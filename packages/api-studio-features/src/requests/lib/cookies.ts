@@ -44,9 +44,7 @@ export function updateCookie(
   index: number,
   patch: Partial<RequestCookie>,
 ): RequestCookie[] {
-  return normalizeCookies(cookies).map((cookie, candidate) =>
-    candidate === index ? { ...cookie, ...patch } : cookie
-  );
+  return normalizeCookies(cookies).map((cookie, candidate) => (candidate === index ? { ...cookie, ...patch } : cookie));
 }
 
 export function removeCookie(cookies: readonly RequestCookie[], index: number): RequestCookie[] {
@@ -56,11 +54,7 @@ export function removeCookie(cookies: readonly RequestCookie[], index: number): 
 export function duplicateCookie(cookies: readonly RequestCookie[], index: number): RequestCookie[] {
   const normalized = normalizeCookies(cookies);
   if (normalized.length >= MAX_REQUEST_COOKIE_ROWS || !normalized[index]) return normalized;
-  return [
-    ...normalized.slice(0, index + 1),
-    { ...normalized[index] },
-    ...normalized.slice(index + 1),
-  ];
+  return [...normalized.slice(0, index + 1), { ...normalized[index] }, ...normalized.slice(index + 1)];
 }
 
 export function validateCookies(cookies: readonly RequestCookie[]): CookieValidationIssue[] {
@@ -86,35 +80,26 @@ export function validateCookies(cookies: readonly RequestCookie[]): CookieValida
 }
 
 export function hasActiveCookies(cookies: readonly RequestCookie[]): boolean {
-  return normalizeCookies(cookies).some(
-    (cookie) => isCookieEnabled(cookie) && Boolean(cookie.name || cookie.value),
-  );
+  return normalizeCookies(cookies).some((cookie) => isCookieEnabled(cookie) && Boolean(cookie.name || cookie.value));
 }
 
 export function hasActiveCookieHeader(headers: readonly RequestHeader[]): boolean {
-  return headers.some(
-    (header) => isHeaderEnabled(header) && header.key.trim().toLowerCase() === "cookie",
-  );
+  return headers.some((header) => isHeaderEnabled(header) && header.key.trim().toLowerCase() === "cookie");
 }
 
-export function hasCookieSourceConflict(
-  cookies: readonly RequestCookie[],
-  headers: readonly RequestHeader[],
-): boolean {
+export function hasCookieSourceConflict(cookies: readonly RequestCookie[], headers: readonly RequestHeader[]): boolean {
   return hasActiveCookies(cookies) && hasActiveCookieHeader(headers);
 }
 
 /** 유효한 활성 행을 RFC Cookie request header 값으로 조립한다. */
-export function buildCookieHeader(
-  cookies: readonly RequestCookie[],
-  maskDirectValues = false,
-): string {
+export function buildCookieHeader(cookies: readonly RequestCookie[], maskDirectValues = false): string {
   return normalizeCookies(cookies)
-    .filter((cookie) =>
-      isCookieEnabled(cookie) &&
-      Boolean(cookie.name) &&
-      COOKIE_NAME.test(cookie.name) &&
-      COOKIE_VALUE.test(cookie.value)
+    .filter(
+      (cookie) =>
+        isCookieEnabled(cookie) &&
+        Boolean(cookie.name) &&
+        COOKIE_NAME.test(cookie.name) &&
+        COOKIE_VALUE.test(cookie.value),
     )
     .map((cookie) => `${cookie.name}=${maskDirectValues ? maskCookieValue(cookie.value) : cookie.value}`)
     .join("; ");

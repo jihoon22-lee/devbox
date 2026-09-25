@@ -42,25 +42,29 @@ describe("generateQr", () => {
     expect(first).toEqual(second);
     expect(first.version).toBe(3);
     expect(first.width).toBe(222);
-    expect(first.svg).toContain("shape-rendering=\"crispEdges\"");
+    expect(first.svg).toContain('shape-rendering="crispEdges"');
     expect(first.svg).not.toContain("example.com");
     expect(first.pngBase64).toBe("cG5n");
     expect(first.payloadBytes).toBe(new TextEncoder().encode(request().text).length);
   });
 
   it("formats Wi-Fi fields with the standard escaped payload", () => {
-    expect(buildWifiPayload({
-      ssid: "dev;box",
-      password: String.raw`p\;,:`,
-      security: "WPA",
-      hidden: true,
-    })).toBe(String.raw`WIFI:T:WPA;S:dev\;box;P:p\\\;\,\:;H:true;;`);
-    expect(buildWifiPayload({
-      ssid: "open",
-      password: "unexpected",
-      security: "nopass",
-      hidden: false,
-    })).toBeNull();
+    expect(
+      buildWifiPayload({
+        ssid: "dev;box",
+        password: String.raw`p\;,:`,
+        security: "WPA",
+        hidden: true,
+      }),
+    ).toBe(String.raw`WIFI:T:WPA;S:dev\;box;P:p\\\;\,\:;H:true;;`);
+    expect(
+      buildWifiPayload({
+        ssid: "open",
+        password: "unexpected",
+        security: "nopass",
+        hidden: false,
+      }),
+    ).toBeNull();
   });
 
   it("rejects invalid Unicode, options, and QR capacity with fixed errors", async () => {
@@ -69,23 +73,27 @@ describe("generateQr", () => {
       code: "invalidInput",
       message: QR_ERROR_MESSAGES.invalidInput,
     });
-    await expect(generateQr(request({
-      preset: "url",
-      text: undefined,
-      url: "HTTPS://example.com/path",
-    }))).resolves.toBeTruthy();
-    await expect(generateQr(request({
-      preset: "url",
-      text: undefined,
-      url: "https://example.com/\u00a0path",
-    }))).rejects.toThrow(QR_ERROR_MESSAGES.invalidInput);
+    await expect(
+      generateQr(
+        request({
+          preset: "url",
+          text: undefined,
+          url: "HTTPS://example.com/path",
+        }),
+      ),
+    ).resolves.toBeTruthy();
+    await expect(
+      generateQr(
+        request({
+          preset: "url",
+          text: undefined,
+          url: "https://example.com/\u00a0path",
+        }),
+      ),
+    ).rejects.toThrow(QR_ERROR_MESSAGES.invalidInput);
 
-    await expect(generateQr(request({ version: 41 as never }))).rejects.toThrow(
-      QR_ERROR_MESSAGES.invalidVersion,
-    );
-    await expect(generateQr(request({ size: 63 }))).rejects.toThrow(
-      QR_ERROR_MESSAGES.invalidSize,
-    );
+    await expect(generateQr(request({ version: 41 as never }))).rejects.toThrow(QR_ERROR_MESSAGES.invalidVersion);
+    await expect(generateQr(request({ size: 63 }))).rejects.toThrow(QR_ERROR_MESSAGES.invalidSize);
     await expect(generateQr(request({ version: 1, text: "x".repeat(MAX_PAYLOAD_BYTES) }))).rejects.toThrow(
       QR_ERROR_MESSAGES.capacity,
     );
@@ -96,10 +104,14 @@ describe("generateQr", () => {
     await expect(generateQr(request({ preset: "unknown" as never, size: 1 }))).rejects.toThrow(
       QR_ERROR_MESSAGES.invalidInput,
     );
-    await expect(generateQr(request({
-      preset: "wifi",
-      wifi: { ssid: 42 } as never,
-    }))).rejects.toThrow(QR_ERROR_MESSAGES.invalidWifi);
+    await expect(
+      generateQr(
+        request({
+          preset: "wifi",
+          wifi: { ssid: 42 } as never,
+        }),
+      ),
+    ).rejects.toThrow(QR_ERROR_MESSAGES.invalidWifi);
   });
 
   it("keeps the rendered dimension bounded and rejects oversized image output", async () => {
@@ -107,8 +119,9 @@ describe("generateQr", () => {
     expect(result.width).toBeGreaterThan(0);
     expect(result.width).toBeLessThanOrEqual(MAX_OUTPUT_SIZE);
 
-    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL")
-      .mockReturnValue(`data:image/png;base64,${"A".repeat(4 * 1024 * 1024 + 1)}`);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
+      `data:image/png;base64,${"A".repeat(4 * 1024 * 1024 + 1)}`,
+    );
     await expect(generateQr(request())).rejects.toMatchObject({
       code: "render",
       message: QR_ERROR_MESSAGES.render,

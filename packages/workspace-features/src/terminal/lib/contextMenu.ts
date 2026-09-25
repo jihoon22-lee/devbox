@@ -17,7 +17,12 @@ export interface PaneContextCapabilities {
   zoomed: boolean;
 }
 
-export function buildPaneContextMenu({ busy, hasSelection, hasCwd, zoomed }: PaneContextCapabilities): readonly ContextMenuEntry[] {
+export function buildPaneContextMenu({
+  busy,
+  hasSelection,
+  hasCwd,
+  zoomed,
+}: PaneContextCapabilities): readonly ContextMenuEntry[] {
   return [
     {
       type: "item",
@@ -53,10 +58,7 @@ export function buildPaneContextMenu({ busy, hasSelection, hasCwd, zoomed }: Pan
   ];
 }
 
-export function buildTabContextMenu(
-  busy: boolean,
-  hasOtherTabs: boolean,
-): readonly ContextMenuEntry[] {
+export function buildTabContextMenu(busy: boolean, hasOtherTabs: boolean): readonly ContextMenuEntry[] {
   return [
     { type: "item", id: "close", label: "닫기", disabled: busy, danger: true },
     {

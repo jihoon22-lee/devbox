@@ -6,9 +6,15 @@ export function createdUtcExpression(subject) {
   return `${subject}.CreationDate.ToUniversalTime().ToString('o',[Globalization.CultureInfo]::InvariantCulture)`;
 }
 function validCreated(value) {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/u.test(value) && Number.isFinite(Date.parse(value));
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/u.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
 }
-function identityKey(item) { return `${item.Pid}:${item.Created}:${item.Name}:${item.Path}`; }
+function identityKey(item) {
+  return `${item.Pid}:${item.Created}:${item.Name}:${item.Path}`;
+}
 function trace(root, candidates, allowUnknownRoot) {
   if (!root || !Number.isSafeInteger(root.Pid) || root.Pid <= 0) return [];
   if (!validCreated(root.Created) && !allowUnknownRoot) return [];
@@ -19,24 +25,31 @@ function trace(root, candidates, allowUnknownRoot) {
     for (const item of candidates) {
       if (owned.has(item.Pid) || !owned.has(item.ParentPid)) continue;
       if (!validCreated(item.Created)) {
-        const error = new Error("Windows process creation identity was invalid"); error.name = "AcceptanceError"; throw error;
+        const error = new Error("Windows process creation identity was invalid");
+        error.name = "AcceptanceError";
+        throw error;
       }
       const parentCreated = owned.get(item.ParentPid);
       // Equal times are allowed: CIM has 100 ns serialization but the OS clock
       // can record a parent and child in the same tick. Preserve every digit.
       if (parentCreated !== null && item.Created < parentCreated) continue;
-      owned.set(item.Pid, item.Created); changed = true;
+      owned.set(item.Pid, item.Created);
+      changed = true;
     }
   }
-  return candidates.filter(item => item.Pid !== root.Pid && owned.has(item.Pid));
+  return candidates.filter((item) => item.Pid !== root.Pid && owned.has(item.Pid));
 }
 export function ownedDescendantsFromSnapshot(rootIdentity, all) {
   if (!rootIdentity) return [];
-  const root = all.find(item => identityKey(item) === identityKey(rootIdentity));
+  const root = all.find((item) => identityKey(item) === identityKey(rootIdentity));
   return root ? trace(root, all, false) : [];
 }
 // Missing root identities can only produce uncertainty, never kill authority.
 export function potentialDescendantsFromSnapshots(rootIdentity, all, baseline) {
   const before = new Set(baseline.map(identityKey));
-  return trace(rootIdentity, all.filter(item => !before.has(identityKey(item))), true);
+  return trace(
+    rootIdentity,
+    all.filter((item) => !before.has(identityKey(item))),
+    true,
+  );
 }

@@ -42,19 +42,18 @@ function hasUnsafeRegexConstruct(value: string): boolean {
   // JavaScript RegExp can backtrack catastrophically. Keep highlighting and
   // fixture filtering to a small, predictable subset. The native command
   // remains authoritative in Tauri mode.
-  return /\\(?:[1-9]|k<)|\(\?[=!<]/.test(value)
-    || /\([^()]*[+*][^()]*\)[+*{]/.test(value)
-    || /\([^()]*\|[^()]*\)[+*{]/.test(value)
-    || /\{\s*\d{3,}(?:\s*,\s*\d*)?\s*\}/.test(value);
+  return (
+    /\\(?:[1-9]|k<)|\(\?[=!<]/.test(value) ||
+    /\([^()]*[+*][^()]*\)[+*{]/.test(value) ||
+    /\([^()]*\|[^()]*\)[+*{]/.test(value) ||
+    /\{\s*\d{3,}(?:\s*,\s*\d*)?\s*\}/.test(value)
+  );
 }
 
 /** Build a bounded browser regexp, or return null to fail closed. */
 export function createSafeRegex(value: string, flags = ""): RegExp | null {
-  if (
-    utf8ByteLength(value) > MAX_HIGHLIGHT_REGEX_BYTES
-    || hasControl(value)
-    || hasUnsafeRegexConstruct(value)
-  ) return null;
+  if (utf8ByteLength(value) > MAX_HIGHLIGHT_REGEX_BYTES || hasControl(value) || hasUnsafeRegexConstruct(value))
+    return null;
   try {
     return new RegExp(value, flags);
   } catch {
@@ -76,14 +75,16 @@ export function createLiteralRegex(value: string, flags = ""): RegExp | null {
 
 export function filterRecords(records: LogRecord[], filter: FilterSpec): LogRecord[] {
   if (
-    utf8ByteLength(filter.text) > MAX_FILTER_BYTES
-    || hasControl(filter.text)
-    || (filter.field !== undefined && (utf8ByteLength(filter.field) > MAX_FIELD_BYTES || hasControl(filter.field)))
-    || (filter.fieldValue !== undefined && (utf8ByteLength(filter.fieldValue) > MAX_FIELD_BYTES || hasControl(filter.fieldValue)))
-    || (filter.startAt !== undefined && (!Number.isSafeInteger(filter.startAt)))
-    || (filter.endAt !== undefined && (!Number.isSafeInteger(filter.endAt)))
-    || (filter.startAt !== undefined && filter.endAt !== undefined && filter.startAt > filter.endAt)
-  ) return [];
+    utf8ByteLength(filter.text) > MAX_FILTER_BYTES ||
+    hasControl(filter.text) ||
+    (filter.field !== undefined && (utf8ByteLength(filter.field) > MAX_FIELD_BYTES || hasControl(filter.field))) ||
+    (filter.fieldValue !== undefined &&
+      (utf8ByteLength(filter.fieldValue) > MAX_FIELD_BYTES || hasControl(filter.fieldValue))) ||
+    (filter.startAt !== undefined && !Number.isSafeInteger(filter.startAt)) ||
+    (filter.endAt !== undefined && !Number.isSafeInteger(filter.endAt)) ||
+    (filter.startAt !== undefined && filter.endAt !== undefined && filter.startAt > filter.endAt)
+  )
+    return [];
 
   let matcher: RegExp | null = null;
   if (filter.regex && filter.text) {
@@ -93,16 +94,23 @@ export function filterRecords(records: LogRecord[], filter: FilterSpec): LogReco
   return records.filter((record) => {
     if (filter.sourceId && record.sourceId !== filter.sourceId) return false;
     if (filter.level && record.level !== filter.level) return false;
-    if (filter.startAt !== undefined && (record.timestampMillis === null || record.timestampMillis < filter.startAt)) return false;
-    if (filter.endAt !== undefined && (record.timestampMillis === null || record.timestampMillis >= filter.endAt)) return false;
-    if (filter.field && filter.fieldValue !== undefined && record.fields[filter.field] !== filter.fieldValue) return false;
+    if (filter.startAt !== undefined && (record.timestampMillis === null || record.timestampMillis < filter.startAt))
+      return false;
+    if (filter.endAt !== undefined && (record.timestampMillis === null || record.timestampMillis >= filter.endAt))
+      return false;
+    if (filter.field && filter.fieldValue !== undefined && record.fields[filter.field] !== filter.fieldValue)
+      return false;
     if (!filter.text) return true;
     if (matcher) {
-      return matcher.test(record.message)
-        || Object.entries(record.fields).some(([key, value]) => matcher.test(key) || matcher.test(value));
+      return (
+        matcher.test(record.message) ||
+        Object.entries(record.fields).some(([key, value]) => matcher.test(key) || matcher.test(value))
+      );
     }
-    return record.message.includes(filter.text)
-      || Object.entries(record.fields).some(([key, value]) => key.includes(filter.text) || value.includes(filter.text));
+    return (
+      record.message.includes(filter.text) ||
+      Object.entries(record.fields).some(([key, value]) => key.includes(filter.text) || value.includes(filter.text))
+    );
   });
 }
 

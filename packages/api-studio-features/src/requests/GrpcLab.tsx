@@ -118,12 +118,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
   const filteredMethods = useMemo(() => {
     const query = methodQuery.trim().toLowerCase();
     if (!connection || !query) return connection?.methods ?? [];
-    return connection.methods.filter((method) => [
-      method.fullName,
-      method.inputType,
-      method.outputType,
-      method.rpcKind,
-    ].some((value) => value.toLowerCase().includes(query)));
+    return connection.methods.filter((method) =>
+      [method.fullName, method.inputType, method.outputType, method.rpcKind].some((value) =>
+        value.toLowerCase().includes(query),
+      ),
+    );
   }, [connection, methodQuery]);
   const inputIssue = useMemo(() => {
     if (!selectedMethod) return "method를 선택하세요.";
@@ -135,20 +134,31 @@ export function GrpcLab({ native }: GrpcLabProps) {
     }
   }, [requestText, selectedMethod]);
   const https = endpoint.trim().toLowerCase().startsWith("https://");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   const profileIssue = useMemo(() => {
     if (!endpoint.trim()) return "endpoint를 입력하세요.";
     if (sourceMode === "local-proto" && !protoSelection) return "root proto를 선택하세요.";
     if (connectTimeoutMs < 100 || connectTimeoutMs > 30_000) return "connect timeout은 100–30000ms입니다.";
     if (rpcTimeoutMs < 100 || rpcTimeoutMs > 300_000) return "RPC deadline은 100–300000ms입니다.";
-    if (https && (rootMode === "custom" || rootMode === "native+custom")
-      && !selectedCredential?.hasCustomCa) {
+    if (https && (rootMode === "custom" || rootMode === "native+custom") && !selectedCredential?.hasCustomCa) {
       return "custom root mode에는 CA가 포함된 credential이 필요합니다.";
     }
     if (https && rootMode === "native" && selectedCredential && !selectedCredential.hasClientIdentity) {
       return "native root mode에서 credential을 선택하려면 client identity가 필요합니다.";
     }
     return null;
-  }, [connectTimeoutMs, credentialId, endpoint, https, protoSelection, rootMode, rpcTimeoutMs, selectedCredential, serverName, sourceMode]);
+  }, [
+    connectTimeoutMs,
+    credentialId,
+    endpoint,
+    https,
+    protoSelection,
+    rootMode,
+    rpcTimeoutMs,
+    selectedCredential,
+    serverName,
+    sourceMode,
+  ]);
 
   useEffect(() => {
     if (!connection) return;
@@ -158,10 +168,10 @@ export function GrpcLab({ native }: GrpcLabProps) {
 
   useEffect(() => {
     if (!selectedMethod) return;
-    const template = selectedMethod.rpcKind === "client-streaming"
-      || selectedMethod.rpcKind === "bidirectional-streaming"
-      ? [selectedMethod.inputTemplate]
-      : selectedMethod.inputTemplate;
+    const template =
+      selectedMethod.rpcKind === "client-streaming" || selectedMethod.rpcKind === "bidirectional-streaming"
+        ? [selectedMethod.inputTemplate]
+        : selectedMethod.inputTemplate;
     setRequestText(JSON.stringify(template, null, 2));
     setResult(null);
   }, [selectedMethod]);
@@ -181,15 +191,18 @@ export function GrpcLab({ native }: GrpcLabProps) {
     };
   }, [native]);
 
-  useEffect(() => () => {
-    generationRef.current += 1;
-    const active = activeRef.current;
-    const current = connectionRef.current;
-    activeRef.current = null;
-    connectionRef.current = null;
-    if (active) void cancelGrpc(active.connectionId, active.requestId).catch(() => undefined);
-    if (current) void disconnectGrpc(current.connectionId).catch(() => undefined);
-  }, []);
+  useEffect(
+    () => () => {
+      generationRef.current += 1;
+      const active = activeRef.current;
+      const current = connectionRef.current;
+      activeRef.current = null;
+      connectionRef.current = null;
+      if (active) void cancelGrpc(active.connectionId, active.requestId).catch(() => undefined);
+      if (current) void disconnectGrpc(current.connectionId).catch(() => undefined);
+    },
+    [],
+  );
 
   const pickSource = async (kind: "proto" | "import-root") => {
     if (!native || phase !== "idle") return;
@@ -207,11 +220,12 @@ export function GrpcLab({ native }: GrpcLabProps) {
   const pickCredentialFile = async (kind: "ca" | "certificate" | "key") => {
     if (!native || credentialBusy) return;
     try {
-      const selection = kind === "ca"
-        ? await pickGrpcCa()
-        : kind === "certificate"
-          ? await pickGrpcClientCertificate()
-          : await pickGrpcClientKey();
+      const selection =
+        kind === "ca"
+          ? await pickGrpcCa()
+          : kind === "certificate"
+            ? await pickGrpcClientCertificate()
+            : await pickGrpcClientKey();
       if (!selection) return;
       if (kind === "ca") setCaSelection(selection);
       else if (kind === "certificate") setCertificateSelection(selection);
@@ -273,9 +287,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
       if (removed) {
         setCredentials((values) => values.filter((value) => value.credentialId !== id));
         if (credentialId === id) setCredentialId("");
-        setNotice(connection
-          ? "저장 credential을 삭제했습니다. 이미 연결된 channel은 연결 해제 전까지 기존 TLS material을 사용합니다."
-          : "저장 credential을 삭제했습니다.");
+        setNotice(
+          connection
+            ? "저장 credential을 삭제했습니다. 이미 연결된 channel은 연결 해제 전까지 기존 TLS material을 사용합니다."
+            : "저장 credential을 삭제했습니다.",
+        );
       }
       setErrorCode(null);
     } catch (cause) {
@@ -295,15 +311,14 @@ export function GrpcLab({ native }: GrpcLabProps) {
     try {
       const connected = await connectGrpc({
         endpoint: endpoint.trim(),
-        source: sourceMode === "reflection"
-          ? { kind: "reflection" }
-          : {
-              kind: "local-proto",
-              protoSelectionId: protoSelection?.selectionId ?? "",
-              ...(importRootSelection
-                ? { importRootSelectionId: importRootSelection.selectionId }
-                : {}),
-            },
+        source:
+          sourceMode === "reflection"
+            ? { kind: "reflection" }
+            : {
+                kind: "local-proto",
+                protoSelectionId: protoSelection?.selectionId ?? "",
+                ...(importRootSelection ? { importRootSelectionId: importRootSelection.selectionId } : {}),
+              },
         tls: https
           ? {
               rootMode,
@@ -459,9 +474,10 @@ export function GrpcLab({ native }: GrpcLabProps) {
 
   const connected = phase === "connected" && connection !== null;
   const busy = phase === "connecting" || phase === "disconnecting";
-  const importReady = credentialLabel.trim().length > 0
-    && Boolean(caSelection || (certificateSelection && keySelection))
-    && Boolean(certificateSelection) === Boolean(keySelection);
+  const importReady =
+    credentialLabel.trim().length > 0 &&
+    Boolean(caSelection || (certificateSelection && keySelection)) &&
+    Boolean(certificateSelection) === Boolean(keySelection);
 
   return (
     <section
@@ -481,8 +497,8 @@ export function GrpcLab({ native }: GrpcLabProps) {
       </div>
 
       <p className="dim mcp-storage-disclosure">
-        기록/내보내기에는 method, count, status, 시간, TLS mode만 저장합니다. ProtoJSON 본문, 엔드포인트,
-        metadata, descriptor, 네이티브 경로, 자격 증명 ID와 PEM은 저장하지 않습니다.
+        기록/내보내기에는 method, count, status, 시간, TLS mode만 저장합니다. ProtoJSON 본문, 엔드포인트, metadata,
+        descriptor, 네이티브 경로, 자격 증명 ID와 PEM은 저장하지 않습니다.
       </p>
 
       {!native && (
@@ -616,10 +632,19 @@ export function GrpcLab({ native }: GrpcLabProps) {
           {!https && <p className="dim">현재 endpoint는 plaintext입니다. TLS material은 전송되지 않습니다.</p>}
         </details>
 
-        {profileIssue && <p className="grpc-validation" role="status">{profileIssue}</p>}
+        {profileIssue && (
+          <p className="grpc-validation" role="status">
+            {profileIssue}
+          </p>
+        )}
         <div className="mcp-inline-actions">
           {connected ? (
-            <button className="btn" type="button" disabled={busy || Boolean(activeRequest)} onClick={() => void onDisconnect()}>
+            <button
+              className="btn"
+              type="button"
+              disabled={busy || Boolean(activeRequest)}
+              onClick={() => void onDisconnect()}
+            >
               연결 해제
             </button>
           ) : (
@@ -638,8 +663,8 @@ export function GrpcLab({ native }: GrpcLabProps) {
       <details className="grpc-panel grpc-credential-panel">
         <summary>TLS 자격 증명 관리자 · Windows DPAPI</summary>
         <p className="dim">
-          CA는 선택 사항입니다. client certificate와 암호화되지 않은 private key는 반드시 한 쌍으로 가져옵니다.
-          PEM 내용과 native 경로는 화면에 표시되지 않습니다.
+          CA는 선택 사항입니다. client certificate와 암호화되지 않은 private key는 반드시 한 쌍으로 가져옵니다. PEM
+          내용과 native 경로는 화면에 표시되지 않습니다.
         </p>
         <div className="grpc-credential-import">
           <label>
@@ -685,7 +710,12 @@ export function GrpcLab({ native }: GrpcLabProps) {
             >
               암호화된 자격 증명 가져오기
             </button>
-            <button className="btn" type="button" disabled={!native || credentialBusy} onClick={() => void refreshCredentials()}>
+            <button
+              className="btn"
+              type="button"
+              disabled={!native || credentialBusy}
+              onClick={() => void refreshCredentials()}
+            >
               자격 증명 새로 고침
             </button>
           </div>
@@ -718,10 +748,18 @@ export function GrpcLab({ native }: GrpcLabProps) {
         <section className="grpc-panel" aria-labelledby="grpc-method-heading">
           <div className="grpc-connection-card" role="status">
             <strong>{connection.authority}</strong>
-            <span>{connection.source.kind}{connection.source.label ? ` · ${connection.source.label}` : ""}</span>
-            <span>서비스 {connection.source.serviceCount}개 · 메서드 {connection.methods.length}개</span>
+            <span>
+              {connection.source.kind}
+              {connection.source.label ? ` · ${connection.source.label}` : ""}
+            </span>
+            <span>
+              서비스 {connection.source.serviceCount}개 · 메서드 {connection.methods.length}개
+            </span>
             <span>descriptor 파일 {connection.source.descriptorFileCount}개</span>
-            <span>{connection.tls.mode}{connection.tls.credentialUsed ? " · 자격 증명 사용" : ""}</span>
+            <span>
+              {connection.tls.mode}
+              {connection.tls.credentialUsed ? " · 자격 증명 사용" : ""}
+            </span>
           </div>
           <h3 id="grpc-method-heading">메서드 탐색기</h3>
           <div className="grpc-method-controls">
@@ -751,14 +789,18 @@ export function GrpcLab({ native }: GrpcLabProps) {
           </div>
           {selectedMethod && (
             <div className="grpc-method-card">
-              <code>{selectedMethod.service}/{selectedMethod.method}</code>
+              <code>
+                {selectedMethod.service}/{selectedMethod.method}
+              </code>
               <span>{selectedMethod.rpcKind}</span>
-              <span>{selectedMethod.inputType} → {selectedMethod.outputType}</span>
+              <span>
+                {selectedMethod.inputType} → {selectedMethod.outputType}
+              </span>
             </div>
           )}
           <label className="grpc-editor-label">
-            {selectedMethod && (selectedMethod.rpcKind === "client-streaming"
-              || selectedMethod.rpcKind === "bidirectional-streaming")
+            {selectedMethod &&
+            (selectedMethod.rpcKind === "client-streaming" || selectedMethod.rpcKind === "bidirectional-streaming")
               ? "ProtoJSON 메시지 배열"
               : "ProtoJSON 메시지"}
             <textarea
@@ -770,7 +812,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
               onChange={(event) => setRequestText(event.currentTarget.value)}
             />
           </label>
-          {inputIssue && <p className="grpc-validation" role="status">{inputIssue}</p>}
+          {inputIssue && (
+            <p className="grpc-validation" role="status">
+              {inputIssue}
+            </p>
+          )}
           <div className="mcp-inline-actions">
             <button
               className="btn send"
@@ -791,7 +837,9 @@ export function GrpcLab({ native }: GrpcLabProps) {
               <div>
                 <h3 id="grpc-result-heading">결과</h3>
                 <span className={result.ok ? "grpc-status-ok" : "grpc-status-error"}>{result.status}</span>
-                <span>메시지 {result.responseMessageCount}개 · {result.elapsedMs}ms</span>
+                <span>
+                  메시지 {result.responseMessageCount}개 · {result.elapsedMs}ms
+                </span>
               </div>
               <pre>{boundedJson(result.responses, 1024 * 1024)}</pre>
             </section>
@@ -813,20 +861,24 @@ export function GrpcLab({ native }: GrpcLabProps) {
           {history.entries.map((entry, index) => (
             <li key={`${entry.startedAtMs}-${entry.service}-${entry.method}-${index}`}>
               <div>
-                <strong>{entry.service}/{entry.method}</strong>
-                <code>{entry.rpcKind} · {entry.status}</code>
-                <span>{entry.requestMessageCount} → {entry.responseMessageCount}개 메시지 · {entry.elapsedMs}ms</span>
-                <span>{entry.sourceKind} · {entry.tlsMode}{entry.credentialUsed ? " · 자격 증명 사용" : ""}</span>
+                <strong>
+                  {entry.service}/{entry.method}
+                </strong>
+                <code>
+                  {entry.rpcKind} · {entry.status}
+                </code>
+                <span>
+                  {entry.requestMessageCount} → {entry.responseMessageCount}개 메시지 · {entry.elapsedMs}ms
+                </span>
+                <span>
+                  {entry.sourceKind} · {entry.tlsMode}
+                  {entry.credentialUsed ? " · 자격 증명 사용" : ""}
+                </span>
                 <time dateTime={new Date(entry.startedAtMs).toISOString()}>
                   {new Date(entry.startedAtMs).toLocaleString()}
                 </time>
               </div>
-              <button
-                className="btn"
-                type="button"
-                disabled={!native}
-                onClick={() => void onExport(entry)}
-              >
+              <button className="btn" type="button" disabled={!native} onClick={() => void onExport(entry)}>
                 요약 내보내기
               </button>
             </li>
@@ -840,7 +892,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
           {ERROR_LABELS[errorCode] ?? ERROR_LABELS.grpc_protocol_failed}
         </div>
       )}
-      {notice && <p className="dim grpc-notice" role="status">{notice}</p>}
+      {notice && (
+        <p className="dim grpc-notice" role="status">
+          {notice}
+        </p>
+      )}
     </section>
   );
 }
@@ -863,9 +919,15 @@ function NativeSelectionRow({
   return (
     <div className="grpc-selection-row">
       <span>{title}</span>
-      <button className="btn" type="button" disabled={disabled} onClick={onPick}>{action}</button>
+      <button className="btn" type="button" disabled={disabled} onClick={onPick}>
+        {action}
+      </button>
       <span role="status">{selection?.label ?? "선택하지 않음"}</span>
-      {selection && <button className="btn" type="button" disabled={disabled} onClick={onClear}>지우기</button>}
+      {selection && (
+        <button className="btn" type="button" disabled={disabled} onClick={onClear}>
+          지우기
+        </button>
+      )}
     </div>
   );
 }

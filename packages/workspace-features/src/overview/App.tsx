@@ -1,8 +1,4 @@
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
@@ -119,20 +115,14 @@ const DIALOG_FOCUSABLE_SELECTOR = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
 
-function trapModalFocus(
-  event: ReactKeyboardEvent<HTMLElement>,
-  close: () => void,
-  busy: boolean,
-) {
+function trapModalFocus(event: ReactKeyboardEvent<HTMLElement>, close: () => void, busy: boolean) {
   if (event.key === "Escape" && !event.nativeEvent.isComposing && !busy) {
     event.preventDefault();
     close();
     return;
   }
   if (event.key !== "Tab") return;
-  const focusable = Array.from(
-    event.currentTarget.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR),
-  );
+  const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR));
   if (focusable.length === 0) {
     event.preventDefault();
     return;
@@ -207,28 +197,31 @@ export default function App() {
   // real profile list instead of racing the empty initial state.
   const [profilesLoaded, setProfilesLoaded] = useState(false);
 
-  const prepareProfileContext = useCallback((target: HTMLElement) => {
-    if (busy && !preflightLoading) return;
-    const id = target.dataset.profileId;
-    const profile = profiles.find((candidate) => candidate.id === id);
-    if (!profile) return;
-    setSelectedId(profile.id);
-    setContextProfile(profile);
-    setContextTargets(null);
-    const request = ++contextTargetRequest.current;
-    void profileOpenTargets(profile.id)
-      .then((targets) => {
-        if (request === contextTargetRequest.current) {
-          setContextTargets({ profileId: profile.id, targets });
-        }
-      })
-      .catch(() => {
-        if (request === contextTargetRequest.current) {
-          setContextTargets({ profileId: profile.id, targets: [] });
-          setError("다른 앱으로 열기 대상을 확인하지 못했습니다");
-        }
-      });
-  }, [busy, preflightLoading, profiles]);
+  const prepareProfileContext = useCallback(
+    (target: HTMLElement) => {
+      if (busy && !preflightLoading) return;
+      const id = target.dataset.profileId;
+      const profile = profiles.find((candidate) => candidate.id === id);
+      if (!profile) return;
+      setSelectedId(profile.id);
+      setContextProfile(profile);
+      setContextTargets(null);
+      const request = ++contextTargetRequest.current;
+      void profileOpenTargets(profile.id)
+        .then((targets) => {
+          if (request === contextTargetRequest.current) {
+            setContextTargets({ profileId: profile.id, targets });
+          }
+        })
+        .catch(() => {
+          if (request === contextTargetRequest.current) {
+            setContextTargets({ profileId: profile.id, targets: [] });
+            setError("다른 앱으로 열기 대상을 확인하지 못했습니다");
+          }
+        });
+    },
+    [busy, preflightLoading, profiles],
+  );
   const profileContextMenu = useContextMenu({
     disabled: busy && !preflightLoading,
     onBeforeOpen: (_reason, target) => prepareProfileContext(target),
@@ -273,7 +266,7 @@ export default function App() {
       if (request !== refreshRequest.current) return;
       setProfiles(list);
       setRun(activeRun ? { ...activeRun, steps: [], resourceProvenance: [] } : null);
-      setSelectedId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
+      setSelectedId((prev) => (prev && list.some((p) => p.id === prev) ? prev : (list[0]?.id ?? "")));
       setProfilesRevision((revision) => revision + 1);
     } catch {
       if (request === refreshRequest.current) {
@@ -310,17 +303,13 @@ export default function App() {
         setTemplateRevision("");
         setTemplateError("프로필 템플릿을 불러올 수 없습니다.");
       }
-      return request === templateRequest.current
-        ? { revision: "", templates: [] }
-        : null;
+      return request === templateRequest.current ? { revision: "", templates: [] } : null;
     }
   }, []);
 
   const openProjectWizard = async () => {
     if (busy || templateBusy) return;
-    templateFocusReturn.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    templateFocusReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setTemplateBusy(true);
     setTemplateDialog("wizard");
     setWizardDraft(profileDraftFromTemplate(null));
@@ -341,9 +330,7 @@ export default function App() {
 
   const openTemplateManager = async () => {
     if (busy || templateBusy) return;
-    templateFocusReturn.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    templateFocusReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setTemplateBusy(true);
     setTemplateDialog("manage");
     setTemplateError(null);
@@ -352,9 +339,9 @@ export default function App() {
       const loadRequest = templateRequest.current + 1;
       const loaded = await loadTemplates();
       if (loadRequest !== templateRequest.current) return;
-      setTemplateEditing(loaded && loaded.templates[0]
-        ? templateDraftFromTemplate(loaded.templates[0])
-        : emptyProfileTemplateDraft());
+      setTemplateEditing(
+        loaded && loaded.templates[0] ? templateDraftFromTemplate(loaded.templates[0]) : emptyProfileTemplateDraft(),
+      );
     } finally {
       setTemplateBusy(false);
     }
@@ -395,9 +382,12 @@ export default function App() {
     first?.focus({ preventScroll: true });
   }, [templateBusy, templateDialog]);
 
-  useEffect(() => () => {
-    templateRequest.current += 1;
-  }, []);
+  useEffect(
+    () => () => {
+      templateRequest.current += 1;
+    },
+    [],
+  );
 
   const selectWizardTemplate = (templateId: string) => {
     setWizardTemplateId(templateId);
@@ -414,9 +404,7 @@ export default function App() {
         wslDistro: previous.wslDistro.trim() ? previous.wslDistro : defaults.wslDistro,
         wslPath: previous.wslPath.trim() ? previous.wslPath : defaults.wslPath,
         gitRoot: previous.gitRoot.trim() ? previous.gitRoot : defaults.gitRoot,
-        expectedPortsText: previous.expectedPortsText.trim()
-          ? previous.expectedPortsText
-          : defaults.expectedPortsText,
+        expectedPortsText: previous.expectedPortsText.trim() ? previous.expectedPortsText : defaults.expectedPortsText,
         serviceRows: previous.serviceRows.length > 0 ? previous.serviceRows : defaults.serviceRows,
       };
     });
@@ -470,10 +458,11 @@ export default function App() {
       }
       const loaded = await loadTemplates();
       if (loaded && validation.template.id) {
-        setTemplateEditing(templateDraftFromTemplate(
-          loaded.templates.find((candidate) => candidate.id === validation.template!.id)
-            ?? validation.template,
-        ));
+        setTemplateEditing(
+          templateDraftFromTemplate(
+            loaded.templates.find((candidate) => candidate.id === validation.template!.id) ?? validation.template,
+          ),
+        );
       }
     } catch {
       if (operationRequest === templateRequest.current) {
@@ -495,9 +484,9 @@ export default function App() {
       await deleteProfileTemplate(templateId, templateRevision);
       const loaded = await loadTemplates();
       if (loaded) {
-        setTemplateEditing(loaded.templates[0]
-          ? templateDraftFromTemplate(loaded.templates[0])
-          : emptyProfileTemplateDraft());
+        setTemplateEditing(
+          loaded.templates[0] ? templateDraftFromTemplate(loaded.templates[0]) : emptyProfileTemplateDraft(),
+        );
       }
     } catch {
       if (operationRequest === templateRequest.current) {
@@ -512,6 +501,7 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     runtimeRequest.current += 1;
     setRuntimeSuggestions(null);
@@ -523,6 +513,7 @@ export default function App() {
     };
   }, [editing?.id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     environmentRequest.current += 1;
     setEnvironmentLoading(false);
@@ -533,10 +524,9 @@ export default function App() {
 
   useEffect(() => {
     const target = preflightTarget.current;
-    const mismatch = (
-      (preflightLoading && target !== null && target !== selectedId)
-      || (preflight !== null && preflight.profileId !== selectedId)
-    );
+    const mismatch =
+      (preflightLoading && target !== null && target !== selectedId) ||
+      (preflight !== null && preflight.profileId !== selectedId);
     if (!mismatch) return;
     // Once Continue has crossed into the backend start operation, preserve the
     // target selection until that operation settles. A profile click must not
@@ -554,12 +544,15 @@ export default function App() {
     if (busy && preflightLoading) setBusy(false);
   }, [busy, preflight, preflightLoading, selectedId]);
 
-  useEffect(() => () => {
-    const target = preflightTarget.current;
-    if (target) void cancelWorkspacePreflight(target).catch(() => undefined);
-    preflightRequest.current += 1;
-    preflightTarget.current = null;
-  }, []);
+  useEffect(
+    () => () => {
+      const target = preflightTarget.current;
+      if (target) void cancelWorkspacePreflight(target).catch(() => undefined);
+      preflightRequest.current += 1;
+      preflightTarget.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     const id = contextProfile?.id;
@@ -667,6 +660,7 @@ export default function App() {
     };
   }, [profilesLoaded]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const request = ++healthRequest.current;
     const previousProfileId = healthProfileId.current;
@@ -688,6 +682,7 @@ export default function App() {
       });
   }, [profilesRevision, selectedId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const request = ++dependencyRequest.current;
     if (!selectedId) {
@@ -769,9 +764,12 @@ export default function App() {
         setError("WSL runtime 상태가 변경되었습니다. 제안을 다시 확인하세요.");
         return;
       }
-      if (latest.status === "stale" && !window.confirm(
-        `WSL runtime snapshot이 오래되었습니다. 선택한 포트 ${selected.length}개를 편집 초안에만 반영할까요? 프로필은 저장 버튼을 누르기 전까지 변경되지 않습니다.`,
-      )) {
+      if (
+        latest.status === "stale" &&
+        !window.confirm(
+          `WSL runtime snapshot이 오래되었습니다. 선택한 포트 ${selected.length}개를 편집 초안에만 반영할까요? 프로필은 저장 버튼을 누르기 전까지 변경되지 않습니다.`,
+        )
+      ) {
         return;
       }
 
@@ -782,9 +780,9 @@ export default function App() {
         setError(merged.error ?? "WSL runtime 포트를 편집 초안에 반영하지 못했습니다.");
         return;
       }
-      setEditing((previous) => (
-        previous === currentDraft ? { ...previous, expectedPortsText: merged.nextText! } : previous
-      ));
+      setEditing((previous) =>
+        previous === currentDraft ? { ...previous, expectedPortsText: merged.nextText! } : previous,
+      );
       setSelectedRuntimePorts(new Set());
     } catch {
       if (request === runtimeRequest.current) {
@@ -828,9 +826,12 @@ export default function App() {
       setError("실행 중인 프로필은 먼저 Workbench가 시작한 리소스를 중지하세요.");
       return;
     }
-    if (!window.confirm(
-      `'${profile.name}' 프로필을 삭제할까요? 저장된 프로필 정의만 삭제하며 프로젝트 파일과 이미 실행 중이던 외부 리소스는 변경하지 않습니다.`,
-    )) return;
+    if (
+      !window.confirm(
+        `'${profile.name}' 프로필을 삭제할까요? 저장된 프로필 정의만 삭제하며 프로젝트 파일과 이미 실행 중이던 외부 리소스는 변경하지 않습니다.`,
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -912,9 +913,11 @@ export default function App() {
       if (request === preflightRequest.current) {
         preflightTarget.current = null;
         setPreflight(null);
-        setError(startCancelRequestedRef.current
-          ? "Workspace 시작을 취소했습니다."
-          : "Workspace 시작 전 상태가 변경되었습니다. 사전 점검을 다시 실행하세요.");
+        setError(
+          startCancelRequestedRef.current
+            ? "Workspace 시작을 취소했습니다."
+            : "Workspace 시작 전 상태가 변경되었습니다. 사전 점검을 다시 실행하세요.",
+        );
         restorePreflightFocus();
       }
     } finally {
@@ -966,9 +969,10 @@ export default function App() {
     try {
       const preview: ProjectEnvironmentPreview = await previewProjectEnvironment({
         windowsPath: draft.windowsPath.trim() || null,
-        wsl: draft.wslDistro.trim() && draft.wslPath.trim()
-          ? { distro: draft.wslDistro.trim(), path: draft.wslPath.trim() }
-          : null,
+        wsl:
+          draft.wslDistro.trim() && draft.wslPath.trim()
+            ? { distro: draft.wslDistro.trim(), path: draft.wslPath.trim() }
+            : null,
         source,
       });
       if (request !== environmentRequest.current || editingRef.current !== draft) return;
@@ -978,13 +982,17 @@ export default function App() {
         conflict: variable.conflict,
         secretReference: variable.secretReference,
       }));
-      setEditing((previous) => previous === draft ? {
-        ...previous,
-        environmentSource: preview.source,
-        environmentRevision: preview.revision,
-        environmentVariables: metadata,
-        environmentPreview: preview,
-      } : previous);
+      setEditing((previous) =>
+        previous === draft
+          ? {
+              ...previous,
+              environmentSource: preview.source,
+              environmentRevision: preview.revision,
+              environmentVariables: metadata,
+              environmentPreview: preview,
+            }
+          : previous,
+      );
     } catch {
       if (request === environmentRequest.current) {
         setError("환경 파일을 확인할 수 없습니다. 프로젝트 경로와 파일을 확인하세요.");
@@ -999,9 +1007,12 @@ export default function App() {
       setError("선택한 프로필에서 Workbench가 시작한 실행을 찾을 수 없습니다.");
       return;
     }
-    if (!window.confirm(
-      `'${profile.name}'에서 Workbench가 시작한 리소스만 중지할까요? 시작 전부터 실행 중이던 리소스는 유지됩니다.`,
-    )) return;
+    if (
+      !window.confirm(
+        `'${profile.name}'에서 Workbench가 시작한 리소스만 중지할까요? 시작 전부터 실행 중이던 리소스는 유지됩니다.`,
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -1085,14 +1096,11 @@ export default function App() {
     }
   };
 
-  const resolvedContextTargets = contextProfile && contextTargets?.profileId === contextProfile.id
-    ? contextTargets.targets
-    : null;
+  const resolvedContextTargets =
+    contextProfile && contextTargets?.profileId === contextProfile.id ? contextTargets.targets : null;
   const contextRun = contextProfile && run?.profileId === contextProfile.id ? run : null;
   const contextPreflight = contextProfile && preflight?.profileId === contextProfile.id ? preflight : null;
-  const contextHasPath = Boolean(
-    contextProfile?.windowsPath?.trim() || contextProfile?.wsl?.path.trim(),
-  );
+  const contextHasPath = Boolean(contextProfile?.windowsPath?.trim() || contextProfile?.wsl?.path.trim());
   const profileContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextProfile) return [];
     const openTargetItems: ContextMenuEntry[] = (resolvedContextTargets ?? []).map((target) => ({
@@ -1118,11 +1126,15 @@ export default function App() {
         type: "item",
         id: "retry",
         label: "실패 단계부터 다시 시도",
-        disabled: busy || environmentLoading || contextRun === null
-          || contextRun.canRetry !== true,
+        disabled: busy || environmentLoading || contextRun === null || contextRun.canRetry !== true,
       },
       { type: "separator", id: "lifecycle-separator" },
-      { type: "item", id: "edit", label: "프로필 편집", disabled: busy || environmentLoading || contextPreflight !== null },
+      {
+        type: "item",
+        id: "edit",
+        label: "프로필 편집",
+        disabled: busy || environmentLoading || contextPreflight !== null,
+      },
       {
         type: "item",
         id: "delete",
@@ -1141,11 +1153,25 @@ export default function App() {
         type: "submenu",
         id: "open-in",
         label: "다른 앱으로 열기",
-        disabled: busy || environmentLoading || contextPreflight !== null || resolvedContextTargets === null || openTargetItems.length === 0,
+        disabled:
+          busy ||
+          environmentLoading ||
+          contextPreflight !== null ||
+          resolvedContextTargets === null ||
+          openTargetItems.length === 0,
         items: openTargetItems,
       },
     ];
-  }, [busy, contextHasPath, contextPreflight, contextProfile, contextRun, environmentLoading, resolvedContextTargets, run]);
+  }, [
+    busy,
+    contextHasPath,
+    contextPreflight,
+    contextProfile,
+    contextRun,
+    environmentLoading,
+    resolvedContextTargets,
+    run,
+  ]);
 
   const onProfileContextSelect = (id: string) => {
     const profile = contextProfile;
@@ -1156,8 +1182,7 @@ export default function App() {
     else if (id === "edit") {
       onCancelPreflight();
       openEditor(draftFromProfile(profile));
-    }
-    else if (id === "delete") void onDelete(profile);
+    } else if (id === "delete") void onDelete(profile);
     else if (id === "copy-path") void onCopyProfilePath(profile.id);
     else {
       const target = resolvedContextTargets?.find((candidate) => `open-in:${candidate.id}` === id);
@@ -1173,13 +1198,17 @@ export default function App() {
     // check then cannot cancel that newer request.
     void cancelProjectEnvironment().catch(() => undefined);
     setEnvironmentLoading(false);
-    setEditing((prev) => (prev ? {
-      ...prev,
-      ...p,
-      environmentRevision: "",
-      environmentVariables: [],
-      environmentPreview: null,
-    } : prev));
+    setEditing((prev) =>
+      prev
+        ? {
+            ...prev,
+            ...p,
+            environmentRevision: "",
+            environmentVariables: [],
+            environmentPreview: null,
+          }
+        : prev,
+    );
   };
   const patchEnvironmentSource = (source: string) => patchProjectLocation({ environmentSource: source });
   const closeEditor = () => {
@@ -1195,11 +1224,8 @@ export default function App() {
     setEditing(draft);
   };
   const draftValidation = editing ? validateProfileDraft(editing) : null;
-  const existingRuntimePorts = new Set(
-    editing ? parseExpectedPorts(editing.expectedPortsText).ports : [],
-  );
-  const runtimeActionable = runtimeSuggestions?.status === "fresh"
-    || runtimeSuggestions?.status === "stale";
+  const existingRuntimePorts = new Set(editing ? parseExpectedPorts(editing.expectedPortsText).ports : []);
+  const runtimeActionable = runtimeSuggestions?.status === "fresh" || runtimeSuggestions?.status === "stale";
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId) ?? null;
   const wizardValidation = wizardDraft ? validateProfileDraft(wizardDraft) : null;
@@ -1209,13 +1235,48 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Workbench</h1>
-        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => { onCancelPreflight(); openEditor(emptyProfileDraft()); }}>+ 프로필</button>
-        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openProjectWizard()}>새 프로젝트 마법사</button>
-        <button type="button" className="btn" disabled={busy || environmentLoading || templateBusy} onClick={() => void openTemplateManager()}>템플릿 관리</button>
-        <button type="button" className="btn refresh" disabled={busy || environmentLoading} onClick={() => void refresh()}>새로고침</button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy || environmentLoading || templateBusy}
+          onClick={() => {
+            onCancelPreflight();
+            openEditor(emptyProfileDraft());
+          }}
+        >
+          + 프로필
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy || environmentLoading || templateBusy}
+          onClick={() => void openProjectWizard()}
+        >
+          새 프로젝트 마법사
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy || environmentLoading || templateBusy}
+          onClick={() => void openTemplateManager()}
+        >
+          템플릿 관리
+        </button>
+        <button
+          type="button"
+          className="btn refresh"
+          disabled={busy || environmentLoading}
+          onClick={() => void refresh()}
+        >
+          새로고침
+        </button>
       </header>
 
-      {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+      {error && (
+        <div className="error" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
 
       <div className="main">
         <aside className="sidebar">
@@ -1227,30 +1288,41 @@ export default function App() {
               tabIndex={0}
               aria-current={p.id === selectedId ? "true" : undefined}
               data-profile-id={p.id}
-              onClick={() => { if (!busy || preflightLoading) setSelectedId(p.id); }}
+              onClick={() => {
+                if (!busy || preflightLoading) setSelectedId(p.id);
+              }}
               onContextMenu={profileContextTrigger.onContextMenu}
               onKeyDown={(event) => {
                 profileContextTrigger.onKeyDown?.(event);
-                if (
-                  event.defaultPrevented
-                  || event.target !== event.currentTarget
-                  || !isKeyboardActivation(event)
-                ) return;
+                if (event.defaultPrevented || event.target !== event.currentTarget || !isKeyboardActivation(event))
+                  return;
                 event.preventDefault();
                 if (!busy || preflightLoading) setSelectedId(p.id);
               }}
             >
-              <button type="button" className="profile-name" disabled={busy || environmentLoading} onClick={() => { if (!busy || preflightLoading) setSelectedId(p.id); }}>
+              <button
+                type="button"
+                className="profile-name"
+                disabled={busy || environmentLoading}
+                onClick={() => {
+                  if (!busy || preflightLoading) setSelectedId(p.id);
+                }}
+              >
                 {p.name}
               </button>
               <button
                 type="button"
                 className="mini"
                 disabled={busy || environmentLoading}
-                onClick={() => { onCancelPreflight(); openEditor(draftFromProfile(p)); }}
+                onClick={() => {
+                  onCancelPreflight();
+                  openEditor(draftFromProfile(p));
+                }}
                 title="편집"
                 aria-label={`${p.name} 프로필 편집`}
-              >✏️</button>
+              >
+                ✏️
+              </button>
               <button
                 type="button"
                 className="mini"
@@ -1300,7 +1372,11 @@ export default function App() {
                     aria-describedby={draftValidation?.errors.name ? "profile-name-error" : undefined}
                     onChange={(e) => patch({ name: e.currentTarget.value })}
                   />
-                  {draftValidation?.errors.name && <span id="profile-name-error" className="field-error" role="alert">{draftValidation.errors.name}</span>}
+                  {draftValidation?.errors.name && (
+                    <span id="profile-name-error" className="field-error" role="alert">
+                      {draftValidation.errors.name}
+                    </span>
+                  )}
                 </label>
                 <label className="field" htmlFor="profile-windows-path">
                   <span>Windows 경로</span>
@@ -1334,10 +1410,20 @@ export default function App() {
                     maxLength={MAX_PROFILE_PATH_BYTES}
                     disabled={busy || environmentLoading}
                     aria-invalid={Boolean(draftValidation?.errors.projectPath || draftValidation?.errors.wsl)}
-                    aria-describedby={draftValidation?.errors.projectPath ? "profile-project-path-error" : draftValidation?.errors.wsl ? "profile-wsl-error" : undefined}
+                    aria-describedby={
+                      draftValidation?.errors.projectPath
+                        ? "profile-project-path-error"
+                        : draftValidation?.errors.wsl
+                          ? "profile-wsl-error"
+                          : undefined
+                    }
                     onChange={(e) => patchProjectLocation({ wslPath: e.currentTarget.value })}
                   />
-                  {draftValidation?.errors.wsl && <span id="profile-wsl-error" className="field-error" role="alert">{draftValidation.errors.wsl}</span>}
+                  {draftValidation?.errors.wsl && (
+                    <span id="profile-wsl-error" className="field-error" role="alert">
+                      {draftValidation.errors.wsl}
+                    </span>
+                  )}
                 </label>
                 <label className="field" htmlFor="profile-git-root">
                   <span>Git 루트</span>
@@ -1350,17 +1436,23 @@ export default function App() {
                     aria-describedby={draftValidation?.errors.gitRoot ? "profile-git-root-error" : undefined}
                     onChange={(e) => patch({ gitRoot: e.currentTarget.value })}
                   />
-                  {draftValidation?.errors.gitRoot && <span id="profile-git-root-error" className="field-error" role="alert">{draftValidation.errors.gitRoot}</span>}
+                  {draftValidation?.errors.gitRoot && (
+                    <span id="profile-git-root-error" className="field-error" role="alert">
+                      {draftValidation.errors.gitRoot}
+                    </span>
+                  )}
                 </label>
                 <fieldset
                   className="editor-section environment-editor"
                   disabled={busy}
-                  aria-describedby={draftValidation?.errors.environment ? "profile-environment-error" : "profile-environment-help"}
+                  aria-describedby={
+                    draftValidation?.errors.environment ? "profile-environment-error" : "profile-environment-help"
+                  }
                 >
                   <legend>프로젝트 환경 (.env)</legend>
                   <p id="profile-environment-help" className="field-help">
-                    프로젝트 루트의 .env 파일만 native에서 읽습니다. profile에는 파일 원문 대신
-                    변수 이름·source·충돌·revision·secret reference만 저장하고, 실행 직전에 다시 확인합니다.
+                    프로젝트 루트의 .env 파일만 native에서 읽습니다. profile에는 파일 원문 대신 변수
+                    이름·source·충돌·revision·secret reference만 저장하고, 실행 직전에 다시 확인합니다.
                   </p>
                   <label className="checkbox-field" htmlFor="profile-environment-enabled">
                     <input
@@ -1381,7 +1473,9 @@ export default function App() {
                       placeholder=".env"
                       disabled={environmentLoading}
                       aria-invalid={Boolean(draftValidation?.errors.environment)}
-                      aria-describedby={draftValidation?.errors.environment ? "profile-environment-error" : "profile-environment-help"}
+                      aria-describedby={
+                        draftValidation?.errors.environment ? "profile-environment-error" : "profile-environment-help"
+                      }
                       onChange={(event) => patchEnvironmentSource(event.currentTarget.value)}
                     />
                   </label>
@@ -1389,7 +1483,11 @@ export default function App() {
                     <button
                       type="button"
                       className="btn"
-                      disabled={environmentLoading || !editing.environmentSource.trim() || (!editing.windowsPath.trim() && !editing.wslPath.trim())}
+                      disabled={
+                        environmentLoading ||
+                        !editing.environmentSource.trim() ||
+                        (!editing.windowsPath.trim() && !editing.wslPath.trim())
+                      }
                       onClick={() => void inspectEnvironment()}
                     >
                       {environmentLoading ? "환경 파일 확인 중..." : "환경 파일 확인"}
@@ -1410,23 +1508,35 @@ export default function App() {
                           {editing.environmentPreview.variables.map((variable) => (
                             <div className="environment-variable-row" key={`${variable.name}-${variable.source}`}>
                               <span className="environment-variable-name">{variable.name}</span>
-                              <span className="environment-variable-value" aria-label="마스킹된 환경 변수 값">{variable.maskedValue || "(비어 있음)"}</span>
+                              <span className="environment-variable-value" aria-label="마스킹된 환경 변수 값">
+                                {variable.maskedValue || "(비어 있음)"}
+                              </span>
                               <span className="environment-variable-source">{variable.source}</span>
-                              {variable.secretReference ? <span className="environment-variable-secret">secret reference</span> : null}
-                              {variable.conflict !== "none" ? <span className="environment-variable-conflict">충돌: {variable.conflict}</span> : null}
+                              {variable.secretReference ? (
+                                <span className="environment-variable-secret">secret reference</span>
+                              ) : null}
+                              {variable.conflict !== "none" ? (
+                                <span className="environment-variable-conflict">충돌: {variable.conflict}</span>
+                              ) : null}
                             </div>
                           ))}
                         </div>
                       )}
                       {editing.environmentPreview.hasConflicts ? (
-                        <p className="field-error" role="alert">중복 또는 예약된 환경 변수 이름이 있어 주입할 수 없습니다.</p>
+                        <p className="field-error" role="alert">
+                          중복 또는 예약된 환경 변수 이름이 있어 주입할 수 없습니다.
+                        </p>
                       ) : null}
                     </div>
                   ) : editing.environmentVariables.length > 0 ? (
-                    <p className="field-help">저장된 metadata가 있습니다. 원문 없이 다시 확인하면 마스킹된 미리보기를 표시합니다.</p>
+                    <p className="field-help">
+                      저장된 metadata가 있습니다. 원문 없이 다시 확인하면 마스킹된 미리보기를 표시합니다.
+                    </p>
                   ) : null}
                   {draftValidation?.errors.environment && (
-                    <span id="profile-environment-error" className="field-error" role="alert">{draftValidation.errors.environment}</span>
+                    <span id="profile-environment-error" className="field-error" role="alert">
+                      {draftValidation.errors.environment}
+                    </span>
                   )}
                 </fieldset>
                 <label className="field" htmlFor="profile-expected-ports">
@@ -1439,17 +1549,25 @@ export default function App() {
                     placeholder="예: 3000, 5173"
                     disabled={busy}
                     aria-invalid={Boolean(draftValidation?.errors.expectedPorts)}
-                    aria-describedby={draftValidation?.errors.expectedPorts ? "profile-ports-error" : "profile-ports-help"}
+                    aria-describedby={
+                      draftValidation?.errors.expectedPorts ? "profile-ports-error" : "profile-ports-help"
+                    }
                     onChange={(e) => patch({ expectedPortsText: e.currentTarget.value })}
                   />
-                  <span id="profile-ports-help" className="field-help">프로필 상태 점검과 Workspace 시작 시 확인할 로컬 TCP 포트입니다.</span>
-                  {draftValidation?.errors.expectedPorts && <span id="profile-ports-error" className="field-error" role="alert">{draftValidation.errors.expectedPorts}</span>}
+                  <span id="profile-ports-help" className="field-help">
+                    프로필 상태 점검과 Workspace 시작 시 확인할 로컬 TCP 포트입니다.
+                  </span>
+                  {draftValidation?.errors.expectedPorts && (
+                    <span id="profile-ports-error" className="field-error" role="alert">
+                      {draftValidation.errors.expectedPorts}
+                    </span>
+                  )}
                 </label>
                 <fieldset className="editor-section runtime-suggestions" disabled={busy}>
                   <legend>WSL 런타임 포트 제안</legend>
                   <p className="field-help">
-                    WSL Desktop이 마지막으로 발행한 read-only snapshot만 읽습니다. WSL·Docker를
-                    실행하거나 컨테이너를 변경하지 않으며, 반영한 포트도 저장 전 편집 초안에만 남습니다.
+                    WSL Desktop이 마지막으로 발행한 read-only snapshot만 읽습니다. WSL·Docker를 실행하거나 컨테이너를
+                    변경하지 않으며, 반영한 포트도 저장 전 편집 초안에만 남습니다.
                   </p>
                   <button
                     type="button"
@@ -1461,11 +1579,16 @@ export default function App() {
                   </button>
                   {runtimeSuggestions ? (
                     <div className="runtime-suggestion-result">
-                      <div className={`runtime-suggestion-status status-${runtimeSuggestions.status}`} role="status" aria-live="polite">
+                      <div
+                        className={`runtime-suggestion-status status-${runtimeSuggestions.status}`}
+                        role="status"
+                        aria-live="polite"
+                      >
                         <strong>{RUNTIME_STATUS_LABEL[runtimeSuggestions.status]}</strong>
                         {runtimeSuggestions.producerVersion && runtimeSuggestions.freshnessMs !== null ? (
                           <span>
-                            {runtimeSuggestions.source} · producer {runtimeSuggestions.producerVersion} · {formatRuntimeFreshness(runtimeSuggestions.freshnessMs)}
+                            {runtimeSuggestions.source} · producer {runtimeSuggestions.producerVersion} ·{" "}
+                            {formatRuntimeFreshness(runtimeSuggestions.freshnessMs)}
                           </span>
                         ) : (
                           <span>{runtimeSuggestions.source}</span>
@@ -1481,7 +1604,9 @@ export default function App() {
                                 <input
                                   type="checkbox"
                                   checked={alreadyRegistered || selected}
-                                  disabled={alreadyRegistered || !runtimeActionable || runtimeLoading || runtimeAccepting}
+                                  disabled={
+                                    alreadyRegistered || !runtimeActionable || runtimeLoading || runtimeAccepting
+                                  }
                                   onChange={(event) => {
                                     const checked = event.currentTarget.checked;
                                     setSelectedRuntimePorts((previous) => {
@@ -1497,8 +1622,11 @@ export default function App() {
                                 {alreadyRegistered ? <span className="runtime-port-existing">이미 등록됨</span> : null}
                                 <ul>
                                   {port.sources.map((source) => (
-                                    <li key={`${source.distro}\u0000${source.container}\u0000${source.target}\u0000${source.protocol}`}>
-                                      {source.distro} · {source.container} ({source.containerState}) · target {source.target}/{source.protocol}
+                                    <li
+                                      key={`${source.distro}\u0000${source.container}\u0000${source.target}\u0000${source.protocol}`}
+                                    >
+                                      {source.distro} · {source.container} ({source.containerState}) · target{" "}
+                                      {source.target}/{source.protocol}
                                     </li>
                                   ))}
                                 </ul>
@@ -1512,7 +1640,9 @@ export default function App() {
                       <button
                         type="button"
                         className="btn primary"
-                        disabled={!runtimeActionable || runtimeLoading || runtimeAccepting || selectedRuntimePorts.size === 0}
+                        disabled={
+                          !runtimeActionable || runtimeLoading || runtimeAccepting || selectedRuntimePorts.size === 0
+                        }
                         onClick={() => void acceptRuntimePorts()}
                       >
                         {runtimeAccepting ? "상태 재확인 중..." : "선택 포트를 초안에 반영"}
@@ -1526,37 +1656,53 @@ export default function App() {
                   aria-describedby={draftValidation?.errors.services ? "profile-services-error" : undefined}
                 >
                   <legend>Run Manager 서비스</legend>
-                  <p className="field-help">연결할 서비스 ID를 등록합니다. 이 화면은 서비스 자체를 시작·수정하지 않습니다.</p>
+                  <p className="field-help">
+                    연결할 서비스 ID를 등록합니다. 이 화면은 서비스 자체를 시작·수정하지 않습니다.
+                  </p>
                   {editing.serviceRows.map((row, index) => (
                     <div className="editable-list-row" key={row.key}>
-                      <label className="sr-only" htmlFor={`service-${row.key}`}>서비스 {index + 1}</label>
+                      <label className="sr-only" htmlFor={`service-${row.key}`}>
+                        서비스 {index + 1}
+                      </label>
                       <input
                         id={`service-${row.key}`}
                         value={row.value}
                         maxLength={MAX_SERVICE_ID_CHARS}
                         placeholder="예: devbox-dev"
                         aria-invalid={Boolean(draftValidation?.errors.serviceRows[row.key])}
-                        aria-describedby={draftValidation?.errors.serviceRows[row.key] ? `service-error-${row.key}` : undefined}
-                        onChange={(e) => patch({
-                          serviceRows: editing.serviceRows.map((candidate) => (
-                            candidate.key === row.key ? { ...candidate, value: e.currentTarget.value } : candidate
-                          )),
-                        })}
+                        aria-describedby={
+                          draftValidation?.errors.serviceRows[row.key] ? `service-error-${row.key}` : undefined
+                        }
+                        onChange={(e) =>
+                          patch({
+                            serviceRows: editing.serviceRows.map((candidate) =>
+                              candidate.key === row.key ? { ...candidate, value: e.currentTarget.value } : candidate,
+                            ),
+                          })
+                        }
                       />
                       <button
                         type="button"
                         className="btn"
-                        onClick={() => patch({ serviceRows: editing.serviceRows.filter((candidate) => candidate.key !== row.key) })}
+                        onClick={() =>
+                          patch({ serviceRows: editing.serviceRows.filter((candidate) => candidate.key !== row.key) })
+                        }
                         aria-label={`서비스 ${index + 1} 삭제`}
                       >
                         삭제
                       </button>
                       {draftValidation?.errors.serviceRows[row.key] && (
-                        <span id={`service-error-${row.key}`} className="field-error" role="alert">{draftValidation.errors.serviceRows[row.key]}</span>
+                        <span id={`service-error-${row.key}`} className="field-error" role="alert">
+                          {draftValidation.errors.serviceRows[row.key]}
+                        </span>
                       )}
                     </div>
                   ))}
-                  {draftValidation?.errors.services && <span id="profile-services-error" className="field-error" role="alert">{draftValidation.errors.services}</span>}
+                  {draftValidation?.errors.services && (
+                    <span id="profile-services-error" className="field-error" role="alert">
+                      {draftValidation.errors.services}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="btn"
@@ -1566,11 +1712,35 @@ export default function App() {
                     + 서비스 추가
                   </button>
                 </fieldset>
-                {draftValidation?.errors.projectPath && <div id="profile-project-path-error" className="field-error form-error" role="alert">{draftValidation.errors.projectPath}</div>}
-                {draftValidation?.errors.id && <div className="field-error form-error" role="alert">{draftValidation.errors.id}</div>}
+                {draftValidation?.errors.projectPath && (
+                  <div id="profile-project-path-error" className="field-error form-error" role="alert">
+                    {draftValidation.errors.projectPath}
+                  </div>
+                )}
+                {draftValidation?.errors.id && (
+                  <div className="field-error form-error" role="alert">
+                    {draftValidation.errors.id}
+                  </div>
+                )}
                 <div className="actions">
-                  <button type="submit" className="btn primary" disabled={busy || environmentLoading || !draftValidation?.profile}>저장</button>
-                  <button type="button" className="btn" disabled={busy} onClick={() => { onCancelPreflight(); closeEditor(); }}>취소</button>
+                  <button
+                    type="submit"
+                    className="btn primary"
+                    disabled={busy || environmentLoading || !draftValidation?.profile}
+                  >
+                    저장
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={busy}
+                    onClick={() => {
+                      onCancelPreflight();
+                      closeEditor();
+                    }}
+                  >
+                    취소
+                  </button>
                 </div>
               </form>
             </section>
@@ -1615,7 +1785,9 @@ export default function App() {
                     설치된 앱, WSL 경로, 예상 포트와 서비스 dependency를 읽기 전용으로 확인하고 있습니다.
                   </p>
                   <div className="actions">
-                    <button type="button" className="btn" onClick={onCancelPreflight}>취소</button>
+                    <button type="button" className="btn" onClick={onCancelPreflight}>
+                      취소
+                    </button>
                   </div>
                 </div>
               )}
@@ -1693,7 +1865,15 @@ export default function App() {
                     >
                       {busy ? "Workspace 시작 중…" : "계속 시작"}
                     </button>
-                    <button type="button" className="btn" autoFocus={!preflight.ready} disabled={busy} onClick={onCancelPreflight}>취소</button>
+                    <button
+                      type="button"
+                      className="btn"
+                      autoFocus={!preflight.ready}
+                      disabled={busy}
+                      onClick={onCancelPreflight}
+                    >
+                      취소
+                    </button>
                   </div>
                 </div>
               )}
@@ -1720,7 +1900,8 @@ export default function App() {
                     const request = dependencyRequest.current;
                     void dependencyHealth(selectedProfile.id)
                       .then((result) => {
-                        if (request === dependencyRequest.current && result.profileId === selectedProfile.id) setDependencyStatus(result);
+                        if (request === dependencyRequest.current && result.profileId === selectedProfile.id)
+                          setDependencyStatus(result);
                       })
                       .catch(() => {
                         if (request === dependencyRequest.current) setError("의존성 상태를 확인할 수 없습니다.");
@@ -1734,7 +1915,9 @@ export default function App() {
                 </button>
               </div>
               {dependencyLoading && !dependencyStatus ? (
-                <div className="dim" role="status">앱/배포판/path/port/service dependency 확인 중…</div>
+                <div className="dim" role="status">
+                  앱/배포판/path/port/service dependency 확인 중…
+                </div>
               ) : dependencyStatus ? (
                 <div className="dependency-health-list" aria-label="Dependency health 결과">
                   {dependencyStatus.items.map((item) => (
@@ -1808,7 +1991,9 @@ export default function App() {
             onKeyDown={(event) => trapModalFocus(event, closeTemplateDialog, templateBusy)}
           >
             <h2 id="project-wizard-title">새 프로젝트 마법사</h2>
-            <p id="project-wizard-description" className="field-help">템플릿은 안전한 기본값만 채우며, 기존 프로필이나 프로젝트 파일은 변경하지 않습니다.</p>
+            <p id="project-wizard-description" className="field-help">
+              템플릿은 안전한 기본값만 채우며, 기존 프로필이나 프로젝트 파일은 변경하지 않습니다.
+            </p>
             <label className="field" htmlFor="wizard-template">
               <span>프로필 템플릿</span>
               <select
@@ -1818,7 +2003,11 @@ export default function App() {
                 onChange={(event) => selectWizardTemplate(event.currentTarget.value)}
               >
                 <option value="">직접 입력</option>
-                {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
               </select>
             </label>
             <form
@@ -1839,7 +2028,11 @@ export default function App() {
                   onChange={(event) => patchWizardDraft({ name: event.currentTarget.value })}
                 />
               </label>
-              {wizardValidation?.errors.name && <span id="wizard-name-error" className="field-error" role="alert">{wizardValidation.errors.name}</span>}
+              {wizardValidation?.errors.name && (
+                <span id="wizard-name-error" className="field-error" role="alert">
+                  {wizardValidation.errors.name}
+                </span>
+              )}
               <label className="field" htmlFor="wizard-windows-path">
                 <span>Windows 경로</span>
                 <input
@@ -1884,7 +2077,11 @@ export default function App() {
                   onChange={(event) => patchWizardDraft({ gitRoot: event.currentTarget.value })}
                 />
               </label>
-              {wizardValidation?.errors.gitRoot && <span id="wizard-git-root-error" className="field-error" role="alert">{wizardValidation.errors.gitRoot}</span>}
+              {wizardValidation?.errors.gitRoot && (
+                <span id="wizard-git-root-error" className="field-error" role="alert">
+                  {wizardValidation.errors.gitRoot}
+                </span>
+              )}
               <label className="field" htmlFor="wizard-ports">
                 <span>예상 포트 (쉼표)</span>
                 <input
@@ -1896,7 +2093,11 @@ export default function App() {
                   onChange={(event) => patchWizardDraft({ expectedPortsText: event.currentTarget.value })}
                 />
               </label>
-              {wizardValidation?.errors.expectedPorts && <span id="wizard-ports-error" className="field-error" role="alert">{wizardValidation.errors.expectedPorts}</span>}
+              {wizardValidation?.errors.expectedPorts && (
+                <span id="wizard-ports-error" className="field-error" role="alert">
+                  {wizardValidation.errors.expectedPorts}
+                </span>
+              )}
               <label className="field" htmlFor="wizard-services">
                 <span>Run Manager 서비스 ID (쉼표)</span>
                 <input
@@ -1909,19 +2110,41 @@ export default function App() {
                     const value = event.currentTarget.value;
                     patchWizardDraft({
                       serviceRows: value.trim()
-                        ? value.split(",").map((service, index) => ({ key: `wizard-service-${index}`, value: service.trim() }))
+                        ? value
+                            .split(",")
+                            .map((service, index) => ({ key: `wizard-service-${index}`, value: service.trim() }))
                         : [],
                     });
                   }}
                 />
               </label>
-              {wizardValidation?.errors.services && <span id="wizard-services-error" className="field-error" role="alert">{wizardValidation.errors.services}</span>}
-              {wizardValidation?.errors.projectPath && <div id="wizard-project-path-error" className="field-error form-error" role="alert">{wizardValidation.errors.projectPath}</div>}
-              {wizardValidation?.errors.wsl && <div id="wizard-wsl-error" className="field-error form-error" role="alert">{wizardValidation.errors.wsl}</div>}
-              {templateError && <div className="field-error form-error" role="alert">{templateError}</div>}
+              {wizardValidation?.errors.services && (
+                <span id="wizard-services-error" className="field-error" role="alert">
+                  {wizardValidation.errors.services}
+                </span>
+              )}
+              {wizardValidation?.errors.projectPath && (
+                <div id="wizard-project-path-error" className="field-error form-error" role="alert">
+                  {wizardValidation.errors.projectPath}
+                </div>
+              )}
+              {wizardValidation?.errors.wsl && (
+                <div id="wizard-wsl-error" className="field-error form-error" role="alert">
+                  {wizardValidation.errors.wsl}
+                </div>
+              )}
+              {templateError && (
+                <div className="field-error form-error" role="alert">
+                  {templateError}
+                </div>
+              )}
               <div className="actions">
-                <button type="submit" className="btn primary" disabled={templateBusy || !wizardValidation?.profile}>{templateBusy ? "생성 중…" : "프로젝트 만들기"}</button>
-                <button type="button" className="btn" disabled={templateBusy} onClick={closeTemplateDialog}>취소</button>
+                <button type="submit" className="btn primary" disabled={templateBusy || !wizardValidation?.profile}>
+                  {templateBusy ? "생성 중…" : "프로젝트 만들기"}
+                </button>
+                <button type="button" className="btn" disabled={templateBusy} onClick={closeTemplateDialog}>
+                  취소
+                </button>
               </div>
             </form>
           </section>
@@ -1940,14 +2163,38 @@ export default function App() {
             onKeyDown={(event) => trapModalFocus(event, closeTemplateDialog, templateBusy)}
           >
             <h2 id="template-manager-title">프로필 템플릿 관리</h2>
-            <p id="template-manager-description" className="field-help">프로젝트와 환경 파일은 변경하지 않고 Workbench의 재사용 가능한 기본값만 관리합니다.</p>
+            <p id="template-manager-description" className="field-help">
+              프로젝트와 환경 파일은 변경하지 않고 Workbench의 재사용 가능한 기본값만 관리합니다.
+            </p>
             <div className="template-manager-grid">
               <div className="template-list" aria-label="프로필 템플릿 목록">
-                <button type="button" className="btn" disabled={templateBusy} onClick={() => setTemplateEditing(emptyProfileTemplateDraft())}>+ 새 템플릿</button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={templateBusy}
+                  onClick={() => setTemplateEditing(emptyProfileTemplateDraft())}
+                >
+                  + 새 템플릿
+                </button>
                 {templates.map((template) => (
                   <div className="template-list-row" key={template.id}>
-                    <button type="button" className="template-list-item" disabled={templateBusy} onClick={() => setTemplateEditing(templateDraftFromTemplate(template))}>{template.name}</button>
-                    <button type="button" className="mini" disabled={templateBusy} aria-label={`${template.name} 템플릿 삭제`} onClick={() => void onDeleteTemplate(template.id)}>✕</button>
+                    <button
+                      type="button"
+                      className="template-list-item"
+                      disabled={templateBusy}
+                      onClick={() => setTemplateEditing(templateDraftFromTemplate(template))}
+                    >
+                      {template.name}
+                    </button>
+                    <button
+                      type="button"
+                      className="mini"
+                      disabled={templateBusy}
+                      aria-label={`${template.name} 템플릿 삭제`}
+                      onClick={() => void onDeleteTemplate(template.id)}
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
                 {templates.length === 0 && <p className="field-help">저장된 템플릿이 없습니다.</p>}
@@ -1970,7 +2217,11 @@ export default function App() {
                     onChange={(event) => patchTemplateDraft({ name: event.currentTarget.value })}
                   />
                 </label>
-                {templateValidation?.errors.name && <span id="template-name-error" className="field-error" role="alert">{templateValidation.errors.name}</span>}
+                {templateValidation?.errors.name && (
+                  <span id="template-name-error" className="field-error" role="alert">
+                    {templateValidation.errors.name}
+                  </span>
+                )}
                 <label className="field" htmlFor="template-windows-path">
                   <span>기본 Windows 경로 (선택)</span>
                   <input
@@ -1978,7 +2229,9 @@ export default function App() {
                     value={templateEditing.windowsPath}
                     disabled={templateBusy}
                     aria-invalid={Boolean(templateValidation?.errors.projectPath)}
-                    aria-describedby={templateValidation?.errors.projectPath ? "template-project-path-error" : undefined}
+                    aria-describedby={
+                      templateValidation?.errors.projectPath ? "template-project-path-error" : undefined
+                    }
                     onChange={(event) => patchTemplateDraft({ windowsPath: event.currentTarget.value })}
                   />
                 </label>
@@ -2000,7 +2253,9 @@ export default function App() {
                     value={templateEditing.wslPath}
                     disabled={templateBusy}
                     aria-invalid={Boolean(templateValidation?.errors.projectPath)}
-                    aria-describedby={templateValidation?.errors.projectPath ? "template-project-path-error" : undefined}
+                    aria-describedby={
+                      templateValidation?.errors.projectPath ? "template-project-path-error" : undefined
+                    }
                     onChange={(event) => patchTemplateDraft({ wslPath: event.currentTarget.value })}
                   />
                 </label>
@@ -2015,7 +2270,11 @@ export default function App() {
                     onChange={(event) => patchTemplateDraft({ gitRoot: event.currentTarget.value })}
                   />
                 </label>
-                {templateValidation?.errors.gitRoot && <span id="template-git-root-error" className="field-error" role="alert">{templateValidation.errors.gitRoot}</span>}
+                {templateValidation?.errors.gitRoot && (
+                  <span id="template-git-root-error" className="field-error" role="alert">
+                    {templateValidation.errors.gitRoot}
+                  </span>
+                )}
                 <label className="field" htmlFor="template-ports">
                   <span>기본 예상 포트 (쉼표)</span>
                   <input
@@ -2027,7 +2286,11 @@ export default function App() {
                     onChange={(event) => patchTemplateDraft({ expectedPortsText: event.currentTarget.value })}
                   />
                 </label>
-                {templateValidation?.errors.expectedPorts && <span id="template-ports-error" className="field-error" role="alert">{templateValidation.errors.expectedPorts}</span>}
+                {templateValidation?.errors.expectedPorts && (
+                  <span id="template-ports-error" className="field-error" role="alert">
+                    {templateValidation.errors.expectedPorts}
+                  </span>
+                )}
                 <label className="field" htmlFor="template-services">
                   <span>기본 서비스 ID (쉼표)</span>
                   <input
@@ -2039,13 +2302,37 @@ export default function App() {
                     onChange={(event) => patchTemplateDraft({ serviceIdsText: event.currentTarget.value })}
                   />
                 </label>
-                {templateValidation?.errors.services && <span id="template-services-error" className="field-error" role="alert">{templateValidation.errors.services}</span>}
-                {templateValidation?.errors.projectPath && <div id="template-project-path-error" className="field-error form-error" role="alert">{templateValidation.errors.projectPath}</div>}
-                {templateValidation?.errors.wsl && <div id="template-wsl-error" className="field-error form-error" role="alert">{templateValidation.errors.wsl}</div>}
-                {templateError && <div className="field-error form-error" role="alert">{templateError}</div>}
+                {templateValidation?.errors.services && (
+                  <span id="template-services-error" className="field-error" role="alert">
+                    {templateValidation.errors.services}
+                  </span>
+                )}
+                {templateValidation?.errors.projectPath && (
+                  <div id="template-project-path-error" className="field-error form-error" role="alert">
+                    {templateValidation.errors.projectPath}
+                  </div>
+                )}
+                {templateValidation?.errors.wsl && (
+                  <div id="template-wsl-error" className="field-error form-error" role="alert">
+                    {templateValidation.errors.wsl}
+                  </div>
+                )}
+                {templateError && (
+                  <div className="field-error form-error" role="alert">
+                    {templateError}
+                  </div>
+                )}
                 <div className="actions">
-                  <button type="submit" className="btn primary" disabled={templateBusy || !templateValidation?.template}>{templateBusy ? "저장 중…" : "템플릿 저장"}</button>
-                  <button type="button" className="btn" disabled={templateBusy} onClick={closeTemplateDialog}>닫기</button>
+                  <button
+                    type="submit"
+                    className="btn primary"
+                    disabled={templateBusy || !templateValidation?.template}
+                  >
+                    {templateBusy ? "저장 중…" : "템플릿 저장"}
+                  </button>
+                  <button type="button" className="btn" disabled={templateBusy} onClick={closeTemplateDialog}>
+                    닫기
+                  </button>
                 </div>
               </form>
             </div>

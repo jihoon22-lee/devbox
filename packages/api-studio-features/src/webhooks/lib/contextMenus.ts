@@ -1,9 +1,6 @@
 import type { ContextMenuEntry } from "@devbox/context-menu";
 
-export function buildHistoryContextMenu(
-  busy: boolean,
-  canReplay = false,
-): readonly ContextMenuEntry[] {
+export function buildHistoryContextMenu(busy: boolean, canReplay = false): readonly ContextMenuEntry[] {
   return [
     { type: "item", id: "copy-masked", label: "마스킹 복사", disabled: busy },
     { type: "item", id: "copy-raw", label: "원본 복사", disabled: busy },
@@ -30,10 +27,7 @@ export function buildHistoryContextMenu(
   ];
 }
 
-export function buildRuleContextMenu(
-  busy: boolean,
-  canCopyExampleCurl = false,
-): readonly ContextMenuEntry[] {
+export function buildRuleContextMenu(busy: boolean, canCopyExampleCurl = false): readonly ContextMenuEntry[] {
   return [
     { type: "item", id: "edit", label: "편집", disabled: busy },
     { type: "item", id: "duplicate", label: "복제", disabled: busy },

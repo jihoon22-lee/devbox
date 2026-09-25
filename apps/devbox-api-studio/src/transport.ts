@@ -6,22 +6,34 @@ import { componentFailure } from "./componentErrors";
 import catalog from "../../../apps/products.json";
 
 const routeFor: Record<Component, string> = {
-  "api-studio.api": "requests", "api-studio.webhooks": "webhooks", "api-studio.transforms": "transforms",
+  "api-studio.api": "requests",
+  "api-studio.webhooks": "webhooks",
+  "api-studio.transforms": "transforms",
 };
 
-configureProductTransport(async <T>(component: Component, method: string, args: Record<string, unknown>): Promise<T> => {
-  if (!nativeMode) throw new Error("데스크톱 앱에서 사용할 수 있습니다.");
-  const description = await currentDescription("api-studio");
-  const header = makeRequest(description.handshake, routeFor[component], Date.now(), description.context);
-  if(method==="send_knowledge_draft" || method==="open_workspace_selection")header.deadlineMs=Date.now()+29000;
-  const provenance = { product: "api-studio", component, requestId: header.requestId, revision: catalog.catalogRevision };
-  let response: { operation: Operation; value: T };
-  try {
-    response = await invoke("plugin:api-studio|execute", { request: { header, component, method, args } });
-  } catch (problem) { throw new Error(problemMessage(problem, provenance)); }
-  if (!response || !isOperation(response.operation, provenance)) {
-    throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
-  }
-  if (response.operation.outcome.state !== "succeeded") throw componentFailure(component, response.value);
-  return response.value;
-});
+configureProductTransport(
+  async <T>(component: Component, method: string, args: Record<string, unknown>): Promise<T> => {
+    if (!nativeMode) throw new Error("데스크톱 앱에서 사용할 수 있습니다.");
+    const description = await currentDescription("api-studio");
+    const header = makeRequest(description.handshake, routeFor[component], Date.now(), description.context);
+    if (method === "send_knowledge_draft" || method === "open_workspace_selection")
+      header.deadlineMs = Date.now() + 29000;
+    const provenance = {
+      product: "api-studio",
+      component,
+      requestId: header.requestId,
+      revision: catalog.catalogRevision,
+    };
+    let response: { operation: Operation; value: T };
+    try {
+      response = await invoke("plugin:api-studio|execute", { request: { header, component, method, args } });
+    } catch (problem) {
+      throw new Error(problemMessage(problem, provenance));
+    }
+    if (!response || !isOperation(response.operation, provenance)) {
+      throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
+    }
+    if (response.operation.outcome.state !== "succeeded") throw componentFailure(component, response.value);
+    return response.value;
+  },
+);

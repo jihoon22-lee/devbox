@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readResponseBytes } from "./api";
 
-function nullBodyResponse(
-  contentLength: string | null,
-  bytes: Uint8Array,
-): Response {
+function nullBodyResponse(contentLength: string | null, bytes: Uint8Array): Response {
   const headers = new Headers();
   if (contentLength !== null) headers.set("content-length", contentLength);
   return {

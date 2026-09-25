@@ -32,12 +32,10 @@ describe("shortcut reference stays in step with the matchers", () => {
   });
 
   it("각 팬 이동 방향이 서로 다른 action으로 해석된다", () => {
-    const directions = APP_SHORTCUTS
-      .filter((shortcut) => shortcut.id.startsWith("focus-"))
-      .map((shortcut) => {
-        const action = matchShortcut(event(shortcut.event));
-        return action?.type === "focus-pane" ? action.direction : null;
-      });
+    const directions = APP_SHORTCUTS.filter((shortcut) => shortcut.id.startsWith("focus-")).map((shortcut) => {
+      const action = matchShortcut(event(shortcut.event));
+      return action?.type === "focus-pane" ? action.direction : null;
+    });
     expect(directions).toEqual(["left", "right", "up", "down"]);
   });
 });

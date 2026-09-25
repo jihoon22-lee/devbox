@@ -14,12 +14,19 @@ vi.mock("./api", () => ({
     { path: "Source.md", is_dir: false },
   ]),
   listTags: vi.fn(async () => []),
-  readFile: vi.fn(async (path: string) => ({ content: path === "Current.md" ? "[[Missing]]" : "first\n  [[Current]]", revision: "disk-1" })),
+  readFile: vi.fn(async (path: string) => ({
+    content: path === "Current.md" ? "[[Missing]]" : "first\n  [[Current]]",
+    revision: "disk-1",
+  })),
   writeFile: vi.fn(async (_path: string, content: string) => ({ content, revision: "disk-2" })),
   createFile: vi.fn(async () => undefined),
   createDirectory: vi.fn(async () => undefined),
-  previewRename: vi.fn(async () => { throw new Error("unused"); }),
-  applyRename: vi.fn(async () => { throw new Error("unused"); }),
+  previewRename: vi.fn(async () => {
+    throw new Error("unused");
+  }),
+  applyRename: vi.fn(async () => {
+    throw new Error("unused");
+  }),
   discardRenamePreview: vi.fn(async () => undefined),
   deleteFile: vi.fn(async () => undefined),
   entryPath: vi.fn(async (rel: string) => rel),
@@ -57,29 +64,45 @@ vi.mock("./api", () => ({
   saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
   discardQuickCapturePreview: vi.fn(async () => undefined),
   listTemplates: vi.fn(async () => []),
-  createTemplate: vi.fn(async () => { throw new Error("unused"); }),
-  updateTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  createTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
+  updateTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
   deleteTemplate: vi.fn(async () => undefined),
-  previewTemplate: vi.fn(async () => { throw new Error("unused"); }),
-  saveTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  previewTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
+  saveTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
   discardTemplatePreview: vi.fn(async () => undefined),
-  analyzeWikilinks: vi.fn(async () => [{
-    target: "Missing",
-    label: "Missing",
-    line: 1,
-    column: 1,
-    from: 0,
-    to: 11,
-    status: "missing",
-    resolved_path: null,
-  }]),
+  analyzeWikilinks: vi.fn(async () => [
+    {
+      target: "Missing",
+      label: "Missing",
+      line: 1,
+      column: 1,
+      from: 0,
+      to: 11,
+      status: "missing",
+      resolved_path: null,
+    },
+  ]),
   wikilinkCandidates: vi.fn(async () => []),
-  backlinks: vi.fn(async (rel: string) => rel === "Current.md" ? [{
-    source_path: "Source.md",
-    target: "Current",
-    line: 2,
-    column: 3,
-  }] : []),
+  backlinks: vi.fn(async (rel: string) =>
+    rel === "Current.md"
+      ? [
+          {
+            source_path: "Source.md",
+            target: "Current",
+            line: 2,
+            column: 3,
+          },
+        ]
+      : [],
+  ),
   openInboundNote: vi.fn(async (path: string) => ({
     path,
     content: path === "Source.md" ? "first\n  [[Current]]" : "[[Missing]]",
@@ -90,10 +113,7 @@ vi.mock("./api", () => ({
 const analyzeMock = vi.mocked(analyzeWikilinks);
 const backlinksMock = vi.mocked(backlinks);
 const openInboundNoteMock = vi.mocked(openInboundNote);
-const originalRangeClientRects = Object.getOwnPropertyDescriptor(
-  Range.prototype,
-  "getClientRects",
-);
+const originalRangeClientRects = Object.getOwnPropertyDescriptor(Range.prototype, "getClientRects");
 
 beforeAll(() => {
   // CodeMirror measures a requested scroll position on the next animation frame.
@@ -122,20 +142,12 @@ describe("Knowledge wikilink and backlink integration", () => {
     render(<App />);
     fireEvent.click(await screen.findByText("Current.md"));
 
-    await waitFor(
-      () => expect(analyzeMock).toHaveBeenCalledWith("[[Missing]]"),
-      { timeout: 5_000 },
-    );
+    await waitFor(() => expect(analyzeMock).toHaveBeenCalledWith("[[Missing]]"), { timeout: 5_000 });
     await waitFor(() => expect(backlinksMock).toHaveBeenCalledWith("Current.md"));
-    expect(
-      await screen.findByText("미해결 1개", undefined, { timeout: 5_000 }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("미해결 1개", undefined, { timeout: 5_000 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "백링크 (1)" })).toBeInTheDocument();
 
-    fireEvent.click(within(screen.getByLabelText("백링크")).getByRole(
-      "button",
-      { name: /Source\.md/u },
-    ));
+    fireEvent.click(within(screen.getByLabelText("백링크")).getByRole("button", { name: /Source\.md/u }));
     await waitFor(() => expect(openInboundNoteMock).toHaveBeenCalledWith("Source.md"));
     await waitFor(() => expect(document.querySelector(".path")?.textContent).toBe("Source.md"));
 

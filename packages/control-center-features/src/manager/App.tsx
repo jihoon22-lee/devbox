@@ -1,6 +1,21 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyDevSetupConfiguration, cancelDevSetupApply, cancelSupportBundle, devSetupAudit, discardDevSetupConfiguration, exportDevSetupConfiguration, exportSupportBundle, importDevSetupConfiguration, installRelatedTool, launchRelatedTool, openRelatedToolUrl, previewSupportBundle, relatedTools, runDiagnosis, type DiagnosisItem } from "./api";
+import {
+  applyDevSetupConfiguration,
+  cancelDevSetupApply,
+  cancelSupportBundle,
+  devSetupAudit,
+  discardDevSetupConfiguration,
+  exportDevSetupConfiguration,
+  exportSupportBundle,
+  importDevSetupConfiguration,
+  installRelatedTool,
+  launchRelatedTool,
+  openRelatedToolUrl,
+  previewSupportBundle,
+  relatedTools,
+  runDiagnosis,
+  type DiagnosisItem,
+} from "./api";
 import type { DevSetupAudit, DevSetupCapability, DevSetupPlanItem, RelatedTool, SupportBundlePreview } from "./types";
 import "./App.css";
 const RELATED_TOOL_GENERIC_ERROR = "관련 도구 작업을 완료할 수 없습니다.";
@@ -27,11 +42,9 @@ const RELATED_TOOL_ERROR_DISPLAY: Readonly<Record<string, string>> = {
 };
 
 function safeRelatedToolError(error: unknown): string {
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "string" ? error : "";
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   return RELATED_TOOL_SAFE_ERRORS.has(message)
-    ? RELATED_TOOL_ERROR_DISPLAY[message] ?? message
+    ? (RELATED_TOOL_ERROR_DISPLAY[message] ?? message)
     : RELATED_TOOL_GENERIC_ERROR;
 }
 
@@ -88,11 +101,16 @@ function availabilityCapabilityLabel(state: RelatedTool["launchState"]): string 
 
 function backendCapabilityLabel(state: NonNullable<RelatedTool["dockerCapability"]>["wslBackend"]): string {
   switch (state) {
-    case "running": return "실행 중";
-    case "stopped": return "중지됨";
-    case "present": return "등록됨 · 실행 상태 확인 불가";
-    case "absent": return "등록되지 않음";
-    case "unknown": return "확인 필요";
+    case "running":
+      return "실행 중";
+    case "stopped":
+      return "중지됨";
+    case "present":
+      return "등록됨 · 실행 상태 확인 불가";
+    case "absent":
+      return "등록되지 않음";
+    case "unknown":
+      return "확인 필요";
   }
 }
 
@@ -141,26 +159,17 @@ const DEV_SETUP_ACTION_LABELS: Record<DevSetupPlanItem["action"], string> = {
   "review-winget": "Windows App Installer 상태 확인",
 };
 
-type DevSetupConfigurationReview = NonNullable<
-  Awaited<ReturnType<typeof importDevSetupConfiguration>>
->;
+type DevSetupConfigurationReview = NonNullable<Awaited<ReturnType<typeof importDevSetupConfiguration>>>;
 type DevSetupConfigurationPackage = DevSetupConfigurationReview["packages"][number];
-type DevSetupConfigurationApplyResult = Awaited<
-  ReturnType<typeof applyDevSetupConfiguration>
->;
+type DevSetupConfigurationApplyResult = Awaited<ReturnType<typeof applyDevSetupConfiguration>>;
 
 const DEV_SETUP_CONFIGURATION_IMPORT_ERROR =
   "WinGet Configuration v3 파일을 불러올 수 없습니다. Microsoft.WinGet/Package와 고정된 winget source 이름만 지원합니다.";
-const DEV_SETUP_CONFIGURATION_EXPORT_ERROR =
-  "정규화된 WinGet Configuration을 내보낼 수 없습니다.";
-const DEV_SETUP_CONFIGURATION_APPLY_ERROR =
-  "Dev Setup 구성을 적용할 수 없습니다. 만료되었거나 최신 검토가 필요합니다.";
-const DEV_SETUP_CONFIGURATION_CANCEL_ERROR =
-  "Dev Setup 적용 취소를 완료할 수 없습니다.";
-const DEV_SETUP_CONFIGURATION_DISCARD_ERROR =
-  "Dev Setup 구성 검토를 폐기할 수 없습니다.";
-const DEV_SETUP_CONFIGURATION_EXPIRED =
-  "Dev Setup 적용 미리 보기가 만료되었습니다. 구성을 다시 가져오세요.";
+const DEV_SETUP_CONFIGURATION_EXPORT_ERROR = "정규화된 WinGet Configuration을 내보낼 수 없습니다.";
+const DEV_SETUP_CONFIGURATION_APPLY_ERROR = "Dev Setup 구성을 적용할 수 없습니다. 만료되었거나 최신 검토가 필요합니다.";
+const DEV_SETUP_CONFIGURATION_CANCEL_ERROR = "Dev Setup 적용 취소를 완료할 수 없습니다.";
+const DEV_SETUP_CONFIGURATION_DISCARD_ERROR = "Dev Setup 구성 검토를 폐기할 수 없습니다.";
+const DEV_SETUP_CONFIGURATION_EXPIRED = "Dev Setup 적용 미리 보기가 만료되었습니다. 구성을 다시 가져오세요.";
 const DEV_SETUP_CONFIGURATION_CANCELLED = "Dev Setup 적용을 취소했습니다.";
 
 const DEV_SETUP_CONFIGURATION_DESIRED_LABELS: Record<string, string> = {
@@ -196,11 +205,8 @@ const DEV_SETUP_APPLY_STATUS_LABELS: Record<string, string> = {
 };
 
 function devSetupConfigurationDesiredLabel(packageReview: DevSetupConfigurationPackage): string {
-  const label = DEV_SETUP_CONFIGURATION_DESIRED_LABELS[packageReview.desired]
-    ?? packageReview.desired;
-  return packageReview.desired === "version" && packageReview.version
-    ? `${label} ${packageReview.version}`
-    : label;
+  const label = DEV_SETUP_CONFIGURATION_DESIRED_LABELS[packageReview.desired] ?? packageReview.desired;
+  return packageReview.desired === "version" && packageReview.version ? `${label} ${packageReview.version}` : label;
 }
 
 function devSetupConfigurationStateLabel(state: string): string {
@@ -220,9 +226,7 @@ function devSetupStateLabel(capability: DevSetupCapability): string {
     return installCapabilityLabel(capability.state as RelatedTool["installState"]);
   }
   if (capability.id === "docker-wsl-backend") {
-    return backendCapabilityLabel(
-      capability.state as NonNullable<RelatedTool["dockerCapability"]>["wslBackend"],
-    );
+    return backendCapabilityLabel(capability.state as NonNullable<RelatedTool["dockerCapability"]>["wslBackend"]);
   }
   return availabilityCapabilityLabel(capability.state as RelatedTool["launchState"]);
 }
@@ -245,12 +249,12 @@ function safeExternalUrl(value: string): string | null {
     if (value.length > MAX_RELATED_TOOL_URL_LENGTH) return null;
     const url = new URL(value);
     if (
-      url.protocol !== "https:"
-      || url.username
-      || url.password
-      || url.port
-      || url.hostname.length === 0
-      || !RELATED_TOOL_OFFICIAL_HOSTS.has(url.hostname)
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.hostname.length === 0 ||
+      !RELATED_TOOL_OFFICIAL_HOSTS.has(url.hostname)
     ) {
       return null;
     }
@@ -261,11 +265,11 @@ function safeExternalUrl(value: string): string | null {
 }
 
 export type ToolsMode = "doctor" | "dev-setup" | "related-tools";
-export default function App({mode}:{mode?:ToolsMode}={}) {
+export default function App({ mode }: { mode?: ToolsMode } = {}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<ToolsMode>(mode??"doctor");
+  const [tab, setTab] = useState<ToolsMode>(mode ?? "doctor");
   const [diagnosis, setDiagnosis] = useState<DiagnosisItem[]>([]);
   const [supportPreview, setSupportPreview] = useState<SupportBundlePreview | null>(null);
   const [supportBusy, setSupportBusy] = useState(false);
@@ -275,8 +279,9 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
   const [devSetupSnapshot, setDevSetupSnapshot] = useState<DevSetupAudit | null>(null);
   const [devSetupBusy, setDevSetupBusy] = useState(false);
   const [devSetupError, setDevSetupError] = useState<string | null>(null);
-  const [devSetupConfigurationReview, setDevSetupConfigurationReview] =
-    useState<DevSetupConfigurationReview | null>(null);
+  const [devSetupConfigurationReview, setDevSetupConfigurationReview] = useState<DevSetupConfigurationReview | null>(
+    null,
+  );
   const [devSetupConfigurationBusy, setDevSetupConfigurationBusy] = useState(false);
   const [devSetupConfigurationError, setDevSetupConfigurationError] = useState<string | null>(null);
   const [devSetupConfigurationNotice, setDevSetupConfigurationNotice] = useState<string | null>(null);
@@ -467,11 +472,12 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
 
   const onImportDevSetupConfiguration = useCallback(async () => {
     if (
-      operationBusyRef.current
-      || readBusyRef.current
-      || devSetupConfigurationBusy
-      || devSetupConfigurationApplyBusyRef.current
-    ) return;
+      operationBusyRef.current ||
+      readBusyRef.current ||
+      devSetupConfigurationBusy ||
+      devSetupConfigurationApplyBusyRef.current
+    )
+      return;
     const requestId = ++devSetupConfigurationRequestIdRef.current;
     readBusyRef.current = true;
     setReadBusy(true);
@@ -513,12 +519,13 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
   const onExportDevSetupConfiguration = useCallback(async () => {
     const review = devSetupConfigurationReview;
     if (
-      !review
-      || devSetupConfigurationConsumed
-      || devSetupConfigurationBusy
-      || operationBusyRef.current
-      || readBusyRef.current
-    ) return;
+      !review ||
+      devSetupConfigurationConsumed ||
+      devSetupConfigurationBusy ||
+      operationBusyRef.current ||
+      readBusyRef.current
+    )
+      return;
     if (Date.now() >= review.expiresAtMs) {
       setDevSetupConfigurationReview(null);
       setDevSetupReviewAcknowledged(false);
@@ -564,12 +571,13 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
   const onDiscardDevSetupConfiguration = useCallback(async () => {
     const review = devSetupConfigurationReview;
     if (
-      !review
-      || devSetupConfigurationBusy
-      || devSetupConfigurationApplyBusyRef.current
-      || operationBusyRef.current
-      || readBusyRef.current
-    ) return;
+      !review ||
+      devSetupConfigurationBusy ||
+      devSetupConfigurationApplyBusyRef.current ||
+      operationBusyRef.current ||
+      readBusyRef.current
+    )
+      return;
     const requestId = ++devSetupConfigurationRequestIdRef.current;
     readBusyRef.current = true;
     setReadBusy(true);
@@ -604,17 +612,19 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
 
   const onApplyDevSetupConfiguration = useCallback(async () => {
     const review = devSetupConfigurationReview;
-    const hasUnknownPackage = review?.packages.some((packageReview) => (
-      packageReview.currentState === "unknown" || packageReview.action === "verify"
-    )) ?? false;
+    const hasUnknownPackage =
+      review?.packages.some(
+        (packageReview) => packageReview.currentState === "unknown" || packageReview.action === "verify",
+      ) ?? false;
     if (
-      !review
-      || devSetupConfigurationConsumed
-      || devSetupConfigurationBusy
-      || devSetupConfigurationApplyBusyRef.current
-      || operationBusyRef.current
-      || readBusyRef.current
-    ) return;
+      !review ||
+      devSetupConfigurationConsumed ||
+      devSetupConfigurationBusy ||
+      devSetupConfigurationApplyBusyRef.current ||
+      operationBusyRef.current ||
+      readBusyRef.current
+    )
+      return;
     if (Date.now() >= review.expiresAtMs) {
       setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_EXPIRED);
       return;
@@ -624,15 +634,19 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
       return;
     }
     if (
-      !review.canApply
-      || !review.hasChanges
-      || !devSetupReviewAcknowledged
-      || !devSetupAgreementsAccepted
-      || !devSetupAdminRiskAcknowledged
-    ) return;
-    if (!window.confirm(
-      "정규화된 package-only 구성의 패키지 변경을 적용할까요? 네트워크와 UAC/관리자 권한이 필요할 수 있으며 자동 재부팅은 실행하지 않습니다.",
-    )) return;
+      !review.canApply ||
+      !review.hasChanges ||
+      !devSetupReviewAcknowledged ||
+      !devSetupAgreementsAccepted ||
+      !devSetupAdminRiskAcknowledged
+    )
+      return;
+    if (
+      !window.confirm(
+        "정규화된 package-only 구성의 패키지 변경을 적용할까요? 네트워크와 UAC/관리자 권한이 필요할 수 있으며 자동 재부팅은 실행하지 않습니다.",
+      )
+    )
+      return;
 
     const requestId = ++devSetupConfigurationApplyRequestIdRef.current;
     devSetupConfigurationApplyBusyRef.current = true;
@@ -647,19 +661,16 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
     setDevSetupConfigurationResult(null);
     setBusy("dev-setup:apply");
     try {
-      const result = await applyDevSetupConfiguration(
-        review.previewId,
-        true,
-        true,
-        true,
-      );
+      const result = await applyDevSetupConfiguration(review.previewId, true, true, true);
       if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
         setDevSetupConfigurationResult(result);
-        setDevSetupConfigurationNotice(result.status === "complete"
-          ? "Dev Setup 패키지 적용이 완료되었습니다."
-          : result.status === "cancelled"
-            ? DEV_SETUP_CONFIGURATION_CANCELLED
-            : "Dev Setup 패키지 적용이 일부 완료되었습니다. 결과를 확인하세요.");
+        setDevSetupConfigurationNotice(
+          result.status === "complete"
+            ? "Dev Setup 패키지 적용이 완료되었습니다."
+            : result.status === "cancelled"
+              ? DEV_SETUP_CONFIGURATION_CANCELLED
+              : "Dev Setup 패키지 적용이 일부 완료되었습니다. 결과를 확인하세요.",
+        );
       }
     } catch {
       if (mountedRef.current && requestId === devSetupConfigurationApplyRequestIdRef.current) {
@@ -683,19 +694,28 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
     devSetupReviewAcknowledged,
   ]);
 
-  useEffect(()=>{mountedRef.current=true;return ()=>{
- mountedRef.current=false;readBusyRef.current=false;refreshRequestIdRef.current++;
- supportRequestIdRef.current++;const pending=supportOperationIdRef.current;if(pending)void cancelSupportBundle(pending).catch(()=>undefined);
- relatedRequestIdRef.current++;relatedActionIdRef.current++;devSetupRequestIdRef.current++;
- devSetupConfigurationRequestIdRef.current++;devSetupConfigurationApplyRequestIdRef.current++;
- if(devSetupConfigurationApplyBusyRef.current)void cancelDevSetupApply().catch(()=>undefined);
- };},[]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      readBusyRef.current = false;
+      refreshRequestIdRef.current++;
+      supportRequestIdRef.current++;
+      const pending = supportOperationIdRef.current;
+      if (pending) void cancelSupportBundle(pending).catch(() => undefined);
+      relatedRequestIdRef.current++;
+      relatedActionIdRef.current++;
+      devSetupRequestIdRef.current++;
+      devSetupConfigurationRequestIdRef.current++;
+      devSetupConfigurationApplyRequestIdRef.current++;
+      if (devSetupConfigurationApplyBusyRef.current) void cancelDevSetupApply().catch(() => undefined);
+    };
+  }, []);
 
   const onRelatedInstall = async (tool: RelatedTool) => {
     if (tool.installState !== "absent" || operationBusyRef.current || readBusyRef.current) return;
-    if (!window.confirm(
-      `'${tool.displayName}'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.`,
-    )) return;
+    if (!window.confirm(`'${tool.displayName}'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.`))
+      return;
     const actionId = ++relatedActionIdRef.current;
     operationBusyRef.current = true;
     setBusy(`related:${tool.id}:install`);
@@ -711,9 +731,9 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
         // The API boundary normalizes this message. Keep the local fallback
         // as a second guard for mocked/older callers.
         shouldRefresh = true;
-        setNotice(result.message === "WinGet 설치가 완료되었습니다."
-          ? result.message
-          : "WinGet 설치가 완료되었습니다.");
+        setNotice(
+          result.message === "WinGet 설치가 완료되었습니다." ? result.message : "WinGet 설치가 완료되었습니다.",
+        );
       }
     } catch (e) {
       if (mountedRef.current && actionId === relatedActionIdRef.current) {
@@ -741,9 +761,7 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
         throw new Error("관련 도구 작업 결과가 올바르지 않습니다.");
       }
       if (mountedRef.current && actionId === relatedActionIdRef.current) {
-        setNotice(result.message === "관련 도구를 실행했습니다."
-          ? result.message
-          : "관련 도구를 실행했습니다.");
+        setNotice(result.message === "관련 도구를 실행했습니다." ? result.message : "관련 도구를 실행했습니다.");
       }
     } catch (e) {
       if (mountedRef.current && actionId === relatedActionIdRef.current) {
@@ -760,8 +778,8 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
       if (mountedRef.current) setError("공식 링크를 열 수 없습니다.");
     });
   };
-  const devSetupConfigurationExpired = devSetupConfigurationReview != null
-    && devSetupConfigurationClockMs >= devSetupConfigurationReview.expiresAtMs;
+  const devSetupConfigurationExpired =
+    devSetupConfigurationReview != null && devSetupConfigurationClockMs >= devSetupConfigurationReview.expiresAtMs;
   const embeddedLoadRef = useRef({
     doctor: onDiagnose,
     "related-tools": refreshRelatedTools,
@@ -778,45 +796,86 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
     void embeddedLoadRef.current[mode]();
   }, [mode]);
 
-  const devSetupConfigurationHasUnknown = devSetupConfigurationReview?.packages.some((packageReview) => (
-    packageReview.currentState === "unknown" || packageReview.action === "verify"
-  )) ?? false;
-  const devSetupConfigurationApplyDisabled = (
-    !devSetupConfigurationReview
-    || devSetupConfigurationConsumed
-    || devSetupConfigurationExpired
-    || devSetupConfigurationBusy
-    || devSetupApplyInFlight
-    || busy !== null
-    || operationBusyRef.current
-    || readBusyRef.current
-    || devSetupConfigurationHasUnknown
-    || !devSetupConfigurationReview.canApply
-    || !devSetupConfigurationReview.hasChanges
-    || !devSetupReviewAcknowledged
-    || !devSetupAgreementsAccepted
-    || !devSetupAdminRiskAcknowledged
-  );
+  const devSetupConfigurationHasUnknown =
+    devSetupConfigurationReview?.packages.some(
+      (packageReview) => packageReview.currentState === "unknown" || packageReview.action === "verify",
+    ) ?? false;
+  const devSetupConfigurationApplyDisabled =
+    !devSetupConfigurationReview ||
+    devSetupConfigurationConsumed ||
+    devSetupConfigurationExpired ||
+    devSetupConfigurationBusy ||
+    devSetupApplyInFlight ||
+    busy !== null ||
+    operationBusyRef.current ||
+    readBusyRef.current ||
+    devSetupConfigurationHasUnknown ||
+    !devSetupConfigurationReview.canApply ||
+    !devSetupConfigurationReview.hasChanges ||
+    !devSetupReviewAcknowledged ||
+    !devSetupAgreementsAccepted ||
+    !devSetupAdminRiskAcknowledged;
 
   return (
     <div className="app manager-tools">
-      {!mode&&<header className="toolbar"><h1 className="title">Control Center 도구</h1>
-  <button type="button" className="btn" aria-current={tab==="doctor"?"page":undefined} disabled={busy!==null||readBusy} onClick={()=>{setTab("doctor");void onDiagnose();}}>환경 진단</button>
-  <button type="button" className="btn" aria-current={tab==="related-tools"?"page":undefined} disabled={busy!==null||readBusy} onClick={()=>{setTab("related-tools");void refreshRelatedTools();}}>관련 도구</button>
-  <button type="button" className="btn" aria-current={tab==="dev-setup"?"page":undefined} disabled={busy!==null||readBusy} onClick={()=>{setTab("dev-setup");void refreshDevSetup();}}>Dev Setup</button></header>}
+      {!mode && (
+        <header className="toolbar">
+          <h1 className="title">Control Center 도구</h1>
+          <button
+            type="button"
+            className="btn"
+            aria-current={tab === "doctor" ? "page" : undefined}
+            disabled={busy !== null || readBusy}
+            onClick={() => {
+              setTab("doctor");
+              void onDiagnose();
+            }}
+          >
+            환경 진단
+          </button>
+          <button
+            type="button"
+            className="btn"
+            aria-current={tab === "related-tools" ? "page" : undefined}
+            disabled={busy !== null || readBusy}
+            onClick={() => {
+              setTab("related-tools");
+              void refreshRelatedTools();
+            }}
+          >
+            관련 도구
+          </button>
+          <button
+            type="button"
+            className="btn"
+            aria-current={tab === "dev-setup" ? "page" : undefined}
+            disabled={busy !== null || readBusy}
+            onClick={() => {
+              setTab("dev-setup");
+              void refreshDevSetup();
+            }}
+          >
+            Dev Setup
+          </button>
+        </header>
+      )}
 
-      {error && <div className="error" role="alert">{error}</div>}
-      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="notice" role="status" aria-live="polite">
+          {notice}
+        </div>
+      )}
 
       {tab === "doctor" ? (
         <div className="doctor">
           <div className="doctor-head">
             <span className="dim">읽기 전용 진단 · 자동 설치·수정 없음</span>
-            <button
-              className="btn"
-              disabled={readBusy}
-              onClick={() => void onDiagnose()}
-            >
+            <button className="btn" disabled={readBusy} onClick={() => void onDiagnose()}>
               다시 진단
             </button>
           </div>
@@ -829,24 +888,21 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
           {diagnosis.length === 0 && <div className="dim">진단을 실행해 주세요.</div>}
           <div className="dim doctor-note">지원 번들·경로·환경변수는 비식별화되어야 합니다 (§15.4 경계).</div>
 
-
-
           <section className="diagnostic-tool support-tool" aria-labelledby="support-bundle-heading">
             <div className="diagnostic-tool-head">
               <div>
                 <h2 id="support-bundle-heading">비식별화된 지원 번들</h2>
-                <p className="dim">제품 목록·진단·운영 로그 요약을 포함합니다. 원본 DB·로그·경로·비밀값은 포함하지 않습니다.</p>
+                <p className="dim">
+                  제품 목록·진단·운영 로그 요약을 포함합니다. 원본 DB·로그·경로·비밀값은 포함하지 않습니다.
+                </p>
               </div>
               <div className="diagnostic-tool-actions">
                 {supportBusy && supportOperationIdRef.current && (
-                  <button className="btn" type="button" onClick={onCancelSupport}>취소</button>
+                  <button className="btn" type="button" onClick={onCancelSupport}>
+                    취소
+                  </button>
                 )}
-                <button
-                  className="btn"
-                  type="button"
-                  disabled={supportBusy}
-                  onClick={() => void onPreviewSupport()}
-                >
+                <button className="btn" type="button" disabled={supportBusy} onClick={() => void onPreviewSupport()}>
                   {supportBusy ? "준비 중..." : "번들 미리 확인"}
                 </button>
               </div>
@@ -858,17 +914,38 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                   <span className="dim">{formatBytes(supportPreview.estimatedBytes)} · 5분 이내 1회 내보내기</span>
                 </div>
                 <div className="support-sections">
-                  <div><strong>포함</strong>{supportPreview.includedSections.map((section) => <span key={section}>{section}</span>)}</div>
-                  <div><strong>제외</strong>{supportPreview.omittedSections.map((section) => <span key={section}>{section}</span>)}</div>
+                  <div>
+                    <strong>포함</strong>
+                    {supportPreview.includedSections.map((section) => (
+                      <span key={section}>{section}</span>
+                    ))}
+                  </div>
+                  <div>
+                    <strong>제외</strong>
+                    {supportPreview.omittedSections.map((section) => (
+                      <span key={section}>{section}</span>
+                    ))}
+                  </div>
                 </div>
                 <div className="query-export-actions">
                   <span className="dim">미리 확인한 내용을 그대로 내보냅니다. 만료되면 다시 미리 확인해 주세요.</span>
-                  <button className="btn primary" type="button" disabled={supportBusy} onClick={() => void onExportSupport()}>확인 후 JSON 내보내기</button>
-                  <button className="btn" type="button" disabled={supportBusy} onClick={() => setSupportPreview(null)}>취소</button>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={supportBusy}
+                    onClick={() => void onExportSupport()}
+                  >
+                    확인 후 JSON 내보내기
+                  </button>
+                  <button className="btn" type="button" disabled={supportBusy} onClick={() => setSupportPreview(null)}>
+                    취소
+                  </button>
                 </div>
               </div>
             )}
-            {!supportPreview && <div className="dim diagnostic-empty">번들 미리 확인 후 포함/제외 범위를 검토할 수 있습니다.</div>}
+            {!supportPreview && (
+              <div className="dim diagnostic-empty">번들 미리 확인 후 포함/제외 범위를 검토할 수 있습니다.</div>
+            )}
           </section>
         </div>
       ) : tab === "dev-setup" ? (
@@ -881,8 +958,8 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
             <div>
               <h2 id="dev-setup-heading">Dev Setup</h2>
               <p className="dim">
-                위 capability 감사는 계속 읽기 전용이며 설치·실행·registry·PATH 변경은 수행하지 않습니다.
-                아래 package-only 경로는 별도의 명시적 검토·확인 뒤에만 WinGet 패키지 적용을 수행합니다.
+                위 capability 감사는 계속 읽기 전용이며 설치·실행·registry·PATH 변경은 수행하지 않습니다. 아래
+                package-only 경로는 별도의 명시적 검토·확인 뒤에만 WinGet 패키지 적용을 수행합니다.
               </p>
             </div>
             <button
@@ -895,9 +972,14 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
             </button>
           </div>
           <div className="diagnostic-safety-note">
-            읽기 전용 감사 · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개 · 아래 패키지 적용과 분리됨
+            읽기 전용 감사 · 고정된 실행 파일과 WSL 목록만 조회 · 원본 경로/환경변수/프로세스 출력 비공개 · 아래 패키지
+            적용과 분리됨
           </div>
-          {devSetupError && <div className="error related-tools-error" role="alert">{devSetupError}</div>}
+          {devSetupError && (
+            <div className="error related-tools-error" role="alert">
+              {devSetupError}
+            </div>
+          )}
           {!devSetupSnapshot && !devSetupBusy && !devSetupError && (
             <div className="dim related-tools-empty" role="status" aria-live="polite">
               개발 환경 감사를 실행해 주세요.
@@ -906,27 +988,21 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
           {devSetupSnapshot && (
             <>
               <div className="dev-setup-meta dim">
-                schema v{devSetupSnapshot.schemaVersion} · {devSetupSnapshot.mode} · 이번 감사 {new Date(devSetupSnapshot.observedAtMs).toLocaleTimeString("ko-KR")}
+                schema v{devSetupSnapshot.schemaVersion} · {devSetupSnapshot.mode} · 이번 감사{" "}
+                {new Date(devSetupSnapshot.observedAtMs).toLocaleTimeString("ko-KR")}
               </div>
               <div className="dev-setup-grid">
                 {devSetupSnapshot.capabilities.map((capability) => {
-                  const plan = devSetupSnapshot.plan.find(
-                    (candidate) => candidate.capabilityId === capability.id,
-                  );
+                  const plan = devSetupSnapshot.plan.find((candidate) => candidate.capabilityId === capability.id);
                   return (
-                    <article
-                      key={capability.id}
-                      className={`dev-setup-card ${plan?.status ?? "unknown"}`}
-                    >
+                    <article key={capability.id} className={`dev-setup-card ${plan?.status ?? "unknown"}`}>
                       <div className="related-tool-card-head">
                         <h3>{DEV_SETUP_CAPABILITY_LABELS[capability.id]}</h3>
                         <span className={`related-tool-state ${plan?.status === "satisfied" ? "ok" : "warning"}`}>
                           {devSetupStateLabel(capability)}
                         </span>
                       </div>
-                      <div className="dim dev-setup-scope">
-                        범위: {capability.scope === "wsl" ? "WSL" : "Windows"}
-                      </div>
+                      <div className="dim dev-setup-scope">범위: {capability.scope === "wsl" ? "WSL" : "Windows"}</div>
                       <ul className="dev-setup-evidence">
                         {capability.evidence.map((evidence) => (
                           <li key={`${evidence.source}:${evidence.result}`}>
@@ -935,9 +1011,7 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                         ))}
                       </ul>
                       {plan && (
-                        <div className={`dev-setup-plan ${plan.status}`}>
-                          {DEV_SETUP_ACTION_LABELS[plan.action]}
-                        </div>
+                        <div className={`dev-setup-plan ${plan.status}`}>{DEV_SETUP_ACTION_LABELS[plan.action]}</div>
                       )}
                     </article>
                   );
@@ -950,7 +1024,7 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
               >
                 <div className="dev-setup-config-head">
                   <div>
-                <h3 id="dev-setup-config-heading">WinGet 구성 v3 · package-only</h3>
+                    <h3 id="dev-setup-config-heading">WinGet 구성 v3 · package-only</h3>
                     <p className="dim">
                       외부 YAML은 그대로 실행하지 않습니다. Microsoft.WinGet/Package 리소스와 고정된
                       <code>winget</code> source 이름만 정규화해 검토합니다.
@@ -970,17 +1044,14 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                     <button
                       className="btn"
                       type="button"
-                      disabled={
-                        busy !== null
-                        || readBusy
-                        || devSetupConfigurationBusy
-                        || devSetupApplyInFlight
-                      }
+                      disabled={busy !== null || readBusy || devSetupConfigurationBusy || devSetupApplyInFlight}
                       onClick={() => void onImportDevSetupConfiguration()}
                     >
                       {devSetupConfigurationBusy && !devSetupApplyInFlight
                         ? "가져오는 중..."
-                        : devSetupConfigurationReview ? "다시 가져오기" : "구성 가져오기"}
+                        : devSetupConfigurationReview
+                          ? "다시 가져오기"
+                          : "구성 가져오기"}
                     </button>
                     {devSetupConfigurationReview && (
                       <>
@@ -988,12 +1059,12 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                           className="btn"
                           type="button"
                           disabled={
-                            devSetupConfigurationBusy
-                            || devSetupApplyInFlight
-                            || devSetupConfigurationConsumed
-                            || devSetupConfigurationExpired
-                            || busy !== null
-                            || readBusy
+                            devSetupConfigurationBusy ||
+                            devSetupApplyInFlight ||
+                            devSetupConfigurationConsumed ||
+                            devSetupConfigurationExpired ||
+                            busy !== null ||
+                            readBusy
                           }
                           onClick={() => void onExportDevSetupConfiguration()}
                         >
@@ -1015,7 +1086,10 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                   <strong>안전 경계</strong>
                   <ul>
                     <li>네트워크 연결이 필요합니다.</li>
-                    <li>설치 프로그램은 UAC/관리자 권한과 재부팅을 요구할 수 있지만 앱이 자동 재부팅을 예약하거나 실행하지 않습니다.</li>
+                    <li>
+                      설치 프로그램은 UAC/관리자 권한과 재부팅을 요구할 수 있지만 앱이 자동 재부팅을 예약하거나 실행하지
+                      않습니다.
+                    </li>
                     <li>패키지 설치 프로그램이 자체 PATH·registry·파일을 변경할 수 있습니다.</li>
                     <li>상태를 알 수 없는 패키지는 적용을 차단하며 설치를 제안하지 않습니다.</li>
                   </ul>
@@ -1048,23 +1122,43 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                         <span className="dim">
                           {devSetupConfigurationExpired
                             ? "만료됨"
-                            : devSetupConfigurationConsumed ? "적용 토큰 사용됨" : "적용 전 검토 가능"}
+                            : devSetupConfigurationConsumed
+                              ? "적용 토큰 사용됨"
+                              : "적용 전 검토 가능"}
                         </span>
                       </div>
                       <dl className="dev-setup-config-facts">
-                        <div><dt>schema</dt><dd><code>{devSetupConfigurationReview.schemaVersion}</code></dd></div>
+                        <div>
+                          <dt>schema</dt>
+                          <dd>
+                            <code>{devSetupConfigurationReview.schemaVersion}</code>
+                          </dd>
+                        </div>
                         <div>
                           <dt>외부 신뢰</dt>
                           <dd>
-                            <span>{devSetupConfigurationReview.sourceTrust === "external-restricted" ? "외부 입력 · 제한 처리(신뢰 안 함)" : "제한된 외부 입력"}</span>{" "}
+                            <span>
+                              {devSetupConfigurationReview.sourceTrust === "external-restricted"
+                                ? "외부 입력 · 제한 처리(신뢰 안 함)"
+                                : "제한된 외부 입력"}
+                            </span>{" "}
                             <code>{devSetupConfigurationReview.sourceTrust}</code>
                           </dd>
                         </div>
-                        <div><dt>digest prefix</dt><dd><code>sha256:{devSetupConfigurationReview.configurationDigest.slice(0, 12)}…</code></dd></div>
-                        <div><dt>적용 수명</dt><dd>5분 · 1회 적용</dd></div>
+                        <div>
+                          <dt>digest prefix</dt>
+                          <dd>
+                            <code>sha256:{devSetupConfigurationReview.configurationDigest.slice(0, 12)}…</code>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>적용 수명</dt>
+                          <dd>5분 · 1회 적용</dd>
+                        </div>
                       </dl>
                       <div className="dev-setup-config-scope dim">
-                        mode: <code>{devSetupConfigurationReview.mode}</code> · 패키지 {devSetupConfigurationReview.packages.length}개
+                        mode: <code>{devSetupConfigurationReview.mode}</code> · 패키지{" "}
+                        {devSetupConfigurationReview.packages.length}개
                       </div>
                       {devSetupConfigurationHasUnknown && (
                         <div className="dev-setup-config-block" role="alert">
@@ -1076,13 +1170,13 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                           적용할 패키지 변경이 없습니다.
                         </div>
                       )}
-                      {devSetupConfigurationReview.hasChanges
-                        && !devSetupConfigurationReview.canApply
-                        && !devSetupConfigurationHasUnknown && (
-                        <div className="dev-setup-config-block" role="alert">
-                          현재 검토는 적용할 수 없습니다. 패키지 상태를 다시 확인하세요.
-                        </div>
-                      )}
+                      {devSetupConfigurationReview.hasChanges &&
+                        !devSetupConfigurationReview.canApply &&
+                        !devSetupConfigurationHasUnknown && (
+                          <div className="dev-setup-config-block" role="alert">
+                            현재 검토는 적용할 수 없습니다. 패키지 상태를 다시 확인하세요.
+                          </div>
+                        )}
                       <div className="dev-setup-config-table-wrap">
                         <table className="dev-setup-config-table">
                           <thead>
@@ -1097,13 +1191,19 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                             {devSetupConfigurationReview.packages.map((packageReview) => (
                               <tr
                                 key={packageReview.packageId}
-                                className={packageReview.currentState === "unknown" || packageReview.action === "verify" ? "unknown" : undefined}
+                                className={
+                                  packageReview.currentState === "unknown" || packageReview.action === "verify"
+                                    ? "unknown"
+                                    : undefined
+                                }
                               >
                                 <td>
                                   <code>{packageReview.packageId}</code>
                                   <div className="dev-setup-config-package-flags">
                                     <span className={packageReview.requestedAgreementAcceptance ? "requested" : "dim"}>
-                                      {packageReview.requestedAgreementAcceptance ? "외부 약관 수락 요청" : "외부 약관 수락 없음"}
+                                      {packageReview.requestedAgreementAcceptance
+                                        ? "외부 약관 수락 요청"
+                                        : "외부 약관 수락 없음"}
                                     </span>
                                     <span className={packageReview.declaredElevation ? "requested" : "dim"}>
                                       {packageReview.declaredElevation ? "외부 관리자 선언" : "외부 권한 선언 없음"}
@@ -1119,15 +1219,20 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                         </table>
                       </div>
                       <div className="dev-setup-config-decision-note">
-                        외부 파일의 선언을 실행 설정에 복사하지 않습니다. 약관 수락은 별도 확인하고,
-                        외부 권한 선언과 무관하게 관리자/UAC·재부팅 가능성을 다시 고지합니다.
+                        외부 파일의 선언을 실행 설정에 복사하지 않습니다. 약관 수락은 별도 확인하고, 외부 권한 선언과
+                        무관하게 관리자/UAC·재부팅 가능성을 다시 고지합니다.
                       </div>
                       <div className="dev-setup-config-checks" aria-label="Dev Setup 적용 확인">
                         <label>
                           <input
                             type="checkbox"
                             checked={devSetupReviewAcknowledged}
-                            disabled={devSetupConfigurationBusy || devSetupConfigurationConsumed || devSetupConfigurationExpired || devSetupApplyInFlight}
+                            disabled={
+                              devSetupConfigurationBusy ||
+                              devSetupConfigurationConsumed ||
+                              devSetupConfigurationExpired ||
+                              devSetupApplyInFlight
+                            }
                             onChange={(event) => setDevSetupReviewAcknowledged(event.target.checked)}
                           />
                           정규화된 package-only 검토를 확인했습니다
@@ -1136,7 +1241,12 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                           <input
                             type="checkbox"
                             checked={devSetupAgreementsAccepted}
-                            disabled={devSetupConfigurationBusy || devSetupConfigurationConsumed || devSetupConfigurationExpired || devSetupApplyInFlight}
+                            disabled={
+                              devSetupConfigurationBusy ||
+                              devSetupConfigurationConsumed ||
+                              devSetupConfigurationExpired ||
+                              devSetupApplyInFlight
+                            }
                             onChange={(event) => setDevSetupAgreementsAccepted(event.target.checked)}
                           />
                           로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다
@@ -1145,7 +1255,12 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                           <input
                             type="checkbox"
                             checked={devSetupAdminRiskAcknowledged}
-                            disabled={devSetupConfigurationBusy || devSetupConfigurationConsumed || devSetupConfigurationExpired || devSetupApplyInFlight}
+                            disabled={
+                              devSetupConfigurationBusy ||
+                              devSetupConfigurationConsumed ||
+                              devSetupConfigurationExpired ||
+                              devSetupApplyInFlight
+                            }
                             onChange={(event) => setDevSetupAdminRiskAcknowledged(event.target.checked)}
                           />
                           관리자/UAC·재부팅 위험을 확인했습니다
@@ -1191,23 +1306,21 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                 )}
               </section>
               <p className="dim related-tools-note">
-                이 capability 계획은 읽기 전용 확인 순서입니다. 아래 package-only apply는 별도 검토·약관·권한 위험 확인 경계를 사용합니다.
+                이 capability 계획은 읽기 전용 확인 순서입니다. 아래 package-only apply는 별도 검토·약관·권한 위험 확인
+                경계를 사용합니다.
               </p>
             </>
           )}
         </section>
       ) : tab === "related-tools" ? (
-        <section
-          className="related-tools"
-          aria-busy={relatedBusy || readBusy}
-          aria-labelledby="related-tools-heading"
-        >
+        <section className="related-tools" aria-busy={relatedBusy || readBusy} aria-labelledby="related-tools-heading">
           <div className="related-tools-head">
             <div>
               <h2 id="related-tools-heading">관련 도구</h2>
               <p className="dim">
-                개발 흐름을 보완하는 작은 공식 도구 목록입니다. 로컬 실행 가능성과 설치 근거를 구분하며 경로와 버전은 표시하지 않습니다.
-                감지와 이미 설치된 도구 실행은 인터넷 없이 가능합니다. WinGet 설치는 Windows와 네트워크가 필요하고, 공식·라이선스 링크는 플랫폼과 관계없이 네트워크 연결 시 열 수 있습니다.
+                개발 흐름을 보완하는 작은 공식 도구 목록입니다. 로컬 실행 가능성과 설치 근거를 구분하며 경로와 버전은
+                표시하지 않습니다. 감지와 이미 설치된 도구 실행은 인터넷 없이 가능합니다. WinGet 설치는 Windows와
+                네트워크가 필요하고, 공식·라이선스 링크는 플랫폼과 관계없이 네트워크 연결 시 열 수 있습니다.
               </p>
             </div>
             <button
@@ -1219,7 +1332,11 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
               {relatedBusy ? "감지 중..." : "다시 감지"}
             </button>
           </div>
-          {relatedError && <div className="error related-tools-error" role="alert">{relatedError}</div>}
+          {relatedError && (
+            <div className="error related-tools-error" role="alert">
+              {relatedError}
+            </div>
+          )}
           {relatedToolList.length === 0 && !relatedBusy && !relatedError && (
             <div className="dim related-tools-empty" role="status" aria-live="polite">
               관련 도구 목록을 확인하려면 다시 감지를 누르세요.
@@ -1230,27 +1347,52 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
               const officialUrl = safeExternalUrl(tool.officialUrl);
               const licenseUrl = safeExternalUrl(tool.licenseUrl);
               return (
-                <article key={tool.id} className={`related-tool-card ${tool.installState === "present" ? "installed" : ""}`}>
+                <article
+                  key={tool.id}
+                  className={`related-tool-card ${tool.installState === "present" ? "installed" : ""}`}
+                >
                   <div className="related-tool-card-head">
                     <div>
                       <h3>{tool.displayName}</h3>
                       <p className="dim">{tool.summary}</p>
                     </div>
-                    <span className={`related-tool-state ${tool.installState === "present" ? "ok" : tool.installState === "unknown" ? "warning" : "dim"}`}>
+                    <span
+                      className={`related-tool-state ${tool.installState === "present" ? "ok" : tool.installState === "unknown" ? "warning" : "dim"}`}
+                    >
                       {installCapabilityLabel(tool.installState)}
                     </span>
                   </div>
                   <dl className="related-tool-facts">
-                    <div><dt>감지</dt><dd>{relatedDetectionDescription(tool)}</dd></div>
-                    <div><dt>Manager 실행</dt><dd>{availabilityCapabilityLabel(tool.launchState)}</dd></div>
+                    <div>
+                      <dt>감지</dt>
+                      <dd>{relatedDetectionDescription(tool)}</dd>
+                    </div>
+                    <div>
+                      <dt>Manager 실행</dt>
+                      <dd>{availabilityCapabilityLabel(tool.launchState)}</dd>
+                    </div>
                     {tool.dockerCapability && (
                       <>
-                        <div><dt>Windows CLI</dt><dd>{availabilityCapabilityLabel(tool.dockerCapability.windowsCli)}</dd></div>
-                        <div><dt>WSL backend</dt><dd>{backendCapabilityLabel(tool.dockerCapability.wslBackend)}</dd></div>
+                        <div>
+                          <dt>Windows CLI</dt>
+                          <dd>{availabilityCapabilityLabel(tool.dockerCapability.windowsCli)}</dd>
+                        </div>
+                        <div>
+                          <dt>WSL backend</dt>
+                          <dd>{backendCapabilityLabel(tool.dockerCapability.wslBackend)}</dd>
+                        </div>
                       </>
                     )}
-                    <div><dt>WinGet ID</dt><dd><code>{tool.wingetId}</code></dd></div>
-                    <div><dt>라이선스</dt><dd>{tool.license}</dd></div>
+                    <div>
+                      <dt>WinGet ID</dt>
+                      <dd>
+                        <code>{tool.wingetId}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>라이선스</dt>
+                      <dd>{tool.license}</dd>
+                    </div>
                   </dl>
                   {tool.dockerCapability && (
                     <div className="related-tool-evidence" aria-label="Docker capability 근거">
@@ -1312,7 +1454,9 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                       >
                         {busy === `related:${tool.id}:install`
                           ? "설치 중..."
-                          : tool.platformSupported ? "확인 후 WinGet 설치" : "WinGet 설치: Windows 전용"}
+                          : tool.platformSupported
+                            ? "확인 후 WinGet 설치"
+                            : "WinGet 설치: Windows 전용"}
                       </button>
                     ) : (
                       <button
@@ -1321,9 +1465,7 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
                         disabled
                         title="설치 여부를 확정할 근거가 없어 자동 설치를 제안하지 않습니다. Dev Setup에서 근거를 확인하세요."
                       >
-                        {tool.installState === "present"
-                          ? "실행 경로 확인 필요"
-                          : "설치 상태 확인 필요"}
+                        {tool.installState === "present" ? "실행 경로 확인 필요" : "설치 상태 확인 필요"}
                       </button>
                     )}
                   </div>
@@ -1332,13 +1474,11 @@ export default function App({mode}:{mode?:ToolsMode}={}) {
             })}
           </div>
           <p className="dim related-tools-note">
-            Manager의 native 기능이 항상 기본 동작이며, 외부 도구는 선택적 보완재입니다. 자동 업데이트·제거·광범위한 WinGet 검색은 지원하지 않습니다.
+            Manager의 native 기능이 항상 기본 동작이며, 외부 도구는 선택적 보완재입니다. 자동 업데이트·제거·광범위한
+            WinGet 검색은 지원하지 않습니다.
           </p>
         </section>
       ) : null}
-
-
-
     </div>
   );
 }

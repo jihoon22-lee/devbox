@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { downloadTextResult, ToolOutput, ToolTextArea } from "./common";
-import {
-  convertJsonYaml,
-  type JsonYamlDirection,
-} from "./jsonYaml";
+import { convertJsonYaml, type JsonYamlDirection } from "./jsonYaml";
 
 const DIRECTION_LABELS: Readonly<Record<JsonYamlDirection, string>> = {
   "json-to-yaml": "JSON → YAML",
@@ -17,11 +14,13 @@ export function JsonYamlTool() {
   const result = useMemo(() => convertJsonYaml(input, direction), [direction, input]);
   const outputName = direction === "json-to-yaml" ? "converted.yaml" : "converted.json";
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => setActionError(null), [direction, result.output]);
 
   const copy = () => {
     if (!result.output) return;
-    void navigator.clipboard.writeText(result.output)
+    void navigator.clipboard
+      .writeText(result.output)
       .then(() => setActionError(null))
       .catch(() => setActionError("변환 결과를 클립보드에 복사하지 못했습니다."));
   };
@@ -39,7 +38,7 @@ export function JsonYamlTool() {
   const useAsOppositeInput = () => {
     if (!result.output) return;
     setInput(result.output);
-    setDirection((current) => current === "json-to-yaml" ? "yaml-to-json" : "json-to-yaml");
+    setDirection((current) => (current === "json-to-yaml" ? "yaml-to-json" : "json-to-yaml"));
   };
 
   return (
@@ -56,12 +55,7 @@ export function JsonYamlTool() {
             {DIRECTION_LABELS[value]}
           </button>
         ))}
-        <button
-          type="button"
-          className="btn"
-          disabled={!result.output}
-          onClick={useAsOppositeInput}
-        >
+        <button type="button" className="btn" disabled={!result.output} onClick={useAsOppositeInput}>
           결과를 반대 방향 입력으로 사용
         </button>
       </div>
@@ -69,8 +63,8 @@ export function JsonYamlTool() {
       {direction === "yaml-to-json" ? (
         <div className="conversion-notice" role="note">
           <strong>손실 안내</strong>
-          JSON은 YAML 주석과 anchor/alias를 표현할 수 없습니다. 주석은 제거되고 alias는 값으로
-          확장되며 anchor 이름과 공유 관계는 보존되지 않습니다.
+          JSON은 YAML 주석과 anchor/alias를 표현할 수 없습니다. 주석은 제거되고 alias는 값으로 확장되며 anchor 이름과
+          공유 관계는 보존되지 않습니다.
         </div>
       ) : null}
 
@@ -91,8 +85,12 @@ export function JsonYamlTool() {
           <div className="io-label conversion-output-label">
             출력 · {direction === "json-to-yaml" ? "YAML" : "JSON"}
             <span className="conversion-actions">
-              <button type="button" className="copy-btn" disabled={!result.output} onClick={copy}>복사</button>
-              <button type="button" className="copy-btn" disabled={!result.output} onClick={save}>저장</button>
+              <button type="button" className="copy-btn" disabled={!result.output} onClick={copy}>
+                복사
+              </button>
+              <button type="button" className="copy-btn" disabled={!result.output} onClick={save}>
+                저장
+              </button>
             </span>
           </div>
           {result.error ? (
@@ -112,7 +110,11 @@ export function JsonYamlTool() {
             value={result.output}
             downloadName={outputName}
           />
-          {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+          {actionError ? (
+            <div className="context-action-error" role="alert">
+              {actionError}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

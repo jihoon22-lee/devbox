@@ -1,11 +1,4 @@
-import type {
-  EnvironmentDraft,
-  EnvironmentAction,
-  Job,
-  JobFieldErrors,
-  JobInput,
-  TargetKind,
-} from "../types";
+import type { EnvironmentDraft, EnvironmentAction, Job, JobFieldErrors, JobInput, TargetKind } from "../types";
 
 export const CRON_PRESETS = [
   { id: "every-minute", label: "매분", expression: "0 * * * * *" },
@@ -57,9 +50,7 @@ export function draftFromJob(job: Job): JobDraft {
     // The read API intentionally gives us only configured/masked state. Keep
     // that state visible without ever copying ciphertext or plaintext into a
     // browser DTO.
-    environment: job.envConfigured
-      ? [{ id: "persisted", key: "", value: "", persisted: true }]
-      : [],
+    environment: job.envConfigured ? [{ id: "persisted", key: "", value: "", persisted: true }] : [],
     environmentAction: "keep",
   };
 }
@@ -152,7 +143,8 @@ export function fieldErrorFromBackend(message: string): JobFieldErrors {
   if (normalized.includes("target_distro")) return { targetDistro: "WSL 대상 배포판이 올바르지 않습니다." };
   if (normalized.includes("command")) return { command: "실행 명령이 올바르지 않습니다." };
   if (normalized.includes("name")) return { name: "작업 이름이 올바르지 않습니다." };
-  if (normalized.includes("environment") || normalized.includes("dpapi")) return { env: "환경변수를 안전하게 저장하지 못했습니다." };
+  if (normalized.includes("environment") || normalized.includes("dpapi"))
+    return { env: "환경변수를 안전하게 저장하지 못했습니다." };
   return {};
 }
 

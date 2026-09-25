@@ -49,21 +49,25 @@ function jsonToYaml(input: string): ConversionResult {
   const errors: ParseError[] = [];
   let unsupportedNumberOffset: number | null = null;
   try {
-    visitJson(input, {
-      onError: (error, offset, length) => errors.push({ error, offset, length }),
-      onLiteralValue: (value, offset) => {
-        if (
-          typeof value === "number"
-          && (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value)))
-        ) {
-          unsupportedNumberOffset ??= offset;
-        }
+    visitJson(
+      input,
+      {
+        onError: (error, offset, length) => errors.push({ error, offset, length }),
+        onLiteralValue: (value, offset) => {
+          if (
+            typeof value === "number" &&
+            (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value)))
+          ) {
+            unsupportedNumberOffset ??= offset;
+          }
+        },
       },
-    }, {
-      allowEmptyContent: false,
-      allowTrailingComma: false,
-      disallowComments: true,
-    });
+      {
+        allowEmptyContent: false,
+        allowTrailingComma: false,
+        disallowComments: true,
+      },
+    );
   } catch {
     return {
       output: "",
@@ -117,11 +121,13 @@ function jsonToYaml(input: string): ConversionResult {
   }
 
   try {
-    return boundedOutput(stringify(value, {
-      aliasDuplicateObjects: false,
-      indent: 2,
-      lineWidth: 0,
-    }));
+    return boundedOutput(
+      stringify(value, {
+        aliasDuplicateObjects: false,
+        indent: 2,
+        lineWidth: 0,
+      }),
+    );
   } catch {
     return {
       output: "",
@@ -228,8 +234,9 @@ function yamlToJson(input: string): ConversionResult {
 
   const firstIssue = document.errors[0] ?? document.warnings[0];
   if (firstIssue) {
-    const position = firstIssue.linePos?.[0]
-      ?? (firstIssue.pos?.[0] !== undefined ? lineCounter.linePos(firstIssue.pos[0]) : undefined);
+    const position =
+      firstIssue.linePos?.[0] ??
+      (firstIssue.pos?.[0] !== undefined ? lineCounter.linePos(firstIssue.pos[0]) : undefined);
     return {
       output: "",
       error: {
@@ -247,19 +254,20 @@ function yamlToJson(input: string): ConversionResult {
     if (normalized.issue) {
       return {
         output: "",
-        error: normalized.issue === "UNSUPPORTED_YAML_GRAPH"
-          ? {
-              code: normalized.issue,
-              message: "순환하거나 과도하게 확장되는 YAML anchor/alias는 JSON으로 변환할 수 없습니다.",
-              line: null,
-              column: null,
-            }
-          : {
-              code: normalized.issue,
-              message: "JSON에서 안전하게 표현할 수 없는 YAML 값입니다.",
-              line: null,
-              column: null,
-            },
+        error:
+          normalized.issue === "UNSUPPORTED_YAML_GRAPH"
+            ? {
+                code: normalized.issue,
+                message: "순환하거나 과도하게 확장되는 YAML anchor/alias는 JSON으로 변환할 수 없습니다.",
+                line: null,
+                column: null,
+              }
+            : {
+                code: normalized.issue,
+                message: "JSON에서 안전하게 표현할 수 없는 YAML 값입니다.",
+                line: null,
+                column: null,
+              },
       };
     }
     const output = JSON.stringify(normalized.value, null, 2);

@@ -109,17 +109,19 @@ describe("LoremTool", () => {
     fireEvent.contextMenu(count, { clientX: 14, clientY: 20 });
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((entry) =>
-        entry.textContent === "Lorem 입력을 붙여넣지 못했습니다.",
-      )).toBe(true);
+      expect(
+        screen.getAllByRole("alert").some((entry) => entry.textContent === "Lorem 입력을 붙여넣지 못했습니다."),
+      ).toBe(true);
     });
   });
 
   it("blocks duplicate copy actions and keeps output after a fixed clipboard error", async () => {
     let resolveCopy: () => void = () => undefined;
-    writeTextMock.mockReturnValueOnce(new Promise<void>((resolve) => {
-      resolveCopy = resolve;
-    }));
+    writeTextMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveCopy = resolve;
+      }),
+    );
     render(<LoremTool />);
     fireEvent.click(screen.getByRole("button", { name: "생성" }));
 
@@ -148,9 +150,9 @@ describe("LoremTool", () => {
     fireEvent.contextMenu(output, { clientX: 14, clientY: 20 });
     fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((entry) =>
-        entry.textContent === "Lorem 결과 작업을 완료하지 못했습니다.",
-      )).toBe(true);
+      expect(
+        screen.getAllByRole("alert").some((entry) => entry.textContent === "Lorem 결과 작업을 완료하지 못했습니다."),
+      ).toBe(true);
     });
     expect(output.textContent).toContain("Lorem ipsum");
   });

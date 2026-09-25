@@ -1,9 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  packageDependencySummary,
-  type PackageDependencySummary,
-} from "../api";
+import { packageDependencySummary, type PackageDependencySummary } from "../api";
 import PackageDependencySummaryPanel from "./PackageDependencySummaryPanel";
 
 vi.mock("../api", () => ({
@@ -81,7 +78,12 @@ describe("PackageDependencySummaryPanel", () => {
   it("ignores a late response after switching profiles", async () => {
     let resolveFirst: ((value: PackageDependencySummary) => void) | undefined;
     packageDependencySummaryMock
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
       .mockResolvedValueOnce({ ...freshSummary, profileId: "profile-2", packageCount: 7 });
     const { rerender } = render(<PackageDependencySummaryPanel profileId="profile-1" />);
     rerender(<PackageDependencySummaryPanel profileId="profile-2" />);

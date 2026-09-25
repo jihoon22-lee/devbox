@@ -12,14 +12,7 @@ function setup(
   secretNames: string[] = [],
 ) {
   const onChange = vi.fn<(rows: MultipartPart[]) => void>();
-  render(
-    <MultipartEditor
-      rows={rows}
-      secretNames={secretNames}
-      onChange={onChange}
-      onPickFile={onPickFile}
-    />,
-  );
+  render(<MultipartEditor rows={rows} secretNames={secretNames} onChange={onChange} onPickFile={onPickFile} />);
   return { onChange };
 }
 
@@ -41,17 +34,11 @@ describe("MultipartEditor", () => {
   });
 
   it("text part에 봉인 secret의 이름 참조만 삽입한다", () => {
-    const { onChange } = setup(
-      [{ ...emptyMultipartPart(), name: "token" }],
-      undefined,
-      ["TOKEN", "bad name"],
-    );
+    const { onChange } = setup([{ ...emptyMultipartPart(), name: "token" }], undefined, ["TOKEN", "bad name"]);
     const select = screen.getByLabelText("1번 part secret 참조") as HTMLSelectElement;
     expect([...select.options].map((option) => option.text)).toEqual(["Secret 참조", "TOKEN"]);
     fireEvent.change(select, { target: { value: "TOKEN" } });
-    expect(onChange).toHaveBeenCalledWith([
-      { ...emptyMultipartPart(), name: "token", value: "${TOKEN}" },
-    ]);
+    expect(onChange).toHaveBeenCalledWith([{ ...emptyMultipartPart(), name: "token", value: "${TOKEN}" }]);
   });
 
   it("저장 후 경로가 제거된 file part에 재선택 오류를 표시한다", () => {
@@ -60,7 +47,9 @@ describe("MultipartEditor", () => {
   });
 
   it("picker 실패를 안전한 메시지로 표시한다", async () => {
-    const picker = vi.fn(async () => { throw new Error("C:\\private\\secret.txt"); });
+    const picker = vi.fn(async () => {
+      throw new Error("C:\\private\\secret.txt");
+    });
     setup([{ ...emptyMultipartPart("file"), name: "upload" }], picker);
     fireEvent.click(screen.getByRole("button", { name: "1번 파일 선택" }));
     await waitFor(() => expect(screen.getByText(/데스크톱 앱 권한을 확인하세요/u)).toBeTruthy());

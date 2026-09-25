@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  packageDependencySummary,
-  type PackageDependencyStatus,
-  type PackageDependencySummary,
-} from "../api";
+import { packageDependencySummary, type PackageDependencyStatus, type PackageDependencySummary } from "../api";
 import { formatRuntimeFreshness } from "../lib/runtimeSuggestions";
 
 const STATUS_LABEL: Record<PackageDependencyStatus, string> = {
@@ -61,28 +57,36 @@ export default function PackageDependencySummaryPanel({ profileId }: Props) {
   }, [refresh]);
 
   const available = summary && !["missing", "corrupt"].includes(summary.status);
-  const sourceDetail = summary?.producerVersion && summary.freshnessMs !== null
-    ? `${summary.source} · producer ${summary.producerVersion} · ${formatRuntimeFreshness(summary.freshnessMs)}`
-    : summary?.source;
+  const sourceDetail =
+    summary?.producerVersion && summary.freshnessMs !== null
+      ? `${summary.source} · producer ${summary.producerVersion} · ${formatRuntimeFreshness(summary.freshnessMs)}`
+      : summary?.source;
 
   return (
-    <section
-      className="package-dependency-panel"
-      aria-labelledby="package-dependency-title"
-      aria-busy={loading}
-    >
+    <section className="package-dependency-panel" aria-labelledby="package-dependency-title" aria-busy={loading}>
       <div className="dependency-health-heading">
-        <h4 id="package-dependency-title" className="dependency-subtitle">패키지</h4>
+        <h4 id="package-dependency-title" className="dependency-subtitle">
+          패키지
+        </h4>
         <button type="button" className="btn" disabled={loading} onClick={refresh}>
           {loading ? "불러오는 중…" : "패키지 요약 새로고침"}
         </button>
       </div>
       <p className="field-help">
-        Repo Manager가 로컬 lockfile에서 게시한 집계만 읽습니다. Workbench는 package manager나 build를 실행하지 않습니다.
+        Repo Manager가 로컬 lockfile에서 게시한 집계만 읽습니다. Workbench는 package manager나 build를 실행하지
+        않습니다.
       </p>
 
-      {loading && <div className="dim" role="status">패키지 의존성 요약을 확인하는 중…</div>}
-      {error && <div className="field-error" role="alert">{error}</div>}
+      {loading && (
+        <div className="dim" role="status">
+          패키지 의존성 요약을 확인하는 중…
+        </div>
+      )}
+      {error && (
+        <div className="field-error" role="alert">
+          {error}
+        </div>
+      )}
       {summary && (
         <>
           <div className={`package-summary-status status-${summary.status}`}>
@@ -98,10 +102,18 @@ export default function PackageDependencySummaryPanel({ profileId }: Props) {
           {available && (
             <>
               <div className="package-summary-metrics" aria-label="패키지 의존성 집계">
-                <span><strong>{summary.packageCount}</strong> 전체</span>
-                <span><strong>{summary.directCount}</strong> 직접</span>
-                <span><strong>{summary.transitiveCount}</strong> 전이</span>
-                <span><strong>{summary.duplicateCount}</strong> 중복 버전</span>
+                <span>
+                  <strong>{summary.packageCount}</strong> 전체
+                </span>
+                <span>
+                  <strong>{summary.directCount}</strong> 직접
+                </span>
+                <span>
+                  <strong>{summary.transitiveCount}</strong> 전이
+                </span>
+                <span>
+                  <strong>{summary.duplicateCount}</strong> 중복 버전
+                </span>
               </div>
               <div className="package-summary-signals">
                 <span>미해결 edge {summary.unresolvedDependencyCount}</span>

@@ -10,18 +10,9 @@ const MAX_LINK_LENGTH = 2048;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/u;
 const CONTROL_CHARACTER_RUN = /[\u0000-\u001f\u007f-\u009f]+/gu;
 
-export type TerminalKeyAction =
-  | "copy"
-  | "paste"
-  | "search"
-  | "font-increase"
-  | "font-decrease"
-  | "font-reset";
+export type TerminalKeyAction = "copy" | "paste" | "search" | "font-increase" | "font-decrease" | "font-reset";
 
-type KeyboardLike = Pick<
-  KeyboardEvent,
-  "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
->;
+type KeyboardLike = Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">;
 
 /** 셸에 전달하면 안 되는 터미널 로컬 단축키만 분류한다. bare Ctrl+C는 SIGINT로 남긴다. */
 export function matchTerminalKey(event: KeyboardLike): TerminalKeyAction | null {
@@ -70,11 +61,7 @@ export function parseOsc7Cwd(payload: string): string | null {
 }
 
 export function normalizeTerminalTitle(input: string): string | null {
-  const title = input
-    .replace(CONTROL_CHARACTER_RUN, " ")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, MAX_TITLE_LENGTH);
+  const title = input.replace(CONTROL_CHARACTER_RUN, " ").replace(/\s+/gu, " ").trim().slice(0, MAX_TITLE_LENGTH);
   return title || null;
 }
 

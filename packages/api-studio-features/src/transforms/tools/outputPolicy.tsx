@@ -2,7 +2,8 @@ import { createContext, useContext } from "react";
 import manifest from "../../../../../apps/api-studio-tools.json";
 import type { PipelineStep, PipelineValueType } from "../workflows/transformPipeline";
 
-export type OutputSource = { kind: "tool"; toolId: string }
+export type OutputSource =
+  | { kind: "tool"; toolId: string }
   | { kind: "pipeline"; inputType: PipelineValueType; steps: readonly PipelineStep[] };
 export const OutputSourceContext = createContext<OutputSource | undefined>(undefined);
 export const useOutputSource = () => useContext(OutputSourceContext);

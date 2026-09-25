@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatMarkdownTable,
-  MARKDOWN_TABLE_LIMITS,
-  markdownTableErrorMessage,
-} from "./markdownTable";
+import { formatMarkdownTable, MARKDOWN_TABLE_LIMITS, markdownTableErrorMessage } from "./markdownTable";
 
 describe("formatMarkdownTable", () => {
   it("pads uneven rows, inserts a missing separator, and preserves source order", () => {
@@ -46,9 +42,7 @@ describe("formatMarkdownTable", () => {
   });
 
   it("keeps pipes inside matched backtick code spans in their source cell", () => {
-    const result = formatMarkdownTable(
-      "| code | value |\n| --- | --- |\n| `a|b` | keep |\n| ``x|`y`` | next |",
-    );
+    const result = formatMarkdownTable("| code | value |\n| --- | --- |\n| `a|b` | keep |\n| ``x|`y`` | next |");
 
     expect(result.error).toBeNull();
     expect(result.output).toContain("`a\\|b`");
@@ -110,16 +104,16 @@ describe("formatMarkdownTable", () => {
       "INPUT_TOO_LARGE",
     );
     expect(
-      formatMarkdownTable(Array.from({ length: MARKDOWN_TABLE_LIMITS.maxRows + 1 }, () => "| x |").join("\n"))
-        .error?.code,
+      formatMarkdownTable(Array.from({ length: MARKDOWN_TABLE_LIMITS.maxRows + 1 }, () => "| x |").join("\n")).error
+        ?.code,
     ).toBe("TOO_MANY_ROWS");
     expect(
       formatMarkdownTable(`| ${Array.from({ length: MARKDOWN_TABLE_LIMITS.maxColumns + 1 }, () => "x").join(" | ")} |`)
         .error?.code,
     ).toBe("TOO_MANY_COLUMNS");
-    expect(
-      formatMarkdownTable(`| ${"x".repeat(MARKDOWN_TABLE_LIMITS.maxCellCodePoints + 1)} |`).error?.code,
-    ).toBe("CELL_TOO_LARGE");
+    expect(formatMarkdownTable(`| ${"x".repeat(MARKDOWN_TABLE_LIMITS.maxCellCodePoints + 1)} |`).error?.code).toBe(
+      "CELL_TOO_LARGE",
+    );
 
     const wide = [
       `| ${"x".repeat(MARKDOWN_TABLE_LIMITS.maxCellCodePoints)} |`,

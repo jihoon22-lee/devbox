@@ -20,11 +20,13 @@ interface TemplateManagerProps {
 }
 
 const today = new Date();
-const defaultDate = String(today.getFullYear()).padStart(4, "0") + "-"
-  + String(today.getMonth() + 1).padStart(2, "0") + "-"
-  + String(today.getDate()).padStart(2, "0");
-const defaultTime = String(today.getHours()).padStart(2, "0") + ":"
-  + String(today.getMinutes()).padStart(2, "0");
+const defaultDate =
+  String(today.getFullYear()).padStart(4, "0") +
+  "-" +
+  String(today.getMonth() + 1).padStart(2, "0") +
+  "-" +
+  String(today.getDate()).padStart(2, "0");
+const defaultTime = String(today.getHours()).padStart(2, "0") + ":" + String(today.getMinutes()).padStart(2, "0");
 
 export default function TemplateManager({ active = true, onClose, onSaved }: TemplateManagerProps) {
   const [templates, setTemplates] = useState<NoteTemplate[]>([]);
@@ -47,19 +49,14 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
   const previewDialogRef = useRef<HTMLElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const selected = templates.find((template) => template.id === selectedId) ?? null;
-  const definitionDirty = selectedId == null
-    || selected == null
-    || selected.name !== name
-    || selected.content !== body;
+  const definitionDirty = selectedId == null || selected == null || selected.name !== name || selected.content !== body;
 
   previewRef.current = preview;
   busyRef.current = busy;
 
   useEffect(() => {
     mountedRef.current = true;
-    restoreFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     return () => {
       mountedRef.current = false;
       requestRef.current += 1;
@@ -89,7 +86,9 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
         }
       })
       .catch((cause) => active && setError(cause instanceof Error ? cause.message : String(cause)));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   const select = (template: NoteTemplate) => {
@@ -119,13 +118,14 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
     busyRef.current = true;
     setError(null);
     try {
-      const saved = selectedId == null
-        ? await createTemplate({ name, content: body })
-        : await updateTemplate(selectedId, { name, content: body });
+      const saved =
+        selectedId == null
+          ? await createTemplate({ name, content: body })
+          : await updateTemplate(selectedId, { name, content: body });
       if (!mountedRef.current || requestRef.current !== request) return;
-      setTemplates((items) => editingId == null
-        ? [...items, saved]
-        : items.map((item) => item.id === saved.id ? saved : item));
+      setTemplates((items) =>
+        editingId == null ? [...items, saved] : items.map((item) => (item.id === saved.id ? saved : item)),
+      );
       setSelectedId(saved.id);
       setName(saved.name);
       setBody(saved.content);
@@ -281,13 +281,17 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
     if (mountedRef.current) onClose();
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!active) return;
-    const container = (preview ? previewDialogRef.current : dialogRef.current);
+    const container = preview ? previewDialogRef.current : dialogRef.current;
     if (!container) return undefined;
-    const focusable = () => Array.from(container.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-    ));
+    const focusable = () =>
+      Array.from(
+        container.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      );
     const focusTask = window.setTimeout(() => focusable()[0]?.focus(), 0);
     const onKeyDown = (event: KeyboardEvent) => {
       if (isImeComposing(event)) return;
@@ -337,9 +341,18 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
         <div className="template-dialog-head">
           <div>
             <h2 id="template-manager-title">노트 템플릿</h2>
-            <p className="dim" id="template-manager-description">로컬 전용 · 새 파일을 만들기 전에 미리보기가 필요합니다.</p>
+            <p className="dim" id="template-manager-description">
+              로컬 전용 · 새 파일을 만들기 전에 미리보기가 필요합니다.
+            </p>
           </div>
-          <button className="btn small" type="button" onClick={() => void closeManager()} disabled={busy || Boolean(preview)}>닫기</button>
+          <button
+            className="btn small"
+            type="button"
+            onClick={() => void closeManager()}
+            disabled={busy || Boolean(preview)}
+          >
+            닫기
+          </button>
         </div>
         <div className="template-layout">
           <aside className="template-list" aria-label="저장된 노트 템플릿">
@@ -356,33 +369,104 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
               </button>
             ))}
             {templates.length === 0 && <div className="dim">아직 템플릿이 없습니다.</div>}
-            <button className="btn small" type="button" onClick={clearEditor} disabled={busy || Boolean(preview)}>새 템플릿</button>
+            <button className="btn small" type="button" onClick={clearEditor} disabled={busy || Boolean(preview)}>
+              새 템플릿
+            </button>
           </aside>
           <section className="template-editor">
             <label>
               이름
-              <input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={128} disabled={busy || Boolean(preview)} />
+              <input
+                value={name}
+                onChange={(event) => setName(event.currentTarget.value)}
+                maxLength={128}
+                disabled={busy || Boolean(preview)}
+              />
             </label>
             <label>
               Markdown
-              <textarea value={body} onChange={(event) => setBody(event.currentTarget.value)} rows={9} disabled={busy || Boolean(preview)} />
+              <textarea
+                value={body}
+                onChange={(event) => setBody(event.currentTarget.value)}
+                rows={9}
+                disabled={busy || Boolean(preview)}
+              />
             </label>
-            <div className="dim template-help">지원 변수: <code>{"{{title}}"}</code> <code>{"{{date}}"}</code> <code>{"{{time}}"}</code> <code>{"{{vault-relative-path}}"}</code></div>
+            <div className="dim template-help">
+              지원 변수: <code>{"{{title}}"}</code> <code>{"{{date}}"}</code> <code>{"{{time}}"}</code>{" "}
+              <code>{"{{vault-relative-path}}"}</code>
+            </div>
             <div className="template-actions">
-              <button className="btn" type="button" onClick={() => void saveDefinition()} disabled={busy || !name.trim()}>템플릿 저장</button>
-              <button className="btn" type="button" onClick={() => void removeDefinition()} disabled={busy || selectedId == null}>삭제</button>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void saveDefinition()}
+                disabled={busy || !name.trim()}
+              >
+                템플릿 저장
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void removeDefinition()}
+                disabled={busy || selectedId == null}
+              >
+                삭제
+              </button>
             </div>
             <hr />
             <h3>새 노트에 적용</h3>
             <div className="template-grid">
-              <label>대상 경로<input value={target} onChange={(event) => setTarget(event.currentTarget.value)} placeholder="Notes/idea.md" disabled={busy || Boolean(preview)} /></label>
-              <label>제목<input value={title} onChange={(event) => setTitle(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
-              <label>날짜<input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
-              <label>시간<input type="time" value={time} onChange={(event) => setTime(event.currentTarget.value)} disabled={busy || Boolean(preview)} /></label>
+              <label>
+                대상 경로
+                <input
+                  value={target}
+                  onChange={(event) => setTarget(event.currentTarget.value)}
+                  placeholder="Notes/idea.md"
+                  disabled={busy || Boolean(preview)}
+                />
+              </label>
+              <label>
+                제목
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.currentTarget.value)}
+                  disabled={busy || Boolean(preview)}
+                />
+              </label>
+              <label>
+                날짜
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.currentTarget.value)}
+                  disabled={busy || Boolean(preview)}
+                />
+              </label>
+              <label>
+                시간
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(event) => setTime(event.currentTarget.value)}
+                  disabled={busy || Boolean(preview)}
+                />
+              </label>
             </div>
             {definitionDirty && <div className="dim">미리보기 전에 템플릿 정의를 저장하세요.</div>}
-            <button className="btn active" type="button" onClick={() => void openPreview()} disabled={busy || selectedId == null || definitionDirty}>적용 전 미리보기</button>
-            {error && <div className="source-error" role="alert">{error}</div>}
+            <button
+              className="btn active"
+              type="button"
+              onClick={() => void openPreview()}
+              disabled={busy || selectedId == null || definitionDirty}
+            >
+              적용 전 미리보기
+            </button>
+            {error && (
+              <div className="source-error" role="alert">
+                {error}
+              </div>
+            )}
           </section>
         </div>
       </div>
@@ -399,10 +483,16 @@ export default function TemplateManager({ active = true, onClose, onSaved }: Tem
           >
             <h3 id="template-preview-title">미리보기 · {preview.target}</h3>
             <pre>{preview.content}</pre>
-            <div className="dim" id="template-preview-description">{preview.byteLength.toLocaleString()}바이트 · 기존 파일은 덮어쓰지 않습니다</div>
+            <div className="dim" id="template-preview-description">
+              {preview.byteLength.toLocaleString()}바이트 · 기존 파일은 덮어쓰지 않습니다
+            </div>
             <div className="template-actions">
-              <button className="btn" type="button" onClick={() => void cancelPreview()} disabled={busy}>취소</button>
-              <button className="btn active" type="button" onClick={() => void confirmPreview()} disabled={busy}>노트 만들기</button>
+              <button className="btn" type="button" onClick={() => void cancelPreview()} disabled={busy}>
+                취소
+              </button>
+              <button className="btn active" type="button" onClick={() => void confirmPreview()} disabled={busy}>
+                노트 만들기
+              </button>
             </div>
           </section>
         </div>

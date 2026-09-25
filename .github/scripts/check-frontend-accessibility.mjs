@@ -7,10 +7,7 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const DEFAULT_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "../..");
 const APP_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REQUIRED_DEPENDENCIES = ["@devbox/a11y", "@devbox/tokens"];
-const REQUIRED_CSS_IMPORTS = [
-  '@import "@devbox/tokens/tokens.css";',
-  '@import "@devbox/a11y/styles.css";',
-];
+const REQUIRED_CSS_IMPORTS = ['@import "@devbox/tokens/tokens.css";', '@import "@devbox/a11y/styles.css";'];
 
 export class AccessibilityContractError extends Error {
   constructor(message) {
@@ -72,7 +69,11 @@ function releaseApps(root) {
   }
 
   const packageApps = readdirSync(safeChild(root, "apps"), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && lstatSync(safeChild(root, "apps", entry.name, "package.json"), { throwIfNoEntry: false })?.isFile())
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        lstatSync(safeChild(root, "apps", entry.name, "package.json"), { throwIfNoEntry: false })?.isFile(),
+    )
     .map((entry) => entry.name)
     .sort();
   if (JSON.stringify(packageApps) !== JSON.stringify(apps)) {
@@ -84,7 +85,9 @@ function releaseApps(root) {
 function testSources(directory) {
   const sources = [];
   const walk = (current) => {
-    for (const entry of readdirSync(current, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+    for (const entry of readdirSync(current, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
       const candidate = path.join(current, entry.name);
       if (entry.isDirectory()) walk(candidate);
       else if (entry.isFile() && /\.test\.tsx?$/.test(entry.name)) sources.push(readText(candidate, candidate));
@@ -104,7 +107,8 @@ function sharedFeatureEntries(root, appRoot, manifest) {
   const entry = safeChild(appRoot, "src/App.tsx");
   if (!lstatSync(entry, { throwIfNoEntry: false })?.isFile()) return [];
   const source = withoutBlockComments(readText(entry, "app entry")).replace(/^[ \t]*\/\/.*$/gm, "");
-  const pattern = /(?:import\s+(?!type\b)[A-Za-z_$][\w$]*\s+from|export\s*\{\s*default\s*\}\s*from)\s*["'](@devbox\/([a-z0-9-]+)\/([^"']+))["']/g;
+  const pattern =
+    /(?:import\s+(?!type\b)[A-Za-z_$][\w$]*\s+from|export\s*\{\s*default\s*\}\s*from)\s*["'](@devbox\/([a-z0-9-]+)\/([^"']+))["']/g;
   const entries = [];
   for (const match of source.matchAll(pattern)) {
     const [, , packageName, exportName] = match;
@@ -114,7 +118,8 @@ function sharedFeatureEntries(root, appRoot, manifest) {
     const target = definition.exports?.[`./${exportName}`];
     if (typeof target !== "string" || !target.startsWith("./src/") || !target.endsWith("/App.tsx")) continue;
     const imported = safeChild(packageRoot, target);
-    if (!lstatSync(imported, { throwIfNoEntry: false })?.isFile()) fail("shared accessibility feature entry is missing");
+    if (!lstatSync(imported, { throwIfNoEntry: false })?.isFile())
+      fail("shared accessibility feature entry is missing");
     entries.push(imported);
   }
   return [...new Set(entries)];
@@ -130,16 +135,18 @@ function checkApp(root, appName) {
     }
   }
 
-  const html = readText(safeChild(appRoot, "index.html"), `${appName} index.html`)
-    .replace(/<!--[\s\S]*?-->/g, "");
+  const html = readText(safeChild(appRoot, "index.html"), `${appName} index.html`).replace(/<!--[\s\S]*?-->/g, "");
   if (!/<html\b[^>]*\blang=["']ko-KR["'][^>]*>/i.test(html)) {
     fail(`${appName} index.html must declare lang=ko-KR`);
   }
 
   const sharedEntries = sharedFeatureEntries(root, appRoot, manifest);
   const ownCss = safeChild(appRoot, "src/App.css");
-  const cssPath = lstatSync(ownCss, { throwIfNoEntry: false })?.isFile() ? ownCss
-    : sharedEntries.length === 1 ? safeChild(path.dirname(sharedEntries[0]), "App.css") : ownCss;
+  const cssPath = lstatSync(ownCss, { throwIfNoEntry: false })?.isFile()
+    ? ownCss
+    : sharedEntries.length === 1
+      ? safeChild(path.dirname(sharedEntries[0]), "App.css")
+      : ownCss;
   const css = withoutBlockComments(readText(cssPath, `${appName} App.css`));
   let previous = -1;
   for (const requiredImport of REQUIRED_CSS_IMPORTS) {
@@ -148,28 +155,40 @@ function checkApp(root, appName) {
     previous = index;
   }
 
-  const vite = withoutBlockComments(readText(safeChild(appRoot, "vite.config.ts"), `${appName} Vite config`))
-    .replace(/^[ \t]*\/\/.*$/gm, "");
+  const vite = withoutBlockComments(readText(safeChild(appRoot, "vite.config.ts"), `${appName} Vite config`)).replace(
+    /^[ \t]*\/\/.*$/gm,
+    "",
+  );
   if (!/^[ \t]*manifest\s*:\s*true\b/m.test(vite)) fail(`${appName} Vite build must emit a manifest`);
 
-  const tests = [...testSources(safeChild(appRoot, "src")), ...sharedEntries.flatMap(entry => testSources(path.dirname(entry)))];
-  if (!tests.some((source) => (
-    /import\s*\{[^}]*\bassertNoA11yViolations\b[^}]*\}\s*from\s*["']@devbox\/a11y\/testing["']/.test(source)
-    && /\bassertNoA11yViolations\s*\(/.test(source)
-  ))) {
+  const tests = [
+    ...testSources(safeChild(appRoot, "src")),
+    ...sharedEntries.flatMap((entry) => testSources(path.dirname(entry))),
+  ];
+  if (
+    !tests.some(
+      (source) =>
+        /import\s*\{[^}]*\bassertNoA11yViolations\b[^}]*\}\s*from\s*["']@devbox\/a11y\/testing["']/.test(source) &&
+        /\bassertNoA11yViolations\s*\(/.test(source),
+    )
+  ) {
     fail(`${appName} must run an axe accessibility smoke test`);
   }
 
   if (appName === "devbox-launcher") {
-    if (!/:root\s*\{[^}]*background\s*:\s*transparent/s.test(css)
-      || !/body\s*\{[^}]*background\s*:\s*transparent/s.test(css)) {
+    if (
+      !/:root\s*\{[^}]*background\s*:\s*transparent/s.test(css) ||
+      !/body\s*\{[^}]*background\s*:\s*transparent/s.test(css)
+    ) {
       fail("devbox-launcher must preserve transparent root and body backgrounds");
     }
   }
 }
 
 function checkSharedStyles(root) {
-  const css = withoutBlockComments(readText(safeChild(root, "packages/a11y/styles.css"), "shared accessibility styles"));
+  const css = withoutBlockComments(
+    readText(safeChild(root, "packages/a11y/styles.css"), "shared accessibility styles"),
+  );
   for (const fragment of [":focus-visible", "prefers-reduced-motion: reduce", "forced-colors: active"]) {
     if (!css.includes(fragment)) fail(`shared accessibility styles must include ${fragment}`);
   }

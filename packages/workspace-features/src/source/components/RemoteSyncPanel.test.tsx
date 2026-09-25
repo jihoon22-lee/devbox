@@ -94,9 +94,7 @@ describe("RemoteSyncPanel", () => {
   });
 
   it("invalidates a pull confirmation when the native status changes", async () => {
-    repoRemoteStatusMock
-      .mockResolvedValueOnce({ ...cleanState })
-      .mockResolvedValueOnce({ ...cleanState, dirty: true });
+    repoRemoteStatusMock.mockResolvedValueOnce({ ...cleanState }).mockResolvedValueOnce({ ...cleanState, dirty: true });
     render(<RemoteSyncPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
     await screen.findByText("원격 작업을 실행할 수 있습니다.");
@@ -129,9 +127,11 @@ describe("RemoteSyncPanel", () => {
 
   it("does not offer cancel during the post-mutation status refresh", async () => {
     let resolveRefresh: ((value: RemoteState) => void) | undefined;
-    repoRemoteStatusMock
-      .mockResolvedValueOnce({ ...cleanState })
-      .mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve; }));
+    repoRemoteStatusMock.mockResolvedValueOnce({ ...cleanState }).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
     repoPullMock.mockResolvedValueOnce(undefined);
     render(<RemoteSyncPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
@@ -143,7 +143,9 @@ describe("RemoteSyncPanel", () => {
     expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
     expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("true");
     resolveRefresh?.({ ...cleanState });
-    await waitFor(() => expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"),
+    );
   });
 
   it("loads state and sends exact repository-only actions", async () => {
@@ -168,7 +170,9 @@ describe("RemoteSyncPanel", () => {
     expect(repoPullMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Pull (FF only) 실행" }));
     await waitFor(() => expect(repoPullMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
-    await waitFor(() => expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Push" }));
     fireEvent.click(screen.getByRole("button", { name: "Push 실행" }));
     await waitFor(() => expect(repoPushMock).toHaveBeenCalledWith(repo.path, expect.any(String)));
@@ -216,7 +220,11 @@ describe("RemoteSyncPanel", () => {
 
   it("blocks duplicate actions, sends cancel, and ignores raw failure details", async () => {
     let resolveFetch: (() => void) | undefined;
-    repoFetchMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveFetch = resolve; }));
+    repoFetchMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
     render(<RemoteSyncPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
     await screen.findByText("원격 작업을 실행할 수 있습니다.");
@@ -231,7 +239,9 @@ describe("RemoteSyncPanel", () => {
     await waitFor(() => expect(repoRemoteCancelMock).toHaveBeenCalledWith(repoFetchMock.mock.calls[0][1]));
     resolveFetch?.();
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("취소했습니다"));
-    await waitFor(() => expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Git 원격 동기화" }).getAttribute("aria-busy")).toBe("false"),
+    );
     expect(screen.getByRole("alert").textContent).toBe("Git 원격 작업을 취소했습니다.");
 
     repoFetchMock.mockRejectedValueOnce(new Error("https://user:credential@secret.example/repo"));
@@ -244,7 +254,8 @@ describe("RemoteSyncPanel", () => {
   });
 
   it("clears stale state when the post-action refresh fails and blocks more mutations", async () => {
-    repoRemoteStatusMock.mockReset()
+    repoRemoteStatusMock
+      .mockReset()
       .mockResolvedValueOnce({ ...cleanState })
       .mockRejectedValueOnce(new Error("status path must not reach the UI"));
     repoFetchMock.mockResolvedValueOnce(undefined);
@@ -265,9 +276,14 @@ describe("RemoteSyncPanel", () => {
 
   it("drops stale status and cancels on unmount", async () => {
     let resolveOld: ((value: RemoteState) => void) | undefined;
-    repoRemoteStatusMock.mockReset()
+    repoRemoteStatusMock
+      .mockReset()
       .mockResolvedValue({ ...cleanState })
-      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+      );
     const rendered = render(<RemoteSyncPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
     rendered.rerender(<RemoteSyncPanel repo={otherRepo} />);
@@ -277,7 +293,11 @@ describe("RemoteSyncPanel", () => {
 
     let resolveFetch: (() => void) | undefined;
     repoRemoteStatusMock.mockResolvedValue({ ...cleanState });
-    repoFetchMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveFetch = resolve; }));
+    repoFetchMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "원격 상태 새로고침" }));
     await screen.findByText("원격 작업을 실행할 수 있습니다.");
     fireEvent.click(screen.getByRole("button", { name: "Fetch" }));

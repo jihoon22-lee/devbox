@@ -3,9 +3,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: native.invoke }));
 
-import { currentDescription, fixtureDescription, invalidateDescription, publishDescription, resetDescriptionCache } from "./api";
+import {
+  currentDescription,
+  fixtureDescription,
+  invalidateDescription,
+  publishDescription,
+  resetDescriptionCache,
+} from "./api";
 
-afterEach(() => { resetDescriptionCache(); native.invoke.mockReset(); });
+afterEach(() => {
+  resetDescriptionCache();
+  native.invoke.mockReset();
+});
 
 describe("description cache", () => {
   it("shares one describe call across concurrent and later calls", async () => {
@@ -43,7 +52,11 @@ describe("description cache", () => {
 
 it("preserves a new context when an older request fails", async () => {
   let reject!: (error: Error) => void;
-  native.invoke.mockReturnValue(new Promise((_, no) => { reject = no; }));
+  native.invoke.mockReturnValue(
+    new Promise((_, no) => {
+      reject = no;
+    }),
+  );
   const pending = currentDescription("workspace");
   const updated = fixtureDescription("workspace");
   publishDescription(updated);

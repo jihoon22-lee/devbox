@@ -11,12 +11,21 @@ describe("source-owned native references", () => {
     }
     expect(isApiArtifactReference({ ...fixture.artifact, recipient: "knowledge-base" }, expected)).toBe(false);
     expect(isApiArtifactReference(fixture.artifact, { ...expected, revision: 2 })).toBe(false);
-    expect(isApiArtifactReference({ ...fixture.artifact, link: { ...fixture.artifact.link, target: { kind: "path", path: "C:\\fixture" } } }, expected)).toBe(false);
+    expect(
+      isApiArtifactReference(
+        { ...fixture.artifact, link: { ...fixture.artifact.link, target: { kind: "path", path: "C:\\fixture" } } },
+        expected,
+      ),
+    ).toBe(false);
   });
   it("accepts only the existing reference version and native-selected owner", () => {
     expect(isOwnedSecretReference(fixture.secret, expected, "api-environment")).toBe(true);
     expect(isOwnedSecretReference(fixture.secret, expected, "runtime-environment")).toBe(false);
-    for (const reference of [{ kind: "secret-ref/v2", name: "API_TOKEN" }, { kind: "secret-ref/v1", name: "../value" }, { ...fixture.secret.reference, plaintext: "synthetic" }]) {
+    for (const reference of [
+      { kind: "secret-ref/v2", name: "API_TOKEN" },
+      { kind: "secret-ref/v1", name: "../value" },
+      { ...fixture.secret.reference, plaintext: "synthetic" },
+    ]) {
       expect(isOwnedSecretReference({ ...fixture.secret, reference }, expected, "api-environment")).toBe(false);
     }
   });

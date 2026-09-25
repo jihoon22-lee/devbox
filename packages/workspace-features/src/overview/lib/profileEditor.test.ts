@@ -43,7 +43,12 @@ describe("profile editor draft", () => {
   });
 
   it("blocks invalid drafts without losing the raw invalid value", () => {
-    const draft = { ...emptyProfileDraft(), name: "devbox", windowsPath: "E:\\projects\\devbox", expectedPortsText: "5173, nope" };
+    const draft = {
+      ...emptyProfileDraft(),
+      name: "devbox",
+      windowsPath: "E:\\projects\\devbox",
+      expectedPortsText: "5173, nope",
+    };
     const validation = validateProfileDraft(draft);
     expect(validation.profile).toBeNull();
     expect(validation.errors.expectedPorts).toBeTruthy();
@@ -248,8 +253,18 @@ describe("profile editor draft", () => {
       environmentSource: ".env",
       environmentRevision: "a".repeat(64),
       environmentVariables: [
-        { name: "TOKEN", source: ".env", conflict: "duplicate", secretReference: { kind: "secret-ref/v1", name: "TOKEN" } },
-        { name: "token", source: ".env", conflict: "duplicate", secretReference: { kind: "secret-ref/v1", name: "token" } },
+        {
+          name: "TOKEN",
+          source: ".env",
+          conflict: "duplicate",
+          secretReference: { kind: "secret-ref/v1", name: "TOKEN" },
+        },
+        {
+          name: "token",
+          source: ".env",
+          conflict: "duplicate",
+          secretReference: { kind: "secret-ref/v1", name: "token" },
+        },
       ],
     });
     expect(validation.errors.environment).toBeUndefined();
@@ -263,12 +278,14 @@ describe("profile editor draft", () => {
       windowsPath: "E:\\projects\\devbox",
       environmentSource: ".env",
       environmentRevision: "a".repeat(64),
-      environmentVariables: [{
-        name: "API_TOKEN",
-        source: ".env",
-        conflict: "none" as const,
-        secretReference: undefined,
-      }],
+      environmentVariables: [
+        {
+          name: "API_TOKEN",
+          source: ".env",
+          conflict: "none" as const,
+          secretReference: undefined,
+        },
+      ],
     } as never;
     expect(() => validateProfileDraft(malformed)).not.toThrow();
     expect(validateProfileDraft(malformed).errors.environment).toContain("reference");

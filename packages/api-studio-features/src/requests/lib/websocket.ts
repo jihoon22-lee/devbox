@@ -20,7 +20,8 @@ export const MESSAGE_TOO_LARGE = "WebSocket message가 허용된 크기를 초�
 export const CLOSE_CODE_INVALID = "WebSocket close code가 올바르지 않습니다";
 export const CLOSE_REASON_INVALID = "WebSocket close reason이 올바르지 않습니다";
 
-const SENSITIVE_NAME = /(authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)/iu;
+const SENSITIVE_NAME =
+  /(authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)/iu;
 const KNOWN_TOKEN = /(?:sk-|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_-]{12,}/gu;
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
 const encoder = new TextEncoder();
@@ -53,8 +54,13 @@ export function validateWebSocketEndpoint(value: string): void {
   } catch {
     throw new Error(ENDPOINT_ERROR);
   }
-  if ((url.protocol !== "ws:" && url.protocol !== "wss:") || !url.hostname
-    || url.username || url.password || url.hash) {
+  if (
+    (url.protocol !== "ws:" && url.protocol !== "wss:") ||
+    !url.hostname ||
+    url.username ||
+    url.password ||
+    url.hash
+  ) {
     throw new Error(ENDPOINT_ERROR);
   }
   for (const key of url.searchParams.keys()) {
@@ -77,10 +83,15 @@ export function buildWebSocketUrl(base: string, params: readonly { key: string; 
 
 export function validateCloseCode(code: number | undefined): number {
   const candidate = code ?? 1000;
-  if (!Number.isInteger(candidate)
-    || !(candidate === 1000 || (candidate >= 1001 && candidate <= 1003)
-      || (candidate >= 1007 && candidate <= 1014)
-      || (candidate >= 3000 && candidate <= 4999))) {
+  if (
+    !Number.isInteger(candidate) ||
+    !(
+      candidate === 1000 ||
+      (candidate >= 1001 && candidate <= 1003) ||
+      (candidate >= 1007 && candidate <= 1014) ||
+      (candidate >= 3000 && candidate <= 4999)
+    )
+  ) {
     throw new Error(CLOSE_CODE_INVALID);
   }
   return candidate;
@@ -93,9 +104,11 @@ export function validateCloseReason(reason: string): void {
 }
 
 export function validateWebSocketRequest(request: RequestTemplate): void {
-  if (request.headers.length > MAX_REQUEST_HEADERS
-    || request.cookies.length > MAX_REQUEST_COOKIES
-    || request.params.length > MAX_REQUEST_PARAMS) {
+  if (
+    request.headers.length > MAX_REQUEST_HEADERS ||
+    request.cookies.length > MAX_REQUEST_COOKIES ||
+    request.params.length > MAX_REQUEST_PARAMS
+  ) {
     throw new Error("WebSocket 요청 항목 수가 제한을 초과했습니다");
   }
   if (request.timeout_ms < MIN_TIMEOUT_MS || request.timeout_ms > MAX_TIMEOUT_MS) {
@@ -160,9 +173,15 @@ export class WebSocketMessageBuffer {
     return removed;
   }
 
-  get messages(): readonly WebSocketMessage[] { return this.messagesValue; }
-  get bytes(): number { return this.bytesValue; }
-  get evicted(): number { return this.evictedValue; }
+  get messages(): readonly WebSocketMessage[] {
+    return this.messagesValue;
+  }
+  get bytes(): number {
+    return this.bytesValue;
+  }
+  get evicted(): number {
+    return this.evictedValue;
+  }
 
   takeEvictedIds(): readonly number[] {
     const ids = this.evictedIdsValue;
@@ -213,14 +232,15 @@ export function maskWebSocketText(value: string, request: RequestTemplate): stri
     request.auth?.password,
     request.auth?.token,
     request.auth?.api_value,
-    ...request.headers.filter((header) => header.enabled !== false && isSensitiveName(header.key)).map((header) => header.value),
+    ...request.headers
+      .filter((header) => header.enabled !== false && isSensitiveName(header.key))
+      .map((header) => header.value),
     ...request.cookies.filter((cookie) => cookie.enabled !== false).map((cookie) => cookie.value),
     ...request.params.filter((parameter) => isSensitiveName(parameter.key)).map((parameter) => parameter.value),
   ].filter((secret): secret is string => Boolean(secret));
-  let output = secrets.sort((left, right) => right.length - left.length).reduce(
-    (result, secret) => result.split(secret).join("[REDACTED]"),
-    value,
-  );
+  let output = secrets
+    .sort((left, right) => right.length - left.length)
+    .reduce((result, secret) => result.split(secret).join("[REDACTED]"), value);
   output = output.replace(KNOWN_TOKEN, "[REDACTED]");
   try {
     const parsed = JSON.parse(output) as unknown;
@@ -266,7 +286,9 @@ function containsSecretBytes(payload: Uint8Array, request: RequestTemplate): boo
     request.auth?.password,
     request.auth?.token,
     request.auth?.api_value,
-    ...request.headers.filter((header) => header.enabled !== false && isSensitiveName(header.key)).map((header) => header.value),
+    ...request.headers
+      .filter((header) => header.enabled !== false && isSensitiveName(header.key))
+      .map((header) => header.value),
     ...request.cookies.filter((cookie) => cookie.enabled !== false).map((cookie) => cookie.value),
   ].filter((secret): secret is string => Boolean(secret));
   const directMatch = secrets.some((secret) => {
@@ -338,10 +360,10 @@ export function toNativeMessageInput(
     if (utf8Bytes(value) > MAX_MESSAGE_BYTES) throw new Error(MESSAGE_TOO_LARGE);
     return { kind, text: value, data: "" };
   }
-  const payload = encoding === "hex" ? hexToBytes(value) : textToBytes(
-    value,
-    kind === "ping" || kind === "pong" ? MAX_CONTROL_PAYLOAD_BYTES : MAX_MESSAGE_BYTES,
-  );
+  const payload =
+    encoding === "hex"
+      ? hexToBytes(value)
+      : textToBytes(value, kind === "ping" || kind === "pong" ? MAX_CONTROL_PAYLOAD_BYTES : MAX_MESSAGE_BYTES);
   if (kind !== "ping" && payload.byteLength > MAX_MESSAGE_BYTES) throw new Error(MESSAGE_TOO_LARGE);
   return { kind, text: "", data: encodeBase64(payload) };
 }

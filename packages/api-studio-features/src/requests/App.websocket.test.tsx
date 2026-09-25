@@ -93,32 +93,38 @@ describe("API Playground WebSocket lifecycle", () => {
     fireEvent.click(connect);
     await waitFor(() => expect(startWebSocketMock).toHaveBeenCalledTimes(1));
 
-    act(() => emitUpdate?.({
-      sessionId: "browser-ws-1",
-      kind: "state",
-      state: "open",
-      sequence: 0,
-      dropped: 0,
-    }));
-    act(() => emitUpdate?.({
-      sessionId: "browser-ws-1",
-      kind: "message",
-      direction: "received",
-      messageType: "binary",
-      messageId: 1,
-      binaryHex: "0102",
-      binarySize: 2,
-      sequence: 1,
-      dropped: 0,
-    }));
-    act(() => emitUpdate?.({
-      sessionId: "browser-ws-1",
-      kind: "state",
-      state: "error",
-      sequence: 1,
-      dropped: 0,
-      message: "WebSocket 연결이 끊어졌습니다",
-    }));
+    act(() =>
+      emitUpdate?.({
+        sessionId: "browser-ws-1",
+        kind: "state",
+        state: "open",
+        sequence: 0,
+        dropped: 0,
+      }),
+    );
+    act(() =>
+      emitUpdate?.({
+        sessionId: "browser-ws-1",
+        kind: "message",
+        direction: "received",
+        messageType: "binary",
+        messageId: 1,
+        binaryHex: "0102",
+        binarySize: 2,
+        sequence: 1,
+        dropped: 0,
+      }),
+    );
+    act(() =>
+      emitUpdate?.({
+        sessionId: "browser-ws-1",
+        kind: "state",
+        state: "error",
+        sequence: 1,
+        dropped: 0,
+        message: "WebSocket 연결이 끊어졌습니다",
+      }),
+    );
 
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));
     expect(screen.getByText("오류", { selector: "span.websocket-state" })).toBeTruthy();

@@ -70,12 +70,12 @@ export default function ProblemsPanel({ docs, diagnosticsFor, serverStatus, onNa
           </select>
           <input placeholder="source" value={sourceFilter} onChange={(e) => setSourceFilter(e.currentTarget.value)} />
         </div>
-        <button className="mini" onClick={onClose}>✕</button>
+        <button className="mini" onClick={onClose}>
+          ✕
+        </button>
       </div>
 
-      <div className="problems-server">
-        {serverStatus ? `LSP: ${serverStatus}` : "LSP 연결 없음"}
-      </div>
+      <div className="problems-server">{serverStatus ? `LSP: ${serverStatus}` : "LSP 연결 없음"}</div>
 
       <div className="problems-list">
         {rows.map(({ docId, path, diag }, i) => (

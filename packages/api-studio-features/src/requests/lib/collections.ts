@@ -131,12 +131,7 @@ export function removeEntry(store: CollectionStore, id: string): CollectionStore
 }
 
 /** 저장된 마스킹 request를 다시 원본 template로 만들지 않고 그대로 복제한다. */
-export function duplicateEntry(
-  store: CollectionStore,
-  id: string,
-  now: number,
-  makeId: () => string,
-): CollectionStore {
+export function duplicateEntry(store: CollectionStore, id: string, now: number, makeId: () => string): CollectionStore {
   const source = store.collections.find((entry) => entry.id === id);
   if (!source) return store;
   const duplicate: CollectionEntry = {
@@ -154,9 +149,7 @@ export function renameEntry(store: CollectionStore, id: string, name: string): C
   if (!normalized) return store;
   return {
     ...store,
-    collections: store.collections.map((entry) =>
-      entry.id === id ? { ...entry, name: normalized } : entry
-    ),
+    collections: store.collections.map((entry) => (entry.id === id ? { ...entry, name: normalized } : entry)),
   };
 }
 
@@ -182,10 +175,7 @@ export function parseStore(raw: string | null): CollectionStore | null {
   }
 }
 
-async function sanitizeStore(
-  store: CollectionStore,
-  sanitize: PersistenceSanitizer,
-): Promise<CollectionStore> {
+async function sanitizeStore(store: CollectionStore, sanitize: PersistenceSanitizer): Promise<CollectionStore> {
   const original = JSON.stringify(store);
   const serialized = await sanitize(original);
   const parsed = parseStore(serialized);
@@ -205,7 +195,8 @@ function parseLegacyStore(raw: string | null): { store: CollectionStore; removed
   if (raw === null) return null;
   try {
     const parsed = JSON.parse(raw) as { version?: unknown; collections?: unknown };
-    if (parsed?.version !== 1 || !Array.isArray(parsed.collections)) return { store: emptyStore(), removedUnsafeValues: 1 };
+    if (parsed?.version !== 1 || !Array.isArray(parsed.collections))
+      return { store: emptyStore(), removedUnsafeValues: 1 };
     let removedUnsafeValues = 0;
     const collections = parsed.collections.flatMap((candidate: LegacyCollectionEntry, index) => {
       if (!isRequestTemplate(candidate?.request)) {
@@ -214,14 +205,16 @@ function parseLegacyStore(raw: string | null): { store: CollectionStore; removed
       }
       const request = sanitizeRequestForPersistence(candidate.request);
       if (request.requiresSecretReview) removedUnsafeValues += 1;
-      return [{
-        id: typeof candidate.id === "string" ? candidate.id : `migrated-${index}`,
-        name: typeof candidate.name === "string" ? candidate.name : candidate.request.url || "untitled",
-        folder: typeof candidate.folder === "string" ? candidate.folder : "",
-        saved_at: typeof candidate.saved_at === "number" ? candidate.saved_at : 0,
-        request,
-        requiresSecretReview: request.requiresSecretReview,
-      }];
+      return [
+        {
+          id: typeof candidate.id === "string" ? candidate.id : `migrated-${index}`,
+          name: typeof candidate.name === "string" ? candidate.name : candidate.request.url || "untitled",
+          folder: typeof candidate.folder === "string" ? candidate.folder : "",
+          saved_at: typeof candidate.saved_at === "number" ? candidate.saved_at : 0,
+          request,
+          requiresSecretReview: request.requiresSecretReview,
+        },
+      ];
     });
     return { store: { version: COLLECTION_VERSION, collections }, removedUnsafeValues };
   } catch {
@@ -250,8 +243,7 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
     typeof request.url === "string" &&
     Array.isArray(request.headers) &&
     request.headers.every(isRequestHeader) &&
-    (request.cookies === undefined ||
-      (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
+    (request.cookies === undefined || (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
     (request.multipart === undefined ||
       (Array.isArray(request.multipart) && request.multipart.every(isMultipartPart))) &&
     Array.isArray(request.params) &&
@@ -266,9 +258,11 @@ function isRequestTemplate(value: unknown): value is RequestTemplate {
 function isGraphqlRequest(value: unknown): value is GraphqlRequest {
   if (!value || typeof value !== "object") return false;
   const request = value as Partial<GraphqlRequest>;
-  return typeof request.query === "string"
-    && typeof request.variables === "string"
-    && typeof request.operation_name === "string";
+  return (
+    typeof request.query === "string" &&
+    typeof request.variables === "string" &&
+    typeof request.operation_name === "string"
+  );
 }
 
 function isKeyValue(value: unknown): value is { key: string; value: string } {
@@ -278,7 +272,9 @@ function isKeyValue(value: unknown): value is { key: string; value: string } {
 }
 
 function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
-  return isRequestTemplate(value) && typeof (value as Partial<PersistedHistoryRequest>).requiresSecretReview === "boolean";
+  return (
+    isRequestTemplate(value) && typeof (value as Partial<PersistedHistoryRequest>).requiresSecretReview === "boolean"
+  );
 }
 
 function copyName(name: string): string {
@@ -287,7 +283,10 @@ function copyName(name: string): string {
 }
 
 function normalizeName(name: string): string {
-  return name.replace(/[\r\n]+/g, " ").trim().slice(0, 120);
+  return name
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 120);
 }
 
 function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {

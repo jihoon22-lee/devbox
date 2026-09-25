@@ -71,7 +71,10 @@ const initialHistory: RequestRecord[] = [
     id: 1,
     method: "POST",
     url: "/hook",
-    headers: [["Authorization", "•••••"], ["Content-Type", "application/json"]],
+    headers: [
+      ["Authorization", "•••••"],
+      ["Content-Type", "application/json"],
+    ],
     body: '{"event":"push"}',
     receivedAtMs: 1_700_000_000_000,
   },
@@ -100,29 +103,31 @@ const safeRunDefinition: RunDefinitionExport = {
   schemaVersion: 1,
   exportedAt: "1700000000000",
   jobs: [],
-  services: [{
-    id: "00000000-0000-4000-8000-000000000001",
-    kind: "service",
-    name: "Webhook Lab · 127.0.0.1:9000",
-    command: "exit /b 1",
-    cwd: null,
-    targetKind: "windows",
-    targetDistro: null,
-    envConfigured: false,
-    cronExpr: null,
-    enabled: false,
-    overlapPolicy: "skip",
-    catchUp: false,
-    lastEvaluatedAt: null,
-    nextQueueSequence: 0,
-    restartPolicy: "never",
-    autoStart: false,
-    healthTcpAddress: "127.0.0.1",
-    healthTcpPort: 9000,
-    healthStartGraceMs: 10000,
-    createdAt: 1700000000000,
-    updatedAt: 1700000000000,
-  }],
+  services: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      kind: "service",
+      name: "Webhook Lab · 127.0.0.1:9000",
+      command: "exit /b 1",
+      cwd: null,
+      targetKind: "windows",
+      targetDistro: null,
+      envConfigured: false,
+      cronExpr: null,
+      enabled: false,
+      overlapPolicy: "skip",
+      catchUp: false,
+      lastEvaluatedAt: null,
+      nextQueueSequence: 0,
+      restartPolicy: "never",
+      autoStart: false,
+      healthTcpAddress: "127.0.0.1",
+      healthTcpPort: 9000,
+      healthStartGraceMs: 10000,
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    },
+  ],
 };
 
 const clearFixturesMock = vi.mocked(clearFixtures);
@@ -167,20 +172,24 @@ beforeEach(() => {
   serverStatusMock.mockReset().mockResolvedValue({ running: false, address: null });
   listHistoryMock.mockReset().mockImplementation(async () => history.map((request) => ({ ...request })));
   listRulesMock.mockReset().mockImplementation(async () => rules.map((rule) => ({ ...rule })));
-  listFixturesMock.mockReset().mockImplementation(async () => fixtures.map((fixture) => ({
-    ...fixture,
-    headers: fixture.headers.map((header) => [...header] as [string, string]),
-  })));
+  listFixturesMock.mockReset().mockImplementation(async () =>
+    fixtures.map((fixture) => ({
+      ...fixture,
+      headers: fixture.headers.map((header) => [...header] as [string, string]),
+    })),
+  );
   exportRunServiceDefinitionMock.mockReset().mockResolvedValue({
     ...safeRunDefinition,
     jobs: [],
     services: safeRunDefinition.services.map((service) => ({ ...service })),
   });
-  previewRuleConflictsMock.mockReset().mockImplementation(async (candidate): Promise<RuleConflictPreview> => ({
-    candidateId: candidate.id || `rule-${rules.length + 1}`,
-    conflicts: [],
-    requiresConfirmation: false,
-  }));
+  previewRuleConflictsMock.mockReset().mockImplementation(
+    async (candidate): Promise<RuleConflictPreview> => ({
+      candidateId: candidate.id || `rule-${rules.length + 1}`,
+      conflicts: [],
+      requiresConfirmation: false,
+    }),
+  );
   replayHistoryMock.mockReset().mockResolvedValue({
     sourceId: "history-1",
     status: 200,
@@ -246,8 +255,12 @@ beforeEach(() => {
       delayMs: 0,
     };
   });
-  clearHistoryMock.mockReset().mockImplementation(async () => { history = []; });
-  clearFixturesMock.mockReset().mockImplementation(async () => { fixtures = []; });
+  clearHistoryMock.mockReset().mockImplementation(async () => {
+    history = [];
+  });
+  clearFixturesMock.mockReset().mockImplementation(async () => {
+    fixtures = [];
+  });
   deleteHistoryMock.mockReset().mockImplementation(async (id) => {
     history = history.filter((request) => request.id !== id);
   });
@@ -305,7 +318,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("Enter와 Space로 규칙·기록을 선택하되 IME 조합 키는 무시한다", async () => {
     render(<App />);
-    const historyRow = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+    const historyRow = (await screen.findByLabelText("GET /health 요청")) as HTMLDivElement;
     const ruleRow = screen.getByLabelText("GET /health 규칙") as HTMLDivElement;
 
     fireEvent.keyDown(historyRow, { key: "Enter", isComposing: true });
@@ -326,14 +339,40 @@ describe("Webhook Lab history and rule context menus", () => {
     expect(screen.getByLabelText("priority").getAttribute("aria-describedby")).toBe("rule-priority-help");
     expect(screen.getByLabelText("status").getAttribute("aria-describedby")).toBe("rule-status-help");
     expect(screen.getByLabelText("delay (ms)").getAttribute("aria-describedby")).toBe("rule-delay-help");
-    expect(screen.getByLabelText("응답 body").getAttribute("aria-describedby")).toBe("rule-body-help rule-headers-help");
-    expect(screen.getByText("대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP token, 최대 16자/16바이트입니다.")).toBeTruthy();
-    expect(screen.getByText("경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.")).toBeTruthy();
-    expect(screen.getByText("우선순위가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 와일드카드 순서이며 마지막에는 규칙 ID로 결정합니다.")).toBeTruthy();
-    expect(screen.getByText("매칭된 요청에 돌려줄 HTTP 응답 status 코드입니다 (허용 범위: 100~599, 예: 200, 404, 500).")).toBeTruthy();
-    expect(screen.getByText("응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~60000ms).")).toBeTruthy();
-    expect(screen.getByText("매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는 최대 256,000자/1,024,000바이트입니다.")).toBeTruthy();
-    expect(screen.getByText("response headers는 최대 100개이며 이름 256자/256바이트, 값 16,384자/65,536바이트, 전체 64,000자/256,000바이트입니다.")).toBeTruthy();
+    expect(screen.getByLabelText("응답 body").getAttribute("aria-describedby")).toBe(
+      "rule-body-help rule-headers-help",
+    );
+    expect(
+      screen.getByText(
+        "대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP token, 최대 16자/16바이트입니다.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "우선순위가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 와일드카드 순서이며 마지막에는 규칙 ID로 결정합니다.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("매칭된 요청에 돌려줄 HTTP 응답 status 코드입니다 (허용 범위: 100~599, 예: 200, 404, 500)."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~60000ms)."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는 최대 256,000자/1,024,000바이트입니다.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "response headers는 최대 100개이며 이름 256자/256바이트, 값 16,384자/65,536바이트, 전체 64,000자/256,000바이트입니다.",
+      ),
+    ).toBeTruthy();
   });
 
   it("응답 status 범위를 벗어난 rule은 저장하지 않고 입력 오류를 연결한다", async () => {
@@ -395,7 +434,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("편집 중인 rule이 refresh에서 사라지면 stale 저장을 차단하고 draft를 유지한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "편집" }));
 
@@ -413,7 +452,9 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("동일한 busy 작업의 double action을 한 번만 실행하고 aria-busy를 표시한다", async () => {
     let release!: (id: string) => void;
-    const pending = new Promise<string>((resolve) => { release = resolve; });
+    const pending = new Promise<string>((resolve) => {
+      release = resolve;
+    });
     setRuleMock.mockReturnValueOnce(pending);
     render(<App />);
     await screen.findByText("요청 기록 (2)");
@@ -439,15 +480,27 @@ describe("Webhook Lab history and rule context menus", () => {
     let releaseRules!: (value: ResponseRule[]) => void;
     serverStatusMock
       .mockReset()
-      .mockReturnValueOnce(new Promise((resolve) => { releaseStatus = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseStatus = resolve;
+        }),
+      )
       .mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
     listHistoryMock
       .mockReset()
-      .mockReturnValueOnce(new Promise((resolve) => { releaseHistory = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseHistory = resolve;
+        }),
+      )
       .mockImplementation(async () => history.map((request) => ({ ...request })));
     listRulesMock
       .mockReset()
-      .mockReturnValueOnce(new Promise((resolve) => { releaseRules = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseRules = resolve;
+        }),
+      )
       .mockImplementation(async () => rules.map((candidate) => ({ ...candidate })));
 
     render(<App />);
@@ -474,19 +527,23 @@ describe("Webhook Lab history and rule context menus", () => {
 
     await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({ method: null }), false));
     expect(previewRuleConflictsMock).toHaveBeenCalledWith(expect.objectContaining({ method: null }));
-    expect(previewRuleConflictsMock.mock.invocationCallOrder[0]).toBeLessThan(setRuleMock.mock.invocationCallOrder[0] ?? Infinity);
+    expect(previewRuleConflictsMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setRuleMock.mock.invocationCallOrder[0] ?? Infinity,
+    );
   });
 
   it("충돌 preview를 먼저 확인하고 취소하면 저장하지 않는다", async () => {
     previewRuleConflictsMock.mockResolvedValueOnce({
       candidateId: "candidate-1",
-      conflicts: [{
-        existingRuleId: "rule-1",
-        winnerRuleId: "candidate-1",
-        loserRuleId: "rule-1",
-        kind: "candidateShadowsExisting",
-        reason: "priority",
-      }],
+      conflicts: [
+        {
+          existingRuleId: "rule-1",
+          winnerRuleId: "candidate-1",
+          loserRuleId: "rule-1",
+          kind: "candidateShadowsExisting",
+          reason: "priority",
+        },
+      ],
       requiresConfirmation: true,
     });
     confirmMock.mockReturnValueOnce(false);
@@ -509,13 +566,15 @@ describe("Webhook Lab history and rule context menus", () => {
   it("충돌 확인을 승인하면 preview candidateId와 확인 flag로 저장한다", async () => {
     previewRuleConflictsMock.mockResolvedValueOnce({
       candidateId: "candidate-1",
-      conflicts: [{
-        existingRuleId: "rule-1",
-        winnerRuleId: "candidate-1",
-        loserRuleId: "rule-1",
-        kind: "partialOverlap",
-        reason: "priority",
-      }],
+      conflicts: [
+        {
+          existingRuleId: "rule-1",
+          winnerRuleId: "candidate-1",
+          loserRuleId: "rule-1",
+          kind: "partialOverlap",
+          reason: "priority",
+        },
+      ],
       requiresConfirmation: true,
     });
     confirmMock.mockReturnValueOnce(true);
@@ -527,13 +586,20 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.change(screen.getByLabelText("priority"), { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
 
-    await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({
-      id: "candidate-1",
-      method: "GET",
-      path: "/health",
-      priority: 10,
-    }), true));
-    expect(previewRuleConflictsMock.mock.invocationCallOrder[0]).toBeLessThan(setRuleMock.mock.invocationCallOrder[0] ?? Infinity);
+    await waitFor(() =>
+      expect(setRuleMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "candidate-1",
+          method: "GET",
+          path: "/health",
+          priority: 10,
+        }),
+        true,
+      ),
+    );
+    expect(previewRuleConflictsMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setRuleMock.mock.invocationCallOrder[0] ?? Infinity,
+    );
   });
 
   it("OpenAPI 파일 취소와 재선택은 저장 없이 preview만 갱신한다", async () => {
@@ -588,7 +654,10 @@ describe("Webhook Lab history and rule context menus", () => {
     });
     Object.defineProperty(file, "text", {
       configurable: true,
-      value: () => new Promise<string>((resolve) => { resolveText = resolve; }),
+      value: () =>
+        new Promise<string>((resolve) => {
+          resolveText = resolve;
+        }),
     });
 
     const view = render(<App />);
@@ -597,10 +666,12 @@ describe("Webhook Lab history and rule context menus", () => {
     await waitFor(() => expect(view.container.querySelector(".app")?.getAttribute("aria-busy")).toBe("true"));
 
     view.unmount();
-    resolveText(JSON.stringify({
-      openapi: "3.0.3",
-      paths: { "/late": { get: { responses: { "200": { description: "ok" } } } } },
-    }));
+    resolveText(
+      JSON.stringify({
+        openapi: "3.0.3",
+        paths: { "/late": { get: { responses: { "200": { description: "ok" } } } } },
+      }),
+    );
     await Promise.resolve();
 
     render(<App />);
@@ -615,24 +686,26 @@ describe("Webhook Lab history and rule context menus", () => {
     const input = screen.getByLabelText("OpenAPI JSON/YAML 파일 선택");
     fireEvent.change(input, {
       target: {
-        files: [makeOpenApiFile("webhooks.json", {
-          openapi: "3.0.3",
-          info: { title: "Webhook", version: "1" },
-          servers: [{ url: "https://private.example" }],
-          components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
-          paths: {
-            "/events/{id}": {
-              get: {
-                security: [{ bearer: [] }],
-                requestBody: { content: { "application/json": { example: { token: "secret" } } } },
-                responses: { "200": { description: "ok" } },
+        files: [
+          makeOpenApiFile("webhooks.json", {
+            openapi: "3.0.3",
+            info: { title: "Webhook", version: "1" },
+            servers: [{ url: "https://private.example" }],
+            components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
+            paths: {
+              "/events/{id}": {
+                get: {
+                  security: [{ bearer: [] }],
+                  requestBody: { content: { "application/json": { example: { token: "secret" } } } },
+                  responses: { "200": { description: "ok" } },
+                },
+              },
+              "/health": {
+                post: { responses: { "201": { description: "created" } } },
               },
             },
-            "/health": {
-              post: { responses: { "201": { description: "created" } } },
-            },
-          },
-        })],
+          }),
+        ],
       },
     });
 
@@ -666,7 +739,12 @@ describe("Webhook Lab history and rule context menus", () => {
     await screen.findByText("요청 기록 (2)");
     fireEvent.change(screen.getByLabelText("OpenAPI JSON/YAML 파일 선택"), {
       target: {
-        files: [makeOpenApiFile("draft.yaml", "openapi: 3.1.0\npaths:\n  /payments:\n    post:\n      responses:\n        '202':\n          description: accepted\n")],
+        files: [
+          makeOpenApiFile(
+            "draft.yaml",
+            "openapi: 3.1.0\npaths:\n  /payments:\n    post:\n      responses:\n        '202':\n          description: accepted\n",
+          ),
+        ],
       },
     });
 
@@ -755,21 +833,19 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Run Manager 정의 JSON 다운로드" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.");
+    expect(alert.textContent).toBe(
+      "Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.",
+    );
     expect(document.body.textContent).not.toContain("raw-token");
   });
 
   it("Run Manager definition의 고정된 profile 제한 사유는 안전하게 안내한다", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
-    exportRunServiceDefinitionMock.mockRejectedValueOnce(
-      new Error("Webhook service profile 개수 제한에 도달했습니다"),
-    );
+    exportRunServiceDefinitionMock.mockRejectedValueOnce(new Error("Webhook service profile 개수 제한에 도달했습니다"));
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Run Manager 정의 JSON 다운로드" }));
 
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "Webhook 서비스 프로필 개수 제한에 도달했습니다",
-    );
+    expect((await screen.findByRole("alert")).textContent).toBe("Webhook 서비스 프로필 개수 제한에 도달했습니다");
   });
 
   it("backend 원문 오류를 고정된 안전 메시지로 대체한다", async () => {
@@ -786,22 +862,28 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("우클릭한 요청을 먼저 선택하고 정확한 메뉴와 후속 기능 경계를 표시한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target, { clientX: 20, clientY: 20 });
 
     expect(target.getAttribute("aria-current")).toBe("true");
-    for (const label of ["마스킹 복사", "원본 복사", "헤더 복사", "API Playground로 변환", "Workspace Logs에서 보기", "삭제"]) {
+    for (const label of [
+      "마스킹 복사",
+      "원본 복사",
+      "헤더 복사",
+      "API Playground로 변환",
+      "Workspace Logs에서 보기",
+      "삭제",
+    ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
-    expect(screen.getByRole("menuitem", { name: "API Playground로 변환" }).getAttribute("aria-disabled"))
-      .toBeNull();
+    expect(screen.getByRole("menuitem", { name: "API Playground로 변환" }).getAttribute("aria-disabled")).toBeNull();
     expect(screen.getByRole("menuitem", { name: "삭제" }).className).toContain("danger");
   });
 
   it("마스킹 복사와 헤더 복사는 정확한 요청 ID의 안전한 backend 결과만 쓴다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "마스킹 복사" }));
@@ -821,11 +903,13 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("unmount 뒤 늦게 도착한 복사 결과는 clipboard side effect를 만들지 않는다", async () => {
     let release!: (value: string) => void;
-    copyMaskedHistoryMock.mockReturnValueOnce(new Promise((resolve) => {
-      release = resolve;
-    }));
+    copyMaskedHistoryMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "마스킹 복사" }));
@@ -839,7 +923,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("원본 복사는 확인 전 backend를 호출하지 않고 키보드 메뉴 종료 후 포커스를 복원한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
@@ -862,7 +946,7 @@ describe("Webhook Lab history and rule context menus", () => {
     confirmMock.mockReturnValue(true);
     copyRawHistoryMock.mockRejectedValueOnce(new Error("Bearer backend-raw-secret"));
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "원본 복사" }));
@@ -873,7 +957,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("history 삭제와 전체 비우기는 확인된 경우에만 실행한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
@@ -896,14 +980,14 @@ describe("Webhook Lab history and rule context menus", () => {
   it("rule 메뉴에서 정확한 규칙을 편집하고 새 ID로 복제한다", async () => {
     rules = [{ ...initialRule, priority: 37 }];
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     expect(target.getAttribute("aria-current")).toBe("true");
-    expect(screen.getByRole("menuitem", { name: "PowerShell curl.exe 복사" }).getAttribute("aria-disabled"))
-      .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }).getAttribute("aria-disabled"))
-      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "PowerShell curl.exe 복사" }).getAttribute("aria-disabled")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }).getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(screen.getByRole("menuitem", { name: "편집" }));
     expect((screen.getByPlaceholderText("method (없으면 전체)") as HTMLInputElement).value).toBe("GET");
     expect((screen.getByLabelText("priority") as HTMLInputElement).value).toBe("37");
@@ -911,30 +995,39 @@ describe("Webhook Lab history and rule context menus", () => {
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "복제" }));
-    await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({ id: "rule-2", path: "/health", priority: 37 }), false));
+    await waitFor(() =>
+      expect(setRuleMock).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "rule-2", path: "/health", priority: 37 }),
+        false,
+      ),
+    );
   });
 
   it("실행 중인 rule의 example curl을 마스킹해 복사한다", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
-    rules = [{
-      ...initialRule,
-      headers: [
-        ["Authorization", "Bearer rule-secret"],
-        ["Content-Type", "application/json"],
-      ] as [string, string][],
-      body: JSON.stringify({ token: "body-secret", ok: true }),
-    }];
+    rules = [
+      {
+        ...initialRule,
+        headers: [
+          ["Authorization", "Bearer rule-secret"],
+          ["Content-Type", "application/json"],
+        ] as [string, string][],
+        body: JSON.stringify({ token: "body-secret", ok: true }),
+      },
+    ];
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     const copy = screen.getByRole("menuitem", { name: "POSIX sh curl 복사" });
     expect(copy.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(copy);
 
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining(
-      "curl --globoff --path-as-is --include --request GET 'http://127.0.0.1:9000/health'",
-    )));
+    await waitFor(() =>
+      expect(writeTextMock).toHaveBeenCalledWith(
+        expect.stringContaining("curl --globoff --path-as-is --include --request GET 'http://127.0.0.1:9000/health'"),
+      ),
+    );
     const copied = writeTextMock.mock.calls[writeTextMock.mock.calls.length - 1]?.[0] ?? "";
     expect(copied).toContain("Authorization: [REDACTED]");
     expect(copied).not.toContain("rule-secret");
@@ -947,22 +1040,28 @@ describe("Webhook Lab history and rule context menus", () => {
       .mockResolvedValueOnce({ running: true, address: "0.0.0.0:9000" });
     rules = [{ ...initialRule, path: "/events/*", method: "post" }];
     render(<App />);
-    const target = await screen.findByLabelText("post /events/* 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("post /events/* 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "PowerShell curl.exe 복사" }));
 
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining(
-      "curl.exe --globoff --path-as-is --include --request POST 'http://127.0.0.1:9000/events/example'",
-    )));
+    await waitFor(() =>
+      expect(writeTextMock).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "curl.exe --globoff --path-as-is --include --request POST 'http://127.0.0.1:9000/events/example'",
+        ),
+      ),
+    );
     expect(serverStatusMock).toHaveBeenCalledTimes(2);
-    expect(writeTextMock.mock.calls[writeTextMock.mock.calls.length - 1]?.[0]).toContain("Concrete trailing-* sample path: /events/example");
+    expect(writeTextMock.mock.calls[writeTextMock.mock.calls.length - 1]?.[0]).toContain(
+      "Concrete trailing-* sample path: /events/example",
+    );
   });
 
   it("replays a selected masked history request only when the local server is running", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     const replay = screen.getByRole("menuitem", { name: "마스킹된 요청 재전송" });
@@ -979,7 +1078,7 @@ describe("Webhook Lab history and rule context menus", () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
     replayHistoryMock.mockRejectedValueOnce(new Error("Bearer raw-replay-secret at C:\\private"));
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
 
     fireEvent.click(target);
     fireEvent.click(screen.getByRole("button", { name: "POST /hook 마스킹된 재전송" }));
@@ -1006,21 +1105,30 @@ describe("Webhook Lab history and rule context menus", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "규칙 추가" }));
 
-    await waitFor(() => expect(setRuleMock).toHaveBeenCalledWith(expect.objectContaining({
-      sequence: [{
-        status: 503,
-        headers: [],
-        body: "retry",
-        delayMs: 100,
-      }],
-    }), false));
+    await waitFor(() =>
+      expect(setRuleMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sequence: [
+            {
+              status: 503,
+              headers: [],
+              body: "retry",
+              delayMs: 100,
+            },
+          ],
+        }),
+        false,
+      ),
+    );
   });
 
   it("resets the selected response sequence without changing the rule", async () => {
-    rules = [{
-      ...initialRule,
-      sequence: [{ status: 500, headers: [], body: "retry", delayMs: 0 }],
-    }];
+    rules = [
+      {
+        ...initialRule,
+        sequence: [{ status: 500, headers: [], body: "retry", delayMs: 0 }],
+      },
+    ];
     render(<App />);
     await screen.findByLabelText("GET /health 규칙");
     expect(screen.getByText("2개 응답")).toBeTruthy();
@@ -1032,12 +1140,14 @@ describe("Webhook Lab history and rule context menus", () => {
   });
 
   it("exposes sequence reset from the rule context menu and preserves focus", async () => {
-    rules = [{
-      ...initialRule,
-      sequence: [{ status: 500, headers: [], body: "retry", delayMs: 0 }],
-    }];
+    rules = [
+      {
+        ...initialRule,
+        sequence: [{ status: 500, headers: [], body: "retry", delayMs: 0 }],
+      },
+    ];
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
     target.focus();
     fireEvent.keyDown(target, { key: "F10", shiftKey: true });
 
@@ -1049,7 +1159,7 @@ describe("Webhook Lab history and rule context menus", () => {
   it("stale rule selection fails closed without copying", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     rules = [];
@@ -1064,19 +1174,21 @@ describe("Webhook Lab history and rule context menus", () => {
       .mockResolvedValueOnce({ running: true, address: "127.0.0.1:9000" })
       .mockResolvedValueOnce({ running: false, address: null });
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("현재 서버가 실행 중이 아니거나 주소가 유효하지 않아 예시 curl을 만들지 못했습니다.");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "현재 서버가 실행 중이 아니거나 주소가 유효하지 않아 예시 curl을 만들지 못했습니다.",
+    );
     expect(writeTextMock).not.toHaveBeenCalled();
   });
 
   it("keyboard menu restores rule focus after Escape", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
     target.focus();
     fireEvent.keyDown(target, { key: "F10", shiftKey: true });
 
@@ -1089,11 +1201,14 @@ describe("Webhook Lab history and rule context menus", () => {
   it("does not start a second clipboard action while the first is busy", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
     let resolveWrite: (() => void) | undefined;
-    writeTextMock.mockImplementation(() => new Promise<void>((resolve) => {
-      resolveWrite = resolve;
-    }));
+    writeTextMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
@@ -1107,13 +1222,15 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("example curl clipboard 실패는 고정 메시지만 표시한다", async () => {
     serverStatusMock.mockResolvedValue({ running: true, address: "127.0.0.1:9000" });
-    rules = [{
-      ...initialRule,
-      headers: [["Authorization", "Bearer rule-secret"]] as [string, string][],
-    }];
+    rules = [
+      {
+        ...initialRule,
+        headers: [["Authorization", "Bearer rule-secret"]] as [string, string][],
+      },
+    ];
     writeTextMock.mockRejectedValueOnce(new Error("Bearer backend-secret"));
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "POSIX sh curl 복사" }));
@@ -1125,7 +1242,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("rule 삭제는 danger 확인을 거치며 취소하면 상태를 유지한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("GET /health 규칙") as HTMLDivElement;
+    const target = (await screen.findByLabelText("GET /health 규칙")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     const deleteItem = screen.getByRole("menuitem", { name: "삭제" });
@@ -1151,7 +1268,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("history context action saves one masked fixture and exposes a stable action label", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     const save = screen.getByRole("menuitem", { name: "마스킹된 fixture 저장" });
@@ -1166,7 +1283,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("history handoff uses the backend producer and never falls back to clipboard", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "API Playground로 변환" }));
@@ -1179,7 +1296,7 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("history Log Lens action sends only the opaque history ID", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
+    const target = (await screen.findByLabelText("POST /hook 요청")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "Workspace Logs에서 보기" }));
@@ -1191,12 +1308,12 @@ describe("Webhook Lab history and rule context menus", () => {
   });
 
   it("keeps history on an unavailable Workspace without clipboard fallback", async () => {
-    const issue="Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
+    const issue = "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
     sendHistoryToLogLensMock.mockRejectedValueOnce(new Error(issue));
-    render(<App/>);
-    const target=await screen.findByLabelText("POST /hook 요청");
+    render(<App />);
+    const target = await screen.findByLabelText("POST /hook 요청");
     fireEvent.contextMenu(target);
-    fireEvent.click(screen.getByRole("menuitem",{name:"Workspace Logs에서 보기"}));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Workspace Logs에서 보기" }));
     await screen.findByText(issue);
     expect(screen.getByLabelText("POST /hook 요청")).toBeTruthy();
     expect(writeTextMock).not.toHaveBeenCalled();
@@ -1204,7 +1321,11 @@ describe("Webhook Lab history and rule context menus", () => {
 
   it("fixture save uses the shared busy guard for double action", async () => {
     let release!: (fixture: CapturedFixture) => void;
-    saveFixtureMock.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    saveFixtureMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
     render(<App />);
     await screen.findByLabelText("GET /health 요청");
     const visibleSave = screen.getByRole("button", { name: "GET /health 마스킹된 fixture 저장" });
@@ -1213,8 +1334,12 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.click(visibleSave);
     await waitFor(() => expect(saveFixtureMock).toHaveBeenCalledTimes(1));
     expect(visibleSave.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "GET /health 마스킹된 fixture 저장" }).closest(".app")?.getAttribute("aria-busy"))
-      .toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: "GET /health 마스킹된 fixture 저장" })
+        .closest(".app")
+        ?.getAttribute("aria-busy"),
+    ).toBe("true");
 
     release({
       id: "fixture-2",
@@ -1228,14 +1353,16 @@ describe("Webhook Lab history and rule context menus", () => {
   });
 
   it("fixture action converts a validated fixture to a local response-rule draft", async () => {
-    fixtures = [{
-      id: "fixture-1",
-      method: "POST",
-      url: "/hooks/push?token=[REDACTED]",
-      headers: [["Authorization", "[REDACTED]"]],
-      body: "{\"token\":\"[REDACTED]\"}",
-      receivedAtMs: 1_700_000_000_000,
-    }];
+    fixtures = [
+      {
+        id: "fixture-1",
+        method: "POST",
+        url: "/hooks/push?token=[REDACTED]",
+        headers: [["Authorization", "[REDACTED]"]],
+        body: '{"token":"[REDACTED]"}',
+        receivedAtMs: 1_700_000_000_000,
+      },
+    ];
     fixtureToRuleMock.mockResolvedValueOnce({
       id: "",
       priority: 0,
@@ -1259,16 +1386,20 @@ describe("Webhook Lab history and rule context menus", () => {
   });
 
   it("stored fixture handoff carries only its opaque ID", async () => {
-    fixtures = [{
-      id: "fixture-1",
-      method: "POST",
-      url: "/hooks/push?access_token=[REDACTED]",
-      headers: [],
-      body: '{"event":"push"}',
-      receivedAtMs: 1_700_000_000_000,
-    }];
+    fixtures = [
+      {
+        id: "fixture-1",
+        method: "POST",
+        url: "/hooks/push?access_token=[REDACTED]",
+        headers: [],
+        body: '{"event":"push"}',
+        receivedAtMs: 1_700_000_000_000,
+      },
+    ];
     render(<App />);
-    const action = await screen.findByRole("button", { name: "POST /hooks/push?access_token=[REDACTED] API Playground로 변환" });
+    const action = await screen.findByRole("button", {
+      name: "POST /hooks/push?access_token=[REDACTED] API Playground로 변환",
+    });
     fireEvent.click(action);
 
     await waitFor(() => expect(sendFixtureToApiMock).toHaveBeenCalledWith("fixture-1"));
@@ -1277,16 +1408,20 @@ describe("Webhook Lab history and rule context menus", () => {
   });
 
   it("stored fixture Log Lens action sends only the opaque fixture ID", async () => {
-    fixtures = [{
-      id: "fixture-1",
-      method: "POST",
-      url: "/hooks/push?access_token=[REDACTED]",
-      headers: [],
-      body: '{"event":"push"}',
-      receivedAtMs: 1_700_000_000_000,
-    }];
+    fixtures = [
+      {
+        id: "fixture-1",
+        method: "POST",
+        url: "/hooks/push?access_token=[REDACTED]",
+        headers: [],
+        body: '{"event":"push"}',
+        receivedAtMs: 1_700_000_000_000,
+      },
+    ];
     render(<App />);
-    const action = await screen.findByRole("button", { name: "POST /hooks/push?access_token=[REDACTED] Workspace Logs에서 보기" });
+    const action = await screen.findByRole("button", {
+      name: "POST /hooks/push?access_token=[REDACTED] Workspace Logs에서 보기",
+    });
     fireEvent.click(action);
 
     await waitFor(() => expect(sendFixtureToLogLensMock).toHaveBeenCalledWith("fixture-1"));
@@ -1347,10 +1482,10 @@ it("labels binary history and explains the blocked API handoff accessibly", asyn
   history = [{ ...initialHistory[0], id: 1, method: "POST", url: "/hook", body: "/wAB", bodyEncoding: "base64" }];
   const issue = "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
   sendHistoryToApiMock.mockRejectedValueOnce(new Error(issue));
-  const {container} = render(<App />);
+  const { container } = render(<App />);
   await screen.findByText("바이너리 본문 · 3 bytes");
   fireEvent.contextMenu(await screen.findByLabelText("POST /hook 요청"));
-  fireEvent.click(screen.getByRole("menuitem", {name: "API Playground로 변환"}));
+  fireEvent.click(screen.getByRole("menuitem", { name: "API Playground로 변환" }));
   await screen.findByText(issue);
   expect(screen.getByLabelText("POST /hook 요청")).toBeTruthy();
   expect(writeTextMock).not.toHaveBeenCalled();

@@ -55,20 +55,31 @@ function storage(): Storage {
   const values = new Map<string, string>();
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
-    removeItem: (key) => { values.delete(key); },
-    clear: () => { values.clear(); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
+    clear: () => {
+      values.clear();
+    },
     key: (index) => [...values.keys()][index] ?? null,
-    get length() { return values.size; },
+    get length() {
+      return values.size;
+    },
   };
 }
 
 describe("gRPC summary-only history", () => {
   it("round-trips the exact schema and stores no body, endpoint, credential, or PEM fields", () => {
-    const saved = saveGrpcHistory({
-      schema: GRPC_HISTORY_SCHEMA,
-      entries: [summary()],
-    }, storage());
+    const saved = saveGrpcHistory(
+      {
+        schema: GRPC_HISTORY_SCHEMA,
+        entries: [summary()],
+      },
+      storage(),
+    );
 
     expect(saved).toEqual({
       schema: GRPC_HISTORY_SCHEMA,
@@ -92,19 +103,33 @@ describe("gRPC summary-only history", () => {
   it("fails closed for unknown root or entry keys and an invalid schema", () => {
     const valid = summary();
     expect(parseGrpcHistory(historyJson([valid], { extra: true }))).toBeNull();
-    expect(parseGrpcHistory(historyJson([{
-      ...valid,
-      responseBody: { secret: "must-not-persist" },
-    }]))).toBeNull();
-    expect(parseGrpcHistory(JSON.stringify({
-      schema: "devbox.api-playground.grpc-history/v0",
-      entries: [],
-    }))).toBeNull();
-    expect(parseGrpcHistory(JSON.stringify({
-      schema: GRPC_HISTORY_SCHEMA,
-      entries: [],
-      endpoint: "https://secret.example.test",
-    }))).toBeNull();
+    expect(
+      parseGrpcHistory(
+        historyJson([
+          {
+            ...valid,
+            responseBody: { secret: "must-not-persist" },
+          },
+        ]),
+      ),
+    ).toBeNull();
+    expect(
+      parseGrpcHistory(
+        JSON.stringify({
+          schema: "devbox.api-playground.grpc-history/v0",
+          entries: [],
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseGrpcHistory(
+        JSON.stringify({
+          schema: GRPC_HISTORY_SCHEMA,
+          entries: [],
+          endpoint: "https://secret.example.test",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("enforces RPC count, time, name, status, TLS, and history-count bounds", () => {
@@ -129,16 +154,14 @@ describe("gRPC summary-only history", () => {
       expect(parseGrpcHistory(historyJson([invalid]))).toBeNull();
     }
 
-    const tooManyEntries = Array.from({ length: MAX_GRPC_HISTORY + 1 }, (_, index) => (
-      summary({ method: `Method${index}` })
-    ));
+    const tooManyEntries = Array.from({ length: MAX_GRPC_HISTORY + 1 }, (_, index) =>
+      summary({ method: `Method${index}` }),
+    );
     expect(parseGrpcHistory(historyJson(tooManyEntries))).toBeNull();
   });
 
   it("prepends new summaries and retains only the newest bounded entries", () => {
-    const entries = Array.from({ length: MAX_GRPC_HISTORY }, (_, index) => (
-      summary({ method: `Method${index}` })
-    ));
+    const entries = Array.from({ length: MAX_GRPC_HISTORY }, (_, index) => summary({ method: `Method${index}` }));
     const original: GrpcHistoryStore = { schema: GRPC_HISTORY_SCHEMA, entries };
     const appended = appendGrpcHistory(original, summary({ method: "Newest" }));
 
@@ -162,14 +185,12 @@ describe("gRPC summary-only history", () => {
   });
 
   it("requires an array for streaming requests and rejects empty, commented, or trailing-comma input", () => {
-    expect(() => splitGrpcRequestMessages("{}", "client-streaming"))
-      .toThrow("grpc_request_invalid");
-    expect(() => splitGrpcRequestMessages("[]", "client-streaming"))
-      .toThrow("grpc_request_invalid");
-    expect(() => splitGrpcRequestMessages("[{\"id\":1},]", "client-streaming"))
-      .toThrow("grpc_request_invalid");
-    expect(() => splitGrpcRequestMessages("[{\"id\":1 /* no comments */}]", "client-streaming"))
-      .toThrow("grpc_request_invalid");
+    expect(() => splitGrpcRequestMessages("{}", "client-streaming")).toThrow("grpc_request_invalid");
+    expect(() => splitGrpcRequestMessages("[]", "client-streaming")).toThrow("grpc_request_invalid");
+    expect(() => splitGrpcRequestMessages('[{"id":1},]', "client-streaming")).toThrow("grpc_request_invalid");
+    expect(() => splitGrpcRequestMessages('[{"id":1 /* no comments */}]', "client-streaming")).toThrow(
+      "grpc_request_invalid",
+    );
   });
 
   it("uses the documented storage key when the caller saves a history", () => {

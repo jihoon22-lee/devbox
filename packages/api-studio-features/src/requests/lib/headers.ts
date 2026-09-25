@@ -6,9 +6,9 @@ export function isRequestHeader(value: unknown): value is RequestHeader {
   if (!value || typeof value !== "object") return false;
   const header = value as Partial<RequestHeader>;
   return (
-    typeof header.key === "string"
-    && typeof header.value === "string"
-    && (header.enabled === undefined || typeof header.enabled === "boolean")
+    typeof header.key === "string" &&
+    typeof header.value === "string" &&
+    (header.enabled === undefined || typeof header.enabled === "boolean")
   );
 }
 
@@ -34,9 +34,9 @@ export function updateHeader(
   index: number,
   patch: Partial<RequestHeader>,
 ): RequestHeader[] {
-  return normalizeHeaders(headers).map((header, current) => (
-    current === index ? normalizeHeader({ ...header, ...patch }) : header
-  ));
+  return normalizeHeaders(headers).map((header, current) =>
+    current === index ? normalizeHeader({ ...header, ...patch }) : header,
+  );
 }
 
 export function removeHeader(headers: readonly RequestHeader[], index: number): RequestHeader[] {
@@ -46,11 +46,7 @@ export function removeHeader(headers: readonly RequestHeader[], index: number): 
 export function duplicateHeader(headers: readonly RequestHeader[], index: number): RequestHeader[] {
   const normalized = normalizeHeaders(headers);
   if (normalized.length >= MAX_REQUEST_HEADER_ROWS || !normalized[index]) return normalized;
-  return [
-    ...normalized.slice(0, index + 1),
-    { ...normalized[index]! },
-    ...normalized.slice(index + 1),
-  ];
+  return [...normalized.slice(0, index + 1), { ...normalized[index]! }, ...normalized.slice(index + 1)];
 }
 
 export function secretReference(name: string): string | null {
@@ -58,8 +54,9 @@ export function secretReference(name: string): string | null {
 }
 
 export function availableSecretNames(names: readonly string[]): string[] {
-  return [...new Set(names.filter((name) => secretReference(name) !== null))]
-    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return [...new Set(names.filter((name) => secretReference(name) !== null))].sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
 }
 
 export function duplicateHeaderNameCount(headers: readonly RequestHeader[]): number {

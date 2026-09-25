@@ -13,7 +13,8 @@ const mockedFetchOpenApiSource = vi.mocked(fetchOpenApiSource);
 afterEach(() => {
   cleanup();
   mockedFetchOpenApiSource.mockReset();
-  product.enabled = false; product.invoke.mockReset();
+  product.enabled = false;
+  product.invoke.mockReset();
 });
 
 function fixture(paths: Record<string, unknown> = { "/users": { get: {} } }): string {
@@ -34,44 +35,89 @@ function fileWithText(text: string, name = "api.json"): File {
 function setup() {
   const onClose = vi.fn<() => void>();
   const onApply = vi.fn();
-  const onAddToCollection = vi.fn<(operations: OpenApiOperationPreview[]) => Promise<void>>().mockResolvedValue(undefined);
+  const onAddToCollection = vi
+    .fn<(operations: OpenApiOperationPreview[]) => Promise<void>>()
+    .mockResolvedValue(undefined);
   const rendered = render(<OpenApiImport onClose={onClose} onApply={onApply} onAddToCollection={onAddToCollection} />);
   return { onClose, onApply, onAddToCollection, rendered };
 }
 
 it("explicitly saves supported operation projections without applying requests or collections", async () => {
-  product.enabled = true; product.invoke.mockResolvedValue({});
-  const onApply = vi.fn(), onAddToCollection = vi.fn(), onClose = vi.fn(), onSavedDefinition = vi.fn();
-  render(<OpenApiImport onApply={onApply} onAddToCollection={onAddToCollection} onClose={onClose} onSavedDefinition={onSavedDefinition} />);
-  fireEvent.change(screen.getByLabelText("로컬 파일 선택"), { target: { files: [fileWithText(fixture({ "/users": { get: { responses: { "201": { description: "Created" } } } } }))] } });
+  product.enabled = true;
+  product.invoke.mockResolvedValue({});
+  const onApply = vi.fn(),
+    onAddToCollection = vi.fn(),
+    onClose = vi.fn(),
+    onSavedDefinition = vi.fn();
+  render(
+    <OpenApiImport
+      onApply={onApply}
+      onAddToCollection={onAddToCollection}
+      onClose={onClose}
+      onSavedDefinition={onSavedDefinition}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("로컬 파일 선택"), {
+    target: {
+      files: [fileWithText(fixture({ "/users": { get: { responses: { "201": { description: "Created" } } } } }))],
+    },
+  });
   const save = await screen.findByRole("button", { name: "선택한 작업 보관 (1)" });
-  expect(product.invoke).not.toHaveBeenCalled(); fireEvent.click(save);
+  expect(product.invoke).not.toHaveBeenCalled();
+  fireEvent.click(save);
   await waitFor(() => expect(onSavedDefinition).toHaveBeenCalledTimes(1));
-  expect(product.invoke).toHaveBeenCalledWith("save_openapi_definition", expect.objectContaining({ openApiVersion: "3.0", operations: [expect.objectContaining({ method: "GET", requestTarget: "/users", mockStatus: 201 })] }));
-  expect(onApply).not.toHaveBeenCalled(); expect(onAddToCollection).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalledTimes(1);
+  expect(product.invoke).toHaveBeenCalledWith(
+    "save_openapi_definition",
+    expect.objectContaining({
+      openApiVersion: "3.0",
+      operations: [expect.objectContaining({ method: "GET", requestTarget: "/users", mockStatus: 201 })],
+    }),
+  );
+  expect(onApply).not.toHaveBeenCalled();
+  expect(onAddToCollection).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 describe("OpenApiImport", () => {
   it("hands a selected operation to the product Mock preview without applying or sending a request", async () => {
     product.enabled = true;
     let complete!: () => void;
-    product.invoke.mockReturnValue(new Promise<void>((resolve) => { complete = resolve; }));
+    product.invoke.mockReturnValue(
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      }),
+    );
     const { onClose, onApply, onAddToCollection } = setup();
     await act(async () => {
-      fireEvent.change(screen.getByLabelText("로컬 파일 선택"), { target: { files: [fileWithText(fixture({
-        "/users": { get: { responses: { "201": { description: "created" } } } },
-      }))] } });
+      fireEvent.change(screen.getByLabelText("로컬 파일 선택"), {
+        target: {
+          files: [
+            fileWithText(
+              fixture({
+                "/users": { get: { responses: { "201": { description: "created" } } } },
+              }),
+            ),
+          ],
+        },
+      });
     });
     await screen.findByText("GET /users");
     expect(product.invoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "선택 operation을 Mock 초안으로" }));
     expect(onClose).not.toHaveBeenCalled();
     expect(product.invoke).toHaveBeenCalledExactlyOnceWith("send_mock_draft", {
-      output: "", status: 201, mediaType: "text", requestTarget: "/users", requestMethod: "GET",
+      output: "",
+      status: 201,
+      mediaType: "text",
+      requestTarget: "/users",
+      requestMethod: "GET",
     });
-    await act(async () => { complete(); });
+    await act(async () => {
+      complete();
+    });
     expect(onClose).toHaveBeenCalledOnce();
-    expect(onApply).not.toHaveBeenCalled(); expect(onAddToCollection).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+    expect(onAddToCollection).not.toHaveBeenCalled();
   });
   it("reads only a local file, previews it, and applies only after explicit confirmation", async () => {
     const { onClose, onApply } = setup();
@@ -118,9 +164,11 @@ describe("OpenApiImport", () => {
 
   it("does not reflect a rejected URL and ignores duplicate submits while loading", async () => {
     let rejectFetch: ((reason?: unknown) => void) | undefined;
-    mockedFetchOpenApiSource.mockReturnValue(new Promise((_resolve, reject) => {
-      rejectFetch = reject;
-    }));
+    mockedFetchOpenApiSource.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
     const { onClose } = setup();
     const rawUrl = "https://example.test/DO_NOT_REFLECT/openapi.json";
     fireEvent.change(screen.getByLabelText("OpenAPI URL"), { target: { value: rawUrl } });
@@ -138,9 +186,11 @@ describe("OpenApiImport", () => {
 
   it("discards a URL result completed after unmount", async () => {
     let resolveFetch: ((source: { text: string; format: "json" }) => void) | undefined;
-    mockedFetchOpenApiSource.mockReturnValue(new Promise((resolve) => {
-      resolveFetch = resolve;
-    }));
+    mockedFetchOpenApiSource.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
     const { onClose, rendered } = setup();
     fireEvent.change(screen.getByLabelText("OpenAPI URL"), {
       target: { value: "https://example.test/openapi.json" },
@@ -171,9 +221,11 @@ describe("OpenApiImport", () => {
     opener.focus();
     setup();
     const dialog = screen.getByRole("dialog");
-    const focusable = [...dialog.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex=\"-1\"])",
-    )];
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ];
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     last.focus();
@@ -191,7 +243,7 @@ describe("OpenApiImport", () => {
     setup();
     fireEvent.change(screen.getByLabelText("로컬 파일 선택"), {
       target: {
-        files: [fileWithText(fixture({ "/ref": { get: { "$ref": "#/components/path" } } }))],
+        files: [fileWithText(fixture({ "/ref": { get: { $ref: "#/components/path" } } }))],
       },
     });
     const row = await screen.findByText("GET /ref");

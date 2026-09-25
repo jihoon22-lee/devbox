@@ -2,12 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GRPC_HISTORY_KEY, GRPC_HISTORY_SCHEMA } from "./lib/grpc";
 import { GrpcLab } from "./GrpcLab";
-import type {
-  GrpcConnectResult,
-  GrpcCredentialProjection,
-  GrpcInvokeResult,
-  GrpcNativeSelection,
-} from "./grpcApi";
+import type { GrpcConnectResult, GrpcCredentialProjection, GrpcInvokeResult, GrpcNativeSelection } from "./grpcApi";
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
@@ -89,15 +84,17 @@ const connection: GrpcConnectResult = {
     credentialUsed: false,
     serverNameOverridden: false,
   },
-  methods: [{
-    service: "Greeter",
-    method: "SayHello",
-    fullName: "Greeter.SayHello",
-    inputType: "HelloRequest",
-    outputType: "HelloReply",
-    rpcKind: "unary",
-    inputTemplate: {},
-  }],
+  methods: [
+    {
+      service: "Greeter",
+      method: "SayHello",
+      fullName: "Greeter.SayHello",
+      inputType: "HelloRequest",
+      outputType: "HelloReply",
+      rpcKind: "unary",
+      inputTemplate: {},
+    },
+  ],
   rpcTimeoutMs: 30_000,
 };
 
@@ -127,9 +124,9 @@ beforeEach(() => {
   mocks.pickClientKey.mockReset().mockResolvedValue(null);
   mocks.pickImportRoot.mockReset().mockResolvedValue(importRootSelection);
   mocks.pickProto.mockReset().mockResolvedValue(protoSelection);
-  mocks.safeErrorCode.mockReset().mockImplementation((cause: unknown) => (
-    cause instanceof Error ? cause.message : String(cause)
-  ));
+  mocks.safeErrorCode
+    .mockReset()
+    .mockImplementation((cause: unknown) => (cause instanceof Error ? cause.message : String(cause)));
 });
 
 afterEach(() => cleanup());
@@ -139,9 +136,9 @@ async function connectLocalProto(): Promise<void> {
   await screen.findByText(protoSelection.label);
   fireEvent.click(screen.getByRole("button", { name: "가져오기 루트 선택" }));
   await screen.findByText(importRootSelection.label);
-  await waitFor(() => expect(
-    (screen.getByRole("button", { name: "gRPC 연결" }) as HTMLButtonElement).disabled,
-  ).toBe(false));
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "gRPC 연결" }) as HTMLButtonElement).disabled).toBe(false),
+  );
   fireEvent.click(screen.getByRole("button", { name: "gRPC 연결" }));
   await screen.findByRole("heading", { name: "메서드 탐색기" });
 }
@@ -190,12 +187,9 @@ describe("gRPC Protocol Lab", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "RPC 호출" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith(
-      connection.connectionId,
-      "grpc-1",
-      "Greeter.SayHello",
-      ["{}"],
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(connection.connectionId, "grpc-1", "Greeter.SayHello", ["{}"]),
+    );
     await screen.findByText(/hello/);
 
     const persisted = JSON.parse(localStorage.getItem(GRPC_HISTORY_KEY) ?? "null") as {
@@ -204,19 +198,21 @@ describe("gRPC Protocol Lab", () => {
     };
     expect(persisted).toEqual({
       schema: GRPC_HISTORY_SCHEMA,
-      entries: [{
-        sourceKind: "local-proto",
-        service: "Greeter",
-        method: "SayHello",
-        rpcKind: "unary",
-        requestMessageCount: 1,
-        responseMessageCount: 1,
-        startedAtMs: invokeResult.startedAtMs,
-        elapsedMs: invokeResult.elapsedMs,
-        status: "OK",
-        tlsMode: "plaintext",
-        credentialUsed: false,
-      }],
+      entries: [
+        {
+          sourceKind: "local-proto",
+          service: "Greeter",
+          method: "SayHello",
+          rpcKind: "unary",
+          requestMessageCount: 1,
+          responseMessageCount: 1,
+          startedAtMs: invokeResult.startedAtMs,
+          elapsedMs: invokeResult.elapsedMs,
+          status: "OK",
+          tlsMode: "plaintext",
+          credentialUsed: false,
+        },
+      ],
     });
     expect(JSON.stringify(persisted)).not.toContain("hello");
     expect(JSON.stringify(persisted)).not.toContain(protoSelection.selectionId);
@@ -255,10 +251,12 @@ describe("gRPC Protocol Lab", () => {
     fireEvent.change(endpoint, { target: { value: "http://127.0.0.1:50051" } });
 
     await connectLocalProto();
-    expect(mocks.connect).toHaveBeenLastCalledWith(expect.objectContaining({
-      endpoint: "http://127.0.0.1:50051",
-      tls: { rootMode: "native" },
-    }));
+    expect(mocks.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        endpoint: "http://127.0.0.1:50051",
+        tls: { rootMode: "native" },
+      }),
+    );
   });
 
   it("keeps the selected method consistent with the visible filter results", async () => {
@@ -296,19 +294,19 @@ describe("gRPC Protocol Lab", () => {
 
   it("cancels the owned native request and records a bounded cancellation summary", async () => {
     let rejectInvoke: ((reason?: unknown) => void) | undefined;
-    mocks.invoke.mockImplementationOnce(() => new Promise((_resolve, reject) => {
-      rejectInvoke = reject;
-    }));
+    mocks.invoke.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectInvoke = reject;
+        }),
+    );
     render(<GrpcLab native />);
     await connectLocalProto();
 
     fireEvent.click(screen.getByRole("button", { name: "RPC 호출" }));
     await screen.findByRole("button", { name: "취소" });
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
-    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(
-      connection.connectionId,
-      "grpc-1",
-    ));
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(connection.connectionId, "grpc-1"));
 
     await act(async () => {
       rejectInvoke?.(new Error("grpc_request_cancelled"));
@@ -317,17 +315,19 @@ describe("gRPC Protocol Lab", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("취소했습니다"));
     expect(JSON.parse(localStorage.getItem(GRPC_HISTORY_KEY) ?? "null")).toMatchObject({
       schema: GRPC_HISTORY_SCHEMA,
-      entries: [{
-        sourceKind: "local-proto",
-        service: "Greeter",
-        method: "SayHello",
-        rpcKind: "unary",
-        requestMessageCount: 1,
-        responseMessageCount: 0,
-        status: "CANCELLED",
-        tlsMode: "plaintext",
-        credentialUsed: false,
-      }],
+      entries: [
+        {
+          sourceKind: "local-proto",
+          service: "Greeter",
+          method: "SayHello",
+          rpcKind: "unary",
+          requestMessageCount: 1,
+          responseMessageCount: 0,
+          status: "CANCELLED",
+          tlsMode: "plaintext",
+          credentialUsed: false,
+        },
+      ],
     });
   });
 });

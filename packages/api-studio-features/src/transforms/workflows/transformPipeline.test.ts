@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
-import {
-  pipelineCompatibility,
-  pipelineOutputType,
-  PIPELINE_LIMITS,
-  runPipeline,
-} from "./transformPipeline";
+import { pipelineCompatibility, pipelineOutputType, PIPELINE_LIMITS, runPipeline } from "./transformPipeline";
 
 describe("typed transformer pipeline (#341)", () => {
   it("connects compatible JSON stages and reports the resulting type", () => {
-    const result = runPipeline(
-      '{"name":"Ada"}',
-      "json",
-      [{ transformerId: "json-format" }, { transformerId: "json-to-typescript" }],
-    );
+    const result = runPipeline('{"name":"Ada"}', "json", [
+      { transformerId: "json-format" },
+      { transformerId: "json-to-typescript" },
+    ]);
 
     expect(result.error).toBeNull();
     expect(result.outputType).toBe("typescript");

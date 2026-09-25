@@ -64,7 +64,9 @@ beforeEach(() => {
   repoChangesMock.mockReset().mockResolvedValue([unstaged]);
   repoStageMock.mockReset().mockResolvedValue(undefined);
   repoUnstageMock.mockReset().mockResolvedValue(undefined);
-  vi.mocked(repoCommitPreview).mockReset().mockResolvedValue({revision:"reviewed-index",stagedPaths:["src/main.ts"]});
+  vi.mocked(repoCommitPreview)
+    .mockReset()
+    .mockResolvedValue({ revision: "reviewed-index", stagedPaths: ["src/main.ts"] });
   repoCommitMock.mockReset().mockResolvedValue(undefined);
   repoLocalCancelMock.mockReset().mockResolvedValue(false);
 });
@@ -74,34 +76,47 @@ afterEach(() => cleanup());
 describe("StageCommitPanel", () => {
   it("reviews freshly read native paths and keeps the message when that index becomes stale", async () => {
     repoChangesMock.mockResolvedValue([staged]);
-    vi.mocked(repoCommitPreview).mockResolvedValue({revision:"native-new-blob",stagedPaths:["external.txt","second.txt"]});
+    vi.mocked(repoCommitPreview).mockResolvedValue({
+      revision: "native-new-blob",
+      stagedPaths: ["external.txt", "second.txt"],
+    });
     repoCommitMock.mockRejectedValue(new Error("commit_review_stale"));
-    render(<StageCommitPanel repo={repo}/>);
-    fireEvent.click(screen.getByRole("button",{name:"변경 파일 불러오기"}));
-    await screen.findByRole("checkbox",{name:"unstage src/main.ts"});
-    const message=screen.getByRole("textbox",{name:"커밋 메시지"});
-    fireEvent.change(message,{target:{value:"retained message"}});
-    fireEvent.click(screen.getByRole("button",{name:"Commit (1)"}));
-    const dialog=await screen.findByRole("dialog");
+    render(<StageCommitPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
+    await screen.findByRole("checkbox", { name: "unstage src/main.ts" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" });
+    fireEvent.change(message, { target: { value: "retained message" } });
+    fireEvent.click(screen.getByRole("button", { name: "Commit (1)" }));
+    const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain("변경 2개");
     expect(dialog.textContent).not.toContain("external.txt");
-    fireEvent.click(screen.getByRole("button",{name:"Commit 실행"}));
-    await waitFor(()=>expect(repoCommitMock).toHaveBeenCalledWith(repo.path,"retained message",expect.any(String),"native-new-blob"));
+    fireEvent.click(screen.getByRole("button", { name: "Commit 실행" }));
+    await waitFor(() =>
+      expect(repoCommitMock).toHaveBeenCalledWith(repo.path, "retained message", expect.any(String), "native-new-blob"),
+    );
     await screen.findByRole("alert");
     expect((message as HTMLTextAreaElement).value).toBe("retained message");
   });
 
   it("shows untracked directory records without file actions while staging only the selected file", async () => {
-    const directory: ChangeEntry = {...unstaged, path:"nested 한글 tree/", kind:"untracked-directory", indexStatus:"?", worktreeStatus:"?", staged:false, unstaged:false};
+    const directory: ChangeEntry = {
+      ...unstaged,
+      path: "nested 한글 tree/",
+      kind: "untracked-directory",
+      indexStatus: "?",
+      worktreeStatus: "?",
+      staged: false,
+      unstaged: false,
+    };
     repoChangesMock.mockResolvedValue([directory, unstaged]);
     const open = vi.fn();
-    render(<StageCommitPanel repo={repo} onOpenFile={open}/>);
-    fireEvent.click(screen.getByRole("button", {name:"변경 파일 불러오기"}));
+    render(<StageCommitPanel repo={repo} onOpenFile={open} />);
+    fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     await screen.findByText("nested 한글 tree/");
-    expect(screen.queryByRole("checkbox", {name:"stage nested 한글 tree/"})).toBeNull();
-    expect(screen.queryByRole("button", {name:"Files에서 nested 한글 tree/ 열기"})).toBeNull();
-    fireEvent.click(screen.getByRole("checkbox", {name:"stage src/main.ts"}));
-    fireEvent.click(screen.getByRole("button", {name:"선택 항목 stage (1)"}));
+    expect(screen.queryByRole("checkbox", { name: "stage nested 한글 tree/" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Files에서 nested 한글 tree/ 열기" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "stage src/main.ts" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 항목 stage (1)" }));
     await waitFor(() => expect(repoStageMock).toHaveBeenCalledWith(repo.path, [unstaged.path], expect.any(String)));
     expect(open).not.toHaveBeenCalled();
   });
@@ -180,7 +195,11 @@ describe("StageCommitPanel", () => {
     expect(first).toMatch(/^[A-Za-z0-9._-]+$/u);
 
     let resolveStage: (() => void) | undefined;
-    repoStageMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveStage = resolve; }));
+    repoStageMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStage = resolve;
+      }),
+    );
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     const checkbox = await screen.findByRole("checkbox", { name: "stage src/main.ts" });
@@ -246,7 +265,14 @@ describe("StageCommitPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Commit (1)" }));
     fireEvent.click(await screen.findByRole("button", { name: "Commit 실행" }));
 
-    await waitFor(() => expect(repoCommitMock).toHaveBeenCalledWith(repo.path, "Commit selected fixture", expect.any(String), "reviewed-index"));
+    await waitFor(() =>
+      expect(repoCommitMock).toHaveBeenCalledWith(
+        repo.path,
+        "Commit selected fixture",
+        expect.any(String),
+        "reviewed-index",
+      ),
+    );
     await waitFor(() => expect(repoChangesMock).toHaveBeenCalledTimes(2));
     expect((message as HTMLTextAreaElement).value).toBe("");
     expect(screen.getByRole("status").textContent).toContain("0개 staged");
@@ -289,7 +315,11 @@ describe("StageCommitPanel", () => {
 
   it("drops a status result that belongs to a replaced repository", async () => {
     let resolveOlder: ((value: ChangeEntry[]) => void) | undefined;
-    repoChangesMock.mockReturnValueOnce(new Promise((resolve) => { resolveOlder = resolve; }));
+    repoChangesMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOlder = resolve;
+      }),
+    );
     const rendered = render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     rendered.rerender(<StageCommitPanel repo={otherRepo} />);
@@ -302,7 +332,11 @@ describe("StageCommitPanel", () => {
 
   it("ignores duplicate actions and late results after unmount", async () => {
     let resolveStage: (() => void) | undefined;
-    repoStageMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveStage = resolve; }));
+    repoStageMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStage = resolve;
+      }),
+    );
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     const checkbox = await screen.findByRole("checkbox", { name: "stage src/main.ts" });
@@ -311,8 +345,7 @@ describe("StageCommitPanel", () => {
     fireEvent.click(stageButton);
     fireEvent.click(stageButton);
     expect(repoStageMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("region", { name: "Git stage 및 commit" }).getAttribute("aria-busy"))
-      .toBe("true");
+    expect(screen.getByRole("region", { name: "Git stage 및 commit" }).getAttribute("aria-busy")).toBe("true");
 
     cleanup();
     resolveStage?.();

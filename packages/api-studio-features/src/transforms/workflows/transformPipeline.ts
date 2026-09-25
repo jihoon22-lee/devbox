@@ -209,33 +209,125 @@ const descriptor = (
  * list of these IDs and can be replayed without restoring any previous text.
  */
 export const TRANSFORMERS: readonly TransformerDescriptor[] = [
-  descriptor("json-format", "JSON 포매터", ["json"], "json", "읽기 쉬운 들여쓰기를 적용한 엄격한 JSON.", (input) => runJsonFormat(input, false)),
-  descriptor("json-minify", "JSON 최소화", ["json"], "json", "불필요한 공백을 제거한 엄격한 JSON.", (input) => runJsonFormat(input, true)),
-  descriptor("json-parse", "JSON 파싱", ["text"], "json", "JSON 단계 전에 텍스트가 엄격한 JSON인지 확인합니다.", runJsonParse),
-  descriptor("json-to-yaml", "JSON → YAML", ["json"], "yaml", "엄격한 JSON 값 하나를 YAML 1.2로 변환합니다.", (input) => runJsonYaml(input, "json-to-yaml")),
-  descriptor("yaml-to-json", "YAML → JSON", ["yaml"], "json", "제한된 YAML 1.2 값 하나를 JSON으로 변환합니다.", (input) => runJsonYaml(input, "yaml-to-json")),
-  descriptor("json-to-typescript", "JSON → TypeScript", ["json"], "typescript", "제한된 TypeScript 선언을 추론합니다.", runJsonTypescript),
-  descriptor("jwt-decode", "JWT 디코더", ["jwt"], "json", "클레임을 검증되지 않은 JSON으로 디코드하며 키를 검증하거나 저장하지 않습니다.", runJwtDecode),
-  descriptor("url-encode", "URL 컴포넌트 인코딩", ["text"], "url-component", "컴포넌트 하나를 인코딩하며 URL을 조합하거나 열지 않습니다.", (input) => runUrl(input, true)),
-  descriptor("url-decode", "URL 컴포넌트 디코딩", ["url", "url-component", "text"], "text", "네트워크 접근 없이 컴포넌트 하나를 디코드합니다.", (input) => runUrl(input, false)),
+  descriptor("json-format", "JSON 포매터", ["json"], "json", "읽기 쉬운 들여쓰기를 적용한 엄격한 JSON.", (input) =>
+    runJsonFormat(input, false),
+  ),
+  descriptor("json-minify", "JSON 최소화", ["json"], "json", "불필요한 공백을 제거한 엄격한 JSON.", (input) =>
+    runJsonFormat(input, true),
+  ),
+  descriptor(
+    "json-parse",
+    "JSON 파싱",
+    ["text"],
+    "json",
+    "JSON 단계 전에 텍스트가 엄격한 JSON인지 확인합니다.",
+    runJsonParse,
+  ),
+  descriptor("json-to-yaml", "JSON → YAML", ["json"], "yaml", "엄격한 JSON 값 하나를 YAML 1.2로 변환합니다.", (input) =>
+    runJsonYaml(input, "json-to-yaml"),
+  ),
+  descriptor(
+    "yaml-to-json",
+    "YAML → JSON",
+    ["yaml"],
+    "json",
+    "제한된 YAML 1.2 값 하나를 JSON으로 변환합니다.",
+    (input) => runJsonYaml(input, "yaml-to-json"),
+  ),
+  descriptor(
+    "json-to-typescript",
+    "JSON → TypeScript",
+    ["json"],
+    "typescript",
+    "제한된 TypeScript 선언을 추론합니다.",
+    runJsonTypescript,
+  ),
+  descriptor(
+    "jwt-decode",
+    "JWT 디코더",
+    ["jwt"],
+    "json",
+    "클레임을 검증되지 않은 JSON으로 디코드하며 키를 검증하거나 저장하지 않습니다.",
+    runJwtDecode,
+  ),
+  descriptor(
+    "url-encode",
+    "URL 컴포넌트 인코딩",
+    ["text"],
+    "url-component",
+    "컴포넌트 하나를 인코딩하며 URL을 조합하거나 열지 않습니다.",
+    (input) => runUrl(input, true),
+  ),
+  descriptor(
+    "url-decode",
+    "URL 컴포넌트 디코딩",
+    ["url", "url-component", "text"],
+    "text",
+    "네트워크 접근 없이 컴포넌트 하나를 디코드합니다.",
+    (input) => runUrl(input, false),
+  ),
   descriptor("base64-encode", "Base64 인코딩", ["text"], "base64", "UTF-8 텍스트를 Base64로 인코딩합니다.", (input) => {
     const result = convertByteEncoding(input, "utf8", "base64");
     return result.error ? failed() : success(result.output);
   }),
-  descriptor("base64-decode", "Base64 디코드", ["base64"], "text", "바이트가 유효한 UTF-8일 때만 Base64를 디코드합니다.", (input) => runByteCodec(input, "base64", "utf8")),
-  descriptor("base64-to-hex", "Base64 → Hex", ["base64"], "hex", "Base64를 손실 없는 원시 바이트 Hex로 디코드합니다.", (input) => runByteCodec(input, "base64", "hex")),
-  descriptor("base64url-encode", "Base64URL 인코딩", ["text"], "base64url", "UTF-8 텍스트를 패딩 없는 Base64URL로 인코딩합니다.", (input) => {
-    const result = convertByteEncoding(input, "utf8", "base64url");
-    return result.error ? failed() : success(result.output);
-  }),
-  descriptor("base64url-decode", "Base64URL 디코드", ["base64url"], "text", "바이트가 유효한 UTF-8일 때만 Base64URL을 디코드합니다.", (input) => runByteCodec(input, "base64url", "utf8")),
-  descriptor("base64url-to-hex", "Base64URL → Hex", ["base64url"], "hex", "Base64URL을 손실 없는 원시 바이트 Hex로 디코드합니다.", (input) => runByteCodec(input, "base64url", "hex")),
+  descriptor(
+    "base64-decode",
+    "Base64 디코드",
+    ["base64"],
+    "text",
+    "바이트가 유효한 UTF-8일 때만 Base64를 디코드합니다.",
+    (input) => runByteCodec(input, "base64", "utf8"),
+  ),
+  descriptor(
+    "base64-to-hex",
+    "Base64 → Hex",
+    ["base64"],
+    "hex",
+    "Base64를 손실 없는 원시 바이트 Hex로 디코드합니다.",
+    (input) => runByteCodec(input, "base64", "hex"),
+  ),
+  descriptor(
+    "base64url-encode",
+    "Base64URL 인코딩",
+    ["text"],
+    "base64url",
+    "UTF-8 텍스트를 패딩 없는 Base64URL로 인코딩합니다.",
+    (input) => {
+      const result = convertByteEncoding(input, "utf8", "base64url");
+      return result.error ? failed() : success(result.output);
+    },
+  ),
+  descriptor(
+    "base64url-decode",
+    "Base64URL 디코드",
+    ["base64url"],
+    "text",
+    "바이트가 유효한 UTF-8일 때만 Base64URL을 디코드합니다.",
+    (input) => runByteCodec(input, "base64url", "utf8"),
+  ),
+  descriptor(
+    "base64url-to-hex",
+    "Base64URL → Hex",
+    ["base64url"],
+    "hex",
+    "Base64URL을 손실 없는 원시 바이트 Hex로 디코드합니다.",
+    (input) => runByteCodec(input, "base64url", "hex"),
+  ),
   descriptor("hex-encode", "Hex 인코딩", ["text"], "hex", "UTF-8 텍스트를 원시 바이트 Hex로 인코딩합니다.", (input) => {
     const result = convertByteEncoding(input, "utf8", "hex");
     return result.error ? failed() : success(result.output);
   }),
-  descriptor("hex-decode", "Hex 디코드", ["hex"], "text", "바이트가 유효한 UTF-8일 때만 Hex를 디코드합니다.", (input) => runByteCodec(input, "hex", "utf8")),
-  descriptor("hex-to-base64", "Hex → Base64", ["hex"], "base64", "Hex를 손실 없는 Base64 바이트로 디코드합니다.", (input) => runByteCodec(input, "hex", "base64")),
+  descriptor("hex-decode", "Hex 디코드", ["hex"], "text", "바이트가 유효한 UTF-8일 때만 Hex를 디코드합니다.", (input) =>
+    runByteCodec(input, "hex", "utf8"),
+  ),
+  descriptor(
+    "hex-to-base64",
+    "Hex → Base64",
+    ["hex"],
+    "base64",
+    "Hex를 손실 없는 Base64 바이트로 디코드합니다.",
+    (input) => runByteCodec(input, "hex", "base64"),
+  ),
   descriptor("case", "대소문자 변환", ["text"], "text", "결정적인 텍스트 대소문자 변형을 만듭니다.", runCase),
 ];
 
@@ -260,9 +352,9 @@ function errorResult(
 }
 
 function outputWithinBounds(output: string): boolean {
-  return typeof output === "string"
-    && isWellFormedUnicode(output)
-    && byteLength(output) <= PIPELINE_LIMITS.maxOutputBytes;
+  return (
+    typeof output === "string" && isWellFormedUnicode(output) && byteLength(output) <= PIPELINE_LIMITS.maxOutputBytes
+  );
 }
 
 function transformerIdOf(step: unknown): string | null {
@@ -283,10 +375,7 @@ export function pipelineCompatibility(
   };
 }
 
-export function pipelineOutputType(
-  initialType: PipelineValueType,
-  steps: readonly PipelineStep[],
-): PipelineValueType {
+export function pipelineOutputType(initialType: PipelineValueType, steps: readonly PipelineStep[]): PipelineValueType {
   if (!isPipelineValueType(initialType) || !Array.isArray(steps)) return "text";
   let current = initialType;
   for (const step of steps) {
@@ -305,17 +394,14 @@ export function runPipeline(
   steps: readonly PipelineStep[],
 ): PipelineResult {
   if (
-    typeof input !== "string"
-    || !isWellFormedUnicode(input)
-    || !isPipelineValueType(initialType)
-    || !Array.isArray(steps)
+    typeof input !== "string" ||
+    !isWellFormedUnicode(input) ||
+    !isPipelineValueType(initialType) ||
+    !Array.isArray(steps)
   ) {
     return errorResult("invalid_input", null, [], isPipelineValueType(initialType) ? initialType : null);
   }
-  if (
-    input.length > PIPELINE_LIMITS.maxInputCodeUnits
-    || byteLength(input) > PIPELINE_LIMITS.maxInputBytes
-  ) {
+  if (input.length > PIPELINE_LIMITS.maxInputCodeUnits || byteLength(input) > PIPELINE_LIMITS.maxInputBytes) {
     return errorResult("input_too_large", null, [], initialType);
   }
   if (steps.length > PIPELINE_LIMITS.maxSteps) {

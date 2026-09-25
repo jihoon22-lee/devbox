@@ -21,7 +21,4 @@ export interface ContextMenuSeparator {
   id?: string;
 }
 
-export type ContextMenuEntry =
-  | ContextMenuActionItem
-  | ContextMenuSubmenu
-  | ContextMenuSeparator;
+export type ContextMenuEntry = ContextMenuActionItem | ContextMenuSubmenu | ContextMenuSeparator;

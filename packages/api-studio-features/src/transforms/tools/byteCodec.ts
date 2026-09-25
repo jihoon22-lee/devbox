@@ -17,9 +17,7 @@ export interface ByteCodecResult {
   error: ByteCodecError | null;
 }
 
-type DecodeResult =
-  | { bytes: Uint8Array; error: null }
-  | { bytes: null; error: ByteCodecError };
+type DecodeResult = { bytes: Uint8Array; error: null } | { bytes: null; error: ByteCodecError };
 
 function failure(
   code: string,
@@ -88,24 +86,14 @@ function decodeHex(input: string): DecodeResult {
     const character = input[index];
     if (isAsciiWhitespace(character)) continue;
     if (hexNibbleValue(character) === -1) {
-      return failure(
-        "INVALID_HEX_CHARACTER",
-        "Hex 입력에는 0-9와 A-F만 사용할 수 있습니다.",
-        index + 1,
-        "character",
-      );
+      return failure("INVALID_HEX_CHARACTER", "Hex 입력에는 0-9와 A-F만 사용할 수 있습니다.", index + 1, "character");
     }
     nibbleCount += 1;
     lastNibblePosition = index + 1;
   }
 
   if (nibbleCount % 2 !== 0) {
-    return failure(
-      "INCOMPLETE_HEX_BYTE",
-      "Hex byte는 두 자리씩 입력해야 합니다.",
-      lastNibblePosition,
-      "character",
-    );
+    return failure("INCOMPLETE_HEX_BYTE", "Hex byte는 두 자리씩 입력해야 합니다.", lastNibblePosition, "character");
   }
   const byteLength = nibbleCount / 2;
   if (byteLength > MAX_BYTE_CODEC_BYTES) {
@@ -150,12 +138,7 @@ function decodeBase64(input: string, urlSafe: boolean): DecodeResult {
       firstPadding = firstPadding === -1 ? encoded.length : firstPadding;
       paddingLength += 1;
       if (paddingLength > 2) {
-        return failure(
-          "INVALID_BASE64_PADDING",
-          "Base64 padding은 최대 두 자리입니다.",
-          index + 1,
-          "character",
-        );
+        return failure("INVALID_BASE64_PADDING", "Base64 padding은 최대 두 자리입니다.", index + 1, "character");
       }
     } else if (!alphabet.test(character)) {
       return failure(
@@ -167,12 +150,7 @@ function decodeBase64(input: string, urlSafe: boolean): DecodeResult {
         "character",
       );
     } else if (firstPadding !== -1) {
-      return failure(
-        "INVALID_BASE64_PADDING",
-        "Base64 padding은 입력 끝에만 올 수 있습니다.",
-        index + 1,
-        "character",
-      );
+      return failure("INVALID_BASE64_PADDING", "Base64 padding은 입력 끝에만 올 수 있습니다.", index + 1, "character");
     }
     encoded += urlSafe ? character.replace(/-/u, "+").replace(/_/u, "/") : character;
   }
@@ -236,7 +214,7 @@ function firstInvalidUtf8Byte(bytes: Uint8Array): number | null {
     return bytes[index] >= minimum && bytes[index] <= maximum ? null : index;
   };
 
-  for (let index = 0; index < bytes.length;) {
+  for (let index = 0; index < bytes.length; ) {
     const first = bytes[index];
     if (first <= 0x7f) {
       index += 1;
@@ -265,9 +243,7 @@ function firstInvalidUtf8Byte(bytes: Uint8Array): number | null {
       if (issue !== null) return issue;
       index += 3;
     } else if (first === 0xf0) {
-      issue = continuation(index + 1, 0x90, 0xbf)
-        ?? continuation(index + 2)
-        ?? continuation(index + 3);
+      issue = continuation(index + 1, 0x90, 0xbf) ?? continuation(index + 2) ?? continuation(index + 3);
       if (issue !== null) return issue;
       index += 4;
     } else if (first >= 0xf1 && first <= 0xf3) {
@@ -275,9 +251,7 @@ function firstInvalidUtf8Byte(bytes: Uint8Array): number | null {
       if (issue !== null) return issue;
       index += 4;
     } else if (first === 0xf4) {
-      issue = continuation(index + 1, 0x80, 0x8f)
-        ?? continuation(index + 2)
-        ?? continuation(index + 3);
+      issue = continuation(index + 1, 0x80, 0x8f) ?? continuation(index + 2) ?? continuation(index + 3);
       if (issue !== null) return issue;
       index += 4;
     } else {
@@ -332,11 +306,7 @@ function encodeOutput(bytes: Uint8Array, target: ByteEncoding): string | ByteCod
   }
 }
 
-export function convertByteEncoding(
-  input: string,
-  source: ByteEncoding,
-  target: ByteEncoding,
-): ByteCodecResult {
+export function convertByteEncoding(input: string, source: ByteEncoding, target: ByteEncoding): ByteCodecResult {
   if (input.length > MAX_BYTE_CODEC_INPUT_CHARACTERS) {
     return {
       output: "",

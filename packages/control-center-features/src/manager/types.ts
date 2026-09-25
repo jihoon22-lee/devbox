@@ -94,17 +94,8 @@ export interface DevSetupAudit {
 }
 
 export type DevSetupConfigurationDesired = "present" | "latest" | "version";
-export type DevSetupConfigurationCurrentState =
-  | "present"
-  | "absent"
-  | "update-available"
-  | "unknown";
-export type DevSetupConfigurationAction =
-  | "none"
-  | "install"
-  | "update"
-  | "reconcile-version"
-  | "verify";
+export type DevSetupConfigurationCurrentState = "present" | "absent" | "update-available" | "unknown";
+export type DevSetupConfigurationAction = "none" | "install" | "update" | "reconcile-version" | "verify";
 
 export interface DevSetupConfigurationPackageReview {
   packageId: string;

@@ -35,12 +35,16 @@ vi.mock("./api", () => ({
   takePendingOpen: vi.fn(),
   classifyHandoffError: (error: unknown) => {
     const code = error instanceof Error ? error.message : "";
-    return ["handoff-storage-failed", "handoff-claim-storage-failed", "handoff-restore-failed", "handoff-response-invalid"]
-      .includes(code)
+    return [
+      "handoff-storage-failed",
+      "handoff-claim-storage-failed",
+      "handoff-restore-failed",
+      "handoff-response-invalid",
+    ].includes(code)
       ? "retryable"
       : "terminal";
   },
-  handoffErrorCode: (error: unknown) => error instanceof Error ? error.message : null,
+  handoffErrorCode: (error: unknown) => (error instanceof Error ? error.message : null),
 }));
 
 const acceptLogSourceMock = vi.mocked(acceptLogSource);
@@ -194,9 +198,7 @@ describe("Log Lens handoff lifecycle", () => {
     await waitFor(() => expect(mocks.openHandler).not.toBeNull());
     await openPreview();
 
-    discardLogSourceMock
-      .mockRejectedValueOnce(new Error("handoff-restore-failed"))
-      .mockResolvedValueOnce(undefined);
+    discardLogSourceMock.mockRejectedValueOnce(new Error("handoff-restore-failed")).mockResolvedValueOnce(undefined);
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     await screen.findByRole("button", { name: "복구 재시도" });
     expect(screen.getByRole("dialog", { name: "Log Lens source 미리보기" })).toBeTruthy();

@@ -30,9 +30,7 @@ describe("ServiceEditor", () => {
 
   it("rejects a non-local TCP address when the optional probe is enabled", async () => {
     const onSave = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    const { getByLabelText, getByRole } = render(
-      <ServiceEditor service={null} onSave={onSave} onCancel={vi.fn()} />,
-    );
+    const { getByLabelText, getByRole } = render(<ServiceEditor service={null} onSave={onSave} onCancel={vi.fn()} />);
 
     fireEvent.change(getByLabelText("서비스 이름"), { target: { value: "web" } });
     fireEvent.change(getByLabelText("서비스 실행 명령"), { target: { value: "npm start" } });

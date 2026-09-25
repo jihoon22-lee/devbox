@@ -4,12 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
 import { generateIdentifiers, type IdentifierOptions } from "./tools/ids";
-import {
-  browserHmacGenerate,
-  browserHmacVerify,
-  type HmacRequest,
-  type HmacVerifyRequest,
-} from "./tools/hmac";
+import { browserHmacGenerate, browserHmacVerify, type HmacRequest, type HmacVerifyRequest } from "./tools/hmac";
 import { browserVerifyJwt, type JwtVerifyRequest } from "./tools/jwt";
 import {
   generateQr as generateBrowserQr,
@@ -49,12 +44,7 @@ export const KNOWLEDGE_DRAFT_INVALID_ERROR = "Knowledge 초안 응답을 사용�
 const HANDOFF_ID_PATTERN = /^[0-9a-f]{32}$/u;
 const TOOLBOX_TEXT_MAX_BYTES = 512 * 1024;
 const TOOLBOX_TEXT_MAX_CHARS = 256_000;
-const TOOLBOX_TEXT_ALLOWED_PRODUCERS = new Set([
-  "api-playground",
-  "devbox-launcher",
-  "log-lens",
-  "code-pad",
-]);
+const TOOLBOX_TEXT_ALLOWED_PRODUCERS = new Set(["api-playground", "devbox-launcher", "log-lens", "code-pad"]);
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
 export async function hash(data: string, algorithm: string): Promise<string> {
@@ -142,7 +132,10 @@ export async function readClipboardText(): Promise<string> {
 }
 
 /** Publish only the explicit output currently shown by a tool. */
-export async function createApiRequestHandoff(output: string, source?: import("./tools/outputPolicy").OutputSource): Promise<ApiHandoffDispatch> {
+export async function createApiRequestHandoff(
+  output: string,
+  source?: import("./tools/outputPolicy").OutputSource,
+): Promise<ApiHandoffDispatch> {
   if (!isTauri()) throw new Error(API_HANDOFF_BROWSER_ERROR);
   return invoke<ApiHandoffDispatch>("create_api_request_handoff", isProductHosted() ? { output, source } : { output });
 }
@@ -152,10 +145,7 @@ const KNOWLEDGE_DRAFT_ERROR_DISPLAY = new Map<string, string>([
   [KNOWLEDGE_DRAFT_CREATE_ERROR, KNOWLEDGE_DRAFT_CREATE_ERROR],
   [KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR, KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR],
   [KNOWLEDGE_DRAFT_BROWSER_ERROR, KNOWLEDGE_DRAFT_BROWSER_ERROR],
-  [
-    "Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
-    KNOWLEDGE_DRAFT_CREATE_ERROR,
-  ],
+  ["Knowledge draft를 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다", KNOWLEDGE_DRAFT_CREATE_ERROR],
 ]);
 
 function safeKnowledgeDraftError(cause: unknown): Error {
@@ -165,11 +155,13 @@ function safeKnowledgeDraftError(cause: unknown): Error {
 }
 
 function parseKnowledgeDraftDispatch(value: unknown): KnowledgeDraftHandoffDispatch {
-  if (!isRecord(value)
-    || Object.keys(value).some((key) => !["handoffId", "redacted"].includes(key))
-    || typeof value.handoffId !== "string"
-    || !HANDOFF_ID_PATTERN.test(value.handoffId)
-    || typeof value.redacted !== "boolean") {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).some((key) => !["handoffId", "redacted"].includes(key)) ||
+    typeof value.handoffId !== "string" ||
+    !HANDOFF_ID_PATTERN.test(value.handoffId) ||
+    typeof value.redacted !== "boolean"
+  ) {
     throw new Error(KNOWLEDGE_DRAFT_INVALID_ERROR);
   }
   return {
@@ -179,9 +171,7 @@ function parseKnowledgeDraftDispatch(value: unknown): KnowledgeDraftHandoffDispa
 }
 
 /** Publish an explicit bounded output as a one-time Knowledge draft handoff. */
-export async function createKnowledgeDraftHandoff(
-  output: string,
-): Promise<KnowledgeDraftHandoffDispatch> {
+export async function createKnowledgeDraftHandoff(output: string): Promise<KnowledgeDraftHandoffDispatch> {
   if (!isTauri()) throw new Error(KNOWLEDGE_DRAFT_BROWSER_ERROR);
   if (typeof output !== "string" || !isBoundedToolboxText(output)) {
     throw new Error(KNOWLEDGE_DRAFT_INPUT_ERROR);
@@ -195,9 +185,7 @@ export async function createKnowledgeDraftHandoff(
   return parseKnowledgeDraftDispatch(response);
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => (
-  typeof value === "object" && value !== null
-);
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 function parseOpenRequest(value: unknown): OpenRequest | null {
   if (!isRecord(value) || !isRecord(value.target)) return null;
@@ -248,10 +236,11 @@ function parseOpenRequest(value: unknown): OpenRequest | null {
       };
     case "handoff":
       if (
-        typeof target.handoffKind !== "string"
-        || typeof target.id !== "string"
-        || !HANDOFF_ID_PATTERN.test(target.id)
-      ) return null;
+        typeof target.handoffKind !== "string" ||
+        typeof target.id !== "string" ||
+        !HANDOFF_ID_PATTERN.test(target.id)
+      )
+        return null;
       return {
         target: { kind: "handoff", handoffKind: target.handoffKind, id: target.id },
         from: typeof from === "string" ? from : null,
@@ -295,33 +284,36 @@ function hasWellFormedText(value: string): boolean {
 }
 
 function isBoundedToolboxText(value: string): boolean {
-  return value.trim().length > 0
-    && value.length <= TOOLBOX_TEXT_MAX_CHARS * 2
-    && Array.from(value).length <= TOOLBOX_TEXT_MAX_CHARS
-    && utf8ByteLength(value) <= TOOLBOX_TEXT_MAX_BYTES
-    && !value.includes("\0")
-    && hasWellFormedText(value)
-    && !Array.from(value).some((character) => {
+  return (
+    value.trim().length > 0 &&
+    value.length <= TOOLBOX_TEXT_MAX_CHARS * 2 &&
+    Array.from(value).length <= TOOLBOX_TEXT_MAX_CHARS &&
+    utf8ByteLength(value) <= TOOLBOX_TEXT_MAX_BYTES &&
+    !value.includes("\0") &&
+    hasWellFormedText(value) &&
+    !Array.from(value).some((character) => {
       const code = character.charCodeAt(0);
-      return (code < 0x20 && ![0x09, 0x0a, 0x0d].includes(code))
-        || (code >= 0x7f && code <= 0x9f);
-    });
+      return (code < 0x20 && ![0x09, 0x0a, 0x0d].includes(code)) || (code >= 0x7f && code <= 0x9f);
+    })
+  );
 }
 
 function parseToolboxTextPreview(value: unknown, requestedId: string): ToolboxTextHandoffPreview {
   const expiresAtMs = isRecord(value) ? value.expiresAtMs : undefined;
-  if (!isRecord(value)
-    || Object.keys(value).some((key) => !["handoffId", "producerId", "expiresAtMs", "text", "redacted"].includes(key))
-    || typeof value.handoffId !== "string"
-    || value.handoffId !== requestedId
-    || !HANDOFF_ID_PATTERN.test(value.handoffId)
-    || typeof value.producerId !== "string"
-    || !TOOLBOX_TEXT_ALLOWED_PRODUCERS.has(value.producerId)
-    || !Number.isSafeInteger(expiresAtMs)
-    || (expiresAtMs as number) <= 0
-    || typeof value.text !== "string"
-    || !isBoundedToolboxText(value.text)
-    || typeof value.redacted !== "boolean") {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).some((key) => !["handoffId", "producerId", "expiresAtMs", "text", "redacted"].includes(key)) ||
+    typeof value.handoffId !== "string" ||
+    value.handoffId !== requestedId ||
+    !HANDOFF_ID_PATTERN.test(value.handoffId) ||
+    typeof value.producerId !== "string" ||
+    !TOOLBOX_TEXT_ALLOWED_PRODUCERS.has(value.producerId) ||
+    !Number.isSafeInteger(expiresAtMs) ||
+    (expiresAtMs as number) <= 0 ||
+    typeof value.text !== "string" ||
+    !isBoundedToolboxText(value.text) ||
+    typeof value.redacted !== "boolean"
+  ) {
     throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
   }
   const safeExpiresAtMs = expiresAtMs as number;
@@ -352,10 +344,12 @@ export async function renewToolboxText(handoffId: string): Promise<ToolboxTextRe
   assertToolboxTextId(handoffId);
   const response = await invoke<unknown>("renew_toolbox_text", { handoffId });
   const leaseUntilMs = isRecord(response) ? response.leaseUntilMs : undefined;
-  if (!isRecord(response)
-    || Object.keys(response).some((key) => key !== "leaseUntilMs")
-    || !Number.isSafeInteger(leaseUntilMs)
-    || (leaseUntilMs as number) <= 0) {
+  if (
+    !isRecord(response) ||
+    Object.keys(response).some((key) => key !== "leaseUntilMs") ||
+    !Number.isSafeInteger(leaseUntilMs) ||
+    (leaseUntilMs as number) <= 0
+  ) {
     throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
   }
   return { leaseUntilMs: leaseUntilMs as number };
@@ -418,6 +412,7 @@ function browserDiff(a: string, b: string): DiffHunk[] {
   if (aEnd > start || bEnd > start) {
     hunks.push({ kind: 2, old_start: start, old_end: aEnd, new_start: start, new_end: bEnd });
   }
-  if (aEnd < al.length) hunks.push({ kind: 0, old_start: aEnd, old_end: al.length, new_start: bEnd, new_end: bl.length });
+  if (aEnd < al.length)
+    hunks.push({ kind: 0, old_start: aEnd, old_end: al.length, new_start: bEnd, new_end: bl.length });
   return hunks;
 }

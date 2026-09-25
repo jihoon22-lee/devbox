@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  CRON_PRESETS,
-  EMPTY_JOB_DRAFT,
-  toJobInput,
-  validateJobDraft,
-} from "./jobEditor";
+import { CRON_PRESETS, EMPTY_JOB_DRAFT, toJobInput, validateJobDraft } from "./jobEditor";
 
 describe("cron builder presets", () => {
   it("exposes the five approved presets with optional-seconds expressions", () => {
@@ -19,7 +14,12 @@ describe("cron builder presets", () => {
   });
 
   it("keeps a five-field direct expression valid", () => {
-    const errors = validateJobDraft({ ...EMPTY_JOB_DRAFT, name: "backup", command: "echo ok", cronExpr: "*/7 * * * *" });
+    const errors = validateJobDraft({
+      ...EMPTY_JOB_DRAFT,
+      name: "backup",
+      command: "echo ok",
+      cronExpr: "*/7 * * * *",
+    });
     expect(errors.cronExpr).toBeUndefined();
   });
 });
@@ -34,7 +34,9 @@ describe("job save validation", () => {
 
   it("requires a distro only for WSL and rejects one for Windows", () => {
     expect(validateJobDraft({ ...valid, targetKind: "wsl", targetDistro: "" }).targetDistro).toContain("배포판");
-    expect(validateJobDraft({ ...valid, targetKind: "windows", targetDistro: "Ubuntu" }).targetDistro).toContain("Windows");
+    expect(validateJobDraft({ ...valid, targetKind: "windows", targetDistro: "Ubuntu" }).targetDistro).toContain(
+      "Windows",
+    );
     expect(validateJobDraft({ ...valid, targetKind: "wsl", targetDistro: "Ubuntu" }).targetDistro).toBeUndefined();
   });
 

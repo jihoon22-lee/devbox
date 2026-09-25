@@ -42,8 +42,8 @@ export function GraphqlEditor({ value, onChange }: GraphqlEditorProps) {
         />
       </label>
       <p className="graphql-hint">
-        네이티브 HTTP 전송만 지원합니다. POST는 JSON 본문을 보내고 GET은 인코딩된 쿼리 매개변수를 보냅니다.
-        저장된 쿼리, subscription, 스키마/인트로스펙션 탐색기와 코드 생성은 지원하지 않습니다.
+        네이티브 HTTP 전송만 지원합니다. POST는 JSON 본문을 보내고 GET은 인코딩된 쿼리 매개변수를 보냅니다. 저장된 쿼리,
+        subscription, 스키마/인트로스펙션 탐색기와 코드 생성은 지원하지 않습니다.
       </p>
     </div>
   );

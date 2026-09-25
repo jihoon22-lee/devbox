@@ -131,8 +131,7 @@ describe("API Playground api-request/v1 receiver", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
     await waitFor(() => expect(ackApiRequestMock).toHaveBeenCalledWith(preview.handoffId));
-    expect((screen.getByPlaceholderText("https://api.example.com/users") as HTMLInputElement).value)
-      .toBe(request.url);
+    expect((screen.getByPlaceholderText("https://api.example.com/users") as HTMLInputElement).value).toBe(request.url);
     expect(screen.queryByRole("dialog", { name: "Webhook 요청 미리보기" })).toBeNull();
   });
 
@@ -143,9 +142,7 @@ describe("API Playground api-request/v1 receiver", () => {
       request: { ...request, url: "/" },
     };
     claimApiRequestMock.mockResolvedValueOnce(toolboxPreview);
-    takePendingOpenMock.mockImplementationOnce(async () => (
-      handoffRequest(preview.handoffId, "developer-toolbox")
-    ));
+    takePendingOpenMock.mockImplementationOnce(async () => handoffRequest(preview.handoffId, "developer-toolbox"));
     render(<App />);
 
     const dialog = await screen.findByRole("dialog", { name: "Toolbox 텍스트 요청 미리보기" });
@@ -199,7 +196,10 @@ describe("API Playground api-request/v1 receiver", () => {
     takePendingOpenMock.mockImplementationOnce(async () => handoffRequest());
     let resolveClaim!: (value: ApiRequestHandoffPreview) => void;
     claimApiRequestMock.mockImplementationOnce(
-      () => new Promise<ApiRequestHandoffPreview>((resolve) => { resolveClaim = resolve; }),
+      () =>
+        new Promise<ApiRequestHandoffPreview>((resolve) => {
+          resolveClaim = resolve;
+        }),
     );
     render(<App />);
 
@@ -230,9 +230,9 @@ describe("API Playground api-request/v1 receiver", () => {
       render(<App />);
 
       await screen.findByRole("dialog", { name: "Webhook 요청 미리보기" });
-      await waitFor(() => expect(
-        (screen.getByRole("button", { name: "취소" }) as HTMLButtonElement).disabled,
-      ).toBe(false));
+      await waitFor(() =>
+        expect((screen.getByRole("button", { name: "취소" }) as HTMLButtonElement).disabled).toBe(false),
+      );
       await act(async () => {
         await Promise.resolve();
         vi.advanceTimersByTime(30_001);

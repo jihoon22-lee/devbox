@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  EMPTY_SERVICE_DRAFT,
-  isLocalTcpAddress,
-  toServiceInput,
-  validateServiceDraft,
-} from "./serviceEditor";
+import { EMPTY_SERVICE_DRAFT, isLocalTcpAddress, toServiceInput, validateServiceDraft } from "./serviceEditor";
 
 describe("service editor validation", () => {
   const valid = { ...EMPTY_SERVICE_DRAFT, name: "web", command: "npm start" };
@@ -38,10 +33,12 @@ describe("service editor validation", () => {
         healthTcpPort: "8080",
       }),
     ).toEqual({});
-    expect(validateServiceDraft({
-      ...valid,
-      environmentAction: "replace",
-      environment: [{ id: "env", key: "BAD-NAME", value: "secret", persisted: false }],
-    }).env).toContain("환경변수");
+    expect(
+      validateServiceDraft({
+        ...valid,
+        environmentAction: "replace",
+        environment: [{ id: "env", key: "BAD-NAME", value: "secret", persisted: false }],
+      }).env,
+    ).toContain("환경변수");
   });
 });

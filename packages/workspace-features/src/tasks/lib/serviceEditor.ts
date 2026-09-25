@@ -51,9 +51,7 @@ export function draftFromService(service: Job): ServiceDraft {
     healthTcpEnabled,
     healthTcpAddress: service.healthTcpAddress ?? "127.0.0.1",
     healthTcpPort: service.healthTcpPort === null ? "" : String(service.healthTcpPort),
-    environment: service.envConfigured
-      ? [{ id: "persisted", key: "", value: "", persisted: true }]
-      : [],
+    environment: service.envConfigured ? [{ id: "persisted", key: "", value: "", persisted: true }] : [],
     environmentAction: "keep",
   };
 }
@@ -153,7 +151,8 @@ export function serviceFieldErrorFromBackend(message: string): ServiceFieldError
   const normalized = message.toLowerCase();
   if (normalized.includes("health_tcp_address")) return { healthTcpAddress: "TCP 헬스체크 주소가 올바르지 않습니다." };
   if (normalized.includes("health_tcp_port")) return { healthTcpPort: "TCP 헬스체크 포트가 올바르지 않습니다." };
-  if (normalized.includes("environment") || normalized.includes("dpapi")) return { env: "환경변수를 안전하게 저장하지 못했습니다." };
+  if (normalized.includes("environment") || normalized.includes("dpapi"))
+    return { env: "환경변수를 안전하게 저장하지 못했습니다." };
   if (normalized.includes("target_distro")) return { targetDistro: "WSL 대상 배포판이 올바르지 않습니다." };
   if (normalized.includes("command")) return { command: "실행 명령이 올바르지 않습니다." };
   if (normalized.includes("name")) return { name: "서비스 이름이 올바르지 않습니다." };

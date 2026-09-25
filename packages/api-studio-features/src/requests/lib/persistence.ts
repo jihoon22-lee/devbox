@@ -7,20 +7,11 @@ import type {
   PersistedHistoryRequest,
   RequestTemplate,
 } from "../types";
-import {
-  isHeaderEnabled,
-  isRequestHeader,
-  normalizeHeaders,
-} from "./headers";
+import { isHeaderEnabled, isRequestHeader, normalizeHeaders } from "./headers";
 import { isRequestCookie, normalizeCookies } from "./cookies";
 import { isExactVariableReference } from "./references";
 import { maskGraphqlQueryLiterals } from "./graphql";
-import {
-  isMultipartPart,
-  MAX_MULTIPART_PARTS,
-  normalizeMultipartParts,
-  safeMultipartFileName,
-} from "./multipart";
+import { isMultipartPart, MAX_MULTIPART_PARTS, normalizeMultipartParts, safeMultipartFileName } from "./multipart";
 
 export const REDACTED = "[REDACTED]";
 export const HISTORY_V1_LS_KEY = "apip-history";
@@ -45,8 +36,10 @@ export type PersistenceSanitizer = (serialized: string) => Promise<string>;
 export const MAX_HISTORY_METHOD_CHARS = 32;
 export const MAX_HISTORY_ID_CHARS = 256;
 export const MAX_HISTORY_DISPLAY_CHARS = 512;
-const HISTORY_KNOWN_TOKEN = /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/iu;
-const HISTORY_KNOWN_TOKEN_GLOBAL = /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/giu;
+const HISTORY_KNOWN_TOKEN =
+  /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/iu;
+const HISTORY_KNOWN_TOKEN_GLOBAL =
+  /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/giu;
 const SAFE_HISTORY_METHOD = /^[A-Z][A-Z0-9!#$%&'*+.^_`|~-]{0,31}$/u;
 
 export interface HistoryVisibleMetadata {
@@ -67,19 +60,17 @@ function boundHistoryText(value: string, maxChars = MAX_HISTORY_DISPLAY_CHARS): 
     .replace(HISTORY_KNOWN_TOKEN_GLOBAL, REDACTED)
     .trim();
   const characters = Array.from(normalized);
-  return characters.length <= maxChars
-    ? normalized
-    : `${characters.slice(0, maxChars).join("")}…`;
+  return characters.length <= maxChars ? normalized : `${characters.slice(0, maxChars).join("")}…`;
 }
 
 function safeHistoryMethod(value: string): string {
   const normalized = value.trim().toUpperCase();
   if (
-    !normalized
-    || Array.from(normalized).length > MAX_HISTORY_METHOD_CHARS
-    || hasHistoryControl(normalized)
-    || HISTORY_KNOWN_TOKEN.test(normalized)
-    || !SAFE_HISTORY_METHOD.test(normalized)
+    !normalized ||
+    Array.from(normalized).length > MAX_HISTORY_METHOD_CHARS ||
+    hasHistoryControl(normalized) ||
+    HISTORY_KNOWN_TOKEN.test(normalized) ||
+    !SAFE_HISTORY_METHOD.test(normalized)
   ) {
     return "UNKNOWN";
   }
@@ -92,9 +83,7 @@ function safeHistoryId(value: string, index: number): string {
 }
 
 function safeHistoryStatus(value: number | undefined): number | undefined {
-  return value !== undefined && Number.isSafeInteger(value) && value >= 100 && value <= 599
-    ? value
-    : undefined;
+  return value !== undefined && Number.isSafeInteger(value) && value >= 100 && value <= 599 ? value : undefined;
 }
 
 /**
@@ -176,15 +165,16 @@ export async function saveHistoryStore(
   const original = JSON.stringify(store);
   const sanitized = await sanitize(original);
   const parsedCandidate = parseHistoryStore(sanitized);
-  const parsed = parsedCandidate && sanitized !== original
-    ? {
-        ...parsedCandidate,
-        history: parsedCandidate.history.map((item) => ({
-          ...item,
-          request: { ...item.request, requiresSecretReview: true },
-        })),
-      }
-    : parsedCandidate;
+  const parsed =
+    parsedCandidate && sanitized !== original
+      ? {
+          ...parsedCandidate,
+          history: parsedCandidate.history.map((item) => ({
+            ...item,
+            request: { ...item.request, requiresSecretReview: true },
+          })),
+        }
+      : parsedCandidate;
   if (!parsed) throw new Error("안전한 History 형식이 아닙니다");
   storage.setItem(HISTORY_V2_LS_KEY, JSON.stringify(parsed));
   const readBack = parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY));
@@ -221,18 +211,14 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     ...cookie,
     value: mark(
       cookie.value,
-      cookie.value && !isExactVariableReference(cookie.value)
-        ? REDACTED
-        : redactKnownTokenPatterns(cookie.value),
+      cookie.value && !isExactVariableReference(cookie.value) ? REDACTED : redactKnownTokenPatterns(cookie.value),
     ),
   }));
   const params = request.params.map((param) => sanitizePair(param, mark));
   const url = mark(request.url, sanitizeUrl(request.url));
   const body = mark(
     request.body,
-    ["multipart", "graphql"].includes(request.body_kind)
-      ? ""
-      : sanitizeBody(request.body, request.body_kind),
+    ["multipart", "graphql"].includes(request.body_kind) ? "" : sanitizeBody(request.body, request.body_kind),
   );
   const sourceMultipart = request.multipart ?? [];
   if (sourceMultipart.length > MAX_MULTIPART_PARTS) requiresSecretReview = true;
@@ -240,9 +226,8 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     sanitizeMultipartPart(part, sourceMultipart[index] ?? part, mark),
   );
   const auth = request.auth ? sanitizeAuth(request.auth, mark) : null;
-  const graphql = request.body_kind === "graphql" && request.graphql
-    ? sanitizeGraphqlRequest(request.graphql, mark)
-    : undefined;
+  const graphql =
+    request.body_kind === "graphql" && request.graphql ? sanitizeGraphqlRequest(request.graphql, mark) : undefined;
 
   return {
     method: request.method,
@@ -273,9 +258,7 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
   };
 }
 
-export function normalizePersistedRequest(
-  request: PersistedHistoryRequest,
-): PersistedHistoryRequest {
+export function normalizePersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {
   // Rebuild the allowlisted wire shape instead of spreading an object parsed from
   // localStorage. This drops hand-edited/legacy fields before an export or a new save.
   return {
@@ -325,21 +308,14 @@ export function containsReference(value: string): boolean {
   return /\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\}/.test(value);
 }
 
-function sanitizePair(
-  pair: KeyValue,
-  mark: (original: string, sanitized: string) => string,
-): KeyValue {
+function sanitizePair(pair: KeyValue, mark: (original: string, sanitized: string) => string): KeyValue {
   const sensitive = isSensitiveName(pair.key);
-  const value = sensitive && pair.value && !isExactVariableReference(pair.value)
-    ? REDACTED
-    : redactKnownTokenPatterns(pair.value);
+  const value =
+    sensitive && pair.value && !isExactVariableReference(pair.value) ? REDACTED : redactKnownTokenPatterns(pair.value);
   return { key: pair.key, value: mark(pair.value, value) };
 }
 
-function sanitizeAuth(
-  auth: AuthConfig,
-  mark: (original: string, sanitized: string) => string,
-): AuthConfig {
+function sanitizeAuth(auth: AuthConfig, mark: (original: string, sanitized: string) => string): AuthConfig {
   const secretField = (value: string) =>
     mark(value, value && !isExactVariableReference(value) ? REDACTED : redactKnownTokenPatterns(value));
   return {
@@ -366,9 +342,12 @@ function sanitizeMultipartPart(
       file_name: mark(original.file_name, redactKnownTokenPatterns(safeName)),
     };
   }
-  const safeValue = isSensitiveName(part.name) && part.value
-    ? isExactVariableReference(part.value) ? part.value : REDACTED
-    : redactKnownTokenPatterns(part.value);
+  const safeValue =
+    isSensitiveName(part.name) && part.value
+      ? isExactVariableReference(part.value)
+        ? part.value
+        : REDACTED
+      : redactKnownTokenPatterns(part.value);
   mark(original.file_path, "");
   mark(original.file_name, "");
   return {
@@ -495,10 +474,8 @@ function redactKnownTokenPatterns(value: string): string {
 }
 
 function redactMalformedJsonFields(value: string): string {
-  return value.replace(
-    /"([^"]+)"\s*:\s*"([^"]*)"/g,
-    (match, key: string, raw: string) =>
-      isSensitiveName(key) && !isExactVariableReference(raw) ? match.replace(raw, REDACTED) : match,
+  return value.replace(/"([^"]+)"\s*:\s*"([^"]*)"/g, (match, key: string, raw: string) =>
+    isSensitiveName(key) && !isExactVariableReference(raw) ? match.replace(raw, REDACTED) : match,
   );
 }
 
@@ -536,8 +513,7 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     typeof request.url === "string" &&
     Array.isArray(request.headers) &&
     request.headers.every(isRequestHeader) &&
-    (request.cookies === undefined ||
-      (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
+    (request.cookies === undefined || (Array.isArray(request.cookies) && request.cookies.every(isRequestCookie))) &&
     (request.multipart === undefined ||
       (Array.isArray(request.multipart) && request.multipart.every(isMultipartPart))) &&
     Array.isArray(request.params) &&
@@ -553,9 +529,11 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
 function isGraphqlRequest(value: unknown): value is GraphqlRequest {
   if (!value || typeof value !== "object") return false;
   const request = value as Partial<GraphqlRequest>;
-  return typeof request.query === "string"
-    && typeof request.variables === "string"
-    && typeof request.operation_name === "string";
+  return (
+    typeof request.query === "string" &&
+    typeof request.variables === "string" &&
+    typeof request.operation_name === "string"
+  );
 }
 
 function isKeyValue(value: unknown): value is KeyValue {

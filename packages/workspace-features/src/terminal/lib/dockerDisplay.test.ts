@@ -18,17 +18,13 @@ describe("dockerDisplayState", () => {
 
 describe("compactDockerPorts", () => {
   it("prioritizes published and target ports without host addresses", () => {
-    expect(compactDockerPorts("127.0.0.1:8080->80/tcp, 0.0.0.0:5432->5432/tcp")).toBe(
-      "8080→80/tcp, 5432→5432/tcp",
-    );
+    expect(compactDockerPorts("127.0.0.1:8080->80/tcp, 0.0.0.0:5432->5432/tcp")).toBe("8080→80/tcp, 5432→5432/tcp");
   });
 
   it("deduplicates IPv4 and IPv6 bindings and counts additional mappings", () => {
-    expect(
-      compactDockerPorts(
-        "0.0.0.0:8080->80/tcp, :::8080->80/tcp, 0.0.0.0:8443->443/tcp, 53/udp",
-      ),
-    ).toBe("8080→80/tcp, 8443→443/tcp +1");
+    expect(compactDockerPorts("0.0.0.0:8080->80/tcp, :::8080->80/tcp, 0.0.0.0:8443->443/tcp, 53/udp")).toBe(
+      "8080→80/tcp, 8443→443/tcp +1",
+    );
   });
 
   it("keeps exposed-only ports and represents an empty source", () => {

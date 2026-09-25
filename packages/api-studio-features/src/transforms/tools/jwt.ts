@@ -96,12 +96,7 @@ export interface ParsedJwt {
   temporalClaims: JwtTemporalClaim[];
 }
 
-export type JwtVerificationStatus =
-  | "unverified"
-  | "verified"
-  | "invalid_signature"
-  | "invalid_claims"
-  | "error";
+export type JwtVerificationStatus = "unverified" | "verified" | "invalid_signature" | "invalid_claims" | "error";
 
 export interface JwtDisplayOptions {
   status?: JwtVerificationStatus;
@@ -172,9 +167,9 @@ function base64UrlValue(character: string): number {
 /** Decode only unpadded RFC 4648 base64url and reject non-zero pad bits. */
 export function decodeBase64Url(value: string, allowEmpty = false): Uint8Array {
   if (
-    typeof value !== "string"
-    || utf8ByteLength(value) > JWT_LIMITS.maxKeyTextBytes
-    || (!allowEmpty && value.length === 0)
+    typeof value !== "string" ||
+    utf8ByteLength(value) > JWT_LIMITS.maxKeyTextBytes ||
+    (!allowEmpty && value.length === 0)
   ) {
     throw error("invalid_base64url");
   }
@@ -213,11 +208,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 function decodeBase64(value: string): Uint8Array {
-  if (
-    value.length === 0
-    || value.length % 4 !== 0
-    || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)
-  ) {
+  if (value.length === 0 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) {
     throw error("invalid_base64");
   }
   try {
@@ -331,9 +322,9 @@ function nodeToValue(node: Node, depth: number, stats: JsonStats): unknown {
       return node.value;
     case "number":
       if (
-        typeof node.value !== "number"
-        || !Number.isFinite(node.value)
-        || (Number.isInteger(node.value) && !Number.isSafeInteger(node.value))
+        typeof node.value !== "number" ||
+        !Number.isFinite(node.value) ||
+        (Number.isInteger(node.value) && !Number.isSafeInteger(node.value))
       ) {
         throw error("invalid_json");
       }
@@ -379,19 +370,19 @@ function validateHeader(header: Record<string, unknown>): JwtAlgorithm {
   const critical = header.crit;
   if (critical !== undefined) {
     if (
-      !Array.isArray(critical)
-      || critical.length > 8
-      || critical.some((name) => typeof name !== "string" || name.length === 0)
+      !Array.isArray(critical) ||
+      critical.length > 8 ||
+      critical.some((name) => typeof name !== "string" || name.length === 0)
     ) {
       throw error("invalid_header");
     }
     const seen = new Set<string>();
     for (const name of critical) {
       if (
-        seen.has(name)
-        || name === "crit"
-        || !CRITICAL_HEADER_NAMES.has(name)
-        || !Object.prototype.hasOwnProperty.call(header, name)
+        seen.has(name) ||
+        name === "crit" ||
+        !CRITICAL_HEADER_NAMES.has(name) ||
+        !Object.prototype.hasOwnProperty.call(header, name)
       ) {
         throw error("invalid_header");
       }
@@ -423,9 +414,7 @@ function temporalClaims(payload: unknown): JwtTemporalClaim[] {
   if (!isObject(payload)) return [];
   return TEMPORAL_CLAIMS.filter((name) => Object.prototype.hasOwnProperty.call(payload, name)).map((name) => {
     const value = payload[name];
-    const valid = typeof value === "number"
-      && Number.isFinite(value)
-      && Math.abs(value) <= 8_640_000_000_000;
+    const valid = typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 8_640_000_000_000;
     let iso8601: string | null = null;
     if (valid) {
       try {
@@ -444,16 +433,12 @@ function temporalClaims(payload: unknown): JwtTemporalClaim[] {
   });
 }
 
-function registeredClaimValues(payload: unknown): Partial<Record<typeof TEMPORAL_CLAIMS[number], number>> {
+function registeredClaimValues(payload: unknown): Partial<Record<(typeof TEMPORAL_CLAIMS)[number], number>> {
   if (!isObject(payload)) return {};
-  const result: Partial<Record<typeof TEMPORAL_CLAIMS[number], number>> = {};
+  const result: Partial<Record<(typeof TEMPORAL_CLAIMS)[number], number>> = {};
   for (const name of TEMPORAL_CLAIMS) {
     const value = payload[name];
-    if (
-      typeof value !== "number"
-      || !Number.isFinite(value)
-      || Math.abs(value) > 8_640_000_000_000
-    ) {
+    if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) > 8_640_000_000_000) {
       if (Object.prototype.hasOwnProperty.call(payload, name)) throw error("invalid_claims");
       continue;
     }
@@ -478,9 +463,10 @@ export function validateJwtTimes(
   }
   const values = registeredClaimValues(payload);
   const claims = temporalClaims(payload);
-  const valid = (values.exp === undefined || nowSeconds <= values.exp + clockSkewSeconds)
-    && (values.nbf === undefined || nowSeconds + clockSkewSeconds >= values.nbf)
-    && (values.iat === undefined || values.iat <= nowSeconds + clockSkewSeconds);
+  const valid =
+    (values.exp === undefined || nowSeconds <= values.exp + clockSkewSeconds) &&
+    (values.nbf === undefined || nowSeconds + clockSkewSeconds >= values.nbf) &&
+    (values.iat === undefined || values.iat <= nowSeconds + clockSkewSeconds);
   return { valid, claims };
 }
 
@@ -500,8 +486,8 @@ export function parseJwt(input: string): ParsedJwt {
   const parsedPayload = parseBoundedJson(payloadBytes);
   const signatureBytes = decodeSegment(signatureSegment);
   if (
-    signatureBytes.length !== ALGORITHM_TAG_LENGTH[algorithm]
-    || utf8ByteLength(signatureSegment) > JWT_LIMITS.maxSignatureTextBytes
+    signatureBytes.length !== ALGORITHM_TAG_LENGTH[algorithm] ||
+    utf8ByteLength(signatureSegment) > JWT_LIMITS.maxSignatureTextBytes
   ) {
     throw error("invalid_signature");
   }
@@ -542,10 +528,7 @@ export function formatJwtDisplay(parsed: ParsedJwt, options: JwtDisplayOptions =
     temporalClaims: parsed.temporalClaims,
   };
   if (options.verifiedAtSeconds !== undefined) {
-    if (
-      !Number.isFinite(options.verifiedAtSeconds)
-      || Math.abs(options.verifiedAtSeconds) > 8_640_000_000_000
-    ) {
+    if (!Number.isFinite(options.verifiedAtSeconds) || Math.abs(options.verifiedAtSeconds) > 8_640_000_000_000) {
       throw error("invalid_claims");
     }
     try {
@@ -576,10 +559,10 @@ function validateNativeRequest(request: JwtVerifyRequest): {
 } {
   const algorithm = parseAlgorithm(request.algorithm);
   if (
-    typeof request.signingInput !== "string"
-    || request.signingInput.length === 0
-    || utf8ByteLength(request.signingInput) > JWT_LIMITS.maxTokenBytes
-    || !/^[\x21-\x7e]+\.[\x21-\x7e]+$/.test(request.signingInput)
+    typeof request.signingInput !== "string" ||
+    request.signingInput.length === 0 ||
+    utf8ByteLength(request.signingInput) > JWT_LIMITS.maxTokenBytes ||
+    !/^[\x21-\x7e]+\.[\x21-\x7e]+$/.test(request.signingInput)
   ) {
     throw error("invalid_structure");
   }

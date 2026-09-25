@@ -42,11 +42,7 @@ class MemoryStorage implements Storage {
 }
 
 const toolIds = new Set(["json-format", "byte-codec", "jwt"]);
-const transformerIds = new Set([
-  "json-format",
-  "base64-decode",
-  "json-to-typescript",
-]);
+const transformerIds = new Set(["json-format", "base64-decode", "json-to-typescript"]);
 
 describe("workflow metadata persistence (#342)", () => {
   it("stores only bounded IDs and timestamps, dropping raw fields and unknown entries", () => {
@@ -159,32 +155,16 @@ describe("workflow metadata persistence (#342)", () => {
     };
 
     expect(sanitizeWorkflowMetadata(raw, { toolIds, transformerIds }).pipelines).toEqual([]);
-    expect(upsertPipeline(
+    expect(upsertPipeline(emptyMetadata(), "pipeline-1", "text", [{ transformerId: "json-format" }], 1)).toEqual(
       emptyMetadata(),
-      "pipeline-1",
-      "text",
-      [{ transformerId: "json-format" }],
-      1,
-    )).toEqual(emptyMetadata());
-    expect(() => upsertPipeline(
-      emptyMetadata(),
-      "pipeline-1",
-      "text",
-      [null as never],
-      1,
-    )).not.toThrow();
+    );
+    expect(() => upsertPipeline(emptyMetadata(), "pipeline-1", "text", [null as never], 1)).not.toThrow();
   });
 
   it("does not overwrite an unrelated pipeline when the library is full", () => {
     let metadata = emptyMetadata();
     for (let index = 1; index <= WORKFLOW_STORAGE_LIMITS.maxPipelines; index += 1) {
-      metadata = upsertPipeline(
-        metadata,
-        `pipeline-${index}`,
-        "base64",
-        [{ transformerId: "base64-decode" }],
-        index,
-      );
+      metadata = upsertPipeline(metadata, `pipeline-${index}`, "base64", [{ transformerId: "base64-decode" }], index);
     }
 
     expect(metadata.pipelines).toHaveLength(WORKFLOW_STORAGE_LIMITS.maxPipelines);
@@ -196,13 +176,7 @@ describe("workflow metadata persistence (#342)", () => {
     const storage = new MemoryStorage();
     const persistence = createWorkflowPersistence({ storage, toolIds, transformerIds });
     let metadata = emptyMetadata();
-    metadata = upsertPipeline(
-      metadata,
-      "pipeline-1",
-      "base64",
-      [{ transformerId: "base64-decode" }],
-      42,
-    );
+    metadata = upsertPipeline(metadata, "pipeline-1", "base64", [{ transformerId: "base64-decode" }], 42);
 
     await persistence.save(metadata);
     const restarted = await createWorkflowPersistence({ storage, toolIds, transformerIds }).load();

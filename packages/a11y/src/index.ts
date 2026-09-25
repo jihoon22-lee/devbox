@@ -27,10 +27,7 @@ const FOCUSABLE_SELECTOR = [
 
 export function isImeComposing(event: CompositionAwareKeyboardEvent): boolean {
   return Boolean(
-    event.isComposing
-      || event.nativeEvent?.isComposing
-      || event.keyCode === 229
-      || event.nativeEvent?.keyCode === 229,
+    event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229 || event.nativeEvent?.keyCode === 229,
   );
 }
 
@@ -40,11 +37,7 @@ export function isKeyboardActivation(event: CompositionAwareKeyboardEvent): bool
 
 export function focusableElements(root: ParentNode): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
-    if (
-      element.hidden
-      || element.matches(":disabled")
-      || element.getAttribute("aria-hidden") === "true"
-    ) return false;
+    if (element.hidden || element.matches(":disabled") || element.getAttribute("aria-hidden") === "true") return false;
     if (element.closest("[hidden], [aria-hidden='true'], [inert]")) return false;
     const view = element.ownerDocument.defaultView;
     if (!view) return false;
@@ -54,7 +47,7 @@ export function focusableElements(root: ParentNode): HTMLElement[] {
       const style = view.getComputedStyle(parent);
       if (style.display === "none" || style.contentVisibility === "hidden") return false;
       if (parent.tagName === "DETAILS" && !parent.hasAttribute("open")) {
-        const summary = Array.from(parent.children).find(child => child.tagName === "SUMMARY");
+        const summary = Array.from(parent.children).find((child) => child.tagName === "SUMMARY");
         if (!summary?.contains(element)) return false;
       }
     }
@@ -64,15 +57,22 @@ export function focusableElements(root: ParentNode): HTMLElement[] {
 
 /** Sequential keyboard navigation excludes negative tabindex and follows positive tabindex order. */
 export function tabbableElements(root: ParentNode): HTMLElement[] {
-  const tabIndex = (element: HTMLElement) => !element.hasAttribute("tabindex") && element.matches("[contenteditable='true']") ? 0 : element.tabIndex;
-  const eligible = focusableElements(root).filter(element => tabIndex(element) >= 0);
-  return eligible.filter(element => {
-    if (!element.matches("input[type='radio']") || !(element as HTMLInputElement).name) return true;
-    const radio = element as HTMLInputElement;
-    const group = focusableElements(element.ownerDocument).filter(candidate => candidate.matches("input[type='radio']")
-      && (candidate as HTMLInputElement).name === radio.name && (candidate as HTMLInputElement).form === radio.form) as HTMLInputElement[];
-    return (group.find(candidate => candidate.checked) ?? group[0]) === radio;
-  }).sort((a, b) => (tabIndex(a) > 0 ? tabIndex(a) : Infinity) - (tabIndex(b) > 0 ? tabIndex(b) : Infinity));
+  const tabIndex = (element: HTMLElement) =>
+    !element.hasAttribute("tabindex") && element.matches("[contenteditable='true']") ? 0 : element.tabIndex;
+  const eligible = focusableElements(root).filter((element) => tabIndex(element) >= 0);
+  return eligible
+    .filter((element) => {
+      if (!element.matches("input[type='radio']") || !(element as HTMLInputElement).name) return true;
+      const radio = element as HTMLInputElement;
+      const group = focusableElements(element.ownerDocument).filter(
+        (candidate) =>
+          candidate.matches("input[type='radio']") &&
+          (candidate as HTMLInputElement).name === radio.name &&
+          (candidate as HTMLInputElement).form === radio.form,
+      ) as HTMLInputElement[];
+      return (group.find((candidate) => candidate.checked) ?? group[0]) === radio;
+    })
+    .sort((a, b) => (tabIndex(a) > 0 ? tabIndex(a) : Infinity) - (tabIndex(b) > 0 ? tabIndex(b) : Infinity));
 }
 
 export function focusFirst(root: ParentNode): HTMLElement | null {
@@ -81,11 +81,7 @@ export function focusFirst(root: ParentNode): HTMLElement | null {
   return target;
 }
 
-export function trapDialogKeyDown(
-  event: DialogKeyboardEvent,
-  root: ParentNode,
-  onEscape?: () => void,
-): boolean {
+export function trapDialogKeyDown(event: DialogKeyboardEvent, root: ParentNode, onEscape?: () => void): boolean {
   if (isImeComposing(event)) return false;
 
   if (event.key === "Escape" && onEscape) {

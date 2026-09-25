@@ -10,11 +10,7 @@ import {
   recoverInstalledLsp,
   uninstallLsp,
 } from "../api";
-import type {
-  ManagedInstallState,
-  ManagedInstallStatus,
-  ManagedServerManifest,
-} from "../types";
+import type { ManagedInstallState, ManagedInstallStatus, ManagedServerManifest } from "../types";
 
 type PendingAction = {
   kind: "install" | "import" | "uninstall";
@@ -31,9 +27,12 @@ type RuntimeMetadata = {
 
 function statusLabel(state: ManagedInstallState): string {
   switch (state) {
-    case "installed": return "설치됨";
-    case "needs_reinstall": return "재설치 필요";
-    default: return "미설치";
+    case "installed":
+      return "설치됨";
+    case "needs_reinstall":
+      return "재설치 필요";
+    default:
+      return "미설치";
   }
 }
 
@@ -52,10 +51,14 @@ function displayRuntime(runtime: RuntimeMetadata): string {
 
 function displayInstallSource(source: "network" | "archive_cache" | "local_archive" | "unknown"): string {
   switch (source) {
-    case "network": return "network";
-    case "archive_cache": return "archive cache";
-    case "local_archive": return "local archive";
-    default: return "legacy/unknown";
+    case "network":
+      return "network";
+    case "archive_cache":
+      return "archive cache";
+    case "local_archive":
+      return "local archive";
+    default:
+      return "legacy/unknown";
   }
 }
 
@@ -79,33 +82,36 @@ function metadataFor(
   const catalogIsAuthority = kind !== "uninstall";
   const installSource = indexed?.install_source ?? "unknown";
   return {
-    sourceUrl: (catalogIsAuthority ? manifest?.source_url : indexed?.source_url)
-      ?? indexed?.source_url
-      ?? manifest?.source_url
-      ?? "카탈로그 없음",
-    license: (catalogIsAuthority ? manifest?.license : indexed?.license)
-      ?? indexed?.license
-      ?? manifest?.license
-      ?? "카탈로그 없음",
-    artifactUrl: (catalogIsAuthority ? manifest?.artifact.url : indexed?.artifact_url)
-      ?? indexed?.artifact_url
-      ?? manifest?.artifact.url
-      ?? "카탈로그 없음",
-    sha256: (catalogIsAuthority ? manifest?.artifact.sha256 : indexed?.sha256)
-      ?? indexed?.sha256
-      ?? manifest?.artifact.sha256
-      ?? "카탈로그 없음",
+    sourceUrl:
+      (catalogIsAuthority ? manifest?.source_url : indexed?.source_url) ??
+      indexed?.source_url ??
+      manifest?.source_url ??
+      "카탈로그 없음",
+    license:
+      (catalogIsAuthority ? manifest?.license : indexed?.license) ??
+      indexed?.license ??
+      manifest?.license ??
+      "카탈로그 없음",
+    artifactUrl:
+      (catalogIsAuthority ? manifest?.artifact.url : indexed?.artifact_url) ??
+      indexed?.artifact_url ??
+      manifest?.artifact.url ??
+      "카탈로그 없음",
+    sha256:
+      (catalogIsAuthority ? manifest?.artifact.sha256 : indexed?.sha256) ??
+      indexed?.sha256 ??
+      manifest?.artifact.sha256 ??
+      "카탈로그 없음",
     size: manifest?.artifact.size_bytes ?? null,
-    runtime: indexed && !catalogIsAuthority
-      ? displayRuntime(indexed.runtime)
-      : manifest
-        ? displayRuntime(manifest.runtime)
-        : indexed
-          ? displayRuntime(indexed.runtime)
-          : "카탈로그 없음",
-    installSource: catalogIsAuthority
-      ? "사용자 확인 후 검증"
-      : displayInstallSource(installSource),
+    runtime:
+      indexed && !catalogIsAuthority
+        ? displayRuntime(indexed.runtime)
+        : manifest
+          ? displayRuntime(manifest.runtime)
+          : indexed
+            ? displayRuntime(indexed.runtime)
+            : "카탈로그 없음",
+    installSource: catalogIsAuthority ? "사용자 확인 후 검증" : displayInstallSource(installSource),
     lastVerifiedAt: indexed?.last_verified_at ?? "확인 기록 없음",
   };
 }
@@ -155,31 +161,62 @@ function ManagedInstallCard({
       <div className="lsp-installer-card-head">
         <div>
           <strong>{status.manifest_id}</strong>
-          <span>{status.version} · {status.platform}</span>
+          <span>
+            {status.version} · {status.platform}
+          </span>
         </div>
         <span className={`lsp-state ${status.state}`}>{statusLabel(status.state)}</span>
       </div>
       <dl className="lsp-installer-metadata">
-        <div><dt>Source</dt><dd>{metadata.sourceUrl}</dd></div>
-        <div><dt>License</dt><dd>{metadata.license}</dd></div>
-        <div><dt>Artifact</dt><dd>{metadata.artifactUrl}</dd></div>
-        <div><dt>SHA-256</dt><dd className="lsp-installer-digest">{metadata.sha256}</dd></div>
-        <div><dt>Size</dt><dd>{formatSize(manifest?.artifact.size_bytes ?? null)}</dd></div>
-        <div><dt>Runtime</dt><dd>{metadata.runtime}</dd></div>
-        <div><dt>설치 source</dt><dd>{metadata.installSource}</dd></div>
-        <div><dt>마지막 검증</dt><dd>{metadata.lastVerifiedAt}</dd></div>
+        <div>
+          <dt>Source</dt>
+          <dd>{metadata.sourceUrl}</dd>
+        </div>
+        <div>
+          <dt>License</dt>
+          <dd>{metadata.license}</dd>
+        </div>
+        <div>
+          <dt>Artifact</dt>
+          <dd>{metadata.artifactUrl}</dd>
+        </div>
+        <div>
+          <dt>SHA-256</dt>
+          <dd className="lsp-installer-digest">{metadata.sha256}</dd>
+        </div>
+        <div>
+          <dt>Size</dt>
+          <dd>{formatSize(manifest?.artifact.size_bytes ?? null)}</dd>
+        </div>
+        <div>
+          <dt>Runtime</dt>
+          <dd>{metadata.runtime}</dd>
+        </div>
+        <div>
+          <dt>설치 source</dt>
+          <dd>{metadata.installSource}</dd>
+        </div>
+        <div>
+          <dt>마지막 검증</dt>
+          <dd>{metadata.lastVerifiedAt}</dd>
+        </div>
       </dl>
       {status.archive_cached && status.state !== "installed" && (
         <p className="lsp-cache-state">검증된 archive cache를 오프라인에서 사용할 수 있습니다.</p>
       )}
       {!knownManifest && (
-        <p className="lsp-warning">이 버전은 현재 검토된 catalog에 없습니다. 설치는 할 수 없고, indexed key를 확인한 뒤 제거만 할 수 있습니다.</p>
+        <p className="lsp-warning">
+          이 버전은 현재 검토된 catalog에 없습니다. 설치는 할 수 없고, indexed key를 확인한 뒤 제거만 할 수 있습니다.
+        </p>
       )}
       {status.state === "needs_reinstall" && (
         <p className="lsp-warning">설치된 파일 또는 metadata 검증에 실패했습니다. 제거한 뒤 다시 설치하세요.</p>
       )}
       {knownManifest && manifest.runtime.kind === "node" && status.state === "not_installed" && (
-        <p className="lsp-warning">Node 서버는 reviewed dependency closure 전체의 .tgz archive를 여러 개 선택해야 합니다. 각 archive는 native reviewed lock과 대조되며 cache와 결합할 수 있습니다.</p>
+        <p className="lsp-warning">
+          Node 서버는 reviewed dependency closure 전체의 .tgz archive를 여러 개 선택해야 합니다. 각 archive는 native
+          reviewed lock과 대조되며 cache와 결합할 수 있습니다.
+        </p>
       )}
       <div className="lsp-installer-actions">
         <button
@@ -216,10 +253,7 @@ function ManagedInstallCard({
 }
 
 interface Props {
-  onChanged?: (
-    catalog: ManagedServerManifest[],
-    statuses: ManagedInstallStatus[],
-  ) => void;
+  onChanged?: (catalog: ManagedServerManifest[], statuses: ManagedInstallStatus[]) => void;
 }
 
 export default function ManagedInstallerPanel({ onChanged }: Props) {
@@ -238,7 +272,10 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
     archiveChoicesRef.current = [];
     if (choices.length > 0) void discardLspArchives(choices).catch(() => {});
   };
-  const cancelPending = () => { releaseChoices(); setPending(null); };
+  const cancelPending = () => {
+    releaseChoices();
+    setPending(null);
+  };
   const refreshGenerationRef = useRef(0);
   const confirmationRef = useRef<HTMLElement>(null);
   // State updates do not synchronously change event-handler closures. Keep a
@@ -247,17 +284,11 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
   const operationInFlightRef = useRef(false);
 
   const statusByKey = useMemo(
-    () => new Map(statuses.map((status) => [
-      keyFor(status.manifest_id, status.version, status.platform),
-      status,
-    ])),
+    () => new Map(statuses.map((status) => [keyFor(status.manifest_id, status.version, status.platform), status])),
     [statuses],
   );
   const catalogByKey = useMemo(
-    () => new Map(catalog.map((manifest) => [
-      keyFor(manifest.id, manifest.version, manifest.platform),
-      manifest,
-    ])),
+    () => new Map(catalog.map((manifest) => [keyFor(manifest.id, manifest.version, manifest.platform), manifest])),
     [catalog],
   );
   const refresh = async () => {
@@ -287,6 +318,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     mountedRef.current = true;
     void refresh();
@@ -296,7 +328,6 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
       releaseChoices();
     };
     // The panel owns one snapshot while it is open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const runRecovery = async () => {
@@ -315,10 +346,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
     }
   };
 
-  const chooseArchive = async (
-    manifest: ManagedServerManifest,
-    status: ManagedInstallStatus,
-  ) => {
+  const chooseArchive = async (manifest: ManagedServerManifest, status: ManagedInstallStatus) => {
     if (operationInFlightRef.current) return;
     operationInFlightRef.current = true;
     const actionKey = keyFor(status.manifest_id, status.version, status.platform);
@@ -357,12 +385,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
       } else if (kind === "import" && manifest && pending.archivePaths) {
         // Confirmed import owns the choices until the native worker retires.
         archiveChoicesRef.current = [];
-        await importLspArchives(
-          manifest.id,
-          manifest.version,
-          manifest.platform,
-          pending.archivePaths,
-        );
+        await importLspArchives(manifest.id, manifest.version, manifest.platform, pending.archivePaths);
       } else {
         // The backend resolves this exact indexed key. No manifest or URL is
         // accepted from the client, which keeps orphan removal recoverable and
@@ -374,11 +397,12 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
         await refresh();
       }
     } catch {
-      const message = kind === "uninstall"
-        ? "관리형 서버를 제거하지 못했습니다."
-        : kind === "import"
-          ? "local archive를 가져오지 못했습니다."
-          : "관리형 서버를 설치하지 못했습니다.";
+      const message =
+        kind === "uninstall"
+          ? "관리형 서버를 제거하지 못했습니다."
+          : kind === "import"
+            ? "local archive를 가져오지 못했습니다."
+            : "관리형 서버를 설치하지 못했습니다.";
       if (mountedRef.current) setError(message);
     } finally {
       if (kind === "import" && pending.archivePaths) {
@@ -418,7 +442,14 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
       {error && (
         <div className="lsp-installer-error" role="alert">
           <span>{error}</span>
-          <button type="button" className="toolbar-button" disabled={loading || recoveryBusy || Boolean(busyKey)} onClick={() => void refresh()}>설치 상태 새로 고침</button>
+          <button
+            type="button"
+            className="toolbar-button"
+            disabled={loading || recoveryBusy || Boolean(busyKey)}
+            onClick={() => void refresh()}
+          >
+            설치 상태 새로 고침
+          </button>
           {recoveryAvailable && (
             <button
               type="button"
@@ -433,57 +464,66 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
       )}
 
       {loading && <p className="lsp-empty">관리형 서버 목록을 읽는 중…</p>}
-      {!loading && catalog.map((manifest) => {
-        const actionKey = keyFor(manifest.id, manifest.version, manifest.platform);
-        const status = statusByKey.get(actionKey) ?? {
-          manifest_id: manifest.id,
-          version: manifest.version,
-          platform: manifest.platform,
-          state: "not_installed" as const,
-          reason: null,
-          installed: null,
-          archive_cached: false,
-        };
-        const hasOtherVersion = statuses.some((item) => (
-          item.manifest_id === manifest.id
-          && item.platform === manifest.platform
-          && item.version !== manifest.version
-          && item.installed !== null
-        ));
-        return (
-          <ManagedInstallCard
-            key={actionKey}
-            manifest={manifest}
-            status={status}
-            hasOtherVersion={hasOtherVersion}
-            loading={loading}
-            busyKey={busyKey}
-            recoveryBusy={recoveryBusy}
-            onInstall={(nextManifest, nextStatus) => setPending({ kind: "install", manifest: nextManifest, status: nextStatus })}
-            onImport={(nextManifest, nextStatus) => void chooseArchive(nextManifest, nextStatus)}
-            onUninstall={(nextManifest, nextStatus) => setPending({ kind: "uninstall", manifest: nextManifest, status: nextStatus })}
-          />
-        );
-      })}
-      {!loading && statuses
-        .filter((status) => !catalogByKey.has(keyFor(status.manifest_id, status.version, status.platform)))
-        .map((status) => {
-          const actionKey = keyFor(status.manifest_id, status.version, status.platform);
+      {!loading &&
+        catalog.map((manifest) => {
+          const actionKey = keyFor(manifest.id, manifest.version, manifest.platform);
+          const status = statusByKey.get(actionKey) ?? {
+            manifest_id: manifest.id,
+            version: manifest.version,
+            platform: manifest.platform,
+            state: "not_installed" as const,
+            reason: null,
+            installed: null,
+            archive_cached: false,
+          };
+          const hasOtherVersion = statuses.some(
+            (item) =>
+              item.manifest_id === manifest.id &&
+              item.platform === manifest.platform &&
+              item.version !== manifest.version &&
+              item.installed !== null,
+          );
           return (
             <ManagedInstallCard
               key={actionKey}
-              manifest={null}
+              manifest={manifest}
               status={status}
-              hasOtherVersion={false}
+              hasOtherVersion={hasOtherVersion}
               loading={loading}
               busyKey={busyKey}
               recoveryBusy={recoveryBusy}
-              onInstall={() => undefined}
-              onImport={() => undefined}
-              onUninstall={(nextManifest, nextStatus) => setPending({ kind: "uninstall", manifest: nextManifest, status: nextStatus })}
+              onInstall={(nextManifest, nextStatus) =>
+                setPending({ kind: "install", manifest: nextManifest, status: nextStatus })
+              }
+              onImport={(nextManifest, nextStatus) => void chooseArchive(nextManifest, nextStatus)}
+              onUninstall={(nextManifest, nextStatus) =>
+                setPending({ kind: "uninstall", manifest: nextManifest, status: nextStatus })
+              }
             />
           );
         })}
+      {!loading &&
+        statuses
+          .filter((status) => !catalogByKey.has(keyFor(status.manifest_id, status.version, status.platform)))
+          .map((status) => {
+            const actionKey = keyFor(status.manifest_id, status.version, status.platform);
+            return (
+              <ManagedInstallCard
+                key={actionKey}
+                manifest={null}
+                status={status}
+                hasOtherVersion={false}
+                loading={loading}
+                busyKey={busyKey}
+                recoveryBusy={recoveryBusy}
+                onInstall={() => undefined}
+                onImport={() => undefined}
+                onUninstall={(nextManifest, nextStatus) =>
+                  setPending({ kind: "uninstall", manifest: nextManifest, status: nextStatus })
+                }
+              />
+            );
+          })}
 
       {pending && pendingMetadata && (
         <div className="lsp-confirmation-backdrop" role="presentation">
@@ -500,22 +540,58 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
               });
             }}
           >
-            <h4>{pending.kind === "uninstall" ? "관리형 서버 제거 확인" : pending.kind === "import" ? "local archive 가져오기 확인" : "관리형 서버 설치 확인"}</h4>
-            <p>{pending.kind === "import"
-              ? pending.manifest?.runtime.kind === "node"
-                ? "선택한 .tgz archive set은 reviewed dependency closure와 exact SHA-256·integrity가 모두 맞을 때만 app-owned cache에 복사됩니다."
-                : "선택한 archive는 아래 SHA-256과 일치할 때만 app-owned cache에 복사됩니다."
-              : "다음 metadata를 확인한 뒤 작업을 승인하세요. 제거는 정확한 indexed key에만 적용됩니다."}</p>
+            <h4>
+              {pending.kind === "uninstall"
+                ? "관리형 서버 제거 확인"
+                : pending.kind === "import"
+                  ? "local archive 가져오기 확인"
+                  : "관리형 서버 설치 확인"}
+            </h4>
+            <p>
+              {pending.kind === "import"
+                ? pending.manifest?.runtime.kind === "node"
+                  ? "선택한 .tgz archive set은 reviewed dependency closure와 exact SHA-256·integrity가 모두 맞을 때만 app-owned cache에 복사됩니다."
+                  : "선택한 archive는 아래 SHA-256과 일치할 때만 app-owned cache에 복사됩니다."
+                : "다음 metadata를 확인한 뒤 작업을 승인하세요. 제거는 정확한 indexed key에만 적용됩니다."}
+            </p>
             <dl className="lsp-confirmation-metadata">
-              <div><dt>이름 / 버전</dt><dd>{pending.status.manifest_id} · {pending.status.version}</dd></div>
-              <div><dt>Source / License</dt><dd>{pendingMetadata.sourceUrl} · {pendingMetadata.license}</dd></div>
-              <div><dt>Artifact URL</dt><dd>{pendingMetadata.artifactUrl}</dd></div>
-              <div><dt>SHA-256 / Size</dt><dd>{pendingMetadata.sha256} · {formatSize(pendingMetadata.size)}</dd></div>
-              <div><dt>Runtime</dt><dd>{pendingMetadata.runtime}</dd></div>
+              <div>
+                <dt>이름 / 버전</dt>
+                <dd>
+                  {pending.status.manifest_id} · {pending.status.version}
+                </dd>
+              </div>
+              <div>
+                <dt>Source / License</dt>
+                <dd>
+                  {pendingMetadata.sourceUrl} · {pendingMetadata.license}
+                </dd>
+              </div>
+              <div>
+                <dt>Artifact URL</dt>
+                <dd>{pendingMetadata.artifactUrl}</dd>
+              </div>
+              <div>
+                <dt>SHA-256 / Size</dt>
+                <dd>
+                  {pendingMetadata.sha256} · {formatSize(pendingMetadata.size)}
+                </dd>
+              </div>
+              <div>
+                <dt>Runtime</dt>
+                <dd>{pendingMetadata.runtime}</dd>
+              </div>
             </dl>
             <div className="lsp-confirmation-actions">
-              <button type="button" className="toolbar-button" disabled={Boolean(busyKey)} onClick={cancelPending}>취소</button>
-              <button type="button" className="toolbar-button selected" disabled={Boolean(busyKey)} onClick={() => void confirmPending()}>
+              <button type="button" className="toolbar-button" disabled={Boolean(busyKey)} onClick={cancelPending}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="toolbar-button selected"
+                disabled={Boolean(busyKey)}
+                onClick={() => void confirmPending()}
+              >
                 {pending.kind === "uninstall" ? "제거 확인" : pending.kind === "import" ? "가져오기 확인" : "설치 확인"}
               </button>
             </div>

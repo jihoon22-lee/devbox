@@ -1,11 +1,7 @@
 import { bodyPreview } from "./lib/body";
 import { isProductHosted } from "../transport";
 import { MockDraftReceiver } from "./MockDraftReceiver";
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isKeyboardActivation } from "@devbox/a11y";
 import { OPENAPI_DOCUMENT_LIMITS, type OpenApiDocumentFormat } from "@devbox/openapi";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -72,7 +68,8 @@ const STALE_RULE_MESSAGE = "선택한 규칙이 더 이상 존재하지 않습�
 const OPENAPI_FILE_FORMAT_ERROR = "OpenAPI 파일 형식을 확인하세요. .json, .yaml, .yml만 선택할 수 있습니다.";
 const OPENAPI_FILE_TOO_LARGE_ERROR = `OpenAPI 파일이 너무 큽니다. ${OPENAPI_DOCUMENT_LIMITS.maxBytes}바이트 이하 파일을 선택하세요.`;
 const OPENAPI_FILE_READ_ERROR = "OpenAPI 파일을 읽지 못했습니다. JSON 또는 YAML 파일을 확인하세요.";
-const RUN_DEFINITION_EXPORT_ERROR = "Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
+const RUN_DEFINITION_EXPORT_ERROR =
+  "Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
   "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다",
   "요청 기록을 찾을 수 없습니다",
@@ -120,7 +117,8 @@ const SAFE_ERROR_DISPLAY: Record<string, string> = {
   "replay는 데스크톱 앱에서만 사용할 수 있습니다": "재전송은 데스크톱 앱에서만 사용할 수 있습니다",
   "response sequence를 초기화하지 못했습니다": "응답 시퀀스를 초기화하지 못했습니다",
   "Webhook service profile을 만들 수 없습니다": "Webhook 서비스 프로필을 만들 수 없습니다",
-  "credential 형태의 응답이 포함된 규칙은 service profile로 내보낼 수 없습니다": "인증 정보 형태의 응답이 포함된 규칙은 서비스 프로필로 내보낼 수 없습니다",
+  "credential 형태의 응답이 포함된 규칙은 service profile로 내보낼 수 없습니다":
+    "인증 정보 형태의 응답이 포함된 규칙은 서비스 프로필로 내보낼 수 없습니다",
   "Webhook service profile 개수 제한에 도달했습니다": "Webhook 서비스 프로필 개수 제한에 도달했습니다",
 };
 
@@ -155,10 +153,8 @@ function emptySequenceStep(): ResponseSequenceStep {
 }
 
 function safeMessage(error: unknown): string {
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "string" ? error : "";
-  return SAFE_ERROR_MESSAGES.has(message) ? SAFE_ERROR_DISPLAY[message] ?? message : GENERIC_ERROR_MESSAGE;
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return SAFE_ERROR_MESSAGES.has(message) ? (SAFE_ERROR_DISPLAY[message] ?? message) : GENERIC_ERROR_MESSAGE;
 }
 
 function safeExportMessage(error: unknown): string {
@@ -193,17 +189,14 @@ function buildRuleConflictSummary(
   const candidateLabel = formatRuleLabel(candidate, candidate.id);
   const lines = conflicts.slice(0, 5).map((conflict) => {
     const existing = knownRules.find((knownRule) => knownRule.id === conflict.existingRuleId);
-    const winner = conflict.winnerRuleId === candidate.id
-      ? candidate
-      : knownRules.find((knownRule) => knownRule.id === conflict.winnerRuleId);
+    const winner =
+      conflict.winnerRuleId === candidate.id
+        ? candidate
+        : knownRules.find((knownRule) => knownRule.id === conflict.winnerRuleId);
     return `${candidateLabel} ↔ ${formatRuleLabel(existing, conflict.existingRuleId)} · 적용: ${formatRuleLabel(winner, conflict.winnerRuleId)}`;
   });
   if (conflicts.length > lines.length) lines.push(`외 ${conflicts.length - lines.length}개 충돌`);
-  return [
-    `겹치는 응답 규칙 ${conflicts.length}개가 있습니다.`,
-    ...lines,
-    "우선순위를 확인하고 저장할까요?",
-  ].join("\n");
+  return [`겹치는 응답 규칙 ${conflicts.length}개가 있습니다.`, ...lines, "우선순위를 확인하고 저장할까요?"].join("\n");
 }
 
 function openApiFormatForFileName(fileName: string): OpenApiDocumentFormat | null {
@@ -286,36 +279,42 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     if (mountedRef.current) setBusy(false);
   }, []);
 
-  const prepareHistoryContext = useCallback((target: HTMLElement) => {
-    const id = Number(target.dataset.historyId);
-    const request = history.find((candidate) => candidate.id === id);
-    if (!request) {
-      setContextHistory(null);
-      setSelectedHistoryId(null);
-      setError(STALE_HISTORY_MESSAGE);
-      return;
-    }
-    setSelectedHistoryId(request.id);
-    setContextHistory(request);
-  }, [history]);
+  const prepareHistoryContext = useCallback(
+    (target: HTMLElement) => {
+      const id = Number(target.dataset.historyId);
+      const request = history.find((candidate) => candidate.id === id);
+      if (!request) {
+        setContextHistory(null);
+        setSelectedHistoryId(null);
+        setError(STALE_HISTORY_MESSAGE);
+        return;
+      }
+      setSelectedHistoryId(request.id);
+      setContextHistory(request);
+    },
+    [history],
+  );
   const historyContextMenu = useContextMenu({
     disabled: busy,
     onBeforeOpen: (_reason, target) => prepareHistoryContext(target),
   });
   const historyContextTrigger = historyContextMenu.triggerProps;
 
-  const prepareRuleContext = useCallback((target: HTMLElement) => {
-    const id = target.dataset.ruleId;
-    const targetRule = rules.find((candidate) => candidate.id === id);
-    if (!targetRule) {
-      setContextRule(null);
-      setSelectedRuleId(null);
-      setError(STALE_RULE_MESSAGE);
-      return;
-    }
-    setSelectedRuleId(targetRule.id);
-    setContextRule(targetRule);
-  }, [rules]);
+  const prepareRuleContext = useCallback(
+    (target: HTMLElement) => {
+      const id = target.dataset.ruleId;
+      const targetRule = rules.find((candidate) => candidate.id === id);
+      if (!targetRule) {
+        setContextRule(null);
+        setSelectedRuleId(null);
+        setError(STALE_RULE_MESSAGE);
+        return;
+      }
+      setSelectedRuleId(targetRule.id);
+      setContextRule(targetRule);
+    },
+    [rules],
+  );
   const ruleContextMenu = useContextMenu({
     disabled: busy,
     onBeforeOpen: (_reason, target) => prepareRuleContext(target),
@@ -339,8 +338,9 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     }
     if (fixtureResult.status === "fulfilled") setFixtures(fixtureResult.value);
     else setFixtures([]);
-    const failure = [statusResult, historyResult, rulesResult, fixtureResult]
-      .find((result): result is PromiseRejectedResult => result.status === "rejected");
+    const failure = [statusResult, historyResult, rulesResult, fixtureResult].find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
     if (failure) setError(safeMessage(failure.reason));
   }, []);
 
@@ -364,7 +364,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     else {
       historyContextMenu.close();
       setContextHistory(null);
-      setSelectedHistoryId((selected) => selected === id ? null : selected);
+      setSelectedHistoryId((selected) => (selected === id ? null : selected));
     }
   }, [contextHistory?.id, history, historyContextMenu.close]);
 
@@ -376,12 +376,13 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     else {
       ruleContextMenu.close();
       setContextRule(null);
-      setSelectedRuleId((selected) => selected === id ? null : selected);
+      setSelectedRuleId((selected) => (selected === id ? null : selected));
     }
   }, [contextRule?.id, ruleContextMenu.close, rules]);
 
   const onStart = async () => {
-    if (lanBind && !window.confirm("LAN 공개는 외부 접근을 허용합니다. 이 컴퓨터의 다른 장치에서 요청을 받을까요?")) return;
+    if (lanBind && !window.confirm("LAN 공개는 외부 접근을 허용합니다. 이 컴퓨터의 다른 장치에서 요청을 받을까요?"))
+      return;
     if (!beginBusy()) return;
     setError(null);
     try {
@@ -462,7 +463,12 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     if (!operation || !operation.applyable) return;
     const draft = openApiOperationToRule(operation);
     if (!draft) return;
-    if (!window.confirm(`${operation.method} ${operation.path} → ${operation.status} operation을 규칙 초안으로 편집기에 채울까요?`)) return;
+    if (
+      !window.confirm(
+        `${operation.method} ${operation.path} → ${operation.status} operation을 규칙 초안으로 편집기에 채울까요?`,
+      )
+    )
+      return;
     setRuleDraft(draft);
     setOpenApiError(null);
   };
@@ -480,7 +486,9 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = isProductHosted() ? "api-studio-service-definition.json" : "webhook-lab-run-manager-definition.json";
+      link.download = isProductHosted()
+        ? "api-studio-service-definition.json"
+        : "webhook-lab-run-manager-definition.json";
       document.body.appendChild(link);
       try {
         link.click();
@@ -530,10 +538,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       if (!mountedRef.current) return;
       const candidate = { ...draft, id: preview.candidateId };
       const requiresConfirmation = preview.requiresConfirmation || preview.conflicts.length > 0;
-      if (
-        requiresConfirmation
-        && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))
-      ) {
+      if (requiresConfirmation && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))) {
         return;
       }
       await setRule(candidate, requiresConfirmation);
@@ -547,10 +552,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     }
   };
 
-  const copyHistoryText = async (
-    load: () => Promise<string>,
-    failureMessage: string,
-  ) => {
+  const copyHistoryText = async (load: () => Promise<string>, failureMessage: string) => {
     if (!beginBusy()) return;
     setError(null);
     try {
@@ -587,7 +589,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       const freshRule = freshRules.find((candidate) => candidate.id === ruleId);
       if (!freshRule) {
         setContextRule(null);
-        setSelectedRuleId((selected) => selected === ruleId ? null : selected);
+        setSelectedRuleId((selected) => (selected === ruleId ? null : selected));
         setError(STALE_RULE_MESSAGE);
         return;
       }
@@ -658,7 +660,13 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   const showReplaySuccess = (source: string, statusCode: number) => {
     if (mountedRef.current) {
       const sourceLabel = source === "history" ? "기록" : "fixture";
-      setHandoffNotice("마스킹된 " + sourceLabel + " 요청을 localhost에 재전송했습니다 (현재 로컬 listener). 응답 status: " + statusCode + ".");
+      setHandoffNotice(
+        "마스킹된 " +
+          sourceLabel +
+          " 요청을 localhost에 재전송했습니다 (현재 로컬 listener). 응답 status: " +
+          statusCode +
+          ".",
+      );
     }
   };
 
@@ -882,10 +890,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       if (!mountedRef.current) return;
       const candidate = { ...duplicate, id: preview.candidateId };
       const requiresConfirmation = preview.requiresConfirmation || preview.conflicts.length > 0;
-      if (
-        requiresConfirmation
-        && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))
-      ) {
+      if (requiresConfirmation && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))) {
         return;
       }
       await setRule(candidate, requiresConfirmation);
@@ -909,8 +914,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
 
   const ruleIssues = validateRule(rule);
   const sequence = rule.sequence ?? [];
-  const ruleIssueFor = (field: RuleValidationField) =>
-    ruleIssues.find((issue) => issue.field === field);
+  const ruleIssueFor = (field: RuleValidationField) => ruleIssues.find((issue) => issue.field === field);
   const methodIssue = ruleIssueFor("method");
   const pathIssue = ruleIssueFor("path");
   const priorityIssue = ruleIssueFor("priority");
@@ -928,7 +932,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   const updateSequenceStep = (index: number, patch: Partial<ResponseSequenceStep>) => {
     setRuleDraft({
       ...rule,
-      sequence: sequence.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step),
+      sequence: sequence.map((step, stepIndex) => (stepIndex === index ? { ...step, ...patch } : step)),
     });
   };
 
@@ -946,25 +950,16 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       return;
     }
     if (id === "copy-masked") {
-      void copyHistoryText(
-        () => copyMaskedHistory(request.id),
-        "마스킹된 요청을 복사하지 못했습니다.",
-      );
+      void copyHistoryText(() => copyMaskedHistory(request.id), "마스킹된 요청을 복사하지 못했습니다.");
     } else if (id === "copy-raw") {
       const confirmed = window.confirm(
         "원본 요청에는 Authorization, Cookie, API key 같은 민감정보가 포함될 수 있습니다. 클립보드에 한 번 복사할까요?",
       );
       if (confirmed) {
-        void copyHistoryText(
-          () => copyRawHistory(request.id),
-          "원본 요청을 안전하게 만들거나 복사하지 못했습니다.",
-        );
+        void copyHistoryText(() => copyRawHistory(request.id), "원본 요청을 안전하게 만들거나 복사하지 못했습니다.");
       }
     } else if (id === "copy-headers") {
-      void copyHistoryText(
-        () => copyHistoryHeaders(request.id),
-        "마스킹된 헤더를 복사하지 못했습니다.",
-      );
+      void copyHistoryText(() => copyHistoryHeaders(request.id), "마스킹된 헤더를 복사하지 못했습니다.");
     } else if (id === "save-fixture") {
       void onSaveFixture(request);
     } else if (id === "replay") {
@@ -993,7 +988,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     const currentRule = rules.find((candidate) => candidate.id === targetRule.id);
     if (!currentRule) {
       setContextRule(null);
-      setSelectedRuleId((selected) => selected === targetRule.id ? null : selected);
+      setSelectedRuleId((selected) => (selected === targetRule.id ? null : selected));
       setError(STALE_RULE_MESSAGE);
       return;
     }
@@ -1006,18 +1001,23 @@ export default function App({ active = true }: { active?: boolean } = {}) {
           headers: [...step.headers],
         })),
       });
-    }
-    else if (id === "duplicate") void onDuplicateRule(currentRule);
+    } else if (id === "duplicate") void onDuplicateRule(currentRule);
     else if (id === "reset-sequence") void onResetSequence(currentRule);
     else if (id === "delete") void onDeleteRule(currentRule);
   };
 
   return (
     <div className="app" aria-busy={busy}>
-      {isProductHosted() && <MockDraftReceiver active={active} disabled={busy} onApply={draft => {
-        setRuleDraft(normalizeRule(draft));
-        setHandoffNotice("전달한 결과를 규칙 초안에 적용했습니다. 경로·메서드를 확인한 뒤 규칙을 저장하세요.");
-      }} />}
+      {isProductHosted() && (
+        <MockDraftReceiver
+          active={active}
+          disabled={busy}
+          onApply={(draft) => {
+            setRuleDraft(normalizeRule(draft));
+            setHandoffNotice("전달한 결과를 규칙 초안에 적용했습니다. 경로·메서드를 확인한 뒤 규칙을 저장하세요.");
+          }}
+        />
+      )}
       <header className="toolbar">
         <h1 className="title">{isProductHosted() ? "Webhooks & Mocks" : "Webhook Lab"}</h1>
         <span className={`status ${status.running ? "ok" : "off"}`}>
@@ -1028,16 +1028,32 @@ export default function App({ active = true }: { active?: boolean } = {}) {
           <>
             <label className="field-inline">
               포트
-              <input type="number" value={port} min={1} max={65535} disabled={busy} onChange={(e) => setPort(Number(e.currentTarget.value))} />
+              <input
+                type="number"
+                value={port}
+                min={1}
+                max={65535}
+                disabled={busy}
+                onChange={(e) => setPort(Number(e.currentTarget.value))}
+              />
             </label>
             <label className="toggle">
-              <input type="checkbox" checked={lanBind} disabled={busy} onChange={(e) => setLanBind(e.currentTarget.checked)} />
+              <input
+                type="checkbox"
+                checked={lanBind}
+                disabled={busy}
+                onChange={(e) => setLanBind(e.currentTarget.checked)}
+              />
               LAN 공개 (위험)
             </label>
-            <button className="btn primary" disabled={busy} onClick={() => void onStart()}>시작</button>
+            <button className="btn primary" disabled={busy} onClick={() => void onStart()}>
+              시작
+            </button>
           </>
         ) : (
-          <button className="btn danger" disabled={busy} onClick={() => void onStop()}>중지</button>
+          <button className="btn danger" disabled={busy} onClick={() => void onStop()}>
+            중지
+          </button>
         )}
         <button
           type="button"
@@ -1051,14 +1067,23 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       </header>
 
       {lanBind && <div className="warn">LAN 공개는 명시적 설정입니다. 외부에서 접근 가능합니다.</div>}
-      {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
-      {handoffNotice && <div className="handoff-notice" role="status" aria-live="polite">{handoffNotice}</div>}
+      {error && (
+        <div className="error" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
+      {handoffNotice && (
+        <div className="handoff-notice" role="status" aria-live="polite">
+          {handoffNotice}
+        </div>
+      )}
 
       <div className="main">
         <section className="panel">
           <h2>규칙</h2>
           <p className="field-help precedence-help">
-            우선순위가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 와일드카드 순서이며 마지막에는 규칙 ID로 결정합니다.
+            우선순위가 높을수록 먼저 적용됩니다. 같으면 정확한 path, method 지정, 긴 와일드카드 순서이며 마지막에는 규칙
+            ID로 결정합니다.
           </p>
           <div className="rule-editor">
             <div className="rule-field">
@@ -1074,9 +1099,14 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                 onChange={(e) => setRuleDraft({ ...rule, method: e.currentTarget.value || null })}
               />
               <p id="rule-method-help" className="field-help">
-                대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP token, 최대 16자/16바이트입니다.
+                대소문자를 구분하지 않고 요청 method와 일치합니다. 비워두면 모든 method(*)에 적용됩니다. ASCII HTTP
+                token, 최대 16자/16바이트입니다.
               </p>
-              {methodIssue && <p id="rule-method-error" className="field-error">{methodIssue.message}</p>}
+              {methodIssue && (
+                <p id="rule-method-error" className="field-error">
+                  {methodIssue.message}
+                </p>
+              )}
             </div>
             <div className="rule-field">
               <label htmlFor="rule-path">path</label>
@@ -1090,9 +1120,14 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                 onChange={(e) => setRuleDraft({ ...rule, path: e.currentTarget.value })}
               />
               <p id="rule-path-help" className="field-help">
-                경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예: /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.
+                경로 전체가 정확히 일치합니다. 마지막 문자가 *일 때만 그 앞부분으로 시작하는 경로와 일치합니다 (예:
+                /events/* → /events/123). /로 시작하고 최대 4,096자/16,384바이트입니다.
               </p>
-              {pathIssue && <p id="rule-path-error" className="field-error">{pathIssue.message}</p>}
+              {pathIssue && (
+                <p id="rule-path-error" className="field-error">
+                  {pathIssue.message}
+                </p>
+              )}
             </div>
             <div className="rule-field">
               <label htmlFor="rule-priority">priority</label>
@@ -1110,9 +1145,14 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                 onChange={(e) => setRuleDraft({ ...rule, priority: Number(e.currentTarget.value) })}
               />
               <p id="rule-priority-help" className="field-help">
-                우선순위가 높을수록 먼저 적용됩니다 (허용 범위: {MIN_RULE_PRIORITY}~{MAX_RULE_PRIORITY}). 같은 값이면 정확한 path와 method 지정 규칙이 우선합니다.
+                우선순위가 높을수록 먼저 적용됩니다 (허용 범위: {MIN_RULE_PRIORITY}~{MAX_RULE_PRIORITY}). 같은 값이면
+                정확한 path와 method 지정 규칙이 우선합니다.
               </p>
-              {priorityIssue && <p id="rule-priority-error" className="field-error">{priorityIssue.message}</p>}
+              {priorityIssue && (
+                <p id="rule-priority-error" className="field-error">
+                  {priorityIssue.message}
+                </p>
+              )}
             </div>
             <div className="rule-field">
               <label htmlFor="rule-status">status</label>
@@ -1132,7 +1172,11 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               <p id="rule-status-help" className="field-help">
                 매칭된 요청에 돌려줄 HTTP 응답 status 코드입니다 (허용 범위: 100~599, 예: 200, 404, 500).
               </p>
-              {statusIssue && <p id="rule-status-error" className="field-error">{statusIssue.message}</p>}
+              {statusIssue && (
+                <p id="rule-status-error" className="field-error">
+                  {statusIssue.message}
+                </p>
+              )}
             </div>
             <div className="rule-field">
               <label htmlFor="rule-delay">delay (ms)</label>
@@ -1150,9 +1194,14 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                 onChange={(e) => setRuleDraft({ ...rule, delayMs: Number(e.currentTarget.value) })}
               />
               <p id="rule-delay-help" className="field-help">
-                응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~{MAX_RESPONSE_DELAY_MS}ms).
+                응답 전에 기다릴 시간(밀리초)입니다. 0이면 지연 없이 바로 응답합니다 (허용 범위: 0~
+                {MAX_RESPONSE_DELAY_MS}ms).
               </p>
-              {delayIssue && <p id="rule-delay-error" className="field-error">{delayIssue.message}</p>}
+              {delayIssue && (
+                <p id="rule-delay-error" className="field-error">
+                  {delayIssue.message}
+                </p>
+              )}
             </div>
             <div className="rule-field">
               <label htmlFor="rule-body">응답 body</label>
@@ -1166,13 +1215,23 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                 onChange={(e) => setRuleDraft({ ...rule, body: e.currentTarget.value })}
               />
               <p id="rule-body-help" className="field-help">
-                매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는 최대 256,000자/1,024,000바이트입니다.
+                매칭된 요청에 돌려줄 response body입니다. 저장된 headers와 함께 응답 규칙의 출력으로 사용됩니다. body는
+                최대 256,000자/1,024,000바이트입니다.
               </p>
               <p id="rule-headers-help" className="field-help">
-                response headers는 최대 100개이며 이름 256자/256바이트, 값 16,384자/65,536바이트, 전체 64,000자/256,000바이트입니다.
+                response headers는 최대 100개이며 이름 256자/256바이트, 값 16,384자/65,536바이트, 전체
+                64,000자/256,000바이트입니다.
               </p>
-              {bodyIssue && <p id="rule-body-error" className="field-error">{bodyIssue.message}</p>}
-              {headersIssue && <p id="rule-headers-error" className="field-error">{headersIssue.message}</p>}
+              {bodyIssue && (
+                <p id="rule-body-error" className="field-error">
+                  {bodyIssue.message}
+                </p>
+              )}
+              {headersIssue && (
+                <p id="rule-headers-error" className="field-error">
+                  {headersIssue.message}
+                </p>
+              )}
             </div>
             <div
               className="sequence-editor"
@@ -1183,7 +1242,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                 <div>
                   <h3>응답 시퀀스</h3>
                   <p id="rule-sequence-help" className="field-help">
-                    위 응답을 첫 단계로 사용한 뒤 아래 단계를 순서대로 적용합니다. 마지막 단계는 유지되며 자동 반복하지 않습니다 (최대 {MAX_RESPONSE_SEQUENCE}단계).
+                    위 응답을 첫 단계로 사용한 뒤 아래 단계를 순서대로 적용합니다. 마지막 단계는 유지되며 자동 반복하지
+                    않습니다 (최대 {MAX_RESPONSE_SEQUENCE}단계).
                   </p>
                 </div>
                 <button
@@ -1248,16 +1308,23 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                   </label>
                 </div>
               ))}
-              {sequenceIssue && <p id="rule-sequence-error" className="field-error">{sequenceIssue.message}</p>}
+              {sequenceIssue && (
+                <p id="rule-sequence-error" className="field-error">
+                  {sequenceIssue.message}
+                </p>
+              )}
             </div>
-            <button className="btn primary" disabled={busy} onClick={() => void onSaveRule()}>{rule.id ? "규칙 저장" : "규칙 추가"}</button>
+            <button className="btn primary" disabled={busy} onClick={() => void onSaveRule()}>
+              {rule.id ? "규칙 저장" : "규칙 추가"}
+            </button>
           </div>
           <section className="openapi-section" aria-labelledby="openapi-heading">
             <div className="openapi-heading">
               <div>
                 <h3 id="openapi-heading">OpenAPI → 규칙 초안</h3>
                 <p className="field-help">
-                  JSON/YAML 파일을 선택하면 안전한 operation만 미리봅니다. 선택하고 확인해야 편집기에 채워지며 자동 저장하지 않습니다.
+                  JSON/YAML 파일을 선택하면 안전한 operation만 미리봅니다. 선택하고 확인해야 편집기에 채워지며 자동
+                  저장하지 않습니다.
                 </p>
               </div>
               <div className="openapi-file-actions">
@@ -1270,25 +1337,23 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                   disabled={busy}
                   onChange={onOpenApiFileChange}
                 />
-                <button
-                  type="button"
-                  className="mini"
-                  disabled={busy}
-                  onClick={() => openApiInputRef.current?.click()}
-                >
+                <button type="button" className="mini" disabled={busy} onClick={() => openApiInputRef.current?.click()}>
                   OpenAPI 파일 선택
                 </button>
               </div>
             </div>
-            {openApiError && <p className="field-error" role="alert">{openApiError}</p>}
+            {openApiError && (
+              <p className="field-error" role="alert">
+                {openApiError}
+              </p>
+            )}
             {openApiPreview && (
               <div className="openapi-preview" aria-label="OpenAPI operation 미리보기">
                 <p className="field-help">
-                  {openApiPreview.sourceName} · OpenAPI {openApiPreview.version} · {openApiPreview.operations.length}개 operation
+                  {openApiPreview.sourceName} · OpenAPI {openApiPreview.version} · {openApiPreview.operations.length}개
+                  operation
                 </p>
-                {openApiPreview.operations.length === 0 && (
-                  <p className="dim">미리볼 operation이 없습니다.</p>
-                )}
+                {openApiPreview.operations.length === 0 && <p className="dim">미리볼 operation이 없습니다.</p>}
                 <div className="openapi-operations" role="list">
                   {openApiPreview.operations.map((operation) => (
                     <label
@@ -1305,7 +1370,9 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                         aria-label={`${operation.method} ${operation.path} (${operation.status})`}
                         onChange={() => setSelectedOpenApiOperationId(operation.id)}
                       />
-                      <span className="mono">{operation.method} {operation.path} → {operation.status}</span>
+                      <span className="mono">
+                        {operation.method} {operation.path} → {operation.status}
+                      </span>
                       {!operation.applyable && (
                         <span className="field-error">{openApiSkipReason(operation.reason)}</span>
                       )}
@@ -1335,11 +1402,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               onContextMenu={ruleContextTrigger.onContextMenu}
               onKeyDown={(event) => {
                 ruleContextTrigger.onKeyDown?.(event);
-                if (
-                  event.defaultPrevented
-                  || event.target !== event.currentTarget
-                  || !isKeyboardActivation(event)
-                ) return;
+                if (event.defaultPrevented || event.target !== event.currentTarget || !isKeyboardActivation(event))
+                  return;
                 event.preventDefault();
                 setSelectedRuleId(targetRule.id);
               }}
@@ -1359,7 +1423,10 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               >
                 시퀀스 초기화
               </button>
-              <span className="mono">{targetRule.method ?? "*"} {targetRule.path} → {targetRule.status}{targetRule.delayMs ? ` (+${targetRule.delayMs}ms)` : ""}</span>
+              <span className="mono">
+                {targetRule.method ?? "*"} {targetRule.path} → {targetRule.status}
+                {targetRule.delayMs ? ` (+${targetRule.delayMs}ms)` : ""}
+              </span>
               <span className="priority-badge">우선순위 {targetRule.priority ?? 0}</span>
               <button
                 type="button"
@@ -1378,7 +1445,9 @@ export default function App({ active = true }: { active?: boolean } = {}) {
         <section className="panel">
           <h2>요청 기록 ({history.length})</h2>
           <div className="history-head">
-            <button className="mini" disabled={busy || history.length === 0} onClick={() => void onClearHistory()}>비우기</button>
+            <button className="mini" disabled={busy || history.length === 0} onClick={() => void onClearHistory()}>
+              비우기
+            </button>
           </div>
           {history.map((request) => (
             <div
@@ -1392,11 +1461,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               onContextMenu={historyContextTrigger.onContextMenu}
               onKeyDown={(event) => {
                 historyContextTrigger.onKeyDown?.(event);
-                if (
-                  event.defaultPrevented
-                  || event.target !== event.currentTarget
-                  || !isKeyboardActivation(event)
-                ) return;
+                if (event.defaultPrevented || event.target !== event.currentTarget || !isKeyboardActivation(event))
+                  return;
                 event.preventDefault();
                 setSelectedHistoryId(request.id);
               }}
@@ -1449,16 +1515,15 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               </button>
             </div>
             <p className="field-help fixture-help">
-              저장된 요청은 앱 전용 파일에 마스킹된 상태로만 보관합니다. 원본 헤더·인증 정보·안전하지 않은 path는 저장하지 않습니다.
+              저장된 요청은 앱 전용 파일에 마스킹된 상태로만 보관합니다. 원본 헤더·인증 정보·안전하지 않은 path는
+              저장하지 않습니다.
             </p>
             {fixtures.map((fixture) => (
-              <div
-                key={fixture.id}
-                className="fixture-row"
-                aria-label={`${fixture.method} ${fixture.url} fixture`}
-              >
+              <div key={fixture.id} className="fixture-row" aria-label={`${fixture.method} ${fixture.url} fixture`}>
                 <div className="fixture-summary">
-                  <span className="mono">{fixture.method} {fixture.url}</span>
+                  <span className="mono">
+                    {fixture.method} {fixture.url}
+                  </span>
                   <span className="dim">{formatFixtureTime(fixture.receivedAtMs)}</span>
                   <span className="masked">마스킹됨</span>
                 </div>

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HistoryItem, RequestTemplate } from "../types";
-import {
-  buildRequestItemContextMenu,
-  duplicateHistoryItem,
-  removeHistoryItem,
-  renameHistoryItem,
-} from "./contextMenu";
+import { buildRequestItemContextMenu, duplicateHistoryItem, removeHistoryItem, renameHistoryItem } from "./contextMenu";
 import { emptyHistoryStore, REDACTED, sanitizeRequestForPersistence } from "./persistence";
 
 function request(): RequestTemplate {
@@ -35,7 +30,7 @@ function historyItem(): HistoryItem {
 describe("API Playground request item context menu", () => {
   it("설계의 정확한 네 항목과 danger 경계를 유지한다", () => {
     const items = buildRequestItemContextMenu(false);
-    expect(items.map((item) => item.type === "item" ? item.label : "separator")).toEqual([
+    expect(items.map((item) => (item.type === "item" ? item.label : "separator"))).toEqual([
       "복제",
       "이름 변경",
       "삭제",
@@ -48,8 +43,7 @@ describe("API Playground request item context menu", () => {
   });
 
   it("저장 작업 중에는 모든 action을 비활성화한다", () => {
-    expect(buildRequestItemContextMenu(true).every((item) => item.type !== "item" || item.disabled))
-      .toBe(true);
+    expect(buildRequestItemContextMenu(true).every((item) => item.type !== "item" || item.disabled)).toBe(true);
   });
 
   it("History 복제는 저장된 마스킹 request만 깊은 복사한다", () => {

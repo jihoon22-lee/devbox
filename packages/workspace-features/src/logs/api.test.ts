@@ -221,7 +221,7 @@ describe("Log Lens handoff API", () => {
           target: "/hook?token=[REDACTED]",
           receivedAtMs: 1,
           headerNames: ["content-type", "authorization"],
-          bodyPreview: "{\"token\":\"[REDACTED]\"}",
+          bodyPreview: '{"token":"[REDACTED]"}',
           redacted: true,
           truncated: false,
         },
@@ -268,10 +268,12 @@ describe("Log Lens handoff API", () => {
       });
 
     await expect(takePendingOpen()).resolves.toMatchObject({ target: { handoffKind: "webhook-log/v1", id } });
-    await expect(previewLogSource("webhook-log/v1", id)).resolves.toEqual(expect.objectContaining({
-      sourceApp: "webhook-lab",
-      source: expect.objectContaining({ kind: "webhookCapture" }),
-    }));
+    await expect(previewLogSource("webhook-log/v1", id)).resolves.toEqual(
+      expect.objectContaining({
+        sourceApp: "webhook-lab",
+        source: expect.objectContaining({ kind: "webhookCapture" }),
+      }),
+    );
     expect(invokeMock).toHaveBeenCalledWith("preview_log_source", { handoffKind: "webhook-log/v1", id });
     await expect(acceptLogSource(id)).resolves.toMatchObject({
       kind: "webhookCapture",
@@ -309,7 +311,13 @@ describe("Log Lens handoff API", () => {
       .mockResolvedValueOnce({
         schemaVersion: 1,
         revision: 6,
-        views: [{ name: "unsafe", sources: [{ kind: "wslFile", distro: "Ubuntu", path: "/secret" }], filter: { text: "", regex: false } }],
+        views: [
+          {
+            name: "unsafe",
+            sources: [{ kind: "wslFile", distro: "Ubuntu", path: "/secret" }],
+            filter: { text: "", regex: false },
+          },
+        ],
       });
 
     await expect(listSavedViews()).resolves.toMatchObject({ revision: 3, views: [view] });

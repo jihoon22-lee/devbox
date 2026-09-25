@@ -5,7 +5,8 @@ export const MAX_RESPONSE_BODY_BYTES = 16 * 1024 * 1024;
 export const MAX_BINARY_PREVIEW_BYTES = 4 * 1024;
 export const MAX_BINARY_TEXT_PREVIEW_BYTES = 4 * 1024;
 
-const TEXT_MEDIA_TYPE = /^(?:text\/|application\/(?:json|[^;]+\+json|xml|[^;]+\+xml|javascript|x-javascript|yaml|x-yaml|graphql|csv|x-www-form-urlencoded))/u;
+const TEXT_MEDIA_TYPE =
+  /^(?:text\/|application\/(?:json|[^;]+\+json|xml|[^;]+\+xml|javascript|x-javascript|yaml|x-yaml|graphql|csv|x-www-form-urlencoded))/u;
 
 export function isTextMediaType(mediaType: string): boolean {
   return TEXT_MEDIA_TYPE.test(mediaType.trim().toLowerCase());

@@ -107,10 +107,14 @@ describe("History v1 fail-closed migration", () => {
 
     expect(parseHistoryStore(JSON.stringify(named))?.history[0].name).toBe("내 요청");
     expect(parseHistoryStore(JSON.stringify(legacyV2))?.history[0].name).toBeUndefined();
-    expect(parseHistoryStore(JSON.stringify({
-      ...named,
-      history: [{ ...named.history[0], name: 123 }],
-    }))).toEqual({ version: 2, history: [] });
+    expect(
+      parseHistoryStore(
+        JSON.stringify({
+          ...named,
+          history: [{ ...named.history[0], name: 123 }],
+        }),
+      ),
+    ).toEqual({ version: 2, history: [] });
   });
 
   it("기존 v2 header는 enabled true로 올리고 duplicate/disabled/reference를 순서대로 보존한다", () => {
@@ -211,7 +215,11 @@ describe("History v1 fail-closed migration", () => {
 
   it("v2 선기록 실패 시 raw를 삭제하거나 marker를 기록하지 않는다", () => {
     const storage = new RecordingStorage();
-    const raw = legacyHistory(request({ auth: { kind: "bearer", username: "", password: "", token: "raw-secret", api_key: "", api_value: "" } }));
+    const raw = legacyHistory(
+      request({
+        auth: { kind: "bearer", username: "", password: "", token: "raw-secret", api_key: "", api_value: "" },
+      }),
+    );
     storage.setItem(HISTORY_V1_LS_KEY, raw);
     storage.failV2Write = true;
 
@@ -250,9 +258,13 @@ describe("History persistence guard", () => {
     storage.events.length = 0;
 
     await expect(
-      saveHistoryStore(validHistoryStore(), async () => {
-        throw new Error("secret review failed");
-      }, storage),
+      saveHistoryStore(
+        validHistoryStore(),
+        async () => {
+          throw new Error("secret review failed");
+        },
+        storage,
+      ),
     ).rejects.toThrow("secret review failed");
 
     expect(storage.getItem(HISTORY_V2_LS_KEY)).toBe(existing);
@@ -263,9 +275,9 @@ describe("History persistence guard", () => {
   it("sanitizer가 v2 형식이 아닌 결과를 반환하면 persistence를 거부한다", async () => {
     const storage = new RecordingStorage();
 
-    await expect(saveHistoryStore(validHistoryStore(), async () => JSON.stringify({ version: 1 }), storage)).rejects.toThrow(
-      "안전한 History 형식이 아닙니다",
-    );
+    await expect(
+      saveHistoryStore(validHistoryStore(), async () => JSON.stringify({ version: 1 }), storage),
+    ).rejects.toThrow("안전한 History 형식이 아닙니다");
 
     expect(storage.getItem(HISTORY_V2_LS_KEY)).toBeNull();
   });
@@ -274,10 +286,14 @@ describe("History persistence guard", () => {
     const storage = new RecordingStorage();
     const seen: string[] = [];
 
-    await saveHistoryStore(validHistoryStore(), async (serialized) => {
-      seen.push(serialized);
-      return serialized;
-    }, storage);
+    await saveHistoryStore(
+      validHistoryStore(),
+      async (serialized) => {
+        seen.push(serialized);
+        return serialized;
+      },
+      storage,
+    );
 
     expect(seen).toHaveLength(1);
     expect(parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY))).not.toBeNull();
@@ -362,25 +378,27 @@ describe("request persistence sanitizer", () => {
   });
 
   it("민감한 값은 reference가 섞여 있어도 전체 값이 exact reference가 아니면 마스킹한다", () => {
-    const safe = sanitizeRequestForPersistence(request({
-      url: "https://prefix-${USER}:prefix-${PASS}@example.test/x?token=prefix-${TOKEN}&keep=${SAFE}",
-      headers: [
-        { key: "Authorization", value: "Bearer prefix-${HEADER_TOKEN}" },
-        { key: "X-Exact", value: "${EXACT}" },
-      ],
-      params: [
-        { key: "access_token", value: "prefix-${PARAM_TOKEN}" },
-        { key: "token", value: "${PARAM_REF}" },
-      ],
-      auth: {
-        kind: "basic",
-        username: "prefix-${USER}",
-        password: "${PASS}",
-        token: "prefix-${AUTH_TOKEN}",
-        api_key: "X-API-Key",
-        api_value: "prefix-${API_VALUE}",
-      },
-    }));
+    const safe = sanitizeRequestForPersistence(
+      request({
+        url: "https://prefix-${USER}:prefix-${PASS}@example.test/x?token=prefix-${TOKEN}&keep=${SAFE}",
+        headers: [
+          { key: "Authorization", value: "Bearer prefix-${HEADER_TOKEN}" },
+          { key: "X-Exact", value: "${EXACT}" },
+        ],
+        params: [
+          { key: "access_token", value: "prefix-${PARAM_TOKEN}" },
+          { key: "token", value: "${PARAM_REF}" },
+        ],
+        auth: {
+          kind: "basic",
+          username: "prefix-${USER}",
+          password: "${PASS}",
+          token: "prefix-${AUTH_TOKEN}",
+          api_key: "X-API-Key",
+          api_value: "prefix-${API_VALUE}",
+        },
+      }),
+    );
 
     expect(safe.headers).toEqual([
       { key: "Authorization", value: REDACTED, enabled: true },
@@ -420,9 +438,7 @@ describe("request persistence sanitizer", () => {
 
   it("known token pattern도 민감한 field 이름 없이 마스킹한다", () => {
     const githubToken = "ghp_1234567890abcdef";
-    const safe = sanitizeRequestForPersistence(
-      request({ body_kind: "raw", body: `trace=${githubToken}` }),
-    );
+    const safe = sanitizeRequestForPersistence(request({ body_kind: "raw", body: `trace=${githubToken}` }));
 
     expect(safe.body).toBe("trace=[REDACTED]");
     expect(safe.body).not.toContain(githubToken);
@@ -430,39 +446,41 @@ describe("request persistence sanitizer", () => {
   });
 
   it("multipart 파일 경로·stale body를 제거하고 민감 text는 직접값만 마스킹한다", () => {
-    const safe = sanitizeRequestForPersistence(request({
-      body_kind: "multipart",
-      body: "raw-file-backup",
-      multipart: [
-        {
-          kind: "file",
-          name: "upload",
-          value: "raw-file-bytes",
-          file_path: "C:\\private\\artifact.zip",
-          file_name: "C:\\private\\artifact.zip",
-          content_type: "application/zip",
-          enabled: false,
-        },
-        {
-          kind: "text",
-          name: "token",
-          value: "direct-token",
-          file_path: "",
-          file_name: "",
-          content_type: "text/plain",
-          enabled: true,
-        },
-        {
-          kind: "text",
-          name: "token",
-          value: "${UPLOAD_TOKEN}",
-          file_path: "",
-          file_name: "",
-          content_type: "",
-          enabled: true,
-        },
-      ],
-    }));
+    const safe = sanitizeRequestForPersistence(
+      request({
+        body_kind: "multipart",
+        body: "raw-file-backup",
+        multipart: [
+          {
+            kind: "file",
+            name: "upload",
+            value: "raw-file-bytes",
+            file_path: "C:\\private\\artifact.zip",
+            file_name: "C:\\private\\artifact.zip",
+            content_type: "application/zip",
+            enabled: false,
+          },
+          {
+            kind: "text",
+            name: "token",
+            value: "direct-token",
+            file_path: "",
+            file_name: "",
+            content_type: "text/plain",
+            enabled: true,
+          },
+          {
+            kind: "text",
+            name: "token",
+            value: "${UPLOAD_TOKEN}",
+            file_path: "",
+            file_name: "",
+            content_type: "",
+            enabled: true,
+          },
+        ],
+      }),
+    );
 
     expect(safe.body).toBe("");
     expect(safe.multipart[0]).toMatchObject({
@@ -496,15 +514,18 @@ describe("request persistence sanitizer", () => {
   });
 
   it("GraphQL generated body를 저장하지 않고 query literal·variables secret을 정화한다", () => {
-    const safe = sanitizeRequestForPersistence(request({
-      body_kind: "graphql",
-      body: '{"query":"generated body must not persist"}',
-      graphql: {
-        query: 'query Viewer { viewer(token: "query-secret", id: "42", ref: "{{ID}}") { id } }',
-        variables: '{"token":"variable-secret","mixed_token":"prefix-${TOKEN}","reference_token":"${TOKEN}","id":"42"}',
-        operation_name: "Viewer",
-      },
-    }));
+    const safe = sanitizeRequestForPersistence(
+      request({
+        body_kind: "graphql",
+        body: '{"query":"generated body must not persist"}',
+        graphql: {
+          query: 'query Viewer { viewer(token: "query-secret", id: "42", ref: "{{ID}}") { id } }',
+          variables:
+            '{"token":"variable-secret","mixed_token":"prefix-${TOKEN}","reference_token":"${TOKEN}","id":"42"}',
+          operation_name: "Viewer",
+        },
+      }),
+    );
 
     expect(safe.body).toBe("");
     expect(safe.graphql).toEqual({
@@ -519,15 +540,17 @@ describe("request persistence sanitizer", () => {
   });
 
   it("비-GraphQL 요청에서는 stale GraphQL 편집 상태를 저장하지 않는다", () => {
-    const safe = sanitizeRequestForPersistence(request({
-      body_kind: "json",
-      body: '{"safe":true}',
-      graphql: {
-        query: 'query Viewer { viewer(token: "stale-secret") { id } }',
-        variables: '{"token":"stale-secret"}',
-        operation_name: "Viewer",
-      },
-    }));
+    const safe = sanitizeRequestForPersistence(
+      request({
+        body_kind: "json",
+        body: '{"safe":true}',
+        graphql: {
+          query: 'query Viewer { viewer(token: "stale-secret") { id } }',
+          variables: '{"token":"stale-secret"}',
+          operation_name: "Viewer",
+        },
+      }),
+    );
 
     expect(safe.graphql).toBeUndefined();
     expect(JSON.stringify(safe)).not.toContain("stale-secret");

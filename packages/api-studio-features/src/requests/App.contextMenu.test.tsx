@@ -3,15 +3,8 @@ import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { sanitizePersistedJson } from "./api";
-import {
-  COLLECTION_V2_LS_KEY,
-  type CollectionStore,
-} from "./lib/collections";
-import {
-  HISTORY_V2_LS_KEY,
-  sanitizeRequestForPersistence,
-  type HistoryStore,
-} from "./lib/persistence";
+import { COLLECTION_V2_LS_KEY, type CollectionStore } from "./lib/collections";
+import { HISTORY_V2_LS_KEY, sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
 import type { RequestTemplate } from "./types";
 
 vi.mock("./api", () => ({
@@ -67,14 +60,16 @@ function seedStores() {
   };
   const collections: CollectionStore = {
     version: 2,
-    collections: [{
-      id: "c-1",
-      name: "저장 요청",
-      folder: "dev",
-      saved_at: 1_000,
-      request,
-      requiresSecretReview: request.requiresSecretReview,
-    }],
+    collections: [
+      {
+        id: "c-1",
+        name: "저장 요청",
+        folder: "dev",
+        saved_at: 1_000,
+        request,
+        requiresSecretReview: request.requiresSecretReview,
+      },
+    ],
   };
   localStorage.setItem(HISTORY_V2_LS_KEY, JSON.stringify(history));
   localStorage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(collections));
@@ -82,8 +77,8 @@ function seedStores() {
 
 async function renderReady() {
   render(<App />);
-  const historyRow = await screen.findByLabelText(/^기록 항목: .*api\.example\.com/u) as HTMLButtonElement;
-  const collectionRow = await screen.findByLabelText("컬렉션 항목: 저장 요청") as HTMLDivElement;
+  const historyRow = (await screen.findByLabelText(/^기록 항목: .*api\.example\.com/u)) as HTMLButtonElement;
+  const collectionRow = (await screen.findByLabelText("컬렉션 항목: 저장 요청")) as HTMLDivElement;
   const inlineDelete = screen.getByRole("button", { name: "저장 요청 컬렉션 삭제" }) as HTMLButtonElement;
   await waitFor(() => expect(inlineDelete.disabled).toBe(false));
   return { historyRow, collectionRow };

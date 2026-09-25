@@ -11,7 +11,10 @@ export interface JournalApi {
   save(path: string, content: string, baseRevision: string): Promise<void>;
   clear(path: string): Promise<void>;
 }
-interface QueueState { tail: Promise<void>; owned: Set<string> }
+interface QueueState {
+  tail: Promise<void>;
+  owned: Set<string>;
+}
 // The document outlives a lazy Notes view. Do not reorder old work when the
 // view remounts (including StrictMode); roots change only on the next startup.
 const queues = new WeakMap<JournalTarget, QueueState>();
@@ -40,7 +43,9 @@ export class NoteJournal {
   }
 
   adoptRestored(path: string) {
-    this.enqueue(async () => { this.queue.owned.add(path); });
+    this.enqueue(async () => {
+      this.queue.owned.add(path);
+    });
   }
 
   async settled(): Promise<void> {
@@ -49,7 +54,10 @@ export class NoteJournal {
       this.record(this.target.snapshot());
     }
     let tail: Promise<void>;
-    do { tail = this.queue.tail; await tail; } while (tail !== this.queue.tail);
+    do {
+      tail = this.queue.tail;
+      await tail;
+    } while (tail !== this.queue.tail);
   }
 
   dispose() {
@@ -59,7 +67,7 @@ export class NoteJournal {
   }
 
   private enqueue(action: () => Promise<void>) {
-    this.queue.tail = this.queue.tail.then(action).catch(error => {
+    this.queue.tail = this.queue.tail.then(action).catch((error) => {
       if (this.disposed) return;
       const code = error instanceof Error ? error.name : error;
       this.onError(code === "journal_limit" ? "journal_limit" : "journal_unavailable");
@@ -76,7 +84,7 @@ export class NoteJournal {
 
   private record(view: NoteView) {
     if (!view.dirty || !view.path) return;
-    const {path, content, revision} = view;
+    const { path, content, revision } = view;
     this.enqueue(async () => {
       await this.api.save(path, content, revision);
       this.queue.owned.add(path);

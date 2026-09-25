@@ -27,9 +27,10 @@ describe("Repo Manager applink routing", () => {
   });
 
   it("rejects non-Path targets with a generic recoverable error", () => {
-    expect(
-      routeOpenRequest({ target: { kind: "query", text: "secret" }, from: null }),
-    ).toEqual({ kind: "error", message: "지원하지 않는 열기 요청입니다" });
+    expect(routeOpenRequest({ target: { kind: "query", text: "secret" }, from: null })).toEqual({
+      kind: "error",
+      message: "지원하지 않는 열기 요청입니다",
+    });
   });
 
   it("matches Windows repository keys case-insensitively but preserves WSL case", () => {

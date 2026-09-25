@@ -1,10 +1,4 @@
-import type {
-  ListenerIdentity,
-  PortFavorite,
-  PortManagerPreferences,
-  PortRow,
-  ProcessFavorite,
-} from "./types";
+import type { ListenerIdentity, PortFavorite, PortManagerPreferences, PortRow, ProcessFavorite } from "./types";
 
 export const DEFAULT_REFRESH_INTERVAL_MS = 5_000;
 export const MIN_REFRESH_INTERVAL_MS = 1_000;
@@ -34,13 +28,9 @@ export function identityKey(identity: ListenerIdentity): string {
     return ["windows", identity.pid, identity.start_time].map(segment).join("|");
   }
   if (identity.kind === "wsl") {
-    return ["wsl", identity.distro, identity.pid, identity.start_tick]
-      .map(segment)
-      .join("|");
+    return ["wsl", identity.distro, identity.pid, identity.start_tick].map(segment).join("|");
   }
-  return ["container", identity.engine, identity.container_id, identity.distro]
-    .map(segment)
-    .join("|");
+  return ["container", identity.engine, identity.container_id, identity.distro].map(segment).join("|");
 }
 
 function endpointKey(row: PortRow): string {
@@ -182,9 +172,7 @@ export function diffPortRows(previous: PortRow[] | null, next: PortRow[]): Refre
     const identity = identityOnlyKey(after);
     const matchIndex = unmatched.findIndex(
       (candidate) =>
-        !candidate.used &&
-        identityOnlyKey(candidate.row) === identity &&
-        sameEndpoint(candidate.row, after),
+        !candidate.used && identityOnlyKey(candidate.row) === identity && sameEndpoint(candidate.row, after),
     );
     if (matchIndex >= 0) {
       unmatched[matchIndex].used = true;
@@ -234,16 +222,14 @@ export function diffPortRows(previous: PortRow[] | null, next: PortRow[]): Refre
     changed: 2,
     "owner-changed": 3,
   };
-  return changes.sort(
-    (left, right) => {
-      const byKind = order[left.kind] - order[right.kind];
-      if (byKind !== 0) return byKind;
-      return (
-        compareText(left.key, right.key) ||
-        compareText(rowFingerprint(left.after ?? left.before!), rowFingerprint(right.after ?? right.before!))
-      );
-    },
-  );
+  return changes.sort((left, right) => {
+    const byKind = order[left.kind] - order[right.kind];
+    if (byKind !== 0) return byKind;
+    return (
+      compareText(left.key, right.key) ||
+      compareText(rowFingerprint(left.after ?? left.before!), rowFingerprint(right.after ?? right.before!))
+    );
+  });
 }
 
 /**
@@ -256,11 +242,10 @@ export function appendRefreshTimeline(
   changes: RefreshDiff[],
   observedAtMs = Date.now(),
 ): RefreshTimelineEvent[] {
-  const safeObservedAt = Number.isSafeInteger(observedAtMs)
-    && observedAtMs >= 0
-    && Number.isFinite(new Date(observedAtMs).getTime())
-    ? observedAtMs
-    : 0;
+  const safeObservedAt =
+    Number.isSafeInteger(observedAtMs) && observedAtMs >= 0 && Number.isFinite(new Date(observedAtMs).getTime())
+      ? observedAtMs
+      : 0;
   const events = changes.map((change) => ({
     kind: change.kind,
     key: change.key,
@@ -298,12 +283,9 @@ export function isPortFavorite(row: PortRow, favorites: PortFavorite[]): boolean
 
 export function isProcessFavorite(row: PortRow, favorites: ProcessFavorite[]): boolean {
   const favorite = processFavoriteFor(row);
-  return favorite !== null && favorites.some(
-    (candidate) => sameProcessFavorite(candidate, favorite),
-  );
+  return favorite !== null && favorites.some((candidate) => sameProcessFavorite(candidate, favorite));
 }
 
 export function isPinnedRow(row: PortRow, preferences: PortManagerPreferences): boolean {
-  return isPortFavorite(row, preferences.favorite_ports) ||
-    isProcessFavorite(row, preferences.favorite_processes);
+  return isPortFavorite(row, preferences.favorite_ports) || isProcessFavorite(row, preferences.favorite_processes);
 }

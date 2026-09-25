@@ -116,23 +116,12 @@ const OAUTH_NOTICE_LABELS: Record<OAuthNotice, string> = {
   "local-only": "원격 revoke를 확인하지 못했지만 OAuth grant를 로컬에서 제거했습니다.",
 };
 
-function cancelMcpRequest(
-  transport: McpTransport,
-  connectionId: string,
-  requestId: string,
-): Promise<boolean> {
-  return transport === "stdio"
-    ? cancelMcpStdio(connectionId, requestId)
-    : cancelMcpHttp(connectionId, requestId);
+function cancelMcpRequest(transport: McpTransport, connectionId: string, requestId: string): Promise<boolean> {
+  return transport === "stdio" ? cancelMcpStdio(connectionId, requestId) : cancelMcpHttp(connectionId, requestId);
 }
 
-function disconnectMcpConnection(
-  transport: McpTransport,
-  connectionId: string,
-): Promise<void> {
-  return transport === "stdio"
-    ? disconnectMcpStdio(connectionId)
-    : disconnectMcpHttp(connectionId);
+function disconnectMcpConnection(transport: McpTransport, connectionId: string): Promise<void> {
+  return transport === "stdio" ? disconnectMcpStdio(connectionId) : disconnectMcpHttp(connectionId);
 }
 
 function invokeMcpRequest(
@@ -147,14 +136,8 @@ function invokeMcpRequest(
     : invokeMcpHttp(connectionId, requestId, method, params);
 }
 
-function isExpectedPostCancelStale(
-  transport: McpTransport,
-  hadActiveRequest: boolean,
-  code: string,
-): boolean {
-  return transport === "stdio"
-    && hadActiveRequest
-    && code === "mcp_stdio_connection_stale";
+function isExpectedPostCancelStale(transport: McpTransport, hadActiveRequest: boolean, code: string): boolean {
+  return transport === "stdio" && hadActiveRequest && code === "mcp_stdio_connection_stale";
 }
 
 function McpLab({ environment, native }: ProtocolLabProps) {
@@ -186,14 +169,10 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   const [resourceTemplates, setResourceTemplates] = useState<ListState>(emptyList);
   const [prompts, setPrompts] = useState<ListState>(emptyList);
   const [selectedToolName, setSelectedToolName] = useState("");
-  const [toolDrafts, setToolDrafts] = useState<ReadonlyMap<string, Record<string, unknown>>>(
-    () => new Map(),
-  );
+  const [toolDrafts, setToolDrafts] = useState<ReadonlyMap<string, Record<string, unknown>>>(() => new Map());
   const [selectedResourceUri, setSelectedResourceUri] = useState("");
   const [selectedPromptName, setSelectedPromptName] = useState("");
-  const [promptDrafts, setPromptDrafts] = useState<ReadonlyMap<string, Record<string, string>>>(
-    () => new Map(),
-  );
+  const [promptDrafts, setPromptDrafts] = useState<ReadonlyMap<string, Record<string, string>>>(() => new Map());
   const generationRef = useRef(0);
   const connectionRef = useRef<McpConnectResult | null>(null);
   const connectionTransportRef = useRef<McpTransport | null>(null);
@@ -207,39 +186,41 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     [oauthGrants, selectedOAuthGrantId],
   );
   const oauthBusy = oauthPhase !== "idle";
-  const authorizationHeaderConflict = Boolean(selectedOAuthGrantId)
-    && headers.some((header) => header.enabled !== false
-      && header.key.trim().toLowerCase() === "authorization");
+  const authorizationHeaderConflict =
+    Boolean(selectedOAuthGrantId) &&
+    headers.some((header) => header.enabled !== false && header.key.trim().toLowerCase() === "authorization");
 
-  useEffect(() => () => {
-    generationRef.current += 1;
-    const active = activeRequestRef.current;
-    const current = connectionRef.current;
-    const currentTransport = connectionTransportRef.current;
-    const oauthRequestId = oauthRequestRef.current;
-    activeRequestRef.current = null;
-    oauthRequestRef.current = null;
-    connectionRef.current = null;
-    connectionTransportRef.current = null;
-    if (active && currentTransport) {
-      void cancelMcpRequest(currentTransport, active.connectionId, active.requestId).catch(() => undefined);
-    }
-    if (current && currentTransport) {
-      void disconnectMcpConnection(currentTransport, current.connectionId).catch(() => undefined);
-    }
-    if (oauthRequestId && native) {
-      void cancelMcpOAuth(oauthRequestId).catch(() => undefined);
-    }
-  }, []);
-
-  const selectedTool = useMemo(() => tools.items.find(
-    (item) => item.name === selectedToolName,
-  ) ?? null, [selectedToolName, tools.items]);
-  const toolSchema = selectedTool?.inputSchema;
-  const schemaAnalysis = useMemo(
-    () => analyzeMcpToolSchema(toolSchema),
-    [toolSchema],
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  useEffect(
+    () => () => {
+      generationRef.current += 1;
+      const active = activeRequestRef.current;
+      const current = connectionRef.current;
+      const currentTransport = connectionTransportRef.current;
+      const oauthRequestId = oauthRequestRef.current;
+      activeRequestRef.current = null;
+      oauthRequestRef.current = null;
+      connectionRef.current = null;
+      connectionTransportRef.current = null;
+      if (active && currentTransport) {
+        void cancelMcpRequest(currentTransport, active.connectionId, active.requestId).catch(() => undefined);
+      }
+      if (current && currentTransport) {
+        void disconnectMcpConnection(currentTransport, current.connectionId).catch(() => undefined);
+      }
+      if (oauthRequestId && native) {
+        void cancelMcpOAuth(oauthRequestId).catch(() => undefined);
+      }
+    },
+    [],
   );
+
+  const selectedTool = useMemo(
+    () => tools.items.find((item) => item.name === selectedToolName) ?? null,
+    [selectedToolName, tools.items],
+  );
+  const toolSchema = selectedTool?.inputSchema;
+  const schemaAnalysis = useMemo(() => analyzeMcpToolSchema(toolSchema), [toolSchema]);
   // Arguments are derived during render rather than reset from an effect: the editor has to show a
   // complete value set on the commit that first renders it, so a value typed straight away cannot
   // be overwritten by a reset arriving one commit later. Maps keep separate drafts for each exact,
@@ -251,14 +232,16 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     return initialMcpArguments(schemaAnalysis.schema);
   }, [schemaAnalysis, selectedTool, selectedToolName, toolDrafts]);
   const argumentIssues = useMemo(
-    () => schemaAnalysis.mode === "form" && schemaAnalysis.schema
-      ? validateMcpArguments(schemaAnalysis.schema, toolArguments)
-      : [schemaAnalysis.reason ?? "지원하지 않는 schema입니다."],
+    () =>
+      schemaAnalysis.mode === "form" && schemaAnalysis.schema
+        ? validateMcpArguments(schemaAnalysis.schema, toolArguments)
+        : [schemaAnalysis.reason ?? "지원하지 않는 schema입니다."],
     [schemaAnalysis, toolArguments],
   );
-  const selectedPrompt = useMemo(() => prompts.items.find(
-    (item) => item.name === selectedPromptName,
-  ) ?? null, [prompts.items, selectedPromptName]);
+  const selectedPrompt = useMemo(
+    () => prompts.items.find((item) => item.name === selectedPromptName) ?? null,
+    [prompts.items, selectedPromptName],
+  );
   const promptFields = Array.isArray(selectedPrompt?.arguments)
     ? selectedPrompt.arguments.filter(isPromptArgument)
     : [];
@@ -290,36 +273,39 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
   const onConnect = async () => {
     if (
-      !native
-      || phase !== "idle"
-      || oauthBusy
-      || (transport === "http" && selectedOAuthGrantId && authorizationHeaderConflict)
-    ) return;
+      !native ||
+      phase !== "idle" ||
+      oauthBusy ||
+      (transport === "http" && selectedOAuthGrantId && authorizationHeaderConflict)
+    )
+      return;
     const generation = ++generationRef.current;
     const requestedTransport = transport;
     setPhase("connecting");
     setErrorCode(null);
     resetExplorer();
-    const profile: McpHttpProfile | McpStdioProfile = requestedTransport === "stdio"
-      ? {
-        executableSelectionId: stdioExecutable?.selectionId ?? "",
-        cwdSelectionId: stdioCwd?.selectionId,
-        era,
-        args: stdioArgs,
-        environment: stdioEnvironment,
-        timeoutMs,
-      }
-      : {
-        endpoint,
-        era,
-        headers,
-        timeoutMs,
-        ...(selectedOAuthGrantId ? { oauthGrantId: selectedOAuthGrantId } : {}),
-      };
+    const profile: McpHttpProfile | McpStdioProfile =
+      requestedTransport === "stdio"
+        ? {
+            executableSelectionId: stdioExecutable?.selectionId ?? "",
+            cwdSelectionId: stdioCwd?.selectionId,
+            era,
+            args: stdioArgs,
+            environment: stdioEnvironment,
+            timeoutMs,
+          }
+        : {
+            endpoint,
+            era,
+            headers,
+            timeoutMs,
+            ...(selectedOAuthGrantId ? { oauthGrantId: selectedOAuthGrantId } : {}),
+          };
     try {
-      const connected = requestedTransport === "stdio"
-        ? await connectMcpStdio(profile as McpStdioProfile, environment)
-        : await connectMcpHttp(profile as McpHttpProfile, environment);
+      const connected =
+        requestedTransport === "stdio"
+          ? await connectMcpStdio(profile as McpStdioProfile, environment)
+          : await connectMcpHttp(profile as McpHttpProfile, environment);
       if (generation !== generationRef.current) {
         await disconnectMcpConnection(requestedTransport, connected.connectionId).catch(() => undefined);
         return;
@@ -338,12 +324,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   };
 
   const onTransportChange = async (next: McpTransport) => {
-    if (
-      next === transport
-      || phase === "connecting"
-      || phase === "disconnecting"
-      || oauthBusy
-    ) return;
+    if (next === transport || phase === "connecting" || phase === "disconnecting" || oauthBusy) return;
     const current = connectionRef.current;
     if (!current) {
       setTransport(next);
@@ -397,10 +378,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       await disconnectMcpConnection(currentTransport, current.connectionId);
     } catch (cause) {
       const code = safeMcpErrorCode(cause);
-      if (
-        generation === generationRef.current
-        && !isExpectedPostCancelStale(currentTransport, Boolean(active), code)
-      ) {
+      if (generation === generationRef.current && !isExpectedPostCancelStale(currentTransport, Boolean(active), code)) {
         setErrorCode(code);
       }
     } finally {
@@ -429,13 +407,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     setActiveRequest({ id: requestId, label });
     setErrorCode(null);
     try {
-      const response = await invokeMcpRequest(
-        currentTransport,
-        current.connectionId,
-        requestId,
-        method,
-        params,
-      );
+      const response = await invokeMcpRequest(currentTransport, current.connectionId, requestId, method, params);
       if (generation !== generationRef.current || connectionRef.current?.connectionId !== current.connectionId) {
         return null;
       }
@@ -447,16 +419,17 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       if (generation === generationRef.current) {
         const code = safeMcpErrorCode(cause);
         if (
-          code === "mcp_connection_stale"
-          || code === "mcp_stdio_connection_stale"
-          || (currentTransport === "stdio" && [
-            "mcp_stdio_transport_failed",
-            "mcp_stdio_protocol_invalid",
-            "mcp_stdio_message_too_large",
-            "mcp_stdio_request_timeout",
-            "mcp_stdio_request_cancelled",
-            "mcp_stdio_cleanup_failed",
-          ].includes(code))
+          code === "mcp_connection_stale" ||
+          code === "mcp_stdio_connection_stale" ||
+          (currentTransport === "stdio" &&
+            [
+              "mcp_stdio_transport_failed",
+              "mcp_stdio_protocol_invalid",
+              "mcp_stdio_message_too_large",
+              "mcp_stdio_request_timeout",
+              "mcp_stdio_request_cancelled",
+              "mcp_stdio_cleanup_failed",
+            ].includes(code))
         ) {
           generationRef.current += 1;
           activeRequestRef.current = null;
@@ -486,14 +459,15 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
   const onAuthorize = async () => {
     if (
-      !native
-      || transport !== "http"
-      || phase === "connecting"
-      || phase === "disconnecting"
-      || oauthBusy
-      || !endpoint.trim()
-      || !oauthClientId.trim()
-    ) return;
+      !native ||
+      transport !== "http" ||
+      phase === "connecting" ||
+      phase === "disconnecting" ||
+      oauthBusy ||
+      !endpoint.trim() ||
+      !oauthClientId.trim()
+    )
+      return;
     const scopes = oauthScopes.map((scope) => scope.trim()).filter(Boolean);
     if (scopes.length > 32 || new Set(scopes).size !== scopes.length) {
       setErrorCode("mcp_oauth_request_invalid");
@@ -544,28 +518,20 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   };
 
   const onRefreshOAuthGrants = async () => {
-    if (
-      !native
-      || transport !== "http"
-      || oauthBusy
-      || phase === "connecting"
-      || phase === "disconnecting"
-      || busy
-    ) return;
+    if (!native || transport !== "http" || oauthBusy || phase === "connecting" || phase === "disconnecting" || busy)
+      return;
     setOAuthPhase("loading");
     setOAuthNotice(null);
     setErrorCode(null);
     try {
       const grants = await listMcpOAuthGrants();
       setOAuthGrants(grants);
-      setSelectedOAuthGrantId((current) => (
-        grants.some((grant) => grant.grantId === current)
-          ? current
-          : grants[0]?.grantId ?? ""
-      ));
-      setOAuthFallbackGrantId((current) => (
-        current && grants.some((grant) => grant.grantId === current) ? current : null
-      ));
+      setSelectedOAuthGrantId((current) =>
+        grants.some((grant) => grant.grantId === current) ? current : (grants[0]?.grantId ?? ""),
+      );
+      setOAuthFallbackGrantId((current) =>
+        current && grants.some((grant) => grant.grantId === current) ? current : null,
+      );
     } catch (cause) {
       setErrorCode(safeMcpErrorCode(cause));
     } finally {
@@ -575,14 +541,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
   const onRevokeOAuthGrant = async (removeLocalOnRemoteFailure: boolean) => {
     const grant = selectedOAuthGrant;
-    if (
-      !native
-      || !grant
-      || oauthBusy
-      || phase === "connecting"
-      || phase === "disconnecting"
-      || busy
-    ) return;
+    if (!native || !grant || oauthBusy || phase === "connecting" || phase === "disconnecting" || busy) return;
     const grantId = grant.grantId;
     setOAuthPhase("revoking");
     setOAuthNotice(null);
@@ -626,12 +585,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     }
   };
 
-  const loadList = async (
-    kind: McpListKind,
-    method: string,
-    state: ListState,
-    update: (state: ListState) => void,
-  ) => {
+  const loadList = async (kind: McpListKind, method: string, state: ListState, update: (state: ListState) => void) => {
     const params = state.loaded && state.nextCursor ? { cursor: state.nextCursor } : {};
     const response = await invoke(method, params, method);
     if (!response?.result) return;
@@ -681,8 +635,8 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       </div>
 
       <p className="dim mcp-storage-disclosure">
-        프로토콜 타임라인/결과는 메모리에만 유지됩니다. OAuth token은 Windows DPAPI로 암호화되어
-        revoke 또는 로컬 제거 전까지 앱 전용 grant 저장소에 보관됩니다.
+        프로토콜 타임라인/결과는 메모리에만 유지됩니다. OAuth token은 Windows DPAPI로 암호화되어 revoke 또는 로컬 제거
+        전까지 앱 전용 grant 저장소에 보관됩니다.
       </p>
 
       {!native && (
@@ -834,9 +788,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                     className="btn"
                     type="button"
                     aria-label={`환경 변수 연결 ${index + 1} 삭제`}
-                    onClick={() => setStdioEnvironment(
-                      stdioEnvironment.filter((_, itemIndex) => itemIndex !== index),
-                    )}
+                    onClick={() => setStdioEnvironment(stdioEnvironment.filter((_, itemIndex) => itemIndex !== index))}
                   >
                     삭제
                   </button>
@@ -846,17 +798,18 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 className="btn"
                 type="button"
                 aria-label="환경 변수 연결 추가"
-                onClick={() => setStdioEnvironment((current) => [
-                  ...current,
-                  { childName: "", sourceName: "" },
-                ])}
+                onClick={() => setStdioEnvironment((current) => [...current, { childName: "", sourceName: "" }])}
               >
                 환경 변수 연결 추가
               </button>
               <datalist id="mcp-stdio-environment-names">
-                {environment.map((variable) => <option key={variable.key} value={variable.key} />)}
+                {environment.map((variable) => (
+                  <option key={variable.key} value={variable.key} />
+                ))}
               </datalist>
-              <p className="dim">환경 변수 값은 네이티브 프로세스 시작 시에만 해석되며 화면이나 타임라인에 표시되지 않습니다.</p>
+              <p className="dim">
+                환경 변수 값은 네이티브 프로세스 시작 시에만 해석되며 화면이나 타임라인에 표시되지 않습니다.
+              </p>
             </fieldset>
           </div>
         )}
@@ -894,10 +847,16 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             <button
               className="btn send"
               type="button"
-              disabled={!native || busy || oauthBusy || timeoutMs < 100 || timeoutMs > 120_000
-                || (transport === "http"
+              disabled={
+                !native ||
+                busy ||
+                oauthBusy ||
+                timeoutMs < 100 ||
+                timeoutMs > 120_000 ||
+                (transport === "http"
                   ? !endpoint.trim() || Boolean(selectedOAuthGrantId && authorizationHeaderConflict)
-                  : !stdioExecutable)}
+                  : !stdioExecutable)
+              }
               onClick={() => void onConnect()}
             >
               {phase === "connecting" ? "연결 중..." : "연결"}
@@ -919,8 +878,8 @@ function McpLab({ environment, native }: ProtocolLabProps) {
         <section className="mcp-oauth-panel" aria-labelledby="mcp-oauth-heading">
           <h3 id="mcp-oauth-heading">HTTP OAuth 2.1</h3>
           <p className="dim">
-            HTTP MCP server의 public client authorization만 지원합니다. 토큰과 callback 값은
-            Protocol Lab 화면이나 timeline에 표시하지 않습니다.
+            HTTP MCP server의 public client authorization만 지원합니다. 토큰과 callback 값은 Protocol Lab 화면이나
+            timeline에 표시하지 않습니다.
           </p>
           <div className="mcp-oauth-inputs">
             <label>
@@ -968,9 +927,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                   className="btn"
                   type="button"
                   aria-label={`OAuth 범위 ${index + 1} 삭제`}
-                  onClick={() => setOAuthScopes(
-                    oauthScopes.filter((_, itemIndex) => itemIndex !== index),
-                  )}
+                  onClick={() => setOAuthScopes(oauthScopes.filter((_, itemIndex) => itemIndex !== index))}
                 >
                   삭제
                 </button>
@@ -986,7 +943,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               범위 추가
             </button>
             {oauthScopesHaveDuplicates && (
-              <p className="dim" role="alert">OAuth 범위는 중복될 수 없습니다.</p>
+              <p className="dim" role="alert">
+                OAuth 범위는 중복될 수 없습니다.
+              </p>
             )}
           </fieldset>
           <div className="mcp-inline-actions">
@@ -1005,8 +964,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 className="btn send"
                 type="button"
                 aria-label="시스템 브라우저에서 OAuth 인증"
-                disabled={!native || oauthBusy || busy || !endpoint.trim() || !oauthClientId.trim()
-                  || oauthScopesHaveDuplicates}
+                disabled={
+                  !native || oauthBusy || busy || !endpoint.trim() || !oauthClientId.trim() || oauthScopesHaveDuplicates
+                }
                 onClick={() => void onAuthorize()}
               >
                 시스템 브라우저에서 인증
@@ -1079,12 +1039,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
           )}
           {selectedOAuthGrantId && authorizationHeaderConflict && (
             <div className="mcp-notice" role="alert">
-              OAuth grant와 활성화된 Authorization custom header를 함께 사용할 수 없습니다. Header를
-              끄거나 OAuth grant 선택을 해제하세요.
+              OAuth grant와 활성화된 Authorization custom header를 함께 사용할 수 없습니다. Header를 끄거나 OAuth grant
+              선택을 해제하세요.
             </div>
           )}
           {oauthNotice && (
-            <p className="dim" role="status">{OAUTH_NOTICE_LABELS[oauthNotice]}</p>
+            <p className="dim" role="status">
+              {OAUTH_NOTICE_LABELS[oauthNotice]}
+            </p>
           )}
         </section>
       )}
@@ -1093,7 +1055,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
         <div className="mcp-server-card" role="status">
           <strong>{boundedText(connection.server.serverName, 200) || "이름 없는 MCP 서버"}</strong>
           <span>{boundedText(connection.server.serverVersion, 100) || "버전 미제공"}</span>
-          <code>{connection.server.era} · {connection.server.protocolVersion}</code>
+          <code>
+            {connection.server.era} · {connection.server.protocolVersion}
+          </code>
           <span>legacy 세션: {connection.sessionManaged ? "사용" : "미사용"}</span>
           <span>tools {hasMcpCapability(capabilities, "tools") ? "✓" : "—"}</span>
           <span>resources {hasMcpCapability(capabilities, "resources") ? "✓" : "—"}</span>
@@ -1117,7 +1081,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 onChange={(event) => setSelectedToolName(event.currentTarget.value)}
               >
                 {tools.items.map((tool) => (
-                  <option key={String(tool.name)} value={String(tool.name)}>{String(tool.name)}</option>
+                  <option key={String(tool.name)} value={String(tool.name)}>
+                    {String(tool.name)}
+                  </option>
                 ))}
               </select>
             )}
@@ -1131,11 +1097,13 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                     schema={schemaAnalysis.schema}
                     value={toolArguments}
                     disabled={busy}
-                    onChange={(values) => setToolDrafts((current) => {
-                      const next = new Map(current);
-                      next.set(selectedToolName, values);
-                      return next;
-                    })}
+                    onChange={(values) =>
+                      setToolDrafts((current) => {
+                        const next = new Map(current);
+                        next.set(selectedToolName, values);
+                        return next;
+                      })
+                    }
                   />
                 ) : (
                   <div className="mcp-schema-fallback">
@@ -1145,18 +1113,22 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 )}
                 {argumentIssues.length > 0 && schemaAnalysis.mode === "form" && (
                   <ul className="mcp-validation-list">
-                    {argumentIssues.slice(0, 5).map((issue) => <li key={issue}>{issue}</li>)}
+                    {argumentIssues.slice(0, 5).map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
                   </ul>
                 )}
                 <button
                   className="btn send"
                   type="button"
                   disabled={busy || schemaAnalysis.mode !== "form" || argumentIssues.length > 0}
-                  onClick={() => void invoke(
-                    "tools/call",
-                    { name: selectedToolName, arguments: toolArguments },
-                    `tools/call · ${selectedToolName}`,
-                  )}
+                  onClick={() =>
+                    void invoke(
+                      "tools/call",
+                      { name: selectedToolName, arguments: toolArguments },
+                      `tools/call · ${selectedToolName}`,
+                    )
+                  }
                 >
                   선택 tool 호출
                 </button>
@@ -1176,12 +1148,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 state={resourceTemplates}
                 busy={busy}
                 label="Template"
-                onClick={() => void loadList(
-                  "resourceTemplates",
-                  "resources/templates/list",
-                  resourceTemplates,
-                  setResourceTemplates,
-                )}
+                onClick={() =>
+                  void loadList(
+                    "resourceTemplates",
+                    "resources/templates/list",
+                    resourceTemplates,
+                    setResourceTemplates,
+                  )
+                }
               />
             </div>
             {resources.items.length > 0 && (
@@ -1211,11 +1185,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               className="btn send"
               type="button"
               disabled={busy || !selectedResourceUri}
-              onClick={() => void invoke(
-                "resources/read",
-                { uri: selectedResourceUri },
-                "resources/read",
-              )}
+              onClick={() => void invoke("resources/read", { uri: selectedResourceUri }, "resources/read")}
             >
               Resource 읽기
             </button>
@@ -1224,7 +1194,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 <summary>리소스 템플릿 {resourceTemplates.items.length}개</summary>
                 <ul className="mcp-identity-list">
                   {resourceTemplates.items.map((item) => (
-                    <li key={String(item.uriTemplate)}><code>{boundedText(String(item.uriTemplate), 300)}</code></li>
+                    <li key={String(item.uriTemplate)}>
+                      <code>{boundedText(String(item.uriTemplate), 300)}</code>
+                    </li>
                   ))}
                 </ul>
               </details>
@@ -1245,13 +1217,16 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 onChange={(event) => setSelectedPromptName(event.currentTarget.value)}
               >
                 {prompts.items.map((prompt) => (
-                  <option key={String(prompt.name)} value={String(prompt.name)}>{String(prompt.name)}</option>
+                  <option key={String(prompt.name)} value={String(prompt.name)}>
+                    {String(prompt.name)}
+                  </option>
                 ))}
               </select>
             )}
             {promptFields.map((field) => (
               <label key={field.name}>
-                {field.name}{field.required ? " · 필수" : ""}
+                {field.name}
+                {field.required ? " · 필수" : ""}
                 <input
                   value={promptArguments[field.name] ?? ""}
                   disabled={busy}
@@ -1271,14 +1246,18 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             <button
               className="btn send"
               type="button"
-              disabled={busy || !selectedPromptName || promptFields.some(
-                (field) => field.required && !(field.name in promptArguments),
-              )}
-              onClick={() => void invoke(
-                "prompts/get",
-                { name: selectedPromptName, arguments: promptArguments },
-                `prompts/get · ${selectedPromptName}`,
-              )}
+              disabled={
+                busy ||
+                !selectedPromptName ||
+                promptFields.some((field) => field.required && !(field.name in promptArguments))
+              }
+              onClick={() =>
+                void invoke(
+                  "prompts/get",
+                  { name: selectedPromptName, arguments: promptArguments },
+                  `prompts/get · ${selectedPromptName}`,
+                )
+              }
             >
               Prompt 가져오기
             </button>
@@ -1289,7 +1268,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       {activeRequest && (
         <div className="mcp-active-request" role="status">
           <span>{activeRequest.label} 실행 중</span>
-          <button className="btn" type="button" onClick={() => void onCancel()}>취소</button>
+          <button className="btn" type="button" onClick={() => void onCancel()}>
+            취소
+          </button>
         </div>
       )}
 
@@ -1314,7 +1295,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               <li key={entry.sequence}>
                 <div>
                   <span>+{entry.offsetMs}ms</span>
-                  <strong>{entry.direction} · {entry.kind}</strong>
+                  <strong>
+                    {entry.direction} · {entry.kind}
+                  </strong>
                   {entry.method && <code>{entry.method}</code>}
                   {entry.requestId && <code>{entry.requestId}</code>}
                 </div>
@@ -1361,15 +1344,7 @@ export function ProtocolLab(props: ProtocolLabProps) {
   );
 }
 
-function ExplorerSection({
-  title,
-  enabled,
-  children,
-}: {
-  title: string;
-  enabled: boolean;
-  children: ReactNode;
-}) {
+function ExplorerSection({ title, enabled, children }: { title: string; enabled: boolean; children: ReactNode }) {
   return (
     <section className={`mcp-explorer-section ${enabled ? "" : "disabled"}`} aria-disabled={!enabled}>
       <h3>{title}</h3>
@@ -1398,11 +1373,13 @@ function ListButton({
 }
 
 function isPromptArgument(value: unknown): value is { name: string; required?: boolean } {
-  return Boolean(value)
-    && typeof value === "object"
-    && typeof (value as { name?: unknown }).name === "string"
-    && ((value as { required?: unknown }).required === undefined
-      || typeof (value as { required?: unknown }).required === "boolean");
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    typeof (value as { name?: unknown }).name === "string" &&
+    ((value as { required?: unknown }).required === undefined ||
+      typeof (value as { required?: unknown }).required === "boolean")
+  );
 }
 
 function boundedText(value: string, max: number): string {
@@ -1418,9 +1395,7 @@ function formatOAuthExpiry(value: number | null): string {
 function boundedJson(value: unknown, max: number): string {
   try {
     const serialized = JSON.stringify(value, null, 2);
-    return serialized.length <= max
-      ? serialized
-      : `${serialized.slice(0, max)}\n… UI preview truncated …`;
+    return serialized.length <= max ? serialized : `${serialized.slice(0, max)}\n… UI preview truncated …`;
   } catch {
     return "[표시할 수 없는 JSON]";
   }

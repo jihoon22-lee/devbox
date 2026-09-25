@@ -65,16 +65,18 @@ function snapshot(): DashboardSnapshot {
     revision: 1,
     capturedAtMs: Date.now(),
     staleAfterMs: 30_000,
-    distros: [{
-      name: "Ubuntu",
-      version: 2,
-      default: true,
-      state: "Running",
-      terminalCount: 0,
-      dockerAvailability: "available",
-      containers: [],
-      resource: null,
-    }],
+    distros: [
+      {
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [],
+        resource: null,
+      },
+    ],
   };
 }
 
@@ -207,11 +209,13 @@ describe("persisted settings", () => {
     storedSettings({ openTerminalOnStart: false, theme: "light" });
     render(<App />);
 
-    await waitFor(() => expect(configureQuickSummonMock).toHaveBeenCalledWith({
-      shortcutEnabled: true,
-      shortcut: "Ctrl+Alt+Space",
-      keepInTray: false,
-    }));
+    await waitFor(() =>
+      expect(configureQuickSummonMock).toHaveBeenCalledWith({
+        shortcutEnabled: true,
+        shortcut: "Ctrl+Alt+Space",
+        keepInTray: false,
+      }),
+    );
     expect(loadSettings().theme).toBe("light");
   });
 
@@ -224,19 +228,23 @@ describe("persisted settings", () => {
 
     const shortcut = within(dialog).getByRole("combobox", { name: "빠른 호출 전역 단축키" });
     fireEvent.change(shortcut, { target: { value: "Ctrl+Shift+Space" } });
-    await waitFor(() => expect(configureQuickSummonMock).toHaveBeenLastCalledWith({
-      shortcutEnabled: true,
-      shortcut: "Ctrl+Shift+Space",
-      keepInTray: false,
-    }));
+    await waitFor(() =>
+      expect(configureQuickSummonMock).toHaveBeenLastCalledWith({
+        shortcutEnabled: true,
+        shortcut: "Ctrl+Shift+Space",
+        keepInTray: false,
+      }),
+    );
     expect(loadSettings().quickSummonShortcut).toBe("Ctrl+Shift+Space");
 
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /닫을 때 트레이에 유지/u }));
-    await waitFor(() => expect(configureQuickSummonMock).toHaveBeenLastCalledWith({
-      shortcutEnabled: true,
-      shortcut: "Ctrl+Shift+Space",
-      keepInTray: true,
-    }));
+    await waitFor(() =>
+      expect(configureQuickSummonMock).toHaveBeenLastCalledWith({
+        shortcutEnabled: true,
+        shortcut: "Ctrl+Shift+Space",
+        keepInTray: true,
+      }),
+    );
     await within(dialog).findByText("현재 닫기 버튼: 창만 숨기고 터미널 상태 유지");
     expect(loadSettings().keepInTray).toBe(true);
   });
@@ -294,7 +302,7 @@ describe("persisted settings", () => {
     render(<App />);
     await screen.findAllByRole("option", { name: /Ubuntu/u });
     fireEvent.click(screen.getByRole("button", { name: "설정" }));
-    const restored = await screen.findByRole("combobox", { name: "세션 유지 방식" }) as HTMLSelectElement;
+    const restored = (await screen.findByRole("combobox", { name: "세션 유지 방식" })) as HTMLSelectElement;
     await waitFor(() => expect(restored.value).toBe("tmux"));
   });
 
@@ -306,7 +314,7 @@ describe("persisted settings", () => {
     expect(loadSettings().multiplexer).toBe("zellij");
 
     fireEvent.click(screen.getByRole("button", { name: "설정" }));
-    const selector = await screen.findByRole("combobox", { name: "세션 유지 방식" }) as HTMLSelectElement;
+    const selector = (await screen.findByRole("combobox", { name: "세션 유지 방식" })) as HTMLSelectElement;
     expect(selector.value).toBe("zellij");
     expect(within(selector).getByRole("option", { name: /zellij/u })).toBeDisabled();
     expect(screen.getByText(/선호 방식은 zellij로 유지됩니다/u)).toBeInTheDocument();

@@ -32,11 +32,16 @@ describe("Quick Open matching", () => {
   });
 
   it("groups nested matches by directory while keeping root files separate", () => {
-    const tree = groupQuickOpenMatches(filterQuickOpenFiles([
-      ...files,
-      { path: "/workspace/src/components/Deep.tsx", relativePath: "src/components/Deep.tsx", size: 10 },
-      { path: "/workspace/src/components/Other.tsx", relativePath: "src/components/Other.tsx", size: 10 },
-    ], ""));
+    const tree = groupQuickOpenMatches(
+      filterQuickOpenFiles(
+        [
+          ...files,
+          { path: "/workspace/src/components/Deep.tsx", relativePath: "src/components/Deep.tsx", size: 10 },
+          { path: "/workspace/src/components/Other.tsx", relativePath: "src/components/Other.tsx", size: 10 },
+        ],
+        "",
+      ),
+    );
 
     expect(tree.files.map(({ file }) => file.relativePath)).toEqual(["README.md"]);
     expect(tree.directories.map(({ path }) => path)).toEqual(["src"]);
@@ -61,11 +66,7 @@ describe("Quick Open matching", () => {
       ),
     );
 
-    expect(flattenQuickOpenTree(tree).map(({ file }) => file.relativePath)).toEqual([
-      "b.ts",
-      "a/one.ts",
-      "c/two.ts",
-    ]);
+    expect(flattenQuickOpenTree(tree).map(({ file }) => file.relativePath)).toEqual(["b.ts", "a/one.ts", "c/two.ts"]);
   });
 
   it("splits long paths without discarding the filename or directory context", () => {

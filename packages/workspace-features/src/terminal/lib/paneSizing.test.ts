@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MIN_PANE_FRACTION,
-  evenFractions,
-  normalizeFractions,
-  resizeAdjacent,
-  toGridTemplate,
-} from "./paneSizing";
+import { MIN_PANE_FRACTION, evenFractions, normalizeFractions, resizeAdjacent, toGridTemplate } from "./paneSizing";
 
 describe("normalizeFractions", () => {
   it("팬 수가 맞고 합이 1이면 그대로 쓴다", () => {

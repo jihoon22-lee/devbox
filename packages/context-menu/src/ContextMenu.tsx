@@ -41,9 +41,7 @@ function interactive(entry: ContextMenuEntry): entry is Exclude<ContextMenuEntry
   return entry.type !== "separator";
 }
 
-function enabled(
-  entry: ContextMenuEntry,
-): entry is Exclude<ContextMenuEntry, { type: "separator" }> {
+function enabled(entry: ContextMenuEntry): entry is Exclude<ContextMenuEntry, { type: "separator" }> {
   return interactive(entry) && !entry.disabled;
 }
 
@@ -112,9 +110,7 @@ function MenuLevel({
   const menuRef = rootRef ?? localRef;
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const previousAutoFocus = useRef(false);
-  const [activeIndex, setActiveIndex] = useState(() =>
-    autoFocus ? firstEnabled(items) : -1,
-  );
+  const [activeIndex, setActiveIndex] = useState(() => (autoFocus ? firstEnabled(items) : -1));
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const [keyboardSubmenuId, setKeyboardSubmenuId] = useState<string | null>(null);
   const placement = useMenuPlacement(menuRef, rootAnchor, parentElement);
@@ -135,9 +131,7 @@ function MenuLevel({
     }
     if (
       openSubmenuId &&
-      !items.some(
-        (entry) => entry.type === "submenu" && entry.id === openSubmenuId && !entry.disabled,
-      )
+      !items.some((entry) => entry.type === "submenu" && entry.id === openSubmenuId && !entry.disabled)
     ) {
       setOpenSubmenuId(null);
       setKeyboardSubmenuId(null);
@@ -252,9 +246,7 @@ function MenuLevel({
       ref={menuRef}
       role="menu"
       aria-label={ariaLabel}
-      className={["db-context-menu", parentElement ? "db-context-submenu" : "", className]
-        .filter(Boolean)
-        .join(" ")}
+      className={["db-context-menu", parentElement ? "db-context-submenu" : "", className].filter(Boolean).join(" ")}
       style={style}
       data-horizontal={placement?.horizontal}
       data-vertical={placement?.vertical}
@@ -263,13 +255,7 @@ function MenuLevel({
     >
       {items.map((entry, index) => {
         if (entry.type === "separator") {
-          return (
-            <div
-              key={entry.id ?? `separator-${index}`}
-              role="separator"
-              className="db-context-menu-separator"
-            />
-          );
+          return <div key={entry.id ?? `separator-${index}`} role="separator" className="db-context-menu-separator" />;
         }
         const isActive = activeIndex === index;
         const hasSubmenu = entry.type === "submenu";
@@ -297,9 +283,7 @@ function MenuLevel({
               onMouseEnter={() => {
                 if (!enabled(entry)) return;
                 focusIndex(index);
-                setOpenSubmenuId(
-                  entry.type === "submenu" ? entry.id : null,
-                );
+                setOpenSubmenuId(entry.type === "submenu" ? entry.id : null);
                 setKeyboardSubmenuId(null);
               }}
               onClick={() => {
@@ -312,7 +296,11 @@ function MenuLevel({
               {entry.type === "item" && entry.shortcut ? (
                 <span className="db-context-menu-shortcut">{entry.shortcut}</span>
               ) : null}
-              {hasSubmenu ? <span className="db-context-menu-arrow" aria-hidden="true">›</span> : null}
+              {hasSubmenu ? (
+                <span className="db-context-menu-arrow" aria-hidden="true">
+                  ›
+                </span>
+              ) : null}
             </button>
             {hasSubmenu && openSubmenuId === entry.id && !entry.disabled ? (
               <MenuLevel

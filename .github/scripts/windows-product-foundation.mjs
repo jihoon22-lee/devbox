@@ -1,28 +1,49 @@
-import {prepareRuntimeCrash,verifyRuntimeCrash} from "./windows-workspace-runtime-crash.mjs";
+import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
 import { measureWorkspaceStartup } from "./windows-workspace-performance.mjs";
 // Runs only on a disposable GitHub-hosted Windows runner. Uses synthetic
 // product installations, never an installed user app or a legacy data store.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  copyFileSync,
+  cpSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
-import { windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy } from "./windows-packaged-smoke.mjs";
+import {
+  windowsProcessIsElevated,
+  inspectElevatedCdpPolicy,
+  installElevatedCdpPolicy,
+  restoreElevatedCdpPolicy,
+} from "./windows-packaged-smoke.mjs";
 
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 const smokeOnly = process.argv.includes("--smoke-only");
-assert.ok(process.argv.slice(2).every(value => value === "--smoke-only"));
+assert.ok(process.argv.slice(2).every((value) => value === "--smoke-only"));
 const elevated = windowsProcessIsElevated();
 const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products;
 const root = mkdtempSync(path.join(tmpdir(), "devbox-product-fixture-"));
-const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", fixtureVersion: 1, scope: smokeOnly ? "fresh-portable-startup" : "full-product-native", products: [], result: "failed" };
+const evidence = {
+  source: process.env.GITHUB_SHA,
+  environment: "github-hosted-windows",
+  fixtureVersion: 1,
+  scope: smokeOnly ? "fresh-portable-startup" : "full-product-native",
+  products: [],
+  result: "failed",
+};
 mkdirSync("product-foundation-evidence", { recursive: true });
 let currentProbe = null;
 function progress(product, suffix, stage) {
@@ -32,8 +53,12 @@ function progress(product, suffix, stage) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function freePort() {
-  const server = createServer(); server.listen(0, "127.0.0.1"); await once(server, "listening");
-  const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port;
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
 }
 
 async function connect(port, child, deadline = performance.now() + 30_000, terminalId = null) {
@@ -41,48 +66,107 @@ async function connect(port, child, deadline = performance.now() + 30_000, termi
     if (child.exitCode !== null) throw new Error("product exited before renderer opened");
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) });
-      const pages = await response.json(); const page = pages.find((p) => {
+      const pages = await response.json();
+      const page = pages.find((p) => {
         if (p.type !== "page" || !p.webSocketDebuggerUrl) return false;
-        try { const url = new URL(p.url); return (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) && ["/", "/index.html"].includes(url.pathname) && (terminalId ? url.searchParams.get("surface")==="terminal"&&url.searchParams.get("id")===terminalId : !url.searchParams.has("surface")); } catch { return false; }
+        try {
+          const url = new URL(p.url);
+          return (
+            (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) &&
+            ["/", "/index.html"].includes(url.pathname) &&
+            (terminalId
+              ? url.searchParams.get("surface") === "terminal" && url.searchParams.get("id") === terminalId
+              : !url.searchParams.has("surface"))
+          );
+        } catch {
+          return false;
+        }
       });
       if (page) {
-        const socket = new WebSocket(page.webSocketDebuggerUrl); await once(socket, "open");
-        let id = 0; const pending = new Map(); const diagnostics = [];
+        const socket = new WebSocket(page.webSocketDebuggerUrl);
+        await once(socket, "open");
+        let id = 0;
+        const pending = new Map();
+        const diagnostics = [];
         socket.addEventListener("message", ({ data }) => {
-          const response = JSON.parse(data); const entry = pending.get(response.id);
-          if (["Runtime.exceptionThrown", "Log.entryAdded", "Page.javascriptDialogOpening", "Inspector.targetCrashed"].includes(response.method)) {
+          const response = JSON.parse(data);
+          const entry = pending.get(response.id);
+          if (
+            [
+              "Runtime.exceptionThrown",
+              "Log.entryAdded",
+              "Page.javascriptDialogOpening",
+              "Inspector.targetCrashed",
+            ].includes(response.method)
+          ) {
             diagnostics.push({ event: response.method, details: JSON.stringify(response.params).slice(0, 6000) });
             if (diagnostics.length > 30) diagnostics.shift();
-            writeFileSync("product-foundation-evidence/renderer-events.json", JSON.stringify({ currentProbe, diagnostics }, null, 2));
+            writeFileSync(
+              "product-foundation-evidence/renderer-events.json",
+              JSON.stringify({ currentProbe, diagnostics }, null, 2),
+            );
           }
-          if (entry) { pending.delete(response.id); clearTimeout(entry.timer); response.error ? entry.reject(new Error("CDP request failed")) : entry.resolve(response.result); }
+          if (entry) {
+            pending.delete(response.id);
+            clearTimeout(entry.timer);
+            response.error ? entry.reject(new Error("CDP request failed")) : entry.resolve(response.result);
+          }
         });
         const command = (method, params = {}) => {
           const next = ++id;
           return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { pending.delete(next); reject(new Error("CDP setup timeout")); }, 10_000);
+            const timer = setTimeout(() => {
+              pending.delete(next);
+              reject(new Error("CDP setup timeout"));
+            }, 10_000);
             pending.set(next, { resolve, reject, timer });
             socket.send(JSON.stringify({ id: next, method, params }));
           });
         };
-        try { await command("Runtime.enable"); await command("Log.enable"); await command("Page.enable"); } catch (error) { socket.close(); throw error; }
+        try {
+          await command("Runtime.enable");
+          await command("Log.enable");
+          await command("Page.enable");
+        } catch (error) {
+          socket.close();
+          throw error;
+        }
         return {
           close: () => socket.close(),
           command,
-          async evaluate(expression, {timeoutMs=10_000} = {}) {
-            if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 660_000) throw new Error("Invalid fixture CDP deadline");
+          async evaluate(expression, { timeoutMs = 10_000 } = {}) {
+            if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 660_000)
+              throw new Error("Invalid fixture CDP deadline");
             const next = ++id;
             const result = await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => { pending.delete(next); writeFileSync("product-foundation-evidence/renderer-timeout.json", JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2)); reject(new Error(`CDP request timeout at ${currentProbe?.stage}`)); }, timeoutMs);
+              const timer = setTimeout(() => {
+                pending.delete(next);
+                writeFileSync(
+                  "product-foundation-evidence/renderer-timeout.json",
+                  JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2),
+                );
+                reject(new Error(`CDP request timeout at ${currentProbe?.stage}`));
+              }, timeoutMs);
               pending.set(next, { resolve, reject, timer });
-              socket.send(JSON.stringify({ id: next, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
+              socket.send(
+                JSON.stringify({
+                  id: next,
+                  method: "Runtime.evaluate",
+                  params: { expression, awaitPromise: true, returnByValue: true },
+                }),
+              );
             });
-            if (result.exceptionDetails) throw new Error(`renderer probe failed: ${String(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text).slice(0, 2000)}`);
+            if (result.exceptionDetails)
+              throw new Error(
+                `renderer probe failed: ${String(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text).slice(0, 2000)}`,
+              );
             return result.result.value;
           },
         };
       }
-    } catch { /* bounded startup polling */ }
+    } catch {
+      /* bounded startup polling */
+    }
     await delay(250);
   }
   throw new Error("renderer startup deadline exceeded");
@@ -96,18 +180,27 @@ async function waitForRenderer(cdp, expression, label) {
   }
   // This runner contains only synthetic fixtures. Retain bounded UI state on
   // failure so a delivery, route, IPC error and lazy-load failure are distinct.
-  const snapshot = await cdp.evaluate("({ route: document.querySelector('nav[aria-label=\"제품 화면\"] [aria-current=page]')?.textContent, dialogs: document.querySelectorAll(\"[role=dialog]\").length, text: (document.body?.innerText ?? \"\").slice(0, 12000) })");
-  writeFileSync(path.join("product-foundation-evidence", `renderer-failure-${Date.now()}.json`), JSON.stringify({ label, snapshot }, null, 2));
+  const snapshot = await cdp.evaluate(
+    '({ route: document.querySelector(\'nav[aria-label="제품 화면"] [aria-current=page]\')?.textContent, dialogs: document.querySelectorAll("[role=dialog]").length, text: (document.body?.innerText ?? "").slice(0, 12000) })',
+  );
+  writeFileSync(
+    path.join("product-foundation-evidence", `renderer-failure-${Date.now()}.json`),
+    JSON.stringify({ label, snapshot }, null, 2),
+  );
   throw new Error(`${label}: route=${snapshot.route}, dialogs=${snapshot.dialogs}`);
 }
 
-function retainNativeErrors(child,product,suffix){
-  let error="";
+function retainNativeErrors(child, product, suffix) {
+  let error = "";
   child.stderr?.setEncoding("utf8");
-  child.stderr?.on("data",value=>{error=(error+value).slice(-16000);writeFileSync(`product-foundation-evidence/native-errors-${product.id}-${suffix}.txt`,error);});
+  child.stderr?.on("data", (value) => {
+    error = (error + value).slice(-16000);
+    writeFileSync(`product-foundation-evidence/native-errors-${product.id}-${suffix}.txt`, error);
+  });
 }
 async function start(product, suffix) {
-  const directory = path.join(root, `${product.id}-${suffix}`); mkdirSync(directory);
+  const directory = path.join(root, `${product.id}-${suffix}`);
+  mkdirSync(directory);
   // Elevated WebView2 reads per-image machine policy instead of the process
   // override. Each fixture copy owns a unique value while both copies run.
   const portableRoot = process.env.DEVBOX_PORTABLE_FIXTURES;
@@ -115,12 +208,26 @@ async function start(product, suffix) {
   const executable = path.join(directory, imageName);
   const built = path.resolve("target/debug", `devbox-${product.id}.exe`);
   assert.ok(existsSync(built), "packaged executable is missing");
-  if (portableRoot) cpSync(path.resolve(portableRoot,product.id),directory,{recursive:true});
+  if (portableRoot) cpSync(path.resolve(portableRoot, product.id), directory, { recursive: true });
   else copyFileSync(built, executable);
   if (product.id === "workspace") {
-    cpSync(path.resolve("apps/devbox-workspace/src-tauri/resources/wsl"), path.join(directory, "resources/wsl"), { recursive: true });
+    cpSync(path.resolve("apps/devbox-workspace/src-tauri/resources/wsl"), path.join(directory, "resources/wsl"), {
+      recursive: true,
+    });
   }
-  writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:process.env.DEVBOX_FIXTURE_PROFILE??"debug",executableBytes:statSync(built).size},null,2));
+  writeFileSync(
+    `product-foundation-evidence/assembly-${product.id}-${suffix}.json`,
+    JSON.stringify(
+      {
+        source: process.env.GITHUB_SHA,
+        product: product.id,
+        profile: process.env.DEVBOX_FIXTURE_PROFILE ?? "debug",
+        executableBytes: statSync(built).size,
+      },
+      null,
+      2,
+    ),
+  );
   const port = await freePort();
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
   // Exercise the product's actual installation-specific profile. Redirecting
@@ -128,30 +235,47 @@ async function start(product, suffix) {
   // would hide a browser-namespace isolation defect behind the harness override.
   delete env.WEBVIEW2_USER_DATA_FOLDER;
   const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
-  if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
+  if (network)
+    Object.assign(env, {
+      HTTP_PROXY: network.url,
+      HTTPS_PROXY: network.url,
+      ALL_PROXY: network.url,
+      http_proxy: network.url,
+      https_proxy: network.url,
+      all_proxy: network.url,
+      NO_PROXY: "127.0.0.1,localhost",
+      no_proxy: "127.0.0.1,localhost",
+    });
   let policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
   let cdp, child;
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
-    child = spawn(executable, process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
-    retainNativeErrors(child,product,suffix);
+    child = spawn(
+      executable,
+      process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`],
+      { env, stdio: ["ignore", "ignore", "pipe"] },
+    );
+    retainNativeErrors(child, product, suffix);
     await once(child, "spawn");
     cdp = await connect(port, child);
     progress(product, suffix, "renderer-connected");
-    let ready = false, readinessError = "";
+    let ready = false,
+      readinessError = "";
     const readinessDeadline = performance.now() + 30_000;
     while (performance.now() < readinessDeadline) {
       // Native development route selection can replace the initial document.
       // Retry only readiness; invocation and authority probes below fail once.
       try {
-        ready = await cdp.evaluate(product.id === "api-studio"
-          ? '!!document.querySelector(".api-feature-requests .url-input")'
-          : product.id === "workspace"
-            ? '!!document.getElementById("workspace-project-path")'
-            : product.id === "knowledge"
-            ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
-            : '!!document.querySelector(".command-browser")');
+        ready = await cdp.evaluate(
+          product.id === "api-studio"
+            ? '!!document.querySelector(".api-feature-requests .url-input")'
+            : product.id === "workspace"
+              ? '!!document.getElementById("workspace-project-path")'
+              : product.id === "knowledge"
+                ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
+                : '!!document.querySelector(".command-browser")',
+        );
       } catch (error) {
         readinessError = error.message;
         // A startup document/renderer transition can invalidate this attachment.
@@ -159,16 +283,28 @@ async function start(product, suffix) {
         // an invocation, replay rejection or authority assertion below.
         cdp.close();
         if (performance.now() < readinessDeadline) {
-          try { cdp = await connect(port, child, readinessDeadline); } catch { break; }
+          try {
+            cdp = await connect(port, child, readinessDeadline);
+          } catch {
+            break;
+          }
         }
       }
-      if (ready) break; await delay(100);
+      if (ready) break;
+      await delay(100);
     }
     if (!ready) {
       try {
-        const snapshot = await cdp.evaluate('({url:location.href,readyState:document.readyState,tauri:!!window.__TAURI_INTERNALS__,text:(document.body?.innerText??"").slice(0,12000)})');
-        writeFileSync(`product-foundation-evidence/startup-${product.id}-${suffix}.json`, JSON.stringify({ currentProbe, snapshot, readinessError }, null, 2));
-      } catch { /* Keep the original readiness failure if diagnostics cannot attach. */ }
+        const snapshot = await cdp.evaluate(
+          '({url:location.href,readyState:document.readyState,tauri:!!window.__TAURI_INTERNALS__,text:(document.body?.innerText??"").slice(0,12000)})',
+        );
+        writeFileSync(
+          `product-foundation-evidence/startup-${product.id}-${suffix}.json`,
+          JSON.stringify({ currentProbe, snapshot, readinessError }, null, 2),
+        );
+      } catch {
+        /* Keep the original readiness failure if diagnostics cannot attach. */
+      }
     }
     assert.ok(ready, `native route must render an accepted response: ${readinessError}`);
     const startupMs = Math.round(performance.now() - started);
@@ -177,9 +313,12 @@ async function start(product, suffix) {
     let performanceProbe;
     if (!smokeOnly && ["workspace", "control-center"].includes(product.id) && suffix === "a") {
       progress(product, suffix, "workspace-performance");
-      performanceProbe = await measureWorkspaceStartup({cdp, child, executable, env, started, startupMs, product});
+      performanceProbe = await measureWorkspaceStartup({ cdp, child, executable, env, started, startupMs, product });
     }
-    assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), process.env.DEVBOX_FIXTURE_PROFILE === "release" ? null : product.defaultRoute);
+    assert.equal(
+      await cdp.evaluate('new URLSearchParams(location.search).get("route")'),
+      process.env.DEVBOX_FIXTURE_PROFILE === "release" ? null : product.defaultRoute,
+    );
     progress(product, suffix, "description");
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
     assert.equal(description.product.id, product.id);
@@ -194,26 +333,67 @@ async function start(product, suffix) {
       try { await invoke("plugin:product-shell|route_status", { request: { ...r, requestId: crypto.randomUUID(), installationId: "other-installation" } }); } catch { ownerRejected = true; }
       return { replayRejected, ownerRejected, availability: result.availability, state: result.operation.outcome.state };
     })()`);
-    assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
+    assert.deepEqual(probe, {
+      replayRejected: true,
+      ownerRejected: true,
+      availability: "foundation",
+      state: "succeeded",
+    });
     let componentProbe;
     if (!smokeOnly) {
-    if (product.id === "workspace") {
-      progress(product, suffix, "workspace-registration");
-      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
-      progress(product,suffix,"workspace-runtime-crash");
-      const runtimeCrash=await prepareRuntimeCrash(cdp,directory);
-      cdp.close();const crashed=once(child,"exit");child.kill();
-      await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
-      child=spawn(executable,process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
-      retainNativeErrors(child,product,suffix);
-      cdp=await connect(port,child,performance.now()+45000);
-      await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
-      componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);
-      writeFileSync(`product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.runtimeCrash},null,2));
-    }
-    if (product.id === "api-studio") {
-      progress(product, suffix, "component-authority");
-      componentProbe = await cdp.evaluate(`(async () => {
+      if (product.id === "workspace") {
+        progress(product, suffix, "workspace-registration");
+        componentProbe = await exerciseWorkspaceRegistration({
+          cdp,
+          directory,
+          waitForRenderer,
+          suffix,
+          processId: child.pid,
+          executable,
+          network,
+          connectTerminal: (id) => connect(port, child, performance.now() + 45000, id),
+        });
+        progress(product, suffix, "workspace-runtime-crash");
+        const runtimeCrash = await prepareRuntimeCrash(cdp, directory);
+        cdp.close();
+        const crashed = once(child, "exit");
+        child.kill();
+        await Promise.race([
+          crashed,
+          delay(10000).then(() => {
+            throw new Error("Owned native fixture did not exit");
+          }),
+        ]);
+        child = spawn(
+          executable,
+          process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`],
+          { env, stdio: ["ignore", "ignore", "pipe"] },
+        );
+        retainNativeErrors(child, product, suffix);
+        cdp = await connect(port, child, performance.now() + 45000);
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".workspace-registry")',
+          "Runtime crash recovery did not reopen Workspace",
+        );
+        componentProbe.runtimeCrash = await verifyRuntimeCrash(cdp, runtimeCrash);
+        writeFileSync(
+          `product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,
+          JSON.stringify(
+            {
+              source: process.env.GITHUB_SHA,
+              environment: "github-hosted-windows",
+              result: "pass",
+              checks: componentProbe.runtimeCrash,
+            },
+            null,
+            2,
+          ),
+        );
+      }
+      if (product.id === "api-studio") {
+        progress(product, suffix, "component-authority");
+        componentProbe = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route });
@@ -226,35 +406,61 @@ async function start(product, suffix) {
         const hash = await invoke("plugin:api-studio|execute", { request: { header: header("transforms"), component: "api-studio.transforms", method: "hash", args: { data: "abc", algorithm: "sha256" } } });
         return { replayRejected, ownerRejected, installationRejected, listenerRunning: status.value.running, hash: hash.value, component: hash.operation.provenance.component, state: hash.operation.outcome.state };
       })()`);
-      assert.deepEqual(componentProbe, { replayRejected: true, ownerRejected: true, installationRejected: true, listenerRunning: false, hash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", component: "api-studio.transforms", state: "succeeded" });
-      progress(product, suffix, "publish-internal-handoff");
-      const artifact = await cdp.evaluate(`(async () => {
+        assert.deepEqual(componentProbe, {
+          replayRejected: true,
+          ownerRejected: true,
+          installationRejected: true,
+          listenerRunning: false,
+          hash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          component: "api-studio.transforms",
+          state: "succeeded",
+        });
+        progress(product, suffix, "publish-internal-handoff");
+        const artifact = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "requests" };
         const result = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.api", method: "send_selection_to_toolbox", args: { text: JSON.stringify({ token: "synthetic-fixture-secret", ok: true }) } } });
         return { id: result.value.handoffId, redacted: result.value.redacted, owner: result.value.artifact.provenance.component };
       })()`);
-      assert.equal(artifact.redacted, true);
-      assert.equal(artifact.owner, "api-studio.api");
-      progress(product, suffix, "wait-internal-preview");
-      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-transforms:not([hidden]) [role=dialog]")', "internal handoff preview did not open");
-      assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-transforms [role=dialog]")?.textContent ?? "").includes("synthetic-fixture-secret")'), false);
-      progress(product, suffix, "apply-internal-preview");
-      await cdp.evaluate('Array.from(document.querySelectorAll(".api-feature-transforms [role=dialog] button")).find(button => button.textContent.trim() === "적용").click()');
-      await waitForRenderer(cdp, "document.querySelector('textarea[aria-label=\"스마트 워크플로 입력\"]')?.value.includes(\"[REDACTED]\") && !document.querySelector(\".api-feature-transforms [role=dialog]\")", "internal handoff was not explicitly applied");
-      assert.equal(await cdp.evaluate(`(async () => {
+        assert.equal(artifact.redacted, true);
+        assert.equal(artifact.owner, "api-studio.api");
+        progress(product, suffix, "wait-internal-preview");
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".api-feature-transforms:not([hidden]) [role=dialog]")',
+          "internal handoff preview did not open",
+        );
+        assert.equal(
+          await cdp.evaluate(
+            '(document.querySelector(".api-feature-transforms [role=dialog]")?.textContent ?? "").includes("synthetic-fixture-secret")',
+          ),
+          false,
+        );
+        progress(product, suffix, "apply-internal-preview");
+        await cdp.evaluate(
+          'Array.from(document.querySelectorAll(".api-feature-transforms [role=dialog] button")).find(button => button.textContent.trim() === "적용").click()',
+        );
+        await waitForRenderer(
+          cdp,
+          'document.querySelector(\'textarea[aria-label="스마트 워크플로 입력"]\')?.value.includes("[REDACTED]") && !document.querySelector(".api-feature-transforms [role=dialog]")',
+          "internal handoff was not explicitly applied",
+        );
+        assert.equal(
+          await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "transforms" };
         const result = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } });
         return result.operation.outcome.state === "failed";
-      })()`), true);
-      progress(product, suffix, "internal-handoff-complete");
-      componentProbe.internalHandoff = "redacted-preview-explicit-apply-one-time";
+      })()`),
+          true,
+        );
+        progress(product, suffix, "internal-handoff-complete");
+        componentProbe.internalHandoff = "redacted-preview-explicit-apply-one-time";
 
-      progress(product, suffix, "transform-export-and-knowledge-fallback");
-      const outputPolicy = await cdp.evaluate(`(async () => {
+        progress(product, suffix, "transform-export-and-knowledge-fallback");
+        const outputPolicy = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const call = (component, method, args) => invoke("plugin:api-studio|execute", { request: {
@@ -278,13 +484,31 @@ async function start(product, suffix) {
           durable: list.value.some(value => value.artifact.id === id) && read.value.artifact.kind === "knowledge-draft/v1",
           foreignDenied: foreign.operation.outcome.state === "failed", requestPreview: sent.operation.outcome.state === "succeeded" };
       })()`);
-      assert.deepEqual(outputPolicy, { hmacRequestDenied: true, hmacDraftDenied: true, stored: true, masked: true, durable: true, foreignDenied: true, requestPreview: true });
-      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-requests:not([hidden]) [role=dialog]")', "transform request preview did not open");
-      assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-requests [role=dialog]")?.textContent ?? "").includes("synthetic-output-secret")'), false);
-      componentProbe.outputPolicy = outputPolicy;
+        assert.deepEqual(outputPolicy, {
+          hmacRequestDenied: true,
+          hmacDraftDenied: true,
+          stored: true,
+          masked: true,
+          durable: true,
+          foreignDenied: true,
+          requestPreview: true,
+        });
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".api-feature-requests:not([hidden]) [role=dialog]")',
+          "transform request preview did not open",
+        );
+        assert.equal(
+          await cdp.evaluate(
+            '(document.querySelector(".api-feature-requests [role=dialog]")?.textContent ?? "").includes("synthetic-output-secret")',
+          ),
+          false,
+        );
+        componentProbe.outputPolicy = outputPolicy;
 
-      progress(product, suffix, "mock-draft-preview");
-      assert.equal(await cdp.evaluate(`(async () => {
+        progress(product, suffix, "mock-draft-preview");
+        assert.equal(
+          await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
@@ -292,14 +516,31 @@ async function start(product, suffix) {
         const sent = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.api", method: "send_mock_draft",
           args: { output: "mock-fixture\\nAuthorization: Bearer synthetic-mock-secret", status: 201 } } });
         return sent.operation.outcome.state === "succeeded";
-      })()`), true);
-      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-webhooks:not([hidden]) .mock-draft-dialog")', "Mock preview did not open");
-      assert.equal(await cdp.evaluate('document.querySelector(".mock-draft-dialog").textContent.includes("synthetic-mock-secret")'), false);
-      const shot = await cdp.command("Page.captureScreenshot", { format: "png" });
-      writeFileSync(`product-foundation-evidence/mock-preview-${suffix}.png`, Buffer.from(shot.data, "base64"));
-      await cdp.evaluate('Array.from(document.querySelectorAll(".mock-draft-dialog button")).find(button => button.textContent.trim() === "현재 규칙 초안 대신 적용").click()');
-      await waitForRenderer(cdp, 'document.querySelector("#rule-body")?.value.includes("mock-fixture") && !document.querySelector(".mock-draft-dialog")', "Mock preview was not explicitly applied");
-      const mockDraft = await cdp.evaluate(`(async () => {
+      })()`),
+          true,
+        );
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".api-feature-webhooks:not([hidden]) .mock-draft-dialog")',
+          "Mock preview did not open",
+        );
+        assert.equal(
+          await cdp.evaluate(
+            'document.querySelector(".mock-draft-dialog").textContent.includes("synthetic-mock-secret")',
+          ),
+          false,
+        );
+        const shot = await cdp.command("Page.captureScreenshot", { format: "png" });
+        writeFileSync(`product-foundation-evidence/mock-preview-${suffix}.png`, Buffer.from(shot.data, "base64"));
+        await cdp.evaluate(
+          'Array.from(document.querySelectorAll(".mock-draft-dialog button")).find(button => button.textContent.trim() === "현재 규칙 초안 대신 적용").click()',
+        );
+        await waitForRenderer(
+          cdp,
+          'document.querySelector("#rule-body")?.value.includes("mock-fixture") && !document.querySelector(".mock-draft-dialog")',
+          "Mock preview was not explicitly applied",
+        );
+        const mockDraft = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const call = (method) => invoke("plugin:api-studio|execute", { request: {
@@ -311,11 +552,11 @@ async function start(product, suffix) {
         return { editorOnly: rules.value.length === 0, listenerStopped: !status.value.running,
           status: document.querySelector("#rule-status").value, redacted: document.querySelector("#rule-body").value.includes("[REDACTED]") };
       })()`);
-      assert.deepEqual(mockDraft, { editorOnly: true, listenerStopped: true, status: "201", redacted: true });
-      componentProbe.mockDraft = mockDraft;
+        assert.deepEqual(mockDraft, { editorOnly: true, listenerStopped: true, status: "201", redacted: true });
+        componentProbe.mockDraft = mockDraft;
 
-      progress(product, suffix, "api-workspace");
-      const workspace = await cdp.evaluate(`(async () => {
+        progress(product, suffix, "api-workspace");
+        const workspace = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke; const d = await invoke("plugin:product-shell|describe");
         const call = (method, args = {}) => invoke("plugin:api-studio|execute", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
@@ -334,31 +575,59 @@ async function start(product, suffix) {
         return { id: created.value.workspaces.at(-1).id, revision: created.value.revision, staleRejected: stale.operation.outcome.state === "failed",
           unboundProjectRejected: foreignProject.operation.outcome.state === "failed", definitionMasked: !JSON.stringify(reopened.value).includes("synthetic-workspace-secret") && JSON.stringify(reopened.value).includes("[REDACTED]") };
       })()`);
-      assert.equal(workspace.staleRejected, true); assert.equal(workspace.unboundProjectRejected, true); assert.equal(workspace.definitionMasked, true);
-      await cdp.evaluate('Array.from(document.querySelectorAll("nav button")).find(button => button.textContent.trim() === "요청").click()');
-      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-requests:not([hidden]) .url-input")', "Requests did not reopen for workspace selection");
-      await cdp.evaluate('Array.from(document.querySelectorAll(".api-feature-requests .handoff-dialog button")).find(button => button.textContent.trim() === "취소")?.click()');
-      await cdp.evaluate('Array.from(document.querySelectorAll(".api-workspace button")).find(button => button.textContent.trim() === "연결 목록 새로고침").click()');
-      await waitForRenderer(cdp, 'Array.from(document.querySelectorAll(".api-workspace select option")).some(option => option.textContent === "Fixture Workspace")', "saved Workspace did not reopen");
-      await cdp.evaluate(`(() => {
+        assert.equal(workspace.staleRejected, true);
+        assert.equal(workspace.unboundProjectRejected, true);
+        assert.equal(workspace.definitionMasked, true);
+        await cdp.evaluate(
+          'Array.from(document.querySelectorAll("nav button")).find(button => button.textContent.trim() === "요청").click()',
+        );
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".api-feature-requests:not([hidden]) .url-input")',
+          "Requests did not reopen for workspace selection",
+        );
+        await cdp.evaluate(
+          'Array.from(document.querySelectorAll(".api-feature-requests .handoff-dialog button")).find(button => button.textContent.trim() === "취소")?.click()',
+        );
+        await cdp.evaluate(
+          'Array.from(document.querySelectorAll(".api-workspace button")).find(button => button.textContent.trim() === "연결 목록 새로고침").click()',
+        );
+        await waitForRenderer(
+          cdp,
+          'Array.from(document.querySelectorAll(".api-workspace select option")).some(option => option.textContent === "Fixture Workspace")',
+          "saved Workspace did not reopen",
+        );
+        await cdp.evaluate(`(() => {
         const input = document.querySelector(".url-input"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"http://127.0.0.1/workspace-unsent"); input.dispatchEvent(new Event("input",{bubbles:true}));
         const select = document.querySelector('select[aria-label="API Workspace 선택"]'); select.value = ${JSON.stringify(workspace.id)}; select.dispatchEvent(new Event("change",{bubbles:true}));
       })()`);
-      await waitForRenderer(cdp, 'document.querySelector(".api-workspace").textContent.includes("독립 Workspace")', "Workspace selection did not finish");
-      assert.equal(await cdp.evaluate('document.querySelector(".url-input").value'), "http://127.0.0.1/workspace-unsent");
-      componentProbe.workspace = { staleRejected: workspace.staleRejected, unboundProjectRejected: workspace.unboundProjectRejected, definitionMasked: workspace.definitionMasked, explicitSelectionPreservesRequest: true };
-
-
-    }
-    if (product.id === "knowledge") {
-      progress(product, suffix, "knowledge-automatic-startup");
-      // Fresh committed installations prepare their private stores automatically.
-      // Pre-commit business denial is exercised by windows-suite-delivery-native.
-      await waitForRenderer(cdp,
-        '!!document.querySelector(".knowledge-feature-notes .app") && !document.querySelector(".knowledge-startup")',
-        "Knowledge stores did not activate automatically");
-      progress(product, suffix, "knowledge-components");
-      componentProbe = await cdp.evaluate(`(async () => {
+        await waitForRenderer(
+          cdp,
+          'document.querySelector(".api-workspace").textContent.includes("독립 Workspace")',
+          "Workspace selection did not finish",
+        );
+        assert.equal(
+          await cdp.evaluate('document.querySelector(".url-input").value'),
+          "http://127.0.0.1/workspace-unsent",
+        );
+        componentProbe.workspace = {
+          staleRejected: workspace.staleRejected,
+          unboundProjectRejected: workspace.unboundProjectRejected,
+          definitionMasked: workspace.definitionMasked,
+          explicitSelectionPreservesRequest: true,
+        };
+      }
+      if (product.id === "knowledge") {
+        progress(product, suffix, "knowledge-automatic-startup");
+        // Fresh committed installations prepare their private stores automatically.
+        // Pre-commit business denial is exercised by windows-suite-delivery-native.
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".knowledge-feature-notes .app") && !document.querySelector(".knowledge-startup")',
+          "Knowledge stores did not activate automatically",
+        );
+        progress(product, suffix, "knowledge-components");
+        componentProbe = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route });
@@ -385,18 +654,46 @@ async function start(product, suffix) {
           independentSearch: results.operation.outcome.state === "succeeded" && Array.isArray(results.value.rows) && results.value.rows.length === 0 && results.value.source === "files",
           queryMutationDenials: denied, unapprovedBindingRejected: blockedBinding.operation.outcome.state === "failed" };
       })()`);
-      assert.deepEqual(componentProbe, { replayRejected: true, legacyCommandRejected: true, foreignInstallationRejected: true,
-        privateVault: true, explicitNoteWrite: true, collectorStartsOff: true, independentSearch: true, queryMutationDenials: 4, unapprovedBindingRejected: true });
-      componentProbe.automaticStartup = true;
-      await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "활동").click()`);
-      await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-activity:not([hidden]) .app")', "Activity route did not mount");
-      await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "검색").click()`);
-      await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-search:not([hidden]) .app")', "Search route did not mount");
-      await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "노트").click()`);
-      assert.equal(await cdp.evaluate('!!document.querySelector(".knowledge-feature-notes:not([hidden]) .app")'), true);
-      componentProbe.routesRemainMounted = await cdp.evaluate('document.querySelectorAll(".knowledge-feature-notes .app, .knowledge-feature-activity .app, .knowledge-feature-search .app").length === 3');
-      assert.equal(componentProbe.routesRemainMounted, true);
-      componentProbe.daily = await cdp.evaluate(`(async () => {
+        assert.deepEqual(componentProbe, {
+          replayRejected: true,
+          legacyCommandRejected: true,
+          foreignInstallationRejected: true,
+          privateVault: true,
+          explicitNoteWrite: true,
+          collectorStartsOff: true,
+          independentSearch: true,
+          queryMutationDenials: 4,
+          unapprovedBindingRejected: true,
+        });
+        componentProbe.automaticStartup = true;
+        await cdp.evaluate(
+          `Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "활동").click()`,
+        );
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".knowledge-feature-activity:not([hidden]) .app")',
+          "Activity route did not mount",
+        );
+        await cdp.evaluate(
+          `Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "검색").click()`,
+        );
+        await waitForRenderer(
+          cdp,
+          '!!document.querySelector(".knowledge-feature-search:not([hidden]) .app")',
+          "Search route did not mount",
+        );
+        await cdp.evaluate(
+          `Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "노트").click()`,
+        );
+        assert.equal(
+          await cdp.evaluate('!!document.querySelector(".knowledge-feature-notes:not([hidden]) .app")'),
+          true,
+        );
+        componentProbe.routesRemainMounted = await cdp.evaluate(
+          'document.querySelectorAll(".knowledge-feature-notes .app, .knowledge-feature-activity .app, .knowledge-feature-search .app").length === 3',
+        );
+        assert.equal(componentProbe.routesRemainMounted, true);
+        componentProbe.daily = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const call = (component, route, method, args = {}) => invoke("plugin:knowledge|execute", { request: {
@@ -419,8 +716,16 @@ async function start(product, suffix) {
           existingOnlyOpens: existing.value.exists === true && existing.value.previewId === null,
           civilDate: content.value.content.includes("# 2024-02-29"), legacyDailyRejected };
       })()`);
-      assert.deepEqual(componentProbe.daily, { previewDoesNotWrite: true, cancelPreventsWrite: true, explicitSave: true, repeatRejected: true, existingOnlyOpens: true, civilDate: true, legacyDailyRejected: true });
-      componentProbe.closePolicy = await cdp.evaluate(`(async () => {
+        assert.deepEqual(componentProbe.daily, {
+          previewDoesNotWrite: true,
+          cancelPreventsWrite: true,
+          explicitSave: true,
+          repeatRejected: true,
+          existingOnlyOpens: true,
+          civilDate: true,
+          legacyDailyRejected: true,
+        });
+        componentProbe.closePolicy = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const call = (method, args = {}) => invoke("plugin:knowledge|execute", { request: {
@@ -433,16 +738,42 @@ async function start(product, suffix) {
           preferenceRoundtrip: enabled.value.closeToTray === true && reset.value.closeToTray === false,
           doesNotEnableCollection: tracking.value === false };
       })()`);
-      assert.deepEqual(componentProbe.closePolicy, { defaultQuits: true, trayAvailable: true, preferenceRoundtrip: true, doesNotEnableCollection: true });
-    }
+        assert.deepEqual(componentProbe.closePolicy, {
+          defaultQuits: true,
+          trayAvailable: true,
+          preferenceRoundtrip: true,
+          doesNotEnableCollection: true,
+        });
+      }
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });
-    await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
-    assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
+    await Promise.race([
+      once(second, "exit"),
+      delay(10_000).then(() => {
+        if (second.exitCode === null) {
+          second.kill();
+          throw new Error("second instance did not exit");
+        }
+      }),
+    ]);
+    assert.equal(second.exitCode, 0);
+    assert.equal(child.exitCode, null);
     // The public portable executable keeps its real name in both installations.
     // Retire only the consumed startup policy before the second copy starts.
-    if (portableRoot && policy) { restoreElevatedCdpPolicy(policy); policy = null; }
-    return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
+    if (portableRoot && policy) {
+      restoreElevatedCdpPolicy(policy);
+      policy = null;
+    }
+    return {
+      child,
+      cdp,
+      policy,
+      network,
+      handshake: description.handshake,
+      startupMs,
+      componentProbe,
+      performanceProbe,
+    };
   } catch (error) {
     stop({ child, cdp, policy, network });
     throw error;
@@ -463,16 +794,33 @@ try {
   for (const product of products) {
     let first, second;
     try {
-      first = await start(product, "a"); second = await start(product, "b");
+      first = await start(product, "a");
+      second = await start(product, "b");
       assert.notEqual(first.handshake.installationId, second.handshake.installationId);
       assert.notEqual(first.handshake.sessionId, second.handshake.sessionId);
       assert.equal(first.child.exitCode, null);
-      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs], ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}), ...(first.performanceProbe ? {performance: first.performanceProbe} : {}) });
-    } finally { try { stop(second); } finally { stop(first); } }
+      evidence.products.push({
+        product: product.id,
+        nativeRoute: "pass",
+        replay: "rejected",
+        foreignInstallation: "rejected",
+        sameInstallationSecondInstance: "exited",
+        separateInstallations: "isolated",
+        startupMs: [first.startupMs, second.startupMs],
+        ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}),
+        ...(first.performanceProbe ? { performance: first.performanceProbe } : {}),
+      });
+    } finally {
+      try {
+        stop(second);
+      } finally {
+        stop(first);
+      }
+    }
   }
   evidence.result = "pass";
 } catch (error) {
-  evidence.failure = String(error?.stack ?? error).slice(0,8000);
+  evidence.failure = String(error?.stack ?? error).slice(0, 8000);
   throw error;
 } finally {
   writeFileSync("product-foundation-evidence/native.json", JSON.stringify(evidence, null, 2) + "\n");

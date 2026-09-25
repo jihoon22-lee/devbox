@@ -58,9 +58,7 @@ vi.mock("./api", () => ({
       },
     ],
   }),
-  listDistros: vi.fn().mockResolvedValue([
-    { name: "Ubuntu", version: 2, default: true, state: "Running" },
-  ]),
+  listDistros: vi.fn().mockResolvedValue([{ name: "Ubuntu", version: 2, default: true, state: "Running" }]),
   dockerPs: vi.fn().mockResolvedValue([]),
   dockerAction: vi.fn().mockResolvedValue(undefined),
   startSession: vi.fn().mockResolvedValue({ sessionId: "session-1", resumed: false, multiplexer: "native" }),
@@ -103,14 +101,16 @@ const onTerminalOutputMock = vi.mocked(onTerminalOutput);
 const profile: WorkspaceProfile = {
   id: "profile-1",
   name: "개발",
-  tabs: [{
-    id: "tab-1",
-    title: "dev",
-    customTitle: true,
-    layout: "cols",
-    paneKeys: ["pane-1", "pane-2"],
-    sizing: { columns: [0.65, 0.35], rows: [1] },
-  }],
+  tabs: [
+    {
+      id: "tab-1",
+      title: "dev",
+      customTitle: true,
+      layout: "cols",
+      paneKeys: ["pane-1", "pane-2"],
+      sizing: { columns: [0.65, 0.35], rows: [1] },
+    },
+  ],
   panes: [
     { key: "pane-1", distro: "Ubuntu", cwd: "/mnt/e/projects/devbox", startCommand: null, multiplexer: "native" },
     { key: "pane-2", distro: "Ubuntu", cwd: "/mnt/e/projects/devbox", startCommand: null, multiplexer: "tmux" },
@@ -150,7 +150,6 @@ beforeEach(() => {
   openWslJournalInLogLensMock.mockReset().mockResolvedValue(undefined);
   onTerminalClosedMock.mockReset().mockResolvedValue(() => undefined);
   onTerminalOutputMock.mockReset().mockResolvedValue(() => undefined);
-
 });
 
 /** 앱 내장 대화상자를 승인한다. 취소가 첫 버튼, 확인이 마지막 버튼이다. */
@@ -167,9 +166,10 @@ describe("App app-link delivery", () => {
   it("waits for the Windows build lookup before mounting PaneCanvas", async () => {
     let resolveBuild: ((value: number | null) => void) | undefined;
     getWindowsBuildNumberMock.mockImplementationOnce(
-      () => new Promise<number | null>((resolve) => {
-        resolveBuild = resolve;
-      }),
+      () =>
+        new Promise<number | null>((resolve) => {
+          resolveBuild = resolve;
+        }),
     );
 
     render(<App />);
@@ -246,9 +246,13 @@ describe("App app-link delivery", () => {
     await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
     expect(startSessionMock).toHaveBeenNthCalledWith(1, "Ubuntu", "/mnt/e/projects/devbox", "pane-2", "tmux");
     expect(startSessionMock).toHaveBeenNthCalledWith(2, "Ubuntu", "/mnt/e/projects/devbox", "pane-1", "native");
-    await waitFor(() => expect((mocks.paneCanvasProps as { activePaneId: string }).activePaneId).toBe("session-pane-2"));
-    expect((mocks.paneCanvasProps as { tabs: Array<{ sizing: unknown }> }).tabs[0].sizing)
-      .toEqual({ columns: [0.65, 0.35], rows: [1] });
+    await waitFor(() =>
+      expect((mocks.paneCanvasProps as { activePaneId: string }).activePaneId).toBe("session-pane-2"),
+    );
+    expect((mocks.paneCanvasProps as { tabs: Array<{ sizing: unknown }> }).tabs[0].sizing).toEqual({
+      columns: [0.65, 0.35],
+      rows: [1],
+    });
   });
 
   it("waits for the active pane before starting any remaining restore work", async () => {
@@ -264,10 +268,12 @@ describe("App app-link delivery", () => {
 
     await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(1));
     expect(startSessionMock.mock.calls[0]?.[2]).toBe("pane-2");
-    expect((mocks.paneCanvasProps as {
-      activePaneId: string;
-      panes: Array<{ sessionId: string | null; restoreStatus?: string }>;
-    })).toMatchObject({
+    expect(
+      mocks.paneCanvasProps as {
+        activePaneId: string;
+        panes: Array<{ sessionId: string | null; restoreStatus?: string }>;
+      },
+    ).toMatchObject({
       activePaneId: "pane-2",
       panes: [
         { sessionId: null, restoreStatus: "connecting" },
@@ -330,40 +336,39 @@ describe("App app-link delivery", () => {
     await act(async () => {
       await (mocks.paneCanvasProps as { onRetryPane: (key: string) => Promise<void> }).onRetryPane("pane-2");
     });
-    await waitFor(() => expect(
-      (mocks.paneCanvasProps as { activePaneId: string }).activePaneId,
-    ).toBe("retry-pane-2"));
+    await waitFor(() => expect((mocks.paneCanvasProps as { activePaneId: string }).activePaneId).toBe("retry-pane-2"));
   });
 
   it("isolates a pending Log Lens handoff from Docker, distro, and new terminal actions", async () => {
     let resolveHandoff: (() => void) | undefined;
     openWslJournalInLogLensMock.mockImplementationOnce(
-      () => new Promise<void>((resolve) => {
-        resolveHandoff = resolve;
-      }),
+      () =>
+        new Promise<void>((resolve) => {
+          resolveHandoff = resolve;
+        }),
     );
     getDashboardSnapshotMock.mockResolvedValueOnce({
       revision: 2,
       capturedAtMs: Date.now(),
       staleAfterMs: 30_000,
-      distros: [{
-        name: "Ubuntu",
-        version: 2,
-        default: true,
-        state: "Running",
-        terminalCount: 0,
-        dockerAvailability: "available",
-        containers: [
-          { id: "container-1", name: "worker", image: "worker:latest", status: "Exited (1)", ports: "" },
-        ],
-        resource: {
-          cpuPercent: 10,
-          memoryUsedBytes: 1,
-          memoryTotalBytes: 2,
-          diskUsedBytes: 1,
-          diskTotalBytes: 2,
+      distros: [
+        {
+          name: "Ubuntu",
+          version: 2,
+          default: true,
+          state: "Running",
+          terminalCount: 0,
+          dockerAvailability: "available",
+          containers: [{ id: "container-1", name: "worker", image: "worker:latest", status: "Exited (1)", ports: "" }],
+          resource: {
+            cpuPercent: 10,
+            memoryUsedBytes: 1,
+            memoryTotalBytes: 2,
+            diskUsedBytes: 1,
+            diskTotalBytes: 2,
+          },
         },
-      }],
+      ],
     });
 
     render(<App />);
@@ -403,6 +408,8 @@ describe("App app-link delivery", () => {
     fireEvent.click(journalButton);
     await acceptDialog();
     await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText("Log Lens journal handoff를 시작하지 못했습니다.")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText("Log Lens journal handoff를 시작하지 못했습니다.")).not.toBeInTheDocument(),
+    );
   });
 });

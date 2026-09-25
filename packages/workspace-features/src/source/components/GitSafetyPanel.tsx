@@ -1,11 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  GIT_SAFETY_ERROR,
-  repoPreflight,
-  type GitSafetyIssue,
-  type GitSafetySnapshot,
-  type RepoEntry,
-} from "../api";
+import { GIT_SAFETY_ERROR, repoPreflight, type GitSafetyIssue, type GitSafetySnapshot, type RepoEntry } from "../api";
 
 interface Props {
   repo: RepoEntry | null;
@@ -30,9 +24,17 @@ export default function GitSafetyPanel({ repo, onBusyChange }: Props) {
   const busyRef = useRef(false);
   const mountedRef = useRef(false);
 
-  useEffect(() => {onBusyChange?.(busy);}, [busy, onBusyChange]);
-  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  useEffect(
+    () => () => {
+      onBusyChange?.(false);
+    },
+    [onBusyChange],
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     mountedRef.current = true;
     sequenceRef.current += 1;
@@ -50,8 +52,7 @@ export default function GitSafetyPanel({ repo, onBusyChange }: Props) {
 
   if (!repo) return null;
 
-  const isCurrent = (sequence: number) =>
-    mountedRef.current && sequence === sequenceRef.current;
+  const isCurrent = (sequence: number) => mountedRef.current && sequence === sequenceRef.current;
 
   const finishBusy = (sequence: number) => {
     if (!isCurrent(sequence)) return;
@@ -79,27 +80,22 @@ export default function GitSafetyPanel({ repo, onBusyChange }: Props) {
   };
 
   return (
-    <section
-      className="git-safety-panel"
-      aria-label="Git 상태 사전 검사"
-      aria-busy={busy}
-    >
+    <section className="git-safety-panel" aria-label="Git 상태 사전 검사" aria-busy={busy}>
       <div className="git-safety-head">
         <div>
           <h2>Git 상태 사전 검사</h2>
           <div className="history-repository mono">{repo.path}</div>
         </div>
-        <button
-          type="button"
-          className="btn"
-          disabled={busy}
-          onClick={() => void runPreflight()}
-        >
+        <button type="button" className="btn" disabled={busy} onClick={() => void runPreflight()}>
           {busy ? "검사 중…" : "상태 검사"}
         </button>
       </div>
 
-      {error ? <div className="error git-safety-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="error git-safety-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="git-safety-status" role="status" aria-live="polite" aria-atomic="true">
         {busy
           ? "Git 상태를 확인하는 중입니다."
@@ -123,7 +119,9 @@ export default function GitSafetyPanel({ repo, onBusyChange }: Props) {
             </div>
             <div>
               <dt>ahead / behind</dt>
-              <dd className="mono">↑{snapshot.ahead} / ↓{snapshot.behind}</dd>
+              <dd className="mono">
+                ↑{snapshot.ahead} / ↓{snapshot.behind}
+              </dd>
             </div>
           </dl>
           {snapshot.issues.length > 0 ? (

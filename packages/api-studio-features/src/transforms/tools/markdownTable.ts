@@ -109,7 +109,7 @@ interface BacktickRun {
  */
 function pipeDelimiters(value: string): number[] {
   const runs: BacktickRun[] = [];
-  for (let index = 0; index < value.length;) {
+  for (let index = 0; index < value.length; ) {
     if (value[index] !== "`" || isEscaped(value, index)) {
       index += 1;
       continue;
@@ -129,7 +129,7 @@ function pipeDelimiters(value: string): number[] {
 
   const delimiters: number[] = [];
   let runIndex = 0;
-  for (let index = 0; index < value.length;) {
+  for (let index = 0; index < value.length; ) {
     while (runIndex < runs.length && runs[runIndex].start < index) runIndex += 1;
     const run = runs[runIndex];
     if (run?.start === index) {
@@ -169,9 +169,7 @@ function splitRow(line: string): string[] | null {
   if (rowDelimiters.length === 0) return null;
 
   const bodyStart = rowDelimiters[0] === 0 ? 1 : 0;
-  const bodyEnd = rowDelimiters[rowDelimiters.length - 1] === trimmed.length - 1
-    ? trimmed.length - 1
-    : trimmed.length;
+  const bodyEnd = rowDelimiters[rowDelimiters.length - 1] === trimmed.length - 1 ? trimmed.length - 1 : trimmed.length;
   const body = trimmed.slice(bodyStart, bodyEnd);
   const delimiters = pipeDelimiters(body);
 
@@ -260,11 +258,7 @@ function padCell(value: string, width: number, alignment: Alignment): string {
 
 function separatorFor(width: number, alignment: Alignment): string {
   const minimum = alignment === "center" ? 5 : 3;
-  const markerCount = alignment === "center"
-    ? 2
-    : alignment === "left" || alignment === "right"
-      ? 1
-      : 0;
+  const markerCount = alignment === "center" ? 2 : alignment === "left" || alignment === "right" ? 1 : 0;
   const hyphens = Math.max(3, width - markerCount, minimum - markerCount);
   if (alignment === "center") return `:${"-".repeat(hyphens)}:`;
   if (alignment === "right") return `${"-".repeat(hyphens)}:`;
@@ -316,14 +310,12 @@ export function formatMarkdownTable(input: string): MarkdownTableResult {
   const columns = columnCount(parsed.rows, parsed.separator);
   if (columns > MARKDOWN_TABLE_LIMITS.maxColumns) return error("TOO_MANY_COLUMNS");
 
-  const alignments: Alignment[] = Array.from({ length: columns }, (_, index) => (
-    parsed.separator && index < parsed.separator.length
-      ? alignmentFor(parsed.separator[index])
-      : "default"
-  ));
-  const escapedRows = parsed.rows.map((row) => (
-    Array.from({ length: columns }, (_, index) => escapeCell(row.cells[index] ?? ""))
-  ));
+  const alignments: Alignment[] = Array.from({ length: columns }, (_, index) =>
+    parsed.separator && index < parsed.separator.length ? alignmentFor(parsed.separator[index]) : "default",
+  );
+  const escapedRows = parsed.rows.map((row) =>
+    Array.from({ length: columns }, (_, index) => escapeCell(row.cells[index] ?? "")),
+  );
   const widths = Array.from({ length: columns }, () => 0);
   for (const row of escapedRows) {
     for (let index = 0; index < columns; index += 1) {
@@ -334,9 +326,9 @@ export function formatMarkdownTable(input: string): MarkdownTableResult {
   const lines: string[] = [];
   const outputBytes = { value: 0 };
   const appendRow = (row: readonly string[]): boolean => {
-    const cells = Array.from({ length: columns }, (_, index) => (
-      padCell(row[index] ?? "", widths[index], alignments[index])
-    ));
+    const cells = Array.from({ length: columns }, (_, index) =>
+      padCell(row[index] ?? "", widths[index], alignments[index]),
+    );
     return appendBoundedLine(lines, `| ${cells.join(" | ")} |`, outputBytes);
   };
 

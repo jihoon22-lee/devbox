@@ -96,8 +96,6 @@ describe("convertRadix", () => {
 
   it("빈 입력은 조용히 비우고 표현 길이 상한을 적용한다", () => {
     expect(convertRadix(" \n ", "auto")).toEqual({ outputs: null, metadata: null, error: null });
-    expect(convertRadix("1".repeat(MAX_RADIX_INPUT_CHARACTERS + 1), "2").error?.code).toBe(
-      "INPUT_TOO_LONG",
-    );
+    expect(convertRadix("1".repeat(MAX_RADIX_INPUT_CHARACTERS + 1), "2").error?.code).toBe("INPUT_TOO_LONG");
   });
 });

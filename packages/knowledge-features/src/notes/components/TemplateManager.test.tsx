@@ -99,9 +99,12 @@ describe("Knowledge template manager", () => {
 
   it("does not leave a stale native preview after an unmounted request resolves", async () => {
     let resolvePreview: ((value: TemplatePreview) => void) | undefined;
-    previewMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolvePreview = resolve;
-    }));
+    previewMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
     const { unmount } = renderManager();
     const dialog = await readyManager();
     fireEvent.click(within(dialog).getByRole("button", { name: "적용 전 미리보기" }));

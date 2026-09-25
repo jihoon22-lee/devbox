@@ -1,5 +1,7 @@
 import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke(method => method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source");
+const invoke = componentInvoke((method) =>
+  method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source",
+);
 import { isTauri } from "./lib/isTauri";
 
 export interface RepoEntry {
@@ -29,12 +31,7 @@ export interface RepoSnapshot {
 }
 
 export type DependencyEcosystem = "cargo" | "pnpm" | "npm" | "python" | "gradle";
-export type DependencySourceStatus =
-  | "ready"
-  | "missingLockfile"
-  | "staleLockfile"
-  | "invalid"
-  | "unsupported";
+export type DependencySourceStatus = "ready" | "missingLockfile" | "staleLockfile" | "invalid" | "unsupported";
 
 export interface DependencySource {
   ecosystem: DependencyEcosystem;
@@ -162,13 +159,7 @@ export interface DependencyEnrichmentReport {
   services: EnrichmentServiceSummary[];
 }
 
-export type GitSafetyIssue =
-  | "dirty"
-  | "detached"
-  | "noUpstream"
-  | "diverged"
-  | "rebaseInProgress"
-  | "mergeInProgress";
+export type GitSafetyIssue = "dirty" | "detached" | "noUpstream" | "diverged" | "rebaseInProgress" | "mergeInProgress";
 
 export interface GitSafetySnapshot {
   branch: string;
@@ -229,7 +220,15 @@ export interface DiffResult {
   truncated: boolean;
 }
 
-export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "untracked-directory" | "conflict";
+export type ChangeKind =
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "untracked"
+  | "untracked-directory"
+  | "conflict";
 
 export interface ChangeEntry {
   path: string;
@@ -401,13 +400,15 @@ const MOCK_ENRICHMENT_PREVIEW: DependencyEnrichmentPreview = {
     {
       service: "osv",
       host: "api.osv.dev",
-      transmitted: [{
-        ecosystem: "crates.io",
-        name: "serde",
-        version: "1.0.0",
-        direct: true,
-        localPackageCount: 1,
-      }],
+      transmitted: [
+        {
+          ecosystem: "crates.io",
+          name: "serde",
+          version: "1.0.0",
+          direct: true,
+          localPackageCount: 1,
+        },
+      ],
       cachedCount: 0,
       staleFallbackCount: 0,
       omittedCount: 0,
@@ -416,13 +417,15 @@ const MOCK_ENRICHMENT_PREVIEW: DependencyEnrichmentPreview = {
     {
       service: "depsDev",
       host: "api.deps.dev",
-      transmitted: [{
-        ecosystem: "CARGO",
-        name: "serde",
-        version: "1.0.0",
-        direct: true,
-        localPackageCount: 1,
-      }],
+      transmitted: [
+        {
+          ecosystem: "CARGO",
+          name: "serde",
+          version: "1.0.0",
+          direct: true,
+          localPackageCount: 1,
+        },
+      ],
       cachedCount: 0,
       staleFallbackCount: 0,
       omittedCount: 0,
@@ -436,27 +439,29 @@ const MOCK_ENRICHMENT_REPORT: DependencyEnrichmentReport = {
   completedAtMs: Date.now(),
   localAuthoritative: true,
   cachePersisted: true,
-  entries: [{
-    packageIds: ["cargo:serde@1.0.0"],
-    osv: {
-      state: "fresh",
-      fetchedAtMs: Date.now(),
-      ageMs: 0,
-      advisoryIds: [],
-      truncated: false,
+  entries: [
+    {
+      packageIds: ["cargo:serde@1.0.0"],
+      osv: {
+        state: "fresh",
+        fetchedAtMs: Date.now(),
+        ageMs: 0,
+        advisoryIds: [],
+        truncated: false,
+      },
+      depsDev: {
+        state: "fresh",
+        fetchedAtMs: Date.now(),
+        ageMs: 0,
+        licenses: ["MIT OR Apache-2.0"],
+        defaultVersion: "1.0.0",
+        deprecated: false,
+        advisoryIds: [],
+        versionFound: true,
+        packageFound: true,
+      },
     },
-    depsDev: {
-      state: "fresh",
-      fetchedAtMs: Date.now(),
-      ageMs: 0,
-      licenses: ["MIT OR Apache-2.0"],
-      defaultVersion: "1.0.0",
-      deprecated: false,
-      advisoryIds: [],
-      versionFound: true,
-      packageFound: true,
-    },
-  }],
+  ],
   services: [
     {
       service: "osv",
@@ -491,9 +496,7 @@ export function prepareInboundRepository(path: string): Promise<RepoEntry> {
     const normalized = path.replace(/\\/g, "/").replace(/\/+$/u, "");
     return Promise.resolve({
       path,
-      canonicalKey: /^[a-zA-Z]:\//u.test(normalized)
-        ? `win:${normalized.toLowerCase()}`
-        : normalized,
+      canonicalKey: /^[a-zA-Z]:\//u.test(normalized) ? `win:${normalized.toLowerCase()}` : normalized,
       hasWorktrees: false,
     });
   }
@@ -513,7 +516,11 @@ export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise
 
 export function repoStatus(path: string): Promise<RepoSnapshot> {
   if (!isTauri()) {
-    return Promise.resolve({ path, branch: { current: "main", ahead: 0, behind: 0, dirty: false, detached: false }, changes: 0 });
+    return Promise.resolve({
+      path,
+      branch: { current: "main", ahead: 0, behind: 0, dirty: false, detached: false },
+      changes: 0,
+    });
   }
   return invoke<RepoSnapshot>("repo_status", { path });
 }
@@ -657,8 +664,18 @@ export function repoCleanup(
       attempted: branchNames.length + worktreePaths.length,
       removed: branchNames.length + worktreePaths.length,
       items: [
-        ...branchNames.map((target) => ({ kind: "branch" as const, target, outcome: "removed" as const, reason: null })),
-        ...worktreePaths.map((target) => ({ kind: "worktree" as const, target, outcome: "removed" as const, reason: null })),
+        ...branchNames.map((target) => ({
+          kind: "branch" as const,
+          target,
+          outcome: "removed" as const,
+          reason: null,
+        })),
+        ...worktreePaths.map((target) => ({
+          kind: "worktree" as const,
+          target,
+          outcome: "removed" as const,
+          reason: null,
+        })),
       ],
     });
   }
@@ -722,7 +739,7 @@ export function dependencyEnrichmentPreview(
       ...MOCK_ENRICHMENT_PREVIEW,
       expiresAtMs: Date.now() + 5 * 60 * 1_000,
       services: MOCK_ENRICHMENT_PREVIEW.services
-        .filter((service) => service.service === "osv" ? services.osv : services.depsDev)
+        .filter((service) => (service.service === "osv" ? services.osv : services.depsDev))
         .map((service) => ({
           ...service,
           transmitted: service.transmitted.map((coordinate) => ({ ...coordinate })),
@@ -735,10 +752,7 @@ export function dependencyEnrichmentPreview(
   });
 }
 
-export function dependencyEnrichmentExecute(
-  path: string,
-  previewToken: string,
-): Promise<DependencyEnrichmentReport> {
+export function dependencyEnrichmentExecute(path: string, previewToken: string): Promise<DependencyEnrichmentReport> {
   if (!isTauri()) {
     return Promise.resolve({
       ...MOCK_ENRICHMENT_REPORT,
@@ -775,10 +789,17 @@ export function repoUnstage(path: string, paths: string[], operationId: string):
   return invoke<void>("repo_unstage", { request: { path, paths, operationId } });
 }
 
-export interface CommitReview { revision: string; stagedPaths: string[] }
+export interface CommitReview {
+  revision: string;
+  stagedPaths: string[];
+}
 export function repoCommitPreview(path: string): Promise<CommitReview> {
-  if (!isTauri()) return Promise.resolve({revision:"browser-fixture",stagedPaths:MOCK_CHANGES.filter(change=>change.staged).map(change=>change.path)});
-  return invoke<CommitReview>("repo_commit_preview", {request:{path}});
+  if (!isTauri())
+    return Promise.resolve({
+      revision: "browser-fixture",
+      stagedPaths: MOCK_CHANGES.filter((change) => change.staged).map((change) => change.path),
+    });
+  return invoke<CommitReview>("repo_commit_preview", { request: { path } });
 }
 export function repoCommit(path: string, message: string, operationId: string, indexRevision: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
@@ -837,5 +858,5 @@ export function openRepositoryFolder(path: string): Promise<void> {
 
 /** Product preview ownership is explicitly discarded on cancel or stale UI. */
 export async function dependencyEnrichmentCancel(path: string, previewToken: string): Promise<void> {
-  if (isProductHosted()) await invoke("dependency_enrichment_cancel", {request:{path, previewToken}});
+  if (isProductHosted()) await invoke("dependency_enrichment_cancel", { request: { path, previewToken } });
 }

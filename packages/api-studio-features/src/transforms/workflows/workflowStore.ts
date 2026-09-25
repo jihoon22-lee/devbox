@@ -67,10 +67,12 @@ function compareIds(left: string, right: string): number {
 }
 
 function safeTimestamp(value: unknown): value is number {
-  return typeof value === "number"
-    && Number.isSafeInteger(value)
-    && value >= 0
-    && value <= WORKFLOW_STORAGE_LIMITS.maxTimestamp;
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= WORKFLOW_STORAGE_LIMITS.maxTimestamp
+  );
 }
 
 function allowed(value: string, set: ReadonlySet<string> | undefined): boolean {
@@ -78,8 +80,7 @@ function allowed(value: string, set: ReadonlySet<string> | undefined): boolean {
 }
 
 function isPipelineStep(value: unknown): value is PipelineStep {
-  return isRecord(value)
-    && isSafeId(value.transformerId, WORKFLOW_STORAGE_LIMITS.maxToolIdLength);
+  return isRecord(value) && isSafeId(value.transformerId, WORKFLOW_STORAGE_LIMITS.maxToolIdLength);
 }
 
 function validPipelineSteps(inputType: PipelineValueType, steps: readonly PipelineStep[]): boolean {
@@ -116,10 +117,11 @@ export function sanitizeWorkflowMetadata(
       if (!isRecord(entry)) continue;
       const toolId = entry.toolId;
       if (
-        !isSafeId(toolId, WORKFLOW_STORAGE_LIMITS.maxToolIdLength)
-        || !allowed(toolId, options.toolIds)
-        || !safeTimestamp(entry.usedAt)
-      ) continue;
+        !isSafeId(toolId, WORKFLOW_STORAGE_LIMITS.maxToolIdLength) ||
+        !allowed(toolId, options.toolIds) ||
+        !safeTimestamp(entry.usedAt)
+      )
+        continue;
       const previous = recentById.get(toolId);
       if (previous === undefined || entry.usedAt > previous) recentById.set(toolId, entry.usedAt);
     }
@@ -134,10 +136,11 @@ export function sanitizeWorkflowMetadata(
   if (Array.isArray(raw.favoriteTools)) {
     for (const value of raw.favoriteTools) {
       if (
-        !isSafeId(value, WORKFLOW_STORAGE_LIMITS.maxToolIdLength)
-        || !allowed(value, options.toolIds)
-        || favoriteSeen.has(value)
-      ) continue;
+        !isSafeId(value, WORKFLOW_STORAGE_LIMITS.maxToolIdLength) ||
+        !allowed(value, options.toolIds) ||
+        favoriteSeen.has(value)
+      )
+        continue;
       favoriteSeen.add(value);
       favoriteTools.push(value);
       if (favoriteTools.length >= WORKFLOW_STORAGE_LIMITS.maxFavoriteTools) break;
@@ -150,13 +153,14 @@ export function sanitizeWorkflowMetadata(
       if (!isRecord(entry)) continue;
       const id = entry.id;
       if (
-        !isSafeId(id, WORKFLOW_STORAGE_LIMITS.maxPipelineIdLength)
-        || !isPipelineValueType(entry.inputType)
-        || !safeTimestamp(entry.updatedAt)
-        || !Array.isArray(entry.steps)
-        || entry.steps.length === 0
-        || entry.steps.length > PIPELINE_LIMITS.maxSteps
-      ) continue;
+        !isSafeId(id, WORKFLOW_STORAGE_LIMITS.maxPipelineIdLength) ||
+        !isPipelineValueType(entry.inputType) ||
+        !safeTimestamp(entry.updatedAt) ||
+        !Array.isArray(entry.steps) ||
+        entry.steps.length === 0 ||
+        entry.steps.length > PIPELINE_LIMITS.maxSteps
+      )
+        continue;
       const steps: PipelineStep[] = [];
       let valid = true;
       for (const rawStep of entry.steps) {
@@ -165,8 +169,8 @@ export function sanitizeWorkflowMetadata(
           break;
         }
         if (
-          (options.transformerIds !== undefined && !options.transformerIds.has(rawStep.transformerId))
-          || !TRANSFORMER_BY_ID.has(rawStep.transformerId)
+          (options.transformerIds !== undefined && !options.transformerIds.has(rawStep.transformerId)) ||
+          !TRANSFORMER_BY_ID.has(rawStep.transformerId)
         ) {
           valid = false;
           break;
@@ -210,15 +214,9 @@ export function recordRecentTool(
   usedAt: number,
   toolIds?: ReadonlySet<string>,
 ): WorkflowMetadata {
-  if (
-    !isSafeId(toolId, WORKFLOW_STORAGE_LIMITS.maxToolIdLength)
-    || !allowed(toolId, toolIds)
-    || !safeTimestamp(usedAt)
-  ) return metadata;
-  const recentTools = [
-    { toolId, usedAt },
-    ...metadata.recentTools.filter((entry) => entry.toolId !== toolId),
-  ]
+  if (!isSafeId(toolId, WORKFLOW_STORAGE_LIMITS.maxToolIdLength) || !allowed(toolId, toolIds) || !safeTimestamp(usedAt))
+    return metadata;
+  const recentTools = [{ toolId, usedAt }, ...metadata.recentTools.filter((entry) => entry.toolId !== toolId)]
     .sort((left, right) => right.usedAt - left.usedAt || compareIds(left.toolId, right.toolId))
     .slice(0, WORKFLOW_STORAGE_LIMITS.maxRecentTools);
   return { ...metadata, recentTools };
@@ -253,23 +251,26 @@ export function upsertPipeline(
   updatedAt: number,
 ): WorkflowMetadata {
   if (
-    !isSafeId(id, WORKFLOW_STORAGE_LIMITS.maxPipelineIdLength)
-    || !isPipelineValueType(inputType)
-    || !Array.isArray(steps)
-    || steps.length === 0
-    || steps.length > PIPELINE_LIMITS.maxSteps
-    || !safeTimestamp(updatedAt)
-    || !steps.every((step) => isPipelineStep(step) && TRANSFORMER_BY_ID.has(step.transformerId))
-    || !validPipelineSteps(inputType, steps)
-  ) return metadata;
+    !isSafeId(id, WORKFLOW_STORAGE_LIMITS.maxPipelineIdLength) ||
+    !isPipelineValueType(inputType) ||
+    !Array.isArray(steps) ||
+    steps.length === 0 ||
+    steps.length > PIPELINE_LIMITS.maxSteps ||
+    !safeTimestamp(updatedAt) ||
+    !steps.every((step) => isPipelineStep(step) && TRANSFORMER_BY_ID.has(step.transformerId)) ||
+    !validPipelineSteps(inputType, steps)
+  )
+    return metadata;
   const saved: SavedPipelineMetadata = {
     id,
     inputType,
     steps: steps.map((step) => ({ transformerId: step.transformerId })),
     updatedAt,
   };
-  const pipelines = [saved, ...metadata.pipelines.filter((item) => item.id !== id)]
-    .slice(0, WORKFLOW_STORAGE_LIMITS.maxPipelines);
+  const pipelines = [saved, ...metadata.pipelines.filter((item) => item.id !== id)].slice(
+    0,
+    WORKFLOW_STORAGE_LIMITS.maxPipelines,
+  );
   return { ...metadata, pipelines };
 }
 
@@ -278,11 +279,13 @@ function fixedStorageError(): Error {
 }
 
 function hasStorageShape(value: unknown): value is Record<string, unknown> {
-  return isRecord(value)
-    && value.schemaVersion === WORKFLOW_SCHEMA_VERSION
-    && Array.isArray(value.recentTools)
-    && Array.isArray(value.favoriteTools)
-    && Array.isArray(value.pipelines);
+  return (
+    isRecord(value) &&
+    value.schemaVersion === WORKFLOW_SCHEMA_VERSION &&
+    Array.isArray(value.recentTools) &&
+    Array.isArray(value.favoriteTools) &&
+    Array.isArray(value.pipelines)
+  );
 }
 
 export interface WorkflowPersistence {

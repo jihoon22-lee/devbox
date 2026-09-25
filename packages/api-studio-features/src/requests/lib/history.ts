@@ -44,11 +44,8 @@ export function filterHistory(items: readonly HistoryItem[], filter: HistoryFilt
   const method = filter.method.trim().toUpperCase();
   return items.filter((item) => {
     const metadata = historyVisibleMetadata(item);
-    const status = metadata.status === undefined
-      ? "error"
-      : metadata.status >= 200 && metadata.status < 400
-        ? "success"
-        : "error";
+    const status =
+      metadata.status === undefined ? "error" : metadata.status >= 200 && metadata.status < 400 ? "success" : "error";
     if (method && metadata.method !== method) return false;
     if (filter.status !== "all" && status !== filter.status) return false;
     if (!query) return true;
@@ -57,7 +54,9 @@ export function filterHistory(items: readonly HistoryItem[], filter: HistoryFilt
       metadata.method,
       metadata.url,
       metadata.status === undefined ? "" : String(metadata.status),
-    ].join(" ").toLocaleLowerCase();
+    ]
+      .join(" ")
+      .toLocaleLowerCase();
     return haystack.includes(query);
   });
 }

@@ -25,9 +25,7 @@ type DiffSelection = "workingTree" | "commit";
 function parseLimit(value: string): number | null {
   if (!/^\d+$/u.test(value)) return null;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= MAX_HISTORY_LIMIT
-    ? parsed
-    : null;
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= MAX_HISTORY_LIMIT ? parsed : null;
 }
 
 /** Read-only Git history/detail/diff surface for the selected repository. */
@@ -44,11 +42,19 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
   const busyRef = useRef(false);
   const composingRef = useRef(0);
 
-  useEffect(() => {onBusyChange?.(busy);}, [busy, onBusyChange]);
-  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  useEffect(
+    () => () => {
+      onBusyChange?.(false);
+    },
+    [onBusyChange],
+  );
 
   // Invalidate the previous repository before this frame accepts input. A
   // passive mount effect can run after the first click and discard its reply.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useLayoutEffect(() => {
     sequenceRef.current += 1;
     busyRef.current = false;
@@ -188,8 +194,12 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
               setHistoryLimit(event.currentTarget.value);
               setError(null);
             }}
-            onCompositionStart={() => { composingRef.current += 1; }}
-            onCompositionEnd={() => { composingRef.current = Math.max(0, composingRef.current - 1); }}
+            onCompositionStart={() => {
+              composingRef.current += 1;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = Math.max(0, composingRef.current - 1);
+            }}
             onKeyDown={onLimitKeyDown}
           />
           <span className="history-limit-help">1–{MAX_HISTORY_LIMIT}</span>
@@ -199,7 +209,11 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
         </button>
       </div>
 
-      {error ? <div className="error history-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="error history-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="history-status" role="status" aria-live="polite" aria-atomic="true">
         {busy
           ? "Git 정보를 읽는 중입니다."
@@ -228,7 +242,9 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
                     <span>{entry.authoredAt}</span>
                   </span>
                   <strong>{entry.subject}</strong>
-                  <span className="history-entry-author">{entry.author} · {entry.authorEmail}</span>
+                  <span className="history-entry-author">
+                    {entry.author} · {entry.authorEmail}
+                  </span>
                   <span className="history-entry-parents">
                     {entry.parents.length > 0
                       ? `상위 커밋 ${entry.parents.map((parent) => parent.slice(0, 12)).join(" · ")}`
@@ -253,7 +269,7 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
               <div className="history-empty dim">commit을 선택하면 detail을 표시합니다.</div>
             )}
 
-              <div className="diff-toolbar" aria-label="diff 작업">
+            <div className="diff-toolbar" aria-label="diff 작업">
               <button
                 type="button"
                 className={`btn ${diffSelection === "workingTree" ? "primary" : ""}`}
@@ -272,7 +288,11 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
               </button>
             </div>
 
-            {diff ? <DiffView result={diff} onOpenFile={onOpenFile} /> : <div className="history-empty dim">diff를 선택하세요.</div>}
+            {diff ? (
+              <DiffView result={diff} onOpenFile={onOpenFile} />
+            ) : (
+              <div className="history-empty dim">diff를 선택하세요.</div>
+            )}
           </div>
         </div>
       ) : null}
@@ -280,7 +300,13 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
   );
 }
 
-function DiffView({ result, onOpenFile }: { result: DiffResult; onOpenFile?: (path: string, line: number | null) => void }) {
+function DiffView({
+  result,
+  onOpenFile,
+}: {
+  result: DiffResult;
+  onOpenFile?: (path: string, line: number | null) => void;
+}) {
   let remainingLines = 2000;
   return (
     <div className="repo-diff" aria-label={`${result.scope} diff`}>
@@ -293,37 +319,80 @@ function DiffView({ result, onOpenFile }: { result: DiffResult; onOpenFile?: (pa
         const lineLimit = Math.min(500, remainingLines);
         remainingLines -= Math.min(lineLimit, file.patch.split("\n", lineLimit).length);
         return (
-        <article className="diff-file" key={`${index}:${file.path}:${file.oldPath ?? ""}`}>
-          <div className="diff-file-head">
-            <strong>{file.status}</strong>
-            <span className="mono">{file.path}</span>
-            {file.oldPath ? <span className="mono">← {file.oldPath}</span> : null}
-            {onOpenFile && <button type="button" onClick={() => onOpenFile(file.path, null)}>현재 파일 열기</button>}
-          </div>
-          {file.binary ? (
-            <div className="note diff-binary" role="note">바이너리 파일 — 내용은 표시하지 않습니다.</div>
-          ) : (
-            <pre className="diff-patch">{onOpenFile ? <PatchLines patch={file.patch} path={file.path} onOpenFile={onOpenFile} limit={lineLimit}/> : file.patch || "(변경 내용 없음)"}</pre>
-          )}
-          {file.truncated ? <div className="note diff-truncated">이 파일의 diff가 상한으로 잘렸습니다.</div> : null}
-        </article>
-      );})}
+          <article className="diff-file" key={`${index}:${file.path}:${file.oldPath ?? ""}`}>
+            <div className="diff-file-head">
+              <strong>{file.status}</strong>
+              <span className="mono">{file.path}</span>
+              {file.oldPath ? <span className="mono">← {file.oldPath}</span> : null}
+              {onOpenFile && (
+                <button type="button" onClick={() => onOpenFile(file.path, null)}>
+                  현재 파일 열기
+                </button>
+              )}
+            </div>
+            {file.binary ? (
+              <div className="note diff-binary" role="note">
+                바이너리 파일 — 내용은 표시하지 않습니다.
+              </div>
+            ) : (
+              <pre className="diff-patch">
+                {onOpenFile ? (
+                  <PatchLines patch={file.patch} path={file.path} onOpenFile={onOpenFile} limit={lineLimit} />
+                ) : (
+                  file.patch || "(변경 내용 없음)"
+                )}
+              </pre>
+            )}
+            {file.truncated ? <div className="note diff-truncated">이 파일의 diff가 상한으로 잘렸습니다.</div> : null}
+          </article>
+        );
+      })}
       {result.files.length === 0 ? <div className="history-empty dim">변경 사항이 없습니다.</div> : null}
     </div>
   );
 }
 
-function PatchLines({patch,path,onOpenFile,limit}: {patch:string;path:string;onOpenFile:(path:string,line:number|null)=>void;limit:number}) {
+function PatchLines({
+  patch,
+  path,
+  onOpenFile,
+  limit,
+}: {
+  patch: string;
+  path: string;
+  onOpenFile: (path: string, line: number | null) => void;
+  limit: number;
+}) {
   let nextLine: number | null = null;
   if (!patch) return "(변경 내용 없음)";
   const lines = patch.split("\n");
-  return <>{lines.slice(0,limit).map((text,index) => {
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
-    if (hunk) {
-      const start = Number(hunk[1]);
-      nextLine = Number.isSafeInteger(start) && start > 0 ? start : null;
-    }
-    const line = !hunk && nextLine !== null && (text.startsWith("+") || text.startsWith(" ")) ? nextLine++ : null;
-    return <span className="diff-patch-row" key={index}>{line !== null && <button type="button" className="diff-line-open" aria-label={`현재 파일 ${path} ${line}행 열기`} onClick={() => onOpenFile(path,line)}>{line}</button>}<span>{text || " "}</span>{"\n"}</span>;
-  })}{lines.length > limit && <span>{lines.slice(limit).join("\n")}</span>}</>;
+  return (
+    <>
+      {lines.slice(0, limit).map((text, index) => {
+        const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
+        if (hunk) {
+          const start = Number(hunk[1]);
+          nextLine = Number.isSafeInteger(start) && start > 0 ? start : null;
+        }
+        const line = !hunk && nextLine !== null && (text.startsWith("+") || text.startsWith(" ")) ? nextLine++ : null;
+        return (
+          <span className="diff-patch-row" key={index}>
+            {line !== null && (
+              <button
+                type="button"
+                className="diff-line-open"
+                aria-label={`현재 파일 ${path} ${line}행 열기`}
+                onClick={() => onOpenFile(path, line)}
+              >
+                {line}
+              </button>
+            )}
+            <span>{text || " "}</span>
+            {"\n"}
+          </span>
+        );
+      })}
+      {lines.length > limit && <span>{lines.slice(limit).join("\n")}</span>}
+    </>
+  );
 }

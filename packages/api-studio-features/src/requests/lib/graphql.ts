@@ -109,10 +109,7 @@ function lex(query: string): Token[] {
       index += 1;
     } else if (current === "-" || /[0-9]/.test(current)) {
       index += 1;
-      while (
-        index < query.length &&
-        !/[\s,()[\]{}]/.test(query[index])
-      ) index += 1;
+      while (index < query.length && !/[\s,()[\]{}]/.test(query[index])) index += 1;
       tokens.push({ kind: "number" });
     } else {
       throw new Error(GRAPHQL_INVALID_DOCUMENT);
@@ -311,12 +308,12 @@ export function validateGraphqlEndpoint(urlValue: string): void {
 }
 
 export function isGraphqlCredentialName(name: string): boolean {
-  return /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|api[-_]?value|access[-_]?token|refresh[-_]?token|token|secret|password|passwd|private[-_]?key|username)/i.test(name);
+  return /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|api[-_]?value|access[-_]?token|refresh[-_]?token|token|secret|password|passwd|private[-_]?key|username)/i.test(
+    name,
+  );
 }
 
-export function validateGraphqlParams(
-  params: readonly { key: string; value: string }[],
-): void {
+export function validateGraphqlParams(params: readonly { key: string; value: string }[]): void {
   for (const param of params) {
     if (param.key && isGraphqlCredentialName(param.key)) {
       throw new Error(GRAPHQL_CREDENTIAL_QUERY_ERROR);
@@ -324,31 +321,24 @@ export function validateGraphqlParams(
   }
 }
 
-export function validateGraphqlHeaders(
-  headers: readonly { key: string; value: string }[],
-): void {
+export function validateGraphqlHeaders(headers: readonly { key: string; value: string }[]): void {
   if (headers.length > MAX_GRAPHQL_REQUEST_HEADERS) throw new Error(GRAPHQL_HEADER_ROWS_ERROR);
-  const total = headers.reduce(
-    (sum, header) => sum + bytes(header.key) + bytes(header.value) + 4,
-    0,
-  );
+  const total = headers.reduce((sum, header) => sum + bytes(header.key) + bytes(header.value) + 4, 0);
   if (total > MAX_GRAPHQL_REQUEST_HEADER_BYTES) throw new Error(GRAPHQL_HEADER_BYTES_ERROR);
 }
 
 export function isGraphqlDerivedHeader(name: string): boolean {
   const normalized = name.trim().toLowerCase().replace(/_/g, "-");
-  return [
-    "content-type",
-    "content-length",
-    "transfer-encoding",
-    "trailer",
-    "expect",
-    "digest",
-    "repr-digest",
-  ].includes(normalized);
+  return ["content-type", "content-length", "transfer-encoding", "trailer", "expect", "digest", "repr-digest"].includes(
+    normalized,
+  );
 }
 
-export function buildGraphqlGetUrl(base: string, params: readonly { key: string; value: string }[], request: GraphqlRequest): string {
+export function buildGraphqlGetUrl(
+  base: string,
+  params: readonly { key: string; value: string }[],
+  request: GraphqlRequest,
+): string {
   validateGraphqlEndpoint(base);
   const url = new URL(base);
   validateGraphqlParams(params);
@@ -390,12 +380,14 @@ export function projectGraphqlResponse(body: string): GraphqlResponse {
       return { envelope: "oversized", data: null, errors: [], errors_truncated: false };
     }
   }
-  if (!("errors" in object)) return { envelope: "valid", data: object.data ?? null, errors: [], errors_truncated: false };
+  if (!("errors" in object))
+    return { envelope: "valid", data: object.data ?? null, errors: [], errors_truncated: false };
   if (!Array.isArray(object.errors)) return { envelope: "invalid", data: null, errors: [], errors_truncated: false };
   const errors = object.errors;
   const projected: GraphqlError[] = [];
   for (const item of errors.slice(0, MAX_GRAPHQL_RESPONSE_ERRORS)) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return { envelope: "invalid", data: null, errors: [], errors_truncated: false };
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      return { envelope: "invalid", data: null, errors: [], errors_truncated: false };
     const record = item as Record<string, unknown>;
     if (typeof record.message !== "string") {
       return { envelope: "invalid", data: null, errors: [], errors_truncated: false };
@@ -405,19 +397,23 @@ export function projectGraphqlResponse(body: string): GraphqlResponse {
     }
     const locations = Array.isArray(record.locations)
       ? record.locations.slice(0, 20).flatMap((location) => {
-        if (!location || typeof location !== "object" || Array.isArray(location)) return [];
-        const candidate = location as Record<string, unknown>;
-        return typeof candidate.line === "number" && Number.isSafeInteger(candidate.line) && candidate.line >= 0
-          && typeof candidate.column === "number" && Number.isSafeInteger(candidate.column) && candidate.column >= 0
-          ? [{ line: candidate.line, column: candidate.column }]
-          : [];
-      })
+          if (!location || typeof location !== "object" || Array.isArray(location)) return [];
+          const candidate = location as Record<string, unknown>;
+          return typeof candidate.line === "number" &&
+            Number.isSafeInteger(candidate.line) &&
+            candidate.line >= 0 &&
+            typeof candidate.column === "number" &&
+            Number.isSafeInteger(candidate.column) &&
+            candidate.column >= 0
+            ? [{ line: candidate.line, column: candidate.column }]
+            : [];
+        })
       : [];
     const path = Array.isArray(record.path)
       ? record.path.slice(0, MAX_GRAPHQL_ERROR_PATH_ITEMS).flatMap((part) => {
-        if (typeof part === "number" && Number.isSafeInteger(part) && part >= 0) return [String(part)];
-        return typeof part === "string" && bytes(part) <= MAX_GRAPHQL_ERROR_PATH_ITEM_BYTES ? [part] : [];
-      })
+          if (typeof part === "number" && Number.isSafeInteger(part) && part >= 0) return [String(part)];
+          return typeof part === "string" && bytes(part) <= MAX_GRAPHQL_ERROR_PATH_ITEM_BYTES ? [part] : [];
+        })
       : [];
     projected.push({ message: record.message, locations, path });
   }
@@ -431,8 +427,10 @@ export function projectGraphqlResponse(body: string): GraphqlResponse {
 
 function validateResponseJson(value: unknown, depth: number, state: { nodes: number }): void {
   state.nodes += 1;
-  if (state.nodes > MAX_GRAPHQL_RESPONSE_NODES || depth > MAX_GRAPHQL_RESPONSE_DEPTH) throw new Error(GRAPHQL_VARIABLES_TOO_COMPLEX);
-  if (typeof value === "string" && bytes(value) > MAX_GRAPHQL_RESPONSE_STRING_BYTES) throw new Error(GRAPHQL_VARIABLES_TOO_COMPLEX);
+  if (state.nodes > MAX_GRAPHQL_RESPONSE_NODES || depth > MAX_GRAPHQL_RESPONSE_DEPTH)
+    throw new Error(GRAPHQL_VARIABLES_TOO_COMPLEX);
+  if (typeof value === "string" && bytes(value) > MAX_GRAPHQL_RESPONSE_STRING_BYTES)
+    throw new Error(GRAPHQL_VARIABLES_TOO_COMPLEX);
   if (Array.isArray(value)) value.forEach((item) => validateResponseJson(item, depth + 1, state));
   else if (value && typeof value === "object") {
     Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
@@ -468,7 +466,10 @@ function stableJsonStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(",")}]`;
   if (value && typeof value === "object") {
     const object = value as Record<string, unknown>;
-    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableJsonStringify(object[key])}`).join(",")}}`;
+    return `{${Object.keys(object)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJsonStringify(object[key])}`)
+      .join(",")}}`;
   }
   const serialized = JSON.stringify(value);
   if (serialized === undefined) throw new Error(GRAPHQL_INVALID_REQUEST);
@@ -581,7 +582,13 @@ function scanGraphqlStringLiterals(query: string): GraphqlStringLiteral[] {
 function skipGraphqlIgnored(query: string, start: number): number {
   let index = start;
   while (index < query.length) {
-    if (query[index] === " " || query[index] === "\t" || query[index] === "\r" || query[index] === "\n" || query[index] === ",") {
+    if (
+      query[index] === " " ||
+      query[index] === "\t" ||
+      query[index] === "\r" ||
+      query[index] === "\n" ||
+      query[index] === ","
+    ) {
       index += 1;
     } else if (query[index] === "#") {
       const newline = query.indexOf("\n", index);
@@ -593,7 +600,10 @@ function skipGraphqlIgnored(query: string, start: number): number {
   return index;
 }
 
-function scanGraphqlLiteral(query: string, start: number): {
+function scanGraphqlLiteral(
+  query: string,
+  start: number,
+): {
   next: number;
   closed: boolean;
   value: string;
@@ -625,7 +635,11 @@ function scanGraphqlLiteral(query: string, start: number): {
 }
 
 export function resolveGraphqlRequest(request: GraphqlRequest, variables: ReadonlyMap<string, string>): GraphqlRequest {
-  const replace = (value: string) => value.replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}|\$\{\s*([A-Za-z0-9_.-]+)\s*\}/g, (match, moustache: string, dollar: string) => variables.get(moustache || dollar) ?? match);
+  const replace = (value: string) =>
+    value.replace(
+      /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}|\$\{\s*([A-Za-z0-9_.-]+)\s*\}/g,
+      (match, moustache: string, dollar: string) => variables.get(moustache || dollar) ?? match,
+    );
   return {
     query: replace(request.query),
     variables: replace(request.variables),

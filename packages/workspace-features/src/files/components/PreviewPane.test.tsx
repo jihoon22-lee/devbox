@@ -72,9 +72,12 @@ describe("PreviewPane Mermaid loading", () => {
 
   it("does not apply a stale render after the preview response changes", async () => {
     let resolveRender!: (result: { svg: string }) => void;
-    renderMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveRender = resolve;
-    }));
+    renderMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRender = resolve;
+        }),
+    );
     const rendered = render(
       <PreviewPane
         docPath="README.md"

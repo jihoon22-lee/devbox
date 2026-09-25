@@ -24,13 +24,16 @@ vi.mock("./components/TermPane", () => ({
     style?: CSSProperties;
     registerFocus: (id: string, focus: () => void) => void;
     unregisterFocus: (id: string) => void;
-    registerTerminalHandle: (id: string, handle: {
-      getCapabilities: () => { hasSelection: boolean; hasCwd: boolean };
-      copySelection: () => Promise<void>;
-      pasteClipboard: () => Promise<void>;
-      openSearch: () => void;
-      copyCwd: () => Promise<void>;
-    }) => void;
+    registerTerminalHandle: (
+      id: string,
+      handle: {
+        getCapabilities: () => { hasSelection: boolean; hasCwd: boolean };
+        copySelection: () => Promise<void>;
+        pasteClipboard: () => Promise<void>;
+        openSearch: () => void;
+        copyCwd: () => Promise<void>;
+      },
+    ) => void;
     unregisterTerminalHandle: (id: string) => void;
     onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
     onClose: () => void;
@@ -54,7 +57,13 @@ vi.mock("./components/TermPane", () => ({
         props.unregisterFocus(props.sessionId);
         props.unregisterTerminalHandle(props.sessionId);
       };
-    }, [props.registerFocus, props.registerTerminalHandle, props.sessionId, props.unregisterFocus, props.unregisterTerminalHandle]);
+    }, [
+      props.registerFocus,
+      props.registerTerminalHandle,
+      props.sessionId,
+      props.unregisterFocus,
+      props.unregisterTerminalHandle,
+    ]);
     return (
       <div
         ref={ref}
@@ -71,7 +80,9 @@ vi.mock("./components/TermPane", () => ({
         <button
           title={`Emit title ${props.sessionId}`}
           onClick={() => props.onMetadataChange(props.sessionId, { title: "npm test" })}
-        >title</button>
+        >
+          title
+        </button>
       </div>
     );
   },
@@ -108,9 +119,7 @@ vi.mock("./api", () => ({
       },
     ],
   }),
-  listDistros: vi.fn().mockResolvedValue([
-    { name: "Ubuntu", version: 2, default: true, state: "Running" },
-  ]),
+  listDistros: vi.fn().mockResolvedValue([{ name: "Ubuntu", version: 2, default: true, state: "Running" }]),
   dockerPs: vi.fn().mockResolvedValue([]),
   dockerAction: vi.fn().mockResolvedValue(undefined),
   startSession: vi.fn().mockImplementation(async () => ({
@@ -161,8 +170,8 @@ async function renderWithPane(cwd = "") {
   const addButton = screen.getByRole("button", { name: "+ 터미널" });
   await waitFor(() => expect(addButton).toBeEnabled());
   fireEvent.click(addButton);
-  const pane = await screen.findByLabelText("Ubuntu 터미널 팬") as HTMLDivElement;
-  const tab = await screen.findByLabelText("Ubuntu 터미널 탭") as HTMLDivElement;
+  const pane = (await screen.findByLabelText("Ubuntu 터미널 팬")) as HTMLDivElement;
+  const tab = (await screen.findByLabelText("Ubuntu 터미널 탭")) as HTMLDivElement;
   return { pane, tab };
 }
 
@@ -223,13 +232,9 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.contextMenu(pane);
     fireEvent.click(screen.getByRole("menuitem", { name: "세로 분할" }));
 
-    await waitFor(() => expect(startSessionMock).toHaveBeenNthCalledWith(
-      3,
-      "Ubuntu",
-      firstCwd,
-      expect.any(String),
-      "native",
-    ));
+    await waitFor(() =>
+      expect(startSessionMock).toHaveBeenNthCalledWith(3, "Ubuntu", firstCwd, expect.any(String), "native"),
+    );
     await waitFor(() => expect(screen.getAllByLabelText("Ubuntu 터미널 팬")).toHaveLength(3));
     const canvas = document.querySelector(".panes") as HTMLElement;
     // 세로 분할은 팬 수만큼의 열 트랙을 만든다. 트랙은 드래그로 조절할 수 있도록
@@ -273,7 +278,7 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.keyDown(tab, { key: "ContextMenu", code: "ContextMenu" });
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
     await answerDialog(true, "작업 탭");
-    const renamed = await screen.findByLabelText("작업 탭 터미널 탭") as HTMLDivElement;
+    const renamed = (await screen.findByLabelText("작업 탭 터미널 탭")) as HTMLDivElement;
 
     fireEvent.contextMenu(renamed);
     fireEvent.click(screen.getByRole("menuitem", { name: "레이아웃 전환" }));

@@ -52,9 +52,11 @@ describe("HmacTool", () => {
 
   it("locks fields and ignores a double action while an operation is pending", async () => {
     let resolve: (value: string) => void = () => undefined;
-    mocks.hmacGenerate.mockReturnValueOnce(new Promise<string>((done) => {
-      resolve = done;
-    }));
+    mocks.hmacGenerate.mockReturnValueOnce(
+      new Promise<string>((done) => {
+        resolve = done;
+      }),
+    );
     render(<HmacTool />);
     fillGenerateInputs();
 
@@ -88,9 +90,11 @@ describe("HmacTool", () => {
 
   it("ignores a late response after unmount and remount", async () => {
     let resolve: (value: string) => void = () => undefined;
-    mocks.hmacGenerate.mockReturnValueOnce(new Promise<string>((done) => {
-      resolve = done;
-    }));
+    mocks.hmacGenerate.mockReturnValueOnce(
+      new Promise<string>((done) => {
+        resolve = done;
+      }),
+    );
     const rendered = render(<HmacTool />);
     fillGenerateInputs();
     fireEvent.click(screen.getByRole("button", { name: "HMAC 생성" }));

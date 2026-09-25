@@ -59,9 +59,7 @@ describe("CodeEditor lifecycle", () => {
   });
 
   it("reconfigures read-only state and exposes replace on Mod-H without remounting", () => {
-    const { container, rerender } = render(
-      <CodeEditor {...baseProps} value="const answer = 42;" onChange={vi.fn()} />,
-    );
+    const { container, rerender } = render(<CodeEditor {...baseProps} value="const answer = 42;" onChange={vi.fn()} />);
     const editor = container.querySelector(".cm-editor") as HTMLElement;
     const view = EditorView.findFromDOM(editor);
     expect(view).not.toBeNull();
@@ -105,12 +103,7 @@ describe("CodeEditor lifecycle", () => {
     const onChange = vi.fn();
     const onCursorChange = vi.fn();
     const { container } = render(
-      <CodeEditor
-        {...baseProps}
-        value={"one\ntwo\nthree"}
-        onChange={onChange}
-        onCursorChange={onCursorChange}
-      />,
+      <CodeEditor {...baseProps} value={"one\ntwo\nthree"} onChange={onChange} onCursorChange={onCursorChange} />,
     );
     const editor = container.querySelector(".cm-editor") as HTMLElement;
     const view = EditorView.findFromDOM(editor);
@@ -127,33 +120,35 @@ describe("CodeEditor lifecycle", () => {
 
   it("runs cut, copy, and native clipboard paste against the CodeMirror selection", async () => {
     const onChange = vi.fn();
-    const rendered = render(
-      <CodeEditor {...baseProps} value="one two" onChange={onChange} />,
-    );
+    const rendered = render(<CodeEditor {...baseProps} value="one two" onChange={onChange} />);
     const editor = rendered.container.querySelector(".cm-editor") as HTMLElement;
     const content = rendered.container.querySelector(".cm-content") as HTMLElement;
     const view = EditorView.findFromDOM(editor)!;
     view.dispatch({ selection: { anchor: 0, head: 3 } });
 
     fireEvent.contextMenu(content, { clientX: 1, clientY: 1 });
-    fireEvent.click(within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "복사" }));
+    fireEvent.click(
+      within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "복사" }),
+    );
     await waitFor(() => expect(writeClipboardTextMock).toHaveBeenCalledWith("one"));
 
     fireEvent.contextMenu(content, { clientX: 1, clientY: 1 });
-    fireEvent.click(within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "잘라내기" }));
+    fireEvent.click(
+      within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "잘라내기" }),
+    );
     await waitFor(() => expect(view.state.doc.toString()).toBe(" two"));
     expect(onChange).toHaveBeenLastCalledWith(" two");
 
     fireEvent.contextMenu(content, { clientX: 1, clientY: 1 });
-    fireEvent.click(within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "붙여넣기" }));
+    fireEvent.click(
+      within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "붙여넣기" }),
+    );
     await waitFor(() => expect(readClipboardTextMock).toHaveBeenCalledTimes(1));
     expect(view.state.doc.toString()).toBe("붙여넣기 two");
   });
 
   it("keeps mutation actions disabled for a read-only editor", () => {
-    const rendered = render(
-      <CodeEditor {...baseProps} readOnly value="one" onChange={vi.fn()} />,
-    );
+    const rendered = render(<CodeEditor {...baseProps} readOnly value="one" onChange={vi.fn()} />);
     const editor = rendered.container.querySelector(".cm-editor") as HTMLElement;
     const content = rendered.container.querySelector(".cm-content") as HTMLElement;
     const view = EditorView.findFromDOM(editor)!;
@@ -168,19 +163,22 @@ describe("CodeEditor lifecycle", () => {
 
   it("does not delete a newer selection when clipboard writing resolves late", async () => {
     let resolveWrite!: () => void;
-    writeClipboardTextMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
-      resolveWrite = resolve;
-    }));
-    const onError = vi.fn();
-    const rendered = render(
-      <CodeEditor {...baseProps} value="one two" onChange={vi.fn()} onError={onError} />,
+    writeClipboardTextMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
     );
+    const onError = vi.fn();
+    const rendered = render(<CodeEditor {...baseProps} value="one two" onChange={vi.fn()} onError={onError} />);
     const editor = rendered.container.querySelector(".cm-editor") as HTMLElement;
     const content = rendered.container.querySelector(".cm-content") as HTMLElement;
     const view = EditorView.findFromDOM(editor)!;
     view.dispatch({ selection: { anchor: 0, head: 3 } });
     fireEvent.contextMenu(content, { clientX: 1, clientY: 1 });
-    fireEvent.click(within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "잘라내기" }));
+    fireEvent.click(
+      within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "잘라내기" }),
+    );
     view.dispatch({ selection: { anchor: 4, head: 7 } });
     resolveWrite();
 
@@ -204,18 +202,20 @@ describe("CodeEditor lifecycle", () => {
     );
     const content = rendered.container.querySelector(".cm-content") as HTMLElement;
     fireEvent.contextMenu(content, { clientX: 1, clientY: 1 });
-    fireEvent.click(within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "정의로 이동" }));
+    fireEvent.click(
+      within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "정의로 이동" }),
+    );
     expect(onNavigate).toHaveBeenCalledWith("doc:one", "definition", 0);
 
     fireEvent.contextMenu(content, { clientX: 1, clientY: 1 });
-    fireEvent.click(within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "참조 찾기" }));
+    fireEvent.click(
+      within(rendered.getByRole("menu", { name: "코드 편집기 작업" })).getByRole("menuitem", { name: "참조 찾기" }),
+    );
     expect(onNavigate).toHaveBeenCalledWith("doc:one", "references", 0);
   });
 
   it("opens from the menu key, restores editor focus, and ignores IME composition", async () => {
-    const rendered = render(
-      <CodeEditor {...baseProps} value="one" onChange={vi.fn()} />,
-    );
+    const rendered = render(<CodeEditor {...baseProps} value="one" onChange={vi.fn()} />);
     const content = rendered.container.querySelector(".cm-content") as HTMLElement;
     content.focus();
     fireEvent.keyDown(content, { key: "F10", shiftKey: true, isComposing: true });
@@ -227,9 +227,7 @@ describe("CodeEditor lifecycle", () => {
     await waitFor(() => expect(document.activeElement).toBe(content));
 
     fireEvent.keyDown(content, { key: "ContextMenu", code: "ContextMenu" });
-    rendered.rerender(
-      <CodeEditor {...baseProps} value="one" visible={false} onChange={vi.fn()} />,
-    );
+    rendered.rerender(<CodeEditor {...baseProps} value="one" visible={false} onChange={vi.fn()} />);
     await waitFor(() => expect(rendered.queryByRole("menu")).toBeNull());
   });
 });

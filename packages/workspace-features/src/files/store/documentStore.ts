@@ -33,14 +33,16 @@ export type EditorAction =
     }
   | {
       type: "applyLspRename";
-      documents: Array<Omit<EditedLspDocument, "uri"> & {
-        uri?: string;
-        nativeRevision?: string | null;
-        docId: DocId;
-        mtimeNanos: string;
-        size: number;
-        contentHash: string;
-      }>;
+      documents: Array<
+        Omit<EditedLspDocument, "uri"> & {
+          uri?: string;
+          nativeRevision?: string | null;
+          docId: DocId;
+          mtimeNanos: string;
+          size: number;
+          contentHash: string;
+        }
+      >;
       /** Rechecked before replacing clean buffers after native disk commit. */
       expectedRevisions?: Readonly<Record<DocId, number>>;
     }
@@ -87,11 +89,7 @@ function lastId(ids: DocId[]): DocId | null {
   return ids.length > 0 ? ids[ids.length - 1] : null;
 }
 
-function activeDocAfterRemoval(
-  ids: DocId[],
-  removedId: DocId,
-  current: DocId | null,
-): DocId | null {
+function activeDocAfterRemoval(ids: DocId[], removedId: DocId, current: DocId | null): DocId | null {
   const oldIndex = ids.indexOf(removedId);
   const remaining = ids.filter((id) => id !== removedId);
   if (current !== removedId) return current && remaining.includes(current) ? current : lastId(remaining);
@@ -108,10 +106,7 @@ function knownIds(state: EditorState): Set<DocId> {
 
 function cleanViews(state: EditorState): [DocId[], DocId[]] {
   const ids = knownIds(state);
-  return [
-    uniqueIds(state.views[0].filter((id) => ids.has(id))),
-    uniqueIds(state.views[1].filter((id) => ids.has(id))),
-  ];
+  return [uniqueIds(state.views[0].filter((id) => ids.has(id))), uniqueIds(state.views[1].filter((id) => ids.has(id)))];
 }
 
 function completeViews(state: EditorState, views: [DocId[], DocId[]], preferredView: ViewId): [DocId[], DocId[]] {
@@ -144,10 +139,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           // the first placement and its normal activation behavior.
           const views = completeViews(state, cleanViews(state), existingView);
           views[1 - existingView] = views[1 - existingView].filter((id) => id !== action.doc.id);
-          views[existingView] = [
-            action.doc.id,
-            ...views[existingView].filter((id) => id !== action.doc.id),
-          ];
+          views[existingView] = [action.doc.id, ...views[existingView].filter((id) => id !== action.doc.id)];
           return {
             ...state,
             views,
@@ -253,16 +245,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const nextDocs = state.docs.filter((doc) => doc.id !== action.docId);
       const nextState = { ...state, docs: nextDocs };
       const completedViews = completeViews(nextState, views, state.activeView);
-      const activeAfterFirstRemoval = activeDocAfterRemoval(
-        state.views[0],
-        action.docId,
-        state.activeDocByView[0],
-      );
-      const activeAfterSecondRemoval = activeDocAfterRemoval(
-        state.views[1],
-        action.docId,
-        state.activeDocByView[1],
-      );
+      const activeAfterFirstRemoval = activeDocAfterRemoval(state.views[0], action.docId, state.activeDocByView[0]);
+      const activeAfterSecondRemoval = activeDocAfterRemoval(state.views[1], action.docId, state.activeDocByView[1]);
       const activeDocByView: [DocId | null, DocId | null] = [
         activeAfterFirstRemoval && completedViews[0].includes(activeAfterFirstRemoval)
           ? activeAfterFirstRemoval
@@ -271,11 +255,12 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           ? activeAfterSecondRemoval
           : lastId(completedViews[1]),
       ];
-      const activeView = activeDocByView[state.activeView] !== null
-        ? state.activeView
-        : activeDocByView[1 - state.activeView] !== null
-          ? (1 - state.activeView) as ViewId
-          : state.activeView;
+      const activeView =
+        activeDocByView[state.activeView] !== null
+          ? state.activeView
+          : activeDocByView[1 - state.activeView] !== null
+            ? ((1 - state.activeView) as ViewId)
+            : state.activeView;
       return {
         ...state,
         docs: nextDocs,
@@ -287,9 +272,10 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case "activateView": {
       const views = completeViews(state, cleanViews(state), action.view);
-      const activeDoc = state.activeDocByView[action.view] && views[action.view].includes(state.activeDocByView[action.view] as DocId)
-        ? state.activeDocByView[action.view]
-        : lastId(views[action.view]);
+      const activeDoc =
+        state.activeDocByView[action.view] && views[action.view].includes(state.activeDocByView[action.view] as DocId)
+          ? state.activeDocByView[action.view]
+          : lastId(views[action.view]);
       const activeDocByView: [DocId | null, DocId | null] = [
         views[0].includes(state.activeDocByView[0] ?? "") ? state.activeDocByView[0] : lastId(views[0]),
         views[1].includes(state.activeDocByView[1] ?? "") ? state.activeDocByView[1] : lastId(views[1]),
@@ -342,11 +328,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       views[action.toView] = [...views[action.toView], action.docId];
       const completedViews = completeViews(state, views, action.toView);
       const activeDocByView: [DocId | null, DocId | null] = [...state.activeDocByView];
-      activeDocByView[source] = activeDocAfterRemoval(
-        state.views[source],
-        action.docId,
-        state.activeDocByView[source],
-      );
+      activeDocByView[source] = activeDocAfterRemoval(state.views[source], action.docId, state.activeDocByView[source]);
       if (!activeDocByView[source] || !completedViews[source].includes(activeDocByView[source]!)) {
         activeDocByView[source] = lastId(completedViews[source]);
       }
@@ -393,16 +375,18 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       if (!previous) return state;
       return {
         ...state,
-        docs: state.docs.map((doc) => doc.id === action.docId
-          ? {
-              ...doc,
-              path: action.path,
-              ...(action.nativeRevision !== undefined ? {nativeRevision:action.nativeRevision} : {}),
-              mtimeNanos: action.mtimeNanos,
-              size: action.size,
-              contentHash: action.contentHash,
-            }
-          : doc),
+        docs: state.docs.map((doc) =>
+          doc.id === action.docId
+            ? {
+                ...doc,
+                path: action.path,
+                ...(action.nativeRevision !== undefined ? { nativeRevision: action.nativeRevision } : {}),
+                mtimeNanos: action.mtimeNanos,
+                size: action.size,
+                contentHash: action.contentHash,
+              }
+            : doc,
+        ),
         recentFiles: [
           action.path,
           ...state.recentFiles.filter((path) => path !== previous.path && path !== action.path),
@@ -415,9 +399,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         ? {
             ...state,
             docs: state.docs.map((doc) =>
-              doc.id === action.docId
-                ? { ...doc, cursor: Math.min(Math.max(0, action.cursor), doc.text.length) }
-                : doc,
+              doc.id === action.docId ? { ...doc, cursor: Math.min(Math.max(0, action.cursor), doc.text.length) } : doc,
             ),
           }
         : state;
@@ -427,9 +409,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         ? {
             ...state,
             docs: state.docs.map((doc) =>
-              doc.id === action.docId
-                ? { ...doc, bookmarks: normalizeBookmarkLines(doc.text, action.bookmarks) }
-                : doc,
+              doc.id === action.docId ? { ...doc, bookmarks: normalizeBookmarkLines(doc.text, action.bookmarks) } : doc,
             ),
           }
         : state;
@@ -465,18 +445,20 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "applyLspDocuments": {
       const byId = new Map(state.docs.map((doc) => [doc.id, doc]));
       if (action.documents.some((edited) => !byId.has(edited.docId))) return state;
-      if (action.expectedRevisions && action.documents.some((edited) => {
-        const expectedRevision = action.expectedRevisions?.[edited.docId];
-        return expectedRevision === undefined || byId.get(edited.docId)?.revision !== expectedRevision;
-      })) return state;
+      if (
+        action.expectedRevisions &&
+        action.documents.some((edited) => {
+          const expectedRevision = action.expectedRevisions?.[edited.docId];
+          return expectedRevision === undefined || byId.get(edited.docId)?.revision !== expectedRevision;
+        })
+      )
+        return state;
       const edits = new Map(action.documents.map((edited) => [edited.docId, edited]));
       return {
         ...state,
         docs: state.docs.map((doc) => {
           const edited = edits.get(doc.id);
-          return edited
-            ? { ...doc, text: edited.text, dirty: true, revision: doc.revision + 1 }
-            : doc;
+          return edited ? { ...doc, text: edited.text, dirty: true, revision: doc.revision + 1 } : doc;
         }),
       };
     }
@@ -484,10 +466,14 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case "applyLspRename": {
       const byId = new Map(state.docs.map((doc) => [doc.id, doc]));
       if (action.documents.some((edited) => !byId.has(edited.docId))) return state;
-      if (action.expectedRevisions && action.documents.some((edited) => {
-        const expectedRevision = action.expectedRevisions?.[edited.docId];
-        return expectedRevision === undefined || byId.get(edited.docId)?.revision !== expectedRevision;
-      })) return state;
+      if (
+        action.expectedRevisions &&
+        action.documents.some((edited) => {
+          const expectedRevision = action.expectedRevisions?.[edited.docId];
+          return expectedRevision === undefined || byId.get(edited.docId)?.revision !== expectedRevision;
+        })
+      )
+        return state;
       const edits = new Map(action.documents.map((edited) => [edited.docId, edited]));
       return {
         ...state,
@@ -518,14 +504,16 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
               doc.id !== action.docId
                 ? doc
                 : (() => {
-                    if (action.submittedNativeRevision !== undefined && doc.nativeRevision !== action.submittedNativeRevision) return doc;
+                    if (
+                      action.submittedNativeRevision !== undefined &&
+                      doc.nativeRevision !== action.submittedNativeRevision
+                    )
+                      return doc;
                     const submittedRevision = action.submittedRevision ?? action.revision;
                     const submittedText = action.submittedText ?? action.text;
                     const matchesSubmittedSnapshot =
                       submittedRevision === undefined ||
-                      (doc.revision === submittedRevision &&
-                        submittedText !== undefined &&
-                        doc.text === submittedText);
+                      (doc.revision === submittedRevision && submittedText !== undefined && doc.text === submittedText);
                     return {
                       ...doc,
                       // The disk snapshot is valid even when a newer local
@@ -533,7 +521,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                       // matching submitted buffer may clear dirty state.
                       dirty: matchesSubmittedSnapshot ? false : true,
                       mtimeNanos: action.mtimeNanos,
-                      ...(action.nativeRevision !== undefined ? {nativeRevision:action.nativeRevision} : {}),
+                      ...(action.nativeRevision !== undefined ? { nativeRevision: action.nativeRevision } : {}),
                       size: action.size,
                       ...(action.contentHash !== undefined ? { contentHash: action.contentHash } : {}),
                       ...(action.lossy !== undefined ? { lossy: action.lossy } : {}),

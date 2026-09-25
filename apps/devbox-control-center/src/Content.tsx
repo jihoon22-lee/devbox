@@ -1,44 +1,123 @@
-import {lazy,Suspense,useState,useCallback,useEffect,useRef} from "react";
-import {type ShellContentProps} from "@devbox/product-shell";
-import {onShortcut,triggerShortcut} from "@devbox/product-shell/commands";
-import {nativeMode,productDataAvailable} from "@devbox/product-shell/api";
-const HostedLauncher=lazy(()=>import("./HostedLauncher"));
-const Health=lazy(()=>import("./Health"));
-const Recovery=lazy(()=>import("./Recovery"));
-const Updates=lazy(()=>import("./Updates"));
-const Inventory=lazy(()=>import("./Inventory"));
-const Tools=lazy(()=>import("./Tools"));
-const Commands=lazy(()=>import("./Commands"));
-const ShortcutSettings=lazy(()=>import("@devbox/product-shell/shortcut-settings"));
-export default function Content(props:ShellContentProps) {
-  const available=productDataAvailable(props.description);
-  const [launcher,setLauncher]=useState(false);
-  const [shortcutIssue,setShortcutIssue]=useState("");
-  const current=useRef(props);current.current=props;
-  const shortcutBusy=useRef(false);
-  const close=useCallback(()=>setLauncher(false),[]);
-  useEffect(()=>{
-    if(!nativeMode||!available)return;
-    let active=true,remove:(()=>void)|undefined,composing=false;
-    const compositionStart=()=>{composing=true;},compositionEnd=()=>{composing=false;};
-    document.addEventListener("compositionstart",compositionStart,true);
-    document.addEventListener("compositionend",compositionEnd,true);
-    void onShortcut(event=>{
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from "react";
+import { type ShellContentProps } from "@devbox/product-shell";
+import { onShortcut, triggerShortcut } from "@devbox/product-shell/commands";
+import { nativeMode, productDataAvailable } from "@devbox/product-shell/api";
+const HostedLauncher = lazy(() => import("./HostedLauncher"));
+const Health = lazy(() => import("./Health"));
+const Recovery = lazy(() => import("./Recovery"));
+const Updates = lazy(() => import("./Updates"));
+const Inventory = lazy(() => import("./Inventory"));
+const Tools = lazy(() => import("./Tools"));
+const Commands = lazy(() => import("./Commands"));
+const ShortcutSettings = lazy(() => import("@devbox/product-shell/shortcut-settings"));
+export default function Content(props: ShellContentProps) {
+  const available = productDataAvailable(props.description);
+  const [launcher, setLauncher] = useState(false);
+  const [shortcutIssue, setShortcutIssue] = useState("");
+  const current = useRef(props);
+  current.current = props;
+  const shortcutBusy = useRef(false);
+  const close = useCallback(() => setLauncher(false), []);
+  useEffect(() => {
+    if (!nativeMode || !available) return;
+    let active = true,
+      remove: (() => void) | undefined,
+      composing = false;
+    const compositionStart = () => {
+        composing = true;
+      },
+      compositionEnd = () => {
+        composing = false;
+      };
+    document.addEventListener("compositionstart", compositionStart, true);
+    document.addEventListener("compositionend", compositionEnd, true);
+    void onShortcut((event) => {
       // Preserve an active modal and IME/editor focus. The global bindings never
       // register Ctrl+C, so Terminal SIGINT remains owned by Terminal.
-      if(((event.wasFocused||event.command==="control-center.launcher")&&document.querySelector("dialog[open], [aria-modal=true]"))||(event.wasFocused&&composing))return;
-      const focused=document.activeElement;
-      if(event.wasFocused&&focused instanceof HTMLElement&&(focused.matches("input,textarea,[contenteditable=true]")||focused.closest(".xterm")))return;
-      if(event.command==="control-center.launcher")setLauncher(true);
-      else if(!shortcutBusy.current){
-        shortcutBusy.current=true;setShortcutIssue("");const state=current.current;
-        void triggerShortcut(state.description,state.route,event.command,crypto.randomUUID()).catch(()=>setShortcutIssue("단축키 작업을 확인하지 못했습니다. 연결한 제품의 실행 상태와 프로젝트·터미널을 확인해 주세요.")).finally(()=>{shortcutBusy.current=false;});
+      if (
+        ((event.wasFocused || event.command === "control-center.launcher") &&
+          document.querySelector("dialog[open], [aria-modal=true]")) ||
+        (event.wasFocused && composing)
+      )
+        return;
+      const focused = document.activeElement;
+      if (
+        event.wasFocused &&
+        focused instanceof HTMLElement &&
+        (focused.matches("input,textarea,[contenteditable=true]") || focused.closest(".xterm"))
+      )
+        return;
+      if (event.command === "control-center.launcher") setLauncher(true);
+      else if (!shortcutBusy.current) {
+        shortcutBusy.current = true;
+        setShortcutIssue("");
+        const state = current.current;
+        void triggerShortcut(state.description, state.route, event.command, crypto.randomUUID())
+          .catch(() =>
+            setShortcutIssue(
+              "단축키 작업을 확인하지 못했습니다. 연결한 제품의 실행 상태와 프로젝트·터미널을 확인해 주세요.",
+            ),
+          )
+          .finally(() => {
+            shortcutBusy.current = false;
+          });
       }
-    }).then(unlisten=>{if(active)remove=unlisten;else unlisten();});
-    return()=>{active=false;remove?.();document.removeEventListener("compositionstart",compositionStart,true);document.removeEventListener("compositionend",compositionEnd,true);};
-  },[available]);
-  if(!available)return <Suspense fallback={<p role="status">설치 상태를 불러오고 있습니다…</p>}><Inventory {...props}/><Recovery {...props}/><Health {...props}/></Suspense>;
-  return <>{shortcutIssue&&<p role="alert">{shortcutIssue}</p>}<button onClick={()=>setLauncher(true)}>Launcher 열기</button>{launcher&&<Suspense fallback={<p role="status">Launcher를 불러오고 있습니다…</p>}><HostedLauncher {...props} close={close}/></Suspense>}<Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}>{
-    props.route==="recovery"?<><Recovery {...props}/><Health {...props}/><Tools route={props.route}/></>:["environment","diagnostics","tools"].includes(props.route)?<Tools route={props.route}/>:props.route==="products"?<><Inventory {...props}/><Commands {...props}/></>:props.route==="updates"?<><Updates {...props}/><Recovery {...props}/><Health {...props}/></>:props.route==="components"?<Inventory {...props}/>:props.route==="shortcuts"?<ShortcutSettings description={props.description} route={props.route}/>:<p role="status">이 화면을 찾을 수 없습니다.</p>
-  }</Suspense></>;
+    }).then((unlisten) => {
+      if (active) remove = unlisten;
+      else unlisten();
+    });
+    return () => {
+      active = false;
+      remove?.();
+      document.removeEventListener("compositionstart", compositionStart, true);
+      document.removeEventListener("compositionend", compositionEnd, true);
+    };
+  }, [available]);
+  if (!available)
+    return (
+      <Suspense fallback={<p role="status">설치 상태를 불러오고 있습니다…</p>}>
+        <Inventory {...props} />
+        <Recovery {...props} />
+        <Health {...props} />
+      </Suspense>
+    );
+  return (
+    <>
+      {shortcutIssue && <p role="alert">{shortcutIssue}</p>}
+      <button onClick={() => setLauncher(true)}>Launcher 열기</button>
+      {launcher && (
+        <Suspense fallback={<p role="status">Launcher를 불러오고 있습니다…</p>}>
+          <HostedLauncher {...props} close={close} />
+        </Suspense>
+      )}
+      <Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}>
+        {props.route === "recovery" ? (
+          <>
+            <Recovery {...props} />
+            <Health {...props} />
+            <Tools route={props.route} />
+          </>
+        ) : ["environment", "diagnostics", "tools"].includes(props.route) ? (
+          <Tools route={props.route} />
+        ) : props.route === "products" ? (
+          <>
+            <Inventory {...props} />
+            <Commands {...props} />
+          </>
+        ) : props.route === "updates" ? (
+          <>
+            <Updates {...props} />
+            <Recovery {...props} />
+            <Health {...props} />
+          </>
+        ) : props.route === "components" ? (
+          <Inventory {...props} />
+        ) : props.route === "shortcuts" ? (
+          <ShortcutSettings description={props.description} route={props.route} />
+        ) : (
+          <p role="status">이 화면을 찾을 수 없습니다.</p>
+        )}
+      </Suspense>
+    </>
+  );
 }

@@ -77,9 +77,7 @@ const tasks: WorkspaceTaskControl[] = [
   },
 ];
 
-const receipt = (
-  patch: Partial<WorkspaceTaskControlReceipt> = {},
-): WorkspaceTaskControlReceipt => ({
+const receipt = (patch: Partial<WorkspaceTaskControlReceipt> = {}): WorkspaceTaskControlReceipt => ({
   schemaVersion: 1,
   requestId: "request-1",
   taskId: "process-build",
@@ -158,9 +156,7 @@ describe("WorkspaceTaskControlPanel", () => {
 
   it("keeps an exact request pending until Run Manager returns a terminal receipt", async () => {
     vi.useFakeTimers();
-    getWorkspaceTaskControlReceiptMock
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(receipt());
+    getWorkspaceTaskControlReceiptMock.mockResolvedValueOnce(null).mockResolvedValueOnce(receipt());
     render(<WorkspaceTaskControlPanel />);
 
     await act(async () => {

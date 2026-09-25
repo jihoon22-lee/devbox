@@ -13,12 +13,7 @@ export function buildRequestItemContextMenu(disabled: boolean): readonly Context
   ];
 }
 
-export function duplicateHistoryItem(
-  store: HistoryStore,
-  id: string,
-  now: number,
-  makeId: () => string,
-): HistoryStore {
+export function duplicateHistoryItem(store: HistoryStore, id: string, now: number, makeId: () => string): HistoryStore {
   const source = store.history.find((item) => item.id === id);
   if (!source) return store;
   const duplicate: HistoryItem = {
@@ -36,7 +31,7 @@ export function renameHistoryItem(store: HistoryStore, id: string, name: string)
   if (!normalized) return store;
   return {
     ...store,
-    history: store.history.map((item) => item.id === id ? { ...item, name: normalized } : item),
+    history: store.history.map((item) => (item.id === id ? { ...item, name: normalized } : item)),
   };
 }
 
@@ -50,7 +45,10 @@ function copyName(name: string): string {
 }
 
 function normalizeName(name: string): string {
-  return name.replace(/[\r\n]+/g, " ").trim().slice(0, 120);
+  return name
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 120);
 }
 
 function clonePersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {

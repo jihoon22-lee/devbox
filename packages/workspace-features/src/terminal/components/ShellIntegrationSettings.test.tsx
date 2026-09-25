@@ -57,27 +57,22 @@ describe("ShellIntegrationSettings", () => {
   it("설치 전 marker block을 확인하고 revision이 일치할 때만 변경을 요청한다", async () => {
     const ask = vi.fn().mockResolvedValue({ confirmed: true, value: "", remember: false });
     const onError = vi.fn();
-    const { container } = render(
-      <ShellIntegrationSettings distro="Ubuntu" ask={ask} onError={onError} />,
-    );
+    const { container } = render(<ShellIntegrationSettings distro="Ubuntu" ask={ask} onError={onError} />);
     await screen.findByText("미설치");
     await assertNoA11yViolations(container);
 
     fireEvent.click(screen.getByRole("button", { name: "Bash 연동 설치" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Bash 셸 연동을 설치할까요?",
-      detail: "# bash block\n",
-      danger: true,
-    })));
-    await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(
-      "Ubuntu",
-      "bash",
-      "install",
-      "bash-r1",
-    ));
-    expect(await screen.findByText(/Bash 연동을 적용했습니다/u)).toHaveTextContent(
-      "~/.bashrc.devbox-backup-1-abcd",
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Bash 셸 연동을 설치할까요?",
+          detail: "# bash block\n",
+          danger: true,
+        }),
+      ),
     );
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledWith("Ubuntu", "bash", "install", "bash-r1"));
+    expect(await screen.findByText(/Bash 연동을 적용했습니다/u)).toHaveTextContent("~/.bashrc.devbox-backup-1-abcd");
     expect(screen.getAllByText("사용 중")).toHaveLength(2);
     expect(onError).not.toHaveBeenCalled();
   });
@@ -100,9 +95,13 @@ describe("ShellIntegrationSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zsh block 복사" }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("# zsh block\n"));
     fireEvent.click(screen.getByRole("button", { name: "Zsh 연동 제거" }));
-    await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Zsh 셸 연동을 제거할까요?",
-    })));
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Zsh 셸 연동을 제거할까요?",
+        }),
+      ),
+    );
   });
 
   it("충돌 상태에서는 자동 변경을 차단하지만 block 복사는 남긴다", async () => {
@@ -122,14 +121,17 @@ describe("ShellIntegrationSettings", () => {
     const debian = report();
     debian.distro = "Debian";
     debian.shells[0] = { ...debian.shells[0], status: "current" };
-    mocks.inspect.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveUbuntu = resolve;
-    })).mockResolvedValueOnce(debian);
+    mocks.inspect
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveUbuntu = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(debian);
     const ask = vi.fn();
     const onError = vi.fn();
-    const view = render(
-      <ShellIntegrationSettings distro="Ubuntu" ask={ask} onError={onError} />,
-    );
+    const view = render(<ShellIntegrationSettings distro="Ubuntu" ask={ask} onError={onError} />);
     view.rerender(<ShellIntegrationSettings distro="Debian" ask={ask} onError={onError} />);
     await waitFor(() => expect(mocks.inspect).toHaveBeenCalledWith("Debian"));
     await waitFor(() => expect(screen.queryByText("미설치")).not.toBeInTheDocument());

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  convertByteEncoding,
-  MAX_BYTE_CODEC_BYTES,
-  MAX_BYTE_CODEC_INPUT_CHARACTERS,
-} from "./byteCodec";
+import { convertByteEncoding, MAX_BYTE_CODEC_BYTES, MAX_BYTE_CODEC_INPUT_CHARACTERS } from "./byteCodec";
 
 describe("convertByteEncoding", () => {
   it("RFC 4648 Base64 vector와 UTF-8 text를 왕복한다", () => {
@@ -143,26 +139,10 @@ describe("convertByteEncoding", () => {
   });
 
   it("표현 길이와 decoded raw byte 상한을 각각 적용한다", () => {
-    const representation = convertByteEncoding(
-      "x".repeat(MAX_BYTE_CODEC_INPUT_CHARACTERS + 1),
-      "utf8",
-      "base64",
-    );
-    const utf8Bytes = convertByteEncoding(
-      "가".repeat(Math.floor(MAX_BYTE_CODEC_BYTES / 3) + 1),
-      "utf8",
-      "base64",
-    );
-    const bytes = convertByteEncoding(
-      "00".repeat(MAX_BYTE_CODEC_BYTES + 1),
-      "hex",
-      "base64",
-    );
-    const base64Bytes = convertByteEncoding(
-      "AAAA".repeat(Math.floor(MAX_BYTE_CODEC_BYTES / 3) + 1),
-      "base64",
-      "hex",
-    );
+    const representation = convertByteEncoding("x".repeat(MAX_BYTE_CODEC_INPUT_CHARACTERS + 1), "utf8", "base64");
+    const utf8Bytes = convertByteEncoding("가".repeat(Math.floor(MAX_BYTE_CODEC_BYTES / 3) + 1), "utf8", "base64");
+    const bytes = convertByteEncoding("00".repeat(MAX_BYTE_CODEC_BYTES + 1), "hex", "base64");
+    const base64Bytes = convertByteEncoding("AAAA".repeat(Math.floor(MAX_BYTE_CODEC_BYTES / 3) + 1), "base64", "hex");
 
     expect(representation.error?.code).toBe("INPUT_TOO_LARGE");
     expect(utf8Bytes.error?.code).toBe("BYTE_LIMIT_EXCEEDED");

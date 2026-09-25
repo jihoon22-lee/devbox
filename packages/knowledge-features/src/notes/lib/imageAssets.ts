@@ -97,12 +97,12 @@ const SAFE_ASSET_PATH = /^assets\/[0-9a-f]{64}\.(?:png|jpg|gif|webp)$/u;
 
 function noteDirectoryDepth(noteRel: string): number | null {
   if (
-    !noteRel
-    || noteRel.length > 4 * 1024
-    || !noteRel.endsWith(".md")
-    || noteRel.includes("\\")
-    || noteRel.includes("\0")
-    || /[\u0000-\u001f\u007f]/u.test(noteRel)
+    !noteRel ||
+    noteRel.length > 4 * 1024 ||
+    !noteRel.endsWith(".md") ||
+    noteRel.includes("\\") ||
+    noteRel.includes("\0") ||
+    /[\u0000-\u001f\u007f]/u.test(noteRel)
   ) {
     return null;
   }
@@ -121,9 +121,9 @@ export function relativeAssetDestination(noteRel: string, assetRel: string): str
 
 export function validateImageAssetResult(noteRel: string, result: ImageAsset): ImageAsset {
   if (
-    typeof result?.relativePath !== "string"
-    || typeof result.markdown !== "string"
-    || typeof result.reused !== "boolean"
+    typeof result?.relativePath !== "string" ||
+    typeof result.markdown !== "string" ||
+    typeof result.reused !== "boolean"
   ) {
     throw new Error(IMAGE_RESULT_ERROR);
   }

@@ -35,19 +35,14 @@ export default function QuickOpen({
   const inputRef = useRef<HTMLInputElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const matches = useMemo(() => filterQuickOpenFiles(files, query), [files, query]);
-  const visibleMatches = useMemo(
-    () => matches.slice(0, QUICK_OPEN_VISIBLE_LIMIT),
-    [matches],
-  );
+  const visibleMatches = useMemo(() => matches.slice(0, QUICK_OPEN_VISIBLE_LIMIT), [matches]);
   const tree = useMemo(() => groupQuickOpenMatches(visibleMatches), [visibleMatches]);
   const displayedMatches = useMemo(() => flattenQuickOpenTree(tree), [tree]);
   const resultsVisible = !loading && Boolean(workspaceFolder) && displayedMatches.length > 0;
-  const selectedOptionId =
-    resultsVisible && displayedMatches[selected] ? optionIdForIndex(selected) : undefined;
+  const selectedOptionId = resultsVisible && displayedMatches[selected] ? optionIdForIndex(selected) : undefined;
 
   useEffect(() => {
-    returnFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     inputRef.current?.focus();
     return () => {
       if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus();
@@ -151,9 +146,7 @@ export default function QuickOpen({
             일부 항목을 읽지 못해 현재 목록은 불완전합니다
           </p>
         )}
-        {!workspaceFolder && !loading && (
-          <p className="quick-open-empty">먼저 작업 폴더를 지정하세요.</p>
-        )}
+        {!workspaceFolder && !loading && <p className="quick-open-empty">먼저 작업 폴더를 지정하세요.</p>}
         {loading && <p className="quick-open-empty">작업 폴더를 읽는 중...</p>}
         {!loading && workspaceFolder && matches.length === 0 && (
           <p className="quick-open-empty">일치하는 파일이 없습니다.</p>
@@ -166,14 +159,8 @@ export default function QuickOpen({
         {resultsVisible && (
           <div id="quick-open-results" className="quick-open-results" role="listbox" aria-label="검색 결과">
             {tree.files.length > 0 && (
-              <ul
-                className="quick-open-list quick-open-root-list"
-                role="group"
-                aria-label="작업 폴더 파일"
-              >
-                {tree.files.map((match) =>
-                  renderMatch(match, displayedMatches, selected, setSelected, onOpen),
-                )}
+              <ul className="quick-open-list quick-open-root-list" role="group" aria-label="작업 폴더 파일">
+                {tree.files.map((match) => renderMatch(match, displayedMatches, selected, setSelected, onOpen))}
               </ul>
             )}
             {tree.directories.map((directory) =>
@@ -202,20 +189,18 @@ function renderDirectory(
       aria-label={`디렉터리 ${directory.path}`}
     >
       <h3 className="quick-open-directory-heading" title={`${directory.path}/`}>
-        <span className="quick-open-directory-marker" aria-hidden="true">▾</span>
+        <span className="quick-open-directory-marker" aria-hidden="true">
+          ▾
+        </span>
         <span className="quick-open-directory-name">{directory.name}/</span>
-        {directory.path !== directory.name && (
-          <span className="quick-open-directory-path">{directory.path}/</span>
-        )}
+        {directory.path !== directory.name && <span className="quick-open-directory-path">{directory.path}/</span>}
       </h3>
       {directory.files.length > 0 && (
         <ul className="quick-open-list" role="group" aria-label={`${directory.path} 파일`}>
           {directory.files.map((match) => renderMatch(match, matches, selected, setSelected, onOpen))}
         </ul>
       )}
-      {directory.directories.map((child) =>
-        renderDirectory(child, matches, selected, setSelected, onOpen),
-      )}
+      {directory.directories.map((child) => renderDirectory(child, matches, selected, setSelected, onOpen))}
     </section>
   );
 }

@@ -3,13 +3,7 @@ import { isTauri } from "./lib/isTauri";
 import { isProductHosted } from "../transport";
 import { KnowledgeDraftAction } from "../knowledge/KnowledgeDraftAction";
 import { MockDraftAction } from "../webhooks/MockDraftAction";
-import type {
-  ApiResponse,
-  BinaryResponse,
-  GraphqlResponse,
-  ResponseCookie,
-  ToolboxDispatch,
-} from "./types";
+import type { ApiResponse, BinaryResponse, GraphqlResponse, ResponseCookie, ToolboxDispatch } from "./types";
 
 export type RawResponseCopyKind = "headers" | "cookies";
 type ResponseTab = "body" | "headers" | "cookies";
@@ -26,10 +20,7 @@ export const TOOLBOX_SELECTION_MESSAGES = {
   error: "Developer Toolbox로 선택 영역을 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
 } as const;
 
-export type ResponseSelectionCheck =
-  | { kind: "valid"; text: string }
-  | { kind: "empty" }
-  | { kind: "outside" };
+export type ResponseSelectionCheck = { kind: "valid"; text: string } | { kind: "empty" } | { kind: "outside" };
 
 /**
  * Inspect only the Selection whose boundary points are inside the rendered
@@ -76,12 +67,14 @@ export function formatResponseHeaders(response: ApiResponse): string {
 }
 
 export function formatResponseCookies(cookies: readonly ResponseCookie[]): string {
-  return cookies.map((cookie) => {
-    const attributes = cookie.attributes
-      .map((attribute) => attribute.value ? `${attribute.key}=${attribute.value}` : attribute.key)
-      .join("; ");
-    return `${cookie.name}=${cookie.value}${attributes ? `; ${attributes}` : ""}`;
-  }).join("\n");
+  return cookies
+    .map((cookie) => {
+      const attributes = cookie.attributes
+        .map((attribute) => (attribute.value ? `${attribute.key}=${attribute.value}` : attribute.key))
+        .join("; ");
+      return `${cookie.name}=${cookie.value}${attributes ? `; ${attributes}` : ""}`;
+    })
+    .join("\n");
 }
 
 export function formatGraphqlData(data: unknown): string {
@@ -112,7 +105,8 @@ function GraphqlResponseSummary({ response, graphql }: { response: ApiResponse; 
                 <div className="dim graphql-error-meta">
                   {error.path.length > 0 && `path: ${error.path.join(".")}`}
                   {error.path.length > 0 && error.locations.length > 0 && " · "}
-                  {error.locations.length > 0 && `location: ${error.locations.map((location) => `${location.line}:${location.column}`).join(", ")}`}
+                  {error.locations.length > 0 &&
+                    `location: ${error.locations.map((location) => `${location.line}:${location.column}`).join(", ")}`}
                 </div>
               )}
             </div>
@@ -148,14 +142,22 @@ function BinaryResponseSummary({
   return (
     <section className="binary-response-summary" aria-label="Binary 응답 미리보기">
       <div className="binary-response-meta">
-        <span><strong>형식</strong> {binary.media_type}</span>
-        <span><strong>크기</strong> {binary.size_bytes.toLocaleString()}바이트</span>
+        <span>
+          <strong>형식</strong> {binary.media_type}
+        </span>
+        <span>
+          <strong>크기</strong> {binary.size_bytes.toLocaleString()}바이트
+        </span>
         <span className="spacer" />
         <button
           type="button"
           className="btn"
           disabled={!canSave || saving}
-          title={canSave ? "현재 응답 Binary를 네이티브 대화상자에서 한 번 저장" : "현재 응답은 네이티브 앱에서만 저장할 수 있습니다"}
+          title={
+            canSave
+              ? "현재 응답 Binary를 네이티브 대화상자에서 한 번 저장"
+              : "현재 응답은 네이티브 앱에서만 저장할 수 있습니다"
+          }
           onClick={onSave}
         >
           {saving ? "저장 중…" : "Binary 저장"}
@@ -173,7 +175,11 @@ function BinaryResponseSummary({
           {binary.text_truncated && <span className="dim">미리보기 일부 생략</span>}
         </div>
       )}
-      {!canSave && <div className="dim">Binary 원문은 제한된 메모리에만 있으며 데스크톱 네이티브 저장으로만 내보낼 수 있습니다.</div>}
+      {!canSave && (
+        <div className="dim">
+          Binary 원문은 제한된 메모리에만 있으며 데스크톱 네이티브 저장으로만 내보낼 수 있습니다.
+        </div>
+      )}
     </section>
   );
 }
@@ -206,6 +212,7 @@ export function ResponseViewer({
   } | null>(null);
   const lastSelectionRevisionRef = useRef<number | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     setTab("body");
     setCopyingRaw(null);
@@ -214,6 +221,7 @@ export function ResponseViewer({
 
   // A response or its rendered form (for example pretty JSON) starts a new
   // revision. A previously captured DOM Range must not cross that boundary.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useLayoutEffect(() => {
     renderRevisionRef.current += 1;
     if (selectionRef.current) {
@@ -289,8 +297,7 @@ export function ResponseViewer({
     const check = inspectResponseSelection(body, window.getSelection());
     const revision = renderRevisionRef.current;
     const previous = selectionRef.current;
-    const staleRevision = lastSelectionRevisionRef.current !== null
-      && lastSelectionRevisionRef.current !== revision;
+    const staleRevision = lastSelectionRevisionRef.current !== null && lastSelectionRevisionRef.current !== revision;
 
     if (staleRevision) {
       setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.stale });
@@ -315,11 +322,7 @@ export function ResponseViewer({
     if (!previous) {
       selectionRef.current = { body, text: check.text, revision };
       lastSelectionRevisionRef.current = revision;
-    } else if (
-      previous.body !== body
-      || previous.revision !== revision
-      || previous.text !== check.text
-    ) {
+    } else if (previous.body !== body || previous.revision !== revision || previous.text !== check.text) {
       setToolboxFeedback({ kind: "error", message: TOOLBOX_SELECTION_MESSAGES.stale });
       return;
     }
@@ -340,9 +343,7 @@ export function ResponseViewer({
       if (renderRevisionRef.current !== actionRevision) return;
       setToolboxFeedback({
         kind: "success",
-        message: result.redacted
-          ? TOOLBOX_SELECTION_MESSAGES.redacted
-          : TOOLBOX_SELECTION_MESSAGES.success,
+        message: result.redacted ? TOOLBOX_SELECTION_MESSAGES.redacted : TOOLBOX_SELECTION_MESSAGES.success,
       });
     } catch {
       if (renderRevisionRef.current === actionRevision) {
@@ -380,12 +381,10 @@ export function ResponseViewer({
   const rawUnavailableTitle = response.headers_truncated
     ? "응답 header 상한을 넘어 원문 복사를 사용할 수 없습니다"
     : "원문 복사는 데스크톱 앱에서만 사용할 수 있습니다";
-  const canCopyRawHeaders = response.raw_headers_available
-    && Boolean(response.response_id)
-    && response.headers.length > 0;
-  const canCopyRawCookies = response.raw_headers_available
-    && Boolean(response.response_id)
-    && response.cookies.length > 0;
+  const canCopyRawHeaders =
+    response.raw_headers_available && Boolean(response.response_id) && response.headers.length > 0;
+  const canCopyRawCookies =
+    response.raw_headers_available && Boolean(response.response_id) && response.cookies.length > 0;
 
   return (
     <div className="response">
@@ -398,11 +397,12 @@ export function ResponseViewer({
       </div>
       <div className="response-tabs" role="tablist" aria-label="응답 보기">
         {RESPONSE_TABS.map((candidate, index) => {
-          const label = candidate === "body"
-            ? "본문"
-            : candidate === "headers"
-              ? `헤더 (${response.headers.length})`
-              : `쿠키 (${response.cookies.length})`;
+          const label =
+            candidate === "body"
+              ? "본문"
+              : candidate === "headers"
+                ? `헤더 (${response.headers.length})`
+                : `쿠키 (${response.cookies.length})`;
           return (
             <button
               key={candidate}
@@ -441,15 +441,26 @@ export function ResponseViewer({
               </label>
             )}
             <span className="spacer" />
-            {isProductHosted() && !response.binary && <KnowledgeDraftAction owner="api-studio.api" value={responseText} />}
-            {isProductHosted() && !response.binary && <MockDraftAction owner="api-studio.api" value={responseText} status={response.status} mediaType={response.is_json ? "json" : "text"} />}
+            {isProductHosted() && !response.binary && (
+              <KnowledgeDraftAction owner="api-studio.api" value={responseText} />
+            )}
+            {isProductHosted() && !response.binary && (
+              <MockDraftAction
+                owner="api-studio.api"
+                value={responseText}
+                status={response.status}
+                mediaType={response.is_json ? "json" : "text"}
+              />
+            )}
             <button
               type="button"
               className="btn"
               disabled={Boolean(response.binary) || sendingSelection}
-              title={response.binary
-                ? "Binary 응답은 선택 영역을 Developer Toolbox로 보낼 수 없습니다"
-                : "현재 마스킹된 응답 본문에서 선택한 텍스트를 Developer Toolbox로 보내기"}
+              title={
+                response.binary
+                  ? "Binary 응답은 선택 영역을 Developer Toolbox로 보낼 수 없습니다"
+                  : "현재 마스킹된 응답 본문에서 선택한 텍스트를 Developer Toolbox로 보내기"
+              }
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void sendSelection()}
             >
@@ -459,7 +470,9 @@ export function ResponseViewer({
               type="button"
               className="btn"
               disabled={Boolean(response.binary)}
-              title={response.binary ? "Binary 응답은 제한된 미리보기와 명시적 저장만 지원합니다" : "마스킹된 응답 본문 복사"}
+              title={
+                response.binary ? "Binary 응답은 제한된 미리보기와 명시적 저장만 지원합니다" : "마스킹된 응답 본문 복사"
+              }
               onClick={() => void copyMasked(responseText, "마스킹된 응답 본문을 복사하지 못했습니다.")}
             >
               본문 복사
@@ -483,7 +496,9 @@ export function ResponseViewer({
               onSave={() => void saveBinary()}
             />
           )}
-          {response.graphql && !response.binary && <GraphqlResponseSummary response={response} graphql={response.graphql} />}
+          {response.graphql && !response.binary && (
+            <GraphqlResponseSummary response={response} graphql={response.graphql} />
+          )}
           {!response.binary && (
             <pre
               ref={responseBodyRef}
@@ -536,10 +551,9 @@ export function ResponseViewer({
               type="button"
               className="btn"
               disabled={response.headers.length === 0}
-              onClick={() => void copyMasked(
-                formatResponseHeaders(response),
-                "마스킹된 응답 header를 복사하지 못했습니다.",
-              )}
+              onClick={() =>
+                void copyMasked(formatResponseHeaders(response), "마스킹된 응답 header를 복사하지 못했습니다.")
+              }
             >
               마스킹된 헤더 복사
             </button>
@@ -561,7 +575,12 @@ export function ResponseViewer({
           {response.headers.length > 0 ? (
             <div className="response-table-wrap">
               <table className="response-table">
-                <thead><tr><th>이름</th><th>값</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>값</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {response.headers.map((header, index) => (
                     <tr key={`${header.key}-${index}`}>
@@ -592,10 +611,9 @@ export function ResponseViewer({
               type="button"
               className="btn"
               disabled={response.cookies.length === 0}
-              onClick={() => void copyMasked(
-                formatResponseCookies(response.cookies),
-                "마스킹된 응답 Cookie를 복사하지 못했습니다.",
-              )}
+              onClick={() =>
+                void copyMasked(formatResponseCookies(response.cookies), "마스킹된 응답 Cookie를 복사하지 못했습니다.")
+              }
             >
               마스킹된 쿠키 복사
             </button>
@@ -612,7 +630,13 @@ export function ResponseViewer({
           {response.cookies.length > 0 ? (
             <div className="response-table-wrap">
               <table className="response-table">
-                <thead><tr><th>이름</th><th>값</th><th>속성</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>값</th>
+                    <th>속성</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {response.cookies.map((cookie, index) => (
                     <tr key={`${cookie.name}-${index}`}>
@@ -620,9 +644,7 @@ export function ResponseViewer({
                       <td className="mono">{cookie.value}</td>
                       <td className="mono">
                         {cookie.attributes
-                          .map((attribute) => attribute.value
-                            ? `${attribute.key}=${attribute.value}`
-                            : attribute.key)
+                          .map((attribute) => (attribute.value ? `${attribute.key}=${attribute.value}` : attribute.key))
                           .join("; ") || "—"}
                       </td>
                     </tr>

@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 const hosted = vi.hoisted(() => ({ value: false, reconnect: vi.fn(async () => {}) }));
-vi.mock("../transport", async importOriginal => ({
-  ...await importOriginal<typeof import("../transport")>(),
+vi.mock("../transport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../transport")>()),
   isProductHosted: () => hosted.value,
   componentInvoke: () => hosted.reconnect,
 }));
@@ -63,7 +63,9 @@ const lspStatusHandlerRef: {
   current: ((event: { payload: LspStatusEvent }) => void) | null;
 } = { current: null };
 const appLinkHandlerRef: {
-  current: ((event: { payload: { target: { kind: string; [key: string]: unknown }; from: string | null } }) => void) | null;
+  current:
+    | ((event: { payload: { target: { kind: string; [key: string]: unknown }; from: string | null } }) => void)
+    | null;
 } = { current: null };
 const appLinkOrder: string[] = [];
 const rejectAppLinkListenRef = { current: false };
@@ -72,7 +74,8 @@ const rejectLspStatusListenRef = { current: false };
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event: string, handler: unknown) => {
     if (event === "file-changed") fileChangedHandlerRef.current = handler as typeof fileChangedHandlerRef.current;
-    if (event === "lsp/diagnostics") lspDiagnosticsHandlerRef.current = handler as typeof lspDiagnosticsHandlerRef.current;
+    if (event === "lsp/diagnostics")
+      lspDiagnosticsHandlerRef.current = handler as typeof lspDiagnosticsHandlerRef.current;
     if (event === "lsp/status") {
       if (rejectLspStatusListenRef.current) throw new Error("status listener unavailable");
       lspStatusHandlerRef.current = handler as typeof lspStatusHandlerRef.current;
@@ -84,7 +87,8 @@ vi.mock("@tauri-apps/api/event", () => ({
     }
     return () => {
       if (event === "file-changed" && fileChangedHandlerRef.current === handler) fileChangedHandlerRef.current = null;
-      if (event === "lsp/diagnostics" && lspDiagnosticsHandlerRef.current === handler) lspDiagnosticsHandlerRef.current = null;
+      if (event === "lsp/diagnostics" && lspDiagnosticsHandlerRef.current === handler)
+        lspDiagnosticsHandlerRef.current = null;
       if (event === "lsp/status" && lspStatusHandlerRef.current === handler) lspStatusHandlerRef.current = null;
       if (event === "devbox://open" && appLinkHandlerRef.current === handler) appLinkHandlerRef.current = null;
     };
@@ -121,11 +125,16 @@ vi.mock("./components/DocHost", () => ({
       ))}
       {props.docs.map((doc) => (
         <output data-testid={`lsp-diagnostics-${doc.id}`} key={`${doc.id}-diagnostics`}>
-          {props.diagnostics?.(doc.id).map((diagnostic) => diagnostic.message).join("|")}
+          {props
+            .diagnostics?.(doc.id)
+            .map((diagnostic) => diagnostic.message)
+            .join("|")}
         </output>
       ))}
       {props.docs.map((doc) => (
-        <output data-testid={`doc-text-${doc.path}`} key={`${doc.id}-text`}>{doc.text}</output>
+        <output data-testid={`doc-text-${doc.path}`} key={`${doc.id}-text`}>
+          {doc.text}
+        </output>
       ))}
     </div>
   ),
@@ -151,7 +160,7 @@ vi.mock("./api", () => ({
   unwatchFile: vi.fn().mockResolvedValue(undefined),
   saveSession: vi.fn().mockResolvedValue(undefined),
   loadRecovery: vi.fn().mockResolvedValue([]),
-  loadRecoveryState: vi.fn().mockResolvedValue({entries:[]}),
+  loadRecoveryState: vi.fn().mockResolvedValue({ entries: [] }),
   applyRecovery: vi.fn().mockResolvedValue(undefined),
   discardRecovery: vi.fn().mockResolvedValue(undefined),
   canonicalizeWorkspace: vi.fn(),
@@ -181,12 +190,22 @@ vi.mock("./api", () => ({
   syncEditorDocument: vi.fn().mockResolvedValue(false),
   closeLspDocument: vi.fn(),
   deleteFileAction: vi.fn(),
-  pullLspDiagnostics: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { uri: "", version: 1, diagnostics: [], origin: "pull" }, stale: false }),
-  requestLspCompletion: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false }),
-  requestLspDefinition: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
+  pullLspDiagnostics: vi.fn().mockResolvedValue({
+    metadata: { uri: "", version: 1 },
+    value: { uri: "", version: 1, diagnostics: [], origin: "pull" },
+    stale: false,
+  }),
+  requestLspCompletion: vi
+    .fn()
+    .mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false }),
+  requestLspDefinition: vi
+    .fn()
+    .mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
   requestLspFormatting: vi.fn().mockResolvedValue({ documents: [] }),
   requestLspHover: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: null, stale: false }),
-  requestLspReferences: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
+  requestLspReferences: vi
+    .fn()
+    .mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false }),
   requestLspRename: vi.fn().mockResolvedValue({ planId: "", files: [] }),
   applyLspRename: vi.fn(),
   cancelLspRename: vi.fn().mockResolvedValue(false),
@@ -263,9 +282,7 @@ function savedFile() {
   };
 }
 
-function configureDiagnosticsApp(
-  capabilityOverrides: Partial<LanguageServerStatus["capabilities"]> = {},
-) {
+function configureDiagnosticsApp(capabilityOverrides: Partial<LanguageServerStatus["capabilities"]> = {}) {
   loadSessionMock.mockResolvedValue({
     session: {
       version: 1,
@@ -334,11 +351,13 @@ function diagnosticEvent(version: number, message: string): LspDiagnosticsEvent 
       value: {
         uri: "file:///tmp/one.ts",
         version,
-        diagnostics: [{
-          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
-          message,
-          severity: 2,
-        }],
+        diagnostics: [
+          {
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+            message,
+            severity: 2,
+          },
+        ],
         origin: "push",
       },
       stale: false,
@@ -350,7 +369,7 @@ beforeEach(() => {
   hosted.value = false;
   hosted.reconnect.mockReset().mockResolvedValue(undefined);
   vi.mocked(loadRecovery).mockReset().mockResolvedValue([]);
-  vi.mocked(loadRecoveryState).mockReset().mockResolvedValue({entries:[]});
+  vi.mocked(loadRecoveryState).mockReset().mockResolvedValue({ entries: [] });
   vi.mocked(saveSession).mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset();
   saveFileMock.mockReset();
@@ -399,9 +418,13 @@ beforeEach(() => {
   saveLspDocumentMock.mockReset();
   closeLspDocumentMock.mockReset();
   deleteFileActionMock.mockReset().mockResolvedValue(undefined);
-  requestLspDefinitionMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
+  requestLspDefinitionMock
+    .mockReset()
+    .mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspFormattingMock.mockReset().mockResolvedValue({ documents: [] });
-  requestLspReferencesMock.mockReset().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
+  requestLspReferencesMock
+    .mockReset()
+    .mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { locations: [], rejected: 0 }, stale: false });
   requestLspRenameMock.mockReset().mockResolvedValue({ planId: "", files: [] });
   applyLspRenameMock.mockReset();
   cancelLspRenameMock.mockReset().mockResolvedValue(false);
@@ -440,11 +463,7 @@ async function openOne() {
   return rendered;
 }
 
-async function openAdditional(
-  rendered: Awaited<ReturnType<typeof openOne>>,
-  path: string,
-  text = "before",
-) {
+async function openAdditional(rendered: Awaited<ReturnType<typeof openOne>>, path: string, text = "before") {
   openFileMock.mockResolvedValueOnce(openedFile(text, path));
   const input = rendered.getByRole("textbox", { name: "열 파일 경로" });
   fireEvent.change(input, { target: { value: path } });
@@ -459,45 +478,50 @@ function fileName(path: string): string {
 describe("App editor shell operations", () => {
   it("chains native session revisions and stops stale autosave without discarding edits", async () => {
     const loaded = await loadSessionMock();
-    loadSessionMock.mockResolvedValue({...loaded, nativeRevision:"loaded-revision"});
+    loadSessionMock.mockResolvedValue({ ...loaded, nativeRevision: "loaded-revision" });
     vi.mocked(saveSession).mockResolvedValueOnce("saved-revision");
     const view = await openOne();
-    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), {timeout:5000});
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), { timeout: 5000 });
     expect(vi.mocked(saveSession).mock.calls[0][1]).toBe("loaded-revision");
     vi.mocked(saveSession).mockRejectedValueOnce(new Error("files_session_changed"));
-    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
-    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(2), {timeout:5000});
+    fireEvent.click(view.getByRole("button", { name: "edit /tmp/one.ts" }));
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(2), { timeout: 5000 });
     expect(vi.mocked(saveSession).mock.calls[1][1]).toBe("saved-revision");
-    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
-    await act(async () => {await new Promise(resolve => setTimeout(resolve, 1100));});
+    fireEvent.click(view.getByRole("button", { name: "edit /tmp/one.ts" }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
     expect(saveSession).toHaveBeenCalledTimes(2);
     expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!!");
   }, 15000);
 
   it("does not carry a late save revision into the next native view", async () => {
     const loaded = await loadSessionMock();
-    loadSessionMock.mockResolvedValueOnce({...loaded,nativeRevision:"first-view"});
+    loadSessionMock.mockResolvedValueOnce({ ...loaded, nativeRevision: "first-view" });
     const saving = deferred<Awaited<ReturnType<typeof saveSession>>>();
     vi.mocked(saveSession).mockReturnValueOnce(saving.promise).mockResolvedValue("second-saved");
     const view = await openOne();
-    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), {timeout:5000});
-    loadSessionMock.mockResolvedValueOnce({...loaded,nativeRevision:"second-view"});
-    view.rerender(<App contextKey="second-project"/>);
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    loadSessionMock.mockResolvedValueOnce({ ...loaded, nativeRevision: "second-view" });
+    view.rerender(<App contextKey="second-project" />);
     await waitFor(() => expect(view.queryByRole("tab")).toBeNull());
-    await act(async () => {saving.resolve("late-first-view");await saving.promise;});
-    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(2), {timeout:5000});
+    await act(async () => {
+      saving.resolve("late-first-view");
+      await saving.promise;
+    });
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(2), { timeout: 5000 });
     expect(vi.mocked(saveSession).mock.calls[1][1]).toBe("second-view");
   }, 15000);
 
   it("retains a dirty hidden route without handling another route's save shortcut", async () => {
     const view = await openOne();
-    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
-    view.rerender(<App active={false}/>);
-    fireEvent.keyDown(window, {key:"s", ctrlKey:true});
+    fireEvent.click(view.getByRole("button", { name: "edit /tmp/one.ts" }));
+    view.rerender(<App active={false} />);
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     expect(saveFileMock).not.toHaveBeenCalled();
     expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
-    view.rerender(<App active/>);
-    fireEvent.keyDown(window, {key:"s", ctrlKey:true});
+    view.rerender(<App active />);
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     await waitFor(() => expect(saveFileMock).toHaveBeenCalledTimes(1));
   });
 
@@ -506,19 +530,32 @@ describe("App editor shell operations", () => {
     const next = deferred<Awaited<ReturnType<typeof loadSession>>>();
     loadSessionMock.mockReturnValueOnce(next.promise);
     vi.mocked(saveSession).mockClear();
-    view.rerender(<App contextKey="next-project"/>);
+    view.rerender(<App contextKey="next-project" />);
     await waitFor(() => expect(loadSessionMock).toHaveBeenCalledTimes(2));
-    await act(async () => {await new Promise(resolve => setTimeout(resolve, 1100));});
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
     expect(saveSession).not.toHaveBeenCalled();
     expect(unwatchFileMock).toHaveBeenCalledWith("/tmp/one.ts");
-    next.resolve({session:{version:1, workspace_folder:null, docs:[], views:[[],[]], active_view:0, active_doc_by_view:[null,null], recent_files:[]}, persistAllowed:true});
+    next.resolve({
+      session: {
+        version: 1,
+        workspace_folder: null,
+        docs: [],
+        views: [[], []],
+        active_view: 0,
+        active_doc_by_view: [null, null],
+        recent_files: [],
+      },
+      persistAllowed: true,
+    });
     await waitFor(() => expect(view.queryByRole("tab")).toBeNull());
   });
 
   it("keeps unsaved text when an unexpected context update arrives", async () => {
     const view = await openOne();
-    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
-    view.rerender(<App contextKey="unexpected-project"/>);
+    fireEvent.click(view.getByRole("button", { name: "edit /tmp/one.ts" }));
+    view.rerender(<App contextKey="unexpected-project" />);
     expect(loadSessionMock).toHaveBeenCalledTimes(1);
     expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
     expect(view.getByText(/프로젝트가 변경되어도 미저장 내용은 보존됩니다/)).toBeTruthy();
@@ -527,17 +564,25 @@ describe("App editor shell operations", () => {
   it("ignores a previous distro's watcher event for the same POSIX spelling", async () => {
     const view = await openOne();
     const before = openFileMock.mock.calls.length;
-    const payload = {path:"/tmp/one.ts",mtimeNanos:"2",contentHash:"changed",size:9,contextKey:"another-distro"};
-    await act(async()=>fileChangedHandlerRef.current?.({payload}));
+    const payload = {
+      path: "/tmp/one.ts",
+      mtimeNanos: "2",
+      contentHash: "changed",
+      size: 9,
+      contextKey: "another-distro",
+    };
+    await act(async () => fileChangedHandlerRef.current?.({ payload }));
     expect(openFileMock).toHaveBeenCalledTimes(before);
     expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before");
-    await act(async()=>fileChangedHandlerRef.current?.({payload:{...payload,contextKey:"standalone"}}));
-    await waitFor(()=>expect(openFileMock).toHaveBeenCalledTimes(before+1));
+    await act(async () => fileChangedHandlerRef.current?.({ payload: { ...payload, contextKey: "standalone" } }));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(before + 1));
   });
 
   it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
     const { container, getByRole } = render(<App />);
-    await waitFor(() => expect((getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false),
+    );
     await assertNoA11yViolations(container);
   });
 
@@ -588,11 +633,7 @@ describe("App editor shell operations", () => {
     expect(previewRegion.querySelector(".preview-pane-path")?.textContent).toBe("/tmp/readme.md");
     expect(rendered.getByRole("tab", { name: /readme\.md/ }).getAttribute("aria-selected")).toBe("true");
     expect(previewToggle.getAttribute("aria-pressed")).toBe("true");
-    await waitFor(() => expect(renderPreviewMock).toHaveBeenCalledWith(
-      "/tmp/readme.md",
-      "# Title",
-      "/tmp",
-    ));
+    await waitFor(() => expect(renderPreviewMock).toHaveBeenCalledWith("/tmp/readme.md", "# Title", "/tmp"));
 
     fireEvent.click(previewToggle);
     expect(rendered.queryByRole("complementary", { name: "프리뷰" })).toBeNull();
@@ -620,7 +661,9 @@ describe("App editor shell operations", () => {
     });
 
     const rendered = render(<App />);
-    await waitFor(() => expect((rendered.getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((rendered.getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false),
+    );
     fireEvent.keyDown(window, { key: "p", ctrlKey: true });
     await waitFor(() => expect(listWorkspaceFilesMock).toHaveBeenCalledWith("/tmp/workspace"));
     expect(await rendered.findByRole("dialog", { name: "빠른 파일 열기" })).toBeTruthy();
@@ -804,17 +847,17 @@ describe("App editor shell operations", () => {
     await openOne();
     openFileMock.mockResolvedValue(openedFile("from disk"));
     await waitFor(() => expect(fileChangedHandlerRef.current).not.toBeNull());
-    fileChangedHandlerRef.current?.({ payload: {
-      path: "/tmp/one.ts",
-      mtimeNanos: "2",
-      contentHash: "hash-2",
-      size: 9,
-    } });
-    await waitFor(() => expect(reloadLspDocumentMock).toHaveBeenCalledWith(
-      "typescript",
-      "file:///tmp/one.ts",
-      "from disk",
-    ));
+    fileChangedHandlerRef.current?.({
+      payload: {
+        path: "/tmp/one.ts",
+        mtimeNanos: "2",
+        contentHash: "hash-2",
+        size: 9,
+      },
+    });
+    await waitFor(() =>
+      expect(reloadLspDocumentMock).toHaveBeenCalledWith("typescript", "file:///tmp/one.ts", "from disk"),
+    );
     expect(changeLspDocumentMock).not.toHaveBeenCalled();
   });
 
@@ -856,7 +899,9 @@ describe("App editor shell operations", () => {
     const rendered = await openOne();
     fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
-    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain("읽기 전용 파일이라 저장할 수 없습니다."));
+    await waitFor(() =>
+      expect(rendered.getByRole("alert").textContent).toContain("읽기 전용 파일이라 저장할 수 없습니다."),
+    );
     expect(rendered.getByRole("alert").textContent).not.toContain("disk is read-only");
     expect(saveLspDocumentMock).not.toHaveBeenCalled();
   });
@@ -875,9 +920,9 @@ describe("App editor shell operations", () => {
     watchFileMock.mockRejectedValueOnce(new Error("watch capacity"));
     const rendered = await openOne();
     expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy();
-    await waitFor(() => expect(rendered.getByRole("alert").textContent).toContain(
-      "외부 변경 감시를 시작하지 못했습니다",
-    ));
+    await waitFor(() =>
+      expect(rendered.getByRole("alert").textContent).toContain("외부 변경 감시를 시작하지 못했습니다"),
+    );
   });
 
   it("rolls back hydration watches across StrictMode effect lifetimes", async () => {
@@ -966,12 +1011,17 @@ describe("App editor shell operations", () => {
     fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
     fireEvent.click(rendered.getByRole("menuitem", { name: "이름 변경" }));
 
-    await waitFor(() => expect(renameFileActionMock).toHaveBeenCalledWith({
-      path: "/tmp/one.ts",
-      mtimeNanos: "1",
-      size: 6,
-      contentHash: "hash-1",
-    }, "renamed.ts"));
+    await waitFor(() =>
+      expect(renameFileActionMock).toHaveBeenCalledWith(
+        {
+          path: "/tmp/one.ts",
+          mtimeNanos: "1",
+          size: 6,
+          contentHash: "hash-1",
+        },
+        "renamed.ts",
+      ),
+    );
     await waitFor(() => expect(rendered.getByRole("tab", { name: /renamed\.ts/ })).toBeTruthy());
     expect(rendered.getByTestId("doc-text-/tmp/renamed.ts").textContent).toBe("before!");
     expect(unwatchFileMock).toHaveBeenCalledWith("/tmp/one.ts");
@@ -1002,12 +1052,14 @@ describe("App editor shell operations", () => {
     fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
     fireEvent.click(rendered.getByRole("menuitem", { name: "삭제" }));
 
-    await waitFor(() => expect(deleteFileActionMock).toHaveBeenCalledWith({
-      path: "/tmp/one.ts",
-      mtimeNanos: "1",
-      size: 6,
-      contentHash: "hash-1",
-    }));
+    await waitFor(() =>
+      expect(deleteFileActionMock).toHaveBeenCalledWith({
+        path: "/tmp/one.ts",
+        mtimeNanos: "1",
+        size: 6,
+        contentHash: "hash-1",
+      }),
+    );
     await waitFor(() => expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull());
     expect(unwatchFileMock).toHaveBeenCalledWith("/tmp/one.ts");
     confirm.mockRestore();
@@ -1049,10 +1101,9 @@ describe("App editor shell operations", () => {
     const rendered = await openOne();
     const conversion = rendered.getByRole("combobox", { name: "저장 인코딩" });
     fireEvent.change(conversion, { target: { value: "cp949" } });
-    await waitFor(() => expect(validateEncodingMock).toHaveBeenCalledWith(
-      "before",
-      { encodingKind: "cp949", bom: false },
-    ));
+    await waitFor(() =>
+      expect(validateEncodingMock).toHaveBeenCalledWith("before", { encodingKind: "cp949", bom: false }),
+    );
     expect((rendered.getByRole("combobox", { name: "줄바꿈 변환" }) as HTMLSelectElement).value).toBe("lf");
     fireEvent.change(rendered.getByRole("combobox", { name: "줄바꿈 변환" }), { target: { value: "crlf" } });
     expect((rendered.getByRole("combobox", { name: "줄바꿈 변환" }) as HTMLSelectElement).value).toBe("crlf");
@@ -1092,7 +1143,9 @@ describe("App editor shell operations", () => {
 
     // The definition request owns the busy guard until its status resolves;
     // wait for the toolbar to re-enable before starting the next request.
-    await waitFor(() => expect((rendered.getByRole("button", { name: "참조" }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((rendered.getByRole("button", { name: "참조" }) as HTMLButtonElement).disabled).toBe(false),
+    );
 
     fireEvent.click(rendered.getByRole("button", { name: "참조" }));
     expect(await rendered.findByRole("region", { name: "참조 결과" })).toBeTruthy();
@@ -1108,28 +1161,34 @@ describe("App editor shell operations", () => {
     });
     requestLspRenameMock.mockResolvedValue({
       planId: "rename-1",
-      files: [{
-        path: "one.ts",
-        ranges: [{
-          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
-          newText: "renamed",
-        }],
-        before: "formatted",
-        after: "renamed",
-      }],
+      files: [
+        {
+          path: "one.ts",
+          ranges: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+              newText: "renamed",
+            },
+          ],
+          before: "formatted",
+          after: "renamed",
+        },
+      ],
     });
     applyLspRenameMock.mockResolvedValue({
       planId: "rename-1",
       success: true,
       rolledBack: false,
-      files: [{
-        path: "one.ts",
-        status: "applied",
-        mtimeNanos: "2",
-        size: 7,
-        contentHash: "hash-2",
-        error: null,
-      }],
+      files: [
+        {
+          path: "one.ts",
+          status: "applied",
+          mtimeNanos: "2",
+          size: 7,
+          contentHash: "hash-2",
+          error: null,
+        },
+      ],
       documents: [{ path: "one.ts", version: 3, text: "renamed" }],
       error: null,
     });
@@ -1158,28 +1217,34 @@ describe("App editor shell operations", () => {
     });
     requestLspRenameMock.mockResolvedValue({
       planId: "rename-1",
-      files: [{
-        path: "one.ts",
-        ranges: [{
-          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
-          newText: "renamed",
-        }],
-        before: "before",
-        after: "renamed",
-      }],
+      files: [
+        {
+          path: "one.ts",
+          ranges: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+              newText: "renamed",
+            },
+          ],
+          before: "before",
+          after: "renamed",
+        },
+      ],
     });
     applyLspRenameMock.mockResolvedValue({
       planId: "rename-1",
       success: false,
       rolledBack: false,
-      files: [{
-        path: "one.ts",
-        status: "conflict",
-        mtimeNanos: null,
-        size: null,
-        contentHash: null,
-        error: "적용 전 파일이 변경되었습니다",
-      }],
+      files: [
+        {
+          path: "one.ts",
+          status: "conflict",
+          mtimeNanos: null,
+          size: null,
+          contentHash: null,
+          error: "적용 전 파일이 변경되었습니다",
+        },
+      ],
       documents: [],
       error: "적용 전 파일이 변경되어 이름 변경을 중단했습니다",
     });
@@ -1194,12 +1259,9 @@ describe("App editor shell operations", () => {
     await waitFor(() => expect(rendered.getByRole("dialog").textContent).toContain("충돌"));
     expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
     expect(applyLspRenameMock).toHaveBeenCalledWith("rename-1");
-    await waitFor(() => expect(changeLspDocumentMock).toHaveBeenCalledWith(
-      "typescript",
-      "file:///tmp/one.ts",
-      "before!",
-      true,
-    ));
+    await waitFor(() =>
+      expect(changeLspDocumentMock).toHaveBeenCalledWith("typescript", "file:///tmp/one.ts", "before!", true),
+    );
 
     // The rejected disk mutation must not make a version-2 diagnostic stale
     // after the user's local edit has already advanced the mirror.
@@ -1226,12 +1288,14 @@ describe("App editor shell operations", () => {
     fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
     renameResponse.resolve({
       planId: "rename-stale",
-      files: [{
-        path: "one.ts",
-        ranges: [],
-        before: "before",
-        after: "renamed",
-      }],
+      files: [
+        {
+          path: "one.ts",
+          ranges: [],
+          before: "before",
+          after: "renamed",
+        },
+      ],
     });
 
     await waitFor(() => expect(discardLspRenameMock).toHaveBeenCalledWith("rename-stale"));
@@ -1250,12 +1314,14 @@ describe("App editor shell operations", () => {
     changeLspDocumentMock.mockReturnValue(changeResponse.promise);
     requestLspRenameMock.mockResolvedValue({
       planId: "rename-cancelled",
-      files: [{
-        path: "one.ts",
-        ranges: [],
-        before: "before",
-        after: "renamed",
-      }],
+      files: [
+        {
+          path: "one.ts",
+          ranges: [],
+          before: "before",
+          after: "renamed",
+        },
+      ],
     });
     discardLspRenameMock.mockResolvedValue(true);
     const rendered = await openOne();
@@ -1309,72 +1375,83 @@ it("opens a retained product navigation request once after hydration and keeps a
   const empty = await loadSessionMock();
   loadSessionMock.mockReturnValueOnce(loading.promise);
   openFileMock.mockResolvedValue(openedFile("first\nsecond\nthird"));
-  const request = {id:"source-first",contextKey:"selected-tree",path:"/tmp/one.ts",line:2};
-  const rendered = render(<App contextKey="selected-tree" openRequest={request}/>);
+  const request = { id: "source-first", contextKey: "selected-tree", path: "/tmp/one.ts", line: 2 };
+  const rendered = render(<App contextKey="selected-tree" openRequest={request} />);
   expect(openFileMock).not.toHaveBeenCalled();
-  await act(async()=>loading.resolve(empty));
-  await waitFor(()=>expect(rendered.getByRole("tab",{name:/one\.ts/})).toBeTruthy());
-  await waitFor(()=>expect((rendered.getByRole("textbox",{name:"열 파일 경로"}) as HTMLInputElement).disabled).toBe(false));
-  fireEvent.click(rendered.getByRole("button",{name:"edit /tmp/one.ts"}));
-  rendered.rerender(<App contextKey="selected-tree" openRequest={request}/>);
+  await act(async () => loading.resolve(empty));
+  await waitFor(() => expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy());
+  await waitFor(() =>
+    expect((rendered.getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+  rendered.rerender(<App contextKey="selected-tree" openRequest={request} />);
   expect(openFileMock).toHaveBeenCalledTimes(1);
-  const second={...request,id:"source-second",line:3};
-  await act(async()=>rendered.rerender(<App contextKey="selected-tree" openRequest={second}/>));
-  await waitFor(()=>expect(openFileMock).toHaveBeenCalledTimes(2));
+  const second = { ...request, id: "source-second", line: 3 };
+  await act(async () => rendered.rerender(<App contextKey="selected-tree" openRequest={second} />));
+  await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(2));
   expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("first\nsecond\nthird!");
   expect(watchFileMock).toHaveBeenCalledTimes(1);
-  rendered.rerender(<App contextKey="selected-tree" openRequest={{...second,id:"foreign",contextKey:"other-tree"}}/>);
+  rendered.rerender(
+    <App contextKey="selected-tree" openRequest={{ ...second, id: "foreign", contextKey: "other-tree" }} />,
+  );
   expect(openFileMock).toHaveBeenCalledTimes(2);
 });
 
-it("keeps context changes blocked until the last closed document releases its watcher",async()=>{
-  const pending=deferred<void>();
+it("keeps context changes blocked until the last closed document releases its watcher", async () => {
+  const pending = deferred<void>();
   unwatchFileMock.mockReturnValueOnce(pending.promise);
   openFileMock.mockResolvedValue(openedFile());
-  const dirty=vi.fn();
-  const request={id:"open-for-close",contextKey:"standalone",path:"/tmp/one.ts",line:null};
-  const rendered=render(<App openRequest={request} onDirtyChange={dirty}/>);
-  await waitFor(()=>expect(rendered.getByRole("tab",{name:/one\.ts/})).toBeTruthy());
-  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(false));
-  fireEvent.click(rendered.getByRole("button",{name:"/tmp/one.ts 닫기"}));
-  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(true));
-  expect(rendered.queryByRole("tab",{name:/one\.ts/})).toBeNull();
-  await act(async()=>pending.resolve());
-  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(false));
+  const dirty = vi.fn();
+  const request = { id: "open-for-close", contextKey: "standalone", path: "/tmp/one.ts", line: null };
+  const rendered = render(<App openRequest={request} onDirtyChange={dirty} />);
+  await waitFor(() => expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy());
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
+  fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(true));
+  expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull();
+  await act(async () => pending.resolve());
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
 });
 
 it("reconnects an offline WSL context and ignores an older watcher read", async () => {
   hosted.value = true;
-  const contextKey = JSON.stringify({target:{kind:"wsl",distroId:"fixture"}});
+  const contextKey = JSON.stringify({ target: { kind: "wsl", distroId: "fixture" } });
   const oldRead = deferred<Awaited<ReturnType<typeof openFile>>>();
-  openFileMock.mockResolvedValueOnce({...openedFile(), nativeRevision:"old"})
+  openFileMock
+    .mockResolvedValueOnce({ ...openedFile(), nativeRevision: "old" })
     .mockReturnValueOnce(oldRead.promise)
-    .mockResolvedValue({...openedFile(), nativeRevision:"new"});
-  const view = render(<App contextKey={contextKey} openRequest={{id:"open",contextKey,path:"/tmp/one.ts",line:null}}/>);
-  await waitFor(() => expect(view.getByRole("tab",{name:/one\.ts/})).toBeTruthy());
+    .mockResolvedValue({ ...openedFile(), nativeRevision: "new" });
+  const view = render(
+    <App contextKey={contextKey} openRequest={{ id: "open", contextKey, path: "/tmp/one.ts", line: null }} />,
+  );
+  await waitFor(() => expect(view.getByRole("tab", { name: /one\.ts/ })).toBeTruthy());
   // The button does not depend on a successful capabilities probe while offline.
-  const reconnect = view.getByRole("button", {name:"WSL 다시 연결"});
-  await act(async () => fileChangedHandlerRef.current?.({payload:{path:"/tmp/one.ts",mtimeNanos:"2",contentHash:"external",size:8,contextKey}}));
+  const reconnect = view.getByRole("button", { name: "WSL 다시 연결" });
+  await act(async () =>
+    fileChangedHandlerRef.current?.({
+      payload: { path: "/tmp/one.ts", mtimeNanos: "2", contentHash: "external", size: 8, contextKey },
+    }),
+  );
   await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(2));
   fireEvent.click(reconnect);
   await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(3));
   await waitFor(() => expect((reconnect as HTMLButtonElement).disabled).toBe(false));
-  await act(async () => oldRead.resolve({...openedFile("obsolete"), nativeRevision:"retired"}));
+  await act(async () => oldRead.resolve({ ...openedFile("obsolete"), nativeRevision: "retired" }));
   expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before");
   expect(hosted.reconnect).toHaveBeenCalledWith("reconnect_wsl_files");
   expect(saveFileMock).not.toHaveBeenCalled();
 });
 
-it("opens an imported recovery path after applying its reviewed contents",async()=>{
-  const path="/tmp/recovered.ts";
-  const entry={path,content:"recovered",baseHash:null,snapshotAtMs:1};
+it("opens an imported recovery path after applying its reviewed contents", async () => {
+  const path = "/tmp/recovered.ts";
+  const entry = { path, content: "recovered", baseHash: null, snapshotAtMs: 1 };
   vi.mocked(loadRecovery).mockResolvedValue([entry]);
-  vi.mocked(loadRecoveryState).mockResolvedValue({entries:[entry]});
-  openFileMock.mockResolvedValueOnce(openedFile("before",path)).mockResolvedValue(openedFile("recovered",path));
-  const view=render(<App/>);
-  fireEvent.click(await view.findByRole("button",{name:"복구 (1)"}));
-  await waitFor(()=>expect(view.getByTestId(`doc-text-${path}`).textContent).toBe("recovered"));
-  expect(vi.mocked(applyRecovery)).toHaveBeenCalledWith(path,"recovered");
+  vi.mocked(loadRecoveryState).mockResolvedValue({ entries: [entry] });
+  openFileMock.mockResolvedValueOnce(openedFile("before", path)).mockResolvedValue(openedFile("recovered", path));
+  const view = render(<App />);
+  fireEvent.click(await view.findByRole("button", { name: "복구 (1)" }));
+  await waitFor(() => expect(view.getByTestId(`doc-text-${path}`).textContent).toBe("recovered"));
+  expect(vi.mocked(applyRecovery)).toHaveBeenCalledWith(path, "recovered");
   expect(watchFileMock).toHaveBeenCalledWith(path);
-  expect(view.queryByRole("button",{name:"복구 (1)"})).toBeNull();
+  expect(view.queryByRole("button", { name: "복구 (1)" })).toBeNull();
 });

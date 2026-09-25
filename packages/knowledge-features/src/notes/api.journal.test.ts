@@ -4,10 +4,17 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ readText: vi.fn() }));
 vi.mock("./lib/isTauri", () => ({ isTauri: () => native.enabled }));
 import { saveNoteJournal, clearNoteJournal, loadNoteJournal, discardOtherVaultJournal } from "./api";
-beforeEach(() => { native.invoke.mockReset(); native.enabled = true; });
+beforeEach(() => {
+  native.invoke.mockReset();
+  native.enabled = true;
+});
 it("keeps write arguments relative and loads only the projected view", async () => {
   await saveNoteJournal("a.md", "draft", "r");
-  expect(native.invoke).toHaveBeenLastCalledWith("save_note_journal", { path: "a.md", content: "draft", baseRevision: "r" });
+  expect(native.invoke).toHaveBeenLastCalledWith("save_note_journal", {
+    path: "a.md",
+    content: "draft",
+    baseRevision: "r",
+  });
   await clearNoteJournal("a.md");
   expect(native.invoke).toHaveBeenLastCalledWith("clear_note_journal", { path: "a.md" });
   native.invoke.mockResolvedValueOnce({ entries: [], otherVaultCount: 2 });
@@ -18,6 +25,8 @@ it("keeps write arguments relative and loads only the projected view", async () 
 it("has an empty browser view and no native side effects", async () => {
   native.enabled = false;
   expect(await loadNoteJournal()).toEqual({ entries: [], otherVaultCount: 0 });
-  await saveNoteJournal("a.md", "draft", "r"); await clearNoteJournal("a.md"); await discardOtherVaultJournal();
+  await saveNoteJournal("a.md", "draft", "r");
+  await clearNoteJournal("a.md");
+  await discardOtherVaultJournal();
   expect(native.invoke).not.toHaveBeenCalled();
 });

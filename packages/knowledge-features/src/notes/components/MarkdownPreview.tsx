@@ -23,11 +23,15 @@ export function resolveNoteLink(baseRel: string, href: string): { path: string; 
     if (!decoded) return { path: baseRel, fragment: hash < 0 ? undefined : decodeURIComponent(href.slice(hash + 1)) };
     for (const part of decoded.split("/")) {
       if (part === "" || part === ".") continue;
-      if (part === "..") { if (!stack.length) return null; stack.pop(); }
-      else stack.push(part);
+      if (part === "..") {
+        if (!stack.length) return null;
+        stack.pop();
+      } else stack.push(part);
     }
     return { path: stack.join("/"), fragment: hash < 0 ? undefined : decodeURIComponent(href.slice(hash + 1)) };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 interface MarkdownPreviewProps {
@@ -54,10 +58,12 @@ export default function MarkdownPreview({
   const renderSeq = useRef(0);
 
   // 문서를 전환하면 이전 문서의 인덱스 기준 SVG는 더 이상 의미가 없다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     lastGoodSvg.current.clear();
   }, [baseRel]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !doc) return;
@@ -94,10 +100,7 @@ export default function MarkdownPreview({
           const source = doc.mermaid[index];
           if (source === undefined) return;
           try {
-            const { svg } = await renderer.render(
-              `mermaid-preview-${index}-${renderSeq.current++}`,
-              source,
-            );
+            const { svg } = await renderer.render(`mermaid-preview-${index}-${renderSeq.current++}`, source);
             if (!canApply(element)) return;
             lastGoodSvg.current.set(index, svg);
             element.innerHTML = svg;
@@ -117,20 +120,28 @@ export default function MarkdownPreview({
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !doc) return;
-    const used = new Set(Array.from(container.querySelectorAll("[id]")).map(node => node.id));
+    const used = new Set(Array.from(container.querySelectorAll("[id]")).map((node) => node.id));
     for (const heading of container.querySelectorAll("h1,h2,h3,h4,h5,h6")) {
       if (heading.id) continue;
-      const base = (heading.textContent ?? "").trim().toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").replace(/\s/g, "-") || "section";
-      let id = base, index = 1;
+      const base =
+        (heading.textContent ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}_\s-]/gu, "")
+          .replace(/\s/g, "-") || "section";
+      let id = base,
+        index = 1;
       while (used.has(id)) id = `${base}-${index++}`;
-      heading.id = id; used.add(id);
+      heading.id = id;
+      used.add(id);
     }
   }, [doc]);
 
   useEffect(() => {
     if (!doc || !anchorRequest) return;
-    const target = Array.from(containerRef.current?.querySelectorAll<HTMLElement>("[id]") ?? [])
-      .find(element => element.id === anchorRequest.fragment);
+    const target = Array.from(containerRef.current?.querySelectorAll<HTMLElement>("[id]") ?? []).find(
+      (element) => element.id === anchorRequest.fragment,
+    );
     target?.scrollIntoView?.({ block: "start" });
   }, [doc, anchorRequest]);
 

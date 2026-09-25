@@ -27,11 +27,7 @@ export function isSnapshotExpired(snapshot: SnapshotAge, nowMs: number): boolean
  * 않고 TTL 주기마다 사용자가 켜 둔 상태만 되돌린다. 수집 실패(`error`), 만료
  * (`stale` 또는 TTL 초과), snapshot 부재에서는 계속 fail-closed다.
  */
-export function isSnapshotActionable(
-  state: DashboardFreshness,
-  hasSnapshot: boolean,
-  expired: boolean,
-): boolean {
+export function isSnapshotActionable(state: DashboardFreshness, hasSnapshot: boolean, expired: boolean): boolean {
   if (!hasSnapshot || expired) return false;
   return state !== "loading" && state !== "stale" && state !== "error";
 }

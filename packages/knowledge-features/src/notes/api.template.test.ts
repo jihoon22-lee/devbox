@@ -4,13 +4,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ readText: vi.fn() }));
 vi.mock("./lib/isTauri", () => ({ isTauri: () => false }));
 
-import {
-  createTemplate,
-  deleteTemplate,
-  previewTemplate,
-  saveTemplate,
-  updateTemplate,
-} from "./api";
+import { createTemplate, deleteTemplate, previewTemplate, saveTemplate, updateTemplate } from "./api";
 
 const input = {
   templateId: 1,
@@ -26,14 +20,16 @@ describe("Knowledge browser template contract", () => {
   });
 
   it("rejects controls, Windows separators, and year-zero dates before preview", async () => {
-    await expect(previewTemplate({ ...input, target: "Notes/unsafe\u0001.md" }))
-      .rejects.toThrow("템플릿 저장 경로가 올바르지 않습니다");
-    await expect(previewTemplate({ ...input, target: "Notes\\unsafe.md" }))
-      .rejects.toThrow("템플릿 저장 경로가 올바르지 않습니다");
-    await expect(previewTemplate({ ...input, date: "0000-01-01" }))
-      .rejects.toThrow("템플릿 날짜가 올바르지 않습니다");
-    await expect(createTemplate({ name: "unsafe\u0001", content: "body" }))
-      .rejects.toThrow("템플릿 이름이 올바르지 않습니다");
+    await expect(previewTemplate({ ...input, target: "Notes/unsafe\u0001.md" })).rejects.toThrow(
+      "템플릿 저장 경로가 올바르지 않습니다",
+    );
+    await expect(previewTemplate({ ...input, target: "Notes\\unsafe.md" })).rejects.toThrow(
+      "템플릿 저장 경로가 올바르지 않습니다",
+    );
+    await expect(previewTemplate({ ...input, date: "0000-01-01" })).rejects.toThrow("템플릿 날짜가 올바르지 않습니다");
+    await expect(createTemplate({ name: "unsafe\u0001", content: "body" })).rejects.toThrow(
+      "템플릿 이름이 올바르지 않습니다",
+    );
   });
 
   it("reports browser approval as preview-only and consumes it once", async () => {
@@ -71,8 +67,9 @@ describe("Knowledge browser template contract", () => {
   it("trims names and rejects case-insensitive browser duplicates like native", async () => {
     const created = await createTemplate({ name: "  Review notes  ", content: "# {{title}}" });
     expect(created.name).toBe("Review notes");
-    await expect(createTemplate({ name: "review NOTES", content: "body" }))
-      .rejects.toThrow("템플릿 이름이 이미 있습니다");
+    await expect(createTemplate({ name: "review NOTES", content: "body" })).rejects.toThrow(
+      "템플릿 이름이 이미 있습니다",
+    );
     await deleteTemplate(created.id);
   });
 });

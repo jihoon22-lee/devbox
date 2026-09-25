@@ -45,10 +45,12 @@ export function browserSnapshot(
     operationId,
     generation,
     sources: summaries,
-    records: summaries.flatMap((summary) => fixtureRecords.map((record) => ({
-      ...record,
-      sourceId: summary.sourceId,
-    }))),
+    records: summaries.flatMap((summary) =>
+      fixtureRecords.map((record) => ({
+        ...record,
+        sourceId: summary.sourceId,
+      })),
+    ),
     cursors: sources.map(() => null),
     statuses: sources.map(() => "initial"),
     truncated: false,

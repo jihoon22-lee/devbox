@@ -19,10 +19,12 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
   const lastGoodSvg = useRef<Map<string, string>>(new Map());
   const renderSequence = useRef(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     lastGoodSvg.current.clear();
   }, [docPath]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !response) return;
@@ -43,10 +45,7 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
         const key = "standalone";
         try {
           const renderer = await getMermaidRenderer();
-          const { svg } = await renderer.render(
-            `code-pad-mermaid-${renderSequence.current++}`,
-            source,
-          );
+          const { svg } = await renderer.render(`code-pad-mermaid-${renderSequence.current++}`, source);
           if (!canApply(container)) return;
           const applied = applySvgResult(lastGoodSvg.current, key, { ok: true, svg });
           container.innerHTML = applied.svg;
@@ -77,10 +76,7 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
           if (source === undefined) return;
           const key = String(index);
           try {
-            const { svg } = await renderer.render(
-              `code-pad-mermaid-${index}-${renderSequence.current++}`,
-              source,
-            );
+            const { svg } = await renderer.render(`code-pad-mermaid-${index}-${renderSequence.current++}`, source);
             if (!canApply(element)) return;
             const applied = applySvgResult(lastGoodSvg.current, key, { ok: true, svg });
             element.innerHTML = applied.svg;
@@ -115,11 +111,7 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
           {error}
         </p>
       )}
-      {!response ? (
-        <p className="preview-empty">렌더링 중...</p>
-      ) : (
-        <div ref={containerRef} className="preview-body" />
-      )}
+      {!response ? <p className="preview-empty">렌더링 중...</p> : <div ref={containerRef} className="preview-body" />}
     </aside>
   );
 }

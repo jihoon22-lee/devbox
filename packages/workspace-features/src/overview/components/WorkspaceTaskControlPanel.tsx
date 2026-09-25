@@ -68,22 +68,28 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
     timersRef.current.delete(requestId);
   }, []);
 
-  const finishPending = useCallback((requestId: string) => {
-    clearPolling(requestId);
-    if (requestGuardRef.current && requestGuardRef.current !== "dispatching"
-      && requestGuardRef.current.requestId === requestId) {
-      requestGuardRef.current = null;
-      if (mountedRef.current) setRequestGuardActive(false);
-    }
-    if (!mountedRef.current) return;
-    setPendingByTask((previous) => {
-      const entry = Object.entries(previous).find(([, value]) => value.requestId === requestId);
-      if (!entry) return previous;
-      const next = { ...previous };
-      delete next[entry[0]];
-      return next;
-    });
-  }, [clearPolling]);
+  const finishPending = useCallback(
+    (requestId: string) => {
+      clearPolling(requestId);
+      if (
+        requestGuardRef.current &&
+        requestGuardRef.current !== "dispatching" &&
+        requestGuardRef.current.requestId === requestId
+      ) {
+        requestGuardRef.current = null;
+        if (mountedRef.current) setRequestGuardActive(false);
+      }
+      if (!mountedRef.current) return;
+      setPendingByTask((previous) => {
+        const entry = Object.entries(previous).find(([, value]) => value.requestId === requestId);
+        if (!entry) return previous;
+        const next = { ...previous };
+        delete next[entry[0]];
+        return next;
+      });
+    },
+    [clearPolling],
+  );
 
   const refresh = useCallback(async () => {
     const request = ++refreshSequence.current;
@@ -103,102 +109,112 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
     }
   }, []);
 
-  const pollReceipt = useCallback((pending: PendingRequest) => {
-    const pollStartedAt = pending.startedAt;
-    const poll = async (): Promise<void> => {
-      if (!mountedRef.current) return;
-      if (Date.now() - pollStartedAt >= MAX_POLL_MS) {
-        finishPending(pending.requestId);
-        setError("Run Manager task 확인 결과를 제한 시간 안에 받지 못했습니다.");
-        return;
-      }
-      try {
-        const receipt = await getWorkspaceTaskControlReceipt(pending.requestId);
+  const pollReceipt = useCallback(
+    (pending: PendingRequest) => {
+      const pollStartedAt = pending.startedAt;
+      const poll = async (): Promise<void> => {
         if (!mountedRef.current) return;
-        // A receipt is provenance for this request only. Do not render a
-        // response with a mismatched correlator/task/action.
-        if (receipt
-          && receipt.requestId === pending.requestId
-          && receipt.taskId === pending.taskId
-          && receipt.action === pending.action) {
-          setReceipts((previous) => ({ ...previous, [receipt.requestId]: receipt }));
-          if (isTerminalTaskControlReceipt(receipt.status)) {
-            if (receipt.status === "started" || receipt.status === "stopped") {
-              setTasks((previous) => previous.map((task) => task.id === pending.taskId
-                ? { ...task, operationActive: receipt.status === "started" }
-                : task));
+        if (Date.now() - pollStartedAt >= MAX_POLL_MS) {
+          finishPending(pending.requestId);
+          setError("Run Manager task 확인 결과를 제한 시간 안에 받지 못했습니다.");
+          return;
+        }
+        try {
+          const receipt = await getWorkspaceTaskControlReceipt(pending.requestId);
+          if (!mountedRef.current) return;
+          // A receipt is provenance for this request only. Do not render a
+          // response with a mismatched correlator/task/action.
+          if (
+            receipt &&
+            receipt.requestId === pending.requestId &&
+            receipt.taskId === pending.taskId &&
+            receipt.action === pending.action
+          ) {
+            setReceipts((previous) => ({ ...previous, [receipt.requestId]: receipt }));
+            if (isTerminalTaskControlReceipt(receipt.status)) {
+              if (receipt.status === "started" || receipt.status === "stopped") {
+                setTasks((previous) =>
+                  previous.map((task) =>
+                    task.id === pending.taskId ? { ...task, operationActive: receipt.status === "started" } : task,
+                  ),
+                );
+              }
+              finishPending(pending.requestId);
+              return;
             }
+          }
+        } catch (cause) {
+          if (Date.now() - pollStartedAt >= MAX_POLL_MS) {
             finishPending(pending.requestId);
+            setError(taskControlErrorMessage(cause));
             return;
           }
         }
-      } catch (cause) {
+        if (!mountedRef.current) return;
         if (Date.now() - pollStartedAt >= MAX_POLL_MS) {
           finishPending(pending.requestId);
-          setError(taskControlErrorMessage(cause));
+          setError("Run Manager task 확인 결과를 제한 시간 안에 받지 못했습니다.");
           return;
         }
-      }
-      if (!mountedRef.current) return;
-      if (Date.now() - pollStartedAt >= MAX_POLL_MS) {
-        finishPending(pending.requestId);
-        setError("Run Manager task 확인 결과를 제한 시간 안에 받지 못했습니다.");
-        return;
-      }
-      const timer = window.setTimeout(() => {
-        timersRef.current.delete(pending.requestId);
-        void poll();
-      }, POLL_INTERVAL_MS);
-      timersRef.current.set(pending.requestId, timer);
-    };
-    void poll();
-  }, [finishPending]);
+        const timer = window.setTimeout(() => {
+          timersRef.current.delete(pending.requestId);
+          void poll();
+        }, POLL_INTERVAL_MS);
+        timersRef.current.set(pending.requestId, timer);
+      };
+      void poll();
+    },
+    [finishPending],
+  );
 
-  const dispatch = useCallback(async (task: WorkspaceTaskControl, action: WorkspaceTaskControlAction) => {
-    // Check the ref before any await so two rapid clicks cannot enqueue two
-    // handoffs even while the first dispatch is still in flight.
-    if (disabled || requestGuardRef.current !== null || Object.keys(pendingByTask).length > 0) return;
-    if (action === "start" && !canStartWorkspaceTask(task)) return;
-    if (action === "stop" && !canStopWorkspaceTask(task)) return;
-    requestGuardRef.current = "dispatching";
-    setRequestGuardActive(true);
-    setDispatchingRequest({ taskId: task.id, action });
-    setError(null);
-    try {
-      const result = await dispatchWorkspaceTaskControl({
-        taskId: task.id,
-        action,
-        expectedRevision: task.revision,
-      });
-      if (!mountedRef.current || !result.requestId || !result.handoffId) {
+  const dispatch = useCallback(
+    async (task: WorkspaceTaskControl, action: WorkspaceTaskControlAction) => {
+      // Check the ref before any await so two rapid clicks cannot enqueue two
+      // handoffs even while the first dispatch is still in flight.
+      if (disabled || requestGuardRef.current !== null || Object.keys(pendingByTask).length > 0) return;
+      if (action === "start" && !canStartWorkspaceTask(task)) return;
+      if (action === "stop" && !canStopWorkspaceTask(task)) return;
+      requestGuardRef.current = "dispatching";
+      setRequestGuardActive(true);
+      setDispatchingRequest({ taskId: task.id, action });
+      setError(null);
+      try {
+        const result = await dispatchWorkspaceTaskControl({
+          taskId: task.id,
+          action,
+          expectedRevision: task.revision,
+        });
+        if (!mountedRef.current || !result.requestId || !result.handoffId) {
+          if (mountedRef.current) {
+            requestGuardRef.current = null;
+            setRequestGuardActive(false);
+            setDispatchingRequest(null);
+            setError(taskControlErrorMessage("task-control-dispatch-invalid"));
+          }
+          return;
+        }
+        const pending: PendingRequest = {
+          requestId: result.requestId,
+          taskId: task.id,
+          action,
+          startedAt: Date.now(),
+        };
+        requestGuardRef.current = { requestId: result.requestId };
+        setDispatchingRequest(null);
+        setPendingByTask((previous) => ({ ...previous, [task.id]: pending }));
+        setLatestRequestByTask((previous) => ({ ...previous, [task.id]: result.requestId }));
+        pollReceipt(pending);
+      } catch (cause) {
         if (mountedRef.current) {
           requestGuardRef.current = null;
           setRequestGuardActive(false);
           setDispatchingRequest(null);
-          setError(taskControlErrorMessage("task-control-dispatch-invalid"));
+          setError(taskControlErrorMessage(cause));
         }
-        return;
       }
-      const pending: PendingRequest = {
-        requestId: result.requestId,
-        taskId: task.id,
-        action,
-        startedAt: Date.now(),
-      };
-      requestGuardRef.current = { requestId: result.requestId };
-      setDispatchingRequest(null);
-      setPendingByTask((previous) => ({ ...previous, [task.id]: pending }));
-      setLatestRequestByTask((previous) => ({ ...previous, [task.id]: result.requestId }));
-      pollReceipt(pending);
-    } catch (cause) {
-      if (mountedRef.current) {
-        requestGuardRef.current = null;
-        setRequestGuardActive(false);
-        setDispatchingRequest(null);
-        setError(taskControlErrorMessage(cause));
-      }
-    }
-  }, [disabled, pendingByTask, pollReceipt]);
+    },
+    [disabled, pendingByTask, pollReceipt],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -236,13 +252,21 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
         </button>
       </div>
 
-      {error && <div className="field-error form-error" role="alert">{error}</div>}
+      {error && (
+        <div className="field-error form-error" role="alert">
+          {error}
+        </div>
+      )}
       {dispatchingRequest && (
         <div className="workspace-task-pending" role="status" aria-live="polite">
           Run Manager task 요청을 전달하는 중입니다. 다른 시작/중지 요청은 잠시 막혀 있습니다.
         </div>
       )}
-      {loading && tasks.length === 0 && <div className="dim" role="status">Run Manager task snapshot을 읽는 중…</div>}
+      {loading && tasks.length === 0 && (
+        <div className="dim" role="status">
+          Run Manager task snapshot을 읽는 중…
+        </div>
+      )}
       {!loading && !error && tasks.length === 0 && <div className="dim">동기화된 workspace task가 없습니다.</div>}
       {tasks.length > 0 && (
         <ul className="workspace-task-list" aria-label="Run Manager workspace task 목록">
@@ -260,10 +284,10 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
               : receipt
                 ? taskControlReceiptMessage(receipt)
                 : taskAvailabilityLabel(task);
-            const terminalError = !pending && receipt
-              && (receipt.status === "rejected" || receipt.status === "failed")
-              ? taskControlReceiptMessage(receipt)
-              : null;
+            const terminalError =
+              !pending && receipt && (receipt.status === "rejected" || receipt.status === "failed")
+                ? taskControlReceiptMessage(receipt)
+                : null;
             // Native snapshot validation limits IDs to ASCII alphanumeric and
             // `-_.:`. Keeping that already-safe opaque value preserves a
             // one-to-one ARIA relationship; replacing punctuation could make
@@ -284,7 +308,11 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
                   </span>
                   {task.hasDependencies && <span className="workspace-task-dependency">dependency 포함</span>}
                 </div>
-                {terminalError && <div className="field-error" role="alert">{terminalError}</div>}
+                {terminalError && (
+                  <div className="field-error" role="alert">
+                    {terminalError}
+                  </div>
+                )}
                 {pending && (
                   <div className="workspace-task-pending" role="status" aria-live="polite">
                     요청을 전달했습니다. Run Manager 창의 확인 전에는 실행되지 않습니다.
@@ -298,11 +326,13 @@ export default function WorkspaceTaskControlPanel({ disabled = false }: Props) {
                     onClick={() => void dispatch(task, "start")}
                     aria-label={`${task.label} 시작`}
                     aria-describedby={statusId}
-                    title={!startAllowed
-                      ? task.operationActive
-                        ? "이미 실행 중인 operation이 있습니다"
-                        : "소스·셸 승인과 사용 가능 상태를 확인하세요"
-                      : undefined}
+                    title={
+                      !startAllowed
+                        ? task.operationActive
+                          ? "이미 실행 중인 operation이 있습니다"
+                          : "소스·셸 승인과 사용 가능 상태를 확인하세요"
+                        : undefined
+                    }
                   >
                     시작
                   </button>

@@ -60,8 +60,8 @@ export function normalizeQuickCapture(input: QuickCaptureInput): QuickCaptureInp
   const title = input.title.trim();
   if (containsSingleLineForbidden(title)) throw new QuickCaptureValidationError("invalid-text");
   if (
-    utf8ByteLengthAtMost(title, MAX_QUICK_CAPTURE_TITLE_BYTES) === null
-    || [...title].length > MAX_QUICK_CAPTURE_TITLE_CHARS
+    utf8ByteLengthAtMost(title, MAX_QUICK_CAPTURE_TITLE_BYTES) === null ||
+    [...title].length > MAX_QUICK_CAPTURE_TITLE_CHARS
   ) {
     throw new QuickCaptureValidationError("title-too-long");
   }
@@ -103,13 +103,10 @@ export function normalizeQuickCapture(input: QuickCaptureInput): QuickCaptureInp
     if (utf8ByteLengthAtMost(tag, MAX_QUICK_CAPTURE_TAG_ITEM_BYTES) === null) {
       throw new QuickCaptureValidationError("tag-too-long");
     }
-    if (
-      containsSingleLineForbidden(tag)
-      || [...tag].some((character) => [",", "[", "]", '"'].includes(character))
-    ) {
+    if (containsSingleLineForbidden(tag) || [...tag].some((character) => [",", "[", "]", '"'].includes(character))) {
       throw new QuickCaptureValidationError("invalid-tag");
     }
-    tagBytes += utf8ByteLengthAtMost(tag, MAX_QUICK_CAPTURE_TAG_ITEM_BYTES) ?? (MAX_QUICK_CAPTURE_TAG_BYTES + 1);
+    tagBytes += utf8ByteLengthAtMost(tag, MAX_QUICK_CAPTURE_TAG_ITEM_BYTES) ?? MAX_QUICK_CAPTURE_TAG_BYTES + 1;
     if (tagBytes > MAX_QUICK_CAPTURE_TAG_BYTES) {
       throw new QuickCaptureValidationError("tags-too-large");
     }
@@ -124,11 +121,7 @@ export function normalizeQuickCapture(input: QuickCaptureInput): QuickCaptureInp
     body,
     tags,
   };
-  if (
-    looksSensitive(normalized.title)
-    || looksSensitive(normalized.body)
-    || normalized.tags.some(looksSensitive)
-  ) {
+  if (looksSensitive(normalized.title) || looksSensitive(normalized.body) || normalized.tags.some(looksSensitive)) {
     throw new QuickCaptureValidationError("sensitive-content");
   }
   return normalized;
@@ -151,9 +144,13 @@ export function parseQuickCaptureTags(value: string): string[] {
 
 /** The native command returns only this fixed, root-relative filename shape. */
 export function isSafeQuickCapturePath(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length <= MAX_QUICK_CAPTURE_PATH_CHARS
-    && /^Inbox\/quick-capture-\d{4,}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])-(?:[01]\d|2[0-3])-[0-5]\d-[0-5]\d(?:-[2-9]|-[1-9]\d|-100)?\.md$/u.test(value);
+  return (
+    typeof value === "string" &&
+    value.length <= MAX_QUICK_CAPTURE_PATH_CHARS &&
+    /^Inbox\/quick-capture-\d{4,}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])-(?:[01]\d|2[0-3])-[0-5]\d-[0-5]\d(?:-[2-9]|-[1-9]\d|-100)?\.md$/u.test(
+      value,
+    )
+  );
 }
 
 function containsForbiddenText(value: string): boolean {
@@ -203,7 +200,12 @@ export function quickCaptureUnicodeScalars(value: string): number {
   let count = 0;
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+    if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      value.charCodeAt(index + 1) >= 0xdc00 &&
+      value.charCodeAt(index + 1) <= 0xdfff
+    ) {
       index += 1;
     }
     count += 1;
@@ -402,9 +404,7 @@ function looksSensitive(value: string): boolean {
       return true;
     }
   }
-  return containsAuthCredential(lower)
-    || containsJwtLikeToken(lower)
-    || containsTelegramBotToken(lower);
+  return containsAuthCredential(lower) || containsJwtLikeToken(lower) || containsTelegramBotToken(lower);
 }
 
 function containsCredentialPrefix(value: string, prefix: string): boolean {
@@ -439,8 +439,9 @@ function containsJwtLikeToken(value: string): boolean {
   return value.split(/\s+/u).some((token) => {
     const trimmed = token.replace(/^[:=,;()[\]"']+|[:=,;()[\]"']+$/gu, "");
     const segments = trimmed.split(".");
-    return segments.length === 3 && segments.every((segment) =>
-      segment.length >= 10 && /^[A-Za-z0-9_-]+$/u.test(segment));
+    return (
+      segments.length === 3 && segments.every((segment) => segment.length >= 10 && /^[A-Za-z0-9_-]+$/u.test(segment))
+    );
   });
 }
 
@@ -451,16 +452,14 @@ function containsTelegramBotToken(value: string): boolean {
     if (separator < 0) return false;
     const id = trimmed.slice(0, separator);
     const secret = trimmed.slice(separator + 1);
-    return id.length >= 8
-      && id.length <= 12
-      && /^\d+$/u.test(id)
-      && secret.length >= 30
-      && /^[A-Za-z0-9_-]+$/u.test(secret);
+    return (
+      id.length >= 8 && id.length <= 12 && /^\d+$/u.test(id) && secret.length >= 30 && /^[A-Za-z0-9_-]+$/u.test(secret)
+    );
   });
 }
 
 export function isSafeQuickCapturePreviewId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length <= MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES
-    && /^qc-[1-9]\d{0,19}$/u.test(value);
+  return (
+    typeof value === "string" && value.length <= MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES && /^qc-[1-9]\d{0,19}$/u.test(value)
+  );
 }

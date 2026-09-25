@@ -10,14 +10,16 @@ import {
 import type { Pane, Tab, WorkspaceDefinition } from "../types";
 
 const workspace: WorkspaceDefinition = {
-  tabs: [{
-    id: "tab-1",
-    title: "개발",
-    customTitle: true,
-    layout: "cols",
-    paneKeys: ["pane-1", "pane-2"],
-    sizing: { columns: [0.65, 0.35], rows: [1] },
-  }],
+  tabs: [
+    {
+      id: "tab-1",
+      title: "개발",
+      customTitle: true,
+      layout: "cols",
+      paneKeys: ["pane-1", "pane-2"],
+      sizing: { columns: [0.65, 0.35], rows: [1] },
+    },
+  ],
   panes: [
     { key: "pane-1", distro: "Ubuntu", cwd: "/mnt/e/devbox", startCommand: "pnpm dev", multiplexer: "native" },
     { key: "pane-2", distro: "Ubuntu", cwd: "E:\\devbox", startCommand: null, multiplexer: "tmux" },
@@ -53,11 +55,14 @@ describe("workspace persistence", () => {
     localStorage.setItem("wsl-desktop:last-layout", JSON.stringify({ version: 99, ...workspace }));
     expect(loadLastWorkspace()).toBeNull();
 
-    localStorage.setItem("wsl-desktop:last-layout", JSON.stringify({
-      version: 2,
-      ...workspace,
-      panes: workspace.panes.slice(0, 1),
-    }));
+    localStorage.setItem(
+      "wsl-desktop:last-layout",
+      JSON.stringify({
+        version: 2,
+        ...workspace,
+        panes: workspace.panes.slice(0, 1),
+      }),
+    );
     expect(loadLastWorkspace()).toBeNull();
   });
 
@@ -65,35 +70,41 @@ describe("workspace persistence", () => {
     const panes: Pane[] = [
       { key: "pane-1", sessionId: "session-99", distro: "Ubuntu", cwd: "/mnt/e/devbox", multiplexer: "native" },
     ];
-    const tabs: Tab[] = [{
-      id: "tab-1",
-      title: "개발",
-      layout: "grid",
-      paneIds: ["session-99"],
-      sizing: { columns: [1], rows: [1] },
-    }];
+    const tabs: Tab[] = [
+      {
+        id: "tab-1",
+        title: "개발",
+        layout: "grid",
+        paneIds: ["session-99"],
+        sizing: { columns: [1], rows: [1] },
+      },
+    ];
     const saved = workspaceFromRuntime(tabs, panes, "tab-1", "session-99");
     expect(saved?.tabs[0].paneKeys).toEqual(["pane-1"]);
     expect(JSON.stringify(saved)).not.toContain("session-99");
   });
 
   it("복원 실패 placeholder도 원래 key·요청 방식·분할 비율로 저장한다", () => {
-    const panes: Pane[] = [{
-      key: "pane-1",
-      sessionId: null,
-      distro: "Ubuntu",
-      cwd: "/mnt/e/devbox",
-      multiplexer: "zellij",
-      requestedMultiplexer: "zellij",
-      restoreStatus: "failed",
-    }];
-    const tabs: Tab[] = [{
-      id: "tab-1",
-      title: "개발",
-      layout: "grid",
-      paneIds: ["pane-1"],
-      sizing: { columns: [1], rows: [1] },
-    }];
+    const panes: Pane[] = [
+      {
+        key: "pane-1",
+        sessionId: null,
+        distro: "Ubuntu",
+        cwd: "/mnt/e/devbox",
+        multiplexer: "zellij",
+        requestedMultiplexer: "zellij",
+        restoreStatus: "failed",
+      },
+    ];
+    const tabs: Tab[] = [
+      {
+        id: "tab-1",
+        title: "개발",
+        layout: "grid",
+        paneIds: ["pane-1"],
+        sizing: { columns: [1], rows: [1] },
+      },
+    ];
 
     const saved = workspaceFromRuntime(tabs, panes, "tab-1", "pane-1");
 
@@ -124,36 +135,40 @@ describe("workspace safety", () => {
 
   it("profile 참조 중복과 unsafe path를 거부한다", () => {
     expect(normalizeProfile({ id: "profile-1", name: "개발", ...workspace })).not.toBeNull();
-    expect(normalizeProfile({
-      id: "profile-1",
-      name: "개발",
-      ...workspace,
-      panes: [{ ...workspace.panes[0], cwd: "../../escape" }, workspace.panes[1]],
-    })).toBeNull();
-    expect(normalizeProfile({
-      id: "profile-1",
-      name: "개발",
-      tabs: [
-        {
-          id: "tab-1",
-          title: "one",
-          customTitle: false,
-          layout: "grid",
-          paneKeys: ["pane-1"],
-          sizing: { columns: [1], rows: [1] },
-        },
-        {
-          id: "tab-2",
-          title: "two",
-          customTitle: false,
-          layout: "grid",
-          paneKeys: ["pane-2"],
-          sizing: { columns: [1], rows: [1] },
-        },
-      ],
-      panes: workspace.panes,
-      activeTabId: "tab-1",
-      activePaneKey: "pane-2",
-    })).toBeNull();
+    expect(
+      normalizeProfile({
+        id: "profile-1",
+        name: "개발",
+        ...workspace,
+        panes: [{ ...workspace.panes[0], cwd: "../../escape" }, workspace.panes[1]],
+      }),
+    ).toBeNull();
+    expect(
+      normalizeProfile({
+        id: "profile-1",
+        name: "개발",
+        tabs: [
+          {
+            id: "tab-1",
+            title: "one",
+            customTitle: false,
+            layout: "grid",
+            paneKeys: ["pane-1"],
+            sizing: { columns: [1], rows: [1] },
+          },
+          {
+            id: "tab-2",
+            title: "two",
+            customTitle: false,
+            layout: "grid",
+            paneKeys: ["pane-2"],
+            sizing: { columns: [1], rows: [1] },
+          },
+        ],
+        panes: workspace.panes,
+        activeTabId: "tab-1",
+        activePaneKey: "pane-2",
+      }),
+    ).toBeNull();
   });
 });

@@ -7,7 +7,8 @@ export interface BroadcastAssessment {
   nextPendingCommand: string;
 }
 
-const DANGEROUS_COMMAND = /(?:^|[;&|]\s*)(?:sudo(?:\s|$)|rm(?:\s|$)|shutdown|reboot|poweroff|mkfs(?:\.|\s)|dd\s+[^\r\n]*\bof=|docker\s+system\s+prune|kubectl\s+delete|drop\s+(?:database|table)|truncate\s+table|git\s+clean\s+-[^\r\n]*f)|(?:^|[\s;&|])\d{0,2}(?:>>?|<<?)|(?:>>?|<<?)/iu;
+const DANGEROUS_COMMAND =
+  /(?:^|[;&|]\s*)(?:sudo(?:\s|$)|rm(?:\s|$)|shutdown|reboot|poweroff|mkfs(?:\.|\s)|dd\s+[^\r\n]*\bof=|docker\s+system\s+prune|kubectl\s+delete|drop\s+(?:database|table)|truncate\s+table|git\s+clean\s+-[^\r\n]*f)|(?:^|[\s;&|])\d{0,2}(?:>>?|<<?)|(?:>>?|<<?)/iu;
 
 function updatePending(previous: string, data: string): string {
   let pending = previous;
@@ -19,15 +20,11 @@ function updatePending(previous: string, data: string): string {
   return pending;
 }
 
-export function assessBroadcastInput(
-  data: string,
-  pendingCommand: string,
-  targetCount: number,
-): BroadcastAssessment {
+export function assessBroadcastInput(data: string, pendingCommand: string, targetCount: number): BroadcastAssessment {
   const logicalLines = data.split(/\r\n|\r|\n/u);
   const containsLineBreak = logicalLines.length > 1;
-  const multiline = logicalLines.length > 2
-    || (containsLineBreak && logicalLines.some((line, index) => index > 0 && line.length > 0));
+  const multiline =
+    logicalLines.length > 2 || (containsLineBreak && logicalLines.some((line, index) => index > 0 && line.length > 0));
   const submitted = containsLineBreak ? `${pendingCommand}${logicalLines[0] ?? ""}` : "";
   let confirmation: string | null = null;
   if (multiline) {
@@ -39,11 +36,7 @@ export function assessBroadcastInput(
 }
 
 /** Apply one explicit pane-target toggle without exceeding the native broadcast bound. */
-export function nextBroadcastTargets(
-  previous: ReadonlySet<string>,
-  id: string,
-  checked: boolean,
-): Set<string> | null {
+export function nextBroadcastTargets(previous: ReadonlySet<string>, id: string, checked: boolean): Set<string> | null {
   const next = new Set(previous);
   if (checked) {
     if (!previous.has(id) && previous.size >= MAX_BROADCAST_TARGETS) return null;

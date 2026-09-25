@@ -14,11 +14,7 @@ import {
 import { Annotation, Compartment, type Extension } from "@codemirror/state";
 import { lintGutter } from "@codemirror/lint";
 import { hoverTooltip } from "@codemirror/view";
-import {
-  openSearchPanel,
-  selectNextOccurrence,
-  selectSelectionMatches,
-} from "@codemirror/search";
+import { openSearchPanel, selectNextOccurrence, selectSelectionMatches } from "@codemirror/search";
 import {
   baseEditorExtensions,
   languageExtensionFor,
@@ -29,13 +25,7 @@ import {
   type SupportedLanguage,
 } from "@devbox/editor";
 import type { EncodingKind } from "../types";
-import {
-  bookmarkExtension,
-  bookmarkField,
-  nextBookmark,
-  previousBookmark,
-  toggleBookmark,
-} from "./bookmarks";
+import { bookmarkExtension, bookmarkField, nextBookmark, previousBookmark, toggleBookmark } from "./bookmarks";
 
 export type { SupportedLanguage };
 export { languageForPath, languageLabel, languageExtensionFor, syntaxHighlightingExtension, readOnlyExtension };
@@ -125,10 +115,7 @@ export function editorExtensions({
     compartments?.syntax.of(syntaxMode) ?? syntaxMode,
     compartments?.readOnly.of(readOnlyMode) ?? readOnlyMode,
     EditorView.updateListener.of((update) => {
-      if (
-        update.docChanged &&
-        !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
-      ) {
+      if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalValueSync))) {
         onChange(update.state.doc.toString());
       }
       if (
@@ -138,8 +125,8 @@ export function editorExtensions({
         onCursorChange?.(update.state.selection.main.head);
       }
       if (
-        update.state.field(bookmarkField) !== update.startState.field(bookmarkField)
-        && !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
+        update.state.field(bookmarkField) !== update.startState.field(bookmarkField) &&
+        !update.transactions.some((transaction) => transaction.annotation(externalValueSync))
       ) {
         onBookmarksChange?.([...update.state.field(bookmarkField)]);
       }

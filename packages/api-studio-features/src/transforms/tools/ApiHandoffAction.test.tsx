@@ -41,12 +41,8 @@ describe("API Playground output handoff", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "API Playground 요청 미리보기" })).toBeNull();
     });
-    expect(screen.getByRole("status").textContent).toContain(
-      "developer-toolbox → api-playground",
-    );
-    expect(screen.getByRole("status").textContent).not.toContain(
-      "0123456789abcdef0123456789abcdef",
-    );
+    expect(screen.getByRole("status").textContent).toContain("developer-toolbox → api-playground");
+    expect(screen.getByRole("status").textContent).not.toContain("0123456789abcdef0123456789abcdef");
   });
 
   it("cancels without publishing or using the clipboard", () => {
@@ -73,9 +69,7 @@ describe("API Playground output handoff", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
 
-    expect(screen.getByRole("alert").textContent).toBe(
-      "API Playground로 전달할 텍스트가 유효하지 않습니다",
-    );
+    expect(screen.getByRole("alert").textContent).toBe("API Playground로 전달할 텍스트가 유효하지 않습니다");
     expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
   });
 
@@ -87,17 +81,18 @@ describe("API Playground output handoff", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
 
-    expect(screen.getByRole("alert").textContent).toBe(
-      "API Playground로 전달할 텍스트가 유효하지 않습니다",
-    );
+    expect(screen.getByRole("alert").textContent).toBe("API Playground로 전달할 텍스트가 유효하지 않습니다");
     expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
   });
 
   it("keeps an in-flight publish single-flight when the source output changes", async () => {
     let resolveDispatch!: (value: Awaited<ReturnType<typeof createApiRequestHandoff>>) => void;
-    createApiRequestHandoffMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveDispatch = resolve;
-    }));
+    createApiRequestHandoffMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDispatch = resolve;
+        }),
+    );
     const view = render(<ApiHandoffAction value="first output" />);
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
     fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
@@ -114,7 +109,9 @@ describe("API Playground output handoff", () => {
       expiresAtMs: 1_700_000_600_000,
     });
     await waitFor(() => {
-      expect((screen.getByRole("button", { name: "API Playground로 보내기" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "API Playground로 보내기" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
     });
     expect(createApiRequestHandoffMock).toHaveBeenCalledTimes(1);
   });

@@ -1,4 +1,4 @@
-import {isProductHosted} from "../../transport";
+import { isProductHosted } from "../../transport";
 import { useRef } from "react";
 import { restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
@@ -154,64 +154,75 @@ export default function SettingsPanel({
 
         <fieldset className="settings-group quick-summon-settings">
           <legend>빠른 호출</legend>
-          {isProductHosted()?<p role="status">전역 단축키는 제품 연결의 공용 설정에서 Control Center가 관리합니다. 이 보조 창을 닫으면 창만 숨기고 터미널은 유지합니다.</p>:<>
-          <label className="settings-row">
-            <input
-              type="checkbox"
-              checked={settings.quickSummonEnabled}
-              onChange={(event) => onChange({ quickSummonEnabled: event.currentTarget.checked })}
-            />
-            <span>
-              시스템 전역 단축키로 창 표시·숨기기
-              <small>다른 앱을 사용 중이어도 기존 WSL Desktop 창과 터미널을 그대로 호출합니다.</small>
-            </span>
-          </label>
-          <label className="settings-row">
-            <span>전역 단축키</span>
-            <select
-              aria-label="빠른 호출 전역 단축키"
-              value={settings.quickSummonShortcut}
-              disabled={!settings.quickSummonEnabled}
-              onChange={(event) => onChange({
-                quickSummonShortcut: event.currentTarget.value as TerminalSettings["quickSummonShortcut"],
-              })}
-            >
-              {QUICK_SUMMON_SHORTCUTS.map((choice) => (
-                <option key={choice.value} value={choice.value}>{choice.label}</option>
-              ))}
-            </select>
-          </label>
-          <p
-            className={`quick-summon-status ${quickSummonStatus?.issues.length ? "warning" : ""}`}
-            role="status"
-            aria-live="polite"
-          >
-            {shortcutStatusMessage(settings, quickSummonStatus)}
-          </p>
-          <label className="settings-row">
-            <input
-              type="checkbox"
-              checked={settings.keepInTray}
-              onChange={(event) => onChange({ keepInTray: event.currentTarget.checked })}
-            />
-            <span>
-              닫을 때 트레이에 유지
-              <small>트레이 메뉴의 ‘완전히 종료’를 선택할 때만 프로세스와 native PTY가 종료됩니다.</small>
-            </span>
-          </label>
-          <div
-            className={`quick-summon-close-behavior ${quickSummonStatus?.issues.includes("trayUnavailable") ? "warning" : ""}`}
-            role="status"
-          >
-            {settings.keepInTray && !quickSummonStatus
-              ? "닫기 버튼 동작을 적용하는 중입니다…"
-              : quickSummonStatus?.issues.includes("trayUnavailable")
-                ? "트레이를 만들지 못했습니다. 안전을 위해 닫기 버튼은 앱을 종료합니다."
-                : quickSummonStatus?.closeBehavior === "hideToTray"
-                  ? "현재 닫기 버튼: 창만 숨기고 터미널 상태 유지"
-                  : "현재 닫기 버튼: 앱과 native PTY 세션 종료"}
-          </div>
-          </>}
+          {isProductHosted() ? (
+            <p role="status">
+              전역 단축키는 제품 연결의 공용 설정에서 Control Center가 관리합니다. 이 보조 창을 닫으면 창만 숨기고
+              터미널은 유지합니다.
+            </p>
+          ) : (
+            <>
+              <label className="settings-row">
+                <input
+                  type="checkbox"
+                  checked={settings.quickSummonEnabled}
+                  onChange={(event) => onChange({ quickSummonEnabled: event.currentTarget.checked })}
+                />
+                <span>
+                  시스템 전역 단축키로 창 표시·숨기기
+                  <small>다른 앱을 사용 중이어도 기존 WSL Desktop 창과 터미널을 그대로 호출합니다.</small>
+                </span>
+              </label>
+              <label className="settings-row">
+                <span>전역 단축키</span>
+                <select
+                  aria-label="빠른 호출 전역 단축키"
+                  value={settings.quickSummonShortcut}
+                  disabled={!settings.quickSummonEnabled}
+                  onChange={(event) =>
+                    onChange({
+                      quickSummonShortcut: event.currentTarget.value as TerminalSettings["quickSummonShortcut"],
+                    })
+                  }
+                >
+                  {QUICK_SUMMON_SHORTCUTS.map((choice) => (
+                    <option key={choice.value} value={choice.value}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p
+                className={`quick-summon-status ${quickSummonStatus?.issues.length ? "warning" : ""}`}
+                role="status"
+                aria-live="polite"
+              >
+                {shortcutStatusMessage(settings, quickSummonStatus)}
+              </p>
+              <label className="settings-row">
+                <input
+                  type="checkbox"
+                  checked={settings.keepInTray}
+                  onChange={(event) => onChange({ keepInTray: event.currentTarget.checked })}
+                />
+                <span>
+                  닫을 때 트레이에 유지
+                  <small>트레이 메뉴의 ‘완전히 종료’를 선택할 때만 프로세스와 native PTY가 종료됩니다.</small>
+                </span>
+              </label>
+              <div
+                className={`quick-summon-close-behavior ${quickSummonStatus?.issues.includes("trayUnavailable") ? "warning" : ""}`}
+                role="status"
+              >
+                {settings.keepInTray && !quickSummonStatus
+                  ? "닫기 버튼 동작을 적용하는 중입니다…"
+                  : quickSummonStatus?.issues.includes("trayUnavailable")
+                    ? "트레이를 만들지 못했습니다. 안전을 위해 닫기 버튼은 앱을 종료합니다."
+                    : quickSummonStatus?.closeBehavior === "hideToTray"
+                      ? "현재 닫기 버튼: 창만 숨기고 터미널 상태 유지"
+                      : "현재 닫기 버튼: 앱과 native PTY 세션 종료"}
+              </div>
+            </>
+          )}
         </fieldset>
 
         <ShellIntegrationSettings distro={distro} ask={ask} onError={onError} />
@@ -226,11 +237,14 @@ export default function SettingsPanel({
             <select
               aria-label="세션 유지 방식"
               value={settings.multiplexer}
-              onChange={(event) => onChange({ multiplexer: event.currentTarget.value as TerminalSettings["multiplexer"] })}
+              onChange={(event) =>
+                onChange({ multiplexer: event.currentTarget.value as TerminalSettings["multiplexer"] })
+              }
             >
               {muxAvailability.map((item) => (
                 <option key={item.kind} value={item.kind} disabled={item.status !== "available"}>
-                  {item.kind}{item.kind === "native" ? " (기본)" : MULTIPLEXER_STATUS_SUFFIX[item.status]}
+                  {item.kind}
+                  {item.kind === "native" ? " (기본)" : MULTIPLEXER_STATUS_SUFFIX[item.status]}
                 </option>
               ))}
             </select>
@@ -290,7 +304,9 @@ export default function SettingsPanel({
               onChange={(event) => onChange({ fontId: event.currentTarget.value })}
             >
               {FONT_CHOICES.map((choice) => (
-                <option key={choice.id} value={choice.id}>{choice.label}</option>
+                <option key={choice.id} value={choice.id}>
+                  {choice.label}
+                </option>
               ))}
             </select>
           </label>
@@ -302,7 +318,9 @@ export default function SettingsPanel({
               onChange={(event) => onChange({ theme: event.currentTarget.value as TerminalThemeName })}
             >
               {(Object.keys(THEME_LABELS) as TerminalThemeName[]).map((name) => (
-                <option key={name} value={name}>{THEME_LABELS[name]}</option>
+                <option key={name} value={name}>
+                  {THEME_LABELS[name]}
+                </option>
               ))}
             </select>
           </label>
@@ -314,7 +332,9 @@ export default function SettingsPanel({
               onChange={(event) => onChange({ cursorStyle: event.currentTarget.value as CursorStyle })}
             >
               {(Object.keys(CURSOR_LABELS) as CursorStyle[]).map((style) => (
-                <option key={style} value={style}>{CURSOR_LABELS[style]}</option>
+                <option key={style} value={style}>
+                  {CURSOR_LABELS[style]}
+                </option>
               ))}
             </select>
           </label>
@@ -335,7 +355,9 @@ export default function SettingsPanel({
               max={MAX_SCROLLBACK_LINES}
               step={1000}
               value={settings.scrollbackLines}
-              onChange={(event) => onChange({ scrollbackLines: clampScrollbackLines(Number(event.currentTarget.value)) })}
+              onChange={(event) =>
+                onChange({ scrollbackLines: clampScrollbackLines(Number(event.currentTarget.value)) })
+              }
             />
           </label>
         </fieldset>
@@ -344,7 +366,9 @@ export default function SettingsPanel({
           <button type="button" className="btn" onClick={() => onFontSizeChange(DEFAULT_TERMINAL_FONT_SIZE)}>
             글꼴 크기 초기화
           </button>
-          <button type="button" className="btn primary" onClick={close}>닫기</button>
+          <button type="button" className="btn primary" onClick={close}>
+            닫기
+          </button>
         </div>
       </section>
     </div>

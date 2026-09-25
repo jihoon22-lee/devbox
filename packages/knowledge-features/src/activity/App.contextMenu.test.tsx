@@ -34,10 +34,21 @@ vi.mock("./api", () => ({
     git: { projects: [], total_commits: 0 },
   })),
   getIdleThreshold: vi.fn().mockResolvedValue(300_000),
-  EMPTY_PRIVACY_RULES: { excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false },
-  getPrivacyRules: vi.fn().mockResolvedValue({ rules: {
-    excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false,
-  }, healthy: true }),
+  EMPTY_PRIVACY_RULES: {
+    excludedProcesses: [],
+    excludedTitlePatterns: [],
+    redactTitlePatterns: [],
+    maskAllTitles: false,
+  },
+  getPrivacyRules: vi.fn().mockResolvedValue({
+    rules: {
+      excludedProcesses: [],
+      excludedTitlePatterns: [],
+      redactTitlePatterns: [],
+      maskAllTitles: false,
+    },
+    healthy: true,
+  }),
   getProjects: mocks.getProjects,
   getRange: vi.fn().mockResolvedValue({
     label: "fixture range",
@@ -251,9 +262,9 @@ describe("Life Log daily digest", () => {
       const response = digestFixture(input);
       response.document.summary.run = { succeeded: 2, failed: 1, lastRunAtMs: 1_800_000_000_000 };
       response.document.summary.knowledge = { notesModified: 3, lastModifiedAtMs: 1_800_000_100_000 };
-      response.document.daily = response.document.daily.map((day, index) => index === 0
-        ? { ...day, runSucceeded: 2, runFailed: 1, knowledgeNotesModified: 3, hasActivity: true }
-        : day);
+      response.document.daily = response.document.daily.map((day, index) =>
+        index === 0 ? { ...day, runSucceeded: 2, runFailed: 1, knowledgeNotesModified: 3, hasActivity: true } : day,
+      );
       return Promise.resolve(response);
     });
 
@@ -268,8 +279,12 @@ describe("Life Log daily digest", () => {
     let firstInput: DigestInput | null = null;
     let resolveFirst!: (response: DigestResponse) => void;
     let resolveSecond!: () => void;
-    const first = new Promise<DigestResponse>((resolve) => { resolveFirst = resolve; });
-    const second = new Promise<void>((resolve) => { resolveSecond = resolve; });
+    const first = new Promise<DigestResponse>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
     mocks.getDigest
       .mockReset()
       .mockImplementationOnce((input: DigestInput) => {
@@ -318,9 +333,11 @@ describe("Life Log daily digest", () => {
     await waitFor(() => expect(mocks.sendDigestToKnowledge).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Knowledge 초안을 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.")).toBeTruthy();
     expect(onDraft).toHaveBeenCalledTimes(1);
-    expect(mocks.sendDigestToKnowledge).toHaveBeenCalledWith(expect.objectContaining({
-      period: "day",
-    }));
+    expect(mocks.sendDigestToKnowledge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        period: "day",
+      }),
+    );
   });
 
   it("ignores an older Knowledge history refresh after a newer request wins", async () => {
@@ -329,8 +346,18 @@ describe("Life Log daily digest", () => {
     let resolveRefresh!: (history: KnowledgeDraftHistoryEntry[]) => void;
     mocks.knowledgeDraftHistory
       .mockReset()
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveInitial = resolve; }))
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitial = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
 
     await renderLoadedApp();
     fireEvent.click(screen.getByRole("button", { name: "설정" }));
@@ -371,11 +398,15 @@ describe("Life Log date context menu", () => {
     fireEvent.contextMenu(dateInput);
     fireEvent.click(screen.getByRole("menuitem", { name: "Markdown 내보내기" }));
 
-    await waitFor(() => expect(mocks.exportLifeLog).toHaveBeenCalledWith(expect.objectContaining({
-      startDate: dateInput.value,
-      endDate: dateInput.value,
-      format: "markdown",
-    })));
+    await waitFor(() =>
+      expect(mocks.exportLifeLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startDate: dateInput.value,
+          endDate: dateInput.value,
+          format: "markdown",
+        }),
+      ),
+    );
     expect(await screen.findByText(/MARKDOWN 내보내기를 브라우저 미리보기로 다운로드했습니다/u)).toBeTruthy();
   });
 
@@ -516,7 +547,9 @@ describe("Life Log date context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "내보내기 미리보기" }));
     const dialog = await screen.findByRole("dialog", { name: "Life Log 내보내기" });
     fireEvent.click(within(dialog).getByRole("button", { name: "미리보기 다운로드" }));
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "Life Log 내보내기" }).getAttribute("aria-busy")).toBe("true"));
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Life Log 내보내기" }).getAttribute("aria-busy")).toBe("true"),
+    );
 
     unmount();
     resolveExport({
@@ -564,9 +597,12 @@ describe("Life Log date context menu", () => {
 
   it("확정된 Git 프로젝트 저장을 늦게 도착한 초기 settings 응답이 덮어쓰지 않는다", async () => {
     let resolveProjects!: (paths: string[]) => void;
-    mocks.getProjects.mockReset().mockImplementationOnce(() => new Promise((resolve) => {
-      resolveProjects = resolve;
-    }));
+    mocks.getProjects.mockReset().mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveProjects = resolve;
+        }),
+    );
     await renderLoadedApp();
     fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const input = screen.getByPlaceholderText(/wsl\$/u);
@@ -582,7 +618,6 @@ describe("Life Log date context menu", () => {
     expect(screen.queryByText("C:\\stale\\project")).toBeNull();
   });
 });
-
 
 it("shows unavailable Git projects without representing them as a zero-commit success", async () => {
   mocks.getDigest.mockImplementation(async (input: DigestInput) => {
@@ -600,7 +635,6 @@ it("shows unavailable Git projects without representing them as a zero-commit su
   expect(within(unavailable as HTMLElement).queryByText("커밋 0개")).not.toBeInTheDocument();
   expect(screen.getByText("커밋 2개")).toBeInTheDocument();
 });
-
 
 it("keeps unmapped and offline project rows visible without changing their Git counts", async () => {
   mocks.getDigest.mockImplementation(async (input: DigestInput) => {

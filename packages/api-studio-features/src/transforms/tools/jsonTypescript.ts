@@ -35,16 +35,90 @@ interface PropertyNode {
 const NEVER: TypeNode = { kind: "never" };
 
 const RESERVED_TYPE_NAMES = new Set([
-  "abstract", "accessor", "any", "arguments", "as", "asserts", "async", "await", "bigint",
-  "boolean", "break", "case",
-  "catch", "class", "const", "constructor", "continue", "debugger", "declare", "default",
-  "delete", "do", "else", "enum", "export", "extends", "false", "finally", "for", "from",
-  "function", "get", "global", "if", "implements", "import", "in", "infer", "instanceof",
-  "interface", "intrinsic", "is", "keyof", "let", "module", "namespace", "never", "new", "null",
-  "number", "object", "of", "out", "override", "package", "private", "protected", "public", "readonly",
-  "require", "return", "satisfies", "set", "static", "string", "super", "switch", "symbol", "this",
-  "throw", "true", "try", "type", "typeof", "undefined", "unique", "unknown", "using",
-  "var", "void", "while", "with", "yield", "eval",
+  "abstract",
+  "accessor",
+  "any",
+  "arguments",
+  "as",
+  "asserts",
+  "async",
+  "await",
+  "bigint",
+  "boolean",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "constructor",
+  "continue",
+  "debugger",
+  "declare",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "get",
+  "global",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "infer",
+  "instanceof",
+  "interface",
+  "intrinsic",
+  "is",
+  "keyof",
+  "let",
+  "module",
+  "namespace",
+  "never",
+  "new",
+  "null",
+  "number",
+  "object",
+  "of",
+  "out",
+  "override",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "readonly",
+  "require",
+  "return",
+  "satisfies",
+  "set",
+  "static",
+  "string",
+  "super",
+  "switch",
+  "symbol",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "type",
+  "typeof",
+  "undefined",
+  "unique",
+  "unknown",
+  "using",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+  "eval",
 ]);
 
 function compareText(left: string, right: string): number {
@@ -76,16 +150,10 @@ function validateRootTypeName(name: string): JsonTypescriptResult | null {
     return error("EMPTY_ROOT_TYPE_NAME", "root type 이름을 입력해야 합니다.");
   }
   if (name.length > MAX_ROOT_TYPE_NAME_LENGTH) {
-    return error(
-      "ROOT_TYPE_NAME_TOO_LONG",
-      `root type 이름은 ${MAX_ROOT_TYPE_NAME_LENGTH}자 이하여야 합니다.`,
-    );
+    return error("ROOT_TYPE_NAME_TOO_LONG", `root type 이름은 ${MAX_ROOT_TYPE_NAME_LENGTH}자 이하여야 합니다.`);
   }
   if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(name)) {
-    return error(
-      "INVALID_ROOT_TYPE_NAME",
-      "root type 이름은 영문자, 숫자, _, $만 사용하고 숫자로 시작할 수 없습니다.",
-    );
+    return error("INVALID_ROOT_TYPE_NAME", "root type 이름은 영문자, 숫자, _, $만 사용하고 숫자로 시작할 수 없습니다.");
   }
   if (RESERVED_TYPE_NAMES.has(name)) {
     return error("RESERVED_ROOT_TYPE_NAME", "TypeScript 예약어는 root type 이름으로 사용할 수 없습니다.");
@@ -138,7 +206,7 @@ function mergeObjectGroup(
 }
 
 function normalizeUnion(nodes: readonly TypeNode[]): TypeNode {
-  const flattened = nodes.flatMap((node) => node.kind === "union" ? node.members : [node]);
+  const flattened = nodes.flatMap((node) => (node.kind === "union" ? node.members : [node]));
   const meaningful = flattened.filter((node) => node.kind !== "never");
   if (meaningful.length === 0) return NEVER;
 
@@ -156,9 +224,7 @@ function normalizeUnion(nodes: readonly TypeNode[]): TypeNode {
 
   const unique = new Map<string, TypeNode>();
   for (const node of merged) unique.set(typeKey(node), node);
-  const members = [...unique.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([, node]) => node);
+  const members = [...unique.entries()].sort(([left], [right]) => compareText(left, right)).map(([, node]) => node);
 
   return members.length === 1 ? members[0]! : { kind: "union", members };
 }
@@ -213,9 +279,10 @@ function renderType(node: TypeNode, indentation: number): string {
       if (node.properties.size === 0) return "Record<string, never>";
       const padding = "  ".repeat(indentation);
       const childPadding = "  ".repeat(indentation + 1);
-      const lines = [...node.properties.entries()].map(([name, property]) => (
-        `${childPadding}${propertyName(name)}${property.optional ? "?" : ""}: ${renderType(property.type, indentation + 1)};`
-      ));
+      const lines = [...node.properties.entries()].map(
+        ([name, property]) =>
+          `${childPadding}${propertyName(name)}${property.optional ? "?" : ""}: ${renderType(property.type, indentation + 1)};`,
+      );
       return `{\n${lines.join("\n")}\n${padding}}`;
     }
   }
@@ -239,13 +306,17 @@ export function convertJsonToTypescript(input: string, rootTypeName: string): Js
 
   const errors: ParseError[] = [];
   try {
-    visitJson(input, {
-      onError: (parseError, offset, length) => errors.push({ error: parseError, offset, length }),
-    }, {
-      allowEmptyContent: false,
-      allowTrailingComma: false,
-      disallowComments: true,
-    });
+    visitJson(
+      input,
+      {
+        onError: (parseError, offset, length) => errors.push({ error: parseError, offset, length }),
+      },
+      {
+        allowEmptyContent: false,
+        allowTrailingComma: false,
+        disallowComments: true,
+      },
+    );
   } catch {
     return error("JSON_PARSE_FAILED", "JSON 구조가 안전한 처리 범위를 초과했습니다.");
   }
@@ -274,7 +345,10 @@ export function convertJsonToTypescript(input: string, rootTypeName: string): Js
       return error("INPUT_TOO_DEEP", `JSON 중첩은 최대 ${MAX_JSON_TYPESCRIPT_DEPTH}단계까지 지원합니다.`);
     }
     if (caught instanceof InferenceLimitError) {
-      return error("INPUT_TOO_COMPLEX", `JSON 값은 최대 ${MAX_JSON_TYPESCRIPT_NODES.toLocaleString("en-US")}개까지 처리합니다.`);
+      return error(
+        "INPUT_TOO_COMPLEX",
+        `JSON 값은 최대 ${MAX_JSON_TYPESCRIPT_NODES.toLocaleString("en-US")}개까지 처리합니다.`,
+      );
     }
     return error("TYPE_INFERENCE_FAILED", "JSON 구조에서 TypeScript type을 생성하지 못했습니다.");
   }

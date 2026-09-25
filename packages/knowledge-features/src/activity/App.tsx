@@ -1,10 +1,6 @@
 import PrivacyRulesPanel from "./PrivacyRulesPanel";
 import { projectAssociationLabel } from "./types";
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
@@ -60,7 +56,9 @@ function fmtDuration(ms: number): string {
 }
 
 function shortApp(app: string): string {
-  return Array.from(app.replace(/\.exe$/i, "")).slice(0, 22).join("");
+  return Array.from(app.replace(/\.exe$/i, ""))
+    .slice(0, 22)
+    .join("");
 }
 
 function safeNativeErrorCode(error: unknown): string | null {
@@ -90,24 +88,24 @@ export function formatNullableTimestamp(value: number | null): string {
 }
 
 export function formatRunSummary(run: RunDigest | null): string {
-  return run == null
-    ? "—"
-    : `${formatNullableCount(run.succeeded)}건 성공 · ${formatNullableCount(run.failed)}건 실패`;
+  return run == null ? "—" : `${formatNullableCount(run.succeeded)}건 성공 · ${formatNullableCount(run.failed)}건 실패`;
 }
 
 export function formatKnowledgeSummary(knowledge: KnowledgeDigest | null): string {
-  return knowledge == null
-    ? "—"
-    : `${formatNullableCount(knowledge.notesModified)}건 수정`;
+  return knowledge == null ? "—" : `${formatNullableCount(knowledge.notesModified)}건 수정`;
 }
 
-export function formatDailyActivity(day: Pick<DigestDay, "runSucceeded" | "runFailed" | "knowledgeNotesModified">): string {
-  const runs = day.runSucceeded == null || day.runFailed == null
-    ? "Run Manager —"
-    : `Run Manager ${formatNullableCount(day.runSucceeded)}/${formatNullableCount(day.runFailed)}`;
-  const notes = day.knowledgeNotesModified == null
-    ? "Knowledge —"
-    : `Knowledge ${formatNullableCount(day.knowledgeNotesModified)}건`;
+export function formatDailyActivity(
+  day: Pick<DigestDay, "runSucceeded" | "runFailed" | "knowledgeNotesModified">,
+): string {
+  const runs =
+    day.runSucceeded == null || day.runFailed == null
+      ? "Run Manager —"
+      : `Run Manager ${formatNullableCount(day.runSucceeded)}/${formatNullableCount(day.runFailed)}`;
+  const notes =
+    day.knowledgeNotesModified == null
+      ? "Knowledge —"
+      : `Knowledge ${formatNullableCount(day.knowledgeNotesModified)}건`;
   return `${runs} · ${notes}`;
 }
 
@@ -154,11 +152,7 @@ function periodDateKeys(date: Date, period: DigestPeriod): { startDate: string; 
   return { startDate: toDateStr(start), endDate: toDateStr(end) };
 }
 
-export function buildDigestInput(
-  date: Date,
-  period: DigestPeriod,
-  app: string | null = null,
-): DigestInput | null {
+export function buildDigestInput(date: Date, period: DigestPeriod, app: string | null = null): DigestInput | null {
   const { startDate, endDate } = periodDateKeys(date, period);
   const range = buildExportInput(startDate, endDate, "json");
   if (!range) return null;
@@ -235,9 +229,7 @@ function dayFromDigest(response: DigestResponse): DaySummary {
   };
 }
 
-function digestSourceDetails(
-  source: DigestResponse["document"]["sources"][number],
-): string | null {
+function digestSourceDetails(source: DigestResponse["document"]["sources"][number]): string | null {
   const details: string[] = [];
   if (Number.isSafeInteger(source.schemaVersion) && source.schemaVersion != null && source.schemaVersion > 0) {
     details.push(`schema v${source.schemaVersion}`);
@@ -245,7 +237,10 @@ function digestSourceDetails(
   if (Number.isSafeInteger(source.snapshotVersion) && source.snapshotVersion != null && source.snapshotVersion > 0) {
     details.push(`snapshot v${source.snapshotVersion}`);
   }
-  if (source.producerVersion && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/.test(source.producerVersion)) {
+  if (
+    source.producerVersion &&
+    /^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/.test(source.producerVersion)
+  ) {
     details.push(source.producerVersion);
   }
   if (source.generatedAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(source.generatedAt)) {
@@ -254,14 +249,13 @@ function digestSourceDetails(
   if (Number.isSafeInteger(source.freshnessMs) && source.freshnessMs != null && source.freshnessMs >= 0) {
     details.push(`${fmtDuration(source.freshnessMs)} 전`);
   }
-  if (source.view === "activity" || source.view === "legacy-data" || source.view === "daily-activity") details.push(source.view);
+  if (source.view === "activity" || source.view === "legacy-data" || source.view === "daily-activity")
+    details.push(source.view);
   return details.length > 0 ? details.join(" · ") : null;
 }
 
 function digestSourceId(value: string): string {
-  return ["life-log", "git", "run-manager", "knowledge-base"].includes(value)
-    ? value
-    : "알 수 없는 소스";
+  return ["life-log", "git", "run-manager", "knowledge-base"].includes(value) ? value : "알 수 없는 소스";
 }
 
 function digestSourceScope(value: string): string {
@@ -301,9 +295,12 @@ function sourceFreshnessLabel(state: ReturnType<typeof sourceFreshnessState>): s
 }
 
 export const FIXED_SOURCE_EXPLANATIONS = {
-  snapshot_range_partial: "선택한 기간의 일부 daily snapshot만 일치해 나머지 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
-  snapshot_range_unavailable: "선택한 기간에 일치하는 daily snapshot이 없어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
-  snapshot_boundary_mismatch: "daily snapshot의 날짜·시간대 경계가 요청 범위와 일치하지 않아 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+  snapshot_range_partial:
+    "선택한 기간의 일부 daily snapshot만 일치해 나머지 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+  snapshot_range_unavailable:
+    "선택한 기간에 일치하는 daily snapshot이 없어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
+  snapshot_boundary_mismatch:
+    "daily snapshot의 날짜·시간대 경계가 요청 범위와 일치하지 않아 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
   snapshot_stale: "daily snapshot이 오래되어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
 } as const;
 
@@ -312,7 +309,9 @@ type DigestSource = DigestResponse["document"]["sources"][number];
 type SourceFreshness = ReturnType<typeof sourceFreshnessState>;
 
 function fixedSourceExplanation(
-  source: Pick<DigestSource, "scope" | "errorCode" | "available" | "freshnessMs"> & { freshnessState?: SourceFreshness },
+  source: Pick<DigestSource, "scope" | "errorCode" | "available" | "freshnessMs"> & {
+    freshnessState?: SourceFreshness;
+  },
 ): string | null {
   if (source.errorCode && source.errorCode in FIXED_SOURCE_EXPLANATIONS) {
     return FIXED_SOURCE_EXPLANATIONS[source.errorCode as keyof typeof FIXED_SOURCE_EXPLANATIONS];
@@ -320,16 +319,15 @@ function fixedSourceExplanation(
   if (source.scope === "requested-range-partial") {
     return FIXED_SOURCE_EXPLANATIONS.snapshot_range_partial;
   }
-  const freshness = source.freshnessState ?? sourceFreshnessState(source.freshnessMs, source.available, source.errorCode);
+  const freshness =
+    source.freshnessState ?? sourceFreshnessState(source.freshnessMs, source.available, source.errorCode);
   if (freshness === "stale" || freshness === "expired") {
     return FIXED_SOURCE_EXPLANATIONS.snapshot_stale;
   }
   return null;
 }
 
-export function digestSourceExplanation(
-  source: DigestResponse["document"]["sources"][number],
-): string {
+export function digestSourceExplanation(source: DigestResponse["document"]["sources"][number]): string {
   const fixed = fixedSourceExplanation(source);
   if (fixed) return fixed;
   if (source.scope === "browser-preview-only") {
@@ -337,7 +335,8 @@ export function digestSourceExplanation(
   }
   if (source.id === "life-log") return "Life Log 로컬 DB를 선택한 날짜 범위와 필터로 집계합니다.";
   if (source.id === "git") return "설정된 프로젝트의 read-only Git count를 요청 범위로 제한합니다.";
-  if (source.id === "run-manager") return "Run Manager 최신 snapshot은 provenance로만 표시하며 활동 통계에 합치지 않습니다.";
+  if (source.id === "run-manager")
+    return "Run Manager 최신 snapshot은 provenance로만 표시하며 활동 통계에 합치지 않습니다.";
   if (source.id === "knowledge-base") return "Knowledge 최신 snapshot은 provenance로만 표시하며 원문을 읽지 않습니다.";
   return "이 source는 통계에 조용히 합치지 않도록 별도로 표시됩니다.";
 }
@@ -354,11 +353,7 @@ function digestActivitySourceNotice(document: DigestResponse["document"]): strin
   return notices.length > 0 ? notices.join(" ") : null;
 }
 
-export function buildExportInput(
-  startDate: string,
-  endDate: string,
-  format: ExportFormat,
-): ExportInput | null {
+export function buildExportInput(startDate: string, endDate: string, format: ExportFormat): ExportInput | null {
   const start = parseDateKey(startDate);
   const end = parseDateKey(endDate);
   if (!start || !end) return null;
@@ -421,18 +416,24 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
         <span className={`freshness-badge freshness-${freshness}`}>{sourceFreshnessLabel(freshness)}</span>
         {diagnostics.length > 0 && <span className="dim">{diagnostics.join(" · ")}</span>}
         <span className="dim">{source.scope ?? "범위 없음"}</span>
-        <span className="source-explanation">{fixedExplanation ?? source.explanation ?? digestSourceExplanation(sourceMetadata)}</span>
+        <span className="source-explanation">
+          {fixedExplanation ?? source.explanation ?? digestSourceExplanation(sourceMetadata)}
+        </span>
         {source.available && activity && (
           <span className="source-activity">
             오늘 작성·수정 {activity.notesModifiedToday}개
-            {activity.lastModifiedAtMs != null && ` · 마지막 수정 ${new Date(activity.lastModifiedAtMs).toLocaleString()}`}
+            {activity.lastModifiedAtMs != null &&
+              ` · 마지막 수정 ${new Date(activity.lastModifiedAtMs).toLocaleString()}`}
             {activity.legacySnapshot && " · 구버전 snapshot"}
-            {!activity.identifiersComplete && !activity.legacySnapshot && ` · 식별자 ${activity.identifiedNotes}개만 포함`}
+            {!activity.identifiersComplete &&
+              !activity.legacySnapshot &&
+              ` · 식별자 ${activity.identifiedNotes}개만 포함`}
           </span>
         )}
         {!source.available && (
           <span role="alert" className="source-error">
-            {source.errorCode ? `${source.errorCode} · ` : ""}{fixedExplanation ? "사용할 수 없음" : source.error ?? "사용할 수 없음"}
+            {source.errorCode ? `${source.errorCode} · ` : ""}
+            {fixedExplanation ? "사용할 수 없음" : (source.error ?? "사용할 수 없음")}
           </span>
         )}
       </div>
@@ -440,7 +441,15 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
   );
 }
 
-export default function App({ active = true, selectedDate, onDateChange, onDaily, onDraft, lifecycleSettings, projectRevision = 0 }: {
+export default function App({
+  active = true,
+  selectedDate,
+  onDateChange,
+  onDaily,
+  onDraft,
+  lifecycleSettings,
+  projectRevision = 0,
+}: {
   active?: boolean;
   selectedDate?: string;
   projectRevision?: number;
@@ -449,10 +458,20 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
   onDraft?: () => void;
   lifecycleSettings?: React.ReactNode;
 } = {}) {
-  const activeRef = useRef(active); activeRef.current = active;
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [localDate, setLocalDate] = useState(() => new Date());
-  const date = useMemo(() => selectedDate ? parseDateKey(selectedDate) ?? localDate : localDate, [selectedDate, localDate]);
-  const setDate = useCallback((next: Date) => { setLocalDate(next); onDateChange?.(toDateStr(next)); }, [onDateChange]);
+  const date = useMemo(
+    () => (selectedDate ? (parseDateKey(selectedDate) ?? localDate) : localDate),
+    [selectedDate, localDate],
+  );
+  const setDate = useCallback(
+    (next: Date) => {
+      setLocalDate(next);
+      onDateChange?.(toDateStr(next));
+    },
+    [onDateChange],
+  );
   const dateStr = useMemo(() => toDateStr(date), [date]);
   const [view, setView] = useState<ViewTab>("day");
   const [day, setDay] = useState<DaySummary | null>(null);
@@ -532,18 +551,21 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     };
   }, []);
 
-  const prepareDateContext = useCallback((target: HTMLElement) => {
-    const value = target.dataset.date;
-    const parsed = value ? parseDateKey(value) : null;
-    if (!value || !parsed) {
-      setContextDate(null);
-      return;
-    }
-    setContextDate(value);
-    if (value === dateStr) return;
-    invalidatePendingLoad();
-    setDate(parsed);
-  }, [dateStr, invalidatePendingLoad, setDate]);
+  const prepareDateContext = useCallback(
+    (target: HTMLElement) => {
+      const value = target.dataset.date;
+      const parsed = value ? parseDateKey(value) : null;
+      if (!value || !parsed) {
+        setContextDate(null);
+        return;
+      }
+      setContextDate(value);
+      if (value === dateStr) return;
+      invalidatePendingLoad();
+      setDate(parsed);
+    },
+    [dateStr, invalidatePendingLoad, setDate],
+  );
   const dateContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareDateContext(target),
   });
@@ -569,24 +591,25 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     }
   };
 
-  const saveOrDownloadExport = async (
-    input: ExportInput,
-  ): Promise<{ saved: boolean; preview: boolean }> => {
+  const saveOrDownloadExport = async (input: ExportInput): Promise<{ saved: boolean; preview: boolean }> => {
     if (isTauri()) {
       return { saved: (await saveLifeLog(input)).saved, preview: false };
     }
     const result = await exportLifeLog(input);
     const expectedExtension = input.format === "markdown" ? "md" : input.format;
-    const expectedMime = input.format === "markdown"
-      ? "text/markdown;charset=utf-8"
-      : `${input.format === "json" ? "application/json" : "text/csv"};charset=utf-8`;
+    const expectedMime =
+      input.format === "markdown"
+        ? "text/markdown;charset=utf-8"
+        : `${input.format === "json" ? "application/json" : "text/csv"};charset=utf-8`;
     const byteLength = new TextEncoder().encode(result.content).byteLength;
-    if (result.origin !== "browser-preview"
-        || result.format !== input.format
-        || result.extension !== expectedExtension
-        || result.mimeType !== expectedMime
-        || result.byteLength !== byteLength
-        || result.byteLength > 4 * 1024 * 1024) {
+    if (
+      result.origin !== "browser-preview" ||
+      result.format !== input.format ||
+      result.extension !== expectedExtension ||
+      result.mimeType !== expectedMime ||
+      result.byteLength !== byteLength ||
+      result.byteLength > 4 * 1024 * 1024
+    ) {
       throw new Error("export 미리보기 결과가 올바르지 않습니다");
     }
     if (typeof URL.createObjectURL !== "function") throw new Error("export 다운로드를 사용할 수 없습니다");
@@ -780,10 +803,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     const action = beginDigestAction();
     if (!action) return;
     try {
-      const result = await sendDigestToKnowledge(
-        digestInputFromResponse(digest),
-        entry.handoffId,
-      );
+      const result = await sendDigestToKnowledge(digestInputFromResponse(digest), entry.handoffId);
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
         onDraft?.();
         await refreshDraftHistory();
@@ -801,9 +821,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
   // a progress update cannot tear down and recreate the focus trap.
   useEffect(() => {
     if (!active || !exportDialogOpen) return;
-    exportRestoreFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    exportRestoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = exportDialogRef.current;
     const focusTask = window.setTimeout(() => exportFirstFieldRef.current?.focus(), 0);
     const onKeyDown = (event: KeyboardEvent) => {
@@ -843,11 +861,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     };
   }, [active, exportDialogOpen]);
 
-  const restoreDateContextFocus = (
-    request: number,
-    target: HTMLElement | null,
-    value: string | null,
-  ) => {
+  const restoreDateContextFocus = (request: number, target: HTMLElement | null, value: string | null) => {
     if (!target || !value || !parseDateKey(value)) return;
     const triggerClass = target.classList.contains("daily-col")
       ? "daily-col"
@@ -858,15 +872,16 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
       if (dateContextFocusRequestRef.current !== request) return;
       const replacement = target.isConnected
         ? target
-        : Array.from(document.querySelectorAll<HTMLElement>("[data-date]")).find((element) =>
-          element.dataset.date === value
-          && (triggerClass === null || element.classList.contains(triggerClass)),
-        );
+        : Array.from(document.querySelectorAll<HTMLElement>("[data-date]")).find(
+            (element) =>
+              element.dataset.date === value && (triggerClass === null || element.classList.contains(triggerClass)),
+          );
       if (
-        !replacement
-        || (replacement instanceof HTMLButtonElement && replacement.disabled)
-        || (replacement instanceof HTMLInputElement && replacement.disabled)
-      ) return;
+        !replacement ||
+        (replacement instanceof HTMLButtonElement && replacement.disabled) ||
+        (replacement instanceof HTMLInputElement && replacement.disabled)
+      )
+        return;
       replacement.focus({ preventScroll: true });
     }, 0);
   };
@@ -926,12 +941,12 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
       if (privacyRules.status === "fulfilled") {
         setPrivacy(privacyRules.value.rules);
         setPrivacyHealthy(privacyRules.value.healthy);
-      } else { setPrivacyHealthy(false); }
+      } else {
+        setPrivacyHealthy(false);
+      }
       if (ast.status === "fulfilled") setAutoStart(ast.value);
       if (src.status === "fulfilled") setSources(src.value);
-      if (history.status === "fulfilled"
-        && appMountedRef.current
-        && historyRequestRef.current === historyRequest) {
+      if (history.status === "fulfilled" && appMountedRef.current && historyRequestRef.current === historyRequest) {
         setDraftHistory(history.value);
       }
       if ([pr, idle, privacyRules, ast, src, history].some((result) => result.status === "rejected")) {
@@ -942,6 +957,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     }
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   const load = useCallback(async () => {
     const request = loadRequestRef.current + 1;
     loadRequestRef.current = request;
@@ -1009,9 +1025,11 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     } catch (reason) {
       if (loadRequestRef.current === request) {
         const code = safeNativeErrorCode(reason);
-        setError(view === "week" || view === "month"
-          ? `local digest를 불러오지 못했습니다.${code ? ` (${code})` : ""}`
-          : `Life Log 데이터를 불러오지 못했습니다.${code ? ` (${code})` : ""}`);
+        setError(
+          view === "week" || view === "month"
+            ? `local digest를 불러오지 못했습니다.${code ? ` (${code})` : ""}`
+            : `Life Log 데이터를 불러오지 못했습니다.${code ? ` (${code})` : ""}`,
+        );
       }
     } finally {
       if (loadRequestRef.current === request) setLoading(false);
@@ -1184,7 +1202,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
 
   const topApp = day?.app_totals[0];
   const maxDaily = Math.max(1, ...(range?.daily.map((d) => d.pc_usage_ms) ?? []));
-  const maxStatDuration = Math.max(1, ...(stats.map((stat) => stat.duration_ms)));
+  const maxStatDuration = Math.max(1, ...stats.map((stat) => stat.duration_ms));
   const summary = view === "day" ? day : range;
   const maxSummaryDuration = Math.max(1, ...(summary?.app_totals.map((app) => app.duration_ms) ?? []));
   const digestAppOptions = useMemo(() => {
@@ -1196,8 +1214,18 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
   return (
     <div className="app">
       <header className="toolbar">
-        {onDaily && <button type="button" className="btn" disabled={contextActionBusy} onClick={onDaily}>이 날짜의 일일 기록</button>}
-        <button type="button" className="btn" aria-label="이전 날짜" onClick={() => shift(-1)} disabled={contextActionBusy}>
+        {onDaily && (
+          <button type="button" className="btn" disabled={contextActionBusy} onClick={onDaily}>
+            이 날짜의 일일 기록
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn"
+          aria-label="이전 날짜"
+          onClick={() => shift(-1)}
+          disabled={contextActionBusy}
+        >
           ◀
         </button>
         <input
@@ -1214,7 +1242,13 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
           onContextMenu={dateContextMenu.triggerProps.onContextMenu}
           onKeyDown={dateContextMenu.triggerProps.onKeyDown}
         />
-        <button type="button" className="btn" aria-label="다음 날짜" onClick={() => shift(1)} disabled={contextActionBusy}>
+        <button
+          type="button"
+          className="btn"
+          aria-label="다음 날짜"
+          onClick={() => shift(1)}
+          disabled={contextActionBusy}
+        >
           ▶
         </button>
         <button type="button" className="btn" onClick={() => selectDate(new Date())} disabled={contextActionBusy}>
@@ -1223,8 +1257,15 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
         <span className="spacer" />
         {loading && (
           <>
-            <span className="loading" role="status" aria-live="polite">불러오는 중…</span>
-            <button type="button" className="btn" onClick={() => void cancelCurrentLoad()} aria-label="데이터 불러오기 취소">
+            <span className="loading" role="status" aria-live="polite">
+              불러오는 중…
+            </span>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void cancelCurrentLoad()}
+              aria-label="데이터 불러오기 취소"
+            >
               취소
             </button>
           </>
@@ -1249,8 +1290,16 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
         </button>
       </header>
 
-      {error && <div className="error" role="alert">{error}</div>}
-      {notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="notice" role="status" aria-live="polite">
+          {notice}
+        </div>
+      )}
 
       {view === "settings" ? (
         <div className="settings">
@@ -1264,44 +1313,65 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                 source={s}
               />
             ))}
-            <div className="dim">소스는 devbox 공용 루트의 읽기 전용 snapshot을 통해 읽습니다(다른 앱의 DB를 직접 읽지 않음).</div>
+            <div className="dim">
+              소스는 devbox 공용 루트의 읽기 전용 snapshot을 통해 읽습니다(다른 앱의 DB를 직접 읽지 않음).
+            </div>
           </section>
 
           <section className="panel" aria-label="Knowledge 초안 handoff 기록">
             <div className="panel-heading-row">
               <div>
                 <h2>Knowledge handoff 기록</h2>
-                <div className="dim">상태와 집계 요약/소스 참조만 보존합니다. 활동 원문·경로·자격 증명은 저장하지 않습니다.</div>
+                <div className="dim">
+                  상태와 집계 요약/소스 참조만 보존합니다. 활동 원문·경로·자격 증명은 저장하지 않습니다.
+                </div>
               </div>
-              <button className="btn small" type="button" onClick={() => void refreshDraftHistory()} disabled={contextActionBusy}>새로 고침</button>
+              <button
+                className="btn small"
+                type="button"
+                onClick={() => void refreshDraftHistory()}
+                disabled={contextActionBusy}
+              >
+                새로 고침
+              </button>
             </div>
             {draftHistory.length === 0 ? (
               <div className="dim">아직 보낸 초안이 없습니다.</div>
-            ) : draftHistory.map((entry) => (
-              <div className="handoff-history-row" key={entry.handoffId}>
-                <div className="handoff-history-main">
-                  <span className={`handoff-status handoff-status-${entry.status}`}>{entry.status}</span>
-                  <strong>{entry.summary.startDate} ~ {entry.summary.endDate}</strong>
-                  <span className="dim">{entry.summary.period} · {entry.summary.timezone}</span>
-                  <span className="dim">세션 {entry.summary.sessionCount}개 · {fmtDuration(entry.summary.pcUsageMs)} · 커밋 {entry.summary.gitCommits}개</span>
-                </div>
-                <div className="handoff-history-sources">
-                  {entry.sources.map((source) => (
-                    <span key={source.id} className={source.available ? "source-ok" : "source-error"}>
-                      {source.id} · {digestSourceScope(source.scope)}{source.errorCode ? ` · ${source.errorCode}` : ""}
+            ) : (
+              draftHistory.map((entry) => (
+                <div className="handoff-history-row" key={entry.handoffId}>
+                  <div className="handoff-history-main">
+                    <span className={`handoff-status handoff-status-${entry.status}`}>{entry.status}</span>
+                    <strong>
+                      {entry.summary.startDate} ~ {entry.summary.endDate}
+                    </strong>
+                    <span className="dim">
+                      {entry.summary.period} · {entry.summary.timezone}
                     </span>
-                  ))}
+                    <span className="dim">
+                      세션 {entry.summary.sessionCount}개 · {fmtDuration(entry.summary.pcUsageMs)} · 커밋{" "}
+                      {entry.summary.gitCommits}개
+                    </span>
+                  </div>
+                  <div className="handoff-history-sources">
+                    {entry.sources.map((source) => (
+                      <span key={source.id} className={source.available ? "source-ok" : "source-error"}>
+                        {source.id} · {digestSourceScope(source.scope)}
+                        {source.errorCode ? ` · ${source.errorCode}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    className="btn small"
+                    type="button"
+                    onClick={() => void regenerateDraft(entry)}
+                    disabled={!isTauri() || !digest || contextActionBusy || loading}
+                  >
+                    다시 생성
+                  </button>
                 </div>
-                <button
-                  className="btn small"
-                  type="button"
-                  onClick={() => void regenerateDraft(entry)}
-                  disabled={!isTauri() || !digest || contextActionBusy || loading}
-                >
-                  다시 생성
-                </button>
-              </div>
-            ))}
+              ))
+            )}
           </section>
 
           <section className="panel">
@@ -1319,25 +1389,50 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                   )}
                 </div>
                 <div className="git-project-actions">
-                  <button className="mini" onClick={() => void checkProject(p)} disabled={projectProbePath !== null || projectSaving}>
+                  <button
+                    className="mini"
+                    onClick={() => void checkProject(p)}
+                    disabled={projectProbePath !== null || projectSaving}
+                  >
                     {projectProbePath === p ? "확인 중…" : "연결 확인"}
                   </button>
-                  <button className="mini" onClick={() => void removeProject(p)} disabled={projectSaving} aria-label={`${p} 제거`}>
+                  <button
+                    className="mini"
+                    onClick={() => void removeProject(p)}
+                    disabled={projectSaving}
+                    aria-label={`${p} 제거`}
+                  >
                     ✕
                   </button>
                 </div>
               </div>
             ))}
             <div className="row">
-              <input placeholder="C:\projects\devbox 또는 \\wsl$\Ubuntu\home\user\project" value={projectInput} onChange={(e) => setProjectInput(e.currentTarget.value)} onKeyDown={(e) => {
-                if (!isImeComposing(e) && e.key === "Enter") void addProject();
-              }} disabled={projectSaving} />
-              <button className="btn" onClick={() => void addProject()} disabled={projectSaving || !projectInput.trim()}>
+              <input
+                placeholder="C:\projects\devbox 또는 \\wsl$\Ubuntu\home\user\project"
+                value={projectInput}
+                onChange={(e) => setProjectInput(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (!isImeComposing(e) && e.key === "Enter") void addProject();
+                }}
+                disabled={projectSaving}
+              />
+              <button
+                className="btn"
+                onClick={() => void addProject()}
+                disabled={projectSaving || !projectInput.trim()}
+              >
                 {projectSaving ? "저장 중…" : "추가"}
               </button>
             </div>
-            <div className="dim">연결 확인은 중지된 WSL 배포판을 시작할 수 있습니다. 경로 저장만으로는 배포판을 시작하지 않습니다.</div>
-            <div className="dim">{lifecycleSettings ? "활동 수집을 켜면 세션이 기록됩니다. 수집 중지는 활동 화면에서 선택할 수 있습니다." : "활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다."}</div>
+            <div className="dim">
+              연결 확인은 중지된 WSL 배포판을 시작할 수 있습니다. 경로 저장만으로는 배포판을 시작하지 않습니다.
+            </div>
+            <div className="dim">
+              {lifecycleSettings
+                ? "활동 수집을 켜면 세션이 기록됩니다. 수집 중지는 활동 화면에서 선택할 수 있습니다."
+                : "활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다."}
+            </div>
           </section>
 
           <section className="panel">
@@ -1387,7 +1482,14 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
             )}
           </section>
 
-          <PrivacyRulesPanel initial={privacy} healthy={privacyHealthy} onSaved={(rules) => { setPrivacy(rules); setPrivacyHealthy(true); }} />
+          <PrivacyRulesPanel
+            initial={privacy}
+            healthy={privacyHealthy}
+            onSaved={(rules) => {
+              setPrivacy(rules);
+              setPrivacyHealthy(true);
+            }}
+          />
         </div>
       ) : view === "timeline" ? (
         <div className="timeline">
@@ -1415,7 +1517,10 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                 <div key={a.app} className="stat-row">
                   <span className="stat-app">{shortApp(a.app)}</span>
                   <div className="stat-bar">
-                    <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / maxStatDuration) * 100)}%` }} />
+                    <div
+                      className="stat-fill"
+                      style={{ width: `${Math.min(100, (a.duration_ms / maxStatDuration) * 100)}%` }}
+                    />
                   </div>
                   <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
                   <span className="dim">세션 {a.sessions}개</span>
@@ -1439,7 +1544,9 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                 </div>
                 <div className="card">
                   <div className="card-label">가장 활발한 앱</div>
-                  <div className="card-value">{topApp ? shortApp(topApp.app) : summary.app_totals[0] ? shortApp(summary.app_totals[0].app) : "-"}</div>
+                  <div className="card-value">
+                    {topApp ? shortApp(topApp.app) : summary.app_totals[0] ? shortApp(summary.app_totals[0].app) : "-"}
+                  </div>
                 </div>
               </div>
 
@@ -1447,7 +1554,9 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                 <section className="panel digest-panel" aria-busy={loading || contextActionBusy}>
                   <div className="digest-heading">
                     <div>
-                      <h2>{view === "day" ? "일간 로컬 요약" : view === "month" ? "월간 로컬 요약" : "주간 로컬 요약"}</h2>
+                      <h2>
+                        {view === "day" ? "일간 로컬 요약" : view === "month" ? "월간 로컬 요약" : "주간 로컬 요약"}
+                      </h2>
                       <p className="dim">결정론적 규칙으로만 계산하며 네트워크·AI·외부 전송을 사용하지 않습니다.</p>
                     </div>
                     <div className="digest-actions">
@@ -1500,14 +1609,20 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                             disabled={contextActionBusy || loading}
                           >
                             <option value="">모든 애플리케이션</option>
-                            {digestAppOptions.map((app) => <option key={app} value={app}>{shortApp(app)}</option>)}
+                            {digestAppOptions.map((app) => (
+                              <option key={app} value={app}>
+                                {shortApp(app)}
+                              </option>
+                            ))}
                           </select>
                         </label>
                         <span className="dim scope-note" role="status" aria-live="polite">
                           {digest.origin === "browser-preview"
                             ? "브라우저 미리보기만 사용 · 네이티브 로컬 데이터 사용 불가 · "
                             : "네이티브 로컬 요약 · "}
-                          {digest.document.range.startDate} ~ {digest.document.range.endDate} · {digest.document.range.timezone} · Git 커밋은 요청한 전체 기간을 사용하며 이 앱 필터를 무시합니다.
+                          {digest.document.range.startDate} ~ {digest.document.range.endDate} ·{" "}
+                          {digest.document.range.timezone} · Git 커밋은 요청한 전체 기간을 사용하며 이 앱 필터를
+                          무시합니다.
                         </span>
                       </div>
                       {digestActivitySourceNotice(digest.document) && (
@@ -1522,7 +1637,9 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                         </div>
                         <div className="card">
                           <div className="card-label">활동일</div>
-                          <div className="card-value">{digest.document.summary.activeDays}/{digest.document.summary.totalDays}</div>
+                          <div className="card-value">
+                            {digest.document.summary.activeDays}/{digest.document.summary.totalDays}
+                          </div>
                         </div>
                         <div className="card">
                           <div className="card-label">세션</div>
@@ -1535,12 +1652,17 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                         <div className="card activity-card" data-testid="run-summary">
                           <div className="card-label">Run Manager · 기간 전체</div>
                           <div className="card-value">{formatRunSummary(digest.document.summary.run)}</div>
-                          <div className="dim">마지막 실행 {formatNullableTimestamp(digest.document.summary.run?.lastRunAtMs ?? null)}</div>
+                          <div className="dim">
+                            마지막 실행 {formatNullableTimestamp(digest.document.summary.run?.lastRunAtMs ?? null)}
+                          </div>
                         </div>
                         <div className="card activity-card" data-testid="knowledge-summary">
                           <div className="card-label">Knowledge 노트 · 기간 전체</div>
                           <div className="card-value">{formatKnowledgeSummary(digest.document.summary.knowledge)}</div>
-                          <div className="dim">마지막 수정 {formatNullableTimestamp(digest.document.summary.knowledge?.lastModifiedAtMs ?? null)}</div>
+                          <div className="dim">
+                            마지막 수정{" "}
+                            {formatNullableTimestamp(digest.document.summary.knowledge?.lastModifiedAtMs ?? null)}
+                          </div>
                         </div>
                       </div>
                       <p className="digest-headline">{digest.document.headline}</p>
@@ -1552,7 +1674,9 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                           <div key={day.date} className={`digest-day ${day.hasActivity ? "" : "empty-day"}`}>
                             <span className="mono">{day.date}</span>
                             <span>{fmtDuration(day.pcUsageMs)}</span>
-                            <span className="dim">세션 {day.sessionCount}개 · 커밋 {day.gitCommits}개</span>
+                            <span className="dim">
+                              세션 {day.sessionCount}개 · 커밋 {day.gitCommits}개
+                            </span>
                             <span className="dim">{day.topApp ? shortApp(day.topApp) : "-"}</span>
                             <span className="dim daily-activity">{formatDailyActivity(day)}</span>
                           </div>
@@ -1562,18 +1686,31 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                         <summary>소스와 집계 규칙</summary>
                         <div className="digest-source-list">
                           {digest.document.sources.map((source) => (
-                            <div key={`${digestSourceId(source.id)}:${digestSourceScope(source.scope)}`} className="git-row">
+                            <div
+                              key={`${digestSourceId(source.id)}:${digestSourceScope(source.scope)}`}
+                              className="git-row"
+                            >
                               <span className="mono">{digestSourceId(source.id)}</span>
                               <span className="source-details">
                                 <span className={source.available ? "source-ok" : "source-error"}>
-                                  {source.available ? "사용 가능" : source.errorCode === "browser_preview_only" ? "브라우저 미리보기만" : "사용 불가"}
+                                  {source.available
+                                    ? "사용 가능"
+                                    : source.errorCode === "browser_preview_only"
+                                      ? "브라우저 미리보기만"
+                                      : "사용 불가"}
                                   {` · ${digestSourceScope(source.scope)}`}
                                 </span>
-                                <span className={`freshness-badge freshness-${sourceFreshnessState(source.freshnessMs, source.available, source.errorCode)}`}>
-                                  {sourceFreshnessLabel(sourceFreshnessState(source.freshnessMs, source.available, source.errorCode))}
+                                <span
+                                  className={`freshness-badge freshness-${sourceFreshnessState(source.freshnessMs, source.available, source.errorCode)}`}
+                                >
+                                  {sourceFreshnessLabel(
+                                    sourceFreshnessState(source.freshnessMs, source.available, source.errorCode),
+                                  )}
                                 </span>
                                 <span className="source-explanation">{digestSourceExplanation(source)}</span>
-                                {source.errorCode && <span className="source-error">오류 코드: {source.errorCode}</span>}
+                                {source.errorCode && (
+                                  <span className="source-error">오류 코드: {source.errorCode}</span>
+                                )}
                                 {digestSourceDetails(source) && (
                                   <span className="dim">{digestSourceDetails(source)}</span>
                                 )}
@@ -1583,7 +1720,10 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                         </div>
                         <div className="digest-rules">
                           {Object.entries(digest.document.rules).map(([name, rule]) => (
-                            <div key={name} className="digest-rule"><span>{name}</span><span className="dim">{rule}</span></div>
+                            <div key={name} className="digest-rule">
+                              <span>{name}</span>
+                              <span className="dim">{rule}</span>
+                            </div>
                           ))}
                         </div>
                       </details>
@@ -1612,12 +1752,17 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                           aria-current={pointDateStr === dateStr ? "date" : undefined}
                           aria-roledescription="일별 사용량"
                           tabIndex={pointDateStr === dateStr ? 0 : -1}
-                          ref={(element) => { dailyChartRefs.current[index] = element; }}
+                          ref={(element) => {
+                            dailyChartRefs.current[index] = element;
+                          }}
                           onKeyDown={(event) => onDailyChartKeyDown(event, index, range.daily)}
                           onClick={() => selectDate(pointDate)}
                           {...dateContextMenu.triggerProps}
                         >
-                          <div className="daily-bar" style={{ height: `${Math.max(2, (p.pc_usage_ms / maxDaily) * 100)}%` }} />
+                          <div
+                            className="daily-bar"
+                            style={{ height: `${Math.max(2, (p.pc_usage_ms / maxDaily) * 100)}%` }}
+                          />
                           <div className="daily-label">{fmtDay(p.day_ms)}</div>
                         </button>
                       );
@@ -1634,7 +1779,10 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                     <div key={a.app} className="stat-row">
                       <span className="stat-app">{shortApp(a.app)}</span>
                       <div className="stat-bar">
-                        <div className="stat-fill" style={{ width: `${Math.min(100, (a.duration_ms / maxSummaryDuration) * 100)}%` }} />
+                        <div
+                          className="stat-fill"
+                          style={{ width: `${Math.min(100, (a.duration_ms / maxSummaryDuration) * 100)}%` }}
+                        />
                       </div>
                       <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
                     </div>
@@ -1647,28 +1795,46 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                   <h2>프로젝트 귀속 · 모든 애플리케이션</h2>
                   {attribution.attributed.map((a) => (
                     <div key={a.projectId} className="git-row">
-                      <span className="mono dim">{a.projectId}{a.projectAssociation && <small> · {projectAssociationLabel(a.projectAssociation)}</small>}</span>
-                      <span className="git-count">세션 {a.sessions}개 · {fmtDuration(a.durationMs)}</span>
+                      <span className="mono dim">
+                        {a.projectId}
+                        {a.projectAssociation && <small> · {projectAssociationLabel(a.projectAssociation)}</small>}
+                      </span>
+                      <span className="git-count">
+                        세션 {a.sessions}개 · {fmtDuration(a.durationMs)}
+                      </span>
                     </div>
                   ))}
                   {attribution.unattributed.sessions > 0 && (
                     <div className="git-row">
                       <span className="dim">미귀속</span>
-                      <span className="git-count">세션 {attribution.unattributed.sessions}개 · {fmtDuration(attribution.unattributed.durationMs)}</span>
+                      <span className="git-count">
+                        세션 {attribution.unattributed.sessions}개 · {fmtDuration(attribution.unattributed.durationMs)}
+                      </span>
                     </div>
                   )}
-                  <div className="dim">귀속은 창 제목의 프로젝트 이름 매치 기준이며 애플리케이션 필터와 독립적입니다(가장 긴 이름 우선, 중복 집계 없음).</div>
+                  <div className="dim">
+                    귀속은 창 제목의 프로젝트 이름 매치 기준이며 애플리케이션 필터와 독립적입니다(가장 긴 이름 우선,
+                    중복 집계 없음).
+                  </div>
                 </section>
               )}
 
               {summary.git.projects.length > 0 && (
                 <section className="panel">
                   <h2>Git</h2>
-                  <p className="dim">같은 저장소의 동일 커밋은 한 번만 집계하며, 경로 순서상 첫 프로젝트에 귀속합니다. 조회하지 못한 프로젝트는 합계에서 제외합니다.</p>
+                  <p className="dim">
+                    같은 저장소의 동일 커밋은 한 번만 집계하며, 경로 순서상 첫 프로젝트에 귀속합니다. 조회하지 못한
+                    프로젝트는 합계에서 제외합니다.
+                  </p>
                   {summary.git.projects.map((p) => (
                     <div key={p.path} className="git-row">
-                      <span className="mono dim">{p.path}{p.projectAssociation && <small> · {projectAssociationLabel(p.projectAssociation)}</small>}</span>
-                      <span className="git-count">{p.error_code ? "조회할 수 없음 · 경로와 Git 연결 확인" : `커밋 ${p.commits}개`}</span>
+                      <span className="mono dim">
+                        {p.path}
+                        {p.projectAssociation && <small> · {projectAssociationLabel(p.projectAssociation)}</small>}
+                      </span>
+                      <span className="git-count">
+                        {p.error_code ? "조회할 수 없음 · 경로와 Git 연결 확인" : `커밋 ${p.commits}개`}
+                      </span>
                     </div>
                   ))}
                 </section>
@@ -1698,15 +1864,33 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
             <div className="export-fields">
               <label htmlFor="life-log-export-start">
                 시작 날짜
-                <input id="life-log-export-start" ref={exportFirstFieldRef} type="date" value={exportStartDate} onChange={(event) => setExportStartDate(event.currentTarget.value)} disabled={contextActionBusy} />
+                <input
+                  id="life-log-export-start"
+                  ref={exportFirstFieldRef}
+                  type="date"
+                  value={exportStartDate}
+                  onChange={(event) => setExportStartDate(event.currentTarget.value)}
+                  disabled={contextActionBusy}
+                />
               </label>
               <label htmlFor="life-log-export-end">
                 종료 날짜
-                <input id="life-log-export-end" type="date" value={exportEndDate} onChange={(event) => setExportEndDate(event.currentTarget.value)} disabled={contextActionBusy} />
+                <input
+                  id="life-log-export-end"
+                  type="date"
+                  value={exportEndDate}
+                  onChange={(event) => setExportEndDate(event.currentTarget.value)}
+                  disabled={contextActionBusy}
+                />
               </label>
               <label htmlFor="life-log-export-format">
                 형식
-                <select id="life-log-export-format" value={exportFormat} onChange={(event) => setExportFormat(event.currentTarget.value as ExportFormat)} disabled={contextActionBusy}>
+                <select
+                  id="life-log-export-format"
+                  value={exportFormat}
+                  onChange={(event) => setExportFormat(event.currentTarget.value as ExportFormat)}
+                  disabled={contextActionBusy}
+                >
                   <option value="markdown">Markdown</option>
                   <option value="json">JSON</option>
                   <option value="csv">CSV</option>
@@ -1714,8 +1898,20 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
               </label>
             </div>
             <div className="export-actions">
-              <button type="button" className="btn" onClick={() => setExportDialogOpen(false)} disabled={contextActionBusy}>취소</button>
-              <button type="button" className="btn active" onClick={() => void submitRangeExport()} disabled={contextActionBusy}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setExportDialogOpen(false)}
+                disabled={contextActionBusy}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn active"
+                onClick={() => void submitRangeExport()}
+                disabled={contextActionBusy}
+              >
                 {contextActionBusy ? "내보내는 중…" : isTauri() ? "저장" : "미리보기 다운로드"}
               </button>
             </div>

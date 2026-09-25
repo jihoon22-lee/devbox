@@ -121,7 +121,11 @@ afterEach(() => cleanup());
 describe("CleanupPanel", () => {
   it("ignores duplicate preview requests while the native read is busy", async () => {
     let resolvePreview: ((value: CleanupPreview) => void) | undefined;
-    repoCleanupPreviewMock.mockReturnValueOnce(new Promise((resolve) => { resolvePreview = resolve; }));
+    repoCleanupPreviewMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
     render(<CleanupPanel repo={repo} />);
     const inspect = screen.getByRole("button", { name: "정리 후보 검사" });
     fireEvent.click(inspect);
@@ -133,9 +137,11 @@ describe("CleanupPanel", () => {
 
   it("cancels an in-flight preview and does not publish its late result", async () => {
     let resolvePreview: ((value: CleanupPreview) => void) | undefined;
-    repoCleanupPreviewMock.mockReturnValueOnce(new Promise((resolve) => {
-      resolvePreview = resolve;
-    }));
+    repoCleanupPreviewMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
     render(<CleanupPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "정리 후보 검사" }));
     expect(repoCleanupPreviewMock).toHaveBeenCalledWith(repo.path, expect.stringMatching(/^[A-Za-z0-9._-]+$/u));
@@ -153,8 +159,10 @@ describe("CleanupPanel", () => {
     await screen.findByText("현재 branch에 이미 병합됨");
 
     expect(screen.getByRole("checkbox", { name: "branch main" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("checkbox", { name: "worktree C:\\projects\\sample-linked" }))
-      .toHaveProperty("disabled", true);
+    expect(screen.getByRole("checkbox", { name: "worktree C:\\projects\\sample-linked" })).toHaveProperty(
+      "disabled",
+      true,
+    );
     expect(screen.getByText(/dirty 파일이 있어 차단됨|커밋되지 않은 변경이 있어 차단됨/)).toBeTruthy();
     expect(screen.getByText("worktree 후보 0개")).toBeTruthy();
   });
@@ -171,13 +179,15 @@ describe("CleanupPanel", () => {
     expect(screen.getByText("branch merged-candidate")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "정리 실행" }));
-    await waitFor(() => expect(repoCleanupMock).toHaveBeenCalledWith(
-      repo.path,
-      ["merged-candidate"],
-      [],
-      preview.revision,
-      expect.stringMatching(/^[A-Za-z0-9._-]+$/u),
-    ));
+    await waitFor(() =>
+      expect(repoCleanupMock).toHaveBeenCalledWith(
+        repo.path,
+        ["merged-candidate"],
+        [],
+        preview.revision,
+        expect.stringMatching(/^[A-Za-z0-9._-]+$/u),
+      ),
+    );
     expect(await screen.findByText("정리 결과")).toBeTruthy();
     expect(screen.getByText("branch merged-candidate")).toBeTruthy();
     expect(document.body.textContent).not.toContain("credential");
@@ -194,7 +204,11 @@ describe("CleanupPanel", () => {
 
   it("cancels an in-flight cleanup and ignores a stale result after unmount", async () => {
     let resolveCleanup: ((value: Awaited<ReturnType<typeof repoCleanup>>) => void) | undefined;
-    repoCleanupMock.mockReturnValueOnce(new Promise((resolve) => { resolveCleanup = resolve; }));
+    repoCleanupMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCleanup = resolve;
+      }),
+    );
     const view = render(<CleanupPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "정리 후보 검사" }));
     await screen.findByRole("checkbox", { name: "branch merged-candidate" });

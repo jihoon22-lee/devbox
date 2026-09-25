@@ -1,12 +1,4 @@
-import {
-  cleanup,
-  createEvent,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, {
@@ -156,9 +148,7 @@ function openRowMenu(processName: string): HTMLTableRowElement {
 }
 
 beforeEach(() => {
-  listPortObservationsMock
-    .mockReset()
-    .mockResolvedValue(observation([LISTENING_ROW, ESTABLISHED_ROW]));
+  listPortObservationsMock.mockReset().mockResolvedValue(observation([LISTENING_ROW, ESTABLISHED_ROW]));
   loadPreferencesMock.mockReset().mockResolvedValue({
     ...DEFAULT_PREFERENCES,
     favorite_ports: [],
@@ -307,9 +297,11 @@ describe("refresh diff and favorite boundaries", () => {
       identity: { kind: "windows" as const, pid: 6789, start_time: "300" },
     };
     expect(diffPortRows(null, [LISTENING_ROW])).toEqual([]);
-    expect(
-      diffPortRows([LISTENING_ROW, ESTABLISHED_ROW], [changed, added]).map((item) => item.kind),
-    ).toEqual(["opened", "closed", "changed"]);
+    expect(diffPortRows([LISTENING_ROW, ESTABLISHED_ROW], [changed, added]).map((item) => item.kind)).toEqual([
+      "opened",
+      "closed",
+      "changed",
+    ]);
     const changedDiff = diffPortRows([LISTENING_ROW], [changed]);
     expect(changedDiff[0]?.before?.identity).toEqual(LISTENING_ROW.identity);
     expect(changedDiff[0]?.after?.state).toBe("BOUND");
@@ -356,11 +348,17 @@ describe("refresh diff and favorite boundaries", () => {
       command_line: "node server.js --token private",
       executable_path: "C:\\private\\node.exe",
     };
-    const [event] = appendRefreshTimeline([], [{
-      kind: "opened",
-      key: "listener",
-      after: sensitive,
-    }], 1_725_000_000_000);
+    const [event] = appendRefreshTimeline(
+      [],
+      [
+        {
+          kind: "opened",
+          key: "listener",
+          after: sensitive,
+        },
+      ],
+      1_725_000_000_000,
+    );
 
     expect(event?.after).toEqual({
       local_addr: LISTENING_ROW.local_addr,
@@ -397,10 +395,7 @@ describe("refresh diff and favorite boundaries", () => {
     const nextMoved = { ...LISTENING_ROW, local_addr: "127.0.0.1:2000", port: 2000, identity };
     const nextExact = { ...previousExact, identity };
 
-    const changes = diffPortRows(
-      [previousExact, previousMoved],
-      [nextMoved, nextExact],
-    );
+    const changes = diffPortRows([previousExact, previousMoved], [nextMoved, nextExact]);
 
     expect(changes).toHaveLength(1);
     expect(changes[0]?.kind).toBe("changed");
@@ -439,9 +434,7 @@ describe("refresh diff and favorite boundaries", () => {
   it("keeps port and process favorites independent and combines them for pinned filtering", () => {
     const preferences = {
       ...DEFAULT_PREFERENCES,
-      favorite_ports: [
-        { source: "windows" as const, proto: "TCP", local_addr: "127.0.0.1:3000", port: 3000 },
-      ],
+      favorite_ports: [{ source: "windows" as const, proto: "TCP", local_addr: "127.0.0.1:3000", port: 3000 }],
       favorite_processes: [],
     };
     expect(isPortFavorite(LISTENING_ROW, preferences.favorite_ports)).toBe(true);
@@ -471,9 +464,7 @@ describe("port context menu", () => {
     ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
-    expect(
-      screen.getByRole("menuitem", { name: "localhost 열기" }).getAttribute("aria-disabled"),
-    ).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "localhost 열기" }).getAttribute("aria-disabled")).toBe("true");
     await waitFor(() => expect(getProcessInfoMock).toHaveBeenCalledWith(4321));
   });
 
@@ -500,9 +491,7 @@ describe("port context menu", () => {
     const copyPath = screen.getByRole("menuitem", { name: "프로세스 경로 복사" });
     await waitFor(() => expect(copyPath.getAttribute("aria-disabled")).toBeNull());
     fireEvent.click(copyPath);
-    await waitFor(() =>
-      expect(writeTextMock).toHaveBeenCalledWith("C:\\Program Files\\nodejs\\node.exe"),
-    );
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("C:\\Program Files\\nodejs\\node.exe"));
 
     openRowMenu("node.exe");
     const reveal = screen.getByRole("menuitem", { name: "탐색기에서 보기" });
@@ -518,12 +507,8 @@ describe("port context menu", () => {
     openRowMenu("node.exe");
 
     await waitFor(() => expect(getProcessInfoMock).toHaveBeenCalledWith(1234));
-    expect(
-      screen.getByRole("menuitem", { name: "프로세스 경로 복사" }).getAttribute("aria-disabled"),
-    ).toBe("true");
-    expect(
-      screen.getByRole("menuitem", { name: "탐색기에서 보기" }).getAttribute("aria-disabled"),
-    ).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "프로세스 경로 복사" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "탐색기에서 보기" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("requires confirmation before Kill and refreshes only after an accepted kill", async () => {
@@ -539,9 +524,7 @@ describe("port context menu", () => {
     openRowMenu("node.exe");
     fireEvent.click(screen.getByRole("menuitem", { name: "리스너 종료" }));
 
-    await waitFor(() =>
-      expect(killListenerMock).toHaveBeenCalledWith(listenerKillRequest(LISTENING_ROW)),
-    );
+    await waitFor(() => expect(killListenerMock).toHaveBeenCalledWith(listenerKillRequest(LISTENING_ROW)));
     await waitFor(() => expect(listPortObservationsMock).toHaveBeenCalledTimes(2));
   });
 
@@ -571,10 +554,13 @@ describe("observations and correlation actions", () => {
 
   it("keeps listener actions available when one correlation producer is unhealthy", async () => {
     listPortObservationsMock.mockReset().mockResolvedValue(
-      observation([LISTENING_ROW], [
-        { producer: "run-manager", state: "available", freshness_ms: 12 },
-        { producer: "workbench", state: "invalid", freshness_ms: null },
-      ]),
+      observation(
+        [LISTENING_ROW],
+        [
+          { producer: "run-manager", state: "available", freshness_ms: 12 },
+          { producer: "workbench", state: "invalid", freshness_ms: null },
+        ],
+      ),
     );
     render(<App />);
     await screen.findByText("node.exe");
@@ -582,9 +568,7 @@ describe("observations and correlation actions", () => {
     expect(screen.getByText("스냅샷 안정")).toBeTruthy();
     expect(screen.getByRole("region", { name: "연결 출처 상태" })).toBeTruthy();
     expect(screen.getByText("invalid")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "리스너 종료" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect((screen.getByRole("button", { name: "리스너 종료" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("renders owner confidence and gates Log Lens buttons on logs_available", async () => {
@@ -598,9 +582,7 @@ describe("observations and correlation actions", () => {
       identity: { kind: "windows", pid: 5678, start_time: "300" },
       correlations: [WORKBENCH_CORRELATION],
     };
-    listPortObservationsMock.mockReset().mockResolvedValue(
-      observation([LISTENING_ROW, workbenchRow]),
-    );
+    listPortObservationsMock.mockReset().mockResolvedValue(observation([LISTENING_ROW, workbenchRow]));
     render(<App />);
     await screen.findByText("node.exe");
     fireEvent.click(renderedRow("node.exe"));
@@ -615,23 +597,15 @@ describe("observations and correlation actions", () => {
     fireEvent.click(within(details).getByRole("button", { name: /API task 소유자 열기/ }));
     await waitFor(() => expect(openPortOwnerMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key));
     fireEvent.click(within(details).getByRole("button", { name: /Log Lens에서 API task stdout 열기/ }));
-    await waitFor(() =>
-      expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stdout"),
-    );
+    await waitFor(() => expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stdout"));
     fireEvent.click(within(details).getByRole("button", { name: /Log Lens에서 API task stderr 열기/ }));
-    await waitFor(() =>
-      expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stderr"),
-    );
+    await waitFor(() => expect(openPortLogMock).toHaveBeenCalledWith(RUN_CORRELATION.action_key, "stderr"));
 
     fireEvent.click(renderedRow("vite.exe"));
     const workbenchDetails = screen.getByRole("complementary", { name: "리스너 세부 정보" });
     expect(within(workbenchDetails).getByText("Web profile")).toBeTruthy();
-    expect(
-      within(workbenchDetails).queryByRole("button", { name: /Log Lens에서 Web profile stdout 열기/ }),
-    ).toBeNull();
-    expect(
-      within(workbenchDetails).queryByRole("button", { name: /Log Lens에서 Web profile stderr 열기/ }),
-    ).toBeNull();
+    expect(within(workbenchDetails).queryByRole("button", { name: /Log Lens에서 Web profile stdout 열기/ })).toBeNull();
+    expect(within(workbenchDetails).queryByRole("button", { name: /Log Lens에서 Web profile stderr 열기/ })).toBeNull();
   });
 
   it("uses the fixed error message when a correlation action fails", async () => {
@@ -787,7 +761,7 @@ describe("identity-safe listener UI boundaries", () => {
           new Promise<PortObservationSnapshot>((resolve) => {
             resolvePoll = resolve;
           }),
-    );
+      );
     render(<App />);
     await screen.findByText("node.exe");
     fireEvent.click(screen.getByRole("button", { name: "일시 중지" }));
@@ -826,7 +800,8 @@ describe("identity-safe listener UI boundaries", () => {
 
   it("reports unavailable WSL observation without inventing closed or reopened listeners", async () => {
     const wsl = { ...LISTENING_ROW, source: "wsl" as const, wsl_distro: "Ubuntu", process_name: "owned-wsl" };
-    listPortObservationsMock.mockReset()
+    listPortObservationsMock
+      .mockReset()
       .mockResolvedValueOnce(observation([LISTENING_ROW, wsl]))
       .mockResolvedValueOnce({ ...observation([LISTENING_ROW]), unavailable_wsl: ["Ubuntu"] })
       .mockResolvedValueOnce(observation([LISTENING_ROW, wsl]));
@@ -871,9 +846,7 @@ describe("identity-safe listener UI boundaries", () => {
       target: { value: "10000" },
     });
     await waitFor(() =>
-      expect(savePreferencesMock).toHaveBeenCalledWith(
-        expect.objectContaining({ refresh_interval_ms: 10_000 }),
-      ),
+      expect(savePreferencesMock).toHaveBeenCalledWith(expect.objectContaining({ refresh_interval_ms: 10_000 })),
     );
 
     const listeningRow = renderedRow("node.exe");
@@ -881,9 +854,7 @@ describe("identity-safe listener UI boundaries", () => {
     await waitFor(() =>
       expect(savePreferencesMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          favorite_ports: [
-            expect.objectContaining({ local_addr: LISTENING_ROW.local_addr, port: 3000 }),
-          ],
+          favorite_ports: [expect.objectContaining({ local_addr: LISTENING_ROW.local_addr, port: 3000 })],
         }),
       ),
     );
@@ -942,8 +913,8 @@ describe("identity-safe listener UI boundaries", () => {
 
 it("selects an exact Problem port without terminating a process", async () => {
   const consumed = vi.fn();
-  render(<App openPort={{id:"synthetic-problem-port",port:3000}} onPortConsumed={consumed}/>);
-  await waitFor(()=>expect(consumed).toHaveBeenCalledWith("synthetic-problem-port"));
+  render(<App openPort={{ id: "synthetic-problem-port", port: 3000 }} onPortConsumed={consumed} />);
+  await waitFor(() => expect(consumed).toHaveBeenCalledWith("synthetic-problem-port"));
   await screen.findByText("node.exe");
   expect(screen.queryByText("browser.exe")).toBeNull();
   expect(screen.getAllByRole("row")).toHaveLength(2);

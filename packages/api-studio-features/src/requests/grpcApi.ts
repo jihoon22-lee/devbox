@@ -35,13 +35,15 @@ export interface GrpcMethodProjection {
 
 export interface GrpcConnectProfile {
   endpoint: string;
-  source: {
-    kind: "local-proto";
-    protoSelectionId: string;
-    importRootSelectionId?: string;
-  } | {
-    kind: "reflection";
-  };
+  source:
+    | {
+        kind: "local-proto";
+        protoSelectionId: string;
+        importRootSelectionId?: string;
+      }
+    | {
+        kind: "reflection";
+      };
   tls: {
     rootMode: GrpcRootMode;
     serverName?: string;
@@ -94,18 +96,29 @@ export interface GrpcExchangeSummary {
   credentialUsed: boolean;
 }
 
-export type GrpcStatusName = typeof GRPC_STATUS_NAMES[number];
+export type GrpcStatusName = (typeof GRPC_STATUS_NAMES)[number];
 
 const GRPC_STATUS_NAMES = [
-  "OK", "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND",
-  "ALREADY_EXISTS", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION",
-  "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE", "DATA_LOSS",
+  "OK",
+  "CANCELLED",
+  "UNKNOWN",
+  "INVALID_ARGUMENT",
+  "DEADLINE_EXCEEDED",
+  "NOT_FOUND",
+  "ALREADY_EXISTS",
+  "PERMISSION_DENIED",
+  "RESOURCE_EXHAUSTED",
+  "FAILED_PRECONDITION",
+  "ABORTED",
+  "OUT_OF_RANGE",
+  "UNIMPLEMENTED",
+  "INTERNAL",
+  "UNAVAILABLE",
+  "DATA_LOSS",
   "UNAUTHENTICATED",
 ] as const;
 const STATUS_NAMES = new Set<string>(GRPC_STATUS_NAMES);
-const RPC_KINDS = new Set<string>([
-  "unary", "server-streaming", "client-streaming", "bidirectional-streaming",
-]);
+const RPC_KINDS = new Set<string>(["unary", "server-streaming", "client-streaming", "bidirectional-streaming"]);
 const ROOT_MODES = new Set<string>(["native", "custom", "native+custom"]);
 const SOURCE_KINDS = new Set<string>(["local-proto", "reflection-v1", "reflection-v1alpha"]);
 const TLS_MODES = new Set<string>(["plaintext", "native", "custom", "native+custom"]);
@@ -148,15 +161,11 @@ let requestSequence = 0;
 export function nextGrpcRequestId(): string {
   requestSequence = (requestSequence + 1) % Number.MAX_SAFE_INTEGER;
   const random = globalThis.crypto?.randomUUID?.().replace(/-/gu, "");
-  return random
-    ? `grpc-${random}`
-    : `grpc-${Date.now().toString(36)}-${requestSequence.toString(36)}`;
+  return random ? `grpc-${random}` : `grpc-${Date.now().toString(36)}-${requestSequence.toString(36)}`;
 }
 
 export function safeGrpcErrorCode(cause: unknown): string {
-  const message = typeof cause === "string"
-    ? cause
-    : cause instanceof Error ? cause.message : "";
+  const message = typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "";
   return SAFE_ERROR_CODES.has(message) ? message : "grpc_protocol_failed";
 }
 
@@ -180,19 +189,16 @@ export async function pickGrpcClientKey(): Promise<GrpcNativeSelection | null> {
   return pickSelection("pick_grpc_client_key", "client-key");
 }
 
-async function pickSelection(
-  command: string,
-  expected: GrpcSelectionKind,
-): Promise<GrpcNativeSelection | null> {
+async function pickSelection(command: string, expected: GrpcSelectionKind): Promise<GrpcNativeSelection | null> {
   requireNative();
   const value = await invoke<unknown>(command);
   if (value === null) return null;
   const record = asRecord(value, "grpc_source_selection_invalid");
   if (
-    !isOpaqueId(record.selectionId)
-    || record.kind !== expected
-    || !isSafeLabel(record.label)
-    || !boundedInteger(record.expiresAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
+    !isOpaqueId(record.selectionId) ||
+    record.kind !== expected ||
+    !isSafeLabel(record.label) ||
+    !boundedInteger(record.expiresAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
   ) {
     throw new Error("grpc_source_selection_invalid");
   }
@@ -214,21 +220,20 @@ export async function importGrpcTlsCredential(input: {
   if (!isSafeText(input.label, 256) || input.label.trim() !== input.label) {
     throw new Error("grpc_credential_invalid");
   }
-  const ids = [input.caSelectionId, input.clientCertificateSelectionId, input.clientKeySelectionId]
-    .filter((value): value is string => value !== undefined);
+  const ids = [input.caSelectionId, input.clientCertificateSelectionId, input.clientKeySelectionId].filter(
+    (value): value is string => value !== undefined,
+  );
   if (
-    ids.length === 0
-    || ids.some((value) => !OPAQUE_ID.test(value))
-    || Boolean(input.clientCertificateSelectionId) !== Boolean(input.clientKeySelectionId)
+    ids.length === 0 ||
+    ids.some((value) => !OPAQUE_ID.test(value)) ||
+    Boolean(input.clientCertificateSelectionId) !== Boolean(input.clientKeySelectionId)
   ) {
     throw new Error("grpc_credential_invalid");
   }
   const value = await invoke<unknown>("import_grpc_tls_credential", {
     label: input.label,
     ...(input.caSelectionId ? { caSelectionId: input.caSelectionId } : {}),
-    ...(input.clientCertificateSelectionId
-      ? { clientCertificateSelectionId: input.clientCertificateSelectionId }
-      : {}),
+    ...(input.clientCertificateSelectionId ? { clientCertificateSelectionId: input.clientCertificateSelectionId } : {}),
     ...(input.clientKeySelectionId ? { clientKeySelectionId: input.clientKeySelectionId } : {}),
   });
   return validateCredential(value);
@@ -242,8 +247,8 @@ export async function listGrpcTlsCredentials(): Promise<GrpcCredentialProjection
   }
   const credentials = value.map(validateCredential);
   if (
-    new Set(credentials.map((credential) => credential.credentialId)).size !== credentials.length
-    || new Set(credentials.map((credential) => credential.label)).size !== credentials.length
+    new Set(credentials.map((credential) => credential.credentialId)).size !== credentials.length ||
+    new Set(credentials.map((credential) => credential.label)).size !== credentials.length
   ) {
     throw new Error("grpc_credential_storage_failed");
   }
@@ -323,24 +328,23 @@ export async function exportGrpcSummary(summary: GrpcExchangeSummary): Promise<b
 
 function validateConnectProfile(profile: GrpcConnectProfile): void {
   if (
-    !isSafeText(profile.endpoint, 8 * 1024)
-    || !ROOT_MODES.has(profile.tls.rootMode)
-    || !Number.isInteger(profile.connectTimeoutMs)
-    || profile.connectTimeoutMs < 100
-    || profile.connectTimeoutMs > 30_000
-    || !Number.isInteger(profile.rpcTimeoutMs)
-    || profile.rpcTimeoutMs < 100
-    || profile.rpcTimeoutMs > 300_000
-    || (profile.tls.serverName !== undefined && !isSafeText(profile.tls.serverName, 253))
-    || (profile.tls.credentialId !== undefined && !OPAQUE_ID.test(profile.tls.credentialId))
+    !isSafeText(profile.endpoint, 8 * 1024) ||
+    !ROOT_MODES.has(profile.tls.rootMode) ||
+    !Number.isInteger(profile.connectTimeoutMs) ||
+    profile.connectTimeoutMs < 100 ||
+    profile.connectTimeoutMs > 30_000 ||
+    !Number.isInteger(profile.rpcTimeoutMs) ||
+    profile.rpcTimeoutMs < 100 ||
+    profile.rpcTimeoutMs > 300_000 ||
+    (profile.tls.serverName !== undefined && !isSafeText(profile.tls.serverName, 253)) ||
+    (profile.tls.credentialId !== undefined && !OPAQUE_ID.test(profile.tls.credentialId))
   ) {
     throw new Error("grpc_invalid_profile");
   }
   if (profile.source.kind === "local-proto") {
     if (
-      !OPAQUE_ID.test(profile.source.protoSelectionId)
-      || (profile.source.importRootSelectionId !== undefined
-        && !OPAQUE_ID.test(profile.source.importRootSelectionId))
+      !OPAQUE_ID.test(profile.source.protoSelectionId) ||
+      (profile.source.importRootSelectionId !== undefined && !OPAQUE_ID.test(profile.source.importRootSelectionId))
     ) {
       throw new Error("grpc_source_selection_invalid");
     }
@@ -356,24 +360,24 @@ function validateConnectResult(value: unknown): GrpcConnectResult {
   const sourceKind = String(source.kind);
   const tlsMode = String(tls.mode);
   if (
-    !isOpaqueId(record.connectionId)
-    || !isSafeName(record.authority)
-    || !SOURCE_KINDS.has(sourceKind)
-    || (source.label !== null && !isSafeLabel(source.label))
-    || ((sourceKind === "local-proto") !== (source.label !== null))
-    || !boundedInteger(source.descriptorFileCount, 1, 256)
-    || !boundedInteger(source.serviceCount, 1, 256)
-    || !TLS_MODES.has(tlsMode)
-    || typeof tls.encrypted !== "boolean"
-    || typeof tls.credentialUsed !== "boolean"
-    || typeof tls.serverNameOverridden !== "boolean"
-    || tls.encrypted !== (tlsMode !== "plaintext")
-    || (tlsMode === "plaintext" && (tls.credentialUsed || tls.serverNameOverridden))
-    || ((tlsMode === "custom" || tlsMode === "native+custom") && !tls.credentialUsed)
-    || !boundedInteger(record.rpcTimeoutMs, 100, 300_000)
-    || !Array.isArray(record.methods)
-    || record.methods.length === 0
-    || record.methods.length > 2_000
+    !isOpaqueId(record.connectionId) ||
+    !isSafeName(record.authority) ||
+    !SOURCE_KINDS.has(sourceKind) ||
+    (source.label !== null && !isSafeLabel(source.label)) ||
+    (sourceKind === "local-proto") !== (source.label !== null) ||
+    !boundedInteger(source.descriptorFileCount, 1, 256) ||
+    !boundedInteger(source.serviceCount, 1, 256) ||
+    !TLS_MODES.has(tlsMode) ||
+    typeof tls.encrypted !== "boolean" ||
+    typeof tls.credentialUsed !== "boolean" ||
+    typeof tls.serverNameOverridden !== "boolean" ||
+    tls.encrypted !== (tlsMode !== "plaintext") ||
+    (tlsMode === "plaintext" && (tls.credentialUsed || tls.serverNameOverridden)) ||
+    ((tlsMode === "custom" || tlsMode === "native+custom") && !tls.credentialUsed) ||
+    !boundedInteger(record.rpcTimeoutMs, 100, 300_000) ||
+    !Array.isArray(record.methods) ||
+    record.methods.length === 0 ||
+    record.methods.length > 2_000
   ) {
     throw new Error("grpc_protocol_failed");
   }
@@ -404,13 +408,13 @@ function validateConnectResult(value: unknown): GrpcConnectResult {
 function validateMethod(value: unknown): GrpcMethodProjection {
   const record = asRecord(value, "grpc_protocol_failed");
   if (
-    !isSafeName(record.service)
-    || !isSafeName(record.method)
-    || !isSafeName(record.fullName)
-    || record.fullName !== `${record.service}.${record.method}`
-    || !isSafeName(record.inputType)
-    || !isSafeName(record.outputType)
-    || !RPC_KINDS.has(String(record.rpcKind))
+    !isSafeName(record.service) ||
+    !isSafeName(record.method) ||
+    !isSafeName(record.fullName) ||
+    record.fullName !== `${record.service}.${record.method}` ||
+    !isSafeName(record.inputType) ||
+    !isSafeName(record.outputType) ||
+    !RPC_KINDS.has(String(record.rpcKind))
   ) {
     throw new Error("grpc_protocol_failed");
   }
@@ -429,16 +433,16 @@ function validateMethod(value: unknown): GrpcMethodProjection {
 function validateInvokeResult(value: unknown, expectedRequestCount: number): GrpcInvokeResult {
   const record = asRecord(value, "grpc_protocol_failed");
   if (
-    typeof record.ok !== "boolean"
-    || typeof record.status !== "string"
-    || !STATUS_NAMES.has(record.status)
-    || record.ok !== (record.status === "OK")
-    || !Array.isArray(record.responses)
-    || record.responses.length > 100
-    || record.requestMessageCount !== expectedRequestCount
-    || record.responseMessageCount !== record.responses.length
-    || !boundedInteger(record.startedAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
-    || !boundedInteger(record.elapsedMs, 0, Number.MAX_SAFE_INTEGER)
+    typeof record.ok !== "boolean" ||
+    typeof record.status !== "string" ||
+    !STATUS_NAMES.has(record.status) ||
+    record.ok !== (record.status === "OK") ||
+    !Array.isArray(record.responses) ||
+    record.responses.length > 100 ||
+    record.requestMessageCount !== expectedRequestCount ||
+    record.responseMessageCount !== record.responses.length ||
+    !boundedInteger(record.startedAtMs, 1, MAX_ECMASCRIPT_DATE_MS) ||
+    !boundedInteger(record.elapsedMs, 0, Number.MAX_SAFE_INTEGER)
   ) {
     throw new Error("grpc_protocol_failed");
   }
@@ -462,13 +466,13 @@ function validateInvokeResult(value: unknown, expectedRequestCount: number): Grp
 function validateCredential(value: unknown): GrpcCredentialProjection {
   const record = asRecord(value, "grpc_credential_storage_failed");
   if (
-    !isOpaqueId(record.credentialId)
-    || !isSafeText(record.label, 256)
-    || record.label.trim() !== record.label
-    || typeof record.hasCustomCa !== "boolean"
-    || typeof record.hasClientIdentity !== "boolean"
-    || (!record.hasCustomCa && !record.hasClientIdentity)
-    || !boundedInteger(record.createdAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
+    !isOpaqueId(record.credentialId) ||
+    !isSafeText(record.label, 256) ||
+    record.label.trim() !== record.label ||
+    typeof record.hasCustomCa !== "boolean" ||
+    typeof record.hasClientIdentity !== "boolean" ||
+    (!record.hasCustomCa && !record.hasClientIdentity) ||
+    !boundedInteger(record.createdAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
   ) {
     throw new Error("grpc_credential_storage_failed");
   }
@@ -505,24 +509,22 @@ function validateRawMessages(messages: string[]): void {
 }
 
 function validateSummary(summary: GrpcExchangeSummary): void {
-  const requestMultiple = summary.rpcKind === "client-streaming"
-    || summary.rpcKind === "bidirectional-streaming";
-  const responseMultiple = summary.rpcKind === "server-streaming"
-    || summary.rpcKind === "bidirectional-streaming";
+  const requestMultiple = summary.rpcKind === "client-streaming" || summary.rpcKind === "bidirectional-streaming";
+  const responseMultiple = summary.rpcKind === "server-streaming" || summary.rpcKind === "bidirectional-streaming";
   if (
-    !SOURCE_KINDS.has(summary.sourceKind)
-    || !isSafeName(summary.service)
-    || !isSafeName(summary.method)
-    || !RPC_KINDS.has(summary.rpcKind)
-    || !boundedInteger(summary.requestMessageCount, 1, requestMultiple ? 100 : 1)
-    || !boundedInteger(summary.responseMessageCount, 0, responseMultiple ? 100 : 1)
-    || (summary.status === "OK" && !responseMultiple && summary.responseMessageCount !== 1)
-    || !boundedInteger(summary.startedAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
-    || !boundedInteger(summary.elapsedMs, 0, Number.MAX_SAFE_INTEGER)
-    || !STATUS_NAMES.has(summary.status)
-    || !TLS_MODES.has(summary.tlsMode)
-    || typeof summary.credentialUsed !== "boolean"
-    || (summary.tlsMode === "plaintext" && summary.credentialUsed)
+    !SOURCE_KINDS.has(summary.sourceKind) ||
+    !isSafeName(summary.service) ||
+    !isSafeName(summary.method) ||
+    !RPC_KINDS.has(summary.rpcKind) ||
+    !boundedInteger(summary.requestMessageCount, 1, requestMultiple ? 100 : 1) ||
+    !boundedInteger(summary.responseMessageCount, 0, responseMultiple ? 100 : 1) ||
+    (summary.status === "OK" && !responseMultiple && summary.responseMessageCount !== 1) ||
+    !boundedInteger(summary.startedAtMs, 1, MAX_ECMASCRIPT_DATE_MS) ||
+    !boundedInteger(summary.elapsedMs, 0, Number.MAX_SAFE_INTEGER) ||
+    !STATUS_NAMES.has(summary.status) ||
+    !TLS_MODES.has(summary.tlsMode) ||
+    typeof summary.credentialUsed !== "boolean" ||
+    (summary.tlsMode === "plaintext" && summary.credentialUsed)
   ) {
     throw new Error("grpc_export_failed");
   }
@@ -549,10 +551,10 @@ function validateJson(value: unknown, byteLimit: number): number {
         visit(child, depth + 1);
       }
     } else if (
-      current !== null
-      && typeof current !== "string"
-      && typeof current !== "number"
-      && typeof current !== "boolean"
+      current !== null &&
+      typeof current !== "string" &&
+      typeof current !== "number" &&
+      typeof current !== "boolean"
     ) {
       throw new Error("grpc_protocol_failed");
     }
@@ -582,11 +584,7 @@ function isOpaqueId(value: unknown): value is string {
 }
 
 function isSafeLabel(value: unknown): value is string {
-  return isSafeText(value, 256)
-    && value !== "."
-    && value !== ".."
-    && !value.includes("/")
-    && !value.includes("\\");
+  return isSafeText(value, 256) && value !== "." && value !== ".." && !value.includes("/") && !value.includes("\\");
 }
 
 function isSafeName(value: unknown): value is string {
@@ -594,10 +592,7 @@ function isSafeName(value: unknown): value is string {
 }
 
 function isSafeText(value: unknown, maxBytes: number): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && utf8Bytes(value) <= maxBytes
-    && !hasControl(value);
+  return typeof value === "string" && value.length > 0 && utf8Bytes(value) <= maxBytes && !hasControl(value);
 }
 
 function hasControl(value: string): boolean {

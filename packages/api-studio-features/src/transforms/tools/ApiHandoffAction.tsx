@@ -6,17 +6,25 @@ import { useOutputSource } from "./outputPolicy";
 export const API_HANDOFF_MAX_CHARS = 256_000;
 export const API_HANDOFF_MAX_BYTES = 1_024_000;
 const API_HANDOFF_INPUT_ERROR = "API Playground로 전달할 텍스트가 유효하지 않습니다";
-const API_HANDOFF_CREATE_ERROR =
-  "API Playground 전달을 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
+const API_HANDOFF_CREATE_ERROR = "API Playground 전달을 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 const API_HANDOFF_BROWSER_ERROR =
   "API Playground 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 const API_HANDOFF_ERROR_DISPLAY = new Map<string, string>([
   [API_HANDOFF_INPUT_ERROR, API_HANDOFF_INPUT_ERROR],
   ["API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다", API_HANDOFF_CREATE_ERROR],
   [API_HANDOFF_CREATE_ERROR, API_HANDOFF_CREATE_ERROR],
-  ["API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다", "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다"],
-  ["API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다", "API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다"],
-  ["API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다", API_HANDOFF_BROWSER_ERROR],
+  [
+    "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
+    "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
+  ],
+  [
+    "API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다",
+    "API Playground를 실행하지 못했습니다. 전달 데이터는 폐기했습니다. 클립보드로 자동 전환하지 않습니다",
+  ],
+  [
+    "API Playground handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
+    API_HANDOFF_BROWSER_ERROR,
+  ],
   [API_HANDOFF_BROWSER_ERROR, API_HANDOFF_BROWSER_ERROR],
 ]);
 
@@ -59,12 +67,14 @@ function hasWellFormedUnicode(value: string): boolean {
 }
 
 function withinHandoffBounds(value: string): boolean {
-  return value.length > 0
-    && !value.includes("\0")
-    && value.length <= API_HANDOFF_MAX_CHARS * 2
-    && utf8ByteLength(value) <= API_HANDOFF_MAX_BYTES
-    && hasWellFormedUnicode(value)
-    && Array.from(value).length <= API_HANDOFF_MAX_CHARS;
+  return (
+    value.length > 0 &&
+    !value.includes("\0") &&
+    value.length <= API_HANDOFF_MAX_CHARS * 2 &&
+    utf8ByteLength(value) <= API_HANDOFF_MAX_BYTES &&
+    hasWellFormedUnicode(value) &&
+    Array.from(value).length <= API_HANDOFF_MAX_CHARS
+  );
 }
 
 function safeHandoffError(cause: unknown): string {
@@ -97,6 +107,7 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     revisionRef.current += 1;
     setOpen(false);
@@ -177,8 +188,11 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
       const dispatch = source ? await createApiRequestHandoff(draft, source) : await createApiRequestHandoff(draft);
       if (!mountedRef.current || revisionRef.current !== revision) return;
       setOpen(false);
-      setStatus(isProductHosted() ? "Requests 미리보기로 전달했습니다. 요청 전송은 별도로 확인하세요."
-        : `API Playground 미리보기로 전달했습니다 (${dispatch.producerId} → ${dispatch.consumerId}).`);
+      setStatus(
+        isProductHosted()
+          ? "Requests 미리보기로 전달했습니다. 요청 전송은 별도로 확인하세요."
+          : `API Playground 미리보기로 전달했습니다 (${dispatch.producerId} → ${dispatch.consumerId}).`,
+      );
     } catch (cause) {
       if (!mountedRef.current || revisionRef.current !== revision) return;
       setError(safeHandoffError(cause));
@@ -216,13 +230,28 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
           >
             <h2 id="api-handoff-dialog-title">{target} 요청 미리보기</h2>
             <p id="api-handoff-dialog-description">
-              현재 결과를 수정한 뒤 명시적으로 전달하세요. {target}는 요청을 편집기에
-              넣기만 하며 자동으로 보내지 않습니다.
+              현재 결과를 수정한 뒤 명시적으로 전달하세요. {target}는 요청을 편집기에 넣기만 하며 자동으로 보내지
+              않습니다.
             </p>
             <dl className="api-handoff-meta">
-              <div><dt>method</dt><dd><code>POST</code></dd></div>
-              <div><dt>url</dt><dd><code>/</code></dd></div>
-              <div><dt>content-type</dt><dd><code>text/plain; charset=utf-8</code></dd></div>
+              <div>
+                <dt>method</dt>
+                <dd>
+                  <code>POST</code>
+                </dd>
+              </div>
+              <div>
+                <dt>url</dt>
+                <dd>
+                  <code>/</code>
+                </dd>
+              </div>
+              <div>
+                <dt>content-type</dt>
+                <dd>
+                  <code>text/plain; charset=utf-8</code>
+                </dd>
+              </div>
             </dl>
             <label className="api-handoff-editor">
               요청 본문
@@ -240,17 +269,16 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
               />
             </label>
             <p className="api-handoff-bounds">
-              {Array.from(draft).length.toLocaleString()} / {API_HANDOFF_MAX_CHARS.toLocaleString()}자 · {utf8ByteLength(draft).toLocaleString()} / {API_HANDOFF_MAX_BYTES.toLocaleString()}바이트
+              {Array.from(draft).length.toLocaleString()} / {API_HANDOFF_MAX_CHARS.toLocaleString()}자 ·{" "}
+              {utf8ByteLength(draft).toLocaleString()} / {API_HANDOFF_MAX_BYTES.toLocaleString()}바이트
             </p>
-            {error ? <div className="context-action-error" role="alert">{error}</div> : null}
+            {error ? (
+              <div className="context-action-error" role="alert">
+                {error}
+              </div>
+            ) : null}
             <div className="api-handoff-dialog-actions">
-              <button
-                ref={cancelButtonRef}
-                type="button"
-                className="btn"
-                onClick={closePreview}
-                disabled={busy}
-              >
+              <button ref={cancelButtonRef} type="button" className="btn" onClick={closePreview} disabled={busy}>
                 취소
               </button>
               <button type="button" className="btn" onClick={() => void submit()} disabled={busy}>

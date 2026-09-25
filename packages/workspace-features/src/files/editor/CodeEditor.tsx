@@ -58,7 +58,7 @@ interface CodeEditorProps {
   canFindReferences?: boolean;
   navigationBusy?: boolean;
   onNavigate?: (docId: string, kind: "definition" | "references", cursor: number) => void;
-  onTransform?: (docId:string,from:number,to:number,current:()=>boolean)=>Promise<void>;
+  onTransform?: (docId: string, from: number, to: number, current: () => boolean) => Promise<void>;
   onError?: (message: string | null) => void;
 }
 
@@ -129,16 +129,29 @@ export default function CodeEditor({
   const openMenuRef = useRef(editorMenu.openAt);
   openMenuRef.current = editorMenu.openAt;
 
-  const contextItems = useMemo<readonly ContextMenuEntry[]>(() => [
-    { type: "item", id: "cut", label: "잘라내기", shortcut: "Ctrl+X", disabled: readOnly || !hasSelection },
-    { type: "item", id: "copy", label: "복사", shortcut: "Ctrl+C", disabled: !hasSelection },
-    { type: "item", id: "paste", label: "붙여넣기", shortcut: "Ctrl+V", disabled: readOnly },
-    ...(onTransform ? [{type:"item" as const,id:"transform",label:"선택 내용을 API Studio에서 변환",disabled:readOnly || !hasSelection}] : []),
-    { type: "separator", id: "navigation-separator" },
-    { type: "item", id: "definition", label: "정의로 이동", disabled: navigationBusy || !canGoToDefinition },
-    { type: "item", id: "references", label: "참조 찾기", disabled: navigationBusy || !canFindReferences },
-  ], [canFindReferences, canGoToDefinition, hasSelection, navigationBusy, readOnly, onTransform]);
+  const contextItems = useMemo<readonly ContextMenuEntry[]>(
+    () => [
+      { type: "item", id: "cut", label: "잘라내기", shortcut: "Ctrl+X", disabled: readOnly || !hasSelection },
+      { type: "item", id: "copy", label: "복사", shortcut: "Ctrl+C", disabled: !hasSelection },
+      { type: "item", id: "paste", label: "붙여넣기", shortcut: "Ctrl+V", disabled: readOnly },
+      ...(onTransform
+        ? [
+            {
+              type: "item" as const,
+              id: "transform",
+              label: "선택 내용을 API Studio에서 변환",
+              disabled: readOnly || !hasSelection,
+            },
+          ]
+        : []),
+      { type: "separator", id: "navigation-separator" },
+      { type: "item", id: "definition", label: "정의로 이동", disabled: navigationBusy || !canGoToDefinition },
+      { type: "item", id: "references", label: "참조 찾기", disabled: navigationBusy || !canFindReferences },
+    ],
+    [canFindReferences, canGoToDefinition, hasSelection, navigationBusy, readOnly, onTransform],
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!mountRef.current) return;
     const compartments = compartmentsRef.current!;
@@ -146,72 +159,77 @@ export default function CodeEditor({
       state: EditorState.create({
         doc: value,
         selection: { anchor: Math.min(Math.max(0, cursor), value.length) },
-        extensions: [...editorExtensions({
-          language: languageForPath(path),
-          syntaxHighlightingEnabled,
-          readOnly,
-          bookmarks,
-          onChange: (text) => onChangeRef.current(text),
-          onCursorChange: (position) => onCursorChangeRef.current?.(position),
-          onBookmarksChange: (next) => onBookmarksChangeRef.current?.(next),
-          completionSource: async (context) => {
-            try {
-              const result = await completionSourceRef.current?.(context);
-              return result ?? currentDocumentWordCompletion(context);
-            } catch {
-              return currentDocumentWordCompletion(context);
-            }
-          },
-          hoverSource: (view, pos, side) => hoverSourceRef.current?.(view, pos, side) ?? null,
-          compartments,
-        }), EditorView.domEventHandlers({
-          contextmenu(event, currentView) {
-            if (currentView.compositionStarted) return false;
-            event.preventDefault();
-            const point = { x: event.clientX, y: event.clientY };
-            try {
-              const position = currentView.posAtCoords(point);
-              const insideSelection = position !== null && currentView.state.selection.ranges.some(
-                (range) => !range.empty && position >= range.from && position <= range.to,
-              );
-              if (position !== null && !insideSelection) {
-                currentView.dispatch({ selection: EditorSelection.cursor(position) });
+        extensions: [
+          ...editorExtensions({
+            language: languageForPath(path),
+            syntaxHighlightingEnabled,
+            readOnly,
+            bookmarks,
+            onChange: (text) => onChangeRef.current(text),
+            onCursorChange: (position) => onCursorChangeRef.current?.(position),
+            onBookmarksChange: (next) => onBookmarksChangeRef.current?.(next),
+            completionSource: async (context) => {
+              try {
+                const result = await completionSourceRef.current?.(context);
+                return result ?? currentDocumentWordCompletion(context);
+              } catch {
+                return currentDocumentWordCompletion(context);
               }
-            } catch {
-              // Layout-less environments keep the current selection.
-            }
-            currentView.focus();
-            onFocusRef.current?.();
-            setHasSelection(hasSelectedText(currentView.state));
-            openMenuRef.current(point, currentView.contentDOM);
-            return true;
-          },
-          keydown(event, currentView) {
-            if (
-              event.isComposing
-              || event.keyCode === 229
-              || !(
-                event.key === "ContextMenu"
-                || event.code === "ContextMenu"
-                || (event.shiftKey && event.key === "F10")
-              )
-            ) {
-              return false;
-            }
-            event.preventDefault();
-            onFocusRef.current?.();
-            const rect = currentView.contentDOM.getBoundingClientRect();
-            setHasSelection(hasSelectedText(currentView.state));
-            openMenuRef.current(
-              {
-                x: rect.left + Math.min(24, Math.max(0, rect.width / 2)),
-                y: rect.bottom,
-              },
-              currentView.contentDOM,
-            );
-            return true;
-          },
-        })],
+            },
+            hoverSource: (view, pos, side) => hoverSourceRef.current?.(view, pos, side) ?? null,
+            compartments,
+          }),
+          EditorView.domEventHandlers({
+            contextmenu(event, currentView) {
+              if (currentView.compositionStarted) return false;
+              event.preventDefault();
+              const point = { x: event.clientX, y: event.clientY };
+              try {
+                const position = currentView.posAtCoords(point);
+                const insideSelection =
+                  position !== null &&
+                  currentView.state.selection.ranges.some(
+                    (range) => !range.empty && position >= range.from && position <= range.to,
+                  );
+                if (position !== null && !insideSelection) {
+                  currentView.dispatch({ selection: EditorSelection.cursor(position) });
+                }
+              } catch {
+                // Layout-less environments keep the current selection.
+              }
+              currentView.focus();
+              onFocusRef.current?.();
+              setHasSelection(hasSelectedText(currentView.state));
+              openMenuRef.current(point, currentView.contentDOM);
+              return true;
+            },
+            keydown(event, currentView) {
+              if (
+                event.isComposing ||
+                event.keyCode === 229 ||
+                !(
+                  event.key === "ContextMenu" ||
+                  event.code === "ContextMenu" ||
+                  (event.shiftKey && event.key === "F10")
+                )
+              ) {
+                return false;
+              }
+              event.preventDefault();
+              onFocusRef.current?.();
+              const rect = currentView.contentDOM.getBoundingClientRect();
+              setHasSelection(hasSelectedText(currentView.state));
+              openMenuRef.current(
+                {
+                  x: rect.left + Math.min(24, Math.max(0, rect.width / 2)),
+                  y: rect.bottom,
+                },
+                currentView.contentDOM,
+              );
+              return true;
+            },
+          }),
+        ],
       }),
       parent: mountRef.current,
     });
@@ -231,7 +249,6 @@ export default function CodeEditor({
     };
     // The document ID is the lifetime boundary. Parent rerenders and changes to
     // the active view only alter the wrapper style, never this EditorView.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
 
   useEffect(() => {
@@ -255,9 +272,7 @@ export default function CodeEditor({
     if (!view || !compartments) return;
     view.dispatch({
       effects: [
-        compartments.language.reconfigure(
-          syntaxHighlightingEnabled ? languageExtensionFor(languageForPath(path)) : [],
-        ),
+        compartments.language.reconfigure(syntaxHighlightingEnabled ? languageExtensionFor(languageForPath(path)) : []),
         compartments.readOnly.reconfigure(readOnlyExtension(readOnly)),
         compartments.syntax.reconfigure(syntaxHighlightingExtension(syntaxHighlightingEnabled)),
       ],
@@ -292,13 +307,22 @@ export default function CodeEditor({
     const view = viewRef.current;
     if (!view) return;
     onErrorRef.current?.(null);
-    if(id === "transform") {
-      if(sending.current || readOnlyRef.current || !onTransform || view.compositionStarted)return;
-      const before=view.state;
-      if(before.selection.ranges.length!==1 || before.selection.main.empty)throw new Error("한 개의 선택 영역을 지정해 주세요.");
-      sending.current=true;
-      try { await onTransform(docId,before.selection.main.from,before.selection.main.to,()=>viewRef.current===view && sameClipboardTarget(before,view.state)); }
-      finally { sending.current=false; }
+    if (id === "transform") {
+      if (sending.current || readOnlyRef.current || !onTransform || view.compositionStarted) return;
+      const before = view.state;
+      if (before.selection.ranges.length !== 1 || before.selection.main.empty)
+        throw new Error("한 개의 선택 영역을 지정해 주세요.");
+      sending.current = true;
+      try {
+        await onTransform(
+          docId,
+          before.selection.main.from,
+          before.selection.main.to,
+          () => viewRef.current === view && sameClipboardTarget(before, view.state),
+        );
+      } finally {
+        sending.current = false;
+      }
       return;
     }
     if (id === "copy" || id === "cut") {

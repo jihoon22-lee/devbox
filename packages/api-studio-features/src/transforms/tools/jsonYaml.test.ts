@@ -1,26 +1,14 @@
 import { describe, expect, it } from "vitest";
-import {
-  convertJsonYaml,
-  MAX_JSON_YAML_INPUT_BYTES,
-} from "./jsonYaml";
+import { convertJsonYaml, MAX_JSON_YAML_INPUT_BYTES } from "./jsonYaml";
 
 describe("convertJsonYaml", () => {
   it("중첩 JSON을 2칸 들여쓰기 YAML로 변환한다", () => {
-    const result = convertJsonYaml(
-      '{"service":{"name":"devbox","ports":[3000,8080]},"enabled":true}',
-      "json-to-yaml",
-    );
+    const result = convertJsonYaml('{"service":{"name":"devbox","ports":[3000,8080]},"enabled":true}', "json-to-yaml");
 
     expect(result.error).toBeNull();
-    expect(result.output).toBe([
-      "service:",
-      "  name: devbox",
-      "  ports:",
-      "    - 3000",
-      "    - 8080",
-      "enabled: true",
-      "",
-    ].join("\n"));
+    expect(result.output).toBe(
+      ["service:", "  name: devbox", "  ports:", "    - 3000", "    - 8080", "enabled: true", ""].join("\n"),
+    );
   });
 
   it("__proto__ key를 데이터로 보존하고 JSON 확장 문법은 거부한다", () => {
@@ -53,12 +41,10 @@ describe("convertJsonYaml", () => {
   });
 
   it("YAML 주석을 제거하고 alias 값을 JSON에 확장한다", () => {
-    const result = convertJsonYaml([
-      "# environment defaults",
-      "defaults: &defaults",
-      "  retries: 3",
-      "copy: *defaults",
-    ].join("\n"), "yaml-to-json");
+    const result = convertJsonYaml(
+      ["# environment defaults", "defaults: &defaults", "  retries: 3", "copy: *defaults"].join("\n"),
+      "yaml-to-json",
+    );
 
     expect(result.error).toBeNull();
     expect(JSON.parse(result.output)).toEqual({
@@ -75,13 +61,10 @@ describe("convertJsonYaml", () => {
   });
 
   it("merge key를 확장하지 않고 YAML 1.2의 일반 key로 다룬다", () => {
-    const result = convertJsonYaml([
-      "base: &base",
-      "  retries: 3",
-      "service:",
-      "  <<: *base",
-      "  name: api",
-    ].join("\n"), "yaml-to-json");
+    const result = convertJsonYaml(
+      ["base: &base", "  retries: 3", "service:", "  <<: *base", "  name: api"].join("\n"),
+      "yaml-to-json",
+    );
 
     expect(result.error).toBeNull();
     expect(JSON.parse(result.output)).toEqual({
@@ -92,10 +75,7 @@ describe("convertJsonYaml", () => {
 
   it("깨진 JSON의 1-based 위치를 반환하고 입력 원문을 오류에 노출하지 않는다", () => {
     const secret = "DO_NOT_REFLECT_THIS_SECRET";
-    const result = convertJsonYaml(
-      `{\n  \"token\": \"${secret}\",\n  \"broken\": }`,
-      "json-to-yaml",
-    );
+    const result = convertJsonYaml(`{\n  \"token\": \"${secret}\",\n  \"broken\": }`, "json-to-yaml");
 
     expect(result.output).toBe("");
     expect(result.error?.code).toBe("INVALID_JSON");
@@ -106,10 +86,7 @@ describe("convertJsonYaml", () => {
 
   it("깨진 YAML의 위치와 안전한 오류 code를 반환한다", () => {
     const secret = "DO_NOT_REFLECT_THIS_YAML_SECRET";
-    const result = convertJsonYaml(
-      `token: ${secret}\nbroken: [one, two`,
-      "yaml-to-json",
-    );
+    const result = convertJsonYaml(`token: ${secret}\nbroken: [one, two`, "yaml-to-json");
 
     expect(result.output).toBe("");
     expect(result.error).not.toBeNull();
@@ -151,10 +128,7 @@ describe("convertJsonYaml", () => {
   it("빈 입력은 비우고 UTF-8 byte 기준 입력 제한을 적용한다", () => {
     expect(convertJsonYaml("  \n", "json-to-yaml")).toEqual({ output: "", error: null });
 
-    const oversized = convertJsonYaml(
-      `\"${"가".repeat(Math.ceil(MAX_JSON_YAML_INPUT_BYTES / 3))}\"`,
-      "json-to-yaml",
-    );
+    const oversized = convertJsonYaml(`\"${"가".repeat(Math.ceil(MAX_JSON_YAML_INPUT_BYTES / 3))}\"`, "json-to-yaml");
     expect(oversized.error?.code).toBe("INPUT_TOO_LARGE");
     expect(oversized.output).toBe("");
   });

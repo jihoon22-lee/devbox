@@ -45,11 +45,14 @@ describe("terminal settings", () => {
   });
 
   it("version 1 설정은 보존하면서 빠른 호출 기본값을 채워 version 2로 이관한다", () => {
-    localStorage.setItem("wsl-desktop:settings", JSON.stringify({
-      version: 1,
-      theme: "light",
-      sidePanelOpen: false,
-    }));
+    localStorage.setItem(
+      "wsl-desktop:settings",
+      JSON.stringify({
+        version: 1,
+        theme: "light",
+        sidePanelOpen: false,
+      }),
+    );
 
     expect(loadSettings()).toMatchObject({
       theme: "light",

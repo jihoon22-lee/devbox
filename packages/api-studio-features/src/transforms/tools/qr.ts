@@ -30,7 +30,47 @@ export const QR_ERROR_MESSAGES = {
 export type QrErrorCode = keyof typeof QR_ERROR_MESSAGES;
 export type QrPreset = "text" | "url" | "wifi";
 export type QrErrorCorrection = "L" | "M" | "Q" | "H";
-export type QrVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40;
+export type QrVersion =
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | 10
+  | 11
+  | 12
+  | 13
+  | 14
+  | 15
+  | 16
+  | 17
+  | 18
+  | 19
+  | 20
+  | 21
+  | 22
+  | 23
+  | 24
+  | 25
+  | 26
+  | 27
+  | 28
+  | 29
+  | 30
+  | 31
+  | 32
+  | 33
+  | 34
+  | 35
+  | 36
+  | 37
+  | 38
+  | 39
+  | 40;
 
 export interface WifiRequest {
   ssid: string;
@@ -157,13 +197,20 @@ function preparePayload(request: GenerateQrRequest): PreparedPayload | QrGenerat
 }
 
 function validateDimensions(request: GenerateQrRequest): true | QrGenerationError {
-  if (request.version !== null && (!Number.isInteger(request.version) || request.version < 1 || request.version > MAX_VERSION)) {
+  if (
+    request.version !== null &&
+    (!Number.isInteger(request.version) || request.version < 1 || request.version > MAX_VERSION)
+  ) {
     return new QrGenerationError("invalidVersion");
   }
   if (!Number.isInteger(request.size) || request.size < MIN_OUTPUT_SIZE || request.size > MAX_OUTPUT_SIZE) {
     return new QrGenerationError("invalidSize");
   }
-  if (!Number.isInteger(request.quietZone) || request.quietZone < MIN_QUIET_ZONE || request.quietZone > MAX_QUIET_ZONE) {
+  if (
+    !Number.isInteger(request.quietZone) ||
+    request.quietZone < MIN_QUIET_ZONE ||
+    request.quietZone > MAX_QUIET_ZONE
+  ) {
     return new QrGenerationError("invalidQuietZone");
   }
   return true;
@@ -177,7 +224,8 @@ function validateErrorCorrection(value: string): QrErrorCorrection | QrGeneratio
 function isSafeHttpUrl(value: string): boolean {
   const scheme = /^https?:\/\//iu.exec(value);
   if (!scheme) return false;
-  if ([...value].some((character) => /[\p{White_Space}\p{Cc}]/u.test(character) || character === "\ufeff")) return false;
+  if ([...value].some((character) => /[\p{White_Space}\p{Cc}]/u.test(character) || character === "\ufeff"))
+    return false;
   const authority = value.slice(scheme[0].length).split(/[/?#]/u, 1)[0] ?? "";
   return authority.length > 0;
 }
@@ -202,7 +250,7 @@ export function buildWifiPayload(wifi: WifiRequest): string | null {
 }
 
 function escapeWifi(value: string): string {
-  return [...value].map((character) => /[\\;,:]/u.test(character) ? `\\${character}` : character).join("");
+  return [...value].map((character) => (/[\\;,:]/u.test(character) ? `\\${character}` : character)).join("");
 }
 
 function encodeUtf8(value: string): Uint8Array | null {
@@ -224,12 +272,7 @@ function byteLength(value: string): number {
   return bytes?.length ?? Number.POSITIVE_INFINITY;
 }
 
-function renderSvg(
-  code: ReturnType<typeof qrcode>,
-  scale: number,
-  quietZone: number,
-  width: number,
-): string {
+function renderSvg(code: ReturnType<typeof qrcode>, scale: number, quietZone: number, width: number): string {
   const modules = code.getModuleCount();
   let svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="${width}" height="${width}" viewBox="0 0 ${width} ${width}" shape-rendering="crispEdges"><rect width="${width}" height="${width}" fill="#fff"/><path fill="#000" d="`;
   for (let row = 0; row < modules; row += 1) {
@@ -254,12 +297,7 @@ function renderSvg(
   return svg;
 }
 
-function renderPng(
-  code: ReturnType<typeof qrcode>,
-  scale: number,
-  quietZone: number,
-  width: number,
-): string {
+function renderPng(code: ReturnType<typeof qrcode>, scale: number, quietZone: number, width: number): string {
   if (typeof document === "undefined") throw new QrGenerationError("render");
   try {
     const canvas = document.createElement("canvas");

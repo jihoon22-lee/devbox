@@ -27,7 +27,13 @@ function issueText(operation: OpenApiOperationPreview): string {
   return error?.message ?? "";
 }
 
-export function OpenApiImport({ onClose, onApply, onAddToCollection, environment = '{"version":1,"environments":[]}', onSavedDefinition }: OpenApiImportProps) {
+export function OpenApiImport({
+  onClose,
+  onApply,
+  onAddToCollection,
+  environment = '{"version":1,"environments":[]}',
+  onSavedDefinition,
+}: OpenApiImportProps) {
   const [mockOperations, setMockOperations] = useState<OpenApiRuleOperation[]>([]);
   const [preview, setPreview] = useState<OpenApiImportPreview | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -59,21 +65,25 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
     return selectOpenApiServer(preview, serverIndex);
   }, [preview, serverIndex]);
 
-  const selectedOperations = displayedPreview?.operations.filter((operation) => selected[operation.id] && operation.applyable) ?? [];
+  const selectedOperations =
+    displayedPreview?.operations.filter((operation) => selected[operation.id] && operation.applyable) ?? [];
   const selectedApplyable = selectedOperations.length === 1 ? selectedOperations[0] : null;
-  const selectedMock = selectedApplyable && mockOperations.find(operation => operation.applyable
-    && operation.method === selectedApplyable.method && operation.path === selectedApplyable.path);
+  const selectedMock =
+    selectedApplyable &&
+    mockOperations.find(
+      (operation) =>
+        operation.applyable &&
+        operation.method === selectedApplyable.method &&
+        operation.path === selectedApplyable.path,
+    );
   const parseSource = (source: OpenApiSource) => {
     const result = parseOpenApiSource(source);
-    const mock = isProductHosted() && result.ok
-      ? previewOpenApiRules(source.text, result.preview.format, "OpenAPI") : null;
+    const mock =
+      isProductHosted() && result.ok ? previewOpenApiRules(source.text, result.preview.format, "OpenAPI") : null;
     return { ...result, mockOperations: mock?.ok ? mock.preview.operations : [] };
   };
 
-  const loadPreview = async (
-    loader: () => Promise<ReturnType<typeof parseSource>>,
-    failureMessage: string,
-  ) => {
+  const loadPreview = async (loader: () => Promise<ReturnType<typeof parseSource>>, failureMessage: string) => {
     if (busyRef.current || applyingRef.current) return;
     const currentRequest = ++requestId.current;
     busyRef.current = true;
@@ -94,9 +104,9 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
       setPreview(result.preview);
       setMockOperations(result.mockOperations);
       setServerIndex(firstServer);
-      setSelected(Object.fromEntries(
-        result.preview.operations.map((operation) => [operation.id, operation.applyable]),
-      ));
+      setSelected(
+        Object.fromEntries(result.preview.operations.map((operation) => [operation.id, operation.applyable])),
+      );
     } catch {
       if (mountedRef.current && currentRequest === requestId.current) setError(failureMessage);
     } finally {
@@ -140,12 +150,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
   };
 
   const closeOnEscape = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (
-      event.key === "Escape"
-      && !event.nativeEvent.isComposing
-      && !busyRef.current
-      && !applyingRef.current
-    ) {
+    if (event.key === "Escape" && !event.nativeEvent.isComposing && !busyRef.current && !applyingRef.current) {
       event.preventDefault();
       onClose();
       return;
@@ -153,9 +158,11 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
     if (event.key !== "Tab") return;
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const focusable = [...dialog.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex=\"-1\"])",
-    )].filter((element) => element.getAttribute("aria-hidden") !== "true");
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((element) => element.getAttribute("aria-hidden") !== "true");
     if (focusable.length === 0) {
       event.preventDefault();
       dialog.focus();
@@ -196,17 +203,36 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
 
   const saveDefinition = async () => {
     if (!displayedPreview || !selectedOperations.length || busyRef.current || applyingRef.current) return;
-    applyingRef.current = true; setApplying(true); setError(null);
+    applyingRef.current = true;
+    setApplying(true);
+    setError(null);
     try {
       await componentInvoke("api-studio.api")("save_openapi_definition", {
-        name: displayedPreview.sourceName || `OpenAPI ${displayedPreview.version} 작업`, openApiVersion: displayedPreview.version, environment,
-        operations: selectedOperations.map(operation => ({ label: operation.label, method: operation.method, requestTarget: operation.path,
-          mockStatus: mockOperations.find(mock => mock.applyable && mock.method === operation.method && mock.path === operation.path)?.status ?? null,
-          request: sanitizeRequestForPersistence(operation.request) })),
+        name: displayedPreview.sourceName || `OpenAPI ${displayedPreview.version} 작업`,
+        openApiVersion: displayedPreview.version,
+        environment,
+        operations: selectedOperations.map((operation) => ({
+          label: operation.label,
+          method: operation.method,
+          requestTarget: operation.path,
+          mockStatus:
+            mockOperations.find(
+              (mock) => mock.applyable && mock.method === operation.method && mock.path === operation.path,
+            )?.status ?? null,
+          request: sanitizeRequestForPersistence(operation.request),
+        })),
       });
-      if (mountedRef.current) { onSavedDefinition?.(); onClose(); }
-    } catch { if (mountedRef.current) setError("선택한 OpenAPI 작업을 보관하지 못했습니다. 저장 한도와 환경·인증 참조를 확인하세요."); }
-    finally { applyingRef.current = false; if (mountedRef.current) setApplying(false); }
+      if (mountedRef.current) {
+        onSavedDefinition?.();
+        onClose();
+      }
+    } catch {
+      if (mountedRef.current)
+        setError("선택한 OpenAPI 작업을 보관하지 못했습니다. 저장 한도와 환경·인증 참조를 확인하세요.");
+    } finally {
+      applyingRef.current = false;
+      if (mountedRef.current) setApplying(false);
+    }
   };
 
   return (
@@ -229,7 +255,13 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
               OpenAPI 3.0/3.1 JSON 또는 YAML을 미리 확인한 뒤 요청 초안으로 적용합니다.
             </p>
           </div>
-          <button className="btn" type="button" onClick={onClose} disabled={busy || applying} aria-label="OpenAPI 가져오기 닫기">
+          <button
+            className="btn"
+            type="button"
+            onClick={onClose}
+            disabled={busy || applying}
+            aria-label="OpenAPI 가져오기 닫기"
+          >
             닫기
           </button>
         </div>
@@ -265,15 +297,26 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
           </button>
         </form>
         <div className="openapi-offline-note">
-          URL은 native 경계에서 최대 4 MiB로만 가져옵니다. 자동 전송과 secret 값 주입은 하지 않으며 서버 주소와 인증 유형만 draft에 넣고 실제 값은 비워 둡니다.
+          URL은 native 경계에서 최대 4 MiB로만 가져옵니다. 자동 전송과 secret 값 주입은 하지 않으며 서버 주소와 인증
+          유형만 draft에 넣고 실제 값은 비워 둡니다.
         </div>
 
-        {busy && <div className="openapi-status" role="status">OpenAPI 문서를 안전하게 읽고 해석하는 중…</div>}
-        {error && <div className="error" role="alert">{error}</div>}
+        {busy && (
+          <div className="openapi-status" role="status">
+            OpenAPI 문서를 안전하게 읽고 해석하는 중…
+          </div>
+        )}
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
         {displayedPreview && (
           <>
             <div className="openapi-summary" role="status">
-              <span>{displayedPreview.sourceName ? displayOpenApiFileName(displayedPreview.sourceName) : "OpenAPI 문서"}</span>
+              <span>
+                {displayedPreview.sourceName ? displayOpenApiFileName(displayedPreview.sourceName) : "OpenAPI 문서"}
+              </span>
               <span>OpenAPI {displayedPreview.version}</span>
               <span>{displayedPreview.operations.length}개 operation</span>
             </div>
@@ -287,14 +330,18 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
                   aria-label="OpenAPI server 선택"
                 >
                   {displayedPreview.servers.map((server) => (
-                    <option key={server.index} value={server.index}>{server.url}</option>
+                    <option key={server.index} value={server.index}>
+                      {server.url}
+                    </option>
                   ))}
                 </select>
               </label>
             )}
             {displayedPreview.errors.length > 0 && (
               <div className="openapi-document-warnings" role="status">
-                {displayedPreview.errors.slice(0, 5).map((entry, index) => <div key={`${entry.code}-${index}`}>{entry.message}</div>)}
+                {displayedPreview.errors.slice(0, 5).map((entry, index) => (
+                  <div key={`${entry.code}-${index}`}>{entry.message}</div>
+                ))}
               </div>
             )}
             <div className="openapi-operations" aria-label="OpenAPI operation 미리보기">
@@ -305,7 +352,9 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
                     <input
                       type="checkbox"
                       checked={Boolean(selected[operation.id])}
-                      onChange={(event) => setSelected((current) => ({ ...current, [operation.id]: event.currentTarget.checked }))}
+                      onChange={(event) =>
+                        setSelected((current) => ({ ...current, [operation.id]: event.currentTarget.checked }))
+                      }
                       disabled={disabled}
                     />
                     <span className={`method ${operation.method.toLowerCase()}`}>{operation.method}</span>
@@ -318,12 +367,18 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
                       </span>
                       {operation.parameters.length > 0 && (
                         <span className="openapi-operation-detail">
-                          {operation.parameters.map((parameter) => `${parameter.location}:${parameter.name}${parameter.redacted ? " (값 비공개)" : ""}`).join(" · ")}
+                          {operation.parameters
+                            .map(
+                              (parameter) =>
+                                `${parameter.location}:${parameter.name}${parameter.redacted ? " (값 비공개)" : ""}`,
+                            )
+                            .join(" · ")}
                         </span>
                       )}
                       {operation.requestBody && (
                         <span className="openapi-operation-detail">
-                          본문 예시 {operation.requestBody.exampleIncluded ? "포함" : "없음"}{operation.requestBody.redacted ? " · 민감 property 비공개" : ""}
+                          본문 예시 {operation.requestBody.exampleIncluded ? "포함" : "없음"}
+                          {operation.requestBody.redacted ? " · 민감 property 비공개" : ""}
                         </span>
                       )}
                       {operation.security && (
@@ -336,7 +391,9 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
                   </label>
                 );
               })}
-              {displayedPreview.operations.length === 0 && <div className="dim">미리볼 수 있는 operation이 없습니다.</div>}
+              {displayedPreview.operations.length === 0 && (
+                <div className="dim">미리볼 수 있는 operation이 없습니다.</div>
+              )}
             </div>
           </>
         )}
@@ -344,14 +401,42 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection, environment
         <div className="openapi-dialog-actions">
           <span className="dim">체크한 operation은 새 항목으로만 추가되며 기존 컬렉션을 덮어쓰지 않습니다.</span>
           <div className="openapi-action-buttons">
-            {isProductHosted() && <button className="btn" type="button" disabled={!selectedOperations.length || busy || applying} onClick={() => void saveDefinition()}>선택한 작업 보관 ({selectedOperations.length})</button>}
-            {isProductHosted() && selectedMock && <MockDraftAction value="" owner="api-studio.api" status={selectedMock.status}
-              requestTarget={selectedMock.path} requestMethod={selectedMock.method} disabled={busy || applying}
-              onSent={onClose} label="선택 operation을 Mock 초안으로" />}
-            <button className="btn" type="button" onClick={applyCurrent} disabled={!selectedApplyable || busy || applying}>
+            {isProductHosted() && (
+              <button
+                className="btn"
+                type="button"
+                disabled={!selectedOperations.length || busy || applying}
+                onClick={() => void saveDefinition()}
+              >
+                선택한 작업 보관 ({selectedOperations.length})
+              </button>
+            )}
+            {isProductHosted() && selectedMock && (
+              <MockDraftAction
+                value=""
+                owner="api-studio.api"
+                status={selectedMock.status}
+                requestTarget={selectedMock.path}
+                requestMethod={selectedMock.method}
+                disabled={busy || applying}
+                onSent={onClose}
+                label="선택 operation을 Mock 초안으로"
+              />
+            )}
+            <button
+              className="btn"
+              type="button"
+              onClick={applyCurrent}
+              disabled={!selectedApplyable || busy || applying}
+            >
               현재 초안에 적용
             </button>
-            <button className="btn send" type="button" onClick={() => void addCollection()} disabled={selectedOperations.length === 0 || busy || applying}>
+            <button
+              className="btn send"
+              type="button"
+              onClick={() => void addCollection()}
+              disabled={selectedOperations.length === 0 || busy || applying}
+            >
               {applying ? "저장 중…" : `새 컬렉션에 추가 (${selectedOperations.length})`}
             </button>
           </div>

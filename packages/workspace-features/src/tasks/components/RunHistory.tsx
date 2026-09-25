@@ -1,10 +1,15 @@
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { friendlyErrorMessage, listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import {
+  friendlyErrorMessage,
+  listActiveRuns,
+  listRuns,
+  openRunLogInLogLens,
+  runJobNow,
+  searchRunLogs,
+  stopActiveRun,
+  tailLog,
+} from "../api";
 import type {
   Job,
   LogLevel,
@@ -45,12 +50,7 @@ export async function collectRunLog(
 
   while (total < LOG_EXPORT_BYTE_LIMIT) {
     const remaining = LOG_EXPORT_BYTE_LIMIT - total;
-    const response = await reader(
-      runId,
-      stream,
-      cursor,
-      Math.min(LOG_EXPORT_CHUNK_BYTES, remaining),
-    );
+    const response = await reader(runId, stream, cursor, Math.min(LOG_EXPORT_CHUNK_BYTES, remaining));
     truncated ||= response.truncated;
     const incoming = Uint8Array.from(response.data);
     if (incoming.length === 0) break;
@@ -153,11 +153,17 @@ function isSafeSearchResponse(response: LogSearchResponse, runId: string): boole
     typeof response.truncated !== "boolean" ||
     response.matches.length > LOG_SEARCH_MAX_RESULT_LINES ||
     response.sources.length > 2
-  ) return false;
+  )
+    return false;
   const sourceIds = new Set<string>();
   const sourceStreams = new Set<LogStream>();
   for (const source of response.sources) {
-    if (source.kind !== "log-source/v1" || source.runId !== runId || !["stdout", "stderr"].includes(source.stream) || sourceStreams.has(source.stream)) {
+    if (
+      source.kind !== "log-source/v1" ||
+      source.runId !== runId ||
+      !["stdout", "stderr"].includes(source.stream) ||
+      sourceStreams.has(source.stream)
+    ) {
       return false;
     }
     const expected = `run-manager:${runId}:${source.stream}`;
@@ -175,9 +181,8 @@ function isSafeSearchResponse(response: LogSearchResponse, runId: string): boole
 }
 
 export default function RunHistory({ active: visible = true, jobs, requestedJobId = null }: RunHistoryProps) {
-  const initialJobId = requestedJobId && jobs.some((job) => job.id === requestedJobId)
-    ? requestedJobId
-    : jobs[0]?.id ?? "";
+  const initialJobId =
+    requestedJobId && jobs.some((job) => job.id === requestedJobId) ? requestedJobId : (jobs[0]?.id ?? "");
   const [jobId, setJobId] = useState(initialJobId);
   const [kind, setKind] = useState<RunDefinitionKind | "">("");
   const [status, setStatus] = useState<RunStatus | "">("");
@@ -240,20 +245,26 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     };
   }, [visible]);
 
-  const prepareRunContext = useCallback((target: HTMLElement) => {
-    if (logLensBusyRef.current) return;
-    const id = target.dataset.runId;
-    const run = runs.find((candidate) => candidate.id === id);
-    if (!run) return;
-    setSelectedRunId(run.id);
-    setContextRun(run);
-  }, [runs]);
+  const prepareRunContext = useCallback(
+    (target: HTMLElement) => {
+      if (logLensBusyRef.current) return;
+      const id = target.dataset.runId;
+      const run = runs.find((candidate) => candidate.id === id);
+      if (!run) return;
+      setSelectedRunId(run.id);
+      setContextRun(run);
+    },
+    [runs],
+  );
   const runContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareRunContext(target),
   });
 
   useEffect(() => {
-    if (!visible) { runContextMenu.close(); setContextRun(null); }
+    if (!visible) {
+      runContextMenu.close();
+      setContextRun(null);
+    }
   }, [visible, runContextMenu.close]);
 
   useEffect(() => {
@@ -273,6 +284,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     }
   }, [contextRun?.id, runContextMenu.close, runs]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   const refresh = useCallback(async () => {
     if (!mountedRef.current || logLensBusyRef.current) return;
     const existing = refreshInFlight.current;
@@ -314,12 +326,14 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
               if (!logLensBusyRef.current) {
                 setRuns(next);
                 setSelectedRunId((current) =>
-                  current && next.some((run) => run.id === current) ? current : next[0]?.id ?? null,
+                  current && next.some((run) => run.id === current) ? current : (next[0]?.id ?? null),
                 );
               }
               setHistoryError(null);
             } else {
-              setHistoryError(historyResult.reason instanceof Error ? historyResult.reason.message : String(historyResult.reason));
+              setHistoryError(
+                historyResult.reason instanceof Error ? historyResult.reason.message : String(historyResult.reason),
+              );
             }
             if (activeResult.status === "fulfilled") {
               setActiveRuns(activeResult.value);
@@ -328,7 +342,9 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
             } else {
               setActiveRuns([]);
               setActiveSnapshotFresh(false);
-              setActiveSnapshotError(activeResult.reason instanceof Error ? activeResult.reason.message : String(activeResult.reason));
+              setActiveSnapshotError(
+                activeResult.reason instanceof Error ? activeResult.reason.message : String(activeResult.reason),
+              );
             }
           } finally {
             if (mountedRef.current && generation === viewGeneration.current) setLoading(false);
@@ -364,9 +380,10 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
   }, [visible, refresh]);
 
   const selectedDefinition = jobs.find((job) => job.id === jobId) ?? null;
-  const activeRun = activeSnapshotFresh && selectedDefinition?.kind === "job"
-    ? activeRuns.find((run) => run.jobId === jobId) ?? null
-    : null;
+  const activeRun =
+    activeSnapshotFresh && selectedDefinition?.kind === "job"
+      ? (activeRuns.find((run) => run.jobId === jobId) ?? null)
+      : null;
 
   const handleRunNow = async () => {
     if (!jobId || selectedDefinition?.kind !== "job") return;
@@ -398,10 +415,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     }
   };
 
-  const selectedRun = useMemo(
-    () => runs.find((run) => run.id === selectedRunId) ?? null,
-    [runs, selectedRunId],
-  );
+  const selectedRun = useMemo(() => runs.find((run) => run.id === selectedRunId) ?? null, [runs, selectedRunId]);
 
   const handleRerun = async (run: Run) => {
     if (jobs.find((job) => job.id === run.jobId)?.kind !== "job") return;
@@ -449,7 +463,12 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
   const handleOpenInLogLens = async (run: Run) => {
     if (!run.logsAvailable || actionBusy || logLensBusyRef.current) return;
     const selectedStream = stream;
-    if (!window.confirm(`선택한 실행의 ${selectedStream} 로그를 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·경로·명령·환경변수는 handoff에 포함되지 않습니다.`)) return;
+    if (
+      !window.confirm(
+        `선택한 실행의 ${selectedStream} 로그를 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·경로·명령·환경변수는 handoff에 포함되지 않습니다.`,
+      )
+    )
+      return;
     const generation = ++logLensGeneration.current;
     const operation = ++logLensOperation.current;
     const context = { runId: run.id, stream: selectedStream };
@@ -459,19 +478,23 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     setActionBusy(true);
     try {
       await openRunLogInLogLens(run.id, selectedStream);
-      if (mountedRef.current
-        && operation === logLensOperation.current
-        && generation === logLensGeneration.current
-        && logLensContextRef.current.runId === context.runId
-        && logLensContextRef.current.stream === context.stream) {
+      if (
+        mountedRef.current &&
+        operation === logLensOperation.current &&
+        generation === logLensGeneration.current &&
+        logLensContextRef.current.runId === context.runId &&
+        logLensContextRef.current.stream === context.stream
+      ) {
         setError(null);
       }
     } catch {
-      if (mountedRef.current
-        && operation === logLensOperation.current
-        && generation === logLensGeneration.current
-        && logLensContextRef.current.runId === context.runId
-        && logLensContextRef.current.stream === context.stream) {
+      if (
+        mountedRef.current &&
+        operation === logLensOperation.current &&
+        generation === logLensGeneration.current &&
+        logLensContextRef.current.runId === context.runId &&
+        logLensContextRef.current.stream === context.stream
+      ) {
         setError("Log Lens handoff를 시작하지 못했습니다.");
       }
     } finally {
@@ -583,6 +606,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     else if (id === "open-log-lens") void handleOpenInLogLens(run);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     logCursor.current = null;
     setLogBytes(new Uint8Array());
@@ -593,6 +617,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
   // A result is tied to the selected run and exact search controls. Clear it
   // as soon as any of those controls changes so an old async response cannot
   // be mistaken for the new query.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     searchGeneration.current += 1;
     setSearchResponse(null);
@@ -648,16 +673,17 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
   const logText = useMemo(() => new TextDecoder().decode(logBytes), [logBytes]);
   const logLines = useMemo(() => logText.split("\n"), [logText]);
   const activeSearchMatch: LogSearchMatch | null =
-    searchResponse && searchIndex >= 0 ? searchResponse.matches[searchIndex] ?? null : null;
+    searchResponse && searchIndex >= 0 ? (searchResponse.matches[searchIndex] ?? null) : null;
   const activeSearchLineUnavailable = Boolean(
     activeSearchMatch &&
-    (activeSearchMatch.stream !== stream ||
-      logTrimmed ||
-      !logText ||
-      logLines.length > MAX_WRAPPED_LOG_LINES ||
-      activeSearchMatch.lineNumber > logLines.length),
+      (activeSearchMatch.stream !== stream ||
+        logTrimmed ||
+        !logText ||
+        logLines.length > MAX_WRAPPED_LOG_LINES ||
+        activeSearchMatch.lineNumber > logLines.length),
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!visible || !activeSearchMatch || activeSearchMatch.stream !== stream) return;
     const line = logLineRefs.current.get(activeSearchMatch.lineNumber);
@@ -676,10 +702,15 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
           if (element) logLineRefs.current.set(index + 1, element);
           else logLineRefs.current.delete(index + 1);
         }}
-        className={activeSearchMatch?.stream === stream && !logTrimmed && activeSearchMatch.lineNumber === index + 1 ? "log-line match-active" : "log-line"}
+        className={
+          activeSearchMatch?.stream === stream && !logTrimmed && activeSearchMatch.lineNumber === index + 1
+            ? "log-line match-active"
+            : "log-line"
+        }
         data-line-number={index + 1}
       >
-        {line}{index < logLines.length - 1 ? "\n" : null}
+        {line}
+        {index < logLines.length - 1 ? "\n" : null}
       </span>
     ));
   };
@@ -689,19 +720,47 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
       <div className="section-toolbar">
         <div>
           <p className="subtitle">최근 50회 또는 지정한 기간의 실행 상태와 로그를 확인합니다.</p>
-          <h3 id="history-title" className="visually-hidden">실행 기록</h3>
+          <h3 id="history-title" className="visually-hidden">
+            실행 기록
+          </h3>
         </div>
         <div className="history-actions">
-          <button type="button" className="button-primary" disabled={actionBusy || loading || selectedDefinition?.kind !== "job"} onClick={() => void handleRunNow()}>지금 실행</button>
-          <button type="button" className="button-secondary" disabled={actionBusy || loading || !activeRun} onClick={() => void handleStop()}>활성 실행 중지</button>
-          <button type="button" className="button-secondary" disabled={loading || logLensBusy} onClick={() => void refresh()}>새로고침</button>
+          <button
+            type="button"
+            className="button-primary"
+            disabled={actionBusy || loading || selectedDefinition?.kind !== "job"}
+            onClick={() => void handleRunNow()}
+          >
+            지금 실행
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={actionBusy || loading || !activeRun}
+            onClick={() => void handleStop()}
+          >
+            활성 실행 중지
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={loading || logLensBusy}
+            onClick={() => void refresh()}
+          >
+            새로고침
+          </button>
         </div>
       </div>
 
       <div className="history-filters">
         <label className="field">
           <span>대상 종류</span>
-          <select aria-label="기록 대상 종류" disabled={logLensBusy} value={kind} onChange={(event) => setKind(event.target.value as RunDefinitionKind | "")}>
+          <select
+            aria-label="기록 대상 종류"
+            disabled={logLensBusy}
+            value={kind}
+            onChange={(event) => setKind(event.target.value as RunDefinitionKind | "")}
+          >
             <option value="">작업과 서비스</option>
             <option value="job">작업만</option>
             <option value="service">서비스만</option>
@@ -709,14 +768,28 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
         </label>
         <label className="field">
           <span>작업 또는 서비스</span>
-          <select aria-label="기록 작업" disabled={logLensBusy} value={jobId} onChange={(event) => setJobId(event.target.value)}>
+          <select
+            aria-label="기록 작업"
+            disabled={logLensBusy}
+            value={jobId}
+            onChange={(event) => setJobId(event.target.value)}
+          >
             <option value="">모든 대상</option>
-            {visibleJobs.map((job) => <option key={job.id} value={job.id}>{job.name}</option>)}
+            {visibleJobs.map((job) => (
+              <option key={job.id} value={job.id}>
+                {job.name}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
           <span>상태</span>
-          <select aria-label="기록 상태" disabled={logLensBusy} value={status} onChange={(event) => setStatus(event.target.value as RunStatus | "")}>
+          <select
+            aria-label="기록 상태"
+            disabled={logLensBusy}
+            value={status}
+            onChange={(event) => setStatus(event.target.value as RunStatus | "")}
+          >
             <option value="">모든 상태</option>
             <option value="succeeded">성공</option>
             <option value="failed">실패</option>
@@ -730,25 +803,71 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
         </label>
         <label className="field">
           <span>시작일</span>
-          <input aria-label="기록 시작일" disabled={logLensBusy} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+          <input
+            aria-label="기록 시작일"
+            disabled={logLensBusy}
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+          />
         </label>
         <label className="field">
           <span>종료일</span>
-          <input aria-label="기록 종료일" disabled={logLensBusy} type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+          <input
+            aria-label="기록 종료일"
+            disabled={logLensBusy}
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+          />
         </label>
         <label className="field">
-          <span>최소 실행 시간 <em>(초)</em></span>
-          <input aria-label="최소 실행 시간(초)" disabled={logLensBusy} type="number" min="0" max="2592000" step="1" value={minDuration} onChange={(event) => setMinDuration(event.target.value)} />
+          <span>
+            최소 실행 시간 <em>(초)</em>
+          </span>
+          <input
+            aria-label="최소 실행 시간(초)"
+            disabled={logLensBusy}
+            type="number"
+            min="0"
+            max="2592000"
+            step="1"
+            value={minDuration}
+            onChange={(event) => setMinDuration(event.target.value)}
+          />
         </label>
         <label className="field">
-          <span>최대 실행 시간 <em>(초)</em></span>
-          <input aria-label="최대 실행 시간(초)" disabled={logLensBusy} type="number" min="0" max="2592000" step="1" value={maxDuration} onChange={(event) => setMaxDuration(event.target.value)} />
+          <span>
+            최대 실행 시간 <em>(초)</em>
+          </span>
+          <input
+            aria-label="최대 실행 시간(초)"
+            disabled={logLensBusy}
+            type="number"
+            min="0"
+            max="2592000"
+            step="1"
+            value={maxDuration}
+            onChange={(event) => setMaxDuration(event.target.value)}
+          />
         </label>
       </div>
 
-      {(error ?? historyError ?? activeSnapshotError ?? logError ?? searchError) ? <div className="error-banner" role="alert">오류: {error ?? historyError ?? activeSnapshotError ?? logError ?? searchError}</div> : null}
-      {jobs.length === 0 ? <div className="empty-card compact"><p>먼저 작업 또는 서비스를 만들어 주세요.</p></div> : null}
-      {jobs.length > 0 && !loading && runs.length === 0 ? <div className="empty-card compact"><p>조건에 맞는 실행 기록이 없습니다.</p></div> : null}
+      {(error ?? historyError ?? activeSnapshotError ?? logError ?? searchError) ? (
+        <div className="error-banner" role="alert">
+          오류: {error ?? historyError ?? activeSnapshotError ?? logError ?? searchError}
+        </div>
+      ) : null}
+      {jobs.length === 0 ? (
+        <div className="empty-card compact">
+          <p>먼저 작업 또는 서비스를 만들어 주세요.</p>
+        </div>
+      ) : null}
+      {jobs.length > 0 && !loading && runs.length === 0 ? (
+        <div className="empty-card compact">
+          <p>조건에 맞는 실행 기록이 없습니다.</p>
+        </div>
+      ) : null}
 
       {runs.length > 0 ? (
         <div className="history-layout">
@@ -766,8 +885,14 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                   {...runContextMenu.triggerProps}
                 >
                   <span className={`run-status ${run.status}`}>{STATUS_LABEL[run.status]}</span>
-                  <span><strong>{formatTime(run.startedAt ?? run.createdAt)}</strong><small>{duration(run)}</small></span>
-                  <span><strong>{run.exitCode === null ? "종료 코드 —" : `종료 코드 ${run.exitCode}`}</strong><small>{run.scheduledAt === null ? "수동 실행" : "예약 실행"}</small></span>
+                  <span>
+                    <strong>{formatTime(run.startedAt ?? run.createdAt)}</strong>
+                    <small>{duration(run)}</small>
+                  </span>
+                  <span>
+                    <strong>{run.exitCode === null ? "종료 코드 —" : `종료 코드 ${run.exitCode}`}</strong>
+                    <small>{run.scheduledAt === null ? "수동 실행" : "예약 실행"}</small>
+                  </span>
                 </button>
               </div>
             ))}
@@ -779,7 +904,9 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                 <div className="run-detail-heading">
                   <div>
                     <span className={`run-status ${selectedRun.status}`}>{STATUS_LABEL[selectedRun.status]}</span>
-                    <p>{formatTime(selectedRun.startedAt ?? selectedRun.createdAt)} · {duration(selectedRun)}</p>
+                    <p>
+                      {formatTime(selectedRun.startedAt ?? selectedRun.createdAt)} · {duration(selectedRun)}
+                    </p>
                   </div>
                   {selectedRun.logsAvailable ? (
                     <div className="stream-tabs" aria-label="로그 스트림">
@@ -791,7 +918,9 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                           aria-pressed={stream === value}
                           disabled={logLensBusy}
                           onClick={() => selectStream(value)}
-                        >{value}</button>
+                        >
+                          {value}
+                        </button>
                       ))}
                       <button
                         type="button"
@@ -805,10 +934,14 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                     </div>
                   ) : null}
                 </div>
-                {selectedRun.failureCode ? <p className="run-error">실행 오류 코드: {selectedRun.failureCode}</p> : null}
+                {selectedRun.failureCode ? (
+                  <p className="run-error">실행 오류 코드: {selectedRun.failureCode}</p>
+                ) : null}
                 {selectedRun.logsAvailable ? (
                   <div className="log-panel">
-                    {logTrimmed ? <div className="log-notice">보존 범위 또는 화면 한도를 벗어난 이전 로그는 생략했습니다.</div> : null}
+                    {logTrimmed ? (
+                      <div className="log-notice">보존 범위 또는 화면 한도를 벗어난 이전 로그는 생략했습니다.</div>
+                    ) : null}
                     <form
                       className="log-search"
                       aria-label="로그 검색"
@@ -845,14 +978,22 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                       </label>
                       <label className="field">
                         <span>방식</span>
-                        <select aria-label="로그 검색 방식" value={searchMode} onChange={(event) => setSearchMode(event.target.value as LogSearchMode)}>
+                        <select
+                          aria-label="로그 검색 방식"
+                          value={searchMode}
+                          onChange={(event) => setSearchMode(event.target.value as LogSearchMode)}
+                        >
                           <option value="literal">일반 텍스트</option>
                           <option value="regex">정규식(명시적)</option>
                         </select>
                       </label>
                       <label className="field">
                         <span>소스</span>
-                        <select aria-label="로그 검색 소스" value={searchSource} onChange={(event) => setSearchSource(event.target.value as LogStream | "")}>
+                        <select
+                          aria-label="로그 검색 소스"
+                          value={searchSource}
+                          onChange={(event) => setSearchSource(event.target.value as LogStream | "")}
+                        >
                           <option value="">모든 스트림</option>
                           <option value="stdout">stdout</option>
                           <option value="stderr">stderr</option>
@@ -860,7 +1001,11 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                       </label>
                       <label className="field">
                         <span>레벨</span>
-                        <select aria-label="로그 검색 레벨" value={searchLevel} onChange={(event) => setSearchLevel(event.target.value as LogLevel | "")}>
+                        <select
+                          aria-label="로그 검색 레벨"
+                          value={searchLevel}
+                          onChange={(event) => setSearchLevel(event.target.value as LogLevel | "")}
+                        >
                           <option value="">모든 레벨</option>
                           <option value="trace">trace</option>
                           <option value="debug">debug</option>
@@ -869,8 +1014,17 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                           <option value="error">error</option>
                         </select>
                       </label>
-                      <button type="submit" className="button-secondary" disabled={searchBusy || !searchQuery}>검색</button>
-                      <button type="button" className="button-secondary" disabled={searchBusy && !searchResponse} onClick={clearSearch}>지우기</button>
+                      <button type="submit" className="button-secondary" disabled={searchBusy || !searchQuery}>
+                        검색
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        disabled={searchBusy && !searchResponse}
+                        onClick={clearSearch}
+                      >
+                        지우기
+                      </button>
                     </form>
                     {searchResponse ? (
                       <div className="log-search-results" aria-label="로그 검색 결과">
@@ -883,8 +1037,22 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                         </div>
                         {searchResponse.matches.length > 0 ? (
                           <div className="log-search-navigation">
-                            <button type="button" className="button-secondary" aria-label="이전 검색 결과" onClick={() => moveToSearchMatch(searchIndex - 1)}>이전</button>
-                            <button type="button" className="button-secondary" aria-label="다음 검색 결과" onClick={() => moveToSearchMatch(searchIndex + 1)}>다음</button>
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              aria-label="이전 검색 결과"
+                              onClick={() => moveToSearchMatch(searchIndex - 1)}
+                            >
+                              이전
+                            </button>
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              aria-label="다음 검색 결과"
+                              onClick={() => moveToSearchMatch(searchIndex + 1)}
+                            >
+                              다음
+                            </button>
                             <ol className="log-search-match-list">
                               {searchResponse.matches.slice(0, LOG_SEARCH_MAX_RESULT_LINES).map((match, index) => (
                                 <li key={`${match.sourceId}:${match.lineNumber}:${index}`}>
@@ -905,7 +1073,9 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
                     ) : null}
                     <pre aria-label={`${stream} 로그`}>{renderLogText()}</pre>
                   </div>
-                ) : <p className="muted run-no-log">보존된 로그가 없습니다.</p>}
+                ) : (
+                  <p className="muted run-no-log">보존된 로그가 없습니다.</p>
+                )}
               </>
             ) : null}
           </section>

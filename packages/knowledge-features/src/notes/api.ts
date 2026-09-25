@@ -51,8 +51,13 @@ export interface OpenRequest {
 }
 
 export interface NoteSnapshot {
-  content: string | null; revision: string;
-  saveOutcome?: { state: "applied" | "appliedWithConflict" | "unknown"; recoveryDirectory: string | null; warning: string };
+  content: string | null;
+  revision: string;
+  saveOutcome?: {
+    state: "applied" | "appliedWithConflict" | "unknown";
+    recoveryDirectory: string | null;
+    warning: string;
+  };
 }
 
 export interface InboundNote {
@@ -206,10 +211,11 @@ function isTemplateControl(character: string): boolean {
 }
 
 function templateTextIsSafe(value: string, maxBytes: number, nonEmpty: boolean): boolean {
-  return templateBytes(value) <= maxBytes
-    && (!nonEmpty || value.trim().length > 0)
-    && [...value].every((character) => !isTemplateControl(character)
-      || "\n\r\t".includes(character));
+  return (
+    templateBytes(value) <= maxBytes &&
+    (!nonEmpty || value.trim().length > 0) &&
+    [...value].every((character) => !isTemplateControl(character) || "\n\r\t".includes(character))
+  );
 }
 
 function validateTemplatePlaceholders(content: string): void {
@@ -219,7 +225,7 @@ function validateTemplatePlaceholders(content: string): void {
     if (start < 0) return;
     const end = content.indexOf("}}", start + 2);
     const token = end < 0 ? "" : content.slice(start, end + 2);
-    if (!TEMPLATE_PLACEHOLDERS.includes(token as typeof TEMPLATE_PLACEHOLDERS[number])) {
+    if (!TEMPLATE_PLACEHOLDERS.includes(token as (typeof TEMPLATE_PLACEHOLDERS)[number])) {
       throw new Error("지원하지 않는 템플릿 변수가 있습니다");
     }
     offset = end + 2;
@@ -227,9 +233,11 @@ function validateTemplatePlaceholders(content: string): void {
 }
 
 function validateTemplateDraftInput(draft: TemplateDraft): void {
-  if (!templateTextIsSafe(draft.name, MAX_TEMPLATE_NAME_BYTES, true)
-    || /[\\/]/u.test(draft.name)
-    || [...draft.name].some(isTemplateControl)) {
+  if (
+    !templateTextIsSafe(draft.name, MAX_TEMPLATE_NAME_BYTES, true) ||
+    /[\\/]/u.test(draft.name) ||
+    [...draft.name].some(isTemplateControl)
+  ) {
     throw new Error("템플릿 이름이 올바르지 않습니다");
   }
   if (!templateTextIsSafe(draft.content, MAX_TEMPLATE_CONTENT_BYTES, false)) {
@@ -240,32 +248,37 @@ function validateTemplateDraftInput(draft: TemplateDraft): void {
 
 function validateTemplateApplyInput(input: TemplateApplyInput, content: string): string {
   const normalized = input.target.split("\\").join("/");
-  if (!templateTextIsSafe(input.target, MAX_TEMPLATE_PATH_BYTES, true)
-    || [...input.target].some(isTemplateControl)
-    || normalized !== input.target
-    || normalized.startsWith("/")
-    || normalized.includes("//")
-    || normalized.includes(":")
-    || normalized.split("/").some((part) => part === "" || part === "." || part === "..")
-    || !normalized.toLowerCase().endsWith(".md")) {
+  if (
+    !templateTextIsSafe(input.target, MAX_TEMPLATE_PATH_BYTES, true) ||
+    [...input.target].some(isTemplateControl) ||
+    normalized !== input.target ||
+    normalized.startsWith("/") ||
+    normalized.includes("//") ||
+    normalized.includes(":") ||
+    normalized.split("/").some((part) => part === "" || part === "." || part === "..") ||
+    !normalized.toLowerCase().endsWith(".md")
+  ) {
     throw new Error("템플릿 저장 경로가 올바르지 않습니다");
   }
-  if (!templateTextIsSafe(input.title, MAX_TEMPLATE_TITLE_BYTES, false)
-    || [...input.title].some(isTemplateControl)) {
+  if (!templateTextIsSafe(input.title, MAX_TEMPLATE_TITLE_BYTES, false) || [...input.title].some(isTemplateControl)) {
     throw new Error("템플릿 제목이 올바르지 않습니다");
   }
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(input.date)) {
     throw new Error("템플릿 날짜가 올바르지 않습니다");
   }
   const date = new Date(`${input.date}T00:00:00Z`);
-  if (Number(input.date.slice(0, 4)) < 1
-    || Number.isNaN(date.getTime())
-    || date.toISOString().slice(0, 10) !== input.date) {
+  if (
+    Number(input.date.slice(0, 4)) < 1 ||
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== input.date
+  ) {
     throw new Error("템플릿 날짜가 올바르지 않습니다");
   }
-  if (!/^\d{2}:\d{2}$/u.test(input.time)
-    || Number(input.time.slice(0, 2)) > 23
-    || Number(input.time.slice(3, 5)) > 59) {
+  if (
+    !/^\d{2}:\d{2}$/u.test(input.time) ||
+    Number(input.time.slice(0, 2)) > 23 ||
+    Number(input.time.slice(3, 5)) > 59
+  ) {
     throw new Error("템플릿 시간이 올바르지 않습니다");
   }
   validateTemplatePlaceholders(content);
@@ -293,11 +306,16 @@ function renderTemplateContent(input: TemplateApplyInput, content: string): stri
     const end = content.indexOf("}}", start + 2);
     if (end < 0) throw new Error("지원하지 않는 템플릿 변수가 있습니다");
     const token = content.slice(start, end + 2);
-    const value = token === "{{title}}" ? input.title
-      : token === "{{date}}" ? input.date
-      : token === "{{time}}" ? input.time
-      : token === "{{vault-relative-path}}" ? input.target
-      : null;
+    const value =
+      token === "{{title}}"
+        ? input.title
+        : token === "{{date}}"
+          ? input.date
+          : token === "{{time}}"
+            ? input.time
+            : token === "{{vault-relative-path}}"
+              ? input.target
+              : null;
     if (value === null) throw new Error("지원하지 않는 템플릿 변수가 있습니다");
     append(value);
     offset = end + 2;
@@ -309,7 +327,8 @@ let mockTemplates: NoteTemplate[] = [
   {
     id: 1,
     name: "일일 노트",
-    content: "---\ntitle: {{title}}\ndate: {{date}}\n---\n\n# {{title}}\n\n{{time}}에 {{vault-relative-path}}에서 작성되었습니다.\n",
+    content:
+      "---\ntitle: {{title}}\ndate: {{date}}\n---\n\n# {{title}}\n\n{{time}}에 {{vault-relative-path}}에서 작성되었습니다.\n",
     createdAtMs: Date.now(),
     updatedAtMs: Date.now(),
   },
@@ -350,9 +369,7 @@ export async function knowledgeWatcherStatus(): Promise<KnowledgeWatcherStatus> 
   return invoke<KnowledgeWatcherStatus>("knowledge_watcher_status");
 }
 
-export async function onKnowledgeWatcherStatus(
-  cb: (status: KnowledgeWatcherStatus) => void,
-): Promise<() => void> {
+export async function onKnowledgeWatcherStatus(cb: (status: KnowledgeWatcherStatus) => void): Promise<() => void> {
   if (!isTauri()) return () => undefined;
   const { listen } = await import("@tauri-apps/api/event");
   return listen<KnowledgeWatcherStatus>("knowledge-watcher-status", (event) => cb(event.payload));
@@ -368,7 +385,11 @@ export async function readFile(rel: string): Promise<NoteSnapshot> {
 export async function openInboundNote(path: string): Promise<InboundNote> {
   if (!isTauri()) {
     const normalized = path.replace(/\\/g, "/");
-    return { path: normalized.split("/Knowledge/").pop() ?? normalized, content: "# Mock note\n", revision: "mock-revision" };
+    return {
+      path: normalized.split("/Knowledge/").pop() ?? normalized,
+      content: "# Mock note\n",
+      revision: "mock-revision",
+    };
   }
   return invoke<InboundNote>("open_inbound_note", { path });
 }
@@ -494,12 +515,15 @@ export async function updateTemplate(id: number, draft: TemplateDraft): Promise<
     validateTemplateDraftInput(normalized);
     const index = mockTemplates.findIndex((template) => template.id === id);
     if (index < 0) throw new Error("템플릿을 찾을 수 없습니다");
-    if (mockTemplates.some((template) => template.id !== id
-      && template.name.toLocaleLowerCase() === normalized.name.toLocaleLowerCase())) {
+    if (
+      mockTemplates.some(
+        (template) => template.id !== id && template.name.toLocaleLowerCase() === normalized.name.toLocaleLowerCase(),
+      )
+    ) {
       throw new Error("템플릿 이름이 이미 있습니다");
     }
     const template = { ...mockTemplates[index], ...normalized, updatedAtMs: Date.now() };
-    mockTemplates = mockTemplates.map((item, itemIndex) => itemIndex === index ? template : item);
+    mockTemplates = mockTemplates.map((item, itemIndex) => (itemIndex === index ? template : item));
     return template;
   }
   return invoke<NoteTemplate>("update_template", { id, draft });
@@ -599,7 +623,11 @@ export async function openIn(appId: string, rel: string): Promise<void> {
 
 /** 편집기 메뉴에서 사용자가 Paste를 선택한 순간에만 plain text를 읽는다. */
 export async function readClipboardText(maxBytes?: number): Promise<string> {
-  const text = !isTauri() ? await navigator.clipboard.readText() : isProductHosted() ? await invoke<string>("read_clipboard_text") : await readText();
+  const text = !isTauri()
+    ? await navigator.clipboard.readText()
+    : isProductHosted()
+      ? await invoke<string>("read_clipboard_text")
+      : await readText();
   if (maxBytes !== undefined && !isQuickCaptureUtf8Within(text, maxBytes)) {
     throw new Error("본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요");
   }
@@ -642,7 +670,10 @@ export async function saveImageAsset(noteRel: string, bytes: Uint8Array): Promis
 
 export async function searchDocs(query: string): Promise<SearchResult[]> {
   if (!isTauri()) {
-    return MOCK_TREE.filter((t) => !t.is_dir && t.path.toLowerCase().includes(query.toLowerCase())).map((t) => ({ path: t.path, title: t.path.split("/").pop() ?? t.path }));
+    return MOCK_TREE.filter((t) => !t.is_dir && t.path.toLowerCase().includes(query.toLowerCase())).map((t) => ({
+      path: t.path,
+      title: t.path.split("/").pop() ?? t.path,
+    }));
   }
   return invoke<SearchResult[]>("search_docs", { query });
 }
@@ -660,8 +691,7 @@ export async function analyzeWikilinks(content: string): Promise<WikilinkOccurre
 export async function wikilinkCandidates(query: string): Promise<WikilinkCandidate[]> {
   if (!isTauri()) {
     const normalized = query.trim().toLowerCase();
-    return MOCK_TREE
-      .filter((entry) => !entry.is_dir && entry.path.toLowerCase().endsWith(".md"))
+    return MOCK_TREE.filter((entry) => !entry.is_dir && entry.path.toLowerCase().endsWith(".md"))
       .filter((entry) => entry.path.toLowerCase().includes(normalized))
       .slice(0, 100)
       .map((entry) => ({
@@ -699,9 +729,9 @@ function safeQuickCaptureShortcutStatus(value: unknown): QuickCaptureShortcutSta
   if (typeof value === "object" && value !== null) {
     const candidate = value as { shortcut?: unknown; state?: unknown };
     if (
-      candidate.shortcut === QUICK_CAPTURE_SHORTCUT
-      && typeof candidate.state === "string"
-      && QUICK_CAPTURE_SHORTCUT_STATES.includes(candidate.state as QuickCaptureShortcutStatus["state"])
+      candidate.shortcut === QUICK_CAPTURE_SHORTCUT &&
+      typeof candidate.state === "string" &&
+      QUICK_CAPTURE_SHORTCUT_STATES.includes(candidate.state as QuickCaptureShortcutStatus["state"])
     ) {
       return {
         shortcut: QUICK_CAPTURE_SHORTCUT,
@@ -751,14 +781,14 @@ function parseQuickCapturePreview(value: unknown): QuickCapturePreview {
   const body = value.body;
   const tags = value.tags;
   if (
-    !isSafeQuickCapturePreviewId(previewId)
-    || previewId.length > MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES
-    || target !== QUICK_CAPTURE_TARGET
-    || typeof title !== "string"
-    || typeof body !== "string"
-    || !Array.isArray(tags)
-    || tags.length > MAX_QUICK_CAPTURE_TAGS
-    || tags.some((tag) => typeof tag !== "string" || !isQuickCaptureUtf8Within(tag, MAX_QUICK_CAPTURE_TAG_ITEM_BYTES))
+    !isSafeQuickCapturePreviewId(previewId) ||
+    previewId.length > MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES ||
+    target !== QUICK_CAPTURE_TARGET ||
+    typeof title !== "string" ||
+    typeof body !== "string" ||
+    !Array.isArray(tags) ||
+    tags.length > MAX_QUICK_CAPTURE_TAGS ||
+    tags.some((tag) => typeof tag !== "string" || !isQuickCaptureUtf8Within(tag, MAX_QUICK_CAPTURE_TAG_ITEM_BYTES))
   ) {
     throw new Error("invalid quick capture preview");
   }
@@ -815,7 +845,7 @@ export async function discardQuickCapturePreview(previewId: string): Promise<voi
 }
 
 export async function quickCaptureShortcutStatus(): Promise<QuickCaptureShortcutStatus> {
-  if(isProductHosted())return {shortcut:"Ctrl+Alt+N",state:"managed"};
+  if (isProductHosted()) return { shortcut: "Ctrl+Alt+N", state: "managed" };
   if (!isTauri()) {
     return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unsupported" };
   }
@@ -835,7 +865,7 @@ export async function onQuickCaptureRequested(cb: () => void): Promise<() => voi
 export async function onQuickCaptureShortcutStatusChanged(
   cb: (status: QuickCaptureShortcutStatus) => void,
 ): Promise<() => void> {
-  if(isProductHosted())return ()=>undefined;
+  if (isProductHosted()) return () => undefined;
   if (!isTauri()) return () => undefined;
   const { listen } = await import("@tauri-apps/api/event");
   return listen<QuickCaptureShortcutStatus>("knowledge://quick-capture-shortcut-status", (event) => {
@@ -861,7 +891,10 @@ export async function openExternal(url: string): Promise<void> {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
-  if (isProductHosted()) { await invoke("open_external_url", { url }); return; }
+  if (isProductHosted()) {
+    await invoke("open_external_url", { url });
+    return;
+  }
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }

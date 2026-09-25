@@ -16,13 +16,7 @@ const revokeObjectUrlMock = vi.fn<(url: string) => void>();
 let clickedDownload = "";
 let clickedHref = "";
 
-function InputHarness({
-  initial = "alpha beta",
-  maxPasteBytes,
-}: {
-  initial?: string;
-  maxPasteBytes?: number;
-}) {
+function InputHarness({ initial = "alpha beta", maxPasteBytes }: { initial?: string; maxPasteBytes?: number }) {
   const [value, setValue] = useState(initial);
   return (
     <ToolTextArea
@@ -140,9 +134,7 @@ describe("ToolTextArea context menu", () => {
     openMenu(input);
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
 
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "클립보드를 읽지 못했습니다: permission denied",
-    );
+    expect((await screen.findByRole("alert")).textContent).toBe("클립보드를 읽지 못했습니다: permission denied");
     expect(input.value).toBe("alpha beta");
   });
 
@@ -169,9 +161,11 @@ describe("ToolTextArea context menu", () => {
     await waitFor(() => expect(input.value).toBe("a"));
 
     let resolvePaste: (value: string) => void = () => undefined;
-    readClipboardTextMock.mockReturnValueOnce(new Promise<string>((resolve) => {
-      resolvePaste = resolve;
-    }));
+    readClipboardTextMock.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        resolvePaste = resolve;
+      }),
+    );
     openMenu(input);
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     fireEvent.change(input, { target: { value: "new" } });
@@ -182,9 +176,11 @@ describe("ToolTextArea context menu", () => {
     expect(input.value).toBe("new");
 
     let resolveUnmountedPaste: (value: string) => void = () => undefined;
-    readClipboardTextMock.mockReturnValueOnce(new Promise<string>((resolve) => {
-      resolveUnmountedPaste = resolve;
-    }));
+    readClipboardTextMock.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        resolveUnmountedPaste = resolve;
+      }),
+    );
     openMenu(input);
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     view.unmount();
@@ -197,13 +193,7 @@ describe("ToolTextArea context menu", () => {
 
 describe("ToolOutput context menu", () => {
   it("copies, selects, and downloads the exact visible result", async () => {
-    render(
-      <ToolOutput
-        className="io-output"
-        value="result text"
-        downloadName="toolbox-result.txt"
-      />,
-    );
+    render(<ToolOutput className="io-output" value="result text" downloadName="toolbox-result.txt" />);
     const output = screen.getByLabelText("출력");
 
     openMenu(output);
@@ -230,9 +220,7 @@ describe("ToolOutput context menu", () => {
     openMenu(screen.getByLabelText("출력"));
 
     for (const label of ["복사", "모두 선택", "결과 파일 저장"]) {
-      expect(screen.getByRole("menuitem", { name: label }).getAttribute("aria-disabled")).toBe(
-        "true",
-      );
+      expect(screen.getByRole("menuitem", { name: label }).getAttribute("aria-disabled")).toBe("true");
     }
   });
 
@@ -244,9 +232,7 @@ describe("ToolOutput context menu", () => {
     openMenu(output);
     fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
 
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "출력 작업을 완료하지 못했습니다: clipboard busy",
-    );
+    expect((await screen.findByRole("alert")).textContent).toBe("출력 작업을 완료하지 못했습니다: clipboard busy");
     expect(output.textContent).toBe("safe result");
   });
 });
@@ -258,13 +244,7 @@ describe("useAsyncTransform cancellation", () => {
       if (signal) signals.push(signal);
       return new Promise<{ output: string }>(() => undefined);
     };
-    const view = render(
-      <TransformerTool
-        placeholder="Text"
-        run={run}
-        clearOutputOnInput
-      />,
-    );
+    const view = render(<TransformerTool placeholder="Text" run={run} clearOutputOnInput />);
     const input = screen.getByRole("textbox", { name: "입력" });
 
     fireEvent.change(input, { target: { value: "first" } });

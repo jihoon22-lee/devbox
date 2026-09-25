@@ -80,11 +80,7 @@ export function saveStore(store: EnvironmentStore, storage: Storage = localStora
   }
 }
 
-export function addEnvironment(
-  store: EnvironmentStore,
-  name: string,
-  makeId: () => string,
-): EnvironmentStore {
+export function addEnvironment(store: EnvironmentStore, name: string, makeId: () => string): EnvironmentStore {
   const env: Environment = { id: makeId(), name: name.trim() || "새 환경", variables: [] };
   return { ...store, environments: [...store.environments, env] };
 }
@@ -118,26 +114,29 @@ export function setVariable(
 function isEnvironment(value: unknown): value is Environment {
   if (!value || typeof value !== "object") return false;
   const environment = value as Partial<Environment>;
-  return typeof environment.id === "string"
-    && typeof environment.name === "string"
-    && Array.isArray(environment.variables)
-    && environment.variables.every(isEnvironmentVariable);
+  return (
+    typeof environment.id === "string" &&
+    typeof environment.name === "string" &&
+    Array.isArray(environment.variables) &&
+    environment.variables.every(isEnvironmentVariable)
+  );
 }
 
 function isEnvironmentVariable(value: unknown): value is EnvVariable {
   if (!value || typeof value !== "object") return false;
   const variable = value as Partial<EnvVariable>;
-  return typeof variable.key === "string"
-    && typeof variable.value === "string"
-    && typeof variable.secret === "boolean";
+  return typeof variable.key === "string" && typeof variable.value === "string" && typeof variable.secret === "boolean";
 }
 
 /// 문자열의 `{{name}}` 또는 `${name}`을 치환한다. 알 수 없는 변수는 그대로 둔다.
 export function applyVariables(template: string, variables: Map<string, string>): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}|\$\{\s*([a-zA-Z0-9_.-]+)\s*\}/g, (match, moustache: string, dollar: string) => {
-    const name = moustache ?? dollar;
-    return variables.get(name) ?? match;
-  });
+  return template.replace(
+    /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}|\$\{\s*([a-zA-Z0-9_.-]+)\s*\}/g,
+    (match, moustache: string, dollar: string) => {
+      const name = moustache ?? dollar;
+      return variables.get(name) ?? match;
+    },
+  );
 }
 
 /// 요청의 URL·헤더·cookie·text multipart·body·params에 environment를 적용한다 (원본 template 불변).
@@ -162,15 +161,17 @@ export function applyToRequest<T>(request: T, variables: Map<string, string>): T
     }));
   }
   if (Array.isArray(out.multipart)) {
-    out.multipart = (out.multipart as Array<{
-      kind: "text" | "file";
-      name: string;
-      value: string;
-      file_path: string;
-      file_name: string;
-      content_type: string;
-      enabled?: boolean;
-    }>).map((part) => ({
+    out.multipart = (
+      out.multipart as Array<{
+        kind: "text" | "file";
+        name: string;
+        value: string;
+        file_path: string;
+        file_name: string;
+        content_type: string;
+        enabled?: boolean;
+      }>
+    ).map((part) => ({
       ...part,
       value: part.kind === "text" ? applyVariables(part.value, variables) : "",
     }));

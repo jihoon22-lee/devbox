@@ -191,9 +191,14 @@ describe("convertCase", () => {
   it("공백으로 구분된 단어를 6가지 표기로 변환한다", () => {
     const out = convertCase("hello world");
     expect(out).toBe(
-      ["UPPER: HELLO WORLD", "lower: hello world", "Pascal: HelloWorld", "camel: helloWorld", "kebab: hello-world", "snake: hello_world"].join(
-        "\n",
-      ),
+      [
+        "UPPER: HELLO WORLD",
+        "lower: hello world",
+        "Pascal: HelloWorld",
+        "camel: helloWorld",
+        "kebab: hello-world",
+        "snake: hello_world",
+      ].join("\n"),
     );
   });
 

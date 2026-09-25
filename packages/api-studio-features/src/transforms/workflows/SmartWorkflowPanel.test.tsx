@@ -51,9 +51,13 @@ describe("SmartWorkflowPanel", () => {
     const view = render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
     fireEvent.change(input(), { target: { value: '{"password":"secret-value"}' } });
     fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));
-    await waitFor(() => expect((screen.getByRole("button", { name: "파이프라인 저장" }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "파이프라인 저장" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
-    await waitFor(() => expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "현재 도구 즐겨찾기" }));
 
     await waitFor(() => {

@@ -7,8 +7,7 @@ vi.mock("../api", () => ({
   createKnowledgeDraftHandoff: vi.fn(),
   KNOWLEDGE_DRAFT_BROWSER_ERROR:
     "Knowledge 초안 전달은 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다",
-  KNOWLEDGE_DRAFT_CREATE_ERROR:
-    "Knowledge 초안을 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
+  KNOWLEDGE_DRAFT_CREATE_ERROR: "Knowledge 초안을 만들거나 전달하지 못했습니다. 클립보드로 자동 전환하지 않습니다",
   KNOWLEDGE_DRAFT_INPUT_ERROR: "Knowledge 초안으로 전달할 텍스트가 유효하지 않습니다",
   KNOWLEDGE_DRAFT_INVALID_ERROR: "Knowledge 초안 응답을 사용할 수 없습니다",
   KNOWLEDGE_DRAFT_TARGET_UNAVAILABLE_ERROR:
@@ -86,7 +85,10 @@ describe("Knowledge draft output action", () => {
   it("closes on output change and ignores a late publish response", async () => {
     let resolveDispatch!: (value: { handoffId: string; redacted: boolean }) => void;
     createKnowledgeDraftHandoffMock.mockImplementationOnce(
-      () => new Promise((resolve) => { resolveDispatch = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveDispatch = resolve;
+        }),
     );
     const view = render(<KnowledgeDraftAction value="first output" />);
     fireEvent.click(screen.getByRole("button", { name: "Knowledge에 초안 저장" }));
@@ -104,7 +106,10 @@ describe("Knowledge draft output action", () => {
   it("ignores a late response after unmount", async () => {
     let resolveDispatch!: (value: { handoffId: string; redacted: boolean }) => void;
     createKnowledgeDraftHandoffMock.mockImplementationOnce(
-      () => new Promise((resolve) => { resolveDispatch = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveDispatch = resolve;
+        }),
     );
     const view = render(<KnowledgeDraftAction value="unmounted output" />);
     fireEvent.click(screen.getByRole("button", { name: "Knowledge에 초안 저장" }));

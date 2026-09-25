@@ -70,15 +70,21 @@ export function useAppDialog(): {
   }, []);
 
   const ask = useCallback<AskDialog>((request) => {
-    const run = chain.current.then(() => new Promise<DialogAnswer>((resolve) => {
-      if (!mounted.current) {
-        resolve(CANCELLED);
-        return;
-      }
-      outstanding.current.add(resolve);
-      setPending({ id: ++nextId.current, request, resolve });
-    }));
-    chain.current = run.then(() => undefined, () => undefined);
+    const run = chain.current.then(
+      () =>
+        new Promise<DialogAnswer>((resolve) => {
+          if (!mounted.current) {
+            resolve(CANCELLED);
+            return;
+          }
+          outstanding.current.add(resolve);
+          setPending({ id: ++nextId.current, request, resolve });
+        }),
+    );
+    chain.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }, []);
 
@@ -110,11 +116,11 @@ export default function AppDialog({ pending, onAnswer }: AppDialogProps) {
   // Draft is derived during render rather than reset from an effect: a new request must show
   // its default value on the first paint, not one commit later.
   const [draft, setDraft] = useState<Draft>({ id: 0, value: "", remember: false });
-  const current: Draft = draft.id === dialogId
-    ? draft
-    : { id: dialogId, value: request?.defaultValue ?? "", remember: false };
+  const current: Draft =
+    draft.id === dialogId ? draft : { id: dialogId, value: request?.defaultValue ?? "", remember: false };
   const { value, remember } = current;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!dialogId) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -131,7 +137,6 @@ export default function AppDialog({ pending, onAnswer }: AppDialogProps) {
       restoreFocus(opener);
     };
     // 요청 identity가 바뀔 때만 focus를 옮긴다. 입력 중 재실행하면 커서가 튄다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogId]);
 
   if (!request) return null;
@@ -159,7 +164,9 @@ export default function AppDialog({ pending, onAnswer }: AppDialogProps) {
       >
         <h2 className="dialog-title">{request.title}</h2>
         {request.lines?.map((line) => (
-          <p key={line} className="dialog-line">{line}</p>
+          <p key={line} className="dialog-line">
+            {line}
+          </p>
         ))}
         {request.detail !== undefined && <pre className="dialog-detail">{request.detail}</pre>}
         {isPrompt && (

@@ -17,8 +17,9 @@ describe("HTML entity text codec", () => {
   });
 
   it("decodes named and numeric entities without using an HTML parser", () => {
-    expect(htmlEntityDecode("&lt;copy&gt; &amp; &copy; &NotEqualTilde; &#169; &#x1F600; &apos;"))
-      .toBe("<copy> & © ≂̸ © 😀 '");
+    expect(htmlEntityDecode("&lt;copy&gt; &amp; &copy; &NotEqualTilde; &#169; &#x1F600; &apos;")).toBe(
+      "<copy> & © ≂̸ © 😀 '",
+    );
   });
 
   it("preserves a literal ampersand that cannot begin an entity", () => {
@@ -26,29 +27,19 @@ describe("HTML entity text codec", () => {
   });
 
   it("fails closed for unknown, unterminated, invalid, and surrogate entities", () => {
-    for (const input of [
-      "&unknown;",
-      "&constructor;",
-      "&amp",
-      "&#xZZ;",
-      "&#12345678;",
-      "&#x110000;",
-      "&#xD800;",
-    ]) {
-      expect(() => htmlEntityDecode(input)).toThrowError(
-        new TextTransformError("malformed_entity"),
-      );
+    for (const input of ["&unknown;", "&constructor;", "&amp", "&#xZZ;", "&#12345678;", "&#x110000;", "&#xD800;"]) {
+      expect(() => htmlEntityDecode(input)).toThrowError(new TextTransformError("malformed_entity"));
     }
   });
 
   it("bounds entity expansion and input before unbounded work", () => {
-    expect(() => htmlEntityDecode("&amp;".repeat(TEXT_ENCODING_LIMITS.maxEntityCount + 1)))
-      .toThrowError(new TextTransformError("entity_limit"));
-    expect(() => htmlEntityEncode("&".repeat(1_000_000))).toThrowError(
-      new TextTransformError("output_too_large"),
+    expect(() => htmlEntityDecode("&amp;".repeat(TEXT_ENCODING_LIMITS.maxEntityCount + 1))).toThrowError(
+      new TextTransformError("entity_limit"),
     );
-    expect(() => htmlEntityEncode("a".repeat(TEXT_ENCODING_LIMITS.maxInputBytes + 1)))
-      .toThrowError(new TextTransformError("input_too_large"));
+    expect(() => htmlEntityEncode("&".repeat(1_000_000))).toThrowError(new TextTransformError("output_too_large"));
+    expect(() => htmlEntityEncode("a".repeat(TEXT_ENCODING_LIMITS.maxInputBytes + 1))).toThrowError(
+      new TextTransformError("input_too_large"),
+    );
   });
 });
 
@@ -62,21 +53,18 @@ describe("URL component text codec", () => {
 
   it("rejects malformed percent escapes and invalid UTF-8 with a fixed error", () => {
     for (const input of ["%", "%zz", "%E0%A4%A", "%C0%AF"]) {
-      expect(() => urlComponentDecode(input)).toThrowError(
-        new TextTransformError("malformed_url"),
-      );
+      expect(() => urlComponentDecode(input)).toThrowError(new TextTransformError("malformed_url"));
     }
   });
 
   it("rejects lone surrogates instead of replacing them", () => {
-    expect(() => urlComponentEncode("\ud800")).toThrowError(
-      new TextTransformError("invalid_unicode"),
-    );
+    expect(() => urlComponentEncode("\ud800")).toThrowError(new TextTransformError("invalid_unicode"));
   });
 
   it("applies the input bound before URL encoding work", () => {
-    expect(() => urlComponentEncode("a".repeat(TEXT_ENCODING_LIMITS.maxInputBytes + 1)))
-      .toThrowError(new TextTransformError("input_too_large"));
+    expect(() => urlComponentEncode("a".repeat(TEXT_ENCODING_LIMITS.maxInputBytes + 1))).toThrowError(
+      new TextTransformError("input_too_large"),
+    );
   });
 });
 

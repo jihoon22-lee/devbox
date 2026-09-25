@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type HTMLAttributes,
-  type KeyboardEvent,
-  type MouseEvent,
-} from "react";
+import { useCallback, useMemo, useState, type HTMLAttributes, type KeyboardEvent, type MouseEvent } from "react";
 import type { Point } from "./position";
 
 interface OpenState {
@@ -20,10 +13,7 @@ export interface UseContextMenuOptions {
 }
 
 export interface ContextMenuTriggerProps
-  extends Pick<
-    HTMLAttributes<HTMLElement>,
-    "aria-haspopup" | "aria-expanded" | "onContextMenu" | "onKeyDown"
-  > {}
+  extends Pick<HTMLAttributes<HTMLElement>, "aria-haspopup" | "aria-expanded" | "onContextMenu" | "onKeyDown"> {}
 
 export interface ContextMenuController {
   open: boolean;
@@ -67,21 +57,14 @@ export function useContextMenu(options: UseContextMenuOptions = {}): ContextMenu
       if (options.disabled) return;
       event.preventDefault();
       options.onBeforeOpen?.("pointer", event.currentTarget);
-      openAt(
-        { x: event.clientX, y: event.clientY },
-        event.currentTarget,
-      );
+      openAt({ x: event.clientX, y: event.clientY }, event.currentTarget);
     },
     [openAt, options.disabled, options.onBeforeOpen],
   );
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (
-        options.disabled ||
-        isComposing(event) ||
-        !(isMenuKey(event) || (event.shiftKey && event.key === "F10"))
-      ) {
+      if (options.disabled || isComposing(event) || !(isMenuKey(event) || (event.shiftKey && event.key === "F10"))) {
         return;
       }
       event.preventDefault();

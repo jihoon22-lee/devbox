@@ -26,7 +26,7 @@ vi.mock("./api", () => ({
   cancelMcpHttp: mocks.cancel,
   disconnectMcpHttp: mocks.disconnect,
   nextMcpRequestId: () => `mcp-${++mocks.nextId}`,
-  safeMcpErrorCode: (cause: unknown) => cause instanceof Error ? cause.message : String(cause),
+  safeMcpErrorCode: (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)),
 }));
 
 vi.mock("./mcpApi", () => ({
@@ -144,35 +144,34 @@ afterEach(() => cleanup());
 describe("Protocol Lab", () => {
   it("keeps browser preview native-only", () => {
     render(<ProtocolLab environment={[]} native={false} />);
-    expect(screen.getByText(/브라우저 미리보기에서는 MCP 네트워크 요청을 보내지 않습니다/))
-      .not.toBeNull();
-    expect((screen.getByRole("button", { name: "연결" }) as HTMLButtonElement).disabled)
-      .toBe(true);
+    expect(screen.getByText(/브라우저 미리보기에서는 MCP 네트워크 요청을 보내지 않습니다/)).not.toBeNull();
+    expect((screen.getByRole("button", { name: "연결" }) as HTMLButtonElement).disabled).toBe(true);
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
   it("gates capabilities and requires explicit list then schema-valid tool call", async () => {
     mocks.invoke
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        tools: [{
-          name: "echo",
-          description: "untrusted description",
-          inputSchema: {
-            type: "object",
-            additionalProperties: false,
-            required: ["message"],
-            properties: { message: { type: "string", minLength: 1 } },
-          },
-        }],
-      }))
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          tools: [
+            {
+              name: "echo",
+              description: "untrusted description",
+              inputSchema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["message"],
+                properties: { message: { type: "string", minLength: 1 } },
+              },
+            },
+          ],
+        }),
+      )
       .mockResolvedValueOnce(invokeResult({ resultType: "complete", content: [] }));
     render(<ProtocolLab environment={[]} native />);
     await connect();
-    expect(screen.getAllByText(
-      "서버가 이 capability를 제공하지 않습니다.",
-      { selector: "p" },
-    )).toHaveLength(2);
+    expect(screen.getAllByText("서버가 이 capability를 제공하지 않습니다.", { selector: "p" })).toHaveLength(2);
     expect(mocks.invoke).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
@@ -180,26 +179,36 @@ describe("Protocol Lab", () => {
     const call = screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement;
     expect(call.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("message string"), { target: { value: "hello" } });
-    await waitFor(() => expect(
-      (screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement).disabled,
-    ).toBe(false));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "선택 tool 호출" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-2",
-      "tools/call",
-      { name: "echo", arguments: { message: "hello" } },
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenLastCalledWith(connection.connectionId, "mcp-2", "tools/call", {
+        name: "echo",
+        arguments: { message: "hello" },
+      }),
+    );
   });
 
   it("loads pagination only when the user asks and cancels the owned request", async () => {
     let rejectSecond: ((reason: Error) => void) | undefined;
     mocks.invoke
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        tools: [{ name: "one", inputSchema: { type: "object", properties: {} } }],
-      }, "cursor-1"))
-      .mockImplementationOnce(() => new Promise((_, reject) => { rejectSecond = reject; }));
+      .mockResolvedValueOnce(
+        invokeResult(
+          {
+            resultType: "complete",
+            tools: [{ name: "one", inputSchema: { type: "object", properties: {} } }],
+          },
+          "cursor-1",
+        ),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectSecond = reject;
+          }),
+      );
     render(<ProtocolLab environment={[]} native />);
     await connect();
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
@@ -208,26 +217,22 @@ describe("Protocol Lab", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "목록 다음 페이지" }));
     await screen.findByText(/tools\/list 실행 중/);
-    expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-2",
-      "tools/list",
-      { cursor: "cursor-1" },
-    );
+    expect(mocks.invoke).toHaveBeenLastCalledWith(connection.connectionId, "mcp-2", "tools/list", {
+      cursor: "cursor-1",
+    });
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
-    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(
-      connection.connectionId,
-      "mcp-2",
-    ));
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(connection.connectionId, "mcp-2"));
     rejectSecond?.(new Error("mcp_stdio_request_cancelled"));
   });
 
   it("calls a tool whose valid root object schema omits properties", async () => {
     mocks.invoke
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        tools: [{ name: "ping", inputSchema: { type: "object" } }],
-      }))
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          tools: [{ name: "ping", inputSchema: { type: "object" } }],
+        }),
+      )
       .mockResolvedValueOnce(invokeResult({ resultType: "complete", content: [] }));
     render(<ProtocolLab environment={[]} native />);
     await connect();
@@ -236,12 +241,12 @@ describe("Protocol Lab", () => {
     const call = screen.getByRole("button", { name: "선택 tool 호출" }) as HTMLButtonElement;
     expect(call.disabled).toBe(false);
     fireEvent.click(call);
-    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-2",
-      "tools/call",
-      { name: "ping", arguments: {} },
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenLastCalledWith(connection.connectionId, "mcp-2", "tools/call", {
+        name: "ping",
+        arguments: {},
+      }),
+    );
   });
 
   it("closes a stale native connection without replaying the request", async () => {
@@ -264,23 +269,31 @@ describe("Protocol Lab", () => {
       },
     });
     mocks.invoke
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        resources: [{ uri: "fixture://resource", name: "Fixture resource" }],
-      }))
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        contents: [{ uri: "fixture://resource", text: "body" }],
-      }))
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        prompts: [{ name: "draft", arguments: [{ name: "topic", required: true }] }],
-      }))
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        description: "drafted",
-        messages: [],
-      }));
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          resources: [{ uri: "fixture://resource", name: "Fixture resource" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          contents: [{ uri: "fixture://resource", text: "body" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          prompts: [{ name: "draft", arguments: [{ name: "topic", required: true }] }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          description: "drafted",
+          messages: [],
+        }),
+      );
 
     render(<ProtocolLab environment={[]} native />);
     await connect();
@@ -290,30 +303,24 @@ describe("Protocol Lab", () => {
 
     fireEvent.click(within(resources).getByRole("button", { name: "Resource 조회" }));
     await within(resources).findByRole("option", { name: "Fixture resource" });
-    expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-1",
-      "resources/list",
-      {},
-    );
+    expect(mocks.invoke).toHaveBeenLastCalledWith(connection.connectionId, "mcp-1", "resources/list", {});
     fireEvent.click(within(resources).getByRole("button", { name: "Resource 읽기" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-2",
-      "resources/read",
-      { uri: "fixture://resource" },
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenLastCalledWith(connection.connectionId, "mcp-2", "resources/read", {
+        uri: "fixture://resource",
+      }),
+    );
 
     fireEvent.click(within(prompts).getByRole("button", { name: "목록 조회" }));
     const topic = await within(prompts).findByLabelText(/topic/);
     fireEvent.change(topic, { target: { value: "release" } });
     fireEvent.click(within(prompts).getByRole("button", { name: "Prompt 가져오기" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-4",
-      "prompts/get",
-      { name: "draft", arguments: { topic: "release" } },
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenLastCalledWith(connection.connectionId, "mcp-4", "prompts/get", {
+        name: "draft",
+        arguments: { topic: "release" },
+      }),
+    );
   });
 
   it("shows only safe native stdio selection labels and handles picker cancellation", async () => {
@@ -332,10 +339,8 @@ describe("Protocol Lab", () => {
       expect(mocks.pickCwd).toHaveBeenCalledTimes(1);
     });
     expect(screen.getAllByText("선택하지 않음")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "실행 파일 선택" }).getAttribute("aria-label"))
-      .toBe("실행 파일 선택");
-    expect(screen.getByRole("button", { name: "작업 폴더 선택" }).getAttribute("aria-label"))
-      .toBe("작업 폴더 선택");
+    expect(screen.getByRole("button", { name: "실행 파일 선택" }).getAttribute("aria-label")).toBe("실행 파일 선택");
+    expect(screen.getByRole("button", { name: "작업 폴더 선택" }).getAttribute("aria-label")).toBe("작업 폴더 선택");
   });
 
   it("builds a structured stdio profile without accepting raw paths", async () => {
@@ -384,29 +389,31 @@ describe("Protocol Lab", () => {
     let rejectSecond: ((reason: Error) => void) | undefined;
     mocks.pickExecutable.mockResolvedValueOnce(executableSelection);
     mocks.invokeStdio
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        tools: [{ name: "one", inputSchema: { type: "object", properties: {} } }],
-      }, "cursor-1"))
-      .mockImplementationOnce(() => new Promise((_, reject) => { rejectSecond = reject; }));
+      .mockResolvedValueOnce(
+        invokeResult(
+          {
+            resultType: "complete",
+            tools: [{ name: "one", inputSchema: { type: "object", properties: {} } }],
+          },
+          "cursor-1",
+        ),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectSecond = reject;
+          }),
+      );
     render(<ProtocolLab environment={[]} native />);
     await connectStdio();
 
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
     await screen.findByRole("button", { name: "목록 다음 페이지" });
-    expect(mocks.invokeStdio).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      "mcp-1",
-      "tools/list",
-      {},
-    );
+    expect(mocks.invokeStdio).toHaveBeenLastCalledWith(connection.connectionId, "mcp-1", "tools/list", {});
     fireEvent.click(screen.getByRole("button", { name: "목록 다음 페이지" }));
     await screen.findByText(/tools\/list 실행 중/);
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
-    await waitFor(() => expect(mocks.cancelStdio).toHaveBeenCalledWith(
-      connection.connectionId,
-      "mcp-2",
-    ));
+    await waitFor(() => expect(mocks.cancelStdio).toHaveBeenCalledWith(connection.connectionId, "mcp-2"));
     rejectSecond?.(new Error("mcp_stdio_request_cancelled"));
     await waitFor(() => expect(screen.queryByText("fixture")).toBeNull());
     mocks.connectStdio.mockResolvedValueOnce(connection);
@@ -425,8 +432,7 @@ describe("Protocol Lab", () => {
     });
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledWith(connection.connectionId));
     expect(screen.queryByText("fixture")).toBeNull();
-    expect((screen.getByRole("button", { name: "실행 파일 선택" }) as HTMLButtonElement).disabled)
-      .toBe(false);
+    expect((screen.getByRole("button", { name: "실행 파일 선택" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("treats stdio stale-after-cancel as successful transport-switch cleanup", async () => {
@@ -461,13 +467,7 @@ describe("Protocol Lab", () => {
     fireEvent.click(screen.getByRole("button", { name: "시스템 브라우저에서 OAuth 인증" }));
 
     await screen.findByText("선택한 OAuth grant");
-    expect(mocks.authorize).toHaveBeenCalledWith(
-      "mcp-1",
-      "https://example.test/mcp",
-      null,
-      "public-client",
-      ["tools"],
-    );
+    expect(mocks.authorize).toHaveBeenCalledWith("mcp-1", "https://example.test/mcp", null, "public-client", ["tools"]);
     expect(screen.getByText(/Windows DPAPI/)).not.toBeNull();
     expect(screen.queryByText(/accessToken|callbackCode|must-not-survive/)).toBeNull();
 
@@ -476,15 +476,17 @@ describe("Protocol Lab", () => {
       target: { value: "Authorization" },
     });
     expect(screen.getByRole("alert").textContent).toContain("함께 사용할 수 없습니다");
-    expect((screen.getByRole("button", { name: "연결" }) as HTMLButtonElement).disabled)
-      .toBe(true);
+    expect((screen.getByRole("button", { name: "연결" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("cancels the exact active OAuth authorization request", async () => {
     let rejectAuthorization: ((reason: Error) => void) | undefined;
-    mocks.authorize.mockImplementationOnce(() => new Promise((_, reject) => {
-      rejectAuthorization = reject;
-    }));
+    mocks.authorize.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectAuthorization = reject;
+        }),
+    );
     render(<ProtocolLab environment={[]} native />);
     fireEvent.change(screen.getByLabelText("MCP 엔드포인트"), {
       target: { value: "https://example.test/mcp" },
@@ -514,10 +516,7 @@ describe("Protocol Lab", () => {
     expect(screen.getByText(/원격에서 revoke하지 못했습니다/)).not.toBeNull();
 
     fireEvent.click(fallback);
-    await waitFor(() => expect(mocks.revokeGrant).toHaveBeenLastCalledWith(
-      oauthGrant.grantId,
-      true,
-    ));
+    await waitFor(() => expect(mocks.revokeGrant).toHaveBeenLastCalledWith(oauthGrant.grantId, true));
     expect(await screen.findByText(/로컬에서 제거했습니다/)).not.toBeNull();
     expect(screen.queryByText("선택한 OAuth grant")).toBeNull();
   });
@@ -528,18 +527,22 @@ describe("Protocol Lab", () => {
       server: { ...connection.server, capabilities: { prompts: {} } },
     });
     mocks.invoke
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        prompts: [
-          { name: "draft", arguments: [{ name: "topic", required: true }] },
-          { name: "summary", arguments: [{ name: "scope", required: true }] },
-        ],
-      }))
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        description: "drafted",
-        messages: [],
-      }));
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          prompts: [
+            { name: "draft", arguments: [{ name: "topic", required: true }] },
+            { name: "summary", arguments: [{ name: "scope", required: true }] },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          description: "drafted",
+          messages: [],
+        }),
+      );
 
     render(<ProtocolLab environment={[]} native />);
     await connect();
@@ -547,12 +550,13 @@ describe("Protocol Lab", () => {
     if (!prompts) throw new Error("prompts section missing");
 
     fireEvent.click(within(prompts).getByRole("button", { name: "목록 조회" }));
-    const topic = await within(prompts).findByLabelText(/topic/) as HTMLInputElement;
+    const topic = (await within(prompts).findByLabelText(/topic/)) as HTMLInputElement;
 
     // The derived arguments cover every field of the selected prompt on the commit that first
     // renders them, so the send button never waits for a follow-up reset to enable itself.
-    expect((within(prompts).getByRole("button", { name: "Prompt 가져오기" }) as HTMLButtonElement)
-      .disabled).toBe(false);
+    expect((within(prompts).getByRole("button", { name: "Prompt 가져오기" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
 
     fireEvent.change(topic, { target: { value: "release" } });
     expect(topic.value).toBe("release");
@@ -572,44 +576,48 @@ describe("Protocol Lab", () => {
     expect((within(prompts).getByLabelText(/scope/) as HTMLInputElement).value).toBe("week");
 
     fireEvent.click(within(prompts).getByRole("button", { name: "Prompt 가져오기" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      expect.stringMatching(/^mcp-/),
-      "prompts/get",
-      { name: "summary", arguments: { scope: "week" } },
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenLastCalledWith(
+        connection.connectionId,
+        expect.stringMatching(/^mcp-/),
+        "prompts/get",
+        { name: "summary", arguments: { scope: "week" } },
+      ),
+    );
   });
 
   it("keeps independent tool drafts when both selections are edited", async () => {
     mocks.invoke
-      .mockResolvedValueOnce(invokeResult({
-        resultType: "complete",
-        tools: [
-          {
-            name: "echo",
-            inputSchema: {
-              type: "object",
-              required: ["message"],
-              properties: { message: { type: "string" } },
+      .mockResolvedValueOnce(
+        invokeResult({
+          resultType: "complete",
+          tools: [
+            {
+              name: "echo",
+              inputSchema: {
+                type: "object",
+                required: ["message"],
+                properties: { message: { type: "string" } },
+              },
             },
-          },
-          {
-            name: "ping",
-            inputSchema: {
-              type: "object",
-              required: ["host"],
-              properties: { host: { type: "string" } },
+            {
+              name: "ping",
+              inputSchema: {
+                type: "object",
+                required: ["host"],
+                properties: { host: { type: "string" } },
+              },
             },
-          },
-        ],
-      }))
+          ],
+        }),
+      )
       .mockResolvedValueOnce(invokeResult({ resultType: "complete", content: [] }));
 
     render(<ProtocolLab environment={[]} native />);
     await connect();
 
     fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
-    const message = await screen.findByLabelText("message string") as HTMLInputElement;
+    const message = (await screen.findByLabelText("message string")) as HTMLInputElement;
     fireEvent.change(message, { target: { value: "hello" } });
     expect(message.value).toBe("hello");
 
@@ -626,12 +634,14 @@ describe("Protocol Lab", () => {
     expect((screen.getByLabelText("host string") as HTMLInputElement).value).toBe("localhost");
 
     fireEvent.click(screen.getByRole("button", { name: "선택 tool 호출" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
-      connection.connectionId,
-      expect.stringMatching(/^mcp-/),
-      "tools/call",
-      { name: "ping", arguments: { host: "localhost" } },
-    ));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenLastCalledWith(
+        connection.connectionId,
+        expect.stringMatching(/^mcp-/),
+        "tools/call",
+        { name: "ping", arguments: { host: "localhost" } },
+      ),
+    );
   });
 
   it("discards all MCP drafts when the connection is reset", async () => {
@@ -651,7 +661,7 @@ describe("Protocol Lab", () => {
     if (!prompts) throw new Error("prompts section missing");
 
     fireEvent.click(within(prompts).getByRole("button", { name: "목록 조회" }));
-    const topic = await within(prompts).findByLabelText(/topic/) as HTMLInputElement;
+    const topic = (await within(prompts).findByLabelText(/topic/)) as HTMLInputElement;
     fireEvent.change(topic, { target: { value: "private draft" } });
     expect(topic.value).toBe("private draft");
 
@@ -663,7 +673,6 @@ describe("Protocol Lab", () => {
     if (!reconnectedPrompts) throw new Error("prompts section missing after reconnect");
     fireEvent.click(within(reconnectedPrompts).getByRole("button", { name: "목록 조회" }));
 
-    expect((await within(reconnectedPrompts).findByLabelText(/topic/) as HTMLInputElement).value)
-      .toBe("");
+    expect(((await within(reconnectedPrompts).findByLabelText(/topic/)) as HTMLInputElement).value).toBe("");
   });
 });

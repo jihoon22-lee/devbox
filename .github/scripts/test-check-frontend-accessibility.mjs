@@ -18,16 +18,35 @@ function fixture(root, overrides = {}) {
   const app = path.join(root, "apps/sample-app");
   write(
     path.join(root, "packages/a11y/styles.css"),
-    overrides.sharedCss ?? ":focus-visible {}\n@media (prefers-reduced-motion: reduce) {}\n@media (forced-colors: active) {}\n",
+    overrides.sharedCss ??
+      ":focus-visible {}\n@media (prefers-reduced-motion: reduce) {}\n@media (forced-colors: active) {}\n",
   );
-  write(path.join(root, "apps/catalog.json"), JSON.stringify({ apps: [{ id: "sample-app", appDir: "apps/sample-app", release: true }] }));
-  write(path.join(app, "package.json"), JSON.stringify(overrides.package ?? {
-    dependencies: { "@devbox/a11y": "workspace:*", "@devbox/tokens": "workspace:*" },
-  }));
+  write(
+    path.join(root, "apps/catalog.json"),
+    JSON.stringify({ apps: [{ id: "sample-app", appDir: "apps/sample-app", release: true }] }),
+  );
+  write(
+    path.join(app, "package.json"),
+    JSON.stringify(
+      overrides.package ?? {
+        dependencies: { "@devbox/a11y": "workspace:*", "@devbox/tokens": "workspace:*" },
+      },
+    ),
+  );
   write(path.join(app, "index.html"), overrides.html ?? '<html lang="ko-KR"></html>');
-  write(path.join(app, "src/App.css"), overrides.css ?? '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n');
-  write(path.join(app, "vite.config.ts"), overrides.vite ?? "export default {\n  build: {\n    manifest: true,\n  },\n};\n");
-  write(path.join(app, "src/App.test.tsx"), overrides.test ?? 'import { assertNoA11yViolations } from "@devbox/a11y/testing";\nvoid assertNoA11yViolations(document);\n');
+  write(
+    path.join(app, "src/App.css"),
+    overrides.css ?? '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n',
+  );
+  write(
+    path.join(app, "vite.config.ts"),
+    overrides.vite ?? "export default {\n  build: {\n    manifest: true,\n  },\n};\n",
+  );
+  write(
+    path.join(app, "src/App.test.tsx"),
+    overrides.test ??
+      'import { assertNoA11yViolations } from "@devbox/a11y/testing";\nvoid assertNoA11yViolations(document);\n',
+  );
 }
 
 function run(root) {
@@ -85,23 +104,41 @@ try {
 
   const background = path.join(temp, "background");
   fixture(background, {
-    sharedCss: ":focus-visible {}\n@media (prefers-reduced-motion: reduce) {}\n@media (forced-colors: active) {}\nbody { background: red; }\n",
+    sharedCss:
+      ":focus-visible {}\n@media (prefers-reduced-motion: reduce) {}\n@media (forced-colors: active) {}\nbody { background: red; }\n",
   });
   expectFailure(background, "must not set a page background");
 
-
   const forwarded = path.join(temp, "forwarded");
   fixture(forwarded, {
-    package: { dependencies: { "@devbox/a11y": "workspace:*", "@devbox/tokens": "workspace:*", "@devbox/workspace-features": "workspace:*" } },
+    package: {
+      dependencies: {
+        "@devbox/a11y": "workspace:*",
+        "@devbox/tokens": "workspace:*",
+        "@devbox/workspace-features": "workspace:*",
+      },
+    },
     test: "// actual smoke moved with the component",
   });
   const forwardedApp = path.join(forwarded, "apps/sample-app/src/App.tsx");
   write(forwardedApp, 'export { default } from "@devbox/workspace-features/sample";\n');
-  write(path.join(forwarded, "packages/workspace-features/package.json"), JSON.stringify({ exports: { "./sample": "./src/sample/App.tsx", "./other": "./src/other/App.tsx" } }));
-  write(path.join(forwarded, "packages/workspace-features/src/sample/App.tsx"), "export default function App() { return null; }");
-  write(path.join(forwarded, "packages/workspace-features/src/other/App.tsx"), "export default function App() { return null; }");
-  write(path.join(forwarded, "packages/workspace-features/src/sample/App.test.tsx"), 'import { assertNoA11yViolations } from "@devbox/a11y/testing"; assertNoA11yViolations(container);');
-  const forwardedResult=run(forwarded);
+  write(
+    path.join(forwarded, "packages/workspace-features/package.json"),
+    JSON.stringify({ exports: { "./sample": "./src/sample/App.tsx", "./other": "./src/other/App.tsx" } }),
+  );
+  write(
+    path.join(forwarded, "packages/workspace-features/src/sample/App.tsx"),
+    "export default function App() { return null; }",
+  );
+  write(
+    path.join(forwarded, "packages/workspace-features/src/other/App.tsx"),
+    "export default function App() { return null; }",
+  );
+  write(
+    path.join(forwarded, "packages/workspace-features/src/sample/App.test.tsx"),
+    'import { assertNoA11yViolations } from "@devbox/a11y/testing"; assertNoA11yViolations(container);',
+  );
+  const forwardedResult = run(forwarded);
   assert.equal(forwardedResult.status, 0, forwardedResult.stderr);
   write(forwardedApp, 'export { default } from "@devbox/workspace-features/other";\n');
   expectFailure(forwarded, "axe accessibility smoke test");

@@ -77,15 +77,11 @@ let requestSequence = 0;
 export function nextMcpRequestId(): string {
   requestSequence = (requestSequence + 1) % Number.MAX_SAFE_INTEGER;
   const random = globalThis.crypto?.randomUUID?.().replace(/-/gu, "");
-  return random
-    ? `mcp-${random}`
-    : `mcp-${Date.now().toString(36)}-${requestSequence.toString(36)}`;
+  return random ? `mcp-${random}` : `mcp-${Date.now().toString(36)}-${requestSequence.toString(36)}`;
 }
 
 export function safeMcpErrorCode(cause: unknown): string {
-  const message = typeof cause === "string"
-    ? cause
-    : cause instanceof Error ? cause.message : "";
+  const message = typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "";
   if (message === NATIVE_REQUIRED || SAFE_ERROR_CODES.has(message)) return message;
   return "mcp_transport_failed";
 }
@@ -99,10 +95,10 @@ export async function connectMcpHttp(
   try {
     return validateConnectResult(value);
   } catch (cause) {
-    const connectionId = isRecord(value) && typeof value.connectionId === "string"
-      && CONNECTION_ID.test(value.connectionId)
-      ? value.connectionId
-      : null;
+    const connectionId =
+      isRecord(value) && typeof value.connectionId === "string" && CONNECTION_ID.test(value.connectionId)
+        ? value.connectionId
+        : null;
     if (connectionId) {
       try {
         await invoke<void>("disconnect_mcp_http", { connectionId });
@@ -133,10 +129,7 @@ export async function invokeMcpHttp(
   return validateInvokeResult(value, method, requestId);
 }
 
-export async function cancelMcpHttp(
-  connectionId: string,
-  requestId: string,
-): Promise<boolean> {
+export async function cancelMcpHttp(connectionId: string, requestId: string): Promise<boolean> {
   requireNative();
   if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("mcp_connection_stale");
@@ -172,19 +165,19 @@ async function pickMcpStdioSelection(
   const label = record.label;
   const expiresAtMs = record.expiresAtMs;
   if (
-    typeof selectionId !== "string"
-    || !CONNECTION_ID.test(selectionId)
-    || record.kind !== kind
-    || typeof label !== "string"
-    || utf8Bytes(label) > 256
-    || hasControl(label)
-    || label.includes("/")
-    || label.includes("\\")
-    || label === "."
-    || label === ".."
-    || typeof expiresAtMs !== "number"
-    || !Number.isSafeInteger(expiresAtMs)
-    || expiresAtMs < 0
+    typeof selectionId !== "string" ||
+    !CONNECTION_ID.test(selectionId) ||
+    record.kind !== kind ||
+    typeof label !== "string" ||
+    utf8Bytes(label) > 256 ||
+    hasControl(label) ||
+    label.includes("/") ||
+    label.includes("\\") ||
+    label === "." ||
+    label === ".." ||
+    typeof expiresAtMs !== "number" ||
+    !Number.isSafeInteger(expiresAtMs) ||
+    expiresAtMs < 0
   ) {
     throw new Error("mcp_stdio_selection_invalid");
   }
@@ -216,10 +209,10 @@ export async function connectMcpStdio(
   try {
     return validateConnectResult(value);
   } catch (cause) {
-    const connectionId = isRecord(value) && typeof value.connectionId === "string"
-      && CONNECTION_ID.test(value.connectionId)
-      ? value.connectionId
-      : null;
+    const connectionId =
+      isRecord(value) && typeof value.connectionId === "string" && CONNECTION_ID.test(value.connectionId)
+        ? value.connectionId
+        : null;
     if (connectionId) {
       try {
         await invoke<void>("disconnect_mcp_stdio", { connectionId });
@@ -250,10 +243,7 @@ export async function invokeMcpStdio(
   return validateInvokeResult(value, method, requestId);
 }
 
-export async function cancelMcpStdio(
-  connectionId: string,
-  requestId: string,
-): Promise<boolean> {
+export async function cancelMcpStdio(connectionId: string, requestId: string): Promise<boolean> {
   requireNative();
   if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("mcp_stdio_connection_stale");
@@ -278,13 +268,13 @@ export async function authorizeMcpHttp(
 ): Promise<McpOAuthGrantProjection> {
   requireNative();
   if (
-    !OAUTH_REQUEST_ID.test(requestId)
-    || !safeOAuthText(endpoint, 8 * 1024)
-    || (issuer !== null && issuer !== undefined && !safeOAuthText(issuer, 8 * 1024))
-    || !safeOAuthText(clientId, 8 * 1024)
-    || scopes.length > 32
-    || !scopes.every((scope) => isSafeOAuthScope(scope))
-    || new Set(scopes).size !== scopes.length
+    !OAUTH_REQUEST_ID.test(requestId) ||
+    !safeOAuthText(endpoint, 8 * 1024) ||
+    (issuer !== null && issuer !== undefined && !safeOAuthText(issuer, 8 * 1024)) ||
+    !safeOAuthText(clientId, 8 * 1024) ||
+    scopes.length > 32 ||
+    !scopes.every((scope) => isSafeOAuthScope(scope)) ||
+    new Set(scopes).size !== scopes.length
   ) {
     throw new Error("mcp_oauth_request_invalid");
   }
@@ -352,21 +342,18 @@ function validateOAuthGrantProjection(value: unknown): McpOAuthGrantProjection {
   const expiresAtMs = record.expiresAtMs;
   const status = record.status;
   if (
-    typeof grantId !== "string"
-    || !GRANT_ID.test(grantId)
-    || !safeOAuthText(issuer, 8 * 1024)
-    || !safeOAuthText(resource, 8 * 1024)
-    || !safeOAuthText(clientId, 8 * 1024)
-    || !Array.isArray(scopes)
-    || scopes.length > 32
-    || !scopes.every((scope) => isSafeOAuthScope(scope))
-    || new Set(scopes).size !== scopes.length
-    || (expiresAtMs !== null && (
-      typeof expiresAtMs !== "number"
-      || !Number.isSafeInteger(expiresAtMs)
-      || expiresAtMs < 0
-    ))
-    || (status !== "active" && status !== "expired")
+    typeof grantId !== "string" ||
+    !GRANT_ID.test(grantId) ||
+    !safeOAuthText(issuer, 8 * 1024) ||
+    !safeOAuthText(resource, 8 * 1024) ||
+    !safeOAuthText(clientId, 8 * 1024) ||
+    !Array.isArray(scopes) ||
+    scopes.length > 32 ||
+    !scopes.every((scope) => isSafeOAuthScope(scope)) ||
+    new Set(scopes).size !== scopes.length ||
+    (expiresAtMs !== null &&
+      (typeof expiresAtMs !== "number" || !Number.isSafeInteger(expiresAtMs) || expiresAtMs < 0)) ||
+    (status !== "active" && status !== "expired")
   ) {
     throw new Error("mcp_oauth_request_invalid");
   }
@@ -382,20 +369,19 @@ function validateOAuthGrantProjection(value: unknown): McpOAuthGrantProjection {
 }
 
 function safeOAuthText(value: unknown, maxBytes: number): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && utf8Bytes(value) <= maxBytes
-    && !hasControl(value);
+  return typeof value === "string" && value.length > 0 && utf8Bytes(value) <= maxBytes && !hasControl(value);
 }
 
 function isSafeOAuthScope(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= 256
-    && [...value].every((character) => {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    [...value].every((character) => {
       const code = character.codePointAt(0) ?? 0;
       return code >= 0x21 && code <= 0x7e;
-    });
+    })
+  );
 }
 
 function validateConnectResult(value: unknown): McpConnectResult {
@@ -409,20 +395,20 @@ function validateConnectResult(value: unknown): McpConnectResult {
   const timeline = validateTimeline(record.timeline);
   const first = timeline[0];
   if (
-    first.direction !== "outgoing"
-    || first.kind !== "request"
-    || first.method !== (server.era === "modern" ? "server/discover" : "initialize")
-    || first.requestId !== (server.era === "modern" ? "discover-1" : "initialize-1")
+    first.direction !== "outgoing" ||
+    first.kind !== "request" ||
+    first.method !== (server.era === "modern" ? "server/discover" : "initialize") ||
+    first.requestId !== (server.era === "modern" ? "discover-1" : "initialize-1")
   ) {
     throw new Error("mcp_message_invalid");
   }
   if (server.era === "modern") {
     const last = timeline[timeline.length - 1];
     if (
-      last.direction !== "incoming"
-      || last.kind !== "response"
-      || last.requestId !== "discover-1"
-      || !timeline.slice(1, -1).every(isIncomingNotification)
+      last.direction !== "incoming" ||
+      last.kind !== "response" ||
+      last.requestId !== "discover-1" ||
+      !timeline.slice(1, -1).every(isIncomingNotification)
     ) {
       throw new Error("mcp_message_invalid");
     }
@@ -431,15 +417,15 @@ function validateConnectResult(value: unknown): McpConnectResult {
     const handshake = timeline.slice(1, -1);
     const initializeResponse = handshake[handshake.length - 1];
     if (
-      !initializeResponse
-      || initializeResponse.direction !== "incoming"
-      || initializeResponse.kind !== "response"
-      || initializeResponse.requestId !== "initialize-1"
-      || !handshake.slice(0, -1).every(isIncomingNotification)
-      || last.direction !== "outgoing"
-      || last.kind !== "notification"
-      || last.method !== "notifications/initialized"
-      || last.requestId !== null
+      !initializeResponse ||
+      initializeResponse.direction !== "incoming" ||
+      initializeResponse.kind !== "response" ||
+      initializeResponse.requestId !== "initialize-1" ||
+      !handshake.slice(0, -1).every(isIncomingNotification) ||
+      last.direction !== "outgoing" ||
+      last.kind !== "notification" ||
+      last.method !== "notifications/initialized" ||
+      last.requestId !== null
     ) {
       throw new Error("mcp_message_invalid");
     }
@@ -460,18 +446,18 @@ function validateServer(value: unknown): McpServerProjection {
   const serverVersion = asString(record.serverVersion);
   const capabilities = asRecord(record.capabilities, "mcp_message_invalid");
   if (
-    (era !== "modern" && era !== "legacy")
-    || !PROTOCOL_VERSION.test(protocolVersion)
-    || (era === "modern" && protocolVersion !== "2026-07-28")
-    || (era === "legacy" && protocolVersion !== "2025-11-25")
-    || utf8Bytes(serverName) > 512
-    || utf8Bytes(serverVersion) > 512
-    || hasControl(serverName)
-    || hasControl(serverVersion)
-    || jsonBytes(capabilities) > 256 * 1024
-    || !Array.isArray(record.supportedVersions)
-    || record.supportedVersions.length === 0
-    || record.supportedVersions.length > 16
+    (era !== "modern" && era !== "legacy") ||
+    !PROTOCOL_VERSION.test(protocolVersion) ||
+    (era === "modern" && protocolVersion !== "2026-07-28") ||
+    (era === "legacy" && protocolVersion !== "2025-11-25") ||
+    utf8Bytes(serverName) > 512 ||
+    utf8Bytes(serverVersion) > 512 ||
+    hasControl(serverName) ||
+    hasControl(serverVersion) ||
+    jsonBytes(capabilities) > 256 * 1024 ||
+    !Array.isArray(record.supportedVersions) ||
+    record.supportedVersions.length === 0 ||
+    record.supportedVersions.length > 16
   ) {
     throw new Error("mcp_message_invalid");
   }
@@ -480,10 +466,8 @@ function validateServer(value: unknown): McpServerProjection {
     if (!PROTOCOL_VERSION.test(version)) throw new Error("mcp_message_invalid");
     return version;
   });
-  if (
-    !supportedVersions.includes(protocolVersion)
-    || new Set(supportedVersions).size !== supportedVersions.length
-  ) throw new Error("mcp_message_invalid");
+  if (!supportedVersions.includes(protocolVersion) || new Set(supportedVersions).size !== supportedVersions.length)
+    throw new Error("mcp_message_invalid");
   return {
     era,
     protocolVersion,
@@ -496,44 +480,35 @@ function validateServer(value: unknown): McpServerProjection {
 
 function validateInvokeResult(value: unknown, method: string, requestId: string): McpInvokeResult {
   const record = asRecord(value, "mcp_message_invalid");
-  if (!["result", "errorCode", "rpcErrorCode", "nextCursor", "timeline"].every(
-    (key) => key in record,
-  )) throw new Error("mcp_message_invalid");
+  if (!["result", "errorCode", "rpcErrorCode", "nextCursor", "timeline"].every((key) => key in record))
+    throw new Error("mcp_message_invalid");
   const result = record.result ?? null;
   const errorCode = record.errorCode ?? null;
   const rpcErrorCode = record.rpcErrorCode ?? null;
   const nextCursor = record.nextCursor ?? null;
   if (
-    (errorCode !== null && (typeof errorCode !== "string" || !SAFE_ERROR_CODES.has(errorCode)))
-    || (rpcErrorCode !== null && (!Number.isSafeInteger(rpcErrorCode) || typeof rpcErrorCode !== "number"))
-    || (nextCursor !== null && (
-      typeof nextCursor !== "string"
-      || nextCursor.length === 0
-      || nextCursor.length > 4 * 1024
-      || hasControl(nextCursor)
-    ))
-    || (result === null) !== (errorCode !== null)
-    || (rpcErrorCode === null) !== (errorCode === null)
-    || (errorCode !== null && nextCursor !== null)
-    || (result !== null && !isRecord(result))
-    || (result !== null && jsonBytes(result) > MAX_RESULT_BYTES)
+    (errorCode !== null && (typeof errorCode !== "string" || !SAFE_ERROR_CODES.has(errorCode))) ||
+    (rpcErrorCode !== null && (!Number.isSafeInteger(rpcErrorCode) || typeof rpcErrorCode !== "number")) ||
+    (nextCursor !== null &&
+      (typeof nextCursor !== "string" ||
+        nextCursor.length === 0 ||
+        nextCursor.length > 4 * 1024 ||
+        hasControl(nextCursor))) ||
+    (result === null) !== (errorCode !== null) ||
+    (rpcErrorCode === null) !== (errorCode === null) ||
+    (errorCode !== null && nextCursor !== null) ||
+    (result !== null && !isRecord(result)) ||
+    (result !== null && jsonBytes(result) > MAX_RESULT_BYTES)
   ) {
     throw new Error("mcp_message_invalid");
   }
   if (result !== null) {
-    const resultCursor = isRecord(result) && result.nextCursor === "[PRESENT]"
-      ? "[PRESENT]"
-      : null;
-    const listMethod = [
-      "tools/list",
-      "resources/list",
-      "resources/templates/list",
-      "prompts/list",
-    ].includes(method);
+    const resultCursor = isRecord(result) && result.nextCursor === "[PRESENT]" ? "[PRESENT]" : null;
+    const listMethod = ["tools/list", "resources/list", "resources/templates/list", "prompts/list"].includes(method);
     const expectedProjection = listMethod && nextCursor !== null ? "[PRESENT]" : null;
     if (
-      (listMethod && resultCursor !== expectedProjection)
-      || (!listMethod && (resultCursor !== null || nextCursor !== null))
+      (listMethod && resultCursor !== expectedProjection) ||
+      (!listMethod && (resultCursor !== null || nextCursor !== null))
     ) {
       throw new Error("mcp_message_invalid");
     }
@@ -542,14 +517,14 @@ function validateInvokeResult(value: unknown, method: string, requestId: string)
   const first = timeline[0];
   const last = timeline[timeline.length - 1];
   if (
-    first.direction !== "outgoing"
-    || first.kind !== "request"
-    || first.method !== method
-    || first.requestId !== requestId
-    || last.direction !== "incoming"
-    || last.kind !== (errorCode === null ? "response" : "error")
-    || last.requestId !== requestId
-    || !timeline.slice(1, -1).every(isIncomingNotification)
+    first.direction !== "outgoing" ||
+    first.kind !== "request" ||
+    first.method !== method ||
+    first.requestId !== requestId ||
+    last.direction !== "incoming" ||
+    last.kind !== (errorCode === null ? "response" : "error") ||
+    last.requestId !== requestId ||
+    !timeline.slice(1, -1).every(isIncomingNotification)
   ) {
     throw new Error("mcp_message_invalid");
   }
@@ -574,27 +549,20 @@ function validateTimeline(value: unknown): McpTimelineEntry[] {
     const requestId = entry.requestId ?? null;
     const payload = entry.payload ?? null;
     if (
-      entry.sequence !== index + 1
-      || !Number.isSafeInteger(entry.offsetMs)
-      || typeof entry.offsetMs !== "number"
-      || entry.offsetMs < 0
-      || (entry.direction !== "outgoing" && entry.direction !== "incoming")
-      || !["request", "notification", "response", "error"].includes(kind)
-      || (method !== null && (
-        typeof method !== "string"
-        || method.length === 0
-        || method.length > 256
-        || hasControl(method)
-      ))
-      || (requestId !== null && (typeof requestId !== "string" || !REQUEST_ID.test(requestId)))
-      || (payload !== null && jsonBytes(payload) > MAX_RESULT_BYTES)
-      || (kind === "request" && (
-        entry.direction !== "outgoing" || method === null || requestId === null
-      ))
-      || (kind === "notification" && (method === null || requestId !== null))
-      || ((kind === "response" || kind === "error") && (
-        entry.direction !== "incoming" || method !== null || requestId === null
-      ))
+      entry.sequence !== index + 1 ||
+      !Number.isSafeInteger(entry.offsetMs) ||
+      typeof entry.offsetMs !== "number" ||
+      entry.offsetMs < 0 ||
+      (entry.direction !== "outgoing" && entry.direction !== "incoming") ||
+      !["request", "notification", "response", "error"].includes(kind) ||
+      (method !== null &&
+        (typeof method !== "string" || method.length === 0 || method.length > 256 || hasControl(method))) ||
+      (requestId !== null && (typeof requestId !== "string" || !REQUEST_ID.test(requestId))) ||
+      (payload !== null && jsonBytes(payload) > MAX_RESULT_BYTES) ||
+      (kind === "request" && (entry.direction !== "outgoing" || method === null || requestId === null)) ||
+      (kind === "notification" && (method === null || requestId !== null)) ||
+      ((kind === "response" || kind === "error") &&
+        (entry.direction !== "incoming" || method !== null || requestId === null))
     ) {
       throw new Error("mcp_message_invalid");
     }
@@ -611,10 +579,9 @@ function validateTimeline(value: unknown): McpTimelineEntry[] {
 }
 
 function isIncomingNotification(entry: McpTimelineEntry): boolean {
-  return entry.direction === "incoming"
-    && entry.kind === "notification"
-    && entry.method !== null
-    && entry.requestId === null;
+  return (
+    entry.direction === "incoming" && entry.kind === "notification" && entry.method !== null && entry.requestId === null
+  );
 }
 
 function asRecord(value: unknown, code: string): Record<string, unknown> {

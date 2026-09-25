@@ -31,17 +31,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= MAX_ID_CHARACTERS
-    && /^[A-Za-z0-9_-]+$/u.test(value);
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_ID_CHARACTERS &&
+    /^[A-Za-z0-9_-]+$/u.test(value)
+  );
 }
 
 function validName(value: unknown): value is string {
-  return typeof value === "string"
-    && value.trim().length > 0
-    && new TextEncoder().encode(value).length <= MAX_NAME_BYTES
-    && !/[\u0000-\u001f\u007f]/u.test(value);
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    new TextEncoder().encode(value).length <= MAX_NAME_BYTES &&
+    !/[\u0000-\u001f\u007f]/u.test(value)
+  );
 }
 
 function validLayout(value: unknown): value is Layout {
@@ -55,18 +59,25 @@ function validMultiplexer(value: unknown): value is MultiplexerKind {
 /** Backend의 parse_safe_project_path와 같은 보수적 절대 경로 경계. */
 export function isSafeWorkspacePath(value: string): boolean {
   const path = value.trim();
-  if (!path || new TextEncoder().encode(path).length > MAX_PATH_BYTES || /[\u0000-\u001f\u007f]/u.test(path)) return false;
+  if (!path || new TextEncoder().encode(path).length > MAX_PATH_BYTES || /[\u0000-\u001f\u007f]/u.test(path))
+    return false;
   if (/^(?:\\\\[?.]\\|\/\/[?.]\/)/u.test(path)) return false;
 
   let parts: string[];
   let windows = false;
   if (/^[A-Za-z]:[\\/]/u.test(path)) {
     windows = true;
-    parts = path.slice(3).split(/[\\/]+/u).filter(Boolean);
+    parts = path
+      .slice(3)
+      .split(/[\\/]+/u)
+      .filter(Boolean);
     if (parts.length < 1) return false;
   } else if (/^(?:\\\\|\/\/)/u.test(path)) {
     windows = true;
-    parts = path.slice(2).split(/[\\/]+/u).filter(Boolean);
+    parts = path
+      .slice(2)
+      .split(/[\\/]+/u)
+      .filter(Boolean);
     if (parts.length < 3) return false;
   } else if (path.startsWith("/")) {
     parts = path.slice(1).split("/").filter(Boolean);
@@ -86,9 +97,7 @@ export function isSafeWorkspacePath(value: string): boolean {
 
 function credentialReference(value: string): boolean {
   const candidate = value.trim().replace(/^['"]|['"]$/gu, "");
-  return candidate.startsWith("$")
-    || (/^%[^%]+%$/u.test(candidate))
-    || (/^\{\{[^{}]+\}\}$/u.test(candidate));
+  return candidate.startsWith("$") || /^%[^%]+%$/u.test(candidate) || /^\{\{[^{}]+\}\}$/u.test(candidate);
 }
 
 export function startCommandError(command: string): string | null {
@@ -97,12 +106,20 @@ export function startCommandError(command: string): string | null {
     return "시작 명령은 4,096자 이하의 한 줄이어야 합니다.";
   }
   const lower = value.toLowerCase();
-  if (/-----begin [^-]{0,40}private key-----|(?:^|[\s'"=:])(?:sk-|ghp_|github_pat_|xox[bp]-)[a-z0-9_-]{12,}/u.test(lower)) {
+  if (
+    /-----begin [^-]{0,40}private key-----|(?:^|[\s'"=:])(?:sk-|ghp_|github_pat_|xox[bp]-)[a-z0-9_-]{12,}/u.test(lower)
+  ) {
     return "시작 명령에 평문 자격증명을 저장할 수 없습니다.";
   }
-  const markers = value.matchAll(/(authorization:\s*bearer\s+|--password(?:=|\s+)|--token(?:=|\s+)|api_?key=|client_secret=|access_token=)/giu);
+  const markers = value.matchAll(
+    /(authorization:\s*bearer\s+|--password(?:=|\s+)|--token(?:=|\s+)|api_?key=|client_secret=|access_token=)/giu,
+  );
   for (const marker of markers) {
-    const candidate = value.slice((marker.index ?? 0) + marker[0].length).trimStart().split(/\s/u)[0] ?? "";
+    const candidate =
+      value
+        .slice((marker.index ?? 0) + marker[0].length)
+        .trimStart()
+        .split(/\s/u)[0] ?? "";
     if (candidate && !credentialReference(candidate)) {
       return "시작 명령에 평문 자격증명을 저장할 수 없습니다.";
     }
@@ -115,9 +132,12 @@ function normalizePane(value: unknown): WorkspacePaneDefinition | null {
   const cwd = value.cwd === null || value.cwd === undefined ? null : value.cwd;
   const startCommand = value.startCommand === null || value.startCommand === undefined ? null : value.startCommand;
   const multiplexer = value.multiplexer ?? "native";
-  if ((cwd !== null && (typeof cwd !== "string" || !isSafeWorkspacePath(cwd)))
-    || (startCommand !== null && (typeof startCommand !== "string" || startCommandError(startCommand) !== null))
-    || !validMultiplexer(multiplexer)) return null;
+  if (
+    (cwd !== null && (typeof cwd !== "string" || !isSafeWorkspacePath(cwd))) ||
+    (startCommand !== null && (typeof startCommand !== "string" || startCommandError(startCommand) !== null)) ||
+    !validMultiplexer(multiplexer)
+  )
+    return null;
   return {
     key: value.key,
     distro: value.distro.trim(),
@@ -128,14 +148,17 @@ function normalizePane(value: unknown): WorkspacePaneDefinition | null {
 }
 
 function normalizeTab(value: unknown): WorkspaceTabDefinition | null {
-  if (!isRecord(value)
-    || !validId(value.id)
-    || !validName(value.title)
-    || !validLayout(value.layout)
-    || !Array.isArray(value.paneKeys)
-    || value.paneKeys.length === 0
-    || value.paneKeys.length > MAX_WORKSPACE_PANES
-    || !value.paneKeys.every(validId)) return null;
+  if (
+    !isRecord(value) ||
+    !validId(value.id) ||
+    !validName(value.title) ||
+    !validLayout(value.layout) ||
+    !Array.isArray(value.paneKeys) ||
+    value.paneKeys.length === 0 ||
+    value.paneKeys.length > MAX_WORKSPACE_PANES ||
+    !value.paneKeys.every(validId)
+  )
+    return null;
   const paneKeys = [...value.paneKeys];
   if (new Set(paneKeys).size !== paneKeys.length) return null;
   const tracks = paneTrackCounts(value.layout, paneKeys.length);
@@ -144,18 +167,25 @@ function normalizeTab(value: unknown): WorkspaceTabDefinition | null {
     // version 1 local layouts and profile stores did not persist split ratios.
     sizing = normalizePaneSizing(undefined, value.layout, paneKeys.length);
   } else {
-    if (!isRecord(value.sizing)
-      || !Array.isArray(value.sizing.columns)
-      || !Array.isArray(value.sizing.rows)
-      || value.sizing.columns.length !== tracks.columns
-      || value.sizing.rows.length !== tracks.rows
-      || ![...value.sizing.columns, ...value.sizing.rows].every(
+    if (
+      !isRecord(value.sizing) ||
+      !Array.isArray(value.sizing.columns) ||
+      !Array.isArray(value.sizing.rows) ||
+      value.sizing.columns.length !== tracks.columns ||
+      value.sizing.rows.length !== tracks.rows ||
+      ![...value.sizing.columns, ...value.sizing.rows].every(
         (fraction) => typeof fraction === "number" && Number.isFinite(fraction) && fraction > 0,
-      )) return null;
-    sizing = normalizePaneSizing({
-      columns: value.sizing.columns,
-      rows: value.sizing.rows,
-    }, value.layout, paneKeys.length);
+      )
+    )
+      return null;
+    sizing = normalizePaneSizing(
+      {
+        columns: value.sizing.columns,
+        rows: value.sizing.rows,
+      },
+      value.layout,
+      paneKeys.length,
+    );
   }
   return {
     id: value.id,
@@ -168,14 +198,17 @@ function normalizeTab(value: unknown): WorkspaceTabDefinition | null {
 }
 
 export function normalizeWorkspace(value: unknown): WorkspaceDefinition | null {
-  if (!isRecord(value)
-    || !Array.isArray(value.tabs)
-    || !Array.isArray(value.panes)
-    || value.tabs.length === 0
-    || value.tabs.length > MAX_WORKSPACE_TABS
-    || value.panes.length === 0
-    || value.panes.length > MAX_WORKSPACE_PANES
-    || !validId(value.activeTabId)) return null;
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.tabs) ||
+    !Array.isArray(value.panes) ||
+    value.tabs.length === 0 ||
+    value.tabs.length > MAX_WORKSPACE_TABS ||
+    value.panes.length === 0 ||
+    value.panes.length > MAX_WORKSPACE_PANES ||
+    !validId(value.activeTabId)
+  )
+    return null;
   const tabs = value.tabs.map(normalizeTab);
   const panes = value.panes.map(normalizePane);
   if (tabs.some((tab) => tab === null) || panes.some((pane) => pane === null)) return null;
@@ -185,13 +218,14 @@ export function normalizeWorkspace(value: unknown): WorkspaceDefinition | null {
   const paneKeys = new Set(normalizedPanes.map((pane) => pane.key));
   if (tabIds.size !== normalizedTabs.length || paneKeys.size !== normalizedPanes.length) return null;
   const references = normalizedTabs.flatMap((tab) => tab.paneKeys);
-  if (references.length !== normalizedPanes.length
-    || new Set(references).size !== references.length
-    || references.some((key) => !paneKeys.has(key))
-    || !tabIds.has(value.activeTabId)) return null;
-  const activePaneKey = value.activePaneKey === null || value.activePaneKey === undefined
-    ? null
-    : value.activePaneKey;
+  if (
+    references.length !== normalizedPanes.length ||
+    new Set(references).size !== references.length ||
+    references.some((key) => !paneKeys.has(key)) ||
+    !tabIds.has(value.activeTabId)
+  )
+    return null;
+  const activePaneKey = value.activePaneKey === null || value.activePaneKey === undefined ? null : value.activePaneKey;
   if (activePaneKey !== null && (!validId(activePaneKey) || !paneKeys.has(activePaneKey))) return null;
   const activeTab = normalizedTabs.find((tab) => tab.id === value.activeTabId);
   if (!activeTab || (activePaneKey !== null && !activeTab.paneKeys.includes(activePaneKey))) return null;
@@ -216,18 +250,18 @@ export function workspaceFromRuntime(
   activePaneId: string | null,
 ): WorkspaceDefinition | null {
   if (tabs.length === 0 || panes.length === 0) return null;
-  const identityToKey = new Map(
-    panes.map((pane) => [pane.sessionId ?? pane.key, pane.key] as const),
-  );
+  const identityToKey = new Map(panes.map((pane) => [pane.sessionId ?? pane.key, pane.key] as const));
   const definition: WorkspaceDefinition = {
-    tabs: tabs.map((tab) => ({
-      id: tab.id,
-      title: tab.title,
-      customTitle: tab.customTitle === true,
-      layout: tab.layout,
-      paneKeys: tab.paneIds.map((id) => identityToKey.get(id)).filter((key): key is string => Boolean(key)),
-      sizing: normalizePaneSizing(tab.sizing, tab.layout, tab.paneIds.length),
-    })).filter((tab) => tab.paneKeys.length > 0),
+    tabs: tabs
+      .map((tab) => ({
+        id: tab.id,
+        title: tab.title,
+        customTitle: tab.customTitle === true,
+        layout: tab.layout,
+        paneKeys: tab.paneIds.map((id) => identityToKey.get(id)).filter((key): key is string => Boolean(key)),
+        sizing: normalizePaneSizing(tab.sizing, tab.layout, tab.paneIds.length),
+      }))
+      .filter((tab) => tab.paneKeys.length > 0),
     panes: panes.map((pane) => ({
       key: pane.key,
       distro: pane.distro,
@@ -252,40 +286,55 @@ export function loadLastWorkspace(): WorkspaceDefinition | null {
 }
 
 let restoreOnly = false;
-export function isRestoreOnly():boolean { return isProductHosted() && restoreOnly; }
-let layoutRevision:string|undefined;
-let layoutOwner:string|undefined;
-let pendingLayout:Promise<void>=Promise.resolve();
+export function isRestoreOnly(): boolean {
+  return isProductHosted() && restoreOnly;
+}
+let layoutRevision: string | undefined;
+let layoutOwner: string | undefined;
+let pendingLayout: Promise<void> = Promise.resolve();
 
 /** Native metadata is authoritative before any saved pane can start/reconnect. */
-export function initializeProductLayout(owner:string,value:{revision:string;layout:unknown;restoreOnly?:boolean}):void {
-  if(!/^[a-f0-9]{64}$/.test(value.revision)||!/^[a-f0-9-]{36}$/.test(owner))throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
-  const workspace=value.layout===null?null:normalizeWorkspace(value.layout);
-  if(value.layout!==null&&!workspace)throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
-  restoreOnly=value.restoreOnly===true;
-  layoutOwner=owner;layoutRevision=value.revision;
+export function initializeProductLayout(
+  owner: string,
+  value: { revision: string; layout: unknown; restoreOnly?: boolean },
+): void {
+  if (!/^[a-f0-9]{64}$/.test(value.revision) || !/^[a-f0-9-]{36}$/.test(owner))
+    throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
+  const workspace = value.layout === null ? null : normalizeWorkspace(value.layout);
+  if (value.layout !== null && !workspace) throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
+  restoreOnly = value.restoreOnly === true;
+  layoutOwner = owner;
+  layoutRevision = value.revision;
   writeLocalLayout(workspace);
 }
-function writeLocalLayout(workspace:WorkspaceDefinition|null):void {
-  if(!workspace){localStorage.removeItem(terminalStorageKey(LAST_LAYOUT_KEY));return;}
-  const persisted:PersistedLayout={version:LAYOUT_VERSION,...workspace};
-  localStorage.setItem(terminalStorageKey(LAST_LAYOUT_KEY),JSON.stringify(persisted));
+function writeLocalLayout(workspace: WorkspaceDefinition | null): void {
+  if (!workspace) {
+    localStorage.removeItem(terminalStorageKey(LAST_LAYOUT_KEY));
+    return;
+  }
+  const persisted: PersistedLayout = { version: LAYOUT_VERSION, ...workspace };
+  localStorage.setItem(terminalStorageKey(LAST_LAYOUT_KEY), JSON.stringify(persisted));
 }
 export function saveLastWorkspace(workspace: WorkspaceDefinition | null): Promise<void> {
   const normalized = workspace ? normalizeWorkspace(workspace) : null;
-  if(!isProductHosted()){writeLocalLayout(normalized);return Promise.resolve();}
-  if(workspace&&!normalized)return Promise.reject(new Error("터미널 레이아웃을 확인하지 못했습니다."));
-  const save=async()=>{
-    if(!layoutRevision||!layoutOwner)throw new Error("터미널 레이아웃이 준비되지 않았습니다.");
-    const result=await componentInvoke("workspace.terminal")<{revision:string}>("save_terminal_layout",{
-      expectedRevision:layoutRevision,layout:normalized?{id:layoutOwner,name:"현재 터미널",...normalized}:null,
+  if (!isProductHosted()) {
+    writeLocalLayout(normalized);
+    return Promise.resolve();
+  }
+  if (workspace && !normalized) return Promise.reject(new Error("터미널 레이아웃을 확인하지 못했습니다."));
+  const save = async () => {
+    if (!layoutRevision || !layoutOwner) throw new Error("터미널 레이아웃이 준비되지 않았습니다.");
+    const result = await componentInvoke("workspace.terminal")<{ revision: string }>("save_terminal_layout", {
+      expectedRevision: layoutRevision,
+      layout: normalized ? { id: layoutOwner, name: "현재 터미널", ...normalized } : null,
     });
-    if(!/^[a-f0-9]{64}$/.test(result.revision))throw new Error("터미널 레이아웃 응답을 확인하지 못했습니다.");
-    layoutRevision=result.revision;writeLocalLayout(normalized);
+    if (!/^[a-f0-9]{64}$/.test(result.revision)) throw new Error("터미널 레이아웃 응답을 확인하지 못했습니다.");
+    layoutRevision = result.revision;
+    writeLocalLayout(normalized);
   };
-  const result=pendingLayout.then(save);
+  const result = pendingLayout.then(save);
   // An uncertain failed save retains the old revision; later writes fail closed
   // until a reload reads the native revision, rather than overwriting new data.
-  pendingLayout=result.catch(()=>undefined);
+  pendingLayout = result.catch(() => undefined);
   return result;
 }

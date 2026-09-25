@@ -82,14 +82,17 @@ describe("Webhook Lab example curl", () => {
   });
 
   it("keeps response metadata out of request arguments and masks mixed placeholders", () => {
-    const curl = buildExampleCurl(rule({
-      headers: [
-        ["X-Exact", "${TOKEN}"],
-        ["X-Mixed", "prefix ${TOKEN}"],
-        ["Authorization", "Bearer ${TOKEN}"],
-      ],
-      body: JSON.stringify({ safe: "prefix ${TOKEN}", token: "${TOKEN}" }),
-    }), "127.0.0.1:9000");
+    const curl = buildExampleCurl(
+      rule({
+        headers: [
+          ["X-Exact", "${TOKEN}"],
+          ["X-Mixed", "prefix ${TOKEN}"],
+          ["Authorization", "Bearer ${TOKEN}"],
+        ],
+        body: JSON.stringify({ safe: "prefix ${TOKEN}", token: "${TOKEN}" }),
+      }),
+      "127.0.0.1:9000",
+    );
 
     expect(curl).toContain("# X-Exact: ${TOKEN}");
     expect(curl).toContain("# X-Mixed: [REDACTED]");
@@ -140,17 +143,62 @@ describe("Webhook Lab example curl", () => {
       "ok",
     );
     expect(buildExampleCurl(rule({ path: "/".padEnd(MAX_EXAMPLE_PATH_CHARS + 1, "x") }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ headers: Array.from({ length: MAX_EXAMPLE_HEADER_COUNT + 1 }, (_, index) => [`X-${index}`, "v"] as [string, string]) }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ headers: [["X-Large", "x".repeat(MAX_EXAMPLE_HEADER_VALUE_CHARS + 1)]] }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ headers: Array.from({ length: 5 }, (_, index) => [`X-${index}`, "x".repeat(Math.floor(MAX_EXAMPLE_HEADER_TOTAL_CHARS / 4))] as [string, string]) }), "127.0.0.1:9000")).toBeNull();
+    expect(
+      buildExampleCurl(
+        rule({
+          headers: Array.from(
+            { length: MAX_EXAMPLE_HEADER_COUNT + 1 },
+            (_, index) => [`X-${index}`, "v"] as [string, string],
+          ),
+        }),
+        "127.0.0.1:9000",
+      ),
+    ).toBeNull();
+    expect(
+      buildExampleCurl(
+        rule({ headers: [["X-Large", "x".repeat(MAX_EXAMPLE_HEADER_VALUE_CHARS + 1)]] }),
+        "127.0.0.1:9000",
+      ),
+    ).toBeNull();
+    expect(
+      buildExampleCurl(
+        rule({
+          headers: Array.from(
+            { length: 5 },
+            (_, index) =>
+              [`X-${index}`, "x".repeat(Math.floor(MAX_EXAMPLE_HEADER_TOTAL_CHARS / 4))] as [string, string],
+          ),
+        }),
+        "127.0.0.1:9000",
+      ),
+    ).toBeNull();
     expect(buildExampleCurl(rule({ body: "x".repeat(MAX_EXAMPLE_BODY_CHARS + 1) }), "127.0.0.1:9000")).toBeNull();
     expect(buildExampleCurl(rule({ body: JSON.stringify(deep) }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ body: JSON.stringify(Array.from({ length: MAX_EXAMPLE_JSON_NODES + 1 }, () => 0)) }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ body: JSON.stringify("x".repeat(MAX_EXAMPLE_JSON_STRING_CHARS + 1)) }), "127.0.0.1:9000")).toBeNull();
+    expect(
+      buildExampleCurl(
+        rule({ body: JSON.stringify(Array.from({ length: MAX_EXAMPLE_JSON_NODES + 1 }, () => 0)) }),
+        "127.0.0.1:9000",
+      ),
+    ).toBeNull();
+    expect(
+      buildExampleCurl(rule({ body: JSON.stringify("x".repeat(MAX_EXAMPLE_JSON_STRING_CHARS + 1)) }), "127.0.0.1:9000"),
+    ).toBeNull();
     expect(buildExampleCurl(rule({ body: JSON.stringify({ "${TOKEN}": "value" }) }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ body: JSON.stringify({ ["x".repeat(MAX_EXAMPLE_JSON_STRING_CHARS + 1)]: "value" }) }), "127.0.0.1:9000")).toBeNull();
-    expect(buildExampleCurl(rule({ body: "token: secret with a suffix" }), "127.0.0.1:9000")).toContain('# Response body: "[REDACTED]"');
-    expect(buildExampleCurl(rule({ headers: [["X-Bad", "value", "extra"] as unknown as [string, string]] }), "127.0.0.1:9000")).toBeNull();
+    expect(
+      buildExampleCurl(
+        rule({ body: JSON.stringify({ ["x".repeat(MAX_EXAMPLE_JSON_STRING_CHARS + 1)]: "value" }) }),
+        "127.0.0.1:9000",
+      ),
+    ).toBeNull();
+    expect(buildExampleCurl(rule({ body: "token: secret with a suffix" }), "127.0.0.1:9000")).toContain(
+      '# Response body: "[REDACTED]"',
+    );
+    expect(
+      buildExampleCurl(
+        rule({ headers: [["X-Bad", "value", "extra"] as unknown as [string, string]] }),
+        "127.0.0.1:9000",
+      ),
+    ).toBeNull();
     expect(buildExampleCurl(rule({ status: MIN_EXAMPLE_STATUS - 1 }), "127.0.0.1:9000")).toBeNull();
     expect(buildExampleCurl(rule({ status: MAX_EXAMPLE_STATUS + 1 }), "127.0.0.1:9000")).toBeNull();
     expect(buildExampleCurl(rule({ delayMs: -1 }), "127.0.0.1:9000")).toBeNull();

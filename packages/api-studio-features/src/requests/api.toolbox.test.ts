@@ -28,9 +28,7 @@ describe("sendSelectionToToolbox", () => {
   it("reports native-only availability in browser mode without invoking or copying", async () => {
     mocks.isTauri.mockReturnValue(false);
 
-    await expect(sendSelectionToToolbox("safe response selection")).rejects.toThrow(
-      TOOLBOX_SELECTION_BROWSER_ERROR,
-    );
+    await expect(sendSelectionToToolbox("safe response selection")).rejects.toThrow(TOOLBOX_SELECTION_BROWSER_ERROR);
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });

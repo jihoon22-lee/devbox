@@ -5,12 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readClipboardImage, readClipboardText } from "../api";
 import MarkdownEditor from "./MarkdownEditor";
-import {
-  IMAGE_BUSY_ERROR,
-  IMAGE_MULTIPLE_ERROR,
-  IMAGE_STALE_ERROR,
-  IMAGE_TOO_LARGE_ERROR,
-} from "../lib/imageAssets";
+import { IMAGE_BUSY_ERROR, IMAGE_MULTIPLE_ERROR, IMAGE_STALE_ERROR, IMAGE_TOO_LARGE_ERROR } from "../lib/imageAssets";
 import type { ImageAsset, WikilinkCandidate, WikilinkOccurrence } from "../types";
 
 vi.mock("../api", () => ({
@@ -34,14 +29,16 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-function setup(options: {
-  value?: string;
-  wikilinks?: WikilinkOccurrence[];
-  loadWikilinkCandidates?: (query: string) => Promise<WikilinkCandidate[]>;
-  onNavigateWikilink?: (path: string) => void;
-  documentKey?: string | null;
-  onImageImport?: (file: File) => Promise<ImageAsset>;
-} = {}) {
+function setup(
+  options: {
+    value?: string;
+    wikilinks?: WikilinkOccurrence[];
+    loadWikilinkCandidates?: (query: string) => Promise<WikilinkCandidate[]>;
+    onNavigateWikilink?: (path: string) => void;
+    documentKey?: string | null;
+    onImageImport?: (file: File) => Promise<ImageAsset>;
+  } = {},
+) {
   const onChange = vi.fn();
   const onError = vi.fn();
   const rendered = render(
@@ -137,9 +134,7 @@ describe("MarkdownEditor context menu", () => {
 
     await waitFor(() => expect(onImageImport).toHaveBeenCalledWith(image));
     expect(readClipboardTextMock).not.toHaveBeenCalled();
-    await waitFor(() => expect(view.state.doc.toString()).toContain(
-      "![image](assets/" + "f".repeat(64) + ".png)",
-    ));
+    await waitFor(() => expect(view.state.doc.toString()).toContain("![image](assets/" + "f".repeat(64) + ".png)"));
   });
 
   it("reports an oversized explicit clipboard image instead of falling back to text", async () => {
@@ -172,9 +167,7 @@ describe("MarkdownEditor context menu", () => {
 
     fireEvent.paste(content, { clipboardData: imageTransfer([image]) });
 
-    await waitFor(() => expect(view.state.doc.toString()).toContain(
-      "![image](assets/" + "a".repeat(64) + ".png)",
-    ));
+    await waitFor(() => expect(view.state.doc.toString()).toContain("![image](assets/" + "a".repeat(64) + ".png)"));
     expect(onImageImport).toHaveBeenCalledTimes(1);
   });
 
@@ -195,9 +188,7 @@ describe("MarkdownEditor context menu", () => {
       clientX: 0,
       clientY: 0,
     });
-    await waitFor(() => expect(view.state.doc.toString()).toBe(
-      "bef![image](assets/" + "b".repeat(64) + ".png)ore",
-    ));
+    await waitFor(() => expect(view.state.doc.toString()).toBe("bef![image](assets/" + "b".repeat(64) + ".png)ore"));
 
     fireEvent.paste(content, { clipboardData: imageTransfer([first, second]) });
     expect(onImageImport).toHaveBeenCalledTimes(1);
@@ -207,7 +198,9 @@ describe("MarkdownEditor context menu", () => {
   it("preserves IME paste and suppresses a second image action while busy", async () => {
     const image = new File([new Uint8Array([1])], "screenshot.png", { type: "image/png" });
     let resolveImport: ((asset: ImageAsset) => void) | undefined;
-    const pending = new Promise<ImageAsset>((resolve) => { resolveImport = resolve; });
+    const pending = new Promise<ImageAsset>((resolve) => {
+      resolveImport = resolve;
+    });
     const onImageImport = vi.fn(() => pending);
     const { content, view, onError } = setup({ onImageImport });
 
@@ -225,8 +218,7 @@ describe("MarkdownEditor context menu", () => {
 
     fireEvent.paste(content, { clipboardData: imageTransfer([image]) });
     await waitFor(() => expect(onImageImport).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(document.querySelector(".codemirror-editor"))
-      .toHaveAttribute("aria-busy", "true"));
+    await waitFor(() => expect(document.querySelector(".codemirror-editor")).toHaveAttribute("aria-busy", "true"));
     expect(screen.getByRole("status")).toHaveTextContent("이미지 저장 중");
     fireEvent.paste(content, { clipboardData: imageTransfer([image]) });
     expect(onError).toHaveBeenLastCalledWith(IMAGE_BUSY_ERROR);
@@ -242,7 +234,9 @@ describe("MarkdownEditor context menu", () => {
   it("does not overwrite text changed while the image import is in flight", async () => {
     const image = new File([new Uint8Array([1])], "screenshot.png", { type: "image/png" });
     let resolveImport: ((asset: ImageAsset) => void) | undefined;
-    const pending = new Promise<ImageAsset>((resolve) => { resolveImport = resolve; });
+    const pending = new Promise<ImageAsset>((resolve) => {
+      resolveImport = resolve;
+    });
     const onImageImport = vi.fn(() => pending);
     const { content, view, onError } = setup({ value: "before", onImageImport });
 
@@ -262,7 +256,9 @@ describe("MarkdownEditor context menu", () => {
   it("does not insert a completed import into a different note with identical text", async () => {
     const image = new File([new Uint8Array([1])], "screenshot.png", { type: "image/png" });
     let resolveImport: ((asset: ImageAsset) => void) | undefined;
-    const pending = new Promise<ImageAsset>((resolve) => { resolveImport = resolve; });
+    const pending = new Promise<ImageAsset>((resolve) => {
+      resolveImport = resolve;
+    });
     const onImageImport = vi.fn(() => pending);
     const { content, view, onError, rerender } = setup({
       value: "same note text",
@@ -300,9 +296,7 @@ describe("MarkdownEditor context menu", () => {
     openByKeyboard(content);
     fireEvent.click(screen.getByRole("menuitem", { name: "링크 삽입" }));
 
-    await waitFor(() => expect(view.state.doc.toString()).toBe(
-      "[alpha](https://example.com) beta",
-    ));
+    await waitFor(() => expect(view.state.doc.toString()).toBe("[alpha](https://example.com) beta"));
   });
 
   it("does not intercept composing Shift+F10 and reports clipboard failures", async () => {
@@ -325,11 +319,13 @@ describe("MarkdownEditor context menu", () => {
 
 describe("MarkdownEditor wikilinks", () => {
   it("completes after [[ with the canonical indexed path and closing brackets", async () => {
-    const loadCandidates = vi.fn(async () => [{
-      path: "Notes/Rust.md",
-      title: "Rust Study",
-      link_target: "Notes/Rust",
-    }]);
+    const loadCandidates = vi.fn(async () => [
+      {
+        path: "Notes/Rust.md",
+        title: "Rust Study",
+        link_target: "Notes/Rust",
+      },
+    ]);
     const { view } = setup({ value: "[[Ru", loadWikilinkCandidates: loadCandidates });
     view.dispatch({ selection: EditorSelection.cursor(view.state.doc.length) });
     view.focus();

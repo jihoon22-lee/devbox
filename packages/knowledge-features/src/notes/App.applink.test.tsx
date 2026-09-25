@@ -35,8 +35,12 @@ vi.mock("./api", () => ({
   renewKnowledgeDraft: vi.fn(async () => ({ leaseUntilMs: Date.now() + 60_000 })),
   createFile: vi.fn(async () => undefined),
   createDirectory: vi.fn(async () => undefined),
-  previewRename: vi.fn(async () => { throw new Error("unused"); }),
-  applyRename: vi.fn(async () => { throw new Error("unused"); }),
+  previewRename: vi.fn(async () => {
+    throw new Error("unused");
+  }),
+  applyRename: vi.fn(async () => {
+    throw new Error("unused");
+  }),
   discardRenamePreview: vi.fn(async () => undefined),
   deleteFile: vi.fn(async () => undefined),
   entryPath: vi.fn(async (rel: string) => rel),
@@ -67,10 +71,12 @@ vi.mock("./api", () => ({
     mocks.quickCaptureHandler = handler;
     return () => undefined;
   }),
-  onQuickCaptureShortcutStatusChanged: vi.fn().mockImplementation(async (handler: (status: { shortcut: string; state: string }) => void) => {
-    mocks.shortcutStatusHandler = handler;
-    return () => undefined;
-  }),
+  onQuickCaptureShortcutStatusChanged: vi
+    .fn()
+    .mockImplementation(async (handler: (status: { shortcut: string; state: string }) => void) => {
+      mocks.shortcutStatusHandler = handler;
+      return () => undefined;
+    }),
   quickCaptureShortcutStatus: vi.fn(async () => ({ shortcut: "Ctrl+Alt+K", state: "registered" })),
   previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
     previewId: "qc-1",
@@ -80,11 +86,19 @@ vi.mock("./api", () => ({
   saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
   discardQuickCapturePreview: vi.fn(async () => undefined),
   listTemplates: vi.fn(async () => []),
-  createTemplate: vi.fn(async () => { throw new Error("unused"); }),
-  updateTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  createTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
+  updateTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
   deleteTemplate: vi.fn(async () => undefined),
-  previewTemplate: vi.fn(async () => { throw new Error("unused"); }),
-  saveTemplate: vi.fn(async () => { throw new Error("unused"); }),
+  previewTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
+  saveTemplate: vi.fn(async () => {
+    throw new Error("unused");
+  }),
   discardTemplatePreview: vi.fn(async () => undefined),
   openInboundNote: vi.fn(async () => ({ path: "Notes/inbound.md", content: "# inbound", revision: "disk-1" })),
   searchDocs: vi.fn(async (query: string) => [{ path: "Notes/result.md", title: `Result ${query}` }]),
@@ -121,10 +135,12 @@ beforeEach(() => {
     mocks.openHandler = handler;
     return () => undefined;
   });
-  openInboundNoteMock.mockReset().mockResolvedValue({ path: "Notes/inbound.md", content: "# inbound", revision: "disk-1" });
-  searchDocsMock.mockReset().mockImplementation(async (query) => [
-    { path: "Notes/result.md", title: `Result ${query}` },
-  ]);
+  openInboundNoteMock
+    .mockReset()
+    .mockResolvedValue({ path: "Notes/inbound.md", content: "# inbound", revision: "disk-1" });
+  searchDocsMock
+    .mockReset()
+    .mockImplementation(async (query) => [{ path: "Notes/result.md", title: `Result ${query}` }]);
   previewKnowledgeDraftMock.mockReset().mockResolvedValue({
     id: "0123456789abcdef0123456789abcdef",
     kind: "knowledge-draft/v1",
@@ -282,24 +298,41 @@ describe("Knowledge Path/Query app-link delivery", () => {
     expect(await screen.findByText("Knowledge 초안을 저장했습니다. handoff는 소비되어 삭제되었습니다.")).toBeTruthy();
   });
 
-  it.each(["취소", "초안 저장"])("previews Workspace session metadata and performs only the chosen %s action", async (action) => {
-    const id = "0123456789abcdef0123456789abcdef";
-    takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "handoff", handoffKind: "knowledge-session/v1", id }, from: "devbox-workspace" });
-    previewKnowledgeDraftMock.mockResolvedValueOnce({ id, kind: "knowledge-session/v1", producerId: "devbox-workspace", expiresAtMs: Date.now() + 600_000, leaseUntilMs: Date.now() + 60_000, title: "개발 세션 요약 · 2026-09-07", body: "# 개발 세션 요약\n\n- 실패한 실행: 2개\n- Git 커밋: 확인 불가", tags: ["development-session", "summary"], summary: null, sources: [] });
-    render(<App />);
-    await screen.findByRole("heading", { name: "개발 세션 요약 미리보기" });
-    expect(screen.getByText("Workspace · 선택한 세션 메타데이터")).toBeTruthy();
-    expect(screen.getByLabelText("Knowledge 초안 본문")).toHaveTextContent("Git 커밋: 확인 불가");
-    expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: action }));
-    if (action === "취소") {
-      await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith(id));
+  it.each(["취소", "초안 저장"])(
+    "previews Workspace session metadata and performs only the chosen %s action",
+    async (action) => {
+      const id = "0123456789abcdef0123456789abcdef";
+      takePendingOpenMock.mockResolvedValueOnce({
+        target: { kind: "handoff", handoffKind: "knowledge-session/v1", id },
+        from: "devbox-workspace",
+      });
+      previewKnowledgeDraftMock.mockResolvedValueOnce({
+        id,
+        kind: "knowledge-session/v1",
+        producerId: "devbox-workspace",
+        expiresAtMs: Date.now() + 600_000,
+        leaseUntilMs: Date.now() + 60_000,
+        title: "개발 세션 요약 · 2026-09-07",
+        body: "# 개발 세션 요약\n\n- 실패한 실행: 2개\n- Git 커밋: 확인 불가",
+        tags: ["development-session", "summary"],
+        summary: null,
+        sources: [],
+      });
+      render(<App />);
+      await screen.findByRole("heading", { name: "개발 세션 요약 미리보기" });
+      expect(screen.getByText("Workspace · 선택한 세션 메타데이터")).toBeTruthy();
+      expect(screen.getByLabelText("Knowledge 초안 본문")).toHaveTextContent("Git 커밋: 확인 불가");
       expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
-    } else {
-      await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalledExactlyOnceWith(id));
-      expect(discardKnowledgeDraftMock).not.toHaveBeenCalled();
-    }
-  });
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      if (action === "취소") {
+        await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith(id));
+        expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+      } else {
+        await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalledExactlyOnceWith(id));
+        expect(discardKnowledgeDraftMock).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("cancels a handoff preview by restoring the one-time claim without saving", async () => {
     takePendingOpenMock.mockResolvedValueOnce({
@@ -388,9 +421,12 @@ describe("Knowledge Path/Query app-link delivery", () => {
 
   it("restores a late native claim after the app unmounts", async () => {
     let resolvePreview: ((preview: KnowledgeDraftPreview) => void) | undefined;
-    previewKnowledgeDraftMock.mockImplementationOnce(() => new Promise<KnowledgeDraftPreview>((resolve) => {
-      resolvePreview = resolve;
-    }));
+    previewKnowledgeDraftMock.mockImplementationOnce(
+      () =>
+        new Promise<KnowledgeDraftPreview>((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
     takePendingOpenMock.mockResolvedValueOnce({
       target: {
         kind: "handoff",
@@ -413,9 +449,12 @@ describe("Knowledge Path/Query app-link delivery", () => {
 
   it("allows only one in-flight Save action", async () => {
     let resolveSave: ((result: { saved: boolean; path: string; handoffDeleted: boolean }) => void) | undefined;
-    saveKnowledgeDraftMock.mockImplementationOnce(() => new Promise<{ saved: boolean; path: string; handoffDeleted: boolean }>((resolve) => {
-      resolveSave = resolve;
-    }));
+    saveKnowledgeDraftMock.mockImplementationOnce(
+      () =>
+        new Promise<{ saved: boolean; path: string; handoffDeleted: boolean }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     takePendingOpenMock.mockResolvedValueOnce({
       target: {
         kind: "handoff",
@@ -444,11 +483,13 @@ describe("Knowledge Path/Query app-link delivery", () => {
   });
 });
 
-
 it("does not infer draft expiry from display wording", async () => {
-  takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "handoff", handoffKind: "knowledge-draft/v1", id: "0123456789abcdef0123456789abcdef" }, from: "life-log" });
+  takePendingOpenMock.mockResolvedValueOnce({
+    target: { kind: "handoff", handoffKind: "knowledge-draft/v1", id: "0123456789abcdef0123456789abcdef" },
+    from: "life-log",
+  });
   saveKnowledgeDraftMock.mockRejectedValueOnce(new Error("만료 처리를 사용할 수 없습니다"));
-  render(<App/>);
+  render(<App />);
   await screen.findByRole("heading", { name: "Life Log 초안 미리보기" });
   fireEvent.click(screen.getByRole("button", { name: "초안 저장" }));
   await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalled());

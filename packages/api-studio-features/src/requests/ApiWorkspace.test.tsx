@@ -10,22 +10,39 @@ const links = { collectionIds: ["c1"], environmentIds: ["e1"], openApiDefinition
 const workspace = { id, name: "Fixture", projectId: null, links };
 const doc = { schemaVersion: 1, revision: 3, selectedId: null, workspaces: [workspace] };
 const state = { document: doc, currentProjectId: null, mockProfiles: [] };
-const props = { collections: [{ id: "c1", name: "Collection A" }], environments: [{ id: "e1", name: "Environment A" }] };
+const props = {
+  collections: [{ id: "c1", name: "Collection A" }],
+  environments: [{ id: "e1", name: "Environment A" }],
+};
 afterEach(cleanup);
-beforeEach(() => { invoke.mockReset(); invoke.mockResolvedValue(state); });
+beforeEach(() => {
+  invoke.mockReset();
+  invoke.mockResolvedValue(state);
+});
 it("loads the selected metadata in StrictMode and switches with its current revision only", async () => {
-  const onChange = vi.fn(); render(<StrictMode><ApiWorkspacePanel {...props} onChange={onChange} /></StrictMode>);
-  await waitFor(() => expect((screen.getByRole("combobox", { name: "API Workspace 선택" }) as HTMLSelectElement).disabled).toBe(false));
+  const onChange = vi.fn();
+  render(
+    <StrictMode>
+      <ApiWorkspacePanel {...props} onChange={onChange} />
+    </StrictMode>,
+  );
+  await waitFor(() =>
+    expect((screen.getByRole("combobox", { name: "API Workspace 선택" }) as HTMLSelectElement).disabled).toBe(false),
+  );
   invoke.mockResolvedValueOnce({ ...doc, revision: 4, selectedId: id });
   fireEvent.change(screen.getByRole("combobox", { name: "API Workspace 선택" }), { target: { value: id } });
   await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(workspace));
   expect(invoke).toHaveBeenLastCalledWith("select_api_workspace", { expectedRevision: 3, id });
-  expect(invoke.mock.calls.every(([method]) => ["api_workspace_state", "select_api_workspace"].includes(method))).toBe(true);
+  expect(invoke.mock.calls.every(([method]) => ["api_workspace_state", "select_api_workspace"].includes(method))).toBe(
+    true,
+  );
   expect(screen.getByText(/요청 초안·현재 환경·연결은 유지됩니다/)).not.toBeNull();
 });
 it("keeps unsaved metadata after a stale save and cannot invent a project binding", async () => {
   render(<ApiWorkspacePanel {...props} onChange={vi.fn()} />);
-  await waitFor(() => expect((screen.getByRole("button", { name: "새 Workspace" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "새 Workspace" }) as HTMLButtonElement).disabled).toBe(false),
+  );
   fireEvent.click(screen.getByRole("button", { name: "새 Workspace" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Workspace 이름" }), { target: { value: "My Workspace" } });
   expect((screen.getByRole("option", { name: "현재 Project (연결 없음)" }) as HTMLOptionElement).disabled).toBe(true);
@@ -34,11 +51,19 @@ it("keeps unsaved metadata after a stale save and cannot invent a project bindin
   fireEvent.click(screen.getByRole("button", { name: "연결 저장" }));
   expect((await screen.findByRole("alert")).textContent).toContain("초안은 유지됩니다");
   expect((screen.getByRole("textbox", { name: "Workspace 이름" }) as HTMLInputElement).value).toBe("My Workspace");
-  expect(invoke).toHaveBeenLastCalledWith("save_api_workspace", expect.objectContaining({ expectedRevision: 3, association: "standalone", links: { ...links, environmentIds: [] } }));
+  expect(invoke).toHaveBeenLastCalledWith(
+    "save_api_workspace",
+    expect.objectContaining({
+      expectedRevision: 3,
+      association: "standalone",
+      links: { ...links, environmentIds: [] },
+    }),
+  );
 });
 it("deletes only after explicit confirmation and emits the native remaining selection", async () => {
   invoke.mockResolvedValueOnce({ ...state, document: { ...doc, selectedId: id } });
-  const onChange = vi.fn(); render(<ApiWorkspacePanel {...props} onChange={onChange} />);
+  const onChange = vi.fn();
+  render(<ApiWorkspacePanel {...props} onChange={onChange} />);
   fireEvent.click(await screen.findByRole("button", { name: "Workspace 삭제…" }));
   expect(invoke).toHaveBeenCalledTimes(1);
   invoke.mockResolvedValueOnce({ ...doc, revision: 4, workspaces: [] });
@@ -48,7 +73,15 @@ it("deletes only after explicit confirmation and emits the native remaining sele
 });
 it("ignores a late native selection after the panel unmounts", async () => {
   let resolve!: (value: unknown) => void;
-  invoke.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
-  const onChange = vi.fn(); const view = render(<ApiWorkspacePanel {...props} onChange={onChange} />); view.unmount();
-  await act(async () => resolve(state)); expect(onChange).not.toHaveBeenCalled();
+  invoke.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const onChange = vi.fn();
+  const view = render(<ApiWorkspacePanel {...props} onChange={onChange} />);
+  view.unmount();
+  await act(async () => resolve(state));
+  expect(onChange).not.toHaveBeenCalled();
 });

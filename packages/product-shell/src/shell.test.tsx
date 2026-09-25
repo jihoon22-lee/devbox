@@ -16,7 +16,9 @@ describe("product shell", () => {
     expect(request.context).toEqual(contextFixture);
     expect(isProjectContext({ ...contextFixture, revision: Number.MAX_SAFE_INTEGER + 1 })).toBe(false);
     expect(isProjectContext({ ...contextFixture, worktreeId: "C:\\unverified-root" })).toBe(false);
-    expect(isProjectContext({ ...contextFixture, target: { ...contextFixture.target, path: "/unverified" } })).toBe(false);
+    expect(isProjectContext({ ...contextFixture, target: { ...contextFixture.target, path: "/unverified" } })).toBe(
+      false,
+    );
   });
   it("shares the native wire fixture and never places a path in route metadata", async () => {
     const description = fixtureDescription("workspace");
@@ -37,20 +39,35 @@ describe("product shell", () => {
   });
   it("refreshes native context metadata without remounting feature buffers", async () => {
     let refreshed = false;
-    render(<ProductShell product="workspace" renderContent={({refreshContext}) => <>
-      <input aria-label="fixture buffer" defaultValue="original"/>
-      <button onClick={() => {void refreshContext().then(() => {refreshed = true;});}}>refresh context</button>
-    </>}/>);
+    render(
+      <ProductShell
+        product="workspace"
+        renderContent={({ refreshContext }) => (
+          <>
+            <input aria-label="fixture buffer" defaultValue="original" />
+            <button
+              onClick={() => {
+                void refreshContext().then(() => {
+                  refreshed = true;
+                });
+              }}
+            >
+              refresh context
+            </button>
+          </>
+        )}
+      />,
+    );
     const input = await screen.findByLabelText("fixture buffer");
-    fireEvent.change(input, {target:{value:"unsaved 한글"}});
-    fireEvent.click(screen.getByRole("button", {name:"refresh context"}));
+    fireEvent.change(input, { target: { value: "unsaved 한글" } });
+    fireEvent.click(screen.getByRole("button", { name: "refresh context" }));
     await waitFor(() => expect(refreshed).toBe(true));
     expect(screen.getByLabelText("fixture buffer")).toBe(input);
     expect((input as HTMLInputElement).value).toBe("unsaved 한글");
   });
   it("opens all four products with keyboard navigation and accessible empty states", async () => {
     for (const product of ["workspace", "api-studio", "knowledge", "control-center"] as const) {
-      const { container, unmount } = render(<ProductShell product={product}/>);
+      const { container, unmount } = render(<ProductShell product={product} />);
       await screen.findByText("이 화면은 아직 제공되지 않습니다");
       expect(screen.getByText("브라우저 미리보기 · 모의 데이터")).toBeTruthy();
       const navigation = screen.getByRole("navigation", { name: "제품 화면" });

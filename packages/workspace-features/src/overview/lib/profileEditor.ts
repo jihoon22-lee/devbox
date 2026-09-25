@@ -133,23 +133,21 @@ function isSafeEnvironmentSource(value: string): boolean {
   if (value === ".env") return true;
   if (!value.startsWith(".env.")) return false;
   const suffix = value.slice(".env.".length);
-  return Boolean(suffix)
-    && !suffix.startsWith(".")
-    && !suffix.includes("..")
-    && !suffix.endsWith(".")
-    && /^[A-Za-z0-9._-]+$/u.test(suffix);
+  return (
+    Boolean(suffix) &&
+    !suffix.startsWith(".") &&
+    !suffix.includes("..") &&
+    !suffix.endsWith(".") &&
+    /^[A-Za-z0-9._-]+$/u.test(suffix)
+  );
 }
 
 function isValidEnvironmentName(value: string): boolean {
-  return utf8ByteLength(value) <= MAX_ENVIRONMENT_NAME_BYTES
-    && /^[A-Za-z_][A-Za-z0-9_]*$/u.test(value);
+  return utf8ByteLength(value) <= MAX_ENVIRONMENT_NAME_BYTES && /^[A-Za-z_][A-Za-z0-9_]*$/u.test(value);
 }
 
 function isEnvironmentConflict(value: string): value is EnvironmentConflict {
-  return value === "none"
-    || value === "duplicate"
-    || value === "reserved"
-    || value === "duplicateAndReserved";
+  return value === "none" || value === "duplicate" || value === "reserved" || value === "duplicateAndReserved";
 }
 
 function expectedEnvironmentConflict(name: string, duplicate: boolean): EnvironmentConflict {
@@ -188,14 +186,28 @@ function expectedEnvironmentConflict(name: string, duplicate: boolean): Environm
 
 function isSecretEnvironmentName(name: string): boolean {
   const upper = name.toUpperCase();
-  return ["PASSWORD", "PASSWD", "TOKEN", "SECRET", "APIKEY", "API_KEY", "ACCESSKEY", "ACCESS_KEY", "PRIVATEKEY", "PRIVATE_KEY", "CLIENTSECRET", "CLIENT_SECRET", "CREDENTIAL", "AUTH", "BEARER", "COOKIE", "SESSION"]
-    .some((marker) => upper.includes(marker));
+  return [
+    "PASSWORD",
+    "PASSWD",
+    "TOKEN",
+    "SECRET",
+    "APIKEY",
+    "API_KEY",
+    "ACCESSKEY",
+    "ACCESS_KEY",
+    "PRIVATEKEY",
+    "PRIVATE_KEY",
+    "CLIENTSECRET",
+    "CLIENT_SECRET",
+    "CREDENTIAL",
+    "AUTH",
+    "BEARER",
+    "COOKIE",
+    "SESSION",
+  ].some((marker) => upper.includes(marker));
 }
 
-function validateEnvironmentMetadata(
-  source: string,
-  variables: EnvironmentVariableMetadata[],
-): string | undefined {
+function validateEnvironmentMetadata(source: string, variables: EnvironmentVariableMetadata[]): string | undefined {
   if (variables.length > MAX_ENVIRONMENT_VARIABLES) {
     return "환경 변수는 최대 128개까지 등록할 수 있습니다.";
   }
@@ -218,8 +230,7 @@ function validateEnvironmentMetadata(
     if (expectedSecret !== hasReference) {
       return "환경 secret reference가 올바르지 않습니다.";
     }
-    if (hasReference
-      && (reference.kind !== "secret-ref/v1" || reference.name !== variable.name)) {
+    if (hasReference && (reference.kind !== "secret-ref/v1" || reference.name !== variable.name)) {
       return "환경 secret reference가 올바르지 않습니다.";
     }
   }
@@ -281,11 +292,12 @@ function hasDraftErrors(errors: ProfileDraftErrors): boolean {
 
 export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidation {
   const errors = emptyErrors();
-  if (draft.id && (
-    draft.id !== draft.id.trim()
-    || Array.from(draft.id).length > MAX_PROFILE_ID_CHARS
-    || hasControlCharacter(draft.id)
-  )) {
+  if (
+    draft.id &&
+    (draft.id !== draft.id.trim() ||
+      Array.from(draft.id).length > MAX_PROFILE_ID_CHARS ||
+      hasControlCharacter(draft.id))
+  ) {
     errors.id = "프로필 ID가 올바르지 않습니다.";
   }
   const name = draft.name.trim();
@@ -376,17 +388,20 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
     else if (draft.environmentEnabled && draft.environmentVariables.some((variable) => variable.conflict !== "none")) {
       errors.environment = "환경 파일의 중복·예약 이름 충돌을 해결한 뒤 저장하세요.";
     }
-    const previewMetadata = draft.environmentPreview?.variables.map(({
+    const previewMetadata = draft.environmentPreview?.variables.map(({ name, source, conflict, secretReference }) => ({
       name,
       source,
       conflict,
       secretReference,
-    }) => ({ name, source, conflict, secretReference }));
-    if (draft.environmentPreview
-      && (draft.environmentPreview.source !== environmentSource
-        || draft.environmentPreview.revision !== draft.environmentRevision
-        || draft.environmentPreview.hasConflicts !== draft.environmentVariables.some((variable) => variable.conflict !== "none")
-        || JSON.stringify(previewMetadata) !== JSON.stringify(draft.environmentVariables))) {
+    }));
+    if (
+      draft.environmentPreview &&
+      (draft.environmentPreview.source !== environmentSource ||
+        draft.environmentPreview.revision !== draft.environmentRevision ||
+        draft.environmentPreview.hasConflicts !==
+          draft.environmentVariables.some((variable) => variable.conflict !== "none") ||
+        JSON.stringify(previewMetadata) !== JSON.stringify(draft.environmentVariables))
+    ) {
       errors.environment = "환경 파일 미리보기가 현재 선택과 일치하지 않습니다. 다시 확인하세요.";
     }
   }
@@ -403,12 +418,14 @@ export function validateProfileDraft(draft: ProfileDraft): ProfileDraftValidatio
       gitRoot: gitRoot || null,
       expectedPorts: ports.ports,
       runManagerServiceIds: serviceIds,
-      environment: environmentSource ? {
-        enabled: draft.environmentEnabled,
-        source: environmentSource,
-        revision: draft.environmentRevision,
-        variables: draft.environmentVariables.map((variable) => ({ ...variable })),
-      } : null,
+      environment: environmentSource
+        ? {
+            enabled: draft.environmentEnabled,
+            source: environmentSource,
+            revision: draft.environmentRevision,
+            variables: draft.environmentVariables.map((variable) => ({ ...variable })),
+          }
+        : null,
     },
   };
 }

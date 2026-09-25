@@ -24,26 +24,16 @@ const FOCUSABLE_SELECTOR = [
  * The dialog owns the keyboard boundary and restores focus when it closes so
  * each mutation panel does not need to duplicate those accessibility rules.
  */
-export default function ConfirmDialog({
-  title,
-  summary,
-  confirmLabel,
-  onConfirm,
-  onCancel,
-}: Props) {
+export default function ConfirmDialog({ title, summary, confirmLabel, onConfirm, onCancel }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(
-    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null,
   );
   const titleIdRef = useRef(`repo-confirm-title-${Math.random().toString(36).slice(2)}`);
   const descriptionIdRef = useRef(`repo-confirm-description-${Math.random().toString(36).slice(2)}`);
 
   useLayoutEffect(() => {
-    const cancelButton = dialogRef.current?.querySelector<HTMLButtonElement>(
-      "[data-confirm-cancel]",
-    );
+    const cancelButton = dialogRef.current?.querySelector<HTMLButtonElement>("[data-confirm-cancel]");
     cancelButton?.focus();
 
     return () => {
@@ -89,7 +79,9 @@ export default function ConfirmDialog({
       >
         <h2 id={titleIdRef.current}>{title}</h2>
         <div id={descriptionIdRef.current} className="confirm-dialog-summary">
-          {summary.map((line, index) => <p key={`${index}:${line}`}>{line}</p>)}
+          {summary.map((line, index) => (
+            <p key={`${index}:${line}`}>{line}</p>
+          ))}
         </div>
         <div className="confirm-dialog-actions">
           <button type="button" className="btn" data-confirm-cancel onClick={onCancel}>

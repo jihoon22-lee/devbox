@@ -108,13 +108,15 @@ const preview: DependencyEnrichmentPreview = {
     {
       service: "osv",
       host: "api.osv.dev",
-      transmitted: [{
-        ecosystem: "crates.io",
-        name: "serde",
-        version: "1.0.0",
-        direct: true,
-        localPackageCount: 1,
-      }],
+      transmitted: [
+        {
+          ecosystem: "crates.io",
+          name: "serde",
+          version: "1.0.0",
+          direct: true,
+          localPackageCount: 1,
+        },
+      ],
       cachedCount: 2,
       staleFallbackCount: 1,
       omittedCount: 3,
@@ -123,13 +125,15 @@ const preview: DependencyEnrichmentPreview = {
     {
       service: "depsDev",
       host: "api.deps.dev",
-      transmitted: [{
-        ecosystem: "CARGO",
-        name: "serde",
-        version: "1.0.0",
-        direct: true,
-        localPackageCount: 1,
-      }],
+      transmitted: [
+        {
+          ecosystem: "CARGO",
+          name: "serde",
+          version: "1.0.0",
+          direct: true,
+          localPackageCount: 1,
+        },
+      ],
       cachedCount: 1,
       staleFallbackCount: 1,
       omittedCount: 0,
@@ -276,11 +280,13 @@ describe("DependencyLensPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "전송 내용 검토" }));
 
     await screen.findByText("https://api.osv.dev");
-    await waitFor(() => expect(dependencyEnrichmentPreviewMock).toHaveBeenCalledWith(
-      repo.path,
-      { osv: true, depsDev: false } satisfies EnrichmentSelection,
-      true,
-    ));
+    await waitFor(() =>
+      expect(dependencyEnrichmentPreviewMock).toHaveBeenCalledWith(
+        repo.path,
+        { osv: true, depsDev: false } satisfies EnrichmentSelection,
+        true,
+      ),
+    );
     expect(dependencyEnrichmentExecuteMock).not.toHaveBeenCalled();
 
     const disclosure = screen.getByLabelText("원격 전송 검토");
@@ -305,10 +311,7 @@ describe("DependencyLensPanel", () => {
 
     expect(dependencyEnrichmentExecuteMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "검토한 정보 보내기" }));
-    await waitFor(() => expect(dependencyEnrichmentExecuteMock).toHaveBeenCalledWith(
-      repo.path,
-      preview.token,
-    ));
+    await waitFor(() => expect(dependencyEnrichmentExecuteMock).toHaveBeenCalledWith(repo.path, preview.token));
     expect(await screen.findByText("원격 보강 완료")).toBeTruthy();
     const summaries = document.querySelector(".dependency-enrichment-summaries");
     expect(summaries?.textContent).toContain("OSV 대상 3 · 전송 2 · 캐시 1 · stale 1 · 실패 1 · 생략 1");
@@ -316,10 +319,11 @@ describe("DependencyLensPanel", () => {
     expect(screen.getByText("이번 결과의 로컬 캐시를 저장하지 못했습니다.")).toBeTruthy();
 
     const inventory = screen.getByLabelText("의존성 패키지 목록");
-    const serdeDetails = Array.from(inventory.querySelectorAll("details")).find((details) =>
-      details.querySelector("summary")?.textContent?.includes("serde")
-      && details.querySelector("summary")?.textContent?.includes("1.0.0")
-      && !details.querySelector("summary")?.textContent?.includes("serde-core"),
+    const serdeDetails = Array.from(inventory.querySelectorAll("details")).find(
+      (details) =>
+        details.querySelector("summary")?.textContent?.includes("serde") &&
+        details.querySelector("summary")?.textContent?.includes("1.0.0") &&
+        !details.querySelector("summary")?.textContent?.includes("serde-core"),
     );
     expect(serdeDetails).toBeTruthy();
     fireEvent.click(serdeDetails!.querySelector("summary")!);
@@ -331,8 +335,8 @@ describe("DependencyLensPanel", () => {
     expect(within(serdeMetadata).getByText("deps.dev에서 deprecated로 표시했습니다.")).toBeTruthy();
     expect(within(serdeMetadata).getByText(/서비스에 해당 버전/)).toBeTruthy();
 
-    const serdeCoreDetails = Array.from(inventory.querySelectorAll("details")).find((details) =>
-      details.querySelector("summary strong")?.textContent === "serde-core",
+    const serdeCoreDetails = Array.from(inventory.querySelectorAll("details")).find(
+      (details) => details.querySelector("summary strong")?.textContent === "serde-core",
     );
     expect(serdeCoreDetails).toBeTruthy();
     expect(within(serdeCoreDetails!).getByText("조회 실패")).toBeTruthy();
@@ -368,10 +372,12 @@ describe("DependencyLensPanel", () => {
   it("bounds duplicate and expanded edge rendering", async () => {
     const boundedReport: DependencyReport = {
       ...report,
-      packages: [{
-        ...report.packages[0],
-        dependencies: Array.from({ length: 301 }, (_, index) => `cargo:target-${index}@1.0.0`),
-      }],
+      packages: [
+        {
+          ...report.packages[0],
+          dependencies: Array.from({ length: 301 }, (_, index) => `cargo:target-${index}@1.0.0`),
+        },
+      ],
       packageCount: 1,
       directCount: 1,
       transitiveCount: 0,
@@ -416,8 +422,9 @@ describe("DependencyLensPanel", () => {
     expect(alert.textContent).toBe(DEPENDENCY_ENRICHMENT_ERROR);
     expect(alert.textContent).not.toContain(secret);
     expect(screen.getByText("Cargo.lock")).toBeTruthy();
-    expect(within(screen.getByLabelText("의존성 패키지 목록")).getAllByText("serde", { selector: "strong" }).length)
-      .toBeGreaterThan(0);
+    expect(
+      within(screen.getByLabelText("의존성 패키지 목록")).getAllByText("serde", { selector: "strong" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("redacts remote execute failures and preserves the local report", async () => {
@@ -434,15 +441,18 @@ describe("DependencyLensPanel", () => {
     expect(alert.textContent).toBe(DEPENDENCY_ENRICHMENT_ERROR);
     expect(alert.textContent).not.toContain(secret);
     expect(screen.getByText("Cargo.lock")).toBeTruthy();
-    expect(within(screen.getByLabelText("의존성 패키지 목록")).getAllByText("serde", { selector: "strong" }).length)
-      .toBeGreaterThan(0);
+    expect(
+      within(screen.getByLabelText("의존성 패키지 목록")).getAllByText("serde", { selector: "strong" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("drops a late result when the repository changes", async () => {
     let resolveOlder: ((value: DependencyReport) => void) | undefined;
-    dependencyInventoryMock.mockReturnValueOnce(new Promise((resolve) => {
-      resolveOlder = resolve;
-    }));
+    dependencyInventoryMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOlder = resolve;
+      }),
+    );
     const rendered = render(<DependencyLensPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "의존성 분석" }));
     rendered.rerender(<DependencyLensPanel repo={otherRepo} />);
@@ -476,10 +486,7 @@ describe("DependencyLensPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "전송 내용 검토" }));
     await screen.findByLabelText("원격 전송 검토");
     fireEvent.click(screen.getByRole("button", { name: "검토한 정보 보내기" }));
-    await waitFor(() => expect(dependencyEnrichmentExecuteMock).toHaveBeenCalledWith(
-      repo.path,
-      preview.token,
-    ));
+    await waitFor(() => expect(dependencyEnrichmentExecuteMock).toHaveBeenCalledWith(repo.path, preview.token));
 
     rendered.rerender(<DependencyLensPanel repo={otherRepo} />);
     pending.resolve(partialEnrichment);
@@ -491,13 +498,13 @@ describe("DependencyLensPanel", () => {
 
 it("locks product selection during review and releases its native token on cancel", async () => {
   const onBusyChange = vi.fn();
-  render(<DependencyLensPanel repo={repo} onBusyChange={onBusyChange}/>);
-  fireEvent.click(screen.getByRole("button", {name:"의존성 분석"}));
-  await screen.findByRole("button", {name:"다시 분석"});
-  fireEvent.click(screen.getByRole("button", {name:"전송 내용 검토"}));
+  render(<DependencyLensPanel repo={repo} onBusyChange={onBusyChange} />);
+  fireEvent.click(screen.getByRole("button", { name: "의존성 분석" }));
+  await screen.findByRole("button", { name: "다시 분석" });
+  fireEvent.click(screen.getByRole("button", { name: "전송 내용 검토" }));
   await screen.findByLabelText("원격 전송 검토");
   expect(onBusyChange).toHaveBeenLastCalledWith(true);
-  fireEvent.click(screen.getByRole("button", {name:"전송 검토 취소"}));
+  fireEvent.click(screen.getByRole("button", { name: "전송 검토 취소" }));
   expect(dependencyEnrichmentCancel).toHaveBeenCalledWith(repo.path, preview.token);
   expect(dependencyEnrichmentExecute).not.toHaveBeenCalled();
   await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
@@ -505,12 +512,16 @@ it("locks product selection during review and releases its native token on cance
 
 it("discards a native review arriving after its project has changed", async () => {
   let resolve!: (value: DependencyEnrichmentPreview) => void;
-  dependencyEnrichmentPreviewMock.mockReturnValue(new Promise(done => {resolve = done;}));
-  const view = render(<DependencyLensPanel repo={repo}/>);
-  fireEvent.click(screen.getByRole("button", {name:"의존성 분석"}));
-  await screen.findByRole("button", {name:"다시 분석"});
-  fireEvent.click(screen.getByRole("button", {name:"전송 내용 검토"}));
-  view.rerender(<DependencyLensPanel repo={otherRepo}/>);
+  dependencyEnrichmentPreviewMock.mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const view = render(<DependencyLensPanel repo={repo} />);
+  fireEvent.click(screen.getByRole("button", { name: "의존성 분석" }));
+  await screen.findByRole("button", { name: "다시 분석" });
+  fireEvent.click(screen.getByRole("button", { name: "전송 내용 검토" }));
+  view.rerender(<DependencyLensPanel repo={otherRepo} />);
   resolve(preview);
   await waitFor(() => expect(dependencyEnrichmentCancel).toHaveBeenCalledWith(repo.path, preview.token));
   expect(screen.queryByLabelText("원격 전송 검토")).toBeNull();

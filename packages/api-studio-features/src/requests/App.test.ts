@@ -18,11 +18,14 @@ describe("statusClass", () => {
     expect(statusClass(400)).toBe("status-4xx");
   });
 
-  it("500번대도 status-4xx 클래스로 분류된다 (기능상 버그 아님 — CSS에 .status-2xx/.status-4xx 둘뿐이라 " +
-    "'에러는 빨간색'이라는 의도대로 동작한다. 다만 클래스 '이름'이 500에는 안 맞는다 — 오타 아님, 후속 정리 후보)", () => {
-    expect(statusClass(500)).toBe("status-4xx");
-    expect(statusClass(503)).toBe("status-4xx");
-  });
+  it(
+    "500번대도 status-4xx 클래스로 분류된다 (기능상 버그 아님 — CSS에 .status-2xx/.status-4xx 둘뿐이라 " +
+      "'에러는 빨간색'이라는 의도대로 동작한다. 다만 클래스 '이름'이 500에는 안 맞는다 — 오타 아님, 후속 정리 후보)",
+    () => {
+      expect(statusClass(500)).toBe("status-4xx");
+      expect(statusClass(503)).toBe("status-4xx");
+    },
+  );
 });
 
 describe("tryPretty", () => {
@@ -94,20 +97,26 @@ describe("buildCurl", () => {
 
   it("key가 빈 파라미터/헤더는 무시한다", () => {
     const curl = buildCurl(
-      baseReq({ url: "https://api.example.com", params: [{ key: "", value: "ignored" }], headers: [{ key: "", value: "ignored" }] }),
+      baseReq({
+        url: "https://api.example.com",
+        params: [{ key: "", value: "ignored" }],
+        headers: [{ key: "", value: "ignored" }],
+      }),
     );
     expect(curl).not.toContain("ignored");
   });
 
   it("중복 header 순서를 유지하고 disabled header는 기본 cURL에서 제외한다", () => {
-    const curl = buildCurl(baseReq({
-      url: "https://api.example.com",
-      headers: [
-        { key: "X-Trace", value: "one", enabled: true },
-        { key: "X-Trace", value: "two", enabled: true },
-        { key: "X-Skip", value: "not-sent", enabled: false },
-      ],
-    }));
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com",
+        headers: [
+          { key: "X-Trace", value: "one", enabled: true },
+          { key: "X-Trace", value: "two", enabled: true },
+          { key: "X-Skip", value: "not-sent", enabled: false },
+        ],
+      }),
+    );
 
     expect(curl.match(/X-Trace:/g)).toHaveLength(2);
     expect(curl.indexOf("X-Trace: one")).toBeLessThan(curl.indexOf("X-Trace: two"));
@@ -223,15 +232,17 @@ describe("buildCurl", () => {
   });
 
   it("구조화 Cookie는 순서대로 한 header로 만들고 직접 값만 마스킹한다", () => {
-    const curl = buildCurl(baseReq({
-      url: "https://api.example.com",
-      cookies: [
-        { name: "session", value: "direct-cookie", enabled: true },
-        { name: "token", value: "${COOKIE_TOKEN}", enabled: true },
-        { name: "empty", value: "", enabled: true },
-        { name: "skip", value: "disabled-secret", enabled: false },
-      ],
-    }));
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com",
+        cookies: [
+          { name: "session", value: "direct-cookie", enabled: true },
+          { name: "token", value: "${COOKIE_TOKEN}", enabled: true },
+          { name: "empty", value: "", enabled: true },
+          { name: "skip", value: "disabled-secret", enabled: false },
+        ],
+      }),
+    );
 
     expect(curl).toContain("Cookie: session=[REDACTED]; token=${COOKIE_TOKEN}; empty=");
     expect(curl).not.toContain("direct-cookie");
@@ -240,15 +251,23 @@ describe("buildCurl", () => {
   });
 
   it("raw Cookie header 충돌 또는 잘못된 구조화 Cookie는 cURL도 fail-closed한다", () => {
-    expect(buildCurl(baseReq({
-      url: "https://api.example.com",
-      headers: [{ key: "Cookie", value: "legacy=one" }],
-      cookies: [{ name: "session", value: "two" }],
-    }))).toBe("");
-    expect(buildCurl(baseReq({
-      url: "https://api.example.com",
-      cookies: [{ name: "bad name", value: "two" }],
-    }))).toBe("");
+    expect(
+      buildCurl(
+        baseReq({
+          url: "https://api.example.com",
+          headers: [{ key: "Cookie", value: "legacy=one" }],
+          cookies: [{ name: "session", value: "two" }],
+        }),
+      ),
+    ).toBe("");
+    expect(
+      buildCurl(
+        baseReq({
+          url: "https://api.example.com",
+          cookies: [{ name: "bad name", value: "two" }],
+        }),
+      ),
+    ).toBe("");
   });
 
   it("body_kind가 none이면 body가 있어도 --data를 추가하지 않는다", () => {
@@ -257,35 +276,37 @@ describe("buildCurl", () => {
   });
 
   it("multipart 기본 cURL은 text를 정화하고 파일 전체 경로 대신 재선택 placeholder를 쓴다", () => {
-    const curl = buildCurl(baseReq({
-      url: "https://api.example.com/upload",
-      body_kind: "multipart",
-      headers: [
-        { key: "Content-Type", value: "text/plain", enabled: true },
-        { key: "Content-Length", value: "1", enabled: true },
-        { key: "Transfer-Encoding", value: "chunked", enabled: true },
-      ],
-      multipart: [
-        {
-          kind: "text",
-          name: "token",
-          value: "direct-multipart-secret",
-          file_path: "",
-          file_name: "",
-          content_type: "text/plain",
-          enabled: true,
-        },
-        {
-          kind: "file",
-          name: "upload",
-          value: "",
-          file_path: "C:\\private\\artifact.zip",
-          file_name: "artifact.zip",
-          content_type: "application/zip",
-          enabled: true,
-        },
-      ],
-    }));
+    const curl = buildCurl(
+      baseReq({
+        url: "https://api.example.com/upload",
+        body_kind: "multipart",
+        headers: [
+          { key: "Content-Type", value: "text/plain", enabled: true },
+          { key: "Content-Length", value: "1", enabled: true },
+          { key: "Transfer-Encoding", value: "chunked", enabled: true },
+        ],
+        multipart: [
+          {
+            kind: "text",
+            name: "token",
+            value: "direct-multipart-secret",
+            file_path: "",
+            file_name: "",
+            content_type: "text/plain",
+            enabled: true,
+          },
+          {
+            kind: "file",
+            name: "upload",
+            value: "",
+            file_path: "C:\\private\\artifact.zip",
+            file_name: "artifact.zip",
+            content_type: "application/zip",
+            enabled: true,
+          },
+        ],
+      }),
+    );
 
     expect(curl).toContain("--form 'token=\"[REDACTED]\";type=text/plain'");
     expect(curl).toContain("--form 'upload=@\"[RESELECT_FILE:artifact.zip]\";type=application/zip'");

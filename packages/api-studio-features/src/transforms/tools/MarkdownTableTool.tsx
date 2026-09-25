@@ -103,9 +103,7 @@ export function MarkdownTableTool() {
   const actionRevision = useRef(0);
   const mounted = useRef(true);
   const current = resolved.input === input;
-  const result = current
-    ? resolved
-    : { ...INITIAL_STATE, input, running: true };
+  const result = current ? resolved : { ...INITIAL_STATE, input, running: true };
   const canAct = current && !result.running && !result.error && result.output.length > 0;
 
   useEffect(() => {
@@ -116,6 +114,7 @@ export function MarkdownTableTool() {
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     actionRevision.current += 1;
     actionBusyRef.current = false;
@@ -190,10 +189,9 @@ export function MarkdownTableTool() {
       <div className="conversion-notice" role="note">
         <strong>사용법</strong>
         <span>
-          파이프(|)로 구분한 표를 붙여 넣으세요. 두 번째 행에 <code>---</code>, <code>:---</code>,
-          <code>---:</code>, <code>:---:</code>를 쓰면 열 정렬을 유지합니다. 열이 부족한 행은 빈 셀로
-          채우고, 누락된 구분 행은 자동으로 추가합니다. 짝이 맞는 백틱 코드 구간 안의 파이프는
-          셀 내용으로 유지하며 원본 행·열 순서는 바꾸지 않습니다.
+          파이프(|)로 구분한 표를 붙여 넣으세요. 두 번째 행에 <code>---</code>, <code>:---</code>,<code>---:</code>,{" "}
+          <code>:---:</code>를 쓰면 열 정렬을 유지합니다. 열이 부족한 행은 빈 셀로 채우고, 누락된 구분 행은 자동으로
+          추가합니다. 짝이 맞는 백틱 코드 구간 안의 파이프는 셀 내용으로 유지하며 원본 행·열 순서는 바꾸지 않습니다.
         </span>
       </div>
 
@@ -204,7 +202,7 @@ export function MarkdownTableTool() {
             aria-label="Markdown 표 입력"
             aria-describedby="markdown-table-help"
             className="io-input markdown-table-input"
-            placeholder={'| 이름 | 값 |\n| --- | --- |\n| devbox | 0.5 |'}
+            placeholder={"| 이름 | 값 |\n| --- | --- |\n| devbox | 0.5 |"}
             rows={18}
             value={input}
             onValueChange={handleInputChange}
@@ -213,7 +211,8 @@ export function MarkdownTableTool() {
             spellCheck={false}
           />
           <span id="markdown-table-help" className="markdown-table-help">
-            최대 {MARKDOWN_TABLE_LIMITS.maxInputBytes.toLocaleString()}바이트 · {MARKDOWN_TABLE_LIMITS.maxRows}행 · {MARKDOWN_TABLE_LIMITS.maxColumns}열 · 셀 {MARKDOWN_TABLE_LIMITS.maxCellCodePoints.toLocaleString()}자
+            최대 {MARKDOWN_TABLE_LIMITS.maxInputBytes.toLocaleString()}바이트 · {MARKDOWN_TABLE_LIMITS.maxRows}행 ·{" "}
+            {MARKDOWN_TABLE_LIMITS.maxColumns}열 · 셀 {MARKDOWN_TABLE_LIMITS.maxCellCodePoints.toLocaleString()}자
           </span>
         </div>
 
@@ -244,7 +243,11 @@ export function MarkdownTableTool() {
             value={canAct ? result.output : ""}
             downloadName="formatted-table.md"
           />
-          {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+          {actionError ? (
+            <div className="context-action-error" role="alert">
+              {actionError}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -5,8 +5,6 @@ import { parseDocument } from "yaml";
 
 export type OpenApiDocumentFormat = "json" | "yaml";
 
-
-
 export type OpenApiDocumentErrorCode =
   | "EMPTY_SOURCE"
   | "SOURCE_TOO_LARGE"
@@ -21,9 +19,7 @@ export interface OpenApiDocumentError {
   code: OpenApiDocumentErrorCode;
 }
 
-export type OpenApiDocumentResult =
-  | { ok: true; value: unknown }
-  | { ok: false; error: OpenApiDocumentError };
+export type OpenApiDocumentResult = { ok: true; value: unknown } | { ok: false; error: OpenApiDocumentError };
 
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
@@ -34,16 +30,19 @@ function fail(code: OpenApiDocumentErrorCode): never {
 function isFailure(value: unknown): value is OpenApiDocumentError {
   if (value === null || typeof value !== "object") return false;
   const code = (value as { code?: unknown }).code;
-  return typeof code === "string" && [
-    "EMPTY_SOURCE",
-    "SOURCE_TOO_LARGE",
-    "PARSER_ERROR",
-    "UNSUPPORTED_GRAPH",
-    "NODE_LIMIT",
-    "DEPTH_LIMIT",
-    "STRING_LIMIT",
-    "DANGEROUS_KEY",
-  ].includes(code);
+  return (
+    typeof code === "string" &&
+    [
+      "EMPTY_SOURCE",
+      "SOURCE_TOO_LARGE",
+      "PARSER_ERROR",
+      "UNSUPPORTED_GRAPH",
+      "NODE_LIMIT",
+      "DEPTH_LIMIT",
+      "STRING_LIMIT",
+      "DANGEROUS_KEY",
+    ].includes(code)
+  );
 }
 
 function byteLength(value: string): number {
@@ -124,25 +123,35 @@ function parseDocumentGraph(text: string, format: OpenApiDocumentFormat): unknow
       if (parseDepth > OPENAPI_DOCUMENT_LIMITS.maxDepth) fail("DEPTH_LIMIT");
     };
     try {
-      visitJson(text, {
-        onObjectBegin: beginContainer,
-        onObjectProperty: countNode,
-        onObjectEnd: () => { parseDepth -= 1; },
-        onArrayBegin: beginContainer,
-        onArrayEnd: () => { parseDepth -= 1; },
-        onLiteralValue: (value) => {
-          countNode();
-          if (typeof value === "number" && (!Number.isFinite(value)
-            || (Number.isInteger(value) && !Number.isSafeInteger(value)))) {
-            unsafeNumber = true;
-          }
+      visitJson(
+        text,
+        {
+          onObjectBegin: beginContainer,
+          onObjectProperty: countNode,
+          onObjectEnd: () => {
+            parseDepth -= 1;
+          },
+          onArrayBegin: beginContainer,
+          onArrayEnd: () => {
+            parseDepth -= 1;
+          },
+          onLiteralValue: (value) => {
+            countNode();
+            if (
+              typeof value === "number" &&
+              (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value)))
+            ) {
+              unsafeNumber = true;
+            }
+          },
+          onError: (error, offset, length) => errors.push({ error, offset, length }),
         },
-        onError: (error, offset, length) => errors.push({ error, offset, length }),
-      }, {
-        allowEmptyContent: false,
-        allowTrailingComma: false,
-        disallowComments: true,
-      });
+        {
+          allowEmptyContent: false,
+          allowTrailingComma: false,
+          disallowComments: true,
+        },
+      );
     } catch (cause) {
       if (isFailure(cause)) throw cause;
       fail("PARSER_ERROR");
@@ -175,10 +184,7 @@ function parseDocumentGraph(text: string, format: OpenApiDocumentFormat): unknow
   }
 }
 
-export function parseBoundedOpenApiDocument(
-  text: string,
-  format: OpenApiDocumentFormat,
-): OpenApiDocumentResult {
+export function parseBoundedOpenApiDocument(text: string, format: OpenApiDocumentFormat): OpenApiDocumentResult {
   try {
     return { ok: true, value: parseDocumentGraph(text, format) };
   } catch (cause) {

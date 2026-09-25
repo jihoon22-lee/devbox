@@ -39,11 +39,16 @@ function persistedRequest(overrides: Partial<RequestTemplate> = {}) {
 
 describe("API Playground transfer documents", () => {
   it("exports a versioned collection document without direct credentials", () => {
-    const store = addEntry(emptyCollectionStore(), {
-      name: "Users",
-      folder: "dev",
-      request: request({ headers: [{ key: "Authorization", value: "Bearer direct-secret", enabled: true }] }),
-    }, 1, () => "c-1");
+    const store = addEntry(
+      emptyCollectionStore(),
+      {
+        name: "Users",
+        folder: "dev",
+        request: request({ headers: [{ key: "Authorization", value: "Bearer direct-secret", enabled: true }] }),
+      },
+      1,
+      () => "c-1",
+    );
     const raw = serializeCollectionExport(store);
     expect(raw).toContain(COLLECTION_EXPORT_SCHEMA);
     expect(raw).not.toContain("direct-secret");
@@ -54,22 +59,30 @@ describe("API Playground transfer documents", () => {
   it("rejects unknown collection fields and invalid schema versions", () => {
     const base = JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: 1, collections: [] });
     expect(parseCollectionExport(base)).not.toBeNull();
-    expect(parseCollectionExport(JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: 2, collections: [] }))).toBeNull();
-    expect(parseCollectionExport(JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: 1, collections: [], extra: true }))).toBeNull();
+    expect(
+      parseCollectionExport(JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: 2, collections: [] })),
+    ).toBeNull();
+    expect(
+      parseCollectionExport(
+        JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: 1, collections: [], extra: true }),
+      ),
+    ).toBeNull();
   });
 
   it("exports only references for secret environment variables", () => {
     const store: EnvironmentStore = {
       ...emptyEnvironmentStore(),
-      environments: [{
-        id: "env-1",
-        name: "dev",
-        variables: [
-          { key: "BASE_URL", value: "https://localhost", secret: false },
-          { key: "API_TOKEN", value: "sealed-secret-blob", secret: true },
-          { key: "ordinary", value: "ghp_1234567890abcdef", secret: false },
-        ],
-      }],
+      environments: [
+        {
+          id: "env-1",
+          name: "dev",
+          variables: [
+            { key: "BASE_URL", value: "https://localhost", secret: false },
+            { key: "API_TOKEN", value: "sealed-secret-blob", secret: true },
+            { key: "ordinary", value: "ghp_1234567890abcdef", secret: false },
+          ],
+        },
+      ],
     };
     const raw = serializeEnvironmentExport(store);
     expect(raw).toContain(ENVIRONMENT_EXPORT_SCHEMA);
@@ -85,21 +98,27 @@ describe("API Playground transfer documents", () => {
   });
 
   it("imports by appending and leaves imported secret values unconfigured", () => {
-    const collections = parseCollectionExport(JSON.stringify({
-      schema: COLLECTION_EXPORT_SCHEMA,
-      schema_version: 1,
-      collections: [],
-    }));
+    const collections = parseCollectionExport(
+      JSON.stringify({
+        schema: COLLECTION_EXPORT_SCHEMA,
+        schema_version: 1,
+        collections: [],
+      }),
+    );
     expect(collections).not.toBeNull();
-    const environments = parseEnvironmentExport(JSON.stringify({
-      schema: ENVIRONMENT_EXPORT_SCHEMA,
-      schema_version: 1,
-      environments: [{
-        id: "incoming",
-        name: "prod",
-        variables: [{ key: "TOKEN", reference: "${TOKEN}", secret: true }],
-      }],
-    }));
+    const environments = parseEnvironmentExport(
+      JSON.stringify({
+        schema: ENVIRONMENT_EXPORT_SCHEMA,
+        schema_version: 1,
+        environments: [
+          {
+            id: "incoming",
+            name: "prod",
+            variables: [{ key: "TOKEN", reference: "${TOKEN}", secret: true }],
+          },
+        ],
+      }),
+    );
     expect(environments).not.toBeNull();
     const merged = mergeImportedEnvironments(emptyEnvironmentStore(), environments!, () => "imported");
     expect(merged?.environments[0].variables[0]).toEqual({ key: "TOKEN", value: "", secret: true });
@@ -110,21 +129,28 @@ describe("API Playground transfer documents", () => {
     const raw = JSON.stringify({
       schema: ENVIRONMENT_EXPORT_SCHEMA,
       schema_version: 1,
-      environments: [{
-        id: "incoming",
-        name: "prod",
-        variables: [{ key: "API_TOKEN", reference: "${API_TOKEN}", secret: false, value: "direct-secret" }],
-      }],
+      environments: [
+        {
+          id: "incoming",
+          name: "prod",
+          variables: [{ key: "API_TOKEN", reference: "${API_TOKEN}", secret: false, value: "direct-secret" }],
+        },
+      ],
     });
     expect(parseEnvironmentExport(raw)).toBeNull();
   });
 
   it("bounds and redacts exported collection/environment metadata without control characters", () => {
-    const collectionStore = addEntry(emptyCollectionStore(), {
-      name: `line\n${"ghp_1234567890abcdef"}`,
-      folder: `folder\u0000${"sk_1234567890abcdef"}`,
-      request: request(),
-    }, 1, () => `id\u0007${"ghp_1234567890abcdef"}`);
+    const collectionStore = addEntry(
+      emptyCollectionStore(),
+      {
+        name: `line\n${"ghp_1234567890abcdef"}`,
+        folder: `folder\u0000${"sk_1234567890abcdef"}`,
+        request: request(),
+      },
+      1,
+      () => `id\u0007${"ghp_1234567890abcdef"}`,
+    );
     const collectionRaw = serializeCollectionExport(collectionStore);
     expect(collectionRaw).not.toContain("ghp_1234567890abcdef");
     expect(collectionRaw).not.toContain("sk_1234567890abcdef");
@@ -136,11 +162,13 @@ describe("API Playground transfer documents", () => {
 
     const environmentRaw = serializeEnvironmentExport({
       ...emptyEnvironmentStore(),
-      environments: [{
-        id: `env\u0000${"ghp_1234567890abcdef"}`,
-        name: `dev\n${"sk-1234567890abcdef"}`,
-        variables: [],
-      }],
+      environments: [
+        {
+          id: `env\u0000${"ghp_1234567890abcdef"}`,
+          name: `dev\n${"sk-1234567890abcdef"}`,
+          variables: [],
+        },
+      ],
     });
     expect(environmentRaw).not.toContain("ghp_1234567890abcdef");
     expect(environmentRaw).not.toContain("sk_1234567890abcdef");
@@ -153,44 +181,48 @@ describe("API Playground transfer documents", () => {
   it("sanitizes every nested browser export field and revalidates the generated document", () => {
     const contaminated = {
       ...emptyCollectionStore(),
-      collections: [{
-        id: "collection-1",
-        name: "request",
-        folder: "dev",
-        saved_at: 1,
-        requiresSecretReview: false,
-        request: persistedRequest({
-          method: "GET\u0000POST",
-          url: "https://example.test/path/ghp_1234567890abcdef",
-          headers: [{ key: "X-Trace\u0000", value: "safe\u0001", enabled: true }],
-          cookies: [{ name: "session\u0002", value: "cookie-value", enabled: true }],
-          multipart: [{
-            kind: "file",
-            name: "upload\u0003",
-            value: "generated-file-body",
-            file_path: "C:\\private\\artifact.zip",
-            file_name: "C:\\private\\artifact.zip",
-            content_type: "application/zip\u0004",
-            enabled: true,
-          }],
-          params: [{ key: "trace\u0005", value: "param\u0006" }],
-          body_kind: "graphql",
-          body: "generated GraphQL body must not persist",
-          auth: {
-            kind: "bearer\u0007",
-            username: "",
-            password: "",
-            token: "prefix-${TOKEN}",
-            api_key: "X-API-Key\u0008",
-            api_value: "prefix-${API_VALUE}",
-          },
-          graphql: {
-            query: "query Viewer { viewer { id } }",
-            variables: "{}",
-            operation_name: "Viewer\u0009",
-          },
-        }),
-      }],
+      collections: [
+        {
+          id: "collection-1",
+          name: "request",
+          folder: "dev",
+          saved_at: 1,
+          requiresSecretReview: false,
+          request: persistedRequest({
+            method: "GET\u0000POST",
+            url: "https://example.test/path/ghp_1234567890abcdef",
+            headers: [{ key: "X-Trace\u0000", value: "safe\u0001", enabled: true }],
+            cookies: [{ name: "session\u0002", value: "cookie-value", enabled: true }],
+            multipart: [
+              {
+                kind: "file",
+                name: "upload\u0003",
+                value: "generated-file-body",
+                file_path: "C:\\private\\artifact.zip",
+                file_name: "C:\\private\\artifact.zip",
+                content_type: "application/zip\u0004",
+                enabled: true,
+              },
+            ],
+            params: [{ key: "trace\u0005", value: "param\u0006" }],
+            body_kind: "graphql",
+            body: "generated GraphQL body must not persist",
+            auth: {
+              kind: "bearer\u0007",
+              username: "",
+              password: "",
+              token: "prefix-${TOKEN}",
+              api_key: "X-API-Key\u0008",
+              api_value: "prefix-${API_VALUE}",
+            },
+            graphql: {
+              query: "query Viewer { viewer { id } }",
+              variables: "{}",
+              operation_name: "Viewer\u0009",
+            },
+          }),
+        },
+      ],
     };
 
     const raw = serializeCollectionExport(contaminated);
@@ -206,34 +238,44 @@ describe("API Playground transfer documents", () => {
   });
 
   it("does not silently drop unsafe environment export variables", () => {
-    expect(() => serializeEnvironmentExport({
-      ...emptyEnvironmentStore(),
-      environments: [{
-        id: "env-1",
-        name: "dev",
-        variables: [{ key: "bad\u0000key", value: "value", secret: false }],
-      }],
-    })).toThrow("metadata");
+    expect(() =>
+      serializeEnvironmentExport({
+        ...emptyEnvironmentStore(),
+        environments: [
+          {
+            id: "env-1",
+            name: "dev",
+            variables: [{ key: "bad\u0000key", value: "value", secret: false }],
+          },
+        ],
+      }),
+    ).toThrow("metadata");
   });
 
   it("rejects control-bearing or credential-shaped imported metadata", () => {
     const collection = {
       schema: COLLECTION_EXPORT_SCHEMA,
       schema_version: 1,
-      collections: [{
-        id: "c-1",
-        name: "bad\u0000name",
-        folder: "folder",
-        saved_at: 1,
-        request: persistedRequest(),
-        requiresSecretReview: false,
-      }],
+      collections: [
+        {
+          id: "c-1",
+          name: "bad\u0000name",
+          folder: "folder",
+          saved_at: 1,
+          request: persistedRequest(),
+          requiresSecretReview: false,
+        },
+      ],
     };
     expect(parseCollectionExport(JSON.stringify(collection))).toBeNull();
-    expect(parseCollectionExport(JSON.stringify({
-      ...collection,
-      collections: [{ ...collection.collections[0], name: "ghp_1234567890abcdef" }],
-    }))).toBeNull();
+    expect(
+      parseCollectionExport(
+        JSON.stringify({
+          ...collection,
+          collections: [{ ...collection.collections[0], name: "ghp_1234567890abcdef" }],
+        }),
+      ),
+    ).toBeNull();
 
     const environment = {
       schema: ENVIRONMENT_EXPORT_SCHEMA,
@@ -241,10 +283,14 @@ describe("API Playground transfer documents", () => {
       environments: [{ id: "env-1", name: "prod\u2028east", variables: [] }],
     };
     expect(parseEnvironmentExport(JSON.stringify(environment))).toBeNull();
-    expect(parseEnvironmentExport(JSON.stringify({
-      ...environment,
-      environments: [{ ...environment.environments[0], name: "sk-1234567890abcdef" }],
-    }))).toBeNull();
+    expect(
+      parseEnvironmentExport(
+        JSON.stringify({
+          ...environment,
+          environments: [{ ...environment.environments[0], name: "sk-1234567890abcdef" }],
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("does not partially merge when the combined count exceeds the bound", () => {
@@ -259,18 +305,22 @@ describe("API Playground transfer documents", () => {
         requiresSecretReview: false,
       })),
     };
-    const importedCollections = parseCollectionExport(JSON.stringify({
-      schema: COLLECTION_EXPORT_SCHEMA,
-      schema_version: 1,
-      collections: [{
-        id: "incoming",
-        name: "incoming",
-        folder: "",
-        saved_at: 1,
-        request: persistedRequest(),
-        requiresSecretReview: false,
-      }],
-    }));
+    const importedCollections = parseCollectionExport(
+      JSON.stringify({
+        schema: COLLECTION_EXPORT_SCHEMA,
+        schema_version: 1,
+        collections: [
+          {
+            id: "incoming",
+            name: "incoming",
+            folder: "",
+            saved_at: 1,
+            request: persistedRequest(),
+            requiresSecretReview: false,
+          },
+        ],
+      }),
+    );
     expect(importedCollections).not.toBeNull();
     expect(mergeImportedCollections(currentCollections, importedCollections!, () => "new-id")).toBeNull();
     expect(currentCollections.collections).toHaveLength(MAX_EXPORTED_COLLECTIONS);
@@ -283,36 +333,56 @@ describe("API Playground transfer documents", () => {
         variables: [],
       })),
     };
-    const importedEnvironments = parseEnvironmentExport(JSON.stringify({
-      schema: ENVIRONMENT_EXPORT_SCHEMA,
-      schema_version: 1,
-      environments: [{ id: "incoming", name: "incoming", variables: [] }],
-    }));
+    const importedEnvironments = parseEnvironmentExport(
+      JSON.stringify({
+        schema: ENVIRONMENT_EXPORT_SCHEMA,
+        schema_version: 1,
+        environments: [{ id: "incoming", name: "incoming", variables: [] }],
+      }),
+    );
     expect(importedEnvironments).not.toBeNull();
     expect(mergeImportedEnvironments(currentEnvironments, importedEnvironments!, () => "new-id")).toBeNull();
     expect(currentEnvironments.environments).toHaveLength(MAX_EXPORTED_ENVIRONMENTS);
   });
 
   it("does not partially merge when ID generation cannot produce unique IDs", () => {
-    const importedCollections = parseCollectionExport(JSON.stringify({
-      schema: COLLECTION_EXPORT_SCHEMA,
-      schema_version: 1,
-      collections: [
-        { id: "incoming-1", name: "one", folder: "", saved_at: 1, request: persistedRequest(), requiresSecretReview: false },
-        { id: "incoming-2", name: "two", folder: "", saved_at: 2, request: persistedRequest(), requiresSecretReview: false },
-      ],
-    }));
+    const importedCollections = parseCollectionExport(
+      JSON.stringify({
+        schema: COLLECTION_EXPORT_SCHEMA,
+        schema_version: 1,
+        collections: [
+          {
+            id: "incoming-1",
+            name: "one",
+            folder: "",
+            saved_at: 1,
+            request: persistedRequest(),
+            requiresSecretReview: false,
+          },
+          {
+            id: "incoming-2",
+            name: "two",
+            folder: "",
+            saved_at: 2,
+            request: persistedRequest(),
+            requiresSecretReview: false,
+          },
+        ],
+      }),
+    );
     expect(importedCollections).not.toBeNull();
     expect(mergeImportedCollections(emptyCollectionStore(), importedCollections!, () => "same-id")).toBeNull();
 
-    const importedEnvironments = parseEnvironmentExport(JSON.stringify({
-      schema: ENVIRONMENT_EXPORT_SCHEMA,
-      schema_version: 1,
-      environments: [
-        { id: "incoming-1", name: "one", variables: [] },
-        { id: "incoming-2", name: "two", variables: [] },
-      ],
-    }));
+    const importedEnvironments = parseEnvironmentExport(
+      JSON.stringify({
+        schema: ENVIRONMENT_EXPORT_SCHEMA,
+        schema_version: 1,
+        environments: [
+          { id: "incoming-1", name: "one", variables: [] },
+          { id: "incoming-2", name: "two", variables: [] },
+        ],
+      }),
+    );
     expect(importedEnvironments).not.toBeNull();
     expect(mergeImportedEnvironments(emptyEnvironmentStore(), importedEnvironments!, () => "same-id")).toBeNull();
   });

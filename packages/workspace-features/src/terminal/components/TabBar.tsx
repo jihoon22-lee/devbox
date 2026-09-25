@@ -35,6 +35,7 @@ export default function TabBar({
 
   // 탭 바는 가로 스크롤된다. Ctrl+Tab이나 Ctrl+Alt+N으로 화면 밖 탭을 활성화해도
   // 보이도록 활성 탭을 시야 안으로 끌어온다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const element = activeRef.current;
     // jsdom과 일부 WebView 조합에는 scrollIntoView가 없다. 없으면 스크롤만 건너뛴다.
@@ -141,8 +142,8 @@ export default function TabBar({
             >
               <span className="tab-title">{tab.title}</span>
               {/* 마우스 전용 보조 수단. tab role 안의 focusable 컨트롤은 중첩 상호작용이
-                * 되므로 접근성 트리에서 감추고, 키보드·보조기술 사용자는 컨텍스트 메뉴,
-                * Delete, Ctrl+Shift+W로 같은 동작에 도달한다. */}
+               * 되므로 접근성 트리에서 감추고, 키보드·보조기술 사용자는 컨텍스트 메뉴,
+               * Delete, Ctrl+Shift+W로 같은 동작에 도달한다. */}
               <span
                 className="tab-close"
                 aria-hidden="true"

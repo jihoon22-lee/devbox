@@ -11,7 +11,9 @@ if (!("getClientRects" in Range.prototype)) {
     value: () => ({
       length: 0,
       item: () => null,
-      *[Symbol.iterator]() { /* empty */ },
+      *[Symbol.iterator]() {
+        /* empty */
+      },
     }),
   });
 }

@@ -55,11 +55,7 @@ function error(code: string, message: string, position: number | null): RadixRes
 
 export function convertRadix(input: string, mode: RadixInputMode): RadixResult {
   if (input.length > MAX_RADIX_INPUT_CHARACTERS) {
-    return error(
-      "INPUT_TOO_LONG",
-      "진법 변환 입력은 최대 512자까지 처리할 수 있습니다.",
-      null,
-    );
+    return error("INPUT_TOO_LONG", "진법 변환 입력은 최대 512자까지 처리할 수 있습니다.", null);
   }
 
   let start = 0;
@@ -83,11 +79,7 @@ export function convertRadix(input: string, mode: RadixInputMode): RadixResult {
   let inputBase: 2 | 8 | 10 | 16;
   if (prefixBase !== undefined) {
     if (mode !== "auto" && Number(mode) !== prefixBase) {
-      return error(
-        "BASE_PREFIX_MISMATCH",
-        "선택한 입력 진법과 접두사가 일치하지 않습니다.",
-        cursor + 2,
-      );
+      return error("BASE_PREFIX_MISMATCH", "선택한 입력 진법과 접두사가 일치하지 않습니다.", cursor + 2);
     }
     inputBase = prefixBase;
     cursor += 2;
@@ -95,7 +87,7 @@ export function convertRadix(input: string, mode: RadixInputMode): RadixResult {
       return error("PREFIX_WITHOUT_DIGITS", "진법 접두사 뒤에 숫자를 입력해야 합니다.", end + 1);
     }
   } else {
-    inputBase = mode === "auto" ? 10 : Number(mode) as 2 | 8 | 10 | 16;
+    inputBase = mode === "auto" ? 10 : (Number(mode) as 2 | 8 | 10 | 16);
   }
 
   const digitStart = cursor;
@@ -103,19 +95,11 @@ export function convertRadix(input: string, mode: RadixInputMode): RadixResult {
   for (; cursor < end; cursor += 1) {
     const digit = digitValue(input[cursor]);
     if (digit < 0 || digit >= inputBase) {
-      return error(
-        "INVALID_DIGIT",
-        `${inputBase}진수에 사용할 수 없는 digit입니다.`,
-        cursor + 1,
-      );
+      return error("INVALID_DIGIT", `${inputBase}진수에 사용할 수 없는 digit입니다.`, cursor + 1);
     }
     magnitude = magnitude * BigInt(inputBase) + BigInt(digit);
     if (magnitude > MAX_RADIX_MAGNITUDE) {
-      return error(
-        "VALUE_OUT_OF_RANGE",
-        "값의 절댓값은 최대 256bit까지 변환할 수 있습니다.",
-        cursor + 1,
-      );
+      return error("VALUE_OUT_OF_RANGE", "값의 절댓값은 최대 256bit까지 변환할 수 있습니다.", cursor + 1);
     }
   }
 

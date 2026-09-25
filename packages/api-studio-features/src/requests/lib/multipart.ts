@@ -51,14 +51,10 @@ export function isMultipartPartEnabled(part: MultipartPart): boolean {
 }
 
 export function isMultipartDerivedHeader(name: string): boolean {
-  return ["content-type", "content-length", "transfer-encoding"].includes(
-    name.trim().toLowerCase().replace(/_/g, "-"),
-  );
+  return ["content-type", "content-length", "transfer-encoding"].includes(name.trim().toLowerCase().replace(/_/g, "-"));
 }
 
-export function normalizeMultipartParts(
-  parts: readonly MultipartPart[] | undefined,
-): MultipartPart[] {
+export function normalizeMultipartParts(parts: readonly MultipartPart[] | undefined): MultipartPart[] {
   return (parts ?? []).slice(0, MAX_MULTIPART_PARTS).map((part) => ({
     kind: part.kind,
     name: part.name,
@@ -104,35 +100,21 @@ export function setMultipartFile(
   });
 }
 
-export function duplicateMultipartPart(
-  parts: readonly MultipartPart[],
-  index: number,
-): MultipartPart[] {
+export function duplicateMultipartPart(parts: readonly MultipartPart[], index: number): MultipartPart[] {
   const normalized = normalizeMultipartParts(parts);
   if (normalized.length >= MAX_MULTIPART_PARTS || !normalized[index]) return normalized;
-  return [
-    ...normalized.slice(0, index + 1),
-    { ...normalized[index] },
-    ...normalized.slice(index + 1),
-  ];
+  return [...normalized.slice(0, index + 1), { ...normalized[index] }, ...normalized.slice(index + 1)];
 }
 
-export function removeMultipartPart(
-  parts: readonly MultipartPart[],
-  index: number,
-): MultipartPart[] {
+export function removeMultipartPart(parts: readonly MultipartPart[], index: number): MultipartPart[] {
   return normalizeMultipartParts(parts).filter((_, candidate) => candidate !== index);
 }
 
 export function multipartPartHasContent(part: MultipartPart): boolean {
-  return Boolean(
-    part.name || part.value || part.file_path || part.file_name || part.content_type,
-  );
+  return Boolean(part.name || part.value || part.file_path || part.file_name || part.content_type);
 }
 
-export function validateMultipartParts(
-  parts: readonly MultipartPart[],
-): MultipartValidationIssue[] {
+export function validateMultipartParts(parts: readonly MultipartPart[]): MultipartValidationIssue[] {
   const issues: MultipartValidationIssue[] = [];
   if (parts.length > MAX_MULTIPART_PARTS) {
     issues.push({
@@ -154,8 +136,7 @@ export function validateMultipartParts(
         message: "part 이름은 120자 이하의 HTTP token이어야 합니다.",
       });
     }
-    if (part.content_type &&
-      (part.content_type.length > 127 || !CONTENT_TYPE.test(part.content_type))) {
+    if (part.content_type && (part.content_type.length > 127 || !CONTENT_TYPE.test(part.content_type))) {
       issues.push({
         index,
         field: "content_type",
@@ -167,9 +148,7 @@ export function validateMultipartParts(
         issues.push({
           index,
           field: "file",
-          message: part.file_name
-            ? `'${part.file_name}' 파일을 다시 선택하세요.`
-            : "전송할 파일을 선택하세요.",
+          message: part.file_name ? `'${part.file_name}' 파일을 다시 선택하세요.` : "전송할 파일을 선택하세요.",
         });
       } else if (part.file_path.length > 32_768 || /[\0\r\n]/.test(part.file_path)) {
         issues.push({ index, field: "file", message: "선택한 파일 경로가 올바르지 않습니다." });
@@ -190,7 +169,5 @@ export function validateMultipartParts(
 }
 
 export function safeMultipartFileName(path: string): string {
-  return (path.split(/[\\/]/).pop() ?? "")
-    .replace(/[\0-\x1F\x7F]/g, "")
-    .slice(0, 255);
+  return (path.split(/[\\/]/).pop() ?? "").replace(/[\0-\x1F\x7F]/g, "").slice(0, 255);
 }

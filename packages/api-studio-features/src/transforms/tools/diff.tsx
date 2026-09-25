@@ -5,7 +5,10 @@ import { ToolOutput, ToolTextArea } from "./common";
 
 const KIND_CLASS = ["diff-eq", "diff-add", "diff-del"];
 export const DiffDraftContext = createContext<{
-  a: string; b: string; setA: (value: string) => void; setB: (value: string) => void;
+  a: string;
+  b: string;
+  setA: (value: string) => void;
+  setB: (value: string) => void;
 } | null>(null);
 
 /** 라인 단위 diff를 두 컬럼으로 표시하는 도구 */
@@ -13,8 +16,10 @@ export function DiffTool() {
   const shared = useContext(DiffDraftContext);
   const [localA, setLocalA] = useState("");
   const [localB, setLocalB] = useState("");
-  const a = shared?.a ?? localA, b = shared?.b ?? localB;
-  const setA = shared?.setA ?? setLocalA, setB = shared?.setB ?? setLocalB;
+  const a = shared?.a ?? localA,
+    b = shared?.b ?? localB;
+  const setA = shared?.setA ?? setLocalA,
+    setB = shared?.setB ?? setLocalB;
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
 
   useEffect(() => {
@@ -50,9 +55,7 @@ export function DiffTool() {
             </div>
           ));
         }
-        return Array.from({ length: end - start }, (_, j) => (
-          <div key={`${i}-${j}`} className="diff-line diff-gap" />
-        ));
+        return Array.from({ length: end - start }, (_, j) => <div key={`${i}-${j}`} className="diff-line diff-gap" />);
       }
       // new side
       if (h.kind === 1) {
@@ -62,9 +65,7 @@ export function DiffTool() {
           </div>
         ));
       }
-      return Array.from({ length: end - start }, (_, j) => (
-        <div key={`${i}-${j}`} className="diff-line diff-gap" />
-      ));
+      return Array.from({ length: end - start }, (_, j) => <div key={`${i}-${j}`} className="diff-line diff-gap" />);
     });
   };
 

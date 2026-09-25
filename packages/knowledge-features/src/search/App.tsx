@@ -1,8 +1,4 @@
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isProductHosted } from "../transport";
 import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -32,15 +28,7 @@ import {
   type EverythingOpenTarget,
   type OpenRequest,
 } from "./api";
-import type {
-  ContentResult,
-  FileEntry,
-  IndexStatus,
-  RootInfo,
-  RootStatus,
-  SavedQuery,
-  SearchFilter,
-} from "./types";
+import type { ContentResult, FileEntry, IndexStatus, RootInfo, RootStatus, SavedQuery, SearchFilter } from "./types";
 import { matchNames } from "./lib/regex";
 import { normalizeFilter, routeOpenRequest } from "./lib/applink";
 import "./App.css";
@@ -88,15 +76,12 @@ function isSearchQueryAllowed(value: string): boolean {
 }
 
 function isSavedDefinitionAllowed(name: string, value: string): boolean {
-  return (
-    utf8ByteLength(name.trim()) <= MAX_SAVED_NAME_BYTES &&
-    utf8ByteLength(value.trim()) <= MAX_SAVED_QUERY_BYTES
-  );
+  return utf8ByteLength(name.trim()) <= MAX_SAVED_NAME_BYTES && utf8ByteLength(value.trim()) <= MAX_SAVED_QUERY_BYTES;
 }
 
 function isFilterEmpty(filter: SearchFilter): boolean {
   return (
-    !(filter.extensions?.length) &&
+    !filter.extensions?.length &&
     filter.modifiedAfter == null &&
     filter.modifiedBefore == null &&
     filter.minSize == null &&
@@ -125,7 +110,14 @@ function filterCount(filter: SearchFilter): number {
 }
 
 function parseExtensions(value: string): string[] {
-  return [...new Set(value.split(",").map((extension) => extension.trim().replace(/^\.+/, "").toLowerCase()).filter(Boolean))];
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((extension) => extension.trim().replace(/^\.+/, "").toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function optionalSize(value: string): number | null | undefined {
@@ -164,7 +156,8 @@ function watcherLabel(status: RootStatus): string {
 }
 
 function watcherTitle(status: RootStatus): string {
-  if (status.error === "watcher_state_poisoned") return "색인 상태 오류로 자동 갱신을 중단했습니다. 앱을 다시 시작하세요.";
+  if (status.error === "watcher_state_poisoned")
+    return "색인 상태 오류로 자동 갱신을 중단했습니다. 앱을 다시 시작하세요.";
   if (status.error === "root_unavailable") {
     return status.sourceKind === "wsl"
       ? "WSL 배포판 또는 검색 루트에 연결할 수 없어 기존 인덱스를 보존했습니다. 연결되면 자동으로 다시 확인합니다."
@@ -189,8 +182,20 @@ interface ResultContext {
   source?: string;
 }
 
-export interface SavedSearchInput {id:string;query:string;filter:SearchFilter}
-export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { onNoteOpen?: () => void; projectRevision?: number;savedSearch?:SavedSearchInput } = {}) {
+export interface SavedSearchInput {
+  id: string;
+  query: string;
+  filter: SearchFilter;
+}
+export default function App({
+  onNoteOpen,
+  projectRevision = 0,
+  savedSearch,
+}: {
+  onNoteOpen?: () => void;
+  projectRevision?: number;
+  savedSearch?: SavedSearchInput;
+} = {}) {
   const product = isProductHosted();
   const [source, setSource] = useState<SearchSource>("files");
   const [sourceSnapshot, setSourceSnapshot] = useState<SourceSnapshot>();
@@ -319,11 +324,18 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
   const handleOpenRequestRef = useRef(handleOpenRequest);
   handleOpenRequestRef.current = handleOpenRequest;
 
-  useEffect(()=>{
-    if(!savedSearch)return;
-    setSource("files");setError(null);setRegexError(null);setMode("name");setRegexMode(false);
-    setQuery(savedSearch.query);setFilter(savedSearch.filter);setExtensionInput(savedSearch.filter.extensions?.join(", ")??"");setFilterOpen(true);
-  },[savedSearch]);
+  useEffect(() => {
+    if (!savedSearch) return;
+    setSource("files");
+    setError(null);
+    setRegexError(null);
+    setMode("name");
+    setRegexMode(false);
+    setQuery(savedSearch.query);
+    setFilter(savedSearch.filter);
+    setExtensionInput(savedSearch.filter.extensions?.join(", ") ?? "");
+    setFilterOpen(true);
+  }, [savedSearch]);
 
   // Event listener를 먼저 준비한 다음 cold request를 pull한다. Hot event도
   // payload를 직접 적용하지 않고 같은 one-shot pending slot을 소비한다.
@@ -368,6 +380,7 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const current = ++seq.current;
     const q = query.trim();
@@ -389,14 +402,22 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
     if (mode !== "name" || !regexMode) setRegexError(null);
     let cancelled = false;
     const controller = new AbortController();
-    if (product) { setResults([]); setContentResults([]); }
+    if (product) {
+      setResults([]);
+      setContentResults([]);
+    }
     const t = setTimeout(async () => {
       try {
         if (product) {
           let expression: RegExp | undefined;
           if (mode === "name" && regexMode) {
-            try { expression = new RegExp(q, "i"); if (!cancelled) setRegexError(null); }
-            catch { if (!cancelled) setRegexError("정규식을 해석할 수 없습니다."); return; }
+            try {
+              expression = new RegExp(q, "i");
+              if (!cancelled) setRegexError(null);
+            } catch {
+              if (!cancelled) setRegexError("정규식을 해석할 수 없습니다.");
+              return;
+            }
           }
           let matches: Promise<Set<number>> | undefined;
           let snapshotSequence = 0;
@@ -404,19 +425,42 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
             if (cancelled || seq.current !== current) return;
             const revision = ++snapshotSequence;
             setSourceSnapshot(snapshot);
-            const rows = snapshot.rows.map(row => ({ ...row.value, source: row.source, sourceRoot: row.rootIdentity, reference: row.reference, availability: row.availability, indexStale: row.indexStale }));
+            const rows = snapshot.rows.map((row) => ({
+              ...row.value,
+              source: row.source,
+              sourceRoot: row.rootIdentity,
+              reference: row.reference,
+              availability: row.availability,
+              indexStale: row.indexStale,
+            }));
             if (mode === "content") setContentResults(rows);
             else if (!expression || rows.length === 0) setResults(rows);
             else {
-              matches ??= matchNames(q, rows.map(row => row.name), controller.signal);
-              void matches.then(indices => {
-                if (!cancelled && seq.current === current && revision === snapshotSequence) setResults(rows.filter((_row, index) => indices.has(index)));
-              }).catch(cause => {
-                if (!cancelled && seq.current === current && revision === snapshotSequence) setRegexError(cause instanceof Error ? cause.message : "정규식 검색을 완료하지 못했습니다.");
-              });
+              matches ??= matchNames(
+                q,
+                rows.map((row) => row.name),
+                controller.signal,
+              );
+              void matches
+                .then((indices) => {
+                  if (!cancelled && seq.current === current && revision === snapshotSequence)
+                    setResults(rows.filter((_row, index) => indices.has(index)));
+                })
+                .catch((cause) => {
+                  if (!cancelled && seq.current === current && revision === snapshotSequence)
+                    setRegexError(cause instanceof Error ? cause.message : "정규식 검색을 완료하지 못했습니다.");
+                });
             }
           };
-          await searchSource(source, expression ? q.replace(/[^a-zA-Z0-9\s]/g, "") : q, mode, expression ? 2000 : 200, filter, controller.signal, accept);
+          await searchSource(
+            source,
+            expression ? q.replace(/[^a-zA-Z0-9\s]/g, "") : q,
+            mode,
+            expression ? 2000 : 200,
+            filter,
+            controller.signal,
+            accept,
+          );
         } else if (mode === "content") {
           const next = isFilterEmpty(filter) ? await searchContent(q) : await searchContent(q, undefined, filter);
           if (!cancelled && seq.current === current) setContentResults(next);
@@ -571,15 +615,18 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
   const activeList = mode === "content" ? contentResults : results;
   const activePath = (i: number) => (mode === "content" ? contentResults[i]?.path : results[i]?.path) ?? null;
 
-  const prepareContextResult = useCallback((target: HTMLElement) => {
-    const indexText = target.dataset.resultIndex;
-    if (indexText === undefined) return;
-    const index = Number.parseInt(indexText, 10);
-    const result = activeList[index];
-    if (!Number.isInteger(index) || !result) return;
-    setActiveIdx(index);
-    setContextResult({ path: result.path, name: result.name, reference: result.reference, source: result.source });
-  }, [activeList]);
+  const prepareContextResult = useCallback(
+    (target: HTMLElement) => {
+      const indexText = target.dataset.resultIndex;
+      if (indexText === undefined) return;
+      const index = Number.parseInt(indexText, 10);
+      const result = activeList[index];
+      if (!Number.isInteger(index) || !result) return;
+      setActiveIdx(index);
+      setContextResult({ path: result.path, name: result.name, reference: result.reference, source: result.source });
+    },
+    [activeList],
+  );
 
   const contextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareContextResult(target),
@@ -588,6 +635,7 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
   // Result replacement invalidates the exact menu target. Run this before
   // paint: a passive effect could otherwise close a keyboard menu that the
   // user opened on the freshly rendered row in the same frame.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useLayoutEffect(() => {
     contextMenu.close();
     setContextResult(null);
@@ -641,11 +689,13 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
     setError(null);
     try {
       if (action === "open") {
-        if (product) await openFile(result.path, result.reference); else await openFile(result.path);
+        if (product) await openFile(result.path, result.reference);
+        else await openFile(result.path);
         if (result.source === "notes") onNoteOpen?.();
-      }
-      else if (action === "folder") { if (product) await revealFile(result.path, result.reference); else await revealFile(result.path); }
-      else await copyPath(result.path);
+      } else if (action === "folder") {
+        if (product) await revealFile(result.path, result.reference);
+        else await revealFile(result.path);
+      } else await copyPath(result.path);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -699,7 +749,9 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
     const target = availableTargets?.find((candidate) => `open-in:${candidate.id}` === id);
     if (!target) return;
     setError(null);
-    const opening = result.reference ? openIn(target.id, result.path, result.reference) : openIn(target.id, result.path);
+    const opening = result.reference
+      ? openIn(target.id, result.path, result.reference)
+      : openIn(target.id, result.path);
     void opening.catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : String(cause));
     });
@@ -709,9 +761,23 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
     <div className="app">
       <header className="toolbar">
         <h1 className="title">{product ? "Search" : "Everything+"}</h1>
-        {product && <label>검색 범위 <select aria-label="검색 범위" value={source} onChange={event => { setSource(event.currentTarget.value as SearchSource); setError(null); }}>
-          <option value="notes">Notes</option><option value="current_project">Current Project</option><option value="files">All Indexed Files</option>
-        </select></label>}
+        {product && (
+          <label>
+            검색 범위{" "}
+            <select
+              aria-label="검색 범위"
+              value={source}
+              onChange={(event) => {
+                setSource(event.currentTarget.value as SearchSource);
+                setError(null);
+              }}
+            >
+              <option value="notes">Notes</option>
+              <option value="current_project">Current Project</option>
+              <option value="files">All Indexed Files</option>
+            </select>
+          </label>
+        )}
         <div className="mode-tabs">
           <button
             className={`mode-tab ${mode === "name" ? "active" : ""}`}
@@ -745,7 +811,18 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
           }}
           autoFocus
         />
-        {product && <button className="btn" disabled={!query.trim()} onClick={() => { setError(null); setQueryRevision(value => value + 1); }}>다시 검색</button>}
+        {product && (
+          <button
+            className="btn"
+            disabled={!query.trim()}
+            onClick={() => {
+              setError(null);
+              setQueryRevision((value) => value + 1);
+            }}
+          >
+            다시 검색
+          </button>
+        )}
         {mode === "name" && (
           <label className="regex-toggle">
             <input type="checkbox" checked={regexMode} onChange={(e) => setRegexMode(e.currentTarget.checked)} />
@@ -758,7 +835,8 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
             : `${status.total_files.toLocaleString()}개 파일`}
         </span>
         <span className="content-status" aria-live="polite">
-          내용 {status.content_indexed_files.toLocaleString()}개 색인됨 · {status.content_failed_files.toLocaleString()}개 건너뜀
+          내용 {status.content_indexed_files.toLocaleString()}개 색인됨 · {status.content_failed_files.toLocaleString()}
+          개 건너뜀
           {status.content_truncated_files > 0 && ` · ${status.content_truncated_files.toLocaleString()}개 일부/잘림`}
         </span>
         <button
@@ -771,20 +849,33 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
         </button>
       </header>
 
-      {product && <p role="status" className="source-status">
-        {source === "current_project" && (!sourceSnapshot || sourceSnapshot.state === "unsupported") ? "현재 프로젝트가 연결되지 않았습니다. 프로젝트 연결 후 해당 범위에서 검색할 수 있습니다."
-          : sourceSnapshot?.state === "unsupported" ? "이 검색 범위에서 현재 필터를 지원하지 않습니다. 필터를 해제하거나 All Indexed Files를 선택해 주세요."
-          : sourceSnapshot?.state === "unavailable" ? "검색 출처를 읽지 못했습니다. 다른 범위를 선택하거나 다시 검색해 주세요."
-          : sourceSnapshot?.state === "running" ? "검색 중… 파일 연결을 확인하고 있습니다."
-          : sourceSnapshot?.state === "timed_out" ? "제한 시간 내 확인한 결과입니다. 연결을 확인하지 못한 파일은 열 수 없습니다."
-          : sourceSnapshot?.partial ? "일부 결과입니다. 결과 상한이나 연결 상태를 확인해 주세요."
-          : source === "current_project" ? "현재 프로젝트 폴더의 파일 인덱스에서 검색합니다."
-          : source === "notes" ? "Notes의 노트 인덱스에서 검색합니다. 파일 필터는 All Indexed Files에서 사용할 수 있습니다." : "파일 인덱스에서 검색합니다. 검색 결과의 출처와 루트를 함께 표시합니다."}
-      </p>}
+      {product && (
+        <p role="status" className="source-status">
+          {source === "current_project" && (!sourceSnapshot || sourceSnapshot.state === "unsupported")
+            ? "현재 프로젝트가 연결되지 않았습니다. 프로젝트 연결 후 해당 범위에서 검색할 수 있습니다."
+            : sourceSnapshot?.state === "unsupported"
+              ? "이 검색 범위에서 현재 필터를 지원하지 않습니다. 필터를 해제하거나 All Indexed Files를 선택해 주세요."
+              : sourceSnapshot?.state === "unavailable"
+                ? "검색 출처를 읽지 못했습니다. 다른 범위를 선택하거나 다시 검색해 주세요."
+                : sourceSnapshot?.state === "running"
+                  ? "검색 중… 파일 연결을 확인하고 있습니다."
+                  : sourceSnapshot?.state === "timed_out"
+                    ? "제한 시간 내 확인한 결과입니다. 연결을 확인하지 못한 파일은 열 수 없습니다."
+                    : sourceSnapshot?.partial
+                      ? "일부 결과입니다. 결과 상한이나 연결 상태를 확인해 주세요."
+                      : source === "current_project"
+                        ? "현재 프로젝트 폴더의 파일 인덱스에서 검색합니다."
+                        : source === "notes"
+                          ? "Notes의 노트 인덱스에서 검색합니다. 파일 필터는 All Indexed Files에서 사용할 수 있습니다."
+                          : "파일 인덱스에서 검색합니다. 검색 결과의 출처와 루트를 함께 표시합니다."}
+        </p>
+      )}
       {status.indexing && (
         <div className="progress">
           <div className="progress-bar" style={{ width: `${Math.max(4, pct)}%` }} />
-          <span className="progress-text">{pct}% ({status.indexed_files.toLocaleString()})</span>
+          <span className="progress-text">
+            {pct}% ({status.indexed_files.toLocaleString()})
+          </span>
         </div>
       )}
 
@@ -816,12 +907,7 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
           className="btn"
           type="button"
           onClick={() => void onSaveQuery()}
-          disabled={
-            savedQueryBusy
-              || !query.trim()
-              || !savedName.trim()
-              || !isSavedDefinitionAllowed(savedName, query)
-          }
+          disabled={savedQueryBusy || !query.trim() || !savedName.trim() || !isSavedDefinitionAllowed(savedName, query)}
           aria-busy={savedQueryBusy}
         >
           검색어 저장
@@ -995,7 +1081,11 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
               }}
             >
               <option value="">모든 루트</option>
-              {roots.map((root) => <option key={root.id} value={root.id}>{root.path}</option>)}
+              {roots.map((root) => (
+                <option key={root.id} value={root.id}>
+                  {root.path}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -1014,13 +1104,19 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
                 setFilter(next);
               }}
             >
-              {CONTENT_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {CONTENT_STATUS_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </label>
           <button className="btn" type="button" onClick={clearFilters} disabled={isFilterEmpty(filter)}>
             필터 지우기
           </button>
-          <p className="filter-note">필터는 네이티브 제한 쿼리에 적용되며, 저장된 검색에는 검색어와 필터 정의만 보관됩니다.</p>
+          <p className="filter-note">
+            필터는 네이티브 제한 쿼리에 적용되며, 저장된 검색에는 검색어와 필터 정의만 보관됩니다.
+          </p>
         </section>
       )}
 
@@ -1055,7 +1151,11 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
           }}
         />
         <label className="regex-toggle">
-          <input type="checkbox" checked={newRootContent} onChange={(e) => setNewRootContent(e.currentTarget.checked)} />
+          <input
+            type="checkbox"
+            checked={newRootContent}
+            onChange={(e) => setNewRootContent(e.currentTarget.checked)}
+          />
           내용 색인
         </label>
         <button className="btn" onClick={() => void onAddRoot()}>
@@ -1093,15 +1193,51 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
                 >
                   <td>
                     <span className="name">{f.name}</span>
-                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : f.source === "current_project" ? "Current Project" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
+                    {product && (
+                      <small className="source-label">
+                        {f.source === "notes" ? "Notes" : f.source === "current_project" ? "Current Project" : "Files"}{" "}
+                        · {f.sourceRoot}
+                        {f.indexStale && " · 인덱스 갱신 필요"}
+                        {f.availability !== "available" && " · 연결 미확인"}
+                      </small>
+                    )}
                   </td>
                   <td className="snippet">{f.snippet}</td>
                   <td className="mono dim">{f.path}</td>
                   <td className="status-cell">{contentStatusLabel(f.content_status, f.truncated)}</td>
                   <td className="row-actions">
-                    <button className="mini" disabled={product && !f.reference} title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "open"); }}>열기</button>
-                    <button className="mini" disabled={product && !f.reference} title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "folder"); }}>폴더</button>
-                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "copy"); }}>복사</button>
+                    <button
+                      className="mini"
+                      disabled={product && !f.reference}
+                      title="열기"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRowAction(f, "open");
+                      }}
+                    >
+                      열기
+                    </button>
+                    <button
+                      className="mini"
+                      disabled={product && !f.reference}
+                      title="폴더에서 보기"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRowAction(f, "folder");
+                      }}
+                    >
+                      폴더
+                    </button>
+                    <button
+                      className="mini"
+                      title="경로 복사"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRowAction(f, "copy");
+                      }}
+                    >
+                      복사
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -1150,15 +1286,51 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
                 >
                   <td>
                     <span className="name">{f.name}</span>
-                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : f.source === "current_project" ? "Current Project" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
+                    {product && (
+                      <small className="source-label">
+                        {f.source === "notes" ? "Notes" : f.source === "current_project" ? "Current Project" : "Files"}{" "}
+                        · {f.sourceRoot}
+                        {f.indexStale && " · 인덱스 갱신 필요"}
+                        {f.availability !== "available" && " · 연결 미확인"}
+                      </small>
+                    )}
                   </td>
                   <td className="mono dim">{f.path}</td>
                   <td className="mono">{f.source === "notes" ? "—" : fmtSize(f.size)}</td>
                   <td className="status-cell">{contentStatusLabel(f.content_status, f.content_truncated)}</td>
                   <td className="row-actions">
-                    <button className="mini" disabled={product && !f.reference} title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "open"); }}>열기</button>
-                    <button className="mini" disabled={product && !f.reference} title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "folder"); }}>폴더</button>
-                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "copy"); }}>복사</button>
+                    <button
+                      className="mini"
+                      disabled={product && !f.reference}
+                      title="열기"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRowAction(f, "open");
+                      }}
+                    >
+                      열기
+                    </button>
+                    <button
+                      className="mini"
+                      disabled={product && !f.reference}
+                      title="폴더에서 보기"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRowAction(f, "folder");
+                      }}
+                    >
+                      폴더
+                    </button>
+                    <button
+                      className="mini"
+                      title="경로 복사"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void onRowAction(f, "copy");
+                      }}
+                    >
+                      복사
+                    </button>
                   </td>
                 </tr>
               ))}

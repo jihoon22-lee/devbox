@@ -47,9 +47,8 @@ export interface RuleValidationIssue {
   message: string;
 }
 
-export type RuleValidationInput =
-  & Pick<ResponseRule, "path" | "status" | "delayMs">
-  & Partial<Pick<ResponseRule, "id" | "method" | "priority" | "headers" | "body" | "sequence">>;
+export type RuleValidationInput = Pick<ResponseRule, "path" | "status" | "delayMs"> &
+  Partial<Pick<ResponseRule, "id" | "method" | "priority" | "headers" | "body" | "sequence">>;
 
 interface StringMetrics {
   chars: number;
@@ -118,11 +117,7 @@ function isTransportHeader(value: string): boolean {
   return TRANSPORT_HEADERS.has(value.toLowerCase());
 }
 
-function addIssue(
-  issues: RuleValidationIssue[],
-  field: RuleValidationField,
-  message: string,
-): void {
+function addIssue(issues: RuleValidationIssue[], field: RuleValidationField, message: string): void {
   issues.push({ field, message });
 }
 
@@ -150,16 +145,16 @@ function validHeaderList(headers: unknown): headers is Array<[string, string]> {
   let headerBytes = 0;
   for (const header of headers) {
     if (
-      !Array.isArray(header)
-      || header.length !== 2
-      || typeof header[0] !== "string"
-      || !within(header[0], MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES)
-      || !isHeaderName(header[0])
-      || isTransportHeader(header[0])
-      || typeof header[1] !== "string"
-      || !within(header[1], MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES)
-      || !isAscii(header[1])
-      || CONTROL_CHARACTERS.test(header[1])
+      !Array.isArray(header) ||
+      header.length !== 2 ||
+      typeof header[0] !== "string" ||
+      !within(header[0], MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES) ||
+      !isHeaderName(header[0]) ||
+      isTransportHeader(header[0]) ||
+      typeof header[1] !== "string" ||
+      !within(header[1], MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES) ||
+      !isAscii(header[1]) ||
+      CONTROL_CHARACTERS.test(header[1])
     ) {
       return false;
     }
@@ -176,17 +171,17 @@ function validResponseStep(value: unknown): value is ResponseSequenceStep {
   if (!value || typeof value !== "object") return false;
   const step = value as Partial<ResponseSequenceStep>;
   return (
-    typeof step.status === "number"
-    && Number.isInteger(step.status)
-    && step.status >= MIN_RESPONSE_STATUS
-    && step.status <= MAX_RESPONSE_STATUS
-    && validHeaderList(step.headers)
-    && typeof step.body === "string"
-    && within(step.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
-    && typeof step.delayMs === "number"
-    && Number.isInteger(step.delayMs)
-    && step.delayMs >= 0
-    && step.delayMs <= MAX_RESPONSE_DELAY_MS
+    typeof step.status === "number" &&
+    Number.isInteger(step.status) &&
+    step.status >= MIN_RESPONSE_STATUS &&
+    step.status <= MAX_RESPONSE_STATUS &&
+    validHeaderList(step.headers) &&
+    typeof step.body === "string" &&
+    within(step.body, MAX_BODY_CHARS, MAX_BODY_BYTES) &&
+    typeof step.delayMs === "number" &&
+    Number.isInteger(step.delayMs) &&
+    step.delayMs >= 0 &&
+    step.delayMs <= MAX_RESPONSE_DELAY_MS
   );
 }
 
@@ -225,63 +220,60 @@ function ruleMetrics(rule: RuleValidationInput): StringMetrics | null {
  * Rust storage boundary. Empty id/method are valid only as new/all-method
  * editor values; the backend assigns an id before inserting a new rule.
  */
-export function validateRule(
-  rule: RuleValidationInput,
-): RuleValidationIssue[] {
+export function validateRule(rule: RuleValidationInput): RuleValidationIssue[] {
   const issues: RuleValidationIssue[] = [];
   const normalized = normalizedStrings(rule);
 
   if (
-    typeof normalized.id !== "string"
-    || (!within(normalized.id, MAX_RULE_ID_CHARS, MAX_RULE_ID_BYTES)
-      && normalized.id !== "")
-    || (normalized.id !== "" && CONTROL_CHARACTERS.test(normalized.id))
+    typeof normalized.id !== "string" ||
+    (!within(normalized.id, MAX_RULE_ID_CHARS, MAX_RULE_ID_BYTES) && normalized.id !== "") ||
+    (normalized.id !== "" && CONTROL_CHARACTERS.test(normalized.id))
   ) {
     addIssue(issues, "id", "rule id의 길이 또는 문자가 유효하지 않습니다.");
   }
 
   if (
-    normalized.method !== null
-    && (typeof normalized.method !== "string"
-      || !within(normalized.method, MAX_METHOD_CHARS, MAX_METHOD_BYTES)
-      || !isMethod(normalized.method))
+    normalized.method !== null &&
+    (typeof normalized.method !== "string" ||
+      !within(normalized.method, MAX_METHOD_CHARS, MAX_METHOD_BYTES) ||
+      !isMethod(normalized.method))
   ) {
     addIssue(issues, "method", "method는 ASCII HTTP token이어야 합니다 (최대 16자).");
   }
 
   if (
-    typeof normalized.path !== "string"
-    || !within(normalized.path, MAX_PATH_CHARS, MAX_PATH_BYTES)
-    || !normalized.path.startsWith("/")
-    || !isAscii(normalized.path)
-    || CONTROL_CHARACTERS.test(normalized.path)
+    typeof normalized.path !== "string" ||
+    !within(normalized.path, MAX_PATH_CHARS, MAX_PATH_BYTES) ||
+    !normalized.path.startsWith("/") ||
+    !isAscii(normalized.path) ||
+    CONTROL_CHARACTERS.test(normalized.path)
   ) {
     addIssue(issues, "path", "path는 ASCII / 경로여야 하며 제어 문자를 포함할 수 없습니다.");
   }
 
   if (
-    typeof rule.status !== "number"
-    || !Number.isInteger(rule.status)
-    || rule.status < MIN_RESPONSE_STATUS
-    || rule.status > MAX_RESPONSE_STATUS
+    typeof rule.status !== "number" ||
+    !Number.isInteger(rule.status) ||
+    rule.status < MIN_RESPONSE_STATUS ||
+    rule.status > MAX_RESPONSE_STATUS
   ) {
     addIssue(issues, "status", `status는 ${MIN_RESPONSE_STATUS}~${MAX_RESPONSE_STATUS} 범위의 정수여야 합니다.`);
   }
 
   const priority = rule.priority ?? 0;
   if (
-    typeof priority !== "number"
-    || !Number.isInteger(priority)
-    || priority < MIN_RULE_PRIORITY
-    || priority > MAX_RULE_PRIORITY
+    typeof priority !== "number" ||
+    !Number.isInteger(priority) ||
+    priority < MIN_RULE_PRIORITY ||
+    priority > MAX_RULE_PRIORITY
   ) {
     addIssue(issues, "priority", `priority는 ${MIN_RULE_PRIORITY}~${MAX_RULE_PRIORITY} 범위의 정수여야 합니다.`);
   }
 
   if (
-    typeof normalized.headers !== "object"
-    || !Array.isArray(normalized.headers)
-    || normalized.headers.length > MAX_RULE_HEADERS
+    typeof normalized.headers !== "object" ||
+    !Array.isArray(normalized.headers) ||
+    normalized.headers.length > MAX_RULE_HEADERS
   ) {
     addIssue(issues, "headers", "response headers의 개수 또는 형식이 유효하지 않습니다.");
   } else {
@@ -289,16 +281,16 @@ export function validateRule(
     let headerBytes = 0;
     for (const header of normalized.headers) {
       if (
-        !Array.isArray(header)
-        || header.length !== 2
-        || typeof header[0] !== "string"
-        || !within(header[0], MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES)
-        || !isHeaderName(header[0])
-        || isTransportHeader(header[0])
-        || typeof header[1] !== "string"
-        || !within(header[1], MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES)
-        || !isAscii(header[1])
-        || CONTROL_CHARACTERS.test(header[1])
+        !Array.isArray(header) ||
+        header.length !== 2 ||
+        typeof header[0] !== "string" ||
+        !within(header[0], MAX_HEADER_NAME_CHARS, MAX_HEADER_NAME_BYTES) ||
+        !isHeaderName(header[0]) ||
+        isTransportHeader(header[0]) ||
+        typeof header[1] !== "string" ||
+        !within(header[1], MAX_HEADER_VALUE_CHARS, MAX_HEADER_VALUE_BYTES) ||
+        !isAscii(header[1]) ||
+        CONTROL_CHARACTERS.test(header[1])
       ) {
         addIssue(issues, "headers", "response header의 이름·값 또는 제어 문자가 유효하지 않습니다.");
         continue;
@@ -314,18 +306,15 @@ export function validateRule(
     }
   }
 
-  if (
-    typeof normalized.body !== "string"
-    || !within(normalized.body, MAX_BODY_CHARS, MAX_BODY_BYTES)
-  ) {
+  if (typeof normalized.body !== "string" || !within(normalized.body, MAX_BODY_CHARS, MAX_BODY_BYTES)) {
     addIssue(issues, "body", `response body는 ${MAX_BODY_CHARS}자/${MAX_BODY_BYTES}바이트 이하여야 합니다.`);
   }
 
   if (
-    typeof rule.delayMs !== "number"
-    || !Number.isInteger(rule.delayMs)
-    || rule.delayMs < 0
-    || rule.delayMs > MAX_RESPONSE_DELAY_MS
+    typeof rule.delayMs !== "number" ||
+    !Number.isInteger(rule.delayMs) ||
+    rule.delayMs < 0 ||
+    rule.delayMs > MAX_RESPONSE_DELAY_MS
   ) {
     addIssue(issues, "delayMs", `delay는 0~${MAX_RESPONSE_DELAY_MS}ms 범위의 정수여야 합니다.`);
   }
@@ -342,10 +331,7 @@ export function validateRule(
   }
 
   const metrics = ruleMetrics(rule);
-  if (
-    metrics
-    && (metrics.chars > MAX_RULE_COLLECTION_CHARS || metrics.bytes > MAX_RULE_COLLECTION_BYTES)
-  ) {
+  if (metrics && (metrics.chars > MAX_RULE_COLLECTION_CHARS || metrics.bytes > MAX_RULE_COLLECTION_BYTES)) {
     addIssue(issues, "collection", "rule 문자열 전체 크기가 허용 범위를 초과했습니다.");
   }
 

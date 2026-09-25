@@ -48,7 +48,9 @@ export default function ShortcutReference({ open, onClose }: ShortcutReferencePr
         <dl className="shortcut-list">
           {APP_SHORTCUTS.map((shortcut) => (
             <div key={shortcut.id}>
-              <dt><kbd>{shortcut.keys}</kbd></dt>
+              <dt>
+                <kbd>{shortcut.keys}</kbd>
+              </dt>
               <dd>{shortcut.label}</dd>
             </div>
           ))}
@@ -58,7 +60,9 @@ export default function ShortcutReference({ open, onClose }: ShortcutReferencePr
         <dl className="shortcut-list">
           {TERMINAL_SHORTCUTS.map((shortcut) => (
             <div key={shortcut.id}>
-              <dt><kbd>{shortcut.keys}</kbd></dt>
+              <dt>
+                <kbd>{shortcut.keys}</kbd>
+              </dt>
               <dd>{shortcut.label}</dd>
             </div>
           ))}
@@ -68,14 +72,18 @@ export default function ShortcutReference({ open, onClose }: ShortcutReferencePr
         <dl className="shortcut-list">
           {OTHER_SHORTCUTS.map((shortcut) => (
             <div key={shortcut.keys}>
-              <dt><kbd>{shortcut.keys}</kbd></dt>
+              <dt>
+                <kbd>{shortcut.keys}</kbd>
+              </dt>
               <dd>{shortcut.label}</dd>
             </div>
           ))}
         </dl>
 
         <div className="dialog-actions">
-          <button type="button" className="btn primary" onClick={close}>닫기</button>
+          <button type="button" className="btn primary" onClick={close}>
+            닫기
+          </button>
         </div>
       </section>
     </div>

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  redactExisting, setPrivacyRules,
-  type InvalidPrivacyRule, type PrivacyRuleField, type PrivacyRuleProblem, type PrivacyRules,
+  redactExisting,
+  setPrivacyRules,
+  type InvalidPrivacyRule,
+  type PrivacyRuleField,
+  type PrivacyRuleProblem,
+  type PrivacyRules,
 } from "./api";
 
 export function toLines(values: string[]): string {
@@ -9,7 +13,10 @@ export function toLines(values: string[]): string {
 }
 
 export function fromLines(text: string): string[] {
-  return text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 const PROBLEMS: Record<PrivacyRuleProblem, string> = {
@@ -33,7 +40,9 @@ function RuleField({ id, label, hint, value, onChange, problems }: FieldProps) {
   return (
     <div className="privacy-row">
       <label htmlFor={id}>{label}</label>
-      <span className="dim" id={`${id}-hint`}>{hint}</span>
+      <span className="dim" id={`${id}-hint`}>
+        {hint}
+      </span>
       <textarea
         id={id}
         rows={3}
@@ -46,7 +55,9 @@ function RuleField({ id, label, hint, value, onChange, problems }: FieldProps) {
       {problems.length > 0 && (
         <ul id={errorId} className="field-error">
           {problems.map((problem) => (
-            <li key={`${problem.index}-${problem.problem}`}>{`${problem.index + 1}번째 규칙: ${PROBLEMS[problem.problem]}`}</li>
+            <li
+              key={`${problem.index}-${problem.problem}`}
+            >{`${problem.index + 1}번째 규칙: ${PROBLEMS[problem.problem]}`}</li>
           ))}
         </ul>
       )}
@@ -54,7 +65,11 @@ function RuleField({ id, label, hint, value, onChange, problems }: FieldProps) {
   );
 }
 
-export default function PrivacyRulesPanel({ initial, healthy, onSaved }: {
+export default function PrivacyRulesPanel({
+  initial,
+  healthy,
+  onSaved,
+}: {
   initial: PrivacyRules;
   healthy: boolean;
   onSaved: (rules: PrivacyRules) => void;
@@ -78,17 +93,22 @@ export default function PrivacyRulesPanel({ initial, healthy, onSaved }: {
     setConfirmApply(false);
   }, [initial]);
 
-  const draft = useMemo<PrivacyRules>(() => ({
-    excludedProcesses: fromLines(processes),
-    excludedTitlePatterns: fromLines(excluded),
-    redactTitlePatterns: fromLines(redact),
-    maskAllTitles: maskAll,
-  }), [processes, excluded, redact, maskAll]);
+  const draft = useMemo<PrivacyRules>(
+    () => ({
+      excludedProcesses: fromLines(processes),
+      excludedTitlePatterns: fromLines(excluded),
+      redactTitlePatterns: fromLines(redact),
+      maskAllTitles: maskAll,
+    }),
+    [processes, excluded, redact, maskAll],
+  );
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
   const problemsFor = (field: PrivacyRuleField) => invalid.filter((problem) => problem.field === field);
 
   const save = async () => {
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
       const result = await setPrivacyRules(draft);
       if (result.saved) {
@@ -108,7 +128,9 @@ export default function PrivacyRulesPanel({ initial, healthy, onSaved }: {
   const applyToStored = async () => {
     if (busy || dirty || !healthy) return;
     setConfirmApply(false);
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
       const count = await redactExisting();
       setNotice(`기존 세션 ${count}개에 규칙을 적용했습니다.`);
@@ -126,26 +148,54 @@ export default function PrivacyRulesPanel({ initial, healthy, onSaved }: {
         <p role="alert">저장된 규칙을 읽지 못해 창 제목 저장을 멈췄습니다. 규칙을 확인하고 다시 저장해 주세요.</p>
       )}
       <fieldset disabled={busy}>
-      <RuleField id="excludedProcesses" label="제외할 프로세스" hint="한 줄에 하나, 대소문자 구분 없이 정확히 일치하면 세션 전체를 저장하지 않습니다."
-        value={processes} onChange={setProcesses} problems={problemsFor("excludedProcesses")} />
-      <RuleField id="excludedTitlePatterns" label="제목을 저장하지 않을 정규식" hint="한 줄에 하나. 일치하면 세션은 남기고 제목만 비웁니다."
-        value={excluded} onChange={setExcluded} problems={problemsFor("excludedTitlePatterns")} />
-      <RuleField id="redactTitlePatterns" label="제목 치환 정규식" hint="한 줄에 하나. 일치한 부분을 [redacted]로 바꿉니다."
-        value={redact} onChange={setRedact} problems={problemsFor("redactTitlePatterns")} />
-      <label className="row">
-        <input type="checkbox" checked={maskAll} onChange={(event) => setMaskAll(event.currentTarget.checked)} />
-        모든 제목을 저장하지 않음
-      </label>
+        <RuleField
+          id="excludedProcesses"
+          label="제외할 프로세스"
+          hint="한 줄에 하나, 대소문자 구분 없이 정확히 일치하면 세션 전체를 저장하지 않습니다."
+          value={processes}
+          onChange={setProcesses}
+          problems={problemsFor("excludedProcesses")}
+        />
+        <RuleField
+          id="excludedTitlePatterns"
+          label="제목을 저장하지 않을 정규식"
+          hint="한 줄에 하나. 일치하면 세션은 남기고 제목만 비웁니다."
+          value={excluded}
+          onChange={setExcluded}
+          problems={problemsFor("excludedTitlePatterns")}
+        />
+        <RuleField
+          id="redactTitlePatterns"
+          label="제목 치환 정규식"
+          hint="한 줄에 하나. 일치한 부분을 [redacted]로 바꿉니다."
+          value={redact}
+          onChange={setRedact}
+          problems={problemsFor("redactTitlePatterns")}
+        />
+        <label className="row">
+          <input type="checkbox" checked={maskAll} onChange={(event) => setMaskAll(event.currentTarget.checked)} />
+          모든 제목을 저장하지 않음
+        </label>
       </fieldset>
       <div className="row">
-        <button className="btn" disabled={busy || (!dirty && healthy)} onClick={() => void save()}>규칙 저장</button>
-        <button className="btn" disabled={busy || dirty || !healthy} onClick={() => setConfirmApply(true)}>기존 세션에 적용</button>
+        <button className="btn" disabled={busy || (!dirty && healthy)} onClick={() => void save()}>
+          규칙 저장
+        </button>
+        <button className="btn" disabled={busy || dirty || !healthy} onClick={() => setConfirmApply(true)}>
+          기존 세션에 적용
+        </button>
       </div>
-      {confirmApply && !dirty && healthy && <div>
-        <p>제외된 세션을 삭제하고 제목을 변경합니다. 이 작업은 되돌릴 수 없습니다.</p>
-        <button disabled={busy} onClick={() => void applyToStored()}>기록 변경 확인</button>
-        <button disabled={busy} onClick={() => setConfirmApply(false)}>취소</button>
-      </div>}
+      {confirmApply && !dirty && healthy && (
+        <div>
+          <p>제외된 세션을 삭제하고 제목을 변경합니다. 이 작업은 되돌릴 수 없습니다.</p>
+          <button disabled={busy} onClick={() => void applyToStored()}>
+            기록 변경 확인
+          </button>
+          <button disabled={busy} onClick={() => setConfirmApply(false)}>
+            취소
+          </button>
+        </div>
+      )}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
       <div className="dim">규칙은 DB 저장 전에 적용됩니다. 제외한 원문은 어디에도 남지 않습니다.</div>

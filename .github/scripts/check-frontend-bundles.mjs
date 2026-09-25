@@ -1,9 +1,4 @@
-import {
-  lstatSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-} from "node:fs";
+import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import process from "node:process";
@@ -108,7 +103,10 @@ function readConfig(configPath) {
     }
 
     const appConfig = parsed.apps[appName];
-    if (!isRecord(appConfig) || Object.keys(appConfig).some((key) => !["dist", "rawBytes", "gzipBytes"].includes(key))) {
+    if (
+      !isRecord(appConfig) ||
+      Object.keys(appConfig).some((key) => !["dist", "rawBytes", "gzipBytes"].includes(key))
+    ) {
       fail(`frontend bundle budget config for ${appName} has an unsupported shape`);
     }
 
@@ -120,7 +118,10 @@ function readConfig(configPath) {
     if (normalizePortablePath(dist) !== `apps/${appName}/dist`) {
       fail(`frontend bundle budget config for ${appName} must use apps/${appName}/dist`);
     }
-    for (const [name, value] of [["rawBytes", rawBytes], ["gzipBytes", gzipBytes]]) {
+    for (const [name, value] of [
+      ["rawBytes", rawBytes],
+      ["gzipBytes", gzipBytes],
+    ]) {
       if (!Number.isSafeInteger(value) || value < 0) {
         fail(`frontend bundle budget config for ${appName} has an invalid ${name} budget`);
       }
@@ -179,8 +180,8 @@ function assertCatalogCoverage(rootPath, appConfigs) {
     const missing = releaseApps.filter((app) => !configuredSet.has(app));
     const extra = configured.filter((app) => !releaseSet.has(app));
     fail(
-      `frontend bundle budgets must cover the release catalog exactly `
-      + `(missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"})`,
+      `frontend bundle budgets must cover the release catalog exactly ` +
+        `(missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"})`,
     );
   }
 }
@@ -197,7 +198,7 @@ function parseAttributeValue(source, start, attributeName) {
   if (index >= source.length) fail(`module script attribute ${attributeName} has no value`);
 
   const quote = source[index];
-  if (quote === "\"" || quote === "'") {
+  if (quote === '"' || quote === "'") {
     const valueStart = index + 1;
     const end = source.indexOf(quote, valueStart);
     if (end < 0) fail(`module script attribute ${attributeName} has an unterminated value`);
@@ -257,12 +258,8 @@ function decodeHtmlAttribute(value) {
     .replaceAll("&#x27;", "'")
     .replaceAll("&amp;", "&")
     .replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (entity, code) => {
-      const value = code.toLowerCase().startsWith("x")
-        ? Number.parseInt(code.slice(1), 16)
-        : Number.parseInt(code, 10);
-      return Number.isSafeInteger(value) && value >= 0 && value <= 0x10ffff
-        ? String.fromCodePoint(value)
-        : entity;
+      const value = code.toLowerCase().startsWith("x") ? Number.parseInt(code.slice(1), 16) : Number.parseInt(code, 10);
+      return Number.isSafeInteger(value) && value >= 0 && value <= 0x10ffff ? String.fromCodePoint(value) : entity;
     });
 }
 
@@ -400,7 +397,11 @@ function discoverLazyChunks(distPath, initialFiles) {
       }
       if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".js") continue;
 
-      const real = resolveExistingFile(distPath, candidate, `frontend output entry ${relativeDisplay(distPath, candidate)}`);
+      const real = resolveExistingFile(
+        distPath,
+        candidate,
+        `frontend output entry ${relativeDisplay(distPath, candidate)}`,
+      );
       if (initialFiles.has(real)) continue;
       const bytes = readExistingFile(distPath, candidate, `lazy chunk ${relativeDisplay(distPath, candidate)}`).bytes;
       chunks.push({
@@ -445,8 +446,16 @@ function readViteManifest(distPath, appName) {
       fail(`${appName} Vite manifest has an invalid chunk record`);
     }
     const allowed = new Set([
-      "assets", "css", "dynamicImports", "file", "imports", "isDynamicEntry",
-      "isEntry", "name", "names", "src",
+      "assets",
+      "css",
+      "dynamicImports",
+      "file",
+      "imports",
+      "isDynamicEntry",
+      "isEntry",
+      "name",
+      "names",
+      "src",
     ]);
     if (Object.keys(value).some((field) => !allowed.has(field))) {
       fail(`${appName} Vite manifest chunk ${key} has an unsupported shape`);
@@ -460,10 +469,12 @@ function readViteManifest(distPath, appName) {
     const imports = value.imports ?? [];
     const dynamicImports = value.dynamicImports ?? [];
     if (
-      !Array.isArray(imports)
-      || imports.some((item) => typeof item !== "string" || item.length === 0 || CONTROL_CHARACTER_PATTERN.test(item))
-      || !Array.isArray(dynamicImports)
-      || dynamicImports.some((item) => typeof item !== "string" || item.length === 0 || CONTROL_CHARACTER_PATTERN.test(item))
+      !Array.isArray(imports) ||
+      imports.some((item) => typeof item !== "string" || item.length === 0 || CONTROL_CHARACTER_PATTERN.test(item)) ||
+      !Array.isArray(dynamicImports) ||
+      dynamicImports.some(
+        (item) => typeof item !== "string" || item.length === 0 || CONTROL_CHARACTER_PATTERN.test(item),
+      )
     ) {
       fail(`${appName} Vite manifest chunk ${key} has invalid imports`);
     }
@@ -548,12 +559,7 @@ function checkApp(rootPath, appName, appConfig) {
   const index = readExistingFile(distPath, indexCandidate, `${appName} index.html`);
   const sources = extractInitialModuleSources(decodeUtf8(index.bytes, `${appName} index.html`));
   const manifest = readViteManifest(distPath, appName);
-  const { initialFiles, initialEntries, initial } = collectInitialModuleEntries(
-    distPath,
-    appName,
-    sources,
-    manifest,
-  );
+  const { initialFiles, initialEntries, initial } = collectInitialModuleEntries(distPath, appName, sources, manifest);
 
   const lazy = discoverLazyChunks(distPath, initialFiles);
   const lazyTotal = lazy.reduce((total, chunk) => addMetrics(total, chunk), zeroMetrics());
@@ -645,7 +651,7 @@ function parseArguments(argv) {
 
   if (options.scope === null) options.scope = positional.shift() ?? process.env.FRONTEND_SCOPE ?? null;
   if (options.apps === null) {
-    options.apps = positional.length > 0 ? positional.join(" ") : process.env.FRONTEND_APPS ?? "";
+    options.apps = positional.length > 0 ? positional.join(" ") : (process.env.FRONTEND_APPS ?? "");
   } else if (positional.length > 0) {
     fail("too many positional arguments");
   }

@@ -1,8 +1,4 @@
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -95,11 +91,16 @@ function restartLabel(job: Job): string {
 
 function serviceStateLabel(state: ServiceInstance["state"]): string {
   switch (state) {
-    case "running": return "실행 중";
-    case "starting": return "시작 중";
-    case "stopping": return "정지 중";
-    case "retry_waiting": return "재시작 대기";
-    case "stopped": return "정지됨";
+    case "running":
+      return "실행 중";
+    case "starting":
+      return "시작 중";
+    case "stopping":
+      return "정지 중";
+    case "retry_waiting":
+      return "재시작 대기";
+    case "stopped":
+      return "정지됨";
   }
 }
 
@@ -113,10 +114,7 @@ function workspaceSourceLabel(sourceRoot: string): string {
   return parts[parts.length - 1] ?? sourceRoot;
 }
 
-function canUseWorkspaceTask(
-  task: WorkspaceTaskState | undefined,
-  snapshotFresh: boolean,
-): boolean {
+function canUseWorkspaceTask(task: WorkspaceTaskState | undefined, snapshotFresh: boolean): boolean {
   return snapshotFresh && (!task || workspaceTaskGateCode(task) === null);
 }
 
@@ -155,42 +153,50 @@ function isWorkspaceOperationTerminal(status: WorkspaceTaskOperationStatus): boo
 
 function workspaceOperationStatusLabel(status: WorkspaceTaskOperationStatus): string {
   switch (status) {
-    case "queued": return "대기 중";
-    case "running": return "실행 중";
-    case "stopping": return "중지 중";
-    case "succeeded": return "완료";
-    case "failed": return "실패";
-    case "cancelled": return "취소됨";
+    case "queued":
+      return "대기 중";
+    case "running":
+      return "실행 중";
+    case "stopping":
+      return "중지 중";
+    case "succeeded":
+      return "완료";
+    case "failed":
+      return "실패";
+    case "cancelled":
+      return "취소됨";
   }
 }
 
 function workspaceOperationRunStatusLabel(status: WorkspaceTaskOperationRunStatus): string {
   switch (status) {
-    case "pending": return "대기 중";
-    case "launching": return "시작 중";
-    case "running": return "실행 중";
-    case "succeeded": return "완료";
-    case "failed": return "실패";
-    case "cancelled": return "취소됨";
-    case "skipped": return "건너뜀";
+    case "pending":
+      return "대기 중";
+    case "launching":
+      return "시작 중";
+    case "running":
+      return "실행 중";
+    case "succeeded":
+      return "완료";
+    case "failed":
+      return "실패";
+    case "cancelled":
+      return "취소됨";
+    case "skipped":
+      return "건너뜀";
   }
 }
 
 function workspaceOperationProgressLabel(operation: WorkspaceTaskOperation): string {
-  const completed = operation.runs.filter((run) =>
-    run.status === "succeeded"
-    || run.status === "failed"
-    || run.status === "cancelled"
-    || run.status === "skipped",
+  const completed = operation.runs.filter(
+    (run) =>
+      run.status === "succeeded" || run.status === "failed" || run.status === "cancelled" || run.status === "skipped",
   ).length;
   return `child ${completed}/${operation.runs.length}`;
 }
 
 function isWorkspaceOperationRunTerminal(status: WorkspaceTaskOperationRunStatus): boolean {
-  return status === "succeeded"
-    || status === "failed"
-    || status === "cancelled"
-    || status === "skipped";
+  return status === "succeeded" || status === "failed" || status === "cancelled" || status === "skipped";
 }
 
 function taskControlActionLabel(action: WorkspaceTaskControlPreview["action"]): string {
@@ -199,11 +205,16 @@ function taskControlActionLabel(action: WorkspaceTaskControlPreview["action"]): 
 
 function taskControlReceiptStatusLabel(status: WorkspaceTaskControlReceipt["status"]): string {
   switch (status) {
-    case "accepted": return "승인됨";
-    case "rejected": return "거절됨";
-    case "started": return "시작됨";
-    case "stopped": return "중지됨";
-    case "failed": return "실패";
+    case "accepted":
+      return "승인됨";
+    case "rejected":
+      return "거절됨";
+    case "started":
+      return "시작됨";
+    case "stopped":
+      return "중지됨";
+    case "failed":
+      return "실패";
   }
 }
 
@@ -228,13 +239,23 @@ async function loadServiceSnapshot(): Promise<ServiceSnapshot> {
   );
   return {
     services,
-    instances: Object.fromEntries(
-      entries.filter((entry): entry is [string, ServiceInstance] => entry !== null),
-    ),
+    instances: Object.fromEntries(entries.filter((entry): entry is [string, ServiceInstance] => entry !== null)),
   };
 }
 
-export default function App({ active: visible = true, onDirtyChange, openTask, onTaskConsumed, importSource }: { active?: boolean; onDirtyChange?: (dirty: boolean) => void; importSource?:{path:string;targetKind:TargetKind;targetDistro:string|null}|null;openTask?: {id:string;jobId:string}|null; onTaskConsumed?:(id:string)=>void }) {
+export default function App({
+  active: visible = true,
+  onDirtyChange,
+  openTask,
+  onTaskConsumed,
+  importSource,
+}: {
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  importSource?: { path: string; targetKind: TargetKind; targetDistro: string | null } | null;
+  openTask?: { id: string; jobId: string } | null;
+  onTaskConsumed?: (id: string) => void;
+}) {
   const viewGenerationRef = useRef(0);
   const loadedGenerationRef = useRef(-1);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
@@ -283,11 +304,13 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
       const current = latest.get(operation.rootJobId);
       const operationActive = !isWorkspaceOperationTerminal(operation.status);
       const currentActive = current ? !isWorkspaceOperationTerminal(current.status) : false;
-      if (!current
-        || (operationActive && !currentActive)
-        || (operationActive === currentActive
-          && (operation.createdAt > current.createdAt
-            || (operation.createdAt === current.createdAt && operation.id > current.id)))) {
+      if (
+        !current ||
+        (operationActive && !currentActive) ||
+        (operationActive === currentActive &&
+          (operation.createdAt > current.createdAt ||
+            (operation.createdAt === current.createdAt && operation.id > current.id)))
+      ) {
         latest.set(operation.rootJobId, operation);
       }
     }
@@ -317,25 +340,31 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
   const workspaceOperationPollHealthyAtRef = useRef(new Map<string, number>());
   const mountedRef = useRef(false);
 
-  const prepareJobContext = useCallback((target: HTMLElement) => {
-    const id = target.dataset.jobId;
-    const job = jobs.find((candidate) => candidate.id === id);
-    if (!job) return;
-    setSelectedJobId(job.id);
-    setContextJob(job);
-  }, [jobs]);
+  const prepareJobContext = useCallback(
+    (target: HTMLElement) => {
+      const id = target.dataset.jobId;
+      const job = jobs.find((candidate) => candidate.id === id);
+      if (!job) return;
+      setSelectedJobId(job.id);
+      setContextJob(job);
+    },
+    [jobs],
+  );
   const jobContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareJobContext(target),
   });
   const jobContextTrigger = jobContextMenu.triggerProps;
 
-  const prepareServiceContext = useCallback((target: HTMLElement) => {
-    const id = target.dataset.serviceId;
-    const service = services.find((candidate) => candidate.id === id);
-    if (!service) return;
-    setSelectedServiceId(service.id);
-    setContextService(service);
-  }, [services]);
+  const prepareServiceContext = useCallback(
+    (target: HTMLElement) => {
+      const id = target.dataset.serviceId;
+      const service = services.find((candidate) => candidate.id === id);
+      if (!service) return;
+      setSelectedServiceId(service.id);
+      setContextService(service);
+    },
+    [services],
+  );
   const serviceContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareServiceContext(target),
   });
@@ -387,10 +416,7 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     const view = viewGenerationRef.current;
     setWorkspaceSnapshotFresh(false);
     try {
-      const [nextJobs, nextWorkspaceTasks] = await Promise.all([
-        listJobs(),
-        listWorkspaceTasks(),
-      ]);
+      const [nextJobs, nextWorkspaceTasks] = await Promise.all([listJobs(), listWorkspaceTasks()]);
       if (!mountedRef.current || view !== viewGenerationRef.current) return;
       setJobs(nextJobs);
       setWorkspaceTasks(nextWorkspaceTasks);
@@ -418,60 +444,81 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     workspaceOperationPollHealthyAtRef.current.delete(operationId);
   }, []);
 
-  const pollWorkspaceTaskOperation = useCallback(async (operationId: string): Promise<void> => {
-    if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
-    workspaceOperationTimersRef.current.delete(operationId);
-    const view = viewGenerationRef.current;
-    const lastHealthyAt = workspaceOperationPollHealthyAtRef.current.get(operationId) ?? Date.now();
+  const pollWorkspaceTaskOperation = useCallback(
+    async (operationId: string): Promise<void> => {
+      if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+      workspaceOperationTimersRef.current.delete(operationId);
+      const view = viewGenerationRef.current;
+      const lastHealthyAt = workspaceOperationPollHealthyAtRef.current.get(operationId) ?? Date.now();
 
-    try {
-      const operation = await getWorkspaceTaskOperation(operationId);
-      if (!mountedRef.current || view !== viewGenerationRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
-      if (!operation) {
-        stopWorkspaceOperationPolling(operationId);
-        setError(friendlyErrorMessage("workspace-task-operation-not-found"));
-        return;
+      try {
+        const operation = await getWorkspaceTaskOperation(operationId);
+        if (
+          !mountedRef.current ||
+          view !== viewGenerationRef.current ||
+          !workspaceOperationPollHealthyAtRef.current.has(operationId)
+        )
+          return;
+        if (!operation) {
+          stopWorkspaceOperationPolling(operationId);
+          setError(friendlyErrorMessage("workspace-task-operation-not-found"));
+          return;
+        }
+        setWorkspaceOperations((previous) => ({ ...previous, [operation.id]: operation }));
+        if (isWorkspaceOperationTerminal(operation.status)) {
+          stopWorkspaceOperationPolling(operationId);
+          return;
+        }
+        // A workspace task may legitimately run longer than ten minutes. Keep
+        // following it while the native DB remains readable; the bound below is
+        // for a continuously broken polling channel, not operation duration.
+        workspaceOperationPollHealthyAtRef.current.set(operationId, Date.now());
+      } catch (cause) {
+        if (
+          !mountedRef.current ||
+          view !== viewGenerationRef.current ||
+          !workspaceOperationPollHealthyAtRef.current.has(operationId)
+        )
+          return;
+        if (Date.now() - lastHealthyAt >= WORKSPACE_OPERATION_POLL_MAX_MS) {
+          stopWorkspaceOperationPolling(operationId);
+          setError(friendlyErrorMessage(cause));
+          return;
+        }
       }
+
+      if (
+        !mountedRef.current ||
+        view !== viewGenerationRef.current ||
+        !workspaceOperationPollHealthyAtRef.current.has(operationId)
+      )
+        return;
+      const timer = window.setTimeout(() => {
+        workspaceOperationTimersRef.current.delete(operationId);
+        void pollWorkspaceTaskOperation(operationId);
+      }, WORKSPACE_OPERATION_POLL_INTERVAL_MS);
+      workspaceOperationTimersRef.current.set(operationId, timer);
+    },
+    [stopWorkspaceOperationPolling],
+  );
+
+  const trackWorkspaceTaskOperation = useCallback(
+    (operation: WorkspaceTaskOperation) => {
+      if (!mountedRef.current) return;
       setWorkspaceOperations((previous) => ({ ...previous, [operation.id]: operation }));
       if (isWorkspaceOperationTerminal(operation.status)) {
-        stopWorkspaceOperationPolling(operationId);
+        stopWorkspaceOperationPolling(operation.id);
         return;
       }
-      // A workspace task may legitimately run longer than ten minutes. Keep
-      // following it while the native DB remains readable; the bound below is
-      // for a continuously broken polling channel, not operation duration.
-      workspaceOperationPollHealthyAtRef.current.set(operationId, Date.now());
-    } catch (cause) {
-      if (!mountedRef.current || view !== viewGenerationRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
-      if (Date.now() - lastHealthyAt >= WORKSPACE_OPERATION_POLL_MAX_MS) {
-        stopWorkspaceOperationPolling(operationId);
-        setError(friendlyErrorMessage(cause));
-        return;
+      if (!workspaceOperationPollHealthyAtRef.current.has(operation.id)) {
+        workspaceOperationPollHealthyAtRef.current.set(operation.id, Date.now());
       }
-    }
-
-    if (!mountedRef.current || view !== viewGenerationRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
-    const timer = window.setTimeout(() => {
-      workspaceOperationTimersRef.current.delete(operationId);
-      void pollWorkspaceTaskOperation(operationId);
-    }, WORKSPACE_OPERATION_POLL_INTERVAL_MS);
-    workspaceOperationTimersRef.current.set(operationId, timer);
-  }, [stopWorkspaceOperationPolling]);
-
-  const trackWorkspaceTaskOperation = useCallback((operation: WorkspaceTaskOperation) => {
-    if (!mountedRef.current) return;
-    setWorkspaceOperations((previous) => ({ ...previous, [operation.id]: operation }));
-    if (isWorkspaceOperationTerminal(operation.status)) {
-      stopWorkspaceOperationPolling(operation.id);
-      return;
-    }
-    if (!workspaceOperationPollHealthyAtRef.current.has(operation.id)) {
-      workspaceOperationPollHealthyAtRef.current.set(operation.id, Date.now());
-    }
-    if (!workspaceOperationTimersRef.current.has(operation.id)) {
-      void pollWorkspaceTaskOperation(operation.id);
-    }
-  }, [pollWorkspaceTaskOperation, stopWorkspaceOperationPolling]);
+      if (!workspaceOperationTimersRef.current.has(operation.id)) {
+        void pollWorkspaceTaskOperation(operation.id);
+      }
+    },
+    [pollWorkspaceTaskOperation, stopWorkspaceOperationPolling],
+  );
 
   const refreshWorkspaceOperations = useCallback(async () => {
     const operations = await listWorkspaceTaskOperations(100);
@@ -501,11 +548,14 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     }
   }, []);
 
-  const retryWorkspaceTaskDiagnostics = useCallback((runId: string) => {
-    workspaceDiagnosticsRequestedRef.current.delete(runId);
-    workspaceDiagnosticsRequestedRef.current.add(runId);
-    void loadWorkspaceTaskDiagnostics(runId);
-  }, [loadWorkspaceTaskDiagnostics]);
+  const retryWorkspaceTaskDiagnostics = useCallback(
+    (runId: string) => {
+      workspaceDiagnosticsRequestedRef.current.delete(runId);
+      workspaceDiagnosticsRequestedRef.current.add(runId);
+      void loadWorkspaceTaskDiagnostics(runId);
+    },
+    [loadWorkspaceTaskDiagnostics],
+  );
 
   useEffect(() => {
     mountedRef.current = visible;
@@ -547,24 +597,25 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     if (mountedRef.current) setTaskControlReceipts(receipts);
   }, []);
 
-  const handleTaskControlHandoff = useCallback(async (handoffId: string) => {
-    if (!mountedRef.current || taskControlPreview) return;
-    taskControlRestoreRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    setTaskControlReceipt(null);
-    setTaskControlLeaseUntil(null);
-    try {
-      const preview = await previewWorkspaceTaskControl(handoffId);
-      if (!mountedRef.current) return;
-      setTaskControlPreview(preview);
-      void refreshTaskControlReceipts().catch((cause) => {
+  const handleTaskControlHandoff = useCallback(
+    async (handoffId: string) => {
+      if (!mountedRef.current || taskControlPreview) return;
+      taskControlRestoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTaskControlReceipt(null);
+      setTaskControlLeaseUntil(null);
+      try {
+        const preview = await previewWorkspaceTaskControl(handoffId);
+        if (!mountedRef.current) return;
+        setTaskControlPreview(preview);
+        void refreshTaskControlReceipts().catch((cause) => {
+          if (mountedRef.current) setError(friendlyErrorMessage(cause));
+        });
+      } catch (cause) {
         if (mountedRef.current) setError(friendlyErrorMessage(cause));
-      });
-    } catch (cause) {
-      if (mountedRef.current) setError(friendlyErrorMessage(cause));
-    }
-  }, [refreshTaskControlReceipts, taskControlPreview]);
+      }
+    },
+    [refreshTaskControlReceipts, taskControlPreview],
+  );
 
   const closeTaskControlPreview = useCallback(() => {
     setTaskControlPreview(null);
@@ -583,7 +634,8 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
       }
       closeTaskControlPreview();
       await refreshTaskControlReceipts();
-      if (receipt.operationId) void refreshWorkspaceOperations().catch((cause) => setError(friendlyErrorMessage(cause)));
+      if (receipt.operationId)
+        void refreshWorkspaceOperations().catch((cause) => setError(friendlyErrorMessage(cause)));
       if (receipt.status === "started") void refreshActiveRuns();
     } catch (cause) {
       if (mountedRef.current) setError(friendlyErrorMessage(cause));
@@ -592,7 +644,14 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     } finally {
       setBusy(false);
     }
-  }, [busy, closeTaskControlPreview, refreshActiveRuns, refreshTaskControlReceipts, refreshWorkspaceOperations, taskControlPreview]);
+  }, [
+    busy,
+    closeTaskControlPreview,
+    refreshActiveRuns,
+    refreshTaskControlReceipts,
+    refreshWorkspaceOperations,
+    taskControlPreview,
+  ]);
 
   const handleRejectTaskControl = useCallback(async () => {
     const preview = taskControlPreview;
@@ -668,45 +727,57 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     };
   }, [visible, taskControlPreview]);
 
-  const handleLauncherTask = useCallback((id: string, openOnly = false) => {
-    const job = jobs.find((candidate) => candidate.id === id);
-    const service = services.find((candidate) => candidate.id === id);
-    const task = job ?? service;
-    if (!task) {
-      setError("Launcher가 요청한 작업을 찾지 못했습니다.");
-      return;
-    }
-    setError(null);
-    setScreen(task.kind === "job" ? "jobs" : "services");
-    if (task.kind === "job") setSelectedJobId(task.id);
-    else setSelectedServiceId(task.id);
-    if (!openOnly) setLauncherTask({ id: task.id, kind: task.kind });
-  }, [jobs, services]);
+  const handleLauncherTask = useCallback(
+    (id: string, openOnly = false) => {
+      const job = jobs.find((candidate) => candidate.id === id);
+      const service = services.find((candidate) => candidate.id === id);
+      const task = job ?? service;
+      if (!task) {
+        setError("Launcher가 요청한 작업을 찾지 못했습니다.");
+        return;
+      }
+      setError(null);
+      setScreen(task.kind === "job" ? "jobs" : "services");
+      if (task.kind === "job") setSelectedJobId(task.id);
+      else setSelectedServiceId(task.id);
+      if (!openOnly) setLauncherTask({ id: task.id, kind: task.kind });
+    },
+    [jobs, services],
+  );
 
-  const consumedProductTask = useRef<string|null>(null);
-  useEffect(()=>{
-    if(!visible||!openTask||consumedProductTask.current===openTask.id||loading||busy||importOpen||screen==="editor"||screen==="service-editor")return;
-    consumedProductTask.current=openTask.id;
-    if(jobs.some(job=>job.id===openTask.jobId)||services.some(service=>service.id===openTask.jobId)){
-      handleLauncherTask(openTask.jobId,true);
-    }else setError("선택한 작업 또는 서비스가 더 이상 없습니다.");
+  const consumedProductTask = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !visible ||
+      !openTask ||
+      consumedProductTask.current === openTask.id ||
+      loading ||
+      busy ||
+      importOpen ||
+      screen === "editor" ||
+      screen === "service-editor"
+    )
+      return;
+    consumedProductTask.current = openTask.id;
+    if (jobs.some((job) => job.id === openTask.jobId) || services.some((service) => service.id === openTask.jobId)) {
+      handleLauncherTask(openTask.jobId, true);
+    } else setError("선택한 작업 또는 서비스가 더 이상 없습니다.");
     onTaskConsumed?.(openTask.id);
-  },[visible,openTask,loading,busy,importOpen,screen,jobs,services,handleLauncherTask,onTaskConsumed]);
+  }, [visible, openTask, loading, busy, importOpen, screen, jobs, services, handleLauncherTask, onTaskConsumed]);
 
   const confirmLauncherTask = async () => {
     if (!launcherTask || busy) return;
-    const task = launcherTask.kind === "job"
-      ? jobs.find((candidate) => candidate.id === launcherTask.id && candidate.kind === "job")
-      : services.find((candidate) => candidate.id === launcherTask.id && candidate.kind === "service");
+    const task =
+      launcherTask.kind === "job"
+        ? jobs.find((candidate) => candidate.id === launcherTask.id && candidate.kind === "job")
+        : services.find((candidate) => candidate.id === launcherTask.id && candidate.kind === "service");
     if (!task) {
       setLauncherTask(null);
       setError("Launcher가 요청한 작업을 찾지 못했습니다.");
       return;
     }
     const workspaceTask = task.kind === "job" ? workspaceTaskByJobId.get(task.id) : undefined;
-    const workspaceOperation = task.kind === "job"
-      ? workspaceOperationByRootJobId.get(task.id)
-      : undefined;
+    const workspaceOperation = task.kind === "job" ? workspaceOperationByRootJobId.get(task.id) : undefined;
     if (workspaceOperation && !isWorkspaceOperationTerminal(workspaceOperation.status)) {
       setLauncherTask(null);
       setError(friendlyErrorMessage("workspace-task-operation-active"));
@@ -934,7 +1005,16 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
   // pulled from the native one-shot slot, then the current job/service list is
   // checked before any run, service action, or task-control handoff is used.
   useEffect(() => {
-    if (!visible || loading || !workspaceSnapshotFresh || screen === "editor" || screen === "service-editor" || importOpen || busy) return;
+    if (
+      !visible ||
+      loading ||
+      !workspaceSnapshotFresh ||
+      screen === "editor" ||
+      screen === "service-editor" ||
+      importOpen ||
+      busy
+    )
+      return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const consumePendingOpen = () => {
@@ -1018,8 +1098,10 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   useEffect(() => {
     if (!visible) {
-      jobContextMenu.close(); serviceContextMenu.close();
-      setContextJob(null); setContextService(null);
+      jobContextMenu.close();
+      serviceContextMenu.close();
+      setContextJob(null);
+      setContextService(null);
     }
   }, [visible, jobContextMenu.close, serviceContextMenu.close]);
 
@@ -1060,11 +1142,14 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
   const handleStopRun = async (job: Job) => {
     const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
     const operationActive = workspaceOperation && !isWorkspaceOperationTerminal(workspaceOperation.status);
-    if (!window.confirm(
-      operationActive
-        ? `'${job.name}' workspace task orchestration을 중지할까요?`
-        : `'${job.name}' 작업의 활성 실행을 중지할까요?`,
-    )) return;
+    if (
+      !window.confirm(
+        operationActive
+          ? `'${job.name}' workspace task orchestration을 중지할까요?`
+          : `'${job.name}' 작업의 활성 실행을 중지할까요?`,
+      )
+    )
+      return;
     setBusy(true);
     try {
       if (operationActive && workspaceOperation) {
@@ -1133,17 +1218,17 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
   };
 
   const editingJob = useMemo(
-    () => (editingJobId ? jobs.find((job) => job.id === editingJobId) ?? null : null),
+    () => (editingJobId ? (jobs.find((job) => job.id === editingJobId) ?? null) : null),
     [editingJobId, jobs],
   );
 
   const editingService = useMemo(
-    () => (editingServiceId ? services.find((service) => service.id === editingServiceId) ?? null : null),
+    () => (editingServiceId ? (services.find((service) => service.id === editingServiceId) ?? null) : null),
     [editingServiceId, services],
   );
 
   const editingWorkspaceTask = useMemo(
-    () => (editingJobId ? workspaceTaskByJobId.get(editingJobId) ?? null : null),
+    () => (editingJobId ? (workspaceTaskByJobId.get(editingJobId) ?? null) : null),
     [editingJobId, workspaceTaskByJobId],
   );
 
@@ -1290,7 +1375,7 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     if (busy || task.trusted) return;
     const approved = window.confirm(
       `현재 source revision ${shortRevision(task.revision)}을 신뢰할까요?\n` +
-      "이 승인은 이 revision을 실행 대상으로 사용할 수 있도록 권한을 부여하지만, task를 실행하거나 프로세스를 시작하지 않습니다.",
+        "이 승인은 이 revision을 실행 대상으로 사용할 수 있도록 권한을 부여하지만, task를 실행하거나 프로세스를 시작하지 않습니다.",
     );
     if (!approved) return;
     setBusy(true);
@@ -1298,7 +1383,9 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     try {
       await trustWorkspaceTaskSource(task.sourceId, task.revision);
       await refreshJobs();
-      setWorkspaceNotice(`source revision ${shortRevision(task.revision)}을 승인했습니다. 작업은 자동 실행되지 않았습니다.`);
+      setWorkspaceNotice(
+        `source revision ${shortRevision(task.revision)}을 승인했습니다. 작업은 자동 실행되지 않았습니다.`,
+      );
       setError(null);
     } catch (cause) {
       setError(friendlyErrorMessage(cause));
@@ -1328,7 +1415,9 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
       await trustWorkspaceTaskShellSource(task.sourceId, task.revision);
       await refreshJobs();
       setShellTrustTask(null);
-      setWorkspaceNotice(`source revision ${shortRevision(task.revision)}의 셸 실행을 승인했습니다. 작업은 자동 실행되지 않았습니다.`);
+      setWorkspaceNotice(
+        `source revision ${shortRevision(task.revision)}의 셸 실행을 승인했습니다. 작업은 자동 실행되지 않았습니다.`,
+      );
       setError(null);
     } catch (cause) {
       setError(friendlyErrorMessage(cause));
@@ -1341,8 +1430,8 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     if (!contextJob) return [];
     const workspaceTask = workspaceTaskByJobId.get(contextJob.id);
     const workspaceOperation = workspaceOperationByRootJobId.get(contextJob.id);
-    const operationActive = workspaceOperation !== undefined
-      && !isWorkspaceOperationTerminal(workspaceOperation.status);
+    const operationActive =
+      workspaceOperation !== undefined && !isWorkspaceOperationTerminal(workspaceOperation.status);
     const workspaceRunnable = canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh);
     return [
       {
@@ -1355,8 +1444,7 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
         type: "item",
         id: "toggle-enabled",
         label: contextJob.enabled ? "비활성화" : "활성화",
-        disabled: busy || (!contextJob.enabled
-          && (!workspaceRunnable || Boolean(workspaceTask?.dependsOn.length))),
+        disabled: busy || (!contextJob.enabled && (!workspaceRunnable || Boolean(workspaceTask?.dependsOn.length))),
       },
       { type: "item", id: "edit", label: "편집", disabled: busy },
       { type: "item", id: "open-logs", label: "로그 열기" },
@@ -1389,14 +1477,12 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     else if (id === "delete") void handleDelete(job);
   };
 
-  const contextServiceState = contextService
-    ? serviceInstances[contextService.id]?.state ?? null
-    : null;
+  const contextServiceState = contextService ? (serviceInstances[contextService.id]?.state ?? null) : null;
   const serviceCanStart = contextServiceState === "stopped";
-  const serviceCanStop = contextServiceState !== null
-    && ["starting", "running", "retry_waiting"].includes(contextServiceState);
-  const serviceCanRestart = contextServiceState !== null
-    && ["starting", "running", "retry_waiting"].includes(contextServiceState);
+  const serviceCanStop =
+    contextServiceState !== null && ["starting", "running", "retry_waiting"].includes(contextServiceState);
+  const serviceCanRestart =
+    contextServiceState !== null && ["starting", "running", "retry_waiting"].includes(contextServiceState);
   const serviceContextItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextService) return [];
     return [
@@ -1436,35 +1522,46 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
     else if (id === "delete") void handleServiceDelete(service);
   };
 
-  const launcherWorkspaceTask = launcherTask?.kind === "job"
-    ? workspaceTaskByJobId.get(launcherTask.id)
-    : undefined;
-  const launcherWorkspaceOperation = launcherTask?.kind === "job"
-    ? workspaceOperationByRootJobId.get(launcherTask.id)
-    : undefined;
-  const launcherOperationActive = launcherWorkspaceOperation !== undefined
-    && !isWorkspaceOperationTerminal(launcherWorkspaceOperation.status);
-  const visibleTaskControlReceipts = taskControlReceipt
-    && !taskControlReceipts.some((receipt) => receipt.requestId === taskControlReceipt.requestId)
-    ? [taskControlReceipt, ...taskControlReceipts]
-    : taskControlReceipts;
+  const launcherWorkspaceTask = launcherTask?.kind === "job" ? workspaceTaskByJobId.get(launcherTask.id) : undefined;
+  const launcherWorkspaceOperation =
+    launcherTask?.kind === "job" ? workspaceOperationByRootJobId.get(launcherTask.id) : undefined;
+  const launcherOperationActive =
+    launcherWorkspaceOperation !== undefined && !isWorkspaceOperationTerminal(launcherWorkspaceOperation.status);
+  const visibleTaskControlReceipts =
+    taskControlReceipt && !taskControlReceipts.some((receipt) => receipt.requestId === taskControlReceipt.requestId)
+      ? [taskControlReceipt, ...taskControlReceipts]
+      : taskControlReceipts;
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand-mark" aria-hidden="true">RM</div>
+        <div className="brand-mark" aria-hidden="true">
+          RM
+        </div>
         <div>
           <h1>Run Manager</h1>
           <p>작업과 서비스를 한곳에서 관리합니다.</p>
         </div>
         <nav aria-label="주요 화면">
-          <button className={`nav-item ${screen === "jobs" || screen === "editor" ? "active" : ""}`} type="button" onClick={() => setScreen("jobs")}>
+          <button
+            className={`nav-item ${screen === "jobs" || screen === "editor" ? "active" : ""}`}
+            type="button"
+            onClick={() => setScreen("jobs")}
+          >
             작업 <span>{jobs.length}</span>
           </button>
-          <button className={`nav-item ${screen === "services" || screen === "service-editor" ? "active" : ""}`} type="button" onClick={() => setScreen("services")}>
+          <button
+            className={`nav-item ${screen === "services" || screen === "service-editor" ? "active" : ""}`}
+            type="button"
+            onClick={() => setScreen("services")}
+          >
             서비스 <span>{services.length}</span>
           </button>
-          <button className={`nav-item ${screen === "history" ? "active" : ""}`} type="button" onClick={() => setScreen("history")}>
+          <button
+            className={`nav-item ${screen === "history" ? "active" : ""}`}
+            type="button"
+            onClick={() => setScreen("history")}
+          >
             실행 기록
           </button>
         </nav>
@@ -1479,8 +1576,12 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
               ? `로그인 시 자동 시작: ${startupStatus.enabled ? "켜짐" : "꺼짐"}`
               : "자동 시작: Windows 전용"}
           </button>
-          <button type="button" onClick={() => void hideMainWindow()}>트레이로 숨기기</button>
-          <button className="danger" type="button" onClick={() => void quitApp()}>안전하게 종료</button>
+          <button type="button" onClick={() => void hideMainWindow()}>
+            트레이로 숨기기
+          </button>
+          <button className="danger" type="button" onClick={() => void quitApp()}>
+            안전하게 종료
+          </button>
         </div>
       </aside>
 
@@ -1509,8 +1610,16 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
           </span>
         </header>
 
-        {(error ?? statusError ?? activeSnapshotError) ? <div className="error-banner" role="alert">오류: {error ?? statusError ?? activeSnapshotError}</div> : null}
-        {workspaceNotice ? <div className="success-banner" role="status">{workspaceNotice}</div> : null}
+        {(error ?? statusError ?? activeSnapshotError) ? (
+          <div className="error-banner" role="alert">
+            오류: {error ?? statusError ?? activeSnapshotError}
+          </div>
+        ) : null}
+        {workspaceNotice ? (
+          <div className="success-banner" role="status">
+            {workspaceNotice}
+          </div>
+        ) : null}
         {visibleTaskControlReceipts.length > 0 ? (
           <section className="task-control-receipts" aria-labelledby="task-control-receipts-title">
             <h3 id="task-control-receipts-title">최근 task-control 내역</h3>
@@ -1521,8 +1630,12 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
                 return (
                   <li key={receipt.requestId}>
                     <span>{task?.label ?? definition?.name ?? receipt.taskId}</span>
-                    <span>{taskControlActionLabel(receipt.action)} · {taskControlReceiptStatusLabel(receipt.status)}</span>
-                    {receipt.failureCode ? <span className="workspace-task-unavailable">{friendlyErrorMessage(receipt.failureCode)}</span> : null}
+                    <span>
+                      {taskControlActionLabel(receipt.action)} · {taskControlReceiptStatusLabel(receipt.status)}
+                    </span>
+                    {receipt.failureCode ? (
+                      <span className="workspace-task-unavailable">{friendlyErrorMessage(receipt.failureCode)}</span>
+                    ) : null}
                   </li>
                 );
               })}
@@ -1530,9 +1643,21 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
           </section>
         ) : null}
 
-        <RuntimeRecovery active={visible} busy={busy} onReviewed={() => { void refreshActiveRuns(); }}/>
+        <RuntimeRecovery
+          active={visible}
+          busy={busy}
+          onReviewed={() => {
+            void refreshActiveRuns();
+          }}
+        />
         {screen === "editor" ? (
-          <JobEditor active={visible} job={editingJob} workspaceTask={editingWorkspaceTask} onSave={handleSave} onCancel={closeEditor} />
+          <JobEditor
+            active={visible}
+            job={editingJob}
+            workspaceTask={editingWorkspaceTask}
+            onSave={handleSave}
+            onCancel={closeEditor}
+          />
         ) : screen === "service-editor" ? (
           <ServiceEditor service={editingService} onSave={handleServiceSave} onCancel={closeServiceEditor} />
         ) : screen === "history" ? (
@@ -1542,19 +1667,39 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
             <div className="section-toolbar">
               <div>
                 <p className="subtitle">서비스 정의와 자동 시작·재시작·로컬 헬스체크 정책을 관리합니다.</p>
-                <h3 id="services-title" className="visually-hidden">서비스 목록</h3>
+                <h3 id="services-title" className="visually-hidden">
+                  서비스 목록
+                </h3>
               </div>
-              <button type="button" className="button-primary" onClick={openServiceCreate}>+ 새 서비스</button>
-              <button type="button" className="button-secondary" onClick={() => void onExportDefs()}>정의 내보내기</button>
-              <button ref={importTriggerRef} type="button" className="button-secondary" onClick={() => setImportOpen(true)}>정의 가져오기</button>
+              <button type="button" className="button-primary" onClick={openServiceCreate}>
+                + 새 서비스
+              </button>
+              <button type="button" className="button-secondary" onClick={() => void onExportDefs()}>
+                정의 내보내기
+              </button>
+              <button
+                ref={importTriggerRef}
+                type="button"
+                className="button-secondary"
+                onClick={() => setImportOpen(true)}
+              >
+                정의 가져오기
+              </button>
             </div>
-            {loading ? <div className="empty-card compact"><div className="pulse" /><p>서비스를 불러오는 중…</p></div> : null}
+            {loading ? (
+              <div className="empty-card compact">
+                <div className="pulse" />
+                <p>서비스를 불러오는 중…</p>
+              </div>
+            ) : null}
             {!loading && services.length === 0 ? (
               <section className="empty-card" aria-labelledby="empty-service-title">
                 <div className="pulse" aria-hidden="true" />
                 <h3 id="empty-service-title">등록된 서비스가 아직 없습니다</h3>
                 <p>계속 실행할 명령을 서비스로 저장하고 자동 시작·재시작 정책을 준비할 수 있습니다.</p>
-                <button type="button" className="button-primary" onClick={openServiceCreate}>첫 서비스 만들기</button>
+                <button type="button" className="button-primary" onClick={openServiceCreate}>
+                  첫 서비스 만들기
+                </button>
               </section>
             ) : null}
             {!loading && services.length > 0 ? (
@@ -1563,8 +1708,7 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
                   const instance = serviceInstances[service.id];
                   const state = instance?.state ?? null;
                   const canStart = state === "stopped";
-                  const canControl = state !== null
-                    && ["starting", "running", "retry_waiting"].includes(state);
+                  const canControl = state !== null && ["starting", "running", "retry_waiting"].includes(state);
                   const ready = state === "running" || state === "starting";
                   const obs = obsMap[service.id];
                   return (
@@ -1579,91 +1723,135 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
                       onKeyDown={(event) => {
                         serviceContextTrigger.onKeyDown?.(event);
                         if (
-                          event.defaultPrevented
-                          || event.target !== event.currentTarget
-                          || !isKeyboardActivation(event)
-                        ) return;
+                          event.defaultPrevented ||
+                          event.target !== event.currentTarget ||
+                          !isKeyboardActivation(event)
+                        )
+                          return;
                         event.preventDefault();
                         setSelectedServiceId(service.id);
                       }}
                     >
-                    <div className="job-card-main">
-                      <div className="job-title-row">
-                        <h3>{service.name}</h3>
-                        <span className={`job-state ${ready ? "ready" : "disabled"}`}>
-                          {state ? serviceStateLabel(state) : "상태 확인 불가"}
-                        </span>
-                      </div>
-                      <code title={service.command}>{service.command}</code>
-                      <div className="job-meta">
-                        <span>{targetLabel(service)}</span>
-                        <span>{restartLabel(service)}</span>
-                        <span>{service.autoStart ? "자동 시작" : "수동 시작"}</span>
-                        {service.healthTcpAddress && service.healthTcpPort ? (
-                          <span>TCP {service.healthTcpAddress}:{service.healthTcpPort}</span>
-                        ) : <span>TCP probe 없음</span>}
-                        {instance && instance.consecutiveFailures > 0 ? (
-                          <span>연속 실패 {instance.consecutiveFailures}회</span>
-                        ) : null}
-                        {service.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
-                      </div>
-                    </div>
-                    <div className="job-actions">
-                      {canControl ? (
-                        <>
-                          <button type="button" className="button-secondary" disabled={busy} onClick={() => void handleServiceRestart(service)}>재시작</button>
-                          <button type="button" className="button-danger" disabled={busy} onClick={() => void handleServiceStop(service)}>정지</button>
-                        </>
-                      ) : (
-                        <button type="button" className="button-secondary" disabled={busy || !canStart} onClick={() => void handleServiceStart(service)}>시작</button>
-                      )}
-                      <button type="button" className="button-secondary" onClick={() => void onToggleObs(service.id)}>
-                        {obsOpen[service.id] ? "상세 닫기" : "상세"}
-                      </button>
-                      <button type="button" className="button-secondary" onClick={() => openServiceEdit(service)}>편집</button>
-                      <button type="button" className="button-danger" disabled={busy || state !== "stopped"} onClick={() => void handleServiceDelete(service)}>삭제</button>
-                    </div>
-                    {obsOpen[service.id] && obs && (
-                      <div className="obs-panel">
-                        <div className="obs-row">
-                          <span className="obs-label">정의</span>
-                          <span>{obs.definition.enabled ? "활성" : "비활성"} · {obs.definition.autoStart ? "자동 시작" : "수동 시작"}</span>
+                      <div className="job-card-main">
+                        <div className="job-title-row">
+                          <h3>{service.name}</h3>
+                          <span className={`job-state ${ready ? "ready" : "disabled"}`}>
+                            {state ? serviceStateLabel(state) : "상태 확인 불가"}
+                          </span>
                         </div>
-                        <div className="obs-row">
-                          <span className="obs-label">인스턴스 (DB 상태)</span>
-                          <span>{obs.instance ? serviceStateLabel(obs.instance.state) : "없음"} · 재시작 {obs.restartCount}회</span>
-                        </div>
-                        {obs.current && (
-                          <div className="obs-row">
-                            <span className="obs-label">현재 실행</span>
+                        <code title={service.command}>{service.command}</code>
+                        <div className="job-meta">
+                          <span>{targetLabel(service)}</span>
+                          <span>{restartLabel(service)}</span>
+                          <span>{service.autoStart ? "자동 시작" : "수동 시작"}</span>
+                          {service.healthTcpAddress && service.healthTcpPort ? (
                             <span>
-                              {obs.current.status} · {fmtUptime(obs.current.startedAt)}
-                              {obs.currentPid != null && ` · PID ${obs.currentPid} (DB 기록)`}
+                              TCP {service.healthTcpAddress}:{service.healthTcpPort}
                             </span>
-                          </div>
-                        )}
-                        {obs.nextRetryAt != null && (
-                          <div className="obs-row">
-                            <span className="obs-label">다음 재시도</span>
-                            <span>{new Date(obs.nextRetryAt).toLocaleTimeString()}</span>
-                          </div>
-                        )}
-                        {obs.recent.length > 0 && (
-                          <div className="obs-row">
-                            <span className="obs-label">최근 실행</span>
-                            <span className="obs-recent">
-                              {obs.recent.slice(0, 5).map((r) => (
-                                <span key={r.id} className={`obs-run ${r.status === "failed" ? "obs-fail" : ""}`}>
-                                  {r.status}{r.exitCode != null ? `(${r.exitCode})` : ""}
-                                </span>
-                              ))}
-                            </span>
-                          </div>
-                        )}
-                        <div className="obs-note">인스턴스 상태는 DB 기록 기준입니다. PID는 실제 프로세스 생존과 다를 수 있습니다.</div>
+                          ) : (
+                            <span>TCP probe 없음</span>
+                          )}
+                          {instance && instance.consecutiveFailures > 0 ? (
+                            <span>연속 실패 {instance.consecutiveFailures}회</span>
+                          ) : null}
+                          {service.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
+                        </div>
                       </div>
-                    )}
-                  </article>
+                      <div className="job-actions">
+                        {canControl ? (
+                          <>
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              disabled={busy}
+                              onClick={() => void handleServiceRestart(service)}
+                            >
+                              재시작
+                            </button>
+                            <button
+                              type="button"
+                              className="button-danger"
+                              disabled={busy}
+                              onClick={() => void handleServiceStop(service)}
+                            >
+                              정지
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={busy || !canStart}
+                            onClick={() => void handleServiceStart(service)}
+                          >
+                            시작
+                          </button>
+                        )}
+                        <button type="button" className="button-secondary" onClick={() => void onToggleObs(service.id)}>
+                          {obsOpen[service.id] ? "상세 닫기" : "상세"}
+                        </button>
+                        <button type="button" className="button-secondary" onClick={() => openServiceEdit(service)}>
+                          편집
+                        </button>
+                        <button
+                          type="button"
+                          className="button-danger"
+                          disabled={busy || state !== "stopped"}
+                          onClick={() => void handleServiceDelete(service)}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                      {obsOpen[service.id] && obs && (
+                        <div className="obs-panel">
+                          <div className="obs-row">
+                            <span className="obs-label">정의</span>
+                            <span>
+                              {obs.definition.enabled ? "활성" : "비활성"} ·{" "}
+                              {obs.definition.autoStart ? "자동 시작" : "수동 시작"}
+                            </span>
+                          </div>
+                          <div className="obs-row">
+                            <span className="obs-label">인스턴스 (DB 상태)</span>
+                            <span>
+                              {obs.instance ? serviceStateLabel(obs.instance.state) : "없음"} · 재시작{" "}
+                              {obs.restartCount}회
+                            </span>
+                          </div>
+                          {obs.current && (
+                            <div className="obs-row">
+                              <span className="obs-label">현재 실행</span>
+                              <span>
+                                {obs.current.status} · {fmtUptime(obs.current.startedAt)}
+                                {obs.currentPid != null && ` · PID ${obs.currentPid} (DB 기록)`}
+                              </span>
+                            </div>
+                          )}
+                          {obs.nextRetryAt != null && (
+                            <div className="obs-row">
+                              <span className="obs-label">다음 재시도</span>
+                              <span>{new Date(obs.nextRetryAt).toLocaleTimeString()}</span>
+                            </div>
+                          )}
+                          {obs.recent.length > 0 && (
+                            <div className="obs-row">
+                              <span className="obs-label">최근 실행</span>
+                              <span className="obs-recent">
+                                {obs.recent.slice(0, 5).map((r) => (
+                                  <span key={r.id} className={`obs-run ${r.status === "failed" ? "obs-fail" : ""}`}>
+                                    {r.status}
+                                    {r.exitCode != null ? `(${r.exitCode})` : ""}
+                                  </span>
+                                ))}
+                              </span>
+                            </div>
+                          )}
+                          <div className="obs-note">
+                            인스턴스 상태는 DB 기록 기준입니다. PID는 실제 프로세스 생존과 다를 수 있습니다.
+                          </div>
+                        </div>
+                      )}
+                    </article>
                   );
                 })}
               </div>
@@ -1674,21 +1862,45 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
             <div className="section-toolbar">
               <div>
                 <p className="subtitle">예약된 작업을 활성화하고 실행 정책을 관리합니다.</p>
-                <h3 id="jobs-title" className="visually-hidden">작업 목록</h3>
+                <h3 id="jobs-title" className="visually-hidden">
+                  작업 목록
+                </h3>
               </div>
-              <button type="button" className="button-primary" onClick={openCreate}>+ 새 작업</button>
-              <button ref={importTriggerRef} type="button" className="button-secondary" onClick={() => setImportOpen(true)}>정의와 task 가져오기</button>
+              <button type="button" className="button-primary" onClick={openCreate}>
+                + 새 작업
+              </button>
+              <button
+                ref={importTriggerRef}
+                type="button"
+                className="button-secondary"
+                onClick={() => setImportOpen(true)}
+              >
+                정의와 task 가져오기
+              </button>
             </div>
-            {loading ? <div className="empty-card compact"><div className="pulse" /><p>작업을 불러오는 중…</p></div> : null}
+            {loading ? (
+              <div className="empty-card compact">
+                <div className="pulse" />
+                <p>작업을 불러오는 중…</p>
+              </div>
+            ) : null}
             {!loading && jobs.length === 0 ? (
               <section className="empty-card" aria-labelledby="empty-title">
                 <div className="pulse" aria-hidden="true" />
                 <h3 id="empty-title">실행할 작업이 아직 없습니다</h3>
                 <p>명령과 cron 일정을 정의하면 로컬 스케줄러가 다음 실행 시각을 미리 보여줍니다.</p>
-                <button type="button" className="button-primary" onClick={openCreate}>첫 작업 만들기</button>
+                <button type="button" className="button-primary" onClick={openCreate}>
+                  첫 작업 만들기
+                </button>
                 <dl>
-                  <div><dt>시작 방식</dt><dd>{status?.backgroundLaunch ? "백그라운드" : "일반"}</dd></div>
-                  <div><dt>데이터베이스</dt><dd title={status?.databasePath}>{status?.databasePath ?? "준비 중"}</dd></div>
+                  <div>
+                    <dt>시작 방식</dt>
+                    <dd>{status?.backgroundLaunch ? "백그라운드" : "일반"}</dd>
+                  </div>
+                  <div>
+                    <dt>데이터베이스</dt>
+                    <dd title={status?.databasePath}>{status?.databasePath ?? "준비 중"}</dd>
+                  </div>
                 </dl>
               </section>
             ) : null}
@@ -1697,8 +1909,8 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
                 {jobs.map((job) => {
                   const workspaceTask = workspaceTaskByJobId.get(job.id);
                   const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
-                  const workspaceOperationActive = workspaceOperation !== undefined
-                    && !isWorkspaceOperationTerminal(workspaceOperation.status);
+                  const workspaceOperationActive =
+                    workspaceOperation !== undefined && !isWorkspaceOperationTerminal(workspaceOperation.status);
                   const workspaceRunnable = canUseWorkspaceTask(workspaceTask, workspaceSnapshotFresh);
                   const operationChildProgress = workspaceOperation?.runs
                     .map((run) => {
@@ -1706,12 +1918,15 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
                       return `${childJob?.name ?? run.jobId}: ${workspaceOperationRunStatusLabel(run.status)}`;
                     })
                     .join(" · ");
-                  const diagnosticRuns = workspaceOperation?.runs.filter((run) => {
-                    const task = workspaceTaskByJobId.get(run.jobId);
-                    return Boolean(run.runId)
-                      && isWorkspaceOperationRunTerminal(run.status)
-                      && task?.hasProblemMatcher === true;
-                  }) ?? [];
+                  const diagnosticRuns =
+                    workspaceOperation?.runs.filter((run) => {
+                      const task = workspaceTaskByJobId.get(run.jobId);
+                      return (
+                        Boolean(run.runId) &&
+                        isWorkspaceOperationRunTerminal(run.status) &&
+                        task?.hasProblemMatcher === true
+                      );
+                    }) ?? [];
                   return (
                     <article
                       className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
@@ -1724,164 +1939,241 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
                       onKeyDown={(event) => {
                         jobContextTrigger.onKeyDown?.(event);
                         if (
-                          event.defaultPrevented
-                          || event.target !== event.currentTarget
-                          || !isKeyboardActivation(event)
-                        ) return;
+                          event.defaultPrevented ||
+                          event.target !== event.currentTarget ||
+                          !isKeyboardActivation(event)
+                        )
+                          return;
                         event.preventDefault();
                         setSelectedJobId(job.id);
                       }}
                     >
-                    <div className="job-card-main">
-                      <div className="job-title-row">
-                        <h3>{job.name}</h3>
-                        <span className={`job-state ${workspaceOperationActive || activeRuns[job.id] ? "running" : job.enabled ? "enabled" : "disabled"}`}>
-                          {workspaceOperationActive
-                            ? `오케스트레이션 ${workspaceOperationStatusLabel(workspaceOperation!.status)}`
-                            : activeRuns[job.id] ? "실행 중" : job.enabled ? "활성" : "비활성"}
-                        </span>
-                      </div>
-                      <code title={job.command}>{job.command}</code>
-                      <div className="job-meta">
-                        <span>{targetLabel(job)}</span>
-                        <span>{scheduleLabel(job)}</span>
-                        <span>{job.overlapPolicy === "skip" ? "중복 건너뛰기" : job.overlapPolicy === "queue" ? "대기열" : "이전 종료"}</span>
-                        {job.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
-                        {workspaceTask ? (
-                          <>
-                            <span className="workspace-task-badge">VS Code {workspaceTask.taskKind}</span>
-                            <span title={workspaceTask.sourceRoot}>소스 {workspaceSourceLabel(workspaceTask.sourceRoot)} · rev {shortRevision(workspaceTask.revision)}</span>
-                            <span className={workspaceTask.trusted ? "workspace-task-trusted" : "workspace-task-untrusted"}>
-                              {workspaceTask.trusted ? "소스 승인됨" : "소스 승인 필요"}
-                            </span>
-                            {workspaceTask.taskKind === "shell" ? (
-                              <span className={workspaceTask.shellTrusted ? "workspace-task-trusted" : "workspace-task-untrusted"}>
-                                {workspaceTask.shellTrusted ? "셸 실행 승인됨" : "셸 실행 승인 필요"}
-                              </span>
-                            ) : null}
-                            <span className={workspaceTask.available ? "workspace-task-trusted" : "workspace-task-unavailable"}>
-                              {workspaceTask.available ? "원본 사용 가능" : "원본 변경됨 · 사용 불가"}
-                            </span>
-                            {workspaceTask.dependsOn.length > 0 ? (
-                              <span>선행 task: {workspaceTask.dependsOn.join(", ")} · {workspaceTask.dependsOrder === "sequence" ? "순차" : "병렬"}</span>
-                            ) : null}
-                            {workspaceTask.hasProblemMatcher ? <span>problem matcher 지원됨</span> : null}
-                            {workspaceTask.environmentKeys.length > 0 ? <span>환경 키: {workspaceTask.environmentKeys.join(", ")}</span> : null}
-                          </>
-                        ) : null}
-                        {workspaceOperation ? (
-                          <>
-                            <span
-                              className={`workspace-operation-badge workspace-operation-${workspaceOperation.status}`}
-                              aria-live="polite"
-                              aria-label={`workspace task operation 상태: ${workspaceOperationStatusLabel(workspaceOperation.status)}`}
-                            >
-                              오케스트레이션 {workspaceOperationStatusLabel(workspaceOperation.status)} · {workspaceOperationProgressLabel(workspaceOperation)}
-                            </span>
-                            {operationChildProgress ? (
-                          <span title={operationChildProgress}>하위 작업 진행: {operationChildProgress}</span>
-                            ) : null}
-                            {workspaceOperation.failureCode ? (
-                              <span className="workspace-task-unavailable">{friendlyErrorMessage(workspaceOperation.failureCode)}</span>
-                            ) : null}
-                          </>
-                        ) : null}
-                      </div>
-                      {diagnosticRuns.length > 0 ? (
-                        <div className="workspace-diagnostics" aria-label={`${job.name} 진단`}>
-                          <strong>problem matcher 진단</strong>
-                          {diagnosticRuns.map((run) => {
-                            const runId = run.runId!;
-                            const state = workspaceDiagnostics[runId];
-                            const childJob = jobs.find((candidate) => candidate.id === run.jobId);
-                            return (
-                              <div className="workspace-diagnostic-run" key={runId}>
-                                <span className="workspace-diagnostic-run-label">{childJob?.name ?? run.jobId}</span>
-                                {state?.status === "loading" || !state ? <span>진단을 불러오는 중…</span> : null}
-                                {state?.status === "error" ? (
-                                  <>
-                                    <span className="workspace-task-unavailable">{state.error}</span>
-                                    <button
-                                      type="button"
-                                      className="button-secondary small"
-                                      onClick={() => retryWorkspaceTaskDiagnostics(runId)}
-                                    >다시 시도</button>
-                                  </>
-                                ) : null}
-                                {state?.status === "ready" ? (
-                                  <>
-                                    {state.diagnostics?.items.length ? (
-                                      <div className="workspace-diagnostic-items">
-                                        {state.diagnostics.items.map((item) => {
-                                          const location = `${item.file}:${item.line}${item.column ? `:${item.column}` : ""}`;
-                                          return (
-                                            <button
-                                              type="button"
-                                              className="workspace-diagnostic-item"
-                                              key={`${runId}:${item.index}`}
-                                              aria-label={`${location} ${item.message}`}
-                                              title={`${location} · ${item.message}`}
-                                              onClick={() => void handleOpenWorkspaceTaskDiagnostic(runId, item.index)}
-                                            >
-                                              <span>{location}</span>
-                                              <span>{item.message}</span>
-                                              <span>{item.severity ?? "진단"} · {item.stream}</span>
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : <span>진단 없음</span>}
-                                    {state.diagnostics?.truncated ? <span className="workspace-diagnostics-truncated">일부 진단만 표시됨</span> : null}
-                                  </>
-                                ) : null}
-                              </div>
-                            );
-                          })}
+                      <div className="job-card-main">
+                        <div className="job-title-row">
+                          <h3>{job.name}</h3>
+                          <span
+                            className={`job-state ${workspaceOperationActive || activeRuns[job.id] ? "running" : job.enabled ? "enabled" : "disabled"}`}
+                          >
+                            {workspaceOperationActive
+                              ? `오케스트레이션 ${workspaceOperationStatusLabel(workspaceOperation!.status)}`
+                              : activeRuns[job.id]
+                                ? "실행 중"
+                                : job.enabled
+                                  ? "활성"
+                                  : "비활성"}
+                          </span>
                         </div>
-                      ) : null}
-                    </div>
-                    <div className="job-actions">
-                      <button
-                        type="button"
-                        className="button-primary"
-                        disabled={busy || !workspaceRunnable || workspaceOperationActive}
-                        title={workspaceOperationActive
-                          ? "이미 workspace task orchestration이 실행 중입니다."
-                          : !workspaceRunnable
-                          ? workspaceSnapshotFresh
-                            ? workspaceTaskGateHint(workspaceTask)
-                            : "workspace task 상태를 다시 불러와야 합니다."
-                          : undefined}
-                        onClick={() => void handleRunNow(job)}
-                      >{workspaceOperationActive ? "실행 중…" : "지금 실행"}</button>
-                      <button
-                        type="button"
-                        className="button-danger"
-                        disabled={busy || (workspaceOperationActive
-                          ? workspaceOperation?.status === "stopping"
-                          : !activeSnapshotFresh || !activeRuns[job.id])}
-                        onClick={() => void handleStopRun(job)}
-                      >{workspaceOperationActive && workspaceOperation?.status === "stopping" ? "중지 중…" : workspaceOperationActive ? "오케스트레이션 중지" : "중지"}</button>
-                      {workspaceTask && !workspaceTask.trusted ? (
+                        <code title={job.command}>{job.command}</code>
+                        <div className="job-meta">
+                          <span>{targetLabel(job)}</span>
+                          <span>{scheduleLabel(job)}</span>
+                          <span>
+                            {job.overlapPolicy === "skip"
+                              ? "중복 건너뛰기"
+                              : job.overlapPolicy === "queue"
+                                ? "대기열"
+                                : "이전 종료"}
+                          </span>
+                          {job.envConfigured ? <span className="secret-badge">환경변수 보호됨</span> : null}
+                          {workspaceTask ? (
+                            <>
+                              <span className="workspace-task-badge">VS Code {workspaceTask.taskKind}</span>
+                              <span title={workspaceTask.sourceRoot}>
+                                소스 {workspaceSourceLabel(workspaceTask.sourceRoot)} · rev{" "}
+                                {shortRevision(workspaceTask.revision)}
+                              </span>
+                              <span
+                                className={
+                                  workspaceTask.trusted ? "workspace-task-trusted" : "workspace-task-untrusted"
+                                }
+                              >
+                                {workspaceTask.trusted ? "소스 승인됨" : "소스 승인 필요"}
+                              </span>
+                              {workspaceTask.taskKind === "shell" ? (
+                                <span
+                                  className={
+                                    workspaceTask.shellTrusted ? "workspace-task-trusted" : "workspace-task-untrusted"
+                                  }
+                                >
+                                  {workspaceTask.shellTrusted ? "셸 실행 승인됨" : "셸 실행 승인 필요"}
+                                </span>
+                              ) : null}
+                              <span
+                                className={
+                                  workspaceTask.available ? "workspace-task-trusted" : "workspace-task-unavailable"
+                                }
+                              >
+                                {workspaceTask.available ? "원본 사용 가능" : "원본 변경됨 · 사용 불가"}
+                              </span>
+                              {workspaceTask.dependsOn.length > 0 ? (
+                                <span>
+                                  선행 task: {workspaceTask.dependsOn.join(", ")} ·{" "}
+                                  {workspaceTask.dependsOrder === "sequence" ? "순차" : "병렬"}
+                                </span>
+                              ) : null}
+                              {workspaceTask.hasProblemMatcher ? <span>problem matcher 지원됨</span> : null}
+                              {workspaceTask.environmentKeys.length > 0 ? (
+                                <span>환경 키: {workspaceTask.environmentKeys.join(", ")}</span>
+                              ) : null}
+                            </>
+                          ) : null}
+                          {workspaceOperation ? (
+                            <>
+                              <span
+                                className={`workspace-operation-badge workspace-operation-${workspaceOperation.status}`}
+                                aria-live="polite"
+                                aria-label={`workspace task operation 상태: ${workspaceOperationStatusLabel(workspaceOperation.status)}`}
+                              >
+                                오케스트레이션 {workspaceOperationStatusLabel(workspaceOperation.status)} ·{" "}
+                                {workspaceOperationProgressLabel(workspaceOperation)}
+                              </span>
+                              {operationChildProgress ? (
+                                <span title={operationChildProgress}>하위 작업 진행: {operationChildProgress}</span>
+                              ) : null}
+                              {workspaceOperation.failureCode ? (
+                                <span className="workspace-task-unavailable">
+                                  {friendlyErrorMessage(workspaceOperation.failureCode)}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                        {diagnosticRuns.length > 0 ? (
+                          <div className="workspace-diagnostics" aria-label={`${job.name} 진단`}>
+                            <strong>problem matcher 진단</strong>
+                            {diagnosticRuns.map((run) => {
+                              const runId = run.runId!;
+                              const state = workspaceDiagnostics[runId];
+                              const childJob = jobs.find((candidate) => candidate.id === run.jobId);
+                              return (
+                                <div className="workspace-diagnostic-run" key={runId}>
+                                  <span className="workspace-diagnostic-run-label">{childJob?.name ?? run.jobId}</span>
+                                  {state?.status === "loading" || !state ? <span>진단을 불러오는 중…</span> : null}
+                                  {state?.status === "error" ? (
+                                    <>
+                                      <span className="workspace-task-unavailable">{state.error}</span>
+                                      <button
+                                        type="button"
+                                        className="button-secondary small"
+                                        onClick={() => retryWorkspaceTaskDiagnostics(runId)}
+                                      >
+                                        다시 시도
+                                      </button>
+                                    </>
+                                  ) : null}
+                                  {state?.status === "ready" ? (
+                                    <>
+                                      {state.diagnostics?.items.length ? (
+                                        <div className="workspace-diagnostic-items">
+                                          {state.diagnostics.items.map((item) => {
+                                            const location = `${item.file}:${item.line}${item.column ? `:${item.column}` : ""}`;
+                                            return (
+                                              <button
+                                                type="button"
+                                                className="workspace-diagnostic-item"
+                                                key={`${runId}:${item.index}`}
+                                                aria-label={`${location} ${item.message}`}
+                                                title={`${location} · ${item.message}`}
+                                                onClick={() =>
+                                                  void handleOpenWorkspaceTaskDiagnostic(runId, item.index)
+                                                }
+                                              >
+                                                <span>{location}</span>
+                                                <span>{item.message}</span>
+                                                <span>
+                                                  {item.severity ?? "진단"} · {item.stream}
+                                                </span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <span>진단 없음</span>
+                                      )}
+                                      {state.diagnostics?.truncated ? (
+                                        <span className="workspace-diagnostics-truncated">일부 진단만 표시됨</span>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="job-actions">
                         <button
                           type="button"
-                          className="button-secondary"
-                          disabled={busy || !workspaceTask.available}
-                          onClick={() => void handleTrustWorkspaceTask(workspaceTask)}
-                        >소스 승인</button>
-                      ) : null}
-                      {workspaceTask && workspaceTask.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted ? (
+                          className="button-primary"
+                          disabled={busy || !workspaceRunnable || workspaceOperationActive}
+                          title={
+                            workspaceOperationActive
+                              ? "이미 workspace task orchestration이 실행 중입니다."
+                              : !workspaceRunnable
+                                ? workspaceSnapshotFresh
+                                  ? workspaceTaskGateHint(workspaceTask)
+                                  : "workspace task 상태를 다시 불러와야 합니다."
+                                : undefined
+                          }
+                          onClick={() => void handleRunNow(job)}
+                        >
+                          {workspaceOperationActive ? "실행 중…" : "지금 실행"}
+                        </button>
                         <button
                           type="button"
                           className="button-danger"
-                          disabled={busy || !workspaceTask.available}
-                          onClick={() => openShellTrustConfirmation(workspaceTask)}
-                        >셸 실행 승인</button>
-                      ) : null}
-                      <button type="button" className="button-secondary" onClick={() => openEdit(job)}>편집</button>
-                      <button type="button" className="button-danger" disabled={busy || !activeSnapshotFresh || Boolean(activeRuns[job.id]) || workspaceOperationActive} onClick={() => void handleDelete(job)}>삭제</button>
-                    </div>
-                  </article>
+                          disabled={
+                            busy ||
+                            (workspaceOperationActive
+                              ? workspaceOperation?.status === "stopping"
+                              : !activeSnapshotFresh || !activeRuns[job.id])
+                          }
+                          onClick={() => void handleStopRun(job)}
+                        >
+                          {workspaceOperationActive && workspaceOperation?.status === "stopping"
+                            ? "중지 중…"
+                            : workspaceOperationActive
+                              ? "오케스트레이션 중지"
+                              : "중지"}
+                        </button>
+                        {workspaceTask && !workspaceTask.trusted ? (
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            disabled={busy || !workspaceTask.available}
+                            onClick={() => void handleTrustWorkspaceTask(workspaceTask)}
+                          >
+                            소스 승인
+                          </button>
+                        ) : null}
+                        {workspaceTask &&
+                        workspaceTask.taskKind === "shell" &&
+                        workspaceTask.trusted &&
+                        !workspaceTask.shellTrusted ? (
+                          <button
+                            type="button"
+                            className="button-danger"
+                            disabled={busy || !workspaceTask.available}
+                            onClick={() => openShellTrustConfirmation(workspaceTask)}
+                          >
+                            셸 실행 승인
+                          </button>
+                        ) : null}
+                        <button type="button" className="button-secondary" onClick={() => openEdit(job)}>
+                          편집
+                        </button>
+                        <button
+                          type="button"
+                          className="button-danger"
+                          disabled={
+                            busy || !activeSnapshotFresh || Boolean(activeRuns[job.id]) || workspaceOperationActive
+                          }
+                          onClick={() => void handleDelete(job)}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </article>
                   );
                 })}
               </div>
@@ -1890,7 +2182,9 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
         )}
       </section>
       {importOpen && (
-        <ImportDialog initialSource={importSource} active={visible}
+        <ImportDialog
+          initialSource={importSource}
+          active={visible}
           onDone={(_created, result: WorkspaceTaskApplyResult | undefined) => {
             if (result) {
               setWorkspaceNotice(
@@ -1961,16 +2255,30 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
           >
             <h2 id="shell-trust-title">셸 실행 승인</h2>
             <p id="shell-trust-description">
-              <strong>{shellTrustTask.label}</strong> task가 source의 셸 명령을 실행하도록 별도로 승인합니다.
-              셸 명령은 source revision에 따라 바뀔 수 있으며, 승인 후 스케줄 실행·수동 실행에서 실제 셸을 호출할 수 있습니다.
-              현재 revision <code>{shortRevision(shellTrustTask.revision)}</code>만 승인되며, source가 변경되면 승인이 무효화됩니다.
+              <strong>{shellTrustTask.label}</strong> task가 source의 셸 명령을 실행하도록 별도로 승인합니다. 셸 명령은
+              source revision에 따라 바뀔 수 있으며, 승인 후 스케줄 실행·수동 실행에서 실제 셸을 호출할 수 있습니다.
+              현재 revision <code>{shortRevision(shellTrustTask.revision)}</code>만 승인되며, source가 변경되면 승인이
+              무효화됩니다.
             </p>
             <dl className="workspace-task-details shell-trust-details">
-              <div><dt>source</dt><dd><code>{shellTrustTask.sourceRoot}</code></dd></div>
-              <div><dt>명령</dt><dd><code>{jobs.find((job) => job.id === shellTrustTask.jobId)?.command ?? "source revision에서 읽음"}</code></dd></div>
+              <div>
+                <dt>source</dt>
+                <dd>
+                  <code>{shellTrustTask.sourceRoot}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>명령</dt>
+                <dd>
+                  <code>
+                    {jobs.find((job) => job.id === shellTrustTask.jobId)?.command ?? "source revision에서 읽음"}
+                  </code>
+                </dd>
+              </div>
             </dl>
             <div className="workspace-task-notice" role="note">
-              이 확인은 일반 source 승인과 별개입니다. 셸 실행 위험을 이해했고 이 source의 셸 task를 실행하겠다면 아래 버튼을 선택하세요.
+              이 확인은 일반 source 승인과 별개입니다. 셸 실행 위험을 이해했고 이 source의 셸 task를 실행하겠다면 아래
+              버튼을 선택하세요.
             </div>
             <div className="launcher-task-actions">
               <button
@@ -2006,20 +2314,37 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
           >
             <h2 id="task-control-title">Workbench 요청 확인</h2>
             <p id="task-control-description">
-              Workbench가 요청한 workspace task <strong>{taskControlActionLabel(taskControlPreview.action)}</strong> 작업을 확인합니다.
+              Workbench가 요청한 workspace task <strong>{taskControlActionLabel(taskControlPreview.action)}</strong>{" "}
+              작업을 확인합니다.
               {taskControlPreview.action === "start"
                 ? " 승인하면 현재 저장된 source revision을 다시 검증한 뒤 요청된 작업을 수행합니다."
                 : " 승인하면 이 task가 root인 Run Manager 소유의 활성 operation만 중지합니다."}
             </p>
             <dl className="workspace-task-details task-control-details">
-              <div><dt>task</dt><dd>{taskControlPreview.label}</dd></div>
-              <div><dt>종류</dt><dd>{taskControlPreview.taskKind}</dd></div>
-              <div><dt>source revision</dt><dd><code>{shortRevision(taskControlPreview.expectedRevision)}</code></dd></div>
-              <div><dt>요청</dt><dd>{taskControlActionLabel(taskControlPreview.action)}</dd></div>
+              <div>
+                <dt>task</dt>
+                <dd>{taskControlPreview.label}</dd>
+              </div>
+              <div>
+                <dt>종류</dt>
+                <dd>{taskControlPreview.taskKind}</dd>
+              </div>
+              <div>
+                <dt>source revision</dt>
+                <dd>
+                  <code>{shortRevision(taskControlPreview.expectedRevision)}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>요청</dt>
+                <dd>{taskControlActionLabel(taskControlPreview.action)}</dd>
+              </div>
             </dl>
             <div className="workspace-task-notice" role="note">
               명령·경로·환경변수는 이 handoff에 포함되지 않으며, 실행 여부는 Run Manager가 다시 검증합니다.
-              {taskControlLeaseUntil ? ` 확인 lease 만료 예정: ${new Date(taskControlLeaseUntil).toLocaleTimeString()}` : " 확인 요청은 제한 시간 동안만 유효합니다."}
+              {taskControlLeaseUntil
+                ? ` 확인 lease 만료 예정: ${new Date(taskControlLeaseUntil).toLocaleTimeString()}`
+                : " 확인 요청은 제한 시간 동안만 유효합니다."}
             </div>
             <div className="launcher-task-actions">
               <button

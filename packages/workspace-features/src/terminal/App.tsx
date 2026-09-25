@@ -1,9 +1,5 @@
 import { isProductHosted } from "../transport";
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -42,10 +38,7 @@ import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./l
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { nextPaneIndex, type FocusDirection } from "./lib/paneGeometry";
 import { normalizePaneSizing } from "./lib/paneSizing";
-import {
-  MAX_BROADCAST_TARGETS,
-  nextBroadcastTargets,
-} from "./lib/broadcastSafety";
+import { MAX_BROADCAST_TARGETS, nextBroadcastTargets } from "./lib/broadcastSafety";
 import {
   loadCopyOnSelect,
   loadPinned,
@@ -68,15 +61,8 @@ import {
   startCommandError,
   workspaceFromRuntime,
 } from "./lib/workspace";
-import {
-  orderWorkspacePanes,
-  RESTORE_START_CONCURRENCY,
-  runWithConcurrencyLimit,
-} from "./lib/workspaceRestore";
-import {
-  DEFAULT_TERMINAL_FONT_SIZE,
-  clampTerminalFontSize,
-} from "./lib/terminalUx";
+import { orderWorkspacePanes, RESTORE_START_CONCURRENCY, runWithConcurrencyLimit } from "./lib/workspaceRestore";
+import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "./lib/terminalUx";
 import type {
   ContainerInfo,
   DashboardSnapshot,
@@ -92,13 +78,7 @@ import type {
 } from "./types";
 import type { DashboardFreshness } from "./lib/resourceDisplay";
 import { isSnapshotActionable, isSnapshotExpired } from "./lib/snapshotState";
-import {
-  fontFamilyFor,
-  loadSettings,
-  saveSettings,
-  TERMINAL_THEMES,
-  type TerminalSettings,
-} from "./lib/settings";
+import { fontFamilyFor, loadSettings, saveSettings, TERMINAL_THEMES, type TerminalSettings } from "./lib/settings";
 import "./App.css";
 
 const LAYOUT_LABELS: Readonly<Record<Layout, string>> = {
@@ -119,7 +99,12 @@ export default function App() {
   const [selected, setSelected] = useState("");
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [dockerMissing, setDockerMissing] = useState(false);
-  useEffect(()=>{const failed=()=>setError("터미널 설정을 저장하지 못했습니다. 다른 창의 변경을 확인한 뒤 설정을 다시 열어 주세요.");window.addEventListener("terminal-preference-save-failed",failed);return()=>window.removeEventListener("terminal-preference-save-failed",failed);},[]);
+  useEffect(() => {
+    const failed = () =>
+      setError("터미널 설정을 저장하지 못했습니다. 다른 창의 변경을 확인한 뒤 설정을 다시 열어 주세요.");
+    window.addEventListener("terminal-preference-save-failed", failed);
+    return () => window.removeEventListener("terminal-preference-save-failed", failed);
+  }, []);
   const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
   const [dashboardState, setDashboardState] = useState<DashboardFreshness>("loading");
   // Recomputed by the freshness tick below so an in-flight refresh that outlives the TTL
@@ -290,13 +275,14 @@ export default function App() {
       shortcut: settings.quickSummonShortcut,
       keepInTray: settings.keepInTray,
     };
-    const request = quickSummonQueue.current
-      .catch(() => undefined)
-      .then(() => configureQuickSummon(config));
+    const request = quickSummonQueue.current.catch(() => undefined).then(() => configureQuickSummon(config));
     // Keep native mutations in the same order as the user's setting changes.
     // Only the latest response is rendered, but every queued configuration is
     // applied before the one that supersedes it.
-    quickSummonQueue.current = request.then(() => undefined, () => undefined);
+    quickSummonQueue.current = request.then(
+      () => undefined,
+      () => undefined,
+    );
     void request
       .then((status) => {
         if (mountedRef.current && quickSummonRequestSequence.current === sequence) {
@@ -428,18 +414,16 @@ export default function App() {
         if (!dashboardMountedRef.current || sequence !== dashboardRequestSequence.current) return;
         dashboardSnapshotRef.current = next;
         setDashboardSnapshot(next);
-        setDistros(next.distros.map(({ name, version, default: isDefault, state }) => ({
-          name,
-          version,
-          default: isDefault,
-          state,
-        })));
-        const fallback = next.distros.find((distro) => distro.default)?.name
-          ?? next.distros[0]?.name
-          ?? "";
-        setSelected((previous) =>
-          next.distros.some((distro) => distro.name === previous) ? previous : fallback,
+        setDistros(
+          next.distros.map(({ name, version, default: isDefault, state }) => ({
+            name,
+            version,
+            default: isDefault,
+            state,
+          })),
         );
+        const fallback = next.distros.find((distro) => distro.default)?.name ?? next.distros[0]?.name ?? "";
+        setSelected((previous) => (next.distros.some((distro) => distro.name === previous) ? previous : fallback));
         setError((current) => (current === DASHBOARD_ERROR_MESSAGE ? null : current));
         setDashboardState("fresh");
         setDistrosLoaded(true);
@@ -452,19 +436,25 @@ export default function App() {
         // a failed poll must never silently re-enable broadcast on the next freshness tick.
         setDashboardState("error");
         setError(DASHBOARD_ERROR_MESSAGE);
-        if(isProductHosted()&&!dashboardSnapshotRef.current){
+        if (isProductHosted() && !dashboardSnapshotRef.current) {
           // CPU/Docker telemetry does not authorize a PTY. A companion already
           // owns an explicitly opened profile; hydrate its target names from a
           // fresh read-only distro list while native launch rechecks each binding.
           // Keep the failed dashboard state so broadcast/default-shell guessing
           // remains disabled. Never use an old cached list after this read fails.
           try {
-            const current=await listDistros();
-            if(!dashboardMountedRef.current||sequence!==dashboardRequestSequence.current)return;
+            const current = await listDistros();
+            if (!dashboardMountedRef.current || sequence !== dashboardRequestSequence.current) return;
             setDistros(current);
-            setSelected(previous=>current.some(distro=>distro.name===previous)?previous:current.find(distro=>distro.default)?.name??current[0]?.name??"");
+            setSelected((previous) =>
+              current.some((distro) => distro.name === previous)
+                ? previous
+                : (current.find((distro) => distro.default)?.name ?? current[0]?.name ?? ""),
+            );
             setDistrosLoaded(true);
-          }catch { /* No fresh target list: saved-profile restoration stays blocked. */ }
+          } catch {
+            /* No fresh target list: saved-profile restoration stays blocked. */
+          }
         }
       })
       .finally(() => {
@@ -491,11 +481,11 @@ export default function App() {
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     void refreshDashboard().catch(() => undefined);
     // The callback is intentionally stable: its single-flight state lives in refs and must not
     // be retriggered every time a new successful snapshot is committed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -544,10 +534,10 @@ export default function App() {
     if (busyRef.current !== null || logLensBusyRef.current !== null) return;
     const snapshot = dashboardSnapshot?.distros.find((distro) => distro.name === selected);
     if (
-      !snapshot
-      || !snapshotActionable
-      || snapshot.dockerAvailability !== "available"
-      || !snapshot.containers.some((container) => container.id === id)
+      !snapshot ||
+      !snapshotActionable ||
+      snapshot.dockerAvailability !== "available" ||
+      !snapshot.containers.some((container) => container.id === id)
     ) {
       setError("최신 Docker snapshot이 준비될 때까지 상태를 변경할 수 없습니다.");
       return;
@@ -575,17 +565,12 @@ export default function App() {
   };
 
   const openJournalInLogLens = async (name: string): Promise<void> => {
-    if (busyRef.current !== null
-      || logLensBusyRef.current !== null
-      || workspaceLoadingRef.current
-      || contextActionBusy) return;
+    if (busyRef.current !== null || logLensBusyRef.current !== null || workspaceLoadingRef.current || contextActionBusy)
+      return;
     const confirmed = await ask({
       kind: "confirm",
       title: `'${name}'의 WSL journal을 Log Lens에서 열까요?`,
-      lines: [
-        "읽기 전용으로만 열립니다.",
-        "로그 원문·명령·자격 증명은 handoff에 포함되지 않습니다.",
-      ],
+      lines: ["읽기 전용으로만 열립니다.", "로그 원문·명령·자격 증명은 handoff에 포함되지 않습니다."],
       confirmLabel: "Log Lens에서 열기",
     });
     if (!confirmed.confirmed) return;
@@ -597,16 +582,12 @@ export default function App() {
     setError(null);
     void openWslJournalInLogLens(name, null)
       .then(() => {
-        if (mountedRef.current
-          && token === logLensOperationToken.current
-          && generation === logLensGeneration.current) {
+        if (mountedRef.current && token === logLensOperationToken.current && generation === logLensGeneration.current) {
           setError(null);
         }
       })
       .catch(() => {
-        if (mountedRef.current
-          && token === logLensOperationToken.current
-          && generation === logLensGeneration.current) {
+        if (mountedRef.current && token === logLensOperationToken.current && generation === logLensGeneration.current) {
           setError("Log Lens journal handoff를 시작하지 못했습니다.");
         }
       })
@@ -619,10 +600,8 @@ export default function App() {
   };
 
   const openFileInLogLens = async (name: string): Promise<void> => {
-    if (busyRef.current !== null
-      || logLensBusyRef.current !== null
-      || workspaceLoadingRef.current
-      || contextActionBusy) return;
+    if (busyRef.current !== null || logLensBusyRef.current !== null || workspaceLoadingRef.current || contextActionBusy)
+      return;
     const entered = await ask({
       kind: "prompt",
       title: "Log Lens에서 열 WSL 파일",
@@ -640,10 +619,7 @@ export default function App() {
     const confirmed = await ask({
       kind: "confirm",
       title: `'${name}'의 선택한 WSL 파일을 Log Lens에서 열까요?`,
-      lines: [
-        "읽기 전용으로만 열립니다.",
-        "경로는 검증된 WSL adapter 설정으로만 한 번 전달됩니다.",
-      ],
+      lines: ["읽기 전용으로만 열립니다.", "경로는 검증된 WSL adapter 설정으로만 한 번 전달됩니다."],
       confirmLabel: "Log Lens에서 열기",
     });
     if (!confirmed.confirmed) return;
@@ -655,16 +631,12 @@ export default function App() {
     setError(null);
     void openWslFileInLogLens(name, wslPath)
       .then(() => {
-        if (mountedRef.current
-          && token === logLensOperationToken.current
-          && generation === logLensGeneration.current) {
+        if (mountedRef.current && token === logLensOperationToken.current && generation === logLensGeneration.current) {
           setError(null);
         }
       })
       .catch(() => {
-        if (mountedRef.current
-          && token === logLensOperationToken.current
-          && generation === logLensGeneration.current) {
+        if (mountedRef.current && token === logLensOperationToken.current && generation === logLensGeneration.current) {
           setError("Log Lens file handoff를 시작하지 못했습니다.");
         }
       })
@@ -703,11 +675,15 @@ export default function App() {
 
     const nextTabs = tabClosed
       ? curTabs.filter((t) => t.id !== owner.id)
-      : curTabs.map((tab) => (tab.id === owner.id ? {
-          ...tab,
-          paneIds: remaining,
-          sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
-        } : tab));
+      : curTabs.map((tab) =>
+          tab.id === owner.id
+            ? {
+                ...tab,
+                paneIds: remaining,
+                sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
+              }
+            : tab,
+        );
     setTabs(nextTabs);
 
     if (tabClosed && curActiveTabId === owner.id) {
@@ -726,20 +702,24 @@ export default function App() {
     void onTerminalOutput(({ session_id, data }) => {
       if (disposed) return;
       writes.current.get(session_id)?.(data);
-    }).then((stop) => {
-      if (disposed) stop();
-      else stopOutput = stop;
-    }).catch(() => undefined);
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else stopOutput = stop;
+      })
+      .catch(() => undefined);
     void onTerminalClosed(({ session_id }) => {
       if (disposed) return;
       // 백엔드가 세션 리소스를 정리한 뒤 보내는 이벤트다. 여기서는 UI 상태만
       // 제거하고 close_session은 호출하지 않는다.
       dropPane(session_id);
       writes.current.delete(session_id);
-    }).then((stop) => {
-      if (disposed) stop();
-      else stopClosed = stop;
-    }).catch(() => undefined);
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else stopClosed = stop;
+      })
+      .catch(() => undefined);
     return () => {
       disposed = true;
       stopOutput?.();
@@ -851,7 +831,8 @@ export default function App() {
     }
     setError(null);
     const usedCwd = (cwdOverride ?? cwd).trim() || undefined;
-    const usedStartCommand = (options?.startCommand === undefined ? startCommand : options.startCommand)?.trim() || undefined;
+    const usedStartCommand =
+      (options?.startCommand === undefined ? startCommand : options.startCommand)?.trim() || undefined;
     if (usedStartCommand) {
       const commandError = startCommandError(usedStartCommand);
       if (commandError) {
@@ -869,74 +850,124 @@ export default function App() {
     }
     const key = options?.paneKey ?? makeId("p");
     const requestedMultiplexer = options?.multiplexer ?? multiplexer;
-    if(isProductHosted()) {
-      const generation=++workspaceRestoreGeneration.current;
-      workspaceLoadingRef.current=true;setWorkspaceLoading(true);
-      const activeTab=tabId??makeId("t");
-      const placeholder:Pane={key,sessionId:null,distro,cwd:usedCwd,startCommand:usedStartCommand,
-        initialCommand:usedStartCommand,multiplexer:requestedMultiplexer,requestedMultiplexer,restoreStatus:"connecting"};
-      const nextPanes=[...panesRef.current,placeholder];
-      const nextTabs:Tab[]=tabId===null?[...stateRef.current.tabs,{id:activeTab,title:nextTabTitle(tabs.map(tab=>tab.title),distro),
-        customTitle:false,layout:"grid",paneIds:[key],sizing:normalizePaneSizing(undefined,"grid",1)}]
-        :stateRef.current.tabs.map(tab=>tab.id===tabId?{...tab,paneIds:[...tab.paneIds,key],sizing:normalizePaneSizing(undefined,tab.layout,tab.paneIds.length+1)}:tab);
-      panesRef.current=nextPanes;stateRef.current={tabs:nextTabs,activeTabId:activeTab,activePaneId:key};
-      setPanes(nextPanes);setTabs(nextTabs);setActiveTabId(activeTab);setActivePaneId(key);
+    if (isProductHosted()) {
+      const generation = ++workspaceRestoreGeneration.current;
+      workspaceLoadingRef.current = true;
+      setWorkspaceLoading(true);
+      const activeTab = tabId ?? makeId("t");
+      const placeholder: Pane = {
+        key,
+        sessionId: null,
+        distro,
+        cwd: usedCwd,
+        startCommand: usedStartCommand,
+        initialCommand: usedStartCommand,
+        multiplexer: requestedMultiplexer,
+        requestedMultiplexer,
+        restoreStatus: "connecting",
+      };
+      const nextPanes = [...panesRef.current, placeholder];
+      const nextTabs: Tab[] =
+        tabId === null
+          ? [
+              ...stateRef.current.tabs,
+              {
+                id: activeTab,
+                title: nextTabTitle(
+                  tabs.map((tab) => tab.title),
+                  distro,
+                ),
+                customTitle: false,
+                layout: "grid",
+                paneIds: [key],
+                sizing: normalizePaneSizing(undefined, "grid", 1),
+              },
+            ]
+          : stateRef.current.tabs.map((tab) =>
+              tab.id === tabId
+                ? {
+                    ...tab,
+                    paneIds: [...tab.paneIds, key],
+                    sizing: normalizePaneSizing(undefined, tab.layout, tab.paneIds.length + 1),
+                  }
+                : tab,
+            );
+      panesRef.current = nextPanes;
+      stateRef.current = { tabs: nextTabs, activeTabId: activeTab, activePaneId: key };
+      setPanes(nextPanes);
+      setTabs(nextTabs);
+      setActiveTabId(activeTab);
+      setActivePaneId(key);
       window.clearTimeout(layoutSaveTimer.current);
       try {
-        const plan=workspaceFromRuntime(nextTabs,nextPanes,activeTab,key);
-        if(!plan)throw new Error("invalid terminal layout");
+        const plan = workspaceFromRuntime(nextTabs, nextPanes, activeTab, key);
+        if (!plan) throw new Error("invalid terminal layout");
         await saveLastWorkspace(plan);
-        const started=await startSession(distro,usedCwd,key,requestedMultiplexer);
-        if(!adoptRestoredSession(key,requestedMultiplexer,started,generation))return false;
-        if(usedCwd)setRecentPaths(pushRecentPath(usedCwd));
-        if(cwdOverride===undefined&&!pinned)setCwd("");
-        void refreshDashboard(true).catch(()=>undefined);
+        const started = await startSession(distro, usedCwd, key, requestedMultiplexer);
+        if (!adoptRestoredSession(key, requestedMultiplexer, started, generation)) return false;
+        if (usedCwd) setRecentPaths(pushRecentPath(usedCwd));
+        if (cwdOverride === undefined && !pinned) setCwd("");
+        void refreshDashboard(true).catch(() => undefined);
         return true;
-      }catch {
-        markRestoreFailed(key,generation);
-        setError(safeFailureMessage??"터미널을 시작하지 못했습니다. 해당 자리에서 상태를 확인해 주세요.");
+      } catch {
+        markRestoreFailed(key, generation);
+        setError(safeFailureMessage ?? "터미널을 시작하지 못했습니다. 해당 자리에서 상태를 확인해 주세요.");
         return false;
-      }finally {
-        if(workspaceRestoreGeneration.current===generation){workspaceLoadingRef.current=false;setWorkspaceLoading(false);}
+      } finally {
+        if (workspaceRestoreGeneration.current === generation) {
+          workspaceLoadingRef.current = false;
+          setWorkspaceLoading(false);
+        }
       }
     }
     try {
       const started = await startSession(distro, usedCwd, key, requestedMultiplexer);
       const id = started.sessionId;
       setPanes((prev) => {
-        const next = [...prev, {
-          key,
-          sessionId: id,
-          distro,
-          cwd: usedCwd,
-          startCommand: usedStartCommand,
-          initialCommand: started.resumed ? undefined : usedStartCommand,
-          multiplexer: started.multiplexer,
-          requestedMultiplexer,
-          resumed: started.resumed,
-        }];
+        const next = [
+          ...prev,
+          {
+            key,
+            sessionId: id,
+            distro,
+            cwd: usedCwd,
+            startCommand: usedStartCommand,
+            initialCommand: started.resumed ? undefined : usedStartCommand,
+            multiplexer: started.multiplexer,
+            requestedMultiplexer,
+            resumed: started.resumed,
+          },
+        ];
         panesRef.current = next;
         return next;
       });
 
       if (tabId === null) {
-        const title = nextTabTitle(tabs.map((t) => t.title), distro);
+        const title = nextTabTitle(
+          tabs.map((t) => t.title),
+          distro,
+        );
         const newTabId = makeId("t");
-        setTabs((prev) => [...prev, {
-          id: newTabId,
-          title,
-          customTitle: false,
-          layout: "grid",
-          paneIds: [id],
-          sizing: normalizePaneSizing(undefined, "grid", 1),
-        }]);
+        setTabs((prev) => [
+          ...prev,
+          {
+            id: newTabId,
+            title,
+            customTitle: false,
+            layout: "grid",
+            paneIds: [id],
+            sizing: normalizePaneSizing(undefined, "grid", 1),
+          },
+        ]);
         setActiveTabId(newTabId);
       } else {
-        setTabs((prev) => prev.map((tab) => {
-          if (tab.id !== tabId) return tab;
-          const paneIds = [...tab.paneIds, id];
-          return { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
-        }));
+        setTabs((prev) =>
+          prev.map((tab) => {
+            if (tab.id !== tabId) return tab;
+            const paneIds = [...tab.paneIds, id];
+            return { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
+          }),
+        );
       }
       setActivePaneId(id);
 
@@ -963,8 +994,8 @@ export default function App() {
     generation: number,
   ): boolean => {
     if (!mountedRef.current || workspaceRestoreGeneration.current !== generation) return false;
-    const placeholder = panesRef.current.find((pane) =>
-      pane.key === key && pane.sessionId === null && pane.restoreStatus === "connecting",
+    const placeholder = panesRef.current.find(
+      (pane) => pane.key === key && pane.sessionId === null && pane.restoreStatus === "connecting",
     );
     if (!placeholder) return false;
     const restoredPane: Pane = {
@@ -977,14 +1008,14 @@ export default function App() {
       restoreStatus: undefined,
       restoreError: undefined,
     };
-    const restoredPanes = panesRef.current.map((pane) => pane.key === key ? restoredPane : pane);
+    const restoredPanes = panesRef.current.map((pane) => (pane.key === key ? restoredPane : pane));
     panesRef.current = restoredPanes;
     setPanes(restoredPanes);
 
     const current = stateRef.current;
     const restoredTabs = current.tabs.map((tab) => ({
       ...tab,
-      paneIds: tab.paneIds.map((id) => id === key ? started.sessionId : id),
+      paneIds: tab.paneIds.map((id) => (id === key ? started.sessionId : id)),
     }));
     const restoredActivePane = current.activePaneId === key ? started.sessionId : current.activePaneId;
     stateRef.current = { ...current, tabs: restoredTabs, activePaneId: restoredActivePane };
@@ -1013,7 +1044,7 @@ export default function App() {
     options: { replaceExisting: boolean; label: string },
   ): Promise<boolean> => {
     if (workspaceLoadingRef.current || contextActionBusyRef.current || logLensBusyRef.current !== null) return false;
-    const oldSessionIds = panesRef.current.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
+    const oldSessionIds = panesRef.current.flatMap((pane) => (pane.sessionId ? [pane.sessionId] : []));
     if (options.replaceExisting && oldSessionIds.length > 0) {
       const switched = await ask({
         kind: "confirm",
@@ -1025,32 +1056,40 @@ export default function App() {
       if (!switched.confirmed) return false;
     }
 
-    const commands = workspace.panes.flatMap((pane) => pane.startCommand
-      ? [`[${pane.distro} · ${pane.key}] ${pane.startCommand}`]
-      : []);
-    const runStartCommands = !isRestoreOnly() && (commands.length === 0 || (await ask({
-      kind: "confirm",
-      title: `시작 명령 ${commands.length}개를 실행할까요?`,
-      lines: ["취소하면 레이아웃만 엽니다."],
-      detail: commands.join("\n"),
-      confirmLabel: "실행",
-      cancelLabel: "레이아웃만 열기",
-      danger: true,
-    })).confirmed);
+    const commands = workspace.panes.flatMap((pane) =>
+      pane.startCommand ? [`[${pane.distro} · ${pane.key}] ${pane.startCommand}`] : [],
+    );
+    const runStartCommands =
+      !isRestoreOnly() &&
+      (commands.length === 0 ||
+        (
+          await ask({
+            kind: "confirm",
+            title: `시작 명령 ${commands.length}개를 실행할까요?`,
+            lines: ["취소하면 레이아웃만 엽니다."],
+            detail: commands.join("\n"),
+            confirmLabel: "실행",
+            cancelLabel: "레이아웃만 열기",
+            danger: true,
+          })
+        ).confirmed);
 
-    if(isProductHosted()) {
-      workspaceLoadingRef.current=true;setWorkspaceLoading(true);
+    if (isProductHosted()) {
+      workspaceLoadingRef.current = true;
+      setWorkspaceLoading(true);
       window.clearTimeout(layoutSaveTimer.current);
       try {
-        if(options.replaceExisting) {
+        if (options.replaceExisting) {
           // Explicit profile replacement retires these exact old PTYs before a
           // stable pane key can refer to the new profile definition.
-          for(const sessionId of oldSessionIds)await closeSession(sessionId);
+          for (const sessionId of oldSessionIds) await closeSession(sessionId);
         }
         await saveLastWorkspace(workspace);
-      }catch {
-        workspaceLoadingRef.current=false;setWorkspaceLoading(false);
-        setError("레이아웃을 준비하거나 이전 터미널을 종료하지 못했습니다. 실행 상태를 확인해 주세요.");return false;
+      } catch {
+        workspaceLoadingRef.current = false;
+        setWorkspaceLoading(false);
+        setError("레이아웃을 준비하거나 이전 터미널을 종료하지 못했습니다. 실행 상태를 확인해 주세요.");
+        return false;
       }
     }
     const generation = ++workspaceRestoreGeneration.current;
@@ -1077,9 +1116,10 @@ export default function App() {
       sizing: normalizePaneSizing(definition.sizing, definition.layout, definition.paneKeys.length),
     }));
     const nextActiveTab = nextTabs.find((tab) => tab.id === workspace.activeTabId) ?? nextTabs[0];
-    const requestedActivePane = workspace.activePaneKey && nextActiveTab.paneIds.includes(workspace.activePaneKey)
-      ? workspace.activePaneKey
-      : (nextActiveTab.paneIds[0] ?? null);
+    const requestedActivePane =
+      workspace.activePaneKey && nextActiveTab.paneIds.includes(workspace.activePaneKey)
+        ? workspace.activePaneKey
+        : (nextActiveTab.paneIds[0] ?? null);
 
     // Render the complete topology before starting PTYs. A failed start therefore replaces its
     // connecting card in place instead of deleting the pane and collapsing adjacent tracks.
@@ -1103,7 +1143,7 @@ export default function App() {
     let startedCount = 0;
     try {
       const startDefinition = async (definition: WorkspaceDefinition["panes"][number]): Promise<void> => {
-        if(isProductHosted()&&(!mountedRef.current||workspaceRestoreGeneration.current!==generation))return;
+        if (isProductHosted() && (!mountedRef.current || workspaceRestoreGeneration.current !== generation)) return;
         try {
           const started = await startSession(
             definition.distro,
@@ -1111,12 +1151,7 @@ export default function App() {
             definition.key,
             definition.multiplexer,
           );
-          if (!adoptRestoredSession(
-            definition.key,
-            definition.multiplexer,
-            started,
-            generation,
-          )) {
+          if (!adoptRestoredSession(definition.key, definition.multiplexer, started, generation)) {
             if (!isProductHosted()) await closeSession(started.sessionId).catch(() => undefined);
             return;
           }
@@ -1129,20 +1164,22 @@ export default function App() {
       const restorePlan = orderWorkspacePanes(workspace);
       // The active pane is started alone so the user's primary shell becomes interactive first.
       await startDefinition(restorePlan.active);
-      await runWithConcurrencyLimit(
-        restorePlan.remaining,
-        RESTORE_START_CONCURRENCY,
-        startDefinition,
-      );
+      await runWithConcurrencyLimit(restorePlan.remaining, RESTORE_START_CONCURRENCY, startDefinition);
 
-      const closeResults = await Promise.allSettled((isProductHosted()?[]:oldSessionIds).map((id) => closeSession(id)));
+      const closeResults = await Promise.allSettled(
+        (isProductHosted() ? [] : oldSessionIds).map((id) => closeSession(id)),
+      );
       const closeFailed = closeResults.filter((result) => result.status === "rejected").length;
       if (failed > 0 || closeFailed > 0) {
         const details = [
           failed > 0 ? `복원 실패 ${failed}개(자리에서 재시도 가능)` : "",
           closeFailed > 0 ? `이전 세션 닫기 실패 ${closeFailed}개` : "",
-        ].filter(Boolean).join(" · ");
-        setError(`${startedCount > 0 ? "프로필을 부분적으로 열었습니다." : "프로필 레이아웃만 복원했습니다."} ${details}`);
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        setError(
+          `${startedCount > 0 ? "프로필을 부분적으로 열었습니다." : "프로필 레이아웃만 복원했습니다."} ${details}`,
+        );
       }
       void refreshDashboard(true).catch(() => undefined);
       return true;
@@ -1156,21 +1193,21 @@ export default function App() {
 
   const retryWorkspacePane = async (key: string): Promise<void> => {
     if (workspaceLoadingRef.current || contextActionBusyRef.current || logLensBusyRef.current !== null) return;
-    const placeholder = panesRef.current.find((pane) =>
-      pane.key === key && pane.sessionId === null && pane.restoreStatus === "failed",
+    const placeholder = panesRef.current.find(
+      (pane) => pane.key === key && pane.sessionId === null && pane.restoreStatus === "failed",
     );
     if (!placeholder) return;
     const generation = workspaceRestoreGeneration.current;
     const requestedMultiplexer = placeholder.requestedMultiplexer ?? placeholder.multiplexer;
-    const connectingPanes = panesRef.current.map((pane) => pane.key === key
-      ? { ...pane, restoreStatus: "connecting" as const, restoreError: undefined }
-      : pane);
+    const connectingPanes = panesRef.current.map((pane) =>
+      pane.key === key ? { ...pane, restoreStatus: "connecting" as const, restoreError: undefined } : pane,
+    );
     panesRef.current = connectingPanes;
     setPanes(connectingPanes);
     setContextBusy(true);
     setError(null);
     try {
-      const started = await (isProductHosted()?retrySession:startSession)(
+      const started = await (isProductHosted() ? retrySession : startSession)(
         placeholder.distro,
         placeholder.cwd,
         placeholder.key,
@@ -1282,18 +1319,15 @@ export default function App() {
       // Nothing to restore. Open one terminal in the default distro so the app that exists to
       // hold terminals does not start empty. Skipped when the distro collection failed, so a
       // failed hydration never starts a shell against a guessed distro.
-      if (
-        settingsRef.current.openTerminalOnStart
-        && dashboardStateRef.current !== "error"
-        && selectedRef.current
-      ) {
+      if (settingsRef.current.openTerminalOnStart && dashboardStateRef.current !== "error" && selectedRef.current) {
         void startInTabRef.current(null, selectedRef.current).finally(() => setWorkspaceReady(true));
         return;
       }
       setWorkspaceReady(true);
       return;
     }
-    void launchWorkspaceRef.current(saved, { replaceExisting: false, label: "마지막 터미널 레이아웃" })
+    void launchWorkspaceRef
+      .current(saved, { replaceExisting: false, label: "마지막 터미널 레이아웃" })
       .finally(() => setWorkspaceReady(true));
   }, [distrosLoaded]);
 
@@ -1301,7 +1335,7 @@ export default function App() {
     if (!workspaceReady || workspaceLoading) return;
     window.clearTimeout(layoutSaveTimer.current);
     layoutSaveTimer.current = window.setTimeout(() => {
-      void saveLastWorkspace(workspaceFromRuntime(tabs, panes, activeTabId, activePaneId)).catch(()=>{
+      void saveLastWorkspace(workspaceFromRuntime(tabs, panes, activeTabId, activePaneId)).catch(() => {
         setError("터미널 레이아웃을 저장하지 못했습니다. 실행 중인 터미널은 유지됩니다.");
       });
     }, 150);
@@ -1350,30 +1384,29 @@ export default function App() {
     if (targets.length === 0) return;
     const targetPaneIds = new Set(targets.flatMap((tab) => tab.paneIds));
     const targetPanes = panesRef.current.filter((pane) => targetPaneIds.has(paneIdentity(pane)));
-    const sessionIds = targetPanes.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
-    const placeholderIds = targetPanes.flatMap((pane) => pane.sessionId === null ? [pane.key] : []);
+    const sessionIds = targetPanes.flatMap((pane) => (pane.sessionId ? [pane.sessionId] : []));
+    const placeholderIds = targetPanes.flatMap((pane) => (pane.sessionId === null ? [pane.key] : []));
     setError(null);
     setContextBusy(true);
     try {
       const results = await Promise.allSettled(sessionIds.map((id) => closeSession(id)));
-      const closedSessionIds = new Set(
-        sessionIds.filter((_id, index) => results[index]?.status === "fulfilled"),
-      );
+      const closedSessionIds = new Set(sessionIds.filter((_id, index) => results[index]?.status === "fulfilled"));
       const removedPaneIds = new Set([...closedSessionIds, ...placeholderIds]);
       const latestTabs = stateRef.current.tabs;
       const latestActiveTabId = stateRef.current.activeTabId;
       const latestActivePaneId = stateRef.current.activePaneId;
       const activeIndex = latestTabs.findIndex((tab) => tab.id === latestActiveTabId);
-      const nextTabs = removedPaneIds.size === 0
-        ? latestTabs
-        : latestTabs
-            .map((tab) => {
-              const paneIds = tab.paneIds.filter((id) => !removedPaneIds.has(id));
-              return paneIds.length === tab.paneIds.length
-                ? tab
-                : { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
-            })
-            .filter((tab) => tab.paneIds.length > 0);
+      const nextTabs =
+        removedPaneIds.size === 0
+          ? latestTabs
+          : latestTabs
+              .map((tab) => {
+                const paneIds = tab.paneIds.filter((id) => !removedPaneIds.has(id));
+                return paneIds.length === tab.paneIds.length
+                  ? tab
+                  : { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
+              })
+              .filter((tab) => tab.paneIds.length > 0);
 
       if (removedPaneIds.size > 0) {
         // close_session 완료 이벤트가 먼저 도착했어도 멱등적이다. 닫기 중 팬이
@@ -1416,9 +1449,10 @@ export default function App() {
       const confirmed = await ask({
         kind: "confirm",
         title: `'${pane.distro}' 터미널 팬을 닫을까요?`,
-        lines: pane.sessionId === null
-          ? ["실패한 복원 자리만 레이아웃에서 제거합니다."]
-          : ["실행 중인 작업이 종료될 수 있습니다."],
+        lines:
+          pane.sessionId === null
+            ? ["실패한 복원 자리만 레이아웃에서 제거합니다."]
+            : ["실행 중인 작업이 종료될 수 있습니다."],
         confirmLabel: "닫기",
         danger: true,
       });
@@ -1461,7 +1495,9 @@ export default function App() {
     setActiveTabId(tabId);
     const tab = tabs.find((t) => t.id === tabId);
     if (tab) {
-      setActivePaneId((prev) => (prev && tab.paneIds.includes(prev) ? prev : (tab.paneIds[tab.paneIds.length - 1] ?? null)));
+      setActivePaneId((prev) =>
+        prev && tab.paneIds.includes(prev) ? prev : (tab.paneIds[tab.paneIds.length - 1] ?? null),
+      );
     }
   };
 
@@ -1501,11 +1537,15 @@ export default function App() {
     const withoutOwnerPane =
       remaining.length === 0
         ? tabs.filter((t) => t.id !== owner.id)
-        : tabs.map((tab) => (tab.id === owner.id ? {
-            ...tab,
-            paneIds: remaining,
-            sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
-          } : tab));
+        : tabs.map((tab) =>
+            tab.id === owner.id
+              ? {
+                  ...tab,
+                  paneIds: remaining,
+                  sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
+                }
+              : tab,
+          );
     const next = withoutOwnerPane.map((tab) => {
       if (tab.id !== targetTabId) return tab;
       const paneIds = [...tab.paneIds, paneId];
@@ -1517,17 +1557,25 @@ export default function App() {
   };
 
   const setTabLayout = (tabId: string, layout: Layout) => {
-    setTabs((prev) => prev.map((tab) => (tab.id === tabId ? {
-      ...tab,
-      layout,
-      sizing: normalizePaneSizing(undefined, layout, tab.paneIds.length),
-    } : tab)));
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              layout,
+              sizing: normalizePaneSizing(undefined, layout, tab.paneIds.length),
+            }
+          : tab,
+      ),
+    );
   };
 
   const setTabSizing = useCallback((tabId: string, sizing: Tab["sizing"]) => {
-    setTabs((previous) => previous.map((tab) => tab.id === tabId
-      ? { ...tab, sizing: normalizePaneSizing(sizing, tab.layout, tab.paneIds.length) }
-      : tab));
+    setTabs((previous) =>
+      previous.map((tab) =>
+        tab.id === tabId ? { ...tab, sizing: normalizePaneSizing(sizing, tab.layout, tab.paneIds.length) } : tab,
+      ),
+    );
   }, []);
 
   const setActiveTabLayout = (layout: Layout) => setTabLayout(activeTabId, layout);
@@ -1580,34 +1628,38 @@ export default function App() {
     }
   };
 
-  const preparePaneContext = useCallback((target: HTMLElement) => {
-    const id = target.dataset.paneId;
-    const pane = panes.find((candidate) => candidate.sessionId === id);
-    const owner = tabs.find((tab) => id !== undefined && tab.paneIds.includes(id));
-    if (!pane || !owner || !id) return;
-    setContextPane(pane);
-    setContextPaneCapabilities(
-      terminalHandles.current.get(id)?.getCapabilities() ?? { hasSelection: false, hasCwd: false },
-    );
-    setActiveTabId(owner.id);
-    setActivePaneId(id);
-  }, [panes, tabs]);
+  const preparePaneContext = useCallback(
+    (target: HTMLElement) => {
+      const id = target.dataset.paneId;
+      const pane = panes.find((candidate) => candidate.sessionId === id);
+      const owner = tabs.find((tab) => id !== undefined && tab.paneIds.includes(id));
+      if (!pane || !owner || !id) return;
+      setContextPane(pane);
+      setContextPaneCapabilities(
+        terminalHandles.current.get(id)?.getCapabilities() ?? { hasSelection: false, hasCwd: false },
+      );
+      setActiveTabId(owner.id);
+      setActivePaneId(id);
+    },
+    [panes, tabs],
+  );
   const paneContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => preparePaneContext(target),
   });
 
-  const prepareTabContext = useCallback((target: HTMLElement) => {
-    const id = target.dataset.tabId;
-    const tab = tabs.find((candidate) => candidate.id === id);
-    if (!tab) return;
-    setContextTab(tab);
-    setActiveTabId(tab.id);
-    setActivePaneId((current) =>
-      current && tab.paneIds.includes(current)
-        ? current
-        : (tab.paneIds[tab.paneIds.length - 1] ?? null),
-    );
-  }, [tabs]);
+  const prepareTabContext = useCallback(
+    (target: HTMLElement) => {
+      const id = target.dataset.tabId;
+      const tab = tabs.find((candidate) => candidate.id === id);
+      if (!tab) return;
+      setContextTab(tab);
+      setActiveTabId(tab.id);
+      setActivePaneId((current) =>
+        current && tab.paneIds.includes(current) ? current : (tab.paneIds[tab.paneIds.length - 1] ?? null),
+      );
+    },
+    [tabs],
+  );
   const tabContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareTabContext(target),
   });
@@ -1636,12 +1688,13 @@ export default function App() {
 
   const domainActionsBusy = contextActionBusy || workspaceLoading;
   const paneContextItems = useMemo<readonly ContextMenuEntry[]>(
-    () => buildPaneContextMenu({
-      busy: domainActionsBusy,
-      hasSelection: contextPaneCapabilities.hasSelection,
-      hasCwd: contextPaneCapabilities.hasCwd,
-      zoomed: zoomedPaneId !== null,
-    }),
+    () =>
+      buildPaneContextMenu({
+        busy: domainActionsBusy,
+        hasSelection: contextPaneCapabilities.hasSelection,
+        hasCwd: contextPaneCapabilities.hasCwd,
+        zoomed: zoomedPaneId !== null,
+      }),
     [domainActionsBusy, contextPaneCapabilities.hasCwd, contextPaneCapabilities.hasSelection, zoomedPaneId],
   );
   const tabContextItems = useMemo<readonly ContextMenuEntry[]>(
@@ -1651,20 +1704,19 @@ export default function App() {
 
   const splitContextPane = (layout: "cols" | "rows") => {
     const pane = contextPane;
-    const owner = tabs.find((tab) =>
-      pane?.sessionId !== null && pane?.sessionId !== undefined && tab.paneIds.includes(pane.sessionId),
+    const owner = tabs.find(
+      (tab) => pane?.sessionId !== null && pane?.sessionId !== undefined && tab.paneIds.includes(pane.sessionId),
     );
     if (!pane || !owner || pane.sessionId === null) return;
     setContextBusy(true);
-    void startInTab(
-      owner.id,
-      pane.distro,
-      pane.cwd,
-      "터미널 팬을 안전하게 분할하지 못했습니다.",
-      { startCommand: null, multiplexer: pane.multiplexer },
-    ).then((started) => {
-      if (started) setTabLayout(owner.id, layout);
-    }).finally(() => setContextBusy(false));
+    void startInTab(owner.id, pane.distro, pane.cwd, "터미널 팬을 안전하게 분할하지 못했습니다.", {
+      startCommand: null,
+      multiplexer: pane.multiplexer,
+    })
+      .then((started) => {
+        if (started) setTabLayout(owner.id, layout);
+      })
+      .finally(() => setContextBusy(false));
   };
 
   const renameContextTab = async (tab: Tab): Promise<void> => {
@@ -1682,9 +1734,11 @@ export default function App() {
       setError("탭 이름은 비워둘 수 없습니다.");
       return;
     }
-    setTabs((previous) => previous.map((candidate) =>
-      candidate.id === tab.id ? { ...candidate, title: name, customTitle: true } : candidate
-    ));
+    setTabs((previous) =>
+      previous.map((candidate) =>
+        candidate.id === tab.id ? { ...candidate, title: name, customTitle: true } : candidate,
+      ),
+    );
   };
 
   const onPaneContextSelect = (id: string) => {
@@ -1747,19 +1801,15 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activeLayout = activeTab?.layout ?? "grid";
-  const activePaneIds = (activeTab?.paneIds ?? []).filter((id) =>
-    panes.some((pane) => pane.sessionId === id),
-  );
+  const activePaneIds = (activeTab?.paneIds ?? []).filter((id) => panes.some((pane) => pane.sessionId === id));
   const selectedBroadcastIds = activePaneIds.filter((id) => broadcastTargetIds.has(id));
-  const broadcastReady = snapshotActionable
-    && !workspaceLoading
-    && !contextActionBusy
-    && busy === null;
+  const broadcastReady = snapshotActionable && !workspaceLoading && !contextActionBusy && busy === null;
 
   useEffect(() => {
     if (!broadcastReady) setBroadcastOn(false);
   }, [broadcastReady]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const allowed = new Set(activePaneIds);
     const next = new Set([...broadcastTargetIds].filter((id) => allowed.has(id)));
@@ -1767,7 +1817,6 @@ export default function App() {
     if (next.size < 2) setBroadcastOn(false);
     // 대상 변경은 active tab/pane identity 변화에만 반응한다. Set 자체는 deps에 넣으면
     // 이 effect가 만든 새 Set 때문에 다시 실행된다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, activePaneIds.join("|")]);
 
   const toggleBroadcastTarget = (id: string, checked: boolean) => {
@@ -1784,15 +1833,14 @@ export default function App() {
     const pane = panes.find((item) => item.sessionId === activePaneId);
     if (!pane || !activeTab) return;
     setContextBusy(true);
-    void startInTab(
-      activeTab.id,
-      pane.distro,
-      pane.cwd,
-      "터미널 팬을 안전하게 분할하지 못했습니다.",
-      { startCommand: null, multiplexer: pane.multiplexer },
-    ).then((started) => {
-      if (started) setTabLayout(activeTab.id, layout);
-    }).finally(() => setContextBusy(false));
+    void startInTab(activeTab.id, pane.distro, pane.cwd, "터미널 팬을 안전하게 분할하지 못했습니다.", {
+      startCommand: null,
+      multiplexer: pane.multiplexer,
+    })
+      .then((started) => {
+        if (started) setTabLayout(activeTab.id, layout);
+      })
+      .finally(() => setContextBusy(false));
   };
 
   const paletteActions: PaletteAction[] = [
@@ -1825,11 +1873,13 @@ export default function App() {
         if (activeTabId) void requestCloseTab(activeTabId);
       },
     },
-    ...(["grid", "cols", "rows"] as const).map((layout): PaletteAction => ({
-      id: `layout-${layout}`,
-      label: `레이아웃: ${LAYOUT_LABELS[layout]}`,
-      run: () => setActiveTabLayout(layout),
-    })),
+    ...(["grid", "cols", "rows"] as const).map(
+      (layout): PaletteAction => ({
+        id: `layout-${layout}`,
+        label: `레이아웃: ${LAYOUT_LABELS[layout]}`,
+        run: () => setActiveTabLayout(layout),
+      }),
+    ),
     {
       id: "split-vertical",
       label: "팬: 세로 분할",
@@ -1948,18 +1998,22 @@ export default function App() {
       label: "키보드 단축키 보기",
       run: () => setShortcutsOpen(true),
     },
-    ...distros.map((distro): PaletteAction => ({
-      id: `open-distro-${distro.name}`,
-      label: `터미널 열기: ${distro.name}`,
-      description: distro.default ? "기본 배포판" : undefined,
-      run: () => openDistroTerminal(distro.name),
-    })),
-    ...profiles.map((profile): PaletteAction => ({
-      id: `profile-${profile.id}`,
-      label: `프로필 전환: ${profile.name}`,
-      description: `${profile.tabs.length}개 탭 · ${profile.panes.length}개 팬`,
-      run: () => void openProfile(profile),
-    })),
+    ...distros.map(
+      (distro): PaletteAction => ({
+        id: `open-distro-${distro.name}`,
+        label: `터미널 열기: ${distro.name}`,
+        description: distro.default ? "기본 배포판" : undefined,
+        run: () => openDistroTerminal(distro.name),
+      }),
+    ),
+    ...profiles.map(
+      (profile): PaletteAction => ({
+        id: `profile-${profile.id}`,
+        label: `프로필 전환: ${profile.name}`,
+        description: `${profile.tabs.length}개 탭 · ${profile.panes.length}개 팬`,
+        run: () => void openProfile(profile),
+      }),
+    ),
   ];
 
   return (
@@ -1997,7 +2051,9 @@ export default function App() {
         />
         <input
           className="start-command"
-          placeholder={isRestoreOnly() ? "상태 복원 창에서는 시작 명령을 보내지 않습니다" : "시작 명령 (선택, 프로필에 저장)"}
+          placeholder={
+            isRestoreOnly() ? "상태 복원 창에서는 시작 명령을 보내지 않습니다" : "시작 명령 (선택, 프로필에 저장)"
+          }
           disabled={isRestoreOnly()}
           value={startCommand}
           maxLength={4096}
@@ -2037,9 +2093,11 @@ export default function App() {
         <span className="spacer" />
         <label
           className="toggle"
-          title={broadcastReady
-            ? "선택한 팬에 동시 입력을 보냅니다"
-            : "최신 WSL snapshot이 준비될 때까지 동시 입력을 사용할 수 없습니다"}
+          title={
+            broadcastReady
+              ? "선택한 팬에 동시 입력을 보냅니다"
+              : "최신 WSL snapshot이 준비될 때까지 동시 입력을 사용할 수 없습니다"
+          }
         >
           <input
             type="checkbox"
@@ -2057,7 +2115,9 @@ export default function App() {
           aria-expanded={broadcastPickerOpen}
           aria-controls="broadcast-target-picker"
           onClick={() => setBroadcastPickerOpen((open) => !open)}
-        >대상 {selectedBroadcastIds.length}/{activePaneIds.length}</button>
+        >
+          대상 {selectedBroadcastIds.length}/{activePaneIds.length}
+        </button>
         <select
           aria-label="탭 레이아웃"
           className="layout-select"
@@ -2066,7 +2126,9 @@ export default function App() {
           onChange={(event) => setActiveTabLayout(event.currentTarget.value as Layout)}
         >
           {(["grid", "cols", "rows"] as const).map((option) => (
-            <option key={option} value={option}>{LAYOUT_LABELS[option]}</option>
+            <option key={option} value={option}>
+              {LAYOUT_LABELS[option]}
+            </option>
           ))}
         </select>
       </header>
@@ -2074,7 +2136,9 @@ export default function App() {
       {broadcastPickerOpen && (
         <div id="broadcast-target-picker" className="broadcast-picker" role="group" aria-label="동시 입력 대상 팬 선택">
           <strong>동시 입력 대상</strong>
-          <span className="dim">기본 꺼짐 · 최소 2개, 최대 {MAX_BROADCAST_TARGETS}개를 직접 선택해야 켤 수 있습니다.</span>
+          <span className="dim">
+            기본 꺼짐 · 최소 2개, 최대 {MAX_BROADCAST_TARGETS}개를 직접 선택해야 켤 수 있습니다.
+          </span>
           {activePaneIds.map((id, index) => {
             const pane = panes.find((item) => item.sessionId === id);
             const checked = broadcastTargetIds.has(id);
