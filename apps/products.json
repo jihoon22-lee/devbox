@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 13,
+  "catalogRevision": 14,
   "channel": "stable",
   "products": [
     {
@@ -469,16 +469,6 @@
       "label": "구성요소",
       "component": "control-center.shell",
       "command": "control-center.open-components",
-      "authority": "shell-read",
-      "status": "foundation"
-    },
-    {
-      "id": "control-center.migration",
-      "owner": "control-center",
-      "route": "migration",
-      "label": "이전 및 백업",
-      "component": "control-center.shell",
-      "command": "control-center.open-migration",
       "authority": "shell-read",
       "status": "foundation"
     },
