@@ -1,3 +1,5 @@
+pub mod activity_ipc;
+mod activity_projection;
 mod component;
 mod core;
 mod federation;

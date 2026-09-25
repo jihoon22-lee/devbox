@@ -9,6 +9,7 @@
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
     "knowledge:allow-execute",
-    "suite:allow-connection"
+    "suite:allow-connection",
+    "knowledge:allow-activity"
   ]
 }

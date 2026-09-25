@@ -1,5 +1,7 @@
 //! Activity's typed native API; no unregistered Tauri command shims.
 use crate::commands::{autostart, digest, export, handoff, life, privacy, queries, tracking};
+pub use crate::core::digest::{DigestDocument, DigestOrigin};
+pub use crate::core::models::{AppTotal, DayPoint};
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::Manager as _;
@@ -167,6 +169,7 @@ product_ipc::issue_codes! { pub enum ActivityIssue {
     ProjectSettingsUnavailable = "project_settings_unavailable",
     SnapshotPayloadInvalid = "snapshot_payload_invalid",
     StoreBusy = "store_busy",
+    TrayUnavailable = "tray_unavailable",
     TrackingStateUnavailable = "tracking_state_unavailable",
     Unavailable = "unavailable",
 }}
@@ -246,6 +249,7 @@ fn to_value<T: serde::Serialize>(value: T) -> Result<Value, String> {
 pub fn result_types(
     export: &mut product_ipc::TypeExporter<'_>,
 ) -> Result<Vec<(&'static str, String)>, String> {
+    export.register::<crate::core::export::ExportDocument>()?;
     Ok(vec![
         (
             "get_digest",

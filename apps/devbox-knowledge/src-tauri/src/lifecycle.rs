@@ -31,7 +31,6 @@ struct Lifecycle {
     close_to_tray: AtomicBool,
     quit: Mutex<QuitReview>,
 }
-pub const METHODS: &[&str] = &["get_close_policy", "set_close_policy"];
 pub const QUIT_METHODS: &[&str] = &["pending_quit", "decide_quit"];
 fn request_quit(app: &tauri::AppHandle) {
     let state = app.state::<Lifecycle>();
@@ -162,22 +161,22 @@ pub fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
         _ => {}
     }
 }
-pub fn dispatch(
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ClosePolicy {
+    pub close_to_tray: bool,
+    pub tray_available: bool,
+}
+
+pub fn dispatch_typed(
     app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
+    call: crate::activity_ipc::HostActivityCall,
 ) -> Result<serde_json::Value, String> {
+    use crate::activity_ipc::HostActivityCall;
     let lifecycle = app.state::<Lifecycle>();
-    match method {
-        "get_close_policy" if args.as_object().is_some_and(|args| args.is_empty()) => {}
-        "set_close_policy" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Input {
-                close_to_tray: bool,
-            }
-            let Input { close_to_tray } =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    match call {
+        HostActivityCall::GetClosePolicy {} => {}
+        HostActivityCall::SetClosePolicy { close_to_tray } => {
             if close_to_tray && !lifecycle.tray_available.load(Ordering::Acquire) {
                 return Err("tray_unavailable".into());
             }
@@ -186,12 +185,14 @@ pub fn dispatch(
                 .close_to_tray
                 .store(close_to_tray, Ordering::Release);
         }
-        _ => return Err("component_args_invalid".into()),
     }
-    Ok(
-        serde_json::json!({"closeToTray": lifecycle.close_to_tray.load(Ordering::Acquire), "trayAvailable": lifecycle.tray_available.load(Ordering::Acquire)}),
-    )
+    serde_json::to_value(ClosePolicy {
+        close_to_tray: lifecycle.close_to_tray.load(Ordering::Acquire),
+        tray_available: lifecycle.tray_available.load(Ordering::Acquire),
+    })
+    .map_err(|_| "component_response_invalid".into())
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

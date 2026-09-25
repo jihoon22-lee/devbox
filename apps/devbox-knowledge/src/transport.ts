@@ -28,7 +28,10 @@ configureProductTransport(
     };
     let response: { operation: Operation; value: T };
     try {
-      response = await invoke("plugin:knowledge|execute", { request: { header, component, method, args } });
+      response =
+        component === "knowledge.activity"
+          ? await invoke("plugin:knowledge|activity", { request: { header, method, args } })
+          : await invoke("plugin:knowledge|execute", { request: { header, component, method, args } });
     } catch (problem) {
       throw new Error(problemMessage(problem, provenance));
     }
@@ -36,7 +39,7 @@ configureProductTransport(
       throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
     if (response.operation.outcome.state !== "succeeded") {
       const value = response.value as { issue?: unknown } | null;
-      throw issueError(value?.issue);
+      throw issueError(value?.issue, component);
     }
     return response.value;
   },

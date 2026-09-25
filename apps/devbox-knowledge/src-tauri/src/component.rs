@@ -68,11 +68,6 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                             | "open_result_draft"
                     ))
         }
-        "knowledge.activity" => {
-            route == "activity"
-                && (activity_engine::component::COMMANDS.contains(&method)
-                    || crate::lifecycle::METHODS.contains(&method))
-        }
         "knowledge.search" => {
             route == "search"
                 && (content_index_engine::component::COMMANDS.contains(&method)
@@ -327,20 +322,6 @@ async fn execute(
             "open_in" => Err("provider_unavailable".into()),
             _ => notes_dispatch(app, &request.method, request.args).await,
         },
-        "knowledge.activity" if crate::lifecycle::METHODS.contains(&request.method.as_str()) => {
-            crate::lifecycle::dispatch(app, &request.method, request.args)
-        }
-        "knowledge.activity" if request.method == "send_digest_to_knowledge" => {
-            activity_engine::component::send_product_draft(app, request.args, |draft| {
-                knowledge_vault_engine::component::offer_product_draft(app, draft)
-            })
-            .await
-        }
-        "knowledge.activity" => {
-            activity_engine::component::dispatch(app, &request.method, request.args)
-                .await
-                .map(|value| crate::search::associate_activity(app, &request.method, value))
-        }
         "knowledge.search" if request.method == "source_saved_reference" => {
             crate::federation::saved_reference(app, request.args).await
         }
@@ -399,7 +380,10 @@ async fn execute(
 }
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("knowledge")
-        .invoke_handler(tauri::generate_handler![execute])
+        .invoke_handler(tauri::generate_handler![
+            execute,
+            crate::activity_ipc::activity
+        ])
         .setup(|app, _| {
             app.manage(Active::default());
             #[cfg(windows)]

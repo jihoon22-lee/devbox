@@ -124,6 +124,7 @@ pub struct ExportRange {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportSession {
     pub id: i64,
     pub app: String,
@@ -211,6 +212,7 @@ pub struct SourceMetadata {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportSummary {
     pub pc_usage_ms: i64,
     pub session_count: usize,
@@ -222,6 +224,7 @@ pub struct ExportSummary {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportRules {
     pub session_window: String,
     pub session_duration: String,
@@ -234,6 +237,7 @@ pub struct ExportRules {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportDocument {
     pub schema_version: u32,
     pub range: ExportRange,

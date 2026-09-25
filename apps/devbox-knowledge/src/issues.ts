@@ -1,3 +1,5 @@
+import { activityMessages } from "@devbox/knowledge-features/activity/issues";
+import type { Component } from "@devbox/knowledge-features/transport";
 const messages: Record<string, string> = {
   quick_capture_sensitive: "민감한 정보가 포함되어 있어 저장하지 않았습니다",
   quick_capture_body_required: "빠른 캡처 본문을 입력하세요",
@@ -67,7 +69,15 @@ const messages: Record<string, string> = {
   preview_expired: "미리보기가 만료되었습니다. 새로 준비해 주세요.",
   preview_stale: "미리보기가 오래되었습니다. 다시 확인해 주세요.",
 };
-export function issueError(issue: unknown): Error {
+export function issueError(issue: unknown, component?: Component): Error {
+  if (component === "knowledge.activity") {
+    const known = typeof issue === "string" && Object.prototype.hasOwnProperty.call(activityMessages, issue);
+    const error = new Error(
+      known ? activityMessages[issue as keyof typeof activityMessages] : activityMessages.unavailable,
+    );
+    if (known) error.name = issue;
+    return error;
+  }
   const known = typeof issue === "string" && Object.prototype.hasOwnProperty.call(messages, issue);
   const error = new Error(known ? messages[issue] : "작업을 완료하지 못했습니다. 입력과 저장 위치를 확인해 주세요.");
   if (known) error.name = issue;

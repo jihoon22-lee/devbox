@@ -1,22 +1,8 @@
-export interface AppTotal {
-  app: string;
-  duration_ms: number;
-  sessions: number;
-}
+export type AppTotal = import("../generated/AppTotal").AppTotal;
 
-export interface Session {
-  id: number;
-  app: string;
-  title: string;
-  start_ts: number;
-  end_ts: number;
-  duration_ms: number;
-}
+export type Session = import("../generated/Session").Session;
 
-export interface ProjectAssociation {
-  state: "mapped" | "unmapped" | "unavailable" | "ambiguous" | "offline" | "missing" | "unverified";
-  context?: { projectId: string; worktreeId: string };
-}
+export type ProjectAssociation = import("../generated/ProjectAssociation").ProjectAssociation;
 
 export function projectAssociationLabel(association: ProjectAssociation): string {
   return {
@@ -30,34 +16,12 @@ export function projectAssociationLabel(association: ProjectAssociation): string
   }[association.state];
 }
 
-export interface ProjectCommit {
-  path: string;
-  commits: number;
-  error_code?: string | null;
-  projectAssociation?: ProjectAssociation;
-}
+export type ProjectCommit = import("../generated/ActivityProjectCommit").ActivityProjectCommit;
 
-export interface GitDay {
-  projects: ProjectCommit[];
-  total_commits: number;
-}
+export type GitDay = import("../generated/ActivityGitDay").ActivityGitDay;
 
-export interface DaySummary {
-  date: string;
-  pc_usage_ms: number;
-  app_totals: AppTotal[];
-  git: GitDay;
-}
+export type DaySummary = import("../generated/ActivityDaySummary").ActivityDaySummary;
 
-export interface DayPoint {
-  day_ms: number;
-  pc_usage_ms: number;
-}
+export type DayPoint = import("../generated/DayPoint").DayPoint;
 
-export interface RangeSummary {
-  label: string;
-  pc_usage_ms: number;
-  app_totals: AppTotal[];
-  git: GitDay;
-  daily: DayPoint[];
-}
+export type RangeSummary = import("../generated/ActivityRangeSummary").ActivityRangeSummary;

@@ -1,7 +1,9 @@
-import { componentInvoke } from "../transport";
-const invoke = componentInvoke("knowledge.activity");
+import { typedCall } from "../typed";
+import type { KnowledgeActivityCall } from "../generated/KnowledgeActivityCall";
+import type { ActivityResults } from "../generated/activity-results";
+export const activityCall = typedCall<KnowledgeActivityCall, ActivityResults>("knowledge.activity");
 import { isTauri } from "./lib/isTauri";
-import type { AppTotal, DaySummary, ProjectAssociation, RangeSummary, Session } from "./types";
+import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 
 /** Export and digest documents share the same versioned activity contract. */
 export const LIFE_LOG_SCHEMA_VERSION = 2 as const;
@@ -11,266 +13,54 @@ export const BROWSER_PREVIEW_SCOPE = "browser-preview-only" as const;
 export const BROWSER_PREVIEW_ERROR_CODE = "browser_preview_only" as const;
 export const NATIVE_SOURCE_IDS = ["life-log", "git", "run-manager", "knowledge-base"] as const;
 
-export type ExportFormat = "markdown" | "json" | "csv";
-export type ExportOrigin = "native" | "browser-preview";
+export type ExportFormat = import("../generated/ExportFormat").ExportFormat;
+export type ExportOrigin = import("../generated/ExportOrigin").ExportOrigin;
 
-export interface ExportDayBoundary {
-  date: string;
-  startMs: number;
-  endMs: number;
-}
+export type ExportDayBoundary = import("../generated/ExportDayBoundary").ExportDayBoundary;
 
-export interface ExportInput {
-  startDate: string;
-  endDate: string;
-  timezone: string;
-  dayStart: number;
-  dayEnd: number;
-  dayBoundaries: ExportDayBoundary[];
-  format: ExportFormat;
-}
+export type ExportInput = import("../generated/ExportInput").ExportInput;
 
-export interface RunDigest {
-  succeeded: number;
-  failed: number;
-  lastRunAtMs: number | null;
-}
+export type RunDigest = import("../generated/RunDigest").RunDigest;
 
-export interface KnowledgeDigest {
-  notesModified: number;
-  lastModifiedAtMs: number | null;
-}
+export type KnowledgeDigest = import("../generated/KnowledgeDigest").KnowledgeDigest;
 
-export interface ExportDailyDigest {
-  date: string;
-  startMs: number;
-  endMs: number;
-  pcUsageMs: number;
-  sessionCount: number;
-  gitCommits: number;
-  runSucceeded: number | null;
-  runFailed: number | null;
-  knowledgeNotesModified: number | null;
-}
+export type ExportDailyDigest = import("../generated/DailyDigest").DailyDigest;
 
-export interface ExportSummary {
-  pcUsageMs: number;
-  sessionCount: number;
-  appTotals: Array<{
-    app: string;
-    durationMs: number;
-    sessions: number;
-  }>;
-  git: {
-    projects: Array<{
-      path: string;
-      commits: number;
-      errorCode: string | null;
-    }>;
-    totalCommits: number;
-    errorCodes: string[];
-  };
-  run: RunDigest | null;
-  knowledge: KnowledgeDigest | null;
-}
+export type ExportSummary = import("../generated/ExportSummary").ExportSummary;
 
-export interface ExportSourceMetadata {
-  id: string;
-  available: boolean;
-  schemaVersion: number | null;
-  snapshotVersion: number | null;
-  producerVersion: string | null;
-  generatedAt: string | null;
-  freshnessMs: number | null;
-  view: string | null;
-  scope: string;
-  errorCode: string | null;
-}
+export type ExportSourceMetadata = import("../generated/SourceMetadata").SourceMetadata;
 
-export interface ExportDocument {
-  schemaVersion: typeof EXPORT_SCHEMA_VERSION;
-  range: {
-    startDate: string;
-    endDate: string;
-    timezone: string;
-    startMs: number;
-    endMs: number;
-    dayBoundaries: ExportDayBoundary[];
-  };
-  rules: {
-    sessionWindow: string;
-    sessionDuration: string;
-    dailyBuckets: string;
-    privacy: string;
-    appTotals: string;
-    gitCommits: string;
-    snapshotScope: string;
-  };
-  summary: ExportSummary;
-  daily: ExportDailyDigest[];
-  sessions: Array<{
-    id: number;
-    app: string;
-    title: string;
-    startTsMs: number;
-    endTsMs: number;
-    durationMs: number;
-  }>;
-  sources: ExportSourceMetadata[];
-}
+export type ExportDocument = import("../generated/ExportDocument").ExportDocument;
 
-export interface RenderedExport {
-  origin: ExportOrigin;
-  format: ExportFormat;
-  extension: string;
-  mimeType: string;
-  byteLength: number;
-  content: string;
-}
+export type RenderedExport = import("../generated/RenderedExport").RenderedExport;
 
-export interface SaveExportResult {
-  saved: boolean;
-  format: ExportFormat;
-  byteLength: number;
-}
+export type SaveExportResult = import("../generated/SaveExportResult").SaveExportResult;
 
-export type DigestPeriod = "day" | "week" | "month";
+export type DigestPeriod = import("../generated/DigestPeriod").DigestPeriod;
 
-export interface DigestFilter {
-  app: string | null;
-}
+export type DigestFilter = import("../generated/DigestFilter").DigestFilter;
 
-export interface DigestInput {
-  startDate: string;
-  endDate: string;
-  timezone: string;
-  dayStart: number;
-  dayEnd: number;
-  dayBoundaries: ExportDayBoundary[];
-  period: DigestPeriod;
-  filter: DigestFilter;
-}
+export type DigestInput = import("../generated/DigestInput").DigestInput;
 
-export interface DigestRules {
-  sessionWindow: string;
-  sessionDuration: string;
-  dailyBuckets: string;
-  appFilter: string;
-  appTotals: string;
-  gitCommits: string;
-  snapshotScope: string;
-  privacy: string;
-  externalProcessing: string;
-}
+export type DigestRules = import("../generated/DigestRules").DigestRules;
 
-export interface DigestDay {
-  date: string;
-  startMs: number;
-  endMs: number;
-  pcUsageMs: number;
-  sessionCount: number;
-  gitCommits: number;
-  runSucceeded: number | null;
-  runFailed: number | null;
-  knowledgeNotesModified: number | null;
-  topApp: string | null;
-  hasActivity: boolean;
-}
+export type DigestDay = import("../generated/DigestDay").DigestDay;
 
-export interface DigestSummary {
-  pcUsageMs: number;
-  sessionCount: number;
-  activeDays: number;
-  totalDays: number;
-  averageDailyUsageMs: number;
-  topApp: string | null;
-  gitCommits: number;
-  run: RunDigest | null;
-  knowledge: KnowledgeDigest | null;
-}
+export type DigestSummary = import("../generated/DigestSummary").DigestSummary;
 
-export interface DigestDocument {
-  schemaVersion: typeof DIGEST_SCHEMA_VERSION;
-  period: DigestPeriod;
-  range: {
-    startDate: string;
-    endDate: string;
-    timezone: string;
-    startMs: number;
-    endMs: number;
-    dayBoundaries: ExportDayBoundary[];
-  };
-  filter: DigestFilter;
-  rules: DigestRules;
-  headline: string;
-  summary: DigestSummary;
-  daily: DigestDay[];
-  appTotals: Array<{
-    app: string;
-    durationMs: number;
-    sessions: number;
-  }>;
-  git: {
-    projects: Array<{
-      path: string;
-      commits: number;
-      errorCode: string | null;
-    }>;
-    totalCommits: number;
-    errorCodes: string[];
-  };
-  sources: ExportSourceMetadata[];
-}
+export type DigestDocument = import("../generated/DigestDocument").DigestDocument;
 
-export interface DigestResponse {
-  projectAssociations?: Record<string, ProjectAssociation>;
-  origin: ExportOrigin;
-  document: DigestDocument;
-  markdown: string;
-  /** Native responses expose a short-lived server-owned save handle. */
-  handle?: string | null;
-}
+export type DigestResponse = import("../generated/ActivityDigestResponse").ActivityDigestResponse;
 
-export interface SaveDigestResult {
-  saved: boolean;
-  byteLength: number;
-}
+export type SaveDigestResult = import("../generated/SaveDigestResult").SaveDigestResult;
 
-export interface SendKnowledgeDraftResult {
-  id: string;
-  kind: "knowledge-draft/v1";
-  expiresAtMs: number;
-  historyId: string;
-}
+export type SendKnowledgeDraftResult = import("../generated/SendKnowledgeDraftResult").SendKnowledgeDraftResult;
 
-export type DraftHandoffStatus = "pending" | "sent" | "consumed" | "expired";
+export type DraftHandoffStatus = import("../generated/DraftStatus").DraftStatus;
 
-export interface KnowledgeDraftSummary {
-  period: "day" | "week" | "month";
-  startDate: string;
-  endDate: string;
-  timezone: string;
-  filter: string | null;
-  pcUsageMs: number;
-  sessionCount: number;
-  activeDays: number;
-  totalDays: number;
-  averageDailyUsageMs: number;
-  gitCommits: number;
-  topApp: string | null;
-}
+export type KnowledgeDraftSummary = import("../generated/KnowledgeDraftSummary").KnowledgeDraftSummary;
 
-export interface KnowledgeDraftHistoryEntry {
-  handoffId: string;
-  kind: "knowledge-draft/v1";
-  status: DraftHandoffStatus;
-  summary: KnowledgeDraftSummary;
-  sources: DigestDocument["sources"];
-  createdAtMs: number;
-  updatedAtMs: number;
-  expiresAtMs: number;
-  regeneratedFrom: string | null;
-}
+export type KnowledgeDraftHistoryEntry = import("../generated/DraftHistoryEntry").DraftHistoryEntry;
 
 const DAY_MS = 86_400_000;
 const MIN_CIVIL_DAY_MS = DAY_MS - 3_600_000;
@@ -408,7 +198,7 @@ const dayCache = new Map<string, DaySummary>();
 export async function getDay(date: string, dayStart: number, dayEnd: number): Promise<DaySummary> {
   if (!isTauri()) return mockDay(date);
   if (date < todayStr() && dayCache.has(date)) return dayCache.get(date)!;
-  const summary = await invoke<DaySummary>("get_day", { date, dayStart, dayEnd });
+  const summary = await activityCall("get_day", { date, dayStart, dayEnd });
   dayCache.set(date, summary);
   return summary;
 }
@@ -430,89 +220,69 @@ export async function getRange(label: string, dayStart: number, dayEnd: number):
       daily: days,
     };
   }
-  return invoke<RangeSummary>("get_range", { label, dayStart, dayEnd });
+  return activityCall("get_range", { label, dayStart, dayEnd });
 }
 
 export async function getTimeline(dayStart: number, dayEnd: number): Promise<Session[]> {
   if (!isTauri()) return MOCK_SESSIONS;
-  return invoke<Session[]>("timeline", { dayStart, dayEnd });
+  return activityCall("timeline", { dayStart, dayEnd });
 }
 
 export async function getAppStats(start: number, end: number): Promise<AppTotal[]> {
   if (!isTauri()) return MOCK_STATS;
-  return invoke<AppTotal[]>("app_stats", { start, end });
+  return activityCall("app_stats", { start, end });
 }
 
 export async function startTracking(): Promise<boolean> {
   if (!isTauri()) return true;
-  return invoke<boolean>("start_tracking");
+  return activityCall("start_tracking", {});
 }
 
 export async function stopTracking(): Promise<void> {
   if (!isTauri()) return;
-  await invoke("stop_tracking");
+  await activityCall("stop_tracking", {});
 }
 
 export async function isTracking(): Promise<boolean> {
   if (!isTauri()) return true;
-  return invoke<boolean>("is_tracking");
+  return activityCall("is_tracking", {});
 }
 
 export async function getProjects(): Promise<string[]> {
   if (!isTauri()) return ["C:\\projects\\devbox"];
-  return invoke<string[]>("get_projects");
+  return activityCall("get_projects", {});
 }
 
 export async function setProjects(paths: string[]): Promise<string[]> {
   if (!isTauri()) return paths;
-  return invoke<string[]>("set_projects", { paths });
+  return activityCall("set_projects", { paths });
 }
 
-export interface ProjectProbe {
-  path: string;
-  target: "windows" | "wsl";
-  repository: boolean;
-  errorCode: string | null;
-}
+export type ProjectProbe = import("../generated/ProjectProbe").ProjectProbe;
 
 export async function probeProject(path: string): Promise<ProjectProbe> {
   if (!isTauri()) {
     return { path, target: "windows", repository: false, errorCode: "browser_preview_only" };
   }
-  return invoke<ProjectProbe>("probe_project", { path });
+  return activityCall("probe_project", { path });
 }
 
 export async function getIdleThreshold(): Promise<number> {
   if (!isTauri()) return 300000;
-  return invoke<number>("get_idle_threshold");
+  return activityCall("get_idle_threshold", {});
 }
 
 export async function setIdleThreshold(thresholdMs: number): Promise<void> {
   if (!isTauri()) return;
-  await invoke("set_idle_threshold", { thresholdMs });
+  await activityCall("set_idle_threshold", { thresholdMs });
 }
 
-export interface PrivacyRules {
-  excludedProcesses: string[];
-  excludedTitlePatterns: string[];
-  redactTitlePatterns: string[];
-  maskAllTitles: boolean;
-}
-export type PrivacyRuleField = "excludedProcesses" | "excludedTitlePatterns" | "redactTitlePatterns";
-export type PrivacyRuleProblem = "empty" | "too_long" | "too_many" | "syntax";
-export interface InvalidPrivacyRule {
-  field: PrivacyRuleField;
-  index: number;
-  problem: PrivacyRuleProblem;
-}
-export interface PrivacyRulesView {
-  rules: PrivacyRules;
-  healthy: boolean;
-}
-export interface PrivacySaveResult {
-  saved: boolean;
-  invalid: InvalidPrivacyRule[];
-}
+export type PrivacyRules = import("../generated/PrivacyRules").PrivacyRules;
+export type PrivacyRuleField = import("../generated/RuleField").RuleField;
+export type PrivacyRuleProblem = import("../generated/RuleProblem").RuleProblem;
+export type InvalidPrivacyRule = import("../generated/InvalidRule").InvalidRule;
+export type PrivacyRulesView = import("../generated/PrivacyRulesView").PrivacyRulesView;
+export type PrivacySaveResult = import("../generated/PrivacySaveResult").PrivacySaveResult;
 
 export const EMPTY_PRIVACY_RULES: PrivacyRules = {
   excludedProcesses: [],
@@ -523,57 +293,34 @@ export const EMPTY_PRIVACY_RULES: PrivacyRules = {
 
 export async function getPrivacyRules(): Promise<PrivacyRulesView> {
   if (!isTauri()) return { rules: EMPTY_PRIVACY_RULES, healthy: true };
-  return invoke<PrivacyRulesView>("get_privacy_rules");
+  return activityCall("get_privacy_rules", {});
 }
 
 export async function setPrivacyRules(rules: PrivacyRules): Promise<PrivacySaveResult> {
   if (!isTauri()) return { saved: true, invalid: [] };
-  return invoke<PrivacySaveResult>("set_privacy_rules", { rules });
+  return activityCall("set_privacy_rules", { rules });
 }
 
 export async function redactExisting(): Promise<number> {
   if (!isTauri()) return 0;
-  return invoke<number>("redact_existing");
+  return activityCall("redact_existing", {});
 }
 
-export interface AutostartStatus {
-  supported: boolean;
-  enabled: boolean;
-  command: string | null;
-}
+export type AutostartStatus = import("../generated/AutostartStatus").AutostartStatus;
 
 export async function autostartStatus(): Promise<AutostartStatus> {
   if (!isTauri()) return { supported: true, enabled: false, command: null };
-  return invoke<AutostartStatus>("autostart_status");
+  return activityCall("autostart_status", {});
 }
 
 export async function setAutostart(enabled: boolean): Promise<AutostartStatus> {
   if (!isTauri()) return { supported: true, enabled, command: null };
-  return invoke<AutostartStatus>("set_autostart", { enabled });
+  return activityCall("set_autostart", { enabled });
 }
 
-export interface SourceStatus {
-  producer: string;
-  available: boolean;
-  schemaVersion: number | null;
-  producerVersion: string | null;
-  generatedAt: string | null;
-  freshnessMs: number | null;
-  freshnessState?: "fresh" | "stale" | "expired" | "unknown" | "error";
-  scope?: string;
-  errorCode?: string | null;
-  explanation?: string;
-  error: string | null;
-  knowledgeActivity: KnowledgeActivity | null;
-}
+export type SourceStatus = import("../generated/SourceStatus").SourceStatus;
 
-export interface KnowledgeActivity {
-  notesModifiedToday: number;
-  lastModifiedAtMs: number | null;
-  identifiedNotes: number;
-  identifiersComplete: boolean;
-  legacySnapshot: boolean;
-}
+export type KnowledgeActivity = import("../generated/KnowledgeActivity").KnowledgeActivity;
 
 function browserPreviewSourceMetadata(id: (typeof NATIVE_SOURCE_IDS)[number]): ExportSourceMetadata {
   return {
@@ -611,21 +358,12 @@ export async function integrationSources(): Promise<SourceStatus[]> {
   if (!isTauri()) {
     return browserPreviewSourceStatuses();
   }
-  return invoke<SourceStatus[]>("integration_sources");
+  return activityCall("integration_sources", {});
 }
 
-export interface Attribution {
-  projectAssociation?: ProjectAssociation;
-  projectId: string;
-  sessions: number;
-  durationMs: number;
-}
+export type Attribution = import("../generated/ActivityAttribution").ActivityAttribution;
 
-export interface AttributionResult {
-  attributed: Attribution[];
-  unattributed: Attribution;
-  profileCount: number;
-}
+export type AttributionResult = import("../generated/ActivityAttributionResult").ActivityAttributionResult;
 
 export async function projectAttribution(dayStart: number, dayEnd: number): Promise<AttributionResult> {
   if (!isTauri()) {
@@ -635,7 +373,7 @@ export async function projectAttribution(dayStart: number, dayEnd: number): Prom
       profileCount: 1,
     };
   }
-  return invoke<AttributionResult>("project_attribution", { dayStart, dayEnd });
+  return activityCall("project_attribution", { dayStart, dayEnd });
 }
 
 /** 명시적인 export action에서만 호출하는 bounded preview 생성. */
@@ -806,13 +544,13 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
       content,
     };
   }
-  return invoke<RenderedExport>("export_life_log", { input });
+  return activityCall("export_life_log", { input });
 }
 
 /** Windows native save dialog + backend atomic write. */
 export async function saveLifeLog(input: ExportInput): Promise<SaveExportResult> {
   if (!isTauri()) throw new Error("native export 저장은 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<SaveExportResult>("save_life_log", { input });
+  return activityCall("save_life_log", { input });
 }
 
 function digestError(): Error {
@@ -1118,12 +856,12 @@ export function validateDigestResponse(value: unknown): DigestResponse {
 export async function getDigest(input: DigestInput): Promise<DigestResponse> {
   if (!isTauri()) return browserDigest(input);
   validateDigestInput(input);
-  return validateDigestResponse(await invoke<unknown>("get_digest", { input }));
+  return validateDigestResponse(await activityCall("get_digest", { input }));
 }
 
 export async function cancelDigest(): Promise<boolean> {
   if (!isTauri()) return false;
-  return invoke<boolean>("cancel_digest");
+  return activityCall("cancel_digest", {});
 }
 
 export async function saveDigest(handle: string): Promise<SaveDigestResult> {
@@ -1131,7 +869,7 @@ export async function saveDigest(handle: string): Promise<SaveDigestResult> {
   if (typeof handle !== "string" || !/^[0-9a-f]{32}$/i.test(handle)) {
     throw new Error("digest 저장 핸들이 만료되었습니다");
   }
-  return invoke<SaveDigestResult>("save_digest", { request: { handle } });
+  return activityCall("save_digest", { request: { handle } });
 }
 
 /** Native-only explicit handoff. Browser preview never publishes or launches. */
@@ -1141,10 +879,10 @@ export async function sendDigestToKnowledge(
 ): Promise<SendKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge handoff는 데스크톱 앱에서 사용할 수 없습니다");
   validateDigestInput(input);
-  return invoke<SendKnowledgeDraftResult>("send_digest_to_knowledge", { input, regeneratedFrom });
+  return activityCall("send_digest_to_knowledge", { input, regeneratedFrom });
 }
 
 export async function knowledgeDraftHistory(): Promise<KnowledgeDraftHistoryEntry[]> {
   if (!isTauri()) return [];
-  return invoke<KnowledgeDraftHistoryEntry[]>("knowledge_draft_history");
+  return activityCall("knowledge_draft_history", {});
 }
