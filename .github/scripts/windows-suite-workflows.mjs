@@ -61,7 +61,17 @@ const value=(result,call)=>{assert.equal(result.operation.outcome.state,"succeed
 const domain=async(item,component,method,args={})=>value(await request(item,`plugin:${item.product}|execute`,{component,method,args},routeFor(component)),`${component}.${method}`);
 const suite=async(item,method)=>value(await request(item,"plugin:suite|connection",{method}));
 const commands=async(item,method,args)=>value(await request(item,`plugin:commands|${method}`,args));
-async function approve(item){const review=await suite(item,{kind:"preview"});assert.equal(review.products.length,4);await suite(item,{kind:"approve",token:review.token,remember:true});assert.equal((await suite(item,{kind:"status"})).connected,true);}
+async function approve(item){
+  const review=await suite(item,{kind:"preview"});
+  assert.equal(review.products.length,4);
+  // Startup may already have connected this exact installation. Preview also
+  // prevents a late startup capture from racing a needed manual approval.
+  const status=await suite(item,{kind:"status"});
+  if(!status.connected)await suite(item,{kind:"approve",token:review.token,remember:true});
+  const connected=await suite(item,{kind:"status"});
+  assert.equal(connected.connected,true);
+  assert.equal(connected.generation,review.generation);
+}
 async function click(item,selector,text){await waitForRenderer(item.cdp,`[...document.querySelectorAll(${JSON.stringify(selector)})].some(node=>node.textContent.trim()===${JSON.stringify(text)}&&!node.disabled)`,"fixture button missing");await item.cdp.evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].find(node=>node.textContent.trim()===${JSON.stringify(text)}&&!node.disabled).click()`);}
 async function review(item,receipt,accept=true){
   const pending=await suite(item,{kind:"pending"});const selected=pending.find(row=>row.operationId===receipt.operationId);assert.ok(selected,"native destination review missing");
