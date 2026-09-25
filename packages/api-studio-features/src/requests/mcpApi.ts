@@ -1,5 +1,5 @@
-import { componentInvoke } from "../transport";
-const invoke = componentInvoke("api-studio.api");
+import { apiCall } from "../calls";
+
 import { isTauri } from "./lib/isTauri";
 import type { EnvVariable } from "./lib/environments";
 import type {
@@ -81,7 +81,14 @@ export function nextMcpRequestId(): string {
 }
 
 export function safeMcpErrorCode(cause: unknown): string {
-  const message = typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "";
+  const message =
+    typeof cause === "string"
+      ? cause
+      : cause instanceof Error
+        ? SAFE_ERROR_CODES.has(cause.name)
+          ? cause.name
+          : cause.message
+        : "";
   if (message === NATIVE_REQUIRED || SAFE_ERROR_CODES.has(message)) return message;
   return "mcp_transport_failed";
 }
@@ -91,7 +98,7 @@ export async function connectMcpHttp(
   environment: readonly EnvVariable[],
 ): Promise<McpConnectResult> {
   requireNative();
-  const value = await invoke<unknown>("connect_mcp_http", { profile, environment });
+  const value = await apiCall("connect_mcp_http", { profile, environment });
   try {
     return validateConnectResult(value);
   } catch (cause) {
@@ -101,7 +108,7 @@ export async function connectMcpHttp(
         : null;
     if (connectionId) {
       try {
-        await invoke<void>("disconnect_mcp_http", { connectionId });
+        await apiCall("disconnect_mcp_http", { connectionId });
       } catch {
         // Preserve the validation error even if best-effort native cleanup fails.
       }
@@ -120,7 +127,7 @@ export async function invokeMcpHttp(
   if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("mcp_connection_stale");
   }
-  const value = await invoke<unknown>("invoke_mcp_http", {
+  const value = await apiCall("invoke_mcp_http", {
     connectionId,
     requestId,
     method,
@@ -134,7 +141,7 @@ export async function cancelMcpHttp(connectionId: string, requestId: string): Pr
   if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("mcp_connection_stale");
   }
-  const value = await invoke<unknown>("cancel_mcp_http", { connectionId, requestId });
+  const value = await apiCall("cancel_mcp_http", { connectionId, requestId });
   if (typeof value !== "boolean") throw new Error("mcp_message_invalid");
   return value;
 }
@@ -142,7 +149,7 @@ export async function cancelMcpHttp(connectionId: string, requestId: string): Pr
 export async function disconnectMcpHttp(connectionId: string): Promise<void> {
   requireNative();
   if (!CONNECTION_ID.test(connectionId)) throw new Error("mcp_connection_stale");
-  await invoke<void>("disconnect_mcp_http", { connectionId });
+  await apiCall("disconnect_mcp_http", { connectionId });
 }
 
 export async function pickMcpStdioExecutable(): Promise<McpNativeSelection | null> {
@@ -158,7 +165,7 @@ async function pickMcpStdioSelection(
   kind: McpNativeSelection["kind"],
 ): Promise<McpNativeSelection | null> {
   requireNative();
-  const value = await invoke<unknown>(command);
+  const value = await apiCall(command);
   if (value === null) return null;
   const record = asRecord(value, "mcp_stdio_selection_invalid");
   const selectionId = record.selectionId;
@@ -205,7 +212,7 @@ export async function connectMcpStdio(
     environment: profile.environment.map(({ childName, sourceName }) => ({ childName, sourceName })),
     timeoutMs: profile.timeoutMs,
   };
-  const value = await invoke<unknown>("connect_mcp_stdio", { profile: safeProfile, environment });
+  const value = await apiCall("connect_mcp_stdio", { profile: safeProfile, environment });
   try {
     return validateConnectResult(value);
   } catch (cause) {
@@ -215,7 +222,7 @@ export async function connectMcpStdio(
         : null;
     if (connectionId) {
       try {
-        await invoke<void>("disconnect_mcp_stdio", { connectionId });
+        await apiCall("disconnect_mcp_stdio", { connectionId });
       } catch {
         // Preserve the validation error even if best-effort native cleanup fails.
       }
@@ -234,7 +241,7 @@ export async function invokeMcpStdio(
   if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("mcp_stdio_connection_stale");
   }
-  const value = await invoke<unknown>("invoke_mcp_stdio", {
+  const value = await apiCall("invoke_mcp_stdio", {
     connectionId,
     requestId,
     method,
@@ -248,7 +255,7 @@ export async function cancelMcpStdio(connectionId: string, requestId: string): P
   if (!CONNECTION_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("mcp_stdio_connection_stale");
   }
-  const value = await invoke<unknown>("cancel_mcp_stdio", { connectionId, requestId });
+  const value = await apiCall("cancel_mcp_stdio", { connectionId, requestId });
   if (typeof value !== "boolean") throw new Error("mcp_stdio_protocol_invalid");
   return value;
 }
@@ -256,7 +263,7 @@ export async function cancelMcpStdio(connectionId: string, requestId: string): P
 export async function disconnectMcpStdio(connectionId: string): Promise<void> {
   requireNative();
   if (!CONNECTION_ID.test(connectionId)) throw new Error("mcp_stdio_connection_stale");
-  await invoke<void>("disconnect_mcp_stdio", { connectionId });
+  await apiCall("disconnect_mcp_stdio", { connectionId });
 }
 
 export async function authorizeMcpHttp(
@@ -285,21 +292,21 @@ export async function authorizeMcpHttp(
     clientId,
     scopes: [...scopes],
   };
-  const value = await invoke<unknown>("authorize_mcp_http", payload);
+  const value = await apiCall("authorize_mcp_http", payload);
   return validateOAuthGrantProjection(value);
 }
 
 export async function cancelMcpOAuth(requestId: string): Promise<boolean> {
   requireNative();
   if (!OAUTH_REQUEST_ID.test(requestId)) throw new Error("mcp_oauth_request_invalid");
-  const value = await invoke<unknown>("cancel_mcp_oauth", { requestId });
+  const value = await apiCall("cancel_mcp_oauth", { requestId });
   if (typeof value !== "boolean") throw new Error("mcp_oauth_request_invalid");
   return value;
 }
 
 export async function listMcpOAuthGrants(): Promise<McpOAuthGrantProjection[]> {
   requireNative();
-  const value = await invoke<unknown>("list_mcp_oauth_grants");
+  const value = await apiCall("list_mcp_oauth_grants", {});
   if (!Array.isArray(value) || value.length > 32) throw new Error("mcp_oauth_storage_failed");
   const grants = value.map(validateOAuthGrantProjection);
   if (new Set(grants.map((grant) => grant.grantId)).size !== grants.length) {
@@ -314,7 +321,7 @@ export async function revokeMcpOAuthGrant(
 ): Promise<McpOAuthRevokeResult> {
   requireNative();
   if (!GRANT_ID.test(grantId)) throw new Error("mcp_oauth_required");
-  const value = await invoke<unknown>("revoke_mcp_oauth_grant", {
+  const value = await apiCall("revoke_mcp_oauth_grant", {
     grantId,
     removeLocalOnRemoteFailure,
   });

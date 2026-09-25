@@ -1,5 +1,6 @@
-import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke("api-studio.api");
+import { apiCall } from "../calls";
+import { isProductHosted } from "../transport";
+
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./lib/isTauri";
@@ -109,15 +110,12 @@ function nextNativeRequestId(): string {
   return randomId ? `request-${randomId}` : `request-${Date.now().toString(36)}-${nativeRequestSequence.toString(36)}`;
 }
 
-export interface RemoteOpenApiSource {
-  text: string;
-  format: "json" | "yaml";
-}
+export type RemoteOpenApiSource = import("../generated/RemoteOpenApiSource").RemoteOpenApiSource;
 
 /** URL 문서를 native bounded fetch 경계에서 읽는다. URL 원문은 결과나 오류에 포함하지 않는다. */
 export async function fetchOpenApiSource(url: string): Promise<RemoteOpenApiSource> {
   if (!isTauri()) throw new Error("URL 가져오기는 데스크톱 앱에서만 사용할 수 있습니다");
-  return invoke<RemoteOpenApiSource>("fetch_openapi_source", { url });
+  return apiCall("fetch_openapi_source", { url });
 }
 
 const SAFE_SSE_UPDATE_MESSAGES = new Set([
@@ -147,7 +145,7 @@ export async function sendRequest(
   };
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    return await invoke<ApiResponse>("send_request", { req, environment, requestId });
+    return await apiCall("send_request", { req, environment, requestId });
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
@@ -155,19 +153,19 @@ export async function sendRequest(
 
 async function cancelRequest(requestId: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("cancel_request", { requestId });
+  await apiCall("cancel_request", { requestId });
 }
 
 /** Drop the native current-response vault after the renderer leaves the page. */
 export async function discardCurrentResponse(): Promise<void> {
   if (!isTauri()) return;
-  await invoke<void>("discard_current_response");
+  await apiCall("discard_current_response", {});
 }
 
 /** 값을 봉인해 base64 blob을 반환한다. */
 export async function sealSecret(value: string): Promise<string> {
   if (!isTauri()) throw new Error("secret 봉인은 데스크톱 앱에서만 사용할 수 있습니다");
-  return invoke<string>("seal_secret", { value });
+  return apiCall("seal_secret", { value });
 }
 
 /** 저장 후보를 backend secret 경계에서 한 번 더 정화한다. */
@@ -178,31 +176,31 @@ export async function sanitizePersistedJson(serialized: string, environment: Env
     }
     return serialized;
   }
-  return invoke<string>("sanitize_persisted_json", { serialized, environment });
+  return apiCall("sanitize_persisted_json", { serialized, environment });
 }
 
 /** 확인 뒤 한 번만 원문 cURL을 만들어 반환한다. 호출자는 즉시 사용하고 저장하지 않는다. */
 export async function buildRevealedCurl(req: RequestTemplate, environment: EnvVariable[]): Promise<string> {
   if (!isTauri()) throw new Error("원문 cURL 복사는 데스크톱 앱에서만 사용할 수 있습니다");
-  return invoke<string>("build_revealed_curl", { req, environment });
+  return apiCall("build_revealed_curl", { req, environment });
 }
 
 /** 확인된 현재 응답의 원문 header를 backend 메모리에서 한 번만 가져온다. */
 export async function copyRawResponseHeaders(responseId: string): Promise<string> {
   if (!isTauri()) throw new Error("원문 응답 header 복사는 데스크톱 앱에서만 사용할 수 있습니다");
-  return invoke<string>("copy_raw_response_headers", { responseId });
+  return apiCall("copy_raw_response_headers", { responseId });
 }
 
 /** 확인된 현재 응답의 원문 Set-Cookie만 backend 메모리에서 한 번 가져온다. */
 export async function copyRawResponseCookies(responseId: string): Promise<string> {
   if (!isTauri()) throw new Error("원문 응답 Cookie 복사는 데스크톱 앱에서만 사용할 수 있습니다");
-  return invoke<string>("copy_raw_response_cookies", { responseId });
+  return apiCall("copy_raw_response_cookies", { responseId });
 }
 
 /** Send only the explicitly selected, rendered response text to Developer Toolbox. */
 export async function sendSelectionToToolbox(text: string): Promise<ToolboxDispatch> {
   if (!isTauri()) throw new Error(TOOLBOX_SELECTION_BROWSER_ERROR);
-  return invoke<ToolboxDispatch>("send_selection_to_toolbox", { text });
+  return apiCall("send_selection_to_toolbox", { text });
 }
 
 /** Save the current bounded binary response through the native dialog only. */
@@ -211,26 +209,26 @@ export async function saveResponseBinary(responseId: string): Promise<boolean> {
   if (responseId.length > 64 || !/^response-[0-9]+$/u.test(responseId)) {
     throw new Error("binary 응답을 안전하게 저장할 수 없습니다");
   }
-  return invoke<boolean>("save_response_binary", { responseId });
+  return apiCall("save_response_binary", { responseId });
 }
 
 /** Read a user-selected JSON transfer file. Browser mode is handled by the UI file input. */
 export async function readJsonFile(): Promise<string | null> {
   if (!isTauri()) throw new Error("JSON 파일 가져오기는 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<string | null>("read_json_file");
+  return apiCall("read_json_file", {});
 }
 
 /** Save an already-sanitized transfer document through a native dialog. */
 export async function saveJsonFile(content: string, defaultName: string): Promise<boolean> {
   if (!isTauri()) throw new Error("JSON 파일 저장은 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<boolean>("save_json_file", { content, defaultName });
+  return apiCall("save_json_file", { content, defaultName });
 }
 
 /** 데스크톱 file picker의 사용자 선택 결과만 runtime multipart 경로로 반환한다. */
 export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
   if (!isTauri()) throw new Error("파일 선택은 데스크톱 앱에서만 사용할 수 있습니다");
   const selected = isProductHosted()
-    ? await invoke<string | null>("pick_multipart_file")
+    ? await apiCall("pick_multipart_file", {})
     : await open({
         directory: false,
         multiple: false,
@@ -243,7 +241,7 @@ export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
 /** Takes the one-shot cold/hot AppLink request stored by the native shell. */
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return invoke<OpenRequest | null>("take_pending_open");
+  return apiCall("take_pending_open", {});
 }
 
 /** Registers the wake-up listener used by the native single-instance plugin. */
@@ -257,25 +255,25 @@ export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise
 /** Claim and validate a pending `api-request/v1` handoff for preview. */
 export async function claimApiRequest(handoffId: string): Promise<ApiRequestHandoffPreview> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
-  return invoke<ApiRequestHandoffPreview>("claim_api_request", { handoffId });
+  return apiCall("claim_api_request", { handoffId });
 }
 
 /** Renew a preview claim without extending the handoff envelope TTL. */
 export async function renewApiRequest(handoffId: string): Promise<{ leaseUntilMs: number }> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
-  return invoke<{ leaseUntilMs: number }>("renew_api_request", { handoffId });
+  return apiCall("renew_api_request", { handoffId });
 }
 
 /** Acknowledge an applied preview and return its editable request template. */
 export async function ackApiRequest(handoffId: string): Promise<RequestTemplate> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
-  return invoke<RequestTemplate>("ack_api_request", { handoffId });
+  return apiCall("ack_api_request", { handoffId });
 }
 
 /** Return a cancelled preview to the shared pending queue. */
 export async function restoreApiRequest(handoffId: string): Promise<void> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
-  return invoke<void>("restore_api_request", { handoffId });
+  return apiCall("restore_api_request", { handoffId });
 }
 
 async function browserFetch(
@@ -616,7 +614,7 @@ async function startNativeSseStream(
   });
   let started: string;
   try {
-    started = await invoke<string>("start_sse_stream", { req, environment, options });
+    started = await apiCall("start_sse_stream", { req, environment, options });
     if (!isSseSessionId(started)) throw new Error("invalid session");
     sessionId = started;
     for (const update of pending.splice(0)) {
@@ -635,7 +633,7 @@ async function startNativeSseStream(
       if (stopped) return;
       stopped = true;
       try {
-        await invoke("stop_sse_stream", { sessionId: activeSessionId });
+        await apiCall("stop_sse_stream", { sessionId: activeSessionId });
       } catch {
         throw new Error("SSE stream을 중지하지 못했습니다.");
       } finally {
@@ -1356,7 +1354,7 @@ async function startNativeWebSocket(
   });
   let started: string;
   try {
-    started = await invoke<string>("start_websocket", { req, environment });
+    started = await apiCall("start_websocket", { req, environment });
     if (!isWebSocketSessionId(started)) throw new Error("invalid session");
     sessionId = started;
     for (const update of pending.splice(0)) {
@@ -1372,7 +1370,7 @@ async function startNativeWebSocket(
   const invokeMessage = async (message: WebSocketMessageInput): Promise<void> => {
     if (stopped) throw new Error("WebSocket 연결이 열려 있지 않습니다");
     try {
-      await invoke("send_websocket_message", { sessionId: activeSessionId, message });
+      await apiCall("send_websocket_message", { sessionId: activeSessionId, message });
     } catch (cause) {
       throw safeWebSocketError(cause);
     }
@@ -1382,7 +1380,7 @@ async function startNativeWebSocket(
     validateCloseReason(reason);
     if (stopped) return;
     try {
-      await invoke("close_websocket", { sessionId: activeSessionId, close: { code, reason } });
+      await apiCall("close_websocket", { sessionId: activeSessionId, close: { code, reason } });
     } catch (cause) {
       throw safeWebSocketError(cause);
     }
@@ -1396,7 +1394,7 @@ async function startNativeWebSocket(
       const payload = encoding === "hex" ? hexToBytes(value) : textToBytes(value);
       if (payload.byteLength > MAX_CONTROL_PAYLOAD_BYTES) throw new Error(MESSAGE_TOO_LARGE);
       try {
-        await invoke("ping_websocket", { sessionId: activeSessionId, data: encodeBase64(payload) });
+        await apiCall("ping_websocket", { sessionId: activeSessionId, data: encodeBase64(payload) });
       } catch (cause) {
         throw safeWebSocketError(cause);
       }
@@ -1406,7 +1404,7 @@ async function startNativeWebSocket(
       if (!Number.isSafeInteger(messageId) || messageId < 1)
         throw new Error("WebSocket binary payload가 올바르지 않습니다");
       try {
-        return await invoke<boolean>("save_websocket_binary", { sessionId: activeSessionId, messageId });
+        return await apiCall("save_websocket_binary", { sessionId: activeSessionId, messageId });
       } catch (cause) {
         throw safeWebSocketError(cause);
       }
@@ -1415,7 +1413,7 @@ async function startNativeWebSocket(
       if (stopped) return;
       stopped = true;
       try {
-        await invoke("disconnect_websocket", { sessionId: activeSessionId });
+        await apiCall("disconnect_websocket", { sessionId: activeSessionId });
       } catch (cause) {
         throw safeWebSocketError(cause);
       } finally {

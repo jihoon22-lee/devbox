@@ -1,9 +1,9 @@
+import { apiCall } from "@devbox/api-studio-features/calls";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 import { listen } from "@tauri-apps/api/event";
 import { nativeMode, productDataAvailable } from "@devbox/product-shell/api";
-import { componentInvoke } from "@devbox/api-studio-features/transport";
-const invokeNavigation = componentInvoke("api-studio.api");
+
 const ListenerControls = lazy(() =>
   import("./ListenerControls").then((module) => ({ default: module.ListenerControls })),
 );
@@ -19,7 +19,7 @@ function Content({ route, navigate }: ShellContentProps) {
     let unlisten: (() => void) | undefined;
     const consume = async () => {
       if (disposed) return;
-      const pending = await invokeNavigation<unknown>("peek_pending_navigation");
+      const pending = await apiCall("peek_pending_navigation", {});
       if (disposed || !pending || typeof pending !== "object") return;
       const value = pending as Record<string, unknown>;
       if (
@@ -29,7 +29,7 @@ function Content({ route, navigate }: ShellContentProps) {
       )
         return;
       navigate(value.route);
-      await invokeNavigation("ack_pending_navigation", { id: value.id });
+      await apiCall("ack_pending_navigation", { id: value.id });
     };
     const wake = () => {
       void consume().catch(() => undefined);

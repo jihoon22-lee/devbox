@@ -1,5 +1,6 @@
-import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke("api-studio.transforms");
+import { transformCall } from "../calls";
+import { isProductHosted } from "../transport";
+
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
@@ -49,32 +50,32 @@ const TOOLBOX_TEXT_ALLOWED_PRODUCERS = new Set(["api-playground", "devbox-launch
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */
 export async function hash(data: string, algorithm: string): Promise<string> {
   if (!isTauri()) return browserHash(data, algorithm);
-  return invoke<string>("hash", { data, algorithm });
+  return transformCall("hash", { data, algorithm });
 }
 
 /** Generates an HMAC without network, persistence, or secret-bearing logs. */
 export async function hmacGenerate(request: HmacRequest): Promise<string> {
   if (!isTauri()) return browserHmacGenerate(request);
-  return invoke<string>("hmac_generate", { request });
+  return transformCall("hmac_generate", { request });
 }
 
 /** Verifies an HMAC and returns only the boolean result. */
 export async function hmacVerify(request: HmacVerifyRequest): Promise<boolean> {
   if (!isTauri()) return browserHmacVerify(request);
-  return invoke<boolean>("hmac_verify", { request });
+  return transformCall("hmac_verify", { request });
 }
 
 /** Verify a parsed JWT without returning its key, signature, or calculated tag. */
 export async function verifyJwt(request: JwtVerifyRequest): Promise<boolean> {
   if (!isTauri()) return browserVerifyJwt(request);
-  return invoke<boolean>("jwt_verify", { request });
+  return transformCall("jwt_verify", { request });
 }
 
 /** Native QR generation is primary; browser preview uses the same bounded contract. */
 export async function generateQr(request: GenerateQrRequest): Promise<QrResult> {
   if (!isTauri()) return generateBrowserQr(request);
   try {
-    return await invoke<QrResult>("generate_qr", { request });
+    return await transformCall("generate_qr", { request });
   } catch (error) {
     throw normalizeQrError(error);
   }
@@ -93,7 +94,7 @@ function normalizeQrError(error: unknown): QrGenerationError {
 /** UUID v4/v7 또는 ULID를 제한된 수량으로 생성한다. */
 export async function generateIds(options: IdentifierOptions): Promise<string[]> {
   if (!isTauri()) return generateIdentifiers(options);
-  return invoke<string[]>("generate_ids", { request: options });
+  return transformCall("generate_ids", { request: options });
 }
 
 /** 기존 UUID v4 호출과의 호환을 유지한다. */
@@ -106,19 +107,19 @@ export async function generateUuid(): Promise<string> {
       hyphens: true,
     })[0];
   }
-  return invoke<string>("generate_uuid");
+  return transformCall("generate_uuid", {});
 }
 
 /** 정규식 전체 매치 목록을 반환한다. */
 export async function regexTest(pattern: string, text: string): Promise<RegexMatch[]> {
   if (!isTauri()) return browserRegex(pattern, text);
-  return invoke<RegexMatch[]>("regex_test", { pattern, text });
+  return transformCall("regex_test", { pattern, text });
 }
 
 /** 두 텍스트의 라인 단위 변경 구간을 반환한다. */
 export async function diff(a: string, b: string): Promise<DiffHunk[]> {
   if (!isTauri()) return browserDiff(a, b);
-  return invoke<DiffHunk[]>("diff", { a, b });
+  return transformCall("diff", { a, b });
 }
 
 /**
@@ -128,7 +129,7 @@ export async function diff(a: string, b: string): Promise<DiffHunk[]> {
  */
 export async function readClipboardText(): Promise<string> {
   if (!isTauri()) return navigator.clipboard.readText();
-  return isProductHosted() ? invoke<string>("read_clipboard_text") : readText();
+  return isProductHosted() ? transformCall("read_clipboard_text", {}) : readText();
 }
 
 /** Publish only the explicit output currently shown by a tool. */
@@ -137,7 +138,7 @@ export async function createApiRequestHandoff(
   source?: import("./tools/outputPolicy").OutputSource,
 ): Promise<ApiHandoffDispatch> {
   if (!isTauri()) throw new Error(API_HANDOFF_BROWSER_ERROR);
-  return invoke<ApiHandoffDispatch>("create_api_request_handoff", isProductHosted() ? { output, source } : { output });
+  return transformCall("create_api_request_handoff", isProductHosted() ? { output, source } : { output });
 }
 
 const KNOWLEDGE_DRAFT_ERROR_DISPLAY = new Map<string, string>([
@@ -178,7 +179,7 @@ export async function createKnowledgeDraftHandoff(output: string): Promise<Knowl
   }
   let response: unknown;
   try {
-    response = await invoke<unknown>("create_knowledge_draft_handoff", { output });
+    response = await transformCall("create_knowledge_draft_handoff", { output });
   } catch (cause) {
     throw safeKnowledgeDraftError(cause);
   }
@@ -253,7 +254,7 @@ function parseOpenRequest(value: unknown): OpenRequest | null {
 /** Takes the one-shot cold-start request left by the native AppLink shell. */
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return parseOpenRequest(await invoke<unknown>("take_pending_open"));
+  return parseOpenRequest(await transformCall("take_pending_open", {}));
 }
 
 /**
@@ -334,7 +335,7 @@ function assertToolboxTextId(handoffId: string): void {
 export async function previewToolboxText(handoffId: string): Promise<ToolboxTextHandoffPreview> {
   if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
   assertToolboxTextId(handoffId);
-  const response = await invoke<unknown>("preview_toolbox_text", { handoffId });
+  const response = await transformCall("preview_toolbox_text", { handoffId });
   return parseToolboxTextPreview(response, handoffId);
 }
 
@@ -342,7 +343,7 @@ export async function previewToolboxText(handoffId: string): Promise<ToolboxText
 export async function renewToolboxText(handoffId: string): Promise<ToolboxTextRenewResult> {
   if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
   assertToolboxTextId(handoffId);
-  const response = await invoke<unknown>("renew_toolbox_text", { handoffId });
+  const response = await transformCall("renew_toolbox_text", { handoffId });
   const leaseUntilMs = isRecord(response) ? response.leaseUntilMs : undefined;
   if (
     !isRecord(response) ||
@@ -359,7 +360,7 @@ export async function renewToolboxText(handoffId: string): Promise<ToolboxTextRe
 export async function acceptToolboxText(handoffId: string): Promise<string> {
   if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
   assertToolboxTextId(handoffId);
-  const response = await invoke<unknown>("accept_toolbox_text", { handoffId });
+  const response = await transformCall("accept_toolbox_text", { handoffId });
   if (typeof response !== "string" || !isBoundedToolboxText(response)) {
     throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
   }
@@ -370,7 +371,7 @@ export async function acceptToolboxText(handoffId: string): Promise<string> {
 export async function discardToolboxText(handoffId: string): Promise<void> {
   if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
   assertToolboxTextId(handoffId);
-  await invoke<void>("discard_toolbox_text", { handoffId });
+  await transformCall("discard_toolbox_text", { handoffId });
 }
 
 async function browserHash(data: string, algorithm: string): Promise<string> {

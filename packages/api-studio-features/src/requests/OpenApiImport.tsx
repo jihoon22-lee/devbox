@@ -1,7 +1,8 @@
+import { apiCall } from "../calls";
 import { sanitizeRequestForPersistence } from "./lib/persistence";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { fetchOpenApiSource } from "./api";
-import { componentInvoke, isProductHosted } from "../transport";
+import { isProductHosted } from "../transport";
 import { MockDraftAction } from "../webhooks/MockDraftAction";
 import { previewOpenApiRules, type OpenApiRuleOperation } from "../webhooks/lib/openapiRules";
 import {
@@ -207,7 +208,7 @@ export function OpenApiImport({
     setApplying(true);
     setError(null);
     try {
-      await componentInvoke("api-studio.api")("save_openapi_definition", {
+      await apiCall("save_openapi_definition", {
         name: displayedPreview.sourceName || `OpenAPI ${displayedPreview.version} 작업`,
         openApiVersion: displayedPreview.version,
         environment,

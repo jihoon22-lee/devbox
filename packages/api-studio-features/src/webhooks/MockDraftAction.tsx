@@ -1,5 +1,5 @@
+import { apiCall, transformCall } from "../calls";
 import { useEffect, useRef, useState } from "react";
-import { componentInvoke } from "../transport";
 import type { DraftOwner } from "../knowledge/api";
 import type { OutputSource } from "../transforms/tools/outputPolicy";
 
@@ -50,7 +50,7 @@ export function MockDraftAction({
     setBusy(true);
     setNotice("");
     try {
-      await componentInvoke(owner)("send_mock_draft", {
+      await (owner === "api-studio.api" ? apiCall : transformCall)("send_mock_draft", {
         output: value,
         status,
         mediaType,

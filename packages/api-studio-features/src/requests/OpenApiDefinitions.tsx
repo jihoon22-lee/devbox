@@ -1,11 +1,11 @@
+import { apiCall } from "../calls";
 import { useEffect, useRef, useState } from "react";
-import { componentInvoke } from "../transport";
 import { isTauri } from "./lib/isTauri";
 import { parseStore } from "./lib/collections";
 import { toRequestTemplate } from "./lib/persistence";
 import { MockDraftAction } from "../webhooks/MockDraftAction";
 import type { RequestTemplate } from "./types";
-const invoke = componentInvoke("api-studio.api");
+
 export interface DefinitionSummary {
   id: string;
   name: string;
@@ -113,7 +113,7 @@ export function OpenApiDefinitions({
   const summaries = useRef(onSummaries);
   summaries.current = onSummaries;
   async function list() {
-    const result = await invoke<unknown>("list_openapi_definitions");
+    const result = await apiCall("list_openapi_definitions", {});
     if (
       !Array.isArray(result) ||
       result.length > 32 ||
@@ -159,7 +159,7 @@ export function OpenApiDefinitions({
     setError("");
     const version = ++generation.current;
     try {
-      const result = parseDefinition(await invoke<unknown>("get_openapi_definition", { id }));
+      const result = parseDefinition(await apiCall("get_openapi_definition", { id }));
       if (result.id !== id) throw new Error(errorText);
       if (mounted.current && generation.current === version) {
         setDefinition(result);
@@ -180,7 +180,7 @@ export function OpenApiDefinitions({
     setError("");
     const version = ++generation.current;
     try {
-      await invoke("delete_openapi_definition", { id: definition.id });
+      await apiCall("delete_openapi_definition", { id: definition.id });
       if (mounted.current && generation.current === version) {
         const remaining = items.filter((item) => item.id !== definition.id);
         setItems(remaining);

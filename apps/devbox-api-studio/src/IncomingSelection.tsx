@@ -1,7 +1,7 @@
+import { transformCall } from "@devbox/api-studio-features/calls";
 import { useEffect, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { componentInvoke } from "@devbox/api-studio-features/transport";
-const invoke = componentInvoke("api-studio.transforms");
+
 export default function IncomingSelection() {
   const { review } = useIncomingReview();
   const [issue, setIssue] = useState(""),
@@ -18,7 +18,7 @@ export default function IncomingSelection() {
     let active = true;
     setIssue("");
     setNotice("");
-    void invoke<{ state: string }>("open_workspace_selection", {
+    void transformCall("open_workspace_selection", {
       id,
       operationId: incoming.operationId,
       revision: incoming.commandRevision,

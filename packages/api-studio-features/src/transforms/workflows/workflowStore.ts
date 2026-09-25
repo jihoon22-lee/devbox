@@ -1,5 +1,5 @@
-import { componentInvoke } from "../../transport";
-const invoke = componentInvoke("api-studio.transforms");
+import { transformCall } from "../../calls";
+
 import { isTauri } from "../lib/isTauri";
 import {
   PIPELINE_LIMITS,
@@ -22,24 +22,11 @@ export const WORKFLOW_STORAGE_LIMITS = Object.freeze({
   maxSerializedBytes: 64 * 1024,
 });
 
-export interface RecentToolMetadata {
-  readonly toolId: string;
-  readonly usedAt: number;
-}
+export type RecentToolMetadata = import("../../generated/RecentToolMetadata").RecentToolMetadata;
 
-export interface SavedPipelineMetadata {
-  readonly id: string;
-  readonly inputType: PipelineValueType;
-  readonly steps: readonly PipelineStep[];
-  readonly updatedAt: number;
-}
+export type SavedPipelineMetadata = import("../../generated/SavedPipelineMetadata").SavedPipelineMetadata;
 
-export interface WorkflowMetadata {
-  readonly schemaVersion: typeof WORKFLOW_SCHEMA_VERSION;
-  readonly recentTools: readonly RecentToolMetadata[];
-  readonly favoriteTools: readonly string[];
-  readonly pipelines: readonly SavedPipelineMetadata[];
-}
+export type WorkflowMetadata = import("../../generated/WorkflowMetadata").WorkflowMetadata;
 
 export const WORKFLOW_STORAGE_ERROR = "Toolbox 워크플로 메타데이터를 저장하거나 읽지 못했습니다.";
 
@@ -306,7 +293,7 @@ export function createWorkflowPersistence(options: WorkflowPersistenceOptions = 
   const load = async (): Promise<WorkflowMetadata> => {
     if (isTauri()) {
       try {
-        const raw = await invoke<unknown>("load_workflow_metadata");
+        const raw = await transformCall("load_workflow_metadata", {});
         if (isRecord(raw) && "metadata" in raw && typeof raw.writable === "boolean") {
           writeBlocked = !raw.writable;
           if (!raw.writable || !hasStorageShape(raw.metadata)) throw fixedStorageError();
@@ -368,7 +355,7 @@ export function createWorkflowPersistence(options: WorkflowPersistenceOptions = 
       if (writeBlocked) throw fixedStorageError();
       if (isTauri()) {
         try {
-          await invoke("save_workflow_metadata", {
+          await transformCall("save_workflow_metadata", {
             // Send the already-bounded JSON string so the native command can
             // reject an oversized IPC payload before deserializing vectors.
             serializedMetadata: serialized,

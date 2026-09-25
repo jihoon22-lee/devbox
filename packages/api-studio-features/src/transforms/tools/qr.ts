@@ -72,33 +72,11 @@ export type QrVersion =
   | 39
   | 40;
 
-export interface WifiRequest {
-  ssid: string;
-  password: string;
-  security: "WPA" | "WEP" | "nopass";
-  hidden: boolean;
-}
+export type WifiRequest = import("../../generated/WifiRequest").WifiRequest;
 
-export interface GenerateQrRequest {
-  preset: QrPreset;
-  text?: string;
-  url?: string;
-  wifi?: WifiRequest;
-  version: QrVersion | null;
-  errorCorrection: QrErrorCorrection;
-  size: number;
-  quietZone: number;
-}
+export type GenerateQrRequest = import("../../generated/GenerateQrRequest").GenerateQrRequest;
 
-export interface QrResult {
-  svg: string;
-  pngBase64: string;
-  width: number;
-  version: number;
-  modules: number;
-  quietZone: number;
-  payloadBytes: number;
-}
+export type QrResult = import("../../generated/QrResult").QrResult;
 
 export class QrGenerationError extends Error {
   readonly code: QrErrorCode;

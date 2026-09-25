@@ -18,8 +18,9 @@ it("preserves terminal protocol errors without reflecting untrusted details", ()
 });
 
 it("preserves the reviewed Webhook receiver-unavailable message only for its owner", () => {
-  const issue = "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
-  expect(componentFailure("api-studio.webhooks", { issue }).message).toBe(issue);
+  const message = "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
+  const issue = "native_error_9b26c2d9449d";
+  expect(componentFailure("api-studio.webhooks", { issue }).message).toBe(message);
   expect(componentFailure("api-studio.api", { issue }).message).toBe("작업을 완료하지 못했습니다.");
   expect(componentFailure("api-studio.webhooks", { issue: issue + " synthetic-secret" }).message).toBe(
     "작업을 완료하지 못했습니다.",
@@ -27,7 +28,8 @@ it("preserves the reviewed Webhook receiver-unavailable message only for its own
 });
 
 it("preserves the binary webhook handoff explanation", () => {
-  const issue = "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
-  expect(componentFailure("api-studio.webhooks", { issue }).message).toBe(issue);
+  const message = "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
+  const issue = "native_error_974bbe3cd37f";
+  expect(componentFailure("api-studio.webhooks", { issue }).message).toBe(message);
   expect(componentFailure("api-studio.api", { issue }).message).toBe("작업을 완료하지 못했습니다.");
 });

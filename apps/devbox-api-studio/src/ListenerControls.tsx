@@ -1,7 +1,7 @@
+import { webhookCall } from "@devbox/api-studio-features/calls";
 import { useEffect, useState } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
-import { componentInvoke } from "@devbox/api-studio-features/transport";
-const invoke = componentInvoke("api-studio.webhooks");
+
 interface Status {
   policy: "stop-on-close" | "keep-listening";
   running: boolean;
@@ -22,7 +22,7 @@ export function ListenerControls() {
       if (pending) return;
       pending = true;
       try {
-        const value = await invoke<Status>("lifecycle_status");
+        const value = await webhookCall("lifecycle_status", {});
         if (alive) setStatus(value);
       } catch {
         if (alive) setError("서버 종료 설정을 확인하지 못했습니다.");
@@ -43,8 +43,8 @@ export function ListenerControls() {
     setBusy(true);
     setError(null);
     try {
-      await invoke(method, args);
-      if (method !== "quit_product") setStatus(await invoke<Status>("lifecycle_status"));
+      await webhookCall(method, args);
+      if (method !== "quit_product") setStatus(await webhookCall("lifecycle_status", {}));
     } catch (cause) {
       const code = cause instanceof Error ? cause.message : "";
       setError(

@@ -1,26 +1,10 @@
-export interface GraphqlRequest {
-  query: string;
-  variables: string;
-  operation_name: string;
-}
+export type GraphqlRequest = import("../../generated/GraphqlRequest").GraphqlRequest;
 
-export interface GraphqlLocation {
-  line: number;
-  column: number;
-}
+export type GraphqlLocation = import("../../generated/GraphqlLocation").GraphqlLocation;
 
-export interface GraphqlError {
-  message: string;
-  locations: GraphqlLocation[];
-  path: string[];
-}
+export type GraphqlError = import("../../generated/GraphqlError").GraphqlError;
 
-export interface GraphqlResponse {
-  envelope: "valid" | "not_json" | "invalid" | "oversized";
-  data: unknown | null;
-  errors: GraphqlError[];
-  errors_truncated: boolean;
-}
+export type GraphqlResponse = import("../../generated/GraphqlResponse").GraphqlResponse;
 
 export const MAX_GRAPHQL_QUERY_BYTES = 512 * 1024;
 export const MAX_GRAPHQL_VARIABLES_BYTES = 512 * 1024;

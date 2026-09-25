@@ -14,18 +14,9 @@ export type HmacAlgorithm = "sha256" | "sha384" | "sha512";
 export type HmacInputEncoding = "utf8" | "hex" | "base64" | "base64url";
 export type HmacOutputEncoding = "hex" | "base64" | "base64url";
 
-export interface HmacRequest {
-  algorithm: HmacAlgorithm;
-  key: string;
-  keyEncoding: HmacInputEncoding;
-  message: string;
-  messageEncoding: HmacInputEncoding;
-  outputEncoding: HmacOutputEncoding;
-}
+export type HmacRequest = import("../../generated/HmacRequest").HmacRequest;
 
-export interface HmacVerifyRequest extends HmacRequest {
-  expectedTag: string;
-}
+export type HmacVerifyRequest = import("../../generated/HmacVerifyRequest").HmacVerifyRequest;
 
 interface PreparedRequest {
   algorithm: HmacAlgorithm;

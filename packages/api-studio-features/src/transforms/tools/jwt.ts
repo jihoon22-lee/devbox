@@ -103,13 +103,7 @@ export interface JwtDisplayOptions {
   verifiedAtSeconds?: number;
 }
 
-export interface JwtVerifyRequest {
-  algorithm: JwtAlgorithm;
-  signingInput: string;
-  signature: string;
-  key: string;
-  keyEncoding: JwtKeyEncoding;
-}
+export type JwtVerifyRequest = import("../../generated/JwtVerifyRequest").JwtVerifyRequest;
 
 const UTF8_ENCODER = new TextEncoder();
 const ALGORITHM_TAG_LENGTH: Readonly<Record<JwtAlgorithm, number>> = Object.freeze({

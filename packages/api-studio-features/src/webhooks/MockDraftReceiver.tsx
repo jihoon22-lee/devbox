@@ -1,12 +1,12 @@
+import { webhookCall } from "../calls";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
-import { componentInvoke } from "../transport";
 import { isTauri } from "./lib/isTauri";
 import { validateRule } from "./lib/ruleValidation";
 import type { ResponseRule } from "./api";
 import "./mockDraft.css";
-const invoke = componentInvoke("api-studio.webhooks");
+
 const ERROR = "Mock 초안을 확인하지 못했습니다. 원래 규칙 초안은 유지됩니다.";
 interface Preview {
   id: string;
@@ -86,7 +86,7 @@ export function MockDraftReceiver({
       checking = true;
       const version = revision.current;
       try {
-        const result = parseMockPreview(await invoke<unknown>("peek_mock_draft"));
+        const result = parseMockPreview(await webhookCall("peek_mock_draft", {}));
         if (alive && revision.current === version) {
           setPreview(result);
           setError("");
@@ -136,7 +136,7 @@ export function MockDraftReceiver({
     setError("");
     const version = ++revision.current;
     try {
-      const result = await invoke<unknown>(apply ? "accept_mock_draft" : "discard_mock_draft", { id: preview.id });
+      const result = await webhookCall(apply ? "accept_mock_draft" : "discard_mock_draft", { id: preview.id });
       if (!mounted.current || revision.current !== version) return;
       if (apply) onApply(parseMockRule(result));
       setPreview(null);

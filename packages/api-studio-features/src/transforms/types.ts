@@ -1,16 +1,6 @@
-export interface RegexMatch {
-  start: number;
-  end: number;
-  text: string;
-}
+export type RegexMatch = import("../generated/RegexMatch").RegexMatch;
 
-export interface DiffHunk {
-  kind: number;
-  old_start: number;
-  old_end: number;
-  new_start: number;
-  new_end: number;
-}
+export type DiffHunk = import("../generated/DiffHunk").DiffHunk;
 
 export interface ApiHandoffDispatch {
   handoffId: string;
@@ -43,10 +33,7 @@ export type OpenTarget =
   | { kind: "install"; appId: string }
   | { kind: "handoff"; handoffKind: string; id: string };
 
-export interface OpenRequest {
-  target: OpenTarget;
-  from: string | null;
-}
+export type OpenRequest = import("../generated/OpenRequest").OpenRequest;
 
 /** Safe, bounded projection returned by `preview_toolbox_text`. */
 export interface ToolboxTextHandoffPreview {

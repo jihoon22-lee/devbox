@@ -1,25 +1,10 @@
-import { componentInvoke, type Component } from "../transport";
+import { apiCall, transformCall } from "../calls";
+import type { Component } from "../transport";
 import type { OutputSource } from "../transforms/tools/outputPolicy";
 
 export type DraftOwner = Extract<Component, "api-studio.api" | "api-studio.transforms">;
-export interface DraftSummary {
-  artifact: {
-    id: string;
-    kind: "knowledge-draft/v1";
-    provenance: {
-      product: "api-studio";
-      component: DraftOwner;
-      requestId: string;
-      revision: number;
-    };
-  };
-  createdAtMs: number;
-  title: string;
-  redacted: boolean;
-}
-export interface KnowledgeDraft extends DraftSummary {
-  body: string;
-}
+export type DraftSummary = import("../generated/KnowledgeResultSummary").KnowledgeResultSummary;
+export type KnowledgeDraft = import("../generated/KnowledgeResultDraft").KnowledgeResultDraft;
 const ERROR = "보관한 Knowledge 초안을 확인하지 못했습니다.";
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -64,7 +49,7 @@ export function parseDraft(value: unknown, owner: DraftOwner): KnowledgeDraft {
   return { ...summary, body };
 }
 export async function saveDraft(owner: DraftOwner, output: string, source?: OutputSource): Promise<KnowledgeDraft> {
-  const result = await componentInvoke(owner)<unknown>("save_knowledge_draft", {
+  const result = await (owner === "api-studio.api" ? apiCall : transformCall)("save_knowledge_draft", {
     output,
     ...(source ? { source } : {}),
   });
@@ -72,18 +57,19 @@ export async function saveDraft(owner: DraftOwner, output: string, source?: Outp
   return parseDraft(result.draft, owner);
 }
 export async function listDrafts(owner: DraftOwner): Promise<DraftSummary[]> {
-  const result = await componentInvoke(owner)<unknown>("list_knowledge_drafts");
+  const result = await (owner === "api-studio.api" ? apiCall : transformCall)("list_knowledge_drafts", {});
   if (!Array.isArray(result) || result.length > 50) throw new Error(ERROR);
   return result.map((value) => parseSummary(value, owner));
 }
 export async function getDraft(owner: DraftOwner, id: string): Promise<KnowledgeDraft> {
-  return parseDraft(await componentInvoke(owner)<unknown>("get_knowledge_draft", { id }), owner);
+  return parseDraft(await (owner === "api-studio.api" ? apiCall : transformCall)("get_knowledge_draft", { id }), owner);
 }
 export async function deleteDraft(owner: DraftOwner, id: string): Promise<void> {
-  await componentInvoke(owner)("delete_knowledge_draft", { id });
+  await (owner === "api-studio.api" ? apiCall : transformCall)("delete_knowledge_draft", { id });
 }
 export function draftError(error: unknown): string {
-  return error instanceof Error && error.message === "knowledge_storage_full"
+  return error instanceof Error &&
+    (error.name === "knowledge_storage_full" || error.message === "knowledge_storage_full")
     ? "보관함이 가득 찼습니다. 기존 초안을 내보낸 뒤 직접 삭제하고 다시 시도하세요."
     : "초안 작업을 완료하지 못했습니다. 기존 보관함은 유지됩니다.";
 }
@@ -100,7 +86,7 @@ export function exportDraft(draft: KnowledgeDraft): void {
 }
 
 export async function sendDraft(owner: DraftOwner, id: string): Promise<void> {
-  const result = await componentInvoke(owner)<unknown>("send_knowledge_draft", { id });
+  const result = await (owner === "api-studio.api" ? apiCall : transformCall)("send_knowledge_draft", { id });
   if (
     !record(result) ||
     typeof result.operationId !== "string" ||

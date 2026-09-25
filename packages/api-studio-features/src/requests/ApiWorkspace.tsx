@@ -1,8 +1,8 @@
+import { apiCall } from "../calls";
 import { useEffect, useRef, useState } from "react";
-import { componentInvoke } from "../transport";
 import { isTauri } from "./lib/isTauri";
 import "./apiWorkspace.css";
-const invoke = componentInvoke("api-studio.api");
+
 export interface WorkspaceLinks {
   collectionIds: string[];
   environmentIds: string[];
@@ -120,7 +120,7 @@ export function ApiWorkspacePanel({
     setError("");
     const current = ++version.current;
     try {
-      const result = await invoke<State>("api_workspace_state");
+      const result = await apiCall("api_workspace_state", {});
       const document = parseWorkspaceDocument(result?.document);
       if (
         (result.currentProjectId !== null && typeof result.currentProjectId !== "string") ||
@@ -159,7 +159,7 @@ export function ApiWorkspacePanel({
     setError("");
     const current = ++version.current;
     try {
-      const document = parseWorkspaceDocument(await invoke<unknown>(method, args));
+      const document = parseWorkspaceDocument(await apiCall(method, args));
       if (mounted.current && current === version.current) {
         applyDocument(document);
         setEdit(null);
