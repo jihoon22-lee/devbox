@@ -29,8 +29,9 @@ impl Drop for SearchLease {
         if !self.keep {
             let _ = search::dispatch_for(
                 &self.app,
-                "source_cancel",
-                json!({"generation":self.generation}),
+                crate::ipc::search::HostSearchCall::SourceCancel {
+                    generation: self.generation.clone(),
+                },
                 Consumer::Federated,
             );
         }
@@ -178,14 +179,18 @@ async fn saved_index(
     .await
     .map_err(|_| "knowledge_source_unavailable")?
 }
-pub(crate) async fn saved_reference(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
+pub(crate) async fn saved_reference_typed(
+    app: &tauri::AppHandle,
+    id: String,
+    revision: String,
+) -> Result<Value, String> {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct Input {
         id: String,
         revision: String,
     }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let input = Input { id, revision };
     if !commands::opaque_id(&input.id) || !commands::revision(&input.revision) {
         return Err("component_args_invalid".into());
     }
@@ -241,10 +246,10 @@ pub(crate) fn handle(
                 revision,
                 operation_id,
             } => crate::result_receive::offer(&app, &component, &id, &revision, &operation_id),
-            Call::ReadFileReference { reference } => crate::search::open(
+            Call::ReadFileReference { reference } => crate::search::open_typed(
                 &app,
-                "native_file_reference",
-                json!({"reference":reference}),
+                crate::search::OpenKind::NativeFileReference,
+                reference,
             )
             .await
             .map_err(|_| "knowledge_file_stale"),
@@ -308,7 +313,23 @@ pub(crate) fn handle(
                 if cancellation.as_ref().is_some_and(|token| token.requested()) {
                     return Err("query_cancelled");
                 }
-                let value=search::dispatch_for(&app,"source_query",json!({"source":source_name,"query":query,"mode":if mode==QueryMode::Content{"content"}else{"name"},"limit":128,"filter":{}}),Consumer::Federated).map_err(|_|"knowledge_source_unavailable")?;
+                let value = search::dispatch_for(
+                    &app,
+                    crate::ipc::search::HostSearchCall::SourceQuery {
+                        source: source_name.into(),
+                        query,
+                        mode: if mode == QueryMode::Content {
+                            "content"
+                        } else {
+                            "name"
+                        }
+                        .into(),
+                        limit: Some(128),
+                        filter: Default::default(),
+                    },
+                    Consumer::Federated,
+                )
+                .map_err(|_| "knowledge_source_unavailable")?;
                 let id = value["generation"]
                     .as_str()
                     .filter(|id| commands::opaque_id(id))
@@ -331,8 +352,9 @@ pub(crate) fn handle(
                     snapshot = serde_json::from_value(
                         search::dispatch_for(
                             &app,
-                            "source_poll",
-                            json!({"generation":id}),
+                            crate::ipc::search::HostSearchCall::SourcePoll {
+                                generation: id.clone(),
+                            },
                             Consumer::Federated,
                         )
                         .map_err(|_| "knowledge_source_unavailable")?,

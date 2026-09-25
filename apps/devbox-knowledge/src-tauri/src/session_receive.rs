@@ -256,10 +256,12 @@ pub(crate) fn publish(
     }
     Ok(json!({"state":if open {"previewPending"} else {"prepared"},"draft":draft}))
 }
-pub(crate) async fn dispatch(
+pub(crate) async fn dispatch_typed(
     app: &tauri::AppHandle,
-    method: &str,
-    args: Value,
+    open: bool,
+    source_id: String,
+    operation_id: String,
+    input_revision: String,
     deadline: u64,
 ) -> std::result::Result<Value, String> {
     let permit = app
@@ -268,7 +270,11 @@ pub(crate) async fn dispatch(
         .clone()
         .try_acquire_owned()
         .map_err(|_| "summary_busy")?;
-    let input: Input = serde_json::from_value(args).map_err(|_| "summary_invalid")?;
+    let input = Input {
+        source_id,
+        operation_id,
+        revision: input_revision,
+    };
     crate::suite::require_reviewed(
         app,
         &input.operation_id,
@@ -297,7 +303,6 @@ pub(crate) async fn dispatch(
         &metadata.binding,
     )?;
     let app = app.clone();
-    let open = method == "open_session_summary";
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         if now() >= deadline {

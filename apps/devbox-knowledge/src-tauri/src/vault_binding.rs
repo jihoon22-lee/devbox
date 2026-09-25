@@ -4,7 +4,6 @@ use crate::core::retirement::{Lease, Pool};
 use crate::core::{stores, vault_binding as data};
 use knowledge_vault_engine::component::ProductVault;
 use rusqlite::{Connection, OpenFlags};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
@@ -37,15 +36,7 @@ struct Binding {
     preview: Arc<Mutex<Option<Preview>>>,
     retirement: Mutex<Option<Arc<Pool<ProductVault>>>>,
 }
-pub const METHODS: &[&str] = &[
-    "vault_change_status",
-    "schedule_vault_change",
-    "cancel_vault_change",
-    "prepare_vault_change",
-    "apply_vault_change",
-    "discard_vault_preview",
-    "vault_change_job",
-];
+
 pub fn initialize(
     app: &tauri::AppHandle,
     root: PathBuf,
@@ -227,41 +218,24 @@ fn apply(
     crate::startup::activate_with_owner(app, &preview.schedule.base, owner)?;
     Ok(json!({"active":true}))
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Id {
-    id: String,
-}
-fn id(args: Value) -> Result<String, String> {
-    let value: Id = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    if uuid::Uuid::parse_str(&value.id).is_err() {
-        return Err("component_args_invalid".into());
-    }
-    Ok(value.id)
-}
-fn empty(args: &Value) -> Result<(), String> {
-    if args.as_object().is_some_and(|args| args.is_empty()) {
-        Ok(())
-    } else {
-        Err("component_args_invalid".into())
-    }
-}
-pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
-    let state = app.try_state::<Binding>().ok_or("vault_change_invalid")?;
-    match method {
-        "vault_change_status" => {
-            empty(&args)?;
-            Ok(json!({"schedule":data::read(&state.root)?}))
+pub fn dispatch_typed(
+    app: &tauri::AppHandle,
+    call: crate::ipc::setup::VaultCall,
+) -> Result<Value, String> {
+    use crate::ipc::setup::VaultCall;
+    if let VaultCall::DiscardVaultPreview { id }
+    | VaultCall::VaultChangeJob { id }
+    | VaultCall::ApplyVaultChange { id } = &call
+    {
+        if uuid::Uuid::parse_str(id).is_err() {
+            return Err("component_args_invalid".into());
         }
-        "schedule_vault_change" => {
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Input {
-                path: String,
-            }
-            let input: Input =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            let target = data::target(&input.path)?;
+    }
+    let state = app.try_state::<Binding>().ok_or("vault_change_invalid")?;
+    match call {
+        VaultCall::VaultChangeStatus {} => Ok(json!({"schedule":data::read(&state.root)?})),
+        VaultCall::ScheduleVaultChange { path } => {
+            let target = data::target(&path)?;
             if crate::startup::require_active(app).is_err() {
                 crate::startup::require_uninitialized(app)?;
             }
@@ -289,8 +263,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 Ok(json!({"schedule":schedule}))
             })
         }
-        "cancel_vault_change" => {
-            empty(&args)?;
+        VaultCall::CancelVaultChange {} => {
             if let Some(job) = state.job.lock().map_err(|_| "store_busy")?.as_ref() {
                 job.cancel.store(true, Ordering::Release);
             }
@@ -301,16 +274,14 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 Ok(json!({"schedule":null}))
             })
         }
-        "discard_vault_preview" => {
-            let id = id(args)?;
+        VaultCall::DiscardVaultPreview { id } => {
             let mut slot = state.preview.lock().map_err(|_| "store_busy")?;
             if slot.as_ref().is_some_and(|preview| preview.id == id) {
                 *slot = None;
             }
             Ok(Value::Null)
         }
-        "vault_change_job" => {
-            let id = id(args)?;
+        VaultCall::VaultChangeJob { id } => {
             let slot = state.job.lock().map_err(|_| "store_busy")?;
             let job = slot
                 .as_ref()
@@ -319,7 +290,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
             match &job.result {
                 Some(Ok(value)) => Ok(json!({"state":"succeeded","value":value})),
                 Some(Err(error)) => Ok(
-                    json!({"state":"failed","issue":crate::component::issue(error),"committed":job.committed.load(Ordering::Acquire)}),
+                    json!({"state":"failed","issue":crate::ipc::setup::classify(error),"committed":job.committed.load(Ordering::Acquire)}),
                 ),
                 None if job.started.elapsed() >= TIMEOUT
                     && !job.committed.load(Ordering::Acquire) =>
@@ -332,13 +303,11 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 }
             }
         }
-        "prepare_vault_change" | "apply_vault_change" => {
+        call @ (VaultCall::PrepareVaultChange {} | VaultCall::ApplyVaultChange { .. }) => {
             crate::startup::require_uninitialized(app)?;
-            let preview_id = if method == "apply_vault_change" {
-                Some(id(args)?)
-            } else {
-                empty(&args)?;
-                None
+            let preview_id = match call {
+                VaultCall::ApplyVaultChange { id } => Some(id),
+                _ => None,
             };
             let mut slot = state.job.lock().map_err(|_| "store_busy")?;
             if slot.as_ref().is_some_and(|job| job.result.is_none()) {
@@ -372,7 +341,6 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
             });
             Ok(json!({"jobId":id}))
         }
-        _ => Err("component_method_invalid".into()),
     }
 }
 

@@ -31,7 +31,6 @@ struct Lifecycle {
     close_to_tray: AtomicBool,
     quit: Mutex<QuitReview>,
 }
-pub const QUIT_METHODS: &[&str] = &["pending_quit", "decide_quit"];
 fn request_quit(app: &tauri::AppHandle) {
     let state = app.state::<Lifecycle>();
     let Ok(mut review) = state.quit.lock() else {
@@ -46,32 +45,23 @@ fn request_quit(app: &tauri::AppHandle) {
         let _ = window.emit("knowledge://quit-request", id);
     }
 }
-pub fn quit_dispatch(
+pub fn quit_dispatch_typed(
     app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
+    call: crate::ipc::commands::QuitCall,
 ) -> Result<serde_json::Value, String> {
     let state = app.state::<Lifecycle>();
     let mut review = state.quit.lock().map_err(|_| "quit_unavailable")?;
-    if method == "pending_quit" && args.as_object().is_some_and(|value| value.is_empty()) {
-        return Ok(serde_json::json!(review.pending));
+    match call {
+        crate::ipc::commands::QuitCall::PendingQuit {} => Ok(serde_json::json!(review.pending)),
+        crate::ipc::commands::QuitCall::DecideQuit { id, quit } => {
+            review.decide(&id, quit)?;
+            drop(review);
+            if quit {
+                app.exit(0);
+            }
+            Ok(serde_json::Value::Null)
+        }
     }
-    if method != "decide_quit" {
-        return Err("component_args_invalid".into());
-    }
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Decision {
-        id: String,
-        quit: bool,
-    }
-    let decision: Decision = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    review.decide(&decision.id, decision.quit)?;
-    drop(review);
-    if decision.quit {
-        app.exit(0);
-    }
-    Ok(serde_json::Value::Null)
 }
 pub fn initialize(app: &tauri::AppHandle) {
     app.manage(Lifecycle::default());
@@ -170,9 +160,9 @@ pub struct ClosePolicy {
 
 pub fn dispatch_typed(
     app: &tauri::AppHandle,
-    call: crate::activity_ipc::HostActivityCall,
+    call: crate::ipc::activity::HostActivityCall,
 ) -> Result<serde_json::Value, String> {
-    use crate::activity_ipc::HostActivityCall;
+    use crate::ipc::activity::HostActivityCall;
     let lifecycle = app.state::<Lifecycle>();
     match call {
         HostActivityCall::GetClosePolicy {} => {}

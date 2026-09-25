@@ -58,6 +58,8 @@ pub struct Reference {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SourceRow")]
 pub struct Row {
     pub source: String,
     pub root_identity: String,
@@ -68,6 +70,8 @@ pub struct Row {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SourceSnapshot")]
 pub struct Snapshot {
     pub generation: String,
     pub store_generation: String,

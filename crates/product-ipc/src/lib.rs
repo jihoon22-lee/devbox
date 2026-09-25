@@ -57,6 +57,7 @@ pub enum ExecutionClass {
 
 pub trait ComponentCall: DeserializeOwned + Send + 'static {
     const COMPONENT: &'static str;
+    const INSTALLATION_REVIEW: bool = false;
     fn method(&self) -> &'static str;
     fn routes(&self) -> &'static [&'static str];
     fn class(&self) -> ExecutionClass {

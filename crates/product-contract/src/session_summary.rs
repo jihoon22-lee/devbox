@@ -10,6 +10,8 @@ const INVALID: &str = "session_summary_invalid";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SessionSummaryBinding")]
 pub struct Binding {
     pub context: ProjectContext,
     pub session_id: String,
@@ -18,6 +20,7 @@ pub struct Binding {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum ProblemCategory {
     BuildFailed,
     TestFailed,
@@ -45,6 +48,7 @@ impl ProblemCategory {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SelectedProblem {
     pub category: ProblemCategory,
     pub count: u32,
@@ -54,6 +58,8 @@ pub struct SelectedProblem {
 /// provider's session and recorded interval, not a latest/today snapshot.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SessionSummaryMetadata")]
 pub struct Metadata {
     pub schema_version: u32,
     pub binding: Binding,
@@ -66,6 +72,8 @@ pub struct Metadata {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SessionSummaryDraft")]
 pub struct Draft {
     pub metadata: Metadata,
     pub title: String,

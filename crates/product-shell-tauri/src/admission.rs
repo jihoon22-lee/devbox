@@ -105,7 +105,11 @@ fn admit_with_guard<C: ComponentCall>(
     call: &C,
     guard: OperationGuard,
 ) -> Result<Admission, Problem> {
-    let provenance = crate::authorize(window, header, C::COMPONENT)?;
+    let provenance = if C::INSTALLATION_REVIEW {
+        crate::authorize_installation_review(window, header)?
+    } else {
+        crate::authorize(window, header, C::COMPONENT)?
+    };
     let problem = |code| Problem {
         code,
         provenance: provenance.clone(),

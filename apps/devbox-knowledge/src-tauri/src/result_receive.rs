@@ -90,13 +90,19 @@ struct Input {
     operation_id: String,
     revision: String,
 }
-pub(crate) async fn open(
+pub(crate) async fn open_typed(
     app: &tauri::AppHandle,
-    args: Value,
+    id: String,
+    operation_id: String,
+    revision: String,
     deadline: u64,
 ) -> Result<Value, String> {
     let permit = crate::session_receive::reserve(app)?;
-    let input: Input = serde_json::from_value(args).map_err(|_| "draft_invalid")?;
+    let input = Input {
+        id,
+        operation_id,
+        revision,
+    };
     let component = {
         let pending = pending().lock().map_err(|_| "draft_busy")?;
         pending

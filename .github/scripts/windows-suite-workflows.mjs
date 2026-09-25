@@ -234,7 +234,12 @@ try {
     knowledge = apps.knowledge,
     center = apps["control-center"];
   await domain(workspace, "workspace.migration", "status");
-  await domain(knowledge, "knowledge.migration", "start_empty");
+  // Startup owns fresh-store initialization. A second start_empty races its
+  // reservation and intermittently fails with busy on real Windows launches.
+  await until(async () => {
+    const status = await domain(knowledge, "knowledge.migration", "status");
+    return status.active === true || status.prepared === true;
+  }, "Knowledge automatic store preparation did not finish");
   await reload(workspace);
   await reload(knowledge);
   for (const item of Object.values(apps)) await approve(item);

@@ -1,8 +1,7 @@
-pub mod activity_ipc;
 mod activity_projection;
-mod component;
 mod core;
 mod federation;
+pub mod ipc;
 mod lifecycle;
 mod project_provider;
 mod search;
@@ -28,7 +27,7 @@ pub fn run() {
             ))
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_opener::init())
-            .plugin(component::plugin())
+            .plugin(ipc::plugin())
             .plugin(project_provider::plugin())
             .plugin(session_receive::plugin())
     })

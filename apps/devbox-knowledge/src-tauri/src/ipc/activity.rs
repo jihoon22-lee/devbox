@@ -6,7 +6,7 @@ use product_shell_tauri::{admit_request, Reply};
 use serde::Deserialize;
 use tauri::{Manager, WebviewWindow};
 
-#[derive(Debug, Deserialize, ts_rs::TS)]
+#[derive(Deserialize, ts_rs::TS)]
 #[serde(
     tag = "method",
     content = "args",
@@ -26,7 +26,7 @@ impl HostActivityCall {
         }
     }
 }
-#[derive(Debug, Deserialize, ts_rs::TS)]
+#[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
 pub enum KnowledgeActivityCall {
     Host(HostActivityCall),

@@ -283,7 +283,31 @@ pub fn opener_result_types(
         ("reveal_file", export.register::<()>()?),
     ])
 }
-product_ipc::issue_codes! {pub enum SearchIssue {ComponentArgsInvalid="component_args_invalid",ComponentResponseInvalid="component_response_invalid",ComponentStateConflict="component_state_conflict",ComponentStateUnavailable="component_state_unavailable",ComponentStorageUnavailable="component_storage_unavailable",ComponentStoreExists="component_store_exists",ImportRowInvalid="import_row_invalid",ProviderUnavailable="provider_unavailable",RootUnavailable="root_unavailable",SearchBusy="search_busy",SearchStale="search_stale",SearchUnavailable="search_unavailable",Unavailable="unavailable",}}
+product_ipc::issue_codes! {pub enum SearchIssue {
+ComponentArgsInvalid = "component_args_invalid",
+ComponentStateConflict = "component_state_conflict",
+FileReferenceInvalid = "file_reference_invalid",
+KnowledgeCommandInvalid = "knowledge_command_invalid",
+KnowledgeCommandUnavailable = "knowledge_command_unavailable",
+KnowledgeFileStale = "knowledge_file_stale",
+KnowledgeQueryModeUnavailable = "knowledge_query_mode_unavailable",
+KnowledgeReferenceInvalid = "knowledge_reference_invalid",
+KnowledgeReferenceStale = "knowledge_reference_stale",
+KnowledgeSourceBusy = "knowledge_source_busy",
+KnowledgeSourceDenied = "knowledge_source_denied",
+KnowledgeSourceInvalid = "knowledge_source_invalid",
+KnowledgeSourceStale = "knowledge_source_stale",
+KnowledgeSourceUnavailable = "knowledge_source_unavailable",
+MigrationBusy = "migration_busy",
+MigrationUnavailable = "migration_unavailable",
+ProviderUnavailable = "provider_unavailable",
+QueryCancelled = "query_cancelled",
+SearchBusy = "search_busy",
+SearchLimit = "search_limit",
+SearchSourceDenied = "search_source_denied",
+SearchStale = "search_stale",
+SearchUnavailable = "search_unavailable",
+SetupRequired = "setup_required",ComponentArgsInvalid="component_args_invalid",ComponentResponseInvalid="component_response_invalid",ComponentStateConflict="component_state_conflict",ComponentStateUnavailable="component_state_unavailable",ComponentStorageUnavailable="component_storage_unavailable",ComponentStoreExists="component_store_exists",ImportRowInvalid="import_row_invalid",ProviderUnavailable="provider_unavailable",RootUnavailable="root_unavailable",SearchBusy="search_busy",SearchStale="search_stale",SearchUnavailable="search_unavailable",Unavailable="unavailable",}}
 pub fn classify(error: &str) -> &'static str {
     SearchIssue::from_code(error)
         .unwrap_or(SearchIssue::Unavailable)
@@ -308,3 +332,5 @@ mod tests {
         assert_eq!(classify("credential: private"), "unavailable");
     }
 }
+
+pub use crate::core::models::SavedQuery;
