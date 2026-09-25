@@ -127,6 +127,10 @@ pub(crate) fn issue(error: &str) -> &'static str {
         "store_future_schema" => "future_schema",
         "store_manifest_invalid" | "store_path_invalid" => "store_invalid",
         "activity_consent_save_failed" => "consent_save_failed",
+        "privacy_rules_save_failed" => "privacy_rules_save_failed",
+        "privacy_rules_invalid" => "privacy_rules_invalid",
+        "privacy_redaction_failed" => "privacy_redaction_failed",
+
         "autostart_owner_conflict" => "autostart_owner_conflict",
         "provider_unavailable" => "provider_unavailable",
         "vault_binding_unavailable" => "vault_binding_unavailable",
@@ -434,5 +438,14 @@ mod tests {
             "operation_failed"
         );
         assert_eq!(issue("activity_consent_save_failed"), "consent_save_failed");
+        assert_eq!(
+            issue("privacy_rules_save_failed"),
+            "privacy_rules_save_failed"
+        );
+        assert_eq!(issue("privacy_rules_invalid"), "privacy_rules_invalid");
+        assert_eq!(
+            issue("privacy_redaction_failed"),
+            "privacy_redaction_failed"
+        );
     }
 }

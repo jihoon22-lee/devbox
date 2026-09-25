@@ -190,7 +190,7 @@ pub(crate) async fn __component_get_privacy_rules(
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct Input {}
     let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = view(&component_app.state::<Arc<AppState>>())?;
+    let value = get_privacy_rules(component_app.state())?;
     serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
@@ -207,7 +207,7 @@ pub(crate) async fn __component_set_privacy_rules(
     }
     let Input { rules } =
         serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_rules(&component_app.state::<Arc<AppState>>(), rules)?;
+    let value = set_privacy_rules(component_app.state(), rules)?;
     serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
@@ -221,7 +221,7 @@ pub(crate) async fn __component_redact_existing(
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct Input {}
     let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = redact_existing_inner(&component_app.state::<Arc<AppState>>())?;
+    let value = redact_existing(component_app.state())?;
     serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 

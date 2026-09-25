@@ -1,4 +1,7 @@
 const messages: Record<string, string> = {
+  privacy_rules_save_failed: "개인정보 규칙을 저장하지 못했습니다. 이전 규칙을 계속 사용합니다.",
+  privacy_rules_invalid: "저장된 개인정보 규칙을 읽지 못해 창 제목 저장을 멈췄습니다. 규칙을 다시 저장해 주세요.",
+  privacy_redaction_failed: "기존 기록에 규칙을 적용하지 못했습니다. 기록은 바뀌지 않았습니다.",
   draft_stale: "저장 위치나 초안 상태가 바뀌었습니다. 새로 준비해 주세요.",
   draft_busy: "다른 초안을 미리보기 중입니다.",
   draft_invalid: "초안 요청의 형식이나 대상을 확인해 주세요.",
