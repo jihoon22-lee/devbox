@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ArtifactReference {
     pub provenance: Provenance,
     pub recipient: String,
@@ -20,12 +21,13 @@ pub struct ArtifactReference {
 /// Resolution requires the native owner's authority; metadata is never a grant.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct OwnedArtifactReference {
     pub provenance: Provenance,
     pub id: String,
     pub kind: OwnedArtifactKind,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, ts_rs::TS)]
 pub enum OwnedArtifactKind {
     #[serde(rename = "knowledge-draft/v1")]
     KnowledgeDraft,

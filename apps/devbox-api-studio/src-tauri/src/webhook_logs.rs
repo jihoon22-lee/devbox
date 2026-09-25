@@ -13,12 +13,11 @@ fn now() -> u64 {
 }
 pub(crate) async fn send(
     app: &tauri::AppHandle,
-    args: Value,
-    saved: bool,
+    selection: webhook_host::component::HandoffSelection,
     operation: String,
     deadline: u64,
 ) -> Result<Value, String> {
-    let payload = webhook_host::component::prepare_log_handoff(app, args, saved)?;
+    let payload = webhook_host::component::prepare_log_handoff(app, selection)?;
     let artifact = store().lock().map_err(|_| "webhook_log_busy")?.publish(
         uuid::Uuid::new_v4().simple().to_string(),
         payload,

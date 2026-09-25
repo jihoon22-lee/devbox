@@ -192,22 +192,14 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         })
         .build()
 }
-pub const COMMANDS: &[&str] = &[
-    "lifecycle_status",
-    "set_close_policy",
-    "hide_main_window",
-    "quit_product",
-];
-pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
+pub fn dispatch_typed(
+    app: &tauri::AppHandle,
+    call: crate::ipc::lifecycle::LifecycleCall,
+) -> Result<Value, String> {
     let state = app.state::<State>();
-    if method == "set_close_policy" {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Input {
-            policy: ClosePolicy,
-        }
-        let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-        if input.policy == ClosePolicy::KeepListening && !state.tray.load(Ordering::Acquire) {
+    use crate::ipc::lifecycle::LifecycleCall;
+    if let LifecycleCall::SetClosePolicy { policy: selected } = call {
+        if selected == ClosePolicy::KeepListening && !state.tray.load(Ordering::Acquire) {
             return Err("lifecycle_tray_unavailable".into());
         }
         let mut storage = state
@@ -219,26 +211,22 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
         }
         let raw = serde_json::to_string(&Settings {
             schema_version: 1,
-            close_policy: input.policy,
+            close_policy: selected,
         })
         .map_err(|_| "component_state_unavailable")?;
         devbox_filesystem::atomic_write(&state.path, raw.as_bytes())
             .map_err(|_| "component_storage_unavailable")?;
         storage.original = Some(raw);
-        state.keep_listening.store(
-            input.policy == ClosePolicy::KeepListening,
-            Ordering::Release,
-        );
+        state
+            .keep_listening
+            .store(selected == ClosePolicy::KeepListening, Ordering::Release);
         return Ok(Value::Null);
     }
-    if args.as_object().is_none_or(|args| !args.is_empty()) {
-        return Err("component_args_invalid".into());
-    }
-    match method {
-        "lifecycle_status" => Ok(
+    match call {
+        LifecycleCall::LifecycleStatus {} => Ok(
             json!({ "mainWindowVisible": app.get_webview_window("main").and_then(|window| window.is_visible().ok()), "policy": policy(&state), "trayAvailable": state.tray.load(Ordering::Acquire), "running": webhook_host::component::listener_running(app), "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
         ),
-        "hide_main_window" => {
+        LifecycleCall::HideMainWindow {} => {
             if close_action(
                 policy(&state),
                 webhook_host::component::listener_running(app),
@@ -253,11 +241,11 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 .map_err(|_| "component_state_unavailable")?;
             Ok(Value::Null)
         }
-        "quit_product" => {
+        LifecycleCall::QuitProduct {} => {
             stop(app.clone(), true);
             Ok(Value::Null)
         }
-        _ => Err("component_method_unavailable".into()),
+        LifecycleCall::SetClosePolicy { .. } => unreachable!("policy was handled above"),
     }
 }
 

@@ -14,6 +14,8 @@ const MAX_BYTES: usize = 2 * 1024 * 1024;
 const MAX_REVISION: u64 = 9_007_199_254_740_991;
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ApiWorkspaceLinks")]
 pub struct Links {
     pub collection_ids: Vec<String>,
     pub environment_ids: Vec<String>,
@@ -22,6 +24,8 @@ pub struct Links {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ApiWorkspaceWorkspace")]
 pub struct Workspace {
     pub id: String,
     pub name: String,
@@ -30,6 +34,8 @@ pub struct Workspace {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ApiWorkspaceDocument")]
 pub struct Document {
     pub schema_version: u8,
     pub revision: u64,
@@ -48,6 +54,8 @@ impl Default for Document {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ApiWorkspaceAssociation")]
 pub enum Association {
     Keep,
     Standalone,
@@ -55,6 +63,8 @@ pub enum Association {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ApiWorkspaceSave")]
 pub struct Save {
     pub expected_revision: u64,
     pub id: Option<String>,

@@ -2,7 +2,6 @@
 //! private namespace. Metadata and wake-ups confer no receiver authority.
 use applink::{CreateHandoff, HandoffStore, OpenRequest, ToolboxTextPayload};
 use product_contract::{references::ArtifactReference, Provenance};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 
@@ -11,32 +10,41 @@ struct Store {
     handoffs: HandoffStore,
     navigation: std::sync::Mutex<Option<Navigation>>,
 }
-#[derive(Clone, serde::Serialize)]
-struct Navigation {
+#[derive(Clone, serde::Serialize, ts_rs::TS)]
+pub struct Navigation {
     id: String,
     route: &'static str,
 }
-pub fn is_navigation(method: &str) -> bool {
-    matches!(method, "peek_pending_navigation" | "ack_pending_navigation")
+#[derive(serde::Deserialize, ts_rs::TS)]
+#[serde(
+    tag = "method",
+    content = "args",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum NavigationCall {
+    PeekPendingNavigation {},
+    AckPendingNavigation { id: String },
 }
-pub fn navigation(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
+impl NavigationCall {
+    pub fn method(&self) -> &'static str {
+        match self {
+            Self::PeekPendingNavigation {} => "peek_pending_navigation",
+            Self::AckPendingNavigation { .. } => "ack_pending_navigation",
+        }
+    }
+}
+pub fn navigation_typed(app: &tauri::AppHandle, call: NavigationCall) -> Result<Value, String> {
     let state = app.state::<Store>();
     let mut pending = state
         .navigation
         .lock()
         .map_err(|_| "handoff_navigation_unavailable")?;
-    match method {
-        "peek_pending_navigation" if args.as_object().is_some_and(|object| object.is_empty()) => {
+    match call {
+        NavigationCall::PeekPendingNavigation {} => {
             serde_json::to_value(&*pending).map_err(|_| "handoff_navigation_unavailable".into())
         }
-        "ack_pending_navigation" => {
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Input {
-                id: String,
-            }
-            let Input { id } =
-                serde_json::from_value(args).map_err(|_| "handoff_navigation_invalid")?;
+        NavigationCall::AckPendingNavigation { id } => {
             if id.len() != 32 {
                 return Err("handoff_navigation_invalid".into());
             }
@@ -45,7 +53,6 @@ pub fn navigation(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
             }
             Ok(Value::Null)
         }
-        _ => Err("handoff_navigation_invalid".into()),
     }
 }
 pub fn initialize(app: &tauri::AppHandle) -> Result<HandoffStore, String> {
@@ -64,22 +71,28 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<HandoffStore, String> {
     Ok(store)
 }
 
-pub fn is_send(component: &str, method: &str) -> bool {
-    matches!(
-        (component, method),
-        ("api-studio.api", "send_selection_to_toolbox")
-            | (
-                "api-studio.api" | "api-studio.transforms",
-                "send_mock_draft"
-            )
-            | ("api-studio.transforms", "create_api_request_handoff")
-            | (
-                "api-studio.webhooks",
-                "send_history_to_api" | "send_fixture_to_api"
-            )
-    )
+pub enum SendCall {
+    Mock(crate::core::mock_draft::MockDraftInput),
+    TransformRequest {
+        source: transforms_core::core::export_policy::OutputSource,
+        output: String,
+    },
+    Selection {
+        text: String,
+    },
+    Webhook(webhook_host::component::HandoffSelection),
 }
-
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffResult {
+    pub handoff_id: String,
+    pub producer_id: String,
+    pub consumer_id: String,
+    pub created_at_ms: u64,
+    pub expires_at_ms: u64,
+    pub artifact: product_contract::references::ArtifactReference,
+    pub redacted: bool,
+}
 fn publish(
     store: &HandoffStore,
     create: CreateHandoff,
@@ -115,11 +128,10 @@ fn publish(
     }))
 }
 
-pub fn send(
+pub fn send_typed(
     app: &tauri::AppHandle,
     component: &str,
-    method: &str,
-    args: Value,
+    call: SendCall,
     provenance: Provenance,
 ) -> Result<Value, String> {
     let now = std::time::SystemTime::now()
@@ -129,13 +141,13 @@ pub fn send(
         .filter(|value| *value > 0)
         .ok_or("handoff_clock_invalid")?;
     let store = app.state::<Store>();
-    let (create, route, redacted) = match (component, method) {
-        ("api-studio.api" | "api-studio.transforms", "send_mock_draft") => {
-            let (create, redacted) = crate::core::mock_draft::prepare(component, args)?;
+    let (create, route, redacted) = match (component, call) {
+        ("api-studio.api" | "api-studio.transforms", SendCall::Mock(input)) => {
+            let (create, redacted) = crate::core::mock_draft::prepare_typed(component, input)?;
             (create, "webhooks", redacted)
         }
-        ("api-studio.transforms", "create_api_request_handoff") => {
-            let (payload, redacted) = prepare_transform_request(args)?;
+        ("api-studio.transforms", SendCall::TransformRequest { source, output }) => {
+            let (payload, redacted) = prepare_transform_request_typed(source, output)?;
             (
                 CreateHandoff {
                     kind: "api-request/v1".into(),
@@ -147,14 +159,7 @@ pub fn send(
                 redacted,
             )
         }
-        ("api-studio.api", "send_selection_to_toolbox") => {
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Input {
-                text: String,
-            }
-            let Input { text } =
-                serde_json::from_value(args).map_err(|_| "handoff_input_invalid")?;
+        ("api-studio.api", SendCall::Selection { text }) => {
             let text = zeroize::Zeroizing::new(text);
             let (payload, redacted) =
                 ToolboxTextPayload::from_selected_text("api-playground", &text)
@@ -170,12 +175,8 @@ pub fn send(
                 redacted,
             )
         }
-        ("api-studio.webhooks", "send_history_to_api" | "send_fixture_to_api") => {
-            let payload = webhook_host::component::prepare_api_handoff(
-                app,
-                args,
-                method == "send_fixture_to_api",
-            )?;
+        ("api-studio.webhooks", SendCall::Webhook(selection)) => {
+            let payload = webhook_host::component::prepare_api_handoff(app, selection)?;
             (
                 CreateHandoff {
                     kind: "api-request/v1".into(),
@@ -216,8 +217,9 @@ pub fn send(
     Ok(result)
 }
 
+#[cfg(test)]
 fn prepare_transform_request(args: Value) -> Result<(Value, bool), String> {
-    #[derive(Deserialize)]
+    #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Input {
         source: transforms_core::core::export_policy::OutputSource,
@@ -225,6 +227,12 @@ fn prepare_transform_request(args: Value) -> Result<(Value, bool), String> {
     }
     let Input { source, output } =
         serde_json::from_value(args).map_err(|_| "handoff_input_invalid")?;
+    prepare_transform_request_typed(source, output)
+}
+fn prepare_transform_request_typed(
+    source: transforms_core::core::export_policy::OutputSource,
+    output: String,
+) -> Result<(Value, bool), String> {
     let output = zeroize::Zeroizing::new(output);
     source.require_exportable()?;
     let masked = applink::redact_handoff_text(&output).map_err(|_| "handoff_input_invalid")?;

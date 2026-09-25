@@ -12,6 +12,8 @@ const MAX_BYTES: usize = 4 * 1024 * 1024;
 const MAX_DEFINITIONS: usize = 32;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "OpenApiOperation")]
 pub struct Operation {
     pub label: String,
     pub method: String,
@@ -21,6 +23,8 @@ pub struct Operation {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "OpenApiDefinition")]
 pub struct Definition {
     pub schema_version: u8,
     pub id: String,
@@ -30,6 +34,8 @@ pub struct Definition {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "OpenApiCreate")]
 pub struct Create {
     pub name: String,
     pub open_api_version: String,
@@ -38,6 +44,8 @@ pub struct Create {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "OpenApiSummary")]
 pub struct Summary {
     pub id: String,
     pub name: String,

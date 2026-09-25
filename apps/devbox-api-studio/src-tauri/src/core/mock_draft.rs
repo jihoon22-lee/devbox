@@ -13,6 +13,7 @@ const EXPIRED: &str = "mock_draft_expired";
 const STORAGE: &str = "mock_draft_unavailable";
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum MediaType {
     Json,
     #[default]
@@ -61,34 +62,44 @@ impl Payload {
         Ok(rule)
     }
 }
+#[derive(Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MockDraftInput {
+    output: String,
+    source: Option<transforms_core::core::export_policy::OutputSource>,
+    #[serde(default = "default_status")]
+    status: u16,
+    #[serde(default)]
+    media_type: MediaType,
+    #[serde(default = "default_target")]
+    request_target: String,
+    request_method: Option<String>,
+}
+fn default_status() -> u16 {
+    200
+}
+fn default_target() -> String {
+    "/".into()
+}
+#[cfg(test)]
 pub fn prepare(component: &str, args: Value) -> Result<(CreateHandoff, bool), String> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        output: String,
-        source: Option<transforms_core::core::export_policy::OutputSource>,
-        #[serde(default = "default_status")]
-        status: u16,
-        #[serde(default)]
-        media_type: MediaType,
-        #[serde(default = "default_target")]
-        request_target: String,
-        request_method: Option<String>,
-    }
-    fn default_status() -> u16 {
-        200
-    }
-    fn default_target() -> String {
-        "/".into()
-    }
-    let Input {
+    prepare_typed(
+        component,
+        serde_json::from_value(args).map_err(|_| INVALID)?,
+    )
+}
+pub fn prepare_typed(
+    component: &str,
+    input: MockDraftInput,
+) -> Result<(CreateHandoff, bool), String> {
+    let MockDraftInput {
         output,
         source,
         status,
         media_type,
         request_target,
         request_method,
-    } = serde_json::from_value(args).map_err(|_| INVALID)?;
+    } = input;
     let output = zeroize::Zeroizing::new(output);
     let producer = match component {
         "api-studio.api" if source.is_none() => "api-playground",
@@ -142,6 +153,8 @@ pub struct Receiver {
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "MockDraftPreview")]
 pub struct Preview {
     pub id: String,
     pub producer: String,

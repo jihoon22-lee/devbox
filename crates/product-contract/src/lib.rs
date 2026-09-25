@@ -61,6 +61,7 @@ pub struct RouteRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct Provenance {
     pub product: String,
     pub component: String,

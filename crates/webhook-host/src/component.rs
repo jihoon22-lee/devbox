@@ -29,10 +29,9 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
 /// Called only by the product's authorized source-owner route.
 pub fn prepare_api_handoff(
     app: &tauri::AppHandle,
-    args: serde_json::Value,
-    saved: bool,
+    selection: HandoffSelection,
 ) -> Result<serde_json::Value, String> {
-    crate::commands::prepare_api_handoff(app, args, saved)
+    crate::commands::prepare_api_handoff(app, selection)
 }
 
 /// Native product lifecycle owns only this process's temporary listener.
@@ -73,10 +72,9 @@ impl Drop for OwnedProfile {
 /// projection from the already-authorized Webhook owner. No raw vault is read.
 pub fn prepare_log_handoff(
     app: &tauri::AppHandle,
-    args: serde_json::Value,
-    saved: bool,
+    selection: HandoffSelection,
 ) -> Result<devbox_applink::WebhookLogPayload, String> {
-    crate::commands::prepare_log_handoff(app, args, saved)
+    crate::commands::prepare_log_handoff(app, selection)
 }
 
 #[cfg(test)]
@@ -108,4 +106,9 @@ mod profile_tests {
         let rebound = TcpListener::bind(("127.0.0.1", port)).unwrap();
         drop(rebound);
     }
+}
+
+pub enum HandoffSelection {
+    History { history_id: u64 },
+    Fixture { id: String },
 }

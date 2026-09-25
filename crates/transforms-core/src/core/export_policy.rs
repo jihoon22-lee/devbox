@@ -38,6 +38,7 @@ pub fn manifest() -> &'static Manifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub enum OutputSource {
     Tool {
         #[serde(rename = "toolId")]
