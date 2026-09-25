@@ -351,16 +351,12 @@ async function start(product, suffix) {
 
     }
     if (product.id === "knowledge") {
-      progress(product, suffix, "knowledge-startup-gate");
-      assert.equal(await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
-        const d = await invoke("plugin:product-shell|describe");
-        const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "notes" };
-        try { await invoke("plugin:knowledge|execute", { request: { header, component: "knowledge.notes", method: "get_root", args: {} } }); return false; }
-        catch { return true; }
-      })()`), true, "note engine must not run before startup approval");
-      await cdp.evaluate('document.querySelector(".knowledge-startup button:not([disabled])").click()');
-      await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "Knowledge stores did not activate");
+      progress(product, suffix, "knowledge-automatic-startup");
+      // Fresh committed installations prepare their private stores automatically.
+      // Pre-commit business denial is exercised by windows-suite-delivery-native.
+      await waitForRenderer(cdp,
+        '!!document.querySelector(".knowledge-feature-notes .app") && !document.querySelector(".knowledge-startup")',
+        "Knowledge stores did not activate automatically");
       progress(product, suffix, "knowledge-components");
       componentProbe = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
@@ -391,6 +387,7 @@ async function start(product, suffix) {
       })()`);
       assert.deepEqual(componentProbe, { replayRejected: true, legacyCommandRejected: true, foreignInstallationRejected: true,
         privateVault: true, explicitNoteWrite: true, collectorStartsOff: true, independentSearch: true, queryMutationDenials: 4, unapprovedBindingRejected: true });
+      componentProbe.automaticStartup = true;
       await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "활동").click()`);
       await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-activity:not([hidden]) .app")', "Activity route did not mount");
       await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "검색").click()`);

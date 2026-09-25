@@ -89,7 +89,7 @@ async function sourceQuery(item, source, query, filter = {}, limit = 200, mode =
 async function product(executable, profile) {
   const before = new Set(readdirSync(base).filter(name => name.startsWith("com.devbox.v08.knowledge.i")));
   const item = await start(executable, "Devbox Knowledge", profile);
-  await wait(item.cdp, '!!document.querySelector(".knowledge-startup") || !!document.querySelector(".knowledge-lifecycle") || !!document.querySelector(".knowledge-feature-notes .app")', "Knowledge startup missing");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-startup") || !!document.querySelector("#vault-setup-title") || !!document.querySelector(".knowledge-feature-notes .app")', "Knowledge startup missing");
   const added = readdirSync(base).filter(name => name.startsWith("com.devbox.v08.knowledge.i") && !before.has(name));
   if (added.length) { assert.equal(added.length, 1); item.dataRoot = path.join(base, added[0]);
     const owner=randomUUID(), marker=path.join(item.dataRoot,`.knowledge-fixture-${owner}`);
