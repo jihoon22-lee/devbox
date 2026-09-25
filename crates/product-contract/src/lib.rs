@@ -369,3 +369,5 @@ mod tests {
 }
 
 pub mod webhook_log;
+
+pub mod operation_log;
