@@ -1,10 +1,6 @@
 //! Explicit typed Workbench -> Run Manager task-control dispatch.
 
-use devbox_applink::{
-    CreateHandoff, HandoffError, HandoffStore, OpenRequest, TaskControlAction, TaskControlRequest,
-    TASK_CONTROL_HANDOFF_KIND, TASK_CONTROL_SCHEMA_VERSION, TASK_CONTROL_SOURCE_APP,
-    TASK_CONTROL_TARGET_APP,
-};
+use devbox_applink::{TaskControlAction, TaskControlRequest, TASK_CONTROL_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -48,19 +44,6 @@ pub struct TaskControlDispatch {
     pub handoff_id: String,
 }
 
-fn handoff_store() -> HandoffStore {
-    HandoffStore::new(devbox_applink::handoff_root_in(
-        &crate::component::common_root(),
-    ))
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 #[tauri::command]
 pub fn dispatch_workspace_task_control(
     task_id: String,
@@ -69,33 +52,6 @@ pub fn dispatch_workspace_task_control(
 ) -> Result<TaskControlDispatch, String> {
     let _ = (task_id, action, expected_revision);
     Err("task-control-run-manager-unavailable".into())
-}
-
-fn authorize_dispatch(
-    controls: &[WorkspaceTaskControlItem],
-    task_id: &str,
-    action: TaskControlAction,
-    expected_revision: &str,
-) -> Result<(), &'static str> {
-    let task = controls
-        .iter()
-        .find(|task| task.id == task_id)
-        .ok_or("task-control-task-not-found")?;
-    if task.revision != expected_revision {
-        return Err("task-control-source-changed");
-    }
-    match action {
-        TaskControlAction::Start if task.operation_active => Err("workspace-task-operation-active"),
-        TaskControlAction::Start if !task.available => Err("workspace-task-unavailable"),
-        TaskControlAction::Start if !task.trusted => Err("workspace-task-source-untrusted"),
-        TaskControlAction::Start if task.task_kind == "shell" && !task.shell_trusted => {
-            Err("workspace-task-shell-untrusted")
-        }
-        TaskControlAction::Stop if !task.operation_active => {
-            Err("task-control-operation-not-active")
-        }
-        TaskControlAction::Start | TaskControlAction::Stop => Ok(()),
-    }
 }
 
 #[tauri::command]
@@ -322,56 +278,5 @@ mod tests {
         assert!(valid_receipt(&receipt));
         receipt.updated_at = 0;
         assert!(!valid_receipt(&receipt));
-    }
-
-    #[test]
-    fn dispatch_authorization_rechecks_the_exact_native_snapshot_state() {
-        let task = WorkspaceTaskControlItem {
-            id: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
-            label: "Build".to_owned(),
-            revision: "a".repeat(64),
-            task_kind: "process".to_owned(),
-            trusted: true,
-            shell_trusted: false,
-            available: true,
-            has_dependencies: false,
-            operation_active: false,
-        };
-        assert_eq!(
-            authorize_dispatch(
-                std::slice::from_ref(&task),
-                &task.id,
-                TaskControlAction::Start,
-                &task.revision,
-            ),
-            Ok(())
-        );
-        assert_eq!(
-            authorize_dispatch(
-                std::slice::from_ref(&task),
-                "arbitrary-renderer-value",
-                TaskControlAction::Start,
-                &task.revision,
-            ),
-            Err("task-control-task-not-found")
-        );
-        assert_eq!(
-            authorize_dispatch(
-                std::slice::from_ref(&task),
-                &task.id,
-                TaskControlAction::Start,
-                &"b".repeat(64),
-            ),
-            Err("task-control-source-changed")
-        );
-        assert_eq!(
-            authorize_dispatch(
-                std::slice::from_ref(&task),
-                &task.id,
-                TaskControlAction::Stop,
-                &task.revision,
-            ),
-            Err("task-control-operation-not-active")
-        );
     }
 }

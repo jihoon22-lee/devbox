@@ -1,6 +1,5 @@
 use devbox_applink::{OpenRequest, OpenTarget};
 use serde::Serialize;
-use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -37,7 +36,6 @@ impl RepoOpenTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn request_shape_comes_from_declared_payload_kind() {

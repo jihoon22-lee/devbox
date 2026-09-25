@@ -128,14 +128,11 @@ impl fmt::Debug for ParsedEnvironmentEntry {
 }
 
 impl ParsedEnvironment {
-    pub fn revision(&self) -> &str {
-        &self.revision
-    }
-
+    #[cfg(test)]
     pub fn entries(&self) -> &[ParsedEnvironmentEntry] {
         &self.entries
     }
-
+    #[cfg(test)]
     pub fn metadata(&self) -> Vec<EnvironmentVariableMetadata> {
         self.entries
             .iter()
@@ -485,11 +482,6 @@ fn is_secret_name(name: &str) -> bool {
     .any(|marker| upper.contains(marker))
 }
 
-pub fn revision(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 pub fn preview(parsed: &ParsedEnvironment) -> ProjectEnvironmentPreview {
     let variables = parsed
         .entries
@@ -512,6 +504,11 @@ pub fn preview(parsed: &ParsedEnvironment) -> ProjectEnvironmentPreview {
         variables,
         has_conflicts: parsed.has_conflicts(),
     }
+}
+
+pub fn revision(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]

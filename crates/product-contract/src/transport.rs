@@ -711,9 +711,12 @@ mod retired_transport_tests {
             "listMigrationBackups",
             "verifyMigrationBackup",
         ] {
-            let raw = format!(r#"{{"kind":"{kind}"}}"#);
+            let raw = format!(r#"{{"method":"{kind}","args":{{}}}}"#);
             assert!(serde_json::from_str::<super::Call>(&raw).is_err());
         }
-        assert!(serde_json::from_str::<super::Call>(r#"{"kind":"readMigrationStatus"}"#).is_ok());
+        assert!(serde_json::from_str::<super::Call>(
+            r#"{"method":"readMigrationStatus","args":{}}"#
+        )
+        .is_ok());
     }
 }

@@ -4,10 +4,7 @@ use crate::core::fixtures::{
     fixture_from_request, fixture_path_from_dir, load_document_with_raw, response_rule_draft,
     sorted_fixtures, update_document, CapturedFixture, FixtureDocument, FixtureError, MAX_FIXTURES,
 };
-use crate::core::handoff::{
-    build_api_request_payload, API_REQUEST_HANDOFF_KIND, CONSUMER_APP_ID, HANDOFF_INPUT_ERROR,
-    PRODUCER_APP_ID,
-};
+use crate::core::handoff::{build_api_request_payload, HANDOFF_INPUT_ERROR};
 use crate::core::history::History;
 use crate::core::http::{self, ParseError, ParsedRequest, MAX_ACTIVE_CONNECTIONS};
 use crate::core::replay::{self, ReplayError, ReplayRateLimiter};
@@ -15,12 +12,8 @@ use crate::core::rules::{
     compare_rule_precedence, plan_upsert, select_matching_rule, upsert, ResponseRule,
     ResponseSequenceState, RuleConflictPreview, INVALID_RULE_ERROR,
 };
-use devbox_applink::{
-    handoff_root_in, webhook_log_payload, CreateHandoff, HandoffError, HandoffStore, OpenRequest,
-    WEBHOOK_LOG_HANDOFF_KIND, WEBHOOK_LOG_TARGET_APP,
-};
+use devbox_applink::webhook_log_payload;
 use serde::Serialize;
-use serde_json::to_value;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -54,18 +47,8 @@ pub const RUN_DEFINITION_EXPORT_ERROR: &str =
     "실행 중인 loopback 서버만 Run Manager 서비스로 내보낼 수 있습니다";
 pub const API_TARGET_UNAVAILABLE_ERROR: &str =
     "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
-pub const API_LAUNCH_ERROR: &str =
-    "API Playground를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다";
-pub const HANDOFF_CREATE_ERROR: &str =
-    "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
 pub const LOG_LENS_TARGET_UNAVAILABLE_ERROR: &str =
     "Log Lens를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
-pub const LOG_LENS_LAUNCH_ERROR: &str =
-    "Log Lens를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다";
-pub const LOG_LENS_HANDOFF_CREATE_ERROR: &str =
-    "Log Lens handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다";
-pub const HANDOFF_CLEANUP_ERROR: &str =
-    "대상 앱 실행 실패 후 handoff를 정리하지 못했습니다. 잠시 후 다시 시도하세요";
 
 pub struct ServerState {
     /// Serializes listener lifecycle transitions. Without this guard two IPC
@@ -1156,34 +1139,6 @@ pub fn send_fixture_to_log_lens(
 fn publish_log_lens_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {
     let _ = (fixture,);
     Err(LOG_LENS_TARGET_UNAVAILABLE_ERROR.into())
-}
-
-fn map_handoff_create_error(error: HandoffError) -> String {
-    match error {
-        HandoffError::InvalidPayload | HandoffError::InvalidRequest | HandoffError::TooLarge => {
-            HANDOFF_INPUT_ERROR.to_string()
-        }
-        HandoffError::UnsafeStorage | HandoffError::Storage | HandoffError::RandomUnavailable => {
-            HANDOFF_CREATE_ERROR.to_string()
-        }
-        HandoffError::Missing
-        | HandoffError::AlreadyClaimed
-        | HandoffError::WrongTarget
-        | HandoffError::WrongKind
-        | HandoffError::Expired
-        | HandoffError::LeaseExpired
-        | HandoffError::TokenMismatch
-        | HandoffError::Corrupt => HANDOFF_CREATE_ERROR.to_string(),
-    }
-}
-
-fn map_log_lens_handoff_create_error(error: HandoffError) -> String {
-    match error {
-        HandoffError::InvalidPayload | HandoffError::InvalidRequest | HandoffError::TooLarge => {
-            HANDOFF_INPUT_ERROR.to_string()
-        }
-        _ => LOG_LENS_HANDOFF_CREATE_ERROR.to_string(),
-    }
 }
 
 #[tauri::command]

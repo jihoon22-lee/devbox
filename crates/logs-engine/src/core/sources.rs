@@ -1306,7 +1306,6 @@ mod tests {
         .is_none());
     }
 
-
     #[test]
     fn webhook_capture_loads_one_sanitized_ephemeral_record() {
         let capture = devbox_applink::webhook_log_payload(

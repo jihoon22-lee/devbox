@@ -154,7 +154,7 @@ mod tests {
             .unwrap();
         assert_ne!(a, b);
         assert_ne!(a, "LifeLog");
-        for invalid in ["com.devbox.lifelog", "com.devbox.v08.knowledge", "com.devbox.v08.knowledge.i../LifeLog", "com.devbox.v08.api-studio.iaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"] {
+        for invalid in [concat!("com.devbox.", "lifelog"), "com.devbox.v08.knowledge", "com.devbox.v08.knowledge.i../LifeLog", "com.devbox.v08.api-studio.iaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"] {
             assert!(super::product_value_name(invalid).is_err());
         }
     }

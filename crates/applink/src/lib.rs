@@ -32,12 +32,8 @@ pub use webhook_log::{
 
 use serde::{Deserialize, Serialize};
 
-/// Handoff envelope의 프로토콜 버전. `OpenRequest` argv에 새 forward-compatible
-/// target flag를 추가하는 것만으로는 one-time handoff envelope의 모양이 바뀌지 않는다.
+/// Version of the one-time handoff envelope.
 pub const PROTOCOL_VERSION: u32 = 2;
-/// Keep cross-app command lines below the smallest supported Windows command
-/// line budget. This bounds both parser work and the values that launchers can
-/// forward through AppLink, including unknown forward-compatible flags.
 
 /// Bounded, app-neutral query filter carried by the `query` applink target.
 ///
@@ -361,7 +357,6 @@ pub struct OpenRequest {
 }
 
 /// Typed request validation failure.
-/// 상황에서만 만들어진다 — 모르는 플래그는 절대 이 오류를 내지 않는다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError(pub String);
 

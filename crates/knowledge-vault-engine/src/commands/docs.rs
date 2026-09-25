@@ -16,7 +16,7 @@ use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::core::entry_actions::{
-    canonical_existing_entry, prepare_open_request, validated_new_entry, KnowledgeOpenTarget,
+    canonical_existing_entry, validated_new_entry, KnowledgeOpenTarget,
 };
 
 /// 앱 전역 상태

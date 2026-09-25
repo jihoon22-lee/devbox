@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::commands::indexing::AppState;
 use crate::core::db;
-use crate::core::open_targets::{prepare_open_request, EverythingOpenTarget};
+use crate::core::open_targets::EverythingOpenTarget;
 use tauri_plugin_opener::OpenerExt;
 
 const INVALID_RESULT_PATH: &str = "검색 결과 파일 경로가 올바르지 않습니다";

@@ -1,4 +1,3 @@
-use devbox_applink::{OpenRequest, OpenTarget};
 use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 
@@ -83,33 +82,6 @@ pub fn validated_new_entry(root: &Path, rel: &str) -> Result<PathBuf, &'static s
         return Err(INVALID_ENTRY);
     }
     Ok(entry)
-}
-
-pub fn prepare_open_request(
-    targets: &[KnowledgeOpenTarget],
-    app_id: &str,
-    canonical_entry: &Path,
-) -> Result<(String, OpenRequest), &'static str> {
-    let normalized_id = app_id.to_ascii_lowercase();
-    let target = targets
-        .iter()
-        .find(|target| target.id == normalized_id)
-        .ok_or("사용 가능한 대상 앱이 아닙니다")?;
-    let path = canonical_entry
-        .to_str()
-        .filter(|path| !path.is_empty())
-        .ok_or(INVALID_ENTRY)?;
-    Ok((
-        target.id.clone(),
-        OpenRequest {
-            target: OpenTarget::Path {
-                path: path.to_string(),
-                line: None,
-                column: None,
-            },
-            from: Some("knowledge-base".to_string()),
-        },
-    ))
 }
 
 #[cfg(test)]

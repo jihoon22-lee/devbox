@@ -13,7 +13,7 @@ use crate::core::models::{
     RunStatus, RunView, ServiceInput, ServiceInstanceView,
 };
 use crate::core::workspace_diagnostics::{
-    match_workspace_diagnostics_at, resolve_workspace_diagnostic_path, WorkspaceTaskDiagnostics,
+    match_workspace_diagnostics_at, WorkspaceTaskDiagnostics,
 };
 use crate::core::workspace_orchestration::WorkspaceTaskOperationView;
 use crate::core::workspace_tasks::{

@@ -1,6 +1,5 @@
 //! Workbench command — 프로필 CRUD, health, Start/Stop Workspace.
 
-use crate::commands::environment::EnvironmentInjection;
 use crate::commands::process_tree::ProcessTree;
 use crate::core::health::{distro_is_running, parse_git_status};
 use crate::core::operation::{
@@ -49,7 +48,6 @@ const WSL_COMMAND_STDOUT_BYTES: usize = 64 * 1024;
 const WSL_COMMAND_STDERR_BYTES: usize = 64 * 1024;
 const PORT_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 const PORT_RETRY_INTERVAL: Duration = Duration::from_secs(2);
-const PROCESS_TERMINATION_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LifeLogAbsorbReport {
@@ -1206,12 +1204,6 @@ impl StartedProcessGuard {
         }
     }
 
-    fn push(&mut self, app_id: &'static str, _process: ()) {
-        let process = StartedProcess { app_id };
-        self.processes.push(process.clone());
-        self.recorded.push(process);
-    }
-
     fn rollback(&mut self) {
         self.cleanup();
     }
@@ -1429,57 +1421,6 @@ fn single_workspace_run(
     Ok(runs.values().next().map(WorkspaceRunOwnership::from))
 }
 
-fn open_request(target: devbox_applink::OpenTarget) -> devbox_applink::OpenRequest {
-    devbox_applink::OpenRequest {
-        target,
-        from: Some("workbench".to_string()),
-    }
-}
-
-fn wsl_desktop_open_request(
-    profile: &ProjectProfile,
-) -> Result<devbox_applink::OpenRequest, String> {
-    let path = profile
-        .wsl
-        .as_ref()
-        .map(|wsl| wsl.path.as_str())
-        .filter(|path| !path.trim().is_empty())
-        .or_else(|| {
-            profile
-                .windows_path
-                .as_deref()
-                .filter(|path| !path.trim().is_empty())
-        })
-        .ok_or_else(|| "WSL Desktop에서 열 프로젝트 경로가 없습니다".to_string())?;
-
-    Ok(open_request(devbox_applink::OpenTarget::Path {
-        path: path.to_string(),
-        line: None,
-        column: None,
-    }))
-}
-
-fn code_pad_open_request(profile: &ProjectProfile) -> Result<devbox_applink::OpenRequest, String> {
-    let path = profile
-        .windows_path
-        .as_deref()
-        .filter(|path| !path.trim().is_empty())
-        .ok_or_else(|| "Code Pad에서 열 Windows 프로젝트 경로가 없습니다".to_string())?;
-
-    Ok(open_request(devbox_applink::OpenTarget::Workspace {
-        path: path.to_string(),
-    }))
-}
-
-fn launch_open_with_profile_environment(
-    app_id: &str,
-    request: &devbox_applink::OpenRequest,
-    environment: Option<&EnvironmentInjection>,
-) -> Result<(), String> {
-    let _ = (app_id, request, environment);
-    Err("Workspace 앱을 사용할 수 없습니다".into())
-}
-
 const PROFILE_CHANGED_ERROR: &str =
     "프로필이 변경되어 Workspace 시작을 중단했습니다. 다시 시도하세요";
 
@@ -1518,11 +1459,7 @@ fn retry_process_liveness(processes: &[StartedProcess]) -> Vec<RetryProcessLiven
         .iter()
         .map(|process| RetryProcessLiveness {
             app_id: process.app_id,
-            state: if false {
-                ProcessLiveness::Running
-            } else {
-                ProcessLiveness::Exited
-            },
+            state: ProcessLiveness::Exited,
         })
         .collect()
 }
@@ -1806,175 +1743,21 @@ pub async fn start_workspace(
     let port_step = wait_for_expected_ports(&profile, &token, budget).await?;
     set_run_step(&mut steps, port_step);
 
-    // Resolve and revalidate as close as possible to the child boundary. The
-    // health/port waits above can take seconds, so resolving before them
-    // would allow a changed `.env` to become stale while we wait.
-    //
-    // A changed file or unavailable secret therefore fails before either
-    // child is launched and cannot result in a partially injected workspace.
+    // Retain operation ownership and profile revalidation for the recorded run.
     let mut started_processes = StartedProcessGuard::new(&registry, profile_id.clone(), None);
-    let mut current_profile =
-        revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await?;
-    let mut environment =
-        match crate::commands::environment::resolve_profile_environment_async_with_control(
-            current_profile.clone(),
-            token.clone(),
-            budget,
-            &_health_claim,
-        )
-        .await
-        {
-            Ok(environment) => environment,
-            Err(error) => {
-                started_processes.rollback();
-                return Err(error);
-            }
-        };
-    // The resolver is a blocking boundary and may give an external profile
-    // writer time to finish. Revalidate again after it returns so the first
-    // child is not launched from a profile that changed while its overlay was
-    // being prepared.
-    current_profile =
-        match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
-            Ok(profile) => profile,
-            Err(error) => {
-                started_processes.rollback();
-                return Err(error);
-            }
-        };
-
-    // 앱 열기 (best-effort). Workbench가 시작한 것만 기록한다. Preflight
-    // provenance is copied as stable metadata; executable paths/PIDs never
-    // cross the UI boundary.
-    let mut resource_provenance = preflight.resources().cloned().collect::<Vec<_>>();
-    budget.check(&token).map_err(operation_message)?;
-    match wsl_desktop_open_request(&current_profile) {
-        Ok(request) => match launch_open_with_profile_environment(
-            "wsl-desktop",
-            &request,
-            environment.as_ref(),
-        ) {
-            Ok(process) => {
-                started_processes.push("wsl-desktop", process);
-                append_process_resource(&mut resource_provenance, "wsl-desktop");
-                set_run_step(
-                    &mut steps,
-                    RunStep {
-                        name: OPEN_WSL_STEP.into(),
-                        ok: true,
-                        detail: "wsl-desktop을 시작했습니다".into(),
-                        status: PreflightStatus::Pass,
-                    },
-                );
-                if let Err(error) = budget.check(&token) {
-                    started_processes.rollback();
-                    return Err(error.message().to_string());
-                }
-            }
-            Err(_) => set_run_step(
-                &mut steps,
-                RunStep {
-                    name: OPEN_WSL_STEP.into(),
-                    ok: false,
-                    detail: "wsl-desktop을 시작할 수 없습니다".into(),
-                    status: PreflightStatus::Failure,
-                },
-            ),
-        },
-        Err(_) => set_run_step(
+    let resource_provenance = preflight.resources().cloned().collect::<Vec<_>>();
+    // Former external applications are no longer execution targets.
+    for name in [OPEN_WSL_STEP, OPEN_CODE_PAD_STEP] {
+        set_run_step(
             &mut steps,
             RunStep {
-                name: OPEN_WSL_STEP.into(),
+                name: name.into(),
                 ok: false,
-                detail: "wsl-desktop 경로를 준비할 수 없습니다".into(),
+                detail: "외부 앱을 사용할 수 없습니다".into(),
                 status: PreflightStatus::Failure,
             },
-        ),
+        );
     }
-    let mut current_profile =
-        match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
-            Ok(profile) => profile,
-            Err(error) => {
-                started_processes.rollback();
-                return Err(error);
-            }
-        };
-    // The first child may have taken long enough for `.env` to change. Re-read
-    // the source and compare its immutable revision immediately before the
-    // second spawn; a preview or an earlier injection must never authorize a
-    // later child after its source has changed.
-    environment =
-        match crate::commands::environment::resolve_profile_environment_async_with_control(
-            current_profile.clone(),
-            token.clone(),
-            budget,
-            &_health_claim,
-        )
-        .await
-        {
-            Ok(environment) => environment,
-            Err(error) => {
-                started_processes.rollback();
-                return Err(error);
-            }
-        };
-    current_profile =
-        match revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await {
-            Ok(profile) => profile,
-            Err(error) => {
-                started_processes.rollback();
-                return Err(error);
-            }
-        };
-    budget.check(&token).map_err(|error| {
-        started_processes.rollback();
-        error.message().to_string()
-    })?;
-    match code_pad_open_request(&current_profile) {
-        Ok(request) => {
-            match launch_open_with_profile_environment("code-pad", &request, environment.as_ref()) {
-                Ok(process) => {
-                    started_processes.push("code-pad", process);
-                    append_process_resource(&mut resource_provenance, "code-pad");
-                    set_run_step(
-                        &mut steps,
-                        RunStep {
-                            name: OPEN_CODE_PAD_STEP.into(),
-                            ok: true,
-                            detail: "code-pad를 시작했습니다".into(),
-                            status: PreflightStatus::Pass,
-                        },
-                    );
-                    if let Err(error) = budget.check(&token) {
-                        started_processes.rollback();
-                        return Err(error.message().to_string());
-                    }
-                }
-                Err(_) => set_run_step(
-                    &mut steps,
-                    RunStep {
-                        name: OPEN_CODE_PAD_STEP.into(),
-                        ok: false,
-                        detail: "code-pad를 시작할 수 없습니다".into(),
-                        status: PreflightStatus::Failure,
-                    },
-                ),
-            }
-        }
-        Err(_) => set_run_step(
-            &mut steps,
-            RunStep {
-                name: OPEN_CODE_PAD_STEP.into(),
-                ok: false,
-                detail: "code-pad 경로를 준비할 수 없습니다".into(),
-                status: PreflightStatus::Failure,
-            },
-        ),
-    }
-    // No later transition step needs the resolved values. Drop the holder as
-    // soon as the second spawn boundary has returned so zeroizing values do
-    // not remain live through registry bookkeeping or the final revalidation.
-    drop(environment);
 
     if let Err(error) =
         revalidate_start_profile(&app, &profile, &token, budget, &_health_claim).await
@@ -2026,7 +1809,6 @@ pub async fn start_workspace(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ChildLaunchOutcome {
-    Started(()),
     Failed,
 }
 
@@ -2042,34 +1824,10 @@ async fn launch_workspace_child(
     budget: OperationBudget,
     claim: &OperationClaim,
 ) -> Result<ChildLaunchOutcome, String> {
-    let current_profile = revalidate_start_profile(app, expected, token, budget, claim).await?;
-    let environment = crate::commands::environment::resolve_profile_environment_async_with_control(
-        current_profile.clone(),
-        token.clone(),
-        budget,
-        claim,
-    )
-    .await?;
-    let current_profile = revalidate_start_profile(app, expected, token, budget, claim).await?;
+    let _ = app_id;
     budget.check(token).map_err(operation_message)?;
-    let request = match app_id {
-        "wsl-desktop" => wsl_desktop_open_request(&current_profile),
-        "code-pad" => code_pad_open_request(&current_profile),
-        _ => return Ok(ChildLaunchOutcome::Failed),
-    };
-    let Ok(request) = request else {
-        return Ok(ChildLaunchOutcome::Failed);
-    };
-    let outcome = match launch_open_with_profile_environment(app_id, &request, environment.as_ref())
-    {
-        Ok(process) => ChildLaunchOutcome::Started(process),
-        Err(_) => ChildLaunchOutcome::Failed,
-    };
-    drop(environment);
-    // Do not check the budget after spawning before returning the receipt: the
-    // caller must first put a successful child into its StartedProcessGuard so
-    // an immediately-expired budget can still roll that receipt back.
-    Ok(outcome)
+    revalidate_start_profile(app, expected, token, budget, claim).await?;
+    Ok(ChildLaunchOutcome::Failed)
 }
 
 fn process_step_name(app_id: &str) -> Option<&'static str> {
@@ -2082,9 +1840,7 @@ fn process_step_name(app_id: &str) -> Option<&'static str> {
 
 fn process_step_detail(app_id: &str, outcome: &ChildLaunchOutcome) -> &'static str {
     match (app_id, outcome) {
-        ("wsl-desktop", ChildLaunchOutcome::Started(_)) => "wsl-desktop을 시작했습니다",
         ("wsl-desktop", ChildLaunchOutcome::Failed) => "wsl-desktop을 시작할 수 없습니다",
-        ("code-pad", ChildLaunchOutcome::Started(_)) => "code-pad를 시작했습니다",
         ("code-pad", ChildLaunchOutcome::Failed) => "code-pad를 시작할 수 없습니다",
         _ => "Workspace 앱을 시작할 수 없습니다",
     }
@@ -2092,7 +1848,7 @@ fn process_step_detail(app_id: &str, outcome: &ChildLaunchOutcome) -> &'static s
 
 fn process_step(app_id: &str, outcome: ChildLaunchOutcome) -> Option<RunStep> {
     let name = process_step_name(app_id)?;
-    let started = matches!(&outcome, ChildLaunchOutcome::Started(_));
+    let started = false;
     Some(RunStep {
         name: name.into(),
         ok: started,
@@ -2227,10 +1983,6 @@ pub async fn retry_workspace(
                 let outcome =
                     launch_workspace_child(&app, &profile, app_id, &token, budget, &_health_claim)
                         .await?;
-                if let ChildLaunchOutcome::Started(process) = &outcome {
-                    new_processes.push(app_id, process.clone());
-                    append_process_resource(&mut resource_provenance, app_id);
-                }
                 if let Some(step_result) = process_step(app_id, outcome) {
                     set_run_step(&mut steps, step_result);
                 }
@@ -3169,54 +2921,6 @@ mod tests {
 
         assert!(read_profile_file(&link).is_err());
         let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn launch_request_prefers_wsl_path_for_wsl_desktop() {
-        let request = wsl_desktop_open_request(&profile(
-            Some("E:\\projects\\devbox"),
-            Some("/mnt/e/projects/devbox"),
-        ))
-        .unwrap();
-        assert_eq!(
-            request.target,
-            devbox_applink::OpenTarget::Path {
-                path: "/mnt/e/projects/devbox".into(),
-                line: None,
-                column: None,
-            }
-        );
-    }
-
-    #[test]
-    fn launch_request_falls_back_to_windows_path_for_wsl_desktop() {
-        let request =
-            wsl_desktop_open_request(&profile(Some("E:\\projects\\devbox"), None)).unwrap();
-        assert_eq!(
-            request.target,
-            devbox_applink::OpenTarget::Path {
-                path: "E:\\projects\\devbox".into(),
-                line: None,
-                column: None,
-            }
-        );
-    }
-
-    #[test]
-    fn launch_request_rejects_missing_or_empty_code_pad_workspace() {
-        assert!(code_pad_open_request(&profile(None, Some("/home/me/project"))).is_err());
-        assert!(code_pad_open_request(&profile(Some("   "), None)).is_err());
-    }
-
-    #[test]
-    fn launch_request_uses_non_empty_windows_path_for_code_pad() {
-        let request = code_pad_open_request(&profile(Some("E:\\projects\\devbox"), None)).unwrap();
-        assert_eq!(
-            request.target,
-            devbox_applink::OpenTarget::Workspace {
-                path: "E:\\projects\\devbox".into(),
-            }
-        );
     }
 
     #[test]
