@@ -34,13 +34,19 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     async (
       command: string,
       args?: {
-        request: { header: { requestId: string }; component: string; method: string; args: Record<string, unknown> };
+        request: { header: { requestId: string }; method: string; args: Record<string, unknown> };
       },
     ) => {
       if (command === "plugin:product-shell|describe") return fixtureDescription("api-studio");
-      if (command !== "plugin:api-studio|execute" || !args) throw new Error(`unexpected fixture command ${command}`);
+      if (
+        !["plugin:api-studio|api", "plugin:api-studio|transforms", "plugin:api-studio|webhooks"].includes(command) ||
+        !args
+      )
+        throw new Error(`unexpected fixture command ${command}`);
       const request = args.request;
-      if (request.component.endsWith(".migration")) throw new Error("retired startup must not be called");
+      expect(request).not.toHaveProperty("component");
+      const component = `api-studio.${command.split("|")[1]}`;
+      if (component.endsWith(".migration")) throw new Error("retired startup must not be called");
       let value: unknown;
       if (request.method === "api_workspace_state")
         value = {
@@ -54,8 +60,8 @@ it("opens a native-owned pending transform preview through the actual hosted tra
         value = null;
         navigation = null;
       } else if (request.method === "take_pending_open") {
-        value = request.component === "api-studio.transforms" ? pending : null;
-        if (request.component === "api-studio.transforms") pending = null;
+        value = component === "api-studio.transforms" ? pending : null;
+        if (component === "api-studio.transforms") pending = null;
       } else if (request.method === "sanitize_persisted_json") value = request.args.serialized;
       else if (request.method === "load_workflow_metadata")
         value = { metadata: { schemaVersion: 1, recentTools: [], favoriteTools: [], pipelines: [] }, writable: true };
@@ -75,7 +81,7 @@ it("opens a native-owned pending transform preview through the actual hosted tra
         operation: {
           provenance: {
             product: "api-studio",
-            component: request.component,
+            component: component,
             requestId: request.header.requestId,
             revision: catalog.catalogRevision,
           },

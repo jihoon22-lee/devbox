@@ -1,0 +1,14 @@
+[package]
+name = "product-ipc"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+
+[dependencies]
+product-contract = { path = "../product-contract" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

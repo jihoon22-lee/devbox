@@ -192,13 +192,17 @@ describe("DataSourceRow", () => {
       producerVersion: "0.5.0",
       generatedAt: "2026-08-25T12:00:00Z",
       freshnessMs: 125_000,
+      freshnessState: "fresh",
+      scope: "latest",
+      errorCode: null,
+      explanation: "",
       error: null,
       knowledgeActivity: {
         notesModifiedToday: 3,
         lastModifiedAtMs: 1_800_000_000_000,
         identifiedNotes: 3,
         identifiersComplete: true,
-        legacySnapshot: false,
+        legacy_snapshot: false,
       },
     };
 
@@ -218,6 +222,10 @@ describe("DataSourceRow", () => {
       producerVersion: "0.5.0",
       generatedAt: "2026-08-25T12:00:00Z",
       freshnessMs: 61_000,
+      freshnessState: "error",
+      scope: "unavailable",
+      errorCode: null,
+      explanation: "",
       error: "Knowledge activity view schema를 지원하지 않습니다",
       knowledgeActivity: null,
     };
@@ -236,6 +244,7 @@ describe("DataSourceRow", () => {
       producerVersion: "0.5.0",
       generatedAt: "2026-08-25T12:00:00Z",
       freshnessMs: null,
+      freshnessState: "error",
       scope: "requested-range-partial",
       errorCode: "snapshot_range_partial",
       explanation: "raw path should not replace the fixed explanation",

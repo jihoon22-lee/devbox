@@ -3,7 +3,9 @@ import { openFile, revealFile, searchSource, type SourceSnapshot } from "./api";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("../transport", () => ({ componentInvoke: () => mocks.invoke, isProductHosted: () => true }));
 vi.mock("./lib/isTauri", () => ({ isTauri: () => true }));
-beforeEach(() => mocks.invoke.mockReset());
+beforeEach(() => {
+  mocks.invoke.mockReset();
+});
 it("revokes a completed generation when its consumer is later cancelled", async () => {
   const snapshot: SourceSnapshot = {
     generation: "native-query",
@@ -11,12 +13,14 @@ it("revokes a completed generation when its consumer is later cancelled", async 
     source: "files",
     state: "complete",
     partial: false,
+    bounds: null,
     rows: [
       {
         source: "files",
         rootIdentity: "files:9",
         reference: "issued-reference",
         availability: "available",
+        indexStale: false,
         value: {
           id: 1,
           path: "C:/fixture/shared.md",

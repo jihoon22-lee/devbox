@@ -4,6 +4,8 @@ use crate::migration_status::Summary;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "HealthReport")]
 pub struct Report {
     pub schema_version: u32,
     pub challenge: String,

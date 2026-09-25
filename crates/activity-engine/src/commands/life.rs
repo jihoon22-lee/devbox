@@ -19,6 +19,7 @@ const MAX_KNOWLEDGE_NOTE_IDS: usize = 512;
 /// payload의 불투명 note ID는 검증과 중복 방지에만 쓰고 frontend로 전달하지 않는다.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct KnowledgeActivity {
     pub notes_modified_today: u64,
     pub last_modified_at_ms: Option<i64>,
@@ -31,6 +32,7 @@ pub struct KnowledgeActivity {
 /// integration snapshot source 상태 (UI 표시용).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SourceStatus {
     pub producer: String,
     pub available: bool,
@@ -49,6 +51,7 @@ pub struct SourceStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ProjectProbe {
     pub path: String,
     pub target: String,
@@ -76,7 +79,6 @@ struct LegacyKnowledgeActivityPayload {
 ///
 /// 프로젝트 identity는 설정된 git 프로젝트 경로의 basename을 쓴다. Workbench의
 /// ProjectProfile(§10.2)이 생기면 canonical key로 대체한다.
-#[tauri::command]
 pub fn project_attribution(
     state: tauri::State<'_, Arc<AppState>>,
     day_start: i64,
@@ -152,6 +154,7 @@ pub fn project_attribution(
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct AttributionResult {
     pub attributed: Vec<Attribution>,
     pub unattributed: Attribution,
@@ -159,7 +162,6 @@ pub struct AttributionResult {
 }
 
 /// 공용 integration root에서 자동 발견한 모든 source 상태를 반환한다.
-#[tauri::command]
 pub fn integration_sources(state: tauri::State<'_, Arc<AppState>>) -> Vec<SourceStatus> {
     let root = state
         .integration_root
@@ -439,7 +441,6 @@ fn valid_note_id(note_id: &str) -> bool {
 }
 
 /// 프로젝트 경로 목록 설정 (줄바꿈 구분).
-#[tauri::command]
 pub fn set_projects(
     state: tauri::State<'_, Arc<AppState>>,
     paths: Vec<String>,
@@ -458,7 +459,6 @@ pub fn set_projects(
 /// Explicit connection check from Settings. Merely displaying or saving a
 /// WSL target never starts its distro; this action may start it through
 /// `wsl.exe`, so the frontend labels it accordingly.
-#[tauri::command]
 pub async fn probe_project(path: String) -> Result<ProjectProbe, String> {
     let normalized = crate::core::export::normalize_project_settings(&[path])?
         .into_iter()
@@ -494,7 +494,6 @@ pub async fn probe_project(path: String) -> Result<ProjectProbe, String> {
     })
 }
 
-#[tauri::command]
 pub fn get_projects(state: tauri::State<'_, Arc<AppState>>) -> Vec<String> {
     let raw = db::get_setting_bounded(
         &state.db.lock().unwrap(),
@@ -518,7 +517,6 @@ fn saved_projects(state: &tauri::State<'_, Arc<AppState>>) -> Vec<String> {
 }
 
 /// 하루 요약. 내부 활동 DB(동기) + git(비동기)을 합친다.
-#[tauri::command]
 pub async fn get_day(
     state: tauri::State<'_, Arc<AppState>>,
     date: String,
@@ -545,7 +543,6 @@ pub async fn get_day(
 }
 
 /// 기간(주/월) 요약. 일별 사용량 + 합계 + git을 한 번에 조회한다.
-#[tauri::command]
 pub async fn get_range(
     state: tauri::State<'_, Arc<AppState>>,
     label: String,
@@ -574,129 +571,6 @@ pub async fn get_range(
         git,
         daily,
     })
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_set_projects(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        paths: Vec<String>,
-    }
-    let Input { paths } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = set_projects(component_app.state(), paths)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_projects(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_projects(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_probe_project(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let Input { path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = probe_project(path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_day(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        date: String,
-        day_start: i64,
-        day_end: i64,
-    }
-    let Input {
-        date,
-        day_start,
-        day_end,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_day(component_app.state(), date, day_start, day_end).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_range(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        label: String,
-        day_start: i64,
-        day_end: i64,
-    }
-    let Input {
-        label,
-        day_start,
-        day_end,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_range(component_app.state(), label, day_start, day_end).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_integration_sources(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = integration_sources(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_project_attribution(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        day_start: i64,
-        day_end: i64,
-    }
-    let Input { day_start, day_end } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = project_attribution(component_app.state(), day_start, day_end)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

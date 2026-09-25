@@ -42,6 +42,7 @@ pub const MAX_KEY_BYTES: usize = 1_000_000;
 /// boundary.  `deny_unknown_fields` keeps browser/native wire drift visible.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct JwtVerifyRequest {
     pub algorithm: String,
     pub signing_input: String,

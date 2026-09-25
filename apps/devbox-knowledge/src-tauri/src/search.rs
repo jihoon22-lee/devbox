@@ -18,13 +18,6 @@ use std::{
 };
 use tauri::Manager;
 
-pub const METHODS: &[&str] = &[
-    "source_query",
-    "source_poll",
-    "source_cancel",
-    "source_reference",
-    "source_saved_reference",
-];
 struct Host {
     root: PathBuf,
     manifest: stores::Manifest,
@@ -122,11 +115,6 @@ struct Query {
     limit: Option<i64>,
     #[serde(default)]
     filter: SearchFilter,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Generation {
-    generation: String,
 }
 fn read_connection(
     path: &Path,
@@ -342,44 +330,46 @@ fn run(
         "unavailable"
     });
 }
-pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
-    dispatch_for(
-        app,
-        method,
-        args,
-        crate::core::source_search::Consumer::Product,
-    )
+pub fn dispatch_typed(
+    app: &tauri::AppHandle,
+    call: crate::ipc::search::HostSearchCall,
+) -> Result<Value, String> {
+    dispatch_for(app, call, crate::core::source_search::Consumer::Product)
 }
 pub(crate) fn dispatch_for(
     app: &tauri::AppHandle,
-    method: &str,
-    args: Value,
+    call: crate::ipc::search::HostSearchCall,
     consumer: crate::core::source_search::Consumer,
 ) -> Result<Value, String> {
     let host = app.try_state::<Host>().ok_or("setup_required")?;
     if stores::read(&host.root)?.as_ref() != Some(&host.manifest) {
         return Err("search_stale".into());
     }
-    match method {
-        "source_reference" => {
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Input {
-                reference: String,
-            }
-            let input: Input =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            if uuid::Uuid::parse_str(&input.reference).is_err() {
+    use crate::ipc::search::HostSearchCall;
+    match call {
+        HostSearchCall::SourceReference { reference } => {
+            if uuid::Uuid::parse_str(&reference).is_err() {
                 return Err("component_args_invalid".into());
             }
-            let reference = host.jobs.resolve(&input.reference)?;
+            let resolved = host.jobs.resolve(&reference)?;
             Ok(
-                json!({"reference":input.reference,"source":reference.source,"name":reference.candidate.value["name"],"path":reference.candidate.path}),
+                json!({"reference":reference,"source":resolved.source,"name":resolved.candidate.value["name"],"path":resolved.candidate.path}),
             )
         }
-        "source_query" => {
-            let mut request: Query =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+        HostSearchCall::SourceQuery {
+            source,
+            query,
+            mode,
+            limit,
+            filter,
+        } => {
+            let mut request = Query {
+                source,
+                query,
+                mode,
+                limit,
+                filter,
+            };
             if !matches!(
                 request.source.as_str(),
                 "notes" | "files" | "current_project"
@@ -431,21 +421,25 @@ pub(crate) fn dispatch_for(
             });
             serde_json::to_value(snapshot).map_err(|_| "search_unavailable".into())
         }
-        "source_poll" | "source_cancel" => {
-            let request: Generation =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            if uuid::Uuid::parse_str(&request.generation).is_err() {
+        call @ (HostSearchCall::SourcePoll { .. } | HostSearchCall::SourceCancel { .. }) => {
+            let cancel = matches!(&call, HostSearchCall::SourceCancel { .. });
+            let generation = match call {
+                HostSearchCall::SourcePoll { generation }
+                | HostSearchCall::SourceCancel { generation } => generation,
+                _ => unreachable!(),
+            };
+            if uuid::Uuid::parse_str(&generation).is_err() {
                 return Err("component_args_invalid".into());
             }
-            if method == "source_cancel" {
-                host.jobs.cancel_for(&request.generation, consumer)?;
+            if cancel {
+                host.jobs.cancel_for(&generation, consumer)?;
                 Ok(Value::Null)
             } else {
-                serde_json::to_value(host.jobs.snapshot_for(&request.generation, consumer)?)
+                serde_json::to_value(host.jobs.snapshot_for(&generation, consumer)?)
                     .map_err(|_| "search_unavailable".into())
             }
         }
-        _ => Err("component_method_invalid".into()),
+        HostSearchCall::SourceSavedReference { .. } => Err("component_args_invalid".into()),
     }
 }
 pub(crate) fn federated_reference(
@@ -466,18 +460,21 @@ impl Drop for OpenPermit {
         self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
-pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Input {
-        reference: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    if uuid::Uuid::parse_str(&input.reference).is_err() {
+pub enum OpenKind {
+    Open,
+    Reveal,
+    NativeFileReference,
+}
+pub async fn open_typed(
+    app: &tauri::AppHandle,
+    kind: OpenKind,
+    reference_id: String,
+) -> Result<Value, String> {
+    if uuid::Uuid::parse_str(&reference_id).is_err() {
         return Err("component_args_invalid".into());
     }
     let host = app.state::<Host>();
-    let reference = host.jobs.resolve(&input.reference)?;
+    let reference = host.jobs.resolve(&reference_id)?;
     host.openers
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
             (count < 2).then_some(count + 1)
@@ -488,8 +485,8 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
     let projects = host.projects.clone();
     let root = host.root.clone();
     let app = app.clone();
-    let reveal = method == "reveal_file";
-    let native_reference = method == "native_file_reference";
+    let reveal = matches!(kind, OpenKind::Reveal);
+    let native_reference = matches!(kind, OpenKind::NativeFileReference);
     let deadline = Instant::now() + Duration::from_secs(2);
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     tauri::async_runtime::spawn_blocking(move || {
@@ -553,7 +550,7 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
                 return Err("search_stale".into());
             }
             drop(current);
-            jobs.resolve(&input.reference)?;
+            jobs.resolve(&reference_id)?;
             if reference
                 .project
                 .as_ref()
@@ -570,7 +567,7 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
                 }
                 let (volume, object) = reference.file_identity.content_components();
                 let proof = product_contract::file_reference::Proof {
-                    reference: input.reference.clone(),
+                    reference: reference_id.clone(),
                     path: row.path.to_str().ok_or("search_stale")?.into(),
                     volume: format!("{volume:x}"),
                     object: format!("{object:x}"),

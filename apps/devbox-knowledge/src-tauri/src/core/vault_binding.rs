@@ -9,6 +9,7 @@ pub const PROOF_KEY: &str = "devbox_knowledge_vault_binding_v1";
 const MAX_SCHEDULE: u64 = 96 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct Schedule {
     pub schema_version: u32,
     pub id: String,

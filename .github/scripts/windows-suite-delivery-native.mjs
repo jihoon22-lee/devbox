@@ -110,7 +110,7 @@ try {
   if (mode === "import") {
     const rejected = await call(
       center,
-      "plugin:control-center|execute",
+      "plugin:control-center|delivery",
       { method: "open_installation_folder", args: { path: root } },
       "products",
     ).then(
@@ -122,7 +122,7 @@ try {
       value(
         await call(
           center,
-          "plugin:control-center|execute",
+          "plugin:control-center|delivery",
           { method: "open_installation_folder", args: {} },
           "products",
         ),
@@ -153,7 +153,7 @@ try {
       assert.ok(ready, `native store preparation timed out: ${member.product}`);
       const method = "record_suite_health";
       const result = value(
-        await call(center, "plugin:control-center|execute", { method, args: { product: member.product } }, "recovery"),
+        await call(center, "plugin:control-center|delivery", { method, args: { product: member.product } }, "recovery"),
       );
       assert.equal(result.recorded, true);
       evidence.checks[`recorded_${member.product}`] = true;

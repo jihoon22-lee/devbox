@@ -10,6 +10,7 @@ name = "applink"
 path = "src/lib.rs"
 
 [dependencies]
+ts-rs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 getrandom = { workspace = true }

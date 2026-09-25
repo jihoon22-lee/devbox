@@ -1,8 +1,9 @@
+import type { WorkspaceCall } from "../generated/WorkspaceCall";
+import { apiCall } from "../calls";
 import { useEffect, useRef, useState } from "react";
-import { componentInvoke } from "../transport";
 import { isTauri } from "./lib/isTauri";
 import "./apiWorkspace.css";
-const invoke = componentInvoke("api-studio.api");
+
 export interface WorkspaceLinks {
   collectionIds: string[];
   environmentIds: string[];
@@ -120,7 +121,7 @@ export function ApiWorkspacePanel({
     setError("");
     const current = ++version.current;
     try {
-      const result = await invoke<State>("api_workspace_state");
+      const result = await apiCall("api_workspace_state", {});
       const document = parseWorkspaceDocument(result?.document);
       if (
         (result.currentProjectId !== null && typeof result.currentProjectId !== "string") ||
@@ -152,14 +153,17 @@ export function ApiWorkspacePanel({
       version.current += 1;
     };
   }, []);
-  async function mutate(method: string, args: Record<string, unknown>) {
+  async function mutate<M extends WorkspaceCall["method"]>(
+    method: M,
+    args: Extract<WorkspaceCall, { method: M }> extends { args: infer A } ? A : never,
+  ) {
     if (running.current || !state) return;
     running.current = true;
     setBusy(true);
     setError("");
     const current = ++version.current;
     try {
-      const document = parseWorkspaceDocument(await invoke<unknown>(method, args));
+      const document = parseWorkspaceDocument(await apiCall(method, args));
       if (mounted.current && current === version.current) {
         applyDocument(document);
         setEdit(null);
@@ -282,7 +286,7 @@ export function ApiWorkspacePanel({
           className="api-workspace-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            void mutate("save_api_workspace", edit as unknown as Record<string, unknown>);
+            void mutate("save_api_workspace", edit);
           }}
         >
           <h2>{edit.id ? "Workspace 연결 편집" : "새 Workspace"}</h2>

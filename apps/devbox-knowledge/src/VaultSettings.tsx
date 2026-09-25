@@ -9,7 +9,7 @@ export default function VaultSettings({ onScheduled }: { onScheduled?: () => voi
   useEffect(() => {
     if (!nativeMode) return;
     let alive = true;
-    void vaultInvoke<{ schedule: VaultSchedule | null }>("vault_change_status")
+    void vaultInvoke("vault_change_status", {})
       .then((value) => {
         if (alive) {
           setSchedule(value.schedule);
@@ -30,10 +30,9 @@ export default function VaultSettings({ onScheduled }: { onScheduled?: () => voi
     setBusy(true);
     setError(null);
     try {
-      const result = await vaultInvoke<{ schedule: VaultSchedule | null }>(
-        cancel ? "cancel_vault_change" : "schedule_vault_change",
-        cancel ? {} : { path },
-      );
+      const result = cancel
+        ? await vaultInvoke("cancel_vault_change", {})
+        : await vaultInvoke("schedule_vault_change", { path });
       setSchedule(result.schedule);
       if (result.schedule) onScheduled?.();
     } catch (error) {

@@ -63,6 +63,7 @@ fn load_compiled(conn: &Connection) -> (CompiledRules, bool) {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct PrivacyRulesView {
     pub rules: PrivacyRules,
     pub healthy: bool,
@@ -70,6 +71,7 @@ pub struct PrivacyRulesView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct PrivacySaveResult {
     pub saved: bool,
     pub invalid: Vec<InvalidRule>,
@@ -132,14 +134,12 @@ pub(crate) fn redact_existing_inner(state: &AppState) -> Result<i64, String> {
     apply_to_existing(&mut conn, &rules).map_err(|_| "privacy_redaction_failed".into())
 }
 
-#[tauri::command]
 pub fn get_privacy_rules(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<PrivacyRulesView, String> {
     view(&state)
 }
 
-#[tauri::command]
 pub fn set_privacy_rules(
     state: tauri::State<'_, Arc<AppState>>,
     rules: PrivacyRules,
@@ -148,7 +148,6 @@ pub fn set_privacy_rules(
 }
 
 /// Apply the current rules to stored sessions (user action). All-or-nothing.
-#[tauri::command]
 pub fn redact_existing(state: tauri::State<'_, Arc<AppState>>) -> Result<i64, String> {
     redact_existing_inner(&state)
 }
@@ -181,51 +180,6 @@ fn apply_to_existing(conn: &mut Connection, rules: &CompiledRules) -> rusqlite::
     }
     transaction.commit()?;
     Ok(affected)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_privacy_rules(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_privacy_rules(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_set_privacy_rules(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rules: PrivacyRules,
-    }
-    let Input { rules } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = set_privacy_rules(component_app.state(), rules)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_redact_existing(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = redact_existing(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

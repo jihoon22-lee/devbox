@@ -12,12 +12,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::core::entry_actions::{
-    canonical_existing_entry, validated_new_entry, KnowledgeOpenTarget,
-};
+use crate::core::entry_actions::{canonical_existing_entry, validated_new_entry};
 
 /// 앱 전역 상태
 pub struct AppState {
@@ -34,7 +31,7 @@ pub struct AppState {
     pub image_cache: Mutex<HashMap<PathBuf, (SystemTime, u64, EntryIdentity, String)>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct TreeEntry {
     pub path: String,
     pub is_dir: bool,
@@ -42,6 +39,7 @@ pub struct TreeEntry {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct InboundNote {
     pub path: String,
     pub content: String,
@@ -50,6 +48,7 @@ pub struct InboundNote {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct QuickCapturePreview {
     pub preview_id: String,
     pub target: String,
@@ -60,6 +59,7 @@ pub struct QuickCapturePreview {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct QuickCaptureSaved {
     /// Root-relative only.  The absolute Knowledge path never crosses IPC.
     pub path: String,
@@ -173,36 +173,11 @@ pub(crate) fn rebuild_wikilink_index_if_needed(
         .map_err(|_| "위키링크 인덱스를 준비할 수 없습니다".to_string())
 }
 
-#[tauri::command]
 pub fn get_root(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
     let conn = state.db.lock().unwrap();
     Ok(resolve_root(&conn)?.to_string_lossy().into_owned())
 }
 
-#[tauri::command]
-pub fn set_root(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<AppState>>,
-    path: String,
-) -> Result<(), String> {
-    let conn = state.db.lock().unwrap();
-    let root = Path::new(&path);
-    crate::core::vault::validate_root_for_creation(root)
-        .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
-    store::ensure_layout(root)?;
-    let vault = VaultIdentity::inspect(root)
-        .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
-    let canonical = vault.canonical_path().to_path_buf();
-    db::set_setting(&conn, "root", &canonical.to_string_lossy()).map_err(|e| e.to_string())?;
-    state.metadata_scans.invalidate();
-    drop(conn);
-    state.rename_plans.lock().unwrap().clear();
-    // watcher를 새 루트로 재시작
-    let watcher = app.state::<Arc<crate::commands::watcher::KnowledgeWatcher>>();
-    watcher.set_root(&canonical)
-}
-
-#[tauri::command]
 pub fn list_tree(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<TreeEntry>, String> {
     scan_tree(
         &state.db,
@@ -268,7 +243,6 @@ fn scan_tree(
         .collect())
 }
 
-#[tauri::command]
 pub fn read_file(
     state: tauri::State<'_, Arc<AppState>>,
     rel: String,
@@ -286,7 +260,6 @@ pub fn read_file(
 /// Untrusted applink `Path`를 현재 Knowledge root 안의 실제 Markdown note로
 /// 해석하고 같은 canonical target에서 bounded read까지 수행한다. 실패 메시지는
 /// 요청 경로나 OS 오류를 반향하지 않는다.
-#[tauri::command]
 pub fn open_inbound_note(
     state: tauri::State<'_, Arc<AppState>>,
     path: String,
@@ -311,7 +284,6 @@ pub fn open_inbound_note(
     })
 }
 
-#[tauri::command]
 pub fn write_file(
     state: tauri::State<'_, Arc<AppState>>,
     rel: String,
@@ -348,7 +320,6 @@ pub fn write_file(
     Ok(saved)
 }
 
-#[tauri::command]
 pub fn create_file(
     state: tauri::State<'_, Arc<AppState>>,
     rel: String,
@@ -373,7 +344,6 @@ pub fn create_file(
     Ok(())
 }
 
-#[tauri::command]
 pub fn create_directory(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
@@ -384,7 +354,6 @@ pub fn create_directory(state: tauri::State<'_, Arc<AppState>>, rel: String) -> 
     std::fs::create_dir_all(path).map_err(|_| "폴더를 만들 수 없습니다".to_string())
 }
 
-#[tauri::command]
 pub fn delete_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<(), String> {
     let mut conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
@@ -406,10 +375,6 @@ pub fn delete_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Resul
     Ok(())
 }
 
-fn available_open_targets() -> Vec<KnowledgeOpenTarget> {
-    Vec::new()
-}
-
 fn resolve_entry_for_action(
     state: &tauri::State<'_, Arc<AppState>>,
     rel: &str,
@@ -420,7 +385,6 @@ fn resolve_entry_for_action(
 }
 
 /// 사용자가 명시적으로 Copy path를 선택했을 때만 absolute path를 frontend에 반환한다.
-#[tauri::command]
 pub fn entry_path(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<String, String> {
     let path = resolve_entry_for_action(&state, &rel)?;
     path.to_str()
@@ -428,7 +392,6 @@ pub fn entry_path(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result
         .ok_or_else(|| "Knowledge 항목 경로가 올바르지 않습니다".to_string())
 }
 
-#[tauri::command]
 pub fn reveal_entry(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
@@ -438,23 +401,6 @@ pub fn reveal_entry(
     app.opener()
         .reveal_item_in_dir(path)
         .map_err(|_| "탐색기에서 항목을 표시할 수 없습니다".to_string())
-}
-
-/// Catalog capability와 실제 설치 executable의 교집합만 공개한다. executable
-/// 경로는 frontend에 보내지 않는다.
-#[tauri::command]
-pub fn open_targets() -> Vec<KnowledgeOpenTarget> {
-    available_open_targets()
-}
-
-#[tauri::command]
-pub fn open_in(
-    state: tauri::State<'_, Arc<AppState>>,
-    app_id: String,
-    rel: String,
-) -> Result<(), String> {
-    let _ = (state, app_id, rel);
-    Err("provider_unavailable".into())
 }
 
 fn validate_capture_inbox(vault: &VaultIdentity) -> Result<PathBuf, String> {
@@ -509,7 +455,6 @@ fn capture_preview(
     })
 }
 
-#[tauri::command]
 pub fn preview_quick_capture(
     state: tauri::State<'_, Arc<AppState>>,
     input: QuickCaptureInput,
@@ -841,7 +786,6 @@ fn current_epoch_seconds() -> i64 {
         .unwrap_or(0)
 }
 
-#[tauri::command]
 pub fn save_quick_capture(
     state: tauri::State<'_, Arc<AppState>>,
     approval: QuickCaptureApproval,
@@ -884,7 +828,6 @@ pub fn save_quick_capture(
     Ok(result)
 }
 
-#[tauri::command]
 pub fn discard_quick_capture_preview(
     state: tauri::State<'_, Arc<AppState>>,
     approval: QuickCaptureApproval,
@@ -900,7 +843,6 @@ pub fn discard_quick_capture_preview(
     Ok(())
 }
 
-#[tauri::command]
 pub fn search_docs(
     state: tauri::State<'_, Arc<AppState>>,
     query: String,
@@ -913,388 +855,9 @@ pub fn search_docs(
     db::search(&conn, q, 100).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub fn list_tags(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
     let conn = state.db.lock().unwrap();
     db::list_tags(&conn).map_err(|e| e.to_string())
-}
-
-/// 오늘 날짜 데일리 노트를 생성/열기. (경로, 내용)을 반환한다.
-#[tauri::command]
-pub fn daily_note(state: tauri::State<'_, Arc<AppState>>) -> Result<(String, String), String> {
-    let conn = state.db.lock().unwrap();
-    let root = resolve_root(&conn)?;
-    let rel = format!("Journal/{}.md", today_str());
-    let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
-    let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
-    if !path.exists() {
-        let content = format!("---\ntags: [daily]\n---\n\n# {}\n\n", today_str());
-        store::write_file(&path, &content)?;
-        db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
-        drop(conn);
-        let _ = crate::integration::write_snapshot(
-            &state.db.lock().unwrap(),
-            state.integration_root.as_deref(),
-        );
-        return Ok((rel, content));
-    }
-    let path = vault
-        .existing_entry(&rel)
-        .map_err(|error| error.to_string())?;
-    let content = store::read_file(&path)?;
-    Ok((rel, content))
-}
-
-fn today_str() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let days = secs.div_euclid(86_400);
-    let (y, m, d) = civil_from_days(days);
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
-/// Howard Hinnant의 civil_from_days 알고리즘 (epoch 1970-01-01)
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as i64;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as i64;
-    (if m <= 2 { y + 1 } else { y }, m, d)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_root(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_root(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_set_root(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let Input { path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    set_root(component_app.clone(), component_app.state(), path)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_list_tree(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let app = component_app.clone();
-    let value = tauri::async_runtime::spawn_blocking(move || list_tree(app.state()))
-        .await
-        .map_err(|_| "metadata_incomplete")??;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_read_file(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-    }
-    let Input { rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = read_file(component_app.state(), rel)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_open_inbound_note(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let Input { path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = open_inbound_note(component_app.state(), path)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_write_file(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-        content: String,
-        expected_revision: String,
-    }
-    let Input {
-        rel,
-        content,
-        expected_revision,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let app = component_app.clone();
-    let saved = tauri::async_runtime::spawn_blocking(move || {
-        write_file(app.state(), rel, content, expected_revision)
-    })
-    .await
-    .map_err(|_| "note_commit_unknown".to_string())??;
-    serde_json::to_value(saved).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_create_file(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-        content: Option<String>,
-    }
-    let Input { rel, content } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let app = component_app.clone();
-    tauri::async_runtime::spawn_blocking(move || create_file(app.state(), rel, content))
-        .await
-        .map_err(|_| "note_commit_unknown".to_string())??;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_create_directory(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-    }
-    let Input { rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    create_directory(component_app.state(), rel)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_delete_file(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-    }
-    let Input { rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let app = component_app.clone();
-    tauri::async_runtime::spawn_blocking(move || delete_file(app.state(), rel))
-        .await
-        .map_err(|_| "note_commit_unknown".to_string())??;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_entry_path(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-    }
-    let Input { rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = entry_path(component_app.state(), rel)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_reveal_entry(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-    }
-    let Input { rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    reveal_entry(component_app.clone(), component_app.state(), rel)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_open_targets(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = open_targets();
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_open_in(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        app_id: String,
-        rel: String,
-    }
-    let Input { app_id, rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    open_in(component_app.state(), app_id, rel)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_preview_quick_capture(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        input: QuickCaptureInput,
-    }
-    let Input { input } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = preview_quick_capture(component_app.state(), input)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_quick_capture(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        approval: QuickCaptureApproval,
-    }
-    let Input { approval } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_quick_capture(component_app.state(), approval)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_discard_quick_capture_preview(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        approval: QuickCaptureApproval,
-    }
-    let Input { approval } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    discard_quick_capture_preview(component_app.state(), approval)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_search_docs(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        query: String,
-    }
-    let Input { query } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = search_docs(component_app.state(), query)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_list_tags(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_tags(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_daily_note(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = daily_note(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]
@@ -1374,19 +937,6 @@ mod tests {
             resolve_configured_root(&connection).unwrap(),
             configured.path()
         );
-    }
-
-    #[test]
-    fn civil_date_for_epoch() {
-        // 1970-01-01
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-    }
-
-    #[test]
-    fn civil_date_known() {
-        // 2026-08-11 = epoch days
-        let days = 20_676;
-        assert_eq!(civil_from_days(days), (2026, 8, 11));
     }
 
     #[test]

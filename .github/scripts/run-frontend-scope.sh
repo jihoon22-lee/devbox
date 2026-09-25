@@ -18,8 +18,8 @@ fi
 
 concurrency=()
 findings=()
-if [[ $action == test ]]; then
-  # Finish the selected tests and report all failures together, retaining a
+if [[ $action == test || $action == build ]]; then
+  # Finish selected compiler/test packages and report all failures together, retaining a
   # failing exit code without repeating successful packages after each fix.
   findings=(--no-bail)
 fi

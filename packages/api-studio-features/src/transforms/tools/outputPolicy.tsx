@@ -14,3 +14,8 @@ export function mayExport(source: OutputSource | undefined): boolean {
   const tool = TOOL_COMMANDS.find((tool) => tool.id === source.toolId);
   return !!tool && tool.policy !== "non-persistable";
 }
+
+/** Copy immutable UI steps into the generated native input shape. */
+export function nativeOutputSource(source: OutputSource): import("../../generated/OutputSource").OutputSource {
+  return source.kind === "pipeline" ? { ...source, steps: source.steps.map((step) => ({ ...step })) } : source;
+}

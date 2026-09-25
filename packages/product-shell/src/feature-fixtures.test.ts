@@ -23,3 +23,12 @@ describe("registered feature fixtures", () => {
     expect(status.operation.outcome.state).toBe("succeeded");
   });
 });
+
+it("names the Knowledge startup component knowledge.setup", async () => {
+  const { default: catalog } = await import("../../../apps/products.json");
+  const ids = catalog.components
+    .filter((component) => component.owner === "knowledge")
+    .map((component) => component.id);
+  expect(ids).toContain("knowledge.setup");
+  expect(ids).not.toContain("knowledge.migration");
+});

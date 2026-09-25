@@ -99,6 +99,7 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "tonic",
+ "ts-rs",
  "url",
  "zeroize",
 ]
@@ -112,6 +113,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "ts-rs",
  "windows 0.61.3",
 ]
 
@@ -1206,6 +1208,7 @@ dependencies = [
  "filesystem",
  "git",
  "integration",
+ "product-ipc",
  "regex",
  "rusqlite",
  "serde",
@@ -1214,6 +1217,7 @@ dependencies = [
  "tauri",
  "tempfile",
  "tokio",
+ "ts-rs",
  "windows 0.61.3",
  "winreg 0.52.0",
 ]
@@ -1230,6 +1234,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "product-contract",
+ "product-ipc",
  "product-shell-tauri",
  "rusqlite",
  "serde",
@@ -1244,6 +1249,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "transforms-core",
+ "ts-rs",
  "uuid",
  "webhook-core",
  "webview2-com",
@@ -1263,6 +1269,7 @@ dependencies = [
  "integration",
  "lopdf",
  "notify",
+ "product-ipc",
  "quick-xml",
  "rusqlite",
  "search",
@@ -1270,6 +1277,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-plugin-opener",
+ "ts-rs",
  "wsl",
  "zip",
 ]
@@ -1283,6 +1291,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "product-contract",
+ "product-ipc",
  "product-shell-tauri",
  "reqwest",
  "rusqlite",
@@ -1296,6 +1305,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "tokio",
+ "ts-rs",
  "uuid",
  "windows 0.61.3",
  "zip",
@@ -1349,6 +1359,7 @@ dependencies = [
  "integration",
  "libc",
  "process-tree",
+ "product-ipc",
  "prost",
  "prost-reflect",
  "prost-types",
@@ -1367,6 +1378,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-reflection",
+ "ts-rs",
  "url",
  "windows 0.61.3",
  "zeroize",
@@ -1384,6 +1396,7 @@ dependencies = [
  "libc",
  "process-tree",
  "product-contract",
+ "product-ipc",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -1391,6 +1404,7 @@ dependencies = [
  "tauri",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "ts-rs",
  "windows 0.61.3",
  "wsl",
  "zeroize",
@@ -1408,6 +1422,7 @@ dependencies = [
  "filesystem",
  "libc",
  "product-contract",
+ "product-ipc",
  "product-shell-tauri",
  "rusqlite",
  "serde",
@@ -1420,6 +1435,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "tokio",
+ "ts-rs",
  "uuid",
  "windows 0.61.3",
  "wsl",
@@ -1438,6 +1454,7 @@ dependencies = [
  "markdown",
  "notify",
  "product-contract",
+ "product-ipc",
  "rusqlite",
  "search",
  "serde",
@@ -1446,6 +1463,7 @@ dependencies = [
  "tauri",
  "tauri-plugin-opener",
  "tempfile",
+ "ts-rs",
  "windows 0.61.3",
  "workspace-wsl",
  "wsl",
@@ -1598,6 +1616,7 @@ dependencies = [
  "integration",
  "md-5",
  "png 0.18.1",
+ "product-ipc",
  "qrcode",
  "regex",
  "serde",
@@ -1607,6 +1626,7 @@ dependencies = [
  "tauri",
  "tempfile",
  "transforms-core",
+ "ts-rs",
  "uuid",
  "zeroize",
 ]
@@ -1618,10 +1638,12 @@ dependencies = [
  "applink",
  "filesystem",
  "integration",
+ "product-ipc",
  "serde",
  "serde_json",
  "tauri",
  "tempfile",
+ "ts-rs",
  "uuid",
  "webhook-core",
 ]
@@ -4763,6 +4785,18 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "ts-rs",
+]
+
+[[package]]
+name = "product-ipc"
+version = "0.1.0"
+dependencies = [
+ "product-contract",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]
@@ -4772,6 +4806,7 @@ dependencies = [
  "catalog",
  "filesystem",
  "product-contract",
+ "product-ipc",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -6515,6 +6550,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6976,6 +7020,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "ts-rs",
 ]
 
 [[package]]
@@ -7016,6 +7061,29 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "ts-rs"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.20",
+ "ts-rs-macros",
+]
+
+[[package]]
+name = "ts-rs-macros"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38d90eea51bc7988ef9e674bf80a85ba6804739e535e9cab48e4bb34a8b652aa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "termcolor",
+]
 
 [[package]]
 name = "tungstenite"
@@ -7469,6 +7537,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "ts-rs",
  "uuid",
 ]
 

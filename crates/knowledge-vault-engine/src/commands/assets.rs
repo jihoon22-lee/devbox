@@ -25,7 +25,8 @@ const IMAGE_ASSET_ERROR: &str = "이미지 자산을 저장할 수 없습니다"
 const MAX_BASE64_BYTES: usize = MAX_ASSET_BYTES.div_ceil(3) * 4;
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Clone)]
+#[derive(Clone, ts_rs::TS)]
+#[ts(rename_all = "camelCase")]
 pub struct SaveImageAssetRequest {
     pub note_rel: String,
     pub bytes_base64: String,
@@ -195,6 +196,7 @@ impl fmt::Debug for SaveImageAssetRequest {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SavedImageAsset {
     /// Root-relative path. It is always generated from a content hash.
     pub relative_path: String,
@@ -204,7 +206,6 @@ pub struct SavedImageAsset {
     pub reused: bool,
 }
 
-#[tauri::command]
 pub fn save_image_asset(
     state: tauri::State<'_, Arc<AppState>>,
     request: SaveImageAssetRequest,
@@ -496,23 +497,6 @@ fn compare_existing(
         // theoretically improbable.
         Err(AssetError::Storage)
     }
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_image_asset(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: SaveImageAssetRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_image_asset(component_app.state(), request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

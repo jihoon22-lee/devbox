@@ -85,6 +85,7 @@ impl Default for PendingKnowledgeDraft {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveKnowledgeDraftResult {
     pub saved: bool,
     pub path: String,
@@ -94,13 +95,13 @@ pub struct SaveKnowledgeDraftResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenewKnowledgeDraftResult {
     pub lease_until_ms: u64,
 }
 
 /// Claim and validate one pending Knowledge draft. The returned preview has no
 /// filesystem path, token, or raw activity record.
-#[tauri::command]
 pub fn preview_knowledge_draft(
     state: tauri::State<'_, Arc<AppState>>,
     pending: tauri::State<'_, PendingKnowledgeDraft>,
@@ -176,7 +177,6 @@ pub fn preview_knowledge_draft(
 /// Save only after the preview's explicit confirmation. File creation is
 /// exclusive and the DB index is updated before applink ack; either failure
 /// restores the claim for retry.
-#[tauri::command]
 pub fn save_knowledge_draft(
     state: tauri::State<'_, Arc<AppState>>,
     pending: tauri::State<'_, PendingKnowledgeDraft>,
@@ -287,7 +287,6 @@ pub fn save_knowledge_draft(
 
 /// Cancel a preview without writing a note. The envelope becomes pending
 /// again and can be opened by a later retry until its TTL expires.
-#[tauri::command]
 pub fn discard_knowledge_draft(
     pending: tauri::State<'_, PendingKnowledgeDraft>,
     id: String,
@@ -322,7 +321,6 @@ pub fn discard_knowledge_draft(
 /// Extend the short claim lease while a user is reading the preview. The
 /// envelope TTL remains authoritative, so renewal can never keep an expired
 /// handoff alive.
-#[tauri::command]
 pub fn renew_knowledge_draft(
     pending: tauri::State<'_, PendingKnowledgeDraft>,
     id: String,
@@ -627,75 +625,6 @@ fn current_epoch_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_preview_knowledge_draft(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-        kind: String,
-    }
-    let Input { id, kind } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = preview_knowledge_draft(component_app.state(), component_app.state(), id, kind)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_knowledge_draft(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_knowledge_draft(component_app.state(), component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_discard_knowledge_draft(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    discard_knowledge_draft(component_app.state(), id)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_renew_knowledge_draft(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = renew_knowledge_draft(component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

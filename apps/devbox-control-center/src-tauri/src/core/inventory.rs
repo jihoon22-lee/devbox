@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SuiteInventory")]
 pub struct Inventory {
     pub installation_key: Option<String>,
     pub generation: Option<String>,
@@ -18,6 +20,8 @@ pub struct Inventory {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SuiteProduct")]
 pub struct Product {
     pub id: String,
     pub name: String,
@@ -28,6 +32,8 @@ pub struct Product {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SuiteComponent")]
 pub struct Component {
     pub id: String,
     pub owner: String,

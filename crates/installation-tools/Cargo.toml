@@ -19,6 +19,8 @@ crate-type = ["rlib"]
 
 
 [dependencies]
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 process-tree = { workspace = true }
 product-contract = { path = "../product-contract" }
 tauri = { workspace = true }

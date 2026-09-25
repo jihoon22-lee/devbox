@@ -30,7 +30,6 @@ impl Drop for Reservation {
         self.0.store(false, Ordering::Release);
     }
 }
-pub const COMMANDS: &[&str] = &["status", "start_empty", "continue_existing"];
 pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let root = app
         .path()
@@ -234,16 +233,14 @@ pub fn activate_with_owner(
     state.active.store(true, Ordering::Release);
     Ok(())
 }
-pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
-    if crate::vault_binding::METHODS.contains(&method) {
-        return crate::vault_binding::dispatch(app, method, args);
-    }
-    if !args.as_object().is_some_and(|object| object.is_empty()) {
-        return Err("component_args_invalid".into());
-    }
+pub fn dispatch_typed(
+    app: &tauri::AppHandle,
+    call: crate::ipc::setup::StartupCall,
+) -> Result<Value, String> {
+    use crate::ipc::setup::StartupCall;
     let state = app.state::<Startup>();
-    match method {
-        "status" => {
+    match call {
+        StartupCall::Status {} => {
             if let Some(error) = state
                 .failure
                 .lock()
@@ -264,7 +261,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire),"hasExisting":stores::read(&state.root)?.is_some(),"vaultChange":crate::vault_binding::pending(app)}),
             )
         }
-        "start_empty" | "continue_existing" => {
+        call @ (StartupCall::StartEmpty {} | StartupCall::ContinueExisting {}) => {
             if state.active.load(Ordering::Acquire) || state.prepared.load(Ordering::Acquire) {
                 return Ok(
                     json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire)}),
@@ -274,7 +271,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 return Err("vault_change_conflict".into());
             }
             let _reservation = reserve(app)?;
-            let manifest = if method == "start_empty" {
+            let manifest = if matches!(call, StartupCall::StartEmpty {}) {
                 stores::create_empty(&state.root)?
             } else {
                 stores::read(&state.root)?.ok_or("setup_required")?
@@ -292,7 +289,6 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire)}),
             )
         }
-        _ => Err("component_method_invalid".into()),
     }
 }
 

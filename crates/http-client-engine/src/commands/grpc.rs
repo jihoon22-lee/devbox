@@ -39,6 +39,7 @@ const MAX_ECMASCRIPT_DATE_MS: u64 = 8_640_000_000_000_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct GrpcConnectProfile {
     endpoint: String,
     source: GrpcSchemaSource,
@@ -49,10 +50,14 @@ pub struct GrpcConnectProfile {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 enum GrpcSchemaSource {
     LocalProto {
+        #[serde(rename = "protoSelectionId", alias = "proto_selection_id")]
         proto_selection_id: String,
         #[serde(default)]
+        #[serde(rename = "importRootSelectionId", alias = "import_root_selection_id")]
         import_root_selection_id: Option<String>,
     },
     Reflection,
@@ -60,6 +65,8 @@ enum GrpcSchemaSource {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 struct GrpcTlsProfile {
     root_mode: GrpcRootMode,
     #[serde(default)]
@@ -70,6 +77,7 @@ struct GrpcTlsProfile {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GrpcSourceProjection {
     kind: String,
     label: Option<String>,
@@ -79,6 +87,7 @@ pub struct GrpcSourceProjection {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GrpcTlsProjection {
     mode: String,
     encrypted: bool,
@@ -88,6 +97,7 @@ pub struct GrpcTlsProjection {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GrpcConnectResult {
     connection_id: String,
     authority: String,
@@ -99,6 +109,7 @@ pub struct GrpcConnectResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GrpcInvokeResult {
     ok: bool,
     status: String,
@@ -111,6 +122,7 @@ pub struct GrpcInvokeResult {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct GrpcExchangeSummary {
     source_kind: String,
     service: String,
@@ -293,7 +305,6 @@ struct PreparedSource {
     consumed: Vec<(String, GrpcSelectionKind)>,
 }
 
-#[tauri::command]
 pub async fn pick_grpc_proto(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<GrpcSelectionState>>,
@@ -301,7 +312,6 @@ pub async fn pick_grpc_proto(
     pick_grpc_selection(app, state.inner().as_ref(), GrpcSelectionKind::Proto).await
 }
 
-#[tauri::command]
 pub async fn pick_grpc_import_root(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<GrpcSelectionState>>,
@@ -309,7 +319,6 @@ pub async fn pick_grpc_import_root(
     pick_grpc_selection(app, state.inner().as_ref(), GrpcSelectionKind::ImportRoot).await
 }
 
-#[tauri::command]
 pub async fn connect_grpc(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<GrpcState>>,
@@ -590,7 +599,6 @@ async fn build_channel(
     }
 }
 
-#[tauri::command]
 pub fn cancel_grpc(
     state: tauri::State<'_, Arc<GrpcState>>,
     connection_id: String,
@@ -601,7 +609,6 @@ pub fn cancel_grpc(
         .map_err(ToOwned::to_owned)
 }
 
-#[tauri::command]
 pub fn disconnect_grpc(
     state: tauri::State<'_, Arc<GrpcState>>,
     connection_id: String,
@@ -860,7 +867,6 @@ struct RpcOutcome {
     messages: Vec<DynamicMessage>,
 }
 
-#[tauri::command]
 pub async fn invoke_grpc(
     state: tauri::State<'_, Arc<GrpcState>>,
     connection_id: String,
@@ -1049,7 +1055,6 @@ fn serialize_responses(messages: Vec<DynamicMessage>) -> Result<Vec<Value>, Stri
     Ok(output)
 }
 
-#[tauri::command]
 pub async fn export_grpc_summary(
     app: tauri::AppHandle,
     summary: GrpcExchangeSummary,
@@ -1218,144 +1223,32 @@ fn elapsed_ms(started: Instant) -> u64 {
         .min(MAX_JS_SAFE_INTEGER)
 }
 
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_pick_grpc_proto(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = pick_grpc_proto(component_app.clone(), component_app.state()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_pick_grpc_import_root(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = pick_grpc_import_root(component_app.clone(), component_app.state()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_connect_grpc(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile: GrpcConnectProfile,
-    }
-    let Input { profile } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = connect_grpc(
-        component_app.clone(),
-        component_app.state(),
-        component_app.state(),
-        component_app.state(),
-        profile,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_invoke_grpc(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        connection_id: String,
-        request_id: String,
-        method: String,
-        messages: Vec<String>,
-    }
-    let Input {
-        connection_id,
-        request_id,
-        method,
-        messages,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = invoke_grpc(
-        component_app.state(),
-        connection_id,
-        request_id,
-        method,
-        messages,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_cancel_grpc(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        connection_id: String,
-        request_id: String,
-    }
-    let Input {
-        connection_id,
-        request_id,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = cancel_grpc(component_app.state(), connection_id, request_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_disconnect_grpc(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        connection_id: String,
-    }
-    let Input { connection_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    disconnect_grpc(component_app.state(), connection_id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_export_grpc_summary(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        summary: GrpcExchangeSummary,
-    }
-    let Input { summary } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = export_grpc_summary(component_app.clone(), summary).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn schema_selection_accepts_frontend_and_previous_native_spellings() {
+        for source in [
+            serde_json::json!({"kind":"local-proto","protoSelectionId":"fixture","importRootSelectionId":"root"}),
+            serde_json::json!({"kind":"local-proto","proto_selection_id":"fixture","import_root_selection_id":"root"}),
+        ] {
+            match serde_json::from_value::<super::GrpcSchemaSource>(source).unwrap() {
+                super::GrpcSchemaSource::LocalProto {
+                    proto_selection_id,
+                    import_root_selection_id,
+                } => {
+                    assert_eq!(proto_selection_id, "fixture");
+                    assert_eq!(import_root_selection_id.as_deref(), Some("root"));
+                }
+                _ => panic!("expected local proto"),
+            }
+        }
+        for spelling in ["native+custom", "native-and-custom"] {
+            let mode: super::GrpcRootMode =
+                serde_json::from_value(serde_json::json!(spelling)).unwrap();
+            assert!(mode.uses_native() && mode.uses_custom());
+            assert_eq!(serde_json::to_value(mode).unwrap(), "native+custom");
+        }
+    }
     use super::*;
     use std::convert::Infallible;
     use std::pin::Pin;

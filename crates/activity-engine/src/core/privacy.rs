@@ -13,6 +13,7 @@ pub const REDACTED: &str = "[redacted]";
 /// Stored and edited rule set. Field names are the persisted wire format.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct PrivacyRules {
     /// Exact process names (case-insensitive). A match drops the session.
     #[serde(default)]
@@ -30,6 +31,7 @@ pub struct PrivacyRules {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum RuleField {
     ExcludedProcesses,
     ExcludedTitlePatterns,
@@ -38,6 +40,7 @@ pub enum RuleField {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum RuleProblem {
     Empty,
     TooLong,
@@ -47,6 +50,7 @@ pub enum RuleProblem {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct InvalidRule {
     pub field: RuleField,
     /// Zero-based position in the submitted list. `TooMany` reports the first

@@ -72,33 +72,11 @@ export type QrVersion =
   | 39
   | 40;
 
-export interface WifiRequest {
-  ssid: string;
-  password: string;
-  security: "WPA" | "WEP" | "nopass";
-  hidden: boolean;
-}
+export type WifiRequest = import("../../generated/WifiRequest").WifiRequest;
 
-export interface GenerateQrRequest {
-  preset: QrPreset;
-  text?: string;
-  url?: string;
-  wifi?: WifiRequest;
-  version: QrVersion | null;
-  errorCorrection: QrErrorCorrection;
-  size: number;
-  quietZone: number;
-}
+export type GenerateQrRequest = import("../../generated/GenerateQrRequest").GenerateQrRequest;
 
-export interface QrResult {
-  svg: string;
-  pngBase64: string;
-  width: number;
-  version: number;
-  modules: number;
-  quietZone: number;
-  payloadBytes: number;
-}
+export type QrResult = import("../../generated/QrResult").QrResult;
 
 export class QrGenerationError extends Error {
   readonly code: QrErrorCode;
@@ -135,7 +113,7 @@ export async function generateQr(request: GenerateQrRequest): Promise<QrResult> 
   qrcode.stringToBytes = (value) => Array.from(new TextEncoder().encode(value));
   let code: ReturnType<typeof qrcode>;
   try {
-    code = qrcode(request.version ?? 0, errorCorrection);
+    code = qrcode((request.version ?? 0) as Parameters<typeof qrcode>[0], errorCorrection);
     code.addData(prepared.text, "Byte");
     code.make();
   } catch {
@@ -198,7 +176,7 @@ function preparePayload(request: GenerateQrRequest): PreparedPayload | QrGenerat
 
 function validateDimensions(request: GenerateQrRequest): true | QrGenerationError {
   if (
-    request.version !== null &&
+    request.version != null &&
     (!Number.isInteger(request.version) || request.version < 1 || request.version > MAX_VERSION)
   ) {
     return new QrGenerationError("invalidVersion");

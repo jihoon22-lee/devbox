@@ -1,7 +1,8 @@
+import type { LifecycleCall } from "@devbox/api-studio-features/generated/LifecycleCall";
+import { webhookCall } from "@devbox/api-studio-features/calls";
 import { useEffect, useState } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
-import { componentInvoke } from "@devbox/api-studio-features/transport";
-const invoke = componentInvoke("api-studio.webhooks");
+
 interface Status {
   policy: "stop-on-close" | "keep-listening";
   running: boolean;
@@ -22,7 +23,7 @@ export function ListenerControls() {
       if (pending) return;
       pending = true;
       try {
-        const value = await invoke<Status>("lifecycle_status");
+        const value = await webhookCall("lifecycle_status", {});
         if (alive) setStatus(value);
       } catch {
         if (alive) setError("서버 종료 설정을 확인하지 못했습니다.");
@@ -39,12 +40,15 @@ export function ListenerControls() {
       clearInterval(timer);
     };
   }, []);
-  async function act(method: string, args?: Record<string, unknown>) {
+  async function act<M extends LifecycleCall["method"]>(
+    method: M,
+    args: Extract<LifecycleCall, { method: M }> extends { args: infer A } ? A : never,
+  ) {
     setBusy(true);
     setError(null);
     try {
-      await invoke(method, args);
-      if (method !== "quit_product") setStatus(await invoke<Status>("lifecycle_status"));
+      await webhookCall(method, args);
+      if (method !== "quit_product") setStatus(await webhookCall("lifecycle_status", {}));
     } catch (cause) {
       const code = cause instanceof Error ? cause.message : "";
       setError(
@@ -65,7 +69,11 @@ export function ListenerControls() {
         <select
           disabled={!status || busy || !status.settingsWritable}
           value={status?.policy ?? "stop-on-close"}
-          onChange={(event) => void act("set_close_policy", { policy: event.target.value })}
+          onChange={(event) =>
+            void act("set_close_policy", {
+              policy: event.target.value === "keep-listening" ? "keep-listening" : "stop-on-close",
+            })
+          }
         >
           <option value="stop-on-close">임시 서버를 중지하고 앱 종료</option>
           <option value="keep-listening" disabled={!status?.trayAvailable}>
@@ -89,11 +97,11 @@ export function ListenerControls() {
       <div>
         <button
           disabled={busy || !status?.running || status.policy !== "keep-listening" || !status.trayAvailable}
-          onClick={() => void act("hide_main_window")}
+          onClick={() => void act("hide_main_window", {})}
         >
           서버를 유지하고 창 숨기기
         </button>
-        <button disabled={busy || !status || status.closing} onClick={() => void act("quit_product")}>
+        <button disabled={busy || !status || status.closing} onClick={() => void act("quit_product", {})}>
           API Studio 완전히 종료
         </button>
       </div>

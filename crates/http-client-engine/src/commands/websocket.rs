@@ -63,6 +63,7 @@ const DISCONNECT_REASON: &str = "client disconnect";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WebSocketMessageInput {
     pub kind: String,
     #[serde(default)]
@@ -73,6 +74,7 @@ pub struct WebSocketMessageInput {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WebSocketCloseInput {
     pub code: Option<u16>,
     #[serde(default)]
@@ -257,7 +259,6 @@ impl WebSocketState {
     }
 }
 
-#[tauri::command]
 pub fn start_websocket(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<WebSocketState>>,
@@ -297,7 +298,6 @@ pub fn start_websocket(
     Ok(session_id)
 }
 
-#[tauri::command]
 pub async fn send_websocket_message(
     state: tauri::State<'_, Arc<WebSocketState>>,
     session_id: String,
@@ -312,7 +312,6 @@ pub async fn send_websocket_message(
         .map_err(|_| SEND_ERROR.to_string())
 }
 
-#[tauri::command]
 pub async fn ping_websocket(
     state: tauri::State<'_, Arc<WebSocketState>>,
     session_id: String,
@@ -327,7 +326,6 @@ pub async fn ping_websocket(
         .map_err(|_| PING_ERROR.to_string())
 }
 
-#[tauri::command]
 pub async fn close_websocket(
     state: tauri::State<'_, Arc<WebSocketState>>,
     session_id: String,
@@ -344,7 +342,6 @@ pub async fn close_websocket(
 
 /// Idempotent convenience command used by lifecycle cleanup.  It sends a normal close frame;
 /// the native task emits closing and closed states and then releases the active slot.
-#[tauri::command]
 pub async fn disconnect_websocket(
     state: tauri::State<'_, Arc<WebSocketState>>,
     session_id: String,
@@ -360,7 +357,6 @@ pub async fn disconnect_websocket(
         .map_err(|_| CLOSE_ERROR.to_string())
 }
 
-#[tauri::command]
 pub async fn save_websocket_binary(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<WebSocketState>>,
@@ -1111,128 +1107,6 @@ fn emit_state(
 
 fn emit_update(update: WebSocketUpdate, app: &tauri::AppHandle) {
     let _ = app.emit(WEBSOCKET_EVENT, update);
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_start_websocket(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        req: RequestTemplate,
-        environment: Vec<EnvironmentVariable>,
-    }
-    let Input { req, environment } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = start_websocket(
-        component_app.clone(),
-        component_app.state(),
-        req,
-        environment,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_send_websocket_message(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-        message: WebSocketMessageInput,
-    }
-    let Input {
-        session_id,
-        message,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    send_websocket_message(component_app.state(), session_id, message).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_ping_websocket(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-        data: String,
-    }
-    let Input { session_id, data } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    ping_websocket(component_app.state(), session_id, data).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_close_websocket(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-        close: WebSocketCloseInput,
-    }
-    let Input { session_id, close } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    close_websocket(component_app.state(), session_id, close).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_disconnect_websocket(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-    }
-    let Input { session_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    disconnect_websocket(component_app.state(), session_id).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_save_websocket_binary(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-        message_id: u64,
-    }
-    let Input {
-        session_id,
-        message_id,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_websocket_binary(
-        component_app.clone(),
-        component_app.state(),
-        session_id,
-        message_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

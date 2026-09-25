@@ -16,6 +16,7 @@ pub struct ProjectMatch {
 /// 귀속 결과 하나.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct Attribution {
     pub project_id: String,
     pub sessions: usize,

@@ -304,7 +304,6 @@ fn status_snapshot(status: &SharedStatus, failed: bool) -> Vec<RootStatus> {
 }
 
 /// 루트별 watcher 상태 (마지막 반영 시각, pending, 오류).
-#[tauri::command]
 pub fn watcher_statuses(watcher: tauri::State<'_, Arc<WatcherManager>>) -> Vec<RootStatus> {
     watcher.statuses()
 }
@@ -776,20 +775,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_watcher_statuses(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = watcher_statuses(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ fi
 shift
 
 python3 .github/scripts/check-agent-metadata.py
+node --test .github/scripts/typed-component-fixture.test.mjs
 python3 .github/scripts/test-verification-resources.py
 
 python3 .github/scripts/test-ci-scope.py
@@ -61,6 +62,7 @@ if [[ $rust_scope != none ]]; then
   bash .github/scripts/run-rust-scope.sh clippy "$rust_scope" "$rust_packages"
   bash .github/scripts/run-rust-scope.sh fmt "$rust_scope" "$rust_packages"
   bash .github/scripts/run-rust-scope.sh test "$rust_scope" "$rust_packages"
+  bash .github/scripts/check-generated-bindings.sh --check-only
 fi
 
 if [[ $dependency_scope == all ]]; then

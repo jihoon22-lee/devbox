@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub enum ExecutionTarget {
     Windows,
     Wsl {
@@ -14,6 +15,7 @@ pub enum ExecutionTarget {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProjectContext {
     pub project_id: String,
     pub worktree_id: String,

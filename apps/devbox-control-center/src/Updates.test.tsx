@@ -54,7 +54,7 @@ it("checks and downloads only on request and requires a separate install confirm
   fireEvent.click(launch);
   await screen.findByRole("status");
   expect(invoke).toHaveBeenLastCalledWith(
-    "plugin:control-center|execute",
+    "plugin:control-center|delivery",
     expect.objectContaining({ request: expect.objectContaining({ method: "launch_suite_update", args: { id } }) }),
   );
 });

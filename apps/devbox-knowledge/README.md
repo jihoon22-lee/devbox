@@ -124,3 +124,7 @@ JSON 응답의 보수적 상한 4 MiB, 전체 조회 시간 5초다. 디렉터�
 이전 결과의 소유권을 복원하지 않는다. 트리와 태그는 같은 화면 요청의 완전한 응답 쌍으로만
 반영한다. 파일시스템 트리와 watcher가 갱신하는 SQLite 태그 색인은 하나의 원자적 snapshot이
 아니므로 태그는 외부 파일 변경을 뒤늦게 반영할 수 있다.
+
+## 타입 IPC 개발
+
+제품 플러그인의 명령은 `activity·notes·search·search_settings·opener·setup·commands`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/knowledge-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.

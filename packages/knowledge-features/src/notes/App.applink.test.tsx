@@ -170,6 +170,7 @@ beforeEach(() => {
     saved: true,
     path: "Journal/2026-08-27-life-log-day.md",
     handoffDeleted: true,
+    handoffStatusRecorded: true,
   });
   discardKnowledgeDraftMock.mockReset().mockResolvedValue(undefined);
 });
@@ -448,12 +449,16 @@ describe("Knowledge Path/Query app-link delivery", () => {
   });
 
   it("allows only one in-flight Save action", async () => {
-    let resolveSave: ((result: { saved: boolean; path: string; handoffDeleted: boolean }) => void) | undefined;
+    let resolveSave:
+      | ((result: { saved: boolean; path: string; handoffDeleted: boolean; handoffStatusRecorded: boolean }) => void)
+      | undefined;
     saveKnowledgeDraftMock.mockImplementationOnce(
       () =>
-        new Promise<{ saved: boolean; path: string; handoffDeleted: boolean }>((resolve) => {
-          resolveSave = resolve;
-        }),
+        new Promise<{ saved: boolean; path: string; handoffDeleted: boolean; handoffStatusRecorded: boolean }>(
+          (resolve) => {
+            resolveSave = resolve;
+          },
+        ),
     );
     takePendingOpenMock.mockResolvedValueOnce({
       target: {
@@ -476,6 +481,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
         saved: true,
         path: "Journal/2026-08-27-life-log-day.md",
         handoffDeleted: true,
+        handoffStatusRecorded: true,
       });
       await Promise.resolve();
     });

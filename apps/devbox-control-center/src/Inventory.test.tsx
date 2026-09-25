@@ -57,7 +57,7 @@ it("opens the native installation directory only after a click without sending a
   fireEvent.click(button);
   await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
   expect(invoke).toHaveBeenLastCalledWith(
-    "plugin:control-center|execute",
+    "plugin:control-center|delivery",
     expect.objectContaining({ request: expect.objectContaining({ method: "open_installation_folder", args: {} }) }),
   );
 });

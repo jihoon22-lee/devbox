@@ -1,82 +1,27 @@
-export interface KeyValue {
-  key: string;
-  value: string;
-}
+export type KeyValue = import("../generated/KeyValue").KeyValue;
 
 /** 이전 v2 저장본에는 enabled가 없으며 이 경우 활성 상태로 해석한다. */
-export interface RequestHeader extends KeyValue {
-  enabled?: boolean;
-}
+export type RequestHeader = import("../generated/RequestHeader").RequestHeader;
 
 /** request Cookie header로 조립되는 단일 name/value 행. domain cookie jar가 아니다. */
-export interface RequestCookie {
-  name: string;
-  value: string;
-  /** 이전 저장본과의 일관성을 위해 누락 시 활성으로 해석한다. */
-  enabled?: boolean;
-}
+export type RequestCookie = import("../generated/RequestCookie").RequestCookie;
 
-export interface MultipartPart {
-  kind: "text" | "file";
-  name: string;
-  /** text part의 값. file part에서는 항상 빈 문자열이다. */
-  value: string;
-  /** file picker가 선택한 현재 실행의 경로. persistence에서는 항상 제거한다. */
-  file_path: string;
-  /** 경로 없이 다시 선택할 파일을 알려 주는 basename 표시 metadata. */
-  file_name: string;
-  /** 비어 있으면 backend가 기본 content type을 사용한다. */
-  content_type: string;
-  enabled?: boolean;
-}
+export type MultipartPart = import("../generated/MultipartPart").MultipartPart;
 
-export interface AuthConfig {
-  kind: string;
-  username: string;
-  password: string;
-  token: string;
-  api_key: string;
-  api_value: string;
-}
+export type AuthConfig = import("../generated/AuthConfig").AuthConfig;
 
-export interface GraphqlRequest {
-  query: string;
-  variables: string;
-  operation_name: string;
-}
+export type GraphqlRequest = import("../generated/GraphqlRequest").GraphqlRequest;
 
-export interface GraphqlLocation {
-  line: number;
-  column: number;
-}
+export type GraphqlLocation = import("../generated/GraphqlLocation").GraphqlLocation;
 
-export interface GraphqlError {
-  message: string;
-  locations: GraphqlLocation[];
-  path: string[];
-}
+export type GraphqlError = import("../generated/GraphqlError").GraphqlError;
 
-export interface GraphqlResponse {
-  envelope: "valid" | "not_json" | "invalid" | "oversized";
-  data: unknown | null;
-  errors: GraphqlError[];
-  errors_truncated: boolean;
-}
+export type GraphqlResponse = import("../generated/GraphqlResponse").GraphqlResponse;
 
 /** 사용자가 편집하고 저장하는 요청 원본. 환경 변수 참조는 해석하지 않은 채 유지한다. */
-export interface RequestTemplate {
-  method: string;
-  url: string;
-  headers: RequestHeader[];
-  cookies: RequestCookie[];
-  multipart: MultipartPart[];
-  params: KeyValue[];
-  body_kind: string;
-  body: string;
-  auth: AuthConfig | null;
-  timeout_ms: number;
-  graphql?: GraphqlRequest | null;
-}
+type NativeRequestTemplate = import("../generated/RequestTemplate").RequestTemplate;
+/** Editor state materializes arrays that are optional only at the native input boundary. */
+export type RequestTemplate = NativeRequestTemplate & { cookies: RequestCookie[]; multipart: MultipartPart[] };
 
 export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
@@ -85,19 +30,9 @@ export type OpenTarget =
   | { kind: "query"; text: string }
   | { kind: "handoff"; handoffKind: string; id: string };
 
-export interface OpenRequest {
-  target: OpenTarget;
-  from: string | null;
-}
+export type OpenRequest = import("../generated/OpenRequest").OpenRequest;
 
-export interface ApiRequestHandoffPreview {
-  handoffId: string;
-  kind: string;
-  producerId: string;
-  consumerId: string;
-  expiresAtMs: number;
-  request: RequestTemplate;
-}
+export type ApiRequestHandoffPreview = import("../generated/ApiRequestHandoffPreview").ApiRequestHandoffPreview;
 
 /**
  * 저장 직전에 민감한 직접 입력값을 제거한 요청.
@@ -107,53 +42,17 @@ export interface PersistedHistoryRequest extends RequestTemplate {
   requiresSecretReview: boolean;
 }
 
-export interface ApiResponse {
-  status: number;
-  status_text: string;
-  headers: KeyValue[];
-  duration_ms: number;
-  size_bytes: number;
-  body: string;
-  is_json: boolean;
-  final_url: string;
-  redirects: RedirectHop[];
-  cookies: ResponseCookie[];
-  response_id: string | null;
-  raw_headers_available: boolean;
-  headers_truncated: boolean;
-  binary?: BinaryResponse | null;
-  graphql?: GraphqlResponse | null;
-}
+export type ApiResponse = import("../generated/ApiResponse").ApiResponse;
 
 /** Safe result returned after the native response selection handoff is queued. */
-export interface ToolboxDispatch {
-  handoffId: string;
-  redacted: boolean;
-}
+export type ToolboxDispatch = Pick<import("../generated/HandoffResult").HandoffResult, "handoffId" | "redacted">;
 
 /** Safe projection of a binary HTTP response. Raw bytes stay in native memory until explicit save. */
-export interface BinaryResponse {
-  media_type: string;
-  size_bytes: number;
-  hex_preview: string;
-  text_preview?: string | null;
-  hex_truncated: boolean;
-  text_truncated: boolean;
-  save_available: boolean;
-}
+export type BinaryResponse = import("../generated/BinaryResponse").BinaryResponse;
 
-export interface ResponseCookie {
-  name: string;
-  /** 응답 DTO에서는 항상 마스킹된 값이다. */
-  value: string;
-  /** 알려진 안전 attribute만 제한적으로 표시하며, 미지 값은 마스킹한다. */
-  attributes: KeyValue[];
-}
+export type ResponseCookie = import("../generated/ResponseCookie").ResponseCookie;
 
-export interface RedirectHop {
-  status: number;
-  location: string;
-}
+export type RedirectHop = import("../generated/RedirectHop").RedirectHop;
 
 export interface HistoryItem {
   id: string;
@@ -164,13 +63,7 @@ export interface HistoryItem {
   status?: number;
 }
 
-export interface SseOptions {
-  connectTimeoutMs: number;
-  idleTimeoutMs: number;
-  totalTimeoutMs: number;
-  /** Native reconnect is deliberately opt-in and is capped by the transport. */
-  reconnect: boolean;
-}
+export type SseOptions = import("../generated/SseOptions").SseOptions;
 
 export type SseUpdateKind = "connected" | "event" | "closed" | "error";
 
@@ -207,12 +100,7 @@ export interface WebSocketMessage {
   closeReason?: string;
 }
 
-export interface WebSocketMessageInput {
-  kind: "text" | "binary" | "ping" | "pong";
-  text: string;
-  /** Base64 payload for binary/control messages. */
-  data: string;
-}
+export type WebSocketMessageInput = import("../generated/WebSocketMessageInput").WebSocketMessageInput;
 
 /** Fixed event envelope. It intentionally contains no URL, headers, raw error, or path. */
 export interface WebSocketUpdate {
@@ -240,82 +128,24 @@ export type McpEra = Exclude<McpEraPreference, "auto">;
 
 export type McpTransport = "http" | "stdio";
 
-export interface McpNativeSelection {
-  selectionId: string;
-  kind: "executable" | "directory";
-  label: string;
-  expiresAtMs: number;
-}
+export type McpNativeSelection = import("../generated/McpNativeSelection").McpNativeSelection;
 
-export interface McpStdioEnvironmentBinding {
-  childName: string;
-  sourceName: string;
-}
+export type McpStdioEnvironmentBinding = import("../generated/McpStdioEnvironmentBinding").McpStdioEnvironmentBinding;
 
-export interface McpStdioProfile {
-  executableSelectionId: string;
-  cwdSelectionId?: string;
-  era: McpEraPreference;
-  args: string[];
-  environment: McpStdioEnvironmentBinding[];
-  timeoutMs: number;
-}
+export type McpStdioProfile = import("../generated/McpStdioProfile").McpStdioProfile;
 
-export interface McpHttpProfile {
-  endpoint: string;
-  era: McpEraPreference;
-  headers: RequestHeader[];
-  timeoutMs: number;
-  oauthGrantId?: string;
-}
+export type McpHttpProfile = import("../generated/McpHttpProfile").McpHttpProfile;
 
 export type McpOAuthGrantStatus = "active" | "expired";
 
-export interface McpOAuthGrantProjection {
-  grantId: string;
-  issuer: string;
-  resource: string;
-  clientId: string;
-  scopes: string[];
-  expiresAtMs: number | null;
-  status: McpOAuthGrantStatus;
-}
+export type McpOAuthGrantProjection = import("../generated/McpOAuthGrantProjection").McpOAuthGrantProjection;
 
-export interface McpOAuthRevokeResult {
-  remoteRevoked: boolean;
-  removedLocal: boolean;
-}
+export type McpOAuthRevokeResult = import("../generated/McpOAuthRevokeResult").McpOAuthRevokeResult;
 
-export interface McpServerProjection {
-  era: McpEra;
-  protocolVersion: string;
-  serverName: string;
-  serverVersion: string;
-  capabilities: Record<string, unknown>;
-  supportedVersions: string[];
-}
+export type McpServerProjection = import("../generated/ServerProjection").ServerProjection;
 
-export interface McpTimelineEntry {
-  sequence: number;
-  offsetMs: number;
-  direction: "outgoing" | "incoming";
-  kind: "request" | "notification" | "response" | "error";
-  method: string | null;
-  requestId: string | null;
-  payload: unknown | null;
-}
+export type McpTimelineEntry = import("../generated/McpTimelineEntry").McpTimelineEntry;
 
-export interface McpConnectResult {
-  connectionId: string;
-  server: McpServerProjection;
-  sessionManaged: boolean;
-  timeline: McpTimelineEntry[];
-}
+export type McpConnectResult = import("../generated/McpConnectResult").McpConnectResult;
 
-export interface McpInvokeResult {
-  result: unknown | null;
-  errorCode: string | null;
-  rpcErrorCode: number | null;
-  nextCursor: string | null;
-  timeline: McpTimelineEntry[];
-}
+export type McpInvokeResult = import("../generated/McpInvokeResult").McpInvokeResult;

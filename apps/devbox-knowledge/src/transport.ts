@@ -10,7 +10,16 @@ const routeFor: Record<Component, string> = {
   "knowledge.search": "search",
   "knowledge.search-settings": "search",
   "knowledge.opener": "search",
-  "knowledge.migration": "notes",
+  "knowledge.setup": "notes",
+};
+const commandFor: Record<Component, string> = {
+  "knowledge.activity": "plugin:knowledge|activity",
+  "knowledge.notes": "plugin:knowledge|notes",
+  "knowledge.search": "plugin:knowledge|search",
+  "knowledge.search-settings": "plugin:knowledge|search_settings",
+  "knowledge.opener": "plugin:knowledge|opener",
+  "knowledge.setup": "plugin:knowledge|setup",
+  "knowledge.commands": "plugin:knowledge|commands",
 };
 import { issueError } from "./issues";
 export { issueError } from "./issues";
@@ -28,7 +37,7 @@ configureProductTransport(
     };
     let response: { operation: Operation; value: T };
     try {
-      response = await invoke("plugin:knowledge|execute", { request: { header, component, method, args } });
+      response = await invoke(commandFor[component], { request: { header, method, args } });
     } catch (problem) {
       throw new Error(problemMessage(problem, provenance));
     }
@@ -36,7 +45,7 @@ configureProductTransport(
       throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
     if (response.operation.outcome.state !== "succeeded") {
       const value = response.value as { issue?: unknown } | null;
-      throw issueError(value?.issue);
+      throw issueError(value?.issue, component);
     }
     return response.value;
   },

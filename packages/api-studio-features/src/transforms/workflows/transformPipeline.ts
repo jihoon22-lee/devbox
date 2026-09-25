@@ -36,9 +36,7 @@ export function isPipelineValueType(value: unknown): value is PipelineValueType 
   return typeof value === "string" && PIPELINE_VALUE_TYPE_SET.has(value);
 }
 
-export interface PipelineStep {
-  readonly transformerId: string;
-}
+export type PipelineStep = import("../../generated/PipelineStep").PipelineStep;
 
 export interface TransformerDescriptor {
   readonly id: string;

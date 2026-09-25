@@ -13,6 +13,7 @@ const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct AutostartStatus {
     pub supported: bool,
     pub enabled: bool,
@@ -80,7 +81,7 @@ fn owned_value(name: &str, expected: &str) -> Result<Option<String>, String> {
     }
 }
 
-fn product_status(_app: &tauri::AppHandle) -> Result<AutostartStatus, String> {
+pub(crate) fn product_status(_app: &tauri::AppHandle) -> Result<AutostartStatus, String> {
     #[cfg(target_os = "windows")]
     {
         let (name, expected) = product_owner(_app)?;
@@ -99,7 +100,10 @@ fn product_status(_app: &tauri::AppHandle) -> Result<AutostartStatus, String> {
     })
 }
 
-fn set_product_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<AutostartStatus, String> {
+pub(crate) fn set_product_autostart(
+    app: &tauri::AppHandle,
+    enabled: bool,
+) -> Result<AutostartStatus, String> {
     #[cfg(target_os = "windows")]
     {
         let (name, expected) = product_owner(app)?;
@@ -113,35 +117,6 @@ fn set_product_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<Autost
     #[cfg(not(target_os = "windows"))]
     let _ = enabled;
     product_status(app)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_autostart_status(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = product_status(component_app)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_set_autostart(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        enabled: bool,
-    }
-    let Input { enabled } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = set_product_autostart(component_app, enabled)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

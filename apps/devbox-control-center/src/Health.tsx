@@ -1,3 +1,4 @@
+import { deliveryCall } from "./delivery";
 import { useEffect, useRef, useState } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
@@ -70,10 +71,7 @@ export default function Health({ description, route }: ShellContentProps) {
       try {
         const header = makeRequest(description.handshake, route, Date.now(), description.context);
         header.deadlineMs += 24000;
-        const result = await invoke<{ operation: unknown; value: Observation & { recorded: boolean } }>(
-          "plugin:control-center|execute",
-          { request: { header, method: "record_suite_health", args: { product: product.id } } },
-        );
+        const result = await deliveryCall(header, "record_suite_health", { product: product.id });
         if (
           !isOperation(result.operation, {
             product: "control-center",

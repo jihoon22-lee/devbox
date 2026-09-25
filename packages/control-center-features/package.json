@@ -8,7 +8,10 @@
     "./manager-api": "./src/manager/api.ts",
     "./manager-types": "./src/manager/types.ts",
     "./manager.css": "./src/manager/App.css",
-    "./transport": "./src/transport.ts"
+    "./transport": "./src/transport.ts",
+    "./calls": "./src/calls.ts",
+    "./issues": "./src/issues.ts",
+    "./generated/*": "./src/generated/*.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

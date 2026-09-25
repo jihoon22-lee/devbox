@@ -32,6 +32,7 @@ const MAX_HMAC_TAG_BYTES: usize = 64;
 /// accidentally formatted by a command or log helper.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct HmacRequest {
     pub algorithm: String,
     pub key: String,
@@ -45,6 +46,7 @@ pub struct HmacRequest {
 /// returns the calculated tag to the frontend.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct HmacVerifyRequest {
     pub algorithm: String,
     pub key: String,

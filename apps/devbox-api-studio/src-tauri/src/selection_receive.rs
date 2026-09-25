@@ -52,9 +52,11 @@ struct Input {
     operation_id: String,
     revision: String,
 }
-pub(crate) async fn open(
+pub(crate) async fn open_typed(
     app: &tauri::AppHandle,
-    args: Value,
+    id: String,
+    operation_id: String,
+    revision: String,
     deadline: u64,
 ) -> std::result::Result<Value, String> {
     static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
@@ -64,7 +66,11 @@ pub(crate) async fn open(
         .clone()
         .try_acquire_owned()
         .map_err(|_| "selection_busy")?;
-    let input: Input = serde_json::from_value(args).map_err(|_| "selection_invalid")?;
+    let input = Input {
+        id,
+        operation_id,
+        revision,
+    };
     let target = Target::Entity {
         entity: EntityKind::Artifact,
         id: input.id.clone(),

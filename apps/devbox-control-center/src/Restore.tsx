@@ -1,54 +1,12 @@
+import { deliveryCall } from "./delivery";
 import { useEffect, useState } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
-import { invoke } from "@tauri-apps/api/core";
 import catalog from "../../../apps/products.json";
 
-interface Checkpoint {
-  id: string;
-  bytes: number;
-  files: number;
-}
-interface RestoreOperation {
-  id: string;
-  phase: string;
-  checkpointId?: string;
-  preparedMs?: number;
-}
-interface UpdateOperation {
-  id: string;
-  state: string;
-  previousVersion: string;
-  version: string;
-  checkpointId: string;
-}
-interface Inventory {
-  update?: UpdateOperation | null;
-  checkpoints: Checkpoint[];
-  operations: RestoreOperation[];
-  activeOperation: string | null;
-  installation?: {
-    phase: string;
-    committed: boolean;
-    recordedOwners: number;
-    clean: boolean;
-    reinstall?: boolean;
-    freshHealth: boolean;
-  };
-}
-type Action =
-  | "commitReinstall"
-  | "updateResume"
-  | "updateCommit"
-  | "updateRollback"
-  | "activateClean"
-  | "commitClean"
-  | "snapshot"
-  | "restore"
-  | "resume"
-  | "commit"
-  | "rollback";
+type Inventory = import("@devbox/control-center-features/generated/RestoreInventory").RestoreInventory;
+type Action = import("@devbox/control-center-features/generated/RestoreAction").RestoreAction;
 const labels: Record<string, string> = {
   prepared: "복원 준비됨",
   applying: "복원 적용 중단",
@@ -90,9 +48,7 @@ export default function Restore({ description, route }: Pick<ShellContentProps, 
     setConfirmed(false);
     if (!nativeMode) return;
     const header = makeRequest(description.handshake, route, Date.now(), description.context);
-    void invoke<{ operation: unknown; value: Inventory }>("plugin:control-center|execute", {
-      request: { header, method: "restore_inventory", args: {} },
-    })
+    void deliveryCall(header, "restore_inventory", {})
       .then((response) => {
         if (
           !isOperation(response.operation, {
@@ -125,10 +81,7 @@ export default function Restore({ description, route }: Pick<ShellContentProps, 
     const header = makeRequest(description.handshake, route, Date.now(), description.context);
     header.deadlineMs += 24000;
     try {
-      const response = await invoke<{ operation: unknown; value: { accepted: boolean } }>(
-        "plugin:control-center|execute",
-        { request: { header, method: "restore_action", args: review } },
-      );
+      const response = await deliveryCall(header, "restore_action", review);
       if (
         !isOperation(response.operation, {
           product: "control-center",

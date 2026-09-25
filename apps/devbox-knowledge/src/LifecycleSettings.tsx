@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
-import { componentInvoke } from "@devbox/knowledge-features/transport";
-const invoke = componentInvoke("knowledge.activity");
-interface Policy {
-  closeToTray: boolean;
-  trayAvailable: boolean;
-}
+import { activityCall } from "@devbox/knowledge-features/activity/api";
+
+type Policy = import("@devbox/knowledge-features/generated/ClosePolicy").ClosePolicy;
 export default function LifecycleSettings() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [busy, setBusy] = useState(false);
@@ -15,7 +12,7 @@ export default function LifecycleSettings() {
   useEffect(() => {
     alive.current = true;
     if (nativeMode) {
-      void invoke<Policy>("get_close_policy")
+      void activityCall("get_close_policy", {})
         .then((value) => {
           if (alive.current) setPolicy(value);
         })
@@ -33,7 +30,7 @@ export default function LifecycleSettings() {
     setBusy(true);
     setError(null);
     try {
-      const value = await invoke<Policy>("set_close_policy", { closeToTray });
+      const value = await activityCall("set_close_policy", { closeToTray });
       if (alive.current) setPolicy(value);
     } catch (error) {
       if (alive.current) setError(error instanceof Error ? error.message : "종료 설정을 저장하지 못했습니다.");

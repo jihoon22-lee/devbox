@@ -41,7 +41,9 @@ impl Activation {
         if product == "control-center" && component == "control-center.delivery" {
             return true;
         }
-        self.phase == Phase::Import && component == format!("{product}.migration")
+        self.phase == Phase::Import
+            && (component == format!("{product}.migration")
+                || component == format!("{product}.setup"))
     }
 }
 #[cfg(test)]
@@ -58,6 +60,8 @@ mod tests {
             phase: Phase::Import,
         };
         assert!(a.allows("knowledge", "knowledge.migration"));
+        assert!(a.allows("knowledge", "knowledge.setup"));
+        assert!(!a.allows("knowledge", "knowledge.notes"));
         assert!(a.allows("workspace", "workspace.shell"));
         for component in ["workspace.runtime", "workspace.terminal", "workspace.files"] {
             assert!(!a.allows("workspace", component));
@@ -66,6 +70,7 @@ mod tests {
         assert!(!a.allows("api-studio", "api-studio.webhooks"));
         a.phase = Phase::Health;
         assert!(!a.allows("knowledge", "knowledge.migration"));
+        assert!(!a.allows("knowledge", "knowledge.setup"));
         a.phase = Phase::Committed;
         assert!(a.allows("knowledge", "knowledge.activity"));
     }

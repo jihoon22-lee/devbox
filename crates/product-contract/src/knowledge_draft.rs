@@ -7,6 +7,8 @@ pub const PRODUCER: &str = "devbox-api-studio";
 pub const COMPONENTS: [&str; 2] = ["api-studio.api", "api-studio.transforms"];
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "KnowledgeResultDraft")]
 pub struct Draft {
     pub artifact: OwnedArtifactReference,
     pub created_at_ms: u64,
@@ -16,6 +18,8 @@ pub struct Draft {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "KnowledgeResultSummary")]
 pub struct Summary {
     pub artifact: OwnedArtifactReference,
     pub created_at_ms: u64,

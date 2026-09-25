@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { componentInvoke } from "@devbox/knowledge-features/transport";
-const invoke = componentInvoke("knowledge.notes");
-interface Preview {
-  state: "prepared" | "previewPending" | "saved";
-  draft: { title: string; body: string };
-}
+import { notesCall } from "@devbox/knowledge-features/notes/api";
+
+type Preview = import("@devbox/knowledge-features/generated/SessionSummaryReply").SessionSummaryReply;
 export default function IncomingSessionSummary({ onNotes }: { onNotes: () => void }) {
   const { review } = useIncomingReview();
   const [preview, setPreview] = useState<Preview | null>(null),
@@ -20,10 +17,10 @@ export default function IncomingSessionSummary({ onNotes }: { onNotes: () => voi
     setIssue("");
     if (!incoming || !sourceId) return;
     let active = true;
-    void invoke<Preview>("preview_session_summary", {
+    void notesCall("preview_session_summary", {
       sourceId,
       operationId: incoming.operationId,
-      revision: incoming.commandRevision,
+      revision: incoming.commandRevision ?? "",
     })
       .then((value) => {
         if (active) setPreview(value);
@@ -35,15 +32,15 @@ export default function IncomingSessionSummary({ onNotes }: { onNotes: () => voi
       active = false;
     };
   }, [incoming, sourceId]);
-  if (!incoming || dismissed === incoming.operationId) return null;
+  if (!incoming || !sourceId || !incoming.commandRevision || dismissed === incoming.operationId) return null;
   const open = async () => {
     setBusy(true);
     setIssue("");
     try {
-      const next = await invoke<Preview>("open_session_summary", {
+      const next = await notesCall("open_session_summary", {
         sourceId,
         operationId: incoming.operationId,
-        revision: incoming.commandRevision,
+        revision: incoming.commandRevision ?? "",
       });
       setPreview(next);
       if (next.state !== "saved") onNotes();

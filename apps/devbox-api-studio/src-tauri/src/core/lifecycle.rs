@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum ClosePolicy {
     #[default]
     StopOnClose,

@@ -117,12 +117,12 @@ impl TemplatePreviewStore {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveTemplateResult {
     pub saved: bool,
     pub path: String,
 }
 
-#[tauri::command]
 pub fn list_templates(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<NoteTemplate>, String> {
     let connection = state
         .db
@@ -166,7 +166,6 @@ pub fn list_templates(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<Note
     Ok(validated)
 }
 
-#[tauri::command]
 pub fn create_template(
     state: tauri::State<'_, Arc<AppState>>,
     draft: TemplateDraft,
@@ -209,7 +208,6 @@ pub fn create_template(
     Ok(template)
 }
 
-#[tauri::command]
 pub fn update_template(
     state: tauri::State<'_, Arc<AppState>>,
     id: i64,
@@ -249,7 +247,6 @@ pub fn update_template(
     Ok(template)
 }
 
-#[tauri::command]
 pub fn delete_template(state: tauri::State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
     if id <= 0 {
         return Err(TemplateError::InvalidId.to_string());
@@ -267,7 +264,6 @@ pub fn delete_template(state: tauri::State<'_, Arc<AppState>>, id: i64) -> Resul
     Ok(())
 }
 
-#[tauri::command]
 pub fn preview_template(
     state: tauri::State<'_, Arc<AppState>>,
     approval: TemplateApplyInput,
@@ -328,7 +324,6 @@ pub fn preview_template(
     })
 }
 
-#[tauri::command]
 pub fn discard_template_preview(
     state: tauri::State<'_, Arc<AppState>>,
     preview_id: String,
@@ -344,7 +339,6 @@ pub fn discard_template_preview(
         .discard(&preview_id, now_ms)
 }
 
-#[tauri::command]
 pub fn save_template(
     state: tauri::State<'_, Arc<AppState>>,
     preview_id: String,
@@ -606,123 +600,6 @@ fn stage_template_file(
         std::io::ErrorKind::AlreadyExists,
         "too many template staging collisions",
     ))
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_list_templates(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_templates(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_create_template(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        draft: TemplateDraft,
-    }
-    let Input { draft } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = create_template(component_app.state(), draft)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_update_template(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: i64,
-        draft: TemplateDraft,
-    }
-    let Input { id, draft } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = update_template(component_app.state(), id, draft)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_delete_template(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: i64,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    delete_template(component_app.state(), id)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_preview_template(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        approval: TemplateApplyInput,
-    }
-    let Input { approval } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = preview_template(component_app.state(), approval)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_template(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        preview_id: String,
-    }
-    let Input { preview_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_template(component_app.state(), preview_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_discard_template_preview(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        preview_id: String,
-    }
-    let Input { preview_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    discard_template_preview(component_app.state(), preview_id)?;
-    Ok(serde_json::Value::Null)
 }
 
 #[cfg(test)]

@@ -16,6 +16,8 @@ serde_json = { workspace = true }
 tauri-build = { workspace = true }
 
 [dependencies]
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 suite-runtime = { path = "../../../crates/suite-runtime" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 tokio = { workspace = true }

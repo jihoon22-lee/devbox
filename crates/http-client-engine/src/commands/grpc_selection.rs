@@ -97,6 +97,7 @@ impl Drop for GrpcSelectionClaim<'_> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GrpcNativeSelection {
     selection_id: String,
     kind: &'static str,

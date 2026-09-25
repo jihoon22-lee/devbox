@@ -47,6 +47,7 @@ const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SseOptions {
     pub connect_timeout_ms: u64,
     pub idle_timeout_ms: u64,
@@ -191,7 +192,6 @@ impl SseState {
     }
 }
 
-#[tauri::command]
 pub fn start_sse_stream(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<SseState>>,
@@ -263,7 +263,6 @@ pub fn start_sse_stream(
     Ok(session_id)
 }
 
-#[tauri::command]
 pub fn stop_sse_stream(
     state: tauri::State<'_, Arc<SseState>>,
     session_id: String,
@@ -914,51 +913,6 @@ fn emit_update(
         attempt,
     };
     let _ = app.emit(SSE_EVENT, update);
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_start_sse_stream(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        req: RequestTemplate,
-        environment: Vec<EnvironmentVariable>,
-        options: SseOptions,
-    }
-    let Input {
-        req,
-        environment,
-        options,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = start_sse_stream(
-        component_app.clone(),
-        component_app.state(),
-        req,
-        environment,
-        options,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_stop_sse_stream(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-    }
-    let Input { session_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    stop_sse_stream(component_app.state(), session_id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

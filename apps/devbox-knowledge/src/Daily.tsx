@@ -1,14 +1,9 @@
 import { localDateKey } from "./dates";
 import { useEffect, useRef, useState } from "react";
-import { componentInvoke } from "@devbox/knowledge-features/transport";
+import { notesCall } from "@devbox/knowledge-features/notes/api";
 import { nativeMode } from "@devbox/product-shell/api";
-const invoke = componentInvoke("knowledge.notes");
-interface Preview {
-  path: string;
-  content: string;
-  previewId: string | null;
-  exists: boolean;
-}
+
+type Preview = import("@devbox/knowledge-features/generated/DailyPreview").DailyPreview;
 interface Props {
   date: string;
   onDateChange: (date: string) => void;
@@ -27,7 +22,7 @@ export default function Daily({ date, onDateChange, onOpen, onActivity }: Props)
   const discard = () => {
     const id = pending.current;
     pending.current = null;
-    if (id && nativeMode) void invoke("discard_daily", { previewId: id }).catch(() => undefined);
+    if (id && nativeMode) void notesCall("discard_daily", { previewId: id }).catch(() => undefined);
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
@@ -57,7 +52,7 @@ export default function Daily({ date, onDateChange, onOpen, onActivity }: Props)
     const generation = ++request.current;
     try {
       const value = nativeMode
-        ? await invoke<Preview>("preview_daily", { date })
+        ? await notesCall("preview_daily", { date })
         : {
             path: `Journal/${date}.md`,
             content: `---\ntags: [daily]\n---\n\n# ${date}\n\n`,
@@ -66,7 +61,7 @@ export default function Daily({ date, onDateChange, onOpen, onActivity }: Props)
           };
       if (!mounted.current || generation !== request.current) {
         if (value.previewId && nativeMode)
-          void invoke("discard_daily", { previewId: value.previewId }).catch(() => undefined);
+          void notesCall("discard_daily", { previewId: value.previewId }).catch(() => undefined);
         return;
       }
       pending.current = value.previewId;
@@ -88,7 +83,7 @@ export default function Daily({ date, onDateChange, onOpen, onActivity }: Props)
     setError(null);
     const generation = ++request.current;
     try {
-      const saved = await invoke<{ path: string; indexed: boolean }>("save_daily", { previewId: id });
+      const saved = await notesCall("save_daily", { previewId: id });
       if (!mounted.current || generation !== request.current) return;
       setPreview({ path: saved.path, content: "", previewId: null, exists: true });
       setNotice(

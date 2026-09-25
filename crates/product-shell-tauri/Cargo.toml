@@ -6,6 +6,7 @@ edition = "2021"
 description = "Native read-only product shell adapter"
 
 [dependencies]
+product-ipc = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-single-instance = "2"
 catalog = { path = "../catalog" }

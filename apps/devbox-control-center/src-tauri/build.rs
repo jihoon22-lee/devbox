@@ -5,7 +5,7 @@ fn main() {
         tauri_build::Attributes::new()
             .plugin(
                 "control-center",
-                tauri_build::InlinedPlugin::new().commands(&["execute"]),
+                tauri_build::InlinedPlugin::new().commands(&["tools", "delivery"]),
             )
             .plugin(
                 "suite",

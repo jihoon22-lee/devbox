@@ -36,6 +36,7 @@ pub struct KnowledgeDraftPayload {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct KnowledgeDraftSummary {
     pub period: String,
     pub start_date: String,
@@ -53,6 +54,7 @@ pub struct KnowledgeDraftSummary {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct KnowledgeDraftSource {
     pub id: String,
     pub available: bool,
@@ -129,6 +131,7 @@ impl IncomingKnowledgeDraft {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct KnowledgeDraftPreview {
     pub id: String,
     pub kind: String,

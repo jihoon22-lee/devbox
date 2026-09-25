@@ -162,7 +162,14 @@ const value = (result, call) => {
 };
 const domain = async (item, component, method, args = {}) =>
   value(
-    await request(item, `plugin:${item.product}|execute`, { component, method, args }, routeFor(component)),
+    await request(
+      item,
+      item.product === "workspace"
+        ? `plugin:${item.product}|execute`
+        : `plugin:${item.product}|${component.split(".")[1].replaceAll("-", "_")}`,
+      item.product === "workspace" ? { component, method, args } : { method, args },
+      routeFor(component),
+    ),
     `${component}.${method}`,
   );
 const suite = async (item, method) => value(await request(item, "plugin:suite|connection", { method }));
@@ -234,7 +241,12 @@ try {
     knowledge = apps.knowledge,
     center = apps["control-center"];
   await domain(workspace, "workspace.migration", "status");
-  await domain(knowledge, "knowledge.migration", "start_empty");
+  // Startup owns fresh-store initialization. A second start_empty races its
+  // reservation and intermittently fails with busy on real Windows launches.
+  await until(async () => {
+    const status = await domain(knowledge, "knowledge.setup", "status");
+    return status.active === true || status.prepared === true;
+  }, "Knowledge automatic store preparation did not finish");
   await reload(workspace);
   await reload(knowledge);
   for (const item of Object.values(apps)) await approve(item);

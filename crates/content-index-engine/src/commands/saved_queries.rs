@@ -29,6 +29,8 @@ static SNAPSHOT_WRITER: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct SaveSavedQueryRequest {
     pub id: Option<i64>,
     pub name: String,
@@ -59,7 +61,6 @@ struct LauncherQueryPayload {
 
 /// List definitions only; result rows are always evaluated against the current
 /// index when a query is opened.
-#[tauri::command]
 pub fn list_saved_queries(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<SavedQuery>, String> {
@@ -74,7 +75,6 @@ pub fn list_saved_queries(
 /// Create or update one saved query, then publish the complete producer view.
 /// The SQLite write and view construction share the producer lock; the file
 /// itself is replaced atomically by `crates/integration`.
-#[tauri::command]
 pub fn save_saved_query(
     state: tauri::State<'_, Arc<AppState>>,
     request: SaveSavedQueryRequest,
@@ -112,7 +112,6 @@ pub fn save_saved_query(
     Ok(saved)
 }
 
-#[tauri::command]
 pub fn delete_saved_query(state: tauri::State<'_, Arc<AppState>>, id: i64) -> Result<(), String> {
     if id <= 0 {
         return Err(SAVED_QUERY_ERROR.to_string());
@@ -308,54 +307,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
         .unwrap_or(0)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_list_saved_queries(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_saved_queries(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_saved_query(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: SaveSavedQueryRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_saved_query(component_app.state(), request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_delete_saved_query(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: i64,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    delete_saved_query(component_app.state(), id)?;
-    Ok(serde_json::Value::Null)
 }
 
 #[cfg(test)]

@@ -109,7 +109,7 @@ function backendCapabilityLabel(state: NonNullable<RelatedTool["dockerCapability
       return "등록됨 · 실행 상태 확인 불가";
     case "absent":
       return "등록되지 않음";
-    case "unknown":
+    default:
       return "확인 필요";
   }
 }

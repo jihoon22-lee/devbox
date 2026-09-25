@@ -1,12 +1,20 @@
-import contract from "../component-errors.json";
+import { apiMessages, webhookMessages, transformMessages } from "@devbox/api-studio-features/issues/catalog";
 import type { Component } from "@devbox/api-studio-features/transport";
-/** Called only after the enclosing operation's native provenance is verified. */
+const catalogs: Record<Component, Readonly<Record<string, string>>> = {
+  "api-studio.api": apiMessages,
+  "api-studio.webhooks": webhookMessages,
+  "api-studio.transforms": transformMessages,
+};
+/** Only declared native codes can select a message after provenance validation. */
 export function componentFailure(component: Component, value: unknown): Error {
-  const messages = contract.components[component as keyof typeof contract.components];
+  const messages = catalogs[component];
   if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).join(",") === "issue") {
     const issue = (value as { issue: unknown }).issue;
-    if (typeof issue === "string" && issue !== "component_unavailable" && messages?.includes(issue))
-      return new Error(issue);
+    if (typeof issue === "string" && Object.prototype.hasOwnProperty.call(messages, issue)) {
+      const error = new Error(messages[issue]);
+      error.name = issue;
+      return error;
+    }
   }
-  return new Error("작업을 완료하지 못했습니다.");
+  return new Error(messages.unavailable);
 }

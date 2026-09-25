@@ -40,11 +40,11 @@ def check(root=ROOT):
         if product["id"] == "workspace":
             expected_permissions.add("workspace:allow-execute")
         if product["id"] == "api-studio":
-            expected_permissions.add("api-studio:allow-execute")
+            expected_permissions.update({"api-studio:allow-api", "api-studio:allow-webhooks", "api-studio:allow-transforms"})
         if product["id"] == "knowledge":
-            expected_permissions.add("knowledge:allow-execute")
+            expected_permissions.update({"knowledge:allow-activity", "knowledge:allow-notes", "knowledge:allow-search", "knowledge:allow-search-settings", "knowledge:allow-opener", "knowledge:allow-setup", "knowledge:allow-commands"})
         if product["id"] == "control-center":
-            expected_permissions.update({"control-center:allow-execute", "commands:allow-command-search", "commands:allow-command-preview", "commands:allow-command-source", "commands:allow-command-cancel", "commands:allow-command-open", "commands:allow-command-status", "commands:allow-command-preferences", "commands:allow-command-shortcut", "commands:allow-command-trigger-shortcut"})
+            expected_permissions.update({"control-center:allow-tools", "control-center:allow-delivery", "commands:allow-command-search", "commands:allow-command-preview", "commands:allow-command-source", "commands:allow-command-cancel", "commands:allow-command-open", "commands:allow-command-status", "commands:allow-command-preferences", "commands:allow-command-shortcut", "commands:allow-command-trigger-shortcut"})
         assert set(capability["permissions"]) == expected_permissions
         capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
         expected_files = {"default.json"}

@@ -44,7 +44,7 @@ pub fn is_valid_preview_id(value: &str) -> bool {
 
 /// The request accepted by the Tauri command.  It contains no path and cannot
 /// select a destination outside the fixed Inbox target.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, ts_rs::TS)]
 pub struct QuickCaptureInput {
     pub title: String,
     pub body: String,
@@ -269,7 +269,8 @@ impl<'de> Deserialize<'de> for BoundedTags {
 /// One-shot native preview approval.  The ID is intentionally the only value
 /// accepted by save; the approved title/body/tags stay in the app-managed
 /// slot and cannot be replaced by a direct save caller.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, ts_rs::TS)]
+#[ts(rename_all = "camelCase")]
 pub struct QuickCaptureApproval {
     pub preview_id: String,
 }

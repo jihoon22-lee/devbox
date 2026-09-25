@@ -9,6 +9,7 @@ use std::{
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct Manifest {
     pub schema_version: u32,
     pub generation: String,

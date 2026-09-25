@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 /// 저장된 세션 (DB 행과 1:1) — activity-timeline 병합
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct Session {
     pub id: i64,
     pub app: String,
@@ -21,7 +21,7 @@ pub struct ClosedSession {
 }
 
 /// 앱별 사용 시간 합계
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS, serde::Deserialize)]
 pub struct AppTotal {
     pub app: String,
     pub duration_ms: i64,
@@ -29,23 +29,24 @@ pub struct AppTotal {
 }
 
 /// 프로젝트별 커밋 수
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ProjectCommit {
     pub path: String,
     pub commits: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub error_code: Option<String>,
 }
 
 /// git 집계
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, ts_rs::TS)]
 pub struct GitDay {
     pub projects: Vec<ProjectCommit>,
     pub total_commits: u32,
 }
 
 /// 하루 요약
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, ts_rs::TS)]
 pub struct DaySummary {
     pub date: String,
     pub pc_usage_ms: i64,
@@ -54,7 +55,7 @@ pub struct DaySummary {
 }
 
 /// 기간 내 하루 한 칸 (일별 사용량 차트용)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS, serde::Deserialize)]
 pub struct DayPoint {
     /// 하루 시작 epoch ms
     pub day_ms: i64,
@@ -62,7 +63,7 @@ pub struct DayPoint {
 }
 
 /// 기간(주/월) 요약
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, ts_rs::TS)]
 pub struct RangeSummary {
     pub label: String,
     pub pc_usage_ms: i64,

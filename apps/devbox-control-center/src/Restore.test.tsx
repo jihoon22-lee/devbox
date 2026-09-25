@@ -53,7 +53,7 @@ it("requires explicit review before closing the shell and sends only the selecte
   fireEvent.click(execute);
   await screen.findByText(/복구 도우미를 시작했습니다/);
   expect(invoke).toHaveBeenLastCalledWith(
-    "plugin:control-center|execute",
+    "plugin:control-center|delivery",
     expect.objectContaining({
       request: expect.objectContaining({ method: "restore_action", args: { action: "restore", id: checkpoint } }),
     }),
@@ -72,7 +72,7 @@ it("keeps a pending restore visible and prevents starting a second snapshot or r
   fireEvent.click(screen.getByRole("button", { name: "Control Center를 닫고 실행" }));
   await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
   expect(invoke).toHaveBeenLastCalledWith(
-    "plugin:control-center|execute",
+    "plugin:control-center|delivery",
     expect.objectContaining({
       request: expect.objectContaining({ method: "restore_action", args: { action: "rollback", id: checkpoint } }),
     }),

@@ -1,35 +1,12 @@
-import type { BodyEncoding } from "./lib/body";
-import { componentInvoke } from "../transport";
-const invoke = componentInvoke("api-studio.webhooks");
+import { webhookCall } from "../calls";
+
 import { isTauri } from "./lib/isTauri";
 
-export interface ServerStatus {
-  running: boolean;
-  address: string | null;
-}
+export type ServerStatus = import("../generated/ServerStatus").ServerStatus;
 
-export interface RequestRecord {
-  id: number;
-  method: string;
-  url: string;
-  headers: Array<[string, string]>;
-  body: string;
-  receivedAtMs: number;
-  bodyEncoding?: BodyEncoding;
-}
+export type RequestRecord = import("../generated/RequestRecord").RequestRecord;
 
-export interface ResponseRule {
-  id: string;
-  priority: number;
-  method: string | null;
-  path: string;
-  status: number;
-  headers: Array<[string, string]>;
-  body: string;
-  delayMs: number;
-  /** Additional responses after the base response; absent means no sequence. */
-  sequence?: ResponseSequenceStep[];
-}
+export type ResponseRule = import("../generated/ResponseRule").ResponseRule;
 
 /** Wire-compatible shape for rules written before priority was introduced. */
 export type ResponseRulePayload = Omit<ResponseRule, "priority"> & {
@@ -40,19 +17,9 @@ export type RuleConflictKind = "candidateShadowsExisting" | "existingShadowsCand
 
 export type RuleConflictReason = "priority" | "exactPath" | "methodSpecific" | "longerWildcardPrefix" | "idTieBreak";
 
-export interface RuleConflict {
-  existingRuleId: string;
-  winnerRuleId: string;
-  loserRuleId: string;
-  kind: RuleConflictKind;
-  reason: RuleConflictReason;
-}
+export type RuleConflict = import("../generated/RuleConflict").RuleConflict;
 
-export interface RuleConflictPreview {
-  candidateId: string;
-  conflicts: RuleConflict[];
-  requiresConfirmation: boolean;
-}
+export type RuleConflictPreview = import("../generated/RuleConflictPreview").RuleConflictPreview;
 
 /** Normalize a legacy rule payload without masking any non-legacy fields. */
 export function normalizeResponseRule(rule: ResponseRulePayload): ResponseRule {
@@ -62,22 +29,9 @@ export function normalizeResponseRule(rule: ResponseRulePayload): ResponseRule {
   };
 }
 
-export interface ResponseSequenceStep {
-  status: number;
-  headers: Array<[string, string]>;
-  body: string;
-  delayMs: number;
-}
+export type ResponseSequenceStep = import("../generated/ResponseSequenceStep").ResponseSequenceStep;
 
-export interface CapturedFixture {
-  id: string;
-  method: string;
-  url: string;
-  headers: Array<[string, string]>;
-  body: string;
-  receivedAtMs: number;
-  bodyEncoding?: BodyEncoding;
-}
+export type CapturedFixture = import("../generated/CapturedFixture").CapturedFixture;
 
 export interface HandoffDispatch {
   handoffId: string;
@@ -87,42 +41,12 @@ export interface HandoffDispatch {
   expiresAtMs: number;
 }
 
-export interface ReplayResult {
-  sourceId: string;
-  status: number;
-}
+export type ReplayResult = import("../generated/ReplayResult").ReplayResult;
 
 /** The disabled Run Manager service definition returned by the native export. */
-export interface RunServiceDefinition {
-  id: string;
-  kind: string;
-  name: string;
-  command: string;
-  cwd: string | null;
-  targetKind: string;
-  targetDistro: string | null;
-  envConfigured: boolean;
-  cronExpr: string | null;
-  enabled: boolean;
-  overlapPolicy: string;
-  catchUp: boolean;
-  lastEvaluatedAt: number | null;
-  nextQueueSequence: number;
-  restartPolicy: string | null;
-  autoStart: boolean | null;
-  healthTcpAddress: string | null;
-  healthTcpPort: number | null;
-  healthStartGraceMs: number | null;
-  createdAt: number;
-  updatedAt: number;
-}
+export type RunServiceDefinition = import("../generated/RunServiceDefinition").RunServiceDefinition;
 
-export interface RunDefinitionExport {
-  schemaVersion: number;
-  exportedAt: string;
-  jobs: RunServiceDefinition[];
-  services: RunServiceDefinition[];
-}
+export type RunDefinitionExport = import("../generated/RunDefinitionExport").RunDefinitionExport;
 
 const HANDOFF_BROWSER_ERROR = "앱 간 handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
 const REPLAY_BROWSER_ERROR = "replay는 데스크톱 앱에서만 사용할 수 있습니다";
@@ -185,7 +109,7 @@ function fixtureOrder(left: CapturedFixture, right: CapturedFixture): number {
 
 export function serverStatus(): Promise<ServerStatus> {
   if (!isTauri()) return Promise.resolve({ running: false, address: null });
-  return invoke<ServerStatus>("server_status");
+  return webhookCall("server_status", {});
 }
 
 /** Export only the backend-owned, disabled Run Manager definition. */
@@ -197,27 +121,27 @@ export function exportRunServiceDefinition(): Promise<RunDefinitionExport> {
       services: MOCK_RUN_DEFINITION.services.map((service) => ({ ...service })),
     });
   }
-  return invoke<RunDefinitionExport>("export_run_service_definition");
+  return webhookCall("export_run_service_definition", {});
 }
 
 export function startServer(bind: string | null, port: number, allowLan = false): Promise<ServerStatus> {
   if (!isTauri()) return Promise.resolve({ running: true, address: `${bind ?? "127.0.0.1"}:${port}` });
-  return invoke<ServerStatus>("start_server", { bind, port, allowLan });
+  return webhookCall("start_server", { bind, port, allowLan });
 }
 
 export function stopServer(): Promise<ServerStatus> {
   if (!isTauri()) return Promise.resolve({ running: false, address: null });
-  return invoke<ServerStatus>("stop_server");
+  return webhookCall("stop_server", {});
 }
 
 export function listHistory(): Promise<RequestRecord[]> {
   if (!isTauri()) return Promise.resolve(MOCK_HISTORY);
-  return invoke<RequestRecord[]>("list_history");
+  return webhookCall("list_history", {});
 }
 
 export function clearHistory(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("clear_history");
+  return webhookCall("clear_history", {}).then(() => undefined);
 }
 
 function mockHistoryRecord(id: number): RequestRecord {
@@ -228,12 +152,12 @@ function mockHistoryRecord(id: number): RequestRecord {
 
 export function copyMaskedHistory(id: number): Promise<string> {
   if (!isTauri()) return Promise.resolve(JSON.stringify(mockHistoryRecord(id), null, 2));
-  return invoke<string>("copy_masked_history", { id });
+  return webhookCall("copy_masked_history", { id });
 }
 
 export function copyRawHistory(id: number): Promise<string> {
   if (!isTauri()) return Promise.reject(new Error("원본 요청 복사는 데스크톱 앱에서만 사용할 수 있습니다"));
-  return invoke<string>("copy_raw_history", { id });
+  return webhookCall("copy_raw_history", { id });
 }
 
 export function copyHistoryHeaders(id: number): Promise<string> {
@@ -241,25 +165,25 @@ export function copyHistoryHeaders(id: number): Promise<string> {
     const headers = mockHistoryRecord(id).headers;
     return Promise.resolve(headers.map(([name, value]) => `${name}: ${value}`).join("\n"));
   }
-  return invoke<string>("copy_history_headers", { id });
+  return webhookCall("copy_history_headers", { id });
 }
 
 export function deleteHistory(id: number): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("delete_history", { id });
+  return webhookCall("delete_history", { id }).then(() => undefined);
 }
 
 /** Replay only a backend-owned masked history snapshot to the local server. */
 export function replayHistory(id: number): Promise<ReplayResult> {
   if (!isTauri()) return Promise.reject(new Error(REPLAY_BROWSER_ERROR));
-  return invoke<ReplayResult>("replay_history", { historyId: id });
+  return webhookCall("replay_history", { historyId: id });
 }
 
 export function listFixtures(): Promise<CapturedFixture[]> {
   if (!isTauri()) {
     return Promise.resolve(MOCK_FIXTURES.map((fixture) => ({ ...fixture })).sort(fixtureOrder));
   }
-  return invoke<CapturedFixture[]>("list_fixtures");
+  return webhookCall("list_fixtures", {});
 }
 
 export function saveFixture(historyId: number): Promise<CapturedFixture> {
@@ -277,7 +201,7 @@ export function saveFixture(historyId: number): Promise<CapturedFixture> {
     MOCK_FIXTURES.push(fixture);
     return Promise.resolve(fixture);
   }
-  return invoke<CapturedFixture>("save_fixture", { historyId });
+  return webhookCall("save_fixture", { historyId });
 }
 
 export function deleteFixture(id: string): Promise<void> {
@@ -286,7 +210,7 @@ export function deleteFixture(id: string): Promise<void> {
     if (index >= 0) MOCK_FIXTURES.splice(index, 1);
     return Promise.resolve();
   }
-  return invoke<void>("delete_fixture", { id });
+  return webhookCall("delete_fixture", { id }).then(() => undefined);
 }
 
 export function clearFixtures(): Promise<void> {
@@ -294,7 +218,7 @@ export function clearFixtures(): Promise<void> {
     MOCK_FIXTURES.splice(0, MOCK_FIXTURES.length);
     return Promise.resolve();
   }
-  return invoke<void>("clear_fixtures");
+  return webhookCall("clear_fixtures", {}).then(() => undefined);
 }
 
 export function fixtureToRule(id: string): Promise<ResponseRule> {
@@ -312,42 +236,42 @@ export function fixtureToRule(id: string): Promise<ResponseRule> {
       delayMs: 0,
     });
   }
-  return invoke<ResponseRulePayload>("fixture_to_rule", { id }).then(normalizeResponseRule);
+  return webhookCall("fixture_to_rule", { id }).then(normalizeResponseRule);
 }
 
 /** Replay only a backend-owned masked fixture to the local server. */
 export function replayFixture(id: string): Promise<ReplayResult> {
   if (!isTauri()) return Promise.reject(new Error(REPLAY_BROWSER_ERROR));
-  return invoke<ReplayResult>("replay_fixture", { id });
+  return webhookCall("replay_fixture", { id });
 }
 
 /** Send only a backend-owned masked history projection to API Playground. */
 export function sendHistoryToApi(historyId: number): Promise<HandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
-  return invoke<HandoffDispatch>("send_history_to_api", { historyId });
+  return webhookCall("send_history_to_api", { historyId });
 }
 
 /** Send only a backend-owned masked fixture to API Playground. */
 export function sendFixtureToApi(id: string): Promise<HandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
-  return invoke<HandoffDispatch>("send_fixture_to_api", { id });
+  return webhookCall("send_fixture_to_api", { id });
 }
 
 /** Send only a bounded, credential-redacted history projection to Log Lens. */
 export function sendHistoryToLogLens(historyId: number): Promise<HandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
-  return invoke<HandoffDispatch>("send_history_to_log_lens", { historyId });
+  return webhookCall("send_history_to_log_lens", { historyId });
 }
 
 /** Send only a bounded, credential-redacted fixture projection to Log Lens. */
 export function sendFixtureToLogLens(id: string): Promise<HandoffDispatch> {
   if (!isTauri()) return Promise.reject(new Error(HANDOFF_BROWSER_ERROR));
-  return invoke<HandoffDispatch>("send_fixture_to_log_lens", { id });
+  return webhookCall("send_fixture_to_log_lens", { id });
 }
 
 export function listRules(): Promise<ResponseRule[]> {
   if (!isTauri()) return Promise.resolve([]);
-  return invoke<ResponseRulePayload[]>("list_rules").then((rules) => rules.map(normalizeResponseRule));
+  return webhookCall("list_rules", {}).then((rules) => rules.map(normalizeResponseRule));
 }
 
 export function previewRuleConflicts(rule: ResponseRulePayload): Promise<RuleConflictPreview> {
@@ -359,21 +283,21 @@ export function previewRuleConflicts(rule: ResponseRulePayload): Promise<RuleCon
       requiresConfirmation: false,
     });
   }
-  return invoke<RuleConflictPreview>("preview_rule_conflicts", { rule: normalizedRule });
+  return webhookCall("preview_rule_conflicts", { rule: normalizedRule });
 }
 
 export function setRule(rule: ResponseRulePayload, confirmConflicts: boolean): Promise<string> {
   const normalizedRule = normalizeResponseRule(rule);
   if (!isTauri()) return Promise.resolve(normalizedRule.id || "mock-rule");
-  return invoke<string>("set_rule", { rule: normalizedRule, confirmConflicts });
+  return webhookCall("set_rule", { rule: normalizedRule, confirmConflicts });
 }
 
 export function deleteRule(id: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("delete_rule", { id });
+  return webhookCall("delete_rule", { id }).then(() => undefined);
 }
 
 export function resetRuleSequence(id: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("reset_rule_sequence", { id });
+  return webhookCall("reset_rule_sequence", { id }).then(() => undefined);
 }

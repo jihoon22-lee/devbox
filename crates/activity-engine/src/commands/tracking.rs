@@ -143,7 +143,6 @@ pub fn now_ms() -> i64 {
 }
 
 /// 추적 시작. 이미 진행 중이면 false를 반환한다.
-#[tauri::command]
 pub fn start_tracking(state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
     start_tracking_inner(&state)
 }
@@ -161,7 +160,6 @@ fn start_tracking_inner(state: &AppState) -> Result<bool, String> {
 }
 
 /// Stop collection before returning, even when persistence fails.
-#[tauri::command]
 pub fn stop_tracking(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
     stop_tracking_inner(&state)
 }
@@ -212,7 +210,6 @@ fn set_product_consent(conn: &Connection, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub fn is_tracking(state: tauri::State<'_, Arc<AppState>>) -> bool {
     state.tracking.load(Ordering::SeqCst)
 }
@@ -302,7 +299,6 @@ fn insert_filtered(
 }
 
 /// idle threshold 설정 (ms).
-#[tauri::command]
 pub fn set_idle_threshold(
     state: tauri::State<'_, Arc<AppState>>,
     threshold_ms: i64,
@@ -315,7 +311,6 @@ pub fn set_idle_threshold(
     Ok(())
 }
 
-#[tauri::command]
 pub fn get_idle_threshold(state: tauri::State<'_, Arc<AppState>>) -> i64 {
     let value = crate::core::db::get_setting(
         &state.db.lock().unwrap(),
@@ -349,79 +344,6 @@ fn last_input_ms() -> Option<i64> {
 #[cfg(not(target_os = "windows"))]
 fn last_input_ms() -> Option<i64> {
     None
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_start_tracking(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = start_tracking(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_stop_tracking(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    stop_tracking(component_app.state())?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_is_tracking(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = is_tracking(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_set_idle_threshold(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        threshold_ms: i64,
-    }
-    let Input { threshold_ms } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    set_idle_threshold(component_app.state(), threshold_ms)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_idle_threshold(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_idle_threshold(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

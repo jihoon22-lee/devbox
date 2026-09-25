@@ -1,9 +1,8 @@
 mod api_workspace;
-mod component;
-mod component_errors;
 mod core;
 mod federation;
 mod handoff;
+pub mod ipc;
 mod knowledge;
 mod lifecycle;
 mod mock_draft;
@@ -30,7 +29,7 @@ pub fn run() {
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
-            .plugin(component::plugin())
+            .plugin(ipc::plugin())
             .plugin(lifecycle::plugin())
     })
     .expect("error while running Devbox API Studio");

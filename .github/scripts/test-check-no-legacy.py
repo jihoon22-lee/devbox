@@ -21,5 +21,27 @@ class GuardTest(unittest.TestCase):
             self.assertEqual(len(hits), 2)
             self.assertEqual({hit.split(":")[0] for hit in hits}, {"a.rs", "d.rs"})
 
+    def test_current_activity_wire_lines_do_not_allow_import_entrypoints(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = pathlib.Path(root)
+            for relative, lines in guard.COMPATIBILITY_LINES.items():
+                path = base / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
+            native = base / "crates/activity-engine/src/commands/life.rs"
+            with native.open("a", encoding="utf-8") as output:
+                output.write("fn legacy_snapshot() {}\n")
+            (base / "foreign.ts").write_text("legacy_snapshot: boolean;\n")
+            original = guard.ROOT
+            guard.ROOT = base
+            try:
+                hits = guard.scan(["."])
+            finally:
+                guard.ROOT = original
+            self.assertEqual(len(hits), 2)
+            self.assertEqual({hit.split(":")[0] for hit in hits}, {
+                "crates/activity-engine/src/commands/life.rs", "foreign.ts",
+            })
+
 if __name__ == "__main__":
     unittest.main()

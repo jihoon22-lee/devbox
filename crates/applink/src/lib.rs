@@ -43,8 +43,10 @@ pub const PROTOCOL_VERSION: u32 = 2;
 /// and apply the filter before searching their own local index.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct QueryFilter {
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub extensions: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_after: Option<i64>,
@@ -304,6 +306,7 @@ impl QueryFilter {
 /// degrade해야 한다.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum OpenTarget {
     Path {
         path: String,
@@ -350,6 +353,7 @@ impl From<HandoffDescriptor> for OpenTarget {
 /// 파싱된 인바운드 요청. Tauri 이벤트(`devbox://open`) payload로 그대로 직렬화된다.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OpenRequest {
     pub target: OpenTarget,
     /// 보낸 앱의 카탈로그 id — 로깅·"되돌아가기" 버튼용. 모르면 `None`.

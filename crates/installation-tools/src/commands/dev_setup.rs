@@ -112,6 +112,7 @@ impl PackageAction {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupConfigurationReviewView {
     pub schema_version: String,
     pub preview_id: String,
@@ -129,6 +130,7 @@ pub struct DevSetupConfigurationReviewView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupPackageReviewView {
     pub package_id: String,
     pub desired: String,
@@ -141,12 +143,14 @@ pub struct DevSetupPackageReviewView {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DevSetupPreviewRequest {
     pub preview_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DevSetupApplyRequest {
     pub preview_id: String,
     pub confirmed: bool,
@@ -156,6 +160,7 @@ pub struct DevSetupApplyRequest {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupConfigurationExportView {
     pub filename: String,
     pub mime_type: String,
@@ -166,6 +171,7 @@ pub struct DevSetupConfigurationExportView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupApplyView {
     pub status: String,
     pub observed_at_ms: u64,
@@ -174,6 +180,7 @@ pub struct DevSetupApplyView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupPackageApplyView {
     pub package_id: String,
     pub status: String,
@@ -202,7 +209,6 @@ impl ApplyPackageStatus {
     }
 }
 
-#[tauri::command]
 pub async fn import_dev_setup_configuration(
     app: AppHandle,
     state: tauri::State<'_, DevSetupConfigurationState>,
@@ -234,7 +240,6 @@ pub async fn import_dev_setup_configuration(
     Ok(Some(view))
 }
 
-#[tauri::command]
 pub fn discard_dev_setup_configuration(
     state: tauri::State<'_, DevSetupConfigurationState>,
     request: DevSetupPreviewRequest,
@@ -243,7 +248,6 @@ pub fn discard_dev_setup_configuration(
     discard_preview(&state, &request.preview_id)
 }
 
-#[tauri::command]
 pub fn export_dev_setup_configuration(
     state: tauri::State<'_, DevSetupConfigurationState>,
     request: DevSetupPreviewRequest,
@@ -263,7 +267,6 @@ pub fn export_dev_setup_configuration(
     })
 }
 
-#[tauri::command]
 pub async fn apply_dev_setup_configuration(
     app: AppHandle,
     state: tauri::State<'_, DevSetupConfigurationState>,
@@ -319,7 +322,6 @@ pub async fn apply_dev_setup_configuration(
     result
 }
 
-#[tauri::command]
 pub fn cancel_dev_setup_apply(
     state: tauri::State<'_, DevSetupConfigurationState>,
 ) -> Result<(), String> {

@@ -16,7 +16,7 @@ const MAX_IMAGE_BYTES: u64 = MAX_ASSET_BYTES as u64;
 /// 이미지 인라인 캐시 상한 항목 수. 초과하면 캐시를 통째로 비운다.
 const IMAGE_CACHE_CAP: usize = 32;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct RenderedDoc {
     pub title: Option<String>,
     pub tags: Vec<String>,
@@ -31,7 +31,6 @@ pub struct RenderedDoc {
 /// `.md` 확장자 여부는 서버에서 검증하지 않는다 — 프론트가 분할/프리뷰 버튼을
 /// 비활성화하는 것으로 충분하고, 임의 텍스트를 마크다운으로 렌더하는 것 자체는
 /// 무해하다.
-#[tauri::command]
 pub fn render_markdown(
     state: tauri::State<'_, Arc<AppState>>,
     rel: String,
@@ -255,24 +254,6 @@ fn mime_from_ext(path: &Path) -> &'static str {
         "ico" => "image/x-icon",
         _ => "application/octet-stream",
     }
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_render_markdown(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-        content: String,
-    }
-    let Input { rel, content } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = render_markdown(component_app.state(), rel, content)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

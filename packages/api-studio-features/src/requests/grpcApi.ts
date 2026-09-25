@@ -1,5 +1,6 @@
-import { componentInvoke } from "../transport";
-const invoke = componentInvoke("api-studio.api");
+import { toJsonValue } from "../json";
+import { apiCall } from "../calls";
+
 import { isTauri } from "./lib/isTauri";
 
 export type GrpcSelectionKind = "proto" | "import-root" | "ca" | "client-cert" | "client-key";
@@ -8,93 +9,19 @@ export type GrpcRpcKind = "unary" | "server-streaming" | "client-streaming" | "b
 export type GrpcSourceKind = "local-proto" | "reflection-v1" | "reflection-v1alpha";
 export type GrpcTlsMode = "plaintext" | GrpcRootMode;
 
-export interface GrpcNativeSelection {
-  selectionId: string;
-  kind: GrpcSelectionKind;
-  label: string;
-  expiresAtMs: number;
-}
+export type GrpcNativeSelection = import("../generated/GrpcNativeSelection").GrpcNativeSelection;
 
-export interface GrpcCredentialProjection {
-  credentialId: string;
-  label: string;
-  hasCustomCa: boolean;
-  hasClientIdentity: boolean;
-  createdAtMs: number;
-}
+export type GrpcCredentialProjection = import("../generated/GrpcCredentialProjection").GrpcCredentialProjection;
 
-export interface GrpcMethodProjection {
-  service: string;
-  method: string;
-  fullName: string;
-  inputType: string;
-  outputType: string;
-  rpcKind: GrpcRpcKind;
-  inputTemplate: unknown;
-}
+export type GrpcMethodProjection = import("../generated/GrpcMethodProjection").GrpcMethodProjection;
 
-export interface GrpcConnectProfile {
-  endpoint: string;
-  source:
-    | {
-        kind: "local-proto";
-        protoSelectionId: string;
-        importRootSelectionId?: string;
-      }
-    | {
-        kind: "reflection";
-      };
-  tls: {
-    rootMode: GrpcRootMode;
-    serverName?: string;
-    credentialId?: string;
-  };
-  connectTimeoutMs: number;
-  rpcTimeoutMs: number;
-}
+export type GrpcConnectProfile = import("../generated/GrpcConnectProfile").GrpcConnectProfile;
 
-export interface GrpcConnectResult {
-  connectionId: string;
-  authority: string;
-  source: {
-    kind: GrpcSourceKind;
-    label: string | null;
-    descriptorFileCount: number;
-    serviceCount: number;
-  };
-  tls: {
-    mode: GrpcTlsMode;
-    encrypted: boolean;
-    credentialUsed: boolean;
-    serverNameOverridden: boolean;
-  };
-  methods: GrpcMethodProjection[];
-  rpcTimeoutMs: number;
-}
+export type GrpcConnectResult = import("../generated/GrpcConnectResult").GrpcConnectResult;
 
-export interface GrpcInvokeResult {
-  ok: boolean;
-  status: GrpcStatusName;
-  responses: unknown[];
-  requestMessageCount: number;
-  responseMessageCount: number;
-  startedAtMs: number;
-  elapsedMs: number;
-}
+export type GrpcInvokeResult = import("../generated/GrpcInvokeResult").GrpcInvokeResult;
 
-export interface GrpcExchangeSummary {
-  sourceKind: GrpcSourceKind;
-  service: string;
-  method: string;
-  rpcKind: GrpcRpcKind;
-  requestMessageCount: number;
-  responseMessageCount: number;
-  startedAtMs: number;
-  elapsedMs: number;
-  status: GrpcStatusName;
-  tlsMode: GrpcTlsMode;
-  credentialUsed: boolean;
-}
+export type GrpcExchangeSummary = import("../generated/GrpcExchangeSummary").GrpcExchangeSummary;
 
 export type GrpcStatusName = (typeof GRPC_STATUS_NAMES)[number];
 
@@ -165,7 +92,14 @@ export function nextGrpcRequestId(): string {
 }
 
 export function safeGrpcErrorCode(cause: unknown): string {
-  const message = typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "";
+  const message =
+    typeof cause === "string"
+      ? cause
+      : cause instanceof Error
+        ? SAFE_ERROR_CODES.has(cause.name)
+          ? cause.name
+          : cause.message
+        : "";
   return SAFE_ERROR_CODES.has(message) ? message : "grpc_protocol_failed";
 }
 
@@ -189,9 +123,17 @@ export async function pickGrpcClientKey(): Promise<GrpcNativeSelection | null> {
   return pickSelection("pick_grpc_client_key", "client-key");
 }
 
-async function pickSelection(command: string, expected: GrpcSelectionKind): Promise<GrpcNativeSelection | null> {
+async function pickSelection(
+  command:
+    | "pick_grpc_proto"
+    | "pick_grpc_import_root"
+    | "pick_grpc_ca"
+    | "pick_grpc_client_certificate"
+    | "pick_grpc_client_key",
+  expected: GrpcSelectionKind,
+): Promise<GrpcNativeSelection | null> {
   requireNative();
-  const value = await invoke<unknown>(command);
+  const value = await apiCall(command, {});
   if (value === null) return null;
   const record = asRecord(value, "grpc_source_selection_invalid");
   if (
@@ -230,7 +172,7 @@ export async function importGrpcTlsCredential(input: {
   ) {
     throw new Error("grpc_credential_invalid");
   }
-  const value = await invoke<unknown>("import_grpc_tls_credential", {
+  const value = await apiCall("import_grpc_tls_credential", {
     label: input.label,
     ...(input.caSelectionId ? { caSelectionId: input.caSelectionId } : {}),
     ...(input.clientCertificateSelectionId ? { clientCertificateSelectionId: input.clientCertificateSelectionId } : {}),
@@ -241,7 +183,7 @@ export async function importGrpcTlsCredential(input: {
 
 export async function listGrpcTlsCredentials(): Promise<GrpcCredentialProjection[]> {
   requireNative();
-  const value = await invoke<unknown>("list_grpc_tls_credentials");
+  const value = await apiCall("list_grpc_tls_credentials", {});
   if (!Array.isArray(value) || value.length > 16) {
     throw new Error("grpc_credential_storage_failed");
   }
@@ -258,7 +200,7 @@ export async function listGrpcTlsCredentials(): Promise<GrpcCredentialProjection
 export async function deleteGrpcTlsCredential(credentialId: string): Promise<boolean> {
   requireNative();
   if (!OPAQUE_ID.test(credentialId)) throw new Error("grpc_credential_invalid");
-  const value = await invoke<unknown>("delete_grpc_tls_credential", { credentialId });
+  const value = await apiCall("delete_grpc_tls_credential", { credentialId });
   if (typeof value !== "boolean") throw new Error("grpc_credential_storage_failed");
   return value;
 }
@@ -266,14 +208,14 @@ export async function deleteGrpcTlsCredential(credentialId: string): Promise<boo
 export async function connectGrpc(profile: GrpcConnectProfile): Promise<GrpcConnectResult> {
   requireNative();
   validateConnectProfile(profile);
-  const value = await invoke<unknown>("connect_grpc", { profile });
+  const value = await apiCall("connect_grpc", { profile });
   try {
     return validateConnectResult(value);
   } catch (cause) {
     const record = isRecord(value) ? value : null;
     if (record && isOpaqueId(record.connectionId)) {
       try {
-        await invoke<void>("disconnect_grpc", { connectionId: record.connectionId });
+        await apiCall("disconnect_grpc", { connectionId: record.connectionId });
       } catch {
         // Preserve the projection validation failure after best-effort cleanup.
       }
@@ -293,7 +235,7 @@ export async function invokeGrpc(
     throw new Error("grpc_request_invalid");
   }
   validateRawMessages(messages);
-  const value = await invoke<unknown>("invoke_grpc", {
+  const value = await apiCall("invoke_grpc", {
     connectionId,
     requestId,
     method,
@@ -307,7 +249,7 @@ export async function cancelGrpc(connectionId: string, requestId: string): Promi
   if (!OPAQUE_ID.test(connectionId) || !REQUEST_ID.test(requestId)) {
     throw new Error("grpc_connection_stale");
   }
-  const value = await invoke<unknown>("cancel_grpc", { connectionId, requestId });
+  const value = await apiCall("cancel_grpc", { connectionId, requestId });
   if (typeof value !== "boolean") throw new Error("grpc_protocol_failed");
   return value;
 }
@@ -315,13 +257,13 @@ export async function cancelGrpc(connectionId: string, requestId: string): Promi
 export async function disconnectGrpc(connectionId: string): Promise<void> {
   requireNative();
   if (!OPAQUE_ID.test(connectionId)) throw new Error("grpc_connection_stale");
-  await invoke<void>("disconnect_grpc", { connectionId });
+  await apiCall("disconnect_grpc", { connectionId });
 }
 
 export async function exportGrpcSummary(summary: GrpcExchangeSummary): Promise<boolean> {
   requireNative();
   validateSummary(summary);
-  const value = await invoke<unknown>("export_grpc_summary", { summary });
+  const value = await apiCall("export_grpc_summary", { summary });
   if (typeof value !== "boolean") throw new Error("grpc_export_failed");
   return value;
 }
@@ -336,15 +278,15 @@ function validateConnectProfile(profile: GrpcConnectProfile): void {
     !Number.isInteger(profile.rpcTimeoutMs) ||
     profile.rpcTimeoutMs < 100 ||
     profile.rpcTimeoutMs > 300_000 ||
-    (profile.tls.serverName !== undefined && !isSafeText(profile.tls.serverName, 253)) ||
-    (profile.tls.credentialId !== undefined && !OPAQUE_ID.test(profile.tls.credentialId))
+    (profile.tls.serverName != null && !isSafeText(profile.tls.serverName, 253)) ||
+    (profile.tls.credentialId != null && !OPAQUE_ID.test(profile.tls.credentialId))
   ) {
     throw new Error("grpc_invalid_profile");
   }
   if (profile.source.kind === "local-proto") {
     if (
       !OPAQUE_ID.test(profile.source.protoSelectionId) ||
-      (profile.source.importRootSelectionId !== undefined && !OPAQUE_ID.test(profile.source.importRootSelectionId))
+      (profile.source.importRootSelectionId != null && !OPAQUE_ID.test(profile.source.importRootSelectionId))
     ) {
       throw new Error("grpc_source_selection_invalid");
     }
@@ -426,7 +368,7 @@ function validateMethod(value: unknown): GrpcMethodProjection {
     inputType: record.inputType,
     outputType: record.outputType,
     rpcKind: record.rpcKind as GrpcRpcKind,
-    inputTemplate: structuredClone(record.inputTemplate),
+    inputTemplate: toJsonValue(record.inputTemplate),
   };
 }
 

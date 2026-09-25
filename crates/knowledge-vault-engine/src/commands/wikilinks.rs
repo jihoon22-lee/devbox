@@ -7,7 +7,7 @@ const MAX_ANALYSIS_BYTES: usize = 10 * 1024 * 1024;
 const MAX_CANDIDATE_QUERY_BYTES: usize = 256;
 const WIKILINK_ERROR: &str = "위키링크 정보를 불러올 수 없습니다";
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ts_rs::TS)]
 pub struct WikilinkOccurrence {
     pub target: String,
     pub label: String,
@@ -19,14 +19,14 @@ pub struct WikilinkOccurrence {
     pub resolved_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ts_rs::TS)]
 pub struct WikilinkCandidate {
     pub path: String,
     pub title: String,
     pub link_target: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ts_rs::TS)]
 pub struct Backlink {
     pub source_path: String,
     pub target: String,
@@ -34,7 +34,6 @@ pub struct Backlink {
     pub column: usize,
 }
 
-#[tauri::command]
 pub fn analyze_wikilinks(
     state: tauri::State<'_, Arc<AppState>>,
     content: String,
@@ -48,7 +47,6 @@ pub fn analyze_wikilinks(
         .map_err(|_| WIKILINK_ERROR.to_string())
 }
 
-#[tauri::command]
 pub fn wikilink_candidates(
     state: tauri::State<'_, Arc<AppState>>,
     query: String,
@@ -71,7 +69,6 @@ pub fn wikilink_candidates(
         .map_err(|_| WIKILINK_ERROR.to_string())
 }
 
-#[tauri::command]
 pub fn backlinks(
     state: tauri::State<'_, Arc<AppState>>,
     rel: String,
@@ -112,57 +109,6 @@ fn occurrence_dto(link: db::AnalyzedWikilink) -> WikilinkOccurrence {
         status,
         resolved_path,
     }
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_analyze_wikilinks(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        content: String,
-    }
-    let Input { content } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = analyze_wikilinks(component_app.state(), content)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_wikilink_candidates(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        query: String,
-    }
-    let Input { query } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = wikilink_candidates(component_app.state(), query)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_backlinks(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rel: String,
-    }
-    let Input { rel } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = backlinks(component_app.state(), rel)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

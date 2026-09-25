@@ -9,6 +9,8 @@ const MAX_RECEIPTS: usize = 256;
 const REVIEW_MS: u64 = 120_000;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "NavigationPhase")]
 pub enum Phase {
     AwaitingReview,
     Opening,
@@ -18,6 +20,8 @@ pub enum Phase {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "NavigationReceipt")]
 pub struct Receipt {
     pub operation_id: String,
     pub phase: Phase,

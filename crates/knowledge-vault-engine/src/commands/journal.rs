@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        Mutex,
     },
 };
 
@@ -87,7 +87,7 @@ impl NoteJournalStore {
         self.remember_root(&configured, Path::new(&canonical))?;
         Ok(canonical)
     }
-    fn active_root(&self, db: &Mutex<Connection>) -> Result<String, String> {
+    pub(crate) fn active_root(&self, db: &Mutex<Connection>) -> Result<String, String> {
         self.resolve_with(db, |root| {
             let vault = VaultIdentity::inspect(root).map_err(|_| UNAVAILABLE)?;
             Ok(vault
@@ -207,70 +207,6 @@ impl NoteJournalStore {
     }
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SaveInput {
-    path: String,
-    content: String,
-    base_revision: String,
-}
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ClearInput {
-    path: String,
-}
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EmptyInput {}
-fn parse<T: serde::de::DeserializeOwned>(args: serde_json::Value) -> Result<T, String> {
-    serde_json::from_value(args).map_err(|_| "component_args_invalid".into())
-}
-pub(crate) async fn __component_save_note_journal(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    let input: SaveInput = parse(args)?;
-    let state = app.state::<Arc<super::docs::AppState>>();
-    let root = state.journal.active_root(&state.db)?;
-    state
-        .journal
-        .save(&root, input.path, input.content, input.base_revision)?;
-    Ok(serde_json::Value::Null)
-}
-pub(crate) async fn __component_clear_note_journal(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    let input: ClearInput = parse(args)?;
-    let state = app.state::<Arc<super::docs::AppState>>();
-    let root = state.journal.active_root(&state.db)?;
-    state.journal.clear(&root, &input.path)?;
-    Ok(serde_json::Value::Null)
-}
-pub(crate) async fn __component_load_note_journal(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    let _: EmptyInput = parse(args)?;
-    let state = app.state::<Arc<super::docs::AppState>>();
-    let root = state.journal.active_root(&state.db)?;
-    serde_json::to_value(state.journal.load(&root)?)
-        .map_err(|_| "component_response_invalid".into())
-}
-pub(crate) async fn __component_discard_other_vault_journal(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    let _: EmptyInput = parse(args)?;
-    let state = app.state::<Arc<super::docs::AppState>>();
-    let root = state.journal.active_root(&state.db)?;
-    state.journal.discard_other(&root)?;
-    Ok(serde_json::Value::Null)
-}
 #[cfg(test)]
 #[path = "journal_tests.rs"]
 mod tests;

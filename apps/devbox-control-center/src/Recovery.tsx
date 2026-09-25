@@ -1,22 +1,11 @@
+import { deliveryCall } from "./delivery";
 import { useEffect, useState } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
-import { invoke } from "@tauri-apps/api/core";
 import catalog from "../../../apps/products.json";
 import Restore from "./Restore";
-interface Status {
-  state: "none" | "recorded";
-  phase?: string;
-  committed?: boolean;
-  recovery?: string;
-  backupCount?: number;
-  dataCheckpointCount?: number;
-  importCount?: number;
-  recordedOwnerCount?: number;
-  cleanupPending?: number;
-  failure?: string | null;
-}
+type Status = import("@devbox/control-center-features/generated/RecoveryStatus").RecoveryStatus;
 const phases: Record<string, string> = {
   inventory: "설치 상태 조사",
   stage: "패키지 준비",
@@ -45,9 +34,7 @@ export default function Recovery({ description, route }: ShellContentProps) {
       return;
     }
     const header = makeRequest(description.handshake, route, Date.now(), description.context);
-    void invoke<{ operation: unknown; value: Status }>("plugin:control-center|execute", {
-      request: { header, method: "suite_recovery", args: {} },
-    })
+    void deliveryCall(header, "suite_recovery", {})
       .then((response) => {
         if (
           !isOperation(response.operation, {

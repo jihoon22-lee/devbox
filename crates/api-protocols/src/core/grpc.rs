@@ -69,9 +69,11 @@ pub const MAX_STREAM_MESSAGES: usize = 100;
 
 #[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum GrpcRootMode {
     Native,
     Custom,
+    #[serde(rename = "native+custom", alias = "native-and-custom")]
     NativeAndCustom,
 }
 
@@ -95,6 +97,7 @@ impl GrpcRootMode {
 
 #[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum GrpcRpcKind {
     Unary,
     ServerStreaming,
@@ -119,6 +122,7 @@ impl GrpcRpcKind {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GrpcMethodProjection {
     pub service: String,
     pub method: String,

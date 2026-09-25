@@ -18,7 +18,7 @@ it.each([false, true])("automatically prepares a store, existing=%s", async (exi
     </Startup>,
   );
   await screen.findByText("notes ready");
-  expect(native.invoke).toHaveBeenCalledWith(existing ? "continue_existing" : "start_empty");
+  expect(native.invoke).toHaveBeenCalledWith(existing ? "continue_existing" : "start_empty", {});
   expect(native.invoke).toHaveBeenCalledTimes(2);
 });
 it("keeps a failed start idle until an explicit retry", async () => {

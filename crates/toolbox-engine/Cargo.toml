@@ -21,6 +21,8 @@ default = []
 
 
 [dependencies]
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 transforms-core = { path = "../transforms-core" }
 tauri = { workspace = true }
 serde = { workspace = true }

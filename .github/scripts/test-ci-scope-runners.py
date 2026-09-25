@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
 
     calls = run("bash", str(FRONTEND_RUNNER), "build", "all")
-    assert calls == [{"cwd": str(ROOT), "argv": ["-r", "build"]}]
+    assert calls == [{"cwd": str(ROOT), "argv": ["-r", "--no-bail", "build"]}]
 
     calls = run(
         "bash",
@@ -140,7 +140,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
     assert run("bash", str(FRONTEND_RUNNER), "test", "all")[0]["argv"] == [
         "-r", "--no-bail", "--workspace-concurrency", "1", "test"]
     assert run("bash", str(FRONTEND_RUNNER), "build", "apps", "apps/devbox-workspace")[0]["argv"] == [
-        "-r", "--workspace-concurrency", "1", "--filter", "./apps/devbox-workspace", "build"]
+        "-r", "--no-bail", "--workspace-concurrency", "1", "--filter", "./apps/devbox-workspace", "build"]
     environment["DEVBOX_VERIFY_RUST_TEST_THREADS"] = "2"
     assert run("bash", str(RUST_RUNNER), "test", "all")[0]["argv"] == [
         "test", "--no-fail-fast", "--workspace", "--features", "workspace-wsl/test-fixtures", "--", "--test-threads=2"]

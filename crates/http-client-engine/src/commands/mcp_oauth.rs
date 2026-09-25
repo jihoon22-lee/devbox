@@ -104,6 +104,7 @@ struct PersistedGrant {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct McpOAuthGrantProjection {
     grant_id: String,
     issuer: String,
@@ -116,6 +117,7 @@ pub struct McpOAuthGrantProjection {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct McpOAuthRevokeResult {
     remote_revoked: bool,
     removed_local: bool,
@@ -305,7 +307,6 @@ impl McpOAuthState {
     }
 }
 
-#[tauri::command]
 pub async fn authorize_mcp_http(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpOAuthState>>,
@@ -435,7 +436,6 @@ pub async fn authorize_mcp_http(
     Ok(projection)
 }
 
-#[tauri::command]
 pub fn cancel_mcp_oauth(
     state: tauri::State<'_, Arc<McpOAuthState>>,
     request_id: String,
@@ -443,7 +443,6 @@ pub fn cancel_mcp_oauth(
     state.cancel_flow(&request_id)
 }
 
-#[tauri::command]
 pub async fn list_mcp_oauth_grants(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpOAuthState>>,
@@ -458,7 +457,6 @@ pub async fn list_mcp_oauth_grants(
         .collect())
 }
 
-#[tauri::command]
 pub async fn revoke_mcp_oauth_grant(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpOAuthState>>,
@@ -1132,98 +1130,6 @@ fn now_unix_ms() -> Result<u64, String> {
         .map_err(|_| STORAGE_FAILED.to_string())?
         .as_millis();
     u64::try_from(millis).map_err(|_| STORAGE_FAILED.to_string())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_authorize_mcp_http(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-        endpoint: String,
-        issuer: Option<String>,
-        client_id: String,
-        scopes: Vec<String>,
-    }
-    let Input {
-        request_id,
-        endpoint,
-        issuer,
-        client_id,
-        scopes,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = authorize_mcp_http(
-        component_app.clone(),
-        component_app.state(),
-        request_id,
-        endpoint,
-        issuer,
-        client_id,
-        scopes,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_cancel_mcp_oauth(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-    }
-    let Input { request_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = cancel_mcp_oauth(component_app.state(), request_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_list_mcp_oauth_grants(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_mcp_oauth_grants(component_app.clone(), component_app.state()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_revoke_mcp_oauth_grant(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        grant_id: String,
-        remove_local_on_remote_failure: bool,
-    }
-    let Input {
-        grant_id,
-        remove_local_on_remote_failure,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = revoke_mcp_oauth_grant(
-        component_app.clone(),
-        component_app.state(),
-        grant_id,
-        remove_local_on_remote_failure,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

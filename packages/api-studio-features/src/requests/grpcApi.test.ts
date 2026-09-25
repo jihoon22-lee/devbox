@@ -117,7 +117,7 @@ describe("gRPC native IPC boundary", () => {
       label: "fixture.proto",
       expiresAtMs: 1_700_000_000_000,
     });
-    expect(invokeMock).toHaveBeenCalledWith("pick_grpc_proto");
+    expect(invokeMock).toHaveBeenCalledWith("pick_grpc_proto", {});
 
     invokeMock.mockResolvedValueOnce({
       selectionId: SELECTION_ID,

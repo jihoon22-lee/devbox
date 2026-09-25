@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
@@ -324,7 +325,7 @@ async function start(product, suffix) {
     assert.equal(description.product.id, product.id);
     progress(product, suffix, "shell-authority");
     const probe = await cdp.evaluate(`(async () => {
-      const invoke = window.__TAURI_INTERNALS__.invoke;
+      const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
       const d = await invoke("plugin:product-shell|describe");
       const r = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: ${JSON.stringify(randomUUID())}, deadlineMs: Date.now() + 5000, route: d.product.defaultRoute };
       const result = await invoke("plugin:product-shell|route_status", { request: r });
@@ -394,16 +395,16 @@ async function start(product, suffix) {
       if (product.id === "api-studio") {
         progress(product, suffix, "component-authority");
         componentProbe = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route });
         const request = { header: header("webhooks"), component: "api-studio.webhooks", method: "server_status", args: {} };
-        const status = await invoke("plugin:api-studio|execute", { request });
+        const status = await invokeComponent("api-studio", { request });
         let replayRejected = false, ownerRejected = false, installationRejected = false;
-        try { await invoke("plugin:api-studio|execute", { request }); } catch { replayRejected = true; }
-        try { await invoke("plugin:api-studio|execute", { request: { ...request, header: header("webhooks"), method: "send_request" } }); } catch { ownerRejected = true; }
-        try { await invoke("plugin:api-studio|execute", { request: { ...request, header: { ...header("webhooks"), installationId: "other-installation" } } }); } catch { installationRejected = true; }
-        const hash = await invoke("plugin:api-studio|execute", { request: { header: header("transforms"), component: "api-studio.transforms", method: "hash", args: { data: "abc", algorithm: "sha256" } } });
+        try { await invokeComponent("api-studio", { request }); } catch { replayRejected = true; }
+        try { await invokeComponent("api-studio", { request: { ...request, header: header("webhooks"), method: "send_request" } }); } catch { ownerRejected = true; }
+        try { await invokeComponent("api-studio", { request: { ...request, header: { ...header("webhooks"), installationId: "other-installation" } } }); } catch { installationRejected = true; }
+        const hash = await invokeComponent("api-studio", { request: { header: header("transforms"), component: "api-studio.transforms", method: "hash", args: { data: "abc", algorithm: "sha256" } } });
         return { replayRejected, ownerRejected, installationRejected, listenerRunning: status.value.running, hash: hash.value, component: hash.operation.provenance.component, state: hash.operation.outcome.state };
       })()`);
         assert.deepEqual(componentProbe, {
@@ -417,10 +418,10 @@ async function start(product, suffix) {
         });
         progress(product, suffix, "publish-internal-handoff");
         const artifact = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "requests" };
-        const result = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.api", method: "send_selection_to_toolbox", args: { text: JSON.stringify({ token: "synthetic-fixture-secret", ok: true }) } } });
+        const result = await invokeComponent("api-studio", { request: { header, component: "api-studio.api", method: "send_selection_to_toolbox", args: { text: JSON.stringify({ token: "synthetic-fixture-secret", ok: true }) } } });
         return { id: result.value.handoffId, redacted: result.value.redacted, owner: result.value.artifact.provenance.component };
       })()`);
         assert.equal(artifact.redacted, true);
@@ -448,10 +449,10 @@ async function start(product, suffix) {
         );
         assert.equal(
           await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "transforms" };
-        const result = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } });
+        const result = await invokeComponent("api-studio", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } });
         return result.operation.outcome.state === "failed";
       })()`),
           true,
@@ -461,9 +462,9 @@ async function start(product, suffix) {
 
         progress(product, suffix, "transform-export-and-knowledge-fallback");
         const outputPolicy = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
-        const call = (component, method, args) => invoke("plugin:api-studio|execute", { request: {
+        const call = (component, method, args) => invokeComponent("api-studio", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
             requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: component === "api-studio.api" ? "requests" : "transforms" },
           component, method, args
@@ -509,11 +510,11 @@ async function start(product, suffix) {
         progress(product, suffix, "mock-draft-preview");
         assert.equal(
           await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
           requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "requests" };
-        const sent = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.api", method: "send_mock_draft",
+        const sent = await invokeComponent("api-studio", { request: { header, component: "api-studio.api", method: "send_mock_draft",
           args: { output: "mock-fixture\\nAuthorization: Bearer synthetic-mock-secret", status: 201 } } });
         return sent.operation.outcome.state === "succeeded";
       })()`),
@@ -541,9 +542,9 @@ async function start(product, suffix) {
           "Mock preview was not explicitly applied",
         );
         const mockDraft = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
-        const call = (method) => invoke("plugin:api-studio|execute", { request: {
+        const call = (method) => invokeComponent("api-studio", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
             requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "webhooks" },
           component: "api-studio.webhooks", method, args: {}
@@ -557,8 +558,8 @@ async function start(product, suffix) {
 
         progress(product, suffix, "api-workspace");
         const workspace = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke; const d = await invoke("plugin:product-shell|describe");
-        const call = (method, args = {}) => invoke("plugin:api-studio|execute", { request: {
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge} const d = await invoke("plugin:product-shell|describe");
+        const call = (method, args = {}) => invokeComponent("api-studio", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
             requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "requests" }, component: "api-studio.api", method, args } });
         const saved = await call("save_openapi_definition", { name: "Fixture operations", openApiVersion: "3.1", environment: JSON.stringify({version:1,environments:[]}),
@@ -628,16 +629,16 @@ async function start(product, suffix) {
         );
         progress(product, suffix, "knowledge-components");
         componentProbe = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route });
-        const call = (component, route, method, args = {}) => invoke("plugin:knowledge|execute", { request: { header: header(route), component, method, args } });
+        const call = (component, route, method, args = {}) => invokeComponent("knowledge", { request: { header: header(route), component, method, args } });
         const repeated = { header: header("notes"), component: "knowledge.notes", method: "get_root", args: {} };
-        const root = await invoke("plugin:knowledge|execute", { request: repeated });
+        const root = await invokeComponent("knowledge", { request: repeated });
         let replayRejected = false, legacyCommandRejected = false, foreignInstallationRejected = false;
-        try { await invoke("plugin:knowledge|execute", { request: repeated }); } catch { replayRejected = true; }
+        try { await invokeComponent("knowledge", { request: repeated }); } catch { replayRejected = true; }
         try { await invoke("get_root"); } catch { legacyCommandRejected = true; }
-        try { await invoke("plugin:knowledge|execute", { request: { ...repeated, header: { ...header("notes"), installationId: "foreign-installation" } } }); } catch { foreignInstallationRejected = true; }
+        try { await invokeComponent("knowledge", { request: { ...repeated, header: { ...header("notes"), installationId: "foreign-installation" } } }); } catch { foreignInstallationRejected = true; }
         const created = await call("knowledge.notes", "notes", "create_file", { rel: "Notes/Product fixture.md", content: "# Product fixture" });
         const read = await call("knowledge.notes", "notes", "read_file", { rel: "Notes/Product fixture.md" });
         const tracking = await call("knowledge.activity", "activity", "is_tracking");
@@ -694,9 +695,9 @@ async function start(product, suffix) {
         );
         assert.equal(componentProbe.routesRemainMounted, true);
         componentProbe.daily = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
-        const call = (component, route, method, args = {}) => invoke("plugin:knowledge|execute", { request: {
+        const call = (component, route, method, args = {}) => invokeComponent("knowledge", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route }, component, method, args } });
         const notes = (method, args) => call("knowledge.notes", "daily", method, args);
         const date = "2024-02-29", path = "Journal/2024-02-29.md";
@@ -726,9 +727,9 @@ async function start(product, suffix) {
           legacyDailyRejected: true,
         });
         componentProbe.closePolicy = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
-        const call = (method, args = {}) => invoke("plugin:knowledge|execute", { request: {
+        const call = (method, args = {}) => invokeComponent("knowledge", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "activity" }, component: "knowledge.activity", method, args } });
         const initial = await call("get_close_policy");
         const enabled = await call("set_close_policy", { closeToTray: true });

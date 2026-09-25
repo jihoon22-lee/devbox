@@ -143,13 +143,33 @@ fn journal_does_not_guess_an_unknown_or_changed_root() {
 
 #[test]
 fn journal_wire_inputs_cannot_select_a_foreign_vault() {
-    assert!(parse::<SaveInput>(
-        serde_json::json!({"path":"a.md","content":"x","baseRevision":"r","vaultRoot":"/foreign"})
-    )
-    .is_err());
-    assert!(
-        parse::<ClearInput>(serde_json::json!({"path":"a.md","vaultRoot":"/foreign"})).is_err()
-    );
-    assert!(parse::<EmptyInput>(serde_json::json!({"vaultRoot":"/foreign"})).is_err());
-    assert!(parse::<EmptyInput>(serde_json::json!({})).is_ok());
+    for (method, args) in [
+        (
+            "save_note_journal",
+            serde_json::json!({"path":"a.md","content":"x","baseRevision":"r","vaultRoot":"/foreign"}),
+        ),
+        (
+            "clear_note_journal",
+            serde_json::json!({"path":"a.md","vaultRoot":"/foreign"}),
+        ),
+        (
+            "load_note_journal",
+            serde_json::json!({"vaultRoot":"/foreign"}),
+        ),
+        (
+            "discard_other_vault_journal",
+            serde_json::json!({"vaultRoot":"/foreign"}),
+        ),
+    ] {
+        assert!(serde_json::from_value::<crate::api::NotesCall>(
+            serde_json::json!({"method":method,"args":args})
+        )
+        .is_err());
+    }
+    for method in ["load_note_journal", "discard_other_vault_journal"] {
+        assert!(serde_json::from_value::<crate::api::NotesCall>(
+            serde_json::json!({"method":method,"args":{}})
+        )
+        .is_ok());
+    }
 }

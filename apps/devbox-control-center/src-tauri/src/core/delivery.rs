@@ -9,6 +9,8 @@ const MAX_ITEMS: usize = 256;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DeliveryPhase")]
 pub enum Phase {
     Inventory,
     Stage,
@@ -503,6 +505,8 @@ pub struct Proof {
 }
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DeliveryRecovery")]
 pub enum Recovery {
     KeepPreviousAndResumeStage,
     BlockWritersAndRestorePrevious,

@@ -87,6 +87,7 @@ struct StoredSelection {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct McpNativeSelection {
     selection_id: String,
     kind: &'static str,
@@ -96,6 +97,7 @@ pub struct McpNativeSelection {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct McpStdioEnvironmentBinding {
     child_name: String,
     source_name: String,
@@ -103,6 +105,8 @@ pub struct McpStdioEnvironmentBinding {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct McpStdioProfile {
     executable_selection_id: String,
     cwd_selection_id: Option<String>,
@@ -584,7 +588,6 @@ struct NegotiatedConnection {
     timeline: Vec<McpTimelineEntry>,
 }
 
-#[tauri::command]
 pub async fn pick_mcp_stdio_executable(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpStdioState>>,
@@ -592,7 +595,6 @@ pub async fn pick_mcp_stdio_executable(
     pick_native_selection(app, state.inner().as_ref(), SelectionKind::Executable).await
 }
 
-#[tauri::command]
 pub async fn pick_mcp_stdio_cwd(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<McpStdioState>>,
@@ -627,7 +629,6 @@ async fn pick_native_selection(
         .map_err(ToOwned::to_owned)
 }
 
-#[tauri::command]
 pub async fn connect_mcp_stdio(
     state: tauri::State<'_, Arc<McpStdioState>>,
     profile: McpStdioProfile,
@@ -678,7 +679,6 @@ pub async fn connect_mcp_stdio(
     })
 }
 
-#[tauri::command]
 pub async fn invoke_mcp_stdio(
     state: tauri::State<'_, Arc<McpStdioState>>,
     connection_id: String,
@@ -827,7 +827,6 @@ fn map_stdio_result_error(code: &str) -> String {
     }
 }
 
-#[tauri::command]
 pub fn cancel_mcp_stdio(
     state: tauri::State<'_, Arc<McpStdioState>>,
     connection_id: String,
@@ -838,7 +837,6 @@ pub fn cancel_mcp_stdio(
         .map_err(ToOwned::to_owned)
 }
 
-#[tauri::command]
 pub async fn disconnect_mcp_stdio(
     state: tauri::State<'_, Arc<McpStdioState>>,
     connection_id: String,
@@ -1521,122 +1519,6 @@ fn now_unix_ms() -> Result<u64, ()> {
         .map_err(|_| ())?
         .as_millis();
     u64::try_from(millis).map_err(|_| ())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_pick_mcp_stdio_executable(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = pick_mcp_stdio_executable(component_app.clone(), component_app.state()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_pick_mcp_stdio_cwd(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = pick_mcp_stdio_cwd(component_app.clone(), component_app.state()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_connect_mcp_stdio(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile: McpStdioProfile,
-        environment: Vec<EnvironmentVariable>,
-    }
-    let Input {
-        profile,
-        environment,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = connect_mcp_stdio(component_app.state(), profile, environment).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_invoke_mcp_stdio(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        connection_id: String,
-        request_id: String,
-        method: String,
-        params: Value,
-    }
-    let Input {
-        connection_id,
-        request_id,
-        method,
-        params,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = invoke_mcp_stdio(
-        component_app.state(),
-        connection_id,
-        request_id,
-        method,
-        params,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_cancel_mcp_stdio(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        connection_id: String,
-        request_id: String,
-    }
-    let Input {
-        connection_id,
-        request_id,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = cancel_mcp_stdio(component_app.state(), connection_id, request_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_disconnect_mcp_stdio(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        connection_id: String,
-    }
-    let Input { connection_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    disconnect_mcp_stdio(component_app.state(), connection_id).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

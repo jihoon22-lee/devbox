@@ -39,6 +39,8 @@ const RENDER_ERROR: &str = "QR 이미지를 생성하지 못했습니다.";
 /// UI request shared by native command and deterministic Rust fixtures.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct GenerateQrRequest {
     pub preset: String,
     pub text: Option<String>,
@@ -54,6 +56,7 @@ pub struct GenerateQrRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct WifiRequest {
     pub ssid: String,
     pub password: String,
@@ -64,6 +67,7 @@ pub struct WifiRequest {
 /// Result returned to the frontend. The payload is intentionally absent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct QrResult {
     pub svg: String,
     pub png_base64: String,

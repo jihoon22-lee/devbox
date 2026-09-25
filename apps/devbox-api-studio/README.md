@@ -76,3 +76,7 @@ and bounded process-tree cleanup remain separate.
 base64로 기록·fixture 저장하고 재전송 시 원래 바이트로 복원한다. 수신 한도는
 1,024,000바이트이며 기록에는 바이너리 앞 192,000바이트까지 남는다. 바이너리는
 텍스트 비밀 마스킹 대상이 아니며 API 요청 전달은 거부한다. Logs에는 크기 설명만 전달한다.
+
+## 타입 IPC 개발
+
+제품 플러그인의 명령은 `api·webhooks·transforms`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/api-studio-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.

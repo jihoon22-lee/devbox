@@ -1,15 +1,7 @@
-use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 
 const INVALID_ENTRY: &str = "Knowledge 항목 경로가 올바르지 않습니다";
 const MISSING_ENTRY: &str = "Knowledge 항목을 찾을 수 없습니다";
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct KnowledgeOpenTarget {
-    pub id: String,
-    pub display_name: String,
-}
 
 fn validate_relative(rel: &str) -> Result<(), &'static str> {
     let path = Path::new(rel);

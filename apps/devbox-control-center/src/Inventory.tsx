@@ -1,32 +1,9 @@
+import { deliveryCall } from "./delivery";
 import { useCallback, useEffect, useState } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
-import { invoke } from "@tauri-apps/api/core";
-interface Product {
-  id: string;
-  name: string;
-  bundleIdentifier: string;
-  binary: string;
-  version: string | null;
-  runtime: string;
-}
-interface Component {
-  id: string;
-  owner: string;
-  binary: string;
-  runtime: string;
-  version: string | null;
-}
-interface Snapshot {
-  installationKey: string | null;
-  generation: string | null;
-  suiteVersion: string | null;
-  declaration: string;
-  installerRegistration: string;
-  products: Product[];
-  components: Component[];
-}
+type Snapshot = import("@devbox/control-center-features/generated/SuiteInventory").SuiteInventory;
 const label = (state: string) =>
   state === "verified" ? "파일 확인됨" : state === "notIncluded" ? "이 패키지에 포함되지 않음" : "확인되지 않음";
 export default function Inventory({ description, route }: ShellContentProps) {
@@ -41,10 +18,7 @@ export default function Inventory({ description, route }: ShellContentProps) {
     setError("");
     try {
       const header = makeRequest(description.handshake, route, Date.now(), description.context);
-      const response = await invoke<{ operation: unknown; value: { opened: boolean } }>(
-        "plugin:control-center|execute",
-        { request: { header, method: "open_installation_folder", args: {} } },
-      );
+      const response = await deliveryCall(header, "open_installation_folder", {});
       if (
         !isOperation(response.operation, {
           product: "control-center",
@@ -79,9 +53,7 @@ export default function Inventory({ description, route }: ShellContentProps) {
       requestId: header.requestId,
       revision: catalog.catalogRevision,
     };
-    void invoke<{ operation: unknown; value: Snapshot }>("plugin:control-center|execute", {
-      request: { header, method: "suite_inventory", args: {} },
-    })
+    void deliveryCall(header, "suite_inventory", {})
       .then((response) => {
         if (!isOperation(response.operation, provenance) || response.operation.outcome.state !== "succeeded")
           throw new Error("inventory_unavailable");

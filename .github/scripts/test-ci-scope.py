@@ -81,7 +81,7 @@ assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-content-ind
 for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engine"]:
     assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge"])
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == sorted(["devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
+assert secrets.rust_packages == sorted(["devbox-activity-engine", "devbox-content-index-engine", "devbox-toolbox-engine", "devbox-webhook-host", "product-ipc", "devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
 
 shared_tree = resolve("crates/process-tree/src/lib.rs")
 assert shared_tree.frontend_scope == "none"
@@ -283,3 +283,12 @@ assert hotkey.rust_packages == ["devbox-control-center"]
 # Explicit crate edges replace source-inclusion exceptions for Suite ownership.
 suite = resolve("crates/suite-runtime/src/lib.rs")
 assert {"suite-runtime", "devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(suite.rust_packages)
+
+for prefix, owner in [
+    ("packages/knowledge-features", "devbox-knowledge"),
+    ("packages/api-studio-features", "devbox-api-studio"),
+    ("packages/control-center-features", "devbox-control-center"),
+]:
+    result = resolve(f"{prefix}/src/generated/Call.ts")
+    assert result.rust_scope == "packages"
+    assert owner in result.rust_packages

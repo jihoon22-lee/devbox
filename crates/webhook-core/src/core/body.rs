@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum BodyEncoding {
     #[default]
     Utf8,

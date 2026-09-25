@@ -11,6 +11,11 @@ const routeFor: Record<Component, string> = {
   "api-studio.transforms": "transforms",
 };
 
+const commandFor: Record<Component, string> = {
+  "api-studio.api": "plugin:api-studio|api",
+  "api-studio.webhooks": "plugin:api-studio|webhooks",
+  "api-studio.transforms": "plugin:api-studio|transforms",
+};
 configureProductTransport(
   async <T>(component: Component, method: string, args: Record<string, unknown>): Promise<T> => {
     if (!nativeMode) throw new Error("데스크톱 앱에서 사용할 수 있습니다.");
@@ -26,7 +31,7 @@ configureProductTransport(
     };
     let response: { operation: Operation; value: T };
     try {
-      response = await invoke("plugin:api-studio|execute", { request: { header, component, method, args } });
+      response = await invoke(commandFor[component], { request: { header, method, args } });
     } catch (problem) {
       throw new Error(problemMessage(problem, provenance));
     }

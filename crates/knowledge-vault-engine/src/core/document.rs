@@ -16,15 +16,19 @@ const MAX_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "NoteSnapshot")]
 pub struct Snapshot {
     pub content: Option<String>,
     pub revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub save_outcome: Option<SaveOutcome>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveOutcome {
     pub state: &'static str,
     pub recovery_directory: Option<String>,

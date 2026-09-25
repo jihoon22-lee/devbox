@@ -20,7 +20,7 @@ pub struct PendingToolboxText {
 }
 
 impl PendingToolboxText {
-    fn has_claim(&self, id: &str) -> bool {
+    pub(crate) fn has_claim(&self, id: &str) -> bool {
         self.slot()
             .as_ref()
             .is_some_and(|current| current.claim.envelope.id == id)
@@ -56,6 +56,7 @@ impl Default for PendingToolboxText {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ToolboxTextPreview {
     pub handoff_id: String,
     pub producer_id: String,
@@ -66,11 +67,11 @@ pub struct ToolboxTextPreview {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenewToolboxTextResult {
     pub lease_until_ms: u64,
 }
 
-#[tauri::command]
 pub fn preview_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -110,7 +111,6 @@ pub fn preview_toolbox_text(
     Ok(preview)
 }
 
-#[tauri::command]
 pub fn accept_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -136,7 +136,6 @@ pub fn accept_toolbox_text(
     }
 }
 
-#[tauri::command]
 pub fn discard_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -161,7 +160,6 @@ pub fn discard_toolbox_text(
     }
 }
 
-#[tauri::command]
 pub fn renew_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -251,110 +249,6 @@ fn map_error(error: HandoffError) -> String {
         | HandoffError::TokenMismatch
         | HandoffError::Corrupt => INVALID.to_string(),
     }
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_preview_toolbox_text(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = preview_toolbox_text(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<PendingToolboxText>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    let value = result?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_accept_toolbox_text(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = accept_toolbox_text(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<PendingToolboxText>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    let value = result?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_discard_toolbox_text(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = discard_toolbox_text(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<PendingToolboxText>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    result?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_renew_toolbox_text(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = renew_toolbox_text(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<PendingToolboxText>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    let value = result?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

@@ -6,88 +6,20 @@ export interface SourceResult {
   indexStale?: boolean;
 }
 
-export interface FileEntry extends SourceResult {
-  id: number;
-  path: string;
-  name: string;
-  ext: string;
-  size: number;
-  modified_ts: number;
-  root_id?: number | null;
-  content_status?: string | null;
-  content_truncated?: boolean;
-  truncated?: boolean;
-}
+export type FileEntry = import("../generated/FileEntry").FileEntry & SourceResult;
 
-export interface ContentResult extends SourceResult {
-  path: string;
-  name: string;
-  snippet: string;
-  ext?: string;
-  size?: number;
-  modified_ts?: number;
-  root_id?: number | null;
-  content_status?: string;
-  truncated?: boolean;
-  error_code?: string | null;
-  extractor_version?: string;
-  indexed_at?: number | null;
-  encoding?: string | null;
-  text_chars?: number;
-}
+export type ContentResult = import("../generated/ContentResult").ContentResult & SourceResult;
 
-export interface SearchFilter {
-  extensions?: string[];
-  modifiedAfter?: number;
-  modifiedBefore?: number;
-  minSize?: number;
-  maxSize?: number;
-  sourceRootId?: number;
-  contentStatus?: string;
-}
+export type SearchFilter = import("../generated/SearchFilter").SearchFilter;
 
 export type OpenQueryFilter = SearchFilter;
 
-export interface SavedQuery {
-  id: number;
-  name: string;
-  query: string;
-  filter: SearchFilter;
-  createdAt: number;
-  updatedAt: number;
-}
+export type SavedQuery = import("../generated/SavedQuery").SavedQuery;
 
-export interface SaveSavedQueryRequest {
-  id?: number;
-  name: string;
-  query: string;
-  filter: SearchFilter;
-}
+export type SaveSavedQueryRequest = import("../generated/SaveSavedQueryRequest").SaveSavedQueryRequest;
 
-export interface RootInfo {
-  id: number;
-  path: string;
-  content: boolean;
-}
+export type RootInfo = import("../generated/RootInfo").RootInfo;
 
-export interface IndexStatus {
-  indexing: boolean;
-  cancel_requested: boolean;
-  total_files: number;
-  indexed_files: number;
-  content_indexed_files: number;
-  content_truncated_files: number;
-  content_failed_files: number;
-  roots: number;
-  last_indexed_at: number | null;
-  last_error: string | null;
-}
+export type IndexStatus = import("../generated/IndexStatus").IndexStatus;
 
-export interface RootStatus {
-  root: string;
-  sourceKind: "native" | "wsl";
-  watchMode: "native" | "polling" | "unavailable";
-  lastSyncedAt: number | null;
-  pending: number;
-  error: string | null;
-}
+export type RootStatus = import("../generated/RootStatus").RootStatus;

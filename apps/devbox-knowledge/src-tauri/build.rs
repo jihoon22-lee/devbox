@@ -15,7 +15,15 @@ fn main() {
             )
             .plugin(
                 "knowledge",
-                tauri_build::InlinedPlugin::new().commands(&["execute"]),
+                tauri_build::InlinedPlugin::new().commands(&[
+                    "activity",
+                    "notes",
+                    "search",
+                    "search_settings",
+                    "opener",
+                    "setup",
+                    "commands",
+                ]),
             ),
     )
     .expect("failed to generate Knowledge capabilities");

@@ -24,6 +24,7 @@ pub const QUICK_CAPTURE_STATUS_EVENT: &str = "knowledge://quick-capture-shortcut
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum ShortcutRegistration {
     Registering,
     Registered,
@@ -34,6 +35,7 @@ pub enum ShortcutRegistration {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ShortcutStatus {
     pub shortcut: String,
     pub state: ShortcutRegistration,
@@ -145,7 +147,6 @@ pub fn install(app: AppHandle, state: Arc<QuickCaptureShortcutState>) {
     }
 }
 
-#[tauri::command]
 pub fn shortcut_status(state: tauri::State<'_, Arc<QuickCaptureShortcutState>>) -> ShortcutStatus {
     state.status()
 }
@@ -263,20 +264,6 @@ mod windows {
     pub(super) fn stop(thread_id: u32) {
         let _ = unsafe { PostThreadMessageW(thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) };
     }
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_shortcut_status(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = shortcut_status(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

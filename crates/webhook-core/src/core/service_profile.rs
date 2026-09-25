@@ -36,6 +36,7 @@ pub struct ServiceProfile {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RunDefinitionExport {
     pub schema_version: u32,
     pub exported_at: String,
@@ -45,6 +46,7 @@ pub struct RunDefinitionExport {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RunServiceDefinition {
     pub id: String,
     pub kind: String,

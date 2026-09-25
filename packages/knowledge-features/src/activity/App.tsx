@@ -407,7 +407,16 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
     scope: source.scope ?? "unavailable",
     errorCode: source.errorCode ?? null,
   };
-  const fixedExplanation = fixedSourceExplanation({ ...sourceMetadata, freshnessState: source.freshnessState });
+  const fixedExplanation = fixedSourceExplanation({
+    ...sourceMetadata,
+    freshnessState:
+      source.freshnessState === "fresh" ||
+      source.freshnessState === "stale" ||
+      source.freshnessState === "expired" ||
+      source.freshnessState === "error"
+        ? source.freshnessState
+        : "unknown",
+  });
 
   return (
     <div className="git-row source-row">
@@ -424,9 +433,9 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
             오늘 작성·수정 {activity.notesModifiedToday}개
             {activity.lastModifiedAtMs != null &&
               ` · 마지막 수정 ${new Date(activity.lastModifiedAtMs).toLocaleString()}`}
-            {activity.legacySnapshot && " · 구버전 snapshot"}
+            {activity.legacy_snapshot && " · 구버전 snapshot"}
             {!activity.identifiersComplete &&
-              !activity.legacySnapshot &&
+              !activity.legacy_snapshot &&
               ` · 식별자 ${activity.identifiedNotes}개만 포함`}
           </span>
         )}

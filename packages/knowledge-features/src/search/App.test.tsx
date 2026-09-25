@@ -51,7 +51,17 @@ vi.mock("./api", () => ({
   listSavedQueries: vi.fn(async () => []),
   watcherStatuses: vi.fn(async () => []),
   searchFiles: vi.fn(async (query: string) => [
-    { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
+    {
+      id: 1,
+      path: `C:\\files\\${query}`,
+      name: query,
+      ext: "",
+      size: 1,
+      modified_ts: 0,
+      root_id: null,
+      content_status: null,
+      content_truncated: false,
+    },
   ]),
   searchContent: vi.fn(async () => []),
   addRoot: vi.fn(async () => undefined),
@@ -119,11 +129,19 @@ beforeEach(() => {
     mocks.openHandler = handler;
     return () => undefined;
   });
-  searchFilesMock
-    .mockReset()
-    .mockImplementation(async (query: string) => [
-      { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
-    ]);
+  searchFilesMock.mockReset().mockImplementation(async (query: string) => [
+    {
+      id: 1,
+      path: `C:\\files\\${query}`,
+      name: query,
+      ext: "",
+      size: 1,
+      modified_ts: 0,
+      root_id: null,
+      content_status: null,
+      content_truncated: false,
+    },
+  ]);
   searchContentMock.mockReset().mockResolvedValue([]);
   listSavedQueriesMock.mockReset().mockResolvedValue([]);
   saveSavedQueryMock.mockReset().mockResolvedValue({
@@ -247,7 +265,19 @@ describe("Everything+ Query app-link delivery", () => {
     await waitFor(() => expect(screen.getByText("fresh")).toBeTruthy());
 
     await act(async () => {
-      resolveOldSearch?.([{ id: 2, path: "C:\\files\\old", name: "old", ext: "", size: 1, modified_ts: 0 }]);
+      resolveOldSearch?.([
+        {
+          id: 2,
+          path: "C:\\files\\old",
+          name: "old",
+          ext: "",
+          size: 1,
+          modified_ts: 0,
+          root_id: null,
+          content_status: null,
+          content_truncated: false,
+        },
+      ]);
     });
 
     expect(screen.queryByText("old")).toBeNull();
@@ -373,8 +403,28 @@ describe("Everything+ root watcher status", () => {
 
 async function renderNamedResults() {
   searchFilesMock.mockResolvedValueOnce([
-    { id: 1, path: "C:\\files\\alpha.txt", name: "alpha.txt", ext: "txt", size: 10, modified_ts: 0 },
-    { id: 2, path: "C:\\files\\beta.md", name: "beta.md", ext: "md", size: 20, modified_ts: 0 },
+    {
+      id: 1,
+      path: "C:\\files\\alpha.txt",
+      name: "alpha.txt",
+      ext: "txt",
+      size: 10,
+      modified_ts: 0,
+      root_id: null,
+      content_status: null,
+      content_truncated: false,
+    },
+    {
+      id: 2,
+      path: "C:\\files\\beta.md",
+      name: "beta.md",
+      ext: "md",
+      size: 20,
+      modified_ts: 0,
+      root_id: null,
+      content_status: null,
+      content_truncated: false,
+    },
   ]);
   render(<App />);
   fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), {
@@ -487,7 +537,22 @@ describe("Everything+ result context menu", () => {
 
   it("uses the same menu for content results and reports launch failure", async () => {
     searchContentMock.mockResolvedValueOnce([
-      { path: "C:\\notes\\meeting.md", name: "meeting.md", snippet: "fixture text" },
+      {
+        path: "C:\\notes\\meeting.md",
+        name: "meeting.md",
+        snippet: "fixture text",
+        ext: "md",
+        size: 0,
+        modified_ts: 0,
+        root_id: null,
+        content_status: "indexed",
+        truncated: false,
+        error_code: null,
+        extractor_version: "fixture",
+        indexed_at: null,
+        encoding: null,
+        text_chars: 0,
+      },
     ]);
     openInMock.mockRejectedValueOnce(new Error("대상 앱을 실행하지 못했습니다"));
     render(<App />);
@@ -511,7 +576,17 @@ describe("Everything+ result context menu", () => {
 describe("Everything+ filters and saved queries", () => {
   it("passes bounded native filters instead of filtering only in the renderer", async () => {
     searchFilesMock.mockResolvedValueOnce([
-      { id: 1, path: "C:\\files\\main.rs", name: "main.rs", ext: "rs", size: 20, modified_ts: 100 },
+      {
+        id: 1,
+        path: "C:\\files\\main.rs",
+        name: "main.rs",
+        ext: "rs",
+        size: 20,
+        modified_ts: 100,
+        root_id: null,
+        content_status: null,
+        content_truncated: false,
+      },
     ]);
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "필터" }));
@@ -596,12 +671,14 @@ describe("product source search", () => {
       source,
       state: "complete",
       partial: false,
+      bounds: null,
       rows: [
         {
           source,
           rootIdentity: `${source}:7`,
           reference,
           availability: reference ? "available" : "stale",
+          indexStale: false,
           value: {
             id: 1,
             path: "C:/vault/shared.md",
