@@ -127,7 +127,7 @@ pub fn committed(conn: &Connection, schedule: &Schedule) -> Result<bool, String>
 /// No Markdown/assets or templates are deleted by this transaction.
 pub fn apply(conn: &Connection, schedule: &Schedule, root: &str) -> Result<(), String> {
     validate(schedule)?;
-    super::import_rows::validate_owned_store(conn, super::import_rows::Source::Notes)?;
+    super::stores::validate_store(conn, super::stores::StoreKind::Notes)?;
     if root.is_empty() || root.len() > 32768 || root.chars().any(char::is_control) {
         return Err("vault_change_invalid".into());
     }

@@ -6,16 +6,14 @@ vi.mock("@devbox/product-shell/api", () => ({ nativeMode: true }));
 vi.mock("@devbox/knowledge-features/transport", () => ({ componentInvoke: () => rpc }));
 beforeEach(() => { rpc.mockReset(); });
 afterEach(cleanup);
-it("does not mount any domain until the explicit startup action succeeds", async () => {
-  rpc.mockResolvedValueOnce({ active: false }).mockResolvedValueOnce({ active: true });
+it("does not mount a domain before automatic preparation completes", async () => {
+  let finish!: (value: {active:boolean})=>void;
+  rpc.mockResolvedValueOnce({active:false}).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
   render(<Startup><p>domain mounted</p></Startup>);
-  const button = await screen.findByRole("button", { name: "새 저장소로 시작" });
-  await vi.waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  await vi.waitFor(()=>expect(rpc).toHaveBeenCalledWith("start_empty"));
   expect(screen.queryByText("domain mounted")).toBeNull();
-  expect(rpc.mock.calls.map(call => call[0])).toEqual(["status"]);
-  fireEvent.click(button);
+  finish({active:true});
   await screen.findByText("domain mounted");
-  expect(rpc.mock.calls.map(call => call[0])).toEqual(["status", "start_empty"]);
 });
 it("preserves a future store without offering a reset or mounting features", async () => {
   const error = new Error("더 최신 버전의 저장소입니다. 원본을 유지했습니다."); error.name = "future_schema";

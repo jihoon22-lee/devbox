@@ -229,12 +229,10 @@ pub(crate) fn handle(
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
                 match call {
-                    Call::VerifyMigrationSources {} => crate::migration::suite_sources(&app),
-                    Call::ListMigrationBackups {} => crate::migration::suite_backups(&app, None),
-                    Call::VerifyMigrationBackup { id } => {
-                        crate::migration::suite_backups(&app, Some(&id))
-                    }
-                    _ => crate::migration::suite_status(&app),
+                    Call::VerifyMigrationSources {}
+                    | Call::ListMigrationBackups {}
+                    | Call::VerifyMigrationBackup { .. } => Err("migration_retired"),
+                    _ => crate::startup::suite_status(&app),
                 }
             })
             .await
@@ -245,11 +243,7 @@ pub(crate) fn handle(
             &call,
             Call::ReadOperations {} | Call::ReviewOperation { .. }
         ) {
-            return crate::suite::project_operations(
-                &app,
-                &call,
-                crate::migration::operation_rows(&app)?,
-            );
+            return crate::suite::project_operations(&app, &call, Vec::new());
         }
         match call {
             Call::DeliverKnowledgeDraft {

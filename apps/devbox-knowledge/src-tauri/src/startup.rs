@@ -1,6 +1,6 @@
-//! Startup and migration own the only activation gate, before any engine opens.
+//! Startup owns the only activation gate, before any engine opens.
 use crate::{
-    core::{import_rows, stores},
+    core::stores,
     vault_owner::{self, VaultOwner},
 };
 use rusqlite::{Connection, OpenFlags};
@@ -15,7 +15,6 @@ use std::{
 use tauri::Manager;
 struct Startup {
     root: PathBuf,
-    legacy: PathBuf,
     lease_base: PathBuf,
     active: AtomicBool,
     prepared: AtomicBool,
@@ -43,10 +42,8 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .path()
         .local_data_dir()
         .map_err(|_| "store_unavailable")?;
-    let legacy = lease_base.clone();
     if !app.manage(Startup {
         root: root.clone(),
-        legacy: legacy.clone(),
         lease_base: lease_base.clone(),
         active: AtomicBool::new(false),
         prepared: AtomicBool::new(false),
@@ -59,11 +56,9 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         return Err("component_state_conflict".into());
     }
     let result = (|| {
-        let migration = crate::migration::initialize(app, root.clone(), legacy);
         let binding = crate::vault_binding::initialize(app, root.clone(), lease_base);
-        let paused_migration = migration?;
         let paused_binding = binding?;
-        if !paused_migration && !paused_binding {
+        if !paused_binding {
             if let Some(manifest) = stores::read(&root)? {
                 let _reservation = reserve(app)?;
                 let owner = owner(app, &manifest)?;
@@ -116,9 +111,9 @@ pub(crate) fn require_ready(app: &tauri::AppHandle) -> Result<(), String> {
 }
 fn validate_prepared_stores(root: &Path, manifest: &stores::Manifest) -> Result<(), String> {
     for source in [
-        import_rows::Source::Notes,
-        import_rows::Source::Activity,
-        import_rows::Source::Search,
+        stores::StoreKind::Notes,
+        stores::StoreKind::Activity,
+        stores::StoreKind::Search,
     ] {
         let connection = Connection::open_with_flags(
             stores::directory(root, manifest, source.key())?.join("data.db"),
@@ -128,7 +123,7 @@ fn validate_prepared_stores(root: &Path, manifest: &stores::Manifest) -> Result<
         connection
             .busy_timeout(std::time::Duration::from_millis(100))
             .map_err(|_| "store_unavailable")?;
-        import_rows::validate_owned_store(&connection, source)?;
+        stores::validate_store(&connection, source)?;
     }
     Ok(())
 }
@@ -148,10 +143,7 @@ pub fn require_uninitialized(app: &tauri::AppHandle) -> Result<(), String> {
     {
         if !matches!(
             error.as_str(),
-            "legacy_writer_active"
-                | "vault_owner_busy"
-                | "vault_binding_unavailable"
-                | "vault_owner_unavailable"
+            "vault_owner_busy" | "vault_binding_unavailable" | "vault_owner_unavailable"
         ) {
             return Err(error.clone());
         }
@@ -178,42 +170,22 @@ pub fn binding(root: &Path, manifest: &stores::Manifest) -> Result<(PathBuf, boo
         return Err("vault_binding_invalid".into());
     }
     let vault = PathBuf::from(&raw);
-    let legacy = !vault_owner::same_vault(&vault, &root.join("notes-vault"));
+    let external = !vault_owner::same_vault(&vault, &root.join("notes-vault"));
     let approval = crate::core::vault_binding::approval_id(&connection, &raw)?;
-    if legacy && approval.is_none() {
-        import_rows::verify_legacy_binding(&connection, &raw)?;
+    if external && approval.is_none() {
+        return Err("vault_binding_invalid".into());
     }
-    Ok((vault, legacy))
+    Ok((vault, external))
 }
 pub fn owner(app: &tauri::AppHandle, manifest: &stores::Manifest) -> Result<VaultOwner, String> {
     let state = app.state::<Startup>();
-    let (vault, legacy) = binding(&state.root, manifest)?;
-    if !legacy {
+    let (vault, external) = binding(&state.root, manifest)?;
+    if !external {
         knowledge_base_lib::component::create_private_vault(&vault)?;
     }
-    let legacy_path = state
-        .legacy
-        .join("com.devbox.knowledgebase")
-        .join("data.db");
-    // Imported bindings retain their source guard contract. A user-selected
-    // vault may have no legacy installation, but still guards one when present.
-    if legacy && !legacy_path.exists() {
-        let connection = Connection::open_with_flags(
-            stores::directory(&state.root, manifest, "notes")?.join("data.db"),
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|_| "vault_binding_invalid")?;
-        if crate::core::vault_binding::approval_id(&connection, &vault.to_string_lossy())?.is_none()
-        {
-            return Err("vault_binding_invalid".into());
-        }
-    }
-    vault_owner::acquire(
-        &state.lease_base,
-        &vault,
-        (legacy && legacy_path.exists()).then_some(legacy_path.as_path()),
-    )
+    vault_owner::acquire(&state.lease_base, &vault)
 }
+
 pub fn activate_with_owner(
     app: &tauri::AppHandle,
     manifest: &stores::Manifest,
@@ -266,9 +238,6 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
     if crate::vault_binding::METHODS.contains(&method) {
         return crate::vault_binding::dispatch(app, method, args);
     }
-    if crate::migration::METHODS.contains(&method) {
-        return crate::migration::dispatch(app, method, args);
-    }
     if !args.as_object().is_some_and(|object| object.is_empty()) {
         return Err("component_args_invalid".into());
     }
@@ -289,12 +258,11 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 return Err(error);
             }
             Ok(
-                json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire),"scheduled":crate::migration::scheduled(app),"hasExisting":stores::read(&state.root)?.is_some(),"vaultChange":crate::vault_binding::pending(app)}),
+                json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire),"hasExisting":stores::read(&state.root)?.is_some(),"vaultChange":crate::vault_binding::pending(app)}),
             )
         }
         "start_empty" | "continue_existing" => {
             if state.active.load(Ordering::Acquire) || state.prepared.load(Ordering::Acquire) {
-                crate::migration::finish_recovery(app)?;
                 return Ok(
                     json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire)}),
                 );
@@ -311,7 +279,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
             let result = (|| {
                 let owner = owner(app, &manifest)?;
                 activate_with_owner(app, &manifest, owner)?;
-                crate::migration::finish_recovery(app)
+                Ok::<_, String>(())
             })();
             if let Err(error) = result {
                 failure(app, error.clone())?;
@@ -332,6 +300,34 @@ pub(crate) fn integration_root(app: &tauri::AppHandle) -> Result<PathBuf, String
 
 #[cfg(test)]
 mod suite_preparation_tests {
+    #[test]
+    fn health_summary_reflects_store_readiness_only() {
+        assert_eq!(
+            super::summary_flags(false, false, false),
+            super::Flags {
+                busy: false,
+                setup_selected: false,
+                review_required: false
+            }
+        );
+        assert_eq!(
+            super::summary_flags(true, true, false),
+            super::Flags {
+                busy: true,
+                setup_selected: true,
+                review_required: true
+            }
+        );
+        assert_eq!(
+            super::summary_flags(false, true, true),
+            super::Flags {
+                busy: false,
+                setup_selected: true,
+                review_required: false
+            }
+        );
+    }
+
     use super::*;
     #[test]
     fn import_only_store_readiness_checks_schema_without_opening_engines() {
@@ -347,4 +343,40 @@ mod suite_preparation_tests {
             .unwrap();
         assert!(validate_prepared_stores(root.path(), &manifest).is_err());
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Flags {
+    busy: bool,
+    setup_selected: bool,
+    review_required: bool,
+}
+fn summary_flags(busy: bool, store_exists: bool, ready: bool) -> Flags {
+    Flags {
+        busy,
+        setup_selected: store_exists,
+        review_required: store_exists && !ready,
+    }
+}
+pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app.try_state::<Startup>().ok_or("migration_unavailable")?;
+    let exists = stores::read(&state.root)
+        .map_err(|_| "migration_unavailable")?
+        .is_some();
+    let flags = summary_flags(
+        state.operation.load(Ordering::Acquire),
+        exists,
+        require_ready(app).is_ok(),
+    );
+    let native = serde_json::to_vec(&(flags.busy, flags.setup_selected, flags.review_required))
+        .map_err(|_| "migration_unavailable")?;
+    let summary = product_contract::migration_status::Summary::new(
+        "knowledge",
+        env!("CARGO_PKG_VERSION"),
+        flags.busy,
+        flags.setup_selected,
+        flags.review_required,
+        &native,
+    )?;
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }

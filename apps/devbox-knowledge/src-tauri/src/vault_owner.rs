@@ -1,5 +1,4 @@
-//! Native lifetime ownership. Legacy SQLite write handles must quiesce before
-//! binding their vault; independent product installations share one vault lease.
+//! Independent product installations share one vault lease.
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
@@ -7,7 +6,6 @@ use std::{
 };
 
 pub struct VaultOwner {
-    _legacy: Option<File>,
     _exclusive: File,
     _root: Option<File>,
 }
@@ -47,7 +45,7 @@ fn key(raw: &str) -> Result<String, String> {
     if raw.starts_with('/') && !raw.starts_with("//") {
         return Ok(format!("unix:{}", raw.trim_end_matches('/')));
     }
-    devbox_wsl::path::canonical_project_key(Some(&raw), None)
+    devbox_wsl::path::canonical_project_key(Some(&raw))
         .map(|key| key.to_ascii_lowercase())
         .map_err(|_| "vault_binding_invalid".into())
 }
@@ -73,24 +71,6 @@ fn directories(base: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 #[cfg(windows)]
-fn legacy_guard(path: &Path) -> Result<File, String> {
-    use std::os::windows::fs::OpenOptionsExt;
-    use windows::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ};
-    devbox_filesystem::ensure_no_links(path).map_err(|_| "vault_binding_invalid")?;
-    // Share-read only rejects an already-open legacy read/write connection and
-    // denies a new SQLite writer until this product releases ownership.
-    OpenOptions::new()
-        .read(true)
-        .share_mode(FILE_SHARE_READ.0)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
-        .open(path)
-        .map_err(|_| "legacy_writer_active".into())
-}
-#[cfg(not(windows))]
-fn legacy_guard(_path: &Path) -> Result<File, String> {
-    Err("vault_guard_platform_unavailable".into())
-}
-#[cfg(windows)]
 fn root_guard(path: &Path) -> Result<File, String> {
     use std::os::windows::fs::OpenOptionsExt;
     use windows::Win32::Storage::FileSystem::{
@@ -110,8 +90,7 @@ fn root_guard(path: &Path) -> Result<File, String> {
 fn root_guard(path: &Path) -> Result<File, String> {
     File::open(path).map_err(|_| "vault_owner_unavailable".into())
 }
-pub fn acquire(base: &Path, vault: &Path, legacy: Option<&Path>) -> Result<VaultOwner, String> {
-    let legacy = legacy.map(legacy_guard).transpose()?;
+pub fn acquire(base: &Path, vault: &Path) -> Result<VaultOwner, String> {
     // WSL transport availability must not block product startup. A lexical
     // lease unifies its UNC and /mnt/drive aliases; every actual note mutation
     // still validates VaultIdentity after the source reconnects.
@@ -158,7 +137,6 @@ pub fn acquire(base: &Path, vault: &Path, legacy: Option<&Path>) -> Result<Vault
     exclusive.try_lock().map_err(|_| "vault_owner_busy")?;
     devbox_filesystem::ensure_no_links(&path).map_err(|_| "vault_owner_unavailable")?;
     Ok(VaultOwner {
-        _legacy: legacy,
         _exclusive: exclusive,
         _root: root,
     })
@@ -212,39 +190,30 @@ mod tests {
         }
         let base = tempfile::tempdir().unwrap();
         let vault = tempfile::tempdir().unwrap();
-        let owner = acquire(base.path(), vault.path(), None).unwrap();
+        let owner = acquire(base.path(), vault.path()).unwrap();
         assert!(
-            matches!(acquire(base.path(),vault.path(),None),Err(error) if error=="vault_owner_busy")
+            matches!(acquire(base.path(),vault.path()),Err(error) if error=="vault_owner_busy")
         );
         drop(owner);
-        assert!(acquire(base.path(), vault.path(), None).is_ok());
+        assert!(acquire(base.path(), vault.path()).is_ok());
     }
     #[test]
     fn unavailable_wsl_binding_acquires_only_a_local_lease_without_source_io() {
         let base = tempfile::tempdir().unwrap();
         let path = Path::new(r"\\wsl.localhost\DevboxMissingFixture\home\fixture\vault");
-        let owner = acquire(base.path(), path, None).unwrap();
+        let owner = acquire(base.path(), path).unwrap();
         assert!(owner._root.is_none());
         let alias = Path::new(r"\\wsl$\devboxmissingfixture\home\fixture\vault");
-        assert!(
-            matches!(acquire(base.path(), alias, None), Err(error) if error == "vault_owner_busy")
-        );
+        assert!(matches!(acquire(base.path(), alias), Err(error) if error == "vault_owner_busy"));
     }
     #[cfg(windows)]
     #[test]
-    fn windows_legacy_write_handles_and_vault_rename_are_blocked_for_owner_lifetime() {
+    fn windows_vault_rename_is_blocked_for_owner_lifetime() {
         let base = tempfile::tempdir().unwrap();
         let vault = tempfile::tempdir().unwrap();
-        let db = base.path().join("legacy.db");
-        fs::write(&db, []).unwrap();
-        let writer = OpenOptions::new().read(true).write(true).open(&db).unwrap();
-        assert!(acquire(base.path(), vault.path(), Some(&db)).is_err());
-        drop(writer);
-        let owner = acquire(base.path(), vault.path(), Some(&db)).unwrap();
-        assert!(OpenOptions::new().read(true).write(true).open(&db).is_err());
+        let owner = acquire(base.path(), vault.path()).unwrap();
         assert!(fs::rename(vault.path(), vault.path().with_extension("moved")).is_err());
         drop(owner);
-        assert!(OpenOptions::new().read(true).write(true).open(&db).is_ok());
         let moved = vault.path().with_extension("moved");
         fs::rename(vault.path(), &moved).unwrap();
         fs::rename(&moved, vault.path()).unwrap();

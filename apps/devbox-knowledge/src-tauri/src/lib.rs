@@ -2,7 +2,6 @@ mod component;
 mod core;
 mod federation;
 mod lifecycle;
-mod migration;
 mod project_provider;
 mod search;
 mod session_receive;
