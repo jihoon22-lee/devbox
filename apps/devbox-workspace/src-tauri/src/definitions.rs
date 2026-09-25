@@ -465,12 +465,12 @@ impl Definitions {
                     serde_json::to_value(&next),
                     effective,
                     bytes,
-                    EditDestination::Native(
+                    EditDestination::Native(Box::new(
                         crate::platform::definition_write::DefinitionTarget::capture(
                             &snapshot.private.path().join(OVERLAY),
                             snapshot.overlay_bytes.as_deref(),
                         )?,
-                    ),
+                    )),
                 )
             }
         };

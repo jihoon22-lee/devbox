@@ -4,7 +4,7 @@ use crate::{core::registry::Binding, host::Host};
 use product_contract::ProjectContext;
 type Result<T> = std::result::Result<T, &'static str>;
 pub(crate) enum EditDestination {
-    Native(super::definition_write::DefinitionTarget),
+    Native(Box<super::definition_write::DefinitionTarget>),
     #[cfg(windows)]
     Wsl,
 }
@@ -121,13 +121,13 @@ impl DefinitionFiles {
     }
     pub(crate) fn prepare_project_write(&self, expected: Option<&[u8]>) -> Result<EditDestination> {
         match self {
-            Self::Native(files) => Ok(EditDestination::Native(
+            Self::Native(files) => Ok(EditDestination::Native(Box::new(
                 super::definition_write::DefinitionTarget::capture(
                     &std::path::Path::new(&files.lease().binding().root)
                         .join(".devbox/project.json"),
                     expected,
                 )?,
-            )),
+            ))),
             #[cfg(windows)]
             Self::Wsl { .. } => Ok(EditDestination::Wsl),
         }
