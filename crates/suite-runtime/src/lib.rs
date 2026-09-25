@@ -3,6 +3,7 @@
 #[cfg(windows)]
 #[path = "platform/mod.rs"]
 pub mod platform;
+pub mod preference;
 use product_contract::{Operation, OperationState, Problem, ProblemCode, RouteRequest};
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
@@ -43,7 +44,8 @@ struct Link {
     review_slots: Arc<tokio::sync::Semaphore>,
     queries: Arc<product_contract::query::Queries>,
     epoch: u64,
-    remembered: bool,
+    mode: crate::preference::Mode,
+    issue: Option<&'static str>,
     launches: std::collections::BTreeMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 #[cfg(windows)]
@@ -57,7 +59,8 @@ impl Default for Link {
             review_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             queries: Arc::default(),
             epoch: 0,
-            remembered: false,
+            mode: crate::preference::Mode::Auto,
+            issue: None,
             launches: product_contract::installation::PRODUCTS
                 .iter()
                 .map(|product| (product.to_string(), Arc::new(tokio::sync::Mutex::new(()))))
@@ -276,6 +279,16 @@ pub fn capture_own(
     platform::component_scope::CapturedScope::capture(root, product, &image, version)
 }
 #[cfg(windows)]
+fn status_value(state: &Link) -> serde_json::Value {
+    serde_json::json!({
+        "connected": state.approved.is_some(),
+        "generation": state.approved.as_ref().map(|scope| &scope.id),
+        "mode": state.mode,
+        "issue": state.issue,
+    })
+}
+
+#[cfg(windows)]
 async fn resume(
     app: tauri::AppHandle,
     product: &'static str,
@@ -296,45 +309,62 @@ async fn resume(
     let version = host_version(&app);
     let captured = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let Some(preference) = platform::connection_preference::read(&storage_app)? else {
-            return Ok::<_, &'static str>(None);
-        };
         let scope = capture_own(product, version)?;
-        if !preference.matches(product, &scope) {
-            return Err("suite_review_required");
+        let preference = platform::connection_preference::read(&storage_app)?;
+        if !crate::preference::should_auto_connect(
+            preference.as_ref(),
+            product,
+            &scope.installation_key,
+        ) {
+            return Ok::<_, &'static str>(None);
         }
         Ok(Some(Arc::new(scope)))
     })
     .await;
-    let Ok(Ok(Some(scope))) = captured else {
-        return;
-    };
-    // A manual review/disconnect wins over a late startup capture.
+    // Every startup outcome must yield to a newer manual decision.
     let Ok(mut state) = state.lock() else {
         return;
     };
     if state.epoch != 0 || state.approved.is_some() {
         return;
     }
-    let Ok(handler) = handler(
-        product,
-        app.clone(),
-        state.navigation.clone(),
-        domain,
-        sources,
-        state.queries.clone(),
-    ) else {
-        return;
+    let connection = match captured {
+        Ok(Ok(Some(scope))) => handler(
+            product,
+            app.clone(),
+            state.navigation.clone(),
+            domain,
+            sources,
+            state.queries.clone(),
+        )
+        .and_then(|handler| platform::component_bus::Bus::start(scope.clone(), product, handler))
+        .map(|bus| Some((scope, bus))),
+        Ok(Ok(None)) => Ok(None),
+        Ok(Err(issue)) => Err(issue),
+        Err(_) => Err("suite_worker_unavailable"),
     };
-    let Ok(bus) = platform::component_bus::Bus::start(scope.clone(), product, handler) else {
-        return;
-    };
-    state.approved = Some(scope);
-    state.bus = Some(bus);
-    state.remembered = true;
+    match connection {
+        Ok(Some((scope, bus))) => {
+            state.approved = Some(scope);
+            state.bus = Some(bus);
+            state.mode = crate::preference::Mode::Auto;
+            state.issue = None;
+        }
+        Ok(None) => {
+            state.mode = crate::preference::Mode::Off;
+            state.issue = None;
+        }
+        Err(issue) => {
+            state.issue = Some(issue);
+        }
+    }
+    let connected = state.approved.is_some();
     drop(state);
     use tauri::Emitter;
-    let _ = app.emit("suite-connected", ());
+    if connected {
+        let _ = app.emit("suite-connected", ());
+    }
+    let _ = app.emit("suite-connection-status", ());
 }
 
 #[cfg(windows)]
@@ -520,9 +550,7 @@ async fn execute(
         }
         Method::Status => {
             let state = state.lock().map_err(|_| "suite_busy")?;
-            Ok(
-                json!({"connected": state.approved.is_some(), "generation": state.approved.as_ref().map(|scope|&scope.id),"remembered":state.remembered}),
-            )
+            Ok(status_value(&state))
         }
         Method::Preview => {
             // Capture only a recognized ancestor of our own executable. No
@@ -570,35 +598,52 @@ async fn execute(
             )?;
             platform::connection_preference::write(
                 &app,
-                product,
-                remember.then_some(scope.as_ref()),
+                &crate::preference::Preference::new(
+                    product,
+                    &scope.installation_key,
+                    crate::preference::Mode::Auto,
+                ),
             )?;
             state.epoch = state.epoch.wrapping_add(1);
-            state.remembered = remember;
-            let generation = scope.id.clone();
+            let _ = remember; // Keep the existing request shape.
+            state.mode = crate::preference::Mode::Auto;
+            state.issue = None;
             state.bus = Some(bus);
             state.approved = Some(scope);
+            let value = status_value(&state);
             drop(state);
             use tauri::Emitter;
             let _ = app.emit("suite-connected", ());
-            Ok(json!({"connected":true,"generation":generation,"remembered":remember}))
+            Ok(value)
         })
         .await
         .map_err(|_| "suite_worker_unavailable")?,
         Method::Disconnect => {
             let storage_app = app.clone();
-            let bus = tokio::task::spawn_blocking(move || {
+            let (bus, value) = tokio::task::spawn_blocking(move || {
                 let mut state = state.lock().map_err(|_| "suite_busy")?;
-                platform::connection_preference::write(&storage_app, product, None)?;
+                let installation = match state.approved.as_ref() {
+                    Some(scope) => scope.installation_key.clone(),
+                    None => capture_own(product, host_version(&storage_app))?.installation_key,
+                };
+                platform::connection_preference::write(
+                    &storage_app,
+                    &crate::preference::Preference::new(
+                        product,
+                        &installation,
+                        crate::preference::Mode::Off,
+                    ),
+                )?;
                 state.epoch = state.epoch.wrapping_add(1);
-                state.remembered = false;
+                state.mode = crate::preference::Mode::Off;
+                state.issue = None;
                 if let Some(scope) = state.approved.take() {
                     scope.retire();
                 }
                 state.pending.take();
                 state.queries.cancel_all();
                 state.navigation.lock().map_err(|_| "suite_busy")?.revoke();
-                Ok::<_, &'static str>(state.bus.take())
+                Ok::<_, &'static str>((state.bus.take(), status_value(&state)))
             })
             .await
             .map_err(|_| "suite_worker_unavailable")??;
@@ -607,7 +652,7 @@ async fn execute(
             }
             use tauri::Emitter;
             let _ = app.emit("suite-disconnected", ());
-            Ok(json!({"connected":false,"generation":null}))
+            Ok(value)
         }
         Method::Probe {
             product: destination,

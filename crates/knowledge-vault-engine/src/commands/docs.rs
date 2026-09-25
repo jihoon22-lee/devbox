@@ -22,6 +22,7 @@ use crate::core::entry_actions::{
 
 /// 앱 전역 상태
 pub struct AppState {
+    pub journal: Arc<super::journal::NoteJournalStore>,
     /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
     pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
@@ -277,7 +278,10 @@ pub fn read_file(
     let root = resolve_root(&conn)?;
     let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
     let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
-    crate::core::document::read(&path)
+    let snapshot = crate::core::document::read(&path)?;
+    // Local cache publication does not probe the source or widen path authority.
+    let _ = state.journal.remember_root(&root, vault.canonical_path());
+    Ok(snapshot)
 }
 
 /// Untrusted applink `Path`를 현재 Knowledge root 안의 실제 Markdown note로
@@ -292,8 +296,15 @@ pub fn open_inbound_note(
         let conn = state.db.lock().unwrap();
         resolve_root(&conn).map_err(|_| "요청한 노트를 열 수 없습니다".to_string())?
     };
+    let vault = VaultIdentity::inspect(&root).map_err(|_| "note_unavailable")?;
     let resolved = crate::core::inbound::resolve_note(&root, &path).map_err(str::to_string)?;
     let snapshot = crate::core::document::read(&resolved.canonical_path)?;
+    vault.revalidate().map_err(|_| "preview_stale")?;
+    let conn = state.db.lock().map_err(|_| "note_unavailable")?;
+    if resolve_configured_root(&conn)? != root {
+        return Err("preview_stale".into());
+    }
+    let _ = state.journal.remember_root(&root, vault.canonical_path());
     Ok(InboundNote {
         path: resolved.relative_path,
         content: snapshot.content.ok_or("note_unavailable")?,
@@ -479,7 +490,7 @@ fn ensure_capture_inbox(vault: &VaultIdentity) -> Result<PathBuf, String> {
         match std::fs::create_dir(&inbox) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(_) => return Err("빠른 캡처를 저장하지 못했습니다".to_string()),
+            Err(_) => return Err("quick_capture_save_failed".to_string()),
         }
     }
     validate_capture_inbox(vault)
@@ -491,7 +502,7 @@ fn capture_preview(
     input: QuickCaptureInput,
     preview_id: String,
 ) -> Result<QuickCapturePreview, String> {
-    let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
+    let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
     validate_capture_inbox(vault)?;
     Ok(QuickCapturePreview {
         preview_id,
@@ -518,7 +529,7 @@ pub fn preview_quick_capture(
         resolve_configured_root(&conn)?
     };
     let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
-    let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
+    let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
     validate_capture_inbox(&vault)?;
     let mut previews = state
         .quick_capture_previews
@@ -701,7 +712,7 @@ fn save_capture_at(
     input: QuickCaptureInput,
     now_seconds: i64,
 ) -> Result<QuickCaptureSaved, String> {
-    let normalized = capture::normalize(input).map_err(|error| error.to_string())?;
+    let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
     save_normalized_capture_at(conn, vault, normalized, now_seconds)
 }
 
@@ -711,7 +722,8 @@ fn save_normalized_capture_at(
     normalized: capture::NormalizedCapture,
     now_seconds: i64,
 ) -> Result<QuickCaptureSaved, String> {
-    let document = capture::render_markdown(&normalized).map_err(|error| error.to_string())?;
+    let document =
+        capture::render_markdown(&normalized).map_err(|error| error.code().to_string())?;
     let inbox = ensure_capture_inbox(vault)?;
 
     let mut selected: Option<(String, PathBuf, EntryIdentity)> = None;
@@ -725,7 +737,7 @@ fn save_normalized_capture_at(
             match stage_capture_file(vault, &inbox, &filename, document.as_bytes()) {
                 Ok(temporary) => temporary,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => return Err("빠른 캡처를 저장하지 못했습니다".to_string()),
+                Err(_) => return Err("quick_capture_save_failed".to_string()),
             };
         // Re-check the destination parent after opening/writing the sibling.
         // A concurrent Inbox replacement must not turn the publication path
@@ -734,7 +746,7 @@ fn save_normalized_capture_at(
             Ok(current_path) if current_path == path => current_path,
             Ok(_) => {
                 cleanup_vault_file(vault, &temporary, &temporary_identity);
-                return Err("빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string());
+                return Err("preview_stale".to_string());
             }
             Err(error) => {
                 cleanup_vault_file(vault, &temporary, &temporary_identity);
@@ -744,7 +756,7 @@ fn save_normalized_capture_at(
         let publication = if vault.revalidate().is_ok() {
             publish_new_vault_file(&temporary, &current_path)
         } else {
-            return Err("빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string());
+            return Err("preview_stale".to_string());
         };
         match publication {
             Ok(()) => {
@@ -759,12 +771,12 @@ fn save_normalized_capture_at(
                     Ok(_) => None,
                 };
                 let Some(target_identity) = target_is_regular else {
-                    return Err("빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string());
+                    return Err("preview_stale".to_string());
                 };
                 if !target_identity.matches(&temporary_identity) {
                     // The target was replaced after publication. Do not index
                     // or remove the competing regular file by path.
-                    return Err("빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string());
+                    return Err("preview_stale".to_string());
                 }
                 selected = Some((rel, path, target_identity));
                 break;
@@ -781,12 +793,12 @@ fn save_normalized_capture_at(
                 // never delete the target by path because a competing writer
                 // may have replaced it in the meantime.
                 cleanup_vault_file(vault, &temporary, &temporary_identity);
-                return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+                return Err("quick_capture_save_failed".to_string());
             }
         }
     }
     let Some((rel, path, path_identity)) = selected else {
-        return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+        return Err("quick_capture_save_failed".to_string());
     };
 
     if let Err(error) = vault.revalidate() {
@@ -802,11 +814,11 @@ fn save_normalized_capture_at(
         Ok(transaction) => transaction,
         Err(_) => {
             cleanup_vault_file(vault, &path, &path_identity);
-            return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+            return Err("quick_capture_save_failed".to_string());
         }
     };
     if let Err(error) = db::index_doc_in_transaction(&transaction, &rel, &document)
-        .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())
+        .map_err(|_| "quick_capture_save_failed".to_string())
     {
         let _ = transaction.rollback();
         cleanup_vault_file(vault, &path, &path_identity);
@@ -814,7 +826,7 @@ fn save_normalized_capture_at(
     }
     if transaction.commit().is_err() {
         cleanup_vault_file(vault, &path, &path_identity);
-        return Err("빠른 캡처를 저장하지 못했습니다".to_string());
+        return Err("quick_capture_save_failed".to_string());
     }
     // The transaction and file publication are separate OS operations. If the
     // vault identity changed while SQLite committed, report a stale approval
@@ -839,7 +851,7 @@ pub fn save_quick_capture(
     approval: QuickCaptureApproval,
 ) -> Result<QuickCaptureSaved, String> {
     if !capture::is_valid_preview_id(&approval.preview_id) {
-        return Err("빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string());
+        return Err("preview_stale".to_string());
     }
 
     // Consume before doing filesystem work.  A timeout, duplicate click, or
@@ -848,19 +860,19 @@ pub fn save_quick_capture(
     let pending = state
         .quick_capture_previews
         .lock()
-        .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())?
+        .map_err(|_| "quick_capture_save_failed".to_string())?
         .take(&approval.preview_id)
-        .ok_or_else(|| "빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string())?;
+        .ok_or_else(|| "preview_stale".to_string())?;
 
     let conn = state
         .db
         .lock()
-        .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())?;
-    let root = resolve_configured_root(&conn)
-        .map_err(|_| "빠른 캡처를 저장하지 못했습니다".to_string())?;
+        .map_err(|_| "quick_capture_save_failed".to_string())?;
+    let root =
+        resolve_configured_root(&conn).map_err(|_| "quick_capture_save_failed".to_string())?;
     let current_vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
     if current_vault != pending.vault {
-        return Err("빠른 캡처 미리보기가 오래되어 다시 확인하세요".to_string());
+        return Err("preview_stale".to_string());
     }
     let result = save_normalized_capture_at(
         &conn,
@@ -1501,7 +1513,7 @@ mod tests {
         db::migrate(&conn).unwrap();
         let error = save_capture_in_root(&conn, root.path(), capture_input("token=secret-value"))
             .unwrap_err();
-        assert_eq!(error, "민감한 정보가 포함되어 있어 저장하지 않았습니다");
+        assert_eq!(error, "quick_capture_sensitive");
         assert!(!root.path().join(capture::INBOX_DIR).exists());
     }
 
@@ -1518,7 +1530,7 @@ mod tests {
             1_754_923_200,
         )
         .unwrap_err();
-        assert_eq!(error, "빠른 캡처를 저장하지 못했습니다");
+        assert_eq!(error, "quick_capture_save_failed");
         assert_eq!(
             std::fs::read_dir(root.path().join("Inbox"))
                 .unwrap()
@@ -1556,7 +1568,7 @@ mod tests {
 
         let error =
             save_capture_at(&conn, &vault, capture_input("stale"), 1_754_923_200).unwrap_err();
-        assert_eq!(error, "빠른 캡처 미리보기가 오래되어 다시 확인하세요");
+        assert_eq!(error, "preview_stale");
         assert!(!root.join("Inbox").exists());
     }
 

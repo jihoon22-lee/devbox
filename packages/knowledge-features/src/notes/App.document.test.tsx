@@ -11,6 +11,10 @@ vi.mock("./api", () => {
     { path: "image.png", is_dir: false },
   ];
   return {
+    loadNoteJournal: vi.fn().mockResolvedValue({ entries: [], otherVaultCount: 0 }),
+    saveNoteJournal: vi.fn().mockResolvedValue(undefined),
+    clearNoteJournal: vi.fn().mockResolvedValue(undefined),
+    discardOtherVaultJournal: vi.fn().mockResolvedValue(undefined),
     listTree: vi.fn(async () => TREE),
     listTags: vi.fn(async () => [] as string[]),
     readFile: vi.fn(async (path: string) => ({ content: path.endsWith(".md") ? "# Hello" : "binary-content", revision: "disk-1" })),

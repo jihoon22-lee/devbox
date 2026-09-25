@@ -51,7 +51,7 @@ describe("product shell", () => {
   it("opens all four products with keyboard navigation and accessible empty states", async () => {
     for (const product of ["workspace", "api-studio", "knowledge", "control-center"] as const) {
       const { container, unmount } = render(<ProductShell product={product}/>);
-      await screen.findByText("기능 이전을 준비하고 있습니다");
+      await screen.findByText("이 화면은 아직 제공되지 않습니다");
       expect(screen.getByText("브라우저 미리보기 · 모의 데이터")).toBeTruthy();
       const navigation = screen.getByRole("navigation", { name: "제품 화면" });
       const buttons = navigation.querySelectorAll("button");

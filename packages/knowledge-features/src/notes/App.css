@@ -1168,3 +1168,22 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.knowledge-feature-notes .note-editor-region {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.knowledge-feature-notes .note-recovery-controls {
+  max-height: 45%;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.knowledge-feature-notes .note-recovery-controls section,
+.knowledge-feature-notes .note-recovery-controls > p,
+.knowledge-feature-notes .note-recovery-controls > div {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.knowledge-feature-notes .recovery-banner ul { padding-left: 20px; }

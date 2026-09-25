@@ -7,7 +7,7 @@
 
 use crate::core::db;
 use crate::core::models::Session;
-use crate::core::privacy::{apply as apply_privacy, PrivacyRules};
+use crate::core::privacy::{CompiledRules, PrivacyRules};
 use devbox_filesystem::{parse_safe_project_path, MAX_PROJECT_PATH_BYTES};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -1228,7 +1228,7 @@ fn is_snapshot_error_code(value: &str) -> bool {
     crate::core::error_codes::is_snapshot(value)
 }
 
-fn read_privacy_rules(conn: &Connection) -> PrivacyRules {
+fn read_privacy_rules(conn: &Connection) -> CompiledRules {
     let raw = match db::get_setting_bounded(conn, "privacy_rules", "{}", MAX_PRIVACY_JSON_BYTES) {
         Ok(raw) => raw,
         Err(_) => return privacy_fail_closed(),
@@ -1254,14 +1254,11 @@ fn read_privacy_rules(conn: &Connection) -> PrivacyRules {
     {
         return privacy_fail_closed();
     }
-    rules
+    CompiledRules::compile(&rules).unwrap_or_else(|_| privacy_fail_closed())
 }
 
-fn privacy_fail_closed() -> PrivacyRules {
-    PrivacyRules {
-        mask_all_titles: true,
-        ..PrivacyRules::default()
-    }
+fn privacy_fail_closed() -> CompiledRules {
+    CompiledRules::fail_closed()
 }
 
 fn bounded_rule_text(value: &str, max_bytes: usize) -> bool {
@@ -1270,7 +1267,7 @@ fn bounded_rule_text(value: &str, max_bytes: usize) -> bool {
 
 fn sanitized_session(
     session: Session,
-    rules: &PrivacyRules,
+    rules: &CompiledRules,
 ) -> Result<Option<ExportSession>, String> {
     let session_span = session
         .end_ts
@@ -1283,7 +1280,7 @@ fn sanitized_session(
     // row cannot make export allocate proportional to an unbounded title.
     let app_input = bounded_text(&session.app, MAX_APP_BYTES, false);
     let title_input = bounded_text(&session.title, MAX_TITLE_BYTES, true);
-    let Some((app, title)) = apply_privacy(rules, &app_input, &title_input) else {
+    let Some((app, title)) = rules.apply(&app_input, &title_input) else {
         return Ok(None);
     };
     let app = bounded_text(&redact_obvious_secret(&app), MAX_APP_BYTES, false);
@@ -3410,7 +3407,7 @@ mod tests {
             "title [31m"
         );
 
-        let rules = PrivacyRules::default();
+        let rules = CompiledRules::compile(&PrivacyRules::default()).unwrap();
         let session = sanitized_session(
             Session {
                 id: 1,
@@ -3508,7 +3505,13 @@ mod tests {
             })
             .to_string(),
         );
-        assert!(read_privacy_rules(&connection).mask_all_titles);
+        assert_eq!(
+            read_privacy_rules(&connection)
+                .apply("fixture.exe", "private")
+                .unwrap()
+                .1,
+            ""
+        );
     }
 
     #[test]

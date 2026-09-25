@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 const INVALID_ROOT: &str = "빠른 캡처 저장 위치를 사용할 수 없습니다";
 const INVALID_ENTRY: &str = "Knowledge 항목 경로가 올바르지 않습니다";
-const STALE_ROOT: &str = "빠른 캡처 미리보기가 오래되어 다시 확인하세요";
+const STALE_ROOT: &str = "preview_stale";
 
 #[derive(Clone)]
 pub struct VaultIdentity {

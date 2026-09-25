@@ -4,7 +4,7 @@
 각 제품은 독립 Windows 실행 파일이며 Suite의 typed route·authority·installation identity를 공유한다.
 공개 완료 여부는 [#541](https://github.com/jihoon22-lee/devbox/issues/541)과 Release가 원장이다.
 v0.7의 15개 앱·32개 자산은 역사적 계약이며 frozen catalog는 migration/reference에만 사용한다.
-v0.8 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
+리뷰 후속 작업 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
 
 ```
 devbox/
@@ -25,7 +25,7 @@ devbox/
 
 | 항목 | 값 |
 |---|---|
-| 타깃 OS | Windows 10/11 (WebView2 내장) |
+| 타깃 OS | Windows 11 (WebView2 내장) |
 | 개발 OS | WSL2 Ubuntu + Windows (편집·로컬 검증은 WSL, 앱 실행·패키징은 Windows) |
 | 소스 위치 | `/home/jihoon/projects/devbox/apps/<AppName>` (Windows: `\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox\apps\<AppName>`) |
 | 에디터 | 자유 (Rust-analyzer + ESLint + Prettier 권장) |
@@ -168,21 +168,13 @@ src/
 | 실제 앱 실행 | `pnpm tauri dev` | Windows PowerShell, `apps/<app>` |
 | 배포 빌드 | `pnpm tauri build` | Windows PowerShell, `apps/<app>` |
 
-- 검증은 커밋 횟수에 맞추지 않는다. 커밋 전에는 diff를 계획과 대조하고 문법·타입 오류를
-  확인하는 데 필요한 최소 검사만 선택한다. 문서 변경은 내용·링크·diff 확인으로 충분하며,
-  코드 변경은 편집기 진단이나 필요한 대상의 typecheck/`cargo check`를 활용한다.
-  PR 개발 완료 전 test·Clippy·build·affected·실기 실행은 금지한다. 하나 구현하고 하나
-  검증하는 방식으로 진행하지 않는다. 테스트와 fixture는 작성만 하고 실행은 모아 둔다.
-- 상세 검증은 PR에 계획한 구현·importer·fixture가 모두 끝났을 때 수행한다. 먼저 수용 기준과
-  검사 항목을 대응시키고, `verify:affected`에 포함된 테스트·타입·빌드·lint를 별도 명령으로
-  선행 반복하지 않는다. 포함되지 않은 회귀·migration·Windows/WSL 실기 검사는 이때 함께
-  수행한다. v0.8의 완료 시점은 B01~B09 각각의 PR 묶음 전체를 기준으로 한다.
-- 개발 완료 전에는 결함·설계 불확실성을 이유로 상세 검증을 앞당기지 않는다. 완료 검증에서
-  실패하면 확인된 결함들의 수정을 먼저 마치고, 실패 항목과 수정의 영향 범위만 모아
-  재실행한다. 수정 하나마다 실행하지 않으며 관련 없는 기존 PASS는 그대로 유지한다.
-- 로컬·수동 CI·push 자동 실행에 같은 시점 규칙을 적용한다. 중간 커밋은 로컬에 모으고
-  PR 개발 완료 후 push한다. 문서 정리·커밋 생성·작업 재개는 재검증 사유가 아니다.
-  최종 CI와 필수 수용 조건을 없애거나, 미완료 선행 PR을 후속 개발로 덮지 않는다.
+- 과제(task) 단위로 실패하는 테스트를 먼저 쓰고, 그 테스트와 직접 영향받는 테스트만 실행한다.
+  예: `cargo test -p devbox-activity-engine --lib core::privacy`,
+  `pnpm --filter @devbox/knowledge-features exec vitest run src/activity`.
+  Windows 전용(`#[cfg(windows)]`) 테스트는 WSL에서 실행되지 않으므로 CI `Rust (Windows)` 잡이 검증한다.
+- clippy·전체 build·`pnpm verify:affected`·Windows/WSL 실기 검사는 PR의 모든 과제가 끝난 뒤 한 번 모아
+  실행한다. 실패하면 확인된 수정들을 먼저 마치고 실패 항목과 수정의 영향 범위만 다시 실행한다.
+- 커밋은 과제 단위로 하고 push는 PR 상세 검증 후 한 번 한다. 최종 CI와 필수 수용 조건은 유지한다.
   실행 시점·범위는 [검증 운영](./docs/verification.md)을 따른다.
 - WSL 컴파일엔 Linux 시스템 라이브러리 필요:
   `libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
@@ -261,31 +253,18 @@ docs/<scope>           문서 작업   예: docs/roadmap
   유지한다. 단순히 같은 앱이라는 이유만으로 묶지 않는다.
 - 여러 이슈를 묶은 PR은 본문에 모든 이슈 번호, 묶는 이유, 이슈별 acceptance와 검증 결과를
   구분해 적는다. 수용 기준 전체를 충족한 이슈만 `Closes #...`로 닫고, 일부 기여는 `Refs #...`로
-  연결한다. 각 이슈의 회귀 테스트를 준비하고, PR 전체 구현이 끝난 최종 통합 상태에서
-  상세 검증·CI·Windows 수용 gate를 수행한다. 커밋별 상세 검증을 의무화하지 않는다.
+  연결한다. 각 과제의 좁은 회귀 테스트를 실행하고, PR 전체 구현이 끝난 최종 통합 상태에서
+  상세 검증·CI·Windows 수용 gate를 수행한다. 커밋별 전체 검증을 반복하지 않는다.
 
-### v0.8 통합 PR 정책 (일반 PR 단위 규칙보다 우선)
+### 리뷰 후속 작업 PR 정책
 
-- 원장은 [#541](https://github.com/jihoon22-lee/devbox/issues/541), 수용 기준은
-  [#542](https://github.com/jihoon22-lee/devbox/issues/542), 실행 계획은 #543~#551이다.
-  작업 시작 시 최신 본문과 선행조건을 확인한다. 기본 검토 예산은 B01~B09의 9개 통합 묶음이며,
-  11개 이슈를 11개 PR로 만들지 않는다.
-- 같은 묶음의 UI·Rust·importer·fixture·문서를 하나의 PR에서 검토한다. 기계적 이동과 의미 변경은
-  commit으로 구분한다. 독립적인 데이터 손실·보안·복구 위험 또는 리뷰 불가능의 구조적 근거가
-  있을 때만 묶음을 재조정하고 원장에 근거와 매핑을 남긴다.
-- B01 기반 확정 후 B02/B03/B04를 독립 진행할 수 있다. 공용 파일의 writer는 한 묶음이 소유한다.
-- 선행 묶음의 계획한 구현과 발견된 차단 결함을 먼저 마무리한다. 미완료 기능이나
-  미해결 결함을 후속 묶음으로 덮지 않는다. 검증 대기를 이유로 미완료 선행 PR을 둔 채
-  의존하는 후속 개발을 시작하지 않는다. 상세 검증의 중복을 줄이되 최종 CI와 병합 순서는
-  지킨다. 병렬 에이전트는 사용자가 요청하거나 적용 지침에서 허용할 때만 사용한다.
-- review packet에는 semantic 변경, pure moves, 데이터·authority 변경, 요구사항/legacy parity 매핑,
-  CI·실기 증거, 제한과 rollback을 담는다. PR 구현 중에는 문법·타입·계획 범위를 확인하고,
-  구현 완료 후 필요한 위험 gate와 각 이슈의 회귀 검증을 모아 수행한다. 동일 검사를 커밋마다
-  반복하거나 일부 구현만 끝난 상태에서 PR 완료 검증을 앞당기지 않는다.
-- #541/#542는 구현 PR에서 자동으로 닫지 않는다. WP도 수용 기준 전체가 충족될 때만 닫는다.
-  문서 반영·결과 기록만을 위한 PR은 기본 계획에 추가하지 않는다. 사용자가 별도 준비 작업을
-  명시한 경우 그 범위만 독립 PR로 마무리하며 B01 구현 완료로 계산하지 않는다.
-- 이 정책은 PR 구성에 대한 예외다. CI·권한·원본 데이터 보존·릴리스 검증 조건은 완화하지 않는다.
+- 원장은 리뷰 후속 ledger 이슈이고 PR 목록·순서·게이트는
+  `docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md`가 정한다.
+  PR 하나는 로드맵 §6의 묶음 하나(계획 파일 여러 개)에 대응한다. 계획에 없는 범위를 끼워 넣지 않는다.
+- 머지는 squash만 쓴다(main은 linear history). 필수 체크 `Frontend (pnpm)`,
+  `Rust (Cargo workspace)`, `Rust (Windows)`가 통과해야 한다. `Product foundation acceptance`(Windows 전체
+  acceptance, 60–90분)는 머지를 막지 않고 머지 뒤 결과를 확인하며, 실패는 다음 묶음을 머지하기 전에 고친다(로드맵 §4.7).
+- v0.8의 B01~B09 통합 정책(#541~#551)은 닫힌 역사 기록이다.
 
 ### 커밋 규칙 (Conventional Commits, 영어)
 ```
@@ -299,7 +278,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 예: `refactor(workspace): extract process crate from port-manager`
 - 1커밋 = 1논리적 단위. WIP 커밋 금지
 - 커밋 전에는 해당 변경의 문법·타입 오류와 계획 범위 이탈을 최소한으로 확인한다.
-  상세 테스트·Clippy·전체 빌드·`verify:affected`는 커밋별 의무가 아니다.
+  과제별 좁은 테스트는 실행하고, Clippy·전체 빌드·`verify:affected`는 PR 끝에 수행한다.
 - PR의 계획한 구현이 모두 끝난 뒤 §5의 상세 검증을 수행한다. PR 최종 변경에 대해
   `.github/workflows/ci.yml` 통과를 확인한 뒤에만 main으로 머지한다. PR 수용 완료는
   필요한 회귀·실기 검사 + affected 검증 + GitHub Actions CI 통과로 판단한다.
@@ -383,10 +362,9 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - GitHub 연결/`gh`는 이슈·PR·CI 조회에, 로컬 셸은 파일·git·pnpm·Cargo 작업에 사용한다.
   OpenAI 기능은 공식 Docs MCP에서 확인하고, 연결 불가 시 공식 문서로 확인한다.
   기존 도구가 충족하는 기능을 위해 MCP를 중복 설치하지 않는다.
-- 작업 기록은 PR 묶음당 `workthrough/YYYY-MM-DD-scope.md` 하나를 생성·갱신한다.
-  변경 목적·중요한 결정·영향 경로·실제 검증 결과·남은 제한을 간결하게 적는다.
-  전체 diff·성공 로그·회의 내용을 복제하지 않는다. CI run/commit/fixture 근거를 연결하고,
-  실패·미실행·수동 실기 필요 상태를 PASS와 구분한다.
+- 작업 기록은 PR 본문과 ledger 이슈 댓글이다. 새 `workthrough/` 파일은 만들지 않는다.
+  변경 목적·결정·영향 경로·실제 검증 결과·남은 제한을 적고, 실패·미실행·수동 실기 필요 상태를
+  PASS와 구분한다.
 - 컨텍스트 전환 시 목표, 승인된 범위, WP/요구사항 ID, branch/worktree, 결정, 검증과 다음 작업을
   짧게 남긴다. 재개 시 실제 git/CI 상태와 대조한다. 자동 노트·Memories는 참고 계층이며
   필수 규칙·데이터 경계·완료 증거의 유일한 원장으로 사용하지 않는다.

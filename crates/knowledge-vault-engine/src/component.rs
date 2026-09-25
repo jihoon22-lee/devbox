@@ -115,7 +115,12 @@ pub fn initialize(
             eprintln!("wikilink index rebuild will retry next launch");
         }
     }
+    let journal = Arc::new(crate::commands::journal::NoteJournalStore::new(
+        dir.join("note-journal.json"),
+    ));
+    app.manage(journal.clone());
     let state = Arc::new(AppState {
+        journal,
         metadata_scans: crate::core::metadata::ScanControl::default(),
         integration_root: integration_root.clone(),
         db: Mutex::new(conn),
@@ -244,6 +249,10 @@ pub const COMMANDS: &[&str] = &[
     "wikilink_candidates",
     "backlinks",
     "knowledge_watcher_status",
+    "save_note_journal",
+    "clear_note_journal",
+    "load_note_journal",
+    "discard_other_vault_journal",
 ];
 
 pub async fn dispatch(
@@ -252,6 +261,19 @@ pub async fn dispatch(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match method {
+        "save_note_journal" => {
+            crate::commands::journal::__component_save_note_journal(app, args).await
+        }
+        "clear_note_journal" => {
+            crate::commands::journal::__component_clear_note_journal(app, args).await
+        }
+        "load_note_journal" => {
+            crate::commands::journal::__component_load_note_journal(app, args).await
+        }
+        "discard_other_vault_journal" => {
+            crate::commands::journal::__component_discard_other_vault_journal(app, args).await
+        }
+
         "save_image_asset" => {
             crate::commands::assets::__component_save_image_asset(app, args).await
         }

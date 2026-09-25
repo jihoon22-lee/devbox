@@ -95,8 +95,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
+          node-version-file: .nvmrc
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
@@ -141,9 +141,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - run: corepack enable pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-windows-package
@@ -231,7 +231,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}
@@ -322,7 +322,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}
@@ -359,7 +359,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}

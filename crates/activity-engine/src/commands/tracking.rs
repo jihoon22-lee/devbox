@@ -1,7 +1,7 @@
 use crate::core::db::insert_session;
 use crate::core::idle::DEFAULT_IDLE_THRESHOLD_MS;
 use crate::core::models::ClosedSession;
-use crate::core::privacy::{apply as apply_privacy, parse_rules, PrivacyRules};
+use crate::core::privacy::CompiledRules;
 use crate::core::sessionizer::Sessionizer;
 use rusqlite::Connection;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -122,6 +122,7 @@ impl Drop for DigestOperationGuard {
 pub struct AppState {
     /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
     pub integration_root: Option<std::path::PathBuf>,
+    pub privacy: crate::commands::privacy::PrivacyState,
     pub db: Mutex<Connection>,
     pub sessionizer: Mutex<Sessionizer>,
     pub tracking: AtomicBool,
@@ -187,7 +188,7 @@ pub(crate) fn stop_tracking_runtime(state: &AppState, update_consent: bool) -> R
         Ok(())
     };
     if let Some(c) = closed {
-        insert_filtered(&conn, &c, &privacy_rules(&conn)).map_err(|e| e.to_string())?;
+        insert_filtered(&conn, &c, &state.privacy.current()).map_err(|e| e.to_string())?;
     }
     persisted
 }
@@ -244,10 +245,7 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
                 )
             };
             let threshold = crate::core::idle::parse_threshold_ms(&threshold);
-            let rules = {
-                let conn = state.db.lock().unwrap();
-                privacy_rules(&conn)
-            };
+            let rules = state.privacy.current();
 
             let idle_end = crate::core::idle::session_end_on_idle(
                 now,
@@ -283,20 +281,13 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
     });
 }
 
-/// 설정에서 privacy rules를 읽는다 (없으면 기본값).
-fn privacy_rules(conn: &Connection) -> PrivacyRules {
-    let json = crate::core::db::get_setting(conn, "privacy_rules", "{}");
-    parse_rules(&json)
-}
-
-/// privacy rule을 **insert 전에** 적용해 저장하거나 건너뛴다.
+/// Apply privacy rules **before** insert, then store or skip the session.
 fn insert_filtered(
     conn: &Connection,
     closed: &ClosedSession,
-    rules: &PrivacyRules,
+    rules: &CompiledRules,
 ) -> rusqlite::Result<()> {
-    let Some((app, title)) = apply_privacy(rules, &closed.app, &closed.title) else {
-        // 제외 대상 세션 — 저장하지 않는다
+    let Some((app, title)) = rules.apply(&closed.app, &closed.title) else {
         return Ok(());
     };
     insert_session(
@@ -434,22 +425,28 @@ pub(crate) async fn __component_get_idle_threshold(
 }
 
 #[cfg(test)]
+pub(crate) fn test_state(conn: rusqlite::Connection) -> AppState {
+    AppState {
+        integration_root: None,
+        tracking: AtomicBool::new(product_consent(&conn)),
+        tracking_control: Mutex::new(()),
+        persist_tracking_consent: true,
+        privacy: crate::commands::privacy::PrivacyState::load(&conn),
+        db: Mutex::new(conn),
+        sessionizer: Mutex::new(crate::core::sessionizer::Sessionizer::new()),
+        snapshot_writer: Mutex::new(()),
+        digest_operations: Arc::new(DigestOperationState::default()),
+        digest_handles: crate::core::digest::DigestHandleStore::default(),
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::DigestOperationState;
     use std::sync::Arc;
 
     fn collector_state(conn: rusqlite::Connection) -> super::AppState {
-        super::AppState {
-            integration_root: None,
-            tracking: std::sync::atomic::AtomicBool::new(super::product_consent(&conn)),
-            tracking_control: std::sync::Mutex::new(()),
-            persist_tracking_consent: true,
-            db: std::sync::Mutex::new(conn),
-            sessionizer: std::sync::Mutex::new(crate::core::sessionizer::Sessionizer::new()),
-            snapshot_writer: std::sync::Mutex::new(()),
-            digest_operations: Arc::new(DigestOperationState::default()),
-            digest_handles: crate::core::digest::DigestHandleStore::default(),
-        }
+        super::test_state(conn)
     }
 
     #[test]
@@ -564,5 +561,54 @@ mod tests {
             .commit_if_not_cancelled(|| Ok::<_, String>(()))
             .unwrap_err();
         assert_eq!(error, "digest_cancelled");
+    }
+    #[test]
+    fn saved_rules_apply_to_the_next_session_without_restart() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let state = collector_state(conn);
+        let rules = crate::core::privacy::PrivacyRules {
+            redact_title_patterns: vec![r"invoice \d{1,4}".into()],
+            ..Default::default()
+        };
+        let saved = crate::commands::privacy::save_rules(&state, rules).unwrap();
+        assert!(saved.saved);
+        super::start_tracking_inner(&state).unwrap();
+        state.sessionizer.lock().unwrap().observe(
+            "mail.exe".into(),
+            "invoice 2024 draft".into(),
+            super::now_ms() - 10,
+        );
+        super::stop_tracking_runtime(&state, false).unwrap();
+        let conn = state.db.lock().unwrap();
+        let title: String = conn
+            .query_row("SELECT title FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title, "[redacted] draft");
+    }
+
+    #[test]
+    fn unreadable_stored_rules_fail_closed() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO settings VALUES ('privacy_rules', '{broken')",
+            [],
+        )
+        .unwrap();
+        let state = collector_state(conn);
+        assert!(!state.privacy.healthy());
+        super::start_tracking_inner(&state).unwrap();
+        state.sessionizer.lock().unwrap().observe(
+            "fixture.exe".into(),
+            "private synthetic title".into(),
+            super::now_ms() - 10,
+        );
+        super::stop_tracking_runtime(&state, false).unwrap();
+        let conn = state.db.lock().unwrap();
+        let title: String = conn
+            .query_row("SELECT title FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title, "");
     }
 }

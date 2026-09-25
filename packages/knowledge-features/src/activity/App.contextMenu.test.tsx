@@ -34,12 +34,10 @@ vi.mock("./api", () => ({
     git: { projects: [], total_commits: 0 },
   })),
   getIdleThreshold: vi.fn().mockResolvedValue(300_000),
-  getPrivacyRules: vi.fn().mockResolvedValue({
-    excludedProcesses: [],
-    excludedTitlePatterns: [],
-    redactTitlePatterns: [],
-    maskAllTitles: false,
-  }),
+  EMPTY_PRIVACY_RULES: { excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false },
+  getPrivacyRules: vi.fn().mockResolvedValue({ rules: {
+    excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false,
+  }, healthy: true }),
   getProjects: mocks.getProjects,
   getRange: vi.fn().mockResolvedValue({
     label: "fixture range",

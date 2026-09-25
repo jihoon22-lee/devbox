@@ -1,3 +1,6 @@
+import { NoteAutosave, readAutosavePreference, writeAutosavePreference } from "./autosave";
+import { NoteJournal } from "./journal";
+import RecoveryControls from "./components/RecoveryControls";
 import { MetadataRefresh } from "./metadataRefresh";
 import {isProductHosted} from "../transport";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -9,6 +12,8 @@ import {
 import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import ChangeSetPreview from "@devbox/diff-view";
 import {
+  saveNoteJournal,
+  clearNoteJournal,
   applyRename,
   analyzeWikilinks,
   backlinks as listBacklinks,
@@ -153,6 +158,12 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   const editorDocument = session ?? localDocument;
   const note = useSyncExternalStore(editorDocument.subscribe, editorDocument.snapshot);
   const { path: selected, content, dirty, sourceVersion } = note;
+  const [autosaveEnabled, setAutosaveEnabled] = useState(() => readAutosavePreference());
+  const autosaveRef = useRef<NoteAutosave | null>(null);
+  const journalRef = useRef<NoteJournal | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const recoveryBusyRef = useRef(recoveryBusy); recoveryBusyRef.current = recoveryBusy;
+
   useEffect(() => session ? undefined : registerNoteEditor(editorDocument), [session, editorDocument]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -266,6 +277,28 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     (e) => setError(e instanceof Error ? e.message : String(e)),
   ));
   const loadMeta = metadataRefresh.request;
+  const loadMetaRef = useRef(loadMeta); loadMetaRef.current = loadMeta;
+  useEffect(() => {
+    const autosave = new NoteAutosave(editorDocument, readAutosavePreference(), () => { void loadMetaRef.current(); });
+    const journal = new NoteJournal(editorDocument, {save: saveNoteJournal, clear: clearNoteJournal}, code => {
+      setError(code === "journal_limit"
+        ? "복구용 임시 저장이 8개로 가득 찼습니다. 남은 복구본을 복원하거나 버린 뒤 다시 편집해 주세요."
+        : "복구용 임시 저장을 기록하지 못했습니다. 편집 내용은 유지됩니다.");
+    });
+    autosaveRef.current = autosave; journalRef.current = journal;
+    const release = editorDocument.setBeforeSwitch(() => autosave.flush());
+    const onBlur = () => { if (!recoveryBusyRef.current) void autosave.flush(); };
+    const onVisibility = () => { if (document.hidden) onBlur(); };
+    window.addEventListener("blur", onBlur); document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", onBlur); document.removeEventListener("visibilitychange", onVisibility);
+      release(); journal.dispose(); autosave.dispose(); journalRef.current = null; autosaveRef.current = null;
+    };
+  }, [editorDocument]);
+  useEffect(() => {
+    autosaveRef.current?.setEnabled(autosaveEnabled); writeAutosavePreference(autosaveEnabled);
+  }, [autosaveEnabled]);
+
 
   useEffect(() => {
     metadataRefresh.start();
@@ -433,6 +466,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
 
   const confirmDiscard = () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?");
   const openFile = async (path: string, fragment?: string) => {
+    if (recoveryBusyRef.current) return;
     setError(null);
     const opened = fragment !== undefined && editorDocument.snapshot().path === path
       || await editorDocument.openPath(path, confirmDiscard);
@@ -451,6 +485,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   }, [active, openRequest]);
 
   const openIndexedNoteAt = async (path: string, line = 1, column = 1) => {
+    if (recoveryBusyRef.current) return;
     setError(null);
     if (await editorDocument.open(() => openInboundNote(path).catch(() => { throw new Error("요청한 노트를 열 수 없습니다"); }), confirmDiscard)) {
       setSelectedTreePath(editorDocument.snapshot().path); setMode("edit");
@@ -459,7 +494,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     }
   };
 
-  const save = async () => { if (await editorDocument.save()) await loadMeta(); };
+  const save = async () => { if (!recoveryBusyRef.current && await editorDocument.save()) await loadMeta(); };
 
   const importImageAsset = useCallback(async (file: File) => {
     const note = selectedRef.current;
@@ -1048,7 +1083,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
         </div>
       )}
       {notice && <div className="notice" role="status">{notice}</div>}
-      <aside className="sidebar">
+      <aside className="sidebar" inert={recoveryBusy}>
         <h1 className="app-title">Knowledge</h1>
         {watcherStatus && (
           <p
@@ -1152,6 +1187,8 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
       </aside>
 
       <main className="content">
+        <RecoveryControls document={editorDocument} autosave={autosaveRef} journal={journalRef} onBusy={setRecoveryBusy}/>
+        <div className="note-editor-region" inert={recoveryBusy}>
         {selected ? (
           <>
             <div className="editor-head">
@@ -1195,7 +1232,8 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
                   </button>
                 </>
               )}
-              {dirty && <span className="dirty">● 저장되지 않음</span>}
+              <label className="row"><input type="checkbox" checked={autosaveEnabled} onChange={event => setAutosaveEnabled(event.currentTarget.checked)}/>자동 저장</label>
+              {note.saving ? <span role="status">저장 중…</span> : dirty ? <span className="dirty">● 저장되지 않음</span> : null}
               <button className="btn" disabled={note.saving} onClick={() => void save()}>
                 저장
               </button>
@@ -1212,7 +1250,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
                   <MarkdownEditor
                     value={content}
                     onChange={(text) => {
-                      editorDocument.edit(text);
+                      if (!recoveryBusyRef.current) editorDocument.edit(text);
                     }}
                     onSave={() => void save()}
                     onError={setError}
@@ -1260,6 +1298,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
         ) : (
           <div className="empty">노트를 선택하거나 일일 노트를 만드세요</div>
         )}
+        </div>
       </main>
     </div>
   );

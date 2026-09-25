@@ -13,3 +13,5 @@ pub mod store;
 pub mod templates;
 pub mod vault;
 pub mod wikilink;
+
+pub mod journal;

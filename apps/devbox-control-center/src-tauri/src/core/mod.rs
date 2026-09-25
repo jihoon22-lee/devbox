@@ -19,3 +19,5 @@ pub mod suite_removal;
 pub mod legacy_sources;
 
 pub mod cutover;
+
+pub mod update_cache;

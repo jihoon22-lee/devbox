@@ -481,15 +481,24 @@ export interface PrivacyRules {
   redactTitlePatterns: string[];
   maskAllTitles: boolean;
 }
+export type PrivacyRuleField = "excludedProcesses" | "excludedTitlePatterns" | "redactTitlePatterns";
+export type PrivacyRuleProblem = "empty" | "too_long" | "too_many" | "syntax";
+export interface InvalidPrivacyRule { field: PrivacyRuleField; index: number; problem: PrivacyRuleProblem }
+export interface PrivacyRulesView { rules: PrivacyRules; healthy: boolean }
+export interface PrivacySaveResult { saved: boolean; invalid: InvalidPrivacyRule[] }
 
-export async function getPrivacyRules(): Promise<PrivacyRules> {
-  if (!isTauri()) return { excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false };
-  return invoke<PrivacyRules>("get_privacy_rules");
+export const EMPTY_PRIVACY_RULES: PrivacyRules = {
+  excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false,
+};
+
+export async function getPrivacyRules(): Promise<PrivacyRulesView> {
+  if (!isTauri()) return { rules: EMPTY_PRIVACY_RULES, healthy: true };
+  return invoke<PrivacyRulesView>("get_privacy_rules");
 }
 
-export async function setPrivacyRules(rules: PrivacyRules): Promise<void> {
-  if (!isTauri()) return;
-  await invoke("set_privacy_rules", { rules });
+export async function setPrivacyRules(rules: PrivacyRules): Promise<PrivacySaveResult> {
+  if (!isTauri()) return { saved: true, invalid: [] };
+  return invoke<PrivacySaveResult>("set_privacy_rules", { rules });
 }
 
 export async function redactExisting(): Promise<number> {

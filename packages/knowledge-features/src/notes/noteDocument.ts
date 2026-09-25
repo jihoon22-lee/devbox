@@ -17,6 +17,7 @@ export class NoteDocument {
   private inspecting = 0;
   private saves = 0;
   private writing: Promise<boolean> | null = null;
+  private beforeSwitch: (() => Promise<unknown>) | null = null;
   constructor(private read: (path: string) => Promise<NoteSnapshot>, private write: Writer) {}
   snapshot = () => this.view;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -50,8 +51,16 @@ export class NoteDocument {
       return true;
     };
   }
+  setBeforeSwitch(hook: () => Promise<unknown>): () => void {
+    this.beforeSwitch = hook;
+    return () => { if (this.beforeSwitch === hook) this.beforeSwitch = null; };
+  }
   async open(load: () => Promise<InboundNote>, discard: () => boolean): Promise<boolean> {
     const request = ++this.opening;
+    if ((this.view.dirty || this.view.saving) && this.beforeSwitch) {
+      try { await this.beforeSwitch(); } catch { /* The remaining dirty check preserves user choice. */ }
+      if (request !== this.opening) return false;
+    }
     if (this.view.dirty && !discard()) return false;
     const edits = this.edits;
     this.publish({ error: null });

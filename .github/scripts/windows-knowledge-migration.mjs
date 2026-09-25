@@ -246,7 +246,7 @@ try {
   const templates = (await command(item, "knowledge.notes", "list_templates")).value;
   assert.equal(templates.length, 1); assert.equal(templates[0].content, "# {{title}}\nlegacy template"); assert.notEqual(templates[0].id, evidence.sourceTemplateId);
   assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/original.md" })).value.content, "# Original\n\n[[second]]\n\n![](assets/pixel.png)\n");
-  assert.equal((await command(item, "knowledge.activity", "get_privacy_rules")).value.maskAllTitles, true);
+  const privacy = (await command(item, "knowledge.activity", "get_privacy_rules")).value; assert.equal(privacy.rules.maskAllTitles, true); assert.equal(privacy.healthy, true);
   const history = (await command(item, "knowledge.activity", "knowledge_draft_history")).value;
   assert.equal(history.length, 1); assert.equal(history[0].status, "expired"); assert.equal(history[0].summary.startDate, "2024-02-29");
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);

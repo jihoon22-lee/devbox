@@ -236,6 +236,16 @@ pub fn get_setting_bounded(
     }
 }
 
+/// Like `set_setting`, but the caller learns whether the value was stored.
+pub fn try_set_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![key, value],
+    )
+    .map(|_| ())
+}
+
 pub fn set_setting(conn: &Connection, key: &str, value: &str) {
     let _ = conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
@@ -475,5 +485,15 @@ mod tests {
         assert_eq!(get_timeline(&conn, 0, 1_000).unwrap().len(), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn try_set_setting_reports_write_failure() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        try_set_setting(&conn, "k", "v1").unwrap();
+        assert_eq!(get_setting(&conn, "k", ""), "v1");
+        conn.execute_batch("PRAGMA query_only = ON").unwrap();
+        assert!(try_set_setting(&conn, "k", "v2").is_err());
+        assert_eq!(get_setting(&conn, "k", ""), "v1");
     }
 }

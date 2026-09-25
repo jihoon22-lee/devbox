@@ -398,6 +398,21 @@ pub enum CaptureError {
 }
 
 impl CaptureError {
+    /// Stable code returned to the product host; the UI maps it to a message.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::SensitiveContent => "quick_capture_sensitive",
+            Self::EmptyBody => "quick_capture_body_required",
+            Self::InvalidText => "quick_capture_invalid",
+            Self::TitleTooLong => "quick_capture_title_limit",
+            Self::BodyTooLarge => "quick_capture_body_limit",
+            Self::TooManyTags => "quick_capture_tag_count",
+            Self::TagTooLong => "quick_capture_tag_limit",
+            Self::TagsTooLarge => "quick_capture_tags_limit",
+            Self::InvalidTag => "quick_capture_tag_invalid",
+        }
+    }
+
     /// Stable, non-sensitive user-facing messages.  No input value or OS
     /// error is ever included in a command error.
     pub const fn message(self) -> &'static str {
@@ -1228,5 +1243,37 @@ body
         assert!(!is_valid_preview_id("qc-01"));
         assert!(!is_valid_preview_id("qc-1/path"));
         assert!(!is_valid_preview_id(&format!("qc-{}", "9".repeat(21))));
+    }
+    #[test]
+    fn every_capture_error_has_a_stable_code() {
+        use CaptureError::*;
+        let codes: Vec<_> = [
+            EmptyBody,
+            InvalidText,
+            TitleTooLong,
+            BodyTooLarge,
+            TooManyTags,
+            TagTooLong,
+            TagsTooLarge,
+            InvalidTag,
+            SensitiveContent,
+        ]
+        .into_iter()
+        .map(CaptureError::code)
+        .collect();
+        assert_eq!(
+            codes,
+            [
+                "quick_capture_body_required",
+                "quick_capture_invalid",
+                "quick_capture_title_limit",
+                "quick_capture_body_limit",
+                "quick_capture_tag_count",
+                "quick_capture_tag_limit",
+                "quick_capture_tags_limit",
+                "quick_capture_tag_invalid",
+                "quick_capture_sensitive",
+            ]
+        );
     }
 }

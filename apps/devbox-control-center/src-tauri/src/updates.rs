@@ -234,33 +234,22 @@ fn directory(review: &Review) -> Result<PathBuf> {
     ensure_no_links(&parent).map_err(|_| "update_cache_unsafe")?;
     let cache = parent.join(format!("com.devbox.v08.suite-downloads.i{}", review.key));
     for path in [&cache, &cache.join(&review.id)] {
-        if path != &cache
-            && !path.exists()
-            && fs::read_dir(&cache)
-                .map_err(|_| "update_cache_unavailable")?
-                .take(16)
-                .count()
-                >= 16
-        {
-            return Err("update_cache_review_required");
-        }
         match fs::create_dir(path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(_) => return Err("update_cache_unavailable"),
         }
         ensure_no_links(path).map_err(|_| "update_cache_unsafe")?;
+        if path == &cache {
+            crate::core::update_cache::prune_releases(&cache, &review.id)
+                .map_err(|_| "update_cache_unavailable")?;
+        }
     }
-    if fs::read_dir(cache.join(&review.id))
-        .map_err(|_| "update_cache_unavailable")?
-        .take(5)
-        .count()
-        > 4
-    {
-        return Err("update_cache_review_required");
-    }
-    Ok(cache.join(&review.id))
+    let release = cache.join(&review.id);
+    crate::core::update_cache::prune_partials(&release).map_err(|_| "update_cache_unavailable")?;
+    Ok(release)
 }
+
 fn verify_file(path: &Path, review: &Review) -> Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     ensure_no_links(path).map_err(|_| "update_cache_unsafe")?;

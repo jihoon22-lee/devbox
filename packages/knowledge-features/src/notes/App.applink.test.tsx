@@ -21,6 +21,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./api", () => ({
+  loadNoteJournal: vi.fn().mockResolvedValue({ entries: [], otherVaultCount: 0 }),
+  saveNoteJournal: vi.fn().mockResolvedValue(undefined),
+  clearNoteJournal: vi.fn().mockResolvedValue(undefined),
+  discardOtherVaultJournal: vi.fn().mockResolvedValue(undefined),
   listTree: vi.fn(async () => [{ path: "Notes/existing.md", is_dir: false }]),
   listTags: vi.fn(async () => [] as string[]),
   readFile: vi.fn(async () => ({ content: "# existing", revision: "disk-1" })),
