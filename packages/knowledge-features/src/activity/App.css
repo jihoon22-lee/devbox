@@ -770,7 +770,8 @@
   min-width: 260px;
 }
 
-.knowledge-feature-activity .privacy-row input {
+.knowledge-feature-activity .privacy-row input,
+.knowledge-feature-activity .privacy-row textarea {
   flex: 1;
   background: var(--bg);
   color: var(--text);
@@ -810,4 +811,11 @@
   .knowledge-feature-activity .handoff-history-row {
     grid-template-columns: 1fr;
   }
+}
+
+.knowledge-feature-activity [aria-labelledby="privacy-rules-heading"] fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
 }

@@ -1,3 +1,4 @@
+import PrivacyRulesPanel from "./PrivacyRulesPanel";
 import { projectAssociationLabel } from "./types";
 import {
   ContextMenu,
@@ -21,10 +22,9 @@ import {
   isTracking,
   projectAttribution,
   probeProject,
-  redactExisting,
   setAutostart,
   setIdleThreshold,
-  setPrivacyRules,
+  EMPTY_PRIVACY_RULES,
   setProjects,
   saveLifeLog,
   saveDigest,
@@ -470,7 +470,8 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
   const [projectProbePath, setProjectProbePath] = useState<string | null>(null);
   const [projectProbes, setProjectProbes] = useState<Record<string, ProjectProbe>>({});
   const [idleThreshold, setIdleThresholdState] = useState(300000);
-  const [privacy, setPrivacy] = useState<PrivacyRules>({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false });
+  const [privacy, setPrivacy] = useState<PrivacyRules>(EMPTY_PRIVACY_RULES);
+  const [privacyHealthy, setPrivacyHealthy] = useState(false);
   const [autoStart, setAutoStart] = useState<AutostartStatus | null>(null);
   const [sources, setSources] = useState<SourceStatus[]>([]);
   const [draftHistory, setDraftHistory] = useState<KnowledgeDraftHistoryEntry[]>([]);
@@ -922,7 +923,10 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
         setProjectsState(pr.value);
       }
       if (idle.status === "fulfilled") setIdleThresholdState(idle.value);
-      if (privacyRules.status === "fulfilled") setPrivacy(privacyRules.value);
+      if (privacyRules.status === "fulfilled") {
+        setPrivacy(privacyRules.value.rules);
+        setPrivacyHealthy(privacyRules.value.healthy);
+      } else { setPrivacyHealthy(false); }
       if (ast.status === "fulfilled") setAutoStart(ast.value);
       if (src.status === "fulfilled") setSources(src.value);
       if (history.status === "fulfilled"
@@ -1383,64 +1387,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
             )}
           </section>
 
-          <section className="panel">
-            <h2>개인정보 보호 규칙</h2>
-            <div className="privacy-row">
-              <span className="dim">제외할 프로세스 (쉼표 구분, 정확 일치):</span>
-              <input
-                value={privacy.excludedProcesses.join(", ")}
-                onChange={(e) => {
-                  const next = { ...privacy, excludedProcesses: e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean) };
-                  setPrivacy(next);
-                  void setPrivacyRules(next);
-                }}
-              />
-            </div>
-            <div className="privacy-row">
-              <span className="dim">제목 미저장 정규식 (쉼표 구분):</span>
-              <input
-                value={privacy.excludedTitlePatterns.join(", ")}
-                onChange={(e) => {
-                  const next = { ...privacy, excludedTitlePatterns: e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean) };
-                  setPrivacy(next);
-                  void setPrivacyRules(next);
-                }}
-              />
-            </div>
-            <div className="privacy-row">
-              <span className="dim">제목 치환 정규식 → [redacted] (쉼표 구분):</span>
-              <input
-                value={privacy.redactTitlePatterns.join(", ")}
-                onChange={(e) => {
-                  const next = { ...privacy, redactTitlePatterns: e.currentTarget.value.split(",").map((s) => s.trim()).filter(Boolean) };
-                  setPrivacy(next);
-                  void setPrivacyRules(next);
-                }}
-              />
-            </div>
-            <label className="row">
-              <input type="checkbox" checked={privacy.maskAllTitles} onChange={(e) => {
-                const next = { ...privacy, maskAllTitles: e.currentTarget.checked };
-                setPrivacy(next);
-                void setPrivacyRules(next);
-              }} />
-              모든 제목을 저장하지 않음
-            </label>
-            <div className="row">
-              <button className="btn" onClick={() => void (async () => {
-                setError(null);
-                try {
-                  const n = await redactExisting();
-                  setNotice(`기존 세션 ${n}개에 규칙을 적용했습니다.`);
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e));
-                }
-              })()}>
-                기존 세션에 적용
-              </button>
-            </div>
-            <div className="dim">규칙은 DB 저장 전에 적용됩니다. 제외한 원문은 어디에도 남지 않습니다.</div>
-          </section>
+          <PrivacyRulesPanel initial={privacy} healthy={privacyHealthy} onSaved={(rules) => { setPrivacy(rules); setPrivacyHealthy(true); }} />
         </div>
       ) : view === "timeline" ? (
         <div className="timeline">
