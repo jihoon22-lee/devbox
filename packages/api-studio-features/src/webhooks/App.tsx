@@ -1,3 +1,4 @@
+import { bodyPreview } from "./lib/body";
 import { isProductHosted } from "../transport";
 import { MockDraftReceiver } from "./MockDraftReceiver";
 import {
@@ -1402,7 +1403,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               <span className={`method ${request.method.toLowerCase()}`}>{request.method}</span>
               <span className="url">{request.url}</span>
               <span className="dim">{new Date(request.receivedAtMs).toLocaleTimeString()}</span>
-              {request.body && <pre className="body">{request.body.slice(0, 200)}</pre>}
+              {request.body && <pre className="body">{bodyPreview(request.body, request.bodyEncoding)}</pre>}
               {request.headers.some(([, value]) => value === "•••••") && (
                 <span className="masked">민감 헤더 마스킹됨</span>
               )}
@@ -1460,7 +1461,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                   <span className="dim">{formatFixtureTime(fixture.receivedAtMs)}</span>
                   <span className="masked">마스킹됨</span>
                 </div>
-                {fixture.body && <pre className="body">{fixture.body.slice(0, 200)}</pre>}
+                {fixture.body && <pre className="body">{bodyPreview(fixture.body, fixture.bodyEncoding)}</pre>}
                 <div className="fixture-actions">
                   <button
                     type="button"

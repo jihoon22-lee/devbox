@@ -1,3 +1,4 @@
+import type { BodyEncoding } from "./lib/body";
 import { componentInvoke } from "../transport";
 const invoke = componentInvoke("api-studio.webhooks");
 import { isTauri } from "./lib/isTauri";
@@ -14,6 +15,7 @@ export interface RequestRecord {
   headers: Array<[string, string]>;
   body: string;
   receivedAtMs: number;
+  bodyEncoding?: BodyEncoding;
 }
 
 export interface ResponseRule {
@@ -82,6 +84,7 @@ export interface CapturedFixture {
   headers: Array<[string, string]>;
   body: string;
   receivedAtMs: number;
+  bodyEncoding?: BodyEncoding;
 }
 
 export interface HandoffDispatch {
