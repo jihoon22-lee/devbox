@@ -34,6 +34,10 @@ vi.mock("./api", () => {
     { path: "image.png", is_dir: false },
   ];
   return {
+    loadNoteJournal: vi.fn().mockResolvedValue({ entries: [], otherVaultCount: 0 }),
+    saveNoteJournal: vi.fn().mockResolvedValue(undefined),
+    clearNoteJournal: vi.fn().mockResolvedValue(undefined),
+    discardOtherVaultJournal: vi.fn().mockResolvedValue(undefined),
     listTree: vi.fn(async () => TREE),
     listTags: vi.fn(async () => [] as string[]),
     readFile: vi.fn(async (path: string) => ({ content: path.endsWith(".md") ? "# Hello" : "binary-content", revision: "disk-1" })),
@@ -440,15 +444,16 @@ it("preserves a dirty note when Daily creation or a product open request is decl
   const { rerender } = render(<App/>);
   fireEvent.click(await screen.findByText("note.md"));
   await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe("# Hello"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "자동 저장" }));
   const content = document.querySelector<HTMLElement>(".cm-content")!;
   const editor = EditorView.findFromDOM(content)!;
   act(() => { editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: "# Unsaved note" } }); });
   fireEvent.click(screen.getByRole("button", { name: "일일 노트" }));
-  expect(confirm).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
   expect(dailyNote).not.toHaveBeenCalled();
   readFileMock.mockClear();
   rerender(<App openRequest={{ id: 1, path: "Journal/2024-02-29.md" }}/>);
-  expect(confirm).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
   expect(readFileMock).not.toHaveBeenCalled();
   expect(editor.state.doc.toString()).toBe("# Unsaved note");
 });

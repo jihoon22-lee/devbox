@@ -5,6 +5,10 @@ import App from "./App";
 import { analyzeWikilinks, backlinks, openInboundNote } from "./api";
 
 vi.mock("./api", () => ({
+  loadNoteJournal: vi.fn().mockResolvedValue({ entries: [], otherVaultCount: 0 }),
+  saveNoteJournal: vi.fn().mockResolvedValue(undefined),
+  clearNoteJournal: vi.fn().mockResolvedValue(undefined),
+  discardOtherVaultJournal: vi.fn().mockResolvedValue(undefined),
   listTree: vi.fn(async () => [
     { path: "Current.md", is_dir: false },
     { path: "Source.md", is_dir: false },
