@@ -69,11 +69,6 @@ pub enum Call {
         challenge: String,
     },
     ReadMigrationStatus {},
-    VerifyMigrationSources {},
-    ListMigrationBackups {},
-    VerifyMigrationBackup {
-        id: String,
-    },
     ReadOperations {},
     ReviewOperation {
         id: String,
@@ -310,9 +305,6 @@ pub fn validate_call(call: &Call) -> Result<()> {
         {
             return Err("peer_webhook_log_invalid");
         }
-        Call::VerifyMigrationBackup { id } if !commands::opaque_id(id) => {
-            return Err("peer_request_invalid");
-        }
         Call::ReadHealthStatus { challenge } if !commands::opaque_id(challenge) => {
             return Err("peer_request_invalid");
         }
@@ -516,34 +508,6 @@ mod tests {
         .is_err());
     }
     #[test]
-    fn backup_observation_is_control_center_only_and_paths_are_not_ids() {
-        for product in PRODUCTS {
-            for call in [
-                Call::ListMigrationBackups {},
-                Call::VerifyMigrationSources {},
-                Call::VerifyMigrationBackup {
-                    id: "owned-backup".into(),
-                },
-            ] {
-                let mut guard = Guard::new(
-                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
-                    "native-session",
-                )
-                .unwrap();
-                let mut input = request();
-                input.call = call;
-                assert_eq!(
-                    guard.authorize(&input, 1000).is_ok(),
-                    product == "control-center"
-                );
-            }
-        }
-        assert!(validate_call(&Call::VerifyMigrationBackup {
-            id: "../foreign".into()
-        })
-        .is_err());
-    }
-    #[test]
     fn observed_peer_role_scope_generation_deadline_and_replay_are_independent() {
         let mut guard = Guard::new(
             Peer::from_native("control-center", &"a".repeat(64), &"b".repeat(64)).unwrap(),
@@ -735,5 +699,21 @@ mod tests {
             frame.len() - 4
         );
         assert!(decode::<Request>(&frame[4..]).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod retired_transport_tests {
+    #[test]
+    fn retired_calls_no_longer_parse() {
+        for kind in [
+            "verifyMigrationSources",
+            "listMigrationBackups",
+            "verifyMigrationBackup",
+        ] {
+            let raw = format!(r#"{{"kind":"{kind}"}}"#);
+            assert!(serde_json::from_str::<super::Call>(&raw).is_err());
+        }
+        assert!(serde_json::from_str::<super::Call>(r#"{"kind":"readMigrationStatus"}"#).is_ok());
     }
 }

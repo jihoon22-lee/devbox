@@ -23,7 +23,6 @@ on:
       - 'crates/ports-engine/**'
       - 'crates/terminal-engine/**'
       - 'crates/api-protocols/**'
-      - 'crates/data-migration/**'
       - 'crates/webhook-core/**'
       - 'crates/transforms-core/**'
       - 'crates/http-client-engine/**'

@@ -221,7 +221,6 @@ pub mod health;
 
 pub mod migration_backup;
 
-pub mod migration_source;
 
 #[cfg(test)]
 mod tests {

@@ -10,13 +10,7 @@ pub(crate) fn handle(
     Box<dyn std::future::Future<Output = Result<serde_json::Value, &'static str>> + Send>,
 > {
     Box::pin(async move {
-        if matches!(
-            &call,
-            Call::ReadMigrationStatus {}
-                | Call::VerifyMigrationSources {}
-                | Call::ListMigrationBackups {}
-                | Call::VerifyMigrationBackup { .. }
-        ) {
+        if matches!(&call, Call::ReadMigrationStatus {}) {
             static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
                 std::sync::OnceLock::new();
             let permit = READERS
@@ -26,16 +20,7 @@ pub(crate) fn handle(
                 .map_err(|_| "migration_busy")?;
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                match call {
-                    Call::VerifyMigrationSources {} => crate::launcher_import::suite_sources(&app),
-                    Call::ListMigrationBackups {} => {
-                        crate::launcher_import::suite_backups(&app, None)
-                    }
-                    Call::VerifyMigrationBackup { id } => {
-                        crate::launcher_import::suite_backups(&app, Some(&id))
-                    }
-                    _ => crate::launcher_import::suite_status(&app),
-                }
+                store_status(&app)
             })
             .await
             .map_err(|_| "migration_unavailable")?;
@@ -78,4 +63,31 @@ pub(crate) fn handle(
         .await
         .map_err(|_| "shortcut_unavailable")?
     })
+}
+
+fn store_status(app: &tauri::AppHandle) -> Result<serde_json::Value, &'static str> {
+    let owner = app
+        .try_state::<crate::commands::PreferenceOwner>()
+        .ok_or("preferences_unavailable")?;
+    let _guard = owner.0.try_lock().map_err(|_| "preferences_busy")?;
+    let preferences = product_contract::launcher_preferences::Preferences::load(
+        &crate::commands::preferences_path(app)?,
+    )
+    .map_err(|_| "preferences_unavailable")?;
+    let shortcuts = app
+        .try_state::<crate::shortcuts::Owner>()
+        .ok_or("shortcut_unavailable")?
+        .load(app)
+        .map_err(|_| "shortcut_unavailable")?;
+    let native =
+        serde_json::to_vec(&(preferences, shortcuts)).map_err(|_| "migration_unavailable")?;
+    serde_json::to_value(product_contract::migration_status::Summary::new(
+        "control-center",
+        env!("CARGO_PKG_VERSION"),
+        false,
+        true,
+        false,
+        &native,
+    )?)
+    .map_err(|_| "migration_unavailable")
 }

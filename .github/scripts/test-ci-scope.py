@@ -70,7 +70,6 @@ assert resolve("packages/api-studio-features/src/requests/api.ts").frontend_apps
 assert resolve("crates/api-protocols/src/core/grpc.rs").rust_packages == ["api-protocols", "devbox-api-studio", "devbox-http-client-engine"]
 for crate, engine in [("webhook-core", "devbox-webhook-host"), ("transforms-core", "devbox-toolbox-engine")]:
     assert resolve(f"crates/{crate}/src/lib.rs").rust_packages == sorted([crate, engine, "devbox-api-studio"])
-assert resolve("crates/data-migration/src/lib.rs").rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-runtime-engine", "devbox-workspace"]
 for engine in ["runtime-engine", "ports-engine", "logs-engine"]:
     assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-workspace"])
 assert resolve("crates/http-client-engine/src/component.rs").rust_packages == ["devbox-api-studio", "devbox-http-client-engine"]

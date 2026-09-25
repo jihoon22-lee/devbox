@@ -10,7 +10,6 @@ members = [
     "crates/suite-runtime",
     "crates/product-contract",
     "crates/api-protocols",
-    "crates/data-migration",
     "crates/webhook-core",
     "crates/transforms-core",
     "crates/ports-engine",

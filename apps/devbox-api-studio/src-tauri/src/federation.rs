@@ -36,13 +36,7 @@ pub(crate) fn handle(
     _cancel: Option<Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
-        if matches!(
-            &call,
-            Call::ReadMigrationStatus {}
-                | Call::VerifyMigrationSources {}
-                | Call::ListMigrationBackups {}
-                | Call::VerifyMigrationBackup { .. }
-        ) {
+        if matches!(&call, Call::ReadMigrationStatus {}) {
             static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
                 std::sync::OnceLock::new();
             let permit = READERS
@@ -52,12 +46,7 @@ pub(crate) fn handle(
                 .map_err(|_| "migration_busy")?;
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                match call {
-                    Call::VerifyMigrationSources {}
-                    | Call::ListMigrationBackups {}
-                    | Call::VerifyMigrationBackup { .. } => Err("migration_retired"),
-                    _ => status_summary(),
-                }
+                status_summary()
             })
             .await
             .map_err(|_| "migration_unavailable")?;

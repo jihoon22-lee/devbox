@@ -23,7 +23,6 @@ tauri-plugin-dialog="2"
 tauri-plugin-opener="2"
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
 product-contract = { path = "../../../crates/product-contract" }
-data-migration = { path = "../../../crates/data-migration" }
 tauri = { version = "2", features = [] }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
