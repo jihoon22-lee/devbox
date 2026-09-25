@@ -2,7 +2,7 @@
 //!
 //! This crate deliberately does not inspect install roots, resolve executables,
 //! launch processes, or write the runtime copy. Those platform and mutation
-//! boundaries belong to `crates/launch` and Devbox Manager.
+//! boundaries belong to the native product hosts.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

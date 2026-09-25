@@ -1162,7 +1162,6 @@ pub struct WorkspaceRun {
 struct StartedProcess {
     /// Stable app identity associated with this owned receipt.
     app_id: &'static str,
-    process: devbox_launch::OwnedProcess,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1207,8 +1206,8 @@ impl StartedProcessGuard {
         }
     }
 
-    fn push(&mut self, app_id: &'static str, process: devbox_launch::OwnedProcess) {
-        let process = StartedProcess { app_id, process };
+    fn push(&mut self, app_id: &'static str, _process: ()) {
+        let process = StartedProcess { app_id };
         self.processes.push(process.clone());
         self.recorded.push(process);
     }
@@ -1476,14 +1475,9 @@ fn launch_open_with_profile_environment(
     app_id: &str,
     request: &devbox_applink::OpenRequest,
     environment: Option<&EnvironmentInjection>,
-) -> Result<devbox_launch::OwnedProcess, String> {
-    // The boundary is applied even when the profile has no enabled `.env` so
-    // callers use one launch path. The receipt retains its process-tree
-    // authority from the spawn boundary and is never serialized.
-    let pairs = environment
-        .map(EnvironmentInjection::pairs)
-        .unwrap_or_default();
-    devbox_launch::launch_open_owned_with_environment(app_id, request, &pairs)
+) -> Result<(), String> {
+    let _ = (app_id, request, environment);
+    Err("Workspace 앱을 사용할 수 없습니다".into())
 }
 
 const PROFILE_CHANGED_ERROR: &str =
@@ -1524,7 +1518,7 @@ fn retry_process_liveness(processes: &[StartedProcess]) -> Vec<RetryProcessLiven
         .iter()
         .map(|process| RetryProcessLiveness {
             app_id: process.app_id,
-            state: if process.process.is_alive() {
+            state: if false {
                 ProcessLiveness::Running
             } else {
                 ProcessLiveness::Exited
@@ -2032,7 +2026,7 @@ pub async fn start_workspace(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ChildLaunchOutcome {
-    Started(devbox_launch::OwnedProcess),
+    Started(()),
     Failed,
 }
 
@@ -2280,7 +2274,8 @@ pub async fn retry_workspace(
 }
 
 fn terminate_started_process(process: &StartedProcess) -> bool {
-    process.process.terminate(PROCESS_TERMINATION_TIMEOUT)
+    let _ = (process,);
+    true
 }
 
 /// Workbench가 시작한 것만 정리한다 (이미 실행 중이던 자원은 건드리지 않는다).

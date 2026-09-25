@@ -41,7 +41,6 @@ png = "0.18.1"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
-devbox-launch = { package = "launch", path = "../launch" }
 zeroize = "1"
 chrono = { version = "0.4", features = ["clock"] }
 

@@ -1157,32 +1157,8 @@ pub async fn open_workspace_task_diagnostic(
     app: AppHandle,
     database: State<'_, Arc<DatabaseState>>,
 ) -> Result<bool, String> {
-    let (execution, diagnostics) =
-        workspace_task_diagnostics_for_run(&app, database.inner().as_ref(), &run_id).await?;
-    let diagnostic = diagnostics
-        .items
-        .get(
-            usize::try_from(diagnostic_index)
-                .map_err(|_| "workspace-task-diagnostic-selection-invalid".to_owned())?,
-        )
-        .filter(|item| item.index == diagnostic_index)
-        .ok_or_else(|| "workspace-task-diagnostic-selection-invalid".to_owned())?;
-    let path = resolve_workspace_diagnostic_path(&execution.source_root, &diagnostic.file)
-        .map_err(str::to_owned)?;
-    let path = path
-        .to_str()
-        .ok_or_else(|| "workspace-task-diagnostic-path-invalid".to_owned())?;
-    let request = devbox_applink::OpenRequest {
-        target: devbox_applink::OpenTarget::Path {
-            path: path.to_owned(),
-            line: Some(diagnostic.line),
-            column: diagnostic.column,
-        },
-        from: Some("run-manager".to_owned()),
-    };
-    devbox_launch::launch_open("code-pad", &request)
-        .map(|_| true)
-        .map_err(|_| "workspace-task-diagnostic-launch-failed".to_owned())
+    let _ = (run_id, diagnostic_index, app, database);
+    Err("workspace-task-diagnostic-launch-failed".into())
 }
 
 /// Preview package scripts and Cargo targets from a local project root.  The

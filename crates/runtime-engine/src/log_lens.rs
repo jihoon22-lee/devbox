@@ -43,9 +43,7 @@ fn now_ms() -> u64 {
 }
 
 fn log_lens_is_installed() -> bool {
-    devbox_launch::installed_targets(HANDOFF_CAPABILITY)
-        .iter()
-        .any(|target| target.id == log_handoff::TARGET_APP)
+    false
 }
 
 fn open_request(descriptor: &HandoffDescriptor) -> OpenRequest {
@@ -119,45 +117,8 @@ pub fn open_run_log_in_log_lens(
     app: AppHandle,
     state: State<'_, Arc<DatabaseState>>,
 ) -> Result<LogLensDispatch, String> {
-    let _dispatch_guard = dispatch_lock()?;
-    let run = state
-        .get_run(&run_id)
-        .map_err(map_storage_error)?
-        .ok_or_else(|| "run-not-found".to_string())?;
-    let data_root =
-        crate::component::data_root(&app).map_err(|_| "logs-unavailable".to_string())?;
-    validate_run_log_dir_for_handoff(&data_root, &run_id, run.log_dir.as_deref())?;
-    if !log_lens_is_installed() {
-        return Err("log-lens-unavailable".to_string());
-    }
-    let payload = log_handoff::payload_for_run(&run_id, stream)
-        .map_err(|_| "log-source-invalid".to_string())?;
-    let now = now_ms();
-    if now == 0 {
-        return Err("handoff-unavailable".to_string());
-    }
-    let store = handoff_store();
-    let publication = store
-        .create_with_publication(
-            CreateHandoff {
-                kind: log_handoff::HANDOFF_KIND.to_string(),
-                source_app: log_handoff::SOURCE_APP.to_string(),
-                target_app: Some(log_handoff::TARGET_APP.to_string()),
-                payload,
-            },
-            now,
-        )
-        .map_err(|_| "handoff-unavailable".to_string())?;
-    let request = open_request(&publication.descriptor);
-    // Do not leave a descriptor that no caller can reliably associate with
-    // this failed launch.  The cleanup re-reads the exact immutable envelope
-    // before removing it and never touches claimed state.
-    launch_or_cleanup(&store, &publication, || {
-        devbox_launch::launch_open(log_handoff::TARGET_APP, &request)
-    })?;
-    Ok(LogLensDispatch {
-        handoff_id: publication.descriptor.id,
-    })
+    let _ = (run_id, stream, app, state);
+    Err("log-lens-unavailable".into())
 }
 
 /// Typed product adapter; native admission precedes this existing command.
@@ -253,25 +214,6 @@ mod tests {
         assert_eq!(
             validate_run_log_dir_for_handoff(root.path(), "run-1", Some("logs/runs/other")),
             Err("logs-unavailable".to_string())
-        );
-    }
-
-    #[test]
-    fn applink_argv_contains_only_the_opaque_handoff_reference() {
-        let request = open_request(&HandoffDescriptor {
-            id: "a".repeat(32),
-            kind: log_handoff::HANDOFF_KIND.into(),
-        });
-        assert_eq!(
-            devbox_launch::open_argv(&request).expect("valid handoff AppLink request"),
-            vec![
-                "--handoff-kind",
-                "log-source/v1",
-                "--handoff-id",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "--from",
-                "run-manager",
-            ]
         );
     }
 }

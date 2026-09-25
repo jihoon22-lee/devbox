@@ -6,7 +6,9 @@
 //! preview is read-only; apply re-runs every check and uses the observed
 //! locator revision as a compare-and-swap guard.
 
-use devbox_launch::{parse_install_root_locator, InstallRootLocator, INSTALL_ROOT_SCHEMA_VERSION};
+use super::install_root::{
+    parse_install_root_locator, InstallRootLocator, INSTALL_ROOT_SCHEMA_VERSION,
+};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;

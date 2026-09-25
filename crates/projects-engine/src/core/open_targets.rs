@@ -1,7 +1,6 @@
 use crate::core::profile::ProjectProfile;
 use devbox_applink::{OpenRequest, OpenTarget};
 use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
-use devbox_launch::InstalledTarget;
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -35,48 +34,6 @@ impl WorkbenchOpenTarget {
             from: Some("workbench".to_string()),
         }
     }
-}
-
-/// Catalog capability와 실제 설치 executable의 교집합을 profile menu용
-/// 공개 정보로 줄인다. 같은 app이 workspace도 받으면 더 구체적인 payload를
-/// 우선하고 source app은 제외한다.
-pub fn select_open_targets(
-    source_app_id: &str,
-    path_targets: Vec<InstalledTarget>,
-    workspace_targets: Vec<InstalledTarget>,
-) -> Vec<WorkbenchOpenTarget> {
-    let workspace_ids = workspace_targets
-        .iter()
-        .map(|target| target.id.clone())
-        .collect::<HashSet<_>>();
-    let mut seen = HashSet::new();
-    let mut targets = path_targets
-        .into_iter()
-        .filter(|target| target.id != source_app_id)
-        .map(|target| {
-            seen.insert(target.id.clone());
-            WorkbenchOpenTarget {
-                payload_kind: if workspace_ids.contains(&target.id) {
-                    OpenPayloadKind::Workspace
-                } else {
-                    OpenPayloadKind::Path
-                },
-                id: target.id,
-                display_name: target.display_name,
-            }
-        })
-        .collect::<Vec<_>>();
-    targets.extend(
-        workspace_targets
-            .into_iter()
-            .filter(|target| target.id != source_app_id && seen.insert(target.id.clone()))
-            .map(|target| WorkbenchOpenTarget {
-                id: target.id,
-                display_name: target.display_name,
-                payload_kind: OpenPayloadKind::Workspace,
-            }),
-    );
-    targets
 }
 
 fn safe_windows_path(profile: &ProjectProfile) -> Option<String> {
@@ -147,14 +104,6 @@ mod tests {
     use crate::core::profile::WslProfile;
     use std::path::PathBuf;
 
-    fn installed(id: &str) -> InstalledTarget {
-        InstalledTarget {
-            id: id.to_string(),
-            display_name: format!("Display {id}"),
-            executable: PathBuf::from(format!("C:/installed/{id}.exe")),
-        }
-    }
-
     fn profile(windows: Option<&str>, posix: Option<&str>) -> ProjectProfile {
         let mut profile = ProjectProfile::new("devbox");
         profile.id = "profile-1".to_string();
@@ -164,40 +113,6 @@ mod tests {
             path: path.to_string(),
         });
         profile
-    }
-
-    #[test]
-    fn catalog_order_drives_targets_and_workspace_is_preferred() {
-        let targets = select_open_targets(
-            "workbench",
-            vec![
-                installed("code-pad"),
-                installed("future-app"),
-                installed("workbench"),
-            ],
-            vec![installed("code-pad"), installed("workspace-only")],
-        );
-
-        assert_eq!(
-            targets,
-            vec![
-                WorkbenchOpenTarget {
-                    id: "code-pad".into(),
-                    display_name: "Display code-pad".into(),
-                    payload_kind: OpenPayloadKind::Workspace,
-                },
-                WorkbenchOpenTarget {
-                    id: "future-app".into(),
-                    display_name: "Display future-app".into(),
-                    payload_kind: OpenPayloadKind::Path,
-                },
-                WorkbenchOpenTarget {
-                    id: "workspace-only".into(),
-                    display_name: "Display workspace-only".into(),
-                    payload_kind: OpenPayloadKind::Workspace,
-                },
-            ]
-        );
     }
 
     #[test]

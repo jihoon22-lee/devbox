@@ -28,7 +28,6 @@ serde_json = "1"
 devbox-wsl = { package = "wsl", path = "../wsl" }
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
-devbox-launch = { package = "launch", path = "../launch" }
 devbox-git = { package = "git", path = "../git" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-secrets = { package = "secrets", path = "../secrets" }

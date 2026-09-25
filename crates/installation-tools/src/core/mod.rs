@@ -5,4 +5,5 @@ pub mod related_tools;
 pub mod support_bundle;
 pub mod url_policy;
 
+pub mod install_root;
 pub mod redaction;

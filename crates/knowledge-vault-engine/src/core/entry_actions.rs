@@ -1,5 +1,4 @@
 use devbox_applink::{OpenRequest, OpenTarget};
-use devbox_launch::InstalledTarget;
 use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 
@@ -11,20 +10,6 @@ const MISSING_ENTRY: &str = "Knowledge 항목을 찾을 수 없습니다";
 pub struct KnowledgeOpenTarget {
     pub id: String,
     pub display_name: String,
-}
-
-pub fn select_open_targets(
-    source_app_id: &str,
-    path_targets: Vec<InstalledTarget>,
-) -> Vec<KnowledgeOpenTarget> {
-    path_targets
-        .into_iter()
-        .filter(|target| target.id != source_app_id)
-        .map(|target| KnowledgeOpenTarget {
-            id: target.id,
-            display_name: target.display_name,
-        })
-        .collect()
 }
 
 fn validate_relative(rel: &str) -> Result<(), &'static str> {
@@ -131,14 +116,6 @@ pub fn prepare_open_request(
 mod tests {
     use super::*;
 
-    fn installed(id: &str) -> InstalledTarget {
-        InstalledTarget {
-            id: id.to_string(),
-            display_name: format!("Display {id}"),
-            executable: PathBuf::from(format!("C:/installed/{id}.exe")),
-        }
-    }
-
     #[test]
     fn canonical_entry_stays_inside_root_and_new_entry_checks_existing_ancestor() {
         let root = tempfile::tempdir().unwrap();
@@ -177,42 +154,5 @@ mod tests {
         symlink(&broken_target, root.path().join("broken")).unwrap();
         assert!(validated_new_entry(root.path(), "broken/new.md").is_err());
         assert!(!broken_target.join("new.md").exists());
-    }
-
-    #[test]
-    fn target_list_is_catalog_ordered_and_request_requires_selected_target() {
-        let targets = select_open_targets(
-            "knowledge-base",
-            vec![
-                installed("code-pad"),
-                installed("knowledge-base"),
-                installed("workbench"),
-            ],
-        );
-        assert_eq!(
-            targets
-                .iter()
-                .map(|target| target.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["code-pad", "workbench"]
-        );
-
-        let path = std::env::temp_dir().join("knowledge-entry.md");
-        let (_, request) = prepare_open_request(&targets, "CODE-PAD", &path).unwrap();
-        assert_eq!(
-            request,
-            OpenRequest {
-                target: OpenTarget::Path {
-                    path: path.to_string_lossy().into_owned(),
-                    line: None,
-                    column: None,
-                },
-                from: Some("knowledge-base".into()),
-            }
-        );
-        assert_eq!(
-            prepare_open_request(&targets, "missing-secret", &path).unwrap_err(),
-            "사용 가능한 대상 앱이 아닙니다"
-        );
     }
 }

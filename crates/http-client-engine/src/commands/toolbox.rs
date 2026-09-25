@@ -25,42 +25,8 @@ pub struct ToolboxDispatch {
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn send_selection_to_toolbox(text: String) -> Result<ToolboxDispatch, String> {
-    let text = Zeroizing::new(text);
-    let (payload, redacted) = ToolboxTextPayload::from_selected_text(SOURCE_APP, text.as_str())
-        .map_err(|_| INVALID_SELECTION.to_string())?;
-    if !devbox_launch::installed_targets(&format!("handoff:{TOOLBOX_TEXT_HANDOFF_KIND}"))
-        .into_iter()
-        .any(|target| target.id == TOOLBOX_TEXT_TARGET_APP)
-    {
-        return Err(TARGET_UNAVAILABLE.to_string());
-    }
-
-    let now = now_ms().ok_or_else(|| DELIVERY_FAILED.to_string())?;
-    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
-    let descriptor = store
-        .create(
-            CreateHandoff {
-                kind: TOOLBOX_TEXT_HANDOFF_KIND.to_string(),
-                source_app: SOURCE_APP.to_string(),
-                target_app: Some(TOOLBOX_TEXT_TARGET_APP.to_string()),
-                payload: serde_json::to_value(payload).map_err(|_| DELIVERY_FAILED.to_string())?,
-            },
-            now,
-        )
-        .map_err(|_| DELIVERY_FAILED.to_string())?;
-    let request = OpenRequest {
-        target: descriptor.clone().into(),
-        from: Some(SOURCE_APP.to_string()),
-    };
-    if devbox_launch::launch_open(TOOLBOX_TEXT_TARGET_APP, &request).is_err() {
-        let _ = store.revoke_pending(&descriptor, SOURCE_APP);
-        return Err(DELIVERY_FAILED.to_string());
-    }
-
-    Ok(ToolboxDispatch {
-        handoff_id: descriptor.id,
-        redacted,
-    })
+    let _ = (text,);
+    Err(TARGET_UNAVAILABLE.into())
 }
 
 fn now_ms() -> Option<u64> {

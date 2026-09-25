@@ -27,7 +27,6 @@ tokio = { version = "1", features = ["rt", "time"] }
 wsl = { path = "../wsl" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
-devbox-launch = { package = "launch", path = "../launch" }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 dirs = "6.0.0"
 zeroize = "1"

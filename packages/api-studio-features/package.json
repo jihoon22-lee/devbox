@@ -7,9 +7,7 @@
     "./requests": "./src/requests/App.tsx",
     "./webhooks": "./src/webhooks/App.tsx",
     "./transforms": "./src/transforms/App.tsx",
-    "./transport": "./src/transport.ts",
-    "./migration": "./src/migration/apiStorage.ts",
-    "./migration-keys": "./src/migration/keys.ts"
+    "./transport": "./src/transport.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

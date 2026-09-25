@@ -140,7 +140,7 @@ fn validate_owner(provenance: &Provenance, owner: SecretOwner) -> Result<(), Pro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use applink::{build_argv, parse_argv, HandoffError, OpenTarget};
+    use applink::{HandoffError, OpenTarget};
     use serde_json::{json, Value};
 
     fn fixture() -> Value {
@@ -172,9 +172,13 @@ mod tests {
         assert!(!value.to_string().contains("synthetic-fixture"));
         value["link"]["target"]["id"] = fixture()["artifact"]["link"]["target"]["id"].clone();
         assert_eq!(value, fixture()["artifact"]);
-        let mut argv = vec!["fixture.exe".into()];
-        argv.extend(build_argv(&artifact.link).unwrap());
-        assert_eq!(parse_argv(&argv).unwrap(), Some(artifact.link.clone()));
+        assert_eq!(
+            serde_json::from_value::<applink::OpenRequest>(
+                serde_json::to_value(&artifact.link).unwrap()
+            )
+            .unwrap(),
+            artifact.link
+        );
         assert_eq!(
             store.claim(id, kind, "knowledge-base", 1001),
             Err(HandoffError::WrongTarget)

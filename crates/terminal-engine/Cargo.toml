@@ -30,7 +30,6 @@ tokio = { version = "1.53.1", features = ["process", "time", "macros", "rt", "io
 devbox-wsl = { package = "wsl", path = "../wsl" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
-devbox-launch = { package = "launch", path = "../launch" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 uuid = { version = "1", features = ["v4"] }

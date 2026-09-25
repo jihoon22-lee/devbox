@@ -56,7 +56,7 @@ pub fn offer_product_open(
     if !is_product() {
         return Err("component_state_unavailable".into());
     }
-    devbox_applink::build_argv(&request).map_err(|_| "component_args_invalid")?;
+    devbox_applink::validate_request(&request).map_err(|_| "component_args_invalid")?;
     app.try_state::<crate::applink::PendingOpen>()
         .ok_or("component_state_unavailable")?
         .set(request.clone());

@@ -43,50 +43,8 @@ pub struct KnowledgeDraftDispatch {
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, String> {
-    let output = zeroize::Zeroizing::new(output);
-    let payload =
-        build_api_request_payload(output.as_str()).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
-    let target_available =
-        devbox_launch::installed_targets(&format!("handoff:{API_REQUEST_HANDOFF_KIND}"))
-            .into_iter()
-            .any(|target| target.id == CONSUMER_APP_ID);
-    if !target_available {
-        return Err(API_TARGET_UNAVAILABLE_ERROR.to_string());
-    }
-
-    let created_at_ms = handoff_now_ms().ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
-    let expires_at_ms = created_at_ms
-        .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
-        .ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
-    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
-    let descriptor = store
-        .create(
-            CreateHandoff {
-                kind: API_REQUEST_HANDOFF_KIND.to_string(),
-                source_app: PRODUCER_APP_ID.to_string(),
-                target_app: Some(CONSUMER_APP_ID.to_string()),
-                payload: serde_json::to_value(payload)
-                    .map_err(|_| HANDOFF_CREATE_ERROR.to_string())?,
-            },
-            created_at_ms,
-        )
-        .map_err(map_handoff_create_error)?;
-    let request = OpenRequest {
-        target: descriptor.clone().into(),
-        from: Some(PRODUCER_APP_ID.to_string()),
-    };
-    if devbox_launch::launch_open(CONSUMER_APP_ID, &request).is_err() {
-        let _ = store.revoke_pending(&descriptor, PRODUCER_APP_ID);
-        return Err(API_LAUNCH_ERROR.to_string());
-    }
-
-    Ok(ApiHandoffDispatch {
-        handoff_id: descriptor.id,
-        producer_id: PRODUCER_APP_ID.to_string(),
-        consumer_id: CONSUMER_APP_ID.to_string(),
-        created_at_ms,
-        expires_at_ms,
-    })
+    let _ = (output,);
+    Err(API_TARGET_UNAVAILABLE_ERROR.into())
 }
 
 /// Publish the current visible transform result as a strict Knowledge draft.
@@ -96,45 +54,8 @@ pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, 
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn create_knowledge_draft_handoff(output: String) -> Result<KnowledgeDraftDispatch, String> {
-    let output = Zeroizing::new(output);
-    let created_date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let (payload, redacted) =
-        crate::core::knowledge_draft::build_payload(output.as_str(), &created_date)
-            .map_err(|_| KNOWLEDGE_HANDOFF_ERROR.to_string())?;
-    let kind = crate::core::knowledge_draft::HANDOFF_KIND;
-    let target = crate::core::knowledge_draft::TARGET_APP;
-    if !devbox_launch::installed_targets(&format!("handoff:{kind}"))
-        .into_iter()
-        .any(|candidate| candidate.id == target)
-    {
-        return Err(KNOWLEDGE_TARGET_UNAVAILABLE_ERROR.to_string());
-    }
-    let now = handoff_now_ms().ok_or_else(|| KNOWLEDGE_HANDOFF_ERROR.to_string())?;
-    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
-    let descriptor = store
-        .create(
-            CreateHandoff {
-                kind: kind.to_string(),
-                source_app: crate::core::knowledge_draft::SOURCE_APP.to_string(),
-                target_app: Some(target.to_string()),
-                payload: serde_json::to_value(payload)
-                    .map_err(|_| KNOWLEDGE_HANDOFF_ERROR.to_string())?,
-            },
-            now,
-        )
-        .map_err(|_| KNOWLEDGE_HANDOFF_ERROR.to_string())?;
-    let request = OpenRequest {
-        target: descriptor.clone().into(),
-        from: Some(crate::core::knowledge_draft::SOURCE_APP.to_string()),
-    };
-    if devbox_launch::launch_open(target, &request).is_err() {
-        let _ = store.revoke_pending(&descriptor, crate::core::knowledge_draft::SOURCE_APP);
-        return Err(KNOWLEDGE_HANDOFF_ERROR.to_string());
-    }
-    Ok(KnowledgeDraftDispatch {
-        handoff_id: descriptor.id,
-        redacted,
-    })
+    let _ = (output,);
+    Err(KNOWLEDGE_TARGET_UNAVAILABLE_ERROR.into())
 }
 
 fn map_handoff_create_error(error: HandoffError) -> String {

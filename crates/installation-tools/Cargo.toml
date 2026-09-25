@@ -36,7 +36,6 @@ devbox-git = { package = "git", path = "../git" }
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-catalog = { package = "catalog", path = "../catalog" }
-devbox-launch = { package = "launch", path = "../launch" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

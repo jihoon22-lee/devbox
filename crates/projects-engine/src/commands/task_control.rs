@@ -67,51 +67,8 @@ pub fn dispatch_workspace_task_control(
     action: TaskControlAction,
     expected_revision: String,
 ) -> Result<TaskControlDispatch, String> {
-    // Treat the renderer selection as a hint. Re-read the strict native
-    // snapshot before publishing so an injected renderer value cannot become
-    // durable handoff/receipt metadata, even though Run Manager also verifies
-    // the request independently.
-    let controls = list_workspace_task_controls()?;
-    authorize_dispatch(&controls, &task_id, action, &expected_revision).map_err(str::to_owned)?;
-    let request = TaskControlRequest {
-        schema_version: TASK_CONTROL_SCHEMA_VERSION,
-        request_id: uuid::Uuid::new_v4().simple().to_string(),
-        task_id,
-        action,
-        expected_revision,
-    };
-    let payload = request.to_payload().map_err(str::to_owned)?;
-    let now = now_ms();
-    if now == 0 {
-        return Err("task-control-unavailable".to_owned());
-    }
-    let store = handoff_store();
-    let publication = store
-        .create_with_publication(
-            CreateHandoff {
-                kind: TASK_CONTROL_HANDOFF_KIND.to_owned(),
-                source_app: TASK_CONTROL_SOURCE_APP.to_owned(),
-                target_app: Some(TASK_CONTROL_TARGET_APP.to_owned()),
-                payload,
-            },
-            now,
-        )
-        .map_err(|_| "task-control-unavailable".to_owned())?;
-    let open = OpenRequest {
-        target: publication.descriptor.clone().into(),
-        from: Some(TASK_CONTROL_SOURCE_APP.to_owned()),
-    };
-    if devbox_launch::launch_open(TASK_CONTROL_TARGET_APP, &open).is_err() {
-        match store.remove_pending(&publication) {
-            Ok(()) | Err(HandoffError::Missing) => {}
-            Err(_) => return Err("task-control-cleanup-failed".to_owned()),
-        }
-        return Err("task-control-run-manager-unavailable".to_owned());
-    }
-    Ok(TaskControlDispatch {
-        request_id: request.request_id,
-        handoff_id: publication.descriptor.id,
-    })
+    let _ = (task_id, action, expected_revision);
+    Err("task-control-run-manager-unavailable".into())
 }
 
 fn authorize_dispatch(

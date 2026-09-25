@@ -1,16 +1,12 @@
 use crate::commands::workspace::load_store;
 use crate::core::open_targets::{
     actionable_targets, prepare_open_request, profile_path as safe_profile_path,
-    select_open_targets, WorkbenchOpenTarget,
+    WorkbenchOpenTarget,
 };
 use crate::core::profile::validate_profile_id;
 
 fn available_targets() -> Vec<WorkbenchOpenTarget> {
-    select_open_targets(
-        "workbench",
-        devbox_launch::installed_targets("path"),
-        devbox_launch::installed_targets("workspace"),
-    )
+    Vec::new()
 }
 
 fn profile(
@@ -50,15 +46,8 @@ pub fn open_profile_in(
     profile_id: String,
     app_id: String,
 ) -> Result<(), String> {
-    let profile = profile(&app, &profile_id)?;
-    let targets = actionable_targets(&profile, available_targets());
-    let (target_id, request) = prepare_open_request(&profile, &targets, &app_id)
-        .map_err(|_| "선택한 앱으로 프로필을 열 수 없습니다".to_string())?;
-    // Context-menu launches do not apply the reviewed project `.env`; only
-    // the explicit Start Workspace transition uses that overlay.
-    devbox_launch::launch_open(&target_id, &request)
-        .map(|_| ())
-        .map_err(|_| "선택한 앱으로 프로필을 열 수 없습니다".to_string())
+    let _ = (app, profile_id, app_id);
+    Err("provider_unavailable".into())
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.

@@ -45,7 +45,6 @@ dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
-devbox-launch = { package = "launch", path = "../launch" }
 tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "process", "sync", "time"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [

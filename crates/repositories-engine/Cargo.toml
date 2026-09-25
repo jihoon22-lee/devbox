@@ -28,7 +28,6 @@ tauri-plugin-opener = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 devbox-wsl = { package = "wsl", path = "../wsl" }
-devbox-launch = { package = "launch", path = "../launch" }
 devbox-git = { package = "git", path = "../git" }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }

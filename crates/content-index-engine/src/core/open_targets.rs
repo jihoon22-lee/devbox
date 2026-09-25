@@ -1,5 +1,4 @@
 use devbox_applink::{OpenRequest, OpenTarget};
-use devbox_launch::InstalledTarget;
 use serde::Serialize;
 use std::path::{Component, Path};
 
@@ -21,22 +20,6 @@ impl EverythingOpenTarget {
             from: Some("everything-plus".to_string()),
         }
     }
-}
-
-/// Catalog `path` capability와 실제 설치 상태의 교집합을 Everything+ 메뉴용
-/// 공개 정보로 줄인다. 실행 파일 경로는 frontend로 보내지 않는다.
-pub fn select_open_targets(
-    source_app_id: &str,
-    path_targets: Vec<InstalledTarget>,
-) -> Vec<EverythingOpenTarget> {
-    path_targets
-        .into_iter()
-        .filter(|target| target.id != source_app_id)
-        .map(|target| EverythingOpenTarget {
-            id: target.id,
-            display_name: target.display_name,
-        })
-        .collect()
 }
 
 /// Frontend가 보낸 app id와 검색 결과 경로를 실행 직전에 다시 검증한다.
@@ -76,14 +59,6 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn installed(id: &str) -> InstalledTarget {
-        InstalledTarget {
-            id: id.to_string(),
-            display_name: format!("Display {id}"),
-            executable: PathBuf::from(format!("C:/installed/{id}.exe")),
-        }
-    }
-
     fn temp_file() -> PathBuf {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -95,32 +70,6 @@ mod tests {
         ));
         std::fs::write(&path, b"fixture").unwrap();
         path
-    }
-
-    #[test]
-    fn catalog_order_drives_targets_and_excludes_the_source() {
-        let targets = select_open_targets(
-            "everything-plus",
-            vec![
-                installed("code-pad"),
-                installed("future-app"),
-                installed("everything-plus"),
-            ],
-        );
-
-        assert_eq!(
-            targets,
-            vec![
-                EverythingOpenTarget {
-                    id: "code-pad".into(),
-                    display_name: "Display code-pad".into(),
-                },
-                EverythingOpenTarget {
-                    id: "future-app".into(),
-                    display_name: "Display future-app".into(),
-                },
-            ]
-        );
     }
 
     #[test]

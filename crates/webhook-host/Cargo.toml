@@ -31,7 +31,6 @@ uuid = { version = "1", features = ["v4"] }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
-devbox-launch = { package = "launch", path = "../launch" }
 
 [dev-dependencies]
 tempfile = "3"

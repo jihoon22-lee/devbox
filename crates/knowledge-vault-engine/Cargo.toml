@@ -37,7 +37,6 @@ notify = "8.2.0"
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }
-devbox-launch = { package = "launch", path = "../launch" }
 devbox-wsl = { package = "wsl", path = "../wsl" }
 product-contract = { path = "../product-contract" }
 

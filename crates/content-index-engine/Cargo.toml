@@ -37,6 +37,5 @@ zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 filesystem = { path = "../filesystem" }
 search = { path = "../search" }
 devbox-applink = { package = "applink", path = "../applink" }
-devbox-launch = { package = "launch", path = "../launch" }
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-wsl = { package = "wsl", path = "../wsl" }

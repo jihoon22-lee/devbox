@@ -1101,48 +1101,11 @@ pub(crate) fn prepare_log_handoff(
 }
 
 fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {
-    let target_available =
-        devbox_launch::installed_targets(&format!("handoff:{API_REQUEST_HANDOFF_KIND}"))
-            .into_iter()
-            .any(|target| target.id == CONSUMER_APP_ID);
-    if !target_available {
-        return Err(API_TARGET_UNAVAILABLE_ERROR.to_string());
+    let _ = (fixture,);
+    if !api_handoff_target_available() {
+        return Err(API_TARGET_UNAVAILABLE_ERROR.into());
     }
-
-    let payload = build_api_request_payload(&fixture).map_err(str::to_string)?;
-    let created_at_ms = handoff_now_ms().ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
-    let expires_at_ms = created_at_ms
-        .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
-        .ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
-    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
-    let publication = store
-        .create_with_publication(
-            CreateHandoff {
-                kind: API_REQUEST_HANDOFF_KIND.to_string(),
-                source_app: PRODUCER_APP_ID.to_string(),
-                target_app: Some(CONSUMER_APP_ID.to_string()),
-                payload: to_value(payload).map_err(|_| HANDOFF_CREATE_ERROR.to_string())?,
-            },
-            created_at_ms,
-        )
-        .map_err(map_handoff_create_error)?;
-    let request = OpenRequest {
-        target: publication.descriptor.clone().into(),
-        from: Some(PRODUCER_APP_ID.to_string()),
-    };
-    if devbox_launch::launch_open(CONSUMER_APP_ID, &request).is_err() {
-        store
-            .remove_pending(&publication)
-            .map_err(|_| HANDOFF_CLEANUP_ERROR.to_string())?;
-        return Err(API_LAUNCH_ERROR.to_string());
-    }
-    Ok(HandoffDispatch {
-        handoff_id: publication.descriptor.id,
-        producer_id: PRODUCER_APP_ID.to_string(),
-        consumer_id: CONSUMER_APP_ID.to_string(),
-        created_at_ms,
-        expires_at_ms,
-    })
+    Err(API_TARGET_UNAVAILABLE_ERROR.into())
 }
 
 /// Publish a bounded, credential-redacted display projection to Log Lens.
@@ -1191,56 +1154,8 @@ pub fn send_fixture_to_log_lens(
 }
 
 fn publish_log_lens_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {
-    let target_available =
-        devbox_launch::installed_targets(&format!("handoff:{WEBHOOK_LOG_HANDOFF_KIND}"))
-            .into_iter()
-            .any(|target| target.id == WEBHOOK_LOG_TARGET_APP);
-    if !target_available {
-        return Err(LOG_LENS_TARGET_UNAVAILABLE_ERROR.to_string());
-    }
-    let payload = webhook_log_payload(
-        &fixture.method,
-        &fixture.url,
-        fixture.received_at_ms,
-        &fixture.headers,
-        &log_body(&fixture),
-    )
-    .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
-    let created_at_ms =
-        handoff_now_ms().ok_or_else(|| LOG_LENS_HANDOFF_CREATE_ERROR.to_string())?;
-    let expires_at_ms = created_at_ms
-        .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
-        .ok_or_else(|| LOG_LENS_HANDOFF_CREATE_ERROR.to_string())?;
-    let store = HandoffStore::new(handoff_root_in(&devbox_integration::common_root()));
-    let publication = store
-        .create_with_publication(
-            CreateHandoff {
-                kind: WEBHOOK_LOG_HANDOFF_KIND.to_string(),
-                source_app: PRODUCER_APP_ID.to_string(),
-                target_app: Some(WEBHOOK_LOG_TARGET_APP.to_string()),
-                payload: to_value(payload)
-                    .map_err(|_| LOG_LENS_HANDOFF_CREATE_ERROR.to_string())?,
-            },
-            created_at_ms,
-        )
-        .map_err(map_log_lens_handoff_create_error)?;
-    let request = OpenRequest {
-        target: publication.descriptor.clone().into(),
-        from: Some(PRODUCER_APP_ID.to_string()),
-    };
-    if devbox_launch::launch_open(WEBHOOK_LOG_TARGET_APP, &request).is_err() {
-        store
-            .remove_pending(&publication)
-            .map_err(|_| HANDOFF_CLEANUP_ERROR.to_string())?;
-        return Err(LOG_LENS_LAUNCH_ERROR.to_string());
-    }
-    Ok(HandoffDispatch {
-        handoff_id: publication.descriptor.id,
-        producer_id: PRODUCER_APP_ID.to_string(),
-        consumer_id: WEBHOOK_LOG_TARGET_APP.to_string(),
-        created_at_ms,
-        expires_at_ms,
-    })
+    let _ = (fixture,);
+    Err(LOG_LENS_TARGET_UNAVAILABLE_ERROR.into())
 }
 
 fn map_handoff_create_error(error: HandoffError) -> String {
@@ -1982,5 +1897,16 @@ mod tests {
         assert!(!response.contains("99999999"));
         assert!(state.history.lock().unwrap().list_masked().is_empty());
         stop_test_listener(&state, &running, thread);
+    }
+}
+
+fn api_handoff_target_available() -> bool {
+    false
+}
+#[cfg(test)]
+mod retired_handoff_tests {
+    #[test]
+    fn external_api_handoff_is_unavailable_without_a_launcher() {
+        assert!(!super::api_handoff_target_available());
     }
 }

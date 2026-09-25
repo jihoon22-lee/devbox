@@ -34,7 +34,6 @@ members = [
     "crates/search",
     "crates/integration",
     "crates/secrets",
-    "crates/launch",
     "crates/git",
     "crates/applink",
     "crates/catalog",

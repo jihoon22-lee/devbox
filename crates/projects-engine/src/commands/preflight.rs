@@ -358,13 +358,7 @@ fn port_probes_bounded(
 }
 
 fn installed_required_app_capabilities() -> Vec<(String, &'static str)> {
-    let mut capabilities = HashSet::new();
-    for capability in ["path", "workspace"] {
-        for target in devbox_launch::installed_targets(capability) {
-            capabilities.insert((target.id, capability));
-        }
-    }
-    capabilities.into_iter().collect()
+    Vec::new()
 }
 
 fn service_snapshot_probe(
