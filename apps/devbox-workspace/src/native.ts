@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { describe, makeRequest, type Description } from "@devbox/product-shell/api";
+import { currentDescription, makeRequest, type Description } from "@devbox/product-shell/api";
 import { isOperation, problemMessage } from "@devbox/product-shell/operation";
 import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
@@ -202,7 +202,7 @@ const issues: Record<string, string> = {
 };
 export function issueMessage(issue: string): string { return issues[issue] ?? "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요."; }
 export async function nativeCall<T>(component: string, method: string, args: Record<string, unknown> = {}, route = "overview"): Promise<T> {
-  const description = await describe("workspace");
+  const description = await currentDescription("workspace");
   return componentCall(description, component, method, args, route);
 }
 /** Feature actions bind the description currently displayed by the caller. */

@@ -76,3 +76,25 @@ export async function routeStatus(description: Description, route: string): Prom
   if (response.operation.outcome.state !== "succeeded") throw new Error(operationMessage(response.operation));
   return response;
 }
+
+const descriptions = new Map<ProductId, Promise<Description>>();
+
+/** Transports reuse the description the shell is showing instead of paying a
+ * describe IPC per command. Native authorization still checks every request. */
+export function currentDescription(product: ProductId): Promise<Description> {
+  const cached = descriptions.get(product);
+  if (cached) return cached;
+  const loading = describe(product);
+  descriptions.set(product, loading);
+  loading.catch(() => { if (descriptions.get(product) === loading) descriptions.delete(product); });
+  return loading;
+}
+
+export function publishDescription(description: Description): void {
+  descriptions.set(description.product.id as ProductId, Promise.resolve(description));
+}
+
+export function invalidateDescription(product: ProductId): void { descriptions.delete(product); }
+
+/** Test helper: forget every cached description. */
+export function resetDescriptionCache(): void { descriptions.clear(); }
