@@ -109,6 +109,15 @@ Tauri의 `app_local_data_dir()`을 사용하며, 이는 **번들 identifier 기�
 - 모든 IO/장시간 작업은 `async fn` + 로딩 상태 UI
 - 결과 반환: `Result<T, String>` (에러는 사용자 메시지로)
 
+### 타입 IPC 메서드 추가
+
+1. engine `api.rs`의 call enum, `method()`와 메서드 목록에 추가한다.
+2. enum dispatch에서 실제 구현을 호출한다. host의 route·권한·실행 등급 경계를 유지한다.
+3. 새 공개 오류 코드를 `issue_codes!`에 추가하고 원문 오류는 투영하지 않는다.
+4. 입력·결과 DTO의 `ts_rs::TS`와 `result_types` 등록을 추가한다.
+5. 묶음 개발이 끝나면 `.github/scripts/check-generated-bindings.sh`로 생성하고 변경 파일을 커밋한다.
+6. component별 `Record<Issue, string>`에 한국어 문구를 추가한다. 타입 검사로 누락을 확인한다.
+
 ### 앱별 Rust 모듈 구조 (apps/<app>/src-tauri/)
 ```
 lib.rs            # run() 진입점, command 등록, 상태 초기화
