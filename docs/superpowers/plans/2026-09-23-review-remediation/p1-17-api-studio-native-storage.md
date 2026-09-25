@@ -346,7 +346,7 @@ export async function migrateLocalDocuments(target: DocumentStorage, source: Sto
 
 ### Task 4: 백업·지원 번들 연계와 문서
 
-- [ ] Control Center 데이터 보존(data checkpoint)이 API Studio 데이터 폴더 전체를 복사하므로 `api-store.db`(+`-wal`)도 포함되는지 `core/data_checkpoint.rs`의 대상 목록을 확인한다(폴더 단위면 변경 없음, 파일 목록이면 추가). 
+- [ ] Control Center 데이터 보존(data checkpoint)이 API Studio 데이터 폴더 전체를 복사하므로 `api-store.db`(+`-wal`)도 포함되는지 `core/data_checkpoint.rs`의 대상 목록을 확인한다(폴더 단위면 변경 없음, 파일 목록이면 추가).
 - [ ] `apps/devbox-api-studio/README.md`에 "컬렉션·기록·환경은 `%LOCALAPPDATA%\com.devbox.v08.apistudio.i*\api-store.db`에 저장한다"를 적는다.
 - [ ] 커밋: `git commit -am "docs(devbox-api-studio): document the native store location"`
 

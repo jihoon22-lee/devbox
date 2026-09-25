@@ -181,7 +181,7 @@
 
 - [ ] **Step 3: 삭제와 정리** — 삭제 목록의 native 파일을 `git rm`하고, `files_host.rs`의 세션·복구 가져오기 메서드를 지운다. `cargo check -p devbox-workspace -p devbox-runtime-engine` 오류를 "정리 규칙"대로 고친다. `crates/runtime-engine/Cargo.toml`에서 `data-migration`(별칭 `devbox-data-migration`) 의존을 지운다. `apps/devbox-workspace/src-tauri/Cargo.toml`에서도 쓰지 않게 된 `data-migration` 의존을 지운다.
 
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p devbox-workspace --lib && cargo test -p devbox-runtime-engine --lib && cargo clippy -p devbox-workspace -p devbox-runtime-engine --all-targets -- -D warnings` → PASS. 
+- [ ] **Step 4: 통과 확인** — Run: `cargo test -p devbox-workspace --lib && cargo test -p devbox-runtime-engine --lib && cargo clippy -p devbox-workspace -p devbox-runtime-engine --all-targets -- -D warnings` → PASS.
 
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "refactor(devbox-workspace): remove v0.7 import natives"`
 

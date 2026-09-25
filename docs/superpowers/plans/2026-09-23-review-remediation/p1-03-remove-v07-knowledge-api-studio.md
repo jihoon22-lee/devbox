@@ -288,7 +288,7 @@ pub(crate) fn status_summary() -> Result<Value, &'static str> {
   - `apps/products.json`: `components`에서 `api-studio.migration`을 지우고 `catalogRevision` +1. 하드코딩된 revision을 P1-02와 같은 방법(`rg`)으로 갱신한다.
   - `Studio.delivery.test.tsx` 등에서 migration gate를 기대하던 테스트를 지운다.
 
-- [ ] **Step 4: 통과 확인** — Run: `cargo test -p devbox-api-studio --lib && cargo test -p devbox-http-client-engine --lib && pnpm --filter devbox-api-studio --filter @devbox/api-studio-features exec vitest run` → PASS. 
+- [ ] **Step 4: 통과 확인** — Run: `cargo test -p devbox-api-studio --lib && cargo test -p devbox-http-client-engine --lib && pnpm --filter devbox-api-studio --filter @devbox/api-studio-features exec vitest run` → PASS.
 
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "refactor(devbox-api-studio): remove the v0.7 import startup"`
 
