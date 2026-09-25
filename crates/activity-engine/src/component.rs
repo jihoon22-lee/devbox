@@ -21,6 +21,7 @@ pub fn initialize(
     let consent = crate::commands::tracking::product_consent(&conn);
     let state = Arc::new(AppState {
         integration_root: Some(integration_root),
+        privacy: crate::commands::privacy::PrivacyState::load(&conn),
         db: Mutex::new(conn),
         sessionizer: Mutex::new(crate::core::sessionizer::Sessionizer::new()),
         tracking: AtomicBool::new(consent),

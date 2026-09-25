@@ -1,137 +1,350 @@
-//! privacy rule (순수 로직). **DB insert 전에** 적용한다 — UI 필터가 아니다.
-//!
-//! 제외하거나 치환하기로 한 원문은 DB·진단 로그·integration snapshot 어디에도
-//! 남지 않아야 한다 (§9.3).
+//! Privacy rules (pure logic). Rules apply **before** a session reaches the
+//! DB; they are not a UI filter. Excluded or replaced text must never be
+//! stored, logged, or written to an integration snapshot.
 
+use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 use serde::{Deserialize, Serialize};
 
-/// 수집 제외·치환 규칙.
+pub const MAX_RULES_PER_LIST: usize = 64;
+pub const MAX_RULE_CHARS: usize = 512;
+const REGEX_SIZE_LIMIT: usize = 1 << 20;
+pub const REDACTED: &str = "[redacted]";
+
+/// Stored and edited rule set. Field names are the persisted wire format.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivacyRules {
-    /// 프로세스 이름이 정확히 일치하면 세션 전체를 저장하지 않는다.
+    /// Exact process names (case-insensitive). A match drops the session.
     #[serde(default)]
     pub excluded_processes: Vec<String>,
-    /// 이 정규식과 일치하는 제목은 저장하지 않는다 (세션은 기록하되 제목 공란).
+    /// A match keeps the session but stores an empty title.
     #[serde(default)]
     pub excluded_title_patterns: Vec<String>,
-    /// 이 정규식과 일치하는 부분을 `[redacted]`로 치환한다.
+    /// Every match is replaced with `[redacted]`.
     #[serde(default)]
     pub redact_title_patterns: Vec<String>,
-    /// 모든 제목을 저장하지 않는다 (제목 공란).
+    /// Never store any title.
     #[serde(default)]
     pub mask_all_titles: bool,
 }
 
-/// 규칙 적용 결과: `None`이면 세션 전체를 저장하지 않는다.
-/// `Some((app, title))`이면 저장할 (process, title)이다.
-pub fn apply(rules: &PrivacyRules, app: &str, title: &str) -> Option<(String, String)> {
-    if rules
-        .excluded_processes
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RuleField {
+    ExcludedProcesses,
+    ExcludedTitlePatterns,
+    RedactTitlePatterns,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleProblem {
+    Empty,
+    TooLong,
+    TooMany,
+    Syntax,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvalidRule {
+    pub field: RuleField,
+    /// Zero-based position in the submitted list. `TooMany` reports the first
+    /// entry beyond the limit.
+    pub index: usize,
+    pub problem: RuleProblem,
+}
+
+/// Validated rules, compiled once and shared by the collector.
+#[derive(Debug)]
+pub struct CompiledRules {
+    excluded_processes: Vec<String>,
+    excluded_titles: RegexSet,
+    redactions: Vec<Regex>,
+    mask_all_titles: bool,
+}
+
+fn check_list(field: RuleField, values: &[String], problems: &mut Vec<InvalidRule>) {
+    if values.len() > MAX_RULES_PER_LIST {
+        problems.push(InvalidRule {
+            field,
+            index: MAX_RULES_PER_LIST,
+            problem: RuleProblem::TooMany,
+        });
+    }
+    for (index, value) in values.iter().enumerate().take(MAX_RULES_PER_LIST) {
+        if value.trim().is_empty() {
+            problems.push(InvalidRule {
+                field,
+                index,
+                problem: RuleProblem::Empty,
+            });
+        } else if value.chars().count() > MAX_RULE_CHARS {
+            problems.push(InvalidRule {
+                field,
+                index,
+                problem: RuleProblem::TooLong,
+            });
+        }
+    }
+}
+
+fn build_regex(pattern: &str) -> Result<Regex, regex::Error> {
+    RegexBuilder::new(pattern)
+        .size_limit(REGEX_SIZE_LIMIT)
+        .build()
+}
+
+fn has_problem(problems: &[InvalidRule], field: RuleField, index: usize) -> bool {
+    problems
         .iter()
-        .any(|p| p.eq_ignore_ascii_case(app))
-    {
-        return None;
-    }
-    if rules
-        .excluded_title_patterns
-        .iter()
-        .any(|p| regex_matches(p, title))
-    {
-        return Some((app.to_string(), String::new()));
-    }
-    let mut out_title = title.to_string();
-    for pattern in &rules.redact_title_patterns {
-        out_title = regex_replace_all(pattern, &out_title);
-    }
-    if rules.mask_all_titles {
-        out_title = String::new();
-    }
-    Some((app.to_string(), out_title))
+        .any(|p| p.field == field && p.index == index)
 }
 
-fn regex_matches(pattern: &str, text: &str) -> bool {
-    regex::Regex::new(pattern)
-        .map(|re| re.is_match(text))
-        .unwrap_or(false)
-}
+impl CompiledRules {
+    /// Validate and compile every rule. Nothing is partially accepted.
+    pub fn compile(rules: &PrivacyRules) -> Result<Self, Vec<InvalidRule>> {
+        let mut problems = Vec::new();
+        check_list(
+            RuleField::ExcludedProcesses,
+            &rules.excluded_processes,
+            &mut problems,
+        );
+        check_list(
+            RuleField::ExcludedTitlePatterns,
+            &rules.excluded_title_patterns,
+            &mut problems,
+        );
+        check_list(
+            RuleField::RedactTitlePatterns,
+            &rules.redact_title_patterns,
+            &mut problems,
+        );
+        for (index, pattern) in rules
+            .excluded_title_patterns
+            .iter()
+            .enumerate()
+            .take(MAX_RULES_PER_LIST)
+        {
+            if !has_problem(&problems, RuleField::ExcludedTitlePatterns, index)
+                && build_regex(pattern).is_err()
+            {
+                problems.push(InvalidRule {
+                    field: RuleField::ExcludedTitlePatterns,
+                    index,
+                    problem: RuleProblem::Syntax,
+                });
+            }
+        }
+        let mut redactions = Vec::new();
+        for (index, pattern) in rules
+            .redact_title_patterns
+            .iter()
+            .enumerate()
+            .take(MAX_RULES_PER_LIST)
+        {
+            if has_problem(&problems, RuleField::RedactTitlePatterns, index) {
+                continue;
+            }
+            match build_regex(pattern) {
+                Ok(regex) => redactions.push(regex),
+                Err(_) => problems.push(InvalidRule {
+                    field: RuleField::RedactTitlePatterns,
+                    index,
+                    problem: RuleProblem::Syntax,
+                }),
+            }
+        }
+        if !problems.is_empty() {
+            return Err(problems);
+        }
+        let excluded_titles = RegexSetBuilder::new(&rules.excluded_title_patterns)
+            .size_limit(REGEX_SIZE_LIMIT)
+            .build()
+            .map_err(|_| {
+                vec![InvalidRule {
+                    field: RuleField::ExcludedTitlePatterns,
+                    index: 0,
+                    problem: RuleProblem::Syntax,
+                }]
+            })?;
+        Ok(Self {
+            excluded_processes: rules
+                .excluded_processes
+                .iter()
+                .map(|p| p.trim().to_lowercase())
+                .collect(),
+            excluded_titles,
+            redactions,
+            mask_all_titles: rules.mask_all_titles,
+        })
+    }
 
-fn regex_replace_all(pattern: &str, text: &str) -> String {
-    match regex::Regex::new(pattern) {
-        Ok(re) => re.replace_all(text, "[redacted]").into_owned(),
-        Err(_) => text.to_string(),
+    /// Used when stored rules cannot be read or compiled: the session keeps
+    /// its process and duration but no title is ever stored.
+    pub fn fail_closed() -> Self {
+        Self {
+            excluded_processes: Vec::new(),
+            excluded_titles: RegexSet::empty(),
+            redactions: Vec::new(),
+            mask_all_titles: true,
+        }
+    }
+
+    /// `None` drops the whole session. `Some((app, title))` is what may be stored.
+    pub fn apply(&self, app: &str, title: &str) -> Option<(String, String)> {
+        let app_lower = app.to_lowercase();
+        if self.excluded_processes.iter().any(|p| *p == app_lower) {
+            return None;
+        }
+        if self.mask_all_titles || self.excluded_titles.is_match(title) {
+            return Some((app.to_string(), String::new()));
+        }
+        let mut out = title.to_string();
+        for regex in &self.redactions {
+            out = regex.replace_all(&out, REDACTED).into_owned();
+        }
+        Some((app.to_string(), out))
     }
 }
 
-/// 설정 문자열(JSON) 파싱. 잘못된 JSON이면 기본값(빈 규칙).
-pub fn parse_rules(json: &str) -> PrivacyRules {
-    serde_json::from_str(json).unwrap_or_default()
+/// Stored JSON → rules. A missing value means "no rules". Anything unreadable
+/// is an error so callers fail closed instead of silently collecting titles.
+pub fn parse_stored_rules(json: Option<&str>) -> Result<PrivacyRules, ()> {
+    match json {
+        None => Ok(PrivacyRules::default()),
+        Some(text) => serde_json::from_str(text).map_err(|_| ()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn rules(excluded: &[&str], excluded_titles: &[&str], redact: &[&str]) -> PrivacyRules {
+    fn rules(processes: &[&str], excluded: &[&str], redact: &[&str]) -> PrivacyRules {
         PrivacyRules {
-            excluded_processes: excluded.iter().map(|s| s.to_string()).collect(),
-            excluded_title_patterns: excluded_titles.iter().map(|s| s.to_string()).collect(),
+            excluded_processes: processes.iter().map(|s| s.to_string()).collect(),
+            excluded_title_patterns: excluded.iter().map(|s| s.to_string()).collect(),
             redact_title_patterns: redact.iter().map(|s| s.to_string()).collect(),
             mask_all_titles: false,
         }
     }
 
     #[test]
-    fn no_rules_passes_through() {
-        let r = PrivacyRules::default();
+    fn empty_rules_pass_titles_through() {
+        let compiled = CompiledRules::compile(&PrivacyRules::default()).unwrap();
         assert_eq!(
-            apply(&r, "chrome.exe", "GitHub").unwrap(),
-            ("chrome.exe".to_string(), "GitHub".to_string())
+            compiled.apply("chrome.exe", "GitHub"),
+            Some(("chrome.exe".to_string(), "GitHub".to_string()))
         );
     }
 
     #[test]
-    fn excluded_process_drops_session() {
-        let r = rules(&["lockapp.exe"], &[], &[]);
-        assert!(apply(&r, "LockApp.exe", "Lock screen").is_none());
-        assert!(apply(&r, "chrome.exe", "x").is_some());
+    fn quantifier_with_comma_is_a_single_working_pattern() {
+        let compiled = CompiledRules::compile(&rules(&[], &[], &[r"patient \d{1,3}"])).unwrap();
+        assert_eq!(
+            compiled.apply("hosp.exe", "patient 123 chart").unwrap().1,
+            "[redacted] chart"
+        );
     }
 
     #[test]
-    fn excluded_title_keeps_session_blank_title() {
-        let r = rules(&[], &["banking.*"], &[]);
-        let out = apply(&r, "chrome.exe", "banking - statement").unwrap();
-        assert_eq!(out.1, "");
+    fn spaces_and_hangul_are_matched_verbatim() {
+        let compiled = CompiledRules::compile(&rules(
+            &[],
+            &["InPrivate - Microsoft Edge", "은행 거래"],
+            &[],
+        ))
+        .unwrap();
+        assert_eq!(
+            compiled
+                .apply("msedge.exe", "뉴스 - InPrivate - Microsoft Edge")
+                .unwrap()
+                .1,
+            ""
+        );
+        assert_eq!(compiled.apply("app.exe", "은행 거래 내역").unwrap().1, "");
+        assert_eq!(compiled.apply("app.exe", "은행").unwrap().1, "은행");
     }
 
     #[test]
-    fn redact_title_replaces_matches() {
-        let r = rules(&[], &[], &["patient[ -]?\\d+"]);
-        let out = apply(&r, "hosp.exe", "patient 1234 chart").unwrap();
-        assert_eq!(out.1, "[redacted] chart");
+    fn excluded_process_drops_session_case_insensitively() {
+        let compiled = CompiledRules::compile(&rules(&["LockApp.exe"], &[], &[])).unwrap();
+        assert!(compiled.apply("lockapp.exe", "Lock screen").is_none());
+        assert!(compiled.apply("chrome.exe", "x").is_some());
     }
 
     #[test]
-    fn mask_all_titles_blanks_title() {
-        let r = PrivacyRules {
-            mask_all_titles: true,
-            ..Default::default()
+    fn mask_all_titles_keeps_session_without_title() {
+        let mut value = rules(&[], &[], &["secret"]);
+        value.mask_all_titles = true;
+        let compiled = CompiledRules::compile(&value).unwrap();
+        assert_eq!(
+            compiled.apply("a.exe", "secret doc"),
+            Some(("a.exe".into(), String::new()))
+        );
+    }
+
+    #[test]
+    fn syntax_error_is_reported_with_field_and_index() {
+        let error = CompiledRules::compile(&rules(&[], &["ok", "(unclosed"], &[])).unwrap_err();
+        assert_eq!(
+            error,
+            vec![InvalidRule {
+                field: RuleField::ExcludedTitlePatterns,
+                index: 1,
+                problem: RuleProblem::Syntax
+            }]
+        );
+    }
+
+    #[test]
+    fn empty_too_long_and_too_many_are_rejected() {
+        let long = "a".repeat(MAX_RULE_CHARS + 1);
+        let error = CompiledRules::compile(&rules(&["  "], &[long.as_str()], &[])).unwrap_err();
+        assert!(error.contains(&InvalidRule {
+            field: RuleField::ExcludedProcesses,
+            index: 0,
+            problem: RuleProblem::Empty
+        }));
+        assert!(error.contains(&InvalidRule {
+            field: RuleField::ExcludedTitlePatterns,
+            index: 0,
+            problem: RuleProblem::TooLong
+        }));
+        let many: Vec<String> = (0..=MAX_RULES_PER_LIST).map(|n| format!("p{n}")).collect();
+        let value = PrivacyRules {
+            redact_title_patterns: many,
+            ..PrivacyRules::default()
         };
-        let out = apply(&r, "chrome.exe", "any title").unwrap();
-        assert_eq!(out.1, "");
+        assert!(CompiledRules::compile(&value)
+            .unwrap_err()
+            .contains(&InvalidRule {
+                field: RuleField::RedactTitlePatterns,
+                index: MAX_RULES_PER_LIST,
+                problem: RuleProblem::TooMany
+            }));
     }
 
     #[test]
-    fn invalid_regex_is_safe() {
-        let r = rules(&[], &["[unclosed"], &["(bad"]);
-        // 잘못된 정규식은 매치 실패(치환 안 함)로 안전하게 처리
-        assert_eq!(apply(&r, "a", "b").unwrap().1, "b");
+    fn fail_closed_never_keeps_a_title() {
+        let compiled = CompiledRules::fail_closed();
+        assert_eq!(
+            compiled.apply("a.exe", "private"),
+            Some(("a.exe".into(), String::new()))
+        );
     }
 
     #[test]
-    fn parse_rules_falls_back_on_bad_json() {
-        assert_eq!(parse_rules("{not json"), PrivacyRules::default());
-        let parsed = parse_rules(r#"{"excludedProcesses":["a"]}"#);
-        assert_eq!(parsed.excluded_processes, vec!["a"]);
+    fn stored_rules_parse_missing_as_default_and_garbage_as_error() {
+        assert_eq!(parse_stored_rules(None), Ok(PrivacyRules::default()));
+        assert!(parse_stored_rules(Some("{not json")).is_err());
+        assert_eq!(
+            parse_stored_rules(Some(r#"{"maskAllTitles":true}"#)).unwrap(),
+            PrivacyRules {
+                mask_all_titles: true,
+                ..PrivacyRules::default()
+            }
+        );
     }
 }
