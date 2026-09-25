@@ -63,6 +63,49 @@ pub(crate) fn activation(
     Ok(Some(marker))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Stamp { len: u64, modified: std::time::SystemTime }
+fn stamp(path: &Path) -> Option<Stamp> {
+    let metadata = std::fs::metadata(path).ok()?;
+    Some(Stamp { len: metadata.len(), modified: metadata.modified().ok()? })
+}
+struct ActivationEntry {
+    executable: std::path::PathBuf,
+    version: String,
+    stamps: (Stamp, Stamp),
+    value: product_contract::activation::Activation,
+}
+/// Cached successes remain scoped to the same executable, version and file stamps.
+#[derive(Default)]
+pub(crate) struct ActivationCache {
+    entry: std::sync::Mutex<Option<ActivationEntry>>,
+    #[cfg(test)]
+    reads: std::sync::atomic::AtomicUsize,
+}
+impl ActivationCache {
+    pub(crate) fn activation(&self, executable: &Path, version: &str) -> Result<Option<product_contract::activation::Activation>> {
+        let Some(root) = generation_root(executable) else { return Ok(None); };
+        let stamps = || stamp(&root.join("devbox-installation.json")).zip(stamp(&root.join("devbox-activation.json")));
+        let mut entry = self.entry.lock().map_err(|_| "suite_activation_unavailable")?;
+        let before = stamps();
+        if let Some(cached) = entry.as_ref() {
+            if cached.executable == executable && cached.version == version && Some(cached.stamps) == before {
+                return Ok(Some(cached.value.clone()));
+            }
+        }
+        *entry = None;
+        #[cfg(test)]
+        self.reads.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let result = activation(executable, version)?;
+        if let (Some(stamps), Some(value)) = (before.filter(|before| Some(*before) == stamps()), result.as_ref()) {
+            *entry = Some(ActivationEntry { executable: executable.to_owned(), version: version.to_owned(), stamps, value: value.clone() });
+        }
+        Ok(result)
+    }
+    #[cfg(test)]
+    fn full_reads(&self) -> usize { self.reads.load(std::sync::atomic::Ordering::Relaxed) }
+}
+
 pub(crate) fn namespace(executable: &Path, product: &str, version: &str) -> Result<String> {
     let product_dir = executable.parent().ok_or("installation_path_invalid")?;
     let Some(products) = product_dir
@@ -216,6 +259,32 @@ impl Drop for WriterGuard {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn activation_cache_reuses_a_verified_marker_until_it_changes() {
+        use product_contract::activation::Phase;
+        let root = Fixture::new();
+        let executable = root.generation("one");
+        let marker = |phase: &str, revision: u64| {
+            format!(
+                r#"{{"schemaVersion":1,"installationId":"fixture","generation":"one","operationId":"fixture-operation","revision":{revision},"phase":"{phase}"}}"#
+            )
+        };
+        let path = root.0.join("devbox-activation.json");
+        fs::write(&path, marker("import", 0)).unwrap();
+        let cache = ActivationCache::default();
+        let phase = |cache: &ActivationCache| cache.activation(&executable, "0.8.0").unwrap().unwrap().phase;
+        assert_eq!(phase(&cache), Phase::Import);
+        assert_eq!(phase(&cache), Phase::Import);
+        assert_eq!(cache.full_reads(), 1);
+        fs::write(&path, marker("committed", 1)).unwrap();
+        assert_eq!(phase(&cache), Phase::Committed);
+        assert_eq!(cache.full_reads(), 2);
+        fs::remove_file(&path).unwrap();
+        assert!(cache.activation(&executable, "0.8.0").is_err());
+        let direct = root.0.join("devbox-workspace.exe");
+        fs::write(&direct, b"fixture").unwrap();
+        assert!(cache.activation(&direct, "0.8.0").unwrap().is_none());
+    }
     use super::*;
     use std::fs;
     struct Fixture(std::path::PathBuf);

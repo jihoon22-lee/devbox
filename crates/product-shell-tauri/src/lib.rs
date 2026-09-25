@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, State, WebviewWindow};
 
 struct ShellState {
+    activation: installation::ActivationCache,
     catalog: ProductCatalog,
     product: String,
     session: Mutex<SessionGuard>,
@@ -47,7 +48,7 @@ fn local_main(window: &WebviewWindow) -> bool {
 }
 
 #[tauri::command]
-fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Description, String> {
+async fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Description, String> {
     if !local_main(&window) {
         return Err("허용되지 않은 창입니다.".into());
     }
@@ -65,7 +66,7 @@ fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Descr
     let handshake = session.handshake().clone();
     let context = session.context().cloned();
     drop(session);
-    let delivery_state = match installation::activation(&state.executable, &state.version) {
+    let delivery_state = match state.activation.activation(&state.executable, &state.version) {
         Ok(None) => "direct",
         Ok(Some(marker)) => match marker.phase {
             product_contract::activation::Phase::Import => "import",
@@ -91,7 +92,7 @@ fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Descr
 }
 
 #[tauri::command]
-fn route_status(
+async fn route_status(
     window: WebviewWindow,
     state: State<'_, ShellState>,
     request: RouteRequest,
@@ -202,7 +203,7 @@ fn authorize_inner(
         .filter(|f| f.owner == state.product)
         .map(|f| f.route.as_str())
         .collect();
-    if !installation::activation(&state.executable, &state.version)
+    if !state.activation.activation(&state.executable, &state.version)
         .map_err(|_| problem(ProblemCode::Unavailable))?
         .is_none_or(|marker| activation_allows(&marker, &state.product, component, admission))
     {
@@ -326,6 +327,7 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 session_id: uuid::Uuid::new_v4().to_string(),
             });
             app.manage(ShellState {
+                activation: Default::default(),
                 catalog,
                 product: product.into(),
                 session: Mutex::new(session),
