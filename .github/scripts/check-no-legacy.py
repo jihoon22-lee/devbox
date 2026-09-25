@@ -5,6 +5,7 @@ import argparse, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCOPES: dict[str, list[str]] = {
+    "knowledge-api-studio": ["apps/devbox-knowledge", "apps/devbox-api-studio", "packages/knowledge-features", "packages/api-studio-features", "crates/http-client-engine"],
     "control-center": [
         "apps/devbox-control-center",
         "crates/installation-tools",
@@ -12,6 +13,8 @@ SCOPES: dict[str, list[str]] = {
     ],
 }
 PATTERNS = [
+    r"com\.devbox\.(knowledgebase|lifelog|everythingplus|apiplayground|webhooklab|developertoolbox)\b",
+    r"\b(MigrationStartup|MigrationSetup|import_plan|import_rows|list_import_sources|prepare_migration|migration_export|legacy_profile)\b",
     r"legacy[-_]v0\.7", r"legacy-v0\.7-catalog", r"\blegacy_cleanup\b", r"\blauncher_import\b",
     r"\bLegacyCleanup\b", r"\bLegacyInventory\b", r"\bLauncherImport\b", r"\bMigrationOwners\b",
     r"\bcutover_review\b", r"\bprepare_cutover\b", r"\brecord_migration_owner\b",
