@@ -157,8 +157,20 @@ pub(crate) fn issue(error: &str) -> &'static str {
         "vault_owner_busy" => "vault_owner_busy",
         "vault_binding_invalid" | "vault_owner_unavailable" => "vault_binding_unavailable",
         "import_timed_out" | "snapshot timed out; quiesce source and retry" => "import_timed_out",
-        _ if error.contains("만료") => "preview_expired",
-        _ if error.contains("미리보기") && error.contains("오래") => "preview_stale",
+        "quick_capture_sensitive" => "quick_capture_sensitive",
+        "quick_capture_body_required" => "quick_capture_body_required",
+        "quick_capture_invalid" => "quick_capture_invalid",
+        "quick_capture_title_limit" => "quick_capture_title_limit",
+        "quick_capture_body_limit" => "quick_capture_body_limit",
+        "quick_capture_tag_count" => "quick_capture_tag_count",
+        "quick_capture_tag_limit" => "quick_capture_tag_limit",
+        "quick_capture_tags_limit" => "quick_capture_tags_limit",
+        "quick_capture_tag_invalid" => "quick_capture_tag_invalid",
+        "quick_capture_save_failed" => "quick_capture_save_failed",
+        "preview_stale" => "preview_stale",
+        "preview_expired" => "preview_expired",
+        "journal_unavailable" => "journal_unavailable",
+        "journal_limit" => "journal_limit",
         _ => "operation_failed",
     }
 }
@@ -446,6 +458,19 @@ mod tests {
         assert_eq!(
             issue("privacy_redaction_failed"),
             "privacy_redaction_failed"
+        );
+        assert_eq!(issue("quick_capture_sensitive"), "quick_capture_sensitive");
+        assert_eq!(
+            issue("quick_capture_save_failed"),
+            "quick_capture_save_failed"
+        );
+        assert_eq!(issue("preview_stale"), "preview_stale");
+        assert_eq!(issue("preview_expired"), "preview_expired");
+        assert_eq!(issue("journal_limit"), "journal_limit");
+        // Human-readable text is never classified by substring any more.
+        assert_eq!(
+            issue("이 미리보기는 오래되었고 만료되었습니다"),
+            "operation_failed"
         );
     }
 }
