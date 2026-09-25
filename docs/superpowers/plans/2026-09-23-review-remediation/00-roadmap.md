@@ -264,7 +264,7 @@ gh run watch <main run id> --exit-status
 
 ## 6. 묶음·계획 색인
 
-Ledger: #<번호>
+Ledger: #580
 
 ### 6.1 묶음 PR
 
