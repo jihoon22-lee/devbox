@@ -145,7 +145,14 @@ describe("buildDigestInput", () => {
     expect(input?.dayStart).toBe(input?.dayBoundaries[0]?.startMs);
     expect(input?.dayEnd).toBe(input?.dayBoundaries[0]?.endMs);
     expect(Object.keys(input ?? {}).sort()).toEqual([
-      "dayBoundaries", "dayEnd", "dayStart", "endDate", "filter", "period", "startDate", "timezone",
+      "dayBoundaries",
+      "dayEnd",
+      "dayStart",
+      "endDate",
+      "filter",
+      "period",
+      "startDate",
+      "timezone",
     ]);
   });
 
@@ -218,9 +225,7 @@ describe("DataSourceRow", () => {
     render(createElement(DataSourceRow, { source }));
 
     expect(screen.getByText(/v1 · 0.5.0 · 1분 전 갱신/)).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Knowledge activity view schema를 지원하지 않습니다",
-    );
+    expect(screen.getByRole("alert").textContent).toBe("Knowledge activity view schema를 지원하지 않습니다");
   });
 
   it("partial source 오류는 backend 문구 대신 고정된 nullable 안내를 표시한다", () => {
@@ -261,11 +266,13 @@ describe("schema v2 activity display", () => {
   it("renders native zeroes and non-zero values when the source is complete", () => {
     expect(formatRunSummary({ succeeded: 0, failed: 2, lastRunAtMs: null })).toBe("0건 성공 · 2건 실패");
     expect(formatKnowledgeSummary({ notesModified: 3, lastModifiedAtMs: null })).toBe("3건 수정");
-    expect(formatDailyActivity({
-      runSucceeded: 2,
-      runFailed: 1,
-      knowledgeNotesModified: 3,
-    })).toBe("Run Manager 2/1 · Knowledge 3건");
+    expect(
+      formatDailyActivity({
+        runSucceeded: 2,
+        runFailed: 1,
+        knowledgeNotesModified: 3,
+      }),
+    ).toBe("Run Manager 2/1 · Knowledge 3건");
   });
 
   it.each([
@@ -273,17 +280,19 @@ describe("schema v2 activity display", () => {
     ["snapshot_stale", "오래되어"],
     ["snapshot_boundary_mismatch", "날짜·시간대 경계"],
   ] as const)("uses fixed %s source explanation", (errorCode, phrase) => {
-    expect(digestSourceExplanation({
-      id: "run-manager",
-      available: false,
-      schemaVersion: null,
-      snapshotVersion: null,
-      producerVersion: null,
-      generatedAt: null,
-      freshnessMs: null,
-      view: "daily-activity",
-      scope: errorCode === "snapshot_range_partial" ? "requested-range-partial" : "requested-range",
-      errorCode,
-    })).toContain(phrase);
+    expect(
+      digestSourceExplanation({
+        id: "run-manager",
+        available: false,
+        schemaVersion: null,
+        snapshotVersion: null,
+        producerVersion: null,
+        generatedAt: null,
+        freshnessMs: null,
+        view: "daily-activity",
+        scope: errorCode === "snapshot_range_partial" ? "requested-range-partial" : "requested-range",
+        errorCode,
+      }),
+    ).toContain(phrase);
   });
 });

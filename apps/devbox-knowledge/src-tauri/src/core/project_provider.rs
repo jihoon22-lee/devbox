@@ -62,7 +62,7 @@ impl Validate for Snapshot {
             }
         }
         for project in &mut self.projects {
-            project.root = everything_plus_lib::component::normalize_import_root(&project.root)
+            project.root = content_index_engine::component::normalize_import_root(&project.root)
                 .map_err(|_| INVALID)?;
         }
         if self

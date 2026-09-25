@@ -15,6 +15,7 @@ SCOPES: dict[str, list[str]] = {
     ],
 }
 PATTERNS = [
+    r"\b(life_log|everything_plus|code_pad|api_playground|knowledge_base|log_lens|port_manager|workbench|repo_manager|run_manager|wsl_desktop|developer_toolbox|webhook_lab|devbox_manager)_lib\b",
     r"\bdevbox_launch\b", r"\bdevbox-launch\b", r"crates/launch\b", r"\bdata[-_]migration\b",
     r"\bVerifyMigrationSources\b", r"\bListMigrationBackups\b", r"\bVerifyMigrationBackup\b", r"\bmigration_source\b",
     r"v0\.8-feature-parity", r"v0\.8-data-inventory",

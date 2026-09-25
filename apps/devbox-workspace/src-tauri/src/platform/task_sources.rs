@@ -1,6 +1,6 @@
 //! Linux source bytes remain behind Registry/distro/helper admission.
 use crate::host::Host;
-use run_manager_lib::{
+use runtime_engine::{
     core::{
         models::TargetKind,
         workspace_tasks::{WorkspaceTaskError as Error, WorkspaceTaskExecution, WorkspaceTaskPlan},
@@ -37,7 +37,7 @@ impl NativeTaskSources for Sources {
         &self,
         distro: &str,
         execution: Option<&WorkspaceTaskExecution>,
-    ) -> Result<Option<run_manager_lib::platform::wsl::Target>, Error> {
+    ) -> Result<Option<runtime_engine::platform::wsl::Target>, Error> {
         if execution.is_none_or(|task| !task.source_root.starts_with('/')) {
             return Ok(None);
         }
@@ -47,7 +47,7 @@ impl NativeTaskSources for Sources {
                 execution.filter(|task| task.source_root.starts_with('/'))
             {
                 let snapshot = self.capture(&task.source_root, distro)?;
-                run_manager_lib::core::workspace_tasks::verify_projected_executions(
+                runtime_engine::core::workspace_tasks::verify_projected_executions(
                     &snapshot.plan,
                     std::slice::from_ref(task),
                 )?;
@@ -83,7 +83,7 @@ impl NativeTaskSources for Sources {
                     .into(),
                 _artifact: artifact,
             };
-            Ok(Some(run_manager_lib::platform::wsl::Target::bound(
+            Ok(Some(runtime_engine::platform::wsl::Target::bound(
                 distro,
                 Arc::new(binding),
             )))
@@ -149,8 +149,8 @@ impl Sources {
         let revision = crate::definitions::digest(
             &serde_json::to_vec(&(&identity, &source_digest)).map_err(|_| Error::InvalidRoot)?,
         );
-        let plan = run_manager_lib::core::workspace_tasks::project_workspace_tasks(
-            run_manager_lib::core::workspace_tasks::TaskProjection {
+        let plan = runtime_engine::core::workspace_tasks::project_workspace_tasks(
+            runtime_engine::core::workspace_tasks::TaskProjection {
                 source_root: root,
                 target_root: root,
                 project_identity: &identity,
@@ -171,23 +171,23 @@ impl Sources {
 }
 #[cfg(windows)]
 struct Bound {
-    lease: Arc<dyn run_manager_lib::platform::wsl::CommandBinding>,
+    lease: Arc<dyn runtime_engine::platform::wsl::CommandBinding>,
     guard: Option<workspace_wsl::task_contract::TaskLaunch>,
     directory: std::path::PathBuf,
     _artifact: Option<super::wsl_helper::Artifact>,
 }
 #[cfg(windows)]
-impl run_manager_lib::platform::wsl::CommandBinding for Bound {
+impl runtime_engine::platform::wsl::CommandBinding for Bound {
     fn bind(
         &self,
         argv: Vec<String>,
-    ) -> Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError> {
+    ) -> Result<Vec<String>, runtime_engine::platform::wsl::WslExecutionError> {
         self.lease.bind(argv)
     }
     fn bind_launch(
         &self,
         argv: Vec<String>,
-    ) -> Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError> {
+    ) -> Result<Vec<String>, runtime_engine::platform::wsl::WslExecutionError> {
         let Some(guard) = &self.guard else {
             return self.lease.bind_launch(argv);
         };
@@ -248,6 +248,6 @@ pub(crate) fn diagnostic_matches(
     context: &product_contract::ProjectContext,
     run: &str,
 ) -> bool {
-    run_manager_lib::component::diagnostic_scope(app, run)
+    runtime_engine::component::diagnostic_scope(app, run)
         .is_ok_and(|(root, identity)| matches_context(host, context, &root, &identity))
 }

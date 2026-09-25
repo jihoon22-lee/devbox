@@ -12,7 +12,9 @@ export class MetadataRefresh<T> {
     private readonly fail: (error: unknown) => void,
   ) {}
 
-  start() { this.enabled = true; }
+  start() {
+    this.enabled = true;
+  }
   stop() {
     this.enabled = false;
     this.pending = false;

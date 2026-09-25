@@ -18,7 +18,7 @@ tauri-build = { workspace = true }
 suite-runtime = { path = "../../../crates/suite-runtime" }
 dirs = { workspace = true }
 zip = { workspace = true }
-devbox_manager_lib = { package = "devbox-installation-tools",path="../../../crates/installation-tools",default-features=false}
+installation_tools = { package = "devbox-installation-tools",path="../../../crates/installation-tools",default-features=false}
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }

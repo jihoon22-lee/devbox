@@ -2,7 +2,7 @@
 //! bounded Files IO queue; the renderer cannot restore native picker choices.
 use crate::core::editor_sessions::StoredSession;
 use crate::{file_owner::FileOwner, host::Host, private_metadata::MetadataRoot};
-use code_pad_lib::{
+use editor_engine::{
     commands::file,
     core::{
         recovery::{RecoveryEntry, RecoveryFile},
@@ -316,7 +316,7 @@ impl FilesHost {
         &mut self,
         scope: crate::file_owner::Scope<'_>,
         path: &str,
-        file: &code_pad_lib::lsp::RenameFileResult,
+        file: &editor_engine::lsp::RenameFileResult,
     ) -> Result<Option<(file::OpenedFileWire, String)>> {
         let opened = self.owner.refresh_after_rename(
             scope,
@@ -453,7 +453,7 @@ impl FilesHost {
         if let Some(bytes) = data.read(CHOICES)? {
             self.owner.restore_native_choices(&bytes)?;
         }
-        code_pad_lib::component::initialize(app, &path).map_err(|_| "files_initialize_failed")?;
+        editor_engine::component::initialize(app, &path).map_err(|_| "files_initialize_failed")?;
         self.data = Some(data);
         Ok(())
     }
@@ -870,7 +870,7 @@ impl FilesHost {
                 .close_for_context(cleanup_context, &request.path)?
             {
                 if let Some(known) = self.watched.remove(&request.path) {
-                    app.state::<Arc<code_pad_lib::watcher::WatcherManager>>()
+                    app.state::<Arc<editor_engine::watcher::WatcherManager>>()
                         .unregister(&known)
                         .map_err(|_| "file_action_unavailable")?;
                 }
@@ -1038,7 +1038,7 @@ impl FilesHost {
                     return Ok(Value::Null);
                 }
                 let canonical = fs::canonicalize(&path).map_err(|_| "file_changed")?;
-                let result = tauri::async_runtime::block_on(code_pad_lib::component::dispatch(
+                let result = tauri::async_runtime::block_on(editor_engine::component::dispatch(
                     app,
                     method,
                     json!({"path":path}),
@@ -1047,7 +1047,7 @@ impl FilesHost {
                 if self.owner.admitted_path(scope, &request.path).is_err() {
                     if method == "watch_file" {
                         let _ = app
-                            .state::<Arc<code_pad_lib::watcher::WatcherManager>>()
+                            .state::<Arc<editor_engine::watcher::WatcherManager>>()
                             .unregister(&canonical);
                     }
                     return Err("file_changed");
@@ -1074,7 +1074,7 @@ impl FilesHost {
                     );
                 }
                 let mut result = value(
-                    code_pad_lib::commands::folder::list_workspace_files_guarded(
+                    editor_engine::commands::folder::list_workspace_files_guarded(
                         std::path::Path::new(&lease.binding().root),
                         &|path| self.owner.ensure_user_path(path).map_err(str::to_string),
                         &|| current_deadline(deadline).map_err(str::to_string),
@@ -1112,7 +1112,7 @@ impl FilesHost {
                     return Err("file_context_changed");
                 }
                 let path = self.owner.admitted_path(scope, &request.path)?;
-                let result = code_pad_lib::commands::preview::render_preview_guarded(
+                let result = editor_engine::commands::preview::render_preview_guarded(
                     &path.to_string_lossy(),
                     &request.content,
                     &lease.binding().root,
@@ -1242,10 +1242,10 @@ impl FilesHost {
                 self.cancel_preview(&request.preview_id);
                 Ok(Value::Null)
             }
-            "take_pending_open" | "validate_encoding" => {
-                tauri::async_runtime::block_on(code_pad_lib::component::dispatch(app, method, args))
-                    .map_err(|_| "file_action_unavailable")
-            }
+            "take_pending_open" | "validate_encoding" => tauri::async_runtime::block_on(
+                editor_engine::component::dispatch(app, method, args),
+            )
+            .map_err(|_| "file_action_unavailable"),
             "read_clipboard_text" => {
                 use tauri_plugin_clipboard_manager::ClipboardExt;
                 empty(&args)?;

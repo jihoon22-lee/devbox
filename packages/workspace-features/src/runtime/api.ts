@@ -1,5 +1,7 @@
 import { componentInvoke } from "../transport";
-const invoke = componentInvoke(method => method === "kill_listener" ? "workspace.process-actions" : "workspace.processes");
+const invoke = componentInvoke((method) =>
+  method === "kill_listener" ? "workspace.process-actions" : "workspace.processes",
+);
 import { isTauri } from "./lib/isTauri";
 import type {
   ContainerStopHandoff,
@@ -159,9 +161,7 @@ export async function loadPortManagerPreferences(): Promise<PortManagerPreferenc
   return invoke<PortManagerPreferences>("load_port_manager_preferences");
 }
 
-export async function savePortManagerPreferences(
-  preferences: PortManagerPreferences,
-): Promise<void> {
+export async function savePortManagerPreferences(preferences: PortManagerPreferences): Promise<void> {
   if (!isTauri()) {
     mockPreferences = {
       ...preferences,
@@ -173,18 +173,14 @@ export async function savePortManagerPreferences(
   await invoke("save_port_manager_preferences", { preferences });
 }
 
-export async function killListener(
-  request: ListenerKillRequest,
-): Promise<ListenerActionResult> {
+export async function killListener(request: ListenerKillRequest): Promise<ListenerActionResult> {
   if (!isTauri()) {
     return { kind: "terminated" };
   }
   return invoke<ListenerActionResult>("kill_listener", { request });
 }
 
-export async function handoffContainerStop(
-  request: ListenerKillRequest,
-): Promise<ContainerStopHandoff> {
+export async function handoffContainerStop(request: ListenerKillRequest): Promise<ContainerStopHandoff> {
   if (!isTauri()) {
     if (request.identity.kind !== "container") {
       throw new Error("container handoff is unavailable");
@@ -237,10 +233,7 @@ export async function openPortOwner(actionKey: string): Promise<void> {
   await invoke("open_port_owner", { actionKey });
 }
 
-export async function openPortLog(
-  actionKey: string,
-  stream: LogStream,
-): Promise<PortLogDispatch> {
+export async function openPortLog(actionKey: string, stream: LogStream): Promise<PortLogDispatch> {
   if (!isTauri()) {
     return { handoff_id: `mock-log-${stream}` };
   }

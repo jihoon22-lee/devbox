@@ -10,7 +10,7 @@ const targets: RepoOpenTarget[] = [
 describe("Repo Manager repository context menu contract", () => {
   it("설계의 exact repository 항목과 catalog submenu를 만든다", () => {
     const items = buildRepositoryContextMenu(targets, false);
-    expect(items.map((item) => item.type === "separator" ? "separator" : item.label)).toEqual([
+    expect(items.map((item) => (item.type === "separator" ? "separator" : item.label))).toEqual([
       "다른 앱으로 열기",
       "worktree 생성",
       "경로 복사",
@@ -19,7 +19,7 @@ describe("Repo Manager repository context menu contract", () => {
     const open = items[0];
     expect(open.type).toBe("submenu");
     if (open.type !== "submenu") throw new Error("open-in submenu missing");
-    expect(open.items.map((item) => item.type === "item" ? [item.id, item.label] : null)).toEqual([
+    expect(open.items.map((item) => (item.type === "item" ? [item.id, item.label] : null))).toEqual([
       ["open-in:code-pad", "Code Pad"],
       ["open-in:wsl-desktop", "WSL Desktop"],
     ]);

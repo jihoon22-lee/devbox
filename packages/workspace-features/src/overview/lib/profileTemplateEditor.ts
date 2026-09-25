@@ -80,9 +80,7 @@ export function profileDraftFromTemplate(template: ProfileTemplate | null): Prof
   };
 }
 
-export function validateProfileTemplateDraft(
-  draft: ProfileTemplateDraft,
-): ProfileTemplateDraftValidation {
+export function validateProfileTemplateDraft(draft: ProfileTemplateDraft): ProfileTemplateDraftValidation {
   const errors: ProfileTemplateDraftErrors = {};
   const name = draft.name.trim();
   const windowsPath = draft.windowsPath.trim();
@@ -103,12 +101,14 @@ export function validateProfileTemplateDraft(
   if (wslDistro && hasControlCharacter(wslDistro)) errors.wsl = "WSL 배포판에 제어 문자를 넣을 수 없습니다.";
 
   const ports = parseExpectedPorts(draft.expectedPortsText);
-  if (draft.expectedPortsText.length > MAX_EXPECTED_PORTS_INPUT_CHARS) errors.expectedPorts = "예상 포트 입력이 너무 깁니다.";
+  if (draft.expectedPortsText.length > MAX_EXPECTED_PORTS_INPUT_CHARS)
+    errors.expectedPorts = "예상 포트 입력이 너무 깁니다.";
   else if (ports.error) errors.expectedPorts = ports.error;
 
   const services = splitServiceIds(draft.serviceIdsText);
   if (services.length > MAX_SERVICES) errors.services = "서비스는 최대 128개까지 등록할 수 있습니다.";
-  else if (services.some((id) => !isValidServiceId(id))) errors.services = "서비스 ID는 비어 있지 않은 안전한 값이어야 합니다.";
+  else if (services.some((id) => !isValidServiceId(id)))
+    errors.services = "서비스 ID는 비어 있지 않은 안전한 값이어야 합니다.";
   else if (new Set(services).size !== services.length) errors.services = "같은 서비스 ID를 두 번 등록할 수 없습니다.";
 
   if (Object.values(errors).some(Boolean)) return { template: null, errors };
@@ -132,10 +132,9 @@ function splitServiceIds(input: string): string[] {
 }
 
 function isValidServiceId(value: string): boolean {
-  return Boolean(value)
-    && value.length <= MAX_SERVICE_ID_CHARS
-    && value === value.trim()
-    && !hasControlCharacter(value);
+  return (
+    Boolean(value) && value.length <= MAX_SERVICE_ID_CHARS && value === value.trim() && !hasControlCharacter(value)
+  );
 }
 
 function isSafePath(value: string): boolean {
@@ -150,7 +149,10 @@ function isSafePath(value: string): boolean {
   const componentSource = isDrive ? value.slice(3) : value;
   const components = componentSource.split(/[\\/]/u).filter(Boolean);
   const minimumComponents = isUnc ? 3 : 1;
-  if (components.length < minimumComponents || components.some((component) => component === "." || component === "..")) {
+  if (
+    components.length < minimumComponents ||
+    components.some((component) => component === "." || component === "..")
+  ) {
     return false;
   }
   if (isPosix) return true;
@@ -158,8 +160,9 @@ function isSafePath(value: string): boolean {
   return components.every((component) => {
     if (component.endsWith(" ") || component.endsWith(".") || /[<>:"|?*]/u.test(component)) return false;
     const stem = (component.split(".")[0] ?? "").toUpperCase();
-    return !["CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$"].includes(stem)
-      && !/^(?:COM|LPT)[1-9]$/u.test(stem);
+    return (
+      !["CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$"].includes(stem) && !/^(?:COM|LPT)[1-9]$/u.test(stem)
+    );
   });
 }
 

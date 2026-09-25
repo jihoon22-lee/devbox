@@ -14,17 +14,19 @@ describe("convertJsonToTypescript", () => {
     );
 
     expect(result.error).toBeNull();
-    expect(result.output).toBe([
-      "export interface ApiConfig {",
-      "  enabled: boolean;",
-      "  service: {",
-      "    name: string;",
-      "    ports: Array<number>;",
-      "  };",
-      "  version: number;",
-      "}",
-      "",
-    ].join("\n"));
+    expect(result.output).toBe(
+      [
+        "export interface ApiConfig {",
+        "  enabled: boolean;",
+        "  service: {",
+        "    name: string;",
+        "    ports: Array<number>;",
+        "  };",
+        "  version: number;",
+        "}",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("배열 object를 병합해 누락 속성과 null union을 추론한다", () => {
@@ -37,30 +39,26 @@ describe("convertJsonToTypescript", () => {
     const result = convertJsonToTypescript(input, "ApiResponse");
 
     expect(result.error).toBeNull();
-    expect(result.output).toBe([
-      "export interface ApiResponse {",
-      "  users: Array<{",
-      "    id: number;",
-      "    meta: {",
-      "      active: boolean;",
-      "      score: null | number;",
-      "    };",
-      "    name?: string;",
-      "  }>;",
-      "}",
-      "",
-    ].join("\n"));
+    expect(result.output).toBe(
+      [
+        "export interface ApiResponse {",
+        "  users: Array<{",
+        "    id: number;",
+        "    meta: {",
+        "      active: boolean;",
+        "      score: null | number;",
+        "    };",
+        "    name?: string;",
+        "  }>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("object key와 배열 표본 순서가 달라도 같은 결과를 만든다", () => {
-    const first = convertJsonToTypescript(
-      '{"items":[{"name":"one","id":1},{"id":2,"active":true}]}',
-      "Root",
-    );
-    const second = convertJsonToTypescript(
-      '{"items":[{"active":false,"id":2},{"id":1,"name":"two"}]}',
-      "Root",
-    );
+    const first = convertJsonToTypescript('{"items":[{"name":"one","id":1},{"id":2,"active":true}]}', "Root");
+    const second = convertJsonToTypescript('{"items":[{"active":false,"id":2},{"id":1,"name":"two"}]}', "Root");
 
     expect(first.error).toBeNull();
     expect(second.error).toBeNull();
@@ -81,22 +79,19 @@ describe("convertJsonToTypescript", () => {
   });
 
   it("빈 배열과 혼합 배열, root primitive를 명시적으로 표현한다", () => {
-    expect(convertJsonToTypescript("[]", "EmptyList").output)
-      .toBe("export type EmptyList = Array<unknown>;\n");
-    expect(convertJsonToTypescript('[1,"two",null]', "MixedList").output)
-      .toBe("export type MixedList = Array<null | number | string>;\n");
-    expect(convertJsonToTypescript("true", "Flag").output)
-      .toBe("export type Flag = boolean;\n");
+    expect(convertJsonToTypescript("[]", "EmptyList").output).toBe("export type EmptyList = Array<unknown>;\n");
+    expect(convertJsonToTypescript('[1,"two",null]', "MixedList").output).toBe(
+      "export type MixedList = Array<null | number | string>;\n",
+    );
+    expect(convertJsonToTypescript("true", "Flag").output).toBe("export type Flag = boolean;\n");
   });
 
   it("빈 object와 TypeScript identifier가 아닌 key를 안전하게 표현한다", () => {
-    expect(convertJsonToTypescript("{}", "EmptyObject").output)
-      .toBe("export type EmptyObject = Record<string, never>;\n");
-
-    const result = convertJsonToTypescript(
-      '{"__proto__":{"safe":true},"content-type":"json","normal":1}',
-      "Headers",
+    expect(convertJsonToTypescript("{}", "EmptyObject").output).toBe(
+      "export type EmptyObject = Record<string, never>;\n",
     );
+
+    const result = convertJsonToTypescript('{"__proto__":{"safe":true},"content-type":"json","normal":1}', "Headers");
     expect(result.error).toBeNull();
     expect(result.output).toContain("__proto__: {");
     expect(result.output).toContain('"content-type": string;');
@@ -105,10 +100,7 @@ describe("convertJsonToTypescript", () => {
 
   it("잘못된 JSON 위치를 반환하고 입력 원문을 오류에 반영하지 않는다", () => {
     const secret = "DO_NOT_REFLECT_JSON_SECRET";
-    const result = convertJsonToTypescript(
-      `{\n  "token": "${secret}",\n  "broken": }`,
-      "SecretShape",
-    );
+    const result = convertJsonToTypescript(`{\n  "token": "${secret}",\n  "broken": }`, "SecretShape");
 
     expect(result.output).toBe("");
     expect(result.error?.code).toBe("INVALID_JSON");
@@ -118,10 +110,8 @@ describe("convertJsonToTypescript", () => {
   });
 
   it("JSON comment와 trailing comma를 허용하지 않는다", () => {
-    expect(convertJsonToTypescript('{"name":"api" // comment\n}', "Root").error?.code)
-      .toBe("INVALID_JSON");
-    expect(convertJsonToTypescript('{"name":"api",}', "Root").error?.code)
-      .toBe("INVALID_JSON");
+    expect(convertJsonToTypescript('{"name":"api" // comment\n}', "Root").error?.code).toBe("INVALID_JSON");
+    expect(convertJsonToTypescript('{"name":"api",}', "Root").error?.code).toBe("INVALID_JSON");
   });
 
   it("root type 이름의 빈 값, 예약어, 잘못된 identifier를 구분한다", () => {

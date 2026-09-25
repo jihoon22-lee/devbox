@@ -137,9 +137,7 @@ describe("Repo Manager Path app-link delivery", () => {
       fixtures.openHandler?.(pathRequest("C:\\stale-secret"));
     });
 
-    await waitFor(() =>
-      expect(prepareInboundRepositoryMock).toHaveBeenCalledWith(fixtures.known.path),
-    );
+    await waitFor(() => expect(prepareInboundRepositoryMock).toHaveBeenCalledWith(fixtures.known.path));
     expect(prepareInboundRepositoryMock).not.toHaveBeenCalledWith("C:\\stale-secret");
     expect(document.body.textContent).not.toContain("stale-secret");
   });
@@ -147,9 +145,10 @@ describe("Repo Manager Path app-link delivery", () => {
   it("does not let an older Path validation replace the newest hot request", async () => {
     let resolveOlder: ((value: typeof fixtures.draft) => void) | undefined;
     prepareInboundRepositoryMock.mockImplementationOnce(
-      () => new Promise((resolve) => {
-        resolveOlder = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveOlder = resolve;
+        }),
     );
     render(<App />);
     await waitFor(() => expect(fixtures.openHandler).not.toBeNull());
@@ -157,16 +156,12 @@ describe("Repo Manager Path app-link delivery", () => {
 
     takePendingOpenMock.mockResolvedValueOnce(pathRequest(fixtures.draft.path));
     await act(async () => fixtures.openHandler?.(pathRequest("ignored-one")));
-    await waitFor(() =>
-      expect(prepareInboundRepositoryMock).toHaveBeenCalledWith(fixtures.draft.path),
-    );
+    await waitFor(() => expect(prepareInboundRepositoryMock).toHaveBeenCalledWith(fixtures.draft.path));
 
     takePendingOpenMock.mockResolvedValueOnce(pathRequest(fixtures.known.path));
     await act(async () => fixtures.openHandler?.(pathRequest("ignored-two")));
     const knownPath = await screen.findByText(fixtures.known.path, { selector: ".repo-path" });
-    await waitFor(() =>
-      expect(knownPath.closest(".repo-card")?.classList.contains("selected")).toBe(true),
-    );
+    await waitFor(() => expect(knownPath.closest(".repo-card")?.classList.contains("selected")).toBe(true));
 
     await act(async () => resolveOlder?.(fixtures.draft));
 

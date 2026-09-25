@@ -95,12 +95,12 @@ fn approval(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<App
     Ok(value)
 }
 pub(crate) enum PreparedSource {
-    Native(Box<(repo_manager_lib::component::SourceAccess, Value)>),
+    Native(Box<(repositories_engine::component::SourceAccess, Value)>),
     #[cfg(windows)]
     Wsl(Box<WslExecution>),
 }
 pub(crate) enum ReadySource {
-    Native(Box<(repo_manager_lib::component::SourceAccess, Value)>),
+    Native(Box<(repositories_engine::component::SourceAccess, Value)>),
     #[cfg(windows)]
     Complete(Value),
 }
@@ -358,7 +358,7 @@ impl SourceHost {
             Some(_) => Err("source_context_changed"),
             None => {
                 let storage = crate::platform::storage_paths::from_host(app, host)?;
-                repo_manager_lib::component::initialize(app, &common)
+                repositories_engine::component::initialize(app, &common)
                     .map_err(|_| "source_owner_unavailable")?;
                 self.common = Some(common);
                 self.storage = Some(storage);
@@ -419,7 +419,7 @@ impl SourceHost {
                     target_dir: String,
                 }
                 let input: Input = serde_json::from_value(args).map_err(|_| "invalid_request")?;
-                if !repo_manager_lib::component::source_branch_valid(&input.branch) {
+                if !repositories_engine::component::source_branch_valid(&input.branch) {
                     return Err("worktree_branch_invalid");
                 }
                 if self.preview_count() >= MAX_PREVIEWS {
@@ -700,7 +700,8 @@ impl SourceHost {
             },
         )
         .map_err(|_| "source_context_changed")?;
-        let mut access = repo_manager_lib::component::SourceAccess::for_project(root, key, policy);
+        let mut access =
+            repositories_engine::component::SourceAccess::for_project(root, key, policy);
         if let Some((pending, operation_id)) = creation {
             let target = pending.target;
             let path = target
@@ -708,7 +709,7 @@ impl SourceHost {
                 .to_str()
                 .ok_or("worktree_target_invalid")?
                 .to_owned();
-            let creation = repo_manager_lib::component::SourceCreation::new(
+            let creation = repositories_engine::component::SourceCreation::new(
                 pending.branch,
                 path,
                 operation_id,

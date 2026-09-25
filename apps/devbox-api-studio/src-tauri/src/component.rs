@@ -80,7 +80,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 return false;
             }
             matches!(route, "requests" | "protocols" | "history")
-                && (api_playground_lib::component::COMMANDS.contains(&method)
+                && (http_client_engine::component::COMMANDS.contains(&method)
                     || crate::api_workspace::COMMANDS.contains(&method)
                     || crate::handoff::is_send(component, method)
                     || crate::knowledge::is_command(component, method)
@@ -89,7 +89,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         "api-studio.webhooks" => {
             route == "webhooks"
-                && (webhook_lab_lib::component::COMMANDS.contains(&method)
+                && (webhook_host::component::COMMANDS.contains(&method)
                     || crate::mock_draft::COMMANDS.contains(&method)
                     || matches!(
                         method,
@@ -103,7 +103,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.transforms" => {
             route == "transforms"
                 && ((method == "open_workspace_selection"
-                    || developer_toolbox_lib::component::COMMANDS.contains(&method))
+                    || toolbox_engine::component::COMMANDS.contains(&method))
                     || crate::knowledge::is_command(component, method)
                     || method == "read_clipboard_text"
                     || crate::handoff::is_send(component, method))
@@ -262,13 +262,13 @@ async fn execute(
     } else {
         match request.component.as_str() {
             "api-studio.api" => {
-                api_playground_lib::component::dispatch(app, &request.method, request.args).await
+                http_client_engine::component::dispatch(app, &request.method, request.args).await
             }
             "api-studio.webhooks" => {
-                webhook_lab_lib::component::dispatch(app, &request.method, request.args).await
+                webhook_host::component::dispatch(app, &request.method, request.args).await
             }
             "api-studio.transforms" => {
-                developer_toolbox_lib::component::dispatch(app, &request.method, request.args).await
+                toolbox_engine::component::dispatch(app, &request.method, request.args).await
             }
             _ => return Err(problem(ProblemCode::Unauthorized)),
         }
@@ -306,11 +306,10 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             app.manage(Active::default());
             let store = crate::handoff::initialize(app).map_err(std::io::Error::other)?;
             crate::mock_draft::initialize(app, store.clone()).map_err(std::io::Error::other)?;
-            api_playground_lib::component::initialize(app, store.clone())
+            http_client_engine::component::initialize(app, store.clone())
                 .map_err(std::io::Error::other)?;
-            webhook_lab_lib::component::initialize(app).map_err(std::io::Error::other)?;
-            developer_toolbox_lib::component::initialize(app, store)
-                .map_err(std::io::Error::other)?;
+            webhook_host::component::initialize(app).map_err(std::io::Error::other)?;
+            toolbox_engine::component::initialize(app, store).map_err(std::io::Error::other)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![execute])

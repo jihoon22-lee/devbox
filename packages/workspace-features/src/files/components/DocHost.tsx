@@ -25,7 +25,7 @@ interface DocHostProps {
   canNavigate?: (docId: DocId, kind: "definition" | "references") => boolean;
   navigationBusy?: boolean;
   onNavigate?: (docId: DocId, kind: "definition" | "references", cursor: number) => void;
-  onTransform?: (docId:string,from:number,to:number,current:()=>boolean)=>Promise<void>;
+  onTransform?: (docId: string, from: number, to: number, current: () => boolean) => Promise<void>;
   onError?: (message: string | null) => void;
 }
 

@@ -13,10 +13,7 @@ import { GROUPS, TOOLS } from "./tools";
 import { OutputSourceContext } from "./tools/outputPolicy";
 import { DiffDraftContext } from "./tools/diff";
 import { isProductHosted } from "../transport";
-import {
-  SmartWorkflowPanel,
-  type SmartWorkflowIncomingText,
-} from "./workflows/SmartWorkflowPanel";
+import { SmartWorkflowPanel, type SmartWorkflowIncomingText } from "./workflows/SmartWorkflowPanel";
 import type { OpenRequest, ToolboxTextHandoffPreview } from "./types";
 
 export const TOOLBOX_TEXT_SOURCE_LABELS: Readonly<Record<string, string>> = {
@@ -51,17 +48,20 @@ const TOOLBOX_TEXT_LOCAL_ERRORS = new Set([
 ]);
 
 function safeToolboxTextError(cause: unknown): string {
-  const message = cause instanceof Error
-    ? cause.message.replace(/^Error:\s*/u, "")
-    : typeof cause === "string" ? cause : "";
-  return TOOLBOX_TEXT_NATIVE_ERROR_DISPLAY.get(message)
-    ?? (TOOLBOX_TEXT_LOCAL_ERRORS.has(message) ? message : TOOLBOX_TEXT_REJECTED_ERROR);
+  const message =
+    cause instanceof Error ? cause.message.replace(/^Error:\s*/u, "") : typeof cause === "string" ? cause : "";
+  return (
+    TOOLBOX_TEXT_NATIVE_ERROR_DISPLAY.get(message) ??
+    (TOOLBOX_TEXT_LOCAL_ERRORS.has(message) ? message : TOOLBOX_TEXT_REJECTED_ERROR)
+  );
 }
 
 function isTerminalToolboxTextError(message: string): boolean {
-  return message === TOOLBOX_TEXT_INVALID_ERROR
-    || message === TOOLBOX_TEXT_EXPIRED_ERROR
-    || message === "텍스트 전달 응답을 사용할 수 없습니다";
+  return (
+    message === TOOLBOX_TEXT_INVALID_ERROR ||
+    message === TOOLBOX_TEXT_EXPIRED_ERROR ||
+    message === "텍스트 전달 응답을 사용할 수 없습니다"
+  );
 }
 
 function formatHandoffExpiry(expiresAtMs: number): string {
@@ -120,20 +120,23 @@ export default function App() {
     setHandoffError(null);
     void previewToolboxText(id)
       .then((preview) => {
-        const validSource = typeof preview.producerId === "string"
-          && Object.prototype.hasOwnProperty.call(TOOLBOX_TEXT_SOURCE_LABELS, preview.producerId);
+        const validSource =
+          typeof preview.producerId === "string" &&
+          Object.prototype.hasOwnProperty.call(TOOLBOX_TEXT_SOURCE_LABELS, preview.producerId);
         if (!validSource) {
-          void Promise.resolve().then(() => discardToolboxText(preview.handoffId)).catch(() => undefined);
+          void Promise.resolve()
+            .then(() => discardToolboxText(preview.handoffId))
+            .catch(() => undefined);
           if (mountedRef.current && handoffGenerationRef.current === generation) {
             handoffRequestIdRef.current = null;
             setHandoffError(TOOLBOX_TEXT_INVALID_ERROR);
           }
           return;
         }
-        if (!mountedRef.current
-          || handoffGenerationRef.current !== generation
-          || handoffRequestIdRef.current !== id) {
-          void Promise.resolve().then(() => discardToolboxText(preview.handoffId)).catch(() => undefined);
+        if (!mountedRef.current || handoffGenerationRef.current !== generation || handoffRequestIdRef.current !== id) {
+          void Promise.resolve()
+            .then(() => discardToolboxText(preview.handoffId))
+            .catch(() => undefined);
           return;
         }
         handoffPreviewRef.current = preview;
@@ -143,7 +146,9 @@ export default function App() {
         // A malformed renderer response can arrive after native claim. A
         // best-effort restore with the exact request id keeps that claim from
         // being stranded until lease expiry.
-        void Promise.resolve().then(() => discardToolboxText(id)).catch(() => undefined);
+        void Promise.resolve()
+          .then(() => discardToolboxText(id))
+          .catch(() => undefined);
         if (!mountedRef.current || handoffGenerationRef.current !== generation) return;
         handoffRequestIdRef.current = null;
         setHandoffError(safeToolboxTextError(cause));
@@ -206,18 +211,21 @@ export default function App() {
   // Keep the claim alive while the explicit preview is open. Renewal extends
   // only the short claim lease; the handoff's own expiry shown in the modal
   // never changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!handoffPreview) return undefined;
     const id = handoffPreview.handoffId;
     let disposed = false;
     const interval = window.setInterval(() => {
       if (disposed || handoffBusyRef.current || handoffPreviewRef.current?.handoffId !== id) return;
-      void Promise.resolve().then(() => renewToolboxText(id)).catch((cause) => {
-        if (disposed || !mountedRef.current || handoffPreviewRef.current?.handoffId !== id) return;
-        const message = safeToolboxTextError(cause);
-        if (isTerminalToolboxTextError(message)) clearHandoffPreview();
-        setHandoffError(message);
-      });
+      void Promise.resolve()
+        .then(() => renewToolboxText(id))
+        .catch((cause) => {
+          if (disposed || !mountedRef.current || handoffPreviewRef.current?.handoffId !== id) return;
+          const message = safeToolboxTextError(cause);
+          if (isTerminalToolboxTextError(message)) clearHandoffPreview();
+          setHandoffError(message);
+        });
     }, 30_000);
     return () => {
       disposed = true;
@@ -285,9 +293,10 @@ export default function App() {
     if (!handoffPreview) {
       const previous = handoffPreviousFocusRef.current;
       handoffPreviousFocusRef.current = null;
-      if (previous?.isConnected) window.setTimeout(() => {
-        if (mountedRef.current && previous.isConnected) previous.focus({ preventScroll: true });
-      }, 0);
+      if (previous?.isConnected)
+        window.setTimeout(() => {
+          if (mountedRef.current && previous.isConnected) previous.focus({ preventScroll: true });
+        }, 0);
       return undefined;
     }
 
@@ -298,17 +307,17 @@ export default function App() {
 
     const dialog = handoffDialogRef.current;
     const activeElement = document.activeElement;
-    handoffPreviousFocusRef.current = activeElement instanceof HTMLElement && !dialog?.contains(activeElement)
-      ? activeElement
-      : null;
+    handoffPreviousFocusRef.current =
+      activeElement instanceof HTMLElement && !dialog?.contains(activeElement) ? activeElement : null;
     handoffCancelButtonRef.current?.focus();
     if (!dialog) return undefined;
 
-    const focusableElements = () => Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
+    const focusableElements = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
     const onDialogKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -352,7 +361,9 @@ export default function App() {
       // on the other hand, already has a stable claim id and is restored now.
       const id = handoffPreviewRef.current?.handoffId;
       if (id && !handoffBusyRef.current) {
-        void Promise.resolve().then(() => discardToolboxText(id)).catch(() => undefined);
+        void Promise.resolve()
+          .then(() => discardToolboxText(id))
+          .catch(() => undefined);
       }
     };
   }, []);
@@ -377,17 +388,35 @@ export default function App() {
         ))}
       </aside>
       <main className="content">
-        {handoffError ? <div className="toolbox-handoff-error" role="alert">{handoffError}</div> : null}
-        {isProductHosted() && incomingText && <section className="incoming-diff-actions" aria-label="전달받은 결과 비교">
-          <p>확인한 전달 결과를 비교 입력으로 사용할 수 있습니다. 각 버튼은 선택한 쪽의 입력만 바꿉니다.</p>
-          <button className="btn" onClick={() => { setDiffA(incomingText.text); setActiveId("diff"); }}>비교의 이전 입력으로</button>
-          <button className="btn" onClick={() => { setDiffB(incomingText.text); setActiveId("diff"); }}>비교의 새 입력으로</button>
-        </section>}
-        <SmartWorkflowPanel
-          activeToolId={activeId}
-          onOpenTool={setActiveId}
-          incomingText={incomingText}
-        />
+        {handoffError ? (
+          <div className="toolbox-handoff-error" role="alert">
+            {handoffError}
+          </div>
+        ) : null}
+        {isProductHosted() && incomingText && (
+          <section className="incoming-diff-actions" aria-label="전달받은 결과 비교">
+            <p>확인한 전달 결과를 비교 입력으로 사용할 수 있습니다. 각 버튼은 선택한 쪽의 입력만 바꿉니다.</p>
+            <button
+              className="btn"
+              onClick={() => {
+                setDiffA(incomingText.text);
+                setActiveId("diff");
+              }}
+            >
+              비교의 이전 입력으로
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                setDiffB(incomingText.text);
+                setActiveId("diff");
+              }}
+            >
+              비교의 새 입력으로
+            </button>
+          </section>
+        )}
+        <SmartWorkflowPanel activeToolId={activeId} onOpenTool={setActiveId} incomingText={incomingText} />
         <h2 className="tool-title">{active.name}</h2>
         <OutputSourceContext value={{ kind: "tool", toolId: active.id }}>
           <DiffDraftContext value={isProductHosted() ? { a: diffA, b: diffB, setA: setDiffA, setB: setDiffB } : null}>
@@ -409,21 +438,36 @@ export default function App() {
               <div>
                 <h2 id="toolbox-handoff-title">Toolbox 텍스트 미리보기</h2>
                 <p id="toolbox-handoff-description">
-                  {TOOLBOX_TEXT_SOURCE_LABELS[handoffPreview.producerId]}에서 전달한 텍스트입니다. 적용하면 Smart input에만 넣으며,
-                  자동 실행·저장·복사하지 않습니다.
+                  {TOOLBOX_TEXT_SOURCE_LABELS[handoffPreview.producerId]}에서 전달한 텍스트입니다. 적용하면 Smart
+                  input에만 넣으며, 자동 실행·저장·복사하지 않습니다.
                 </p>
               </div>
               <span className="toolbox-handoff-kind">{TOOLBOX_TEXT_HANDOFF_KIND}</span>
             </div>
             <dl className="toolbox-handoff-meta">
-              <div><dt>원본</dt><dd>{TOOLBOX_TEXT_SOURCE_LABELS[handoffPreview.producerId]}</dd></div>
-              <div><dt>전달</dt><dd><code>{handoffPreview.handoffId}</code></dd></div>
-              <div><dt>만료</dt><dd>{formatHandoffExpiry(handoffPreview.expiresAtMs)}</dd></div>
+              <div>
+                <dt>원본</dt>
+                <dd>{TOOLBOX_TEXT_SOURCE_LABELS[handoffPreview.producerId]}</dd>
+              </div>
+              <div>
+                <dt>전달</dt>
+                <dd>
+                  <code>{handoffPreview.handoffId}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>만료</dt>
+                <dd>{formatHandoffExpiry(handoffPreview.expiresAtMs)}</dd>
+              </div>
             </dl>
             {handoffPreview.redacted ? (
-              <p className="toolbox-handoff-redacted" role="note">민감한 값은 송신 앱에서 마스킹되었습니다.</p>
+              <p className="toolbox-handoff-redacted" role="note">
+                민감한 값은 송신 앱에서 마스킹되었습니다.
+              </p>
             ) : null}
-            <pre className="toolbox-handoff-text" aria-label="Toolbox 전달 텍스트">{handoffPreview.text}</pre>
+            <pre className="toolbox-handoff-text" aria-label="Toolbox 전달 텍스트">
+              {handoffPreview.text}
+            </pre>
             <div className="toolbox-handoff-actions">
               <button
                 ref={handoffCancelButtonRef}
@@ -434,12 +478,7 @@ export default function App() {
               >
                 취소
               </button>
-              <button
-                type="button"
-                className="btn active"
-                disabled={handoffBusy}
-                onClick={() => void onApplyHandoff()}
-              >
+              <button type="button" className="btn active" disabled={handoffBusy} onClick={() => void onApplyHandoff()}>
                 {handoffBusy ? "처리 중..." : "적용"}
               </button>
             </div>

@@ -3,18 +3,9 @@ const invoke = componentInvoke("api-studio.api");
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./lib/isTauri";
-import {
-  isBinaryResponse,
-  MAX_RESPONSE_BODY_BYTES,
-  projectBinaryResponse,
-} from "./lib/binary";
+import { isBinaryResponse, MAX_RESPONSE_BODY_BYTES, projectBinaryResponse } from "./lib/binary";
 import { applyToRequest, type EnvVariable } from "./lib/environments";
-import {
-  buildCookieHeader,
-  hasCookieSourceConflict,
-  isCookieEnabled,
-  validateCookies,
-} from "./lib/cookies";
+import { buildCookieHeader, hasCookieSourceConflict, isCookieEnabled, validateCookies } from "./lib/cookies";
 import { isHeaderEnabled } from "./lib/headers";
 import {
   buildGraphqlBody,
@@ -65,12 +56,7 @@ import {
   validateCloseReason,
   validateWebSocketRequest,
 } from "./lib/websocket";
-import type {
-  WebSocketConnectionState,
-  WebSocketMessage,
-  WebSocketMessageInput,
-  WebSocketUpdate,
-} from "./types";
+import type { WebSocketConnectionState, WebSocketMessage, WebSocketMessageInput, WebSocketUpdate } from "./types";
 
 export {
   cancelMcpHttp,
@@ -120,9 +106,7 @@ export const TOOLBOX_SELECTION_BROWSER_ERROR =
 function nextNativeRequestId(): string {
   nativeRequestSequence = (nativeRequestSequence + 1) % Number.MAX_SAFE_INTEGER;
   const randomId = globalThis.crypto?.randomUUID?.().replace(/-/g, "");
-  return randomId
-    ? `request-${randomId}`
-    : `request-${Date.now().toString(36)}-${nativeRequestSequence.toString(36)}`;
+  return randomId ? `request-${randomId}` : `request-${Date.now().toString(36)}-${nativeRequestSequence.toString(36)}`;
 }
 
 export interface RemoteOpenApiSource {
@@ -158,7 +142,9 @@ export async function sendRequest(
   if (!isTauri()) return browserFetch(req, environment, signal);
   if (signal?.aborted) throw new Error("요청이 취소되었습니다");
   const requestId = nextNativeRequestId();
-  const onAbort = () => { void cancelRequest(requestId); };
+  const onAbort = () => {
+    void cancelRequest(requestId);
+  };
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
     return await invoke<ApiResponse>("send_request", { req, environment, requestId });
@@ -185,10 +171,7 @@ export async function sealSecret(value: string): Promise<string> {
 }
 
 /** 저장 후보를 backend secret 경계에서 한 번 더 정화한다. */
-export async function sanitizePersistedJson(
-  serialized: string,
-  environment: EnvVariable[],
-): Promise<string> {
+export async function sanitizePersistedJson(serialized: string, environment: EnvVariable[]): Promise<string> {
   if (!isTauri()) {
     if (environment.some((variable) => variable.secret)) {
       throw new Error("secret 검증은 데스크톱 앱에서만 사용할 수 있습니다");
@@ -199,10 +182,7 @@ export async function sanitizePersistedJson(
 }
 
 /** 확인 뒤 한 번만 원문 cURL을 만들어 반환한다. 호출자는 즉시 사용하고 저장하지 않는다. */
-export async function buildRevealedCurl(
-  req: RequestTemplate,
-  environment: EnvVariable[],
-): Promise<string> {
+export async function buildRevealedCurl(req: RequestTemplate, environment: EnvVariable[]): Promise<string> {
   if (!isTauri()) throw new Error("원문 cURL 복사는 데스크톱 앱에서만 사용할 수 있습니다");
   return invoke<string>("build_revealed_curl", { req, environment });
 }
@@ -249,11 +229,13 @@ export async function saveJsonFile(content: string, defaultName: string): Promis
 /** 데스크톱 file picker의 사용자 선택 결과만 runtime multipart 경로로 반환한다. */
 export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
   if (!isTauri()) throw new Error("파일 선택은 데스크톱 앱에서만 사용할 수 있습니다");
-  const selected = isProductHosted() ? await invoke<string | null>("pick_multipart_file") : await open({
-    directory: false,
-    multiple: false,
-    title: "multipart 파일 선택",
-  });
+  const selected = isProductHosted()
+    ? await invoke<string | null>("pick_multipart_file")
+    : await open({
+        directory: false,
+        multiple: false,
+        title: "multipart 파일 선택",
+      });
   if (typeof selected !== "string") return null;
   return { path: selected, name: safeMultipartFileName(selected) };
 }
@@ -267,7 +249,9 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
 /** Registers the wake-up listener used by the native single-instance plugin. */
 export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<UnlistenFn> {
   if (!isTauri()) return () => undefined;
-  return listen<OpenRequest>(isProductHosted() ? "api-studio://api-open" : "devbox://open", (event) => cb(event.payload));
+  return listen<OpenRequest>(isProductHosted() ? "api-studio://api-open" : "devbox://open", (event) =>
+    cb(event.payload),
+  );
 }
 
 /** Claim and validate a pending `api-request/v1` handoff for preview. */
@@ -294,15 +278,18 @@ export async function restoreApiRequest(handoffId: string): Promise<void> {
   return invoke<void>("restore_api_request", { handoffId });
 }
 
-async function browserFetch(req: RequestTemplate, environment: EnvVariable[], signal?: AbortSignal): Promise<ApiResponse> {
+async function browserFetch(
+  req: RequestTemplate,
+  environment: EnvVariable[],
+  signal?: AbortSignal,
+): Promise<ApiResponse> {
   if (environment.some((variable) => variable.secret)) {
     throw new Error("secret 포함 요청은 데스크톱 앱에서만 전송할 수 있습니다");
   }
   const variables = new Map(environment.map((variable) => [variable.key, variable.value]));
   let resolved = { ...applyToRequest(req, variables), method: req.method.trim().toUpperCase() };
-  const graphql = resolved.body_kind === "graphql" && resolved.graphql
-    ? resolveGraphqlRequest(resolved.graphql, variables)
-    : null;
+  const graphql =
+    resolved.body_kind === "graphql" && resolved.graphql ? resolveGraphqlRequest(resolved.graphql, variables) : null;
   if (resolved.body_kind === "graphql") {
     if (!graphql) throw new Error("GraphQL 요청 구성이 올바르지 않습니다");
     validateGraphqlEndpoint(resolved.url);
@@ -323,14 +310,18 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[], si
   if (resolved.body_kind === "multipart") {
     const issue = validateMultipartParts(resolved.multipart)[0];
     if (issue) throw new Error(issue.message);
-    if (resolved.multipart.some((part) =>
-      isMultipartPartEnabled(part) && part.kind === "file" && Boolean(part.name || part.file_name),
-    )) {
+    if (
+      resolved.multipart.some(
+        (part) => isMultipartPartEnabled(part) && part.kind === "file" && Boolean(part.name || part.file_name),
+      )
+    ) {
       throw new Error("multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다");
     }
-    if (resolved.multipart.some((part) =>
-      isMultipartPartEnabled(part) && part.kind === "text" && Boolean(part.content_type),
-    )) {
+    if (
+      resolved.multipart.some(
+        (part) => isMultipartPartEnabled(part) && part.kind === "text" && Boolean(part.content_type),
+      )
+    ) {
       throw new Error("part별 Content-Type 전송은 데스크톱 앱에서만 사용할 수 있습니다");
     }
   }
@@ -357,12 +348,13 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[], si
   }
   const params = new URLSearchParams();
   for (const p of resolved.params) if (p.key) params.append(p.key, p.value);
-  const url = resolved.body_kind === "graphql" && graphql && resolved.method === "GET"
-    ? buildGraphqlGetUrl(resolved.url, resolved.params, graphql)
-    : (() => {
-      const sep = resolved.url.includes("?") ? "&" : "?";
-      return params.size ? resolved.url + sep + params.toString() : resolved.url;
-    })();
+  const url =
+    resolved.body_kind === "graphql" && graphql && resolved.method === "GET"
+      ? buildGraphqlGetUrl(resolved.url, resolved.params, graphql)
+      : (() => {
+          const sep = resolved.url.includes("?") ? "&" : "?";
+          return params.size ? resolved.url + sep + params.toString() : resolved.url;
+        })();
   if (resolved.body_kind === "graphql") validateGraphqlEndpoint(url);
 
   let body: BodyInit | undefined;
@@ -412,8 +404,7 @@ async function browserFetch(req: RequestTemplate, environment: EnvVariable[], si
   resp.headers.forEach((v, k) => {
     if (headersTruncated) return;
     const lineBytes = encoder.encode(k).byteLength + encoder.encode(v).byteLength + 2;
-    if (respHeaders.length >= MAX_RESPONSE_HEADERS
-      || responseHeaderBytes + lineBytes > MAX_RESPONSE_HEADER_BYTES) {
+    if (respHeaders.length >= MAX_RESPONSE_HEADERS || responseHeaderBytes + lineBytes > MAX_RESPONSE_HEADER_BYTES) {
       headersTruncated = true;
       return;
     }
@@ -479,13 +470,13 @@ function normalizeResponseMediaType(value: string): string {
   const candidate = value.split(";", 1)[0].trim().toLowerCase().slice(0, MAX_RESPONSE_MEDIA_TYPE_BYTES);
   // Content-Type is response metadata, but it is still untrusted input. Keep
   // only the bounded MIME token and avoid reflecting credential-shaped values.
-  return candidate && !isSensitiveName(candidate) && SAFE_RESPONSE_MEDIA_TYPE.test(candidate)
-    ? candidate
-    : "";
+  return candidate && !isSensitiveName(candidate) && SAFE_RESPONSE_MEDIA_TYPE.test(candidate) ? candidate : "";
 }
 
 function isSensitiveName(name: string): boolean {
-  return /(authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)/i.test(name);
+  return /(authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)/i.test(
+    name,
+  );
 }
 
 function redactUrl(value: string, maskGraphql = false): string {
@@ -513,14 +504,10 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
     ...req.headers
       .filter((header) => isHeaderEnabled(header) && isSensitiveName(header.key))
       .map((header) => header.value),
-    ...req.cookies
-      .filter((cookie) => isCookieEnabled(cookie))
-      .map((cookie) => cookie.value),
+    ...req.cookies.filter((cookie) => isCookieEnabled(cookie)).map((cookie) => cookie.value),
     ...req.params.filter((param) => isSensitiveName(param.key)).map((param) => param.value),
     ...req.multipart
-      .filter((part) =>
-        isMultipartPartEnabled(part) && part.kind === "text" && isSensitiveName(part.name),
-      )
+      .filter((part) => isMultipartPartEnabled(part) && part.kind === "text" && isSensitiveName(part.name))
       .map((part) => part.value),
     ...(req.body_kind === "graphql" && req.graphql ? graphqlSecrets(req.graphql) : []),
   ].filter((value): value is string => Boolean(value));
@@ -532,17 +519,18 @@ function redactBrowserText(text: string, req: RequestTemplate): string {
   } catch {
     // The request boundary reports a fixed URL error; redaction itself never reflects it.
   }
-  const exactRedacted = directSecrets.sort((a, b) => b.length - a.length).reduce(
-    (result, secret) => result.split(secret).join("[REDACTED]"),
-    text,
-  );
+  const exactRedacted = directSecrets
+    .sort((a, b) => b.length - a.length)
+    .reduce((result, secret) => result.split(secret).join("[REDACTED]"), text);
   try {
     return redactBrowserTokens(JSON.stringify(redactBrowserJson(JSON.parse(exactRedacted) as unknown)));
   } catch {
-    return redactBrowserTokens(exactRedacted.replace(
-      /((?:authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)\s*[=:]\s*)([^\s,;&]+)/gi,
-      "$1[REDACTED]",
-    ));
+    return redactBrowserTokens(
+      exactRedacted.replace(
+        /((?:authorization|cookie|set[-_]?cookie|api[-_]?key|api[-_]?value|token|secret|password|passwd|private[-_]?key|username)\s*[=:]\s*)([^\s,;&]+)/gi,
+        "$1[REDACTED]",
+      ),
+    );
   }
 }
 
@@ -569,10 +557,7 @@ function graphqlSecrets(request: NonNullable<RequestTemplate["graphql"]>): strin
 }
 
 function redactBrowserTokens(value: string): string {
-  return value.replace(
-    /(?:sk-|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_\-]{12,}/g,
-    "[REDACTED]",
-  );
+  return value.replace(/(?:sk-|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_\-]{12,}/g, "[REDACTED]");
 }
 
 function redactBrowserJson(value: unknown, key = ""): unknown {
@@ -721,7 +706,8 @@ async function runBrowserSse(
           }
           const chunk = result.value;
           decodedBytes += chunk.byteLength;
-          if (decodedBytes > MAX_DECODED_BYTES) throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
+          if (decodedBytes > MAX_DECODED_BYTES)
+            throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
           for (const event of parser.feed(chunk)) {
             sequence = emitBrowserEvent(event, req, sessionId, onUpdate, sequence, history);
             if (event.retryMs !== undefined) retryMs = event.retryMs;
@@ -744,11 +730,12 @@ async function runBrowserSse(
       }
     } catch (cause) {
       if (signal.aborted) return;
-      const failure = cause instanceof BrowserSseFailure
-        ? cause
-        : cause instanceof SseParseError
-          ? new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false)
-          : new BrowserSseFailure("SSE stream 연결에 실패했습니다", true);
+      const failure =
+        cause instanceof BrowserSseFailure
+          ? cause
+          : cause instanceof SseParseError
+            ? new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false)
+            : new BrowserSseFailure("SSE stream 연결에 실패했습니다", true);
       if (!options.reconnect || !failure.retryable || attempts >= MAX_SSE_RECONNECT_ATTEMPTS) {
         onUpdate({ sessionId, kind: "error", sequence, dropped: history.evicted, message: failure.message });
         return;
@@ -772,7 +759,10 @@ async function runBrowserSse(
 }
 
 class BrowserSseFailure extends Error {
-  constructor(readonly message: string, readonly retryable: boolean) {
+  constructor(
+    readonly message: string,
+    readonly retryable: boolean,
+  ) {
     super(message);
     this.name = "BrowserSseFailure";
   }
@@ -797,11 +787,11 @@ async function browserSseFetch(
   for (const header of req.headers.slice(0, MAX_SSE_HEADERS)) {
     const headerName = header.key.trim().toLowerCase();
     if (
-      isHeaderEnabled(header)
-      && header.key
-      && headerName !== "last-event-id"
-      && headerName !== "accept"
-      && !(req.body_kind === "multipart" && isMultipartDerivedHeader(header.key))
+      isHeaderEnabled(header) &&
+      header.key &&
+      headerName !== "last-event-id" &&
+      headerName !== "accept" &&
+      !(req.body_kind === "multipart" && isMultipartDerivedHeader(header.key))
     ) {
       try {
         headers.append(header.key, header.value);
@@ -878,7 +868,13 @@ async function browserSseFetch(
   }, connectTimeout);
   let response: Response;
   try {
-    response = await fetch(url, { method: req.method, headers, body, redirect: "error", signal: requestController.signal });
+    response = await fetch(url, {
+      method: req.method,
+      headers,
+      body,
+      redirect: "error",
+      signal: requestController.signal,
+    });
   } catch {
     if (signal.aborted) throw new BrowserSseFailure("SSE stream이 중지되었습니다", false);
     if (timedOut || remaining <= 1) throw new BrowserSseFailure("SSE stream 시간이 초과되었습니다", true);
@@ -887,7 +883,10 @@ async function browserSseFetch(
     clearTimeout(connectTimer);
     signal.removeEventListener("abort", relayAbort);
   }
-  if (!response.ok || (response.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase() !== "text/event-stream") {
+  if (
+    !response.ok ||
+    (response.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase() !== "text/event-stream"
+  ) {
     throw new BrowserSseFailure("SSE 응답 형식이 아닙니다", false);
   }
   return response;
@@ -920,10 +919,14 @@ function sleepWithAbort(delayMs: number, signal: AbortSignal): Promise<void> {
       return;
     }
     const timer = setTimeout(resolve, delayMs);
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      resolve();
-    }, { once: true });
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 
@@ -942,10 +945,11 @@ function emitBrowserEvent(
     ...(event.retryMs === undefined ? {} : { retryMs: event.retryMs }),
   };
   if (
-    utf8ByteLength(safe.event) > MAX_EVENT_NAME_BYTES
-    || utf8ByteLength(safe.data) > MAX_EVENT_DATA_BYTES
-    || (safe.id !== undefined && utf8ByteLength(safe.id) > MAX_EVENT_ID_BYTES)
-  ) throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
+    utf8ByteLength(safe.event) > MAX_EVENT_NAME_BYTES ||
+    utf8ByteLength(safe.data) > MAX_EVENT_DATA_BYTES ||
+    (safe.id !== undefined && utf8ByteLength(safe.id) > MAX_EVENT_ID_BYTES)
+  )
+    throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
   history.push(safe);
   const nextSequence = sequence + 1;
   if (!Number.isSafeInteger(nextSequence)) throw new BrowserSseFailure("SSE stream 데이터가 올바르지 않습니다", false);
@@ -963,13 +967,25 @@ function emitBrowserEvent(
 }
 
 function validateSseOptions(options: SseOptions): void {
-  if (!Number.isInteger(options.connectTimeoutMs) || options.connectTimeoutMs < MIN_SSE_CONNECT_TIMEOUT_MS || options.connectTimeoutMs > MAX_SSE_CONNECT_TIMEOUT_MS) {
+  if (
+    !Number.isInteger(options.connectTimeoutMs) ||
+    options.connectTimeoutMs < MIN_SSE_CONNECT_TIMEOUT_MS ||
+    options.connectTimeoutMs > MAX_SSE_CONNECT_TIMEOUT_MS
+  ) {
     throw new Error("SSE 연결 timeout 범위가 올바르지 않습니다.");
   }
-  if (!Number.isInteger(options.idleTimeoutMs) || options.idleTimeoutMs < MIN_SSE_IDLE_TIMEOUT_MS || options.idleTimeoutMs > MAX_SSE_IDLE_TIMEOUT_MS) {
+  if (
+    !Number.isInteger(options.idleTimeoutMs) ||
+    options.idleTimeoutMs < MIN_SSE_IDLE_TIMEOUT_MS ||
+    options.idleTimeoutMs > MAX_SSE_IDLE_TIMEOUT_MS
+  ) {
     throw new Error("SSE idle timeout 범위가 올바르지 않습니다.");
   }
-  if (!Number.isInteger(options.totalTimeoutMs) || options.totalTimeoutMs < MIN_SSE_TOTAL_TIMEOUT_MS || options.totalTimeoutMs > MAX_SSE_TOTAL_TIMEOUT_MS) {
+  if (
+    !Number.isInteger(options.totalTimeoutMs) ||
+    options.totalTimeoutMs < MIN_SSE_TOTAL_TIMEOUT_MS ||
+    options.totalTimeoutMs > MAX_SSE_TOTAL_TIMEOUT_MS
+  ) {
     throw new Error("SSE 전체 timeout 범위가 올바르지 않습니다.");
   }
 }
@@ -978,11 +994,11 @@ function validateSseEnvironment(environment: EnvVariable[]): void {
   if (environment.length > MAX_SSE_ENVIRONMENT_VARIABLES) {
     throw new Error("SSE 환경 변수는 최대 100개까지 사용할 수 있습니다.");
   }
-  if (environment.some((variable) =>
-    !variable.key
-    || utf8ByteLength(variable.key) > 128
-    || utf8ByteLength(variable.value) > 64 * 1024
-  )) {
+  if (
+    environment.some(
+      (variable) => !variable.key || utf8ByteLength(variable.key) > 128 || utf8ByteLength(variable.value) > 64 * 1024,
+    )
+  ) {
     throw new Error("SSE 환경 변수 형식이 올바르지 않습니다.");
   }
 }
@@ -991,18 +1007,21 @@ function validateBrowserSseRequest(req: RequestTemplate): void {
   const method = req.method.trim().toUpperCase();
   if (method !== "GET" && method !== "POST") throw new Error("SSE stream은 GET 또는 POST만 지원합니다.");
   if (
-    utf8ByteLength(req.url) > MAX_SSE_URL_BYTES
-    || req.headers.length > MAX_SSE_HEADERS
-    || req.cookies.length > 100
-    || req.params.length > MAX_SSE_PARAMS
+    utf8ByteLength(req.url) > MAX_SSE_URL_BYTES ||
+    req.headers.length > MAX_SSE_HEADERS ||
+    req.cookies.length > 100 ||
+    req.params.length > MAX_SSE_PARAMS
   ) {
     throw new Error("SSE 요청 항목 수 또는 URL이 제한을 초과했습니다.");
   }
   if (utf8ByteLength(req.body) > MAX_SSE_BODY_BYTES) throw new Error("SSE 요청 본문이 너무 큽니다.");
-  const hasMultipartContent = req.body_kind === "multipart" && req.multipart.some((part) =>
-    isMultipartPartEnabled(part)
-    && Boolean(part.name || part.value || part.file_path || part.file_name || part.content_type)
-  );
+  const hasMultipartContent =
+    req.body_kind === "multipart" &&
+    req.multipart.some(
+      (part) =>
+        isMultipartPartEnabled(part) &&
+        Boolean(part.name || part.value || part.file_path || part.file_name || part.content_type),
+    );
   if (method === "GET" && (req.body.trim() || hasMultipartContent)) {
     throw new Error("GET SSE 요청에는 본문을 사용할 수 없습니다.");
   }
@@ -1027,13 +1046,16 @@ function validateBrowserSseRequest(req: RequestTemplate): void {
     throw new Error("SSE 인증 설정이 올바르지 않습니다.");
   }
   for (const header of req.headers) {
-    if (utf8ByteLength(header.key) > 256 || utf8ByteLength(header.value) > 64 * 1024) throw new Error("SSE 요청 header가 너무 깁니다.");
+    if (utf8ByteLength(header.key) > 256 || utf8ByteLength(header.value) > 64 * 1024)
+      throw new Error("SSE 요청 header가 너무 깁니다.");
   }
   for (const cookie of req.cookies) {
-    if (utf8ByteLength(cookie.name) > 256 || utf8ByteLength(cookie.value) > 64 * 1024) throw new Error("SSE 요청 Cookie가 너무 깁니다.");
+    if (utf8ByteLength(cookie.name) > 256 || utf8ByteLength(cookie.value) > 64 * 1024)
+      throw new Error("SSE 요청 Cookie가 너무 깁니다.");
   }
   for (const parameter of req.params) {
-    if (utf8ByteLength(parameter.key) > 64 * 1024 || utf8ByteLength(parameter.value) > 64 * 1024) throw new Error("SSE 요청 parameter가 너무 깁니다.");
+    if (utf8ByteLength(parameter.key) > 64 * 1024 || utf8ByteLength(parameter.value) > 64 * 1024)
+      throw new Error("SSE 요청 parameter가 너무 깁니다.");
   }
   if (req.body_kind === "multipart") {
     const multipartIssue = validateMultipartParts(req.multipart)[0];
@@ -1044,23 +1066,21 @@ function validateBrowserSseRequest(req: RequestTemplate): void {
     if (req.multipart.some((part) => isMultipartPartEnabled(part) && part.kind === "file")) {
       throw new Error("SSE multipart 파일 전송은 데스크톱 앱에서만 사용할 수 있습니다.");
     }
-    if (req.multipart.some((part) =>
-      isMultipartPartEnabled(part) && part.kind === "text" && Boolean(part.content_type)
-    )) {
+    if (
+      req.multipart.some((part) => isMultipartPartEnabled(part) && part.kind === "text" && Boolean(part.content_type))
+    ) {
       throw new Error("SSE multipart part별 Content-Type은 데스크톱 앱에서만 사용할 수 있습니다.");
     }
   }
   if (req.body_kind === "none" && req.body.trim()) {
     throw new Error("SSE 요청 본문 형식이 올바르지 않습니다.");
   }
-  if (req.auth && [
-    req.auth.kind,
-    req.auth.username,
-    req.auth.password,
-    req.auth.token,
-    req.auth.api_key,
-    req.auth.api_value,
-  ].some((value) => utf8ByteLength(value) > 64 * 1024)) {
+  if (
+    req.auth &&
+    [req.auth.kind, req.auth.username, req.auth.password, req.auth.token, req.auth.api_key, req.auth.api_value].some(
+      (value) => utf8ByteLength(value) > 64 * 1024,
+    )
+  ) {
     throw new Error("SSE 인증 설정이 너무 깁니다.");
   }
 }
@@ -1068,14 +1088,48 @@ function validateBrowserSseRequest(req: RequestTemplate): void {
 function parseSseUpdate(value: unknown): SseUpdate | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<SseUpdate>;
-  if (!isSseSessionId(candidate.sessionId) || !["connected", "event", "closed", "error"].includes(candidate.kind ?? "")) return null;
-  if (!Number.isSafeInteger(candidate.sequence) || !Number.isSafeInteger(candidate.dropped) || (candidate.sequence ?? 0) < 0 || (candidate.dropped ?? 0) < 0 || (candidate.dropped ?? 0) > MAX_DECODED_BYTES) return null;
-  if (candidate.event !== undefined && (typeof candidate.event !== "string" || utf8ByteLength(candidate.event) > MAX_EVENT_NAME_BYTES)) return null;
-  if (candidate.data !== undefined && (typeof candidate.data !== "string" || utf8ByteLength(candidate.data) > MAX_EVENT_DATA_BYTES)) return null;
-  if (candidate.id !== undefined && (typeof candidate.id !== "string" || utf8ByteLength(candidate.id) > MAX_EVENT_ID_BYTES)) return null;
-  if (candidate.message !== undefined && (typeof candidate.message !== "string" || !SAFE_SSE_UPDATE_MESSAGES.has(candidate.message))) return null;
-  if (candidate.retryMs !== undefined && (!Number.isSafeInteger(candidate.retryMs) || candidate.retryMs < 0 || candidate.retryMs > MAX_RETRY_MS)) return null;
-  if (candidate.attempt !== undefined && (!Number.isSafeInteger(candidate.attempt) || candidate.attempt < 0 || candidate.attempt > MAX_SSE_RECONNECT_ATTEMPTS)) return null;
+  if (!isSseSessionId(candidate.sessionId) || !["connected", "event", "closed", "error"].includes(candidate.kind ?? ""))
+    return null;
+  if (
+    !Number.isSafeInteger(candidate.sequence) ||
+    !Number.isSafeInteger(candidate.dropped) ||
+    (candidate.sequence ?? 0) < 0 ||
+    (candidate.dropped ?? 0) < 0 ||
+    (candidate.dropped ?? 0) > MAX_DECODED_BYTES
+  )
+    return null;
+  if (
+    candidate.event !== undefined &&
+    (typeof candidate.event !== "string" || utf8ByteLength(candidate.event) > MAX_EVENT_NAME_BYTES)
+  )
+    return null;
+  if (
+    candidate.data !== undefined &&
+    (typeof candidate.data !== "string" || utf8ByteLength(candidate.data) > MAX_EVENT_DATA_BYTES)
+  )
+    return null;
+  if (
+    candidate.id !== undefined &&
+    (typeof candidate.id !== "string" || utf8ByteLength(candidate.id) > MAX_EVENT_ID_BYTES)
+  )
+    return null;
+  if (
+    candidate.message !== undefined &&
+    (typeof candidate.message !== "string" || !SAFE_SSE_UPDATE_MESSAGES.has(candidate.message))
+  )
+    return null;
+  if (
+    candidate.retryMs !== undefined &&
+    (!Number.isSafeInteger(candidate.retryMs) || candidate.retryMs < 0 || candidate.retryMs > MAX_RETRY_MS)
+  )
+    return null;
+  if (
+    candidate.attempt !== undefined &&
+    (!Number.isSafeInteger(candidate.attempt) ||
+      candidate.attempt < 0 ||
+      candidate.attempt > MAX_SSE_RECONNECT_ATTEMPTS)
+  )
+    return null;
   return candidate as SseUpdate;
 }
 
@@ -1160,8 +1214,14 @@ function isWebSocketSessionId(value: unknown): value is string {
 }
 
 function isConnectionState(value: unknown): value is WebSocketConnectionState {
-  return value === "idle" || value === "connecting" || value === "open"
-    || value === "closing" || value === "closed" || value === "error";
+  return (
+    value === "idle" ||
+    value === "connecting" ||
+    value === "open" ||
+    value === "closing" ||
+    value === "closed" ||
+    value === "error"
+  );
 }
 
 function isMessageKind(value: unknown): value is WebSocketMessage["kind"] {
@@ -1180,51 +1240,60 @@ function isBinaryPreview(value: unknown): value is string {
   if (value === "[REDACTED]") return true;
   if (typeof value !== "string") return false;
   const normalized = value.endsWith("…") ? value.slice(0, -1) : value;
-  return normalized.length <= MAX_BINARY_PREVIEW_BYTES * 2
-    && normalized.length % 2 === 0
-    && /^[0-9a-f]*$/u.test(normalized);
+  return (
+    normalized.length <= MAX_BINARY_PREVIEW_BYTES * 2 && normalized.length % 2 === 0 && /^[0-9a-f]*$/u.test(normalized)
+  );
 }
 
 function parseWebSocketUpdate(payload: unknown): WebSocketUpdate | null {
   if (!payload || typeof payload !== "object") return null;
   const candidate = payload as Record<string, unknown>;
-  if (!isWebSocketSessionId(candidate.sessionId)
-    || (candidate.kind !== "state" && candidate.kind !== "message")
-    || !Number.isSafeInteger(candidate.sequence) || Number(candidate.sequence) < 0
-    || !Number.isSafeInteger(candidate.dropped) || Number(candidate.dropped) < 0) {
+  if (
+    !isWebSocketSessionId(candidate.sessionId) ||
+    (candidate.kind !== "state" && candidate.kind !== "message") ||
+    !Number.isSafeInteger(candidate.sequence) ||
+    Number(candidate.sequence) < 0 ||
+    !Number.isSafeInteger(candidate.dropped) ||
+    Number(candidate.dropped) < 0
+  ) {
     return null;
   }
   if (candidate.kind === "state") {
     return isConnectionState(candidate.state)
       ? {
-        sessionId: candidate.sessionId,
-        kind: "state",
-        state: candidate.state,
-        sequence: Number(candidate.sequence),
-        dropped: Number(candidate.dropped),
-        ...(typeof candidate.message === "string" && SAFE_WEBSOCKET_MESSAGES.has(candidate.message)
-          ? { message: candidate.message } : {}),
-      }
+          sessionId: candidate.sessionId,
+          kind: "state",
+          state: candidate.state,
+          sequence: Number(candidate.sequence),
+          dropped: Number(candidate.dropped),
+          ...(typeof candidate.message === "string" && SAFE_WEBSOCKET_MESSAGES.has(candidate.message)
+            ? { message: candidate.message }
+            : {}),
+        }
       : null;
   }
-  if (!isMessageKind(candidate.messageType)
-    || !isMessageDirection(candidate.direction)
-    || !Number.isSafeInteger(candidate.messageId) || Number(candidate.messageId) < 1) {
+  if (
+    !isMessageKind(candidate.messageType) ||
+    !isMessageDirection(candidate.direction) ||
+    !Number.isSafeInteger(candidate.messageId) ||
+    Number(candidate.messageId) < 1
+  ) {
     return null;
   }
-  if ((candidate.text !== undefined && !isBoundedString(candidate.text, MAX_TEXT_PREVIEW_BYTES))
-    || (candidate.binaryHex !== undefined && !isBinaryPreview(candidate.binaryHex))
-    || (candidate.binaryText !== undefined && !isBoundedString(candidate.binaryText, MAX_TEXT_PREVIEW_BYTES))
-    || (candidate.binarySize !== undefined
-      && (!Number.isSafeInteger(candidate.binarySize)
-        || Number(candidate.binarySize) < 0
-        || Number(candidate.binarySize) > MAX_MESSAGE_BYTES))
-    || (candidate.closeCode !== undefined
-      && (!Number.isInteger(candidate.closeCode)
-        || Number(candidate.closeCode) < 0
-        || Number(candidate.closeCode) > 65_535))
-    || (candidate.closeReason !== undefined
-      && !isBoundedString(candidate.closeReason, MAX_CLOSE_REASON_BYTES))) {
+  if (
+    (candidate.text !== undefined && !isBoundedString(candidate.text, MAX_TEXT_PREVIEW_BYTES)) ||
+    (candidate.binaryHex !== undefined && !isBinaryPreview(candidate.binaryHex)) ||
+    (candidate.binaryText !== undefined && !isBoundedString(candidate.binaryText, MAX_TEXT_PREVIEW_BYTES)) ||
+    (candidate.binarySize !== undefined &&
+      (!Number.isSafeInteger(candidate.binarySize) ||
+        Number(candidate.binarySize) < 0 ||
+        Number(candidate.binarySize) > MAX_MESSAGE_BYTES)) ||
+    (candidate.closeCode !== undefined &&
+      (!Number.isInteger(candidate.closeCode) ||
+        Number(candidate.closeCode) < 0 ||
+        Number(candidate.closeCode) > 65_535)) ||
+    (candidate.closeReason !== undefined && !isBoundedString(candidate.closeReason, MAX_CLOSE_REASON_BYTES))
+  ) {
     return null;
   }
   const update: WebSocketUpdate = {
@@ -1244,7 +1313,8 @@ function parseWebSocketUpdate(payload: unknown): WebSocketUpdate | null {
     update.binarySize = Number(candidate.binarySize);
   }
   if (typeof candidate.binaryTruncated === "boolean") update.binaryTruncated = candidate.binaryTruncated;
-  if (Number.isInteger(candidate.closeCode) && Number(candidate.closeCode) >= 0) update.closeCode = Number(candidate.closeCode);
+  if (Number.isInteger(candidate.closeCode) && Number(candidate.closeCode) >= 0)
+    update.closeCode = Number(candidate.closeCode);
   if (typeof candidate.closeReason === "string") update.closeReason = candidate.closeReason;
   return update;
 }
@@ -1333,7 +1403,8 @@ async function startNativeWebSocket(
     },
     close,
     saveBinary: async (messageId) => {
-      if (!Number.isSafeInteger(messageId) || messageId < 1) throw new Error("WebSocket binary payload가 올바르지 않습니다");
+      if (!Number.isSafeInteger(messageId) || messageId < 1)
+        throw new Error("WebSocket binary payload가 올바르지 않습니다");
       try {
         return await invoke<boolean>("save_websocket_binary", { sessionId: activeSessionId, messageId });
       } catch (cause) {
@@ -1429,16 +1500,21 @@ async function startBrowserWebSocket(
   socket.onmessage = (event) => {
     if (stopped) return;
     if (typeof event.data === "string") {
-      try { emitMessage(makeTextMessage(nextId(), "received", event.data, resolved)); } catch { emitState("error", "WebSocket message가 허용된 크기를 초과했습니다"); }
+      try {
+        emitMessage(makeTextMessage(nextId(), "received", event.data, resolved));
+      } catch {
+        emitState("error", "WebSocket message가 허용된 크기를 초과했습니다");
+      }
       return;
     }
     const readBinary = async () => {
       try {
-        const bytes = event.data instanceof ArrayBuffer
-          ? new Uint8Array(event.data)
-          : event.data instanceof Blob
-            ? new Uint8Array(await event.data.arrayBuffer())
-            : null;
+        const bytes =
+          event.data instanceof ArrayBuffer
+            ? new Uint8Array(event.data)
+            : event.data instanceof Blob
+              ? new Uint8Array(await event.data.arrayBuffer())
+              : null;
         if (!bytes) throw new Error("binary");
         if (stopped || socketClosed) return;
         const id = nextId();
@@ -1470,7 +1546,11 @@ async function startBrowserWebSocket(
     if (stopped || socketClosed || socket.readyState !== WebSocket.CONNECTING) return;
     stopped = true;
     emitState("error", "WebSocket 연결 시간이 초과되었습니다");
-    try { socket.close(); } catch { /* The browser owns CONNECTING socket teardown. */ }
+    try {
+      socket.close();
+    } catch {
+      /* The browser owns CONNECTING socket teardown. */
+    }
   }, resolved.timeout_ms);
   return {
     sessionId,

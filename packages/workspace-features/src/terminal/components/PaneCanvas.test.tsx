@@ -25,14 +25,9 @@ vi.mock("./TermPane", () => ({
       mountSpy(props.sessionId);
       return () => unmountSpy(props.sessionId);
       // eslint 없음(레포에 eslint 설정이 없다) — sessionId만 의존성으로 둔다.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.sessionId]);
     return (
-      <div
-        data-testid={`pane-${props.sessionId}`}
-        data-active={String(props.active)}
-        style={props.style}
-      >
+      <div data-testid={`pane-${props.sessionId}`} data-active={String(props.active)} style={props.style}>
         {props.sessionId}
       </div>
     );
@@ -225,13 +220,17 @@ describe("PaneCanvas — workspace 복원 placeholder", () => {
       restoreError: "터미널을 복원하지 못했습니다.",
     };
     const onRetryPane = vi.fn();
-    render(<PaneCanvas {...baseProps({
-      tabs: [tab("t1", ["pane-failed"])],
-      panes: [failed],
-      activeTabId: "t1",
-      activePaneId: "pane-failed",
-      onRetryPane,
-    })} />);
+    render(
+      <PaneCanvas
+        {...baseProps({
+          tabs: [tab("t1", ["pane-failed"])],
+          panes: [failed],
+          activeTabId: "t1",
+          activePaneId: "pane-failed",
+          onRetryPane,
+        })}
+      />,
+    );
 
     expect(screen.getByRole("group", { name: "Ubuntu 터미널 복원 실패" })).toHaveFocus();
     expect(screen.getByText("/mnt/e/projects/devbox")).toBeInTheDocument();
@@ -246,14 +245,17 @@ describe("PaneCanvas — 크기 조절과 확대", () => {
   const twoPanes = [pane("p1"), pane("p2")];
 
   it("workspace에 저장된 분할 비율을 첫 렌더부터 적용한다", () => {
-    render(<PaneCanvas {...baseProps({
-      tabs: [{ ...twoPaneTabs[0], sizing: { columns: [0.65, 0.35], rows: [1] } }],
-      panes: twoPanes,
-      activeTabId: "t1",
-    })} />);
+    render(
+      <PaneCanvas
+        {...baseProps({
+          tabs: [{ ...twoPaneTabs[0], sizing: { columns: [0.65, 0.35], rows: [1] } }],
+          panes: twoPanes,
+          activeTabId: "t1",
+        })}
+      />,
+    );
 
-    expect((document.querySelector(".panes") as HTMLElement).style.gridTemplateColumns)
-      .toBe("650fr 350fr");
+    expect((document.querySelector(".panes") as HTMLElement).style.gridTemplateColumns).toBe("650fr 350fr");
   });
 
   it("세로 분할에는 팬 사이마다 구분선을 하나씩 둔다", () => {
@@ -366,9 +368,7 @@ describe("PaneCanvas — 크기 조절과 확대", () => {
 
   it("확대하면 그 팬만 보이고 구분선은 사라진다", () => {
     render(
-      <PaneCanvas
-        {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1", zoomedPaneId: "p2" })}
-      />,
+      <PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1", zoomedPaneId: "p2" })} />,
     );
     expect(screen.queryAllByRole("separator")).toHaveLength(0);
     expect(screen.getByTestId("pane-p2")).toHaveAttribute("data-active", "true");
@@ -401,9 +401,7 @@ describe("PaneCanvas — 크기 조절과 확대", () => {
 
   it("확대한 팬이 활성 탭에 없으면 확대를 무시한다", () => {
     render(
-      <PaneCanvas
-        {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1", zoomedPaneId: "other" })}
-      />,
+      <PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1", zoomedPaneId: "other" })} />,
     );
     expect(screen.getByTestId("pane-p1")).toHaveAttribute("data-active", "true");
     expect(screen.getByTestId("pane-p2")).toHaveAttribute("data-active", "true");

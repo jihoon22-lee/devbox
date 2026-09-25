@@ -261,9 +261,9 @@ impl StoreRoot {
                 return Err("invalid_component_store");
             }
             if component == "overview" {
-                workbench_lib::component::validate_persistent_file(name, &bytes)?;
+                projects_engine::component::validate_persistent_file(name, &bytes)?;
             } else {
-                code_pad_lib::component::validate_persistent_file(name, &bytes)?;
+                editor_engine::component::validate_persistent_file(name, &bytes)?;
             }
             if filesystem_identity(&path, false).map_err(|_| "store_generation_changed")?
                 != identity

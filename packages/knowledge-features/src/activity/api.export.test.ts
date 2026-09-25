@@ -63,23 +63,19 @@ describe("Life Log browser export preview", () => {
     expect(document.summary.sessionCount).toBe(0);
     expect(document.summary.run).toBeNull();
     expect(document.summary.knowledge).toBeNull();
-    expect(document.daily.every((day) =>
-      day.runSucceeded === null
-      && day.runFailed === null
-      && day.knowledgeNotesModified === null,
-    )).toBe(true);
+    expect(
+      document.daily.every(
+        (day) => day.runSucceeded === null && day.runFailed === null && day.knowledgeNotesModified === null,
+      ),
+    ).toBe(true);
     expect(document.sources).toHaveLength(4);
-    expect(document.sources.map((source) => source.id)).toEqual([
-      "life-log",
-      "git",
-      "run-manager",
-      "knowledge-base",
-    ]);
-    expect(document.sources.every((source) =>
-      !source.available
-      && source.errorCode === "browser_preview_only"
-      && source.scope === "browser-preview-only",
-    )).toBe(true);
+    expect(document.sources.map((source) => source.id)).toEqual(["life-log", "git", "run-manager", "knowledge-base"]);
+    expect(
+      document.sources.every(
+        (source) =>
+          !source.available && source.errorCode === "browser_preview_only" && source.scope === "browser-preview-only",
+      ),
+    ).toBe(true);
     expect(first.content).not.toContain("C:\\secret");
   });
 
@@ -115,9 +111,9 @@ describe("Life Log browser export preview", () => {
     await expect(exportLifeLog(malformed)).rejects.toThrow("브라우저 미리보기 입력이 올바르지 않습니다");
     await expect(exportLifeLog(malformed)).rejects.not.toThrow(raw);
 
-    await expect(
-      exportLifeLog({ ...input, credential: raw } as typeof input),
-    ).rejects.toThrow("브라우저 미리보기 입력이 올바르지 않습니다");
+    await expect(exportLifeLog({ ...input, credential: raw } as typeof input)).rejects.toThrow(
+      "브라우저 미리보기 입력이 올바르지 않습니다",
+    );
   });
 });
 
@@ -134,11 +130,12 @@ describe("Life Log browser local digest preview", () => {
     expect(result.document.range.dayBoundaries).toEqual(input.dayBoundaries);
     expect(result.document.daily).toHaveLength(1);
     expect(result.document.summary.totalDays).toBe(1);
-    expect(result.document.sources.every((source) =>
-      !source.available
-      && source.scope === "browser-preview-only"
-      && source.errorCode === "browser_preview_only",
-    )).toBe(true);
+    expect(
+      result.document.sources.every(
+        (source) =>
+          !source.available && source.scope === "browser-preview-only" && source.errorCode === "browser_preview_only",
+      ),
+    ).toBe(true);
     expect(result.markdown).toContain("Period: `day`");
     expect(result.markdown).toContain("date keys inclusive; end timestamp exclusive");
   });
@@ -158,17 +155,20 @@ describe("Life Log browser local digest preview", () => {
       run: null,
       knowledge: null,
     });
-    expect(result.document.daily.every((day) =>
-      day.runSucceeded === null
-      && day.runFailed === null
-      && day.knowledgeNotesModified === null,
-    )).toBe(true);
+    expect(
+      result.document.daily.every(
+        (day) => day.runSucceeded === null && day.runFailed === null && day.knowledgeNotesModified === null,
+      ),
+    ).toBe(true);
     expect(result.document.sources.map((source) => source.id)).toEqual([
-      "life-log", "git", "run-manager", "knowledge-base",
+      "life-log",
+      "git",
+      "run-manager",
+      "knowledge-base",
     ]);
-    expect(result.document.sources.every((source) =>
-      !source.available && source.errorCode === "browser_preview_only",
-    )).toBe(true);
+    expect(
+      result.document.sources.every((source) => !source.available && source.errorCode === "browser_preview_only"),
+    ).toBe(true);
     expect(result.markdown).toContain("## Rules\n\n");
     expect(result.markdown).not.toContain("C:\\secret");
   });
@@ -190,9 +190,7 @@ describe("Life Log browser local digest preview", () => {
   it("rejects a monthly range whose end is not the actual calendar month end", () => {
     const exportInput = buildExportInput("2024-02-01", "2024-02-28", "json");
     if (!exportInput) throw new Error("fixture range could not be built");
-    expect(() => validateDigestInput(digestInput(exportInput, "month"))).toThrow(
-      "digest 입력이 올바르지 않습니다",
-    );
+    expect(() => validateDigestInput(digestInput(exportInput, "month"))).toThrow("digest 입력이 올바르지 않습니다");
   });
 
   it("rejects an app filter that resembles a credential without echoing it", () => {
@@ -227,11 +225,14 @@ describe("Life Log browser local digest preview", () => {
     if (!exportInput) throw new Error("fixture range could not be built");
     const boundary = exportInput.dayBoundaries[0];
     if (!boundary) throw new Error("fixture boundary missing");
-    const malformed = digestInput({
-      ...exportInput,
-      dayEnd: boundary.endMs + 1,
-      dayBoundaries: [{ ...boundary, endMs: boundary.endMs + 1 }],
-    }, "day");
+    const malformed = digestInput(
+      {
+        ...exportInput,
+        dayEnd: boundary.endMs + 1,
+        dayBoundaries: [{ ...boundary, endMs: boundary.endMs + 1 }],
+      },
+      "day",
+    );
     expect(() => validateDigestInput(malformed)).toThrow("digest 입력이 올바르지 않습니다");
   });
 
@@ -240,12 +241,16 @@ describe("Life Log browser local digest preview", () => {
     const dayRange = buildExportInput("2024-01-03", "2024-01-04", "json");
     if (!weekRange || !dayRange) throw new Error("fixture range could not be built");
 
-    expect(() => validateDigestInput({
-      ...digestInput(weekRange, "week"),
-    })).toThrow("digest 입력이 올바르지 않습니다");
-    expect(() => validateDigestInput({
-      ...digestInput(dayRange, "day"),
-    })).toThrow("digest 입력이 올바르지 않습니다");
+    expect(() =>
+      validateDigestInput({
+        ...digestInput(weekRange, "week"),
+      }),
+    ).toThrow("digest 입력이 올바르지 않습니다");
+    expect(() =>
+      validateDigestInput({
+        ...digestInput(dayRange, "day"),
+      }),
+    ).toThrow("digest 입력이 올바르지 않습니다");
   });
 });
 
@@ -253,16 +258,19 @@ describe("Life Log schema v2 response boundary", () => {
   it("marks every browser source unavailable without latest snapshot substitution", async () => {
     const sources = await integrationSources();
     expect(sources).toHaveLength(4);
-    expect(sources.every((source) =>
-      !source.available
-      && source.schemaVersion === null
-      && source.producerVersion === null
-      && source.generatedAt === null
-      && source.freshnessMs === null
-      && source.scope === "browser-preview-only"
-      && source.errorCode === "browser_preview_only"
-      && source.knowledgeActivity === null,
-    )).toBe(true);
+    expect(
+      sources.every(
+        (source) =>
+          !source.available &&
+          source.schemaVersion === null &&
+          source.producerVersion === null &&
+          source.generatedAt === null &&
+          source.freshnessMs === null &&
+          source.scope === "browser-preview-only" &&
+          source.errorCode === "browser_preview_only" &&
+          source.knowledgeActivity === null,
+      ),
+    ).toBe(true);
   });
 
   it("accepts v2 nullable activity fields and rejects an older or incomplete response", async () => {

@@ -111,7 +111,7 @@ impl ProjectOwner {
         &self,
         revision: u64,
         id: Option<&str>,
-        template: workbench_lib::component::ProfileTemplate,
+        template: projects_engine::component::ProfileTemplate,
     ) -> Result<Registry> {
         self.store
             .update(revision, |registry| {
@@ -248,7 +248,7 @@ impl ProjectOwner {
             .find(|template| template.id == template_id && !template.archived)
             .ok_or("unknown_imported_template")?;
         // Validate the concrete input before opening an external filesystem.
-        let mut profile = workbench_lib::component::ProjectProfile::new(name);
+        let mut profile = projects_engine::component::ProjectProfile::new(name);
         profile.windows_path = Some(root.into());
         let profile = template
             .template
@@ -268,8 +268,8 @@ impl ProjectOwner {
             .iter()
             .find(|template| template.id == request.template_id && !template.archived)
             .ok_or("unknown_imported_template")?;
-        let mut profile = workbench_lib::component::ProjectProfile::new(&request.name);
-        profile.wsl = Some(workbench_lib::component::WslProfile {
+        let mut profile = projects_engine::component::ProjectProfile::new(&request.name);
+        profile.wsl = Some(projects_engine::component::WslProfile {
             distro: request.distro_id.clone(),
             path: request.root.clone(),
         });
@@ -286,7 +286,7 @@ impl ProjectOwner {
                 request.start_stopped,
             )?;
             let mut profile = profile;
-            profile.wsl = Some(workbench_lib::component::WslProfile {
+            profile.wsl = Some(projects_engine::component::WslProfile {
                 distro: lease.distro_name()?,
                 path: lease.binding().root.clone(),
             });
@@ -308,7 +308,7 @@ impl ProjectOwner {
         revision: u64,
         lease: ProjectLease,
         template: &templates::ImportedTemplate,
-        profile: workbench_lib::component::ProjectProfile,
+        profile: projects_engine::component::ProjectProfile,
     ) -> Result<RegistrationPreview> {
         self.prepare_observed_template_binding(
             revision,
@@ -322,7 +322,7 @@ impl ProjectOwner {
         revision: u64,
         lease: RegistrationLease,
         template: &templates::ImportedTemplate,
-        mut profile: workbench_lib::component::ProjectProfile,
+        mut profile: projects_engine::component::ProjectProfile,
     ) -> Result<RegistrationPreview> {
         // The native probe, not the supplied spelling, owns the actual binding.
         if lease.binding().target == product_contract::ExecutionTarget::Windows {
@@ -526,7 +526,7 @@ mod tests {
     use super::*;
     #[test]
     fn local_template_edit_and_archive_preserve_instantiated_profiles_across_restart() {
-        use workbench_lib::component::{ProfileTemplate, ProjectProfile};
+        use projects_engine::component::{ProfileTemplate, ProjectProfile};
         let directory = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         let owner = ProjectOwner::open(directory.path()).unwrap();
@@ -534,7 +534,7 @@ mod tests {
         template.id.clear();
         template.expected_ports = vec![4321];
         if cfg!(unix) {
-            template.wsl = Some(workbench_lib::component::WslProfile {
+            template.wsl = Some(projects_engine::component::WslProfile {
                 distro: "native-test-fixture".into(),
                 path: "/fixture".into(),
             });
@@ -617,7 +617,7 @@ mod tests {
     }
     #[test]
     fn template_tokens_and_concrete_profile_creation_share_the_native_registry_commit() {
-        use workbench_lib::component::{ProfileTemplate, ProjectProfile, WslProfile};
+        use projects_engine::component::{ProfileTemplate, ProjectProfile, WslProfile};
         let directory = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         let owner = ProjectOwner::open(directory.path()).unwrap();

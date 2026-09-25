@@ -50,12 +50,7 @@ describe("profile template editor", () => {
   });
 
   it("rejects relative, traversal, device, and unsafe Windows defaults", () => {
-    for (const windowsPath of [
-      "relative/project",
-      "C:/work/../escape",
-      "C:/work/NUL.txt",
-      "\\\\?\\C:\\work\\devbox",
-    ]) {
+    for (const windowsPath of ["relative/project", "C:/work/../escape", "C:/work/NUL.txt", "\\\\?\\C:\\work\\devbox"]) {
       const result = validateProfileTemplateDraft({
         ...emptyProfileTemplateDraft(),
         name: "Unsafe",

@@ -171,7 +171,7 @@ pub fn send(
             )
         }
         ("api-studio.webhooks", "send_history_to_api" | "send_fixture_to_api") => {
-            let payload = webhook_lab_lib::component::prepare_api_handoff(
+            let payload = webhook_host::component::prepare_api_handoff(
                 app,
                 args,
                 method == "send_fixture_to_api",
@@ -191,11 +191,11 @@ pub fn send(
     };
     let mut result = publish(&store.handoffs, create, provenance, now, |link| {
         if route == "transforms" {
-            developer_toolbox_lib::component::deliver(app, link)
+            toolbox_engine::component::deliver(app, link)
         } else if route == "webhooks" {
             crate::mock_draft::deliver(app, link)
         } else {
-            api_playground_lib::component::deliver(app, link)
+            http_client_engine::component::deliver(app, link)
         }
     })?;
     result["redacted"] = Value::Bool(redacted);
@@ -349,7 +349,7 @@ pub(crate) fn receive_selection(
     {
         return Ok("applied");
     }
-    developer_toolbox_lib::component::deliver(
+    toolbox_engine::component::deliver(
         app,
         OpenRequest {
             target: applink::HandoffDescriptor {

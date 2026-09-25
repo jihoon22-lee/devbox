@@ -1,8 +1,4 @@
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import {
   useCallback,
   useEffect,
@@ -110,6 +106,7 @@ function useEditableTextContextMenu(
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     actionRevision.current += 1;
     setActionError(null);
@@ -172,18 +169,18 @@ function useEditableTextContextMenu(
         .then((clipboard) => {
           const currentTarget = controlRef.current;
           if (
-            !mounted.current
-            || actionRevision.current !== revision
-            || !currentTarget?.isConnected
-            || currentTarget.value !== capturedValue
-          ) return;
+            !mounted.current ||
+            actionRevision.current !== revision ||
+            !currentTarget?.isConnected ||
+            currentTarget.value !== capturedValue
+          )
+            return;
           const current = currentTarget.value;
           const start = Math.min(captured.start, current.length);
           const end = Math.min(Math.max(captured.end, start), current.length);
           const maxLength = currentTarget.maxLength;
-          const availableCodeUnits = maxLength >= 0
-            ? Math.max(0, maxLength - (current.length - (end - start)))
-            : Number.POSITIVE_INFINITY;
+          const availableCodeUnits =
+            maxLength >= 0 ? Math.max(0, maxLength - (current.length - (end - start))) : Number.POSITIVE_INFINITY;
           const currentBytes = utf8ByteLength(current);
           const selectedBytes = utf8ByteLength(current.slice(start, end));
           const maxBytes = options.maxPasteBytes ?? Number.POSITIVE_INFINITY;
@@ -230,7 +227,7 @@ function takeUtf8Prefix(value: string, maxBytes: number, maxCodeUnits: number): 
   let bytes = 0;
   let codeUnits = 0;
   let end = 0;
-  for (let index = 0; index < value.length;) {
+  for (let index = 0; index < value.length; ) {
     const first = value.charCodeAt(index);
     let characterBytes: number;
     let characterUnits = 1;
@@ -253,8 +250,7 @@ function takeUtf8Prefix(value: string, maxBytes: number, maxCodeUnits: number): 
   return value.slice(0, end);
 }
 
-interface ToolTextAreaProps
-  extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> {
+interface ToolTextAreaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> {
   value: string;
   onValueChange: (value: string) => void;
   menuLabel?: string;
@@ -311,8 +307,7 @@ export function ToolTextArea({
   );
 }
 
-interface ToolTextFieldProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
+interface ToolTextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
   value: string;
   onValueChange: (value: string) => void;
   menuLabel?: string;
@@ -456,6 +451,7 @@ export function ToolOutput({
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     actionRevision.current += 1;
     actionBusyRef.current = false;
@@ -499,18 +495,11 @@ export function ToolOutput({
     });
     void action
       .then(() => {
-        if (
-          mounted.current
-          && actionRevision.current === revision
-          && valueRef.current === snapshot
-        ) setActionError(null);
+        if (mounted.current && actionRevision.current === revision && valueRef.current === snapshot)
+          setActionError(null);
       })
       .catch((error) => {
-        if (
-          !mounted.current
-          || actionRevision.current !== revision
-          || valueRef.current !== snapshot
-        ) return;
+        if (!mounted.current || actionRevision.current !== revision || valueRef.current !== snapshot) return;
         setActionError(actionErrorMessage ?? fixedActionError ?? `출력 작업을 완료하지 못했습니다: ${message(error)}`);
       })
       .finally(() => {
@@ -531,13 +520,21 @@ export function ToolOutput({
     className,
   };
   const actionValue = handoffValue ?? value;
-  const handoffActions = allowHandoff && (source ? mayExport(source) : !isProductHosted()) ? (
-    <div className="tool-output-actions">
-      <ApiHandoffAction value={actionValue} disabled={busy || actionBusy} />
-      {isProductHosted() && !!actionValue && <MockDraftAction value={actionValue} owner="api-studio.transforms" source={source} disabled={busy || actionBusy} />}
-      <KnowledgeDraftAction value={actionValue} disabled={busy || actionBusy} />
-    </div>
-  ) : null;
+  const handoffActions =
+    allowHandoff && (source ? mayExport(source) : !isProductHosted()) ? (
+      <div className="tool-output-actions">
+        <ApiHandoffAction value={actionValue} disabled={busy || actionBusy} />
+        {isProductHosted() && !!actionValue && (
+          <MockDraftAction
+            value={actionValue}
+            owner="api-studio.transforms"
+            source={source}
+            disabled={busy || actionBusy}
+          />
+        )}
+        <KnowledgeDraftAction value={actionValue} disabled={busy || actionBusy} />
+      </div>
+    ) : null;
 
   return (
     <>
@@ -610,12 +607,14 @@ export function TransformerTool({
         </div>
         <div className="io-col">
           <div className="io-label">
-            출력 {running && <span className="dim" role="status" aria-live="polite">(실행 중...)</span>}
+            출력{" "}
+            {running && (
+              <span className="dim" role="status" aria-live="polite">
+                (실행 중...)
+              </span>
+            )}
             {output && !error && (
-              <button
-                className="copy-btn"
-                onClick={() => navigator.clipboard.writeText(output)}
-              >
+              <button className="copy-btn" onClick={() => navigator.clipboard.writeText(output)}>
                 복사
               </button>
             )}

@@ -1,94 +1,220 @@
 import IncomingWebhookLog from "./IncomingWebhookLog";
-import {useIncomingReview} from "@devbox/product-shell/incoming";
-import {lazy,Suspense,useCallback,useEffect,useRef,useState} from "react";
-import {listen} from "@tauri-apps/api/event";
-import type {Description} from "@devbox/product-shell/api";
-import type {RuntimeLogOpenRequest} from "@devbox/workspace-features/logs";
-import {runtimeDestination,runtimeLogRequest,runtimeDiagnostic,sameRuntimeContext,type RuntimeFocusRequest} from "./runtimeNavigation";
-import {componentCall} from "./native";
-type TaskSource={path:string;targetKind:"windows"|"wsl";targetDistro:string|null};
-const Tasks=lazy(()=>import("@devbox/workspace-features/tasks"));
-const Runtime=lazy(()=>import("@devbox/workspace-features/runtime"));
-const Logs=lazy(()=>import("@devbox/workspace-features/logs"));
-const RuntimeWsl=lazy(()=>import("./RuntimeWsl"));
-const IncomingRuntimeReview=lazy(()=>import("./IncomingRuntimeReview"));
-type Diagnostic={id:string;relativePath:string;line:number;column:number|null};
-export default function NativeRuntimeRoutes({route,description,navigate,tasksDirty,onDirtyChange,onDiagnostic,externalLogOpen,onExternalLogConsumed,focusRequest,onFocusConsumed}:{route:string;description:Description;navigate:(route:string)=>void;tasksDirty:boolean;onDirtyChange:(dirty:boolean)=>void;onDiagnostic:(request:Diagnostic)=>void;focusRequest?:RuntimeFocusRequest|null;onFocusConsumed?:(id:string)=>void;externalLogOpen?:RuntimeLogOpenRequest|null;onExternalLogConsumed?:(id:string)=>void}) {
-  const {review:incoming,clear:clearIncoming}=useIncomingReview();
-  const incomingTask=incoming?.route==="tasks"&&incoming.target.kind==="entity"&&["task","service"].includes(incoming.target.entity)?{id:incoming.operationId,jobId:incoming.target.id}:null;
-  const consumeTask=(id:string)=>{if(incomingTask?.id===id)clearIncoming();else onFocusConsumed?.(id);};
-  const [taskSource,setTaskSource]=useState<{context:Description["context"];source:TaskSource}|null>(null);
-  useEffect(()=>{
-    if(route!=="tasks"||!description.context)return;
-    let disposed=false;
-    void componentCall<{context:Description["context"];source:TaskSource}>(description,"workspace.runtime","workspace_task_source",{},"tasks")
-      .then(value=>{if(!disposed)setTaskSource(value);}).catch(()=>{if(!disposed)setTaskSource(null);});
-    return()=>{disposed=true;};
-  },[route,description]);
-  const currentTaskSource=taskSource&&sameRuntimeContext(taskSource.context,description.context)?taskSource.source:null;
-  const focus=focusRequest&&sameRuntimeContext(focusRequest.context,description.context)?focusRequest:null;
+import { useIncomingReview } from "@devbox/product-shell/incoming";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import type { Description } from "@devbox/product-shell/api";
+import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
+import {
+  runtimeDestination,
+  runtimeLogRequest,
+  runtimeDiagnostic,
+  sameRuntimeContext,
+  type RuntimeFocusRequest,
+} from "./runtimeNavigation";
+import { componentCall } from "./native";
+type TaskSource = { path: string; targetKind: "windows" | "wsl"; targetDistro: string | null };
+const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
+const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
+const Logs = lazy(() => import("@devbox/workspace-features/logs"));
+const RuntimeWsl = lazy(() => import("./RuntimeWsl"));
+const IncomingRuntimeReview = lazy(() => import("./IncomingRuntimeReview"));
+type Diagnostic = { id: string; relativePath: string; line: number; column: number | null };
+export default function NativeRuntimeRoutes({
+  route,
+  description,
+  navigate,
+  tasksDirty,
+  onDirtyChange,
+  onDiagnostic,
+  externalLogOpen,
+  onExternalLogConsumed,
+  focusRequest,
+  onFocusConsumed,
+}: {
+  route: string;
+  description: Description;
+  navigate: (route: string) => void;
+  tasksDirty: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+  onDiagnostic: (request: Diagnostic) => void;
+  focusRequest?: RuntimeFocusRequest | null;
+  onFocusConsumed?: (id: string) => void;
+  externalLogOpen?: RuntimeLogOpenRequest | null;
+  onExternalLogConsumed?: (id: string) => void;
+}) {
+  const { review: incoming, clear: clearIncoming } = useIncomingReview();
+  const incomingTask =
+    incoming?.route === "tasks" &&
+    incoming.target.kind === "entity" &&
+    ["task", "service"].includes(incoming.target.entity)
+      ? { id: incoming.operationId, jobId: incoming.target.id }
+      : null;
+  const consumeTask = (id: string) => {
+    if (incomingTask?.id === id) clearIncoming();
+    else onFocusConsumed?.(id);
+  };
+  const [taskSource, setTaskSource] = useState<{ context: Description["context"]; source: TaskSource } | null>(null);
+  useEffect(() => {
+    if (route !== "tasks" || !description.context) return;
+    let disposed = false;
+    void componentCall<{ context: Description["context"]; source: TaskSource }>(
+      description,
+      "workspace.runtime",
+      "workspace_task_source",
+      {},
+      "tasks",
+    )
+      .then((value) => {
+        if (!disposed) setTaskSource(value);
+      })
+      .catch(() => {
+        if (!disposed) setTaskSource(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [route, description]);
+  const currentTaskSource =
+    taskSource && sameRuntimeContext(taskSource.context, description.context) ? taskSource.source : null;
+  const focus = focusRequest && sameRuntimeContext(focusRequest.context, description.context) ? focusRequest : null;
   const [engineVisited, setEngineVisited] = useState(() => new Set([route]));
   const [logQueue, setLogQueue] = useState<RuntimeLogOpenRequest[]>([]);
-  const runtimeLogOpen=logQueue[0]??null;
-  const logQueueRef=useRef(logQueue);
-  logQueueRef.current=logQueue;
-  const acceptWebhook=useCallback((request:RuntimeLogOpenRequest)=>{
-    if(logQueueRef.current.some(item=>item.id===request.id))return;
-    if(logQueueRef.current.length>=8)throw new Error("log queue full");
-    const next=[...logQueueRef.current,request];
-    logQueueRef.current=next;
+  const runtimeLogOpen = logQueue[0] ?? null;
+  const logQueueRef = useRef(logQueue);
+  logQueueRef.current = logQueue;
+  const acceptWebhook = useCallback((request: RuntimeLogOpenRequest) => {
+    if (logQueueRef.current.some((item) => item.id === request.id)) return;
+    if (logQueueRef.current.length >= 8) throw new Error("log queue full");
+    const next = [...logQueueRef.current, request];
+    logQueueRef.current = next;
     setLogQueue(next);
-  },[]);
-  const consumedExternal=useRef<string|null>(null);
-  useEffect(()=>{
-    if(externalLogOpen && consumedExternal.current!==externalLogOpen.id && logQueue.length<8 && !logQueue.some(request=>request.id===externalLogOpen.id)) {
-      setLogQueue(previous=>previous.some(request=>request.id===externalLogOpen.id)?previous:[...previous,externalLogOpen]);
+  }, []);
+  const consumedExternal = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      externalLogOpen &&
+      consumedExternal.current !== externalLogOpen.id &&
+      logQueue.length < 8 &&
+      !logQueue.some((request) => request.id === externalLogOpen.id)
+    ) {
+      setLogQueue((previous) =>
+        previous.some((request) => request.id === externalLogOpen.id) ? previous : [...previous, externalLogOpen],
+      );
     }
-  },[externalLogOpen,logQueue]);
-  const consumeLog=useCallback((id:string)=>{
-    setLogQueue(previous=>previous.filter(request=>request.id!==id));
-    if(externalLogOpen?.id===id){consumedExternal.current=id;onExternalLogConsumed?.(id);}
-  },[externalLogOpen,onExternalLogConsumed]);
+  }, [externalLogOpen, logQueue]);
+  const consumeLog = useCallback(
+    (id: string) => {
+      setLogQueue((previous) => previous.filter((request) => request.id !== id));
+      if (externalLogOpen?.id === id) {
+        consumedExternal.current = id;
+        onExternalLogConsumed?.(id);
+      }
+    },
+    [externalLogOpen, onExternalLogConsumed],
+  );
   const [runtimeNotice, setRuntimeNotice] = useState("");
-  const [navigationReady,setNavigationReady]=useState(false);
-  const current = useRef({route, context:description.context, navigate, tasksDirty, onDiagnostic});
-  current.current = {route, context:description.context, navigate, tasksDirty, onDiagnostic};
-  useEffect(() => { setEngineVisited(previous => previous.has(route) ? previous : new Set([...previous, route])); }, [route]);
+  const [navigationReady, setNavigationReady] = useState(false);
+  const current = useRef({ route, context: description.context, navigate, tasksDirty, onDiagnostic });
+  current.current = { route, context: description.context, navigate, tasksDirty, onDiagnostic };
+  useEffect(() => {
+    setEngineVisited((previous) => (previous.has(route) ? previous : new Set([...previous, route])));
+  }, [route]);
   useEffect(() => {
     let disposed = false;
     const stops: Array<() => void> = [];
-    const keep = (stop: () => void) => { if (disposed) stop(); else {stops.push(stop);if(stops.length===3)setNavigationReady(true);} };
-    void listen<unknown>("workspace://runtime-navigate", event => {
+    const keep = (stop: () => void) => {
+      if (disposed) stop();
+      else {
+        stops.push(stop);
+        if (stops.length === 3) setNavigationReady(true);
+      }
+    };
+    void listen<unknown>("workspace://runtime-navigate", (event) => {
       if (disposed) return;
       const state = current.current;
       const destination = runtimeDestination(event.payload, state.context, state.route);
       if (!destination) return;
-      setRuntimeNotice(destination === "tasks" && state.tasksDirty ? "작성 중인 내용을 저장하거나 취소하면 요청한 작업으로 이동합니다." : "");
+      setRuntimeNotice(
+        destination === "tasks" && state.tasksDirty
+          ? "작성 중인 내용을 저장하거나 취소하면 요청한 작업으로 이동합니다."
+          : "",
+      );
       state.navigate(destination);
-    }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("작업 이동 연결을 시작하지 못했습니다."); });
-    void listen<unknown>("workspace://runtime-log", event => {
+    })
+      .then(keep)
+      .catch(() => {
+        if (!disposed) setRuntimeNotice("작업 이동 연결을 시작하지 못했습니다.");
+      });
+    void listen<unknown>("workspace://runtime-log", (event) => {
       if (disposed) return;
       const state = current.current;
       const request = runtimeLogRequest(event.payload, state.context, state.route);
       if (!request) return;
       setRuntimeNotice("");
-      setLogQueue(previous=>previous.some(item=>item.id===request.id)?previous:[...previous,request].slice(0,8));
+      setLogQueue((previous) =>
+        previous.some((item) => item.id === request.id) ? previous : [...previous, request].slice(0, 8),
+      );
       state.navigate("logs");
-    }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("실행 로그 연결을 시작하지 못했습니다."); });
-    void listen<unknown>("workspace://runtime-diagnostic", event => { if (disposed) return; const state=current.current; const request=runtimeDiagnostic(event.payload,state.context,state.route); if(request)state.onDiagnostic(request); }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("진단 위치 연결을 시작하지 못했습니다."); });
-    return () => { disposed = true; stops.forEach(stop => stop()); };
+    })
+      .then(keep)
+      .catch(() => {
+        if (!disposed) setRuntimeNotice("실행 로그 연결을 시작하지 못했습니다.");
+      });
+    void listen<unknown>("workspace://runtime-diagnostic", (event) => {
+      if (disposed) return;
+      const state = current.current;
+      const request = runtimeDiagnostic(event.payload, state.context, state.route);
+      if (request) state.onDiagnostic(request);
+    })
+      .then(keep)
+      .catch(() => {
+        if (!disposed) setRuntimeNotice("진단 위치 연결을 시작하지 못했습니다.");
+      });
+    return () => {
+      disposed = true;
+      stops.forEach((stop) => stop());
+    };
   }, []);
-  if(!navigationReady)return <p role="status">{runtimeNotice||"실행 화면 연결을 준비하고 있습니다…"}</p>;
-  return <>
-    {runtimeNotice && <p role="status">{runtimeNotice}</p>}
-    {(engineVisited.has("tasks") || route === "tasks") && <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
-      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><IncomingRuntimeReview description={description}/><Tasks importSource={currentTaskSource} openTask={incomingTask??(focus?.target.kind==="task"?{id:focus.id,jobId:focus.target.jobId}:null)} onTaskConsumed={consumeTask} active={route === "tasks"} onDirtyChange={onDirtyChange}/></Suspense>
-    </div>}
-    {(engineVisited.has("runtime") || route === "runtime") && <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
-      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><Runtime openPort={focus?.target.kind==="port"?{id:focus.id,port:focus.target.port}:null} onPortConsumed={onFocusConsumed} active={route === "runtime"}/><RuntimeWsl description={description} active={route === "runtime"}/></Suspense>
-    </div>}
-    {(engineVisited.has("logs") || route === "logs") && <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
-      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><IncomingWebhookLog description={description} onOpen={acceptWebhook}/><Logs active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog}/></Suspense>
-    </div>}
-  </>;
+  if (!navigationReady) return <p role="status">{runtimeNotice || "실행 화면 연결을 준비하고 있습니다…"}</p>;
+  return (
+    <>
+      {runtimeNotice && <p role="status">{runtimeNotice}</p>}
+      {(engineVisited.has("tasks") || route === "tasks") && (
+        <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
+          <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}>
+            <IncomingRuntimeReview description={description} />
+            <Tasks
+              importSource={currentTaskSource}
+              openTask={
+                incomingTask ?? (focus?.target.kind === "task" ? { id: focus.id, jobId: focus.target.jobId } : null)
+              }
+              onTaskConsumed={consumeTask}
+              active={route === "tasks"}
+              onDirtyChange={onDirtyChange}
+            />
+          </Suspense>
+        </div>
+      )}
+      {(engineVisited.has("runtime") || route === "runtime") && (
+        <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
+          <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}>
+            <Runtime
+              openPort={focus?.target.kind === "port" ? { id: focus.id, port: focus.target.port } : null}
+              onPortConsumed={onFocusConsumed}
+              active={route === "runtime"}
+            />
+            <RuntimeWsl description={description} active={route === "runtime"} />
+          </Suspense>
+        </div>
+      )}
+      {(engineVisited.has("logs") || route === "logs") && (
+        <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
+          <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}>
+            <IncomingWebhookLog description={description} onOpen={acceptWebhook} />
+            <Logs active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog} />
+          </Suspense>
+        </div>
+      )}
+    </>
+  );
 }

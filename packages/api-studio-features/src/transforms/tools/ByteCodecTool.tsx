@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { downloadTextResult, ToolOutput, ToolTextArea } from "./common";
-import {
-  convertByteEncoding,
-  type ByteEncoding,
-} from "./byteCodec";
+import { convertByteEncoding, type ByteEncoding } from "./byteCodec";
 
 const ENCODING_LABELS: Readonly<Record<ByteEncoding, string>> = {
   utf8: "UTF-8 텍스트",
@@ -26,11 +23,13 @@ export function ByteCodecTool() {
   const [actionError, setActionError] = useState<string | null>(null);
   const result = useMemo(() => convertByteEncoding(input, source, target), [input, source, target]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => setActionError(null), [result.output, source, target]);
 
   const copy = () => {
     if (!result.output) return;
-    void navigator.clipboard.writeText(result.output)
+    void navigator.clipboard
+      .writeText(result.output)
       .then(() => setActionError(null))
       .catch(() => setActionError("변환 결과를 클립보드에 복사하지 못했습니다."));
   };
@@ -63,7 +62,9 @@ export function ByteCodecTool() {
             onChange={(event) => setSource(event.currentTarget.value as ByteEncoding)}
           >
             {(Object.keys(ENCODING_LABELS) as ByteEncoding[]).map((encoding) => (
-              <option key={encoding} value={encoding}>{ENCODING_LABELS[encoding]}</option>
+              <option key={encoding} value={encoding}>
+                {ENCODING_LABELS[encoding]}
+              </option>
             ))}
           </select>
         </label>
@@ -76,7 +77,9 @@ export function ByteCodecTool() {
             onChange={(event) => setTarget(event.currentTarget.value as ByteEncoding)}
           >
             {(Object.keys(ENCODING_LABELS) as ByteEncoding[]).map((encoding) => (
-              <option key={encoding} value={encoding}>{ENCODING_LABELS[encoding]}</option>
+              <option key={encoding} value={encoding}>
+                {ENCODING_LABELS[encoding]}
+              </option>
             ))}
           </select>
         </label>
@@ -87,10 +90,9 @@ export function ByteCodecTool() {
 
       <div className="conversion-notice" role="note">
         <strong>표현 안내</strong>
-        UTF-8은 텍스트를 바이트로 인코딩합니다. 임의의 원시 바이트는 Hex/Base64 계열로 보존합니다.
-        Hex/Base64 입력의 ASCII 공백은 무시하고 Base64 계열은 올바른 끝 패딩 생략을
-        허용합니다. 유효하지 않은 UTF-8은 대체 문자로 바꾸지 않고 바이트 위치를 표시합니다.
-        Base64는 암호화가 아니며 입력과 결과를 자동으로 저장하거나 전송하지 않습니다.
+        UTF-8은 텍스트를 바이트로 인코딩합니다. 임의의 원시 바이트는 Hex/Base64 계열로 보존합니다. Hex/Base64 입력의
+        ASCII 공백은 무시하고 Base64 계열은 올바른 끝 패딩 생략을 허용합니다. 유효하지 않은 UTF-8은 대체 문자로 바꾸지
+        않고 바이트 위치를 표시합니다. Base64는 암호화가 아니며 입력과 결과를 자동으로 저장하거나 전송하지 않습니다.
       </div>
 
       <div className="io-grid">
@@ -110,8 +112,12 @@ export function ByteCodecTool() {
           <div className="io-label conversion-output-label">
             출력 · {ENCODING_LABELS[target]} · {result.byteLength.toLocaleString()}바이트
             <span className="conversion-actions">
-              <button type="button" className="copy-btn" disabled={!result.output} onClick={copy}>복사</button>
-              <button type="button" className="copy-btn" disabled={!result.output} onClick={save}>저장</button>
+              <button type="button" className="copy-btn" disabled={!result.output} onClick={copy}>
+                복사
+              </button>
+              <button type="button" className="copy-btn" disabled={!result.output} onClick={save}>
+                저장
+              </button>
             </span>
           </div>
           {result.error ? (
@@ -131,7 +137,11 @@ export function ByteCodecTool() {
             value={result.output}
             downloadName={OUTPUT_NAMES[target]}
           />
-          {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+          {actionError ? (
+            <div className="context-action-error" role="alert">
+              {actionError}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

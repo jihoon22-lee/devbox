@@ -89,11 +89,7 @@ export function QrTool() {
     change();
   };
 
-  const hasPayload = preset === "text"
-    ? text.length > 0
-    : preset === "url"
-      ? url.length > 0
-      : wifi.ssid.length > 0;
+  const hasPayload = preset === "text" ? text.length > 0 : preset === "url" ? url.length > 0 : wifi.ssid.length > 0;
 
   const run = async () => {
     if (composing.current || runningRef.current || !hasPayload) return;
@@ -105,7 +101,7 @@ export function QrTool() {
       text: preset === "text" ? text : undefined,
       url: preset === "url" ? url : undefined,
       wifi: preset === "wifi" ? wifi : undefined,
-      version: versionValue === null ? null : versionValue as QrVersion,
+      version: versionValue === null ? null : (versionValue as QrVersion),
       errorCorrection,
       size,
       quietZone,
@@ -143,7 +139,8 @@ export function QrTool() {
       return;
     }
     try {
-      void navigator.clipboard.writeText(result.svg)
+      void navigator.clipboard
+        .writeText(result.svg)
         .then(() => {
           if (mounted.current && actionId.current === currentAction) setActionError(null);
         })
@@ -164,7 +161,8 @@ export function QrTool() {
     try {
       const bytes = decodeBase64(result.pngBase64);
       const item = new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) });
-      void navigator.clipboard.write([item])
+      void navigator.clipboard
+        .write([item])
         .then(() => {
           if (mounted.current && actionId.current === currentAction) setActionError(null);
         })
@@ -227,7 +225,9 @@ export function QrTool() {
             onChange={(event) => invalidate(() => setVersionText(event.currentTarget.value))}
           >
             {VERSION_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
         </label>
@@ -240,7 +240,9 @@ export function QrTool() {
             onChange={(event) => invalidate(() => setErrorCorrection(event.currentTarget.value as QrErrorCorrection))}
           >
             {ERROR_CORRECTION_LEVELS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
         </label>
@@ -252,9 +254,18 @@ export function QrTool() {
             inputMode="numeric"
             value={sizeText}
             disabled={running}
-            aria-invalid={sizeText !== "" && (!Number.isInteger(Number(sizeText)) || Number(sizeText) < MIN_OUTPUT_SIZE || Number(sizeText) > MAX_OUTPUT_SIZE)}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={() => { composing.current = false; }}
+            aria-invalid={
+              sizeText !== "" &&
+              (!Number.isInteger(Number(sizeText)) ||
+                Number(sizeText) < MIN_OUTPUT_SIZE ||
+                Number(sizeText) > MAX_OUTPUT_SIZE)
+            }
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
             onChange={(event) => invalidate(() => setSizeText(event.currentTarget.value))}
           />
         </label>
@@ -266,21 +277,34 @@ export function QrTool() {
             inputMode="numeric"
             value={quietZoneText}
             disabled={running}
-            aria-invalid={quietZoneText !== "" && (!Number.isInteger(Number(quietZoneText)) || Number(quietZoneText) < MIN_QUIET_ZONE || Number(quietZoneText) > MAX_QUIET_ZONE)}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={() => { composing.current = false; }}
+            aria-invalid={
+              quietZoneText !== "" &&
+              (!Number.isInteger(Number(quietZoneText)) ||
+                Number(quietZoneText) < MIN_QUIET_ZONE ||
+                Number(quietZoneText) > MAX_QUIET_ZONE)
+            }
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
             onChange={(event) => invalidate(() => setQuietZoneText(event.currentTarget.value))}
           />
         </label>
-        <button type="button" className="btn qr-generate-button" disabled={running || !hasPayload} onClick={() => void run()}>
+        <button
+          type="button"
+          className="btn qr-generate-button"
+          disabled={running || !hasPayload}
+          onClick={() => void run()}
+        >
           {running ? "생성 중..." : "QR 생성"}
         </button>
       </div>
 
       <div className="qr-help" role="note">
-        모든 생성은 오프라인에서 처리하며 입력·결과를 자동 저장하거나 전송하지 않습니다. 크기는
-        모듈 단위로 맞춰져 요청한 최대 크기보다 작아질 수 있습니다. 오류 보정이 높을수록 같은
-        버전에서 담을 수 있는 데이터가 줄어듭니다.
+        모든 생성은 오프라인에서 처리하며 입력·결과를 자동 저장하거나 전송하지 않습니다. 크기는 모듈 단위로 맞춰져
+        요청한 최대 크기보다 작아질 수 있습니다. 오류 보정이 높을수록 같은 버전에서 담을 수 있는 데이터가 줄어듭니다.
       </div>
 
       {preset === "text" ? (
@@ -300,8 +324,12 @@ export function QrTool() {
             disabled={running}
             maxLength={MAX_PAYLOAD_BYTES}
             spellCheck={false}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={() => { composing.current = false; }}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
           />
         </div>
       ) : null}
@@ -321,8 +349,12 @@ export function QrTool() {
             fixedActionError={FIXED_ACTION_ERROR}
             disabled={running}
             maxLength={MAX_PAYLOAD_BYTES}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={() => { composing.current = false; }}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
           />
           <div className="qr-field-help">외부 요청 없이 입력한 HTTP 또는 HTTPS 문자열만 QR에 넣습니다.</div>
         </div>
@@ -341,13 +373,22 @@ export function QrTool() {
               fixedActionError={FIXED_ACTION_ERROR}
               disabled={running}
               maxLength={MAX_WIFI_SSID_BYTES}
-              onCompositionStart={() => { composing.current = true; }}
-              onCompositionEnd={() => { composing.current = false; }}
+              onCompositionStart={() => {
+                composing.current = true;
+              }}
+              onCompositionEnd={() => {
+                composing.current = false;
+              }}
             />
           </label>
           <label>
             보안
-            <select aria-label="Wi-Fi 보안" value={wifi.security} disabled={running} onChange={(event) => setWifiField("security", event.currentTarget.value as WifiRequest["security"])}>
+            <select
+              aria-label="Wi-Fi 보안"
+              value={wifi.security}
+              disabled={running}
+              onChange={(event) => setWifiField("security", event.currentTarget.value as WifiRequest["security"])}
+            >
               <option value="WPA">WPA/WPA2</option>
               <option value="WEP">WEP</option>
               <option value="nopass">암호 없음</option>
@@ -365,8 +406,12 @@ export function QrTool() {
               fixedActionError={FIXED_ACTION_ERROR}
               disabled={running}
               maxLength={MAX_WIFI_PASSWORD_BYTES}
-              onCompositionStart={() => { composing.current = true; }}
-              onCompositionEnd={() => { composing.current = false; }}
+              onCompositionStart={() => {
+                composing.current = true;
+              }}
+              onCompositionEnd={() => {
+                composing.current = false;
+              }}
             />
           </label>
           <label className="qr-checkbox">
@@ -379,13 +424,23 @@ export function QrTool() {
             />
             숨겨진 네트워크
           </label>
-          <div className="qr-field-help">SSID는 UTF-8 32바이트, 비밀번호는 63바이트까지입니다. 예약 문자는 QR 형식에 맞게 이스케이프 처리됩니다.</div>
+          <div className="qr-field-help">
+            SSID는 UTF-8 32바이트, 비밀번호는 63바이트까지입니다. 예약 문자는 QR 형식에 맞게 이스케이프 처리됩니다.
+          </div>
         </div>
       ) : null}
 
-      {error ? <div className="qr-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="qr-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="qr-status" role="status" aria-live="polite" aria-atomic="true">
-        {running ? "QR을 생성하는 중입니다." : result ? `${result.width}px · 버전 ${result.version} · ${result.payloadBytes}바이트` : ""}
+        {running
+          ? "QR을 생성하는 중입니다."
+          : result
+            ? `${result.width}px · 버전 ${result.version} · ${result.payloadBytes}바이트`
+            : ""}
       </div>
 
       <section className="qr-result" aria-label="QR 결과">
@@ -397,8 +452,12 @@ export function QrTool() {
               alt="생성된 QR 코드 미리보기"
             />
             <div className="qr-preview-actions">
-              <button type="button" className="copy-btn" onClick={copyPng}>PNG 복사</button>
-              <button type="button" className="copy-btn" onClick={savePng}>PNG 저장</button>
+              <button type="button" className="copy-btn" onClick={copyPng}>
+                PNG 복사
+              </button>
+              <button type="button" className="copy-btn" onClick={savePng}>
+                PNG 저장
+              </button>
             </div>
           </div>
         ) : null}
@@ -406,8 +465,12 @@ export function QrTool() {
           <div className="io-label">
             SVG 결과
             <span className="conversion-actions">
-              <button type="button" className="copy-btn" aria-label="SVG 복사" disabled={!result} onClick={copySvg}>복사</button>
-              <button type="button" className="copy-btn" aria-label="SVG 저장" disabled={!result} onClick={saveSvg}>저장</button>
+              <button type="button" className="copy-btn" aria-label="SVG 복사" disabled={!result} onClick={copySvg}>
+                복사
+              </button>
+              <button type="button" className="copy-btn" aria-label="SVG 저장" disabled={!result} onClick={saveSvg}>
+                저장
+              </button>
             </span>
           </div>
           <ToolOutput
@@ -419,7 +482,11 @@ export function QrTool() {
           />
         </div>
       </section>
-      {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+      {actionError ? (
+        <div className="context-action-error" role="alert">
+          {actionError}
+        </div>
+      ) : null}
     </div>
   );
 }

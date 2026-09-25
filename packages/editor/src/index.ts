@@ -59,7 +59,7 @@ const EXTENSION_LANGUAGE: Record<string, SupportedLanguage> = {
 export function languageForPath(path: string): SupportedLanguage {
   const fileName = path.split("\\").join("/").split("/").pop() ?? "";
   const extension = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() : undefined;
-  return extension ? EXTENSION_LANGUAGE[extension] ?? "text" : "text";
+  return extension ? (EXTENSION_LANGUAGE[extension] ?? "text") : "text";
 }
 
 export function languageLabel(language: SupportedLanguage): string {

@@ -241,7 +241,7 @@ pub(crate) fn publish(
         return Err("summary_expired");
     }
     if open {
-        knowledge_base_lib::component::offer_product_draft(
+        knowledge_vault_engine::component::offer_product_draft(
             app,
             &OpenRequest {
                 target: HandoffDescriptor {

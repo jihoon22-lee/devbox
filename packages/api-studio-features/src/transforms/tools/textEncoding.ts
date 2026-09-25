@@ -146,9 +146,8 @@ function estimateUrlEncodedBytes(input: string): number {
     const codePoint = input.codePointAt(index);
     if (codePoint === undefined) throw new TextTransformError("invalid_unicode");
     const character = String.fromCodePoint(codePoint);
-    const increment = codePoint <= 0x7f && URL_COMPONENT_SAFE_ASCII.test(character)
-      ? 1
-      : utf8BytesForCodePoint(codePoint) * 3;
+    const increment =
+      codePoint <= 0x7f && URL_COMPONENT_SAFE_ASCII.test(character) ? 1 : utf8BytesForCodePoint(codePoint) * 3;
     outputBytes = addOutputBytes(outputBytes, increment);
     if (codePoint > 0xffff) index += 1;
   }
@@ -171,11 +170,7 @@ export function urlComponentEncode(input: string): string {
 function assertPercentEncoding(input: string): void {
   for (let index = 0; index < input.length; index += 1) {
     if (input[index] !== "%") continue;
-    if (
-      index + 2 >= input.length ||
-      !HEX_DIGIT.test(input[index + 1]) ||
-      !HEX_DIGIT.test(input[index + 2])
-    ) {
+    if (index + 2 >= input.length || !HEX_DIGIT.test(input[index + 1]) || !HEX_DIGIT.test(input[index + 2])) {
       throw new TextTransformError("malformed_url");
     }
     index += 2;
@@ -201,12 +196,7 @@ function numericEntityValue(token: string): string | null {
   const digits = isHex ? token.slice(2) : token.slice(1);
   if (digits.length > TEXT_ENCODING_LIMITS.maxNumericEntityDigits) return null;
   const value = Number.parseInt(digits, isHex ? 16 : 10);
-  if (
-    !Number.isInteger(value) ||
-    value <= 0 ||
-    value > 0x10ffff ||
-    (value >= 0xd800 && value <= 0xdfff)
-  ) {
+  if (!Number.isInteger(value) || value <= 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
     return null;
   }
   return String.fromCodePoint(value);
@@ -252,10 +242,7 @@ export function htmlEntityDecode(input: string): string {
     }
 
     const semicolon = input.indexOf(";", index + 1);
-    if (
-      semicolon < 0 ||
-      semicolon - index - 1 > TEXT_ENCODING_LIMITS.maxEntityTokenLength
-    ) {
+    if (semicolon < 0 || semicolon - index - 1 > TEXT_ENCODING_LIMITS.maxEntityTokenLength) {
       throw new TextTransformError("malformed_entity");
     }
     const token = input.slice(index + 1, semicolon);
@@ -286,10 +273,7 @@ export function htmlEntityEncode(input: string): string {
     if (codePoint === undefined) throw new TextTransformError("invalid_unicode");
     const character = String.fromCodePoint(codePoint);
     const encoded = HTML_ENTITY_ENCODINGS[character];
-    estimatedBytes = addOutputBytes(
-      estimatedBytes,
-      encoded === undefined ? utf8ByteLength(character) : encoded.length,
-    );
+    estimatedBytes = addOutputBytes(estimatedBytes, encoded === undefined ? utf8ByteLength(character) : encoded.length);
     if (codePoint > 0xffff) index += 1;
   }
   assertEstimatedOutputBounds(inputBytes, estimatedBytes);
@@ -306,16 +290,11 @@ export function htmlEntityEncode(input: string): string {
 }
 
 /** Convert a codec into the shape consumed by TransformerTool without reflecting raw errors. */
-export function runTextTransform(
-  transform: (input: string) => string,
-  input: string,
-): Promise<TextTransformResult> {
+export function runTextTransform(transform: (input: string) => string, input: string): Promise<TextTransformResult> {
   try {
     return Promise.resolve({ output: transform(input) });
   } catch (error) {
-    const safeError = error instanceof TextTransformError
-      ? error
-      : new TextTransformError("transform_failed");
+    const safeError = error instanceof TextTransformError ? error : new TextTransformError("transform_failed");
     return Promise.resolve({
       output: "",
       error: safeError.message,

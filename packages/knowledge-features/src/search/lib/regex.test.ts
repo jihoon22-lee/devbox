@@ -1,16 +1,30 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { matchNames } from "./regex";
-const workers: Array<{ terminate: ReturnType<typeof vi.fn>; postMessage: ReturnType<typeof vi.fn>; onmessage?: (event: { data: unknown }) => void }> = [];
+const workers: Array<{
+  terminate: ReturnType<typeof vi.fn>;
+  postMessage: ReturnType<typeof vi.fn>;
+  onmessage?: (event: { data: unknown }) => void;
+}> = [];
 function installWorker() {
-  vi.stubGlobal("Worker", class {
-    terminate = vi.fn();
-    postMessage = vi.fn();
-    constructor() { workers.push(this); }
-  });
+  vi.stubGlobal(
+    "Worker",
+    class {
+      terminate = vi.fn();
+      postMessage = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    },
+  );
 }
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); workers.length = 0; });
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  workers.length = 0;
+});
 it("terminates stuck regex execution and rejects without blocking another query", async () => {
-  installWorker(); vi.useFakeTimers();
+  installWorker();
+  vi.useFakeTimers();
   const task = matchNames("(a+)+$", ["a".repeat(100) + "!"], new AbortController().signal);
   const rejected = expect(task).rejects.toThrow("제한 시간");
   await vi.advanceTimersByTimeAsync(500);

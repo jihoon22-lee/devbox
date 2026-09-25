@@ -20,12 +20,14 @@ describe("resource display", () => {
   });
 
   it("shows first-sample CPU as unavailable instead of a false percentage", () => {
-    expect(resourceSummaryLabel({
-      cpuPercent: null,
-      memoryUsedBytes: 1,
-      memoryTotalBytes: 2,
-      diskUsedBytes: 1,
-      diskTotalBytes: 2,
-    })).toContain("CPU —");
+    expect(
+      resourceSummaryLabel({
+        cpuPercent: null,
+        memoryUsedBytes: 1,
+        memoryTotalBytes: 2,
+        diskUsedBytes: 1,
+        diskTotalBytes: 2,
+      }),
+    ).toContain("CPU —");
   });
 });

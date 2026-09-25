@@ -1,12 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import QuickCaptureDialog from "./QuickCaptureDialog";
-import {
-  discardQuickCapturePreview,
-  previewQuickCapture,
-  readClipboardText,
-  saveQuickCapture,
-} from "../api";
+import { discardQuickCapturePreview, previewQuickCapture, readClipboardText, saveQuickCapture } from "../api";
 import type { QuickCapturePreview } from "../types";
 
 vi.mock("../api", () => ({
@@ -91,11 +86,13 @@ describe("Knowledge quick capture dialog", () => {
     fireEvent.change(within(dialog).getByLabelText(/태그/), { target: { value: "rust, rust, offline" } });
 
     fireEvent.click(within(dialog).getByRole("button", { name: "미리보기" }));
-    await waitFor(() => expect(previewMock).toHaveBeenCalledWith({
-      title: "  Idea  ",
-      body: "body\n",
-      tags: ["rust", "rust", "offline"],
-    }));
+    await waitFor(() =>
+      expect(previewMock).toHaveBeenCalledWith({
+        title: "  Idea  ",
+        body: "body\n",
+        tags: ["rust", "rust", "offline"],
+      }),
+    );
     const save = await within(dialog).findByRole("button", { name: "저장" });
     expect(dialog).toHaveTextContent("Inbox");
     expect(dialog).toHaveTextContent("Idea");
@@ -119,7 +116,12 @@ describe("Knowledge quick capture dialog", () => {
 
   it("blocks duplicate saves and ignores Escape while native save is busy", async () => {
     let resolveSave: ((value: { path: string }) => void) | undefined;
-    saveMock.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    saveMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     const { onClose } = renderDialog();
     const dialog = screen.getByRole("dialog", { name: "빠른 캡처" });
     fireEvent.change(within(dialog).getByLabelText(/본문/), { target: { value: "body" } });
@@ -137,7 +139,12 @@ describe("Knowledge quick capture dialog", () => {
 
   it("discards a late preview completion after unmount", async () => {
     let resolvePreview: ((value: QuickCapturePreview) => void) | undefined;
-    previewMock.mockImplementationOnce(() => new Promise((resolve) => { resolvePreview = resolve; }));
+    previewMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
     renderDialog();
     const dialog = screen.getByRole("dialog", { name: "빠른 캡처" });
     fireEvent.change(within(dialog).getByLabelText(/본문/u), { target: { value: "body" } });
@@ -149,7 +156,12 @@ describe("Knowledge quick capture dialog", () => {
 
   it("cancels a pending preview from the modal and discards its late approval", async () => {
     let resolvePreview: ((value: QuickCapturePreview) => void) | undefined;
-    previewMock.mockImplementationOnce(() => new Promise((resolve) => { resolvePreview = resolve; }));
+    previewMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
     const { onClose } = renderDialog();
     const dialog = screen.getByRole("dialog", { name: "빠른 캡처" });
     fireEvent.change(within(dialog).getByLabelText(/본문/u), { target: { value: "body" } });

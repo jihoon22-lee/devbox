@@ -1,10 +1,4 @@
-import type {
-  GrpcExchangeSummary,
-  GrpcRpcKind,
-  GrpcSourceKind,
-  GrpcStatusName,
-  GrpcTlsMode,
-} from "../grpcApi";
+import type { GrpcExchangeSummary, GrpcRpcKind, GrpcSourceKind, GrpcStatusName, GrpcTlsMode } from "../grpcApi";
 import { parseTree, type ParseError } from "jsonc-parser";
 
 export const GRPC_HISTORY_KEY = "devbox.api-playground.grpc-history/v1";
@@ -16,14 +10,25 @@ const MAX_MESSAGE_BYTES = 1024 * 1024;
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const MAX_ECMASCRIPT_DATE_MS = 8_640_000_000_000_000;
 const STATUS_NAMES = new Set([
-  "OK", "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND",
-  "ALREADY_EXISTS", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION",
-  "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE", "DATA_LOSS",
+  "OK",
+  "CANCELLED",
+  "UNKNOWN",
+  "INVALID_ARGUMENT",
+  "DEADLINE_EXCEEDED",
+  "NOT_FOUND",
+  "ALREADY_EXISTS",
+  "PERMISSION_DENIED",
+  "RESOURCE_EXHAUSTED",
+  "FAILED_PRECONDITION",
+  "ABORTED",
+  "OUT_OF_RANGE",
+  "UNIMPLEMENTED",
+  "INTERNAL",
+  "UNAVAILABLE",
+  "DATA_LOSS",
   "UNAUTHENTICATED",
 ]);
-const RPC_KINDS = new Set([
-  "unary", "server-streaming", "client-streaming", "bidirectional-streaming",
-]);
+const RPC_KINDS = new Set(["unary", "server-streaming", "client-streaming", "bidirectional-streaming"]);
 const SOURCE_KINDS = new Set(["local-proto", "reflection-v1", "reflection-v1alpha"]);
 const TLS_MODES = new Set(["plaintext", "native", "custom", "native+custom"]);
 const ROOT_KEYS = new Set(["schema", "entries"]);
@@ -69,10 +74,7 @@ export function loadGrpcHistory(storage: Storage = localStorage): GrpcHistorySto
   return parseGrpcHistory(storage.getItem(GRPC_HISTORY_KEY)) ?? emptyGrpcHistory();
 }
 
-export function appendGrpcHistory(
-  store: GrpcHistoryStore,
-  summary: GrpcExchangeSummary,
-): GrpcHistoryStore {
+export function appendGrpcHistory(store: GrpcHistoryStore, summary: GrpcExchangeSummary): GrpcHistoryStore {
   const safe = projectSummary(summary);
   return {
     schema: GRPC_HISTORY_SCHEMA,
@@ -80,10 +82,7 @@ export function appendGrpcHistory(
   };
 }
 
-export function saveGrpcHistory(
-  store: GrpcHistoryStore,
-  storage: Storage = localStorage,
-): GrpcHistoryStore {
+export function saveGrpcHistory(store: GrpcHistoryStore, storage: Storage = localStorage): GrpcHistoryStore {
   const safe: GrpcHistoryStore = {
     schema: GRPC_HISTORY_SCHEMA,
     entries: store.entries.slice(0, MAX_GRPC_HISTORY).map(projectSummary),
@@ -146,28 +145,26 @@ export function splitGrpcRequestMessages(raw: string, rpcKind: GrpcRpcKind): str
 
 function projectSummary(value: unknown): GrpcExchangeSummary {
   if (!isRecord(value) || !exactKeys(value, ENTRY_KEYS)) throw new Error("grpc_history_invalid");
-  const requestMultiple = value.rpcKind === "client-streaming"
-    || value.rpcKind === "bidirectional-streaming";
-  const responseMultiple = value.rpcKind === "server-streaming"
-    || value.rpcKind === "bidirectional-streaming";
+  const requestMultiple = value.rpcKind === "client-streaming" || value.rpcKind === "bidirectional-streaming";
+  const responseMultiple = value.rpcKind === "server-streaming" || value.rpcKind === "bidirectional-streaming";
   if (
-    typeof value.sourceKind !== "string"
-    || !SOURCE_KINDS.has(value.sourceKind)
-    || !safeName(value.service)
-    || !safeName(value.method)
-    || typeof value.rpcKind !== "string"
-    || !RPC_KINDS.has(value.rpcKind)
-    || !boundedInteger(value.requestMessageCount, 1, requestMultiple ? 100 : 1)
-    || !boundedInteger(value.responseMessageCount, 0, responseMultiple ? 100 : 1)
-    || (value.status === "OK" && !responseMultiple && value.responseMessageCount !== 1)
-    || !boundedInteger(value.startedAtMs, 1, MAX_ECMASCRIPT_DATE_MS)
-    || !boundedInteger(value.elapsedMs, 0, Number.MAX_SAFE_INTEGER)
-    || typeof value.status !== "string"
-    || !STATUS_NAMES.has(value.status)
-    || typeof value.tlsMode !== "string"
-    || !TLS_MODES.has(value.tlsMode)
-    || typeof value.credentialUsed !== "boolean"
-    || (value.tlsMode === "plaintext" && value.credentialUsed)
+    typeof value.sourceKind !== "string" ||
+    !SOURCE_KINDS.has(value.sourceKind) ||
+    !safeName(value.service) ||
+    !safeName(value.method) ||
+    typeof value.rpcKind !== "string" ||
+    !RPC_KINDS.has(value.rpcKind) ||
+    !boundedInteger(value.requestMessageCount, 1, requestMultiple ? 100 : 1) ||
+    !boundedInteger(value.responseMessageCount, 0, responseMultiple ? 100 : 1) ||
+    (value.status === "OK" && !responseMultiple && value.responseMessageCount !== 1) ||
+    !boundedInteger(value.startedAtMs, 1, MAX_ECMASCRIPT_DATE_MS) ||
+    !boundedInteger(value.elapsedMs, 0, Number.MAX_SAFE_INTEGER) ||
+    typeof value.status !== "string" ||
+    !STATUS_NAMES.has(value.status) ||
+    typeof value.tlsMode !== "string" ||
+    !TLS_MODES.has(value.tlsMode) ||
+    typeof value.credentialUsed !== "boolean" ||
+    (value.tlsMode === "plaintext" && value.credentialUsed)
   ) {
     throw new Error("grpc_history_invalid");
   }
@@ -196,17 +193,16 @@ function exactKeys(value: Record<string, unknown>, expected: ReadonlySet<string>
 }
 
 function safeName(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && utf8Bytes(value) <= MAX_NAME_BYTES
-    && !/[\u0000-\u001f\u007f\s]/u.test(value);
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    utf8Bytes(value) <= MAX_NAME_BYTES &&
+    !/[\u0000-\u001f\u007f\s]/u.test(value)
+  );
 }
 
 function boundedInteger(value: unknown, minimum: number, maximum: number): value is number {
-  return typeof value === "number"
-    && Number.isSafeInteger(value)
-    && value >= minimum
-    && value <= maximum;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
 }
 
 function utf8Bytes(value: string): number {

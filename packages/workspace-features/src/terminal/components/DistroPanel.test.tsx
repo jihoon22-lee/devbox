@@ -5,9 +5,7 @@ import DistroPanel from "./DistroPanel";
 
 afterEach(() => cleanup());
 
-function baseProps(
-  overrides: Partial<ComponentProps<typeof DistroPanel>> = {},
-): ComponentProps<typeof DistroPanel> {
+function baseProps(overrides: Partial<ComponentProps<typeof DistroPanel>> = {}): ComponentProps<typeof DistroPanel> {
   return {
     distros: [],
     selectedDistro: "",
@@ -75,22 +73,24 @@ describe("DistroPanel distro state", () => {
       <DistroPanel
         {...baseProps({
           distros: [{ name: "Ubuntu", version: 2, default: true, state: "Running" }],
-          dashboardDistros: [{
-            name: "Ubuntu",
-            version: 2,
-            default: true,
-            state: "Running",
-            terminalCount: 3,
-            dockerAvailability: "available",
-            containers: [],
-            resource: {
-              cpuPercent: 25,
-              memoryUsedBytes: 1024,
-              memoryTotalBytes: 2048,
-              diskUsedBytes: 3 * 1024,
-              diskTotalBytes: 4 * 1024,
+          dashboardDistros: [
+            {
+              name: "Ubuntu",
+              version: 2,
+              default: true,
+              state: "Running",
+              terminalCount: 3,
+              dockerAvailability: "available",
+              containers: [],
+              resource: {
+                cpuPercent: 25,
+                memoryUsedBytes: 1024,
+                memoryTotalBytes: 2048,
+                diskUsedBytes: 3 * 1024,
+                diskTotalBytes: 4 * 1024,
+              },
             },
-          }],
+          ],
           snapshotState: "fresh",
         })}
       />,
@@ -151,16 +151,18 @@ describe("DistroPanel distro state", () => {
         {...baseProps({
           distros: [{ name: "Ubuntu", version: 2, default: true, state: "Stopped" }],
           selectedDistro: "Ubuntu",
-          dashboardDistros: [{
-            name: "Ubuntu",
-            version: 2,
-            default: true,
-            state: "Stopped",
-            terminalCount: 0,
-            dockerAvailability: "notQueried",
-            containers: [],
-            resource: null,
-          }],
+          dashboardDistros: [
+            {
+              name: "Ubuntu",
+              version: 2,
+              default: true,
+              state: "Stopped",
+              terminalCount: 0,
+              dockerAvailability: "notQueried",
+              containers: [],
+              resource: null,
+            },
+          ],
         })}
       />,
     );
@@ -172,20 +174,24 @@ describe("DistroPanel distro state", () => {
         {...baseProps({
           distros: [{ name: "Ubuntu", version: 2, default: true, state: "Running" }],
           selectedDistro: "Ubuntu",
-          dashboardDistros: [{
-            name: "Ubuntu",
-            version: 2,
-            default: true,
-            state: "Running",
-            terminalCount: 0,
-            dockerAvailability: "error",
-            containers: [],
-            resource: null,
-          }],
+          dashboardDistros: [
+            {
+              name: "Ubuntu",
+              version: 2,
+              default: true,
+              state: "Running",
+              terminalCount: 0,
+              dockerAvailability: "error",
+              containers: [],
+              resource: null,
+            },
+          ],
         })}
       />,
     );
-    expect(screen.getByText("선택한 WSL 배포판의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.")).toBeInTheDocument();
+    expect(
+      screen.getByText("선택한 WSL 배포판의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요."),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText("Docker 컨테이너")).toBeNull();
   });
 });
@@ -202,8 +208,7 @@ describe("DistroPanel Docker compact view", () => {
                 name: "developer-api-with-a-long-container-name",
                 image: "registry.example.test/team/api:latest",
                 status: "Up 3 hours (healthy)",
-                ports:
-                  "0.0.0.0:8080->80/tcp, :::8080->80/tcp, 127.0.0.1:9229->9229/tcp, 53/udp",
+                ports: "0.0.0.0:8080->80/tcp, :::8080->80/tcp, 127.0.0.1:9229->9229/tcp, 53/udp",
               },
             ],
           })}
@@ -242,9 +247,7 @@ describe("DistroPanel Docker compact view", () => {
       />,
     );
 
-    expect(screen.getByText("컨테이너 ID").nextElementSibling).toHaveTextContent(
-      "full-container-id",
-    );
+    expect(screen.getByText("컨테이너 ID").nextElementSibling).toHaveTextContent("full-container-id");
     expect(screen.getByText("이미지").nextElementSibling).toHaveTextContent("jobs:sha-123");
     expect(screen.getByText("원본 상태").nextElementSibling).toHaveTextContent("Created");
     expect(screen.getByText("원본 포트").nextElementSibling).toHaveTextContent("(비어 있음)");

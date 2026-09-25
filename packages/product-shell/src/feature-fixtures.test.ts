@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import registry from "../../../apps/product-feature-fixtures.json";
 import { fixtureDescription, routeStatus, type ProductId } from "./api";
 
-interface Fixture { featureId: string; owner: ProductId; route: string; authority: string; availability: string }
-
+interface Fixture {
+  featureId: string;
+  owner: ProductId;
+  route: string;
+  authority: string;
+  availability: string;
+}
 
 describe("registered feature fixtures", () => {
   it.each(registry.entries)("opens $featureId through the shell adapter", async (entry) => {

@@ -27,15 +27,7 @@ const IDENTITY_KEYS: Record<McpListKind, string> = {
   prompts: "name",
 };
 
-const COMMON_SCHEMA_KEYS = new Set([
-  "$schema",
-  "title",
-  "description",
-  "type",
-  "enum",
-  "default",
-  "x-mcp-header",
-]);
+const COMMON_SCHEMA_KEYS = new Set(["$schema", "title", "description", "type", "enum", "default", "x-mcp-header"]);
 const TYPE_SCHEMA_KEYS: Record<string, ReadonlySet<string>> = {
   object: new Set(["properties", "required", "additionalProperties"]),
   string: new Set(["minLength", "maxLength"]),
@@ -61,15 +53,13 @@ export function projectMcpListPage(result: unknown, kind: McpListKind): McpListP
   const items = result[kind].map((candidate) => {
     if (!isRecord(candidate)) throw new Error("mcp_message_invalid");
     const identity = candidate[identityKey];
-    const max = kind === "resources" || kind === "resourceTemplates"
-      ? MAX_URI_BYTES
-      : MAX_NAME_BYTES;
+    const max = kind === "resources" || kind === "resourceTemplates" ? MAX_URI_BYTES : MAX_NAME_BYTES;
     if (
-      typeof identity !== "string"
-      || identity.length === 0
-      || utf8Bytes(identity) > max
-      || hasControl(identity)
-      || seen.has(identity)
+      typeof identity !== "string" ||
+      identity.length === 0 ||
+      utf8Bytes(identity) > max ||
+      hasControl(identity) ||
+      seen.has(identity)
     ) {
       throw new Error("mcp_message_invalid");
     }
@@ -77,12 +67,13 @@ export function projectMcpListPage(result: unknown, kind: McpListKind): McpListP
     if (kind === "tools" && (!isRecord(candidate.inputSchema) || candidate.inputSchema.type !== "object")) {
       throw new Error("mcp_message_invalid");
     }
-    if ((kind === "resources" || kind === "resourceTemplates") && (
-      typeof candidate.name !== "string"
-      || candidate.name.length === 0
-      || utf8Bytes(candidate.name) > MAX_NAME_BYTES
-      || hasControl(candidate.name)
-    )) {
+    if (
+      (kind === "resources" || kind === "resourceTemplates") &&
+      (typeof candidate.name !== "string" ||
+        candidate.name.length === 0 ||
+        utf8Bytes(candidate.name) > MAX_NAME_BYTES ||
+        hasControl(candidate.name))
+    ) {
       throw new Error("mcp_message_invalid");
     }
     if (kind === "prompts") validatePromptArguments(candidate.arguments);
@@ -162,10 +153,7 @@ export function setMcpValueAtPath(
   return output;
 }
 
-export function removeMcpValueAtPath(
-  root: Record<string, unknown>,
-  path: readonly string[],
-): Record<string, unknown> {
+export function removeMcpValueAtPath(root: Record<string, unknown>, path: readonly string[]): Record<string, unknown> {
   if (path.length === 0) return root;
   const output = structuredClone(root);
   let current: Record<string, unknown> = output;
@@ -178,10 +166,7 @@ export function removeMcpValueAtPath(
   return output;
 }
 
-export function validateMcpArguments(
-  schema: Record<string, unknown>,
-  value: unknown,
-): string[] {
+export function validateMcpArguments(schema: Record<string, unknown>, value: unknown): string[] {
   const issues: string[] = [];
   try {
     validateSupportedSchema(schema, 0, true);
@@ -230,12 +215,14 @@ function validateSupportedSchema(
   if (schema["x-mcp-header"] !== undefined) {
     const header = schema["x-mcp-header"];
     const normalized = typeof header === "string" ? header.toLowerCase() : "";
-    if (!headerReachable
-      || !["string", "integer", "boolean"].includes(type)
-      || typeof header !== "string"
-      || !isHeaderToken(header)
-      || headerNames.has(normalized)
-      || headerNames.size >= MAX_DERIVED_PARAMETER_HEADERS) {
+    if (
+      !headerReachable ||
+      !["string", "integer", "boolean"].includes(type) ||
+      typeof header !== "string" ||
+      !isHeaderToken(header) ||
+      headerNames.has(normalized) ||
+      headerNames.size >= MAX_DERIVED_PARAMETER_HEADERS
+    ) {
       throw new Error("unsupported");
     }
     headerNames.add(normalized);
@@ -258,31 +245,25 @@ function validateSupportedSchema(
       if (!name || utf8Bytes(name) > 4 * 1024 || hasControl(name) || !isRecord(child)) {
         throw new Error("unsupported");
       }
-      validateSupportedSchema(
-        child,
-        depth + 1,
-        false,
-        root || headerReachable,
-        headerNames,
-      );
+      validateSupportedSchema(child, depth + 1, false, root || headerReachable, headerNames);
     }
   } else if (type === "array") {
     if (!isRecord(schema.items)) throw new Error("unsupported");
     validateNonNegativeInteger(schema.minItems);
     validateNonNegativeInteger(schema.maxItems);
-    if ((schema.minItems as number | undefined) !== undefined
-      && (schema.minItems as number) > MAX_ARRAY_ITEMS) throw new Error("unsupported");
-    if ((schema.maxItems as number | undefined) !== undefined
-      && (schema.maxItems as number) > MAX_ARRAY_ITEMS) throw new Error("unsupported");
+    if ((schema.minItems as number | undefined) !== undefined && (schema.minItems as number) > MAX_ARRAY_ITEMS)
+      throw new Error("unsupported");
+    if ((schema.maxItems as number | undefined) !== undefined && (schema.maxItems as number) > MAX_ARRAY_ITEMS)
+      throw new Error("unsupported");
     validateOrderedRange(schema.minItems, schema.maxItems);
     validateSupportedSchema(schema.items, depth + 1, false, false, headerNames);
   } else if (type === "string") {
     validateNonNegativeInteger(schema.minLength);
     validateNonNegativeInteger(schema.maxLength);
-    if ((schema.minLength as number | undefined) !== undefined
-      && (schema.minLength as number) > MAX_STRING_LENGTH) throw new Error("unsupported");
-    if ((schema.maxLength as number | undefined) !== undefined
-      && (schema.maxLength as number) > MAX_STRING_LENGTH) throw new Error("unsupported");
+    if ((schema.minLength as number | undefined) !== undefined && (schema.minLength as number) > MAX_STRING_LENGTH)
+      throw new Error("unsupported");
+    if ((schema.maxLength as number | undefined) !== undefined && (schema.maxLength as number) > MAX_STRING_LENGTH)
+      throw new Error("unsupported");
     validateOrderedRange(schema.minLength, schema.maxLength);
   } else if (type === "integer" || type === "number") {
     validateFiniteNumber(schema.minimum);
@@ -377,12 +358,17 @@ function initialValue(schema: Record<string, unknown>, root = false): unknown {
       }
       return output;
     }
-    case "string": return "";
+    case "string":
+      return "";
     case "integer":
-    case "number": return 0;
-    case "boolean": return false;
-    case "array": return [];
-    default: return root ? {} : null;
+    case "number":
+      return 0;
+    case "boolean":
+      return false;
+    case "array":
+      return [];
+    default:
+      return root ? {} : null;
   }
 }
 
@@ -393,11 +379,16 @@ function validateEnum(value: unknown, type: string): void {
   }
   const seen = new Set<string>();
   for (const item of value) {
-    const valid = type === "string" ? typeof item === "string"
-      : type === "integer" ? Number.isSafeInteger(item)
-        : type === "number" ? typeof item === "number" && Number.isFinite(item)
-          : type === "boolean" ? typeof item === "boolean"
-            : false;
+    const valid =
+      type === "string"
+        ? typeof item === "string"
+        : type === "integer"
+          ? Number.isSafeInteger(item)
+          : type === "number"
+            ? typeof item === "number" && Number.isFinite(item)
+            : type === "boolean"
+              ? typeof item === "boolean"
+              : false;
     const identity = JSON.stringify(item);
     if (!valid || seen.has(identity)) throw new Error("unsupported");
     seen.add(identity);
@@ -405,17 +396,12 @@ function validateEnum(value: unknown, type: string): void {
 }
 
 function validateDisplay(value: unknown): void {
-  if (value !== undefined && (
-    typeof value !== "string"
-    || utf8Bytes(value) > 4 * 1024
-    || value.includes("\0")
-  )) throw new Error("unsupported");
+  if (value !== undefined && (typeof value !== "string" || utf8Bytes(value) > 4 * 1024 || value.includes("\0")))
+    throw new Error("unsupported");
 }
 
 function isHeaderToken(value: string): boolean {
-  return value.length > 0
-    && value.length <= 128
-    && /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u.test(value);
+  return value.length > 0 && value.length <= 128 && /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u.test(value);
 }
 
 function validatePromptArguments(value: unknown): void {
@@ -425,13 +411,15 @@ function validatePromptArguments(value: unknown): void {
   }
   const seen = new Set<string>();
   for (const candidate of value) {
-    if (!isRecord(candidate)
-      || typeof candidate.name !== "string"
-      || candidate.name.length === 0
-      || utf8Bytes(candidate.name) > MAX_NAME_BYTES
-      || hasControl(candidate.name)
-      || seen.has(candidate.name)
-      || (candidate.required !== undefined && typeof candidate.required !== "boolean")) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.name !== "string" ||
+      candidate.name.length === 0 ||
+      utf8Bytes(candidate.name) > MAX_NAME_BYTES ||
+      hasControl(candidate.name) ||
+      seen.has(candidate.name) ||
+      (candidate.required !== undefined && typeof candidate.required !== "boolean")
+    ) {
       throw new Error("mcp_message_invalid");
     }
     seen.add(candidate.name);
@@ -456,12 +444,7 @@ function validateOrderedRange(minimum: unknown, maximum: unknown): void {
   }
 }
 
-function validateNumberRange(
-  schema: Record<string, unknown>,
-  value: number,
-  path: string,
-  issues: string[],
-): void {
+function validateNumberRange(schema: Record<string, unknown>, value: number, path: string, issues: string[]): void {
   if (typeof schema.minimum === "number" && value < schema.minimum) issues.push(`${path}: 최솟값보다 작습니다.`);
   if (typeof schema.maximum === "number" && value > schema.maximum) issues.push(`${path}: 최댓값보다 큽니다.`);
 }

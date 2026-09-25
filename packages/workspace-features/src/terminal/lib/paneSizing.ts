@@ -51,11 +51,7 @@ export function normalizePaneSizing(
  * 두 이웃 팬 사이의 구분선을 끌었을 때의 새 비율. 두 팬의 합은 유지하고 각각은
  * 최소 비율 아래로 내려가지 않는다.
  */
-export function resizeAdjacent(
-  fractions: readonly number[],
-  index: number,
-  deltaFraction: number,
-): number[] {
+export function resizeAdjacent(fractions: readonly number[], index: number, deltaFraction: number): number[] {
   if (index < 0 || index + 1 >= fractions.length) return [...fractions];
   const pair = fractions[index] + fractions[index + 1];
   const minimum = Math.min(MIN_PANE_FRACTION, pair / 2);

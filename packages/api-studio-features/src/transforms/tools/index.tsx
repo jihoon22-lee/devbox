@@ -31,8 +31,18 @@ export interface ToolDef {
 }
 
 const jsonTools: ToolDef[] = [
-  { id: "json-format", group: "JSON", name: "포매터", component: () => <TransformerTool placeholder="JSON을 붙여넣으세요..." run={jsonFormatter()} /> },
-  { id: "json-minify", group: "JSON", name: "최소화", component: () => <TransformerTool placeholder="JSON을 붙여넣으세요..." run={jsonMinifier()} /> },
+  {
+    id: "json-format",
+    group: "JSON",
+    name: "포매터",
+    component: () => <TransformerTool placeholder="JSON을 붙여넣으세요..." run={jsonFormatter()} />,
+  },
+  {
+    id: "json-minify",
+    group: "JSON",
+    name: "최소화",
+    component: () => <TransformerTool placeholder="JSON을 붙여넣으세요..." run={jsonMinifier()} />,
+  },
   { id: "json-yaml", group: "JSON", name: "JSON ↔ YAML", component: JsonYamlTool },
   { id: "json-typescript", group: "JSON", name: "JSON → TypeScript", component: JsonTypescriptTool },
 ];

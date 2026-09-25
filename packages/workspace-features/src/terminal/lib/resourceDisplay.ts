@@ -25,11 +25,12 @@ export function formatResourcePair(used: number, total: number): string {
 
 export function resourceSummaryLabel(resource: ResourceSummary | null | undefined): string {
   if (!resource) return "리소스 조회 안 함";
-  const cpu = Number.isInteger(resource.cpuPercent)
-    && resource.cpuPercent !== null
-    && resource.cpuPercent >= 0
-    && resource.cpuPercent <= 100
-    ? `${resource.cpuPercent}%`
-    : "—";
+  const cpu =
+    Number.isInteger(resource.cpuPercent) &&
+    resource.cpuPercent !== null &&
+    resource.cpuPercent >= 0 &&
+    resource.cpuPercent <= 100
+      ? `${resource.cpuPercent}%`
+      : "—";
   return `CPU ${cpu} · 메모리 ${formatResourcePair(resource.memoryUsedBytes, resource.memoryTotalBytes)} · 디스크 ${formatResourcePair(resource.diskUsedBytes, resource.diskTotalBytes)}`;
 }

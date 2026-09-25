@@ -9,10 +9,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "port_manager_lib"
+# Domain library names remain distinct from product executable names.
+name = "ports_engine"
 crate-type = ["rlib"]
 
 # Product consumers reuse commands without embedding the standalone frontend.

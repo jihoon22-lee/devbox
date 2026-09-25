@@ -44,8 +44,7 @@ describe("request header operations", () => {
   });
 
   it("secret 이름만 deterministic 목록과 reference로 만들고 값은 받지 않는다", () => {
-    expect(availableSecretNames(["TOKEN", "bad name", "API_KEY", "TOKEN"]))
-      .toEqual(["API_KEY", "TOKEN"]);
+    expect(availableSecretNames(["TOKEN", "bad name", "API_KEY", "TOKEN"])).toEqual(["API_KEY", "TOKEN"]);
     expect(secretReference("TOKEN")).toBe("${TOKEN}");
     expect(secretReference("bad name")).toBeNull();
   });

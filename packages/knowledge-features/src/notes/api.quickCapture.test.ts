@@ -14,9 +14,7 @@ describe("quick capture IPC error boundary", () => {
   it("preserves an allowlisted string rejection from the Tauri runtime", async () => {
     invokeMock.mockRejectedValueOnce("빠른 캡처 미리보기가 오래되어 다시 확인하세요");
 
-    await expect(saveQuickCapture("qc-1")).rejects.toThrow(
-      "빠른 캡처 미리보기가 오래되어 다시 확인하세요",
-    );
+    await expect(saveQuickCapture("qc-1")).rejects.toThrow("빠른 캡처 미리보기가 오래되어 다시 확인하세요");
   });
 
   it("redacts an unexpected native string instead of reflecting it", async () => {

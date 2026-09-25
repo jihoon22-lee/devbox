@@ -12,14 +12,20 @@ export function matchNames(expression: string, names: string[], signal: AbortSig
       clearTimeout(timer);
       signal.removeEventListener("abort", abort);
       worker.terminate();
-      if (indices) resolve(new Set(indices)); else reject(new Error(ERROR));
+      if (indices) resolve(new Set(indices));
+      else reject(new Error(ERROR));
     };
     const abort = () => finish();
     const timer = setTimeout(() => finish(), 500);
     signal.addEventListener("abort", abort, { once: true });
-    worker.onmessage = event => {
+    worker.onmessage = (event) => {
       const indices: unknown = event.data?.indices;
-      if (Array.isArray(indices) && indices.length <= names.length && indices.every(index => Number.isInteger(index) && index >= 0 && index < names.length)) finish(indices);
+      if (
+        Array.isArray(indices) &&
+        indices.length <= names.length &&
+        indices.every((index) => Number.isInteger(index) && index >= 0 && index < names.length)
+      )
+        finish(indices);
       else finish();
     };
     worker.onerror = () => finish();

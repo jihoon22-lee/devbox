@@ -61,20 +61,24 @@ describe("API Playground SSE lifecycle", () => {
     fireEvent.click(start);
     await waitFor(() => expect(startSseStreamMock).toHaveBeenCalledTimes(1));
 
-    act(() => emitUpdate?.({
-      sessionId: "browser-sse-1",
-      kind: "connected",
-      sequence: 0,
-      dropped: 0,
-    }));
+    act(() =>
+      emitUpdate?.({
+        sessionId: "browser-sse-1",
+        kind: "connected",
+        sequence: 0,
+        dropped: 0,
+      }),
+    );
     expect(screen.getByText("SSE 연결됨", { selector: "span.sse-status" })).toBeTruthy();
 
-    act(() => emitUpdate?.({
-      sessionId: "browser-sse-1",
-      kind: "closed",
-      sequence: 0,
-      dropped: 0,
-    }));
+    act(() =>
+      emitUpdate?.({
+        sessionId: "browser-sse-1",
+        kind: "closed",
+        sequence: 0,
+        dropped: 0,
+      }),
+    );
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));
     expect(screen.getByText("SSE 닫힘", { selector: "span.sse-status" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "SSE 중지" }) as HTMLButtonElement).disabled).toBe(true);
@@ -84,12 +88,14 @@ describe("API Playground SSE lifecycle", () => {
     const { start, unmount } = await renderReady();
     fireEvent.click(start);
     await waitFor(() => expect(startSseStreamMock).toHaveBeenCalledTimes(1));
-    act(() => emitUpdate?.({
-      sessionId: "browser-sse-1",
-      kind: "connected",
-      sequence: 0,
-      dropped: 0,
-    }));
+    act(() =>
+      emitUpdate?.({
+        sessionId: "browser-sse-1",
+        kind: "connected",
+        sequence: 0,
+        dropped: 0,
+      }),
+    );
 
     unmount();
     await waitFor(() => expect(stopMock).toHaveBeenCalledTimes(1));

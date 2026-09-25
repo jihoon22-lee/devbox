@@ -3,32 +3,96 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
-import type {LauncherAdapter} from "./adapter";
+import type { LauncherAdapter } from "./adapter";
 
 const api = {
   CLIPBOARD_PREVIEW_ID: "builtin/clipboard-preview",
   clearRecents: vi.fn<LauncherAdapter["clearRecents"]>(async () => undefined),
-  getShortcut: vi.fn<LauncherAdapter["getShortcut"]>(async () => ({ accelerator: "Ctrl+Alt+Space", enabled: true, registration: "registered", alternatives: ["Ctrl+Alt+L", "Ctrl+Alt+J"] })),
+  getShortcut: vi.fn<LauncherAdapter["getShortcut"]>(async () => ({
+    accelerator: "Ctrl+Alt+Space",
+    enabled: true,
+    registration: "registered",
+    alternatives: ["Ctrl+Alt+L", "Ctrl+Alt+J"],
+  })),
   launchResult: vi.fn<LauncherAdapter["launchResult"]>(async () => ({ status: "launched", appId: "workbench" })),
-  performTextAction: vi.fn<LauncherAdapter["performTextAction"]>(async () => ({ status: "launched", appId: "developer-toolbox" })),
-  previewTextAction: vi.fn<LauncherAdapter["previewTextAction"]>(async (result: { id: string }) => ({ actionId: result.id, kind: result.id === "builtin/clipboard-preview" ? "clipboard-preview/v1" : "handoff:toolbox-text/v1", maxBytes: 65536 })),
+  performTextAction: vi.fn<LauncherAdapter["performTextAction"]>(async () => ({
+    status: "launched",
+    appId: "developer-toolbox",
+  })),
+  previewTextAction: vi.fn<LauncherAdapter["previewTextAction"]>(async (result: { id: string }) => ({
+    actionId: result.id,
+    kind: result.id === "builtin/clipboard-preview" ? "clipboard-preview/v1" : "handoff:toolbox-text/v1",
+    maxBytes: 65536,
+  })),
   readCurrentText: vi.fn<LauncherAdapter["readCurrentText"]>(async () => "selected text"),
   search: vi.fn<LauncherAdapter["search"]>(async () => ({
     results: [
-      { id: "catalog/app/workbench", revision: "a".repeat(64), label: "Workbench", detail: "Devbox 앱", source: "catalog", targetApp: "workbench", targetKind: "app", stale: false, explicitPreview: false, favorite: false, recent: false },
-      { id: "builtin/clipboard-preview", revision: "b".repeat(64), label: "클립보드 미리보기", detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음", source: "launcher", targetApp: "devbox-launcher", targetKind: "clipboard-preview", stale: false, explicitPreview: true, favorite: false, recent: false },
+      {
+        id: "catalog/app/workbench",
+        revision: "a".repeat(64),
+        label: "Workbench",
+        detail: "Devbox 앱",
+        source: "catalog",
+        targetApp: "workbench",
+        targetKind: "app",
+        stale: false,
+        explicitPreview: false,
+        favorite: false,
+        recent: false,
+      },
+      {
+        id: "builtin/clipboard-preview",
+        revision: "b".repeat(64),
+        label: "클립보드 미리보기",
+        detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음",
+        source: "launcher",
+        targetApp: "devbox-launcher",
+        targetKind: "clipboard-preview",
+        stale: false,
+        explicitPreview: true,
+        favorite: false,
+        recent: false,
+      },
     ],
     sources: [],
   })),
   setFavorite: vi.fn<LauncherAdapter["setFavorite"]>(async () => undefined),
-  setShortcut: vi.fn<LauncherAdapter["setShortcut"]>(async (config) => ({...config,registration:"registered",alternatives:[]})),
+  setShortcut: vi.fn<LauncherAdapter["setShortcut"]>(async (config) => ({
+    ...config,
+    registration: "registered",
+    alternatives: [],
+  })),
   hide: vi.fn<LauncherAdapter["hide"]>(async () => undefined),
 };
 
 const DEFAULT_SEARCH_RESPONSE = {
   results: [
-    { id: "catalog/app/workbench", revision: "a".repeat(64), label: "Workbench", detail: "Devbox 앱", source: "catalog", targetApp: "workbench", targetKind: "app", stale: false, explicitPreview: false, favorite: false, recent: false },
-    { id: "builtin/clipboard-preview", revision: "b".repeat(64), label: "클립보드 미리보기", detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음", source: "launcher", targetApp: "devbox-launcher", targetKind: "clipboard-preview", stale: false, explicitPreview: true, favorite: false, recent: false },
+    {
+      id: "catalog/app/workbench",
+      revision: "a".repeat(64),
+      label: "Workbench",
+      detail: "Devbox 앱",
+      source: "catalog",
+      targetApp: "workbench",
+      targetKind: "app",
+      stale: false,
+      explicitPreview: false,
+      favorite: false,
+      recent: false,
+    },
+    {
+      id: "builtin/clipboard-preview",
+      revision: "b".repeat(64),
+      label: "클립보드 미리보기",
+      detail: "현재 선택 영역, 없으면 클립보드 · 전달하지 않음",
+      source: "launcher",
+      targetApp: "devbox-launcher",
+      targetKind: "clipboard-preview",
+      stale: false,
+      explicitPreview: true,
+      favorite: false,
+      recent: false,
+    },
   ],
   sources: [],
 };
@@ -56,10 +120,15 @@ describe("product Launcher preserved behavior", () => {
     render(<App adapter={api} />);
     const result = await screen.findByRole("option", { name: /Workbench/ });
     fireEvent.click(result);
-    await waitFor(() => expect(api.launchResult).toHaveBeenCalledWith(expect.objectContaining({
-      id: "catalog/app/workbench",
-      revision: expect.stringMatching(/^[0-9a-f]{64}$/),
-    }), false));
+    await waitFor(() =>
+      expect(api.launchResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "catalog/app/workbench",
+          revision: expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
+        false,
+      ),
+    );
   });
 
   it("only samples selected text for the explicit clipboard preview fallback", async () => {
@@ -70,27 +139,46 @@ describe("product Launcher preserved behavior", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "닫기" })).toHaveFocus());
     expect(api.readCurrentText).toHaveBeenCalledTimes(1);
     expect(api.performTextAction).not.toHaveBeenCalled();
-    expect(api.previewTextAction).toHaveBeenCalledWith(expect.objectContaining({
-      id: "builtin/clipboard-preview",
-      revision: "b".repeat(64),
-    }));
+    expect(api.previewTextAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "builtin/clipboard-preview",
+        revision: "b".repeat(64),
+      }),
+    );
     expect(screen.getByRole("dialog")).toHaveTextContent("selected text");
   });
 
   it("carries the result revision through preview and confirmed text handoff", async () => {
     vi.mocked(api.search).mockResolvedValue({
       results: [
-        { id: "catalog/action/developer-toolbox/transform-text", revision: "d".repeat(64), label: "텍스트 변환", detail: "명시적 미리보기", source: "catalog", targetApp: "developer-toolbox", targetKind: "handoff", stale: false, explicitPreview: true, favorite: false, recent: false },
+        {
+          id: "catalog/action/developer-toolbox/transform-text",
+          revision: "d".repeat(64),
+          label: "텍스트 변환",
+          detail: "명시적 미리보기",
+          source: "catalog",
+          targetApp: "developer-toolbox",
+          targetKind: "handoff",
+          stale: false,
+          explicitPreview: true,
+          favorite: false,
+          recent: false,
+        },
       ],
       sources: [],
     });
     render(<App adapter={api} />);
     fireEvent.click(await screen.findByRole("option", { name: /텍스트 변환/ }));
     fireEvent.click(await screen.findByRole("button", { name: "전달" }));
-    await waitFor(() => expect(api.performTextAction).toHaveBeenCalledWith(expect.objectContaining({
-      id: "catalog/action/developer-toolbox/transform-text",
-      revision: "d".repeat(64),
-    }), "selected text"));
+    await waitFor(() =>
+      expect(api.performTextAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "catalog/action/developer-toolbox/transform-text",
+          revision: "d".repeat(64),
+        }),
+        "selected text",
+      ),
+    );
   });
 
   it("does not treat an IME composing Enter as an action", async () => {
@@ -122,17 +210,31 @@ describe("product Launcher preserved behavior", () => {
     render(<App adapter={api} />);
     const select = await screen.findByRole("combobox", { name: "Launcher 단축키" });
     fireEvent.change(select, { target: { value: "Ctrl+Alt+L" } });
-    await waitFor(() => expect(api.setShortcut).toHaveBeenCalledWith({
-      accelerator: "Ctrl+Alt+L",
-      enabled: true,
-    }));
+    await waitFor(() =>
+      expect(api.setShortcut).toHaveBeenCalledWith({
+        accelerator: "Ctrl+Alt+L",
+        enabled: true,
+      }),
+    );
     expect(screen.getByText("즉시 적용")).toBeInTheDocument();
   });
 
   it("uses an accessible confirmation dialog before opening stale results", async () => {
     vi.mocked(api.search).mockResolvedValue({
       results: [
-        { id: "snapshot/workbench/old", revision: "c".repeat(64), label: "Old profile", detail: "Workbench", source: "workbench", targetApp: "workbench", targetKind: "profile", stale: true, explicitPreview: false, favorite: false, recent: false },
+        {
+          id: "snapshot/workbench/old",
+          revision: "c".repeat(64),
+          label: "Old profile",
+          detail: "Workbench",
+          source: "workbench",
+          targetApp: "workbench",
+          targetKind: "profile",
+          stale: true,
+          explicitPreview: false,
+          favorite: false,
+          recent: false,
+        },
       ],
       sources: [{ producer: "workbench", view: "profiles", status: "stale" }],
     });
@@ -158,27 +260,49 @@ describe("product Launcher preserved behavior", () => {
   it("revalidates and launches a stale result only after confirmation", async () => {
     vi.mocked(api.search).mockResolvedValue({
       results: [
-        { id: "snapshot/workbench/old", revision: "c".repeat(64), label: "Old profile", detail: "Workbench", source: "workbench", targetApp: "workbench", targetKind: "profile", stale: true, explicitPreview: false, favorite: false, recent: false },
+        {
+          id: "snapshot/workbench/old",
+          revision: "c".repeat(64),
+          label: "Old profile",
+          detail: "Workbench",
+          source: "workbench",
+          targetApp: "workbench",
+          targetKind: "profile",
+          stale: true,
+          explicitPreview: false,
+          favorite: false,
+          recent: false,
+        },
       ],
       sources: [{ producer: "workbench", view: "profiles", status: "stale" }],
     });
     render(<App adapter={api} />);
     fireEvent.click(await screen.findByRole("option", { name: /Old profile/ }));
     fireEvent.click(await screen.findByRole("button", { name: "계속 열기" }));
-    await waitFor(() => expect(api.launchResult).toHaveBeenCalledWith(expect.objectContaining({
-      id: "snapshot/workbench/old",
-      revision: "c".repeat(64),
-    }), true));
+    await waitFor(() =>
+      expect(api.launchResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "snapshot/workbench/old",
+          revision: "c".repeat(64),
+        }),
+        true,
+      ),
+    );
   });
 
   it("keeps favorite toggles separate from result execution and refreshes the query", async () => {
     render(<App adapter={api} />);
     await screen.findByRole("option", { name: /Workbench/ });
     fireEvent.click(screen.getByRole("button", { name: "Workbench 즐겨찾기 추가" }));
-    await waitFor(() => expect(api.setFavorite).toHaveBeenCalledWith(expect.objectContaining({
-      id: "catalog/app/workbench",
-      revision: "a".repeat(64),
-    }), true));
+    await waitFor(() =>
+      expect(api.setFavorite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "catalog/app/workbench",
+          revision: "a".repeat(64),
+        }),
+        true,
+      ),
+    );
     expect(api.launchResult).not.toHaveBeenCalled();
     await waitFor(() => expect(api.search).toHaveBeenCalledTimes(2));
   });

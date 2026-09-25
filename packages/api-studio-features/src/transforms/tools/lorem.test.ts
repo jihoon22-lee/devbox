@@ -32,7 +32,9 @@ describe("generateLorem", () => {
     const paragraphs = generateLorem({ unit: "paragraphs", count: 2 });
     expect(paragraphs.output.split("\n\n")).toHaveLength(2);
     expect(paragraphs.output.split("\n\n").every((paragraph) => paragraph.endsWith("."))).toBe(true);
-    expect(paragraphs.output.split("\n\n").every((paragraph) => (paragraph.match(/\./gu) ?? []).length === 5)).toBe(true);
+    expect(paragraphs.output.split("\n\n").every((paragraph) => (paragraph.match(/\./gu) ?? []).length === 5)).toBe(
+      true,
+    );
     expect(generateLorem({ unit: "paragraphs", count: 2 })).toEqual(paragraphs);
   });
 

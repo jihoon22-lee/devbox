@@ -14,18 +14,8 @@ import {
   IMAGE_TOO_LARGE_ERROR,
   imageErrorMessage,
 } from "../lib/imageAssets";
-import type {
-  EditorCursorRequest,
-  ImageAsset,
-  WikilinkCandidate,
-  WikilinkOccurrence,
-} from "../types";
-import {
-  hasSelectedText,
-  insertMarkdownLink,
-  removeSelectedText,
-  selectedText,
-} from "./editorActions";
+import type { EditorCursorRequest, ImageAsset, WikilinkCandidate, WikilinkOccurrence } from "../types";
+import { hasSelectedText, insertMarkdownLink, removeSelectedText, selectedText } from "./editorActions";
 import { setWikilinkOccurrences, wikilinkEditorExtensions } from "./wikilinkEditor";
 
 // 공용 CodeMirror 설정은 packages/editor(@devbox/editor)에서 가져온다 (PR 24).
@@ -78,9 +68,7 @@ export default function MarkdownEditor({
   documentKeyRef.current = documentKey;
   const onImageImportRef = useRef(onImageImport);
   onImageImportRef.current = onImageImport;
-  const importImageRef = useRef<(file: File, dropPosition?: number) => Promise<boolean>>(
-    async () => false,
-  );
+  const importImageRef = useRef<(file: File, dropPosition?: number) => Promise<boolean>>(async () => false);
   const editorMenu = useContextMenu();
   const openMenuRef = useRef(editorMenu.openAt);
   openMenuRef.current = editorMenu.openAt;
@@ -96,6 +84,7 @@ export default function MarkdownEditor({
     [hasSelection, imageBusy],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!mountRef.current) return;
     mountedRef.current = true;
@@ -111,7 +100,14 @@ export default function MarkdownEditor({
           ),
           keymap.of([
             ...defaultKeymap,
-            { key: "Mod-s", run: () => { onSaveRef.current(); return true; }, preventDefault: true },
+            {
+              key: "Mod-s",
+              run: () => {
+                onSaveRef.current();
+                return true;
+              },
+              preventDefault: true,
+            },
           ]),
           EditorView.domEventHandlers({
             contextmenu(event, currentView) {
@@ -120,9 +116,11 @@ export default function MarkdownEditor({
               const point = { x: event.clientX, y: event.clientY };
               try {
                 const position = currentView.posAtCoords(point);
-                const insideSelection = position !== null && currentView.state.selection.ranges.some(
-                  (range) => !range.empty && position >= range.from && position <= range.to,
-                );
+                const insideSelection =
+                  position !== null &&
+                  currentView.state.selection.ranges.some(
+                    (range) => !range.empty && position >= range.from && position <= range.to,
+                  );
                 if (position !== null && !insideSelection) {
                   currentView.dispatch({ selection: EditorSelection.cursor(position) });
                 }
@@ -135,12 +133,12 @@ export default function MarkdownEditor({
             },
             keydown(event, currentView) {
               if (
-                event.isComposing
-                || event.keyCode === 229
-                || !(
-                  event.key === "ContextMenu"
-                  || event.code === "ContextMenu"
-                  || (event.shiftKey && event.key === "F10")
+                event.isComposing ||
+                event.keyCode === 229 ||
+                !(
+                  event.key === "ContextMenu" ||
+                  event.code === "ContextMenu" ||
+                  (event.shiftKey && event.key === "F10")
                 )
               ) {
                 return false;
@@ -188,10 +186,11 @@ export default function MarkdownEditor({
               }
               let position = currentView.state.selection.main.head;
               try {
-                position = currentView.posAtCoords({
-                  x: dragEvent.clientX,
-                  y: dragEvent.clientY,
-                }) ?? position;
+                position =
+                  currentView.posAtCoords({
+                    x: dragEvent.clientX,
+                    y: dragEvent.clientY,
+                  }) ?? position;
               } catch {
                 // WebViews can reject coordinate mapping while the editor has
                 // no layout yet. The current selection is a safe fallback.
@@ -218,7 +217,6 @@ export default function MarkdownEditor({
       viewRef.current = null;
     };
     // 마운트 수명은 컴포넌트 수명과 같다 (파일 전환은 value 동기화로 처리)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 외부 값 동기화 (파일 전환/저장 취소)
@@ -265,19 +263,18 @@ export default function MarkdownEditor({
     const token = ++imageTokenRef.current;
     const documentBefore = view.state.doc.toString();
     const documentKeyBefore = documentKeyRef.current;
-    const selectionBefore = dropPosition === undefined
-      ? view.state.selection.main
-      : { from: dropPosition, to: dropPosition };
+    const selectionBefore =
+      dropPosition === undefined ? view.state.selection.main : { from: dropPosition, to: dropPosition };
     imageBusyRef.current = true;
     if (mountedRef.current) setImageBusy(true);
     onErrorRef.current(null);
     try {
       const asset = await callback(file);
       if (
-        !mountedRef.current
-        || token !== imageTokenRef.current
-        || viewRef.current !== view
-        || documentKeyRef.current !== documentKeyBefore
+        !mountedRef.current ||
+        token !== imageTokenRef.current ||
+        viewRef.current !== view ||
+        documentKeyRef.current !== documentKeyBefore
       ) {
         if (mountedRef.current && token === imageTokenRef.current && documentKeyRef.current !== documentKeyBefore) {
           onErrorRef.current(IMAGE_STALE_ERROR);
@@ -362,12 +359,7 @@ export default function MarkdownEditor({
 
   return (
     <>
-      <div
-        ref={mountRef}
-        className="editor codemirror-editor"
-        aria-busy={imageBusy}
-        aria-label="Markdown 편집기"
-      >
+      <div ref={mountRef} className="editor codemirror-editor" aria-busy={imageBusy} aria-label="Markdown 편집기">
         {imageBusy && (
           <div className="image-upload-status" role="status" aria-live="polite">
             이미지 저장 중…

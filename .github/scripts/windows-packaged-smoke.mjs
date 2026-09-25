@@ -1,4 +1,8 @@
-import { createdUtcExpression, ownedDescendantsFromSnapshot, potentialDescendantsFromSnapshots } from "./windows-process-identity.mjs";
+import {
+  createdUtcExpression,
+  ownedDescendantsFromSnapshot,
+  potentialDescendantsFromSnapshots,
+} from "./windows-process-identity.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -17,13 +21,19 @@ import path from "node:path";
 import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { loadPerformanceConfig, measureInput, measureIdle, measureWorkload, evaluateBudgets, performanceHost } from "./product-foundation-performance.mjs";
+import {
+  loadPerformanceConfig,
+  measureInput,
+  measureIdle,
+  measureWorkload,
+  evaluateBudgets,
+  performanceHost,
+} from "./product-foundation-performance.mjs";
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 const modulePath = fileURLToPath(import.meta.url);
-const isMain = process.platform === "win32"
-  ? entryPath.toLowerCase() === modulePath.toLowerCase()
-  : entryPath === modulePath;
+const isMain =
+  process.platform === "win32" ? entryPath.toLowerCase() === modulePath.toLowerCase() : entryPath === modulePath;
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 let requestedSignal = null;
@@ -103,11 +113,12 @@ function releaseAcceptanceLock() {
 
 function powershell(script) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const result = spawnSync(
-      "powershell.exe",
-      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
-      { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15_000 },
-    );
+    const result = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+      timeout: 15_000,
+    });
     if (result.status === 0) return result.stdout.trim();
   }
   fail("bounded Windows helper failed");
@@ -118,28 +129,30 @@ function powershell(script) {
 // The caller records ownership before invoking this helper and restores it in
 // runApp's finally block.
 function powershellOnce(script, failureMessage) {
-  const result = spawnSync(
-    "powershell.exe",
-    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
-    { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15_000 },
-  );
+  const result = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+    timeout: 15_000,
+  });
   if (result.status !== 0) fail(failureMessage);
   return result.stdout.trim();
 }
 
-const CDP_POLICY_KEY =
-  "HKLM:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments";
+const CDP_POLICY_KEY = "HKLM:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments";
 
 function powershellUtf8(value) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
 export function windowsProcessIsElevated() {
-  return powershell(
-    `$identity=[Security.Principal.WindowsIdentity]::GetCurrent(); ` +
-      `$principal=[Security.Principal.WindowsPrincipal]::new($identity); ` +
-      `$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) | ConvertTo-Json -Compress`,
-  ) === "true";
+  return (
+    powershell(
+      `$identity=[Security.Principal.WindowsIdentity]::GetCurrent(); ` +
+        `$principal=[Security.Principal.WindowsPrincipal]::new($identity); ` +
+        `$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) | ConvertTo-Json -Compress`,
+    ) === "true"
+  );
 }
 
 export function inspectElevatedCdpPolicy(imageName, port) {
@@ -293,7 +306,9 @@ function descendantIdentities(rootIdentity) {
 // they only make cleanup uncertain, preserve generated data, and block release.
 function potentialNewDescendants(rootIdentity, baseline) {
   if (!rootIdentity) return [];
-  return potentialDescendantsFromSnapshots(rootIdentity, allWindowsProcesses(), baseline).map(assertTrackableProcessIdentity);
+  return potentialDescendantsFromSnapshots(rootIdentity, allWindowsProcesses(), baseline).map(
+    assertTrackableProcessIdentity,
+  );
 }
 
 function survivingIdentities(identities) {
@@ -346,7 +361,9 @@ export function nativeWindowState(pid, expectedTitle, minimize = false) {
       `[void][DevboxAcceptance.NativeMethods]::GetWindowTextW($candidate,$buffer,$buffer.Capacity); ` +
       `if($buffer.ToString() -ceq $expectedTitle){$script:devboxWindow=$candidate; return $false}; return $true}; ` +
       `[void][DevboxAcceptance.NativeMethods]::EnumWindows($callback,[IntPtr]::Zero); $handle=$script:devboxWindow; ` +
-      (minimize ? `if($handle -ne [IntPtr]::Zero){[void][DevboxAcceptance.NativeMethods]::ShowWindowAsync($handle,6)}; ` : ``) +
+      (minimize
+        ? `if($handle -ne [IntPtr]::Zero){[void][DevboxAcceptance.NativeMethods]::ShowWindowAsync($handle,6)}; `
+        : ``) +
       `$foreground=[DevboxAcceptance.NativeMethods]::GetForegroundWindow(); [uint32]$foregroundPid=0; ` +
       `if($foreground -ne [IntPtr]::Zero){[void][DevboxAcceptance.NativeMethods]::GetWindowThreadProcessId($foreground,[ref]$foregroundPid)}; ` +
       `[pscustomobject]@{HasHandle=($handle -ne [IntPtr]::Zero);` +
@@ -404,15 +421,10 @@ function firstInstanceContract(processInfo, nativeWindow, expectedTitle, allowHi
   const titleMatched = nativeWindow?.HasHandle === true && nativeWindow.Title === expectedTitle;
   const visibleAndRestored = titleMatched && isOwnedRestoredWindow(nativeWindow);
   const hiddenWithoutVisibleMainWindow =
-    titleMatched &&
-    allowHiddenWindow === true &&
-    nativeWindow.Visible === false &&
-    nativeWindow.Minimized === false;
+    titleMatched && allowHiddenWindow === true && nativeWindow.Visible === false && nativeWindow.Minimized === false;
   return {
     healthy:
-      processInfo?.Responding === true &&
-      childAlive === true &&
-      (visibleAndRestored || hiddenWithoutVisibleMainWindow),
+      processInfo?.Responding === true && childAlive === true && (visibleAndRestored || hiddenWithoutVisibleMainWindow),
     titleMatched,
     visibleAndRestored,
     hiddenWithoutVisibleMainWindow,
@@ -434,9 +446,7 @@ export async function waitForOwnedRestoredWindow(pid, expectedTitle, timeoutMill
 function recordProcessInventoryError(result, error) {
   result.cleanup.processInventoryError = true;
   result.cleanup.processInventoryErrors ??= [];
-  result.cleanup.processInventoryErrors.push(
-    publicErrorMessage(error, "process inventory failed"),
-  );
+  result.cleanup.processInventoryErrors.push(publicErrorMessage(error, "process inventory failed"));
 }
 
 function listenerOwnerPids(port) {
@@ -549,8 +559,7 @@ export async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_0
         if (payload.length > 1_048_576) fail("CDP target list exceeded its bound");
         const targets = JSON.parse(payload);
         const candidates = targets.filter((target) => target.type === "page" && target.webSocketDebuggerUrl);
-        lastObservation =
-          `HTTP ${response.status}; page titles=${JSON.stringify(candidates.map((target) => target.title))}`;
+        lastObservation = `HTTP ${response.status}; page titles=${JSON.stringify(candidates.map((target) => target.title))}`;
         const exact = candidates.find((target) => target.title === expectedTitle);
         if (exact) return exact;
       }
@@ -759,11 +768,7 @@ function lineageRoot(identity, pid) {
 }
 
 function secondProcessIdentityConfirmed(child, identity, exitedBeforeObservation) {
-  return (
-    !child?.pid ||
-    Boolean(identity) ||
-    (exitedBeforeObservation === true && child.exitCode !== null)
-  );
+  return !child?.pid || Boolean(identity) || (exitedBeforeObservation === true && child.exitCode !== null);
 }
 
 export async function stopOwnedProcess(identity, executable, child) {
@@ -793,7 +798,9 @@ export async function stopOwnedProcess(identity, executable, child) {
 function removeGenerated(directory, allowedParents) {
   if (!pathExists(directory)) return;
   const resolved = path.resolve(directory);
-  const allowed = allowedParents.some((parent) => path.dirname(resolved).toLowerCase() === path.resolve(parent).toLowerCase());
+  const allowed = allowedParents.some(
+    (parent) => path.dirname(resolved).toLowerCase() === path.resolve(parent).toLowerCase(),
+  );
   if (!allowed) fail("refusing to remove an unexpected app-data path");
   rmSync(resolved, { recursive: true, force: false, maxRetries: 3, retryDelay: 250 });
 }
@@ -824,11 +831,7 @@ function assertNoStaleAcceptancePaths(directory, actualLocalAppData) {
   if (pathExists(directory) && pathExists(path.join(directory, OWNER_MARKER))) {
     fail("stale packaged-acceptance current data requires recovery");
   }
-  const stalePrefixes = [
-    `${base}.devbox-v050-`,
-    `${base}.devbox-generated-v050-`,
-    `${base}.devbox-staging-v050-`,
-  ];
+  const stalePrefixes = [`${base}.devbox-v050-`, `${base}.devbox-generated-v050-`, `${base}.devbox-staging-v050-`];
   if (readdirSync(parent).some((entry) => stalePrefixes.some((prefix) => entry.startsWith(prefix)))) {
     fail("stale packaged-acceptance data requires recovery");
   }
@@ -842,9 +845,7 @@ function prepareKnowledgeRoot(appDataDirectory, knowledgeRoot) {
   if (pathExists(databaseFile)) fail("isolated Knowledge database already exists");
   const database = new DatabaseSync(databaseFile);
   try {
-    database.exec(
-      "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-    );
+    database.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     database.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("root", knowledgeRoot);
     const selected = database.prepare("SELECT value FROM settings WHERE key = ?").get("root");
     if (selected?.value !== knowledgeRoot) fail("isolated Knowledge root read-back failed");
@@ -1071,23 +1072,11 @@ function runVerificationContractSelfTest() {
   };
   const hiddenWindow = { ...visibleWindow, Visible: false };
   const respondingProcess = { Responding: true, Title: "com.devbox.devboxlauncher-siw" };
-  const visibleContract = firstInstanceContract(
-    respondingProcess,
-    visibleWindow,
-    "Devbox Launcher",
-    false,
-    true,
-  );
+  const visibleContract = firstInstanceContract(respondingProcess, visibleWindow, "Devbox Launcher", false, true);
   if (!visibleContract.healthy || !visibleContract.visibleAndRestored) {
     fail("visible first-instance self-test did not pass");
   }
-  const hiddenContract = firstInstanceContract(
-    respondingProcess,
-    hiddenWindow,
-    "Devbox Launcher",
-    true,
-    true,
-  );
+  const hiddenContract = firstInstanceContract(respondingProcess, hiddenWindow, "Devbox Launcher", true, true);
   if (!hiddenContract.healthy || !hiddenContract.hiddenWithoutVisibleMainWindow) {
     fail("hidden first-instance self-test did not pass");
   }
@@ -1118,7 +1107,13 @@ function runVerificationContractSelfTest() {
   ) {
     fail("hosted window fallback self-test escaped its Windows runner scope");
   }
-  const processIdentity = (Pid, ParentPid, Created) => ({ Pid, ParentPid, Created, Name: `fixture-${Pid}.exe`, Path: `C:/fixture/${Pid}.exe` });
+  const processIdentity = (Pid, ParentPid, Created) => ({
+    Pid,
+    ParentPid,
+    Created,
+    Name: `fixture-${Pid}.exe`,
+    Path: `C:/fixture/${Pid}.exe`,
+  });
   const root = processIdentity(10, 1, "2026-09-07T12:00:00.1234567Z");
   const earlier = processIdentity(11, 10, "2026-09-07T12:00:00.1234566Z");
   const unrelatedGrandchild = processIdentity(12, 11, "2026-09-07T12:00:01.0000000Z");
@@ -1126,16 +1121,31 @@ function runVerificationContractSelfTest() {
   const grandchild = processIdentity(14, 13, "2026-09-07T12:00:00.1234569Z");
   const backwardGrandchild = processIdentity(15, 13, "2026-09-07T12:00:00.1234567Z");
   const snapshot = [grandchild, unrelatedGrandchild, backwardGrandchild, earlier, child, root];
-  if (ownedDescendantsFromSnapshot(root, snapshot).map(item => item.Pid).sort().join(",") !== "13,14") {
+  if (
+    ownedDescendantsFromSnapshot(root, snapshot)
+      .map((item) => item.Pid)
+      .sort()
+      .join(",") !== "13,14"
+  ) {
     fail("reused parent PID self-test claimed an older unrelated process");
   }
   if (ownedDescendantsFromSnapshot({ ...root, Created: "2026-09-07T12:00:00.1234560Z" }, snapshot).length) {
     fail("recycled root identity self-test claimed current descendants");
   }
-  if (potentialDescendantsFromSnapshots(root, snapshot.filter(item => item !== root), [earlier, unrelatedGrandchild]).map(item => item.Pid).sort().join(",") !== "13,14") {
+  if (
+    potentialDescendantsFromSnapshots(
+      root,
+      snapshot.filter((item) => item !== root),
+      [earlier, unrelatedGrandchild],
+    )
+      .map((item) => item.Pid)
+      .sort()
+      .join(",") !== "13,14"
+  ) {
     fail("post-exit uncertainty self-test failed temporal lineage checks");
   }
-  if (ownedDescendantsFromSnapshot({ Pid: 10 }, snapshot).length) fail("unobserved root received termination authority");
+  if (ownedDescendantsFromSnapshot({ Pid: 10 }, snapshot).length)
+    fail("unobserved root received termination authority");
   const inaccessibleChild = { Pid: 7, ParentPid: 6, Created: "created", Name: "conhost.exe", Path: "" };
   assertTrackableProcessIdentity(inaccessibleChild);
   let incompleteRejected = false;
@@ -1324,7 +1334,10 @@ async function runApp(app, context) {
     });
     const startedAt = new Date().toISOString();
     processesBeforePrimary = allWindowsProcesses();
-    if (measured) { coldStarted = performance.now(); result.performance = { stage: "startup" }; }
+    if (measured) {
+      coldStarted = performance.now();
+      result.performance = { stage: "startup" };
+    }
     child = spawn(executable, [], { env: environment, windowsHide: false, stdio: ["ignore", "pipe", "pipe"] });
     child.on("error", () => {});
     if (!child.pid) fail("packaged process did not start");
@@ -1333,10 +1346,7 @@ async function runApp(app, context) {
     const stderrResult = capture(child.stderr);
 
     const target = await waitForCdp(port, app.title);
-    const allowedCdpOwners = new Set([
-      child.pid,
-      ...descendantIdentities(childIdentity).map((item) => item.Pid),
-    ]);
+    const allowedCdpOwners = new Set([child.pid, ...descendantIdentities(childIdentity).map((item) => item.Pid)]);
     const cdpOwners = listenerOwnerPids(port);
     if (cdpOwners.length !== 1 || !allowedCdpOwners.has(cdpOwners[0])) {
       fail("CDP listener ownership did not match the packaged process tree");
@@ -1434,9 +1444,14 @@ async function runApp(app, context) {
     if (!firstContract.healthy) fail("packaged parent was not healthy after ten seconds");
     if (measured) {
       result.performance.stage = "idle";
-      result.performance.idle = await measureIdle(() => [childIdentity, ...descendantIdentities(childIdentity)], context.performanceConfiguration.idleSampleMs);
+      result.performance.idle = await measureIdle(
+        () => [childIdentity, ...descendantIdentities(childIdentity)],
+        context.performanceConfiguration.idleSampleMs,
+      );
       result.performance.stage = "workload";
-      result.performance.workload = await measureWorkload(app, cdp, isolatedRoot, (stage) => { result.performance.stage = stage; });
+      result.performance.workload = await measureWorkload(app, cdp, isolatedRoot, (stage) => {
+        result.performance.stage = stage;
+      });
     }
 
     result.focusDisplacement = await displaceOwnedWindow(
@@ -1457,10 +1472,7 @@ async function runApp(app, context) {
     secondExitedBeforeIdentityObservation = secondObservation.exitedBeforeObservation;
     secondLineageRoot = lineageRoot(secondIdentity, secondChild.pid);
     const secondExit = await waitForExitTracking(secondChild, secondIdentity, 10_000);
-    ownedDescendants = mergeIdentities(
-      ownedDescendants,
-      secondExit.descendants ?? [],
-    );
+    ownedDescendants = mergeIdentities(ownedDescendants, secondExit.descendants ?? []);
     const trackedSecondIdentities = new Set(
       ownedDescendants.map((identity) => `${identity.Pid}:${identity.Created}:${identity.Name}:${identity.Path}`),
     );
@@ -1556,10 +1568,7 @@ async function runApp(app, context) {
           secondLineageRoot ??= lineageRoot(secondIdentity, secondChild.pid);
           ownedDescendants = mergeIdentities(ownedDescendants, descendantIdentities(secondIdentity));
           const secondCleanup = await stopOwnedProcess(secondIdentity, executable, secondChild);
-          ownedDescendants = mergeIdentities(
-            ownedDescendants,
-            secondCleanup.descendants ?? [],
-          );
+          ownedDescendants = mergeIdentities(ownedDescendants, secondCleanup.descendants ?? []);
           result.cleanup.secondProcess = {
             forced: secondCleanup.forced,
             alreadyExited: secondCleanup.alreadyExited,
@@ -1598,10 +1607,7 @@ async function runApp(app, context) {
     if (child) {
       try {
         const processCleanup = await stopOwnedProcess(childIdentity, executable, child);
-        ownedDescendants = mergeIdentities(
-          ownedDescendants,
-          processCleanup.descendants ?? [],
-        );
+        ownedDescendants = mergeIdentities(ownedDescendants, processCleanup.descendants ?? []);
         result.cleanup.process = {
           forced: processCleanup.forced,
           alreadyExited: processCleanup.alreadyExited,
@@ -1616,10 +1622,7 @@ async function runApp(app, context) {
         result.cleanup.cdpPolicyRestored = true;
       } catch (error) {
         result.cleanup.cdpPolicyRestored = false;
-        result.cleanup.cdpPolicyError = publicErrorMessage(
-          error,
-          "WebView2 CDP policy cleanup failed",
-        );
+        result.cleanup.cdpPolicyError = publicErrorMessage(error, "WebView2 CDP policy cleanup failed");
       }
     }
     try {
@@ -1817,9 +1820,16 @@ async function main() {
   if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(expectedTag)) fail("invalid --tag");
   if (!/^[0-9a-f]{40}$/.test(expectedCommit)) fail("invalid --commit");
   const performanceOnly = args.get("performance-only") === "true";
-  if (args.has("performance-only") && (!performanceOnly || !args.has("performance"))) fail("performance-only requires an explicit baseline measurement config");
+  if (args.has("performance-only") && (!performanceOnly || !args.has("performance")))
+    fail("performance-only requires an explicit baseline measurement config");
   const performanceConfiguration = args.has("performance")
-    ? loadPerformanceConfig(path.resolve(args.get("performance")), expectedTag, expectedCommit, isGitHubHostedWindowsAcceptanceHost(process.env), performanceOnly)
+    ? loadPerformanceConfig(
+        path.resolve(args.get("performance")),
+        expectedTag,
+        expectedCommit,
+        isGitHubHostedWindowsAcceptanceHost(process.env),
+        performanceOnly,
+      )
     : null;
   const config = JSON.parse(readFileSync(configFile, "utf8"));
   const verification = JSON.parse(readFileSync(verificationFile, "utf8"));
@@ -1836,22 +1846,10 @@ async function main() {
   }
   assertPlainPathAndAncestors(actualLocalAppData, true);
   assertSafeConfig(config);
-  assertSafeScratchLayout(
-    configFile,
-    verificationFile,
-    assetsDirectory,
-    outputFile,
-    runtimeRoot,
-    actualLocalAppData,
-  );
+  assertSafeScratchLayout(configFile, verificationFile, assetsDirectory, outputFile, runtimeRoot, actualLocalAppData);
   assertArtifactVerification(verification, expectedTag, expectedCommit, sha256File(configFile));
   const protectedProcessNames = [
-    ...new Set(
-      config.apps.flatMap((app) => [
-        `${app.id}.exe`,
-        ...(app.additionalProcessNames ?? []),
-      ]),
-    ),
+    ...new Set(config.apps.flatMap((app) => [`${app.id}.exe`, ...(app.additionalProcessNames ?? [])])),
   ];
   if (matchingWindowsProcesses(protectedProcessNames).length > 0) {
     fail("close all Devbox processes before packaged acceptance");
@@ -1906,9 +1904,11 @@ async function main() {
     report.performanceConfiguration = performanceConfiguration;
     report.performanceHost = performanceHost();
   }
-  const selectedApps = performanceOnly ? config.apps.filter(app => performanceConfiguration.apps.includes(app.id)) : config.apps;
+  const selectedApps = performanceOnly
+    ? config.apps.filter((app) => performanceConfiguration.apps.includes(app.id))
+    : config.apps;
   report.scope = performanceOnly ? "selected-pinned-baseline-measurements" : "full-packaged-runtime";
-  report.selectedApps = selectedApps.map(app => app.id);
+  report.selectedApps = selectedApps.map((app) => app.id);
   for (const app of selectedApps) {
     const result = await runApp(app, context);
     report.apps.push(result);
@@ -1927,7 +1927,9 @@ async function main() {
     const measurements = report.apps.filter((app) => performanceConfiguration.apps.includes(app.id));
     report.performanceSummary = {
       measuredBudgetsPassed: measurements.filter((app) => app.performance?.budget?.passed === true).length,
-      knownBaselineFailures: measurements.filter((app) => app.performance?.budget?.knownBaselineFailureObserved === true).map((app) => app.id),
+      knownBaselineFailures: measurements
+        .filter((app) => app.performance?.budget?.knownBaselineFailureObserved === true)
+        .map((app) => app.id),
       r24Passed: false,
     };
   }
@@ -1946,8 +1948,13 @@ async function main() {
     // The opt-in job records a pinned legacy failure as failed performance
     // evidence. Every other budget and the existing runtime/cleanup contract
     // must still pass; normal release acceptance has no such baseline fixture.
-    (performanceConfiguration && report.apps.some((app) => performanceConfiguration.apps.includes(app.id)
-      && app.performance?.budget?.passed !== true && app.performance?.budget?.knownBaselineFailureObserved !== true)) ||
+    (performanceConfiguration &&
+      report.apps.some(
+        (app) =>
+          performanceConfiguration.apps.includes(app.id) &&
+          app.performance?.budget?.passed !== true &&
+          app.performance?.budget?.knownBaselineFailureObserved !== true,
+      )) ||
     requestedSignal
   ) {
     process.exitCode = requestedSignal ? 130 : 2;

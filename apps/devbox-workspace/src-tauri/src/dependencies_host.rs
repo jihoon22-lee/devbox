@@ -2,7 +2,7 @@
 //! private summary/cache and the existing explicit remote-enrichment approval.
 use crate::{host::Host, private_metadata::MetadataRoot};
 use product_contract::ProjectContext;
-use repo_manager_lib::component::DependencyAccess;
+use repositories_engine::component::DependencyAccess;
 use std::sync::Arc;
 type Result<T> = std::result::Result<T, &'static str>;
 
@@ -54,7 +54,7 @@ pub(crate) fn access<T: Send + Sync + 'static>(
                     .map_err(str::to_owned)
             },
         )
-        .map_err(|error| repo_manager_lib::component::dependency_issue(&error));
+        .map_err(|error| repositories_engine::component::dependency_issue(&error));
     }
     let lease = owner.admit(&context)?;
     let root = std::path::PathBuf::from(&lease.binding().root);
@@ -70,5 +70,5 @@ pub(crate) fn access<T: Send + Sync + 'static>(
         lease.revalidate().map_err(str::to_owned)?;
         crate::files_host::current_deadline(deadline).map_err(str::to_owned)
     })
-    .map_err(|error| repo_manager_lib::component::dependency_issue(&error))
+    .map_err(|error| repositories_engine::component::dependency_issue(&error))
 }

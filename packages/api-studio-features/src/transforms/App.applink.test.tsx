@@ -158,18 +158,14 @@ describe("Developer Toolbox toolbox-text/v1 receiver", () => {
   });
 
   it("localizes an allowlisted native handoff error without changing its contract", async () => {
-    previewToolboxTextMock.mockRejectedValueOnce(
-      new Error("다른 텍스트 handoff를 먼저 처리하세요"),
-    );
+    previewToolboxTextMock.mockRejectedValueOnce(new Error("다른 텍스트 handoff를 먼저 처리하세요"));
     render(<App />);
     await waitForListener();
     takePendingOpenMock.mockResolvedValueOnce(request());
 
     await act(async () => mocks.wakeup?.());
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(
-      "다른 텍스트 전달을 먼저 처리하세요",
-    ));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("다른 텍스트 전달을 먼저 처리하세요"));
     expect(document.body.textContent).not.toContain("다른 텍스트 handoff를 먼저 처리하세요");
   });
 
@@ -186,9 +182,12 @@ describe("Developer Toolbox toolbox-text/v1 receiver", () => {
     expect(screen.getByLabelText("파이프라인 결과").textContent).toContain('"name": "Ada"');
 
     let resolveAccept!: (value: string) => void;
-    acceptToolboxTextMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveAccept = resolve;
-    }));
+    acceptToolboxTextMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAccept = resolve;
+        }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "적용" }));
     expect(smartInput.value).toBe('{"name":"Ada"}');
     expect(acceptToolboxTextMock).toHaveBeenCalledWith(firstId);
@@ -237,9 +236,12 @@ describe("Developer Toolbox toolbox-text/v1 receiver", () => {
 
   it("restores a late claim when the renderer unmounts", async () => {
     let resolvePreview!: (value: ToolboxTextHandoffPreview) => void;
-    previewToolboxTextMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolvePreview = resolve;
-    }));
+    previewToolboxTextMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
     const view = render(<App />);
     await waitForListener();
     takePendingOpenMock.mockResolvedValueOnce(request());
@@ -254,9 +256,12 @@ describe("Developer Toolbox toolbox-text/v1 receiver", () => {
 
   it("does not allow a stale preview response to open a modal", async () => {
     let resolvePreview!: (value: ToolboxTextHandoffPreview) => void;
-    previewToolboxTextMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolvePreview = resolve;
-    }));
+    previewToolboxTextMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
     const view = render(<App />);
     await waitForListener();
     takePendingOpenMock.mockResolvedValueOnce(request());

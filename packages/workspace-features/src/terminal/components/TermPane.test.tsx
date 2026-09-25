@@ -3,10 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TermPane from "./TermPane";
 import { DEFAULT_SETTINGS, TERMINAL_THEMES, fontFamilyFor } from "../lib/settings";
-import {
-  MAX_TERMINAL_PASTE_CHARACTERS,
-  MAX_TERMINAL_SEARCH_CHARACTERS,
-} from "../lib/terminalUx";
+import { MAX_TERMINAL_PASTE_CHARACTERS, MAX_TERMINAL_SEARCH_CHARACTERS } from "../lib/terminalUx";
 
 /**
  * jsdom에는 캔버스 텍스트 측정이 없어 실제 xterm을 그릴 수 없다(PaneCanvas.test.tsx의
@@ -204,13 +201,15 @@ vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: FakeUnicode11Addon })
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: FakeWebLinksAddon }));
 vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: FakeWebglAddon }));
 
-const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink, mockBroadcast, mockWriteSession } = vi.hoisted(() => ({
-  mockResizeSession: vi.fn().mockResolvedValue(undefined),
-  mockReadClipboardText: vi.fn().mockResolvedValue(""),
-  mockOpenTerminalLink: vi.fn().mockResolvedValue(undefined),
-  mockBroadcast: vi.fn().mockResolvedValue(undefined),
-  mockWriteSession: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink, mockBroadcast, mockWriteSession } = vi.hoisted(
+  () => ({
+    mockResizeSession: vi.fn().mockResolvedValue(undefined),
+    mockReadClipboardText: vi.fn().mockResolvedValue(""),
+    mockOpenTerminalLink: vi.fn().mockResolvedValue(undefined),
+    mockBroadcast: vi.fn().mockResolvedValue(undefined),
+    mockWriteSession: vi.fn().mockResolvedValue(undefined),
+  }),
+);
 const stableRegisterFocus = vi.fn<(id: string, focus: () => void) => void>();
 const stableUnregisterFocus = vi.fn<(id: string) => void>();
 const askMock = vi.fn().mockResolvedValue({ confirmed: false, value: "", remember: false });
@@ -324,10 +323,14 @@ afterEach(() => {
 
 describe("TermPane — resize 바닥값 (§2.3)", () => {
   it("요청한 multiplexer가 native로 낮아지면 fallback을 명시한다", () => {
-    render(<TermPane {...baseProps({
-      requestedMultiplexer: "zellij",
-      multiplexer: "native",
-    })} />);
+    render(
+      <TermPane
+        {...baseProps({
+          requestedMultiplexer: "zellij",
+          multiplexer: "native",
+        })}
+      />,
+    );
 
     expect(screen.getByText("zellij → native")).toHaveAttribute(
       "title",
@@ -339,10 +342,14 @@ describe("TermPane — resize 바닥값 (§2.3)", () => {
     const onContextMenu = vi.fn();
     const onKeyDown = vi.fn();
     const registerFocus = vi.fn();
-    const { container } = render(<TermPane {...baseProps({
-      registerFocus,
-      contextMenuTriggerProps: { onContextMenu, onKeyDown },
-    })} />);
+    const { container } = render(
+      <TermPane
+        {...baseProps({
+          registerFocus,
+          contextMenuTriggerProps: { onContextMenu, onKeyDown },
+        })}
+      />,
+    );
     const pane = container.querySelector(".pane") as HTMLDivElement;
 
     fireEvent.contextMenu(pane);
@@ -488,9 +495,7 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
 
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText).toHaveBeenCalledWith("settled");
-    expect(onTerminalError).toHaveBeenCalledWith(
-      "선택한 텍스트를 클립보드에 복사하지 못했습니다.",
-    );
+    expect(onTerminalError).toHaveBeenCalledWith("선택한 텍스트를 클립보드에 복사하지 못했습니다.");
     expect(onTerminalError).not.toHaveBeenCalledWith(expect.stringContaining(raw));
   });
 
@@ -509,10 +514,12 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output");
 
     await handle.pasteClipboard();
-    expect(askMock).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "confirm",
-      title: "2줄을 터미널에 붙여넣을까요?",
-    }));
+    expect(askMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "confirm",
+        title: "2줄을 터미널에 붙여넣을까요?",
+      }),
+    );
     expect(pasteSpy).toHaveBeenCalledWith("echo one\r\necho two");
 
     const raw = "C:\\secret\\clipboard-read credential-raw";
@@ -568,17 +575,18 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     render(<TermPane {...baseProps({ registerTerminalHandle })} />);
     const term = createdTerminals[0];
     term.selection = "copy me";
-    const event = (key: string, code: string, shiftKey: boolean) => ({
-      type: "keydown",
-      ctrlKey: true,
-      shiftKey,
-      altKey: false,
-      metaKey: false,
-      key,
-      code,
-      preventDefault: vi.fn(),
-      stopPropagation: vi.fn(),
-    }) as unknown as KeyboardEvent;
+    const event = (key: string, code: string, shiftKey: boolean) =>
+      ({
+        type: "keydown",
+        ctrlKey: true,
+        shiftKey,
+        altKey: false,
+        metaKey: false,
+        key,
+        code,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      }) as unknown as KeyboardEvent;
 
     expect(term.keyHandler?.(event("c", "KeyC", false))).toBe(true);
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
@@ -590,7 +598,9 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     await waitFor(() => expect(pasteSpy).toHaveBeenCalledWith("keyboard paste"));
 
     const searchEvent = event("f", "KeyF", true);
-    act(() => { term.keyHandler?.(searchEvent); });
+    act(() => {
+      term.keyHandler?.(searchEvent);
+    });
     expect(await screen.findByRole("search", { name: "터미널 출력 검색" })).toBeInTheDocument();
   });
 
@@ -614,12 +624,13 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     const onTerminalError = vi.fn();
     const registerWrite = vi.fn();
     const unregisterWrite = vi.fn();
-    const props = (nextFontSize: number) => baseProps({
-      fontSize: nextFontSize,
-      onTerminalError,
-      registerWrite,
-      unregisterWrite,
-    });
+    const props = (nextFontSize: number) =>
+      baseProps({
+        fontSize: nextFontSize,
+        onTerminalError,
+        registerWrite,
+        unregisterWrite,
+      });
     const { rerender } = render(<TermPane {...props(13)} />);
     const term = createdTerminals[0];
 
@@ -628,10 +639,7 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     expect(onTerminalError).toHaveBeenCalledWith("지원하지 않는 링크 형식입니다.");
     expect(mockOpenTerminalLink).not.toHaveBeenCalled();
 
-    createdWebLinksAddons[0].handler?.(
-      { preventDefault } as unknown as MouseEvent,
-      "https://example.com/docs",
-    );
+    createdWebLinksAddons[0].handler?.({ preventDefault } as unknown as MouseEvent, "https://example.com/docs");
     await waitFor(() => expect(mockOpenTerminalLink).toHaveBeenCalledWith("https://example.com/docs"));
     expect(confirmLinkHostMock).toHaveBeenCalledWith("example.com");
 
@@ -661,9 +669,13 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
     act(() => term.dataHandler?.("sudo rm -rf ./cache"));
     expect(mockBroadcast).toHaveBeenCalledWith(["s1", "s3"], "sudo rm -rf ./cache");
     act(() => term.dataHandler?.("\r"));
-    await waitFor(() => expect(askMock).toHaveBeenCalledWith(expect.objectContaining({
-      title: "2개 터미널에 위험할 수 있는 명령을 동시에 보낼까요?",
-    })));
+    await waitFor(() =>
+      expect(askMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "2개 터미널에 위험할 수 있는 명령을 동시에 보낼까요?",
+        }),
+      ),
+    );
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     act(() => term.dataHandler?.("\r"));
     await waitFor(() => expect(askMock).toHaveBeenCalledTimes(2));
@@ -672,7 +684,12 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
 
   it("확인이 열려 있는 동안 들어온 입력은 순서를 지켜 확인 뒤에 전달된다", async () => {
     let release: ((answer: { confirmed: boolean; value: string; remember: boolean }) => void) | undefined;
-    askMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    askMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s2"] })} />);
     const term = createdTerminals[0];
 
@@ -688,24 +705,26 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
     approve();
     act(() => release?.({ confirmed: true, value: "", remember: false }));
     await waitFor(() => expect(mockBroadcast).toHaveBeenCalledTimes(3));
-    expect(mockBroadcast.mock.calls.map((call) => call[1])).toEqual([
-      "rm -rf ./cache",
-      "\r",
-      "echo after",
-    ]);
+    expect(mockBroadcast.mock.calls.map((call) => call[1])).toEqual(["rm -rf ./cache", "\r", "echo after"]);
   });
 
   it("확인 중 대상이 바뀌면 승인해도 이전 대상에는 보내지 않는다", async () => {
     let release: ((answer: { confirmed: boolean; value: string; remember: boolean }) => void) | undefined;
-    askMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    askMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     const registerWrite = vi.fn();
     const unregisterWrite = vi.fn();
-    const props = (targets: string[]) => baseProps({
-      broadcastOn: true,
-      broadcastTargetIds: targets,
-      registerWrite,
-      unregisterWrite,
-    });
+    const props = (targets: string[]) =>
+      baseProps({
+        broadcastOn: true,
+        broadcastTargetIds: targets,
+        registerWrite,
+        unregisterWrite,
+      });
     const { rerender } = render(<TermPane {...props(["s1", "s2"])} />);
     const term = createdTerminals[0];
 
@@ -752,12 +771,16 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
     const onTerminalError = vi.fn();
     const raw = "C:\\secret\\stale-session credential-raw";
     mockBroadcast.mockRejectedValueOnce(new Error(raw));
-    render(<TermPane {...baseProps({
-      broadcastOn: true,
-      broadcastTargetIds: ["s1", "s2"],
-      onBroadcastFailure,
-      onTerminalError,
-    })} />);
+    render(
+      <TermPane
+        {...baseProps({
+          broadcastOn: true,
+          broadcastTargetIds: ["s1", "s2"],
+          onBroadcastFailure,
+          onTerminalError,
+        })}
+      />,
+    );
 
     act(() => createdTerminals[0].dataHandler?.("echo safe"));
     await waitFor(() => expect(onBroadcastFailure).toHaveBeenCalledTimes(1));
@@ -789,14 +812,16 @@ describe("TermPane — renderer, search options and buffer commands", () => {
   it("검색 옵션 토글은 같은 질의를 새 옵션으로 다시 실행한다", () => {
     render(<TermPane {...baseProps({})} />);
     const term = createdTerminals[0];
-    act(() => term.keyHandler?.({
-      type: "keydown",
-      key: "f",
-      ctrlKey: true,
-      shiftKey: true,
-      preventDefault: () => undefined,
-      stopPropagation: () => undefined,
-    } as unknown as KeyboardEvent));
+    act(() =>
+      term.keyHandler?.({
+        type: "keydown",
+        key: "f",
+        ctrlKey: true,
+        shiftKey: true,
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+      } as unknown as KeyboardEvent),
+    );
 
     fireEvent.change(screen.getByLabelText("검색어"), { target: { value: "error" } });
     const addon = createdSearchAddons[0];

@@ -47,10 +47,12 @@ describe("image asset boundaries", () => {
     };
     expect(validateImageAssetResult("note.md", result)).toEqual(result);
     expect(() => validateImageAssetResult("Notes/note.md", result)).toThrow(IMAGE_RESULT_ERROR);
-    expect(() => validateImageAssetResult("note.md", {
-      ...result,
-      markdown: "![secret](https://example.test/secret)",
-    })).toThrow(IMAGE_RESULT_ERROR);
+    expect(() =>
+      validateImageAssetResult("note.md", {
+        ...result,
+        markdown: "![secret](https://example.test/secret)",
+      }),
+    ).toThrow(IMAGE_RESULT_ERROR);
   });
 
   it("rejects a file before reading when its declared size exceeds the bound", async () => {
@@ -60,9 +62,7 @@ describe("image asset boundaries", () => {
   });
 
   it("bounds base64 conversion even when the helper is called directly", () => {
-    expect(() => bytesToBase64(new Uint8Array(MAX_IMAGE_ASSET_BYTES + 1))).toThrow(
-      IMAGE_TOO_LARGE_ERROR,
-    );
+    expect(() => bytesToBase64(new Uint8Array(MAX_IMAGE_ASSET_BYTES + 1))).toThrow(IMAGE_TOO_LARGE_ERROR);
   });
 
   it("accepts image transfer items but never treats text items as assets", () => {

@@ -2,7 +2,27 @@ import { invoke, isProductHosted } from "../transport";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import catalogJson from "../../../../apps/products.json";
 import { isTauri } from "./lib/isTauri";
-import type { CapabilityEvidence, DevSetupAudit, DevSetupCapability, DevSetupConfigurationAction, DevSetupConfigurationApplyResult, DevSetupConfigurationApplyStatus, DevSetupConfigurationCurrentState, DevSetupConfigurationDesired, DevSetupConfigurationExport, DevSetupConfigurationPackageApplyResult, DevSetupConfigurationPackageApplyStatus, DevSetupConfigurationPackageReview, DevSetupConfigurationReview, DevSetupPlanItem, DockerCapability, RelatedTool, RelatedToolActionResult, SupportBundleExport, SupportBundlePreview } from "./types";
+import type {
+  CapabilityEvidence,
+  DevSetupAudit,
+  DevSetupCapability,
+  DevSetupConfigurationAction,
+  DevSetupConfigurationApplyResult,
+  DevSetupConfigurationApplyStatus,
+  DevSetupConfigurationCurrentState,
+  DevSetupConfigurationDesired,
+  DevSetupConfigurationExport,
+  DevSetupConfigurationPackageApplyResult,
+  DevSetupConfigurationPackageApplyStatus,
+  DevSetupConfigurationPackageReview,
+  DevSetupConfigurationReview,
+  DevSetupPlanItem,
+  DockerCapability,
+  RelatedTool,
+  RelatedToolActionResult,
+  SupportBundleExport,
+  SupportBundlePreview,
+} from "./types";
 const MOCK_OBSERVED_AT_MS = Date.now();
 const MAX_JAVASCRIPT_TIMESTAMP_MS = 8_640_000_000_000_000;
 const DEV_SETUP_CONFIGURATION_SCHEMA =
@@ -167,17 +187,16 @@ const RELATED_TOOL_ACTION_MESSAGES = {
 const MAX_RELATED_TOOL_URL_LENGTH = 2048;
 
 function isRelatedToolId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length <= 64
-    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
-    && RELATED_TOOL_ID_SET.has(value);
+  return (
+    typeof value === "string" &&
+    value.length <= 64 &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) &&
+    RELATED_TOOL_ID_SET.has(value)
+  );
 }
 
 function isRelatedDetection(value: unknown): value is RelatedTool["detection"] {
-  return value === "path"
-    || value === "known-location"
-    || value === "not-found"
-    || value === "unavailable";
+  return value === "path" || value === "known-location" || value === "not-found" || value === "unavailable";
 }
 
 function isInstallCapabilityState(value: unknown): value is RelatedTool["installState"] {
@@ -195,17 +214,9 @@ const EVIDENCE_RESULTS: Record<string, ReadonlySet<string>> = {
   "wsl-runtime": new Set(["running", "stopped", "not-observed", "unavailable"]),
   "winget-executable": new Set(["trusted-location", "not-observed", "unavailable"]),
 };
-const DOCKER_EVIDENCE_SOURCES = [
-  "desktop-executable",
-  "windows-cli",
-  "wsl-registration",
-  "wsl-runtime",
-] as const;
+const DOCKER_EVIDENCE_SOURCES = ["desktop-executable", "windows-cli", "wsl-registration", "wsl-runtime"] as const;
 
-function validateEvidence(
-  value: unknown,
-  expectedSources: readonly string[],
-): CapabilityEvidence[] {
+function validateEvidence(value: unknown, expectedSources: readonly string[]): CapabilityEvidence[] {
   if (!Array.isArray(value) || value.length !== expectedSources.length) {
     throw new Error("환경 capability 응답이 올바르지 않습니다.");
   }
@@ -215,9 +226,9 @@ function validateEvidence(
     }
     const evidence = candidate as Partial<CapabilityEvidence>;
     if (
-      evidence.source !== expectedSources[index]
-      || typeof evidence.result !== "string"
-      || !EVIDENCE_RESULTS[evidence.source]?.has(evidence.result)
+      evidence.source !== expectedSources[index] ||
+      typeof evidence.result !== "string" ||
+      !EVIDENCE_RESULTS[evidence.source]?.has(evidence.result)
     ) {
       throw new Error("환경 capability 응답이 올바르지 않습니다.");
     }
@@ -231,30 +242,31 @@ function validateDockerCapability(value: unknown): DockerCapability {
   }
   const capability = value as Partial<DockerCapability>;
   if (
-    !isInstallCapabilityState(capability.desktopInstall)
-    || !isAvailabilityCapabilityState(capability.desktopLaunch)
-    || !isAvailabilityCapabilityState(capability.windowsCli)
-    || !["running", "stopped", "present", "absent", "unknown"].includes(
-      capability.wslBackend ?? "",
-    )
-    || typeof capability.observedAtMs !== "number"
-    || !Number.isSafeInteger(capability.observedAtMs)
-    || (capability.observedAtMs ?? 0) <= 0
-    || (capability.observedAtMs ?? 0) > MAX_JAVASCRIPT_TIMESTAMP_MS
+    !isInstallCapabilityState(capability.desktopInstall) ||
+    !isAvailabilityCapabilityState(capability.desktopLaunch) ||
+    !isAvailabilityCapabilityState(capability.windowsCli) ||
+    !["running", "stopped", "present", "absent", "unknown"].includes(capability.wslBackend ?? "") ||
+    typeof capability.observedAtMs !== "number" ||
+    !Number.isSafeInteger(capability.observedAtMs) ||
+    (capability.observedAtMs ?? 0) <= 0 ||
+    (capability.observedAtMs ?? 0) > MAX_JAVASCRIPT_TIMESTAMP_MS
   ) {
     throw new Error("Docker capability 응답이 올바르지 않습니다.");
   }
   const evidence = validateEvidence(capability.evidence, DOCKER_EVIDENCE_SOURCES);
   const [desktopEvidence, cliEvidence, registrationEvidence, runtimeEvidence] = evidence;
-  const expectedDesktop = desktopEvidence.result === "path"
-    || desktopEvidence.result === "known-location"
-    ? ["present", "available"]
-    : desktopEvidence.result === "not-observed"
-      ? ["unknown", "unavailable"]
-      : ["unknown", "unknown"];
-  const expectedCli = cliEvidence.result === "path" || cliEvidence.result === "known-location"
-    ? "available"
-    : cliEvidence.result === "not-observed" ? "unavailable" : "unknown";
+  const expectedDesktop =
+    desktopEvidence.result === "path" || desktopEvidence.result === "known-location"
+      ? ["present", "available"]
+      : desktopEvidence.result === "not-observed"
+        ? ["unknown", "unavailable"]
+        : ["unknown", "unknown"];
+  const expectedCli =
+    cliEvidence.result === "path" || cliEvidence.result === "known-location"
+      ? "available"
+      : cliEvidence.result === "not-observed"
+        ? "unavailable"
+        : "unknown";
   const backendEvidence = `${registrationEvidence.result}:${runtimeEvidence.result}`;
   const expectedBackend = {
     "registered:running": "running",
@@ -264,11 +276,11 @@ function validateDockerCapability(value: unknown): DockerCapability {
     "unavailable:unavailable": "unknown",
   }[backendEvidence];
   if (
-    capability.desktopInstall !== expectedDesktop[0]
-    || capability.desktopLaunch !== expectedDesktop[1]
-    || capability.windowsCli !== expectedCli
-    || expectedBackend === undefined
-    || capability.wslBackend !== expectedBackend
+    capability.desktopInstall !== expectedDesktop[0] ||
+    capability.desktopLaunch !== expectedDesktop[1] ||
+    capability.windowsCli !== expectedCli ||
+    expectedBackend === undefined ||
+    capability.wslBackend !== expectedBackend
   ) {
     throw new Error("Docker capability 응답이 올바르지 않습니다.");
   }
@@ -298,45 +310,39 @@ function validateRelatedTools(value: unknown): RelatedTool[] {
       throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
     }
     const tool = candidate as Partial<RelatedTool>;
-    const expected = typeof tool.id === "string"
-      ? MOCK_RELATED_TOOLS.find((item) => item.id === tool.id)
-      : undefined;
+    const expected = typeof tool.id === "string" ? MOCK_RELATED_TOOLS.find((item) => item.id === tool.id) : undefined;
     const detection = tool.detection;
     const installState = tool.installState;
     const launchState = tool.launchState;
     const isDocker = expected?.id === "docker-desktop";
-    const dockerCapability = isDocker
-      ? validateDockerCapability(tool.dockerCapability)
-      : null;
-    const ordinaryStates = detection === "path" || detection === "known-location"
-      ? ["present", "available"]
-      : detection === "not-found" ? ["absent", "unavailable"] : ["unknown", "unknown"];
+    const dockerCapability = isDocker ? validateDockerCapability(tool.dockerCapability) : null;
+    const ordinaryStates =
+      detection === "path" || detection === "known-location"
+        ? ["present", "available"]
+        : detection === "not-found"
+          ? ["absent", "unavailable"]
+          : ["unknown", "unknown"];
     if (
-      !expected
-      || seen.has(expected.id)
-      || !isRelatedDetection(detection)
-      || tool.displayName !== expected.displayName
-      || tool.summary !== expected.summary
-      || tool.wingetId !== expected.wingetId
-      || tool.officialUrl !== expected.officialUrl
-      || tool.licenseUrl !== expected.licenseUrl
-      || tool.license !== expected.license
-      || typeof tool.platformSupported !== "boolean"
-      || typeof tool.installed !== "boolean"
-      || (!tool.platformSupported && tool.installed)
-      || !isInstallCapabilityState(installState)
-      || !isAvailabilityCapabilityState(launchState)
-      || tool.installed !== (installState === "present")
-      || (isDocker && (
-        installState !== dockerCapability?.desktopInstall
-        || launchState !== dockerCapability.desktopLaunch
-      ))
-      || (!isDocker && (
-        tool.dockerCapability !== null
-        || installState !== ordinaryStates[0]
-        || launchState !== ordinaryStates[1]
-      ))
-      || (!tool.platformSupported && (installState !== "unknown" || launchState !== "unknown"))
+      !expected ||
+      seen.has(expected.id) ||
+      !isRelatedDetection(detection) ||
+      tool.displayName !== expected.displayName ||
+      tool.summary !== expected.summary ||
+      tool.wingetId !== expected.wingetId ||
+      tool.officialUrl !== expected.officialUrl ||
+      tool.licenseUrl !== expected.licenseUrl ||
+      tool.license !== expected.license ||
+      typeof tool.platformSupported !== "boolean" ||
+      typeof tool.installed !== "boolean" ||
+      (!tool.platformSupported && tool.installed) ||
+      !isInstallCapabilityState(installState) ||
+      !isAvailabilityCapabilityState(launchState) ||
+      tool.installed !== (installState === "present") ||
+      (isDocker &&
+        (installState !== dockerCapability?.desktopInstall || launchState !== dockerCapability.desktopLaunch)) ||
+      (!isDocker &&
+        (tool.dockerCapability !== null || installState !== ordinaryStates[0] || launchState !== ordinaryStates[1])) ||
+      (!tool.platformSupported && (installState !== "unknown" || launchState !== "unknown"))
     ) {
       throw new Error("관련 도구 감지 응답이 올바르지 않습니다.");
     }
@@ -377,13 +383,10 @@ const DEV_SETUP_EVIDENCE: Record<DevSetupCapability["id"], readonly string[]> = 
 };
 
 function isDevSetupCapabilityId(value: unknown): value is DevSetupCapability["id"] {
-  return typeof value === "string"
-    && DEV_SETUP_CAPABILITY_IDS.some((candidate) => candidate === value);
+  return typeof value === "string" && DEV_SETUP_CAPABILITY_IDS.some((candidate) => candidate === value);
 }
 
-function expectedPlan(
-  capability: DevSetupCapability,
-): Pick<DevSetupPlanItem, "status" | "action"> | null {
+function expectedPlan(capability: DevSetupCapability): Pick<DevSetupPlanItem, "status" | "action"> | null {
   switch (capability.id) {
     case "docker-desktop-install":
       if (capability.state === "present") return { status: "satisfied", action: "none" };
@@ -422,16 +425,16 @@ function validateDevSetupAudit(value: unknown): DevSetupAudit {
   }
   const audit = value as Partial<DevSetupAudit>;
   if (
-    audit.schemaVersion !== 1
-    || audit.mode !== "read-only"
-    || typeof audit.observedAtMs !== "number"
-    || !Number.isSafeInteger(audit.observedAtMs)
-    || (audit.observedAtMs ?? 0) <= 0
-    || (audit.observedAtMs ?? 0) > MAX_JAVASCRIPT_TIMESTAMP_MS
-    || !Array.isArray(audit.capabilities)
-    || audit.capabilities.length !== DEV_SETUP_CAPABILITY_IDS.length
-    || !Array.isArray(audit.plan)
-    || audit.plan.length !== DEV_SETUP_CAPABILITY_IDS.length
+    audit.schemaVersion !== 1 ||
+    audit.mode !== "read-only" ||
+    typeof audit.observedAtMs !== "number" ||
+    !Number.isSafeInteger(audit.observedAtMs) ||
+    (audit.observedAtMs ?? 0) <= 0 ||
+    (audit.observedAtMs ?? 0) > MAX_JAVASCRIPT_TIMESTAMP_MS ||
+    !Array.isArray(audit.capabilities) ||
+    audit.capabilities.length !== DEV_SETUP_CAPABILITY_IDS.length ||
+    !Array.isArray(audit.plan) ||
+    audit.plan.length !== DEV_SETUP_CAPABILITY_IDS.length
   ) {
     throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
   }
@@ -442,10 +445,10 @@ function validateDevSetupAudit(value: unknown): DevSetupAudit {
     const capability = candidate as Partial<DevSetupCapability>;
     const id = capability.id;
     if (
-      !isDevSetupCapabilityId(id)
-      || id !== DEV_SETUP_CAPABILITY_IDS[index]
-      || capability.scope !== DEV_SETUP_SCOPES[id]
-      || typeof capability.state !== "string"
+      !isDevSetupCapabilityId(id) ||
+      id !== DEV_SETUP_CAPABILITY_IDS[index] ||
+      capability.scope !== DEV_SETUP_SCOPES[id] ||
+      typeof capability.state !== "string"
     ) {
       throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
     }
@@ -462,12 +465,13 @@ function validateDevSetupAudit(value: unknown): DevSetupAudit {
   });
   const [desktopInstall, desktopLaunch, windowsCli, wslBackend, winget] = capabilities;
   if (
-    desktopInstall.evidence[0].result !== desktopLaunch.evidence[0].result
-    || winget.state !== (
-      winget.evidence[0].result === "trusted-location"
+    desktopInstall.evidence[0].result !== desktopLaunch.evidence[0].result ||
+    winget.state !==
+      (winget.evidence[0].result === "trusted-location"
         ? "available"
-        : winget.evidence[0].result === "not-observed" ? "unavailable" : "unknown"
-    )
+        : winget.evidence[0].result === "not-observed"
+          ? "unavailable"
+          : "unknown")
   ) {
     throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
   }
@@ -476,11 +480,7 @@ function validateDevSetupAudit(value: unknown): DevSetupAudit {
     desktopLaunch: desktopLaunch.state as DockerCapability["desktopLaunch"],
     windowsCli: windowsCli.state as DockerCapability["windowsCli"],
     wslBackend: wslBackend.state as DockerCapability["wslBackend"],
-    evidence: [
-      desktopInstall.evidence[0],
-      windowsCli.evidence[0],
-      ...wslBackend.evidence,
-    ],
+    evidence: [desktopInstall.evidence[0], windowsCli.evidence[0], ...wslBackend.evidence],
     observedAtMs: audit.observedAtMs,
   });
   const plan = audit.plan.map((candidate, index): DevSetupPlanItem => {
@@ -491,10 +491,10 @@ function validateDevSetupAudit(value: unknown): DevSetupAudit {
     const capability = capabilities[index];
     const expected = expectedPlan(capability);
     if (
-      !expected
-      || item.capabilityId !== capability.id
-      || item.status !== expected?.status
-      || item.action !== expected.action
+      !expected ||
+      item.capabilityId !== capability.id ||
+      item.status !== expected?.status ||
+      item.action !== expected.action
     ) {
       throw new Error("Dev Setup 감사 응답이 올바르지 않습니다.");
     }
@@ -538,15 +538,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return Object.keys(value).length === keys.length
-    && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+  return (
+    Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+  );
 }
 
 function isSafeDevSetupTimestamp(value: unknown): value is number {
-  return typeof value === "number"
-    && Number.isSafeInteger(value)
-    && value > 0
-    && value <= MAX_JAVASCRIPT_TIMESTAMP_MS;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= MAX_JAVASCRIPT_TIMESTAMP_MS;
 }
 
 function isDevSetupPreviewId(value: unknown): value is string {
@@ -558,51 +556,49 @@ function isDevSetupSha256(value: unknown): value is string {
 }
 
 function isDevSetupConfigurationDesired(value: unknown): value is DevSetupConfigurationDesired {
-  return typeof value === "string"
-    && (["present", "latest", "version"] as readonly string[]).includes(value);
+  return typeof value === "string" && (["present", "latest", "version"] as readonly string[]).includes(value);
 }
 
-function isDevSetupConfigurationCurrentState(
-  value: unknown,
-): value is DevSetupConfigurationCurrentState {
-  return typeof value === "string"
-    && (["present", "absent", "update-available", "unknown"] as readonly string[]).includes(value);
+function isDevSetupConfigurationCurrentState(value: unknown): value is DevSetupConfigurationCurrentState {
+  return (
+    typeof value === "string" &&
+    (["present", "absent", "update-available", "unknown"] as readonly string[]).includes(value)
+  );
 }
 
 function isDevSetupConfigurationAction(value: unknown): value is DevSetupConfigurationAction {
-  return typeof value === "string"
-    && (["none", "install", "update", "reconcile-version", "verify"] as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (["none", "install", "update", "reconcile-version", "verify"] as readonly string[]).includes(value)
+  );
 }
 
-function isDevSetupConfigurationApplyStatus(
-  value: unknown,
-): value is DevSetupConfigurationApplyStatus {
-  return typeof value === "string"
-    && (["complete", "partial", "cancelled"] as readonly string[]).includes(value);
+function isDevSetupConfigurationApplyStatus(value: unknown): value is DevSetupConfigurationApplyStatus {
+  return typeof value === "string" && (["complete", "partial", "cancelled"] as readonly string[]).includes(value);
 }
 
-function isDevSetupConfigurationPackageApplyStatus(
-  value: unknown,
-): value is DevSetupConfigurationPackageApplyStatus {
-  return typeof value === "string"
-    && (["unchanged", "applied", "failed", "timed-out", "cancelled", "skipped"] as readonly string[]).includes(value);
+function isDevSetupConfigurationPackageApplyStatus(value: unknown): value is DevSetupConfigurationPackageApplyStatus {
+  return (
+    typeof value === "string" &&
+    (["unchanged", "applied", "failed", "timed-out", "cancelled", "skipped"] as readonly string[]).includes(value)
+  );
 }
 
 function isDevSetupPackageId(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > 128) return false;
   const segments = value.split(".");
-  return segments.length >= 2
-    && segments.length <= 8
-    && segments.every((segment) => segment.length > 0
-      && segment.length <= 32
-      && /^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/.test(segment));
+  return (
+    segments.length >= 2 &&
+    segments.length <= 8 &&
+    segments.every(
+      (segment) =>
+        segment.length > 0 && segment.length <= 32 && /^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/.test(segment),
+    )
+  );
 }
 
 function isDevSetupPackageVersion(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= 128
-    && /^[A-Za-z0-9._+-]+$/.test(value);
+  return typeof value === "string" && value.length > 0 && value.length <= 128 && /^[A-Za-z0-9._+-]+$/.test(value);
 }
 
 function expectedDevSetupAction(
@@ -622,23 +618,22 @@ function expectedDevSetupAction(
 }
 
 function devSetupActionChangesSystem(action: DevSetupConfigurationAction): boolean {
-  return action === "install"
-    || action === "update"
-    || action === "reconcile-version";
+  return action === "install" || action === "update" || action === "reconcile-version";
 }
 
-function validateDevSetupConfigurationPackage(
-  value: unknown,
-): DevSetupConfigurationPackageReview {
-  if (!isRecord(value) || !hasExactKeys(value, [
-    "packageId",
-    "desired",
-    "version",
-    "currentState",
-    "action",
-    "requestedAgreementAcceptance",
-    "declaredElevation",
-  ])) {
+function validateDevSetupConfigurationPackage(value: unknown): DevSetupConfigurationPackageReview {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "packageId",
+      "desired",
+      "version",
+      "currentState",
+      "action",
+      "requestedAgreementAcceptance",
+      "declaredElevation",
+    ])
+  ) {
     throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
   }
   const packageId = value.packageId;
@@ -647,12 +642,12 @@ function validateDevSetupConfigurationPackage(
   const currentState = value.currentState;
   const action = value.action;
   if (
-    !isDevSetupPackageId(packageId)
-    || !isDevSetupConfigurationDesired(desired)
-    || !isDevSetupConfigurationCurrentState(currentState)
-    || !isDevSetupConfigurationAction(action)
-    || typeof value.requestedAgreementAcceptance !== "boolean"
-    || typeof value.declaredElevation !== "boolean"
+    !isDevSetupPackageId(packageId) ||
+    !isDevSetupConfigurationDesired(desired) ||
+    !isDevSetupConfigurationCurrentState(currentState) ||
+    !isDevSetupConfigurationAction(action) ||
+    typeof value.requestedAgreementAcceptance !== "boolean" ||
+    typeof value.declaredElevation !== "boolean"
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
   }
@@ -677,43 +672,44 @@ function validateDevSetupConfigurationPackage(
   };
 }
 
-function validateDevSetupConfigurationReview(
-  value: unknown,
-): DevSetupConfigurationReview {
-  if (!isRecord(value) || !hasExactKeys(value, [
-    "schemaVersion",
-    "previewId",
-    "expiresAtMs",
-    "configurationDigest",
-    "sourceTrust",
-    "mode",
-    "canApply",
-    "hasChanges",
-    "requiresAgreementConfirmation",
-    "mayRequireAdmin",
-    "mayRequireReboot",
-    "packages",
-  ])) {
+function validateDevSetupConfigurationReview(value: unknown): DevSetupConfigurationReview {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "schemaVersion",
+      "previewId",
+      "expiresAtMs",
+      "configurationDigest",
+      "sourceTrust",
+      "mode",
+      "canApply",
+      "hasChanges",
+      "requiresAgreementConfirmation",
+      "mayRequireAdmin",
+      "mayRequireReboot",
+      "packages",
+    ])
+  ) {
     throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
   }
   const now = Date.now();
   if (
-    value.schemaVersion !== "0.3"
-    || !isDevSetupPreviewId(value.previewId)
-    || !isSafeDevSetupTimestamp(value.expiresAtMs)
-    || value.expiresAtMs <= now
-    || value.expiresAtMs > now + DEV_SETUP_CONFIGURATION_PREVIEW_TTL_MS
-    || !isDevSetupSha256(value.configurationDigest)
-    || value.sourceTrust !== "external-restricted"
-    || value.mode !== "package-only"
-    || typeof value.canApply !== "boolean"
-    || typeof value.hasChanges !== "boolean"
-    || typeof value.requiresAgreementConfirmation !== "boolean"
-    || typeof value.mayRequireAdmin !== "boolean"
-    || typeof value.mayRequireReboot !== "boolean"
-    || !Array.isArray(value.packages)
-    || value.packages.length < 1
-    || value.packages.length > DEV_SETUP_CONFIGURATION_MAX_PACKAGES
+    value.schemaVersion !== "0.3" ||
+    !isDevSetupPreviewId(value.previewId) ||
+    !isSafeDevSetupTimestamp(value.expiresAtMs) ||
+    value.expiresAtMs <= now ||
+    value.expiresAtMs > now + DEV_SETUP_CONFIGURATION_PREVIEW_TTL_MS ||
+    !isDevSetupSha256(value.configurationDigest) ||
+    value.sourceTrust !== "external-restricted" ||
+    value.mode !== "package-only" ||
+    typeof value.canApply !== "boolean" ||
+    typeof value.hasChanges !== "boolean" ||
+    typeof value.requiresAgreementConfirmation !== "boolean" ||
+    typeof value.mayRequireAdmin !== "boolean" ||
+    typeof value.mayRequireReboot !== "boolean" ||
+    !Array.isArray(value.packages) ||
+    value.packages.length < 1 ||
+    value.packages.length > DEV_SETUP_CONFIGURATION_MAX_PACKAGES
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
   }
@@ -726,15 +722,14 @@ function validateDevSetupConfigurationReview(
     }
     seenPackageIds.add(normalizedId);
   }
-  const hasChanges = packages.some((packageReview) =>
-    devSetupActionChangesSystem(packageReview.action));
+  const hasChanges = packages.some((packageReview) => devSetupActionChangesSystem(packageReview.action));
   const hasVerify = packages.some((packageReview) => packageReview.action === "verify");
   if (
-    value.hasChanges !== hasChanges
-    || value.canApply !== (hasChanges && !hasVerify)
-    || value.requiresAgreementConfirmation !== true
-    || value.mayRequireAdmin !== hasChanges
-    || value.mayRequireReboot !== hasChanges
+    value.hasChanges !== hasChanges ||
+    value.canApply !== (hasChanges && !hasVerify) ||
+    value.requiresAgreementConfirmation !== true ||
+    value.mayRequireAdmin !== hasChanges ||
+    value.mayRequireReboot !== hasChanges
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_REVIEW_ERROR);
   }
@@ -754,9 +749,7 @@ function validateDevSetupConfigurationReview(
   };
 }
 
-function cloneDevSetupConfigurationReview(
-  review: DevSetupConfigurationReview,
-): DevSetupConfigurationReview {
+function cloneDevSetupConfigurationReview(review: DevSetupConfigurationReview): DevSetupConfigurationReview {
   return {
     ...review,
     packages: review.packages.map((packageReview) => ({ ...packageReview })),
@@ -765,9 +758,7 @@ function cloneDevSetupConfigurationReview(
 
 let lastDevSetupConfigurationReview: DevSetupConfigurationReview | null = null;
 
-function requireLastDevSetupConfigurationReview(
-  previewId: string,
-): DevSetupConfigurationReview {
+function requireLastDevSetupConfigurationReview(previewId: string): DevSetupConfigurationReview {
   const review = lastDevSetupConfigurationReview;
   if (!review || review.previewId !== previewId || review.expiresAtMs <= Date.now()) {
     throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
@@ -775,9 +766,7 @@ function requireLastDevSetupConfigurationReview(
   return review;
 }
 
-function renderDevSetupConfigurationExport(
-  packages: readonly DevSetupConfigurationPackageReview[],
-): string {
+function renderDevSetupConfigurationExport(packages: readonly DevSetupConfigurationPackageReview[]): string {
   let content = `# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.3\n$schema: ${DEV_SETUP_CONFIGURATION_SCHEMA}\nmetadata:\n  winget:\n    processor:\n      identifier: dscv3\nresources:\n`;
   for (const [index, packageReview] of packages.entries()) {
     content += `  - type: Microsoft.WinGet/Package\n    name: DevboxPackage${String(index + 1).padStart(2, "0")}\n    properties:\n      id: ${JSON.stringify(packageReview.packageId)}\n      source: winget\n      matchOption: equals\n`;
@@ -786,7 +775,8 @@ function renderDevSetupConfigurationExport(
     } else if (packageReview.desired === "version") {
       content += `      version: ${JSON.stringify(packageReview.version)}\n`;
     }
-    content += "      installMode: silent\n    metadata:\n      description: Devbox reviewed package-only configuration\n";
+    content +=
+      "      installMode: silent\n    metadata:\n      description: Devbox reviewed package-only configuration\n";
   }
   return content;
 }
@@ -816,28 +806,22 @@ function validateDevSetupConfigurationExportShape(
   byteCount: number;
   sha256: string;
 } {
-  if (!isRecord(value) || !hasExactKeys(value, [
-    "filename",
-    "mimeType",
-    "content",
-    "byteCount",
-    "sha256",
-  ])) {
+  if (!isRecord(value) || !hasExactKeys(value, ["filename", "mimeType", "content", "byteCount", "sha256"])) {
     throw new Error(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
   }
   if (
-    value.filename !== "devbox-packages.winget"
-    || value.mimeType !== "application/yaml;charset=utf-8"
-    || typeof value.content !== "string"
-    || value.content.length === 0
-    || utf8ByteLength(value.content) > DEV_SETUP_CONFIGURATION_MAX_BYTES
-    || typeof value.byteCount !== "number"
-    || !Number.isSafeInteger(value.byteCount)
-    || value.byteCount <= 0
-    || value.byteCount !== utf8ByteLength(value.content)
-    || !isDevSetupSha256(value.sha256)
-    || value.sha256 !== review.configurationDigest
-    || value.content !== renderDevSetupConfigurationExport(review.packages)
+    value.filename !== "devbox-packages.winget" ||
+    value.mimeType !== "application/yaml;charset=utf-8" ||
+    typeof value.content !== "string" ||
+    value.content.length === 0 ||
+    utf8ByteLength(value.content) > DEV_SETUP_CONFIGURATION_MAX_BYTES ||
+    typeof value.byteCount !== "number" ||
+    !Number.isSafeInteger(value.byteCount) ||
+    value.byteCount <= 0 ||
+    value.byteCount !== utf8ByteLength(value.content) ||
+    !isDevSetupSha256(value.sha256) ||
+    value.sha256 !== review.configurationDigest ||
+    value.content !== renderDevSetupConfigurationExport(review.packages)
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_EXPORT_ERROR);
   }
@@ -873,10 +857,10 @@ function validateDevSetupConfigurationApply(
     throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
   }
   if (
-    !isDevSetupConfigurationApplyStatus(value.status)
-    || !isSafeDevSetupTimestamp(value.observedAtMs)
-    || !Array.isArray(value.results)
-    || value.results.length !== expectedPackageIds.length
+    !isDevSetupConfigurationApplyStatus(value.status) ||
+    !isSafeDevSetupTimestamp(value.observedAtMs) ||
+    !Array.isArray(value.results) ||
+    value.results.length !== expectedPackageIds.length
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
   }
@@ -885,16 +869,16 @@ function validateDevSetupConfigurationApply(
       throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
     }
     if (
-      candidate.packageId !== expectedPackageIds[index]
-      || !isDevSetupConfigurationPackageApplyStatus(candidate.status)
+      candidate.packageId !== expectedPackageIds[index] ||
+      !isDevSetupConfigurationPackageApplyStatus(candidate.status)
     ) {
       throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
     }
     const action = review.packages[index].action;
     const cancellationStatus = candidate.status === "cancelled" || candidate.status === "skipped";
     if (
-      (!cancellationStatus && action === "none" && candidate.status !== "unchanged")
-      || (!cancellationStatus && action !== "none" && candidate.status === "unchanged")
+      (!cancellationStatus && action === "none" && candidate.status !== "unchanged") ||
+      (!cancellationStatus && action !== "none" && candidate.status === "unchanged")
     ) {
       throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
     }
@@ -911,14 +895,9 @@ function validateDevSetupConfigurationApply(
   const hasTimedOut = statuses.includes("timed-out");
   const partialFailure = statuses.some((status) => status === "failed" || status === "timed-out");
   if (
-    (value.status === "complete" && !complete)
-    || (value.status === "cancelled" && (!cancellationSignal || complete))
-    || (value.status === "partial" && (
-      complete
-      || hasCancelled
-      || !partialFailure
-      || hasSkipped && !hasTimedOut
-    ))
+    (value.status === "complete" && !complete) ||
+    (value.status === "cancelled" && (!cancellationSignal || complete)) ||
+    (value.status === "partial" && (complete || hasCancelled || !partialFailure || (hasSkipped && !hasTimedOut)))
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_APPLY_ERROR);
   }
@@ -965,9 +944,7 @@ function mockDevSetupConfigurationReview(): DevSetupConfigurationReview {
   };
 }
 
-function mockDevSetupConfigurationExport(
-  review: DevSetupConfigurationReview,
-): DevSetupConfigurationExport {
+function mockDevSetupConfigurationExport(review: DevSetupConfigurationReview): DevSetupConfigurationExport {
   const content = renderDevSetupConfigurationExport(review.packages);
   return {
     filename: "devbox-packages.winget",
@@ -984,10 +961,10 @@ function validateRelatedAction(
   status: RelatedToolActionResult["status"],
 ): RelatedToolActionResult {
   if (
-    !value
-    || typeof value !== "object"
-    || (value as Partial<RelatedToolActionResult>).toolId !== toolId
-    || (value as Partial<RelatedToolActionResult>).status !== status
+    !value ||
+    typeof value !== "object" ||
+    (value as Partial<RelatedToolActionResult>).toolId !== toolId ||
+    (value as Partial<RelatedToolActionResult>).status !== status
   ) {
     throw new Error("관련 도구 작업 결과가 올바르지 않습니다.");
   }
@@ -999,7 +976,6 @@ function validateRelatedAction(
     message: RELATED_TOOL_ACTION_MESSAGES[status],
   };
 }
-
 
 export interface DiagnosisItem {
   name: string;
@@ -1046,13 +1022,18 @@ export async function cancelSupportBundle(operationId: string): Promise<void> {
 
 export async function exportSupportBundle(previewId: string): Promise<SupportBundleExport> {
   if (!isTauri()) {
-    const content = JSON.stringify({
-      schemaVersion: 3,
-      products: catalogJson.products.map(product=>({id:product.id,version:"0.8.1"})),
-      diagnosis: [], operations: [],
-      redaction: { version: "v1", paths: "omitted", secrets: "omitted", rawLogs: "omitted" },
-      omitted: ["raw-database-bytes", "raw-log-lines", "filesystem-paths", "credentials"],
-    }, null, 2);
+    const content = JSON.stringify(
+      {
+        schemaVersion: 3,
+        products: catalogJson.products.map((product) => ({ id: product.id, version: "0.8.1" })),
+        diagnosis: [],
+        operations: [],
+        redaction: { version: "v1", paths: "omitted", secrets: "omitted", rawLogs: "omitted" },
+        omitted: ["raw-database-bytes", "raw-log-lines", "filesystem-paths", "credentials"],
+      },
+      null,
+      2,
+    );
     return {
       filename: "devbox-support-bundle.json",
       mimeType: "application/json",
@@ -1065,16 +1046,12 @@ export async function exportSupportBundle(previewId: string): Promise<SupportBun
 }
 
 export async function relatedTools(): Promise<RelatedTool[]> {
-  const result = isTauri()
-    ? await invoke<unknown>("related_tools")
-    : MOCK_RELATED_TOOLS.map((tool) => ({ ...tool }));
+  const result = isTauri() ? await invoke<unknown>("related_tools") : MOCK_RELATED_TOOLS.map((tool) => ({ ...tool }));
   return validateRelatedTools(result);
 }
 
 export async function devSetupAudit(): Promise<DevSetupAudit> {
-  const result = isTauri()
-    ? await invoke<unknown>("dev_setup_audit")
-    : mockDevSetupAudit();
+  const result = isTauri() ? await invoke<unknown>("dev_setup_audit") : mockDevSetupAudit();
   return validateDevSetupAudit(result);
 }
 
@@ -1120,9 +1097,7 @@ export async function discardDevSetupConfiguration(previewId: string): Promise<v
   }
 }
 
-export async function exportDevSetupConfiguration(
-  previewId: string,
-): Promise<DevSetupConfigurationExport> {
+export async function exportDevSetupConfiguration(previewId: string): Promise<DevSetupConfigurationExport> {
   if (!isDevSetupPreviewId(previewId)) {
     throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
   }
@@ -1149,10 +1124,10 @@ export async function applyDevSetupConfiguration(
   acknowledgeAdminAndReboot: boolean,
 ): Promise<DevSetupConfigurationApplyResult> {
   if (
-    !isDevSetupPreviewId(previewId)
-    || typeof confirmed !== "boolean"
-    || typeof acceptPackageAgreements !== "boolean"
-    || typeof acknowledgeAdminAndReboot !== "boolean"
+    !isDevSetupPreviewId(previewId) ||
+    typeof confirmed !== "boolean" ||
+    typeof acceptPackageAgreements !== "boolean" ||
+    typeof acknowledgeAdminAndReboot !== "boolean"
   ) {
     throw new Error(DEV_SETUP_CONFIGURATION_REQUEST_ERROR);
   }
@@ -1192,10 +1167,7 @@ export async function applyDevSetupConfiguration(
       throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
     }
   }
-  const validated = validateDevSetupConfigurationApply(
-    result,
-    review,
-  );
+  const validated = validateDevSetupConfigurationApply(result, review);
   return validated;
 }
 
@@ -1208,19 +1180,20 @@ export async function cancelDevSetupApply(): Promise<void> {
   }
 }
 
-export async function installRelatedTool(
-  toolId: string,
-  confirmed: boolean,
-): Promise<RelatedToolActionResult> {
+export async function installRelatedTool(toolId: string, confirmed: boolean): Promise<RelatedToolActionResult> {
   if (!isRelatedToolId(toolId)) throw new Error("관련 도구 식별자가 올바르지 않습니다.");
   if (typeof confirmed !== "boolean") throw new Error("관련 도구 설치 확인값이 올바르지 않습니다.");
   if (!isTauri()) {
     if (!confirmed) throw new Error("관련 도구 설치는 사용자 확인이 필요합니다.");
-    return validateRelatedAction({
+    return validateRelatedAction(
+      {
+        toolId,
+        status: "installed",
+        message: "WinGet 설치가 완료되었습니다.",
+      },
       toolId,
-      status: "installed",
-      message: "WinGet 설치가 완료되었습니다.",
-    }, toolId, "installed");
+      "installed",
+    );
   }
   const result = await invoke<unknown>("install_related_tool", {
     request: { toolId, confirmed },
@@ -1231,11 +1204,15 @@ export async function installRelatedTool(
 export async function launchRelatedTool(toolId: string): Promise<RelatedToolActionResult> {
   if (!isRelatedToolId(toolId)) throw new Error("관련 도구 식별자가 올바르지 않습니다.");
   if (!isTauri()) {
-    return validateRelatedAction({
+    return validateRelatedAction(
+      {
+        toolId,
+        status: "launched",
+        message: "관련 도구를 실행했습니다.",
+      },
       toolId,
-      status: "launched",
-      message: "관련 도구를 실행했습니다.",
-    }, toolId, "launched");
+      "launched",
+    );
   }
   const result = await invoke<unknown>("launch_related_tool", { toolId });
   return validateRelatedAction(result, toolId, "launched");
@@ -1257,12 +1234,14 @@ function isSafeRelatedToolUrl(value: unknown): value is string {
   try {
     if (typeof value !== "string" || value.length > MAX_RELATED_TOOL_URL_LENGTH) return false;
     const url = new URL(value);
-    return url.protocol === "https:"
-      && !url.username
-      && !url.password
-      && !url.port
-      && url.hostname.length > 0
-      && RELATED_TOOL_OFFICIAL_HOSTS.has(url.hostname);
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      url.hostname.length > 0 &&
+      RELATED_TOOL_OFFICIAL_HOSTS.has(url.hostname)
+    );
   } catch {
     return false;
   }
@@ -1275,5 +1254,6 @@ export async function openRelatedToolUrl(url: string): Promise<void> {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
-  if(isProductHosted())await invoke("open_related_url",{url});else await openUrl(url);
+  if (isProductHosted()) await invoke("open_related_url", { url });
+  else await openUrl(url);
 }

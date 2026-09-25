@@ -1,8 +1,5 @@
 import { useState } from "react";
-import type {
-  WebSocketConnectionState,
-  WebSocketMessage,
-} from "./types";
+import type { WebSocketConnectionState, WebSocketMessage } from "./types";
 
 type PayloadEncoding = "text" | "hex";
 
@@ -45,7 +42,8 @@ function MessageContent({
   if (message.kind === "close") {
     return (
       <span className="websocket-payload">
-        코드 {message.closeCode ?? "-"}{message.closeReason ? ` — ${message.closeReason}` : ""}
+        코드 {message.closeCode ?? "-"}
+        {message.closeReason ? ` — ${message.closeReason}` : ""}
       </span>
     );
   }
@@ -138,7 +136,10 @@ export function WebSocketPanel({
           <div className="websocket-field-row">
             <label>
               <span>형식</span>
-              <select value={sendKind} onChange={(event) => setSendKind(event.currentTarget.value as "text" | "binary")}>
+              <select
+                value={sendKind}
+                onChange={(event) => setSendKind(event.currentTarget.value as "text" | "binary")}
+              >
                 <option value="text">텍스트</option>
                 <option value="binary">바이너리</option>
               </select>
@@ -192,7 +193,10 @@ export function WebSocketPanel({
             </label>
             <label>
               <span>인코딩</span>
-              <select value={pingEncoding} onChange={(event) => setPingEncoding(event.currentTarget.value as PayloadEncoding)}>
+              <select
+                value={pingEncoding}
+                onChange={(event) => setPingEncoding(event.currentTarget.value as PayloadEncoding)}
+              >
                 <option value="text">UTF-8 텍스트</option>
                 <option value="hex">Hex</option>
               </select>
@@ -258,7 +262,13 @@ export function WebSocketPanel({
           {messages.length}개 유지{dropped > 0 ? ` · ${dropped}개 제외됨` : ""}
         </span>
       </div>
-      <div className="websocket-log" role="log" aria-live="polite" aria-label="WebSocket 메시지" aria-relevant="additions">
+      <div
+        className="websocket-log"
+        role="log"
+        aria-live="polite"
+        aria-label="WebSocket 메시지"
+        aria-relevant="additions"
+      >
         {messages.map((message) => (
           <div key={`${message.direction}-${message.id}`} className="websocket-message">
             <span className={`websocket-direction websocket-direction-${message.direction}`}>

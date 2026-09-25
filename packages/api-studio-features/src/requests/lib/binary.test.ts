@@ -20,7 +20,9 @@ describe("binary response projection", () => {
 
   it("masks a secret before exposing text or hex and bounds previews", () => {
     const payload = new TextEncoder().encode(`prefix-secret-${"x".repeat(MAX_BINARY_PREVIEW_BYTES)}`);
-    const projection = projectBinaryResponse("application/octet-stream", payload, (value) => value.replace("secret", "[REDACTED]"));
+    const projection = projectBinaryResponse("application/octet-stream", payload, (value) =>
+      value.replace("secret", "[REDACTED]"),
+    );
     expect(projection.hex_preview).toBe("[REDACTED]");
     expect(projection.text_preview).toContain("[REDACTED]");
     expect(projection.hex_truncated).toBe(true);

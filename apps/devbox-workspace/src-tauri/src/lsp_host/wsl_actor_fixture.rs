@@ -6,7 +6,7 @@ use super::{
     wsl_approval::Snapshot,
 };
 use crate::{files_host::FilesHost, host::Host};
-use code_pad_lib::lsp::RequestCancellation;
+use editor_engine::lsp::RequestCancellation;
 use product_contract::ProjectContext;
 use serde_json::{json, Value};
 use std::{

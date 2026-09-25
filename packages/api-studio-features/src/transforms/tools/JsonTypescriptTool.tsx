@@ -8,16 +8,15 @@ export function JsonTypescriptTool() {
   const [rootTypeName, setRootTypeName] = useState(DEFAULT_ROOT_TYPE_NAME);
   const [input, setInput] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const result = useMemo(
-    () => convertJsonToTypescript(input, rootTypeName),
-    [input, rootTypeName],
-  );
+  const result = useMemo(() => convertJsonToTypescript(input, rootTypeName), [input, rootTypeName]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => setActionError(null), [input, rootTypeName]);
 
   const copy = () => {
     if (!result.output) return;
-    void navigator.clipboard.writeText(result.output)
+    void navigator.clipboard
+      .writeText(result.output)
       .then(() => setActionError(null))
       .catch(() => setActionError("TypeScript 결과를 클립보드에 복사하지 못했습니다."));
   };
@@ -55,9 +54,9 @@ export function JsonTypescriptTool() {
 
       <div className="conversion-notice" role="note">
         <strong>추론 안내</strong>
-        배열의 object 표본은 하나의 구조로 병합하며 누락된 속성은 optional로, null은 union으로
-        보존합니다. 빈 배열의 원소는 unknown으로 생성합니다. 값 자체는 코드에 포함하지 않으며
-        입력과 결과를 자동 저장하거나 외부로 전송하지 않습니다.
+        배열의 object 표본은 하나의 구조로 병합하며 누락된 속성은 optional로, null은 union으로 보존합니다. 빈 배열의
+        원소는 unknown으로 생성합니다. 값 자체는 코드에 포함하지 않으며 입력과 결과를 자동 저장하거나 외부로 전송하지
+        않습니다.
       </div>
 
       <div className="io-grid">
@@ -92,7 +91,11 @@ export function JsonTypescriptTool() {
             value={result.output}
             downloadName={`${rootTypeName || DEFAULT_ROOT_TYPE_NAME}.ts`}
           />
-          {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+          {actionError ? (
+            <div className="context-action-error" role="alert">
+              {actionError}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

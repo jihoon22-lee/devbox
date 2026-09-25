@@ -58,7 +58,7 @@ fn stop(app: tauri::AppHandle, quit: bool) {
         return;
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let result = webhook_lab_lib::component::stop_owned_listener(&app);
+        let result = webhook_host::component::stop_owned_listener(&app);
         if quit {
             // Listener sockets/threads belong to this process. Even a poisoned
             // soft-stop state must not prevent explicit full exit; OS teardown
@@ -178,7 +178,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 }
                 match close_action(
                     policy(&state),
-                    webhook_lab_lib::component::listener_running(app),
+                    webhook_host::component::listener_running(app),
                     state.tray.load(Ordering::Acquire),
                 ) {
                     CloseAction::Quit => stop(app.clone(), true),
@@ -236,12 +236,12 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
     }
     match method {
         "lifecycle_status" => Ok(
-            json!({ "mainWindowVisible": app.get_webview_window("main").and_then(|window| window.is_visible().ok()), "policy": policy(&state), "trayAvailable": state.tray.load(Ordering::Acquire), "running": webhook_lab_lib::component::listener_running(app), "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
+            json!({ "mainWindowVisible": app.get_webview_window("main").and_then(|window| window.is_visible().ok()), "policy": policy(&state), "trayAvailable": state.tray.load(Ordering::Acquire), "running": webhook_host::component::listener_running(app), "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
         ),
         "hide_main_window" => {
             if close_action(
                 policy(&state),
-                webhook_lab_lib::component::listener_running(app),
+                webhook_host::component::listener_running(app),
                 state.tray.load(Ordering::Acquire),
             ) != CloseAction::Hide
             {
@@ -268,7 +268,7 @@ pub(crate) fn operation_rows(
     let Some(state) = app.try_state::<State>() else {
         return Ok(vec![]);
     };
-    let running = webhook_lab_lib::component::listener_running(app);
+    let running = webhook_host::component::listener_running(app);
     let closing = state.closing.load(Ordering::Acquire);
     let failed = state.failed.load(Ordering::Acquire);
     if !running && !closing && !failed {

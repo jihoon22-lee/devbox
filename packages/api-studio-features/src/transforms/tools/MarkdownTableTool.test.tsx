@@ -91,43 +91,43 @@ describe("MarkdownTableTool", () => {
     render(<MarkdownTableTool />);
     fireEvent.change(input(), { target: { value: "| value |\n| --- |\n| safe |" } });
     // Complete the deferred formatter and its effects before testing actions.
-    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
     vi.useRealTimers();
     const output = screen.getByLabelText("Markdown 표 출력");
     expect(output.textContent).toContain("safe");
 
     writeTextMock.mockRejectedValueOnce(new Error("C:\\secret\\token"));
     fireEvent.click(screen.getByRole("button", { name: "복사" }));
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "변환 결과를 클립보드에 복사하지 못했습니다.",
-    );
+    expect((await screen.findByRole("alert")).textContent).toBe("변환 결과를 클립보드에 복사하지 못했습니다.");
 
     createObjectUrlMock.mockImplementationOnce(() => {
       throw new Error("/unsafe/path");
     });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((entry) =>
-        entry.textContent === "변환 결과 파일을 저장하지 못했습니다.",
-      )).toBe(true);
+      expect(
+        screen.getAllByRole("alert").some((entry) => entry.textContent === "변환 결과 파일을 저장하지 못했습니다."),
+      ).toBe(true);
     });
 
     writeTextMock.mockRejectedValueOnce(new Error("credential=secret"));
     fireEvent.contextMenu(output, { clientX: 14, clientY: 20 });
     fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((entry) =>
-        entry.textContent === "변환 결과 작업을 완료하지 못했습니다.",
-      )).toBe(true);
+      expect(
+        screen.getAllByRole("alert").some((entry) => entry.textContent === "변환 결과 작업을 완료하지 못했습니다."),
+      ).toBe(true);
     });
 
     readClipboardTextMock.mockRejectedValueOnce(new Error("C:\\private\\credential"));
     fireEvent.contextMenu(input(), { clientX: 14, clientY: 20 });
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((entry) =>
-        entry.textContent === "표 입력을 붙여넣지 못했습니다.",
-      )).toBe(true);
+      expect(screen.getAllByRole("alert").some((entry) => entry.textContent === "표 입력을 붙여넣지 못했습니다.")).toBe(
+        true,
+      );
     });
   });
 
@@ -160,8 +160,6 @@ describe("MarkdownTableTool", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
 
     await waitFor(() => expect(tableInput.value.length).toBe(1_000_000));
-    expect(new TextEncoder().encode(tableInput.value).byteLength).toBeLessThanOrEqual(
-      1_000_000,
-    );
+    expect(new TextEncoder().encode(tableInput.value).byteLength).toBeLessThanOrEqual(1_000_000);
   });
 });

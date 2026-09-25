@@ -104,11 +104,15 @@ export default function DistroPanel({
 
       {dockerMissing && (
         <div className="banner">
-          WSL에 Docker가 설치되어 있지 않습니다. <code>sudo apt install docker.io</code> 또는 Docker
-          Desktop을 설치하세요.
+          WSL에 Docker가 설치되어 있지 않습니다. <code>sudo apt install docker.io</code> 또는 Docker Desktop을
+          설치하세요.
         </div>
       )}
-      {dockerError && <div className="banner">선택한 WSL 배포판의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.</div>}
+      {dockerError && (
+        <div className="banner">
+          선택한 WSL 배포판의 Docker 상태를 읽지 못했습니다. 다음 snapshot에서 다시 시도하세요.
+        </div>
+      )}
       {dockerNotQueried && <div className="banner">중지된 WSL 배포판에서는 Docker를 조회하지 않습니다.</div>}
 
       <div className="cards">
@@ -131,11 +135,7 @@ export default function DistroPanel({
                 <span>활성 터미널</span>
                 <span>{snapshot ? snapshot.terminalCount : "—"}</span>
               </div>
-              <div
-                className="resource-summary"
-                role="group"
-                aria-label={`${d.name} resource summary`}
-              >
+              <div className="resource-summary" role="group" aria-label={`${d.name} resource summary`}>
                 {resourceSummaryLabel(snapshot?.resource)}
               </div>
               <button
@@ -174,7 +174,9 @@ export default function DistroPanel({
         })}
       </div>
 
-      <h2 className="dash-subtitle">Docker ({running}/{containers.length}개 실행 중)</h2>
+      <h2 className="dash-subtitle">
+        Docker ({running}/{containers.length}개 실행 중)
+      </h2>
       {!dockerMissing && !dockerError && !dockerNotQueried && (
         <div className="docker-list" aria-label="Docker 컨테이너">
           {containers.map((c) => {

@@ -43,51 +43,68 @@ describe("GraphQL wire contract", () => {
   });
 
   it("requires an operation selection and rejects unsupported subscription/introspection", () => {
-    expect(() => buildGraphqlBody(request({ query: "query A { a } query B { b }" }))).toThrow(GRAPHQL_OPERATION_INVALID);
-    expect(buildGraphqlBody(request({
-      query: "query A { a } query B { b }",
-      operation_name: "B",
-    }))).toContain('"operationName":"B"');
-    expect(() => buildGraphqlBody(request({
-      query: "query A { a } { b }",
-      operation_name: "A",
-    }))).toThrow(GRAPHQL_OPERATION_INVALID);
-    expect(() => buildGraphqlBody(request({ query: "subscription Events { events }", operation_name: "Events" }))).toThrow(GRAPHQL_UNSUPPORTED_SUBSCRIPTION);
-    expect(() => buildGraphqlBody(request({ query: "{ __schema { queryType { name } } }" }))).toThrow(GRAPHQL_UNSUPPORTED_INTROSPECTION);
+    expect(() => buildGraphqlBody(request({ query: "query A { a } query B { b }" }))).toThrow(
+      GRAPHQL_OPERATION_INVALID,
+    );
+    expect(
+      buildGraphqlBody(
+        request({
+          query: "query A { a } query B { b }",
+          operation_name: "B",
+        }),
+      ),
+    ).toContain('"operationName":"B"');
+    expect(() =>
+      buildGraphqlBody(
+        request({
+          query: "query A { a } { b }",
+          operation_name: "A",
+        }),
+      ),
+    ).toThrow(GRAPHQL_OPERATION_INVALID);
+    expect(() =>
+      buildGraphqlBody(request({ query: "subscription Events { events }", operation_name: "Events" })),
+    ).toThrow(GRAPHQL_UNSUPPORTED_SUBSCRIPTION);
+    expect(() => buildGraphqlBody(request({ query: "{ __schema { queryType { name } } }" }))).toThrow(
+      GRAPHQL_UNSUPPORTED_INTROSPECTION,
+    );
   });
 
   it("accepts only bounded JSON objects for variables and rejects credential query params", () => {
     expect(() => parseGraphqlVariables("[]")).toThrow(GRAPHQL_VARIABLES_INVALID);
-    expect(() => buildGraphqlGetUrl("https://api.example.test/graphql", [{ key: "access_token", value: "secret" }], request())).toThrow(GRAPHQL_CREDENTIAL_QUERY_ERROR);
+    expect(() =>
+      buildGraphqlGetUrl("https://api.example.test/graphql", [{ key: "access_token", value: "secret" }], request()),
+    ).toThrow(GRAPHQL_CREDENTIAL_QUERY_ERROR);
     expect(parseGraphqlVariables(" ")).toEqual({});
-    expect(() => validateGraphqlHeaders(
-      Array.from({ length: 101 }, (_, index) => ({ key: `x-${index}`, value: "ok" })),
-    )).toThrow(GRAPHQL_HEADER_ROWS_ERROR);
-    expect(() => validateGraphqlEndpoint("https://api.example.test/graphql#fragment"))
-      .toThrow(GRAPHQL_ENDPOINT_ERROR);
+    expect(() =>
+      validateGraphqlHeaders(Array.from({ length: 101 }, (_, index) => ({ key: `x-${index}`, value: "ok" }))),
+    ).toThrow(GRAPHQL_HEADER_ROWS_ERROR);
+    expect(() => validateGraphqlEndpoint("https://api.example.test/graphql#fragment")).toThrow(GRAPHQL_ENDPOINT_ERROR);
   });
 
   it("masks query literals without changing exact environment references", () => {
-    expect(maskGraphqlQueryLiterals(
-      'query Viewer { viewer(token: "raw-secret", id: "{{ID}}") { id } }',
-    )).toBe('query Viewer { viewer(token: "[REDACTED]", id: "{{ID}}") { id } }');
+    expect(maskGraphqlQueryLiterals('query Viewer { viewer(token: "raw-secret", id: "{{ID}}") { id } }')).toBe(
+      'query Viewer { viewer(token: "[REDACTED]", id: "{{ID}}") { id } }',
+    );
     expect(maskGraphqlQueryLiterals('query Viewer { viewer(token: "unterminated')).toBe(
       'query Viewer { viewer(token: "[REDACTED]"',
     );
-    expect(extractGraphqlCredentialLiterals(
-      'query Viewer { viewer(token: "escaped\\\"secret", id: "42") { id } }',
-    )).toEqual(['escaped"secret']);
+    expect(
+      extractGraphqlCredentialLiterals('query Viewer { viewer(token: "escaped\\\"secret", id: "42") { id } }'),
+    ).toEqual(['escaped"secret']);
   });
 
   it("fails closed for oversized encoded GET URLs and projects oversized errors", () => {
-    expect(() => buildGraphqlGetUrl(
-      "https://api.example.test/graphql",
-      [],
-      request({ query: `{ viewer(filter: "${"x".repeat(9000)}") { id } }` }),
-    )).toThrow(GRAPHQL_URL_TOO_LARGE);
-    expect(projectGraphqlResponse(
-      JSON.stringify({ errors: [{ message: "x".repeat(4097) }] }),
-    ).envelope).toBe("oversized");
+    expect(() =>
+      buildGraphqlGetUrl(
+        "https://api.example.test/graphql",
+        [],
+        request({ query: `{ viewer(filter: "${"x".repeat(9000)}") { id } }` }),
+      ),
+    ).toThrow(GRAPHQL_URL_TOO_LARGE);
+    expect(projectGraphqlResponse(JSON.stringify({ errors: [{ message: "x".repeat(4097) }] })).envelope).toBe(
+      "oversized",
+    );
   });
 
   it("rejects pathological JSON nesting before recursive parsing", () => {

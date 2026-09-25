@@ -57,8 +57,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "knowledge.notes" => {
             matches!(route, "notes" | "daily")
                 && method != "daily_note"
-                && (knowledge_base_lib::component::COMMANDS.contains(&method)
-                    || knowledge_base_lib::component::DAILY_METHODS.contains(&method)
+                && (knowledge_vault_engine::component::COMMANDS.contains(&method)
+                    || knowledge_vault_engine::component::DAILY_METHODS.contains(&method)
                     || matches!(
                         method,
                         "read_clipboard_text"
@@ -70,12 +70,12 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         "knowledge.activity" => {
             route == "activity"
-                && (life_log_lib::component::COMMANDS.contains(&method)
+                && (activity_engine::component::COMMANDS.contains(&method)
                     || crate::lifecycle::METHODS.contains(&method))
         }
         "knowledge.search" => {
             route == "search"
-                && (everything_plus_lib::component::COMMANDS.contains(&method)
+                && (content_index_engine::component::COMMANDS.contains(&method)
                     || crate::search::METHODS.contains(&method))
                 && !matches!(method, "search_files" | "search_content")
                 && !SEARCH_SETTINGS.contains(&method)
@@ -183,10 +183,10 @@ async fn notes_dispatch(
     let app = app.clone();
     let method = method.to_owned();
     tauri::async_runtime::spawn_blocking(move || {
-        if knowledge_base_lib::component::DAILY_METHODS.contains(&method.as_str()) {
-            knowledge_base_lib::component::daily_dispatch(&app, &method, args)
+        if knowledge_vault_engine::component::DAILY_METHODS.contains(&method.as_str()) {
+            knowledge_vault_engine::component::daily_dispatch(&app, &method, args)
         } else {
-            tauri::async_runtime::block_on(knowledge_base_lib::component::dispatch(
+            tauri::async_runtime::block_on(knowledge_vault_engine::component::dispatch(
                 &app, &method, args,
             ))
         }
@@ -283,7 +283,8 @@ async fn execute(
             .await
         }
         "knowledge.notes"
-            if knowledge_base_lib::component::DAILY_METHODS.contains(&request.method.as_str()) =>
+            if knowledge_vault_engine::component::DAILY_METHODS
+                .contains(&request.method.as_str()) =>
         {
             notes_dispatch(app, &request.method, request.args).await
         }
@@ -330,13 +331,13 @@ async fn execute(
             crate::lifecycle::dispatch(app, &request.method, request.args)
         }
         "knowledge.activity" if request.method == "send_digest_to_knowledge" => {
-            life_log_lib::component::send_product_draft(app, request.args, |draft| {
-                knowledge_base_lib::component::offer_product_draft(app, draft)
+            activity_engine::component::send_product_draft(app, request.args, |draft| {
+                knowledge_vault_engine::component::offer_product_draft(app, draft)
             })
             .await
         }
         "knowledge.activity" => {
-            life_log_lib::component::dispatch(app, &request.method, request.args)
+            activity_engine::component::dispatch(app, &request.method, request.args)
                 .await
                 .map(|value| crate::search::associate_activity(app, &request.method, value))
         }
@@ -364,7 +365,7 @@ async fn execute(
             crate::search::dispatch(app, &request.method, request.args)
         }
         "knowledge.search" | "knowledge.search-settings" => {
-            everything_plus_lib::component::dispatch(app, &request.method, request.args).await
+            content_index_engine::component::dispatch(app, &request.method, request.args).await
         }
         _ => Err("component_method_invalid".into()),
     };
@@ -406,7 +407,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 option_env!("DEVBOX_WSL_HELPER_SHA256"),
                 option_env!("DEVBOX_WSL_HELPER_BYTES"),
             ) {
-                knowledge_base_lib::component::configure_document_helper(
+                knowledge_vault_engine::component::configure_document_helper(
                     app.path().resource_dir()?.join("resources/wsl"),
                     digest,
                     bytes.parse()?,

@@ -4,7 +4,9 @@ use crate::{
     lsp_environment::Environment,
     lsp_evidence::{self, Evidence},
 };
-use code_pad_lib::lsp::{EnvironmentAllowlist, LspConfig, ResolvedProcess, RuntimeKind, ServerRef};
+use editor_engine::lsp::{
+    EnvironmentAllowlist, LspConfig, ResolvedProcess, RuntimeKind, ServerRef,
+};
 use product_contract::ProjectContext;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -165,8 +167,8 @@ impl Review {
     pub(crate) fn digest(&self) -> &str {
         &self.digest
     }
-    pub(crate) fn reviewed(&self) -> code_pad_lib::lsp::ReviewedLspExecution {
-        code_pad_lib::lsp::ReviewedLspExecution {
+    pub(crate) fn reviewed(&self) -> editor_engine::lsp::ReviewedLspExecution {
+        editor_engine::lsp::ReviewedLspExecution {
             config: self.config.clone(),
             processes: self.processes.clone(),
             environment: self.environment.clone(),

@@ -1,7 +1,11 @@
 import { componentInvoke, isProductHosted } from "../transport";
 // This selects a transport owner only. Native dispatch has its own closed
 // method lists and caller/session checks; this predicate grants no authority.
-const invoke = componentInvoke(method => method.startsWith("lsp_") || method.includes("_lsp_") || method.includes("language_server") ? "workspace.lsp" : "workspace.files");
+const invoke = componentInvoke((method) =>
+  method.startsWith("lsp_") || method.includes("_lsp_") || method.includes("language_server")
+    ? "workspace.lsp"
+    : "workspace.files",
+);
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
@@ -52,8 +56,15 @@ export interface RenamedFile {
   contentHash: string;
 }
 
-export function openFile(path: string, encoding: Encoding | null = null, receivedReference?: string): Promise<OpenedFile> {
-  return invoke<OpenedFile>("open_file", { request: { path, encoding }, ...(receivedReference?{receivedReference}:{}) });
+export function openFile(
+  path: string,
+  encoding: Encoding | null = null,
+  receivedReference?: string,
+): Promise<OpenedFile> {
+  return invoke<OpenedFile>("open_file", {
+    request: { path, encoding },
+    ...(receivedReference ? { receivedReference } : {}),
+  });
 }
 
 export function pickFiles(): Promise<string[]> {
@@ -61,8 +72,13 @@ export function pickFiles(): Promise<string[]> {
 }
 
 function actionRequest(file: FileActionSnapshot) {
-  return {path:file.path, expectedMtimeNanos:file.mtimeNanos, expectedSize:file.size, expectedContentHash:file.contentHash,
-    ...(file.nativeRevision !== undefined ? {nativeRevision:file.nativeRevision} : {})};
+  return {
+    path: file.path,
+    expectedMtimeNanos: file.mtimeNanos,
+    expectedSize: file.size,
+    expectedContentHash: file.contentHash,
+    ...(file.nativeRevision !== undefined ? { nativeRevision: file.nativeRevision } : {}),
+  };
 }
 
 /**
@@ -96,7 +112,7 @@ export function saveFile(
       expectedSize,
       expectedContentHash,
       sourceLossy,
-      ...(nativeRevision !== undefined ? {nativeRevision} : {}),
+      ...(nativeRevision !== undefined ? { nativeRevision } : {}),
     },
   });
 }
@@ -105,10 +121,7 @@ export function validateEncoding(text: string, encoding: Encoding): Promise<void
   return invoke<void>("validate_encoding", { request: { text, encoding } });
 }
 
-export function renameFileAction(
-  file: FileActionSnapshot,
-  newName: string,
-): Promise<RenamedFile> {
+export function renameFileAction(file: FileActionSnapshot, newName: string): Promise<RenamedFile> {
   return invoke<RenamedFile>("rename_file_action", {
     request: { ...actionRequest(file), newName },
   });
@@ -143,7 +156,12 @@ export function watchFile(path: string): Promise<void> {
 }
 
 export function unwatchFile(path: string, contextKey?: string): Promise<void> {
-  return invoke<void>("unwatch_file", { path, ...(isProductHosted() && contextKey && contextKey !== "standalone" ? {documentContext: JSON.parse(contextKey)} : {}) });
+  return invoke<void>("unwatch_file", {
+    path,
+    ...(isProductHosted() && contextKey && contextKey !== "standalone"
+      ? { documentContext: JSON.parse(contextKey) }
+      : {}),
+  });
 }
 
 export function loadSession(): Promise<LoadedSession> {
@@ -155,15 +173,11 @@ export async function saveSession(session: SessionState, nativeRevision?: string
     await invoke<void>("save_session", { session });
     return undefined;
   }
-  const result = await invoke<{nativeRevision:string}>("save_session", {session, nativeRevision});
+  const result = await invoke<{ nativeRevision: string }>("save_session", { session, nativeRevision });
   return result.nativeRevision;
 }
 
-export function renderPreview(
-  path: string,
-  content: string,
-  workspaceRoot: string,
-): Promise<PreviewResponse> {
+export function renderPreview(path: string, content: string, workspaceRoot: string): Promise<PreviewResponse> {
   return invoke<PreviewResponse>("render_preview", {
     path,
     content,
@@ -175,33 +189,41 @@ export function loadLspConfig(): Promise<LoadedLspConfig> {
   return invoke<LoadedLspConfig>("load_lsp_config");
 }
 
-export function saveLspConfig(config: LspConfig, recoverInvalid = false, nativeRevision?: string | null): Promise<void> {
+export function saveLspConfig(
+  config: LspConfig,
+  recoverInvalid = false,
+  nativeRevision?: string | null,
+): Promise<void> {
   return invoke<void>("save_lsp_config", { config, recoverInvalid, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
 export function startLanguageServer(languageId: string): Promise<void> {
-  return startServer("start_language_server",languageId);
+  return startServer("start_language_server", languageId);
 }
 
 export function stopLanguageServer(languageId: string): Promise<void> {
-  const operationId=isProductHosted()?pendingStarts.get(languageId)?.operationId:undefined;
-  return invoke<void>("stop_language_server", { languageId,...(operationId?{operationId}:{}) });
+  const operationId = isProductHosted() ? pendingStarts.get(languageId)?.operationId : undefined;
+  return invoke<void>("stop_language_server", { languageId, ...(operationId ? { operationId } : {}) });
 }
 
 export function restartLanguageServer(languageId: string): Promise<void> {
-  return startServer("restart_language_server",languageId);
+  return startServer("restart_language_server", languageId);
 }
 
-const pendingStarts=new Map<string,{operationId:string;promise:Promise<void>}>();
-function startServer(method:string,languageId:string):Promise<void> {
-  if(!isProductHosted())return invoke<void>(method,{languageId});
-  const pending=pendingStarts.get(languageId);if(pending)return pending.promise;
-  const operationId=crypto.randomUUID();
+const pendingStarts = new Map<string, { operationId: string; promise: Promise<void> }>();
+function startServer(method: string, languageId: string): Promise<void> {
+  if (!isProductHosted()) return invoke<void>(method, { languageId });
+  const pending = pendingStarts.get(languageId);
+  if (pending) return pending.promise;
+  const operationId = crypto.randomUUID();
   // Publish cancellation identity before the first invoke/description await.
-  const promise=Promise.resolve().then(()=>invoke<void>(method,{languageId,operationId})).finally(()=>{
-    if(pendingStarts.get(languageId)?.operationId===operationId)pendingStarts.delete(languageId);
-  });
-  pendingStarts.set(languageId,{operationId,promise});return promise;
+  const promise = Promise.resolve()
+    .then(() => invoke<void>(method, { languageId, operationId }))
+    .finally(() => {
+      if (pendingStarts.get(languageId)?.operationId === operationId) pendingStarts.delete(languageId);
+    });
+  pendingStarts.set(languageId, { operationId, promise });
+  return promise;
 }
 
 export function languageServerStatuses(): Promise<LanguageServerStatus[]> {
@@ -218,7 +240,12 @@ export function openLspDocument(
   text: string,
   nativeRevision?: string | null,
 ): Promise<LspDidOpen> {
-  return invoke<LspDidOpen>("open_lsp_document", { languageId, path, text, ...(isProductHosted() ? { nativeRevision } : {}) });
+  return invoke<LspDidOpen>("open_lsp_document", {
+    languageId,
+    path,
+    text,
+    ...(isProductHosted() ? { nativeRevision } : {}),
+  });
 }
 
 export function changeLspDocument(
@@ -228,7 +255,13 @@ export function changeLspDocument(
   dirty: boolean,
   nativeRevision?: string | null,
 ): Promise<LspDidChange> {
-  return invoke<LspDidChange>("change_lsp_document", { languageId, uri, text, dirty, ...(isProductHosted() ? { nativeRevision } : {}) });
+  return invoke<LspDidChange>("change_lsp_document", {
+    languageId,
+    uri,
+    text,
+    dirty,
+    ...(isProductHosted() ? { nativeRevision } : {}),
+  });
 }
 
 export function reloadLspDocument(
@@ -237,11 +270,25 @@ export function reloadLspDocument(
   text: string,
   nativeRevision?: string | null,
 ): Promise<LspDidChange> {
-  return invoke<LspDidChange>("reload_lsp_document", { languageId, uri, text, ...(isProductHosted() ? { nativeRevision } : {}) });
+  return invoke<LspDidChange>("reload_lsp_document", {
+    languageId,
+    uri,
+    text,
+    ...(isProductHosted() ? { nativeRevision } : {}),
+  });
 }
 
-export function saveLspDocument(languageId: string, uri: string, nativeRevision?: string | null, text?: string): Promise<LspDidSave> {
-  return invoke<LspDidSave>("save_lsp_document", { languageId, uri, ...(isProductHosted() ? { nativeRevision, ...(text !== undefined ? { text } : {}) } : {}) });
+export function saveLspDocument(
+  languageId: string,
+  uri: string,
+  nativeRevision?: string | null,
+  text?: string,
+): Promise<LspDidSave> {
+  return invoke<LspDidSave>("save_lsp_document", {
+    languageId,
+    uri,
+    ...(isProductHosted() ? { nativeRevision, ...(text !== undefined ? { text } : {}) } : {}),
+  });
 }
 
 export function closeLspDocument(languageId: string, uri: string): Promise<LspDidClose> {
@@ -256,11 +303,7 @@ export function lspInstalled(): Promise<ManagedInstallStatus[]> {
   return invoke<ManagedInstallStatus[]>("lsp_installed");
 }
 
-export function installLsp(
-  manifestId: string,
-  version: string,
-  platform: string,
-): Promise<void> {
+export function installLsp(manifestId: string, version: string, platform: string): Promise<void> {
   return invoke<void>("lsp_install", { manifestId, version, platform });
 }
 
@@ -297,11 +340,7 @@ export function importLspArchives(
   });
 }
 
-export function uninstallLsp(
-  manifestId: string,
-  version: string,
-  platform: string,
-): Promise<void> {
+export function uninstallLsp(manifestId: string, version: string, platform: string): Promise<void> {
   return invoke<void>("lsp_uninstall", { manifestId, version, platform });
 }
 
@@ -349,10 +388,7 @@ export function requestLspFormatting(
   });
 }
 
-export function pullLspDiagnostics(
-  languageId: string,
-  uri: string,
-): Promise<LspFeatureResponse<LspDiagnosticResult>> {
+export function pullLspDiagnostics(languageId: string, uri: string): Promise<LspFeatureResponse<LspDiagnosticResult>> {
   return invoke<LspFeatureResponse<LspDiagnosticResult>>("pull_lsp_diagnostics", {
     languageId,
     uri,
@@ -417,39 +453,79 @@ export interface RecoveryEntry {
   baseHash: string | null;
   snapshotAtMs: number;
 }
-interface RecoveryWire {path:string; content:string; base_hash:string | null; snapshot_at_ms:number}
+interface RecoveryWire {
+  path: string;
+  content: string;
+  base_hash: string | null;
+  snapshot_at_ms: number;
+}
 
-export interface LoadedRecovery { entries: RecoveryEntry[]; nativeRevision?: string }
+export interface LoadedRecovery {
+  entries: RecoveryEntry[];
+  nativeRevision?: string;
+}
 export async function saveRecovery(entries: RecoveryEntry[], nativeRevision?: string): Promise<string | undefined> {
-  const args = { entries:entries.map(entry => ({path:entry.path, content:entry.content, base_hash:entry.baseHash, snapshot_at_ms:entry.snapshotAtMs})) };
-  if (isProductHosted()) return (await invoke<{nativeRevision:string}>("save_recovery", {...args,nativeRevision})).nativeRevision;
+  const args = {
+    entries: entries.map((entry) => ({
+      path: entry.path,
+      content: entry.content,
+      base_hash: entry.baseHash,
+      snapshot_at_ms: entry.snapshotAtMs,
+    })),
+  };
+  if (isProductHosted())
+    return (await invoke<{ nativeRevision: string }>("save_recovery", { ...args, nativeRevision })).nativeRevision;
   await invoke<void>("save_recovery", args);
 }
 export async function loadRecoveryState(): Promise<LoadedRecovery> {
   const hosted = isProductHosted();
-  const result = await invoke<RecoveryWire[] | {entries:RecoveryWire[];nativeRevision:string}>("load_recovery");
-  const state = hosted ? result as {entries:RecoveryWire[];nativeRevision:string} : {entries:result as RecoveryWire[],nativeRevision:undefined};
-  return {entries:state.entries.map(entry => ({path:entry.path, content:entry.content, baseHash:entry.base_hash, snapshotAtMs:entry.snapshot_at_ms})),nativeRevision:state.nativeRevision};
+  const result = await invoke<RecoveryWire[] | { entries: RecoveryWire[]; nativeRevision: string }>("load_recovery");
+  const state = hosted
+    ? (result as { entries: RecoveryWire[]; nativeRevision: string })
+    : { entries: result as RecoveryWire[], nativeRevision: undefined };
+  return {
+    entries: state.entries.map((entry) => ({
+      path: entry.path,
+      content: entry.content,
+      baseHash: entry.base_hash,
+      snapshotAtMs: entry.snapshot_at_ms,
+    })),
+    nativeRevision: state.nativeRevision,
+  };
 }
 export async function loadRecovery(): Promise<RecoveryEntry[]> {
   return (await loadRecoveryState()).entries;
 }
 export async function discardRecovery(path: string | null, nativeRevision?: string): Promise<string | undefined> {
-  if (isProductHosted()) return (await invoke<{nativeRevision:string}>("discard_recovery", {path,nativeRevision})).nativeRevision;
+  if (isProductHosted())
+    return (await invoke<{ nativeRevision: string }>("discard_recovery", { path, nativeRevision })).nativeRevision;
   await invoke<void>("discard_recovery", { path });
 }
 
 export function applyRecovery(path: string, content: string): Promise<void> {
   return invoke<void>("apply_recovery", { path, content });
 }
-export interface RecoveryPreview {previewId:string; path:string; before:string; after:string}
-export function prepareRecovery(path:string): Promise<RecoveryPreview> { return invoke("prepare_recovery", {path}); }
-export function applyRecoveryPreview(previewId:string): Promise<SavedFile> { return invoke("apply_recovery_preview", {previewId}); }
-export function cancelRecoveryPreview(previewId:string): Promise<void> { return invoke("cancel_recovery_preview", {previewId}); }
+export interface RecoveryPreview {
+  previewId: string;
+  path: string;
+  before: string;
+  after: string;
+}
+export function prepareRecovery(path: string): Promise<RecoveryPreview> {
+  return invoke("prepare_recovery", { path });
+}
+export function applyRecoveryPreview(previewId: string): Promise<SavedFile> {
+  return invoke("apply_recovery_preview", { previewId });
+}
+export function cancelRecoveryPreview(previewId: string): Promise<void> {
+  return invoke("cancel_recovery_preview", { previewId });
+}
 
 /** Hosted metadata mirror; standalone editing has no product document owner. */
 export function syncEditorDocument(path: string, nativeRevision: string, text: string): Promise<boolean> {
-  return isProductHosted() ? invoke<boolean>("sync_editor_document", { path, nativeRevision, text }) : Promise.resolve(false);
+  return isProductHosted()
+    ? invoke<boolean>("sync_editor_document", { path, nativeRevision, text })
+    : Promise.resolve(false);
 }
 
 export interface LspExecutionPreview {
@@ -475,12 +551,28 @@ export function revokeLspExecution(): Promise<void> {
   return componentInvoke("workspace.lsp")<void>("lsp_execution_revoke");
 }
 
-export interface LspRecoveryListing { records: Array<{ journalId: string; files: number; available: boolean }>; truncated: boolean }
-export interface LspRecoveryPreview {
-  previewId: string; journalId: string;
-  files: Array<{ path: string; restore: boolean; current: string; original: string; currentSize: number; originalSize: number }>;
+export interface LspRecoveryListing {
+  records: Array<{ journalId: string; files: number; available: boolean }>;
+  truncated: boolean;
 }
-export interface LspRecoveryResult { complete: boolean; restored: string[]; cleanupPending: boolean; error: string | null }
+export interface LspRecoveryPreview {
+  previewId: string;
+  journalId: string;
+  files: Array<{
+    path: string;
+    restore: boolean;
+    current: string;
+    original: string;
+    currentSize: number;
+    originalSize: number;
+  }>;
+}
+export interface LspRecoveryResult {
+  complete: boolean;
+  restored: string[];
+  cleanupPending: boolean;
+  error: string | null;
+}
 export function listLspRecovery(): Promise<LspRecoveryListing> {
   return componentInvoke("workspace.lsp")<LspRecoveryListing>("lsp_recovery_list");
 }
@@ -494,7 +586,13 @@ export function cancelLspRecovery(previewId: string): Promise<void> {
   return componentInvoke("workspace.lsp")<void>("lsp_recovery_cancel", { previewId });
 }
 
-export async function sendEditorSelection(path:string,nativeRevision:string,text:string,from:number,to:number):Promise<void> {
-  if(!isProductHosted())throw new Error("Workspace에서 사용할 수 있습니다.");
-  await invoke("send_editor_selection",{path,nativeRevision,text,from,to});
+export async function sendEditorSelection(
+  path: string,
+  nativeRevision: string,
+  text: string,
+  from: number,
+  to: number,
+): Promise<void> {
+  if (!isProductHosted()) throw new Error("Workspace에서 사용할 수 있습니다.");
+  await invoke("send_editor_selection", { path, nativeRevision, text, from, to });
 }

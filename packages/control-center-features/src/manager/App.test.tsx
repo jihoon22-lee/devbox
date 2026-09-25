@@ -2,10 +2,40 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { applyDevSetupConfiguration, cancelDevSetupApply, cancelSupportBundle, devSetupAudit, discardDevSetupConfiguration, exportDevSetupConfiguration, exportSupportBundle, importDevSetupConfiguration, installRelatedTool, launchRelatedTool, openRelatedToolUrl, previewSupportBundle, relatedTools, runDiagnosis } from "./api";
+import {
+  applyDevSetupConfiguration,
+  cancelDevSetupApply,
+  cancelSupportBundle,
+  devSetupAudit,
+  discardDevSetupConfiguration,
+  exportDevSetupConfiguration,
+  exportSupportBundle,
+  importDevSetupConfiguration,
+  installRelatedTool,
+  launchRelatedTool,
+  openRelatedToolUrl,
+  previewSupportBundle,
+  relatedTools,
+  runDiagnosis,
+} from "./api";
 import type { DevSetupAudit, RelatedTool, RelatedToolActionResult, SupportBundlePreview } from "./types";
 
-vi.mock("./api",()=>({applyDevSetupConfiguration:vi.fn(),cancelDevSetupApply:vi.fn(),cancelSupportBundle:vi.fn(),devSetupAudit:vi.fn(),discardDevSetupConfiguration:vi.fn(),exportDevSetupConfiguration:vi.fn(),exportSupportBundle:vi.fn(),importDevSetupConfiguration:vi.fn(),installRelatedTool:vi.fn(),launchRelatedTool:vi.fn(),openRelatedToolUrl:vi.fn(),previewSupportBundle:vi.fn(),relatedTools:vi.fn(),runDiagnosis:vi.fn()}));
+vi.mock("./api", () => ({
+  applyDevSetupConfiguration: vi.fn(),
+  cancelDevSetupApply: vi.fn(),
+  cancelSupportBundle: vi.fn(),
+  devSetupAudit: vi.fn(),
+  discardDevSetupConfiguration: vi.fn(),
+  exportDevSetupConfiguration: vi.fn(),
+  exportSupportBundle: vi.fn(),
+  importDevSetupConfiguration: vi.fn(),
+  installRelatedTool: vi.fn(),
+  launchRelatedTool: vi.fn(),
+  openRelatedToolUrl: vi.fn(),
+  previewSupportBundle: vi.fn(),
+  relatedTools: vi.fn(),
+  runDiagnosis: vi.fn(),
+}));
 const discardDevSetupConfigurationMock = vi.mocked(discardDevSetupConfiguration);
 const importDevSetupConfigurationMock = vi.mocked(importDevSetupConfiguration);
 const exportDevSetupConfigurationMock = vi.mocked(exportDevSetupConfiguration);
@@ -85,12 +115,8 @@ const devSetupFixture: DevSetupAudit = {
   ],
 };
 
-type DevSetupConfigurationReviewFixture = NonNullable<
-  Awaited<ReturnType<typeof importDevSetupConfiguration>>
->;
-type DevSetupConfigurationApplyFixture = Awaited<
-  ReturnType<typeof applyDevSetupConfiguration>
->;
+type DevSetupConfigurationReviewFixture = NonNullable<Awaited<ReturnType<typeof importDevSetupConfiguration>>>;
+type DevSetupConfigurationApplyFixture = Awaited<ReturnType<typeof applyDevSetupConfiguration>>;
 
 const devSetupConfigurationReviewFixture: DevSetupConfigurationReviewFixture = {
   schemaVersion: "0.3",
@@ -184,7 +210,7 @@ beforeEach(() => {
   exportSupportBundleMock.mockReset().mockResolvedValue({
     filename: "devbox-support-bundle.json",
     mimeType: "application/json",
-    content: "{\"redactionVersion\":\"v1\"}",
+    content: '{"redactionVersion":"v1"}',
     byteCount: 26,
     redactionVersion: "v1",
   });
@@ -214,7 +240,6 @@ it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
 });
 
 describe("Devbox Manager diagnostics and support bundle", () => {
-
   it("shows support bundle inclusion and omission boundaries before one-time export", async () => {
     render(<App />);
     await screen.findByText("Control Center 도구");
@@ -258,10 +283,12 @@ describe("Devbox Manager Related Tools", () => {
     expect(await screen.findByText("Visual Studio Code")).toBeTruthy();
     expect(screen.getByText("표준 감지 위치에서 찾지 못했습니다.")).toBeTruthy();
     expect(screen.getByText(/감지와 이미 설치된 도구 실행은 인터넷 없이 가능/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "공식 사이트" }).getAttribute("href"))
-      .toBe("https://code.visualstudio.com/");
-    expect(screen.getByRole("link", { name: "라이선스" }).getAttribute("href"))
-      .toBe("https://code.visualstudio.com/License");
+    expect(screen.getByRole("link", { name: "공식 사이트" }).getAttribute("href")).toBe(
+      "https://code.visualstudio.com/",
+    );
+    expect(screen.getByRole("link", { name: "라이선스" }).getAttribute("href")).toBe(
+      "https://code.visualstudio.com/License",
+    );
     expect(screen.getByText("Microsoft.VisualStudioCode")).toBeTruthy();
     expect(screen.getByRole("button", { name: "확인 후 WinGet 설치" })).toBeTruthy();
     fireEvent.click(screen.getByRole("link", { name: "공식 사이트" }));
@@ -269,11 +296,13 @@ describe("Devbox Manager Related Tools", () => {
   });
 
   it("does not render non-HTTPS links returned outside the curated contract", async () => {
-    relatedToolsMock.mockResolvedValueOnce([{
-      ...relatedTool,
-      officialUrl: "https://evil.example/tool.exe",
-      licenseUrl: "javascript:alert(1)",
-    }]);
+    relatedToolsMock.mockResolvedValueOnce([
+      {
+        ...relatedTool,
+        officialUrl: "https://evil.example/tool.exe",
+        licenseUrl: "javascript:alert(1)",
+      },
+    ]);
     render(<App />);
     await screen.findByText("Control Center 도구");
     fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
@@ -284,13 +313,15 @@ describe("Devbox Manager Related Tools", () => {
   });
 
   it("keeps official links usable while disabling WinGet on unsupported platforms", async () => {
-    relatedToolsMock.mockResolvedValueOnce([{
-      ...relatedTool,
-      platformSupported: false,
-      detection: "unavailable",
-      installState: "unknown",
-      launchState: "unknown",
-    }]);
+    relatedToolsMock.mockResolvedValueOnce([
+      {
+        ...relatedTool,
+        platformSupported: false,
+        detection: "unavailable",
+        installState: "unknown",
+        launchState: "unknown",
+      },
+    ]);
     render(<App />);
     await screen.findByText("Control Center 도구");
     fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
@@ -298,17 +329,17 @@ describe("Devbox Manager Related Tools", () => {
     const install = await screen.findByRole("button", { name: "설치 상태 확인 필요" });
     expect((install as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("link", { name: "공식 사이트" }));
-    await waitFor(() => expect(openRelatedToolUrlMock).toHaveBeenCalledWith(
-      "https://code.visualstudio.com/",
-    ));
+    await waitFor(() => expect(openRelatedToolUrlMock).toHaveBeenCalledWith("https://code.visualstudio.com/"));
     expect(installRelatedToolMock).not.toHaveBeenCalled();
   });
 
   it("does not parse unbounded official-link values", async () => {
-    relatedToolsMock.mockResolvedValueOnce([{
-      ...relatedTool,
-      officialUrl: `https://code.visualstudio.com/${"x".repeat(2048)}`,
-    }]);
+    relatedToolsMock.mockResolvedValueOnce([
+      {
+        ...relatedTool,
+        officialUrl: `https://code.visualstudio.com/${"x".repeat(2048)}`,
+      },
+    ]);
     render(<App />);
     await screen.findByText("Control Center 도구");
     fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
@@ -336,13 +367,15 @@ describe("Devbox Manager Related Tools", () => {
   });
 
   it("offers launch only for a detected installed tool", async () => {
-    relatedToolsMock.mockResolvedValueOnce([{
-      ...relatedTool,
-      installed: true,
-      detection: "path",
-      installState: "present",
-      launchState: "available",
-    }]);
+    relatedToolsMock.mockResolvedValueOnce([
+      {
+        ...relatedTool,
+        installed: true,
+        detection: "path",
+        installState: "present",
+        launchState: "available",
+      },
+    ]);
     render(<App />);
     await screen.findByText("Control Center 도구");
     fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
@@ -354,33 +387,35 @@ describe("Devbox Manager Related Tools", () => {
   });
 
   it("shows a Docker WSL backend without claiming the desktop is uninstalled", async () => {
-    relatedToolsMock.mockResolvedValueOnce([{
-      id: "docker-desktop",
-      displayName: "Docker Desktop",
-      summary: "Docker 컨테이너 개발 환경",
-      wingetId: "Docker.DockerDesktop",
-      officialUrl: "https://www.docker.com/products/docker-desktop/",
-      licenseUrl: "https://www.docker.com/legal/docker-software-license/",
-      license: "Docker Software License",
-      platformSupported: true,
-      installed: false,
-      detection: "not-found",
-      installState: "unknown",
-      launchState: "unavailable",
-      dockerCapability: {
-        desktopInstall: "unknown",
-        desktopLaunch: "unavailable",
-        windowsCli: "available",
-        wslBackend: "running",
-        evidence: [
-          { source: "desktop-executable", result: "not-observed" },
-          { source: "windows-cli", result: "known-location" },
-          { source: "wsl-registration", result: "registered" },
-          { source: "wsl-runtime", result: "running" },
-        ],
-        observedAtMs: Date.now(),
+    relatedToolsMock.mockResolvedValueOnce([
+      {
+        id: "docker-desktop",
+        displayName: "Docker Desktop",
+        summary: "Docker 컨테이너 개발 환경",
+        wingetId: "Docker.DockerDesktop",
+        officialUrl: "https://www.docker.com/products/docker-desktop/",
+        licenseUrl: "https://www.docker.com/legal/docker-software-license/",
+        license: "Docker Software License",
+        platformSupported: true,
+        installed: false,
+        detection: "not-found",
+        installState: "unknown",
+        launchState: "unavailable",
+        dockerCapability: {
+          desktopInstall: "unknown",
+          desktopLaunch: "unavailable",
+          windowsCli: "available",
+          wslBackend: "running",
+          evidence: [
+            { source: "desktop-executable", result: "not-observed" },
+            { source: "windows-cli", result: "known-location" },
+            { source: "wsl-registration", result: "registered" },
+            { source: "wsl-runtime", result: "running" },
+          ],
+          observedAtMs: Date.now(),
+        },
       },
-    }]);
+    ]);
     render(<App />);
     await screen.findByText("Control Center 도구");
     fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
@@ -393,9 +428,7 @@ describe("Devbox Manager Related Tools", () => {
   });
 
   it("does not render raw native errors from a related-tool action", async () => {
-    installRelatedToolMock.mockRejectedValueOnce(
-      new Error("C:\\Users\\developer\\secret-token=should-not-render"),
-    );
+    installRelatedToolMock.mockRejectedValueOnce(new Error("C:\\Users\\developer\\secret-token=should-not-render"));
     confirmMock.mockReturnValueOnce(true);
     render(<App />);
     await screen.findByText("Control Center 도구");
@@ -410,9 +443,7 @@ describe("Devbox Manager Related Tools", () => {
   });
 
   it("localizes an allowlisted native related-tool error without changing its contract", async () => {
-    installRelatedToolMock.mockRejectedValueOnce(
-      new Error("Related Tools는 Windows에서만 사용할 수 있습니다."),
-    );
+    installRelatedToolMock.mockRejectedValueOnce(new Error("Related Tools는 Windows에서만 사용할 수 있습니다."));
     confirmMock.mockReturnValueOnce(true);
     render(<App />);
     await screen.findByText("Control Center 도구");
@@ -421,16 +452,17 @@ describe("Devbox Manager Related Tools", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
 
-    await waitFor(() => expect(
-      screen.getByText("관련 도구는 Windows에서만 사용할 수 있습니다."),
-    ).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("관련 도구는 Windows에서만 사용할 수 있습니다.")).toBeTruthy());
   });
 
   it("ignores a related-tool action result after unmount", async () => {
     let resolveInstall!: (result: RelatedToolActionResult) => void;
-    installRelatedToolMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveInstall = resolve;
-    }));
+    installRelatedToolMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInstall = resolve;
+        }),
+    );
     confirmMock.mockReturnValueOnce(true);
     const view = render(<App />);
     await screen.findByText("Control Center 도구");
@@ -468,16 +500,14 @@ describe("Devbox Manager Dev Setup audit", () => {
   });
 
   it("does not render raw native errors from the audit boundary", async () => {
-    devSetupAuditMock.mockRejectedValueOnce(
-      new Error("C:\\Users\\developer\\secret-token=should-not-render"),
-    );
+    devSetupAuditMock.mockRejectedValueOnce(new Error("C:\\Users\\developer\\secret-token=should-not-render"));
     render(<App />);
     await screen.findByText("Control Center 도구");
     fireEvent.click(screen.getByRole("button", { name: "Dev Setup" }));
 
-    expect(await screen.findByText(
-      "Dev Setup 감사를 완료할 수 없습니다. Windows와 WSL 환경을 확인하세요.",
-    )).toBeTruthy();
+    expect(
+      await screen.findByText("Dev Setup 감사를 완료할 수 없습니다. Windows와 WSL 환경을 확인하세요."),
+    ).toBeTruthy();
     expect(screen.queryByText(/secret-token/)).toBeNull();
   });
 
@@ -490,9 +520,11 @@ describe("Devbox Manager Dev Setup audit", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
 
-    expect(await screen.findByRole("heading", {
-      name: "WinGet 구성 v3 · package-only",
-    })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", {
+        name: "WinGet 구성 v3 · package-only",
+      }),
+    ).toBeTruthy();
     expect(screen.getByText(/외부 YAML은 그대로 실행하지 않습니다/)).toBeTruthy();
     expect(screen.getByText("Git.Git")).toBeTruthy();
     expect(screen.getByText("Microsoft.VisualStudioCode")).toBeTruthy();
@@ -545,9 +577,9 @@ describe("Devbox Manager Dev Setup audit", () => {
     await screen.findByText("Git.Git");
 
     fireEvent.click(screen.getByRole("button", { name: "검토 버리기" }));
-    await waitFor(() => expect(discardDevSetupConfigurationMock).toHaveBeenCalledWith(
-      devSetupConfigurationReviewFixture.previewId,
-    ));
+    await waitFor(() =>
+      expect(discardDevSetupConfigurationMock).toHaveBeenCalledWith(devSetupConfigurationReviewFixture.previewId),
+    );
     expect(screen.queryByText("Git.Git")).toBeNull();
     expect(screen.getByText(/WinGet Configuration 파일을 가져오면/)).toBeTruthy();
   });
@@ -565,7 +597,9 @@ describe("Devbox Manager Dev Setup audit", () => {
     expect(apply.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("checkbox", { name: "정규화된 package-only 검토를 확인했습니다" }));
     expect(apply.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }),
+    );
     expect(apply.hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("checkbox", { name: "관리자/UAC·재부팅 위험을 확인했습니다" }));
     expect(apply.hasAttribute("disabled")).toBe(false);
@@ -576,12 +610,14 @@ describe("Devbox Manager Dev Setup audit", () => {
 
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(apply);
-    await waitFor(() => expect(applyDevSetupConfigurationMock).toHaveBeenCalledWith(
-      devSetupConfigurationReviewFixture.previewId,
-      true,
-      true,
-      true,
-    ));
+    await waitFor(() =>
+      expect(applyDevSetupConfigurationMock).toHaveBeenCalledWith(
+        devSetupConfigurationReviewFixture.previewId,
+        true,
+        true,
+        true,
+      ),
+    );
     expect(screen.getByRole("button", { name: "정규화된 구성 내보내기" }).hasAttribute("disabled")).toBe(true);
   });
 
@@ -589,11 +625,13 @@ describe("Devbox Manager Dev Setup audit", () => {
     importDevSetupConfigurationMock.mockResolvedValueOnce({
       ...devSetupConfigurationReviewFixture,
       canApply: false,
-      packages: [{
-        ...devSetupConfigurationReviewFixture.packages[0],
-        currentState: "unknown",
-        action: "verify",
-      }],
+      packages: [
+        {
+          ...devSetupConfigurationReviewFixture.packages[0],
+          currentState: "unknown",
+          action: "verify",
+        },
+      ],
     });
     render(<App />);
     await screen.findByText("Control Center 도구");
@@ -610,9 +648,12 @@ describe("Devbox Manager Dev Setup audit", () => {
 
   it("offers cancellation while package apply is in flight and renders resource results", async () => {
     let resolveApply!: (result: DevSetupConfigurationApplyFixture) => void;
-    applyDevSetupConfigurationMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveApply = resolve;
-    }));
+    applyDevSetupConfigurationMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
     confirmMock.mockReturnValueOnce(true);
     importDevSetupConfigurationMock.mockResolvedValueOnce(devSetupConfigurationReviewFixture);
     render(<App />);
@@ -622,7 +663,9 @@ describe("Devbox Manager Dev Setup audit", () => {
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
     await screen.findByText("Git.Git");
     fireEvent.click(screen.getByRole("checkbox", { name: "정규화된 package-only 검토를 확인했습니다" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "로컬에 등록된 고정 이름 winget source·패키지 약관 수락을 확인했습니다" }),
+    );
     fireEvent.click(screen.getByRole("checkbox", { name: "관리자/UAC·재부팅 위험을 확인했습니다" }));
     fireEvent.click(await screen.findByRole("button", { name: "확인 후 패키지 적용" }));
     await waitFor(() => expect(applyDevSetupConfigurationMock).toHaveBeenCalled());
@@ -661,9 +704,9 @@ describe("Devbox Manager Dev Setup audit", () => {
     fireEvent.click(screen.getByRole("button", { name: "구성 가져오기" }));
     fireEvent.click(await screen.findByRole("button", { name: "정규화된 구성 내보내기" }));
 
-    await waitFor(() => expect(exportDevSetupConfigurationMock).toHaveBeenCalledWith(
-      devSetupConfigurationReviewFixture.previewId,
-    ));
+    await waitFor(() =>
+      expect(exportDevSetupConfigurationMock).toHaveBeenCalledWith(devSetupConfigurationReviewFixture.previewId),
+    );
     expect(click).toHaveBeenCalledTimes(1);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
   });

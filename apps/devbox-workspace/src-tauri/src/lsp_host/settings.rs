@@ -6,7 +6,7 @@ use crate::{
     core::registry::Binding, definitions::digest, host::Host,
     platform::definition_write::DefinitionTarget, private_metadata::MetadataRoot,
 };
-use code_pad_lib::lsp::LspConfig;
+use editor_engine::lsp::LspConfig;
 use product_contract::ProjectContext;
 use serde::Deserialize;
 use serde_json::{json, Value};

@@ -38,15 +38,19 @@ const validRule = {
 
 describe("validateRule", () => {
   it("accepts the documented response status and delay boundaries", () => {
-    expect(validateRule({
-      ...validRule,
-      status: MIN_RESPONSE_STATUS,
-      delayMs: MAX_RESPONSE_DELAY_MS,
-    })).toEqual([]);
-    expect(validateRule({
-      ...validRule,
-      status: MAX_RESPONSE_STATUS,
-    })).toEqual([]);
+    expect(
+      validateRule({
+        ...validRule,
+        status: MIN_RESPONSE_STATUS,
+        delayMs: MAX_RESPONSE_DELAY_MS,
+      }),
+    ).toEqual([]);
+    expect(
+      validateRule({
+        ...validRule,
+        status: MAX_RESPONSE_STATUS,
+      }),
+    ).toEqual([]);
   });
 
   it("rejects out-of-range and fractional response values", () => {
@@ -84,14 +88,18 @@ describe("validateRule", () => {
     expect(validateRule({ ...validRule, path: "hook" })[0]).toMatchObject({ field: "path" });
     expect(validateRule({ ...validRule, path: "/hook\u0085secret" })[0]).toMatchObject({ field: "path" });
     expect(validateRule({ ...validRule, path: "/hook/한글" })[0]).toMatchObject({ field: "path" });
-    expect(validateRule({
-      ...validRule,
-      path: `/${"p".repeat(MAX_PATH_CHARS - 1)}`,
-    })).toEqual([]);
-    expect(validateRule({
-      ...validRule,
-      path: `/${"p".repeat(MAX_PATH_CHARS)}`,
-    })[0]).toMatchObject({ field: "path" });
+    expect(
+      validateRule({
+        ...validRule,
+        path: `/${"p".repeat(MAX_PATH_CHARS - 1)}`,
+      }),
+    ).toEqual([]);
+    expect(
+      validateRule({
+        ...validRule,
+        path: `/${"p".repeat(MAX_PATH_CHARS)}`,
+      })[0],
+    ).toMatchObject({ field: "path" });
     expect(MAX_PATH_BYTES).toBeGreaterThan(MAX_PATH_CHARS);
   });
 
@@ -106,49 +114,67 @@ describe("validateRule", () => {
     expect(validateRule({ ...validRule, method: null })).toEqual([]);
     expect(MAX_METHOD_BYTES).toBe(MAX_METHOD_CHARS);
 
-    expect(validateRule({
-      ...validRule,
-      body: "b".repeat(MAX_BODY_CHARS),
-    })).toEqual([]);
-    expect(validateRule({
-      ...validRule,
-      body: "b".repeat(MAX_BODY_CHARS + 1),
-    })[0]).toMatchObject({ field: "body" });
-    expect(validateRule({
-      ...validRule,
-      body: "🙂".repeat(MAX_BODY_BYTES / 4 + 1),
-    })[0]).toMatchObject({ field: "body" });
+    expect(
+      validateRule({
+        ...validRule,
+        body: "b".repeat(MAX_BODY_CHARS),
+      }),
+    ).toEqual([]);
+    expect(
+      validateRule({
+        ...validRule,
+        body: "b".repeat(MAX_BODY_CHARS + 1),
+      })[0],
+    ).toMatchObject({ field: "body" });
+    expect(
+      validateRule({
+        ...validRule,
+        body: "🙂".repeat(MAX_BODY_BYTES / 4 + 1),
+      })[0],
+    ).toMatchObject({ field: "body" });
     expect(validateRule({ ...validRule, body: "\ud800" })[0]).toMatchObject({ field: "body" });
   });
 
   it("mirrors header name, value, count, and aggregate bounds", () => {
-    expect(validateRule({
-      ...validRule,
-      headers: Array.from({ length: MAX_RULE_HEADERS }, (_, index) => [`X-${index}`, "ok"] as [string, string]),
-    })).toEqual([]);
-    expect(validateRule({
-      ...validRule,
-      headers: Array.from({ length: MAX_RULE_HEADERS + 1 }, (_, index) => [`X-${index}`, "ok"] as [string, string]),
-    })[0]).toMatchObject({ field: "headers" });
-    expect(validateRule({
-      ...validRule,
-      headers: [["not a header", "ok"]],
-    })[0]).toMatchObject({ field: "headers" });
-    expect(validateRule({
-      ...validRule,
-      headers: [["X-Test", "v".repeat(MAX_HEADER_VALUE_CHARS)]],
-    })).toEqual([]);
-    expect(validateRule({
-      ...validRule,
-      headers: [["X-Test", "v".repeat(MAX_HEADER_VALUE_CHARS + 1)]],
-    })[0]).toMatchObject({ field: "headers" });
-    expect(validateRule({
-      ...validRule,
-      headers: Array.from({ length: 5 }, (_, index) => [
-        `X-${index}`,
-        "v".repeat(MAX_HEADER_TOTAL_CHARS / 4),
-      ] as [string, string]),
-    }).some((issue: RuleValidationIssue) => issue.field === "headers")).toBe(true);
+    expect(
+      validateRule({
+        ...validRule,
+        headers: Array.from({ length: MAX_RULE_HEADERS }, (_, index) => [`X-${index}`, "ok"] as [string, string]),
+      }),
+    ).toEqual([]);
+    expect(
+      validateRule({
+        ...validRule,
+        headers: Array.from({ length: MAX_RULE_HEADERS + 1 }, (_, index) => [`X-${index}`, "ok"] as [string, string]),
+      })[0],
+    ).toMatchObject({ field: "headers" });
+    expect(
+      validateRule({
+        ...validRule,
+        headers: [["not a header", "ok"]],
+      })[0],
+    ).toMatchObject({ field: "headers" });
+    expect(
+      validateRule({
+        ...validRule,
+        headers: [["X-Test", "v".repeat(MAX_HEADER_VALUE_CHARS)]],
+      }),
+    ).toEqual([]);
+    expect(
+      validateRule({
+        ...validRule,
+        headers: [["X-Test", "v".repeat(MAX_HEADER_VALUE_CHARS + 1)]],
+      })[0],
+    ).toMatchObject({ field: "headers" });
+    expect(
+      validateRule({
+        ...validRule,
+        headers: Array.from(
+          { length: 5 },
+          (_, index) => [`X-${index}`, "v".repeat(MAX_HEADER_TOTAL_CHARS / 4)] as [string, string],
+        ),
+      }).some((issue: RuleValidationIssue) => issue.field === "headers"),
+    ).toBe(true);
     expect(MAX_HEADER_NAME_BYTES).toBe(MAX_HEADER_NAME_CHARS);
     expect(MAX_HEADER_VALUE_BYTES).toBe(MAX_HEADER_VALUE_CHARS * 4);
     expect(MAX_HEADER_TOTAL_BYTES).toBe(MAX_HEADER_TOTAL_CHARS * 4);
@@ -156,10 +182,12 @@ describe("validateRule", () => {
 
   it("rejects response transport headers so the native writer owns wire framing", () => {
     for (const name of ["Connection", "Content-Length", "Transfer-Encoding", "Upgrade", "Host"]) {
-      expect(validateRule({
-        ...validRule,
-        headers: [[name, "1"]],
-      }).some((issue) => issue.field === "headers")).toBe(true);
+      expect(
+        validateRule({
+          ...validRule,
+          headers: [[name, "1"]],
+        }).some((issue) => issue.field === "headers"),
+      ).toBe(true);
     }
   });
 
@@ -189,26 +217,35 @@ describe("validateRule", () => {
       delayMs: 25,
     };
     expect(validateRule({ ...validRule, sequence: [step] })).toEqual([]);
-    expect(validateRule({
-      ...validRule,
-      sequence: Array.from({ length: MAX_RESPONSE_SEQUENCE + 1 }, () => step),
-    }).some((issue) => issue.field === "sequence")).toBe(true);
-    expect(validateRule({
-      ...validRule,
-      sequence: [{ ...step, status: 600 }],
-    }).some((issue) => issue.field === "sequence")).toBe(true);
-    expect(validateRule({
-      ...validRule,
-      sequence: [{ ...step, headers: [["X-Bad", "line\nfeed"]] }],
-    }).some((issue) => issue.field === "sequence")).toBe(true);
-    expect(validateRule({
-      ...validRule,
-      sequence: [{ ...step, body: "x".repeat(MAX_BODY_CHARS + 1) }],
-    }).some((issue) => issue.field === "sequence")).toBe(true);
-    });
+    expect(
+      validateRule({
+        ...validRule,
+        sequence: Array.from({ length: MAX_RESPONSE_SEQUENCE + 1 }, () => step),
+      }).some((issue) => issue.field === "sequence"),
+    ).toBe(true);
+    expect(
+      validateRule({
+        ...validRule,
+        sequence: [{ ...step, status: 600 }],
+      }).some((issue) => issue.field === "sequence"),
+    ).toBe(true);
+    expect(
+      validateRule({
+        ...validRule,
+        sequence: [{ ...step, headers: [["X-Bad", "line\nfeed"]] }],
+      }).some((issue) => issue.field === "sequence"),
+    ).toBe(true);
+    expect(
+      validateRule({
+        ...validRule,
+        sequence: [{ ...step, body: "x".repeat(MAX_BODY_CHARS + 1) }],
+      }).some((issue) => issue.field === "sequence"),
+    ).toBe(true);
   });
+});
 
-  it("rejects non-ASCII response header values that the native writer cannot emit", () => {
-    expect(validateRule({ ...validRule, headers: [["X-Label", "한글"]] })
-      .some((issue) => issue.field === "headers")).toBe(true);
-  });
+it("rejects non-ASCII response header values that the native writer cannot emit", () => {
+  expect(
+    validateRule({ ...validRule, headers: [["X-Label", "한글"]] }).some((issue) => issue.field === "headers"),
+  ).toBe(true);
+});

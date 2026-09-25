@@ -70,7 +70,7 @@ export const QUICK_SUMMON_SHORTCUTS = [
   { value: "Ctrl+Alt+F12", label: "Ctrl + Alt + F12" },
 ] as const;
 
-export type QuickSummonShortcut = typeof QUICK_SUMMON_SHORTCUTS[number]["value"];
+export type QuickSummonShortcut = (typeof QUICK_SUMMON_SHORTCUTS)[number]["value"];
 
 export interface TerminalSettings {
   /** 팬 하나를 닫을 때 확인할지. 탭·다중 팬 닫기 확인은 이 설정과 무관하게 항상 묻는다. */
@@ -139,27 +139,30 @@ export function normalizeSettings(value: unknown): TerminalSettings {
     confirmSinglePaneClose: boolean(value.confirmSinglePaneClose, DEFAULT_SETTINGS.confirmSinglePaneClose),
     openTerminalOnStart: boolean(value.openTerminalOnStart, DEFAULT_SETTINGS.openTerminalOnStart),
     sidePanelOpen: boolean(value.sidePanelOpen, DEFAULT_SETTINGS.sidePanelOpen),
-    multiplexer: multiplexer === "tmux" || multiplexer === "zellij" || multiplexer === "native"
-      ? multiplexer
-      : DEFAULT_SETTINGS.multiplexer,
-    fontId: typeof fontId === "string" && FONT_CHOICES.some((choice) => choice.id === fontId)
-      ? fontId
-      : DEFAULT_SETTINGS.fontId,
-    cursorStyle: cursorStyle === "block" || cursorStyle === "underline" || cursorStyle === "bar"
-      ? cursorStyle
-      : DEFAULT_SETTINGS.cursorStyle,
+    multiplexer:
+      multiplexer === "tmux" || multiplexer === "zellij" || multiplexer === "native"
+        ? multiplexer
+        : DEFAULT_SETTINGS.multiplexer,
+    fontId:
+      typeof fontId === "string" && FONT_CHOICES.some((choice) => choice.id === fontId)
+        ? fontId
+        : DEFAULT_SETTINGS.fontId,
+    cursorStyle:
+      cursorStyle === "block" || cursorStyle === "underline" || cursorStyle === "bar"
+        ? cursorStyle
+        : DEFAULT_SETTINGS.cursorStyle,
     cursorBlink: boolean(value.cursorBlink, DEFAULT_SETTINGS.cursorBlink),
-    scrollbackLines: typeof value.scrollbackLines === "number"
-      ? clampScrollbackLines(value.scrollbackLines)
-      : DEFAULT_SETTINGS.scrollbackLines,
-    theme: theme === "dark" || theme === "light" || theme === "highContrast"
-      ? theme
-      : DEFAULT_SETTINGS.theme,
+    scrollbackLines:
+      typeof value.scrollbackLines === "number"
+        ? clampScrollbackLines(value.scrollbackLines)
+        : DEFAULT_SETTINGS.scrollbackLines,
+    theme: theme === "dark" || theme === "light" || theme === "highContrast" ? theme : DEFAULT_SETTINGS.theme,
     quickSummonEnabled: boolean(value.quickSummonEnabled, DEFAULT_SETTINGS.quickSummonEnabled),
-    quickSummonShortcut: typeof quickSummonShortcut === "string"
-      && QUICK_SUMMON_SHORTCUTS.some((choice) => choice.value === quickSummonShortcut)
-      ? quickSummonShortcut as QuickSummonShortcut
-      : DEFAULT_SETTINGS.quickSummonShortcut,
+    quickSummonShortcut:
+      typeof quickSummonShortcut === "string" &&
+      QUICK_SUMMON_SHORTCUTS.some((choice) => choice.value === quickSummonShortcut)
+        ? (quickSummonShortcut as QuickSummonShortcut)
+        : DEFAULT_SETTINGS.quickSummonShortcut,
     keepInTray: boolean(value.keepInTray, DEFAULT_SETTINGS.keepInTray),
   };
 }
@@ -167,10 +170,8 @@ export function normalizeSettings(value: unknown): TerminalSettings {
 export function loadSettings(): TerminalSettings {
   try {
     const raw: unknown = JSON.parse(readTerminalPreference(SETTINGS_KEY) ?? "null");
-    if (
-      !isRecord(raw)
-      || (raw.version !== SETTINGS_VERSION && raw.version !== LEGACY_SETTINGS_VERSION)
-    ) return { ...DEFAULT_SETTINGS };
+    if (!isRecord(raw) || (raw.version !== SETTINGS_VERSION && raw.version !== LEGACY_SETTINGS_VERSION))
+      return { ...DEFAULT_SETTINGS };
     return normalizeSettings(raw);
   } catch {
     return { ...DEFAULT_SETTINGS };

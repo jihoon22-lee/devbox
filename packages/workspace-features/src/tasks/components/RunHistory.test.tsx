@@ -1,6 +1,14 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listActiveRuns, listRuns, openRunLogInLogLens, runJobNow, searchRunLogs, stopActiveRun, tailLog } from "../api";
+import {
+  listActiveRuns,
+  listRuns,
+  openRunLogInLogLens,
+  runJobNow,
+  searchRunLogs,
+  stopActiveRun,
+  tailLog,
+} from "../api";
 import type { Job, LogSearchResponse, Run } from "../types";
 import RunHistory, { collectRunLog } from "./RunHistory";
 
@@ -66,7 +74,9 @@ const run: Run = {
 beforeEach(() => {
   listRunsMock.mockReset().mockResolvedValue([run]);
   listActiveRunsMock.mockReset().mockResolvedValue([]);
-  runJobNowMock.mockReset().mockResolvedValue({ ...run, id: "run-now", status: "running", endedAt: null, exitCode: null });
+  runJobNowMock
+    .mockReset()
+    .mockResolvedValue({ ...run, id: "run-now", status: "running", endedAt: null, exitCode: null });
   openRunLogInLogLensMock.mockReset().mockResolvedValue(undefined);
   searchRunLogsMock.mockReset().mockResolvedValue({
     matches: [],
@@ -113,9 +123,10 @@ describe("RunHistory", () => {
     listRunsMock.mockResolvedValue([run, second]);
     let resolveHandoff: (() => void) | undefined;
     openRunLogInLogLensMock.mockImplementationOnce(
-      () => new Promise<void>((resolve) => {
-        resolveHandoff = resolve;
-      }),
+      () =>
+        new Promise<void>((resolve) => {
+          resolveHandoff = resolve;
+        }),
     );
     confirmMock.mockReturnValue(true);
     const view = render(<RunHistory jobs={[job]} />);
@@ -174,10 +185,9 @@ describe("RunHistory", () => {
       target: { value: "-1" },
     });
 
-    await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(
-      job.id,
-      expect.objectContaining({ minDurationMs: -1_000 }),
-    ));
+    await waitFor(() =>
+      expect(listRunsMock).toHaveBeenCalledWith(job.id, expect.objectContaining({ minDurationMs: -1_000 })),
+    );
   });
 
   it("shows the retained-range warning and does not expose numeric cursors", async () => {
@@ -196,7 +206,11 @@ describe("RunHistory", () => {
   it("exposes manual run and active-stop controls", async () => {
     const active = { ...run, id: "run-now", status: "running" as const, endedAt: null, exitCode: null };
     const cancelled = { ...active, status: "cancelled" as const, endedAt: 5_000 };
-    listRunsMock.mockReset().mockResolvedValueOnce([run]).mockResolvedValueOnce([active]).mockResolvedValue([cancelled]);
+    listRunsMock
+      .mockReset()
+      .mockResolvedValueOnce([run])
+      .mockResolvedValueOnce([active])
+      .mockResolvedValue([cancelled]);
     runJobNowMock.mockResolvedValue(active);
     listActiveRunsMock.mockReset().mockResolvedValue([active]);
     stopActiveRunMock.mockImplementation(async () => {
@@ -258,14 +272,13 @@ describe("RunHistory", () => {
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
     const downloads: string[] = [];
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
       downloads.push(this.download);
     });
     const view = render(<RunHistory jobs={[job]} />);
     await view.findByLabelText("stdout 로그");
-    tailLogMock.mockReset()
+    tailLogMock
+      .mockReset()
       .mockResolvedValueOnce({
         data: Array.from(new TextEncoder().encode("saved\n")),
         retainedStartOffset: "0",
@@ -292,7 +305,8 @@ describe("RunHistory", () => {
   });
 
   it("collects multiple decimal-cursor chunks without converting offsets to numbers", async () => {
-    tailLogMock.mockReset()
+    tailLogMock
+      .mockReset()
       .mockResolvedValueOnce({
         data: [97, 98],
         retainedStartOffset: "90071992547409930",
@@ -316,15 +330,12 @@ describe("RunHistory", () => {
 
     expect(new TextDecoder().decode(collected.bytes)).toBe("abcd");
     expect(collected.truncated).toBe(false);
-    expect(tailLogMock.mock.calls.map((call) => call[2])).toEqual([
-      null,
-      "90071992547409932",
-      "90071992547409934",
-    ]);
+    expect(tailLogMock.mock.calls.map((call) => call[2])).toEqual([null, "90071992547409932", "90071992547409934"]);
   });
 
   it("stops a malformed non-advancing cursor instead of looping", async () => {
-    tailLogMock.mockReset()
+    tailLogMock
+      .mockReset()
       .mockResolvedValueOnce({
         data: [97],
         retainedStartOffset: "0",
@@ -369,14 +380,16 @@ describe("RunHistory", () => {
     fireEvent.change(view.getByRole("combobox", { name: "로그 검색 레벨" }), { target: { value: "error" } });
     fireEvent.submit(view.getByRole("form", { name: "로그 검색" }));
 
-    await waitFor(() => expect(searchRunLogsMock).toHaveBeenCalledWith("run-1", {
-      query: "failure",
-      mode: "literal",
-      source: "stderr",
-      level: "error",
-      startAt: null,
-      endAt: null,
-    }));
+    await waitFor(() =>
+      expect(searchRunLogsMock).toHaveBeenCalledWith("run-1", {
+        query: "failure",
+        mode: "literal",
+        source: "stderr",
+        level: "error",
+        startAt: null,
+        endAt: null,
+      }),
+    );
     expect(await view.findByText(/1 \/ 1개 결과/)).toBeTruthy();
     fireEvent.click(view.getByRole("button", { name: "다음 검색 결과" }));
     expect(view.getByRole("button", { name: "stderr" }).className).toContain("active");
@@ -400,13 +413,15 @@ describe("RunHistory", () => {
 
   it("submits from keyboard and clears metadata without retaining a log copy", async () => {
     searchRunLogsMock.mockResolvedValueOnce({
-      matches: [{
-        sourceId: "run-manager:run-1:stdout",
-        stream: "stdout",
-        lineNumber: 1,
-        level: null,
-        timestampMillis: null,
-      }],
+      matches: [
+        {
+          sourceId: "run-manager:run-1:stdout",
+          stream: "stdout",
+          lineNumber: 1,
+          level: null,
+          timestampMillis: null,
+        },
+      ],
       scannedLines: 1,
       scannedBytes: 4,
       truncated: false,
@@ -426,9 +441,11 @@ describe("RunHistory", () => {
 
   it("guards duplicate searches while busy and ignores a stale result after unmount", async () => {
     let resolve: (value: LogSearchResponse) => void = () => undefined;
-    searchRunLogsMock.mockReturnValueOnce(new Promise<LogSearchResponse>((done) => {
-      resolve = (value) => done(value);
-    }));
+    searchRunLogsMock.mockReturnValueOnce(
+      new Promise<LogSearchResponse>((done) => {
+        resolve = (value) => done(value);
+      }),
+    );
     const view = render(<RunHistory jobs={[job]} />);
     const query = await view.findByRole("searchbox", { name: "로그 검색어" });
     fireEvent.change(query, { target: { value: "hit" } });

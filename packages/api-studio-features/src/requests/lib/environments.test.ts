@@ -19,11 +19,21 @@ class EnvironmentStorage implements Storage {
   private readonly values = new Map<string, string>();
   failWrite = false;
 
-  get length(): number { return this.values.size; }
-  clear(): void { this.values.clear(); }
-  getItem(key: string): string | null { return this.values.get(key) ?? null; }
-  key(index: number): string | null { return [...this.values.keys()][index] ?? null; }
-  removeItem(key: string): void { this.values.delete(key); }
+  get length(): number {
+    return this.values.size;
+  }
+  clear(): void {
+    this.values.clear();
+  }
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+  key(index: number): string | null {
+    return [...this.values.keys()][index] ?? null;
+  }
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
   setItem(key: string, value: string): void {
     if (this.failWrite) throw new Error("write failed");
     this.values.set(key, value);
@@ -32,7 +42,10 @@ class EnvironmentStorage implements Storage {
 
 describe("variable substitution", () => {
   it("기본 치환", () => {
-    const vars = new Map([["base", "https://api.example.com"], ["token", "abc"]]);
+    const vars = new Map([
+      ["base", "https://api.example.com"],
+      ["token", "abc"],
+    ]);
     expect(applyVariables("{{base}}/v1?token={{token}}", vars)).toBe("https://api.example.com/v1?token=abc");
   });
 
@@ -42,9 +55,7 @@ describe("variable substitution", () => {
       ["VERSION", "v2"],
       ["TOKEN", "abc"],
     ]);
-    expect(applyVariables("${BASE_URL}/${VERSION}?token={{TOKEN}}", vars)).toBe(
-      "https://api.example.com/v2?token=abc",
-    );
+    expect(applyVariables("${BASE_URL}/${VERSION}?token={{TOKEN}}", vars)).toBe("https://api.example.com/v2?token=abc");
   });
 
   it("알 수 없는 변수는 그대로", () => {
@@ -59,7 +70,11 @@ describe("variable substitution", () => {
 
   it("요청 template 불변 (원본은 그대로)", () => {
     const req = { url: "{{base}}/x", body: "hello {{name}}", headers: [{ key: "A", value: "{{t}}" }] };
-    const vars = new Map([["base", "https://e"], ["name", "world"], ["t", "v"]]);
+    const vars = new Map([
+      ["base", "https://e"],
+      ["name", "world"],
+      ["t", "v"],
+    ]);
     const out = applyToRequest(req, vars);
     expect(out.url).toBe("https://e/x");
     expect(out.body).toBe("hello world");
@@ -75,23 +90,26 @@ describe("variable substitution", () => {
       url: "${BASE_URL}/${VERSION}",
       headers: [{ key: "Authorization", value: "Bearer ${TOKEN}", enabled: false }],
       cookies: [{ name: "session", value: "${TOKEN}", enabled: true }],
-      multipart: [{
-        kind: "text",
-        name: "token",
-        value: "${TOKEN}",
-        file_path: "",
-        file_name: "",
-        content_type: "text/plain",
-        enabled: true,
-      }, {
-        kind: "file",
-        name: "upload",
-        value: "",
-        file_path: "C:\\${TOKEN}\\artifact.zip",
-        file_name: "artifact.zip",
-        content_type: "application/zip",
-        enabled: true,
-      }],
+      multipart: [
+        {
+          kind: "text",
+          name: "token",
+          value: "${TOKEN}",
+          file_path: "",
+          file_name: "",
+          content_type: "text/plain",
+          enabled: true,
+        },
+        {
+          kind: "file",
+          name: "upload",
+          value: "",
+          file_path: "C:\\${TOKEN}\\artifact.zip",
+          file_name: "artifact.zip",
+          content_type: "application/zip",
+          enabled: true,
+        },
+      ],
       params: [{ key: "tenant", value: "${TENANT}" }],
       body_kind: "json",
       body: '{"token":"${TOKEN}"}',
@@ -123,9 +141,7 @@ describe("variable substitution", () => {
     expect(out.headers[0].enabled).toBe(false);
     expect(out.multipart[0].value).toBe("token-value");
     expect(out.multipart[1].file_path).toBe("C:\\${TOKEN}\\artifact.zip");
-    expect(out.cookies).toEqual([
-      { name: "session", value: "token-value", enabled: true },
-    ]);
+    expect(out.cookies).toEqual([{ name: "session", value: "token-value", enabled: true }]);
     expect(out.params[0].value).toBe("tenant-value");
     expect(out.body).toBe('{"token":"token-value"}');
     expect(out.auth).toEqual({
@@ -207,7 +223,12 @@ describe("environment store", () => {
     const originalRaw = storage.getItem("apip-environments");
     storage.failWrite = true;
 
-    expect(() => saveStore(addEnvironment(original, "new", () => "e-new"), storage)).toThrow("write failed");
+    expect(() =>
+      saveStore(
+        addEnvironment(original, "new", () => "e-new"),
+        storage,
+      ),
+    ).toThrow("write failed");
     expect(storage.getItem("apip-environments")).toBe(originalRaw);
   });
 });

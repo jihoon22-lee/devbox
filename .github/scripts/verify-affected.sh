@@ -49,6 +49,7 @@ dependency_scope=$(scope_value dependency_scope)
 printf '%s\n' "$scope_output"
 
 if [[ $frontend_scope != none ]]; then
+  pnpm exec biome ci .
   bash .github/scripts/run-frontend-scope.sh build "$frontend_scope" "$frontend_packages"
   node .github/scripts/check-frontend-bundles.mjs "$frontend_scope" "$frontend_apps"
   bash .github/scripts/run-frontend-scope.sh test "$frontend_scope" "$frontend_packages"

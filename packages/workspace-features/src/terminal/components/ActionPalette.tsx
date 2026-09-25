@@ -25,7 +25,9 @@ export default function ActionPalette({ open, actions, onClose }: ActionPaletteP
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("ko-KR");
     return needle
-      ? actions.filter((action) => `${action.label} ${action.description ?? ""}`.toLocaleLowerCase("ko-KR").includes(needle))
+      ? actions.filter((action) =>
+          `${action.label} ${action.description ?? ""}`.toLocaleLowerCase("ko-KR").includes(needle),
+        )
       : [...actions];
   }, [actions, query]);
 
@@ -54,9 +56,13 @@ export default function ActionPalette({ open, actions, onClose }: ActionPaletteP
   };
 
   return (
-    <div className="palette-backdrop" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose();
-    }}>
+    <div
+      className="palette-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <section
         ref={dialogRef}
         className="action-palette"

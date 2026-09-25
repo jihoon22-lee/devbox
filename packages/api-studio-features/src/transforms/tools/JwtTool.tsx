@@ -50,10 +50,13 @@ export function JwtDecoder() {
   const sequence = useRef(0);
   const runningRef = useRef(false);
 
-  useEffect(() => () => {
-    sequence.current += 1;
-    runningRef.current = false;
-  }, []);
+  useEffect(
+    () => () => {
+      sequence.current += 1;
+      runningRef.current = false;
+    },
+    [],
+  );
 
   const invalidateResult = () => {
     sequence.current += 1;
@@ -121,10 +124,12 @@ export function JwtDecoder() {
       const temporal = validateJwtTimes(parsed.payload, nowSeconds);
       if (!temporal.valid) {
         if (sequence.current !== current) return;
-        setOutput(formatJwtDisplay(parsed, {
-          status: "invalid_claims",
-          verifiedAtSeconds: nowSeconds,
-        }));
+        setOutput(
+          formatJwtDisplay(parsed, {
+            status: "invalid_claims",
+            verifiedAtSeconds: nowSeconds,
+          }),
+        );
         setStatus("invalid_claims");
         return;
       }
@@ -142,10 +147,12 @@ export function JwtDecoder() {
       });
       if (sequence.current !== current) return;
       const nextStatus: JwtVerificationStatus = valid ? "verified" : "invalid_signature";
-      setOutput(formatJwtDisplay(parsed, {
-        status: nextStatus,
-        verifiedAtSeconds: nowSeconds,
-      }));
+      setOutput(
+        formatJwtDisplay(parsed, {
+          status: nextStatus,
+          verifiedAtSeconds: nowSeconds,
+        }),
+      );
       setStatus(nextStatus);
     } catch (caught) {
       if (sequence.current !== current) return;
@@ -165,10 +172,10 @@ export function JwtDecoder() {
   return (
     <div className="tool jwt-tool" aria-busy={running}>
       <p id="jwt-help" className="jwt-help">
-        디코드는 헤더와 페이로드를 <strong>검증되지 않은 상태</strong>로 표시합니다. 서명 검증은
-        명시적으로 실행하며 raw UTF-8, Hex, 패딩 포함 Base64 또는 패딩 없는 Base64URL 키를
-        사용하는 HS256, HS384, HS512만 지원합니다. PEM/JWK, RSA, EC, alg=none, 토큰 저장 및
-        클립보드 자동 작업은 지원하지 않습니다. 시간 클레임은 현재 UTC 시각과 고정된 ±{JWT_LIMITS.clockSkewSeconds}초 시계 오차를 사용합니다.
+        디코드는 헤더와 페이로드를 <strong>검증되지 않은 상태</strong>로 표시합니다. 서명 검증은 명시적으로 실행하며 raw
+        UTF-8, Hex, 패딩 포함 Base64 또는 패딩 없는 Base64URL 키를 사용하는 HS256, HS384, HS512만 지원합니다. PEM/JWK,
+        RSA, EC, alg=none, 토큰 저장 및 클립보드 자동 작업은 지원하지 않습니다. 시간 클레임은 현재 UTC 시각과 고정된 ±
+        {JWT_LIMITS.clockSkewSeconds}초 시계 오차를 사용합니다.
       </p>
 
       <div className="jwt-toolbar">
@@ -218,7 +225,11 @@ export function JwtDecoder() {
       <div className="jwt-status" role="status" aria-live="polite">
         {running ? "JWT를 검증하는 중..." : STATUS_LABELS[status]}
       </div>
-      {error ? <div className="jwt-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="jwt-error" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       <div className="io-grid jwt-grid">
         <div className="io-col">

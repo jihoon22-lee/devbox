@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  detectSmartInput,
-  SMART_DETECTION_LIMITS,
-} from "./smartDetection";
+import { detectSmartInput, SMART_DETECTION_LIMITS } from "./smartDetection";
 
 const JWT =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.AL_nmexgcwawKDK5uJ0RtfAxT1GguksdPuaahEACpHc";

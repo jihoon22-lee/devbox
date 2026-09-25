@@ -2,7 +2,7 @@
 use crate::host::Host;
 use product_contract::ProjectContext;
 use std::sync::Arc;
-use wsl_desktop_lib::component::{TerminalLaunchFactory, TerminalLaunchLease};
+use terminal_engine::component::{TerminalLaunchFactory, TerminalLaunchLease};
 
 #[cfg(any(windows, test))]
 use super::runtime_bridge::outside_runtime;
@@ -36,7 +36,7 @@ pub(crate) fn capture_runtime(
     host: &Host,
     distro: &str,
     deadline: u64,
-) -> Result<Arc<dyn run_manager_lib::platform::wsl::CommandBinding>, String> {
+) -> Result<Arc<dyn runtime_engine::platform::wsl::CommandBinding>, String> {
     outside_runtime(|| {
         native::capture_runtime(
             &Factory {
@@ -174,11 +174,11 @@ mod native {
         Ok(admission)
     }
     struct RuntimeAdmission(Admission);
-    impl run_manager_lib::platform::wsl::CommandBinding for RuntimeAdmission {
+    impl runtime_engine::platform::wsl::CommandBinding for RuntimeAdmission {
         fn bind(
             &self,
             argv: Vec<String>,
-        ) -> std::result::Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError>
+        ) -> std::result::Result<Vec<String>, runtime_engine::platform::wsl::WslExecutionError>
         {
             // Observing/retiring an already owned run must survive a moved
             // project or a retired filesystem helper. Its retained distro and
@@ -194,7 +194,7 @@ mod native {
         fn bind_launch(
             &self,
             argv: Vec<String>,
-        ) -> std::result::Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError>
+        ) -> std::result::Result<Vec<String>, runtime_engine::platform::wsl::WslExecutionError>
         {
             self.0
                 .bind_argv(argv)
@@ -204,7 +204,7 @@ mod native {
     pub(super) fn capture_runtime(
         factory: &Factory<'_>,
         distro: &str,
-    ) -> Result<Arc<dyn run_manager_lib::platform::wsl::CommandBinding>> {
+    ) -> Result<Arc<dyn runtime_engine::platform::wsl::CommandBinding>> {
         Ok(Arc::new(RuntimeAdmission(capture(factory, distro, true)?)))
     }
     impl Drop for Admission {

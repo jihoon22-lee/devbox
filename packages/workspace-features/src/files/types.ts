@@ -205,13 +205,7 @@ export interface LspRenamePreview {
   files: LspRenamePreviewFile[];
 }
 
-export type LspRenameFileStatus =
-  | "applied"
-  | "rolledBack"
-  | "failed"
-  | "notApplied"
-  | "conflict"
-  | "rollbackFailed";
+export type LspRenameFileStatus = "applied" | "rolledBack" | "failed" | "notApplied" | "conflict" | "rollbackFailed";
 
 export interface LspRenameFileResult {
   nativeRevision?: string | null;

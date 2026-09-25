@@ -3,7 +3,9 @@ import { createContext, lazy, useContext, type ComponentProps, type ComponentTyp
 // A boundary owns an attempt even while its Suspense subtree has not committed.
 // Weak keys let obsolete attempts (and their rejected promises) be collected.
 export const RecoveryAttempt = createContext<object>({});
-export function recoveryLazy<Feature extends ComponentType<any>>(load: () => Promise<{ default: Feature }>): ComponentType<ComponentProps<Feature>> {
+export function recoveryLazy<Feature extends ComponentType<any>>(
+  load: () => Promise<{ default: Feature }>,
+): ComponentType<ComponentProps<Feature>> {
   type Props = ComponentProps<Feature>;
   const attempts = new WeakMap<object, ComponentType<Props>>();
   return function RecoverableFeature(props: Props) {
@@ -13,6 +15,6 @@ export function recoveryLazy<Feature extends ComponentType<any>>(load: () => Pro
       Feature = lazy(load) as ComponentType<Props>;
       attempts.set(attempt, Feature);
     }
-    return <Feature {...props}/>;
+    return <Feature {...props} />;
   };
 }

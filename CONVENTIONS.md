@@ -28,7 +28,7 @@ devbox/
 | 타깃 OS | Windows 11 (WebView2 내장) |
 | 개발 OS | WSL2 Ubuntu + Windows (편집·로컬 검증은 WSL, 앱 실행·패키징은 Windows) |
 | 소스 위치 | `/home/jihoon/projects/devbox/apps/<AppName>` (Windows: `\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox\apps\<AppName>`) |
-| 에디터 | 자유 (Rust-analyzer + ESLint + Prettier 권장) |
+| 에디터 | 자유 (Rust-analyzer + Biome 권장) |
 | 프론트 패키지 매니저 | **pnpm** (workspace) |
 | Rust 빌드 | **Cargo workspace** (루트 `Cargo.toml`) |
 
@@ -76,6 +76,8 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 앱 간 중복 발견 시 → `crates/<domain>`으로 추출
 
 ### 프론트엔드 (React, apps/<app>/src/)
+- 포맷·hook 규칙은 Biome(`pnpm format`, `pnpm lint`)이 정한다.
+- 새 코드는 suppression 없이 `useExhaustiveDependencies`를 지킨다.
 - Vite + **React 19 + TypeScript(엄격 모드)**
 - 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (`@devbox/tokens`)
 - 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 완료, knowledge-base·code-pad 사용)

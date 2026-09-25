@@ -5,7 +5,10 @@ import { ProductShell } from "@devbox/product-shell";
 import catalog from "../../products.json";
 import Content from "./Content";
 
-afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); });
+afterEach(() => {
+  cleanup();
+  window.history.replaceState(null, "", "/");
+});
 const routes = catalog.features.filter((feature) => feature.owner === "control-center").map((feature) => feature.route);
 
 it.each(routes)("renders a real view for the %s route", async (route) => {
@@ -25,6 +28,7 @@ it("shows global shortcut settings on the shortcuts route", async () => {
 });
 
 it("has only current routes after retiring migration", () => {
-  expect(catalog.features.filter(feature => feature.owner === "control-center").map(feature => feature.route))
-    .toEqual(["products", "updates", "components", "environment", "recovery", "shortcuts", "diagnostics", "tools"]);
+  expect(
+    catalog.features.filter((feature) => feature.owner === "control-center").map((feature) => feature.route),
+  ).toEqual(["products", "updates", "components", "environment", "recovery", "shortcuts", "diagnostics", "tools"]);
 });

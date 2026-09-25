@@ -33,9 +33,7 @@ describe("identifier generator", () => {
     expect(compact.every((value) => /^[0-9a-f]{32}$/.test(value))).toBe(true);
     expect(compact.every((value) => value[12] === "4")).toBe(true);
 
-    const formatted = generateIdentifiers(
-      options("uuid-v4", { count: 1, uppercase: true, hyphens: true }),
-    )[0];
+    const formatted = generateIdentifiers(options("uuid-v4", { count: 1, uppercase: true, hyphens: true }))[0];
     expect(formatted).toMatch(/^[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/);
     expect(formatted[14]).toBe("4");
   });
@@ -82,9 +80,7 @@ describe("identifier generator", () => {
       expect(canonical.every((value) => value[0] <= "7")).toBe(true);
       expect(canonical.every((value, index) => index === 0 || canonical[index - 1] < value)).toBe(true);
 
-      const grouped = generateIdentifiers(
-        options("ulid", { count: 1, uppercase: false, hyphens: true }),
-      )[0];
+      const grouped = generateIdentifiers(options("ulid", { count: 1, uppercase: false, hyphens: true }))[0];
       expect(grouped).toMatch(/^[0-9a-hjkmnp-tv-z]{5}(?:-[0-9a-hjkmnp-tv-z]{5}){3}-[0-9a-hjkmnp-tv-z]{6}$/);
       expect(grouped.split("-").join("")).toHaveLength(26);
     } finally {
@@ -101,8 +97,7 @@ describe("identifier generator", () => {
     expect(
       encodeCrockfordUlid(
         Uint8Array.from([
-          0x01, 0x56, 0x3e, 0x3a, 0xb5, 0xd3, 0xd6, 0x76,
-          0x4c, 0x61, 0xef, 0xb9, 0x93, 0x02, 0xbd, 0x5b,
+          0x01, 0x56, 0x3e, 0x3a, 0xb5, 0xd3, 0xd6, 0x76, 0x4c, 0x61, 0xef, 0xb9, 0x93, 0x02, 0xbd, 0x5b,
         ]),
       ),
     ).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
@@ -115,9 +110,7 @@ describe("identifier generator", () => {
       },
     });
     try {
-      expect(() => generateIdentifiers(options("uuid-v4", { count: 1 }))).toThrow(
-        SECURE_RANDOM_ERROR,
-      );
+      expect(() => generateIdentifiers(options("uuid-v4", { count: 1 }))).toThrow(SECURE_RANDOM_ERROR);
       expect(IDENTIFIER_GENERATION_ERROR).not.toContain("raw platform detail");
     } finally {
       vi.unstubAllGlobals();
@@ -146,9 +139,7 @@ describe("identifier generator", () => {
       },
     });
 
-    expect(() => generateIdentifiers(options("uuid-v7", { count: 2 }))).toThrow(
-      IDENTIFIER_SEQUENCE_ERROR,
-    );
+    expect(() => generateIdentifiers(options("uuid-v7", { count: 2 }))).toThrow(IDENTIFIER_SEQUENCE_ERROR);
     expect(() => generateIdentifiers(options("ulid", { count: 2, uppercase: true }))).toThrow(
       IDENTIFIER_SEQUENCE_ERROR,
     );
@@ -156,11 +147,7 @@ describe("identifier generator", () => {
 
   it("enforces a bounded non-empty batch", () => {
     expect(() => generateIdentifiers(options("uuid-v4", { count: 0 }))).toThrow();
-    expect(() =>
-      generateIdentifiers(options("uuid-v4", { count: MAX_IDENTIFIER_BATCH + 1 })),
-    ).toThrow();
-    expect(() =>
-      generateIdentifiers(options("uuid-v4", { uppercase: "yes" as unknown as boolean })),
-    ).toThrow();
+    expect(() => generateIdentifiers(options("uuid-v4", { count: MAX_IDENTIFIER_BATCH + 1 }))).toThrow();
+    expect(() => generateIdentifiers(options("uuid-v4", { uppercase: "yes" as unknown as boolean }))).toThrow();
   });
 });

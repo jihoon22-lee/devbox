@@ -49,14 +49,16 @@ const workingDiff: DiffResult = {
   scope: "workingTree",
   commitId: null,
   truncated: false,
-  files: [{
-    path: "assets/icon.bin",
-    oldPath: null,
-    status: "modified",
-    binary: true,
-    patch: "",
-    truncated: false,
-  }],
+  files: [
+    {
+      path: "assets/icon.bin",
+      oldPath: null,
+      status: "modified",
+      binary: true,
+      patch: "",
+      truncated: false,
+    },
+  ],
 };
 
 const repoHistoryMock = vi.mocked(repoHistory);
@@ -75,10 +77,15 @@ describe("HistoryDiffPanel", () => {
   it("keeps the first committed-frame request on mount and repository change", async () => {
     function FirstFrame({ selected }: { selected: RepoEntry }) {
       const host = useRef<HTMLDivElement>(null);
+      // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
       useLayoutEffect(() => {
         host.current?.querySelector<HTMLButtonElement>(".history-panel-head button")?.click();
       }, [selected.canonicalKey, selected.path]);
-      return <div ref={host}><HistoryDiffPanel repo={selected} /></div>;
+      return (
+        <div ref={host}>
+          <HistoryDiffPanel repo={selected} />
+        </div>
+      );
     }
     const view = render(<FirstFrame selected={repo} />);
     await screen.findByRole("button", { name: /Add fixture/ });
@@ -94,9 +101,9 @@ describe("HistoryDiffPanel", () => {
   });
   it("preserves the native bridge's fixed recovery message for failed diff reads", async () => {
     repoDiffMock.mockRejectedValueOnce(new WorkspaceOperationError("Git 설정이나 실행 근거를 다시 검토해 주세요."));
-    render(<HistoryDiffPanel repo={repo}/>);
-    fireEvent.click(screen.getByRole("button", {name:"히스토리 불러오기"}));
-    fireEvent.click(await screen.findByRole("button", {name:/Add fixture/}));
+    render(<HistoryDiffPanel repo={repo} />);
+    fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Add fixture/ }));
     expect((await screen.findByRole("alert")).textContent).toBe("Git 설정이나 실행 근거를 다시 검토해 주세요.");
   });
   it("loads an explicit bounded history request and exposes accessible status", async () => {
@@ -137,7 +144,11 @@ describe("HistoryDiffPanel", () => {
 
   it("locks the refresh action and ignores duplicate requests while busy", async () => {
     let resolve: (value: HistoryResult) => void = () => undefined;
-    repoHistoryMock.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    repoHistoryMock.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     render(<HistoryDiffPanel repo={repo} />);
 
     const button = screen.getByRole("button", { name: "히스토리 불러오기" });
@@ -146,8 +157,7 @@ describe("HistoryDiffPanel", () => {
 
     expect(repoHistoryMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "불러오는 중…" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Git 히스토리 및 diff" }).getAttribute("aria-busy"))
-      .toBe("true");
+    expect(screen.getByRole("region", { name: "Git 히스토리 및 diff" }).getAttribute("aria-busy")).toBe("true");
 
     resolve(history);
     await waitFor(() => expect(screen.getByRole("button", { name: /Add fixture/ })).toBeTruthy());
@@ -167,7 +177,11 @@ describe("HistoryDiffPanel", () => {
 
   it("ignores late results after unmount and remount and redacts native errors", async () => {
     let resolve: (value: HistoryResult) => void = () => undefined;
-    repoHistoryMock.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    repoHistoryMock.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     const rendered = render(<HistoryDiffPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
     rendered.unmount();
@@ -195,14 +209,26 @@ describe("HistoryDiffPanel", () => {
 });
 
 it("opens current-file diff line positions without counting removed lines", async () => {
-  const open=vi.fn();
-  repoDiffMock.mockResolvedValue({...workingDiff,files:[{path:"한글 파일.ts",oldPath:null,status:"modified",binary:false,truncated:false,patch:"@@ -8,3 +9,3 @@\n context\n-removed\n+added\n same"}]});
-  render(<HistoryDiffPanel repo={repo} onOpenFile={open}/>);
-  fireEvent.click(screen.getByRole("button",{name:"히스토리 불러오기"}));
-  await screen.findByRole("button",{name:/Add fixture/});
-  fireEvent.click(screen.getByRole("button",{name:"작업 트리 diff"}));
-  fireEvent.click(await screen.findByRole("button",{name:"현재 파일 한글 파일.ts 10행 열기"}));
-  expect(open).toHaveBeenCalledWith("한글 파일.ts",10);
-  expect(screen.getByRole("button",{name:"현재 파일 한글 파일.ts 11행 열기"})).toBeTruthy();
-  expect(screen.queryByRole("button",{name:"현재 파일 한글 파일.ts 12행 열기"})).toBeNull();
+  const open = vi.fn();
+  repoDiffMock.mockResolvedValue({
+    ...workingDiff,
+    files: [
+      {
+        path: "한글 파일.ts",
+        oldPath: null,
+        status: "modified",
+        binary: false,
+        truncated: false,
+        patch: "@@ -8,3 +9,3 @@\n context\n-removed\n+added\n same",
+      },
+    ],
+  });
+  render(<HistoryDiffPanel repo={repo} onOpenFile={open} />);
+  fireEvent.click(screen.getByRole("button", { name: "히스토리 불러오기" }));
+  await screen.findByRole("button", { name: /Add fixture/ });
+  fireEvent.click(screen.getByRole("button", { name: "작업 트리 diff" }));
+  fireEvent.click(await screen.findByRole("button", { name: "현재 파일 한글 파일.ts 10행 열기" }));
+  expect(open).toHaveBeenCalledWith("한글 파일.ts", 10);
+  expect(screen.getByRole("button", { name: "현재 파일 한글 파일.ts 11행 열기" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "현재 파일 한글 파일.ts 12행 열기" })).toBeNull();
 });

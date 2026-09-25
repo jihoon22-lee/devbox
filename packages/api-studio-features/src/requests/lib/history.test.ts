@@ -33,10 +33,19 @@ describe("history filter", () => {
   ];
 
   it("searches safe name/url/method metadata and filters status", () => {
-    expect(filterHistory(history, { query: "users", method: "", status: "all" }).map((entry) => entry.id)).toEqual(["one"]);
-    expect(filterHistory(history, { query: "", method: "POST", status: "error" }).map((entry) => entry.id)).toEqual(["two"]);
-    expect(filterHistory(history, { query: "", method: "", status: "success" }).map((entry) => entry.id)).toEqual(["one"]);
-    expect(filterHistory(history, { query: "", method: "", status: "error" }).map((entry) => entry.id)).toEqual(["two", "three"]);
+    expect(filterHistory(history, { query: "users", method: "", status: "all" }).map((entry) => entry.id)).toEqual([
+      "one",
+    ]);
+    expect(filterHistory(history, { query: "", method: "POST", status: "error" }).map((entry) => entry.id)).toEqual([
+      "two",
+    ]);
+    expect(filterHistory(history, { query: "", method: "", status: "success" }).map((entry) => entry.id)).toEqual([
+      "one",
+    ]);
+    expect(filterHistory(history, { query: "", method: "", status: "error" }).map((entry) => entry.id)).toEqual([
+      "two",
+      "three",
+    ]);
   });
 
   it("does not inspect request body/header secrets and bounds the query", () => {
@@ -44,7 +53,9 @@ describe("history filter", () => {
     secret.request.headers = [{ key: "Authorization", value: "header-secret" }];
     secret.request.body = "body-secret";
     expect(filterHistory([secret], { query: "header-secret", method: "", status: "all" })).toEqual([]);
-    expect(filterHistory([secret], { query: "x".repeat(MAX_HISTORY_QUERY_CHARS + 20), method: "", status: "all" })).toEqual([]);
+    expect(
+      filterHistory([secret], { query: "x".repeat(MAX_HISTORY_QUERY_CHARS + 20), method: "", status: "all" }),
+    ).toEqual([]);
   });
 
   it("redacts a manually edited sensitive URL before searching or displaying it", () => {
@@ -75,10 +86,12 @@ describe("history filter", () => {
     const unsafe = item("token-url", "https://example.test/path/ghp_1234567890abcdef", 200, "safe");
     const parsed = parseHistoryStore(JSON.stringify({ version: 2, history: [unsafe] }));
     expect(parsed?.history[0].request.url).not.toContain("ghp_1234567890abcdef");
-    expect(filterHistory(parsed?.history ?? [], {
-      query: "ghp_1234567890abcdef",
-      method: "",
-      status: "all",
-    })).toEqual([]);
+    expect(
+      filterHistory(parsed?.history ?? [], {
+        query: "ghp_1234567890abcdef",
+        method: "",
+        status: "all",
+      }),
+    ).toEqual([]);
   });
 });

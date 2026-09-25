@@ -96,15 +96,13 @@ describe("MarkdownPreview Mermaid loading", () => {
       mermaid: ["graph TD; A-->B;"],
     };
     const second = { ...first, mermaid: ["invalid"] };
-    const rendered = render(
-      <MarkdownPreview baseRel="Notes/diagram.md" doc={first} onNavigate={() => undefined} />,
-    );
+    const rendered = render(<MarkdownPreview baseRel="Notes/diagram.md" doc={first} onNavigate={() => undefined} />);
 
-    await waitFor(() => expect(rendered.container.querySelector(".preview-body")?.innerHTML).toContain('data-rendered="good"'));
-    renderMock.mockRejectedValueOnce(new Error("syntax error"));
-    rendered.rerender(
-      <MarkdownPreview baseRel="Notes/diagram.md" doc={second} onNavigate={() => undefined} />,
+    await waitFor(() =>
+      expect(rendered.container.querySelector(".preview-body")?.innerHTML).toContain('data-rendered="good"'),
     );
+    renderMock.mockRejectedValueOnce(new Error("syntax error"));
+    rendered.rerender(<MarkdownPreview baseRel="Notes/diagram.md" doc={second} onNavigate={() => undefined} />);
 
     await waitFor(() => expect(rendered.container.querySelector(".mermaid-error-badge")).toBeTruthy());
     expect(rendered.container.querySelector(".preview-body")?.innerHTML).toContain('data-rendered="good"');
@@ -112,18 +110,19 @@ describe("MarkdownPreview Mermaid loading", () => {
 
   it("does not apply a stale render after the document changes", async () => {
     let resolveRender!: (result: { svg: string }) => void;
-    renderMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveRender = resolve;
-    }));
+    renderMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRender = resolve;
+        }),
+    );
     const first = {
       title: null,
       tags: [],
       html: '<div class="mermaid-block" data-idx="0"></div>',
       mermaid: ["old"],
     };
-    const rendered = render(
-      <MarkdownPreview baseRel="Notes/diagram.md" doc={first} onNavigate={() => undefined} />,
-    );
+    const rendered = render(<MarkdownPreview baseRel="Notes/diagram.md" doc={first} onNavigate={() => undefined} />);
     await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
 
     rendered.rerender(
@@ -140,22 +139,40 @@ describe("MarkdownPreview Mermaid loading", () => {
   });
 });
 
-
 it("separates URL syntax before decoding exactly once and rejects escapes", () => {
-  expect(resolveNoteLink("Notes/current.md", "my%20note.md#section")).toEqual({ path: "Notes/my note.md", fragment: "section" });
-  expect(resolveNoteLink("Notes/current.md", "other%23name.md#한글")).toEqual({ path: "Notes/other#name.md", fragment: "한글" });
-  expect(resolveNoteLink("Notes/current.md", "x%2520y.md?q=1")).toEqual({ path: "Notes/x%20y.md", fragment: undefined });
+  expect(resolveNoteLink("Notes/current.md", "my%20note.md#section")).toEqual({
+    path: "Notes/my note.md",
+    fragment: "section",
+  });
+  expect(resolveNoteLink("Notes/current.md", "other%23name.md#한글")).toEqual({
+    path: "Notes/other#name.md",
+    fragment: "한글",
+  });
+  expect(resolveNoteLink("Notes/current.md", "x%2520y.md?q=1")).toEqual({
+    path: "Notes/x%20y.md",
+    fragment: undefined,
+  });
   expect(resolveNoteLink("Notes/current.md", "#same")).toEqual({ path: "Notes/current.md", fragment: "same" });
-  for (const href of ["../../outside.md", "%", "x%00.md", "file:///x", "//host/x", "..%5cx"]) expect(resolveNoteLink("Notes/current.md", href)).toBeNull();
+  for (const href of ["../../outside.md", "%", "x%00.md", "file:///x", "//host/x", "..%5cx"])
+    expect(resolveNoteLink("Notes/current.md", href)).toBeNull();
 });
 it("moves to a heading only after the target preview arrives", () => {
   const scroll = vi.fn();
   const previous = HTMLElement.prototype.scrollIntoView;
   HTMLElement.prototype.scrollIntoView = scroll;
   const anchorRequest = { fragment: "section", id: 1 };
-  const view = render(<MarkdownPreview baseRel="other.md" doc={null} anchorRequest={anchorRequest} onNavigate={() => {}}/>);
+  const view = render(
+    <MarkdownPreview baseRel="other.md" doc={null} anchorRequest={anchorRequest} onNavigate={() => {}} />,
+  );
   expect(scroll).not.toHaveBeenCalled();
-  view.rerender(<MarkdownPreview baseRel="other.md" doc={{ title: null, tags: [], html: "<h2>Section</h2>", mermaid: [] }} anchorRequest={anchorRequest} onNavigate={() => {}}/>);
+  view.rerender(
+    <MarkdownPreview
+      baseRel="other.md"
+      doc={{ title: null, tags: [], html: "<h2>Section</h2>", mermaid: [] }}
+      anchorRequest={anchorRequest}
+      onNavigate={() => {}}
+    />,
+  );
   expect(scroll).toHaveBeenCalledTimes(1);
   expect(view.container.querySelector("h2")?.id).toBe("section");
   HTMLElement.prototype.scrollIntoView = previous;

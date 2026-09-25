@@ -17,14 +17,26 @@ afterEach(() => cleanup());
 
 describe("Log Lens bounded UI", () => {
   it("accepts a reviewed webhook source once while retaining the open request prop", async () => {
-    const request: RuntimeLogOpenRequest = { id: "review-one", source: { kind: "webhookCapture", capture: {
-      schemaVersion: 1, method: "POST", target: "/events", receivedAtMs: 1788000000000,
-      headerNames: [], bodyPreview: "ordinary", redacted: true, truncated: false,
-    } } };
+    const request: RuntimeLogOpenRequest = {
+      id: "review-one",
+      source: {
+        kind: "webhookCapture",
+        capture: {
+          schemaVersion: 1,
+          method: "POST",
+          target: "/events",
+          receivedAtMs: 1788000000000,
+          headerNames: [],
+          bodyPreview: "ordinary",
+          redacted: true,
+          truncated: false,
+        },
+      },
+    };
     const consumed = vi.fn();
-    const app = render(<App openRequest={request} onOpenConsumed={consumed}/>);
+    const app = render(<App openRequest={request} onOpenConsumed={consumed} />);
     await waitFor(() => expect(consumed).toHaveBeenCalledOnce());
-    app.rerender(<App openRequest={request} onOpenConsumed={consumed}/>);
+    app.rerender(<App openRequest={request} onOpenConsumed={consumed} />);
     expect(consumed).toHaveBeenCalledWith("review-one");
     expect(consumed).toHaveBeenCalledOnce();
     expect(screen.getByText(/2\/16개 선택/)).toBeTruthy();
@@ -89,7 +101,9 @@ describe("Log Lens bounded UI", () => {
 
     const load = screen.getByLabelText("저장된 뷰 불러오기");
     fireEvent.change(load, { target: { value: "Errors" } });
-    expect((await screen.findByRole("status")).textContent).toContain("저장된 뷰 “Errors” 설정을 불러왔습니다. source를 읽으려면 재연결하세요.");
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "저장된 뷰 “Errors” 설정을 불러왔습니다. source를 읽으려면 재연결하세요.",
+    );
     expect(screen.getByRole("button", { name: "source 재연결" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "source 재연결" }));

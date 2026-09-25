@@ -121,9 +121,12 @@ describe("Log Lens Developer Toolbox activity handoff", () => {
 
   it("drops a late export when the explicit selection changes", async () => {
     let resolveExport!: (value: { text: string; truncated: boolean }) => void;
-    exportRecordsMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveExport = resolve;
-    }));
+    exportRecordsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveExport = resolve;
+        }),
+    );
     render(<App />);
     fireEvent.click(firstLogCheckbox());
     fireEvent.click(toolboxButton());
@@ -151,7 +154,9 @@ describe("Log Lens Developer Toolbox activity handoff", () => {
     fireEvent.click(toolboxButton());
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("선택한 로그를 Developer Toolbox로 보내지 못했습니다. 클립보드로 자동 전환하지 않았습니다.");
+    expect(alert.textContent).toBe(
+      "선택한 로그를 Developer Toolbox로 보내지 못했습니다. 클립보드로 자동 전환하지 않았습니다.",
+    );
     expect(alert.textContent).not.toContain("secret.log");
     expect(writeText).not.toHaveBeenCalled();
   });

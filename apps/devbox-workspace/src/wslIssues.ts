@@ -1,9 +1,10 @@
-const issues:Record<string,string>={
+const issues: Record<string, string> = {
   wsl_lsp_installed_target_required: "WSL 배포판에 설치된 언어 서버 또는 Node 진입 파일을 직접 지정해 주세요.",
   wsl_lsp_language_unsupported: "이 WSL 언어 서버의 언어는 아직 지원하지 않습니다.",
   wsl_distro_stopped: "WSL 배포판이 중지되어 있습니다. 목록을 새로 고친 뒤 시작 여부를 선택해 주세요.",
   wsl_distro_missing: "WSL 배포판 등록을 찾을 수 없습니다. 목록을 새로 고쳐 주세요.",
-  wsl_storage_path_unsafe: "WSL 저장 폴더 경로에 링크나 접근할 수 없는 폴더가 있습니다. 배포판 저장 위치를 확인해 주세요.",
+  wsl_storage_path_unsafe:
+    "WSL 저장 폴더 경로에 링크나 접근할 수 없는 폴더가 있습니다. 배포판 저장 위치를 확인해 주세요.",
   wsl_storage_unavailable: "WSL 배포판 저장 폴더의 식별 정보를 읽지 못했습니다. 경로와 접근 권한을 확인해 주세요.",
   wsl_request_cancelled: "WSL 파일 작업이 취소되었습니다. 편집 내용은 유지됩니다.",
   wsl_registry_changed: "WSL 배포판이나 디스크가 바뀌었습니다. 폴더 연결을 다시 검토해 주세요.",
@@ -25,7 +26,8 @@ const issues:Record<string,string>={
   wsl_root_changed: "WSL 폴더나 저장소가 바뀌었습니다. 폴더 연결을 다시 검토해 주세요.",
   wsl_context_invalid: "WSL 프로젝트 문맥을 확인하지 못했습니다. 프로젝트를 다시 선택해 주세요.",
   wsl_context_required: "WSL 파일을 열기 전에 프로젝트 연결을 확인해 주세요.",
-  wsl_native_filesystem_required: "배포판의 기본 Linux 파일시스템 폴더를 선택해 주세요. 다른 마운트의 파일은 아직 지원하지 않습니다.",
+  wsl_native_filesystem_required:
+    "배포판의 기본 Linux 파일시스템 폴더를 선택해 주세요. 다른 마운트의 파일은 아직 지원하지 않습니다.",
   wsl_filesystem_unavailable: "WSL 파일시스템 정보를 읽지 못했습니다. 배포판 상태를 확인해 주세요.",
   wsl_root_expired: "WSL 폴더 검토가 만료되었습니다. 폴더를 다시 확인해 주세요.",
   wsl_connection_closed: "WSL 연결이 종료되었습니다. 배포판 상태를 확인하고 다시 연결해 주세요.",
@@ -33,4 +35,6 @@ const issues:Record<string,string>={
   wsl_operation_failed: "WSL 폴더를 확인하지 못했습니다. 경로와 접근 권한을 확인해 주세요.",
   wsl_admission_required: "WSL 프로젝트 연결은 아직 사용할 수 없습니다.",
 };
-export function wslIssueMessage(issue:string):string|undefined{return issues[issue];}
+export function wslIssueMessage(issue: string): string | undefined {
+  return issues[issue];
+}

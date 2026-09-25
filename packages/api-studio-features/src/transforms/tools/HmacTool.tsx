@@ -120,12 +120,7 @@ export function HmacTool() {
 
   const selectDisabled = running;
   const helpId = "hmac-help";
-  const resultStatus =
-    mode === "verify"
-      ? output
-      : output
-        ? "HMAC을 생성했습니다."
-        : "";
+  const resultStatus = mode === "verify" ? output : output ? "HMAC을 생성했습니다." : "";
 
   return (
     <div className="tool hmac-tool" aria-busy={running}>
@@ -184,13 +179,14 @@ export function HmacTool() {
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => void run()}
-          disabled={running}
-        >
-          {running ? (mode === "generate" ? "생성 중..." : "검증 중...") : mode === "generate" ? "HMAC 생성" : "HMAC 검증"}
+        <button type="button" className="btn" onClick={() => void run()} disabled={running}>
+          {running
+            ? mode === "generate"
+              ? "생성 중..."
+              : "검증 중..."
+            : mode === "generate"
+              ? "HMAC 생성"
+              : "HMAC 검증"}
         </button>
       </div>
 
@@ -291,21 +287,23 @@ export function HmacTool() {
       </div>
 
       <div id={helpId} className="hmac-help" role="note">
-        키와 메시지는 UTF-8 텍스트, Hex, 표준 패딩 Base64 또는 패딩 없는 Base64URL로 해석합니다.
-        결과 인코딩도 명시적으로 선택하며 지원 알고리즘은 SHA-256·SHA-384·SHA-512입니다.
-        한 필드의 인코딩된 텍스트는 {MAX_HMAC_TEXT_BYTES.toLocaleString()}바이트, 디코딩된 키/메시지는
-        1,000,000바이트까지입니다. 검증은 Web Crypto/RustCrypto의 상수 시간 프리미티브를
-        사용합니다. 키·입력·결과는 현재 화면과 한 번의 작업 메모리에만 존재하며 자동 저장·로그·전송하지 않습니다.
+        키와 메시지는 UTF-8 텍스트, Hex, 표준 패딩 Base64 또는 패딩 없는 Base64URL로 해석합니다. 결과 인코딩도
+        명시적으로 선택하며 지원 알고리즘은 SHA-256·SHA-384·SHA-512입니다. 한 필드의 인코딩된 텍스트는{" "}
+        {MAX_HMAC_TEXT_BYTES.toLocaleString()}바이트, 디코딩된 키/메시지는 1,000,000바이트까지입니다. 검증은 Web
+        Crypto/RustCrypto의 상수 시간 프리미티브를 사용합니다. 키·입력·결과는 현재 화면과 한 번의 작업 메모리에만
+        존재하며 자동 저장·로그·전송하지 않습니다.
       </div>
-      {error ? <div className="hmac-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="hmac-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="hmac-status" role="status" aria-live="polite" aria-atomic="true">
         {running ? (mode === "generate" ? "HMAC을 생성하는 중입니다." : "HMAC을 검증하는 중입니다.") : resultStatus}
       </div>
 
       <div className="io-col hmac-output-col">
-        <div className="io-label">
-          결과 {mode === "generate" && output ? <CopyBtn value={output} /> : null}
-        </div>
+        <div className="io-label">결과 {mode === "generate" && output ? <CopyBtn value={output} /> : null}</div>
         <ToolOutput
           className={`io-output ${error ? "io-error" : ""}`}
           value={error || output}

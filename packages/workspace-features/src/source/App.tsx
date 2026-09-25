@@ -1,8 +1,4 @@
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -33,8 +29,10 @@ import DependencyLensPanel from "./components/DependencyLensPanel";
 import "./App.css";
 
 function usesNativeTextContext(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement
-    && target.closest("button, a, input, select, textarea, [contenteditable='true']") !== null;
+  return (
+    target instanceof HTMLElement &&
+    target.closest("button, a, input, select, textarea, [contenteditable='true']") !== null
+  );
 }
 
 const SAFE_APP_ERRORS = new Set([
@@ -82,14 +80,17 @@ export default function App() {
     };
   }, []);
 
-  const prepareRepositoryContext = useCallback((target: HTMLElement) => {
-    const key = target.dataset.repoKey;
-    const repo = repos.find((candidate) => sameRepositoryKey(candidate.canonicalKey, key ?? ""));
-    if (!repo) return;
-    setSelectedRepoKey(repo.canonicalKey);
-    setRegistrationDraft(null);
-    setContextRepo(repo);
-  }, [repos]);
+  const prepareRepositoryContext = useCallback(
+    (target: HTMLElement) => {
+      const key = target.dataset.repoKey;
+      const repo = repos.find((candidate) => sameRepositoryKey(candidate.canonicalKey, key ?? ""));
+      if (!repo) return;
+      setSelectedRepoKey(repo.canonicalKey);
+      setRegistrationDraft(null);
+      setContextRepo(repo);
+    },
+    [repos],
+  );
   const repositoryContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareRepositoryContext(target),
   });
@@ -115,15 +116,11 @@ export default function App() {
         pendingSelectionKeyRef.current = null;
       } else {
         setSelectedRepoKey((current) =>
-          current && list.some((repo) => sameRepositoryKey(repo.canonicalKey, current))
-            ? current
-            : null,
+          current && list.some((repo) => sameRepositoryKey(repo.canonicalKey, current)) ? current : null,
         );
       }
       setRegistrationDraft((current) =>
-        current && list.some((repo) => sameRepositoryKey(repo.canonicalKey, current.canonicalKey))
-          ? null
-          : current,
+        current && list.some((repo) => sameRepositoryKey(repo.canonicalKey, current.canonicalKey)) ? null : current,
       );
       // 목록이 확보되면 inbound listener/선택을 먼저 활성화한다. 각 repository의
       // Git status와 worktree 조회는 그 뒤에 이어져도 card 선택을 막지 않는다.
@@ -132,7 +129,14 @@ export default function App() {
       const st: Record<string, RepoSnapshot> = {};
       const ws: Record<string, string[]> = {};
       for (const r of list) {
-        st[r.path] = await repoStatus(r.path).catch(() => st[r.path] ?? { path: r.path, branch: { current: "?", ahead: 0, behind: 0, dirty: false, detached: false }, changes: 0 });
+        st[r.path] = await repoStatus(r.path).catch(
+          () =>
+            st[r.path] ?? {
+              path: r.path,
+              branch: { current: "?", ahead: 0, behind: 0, dirty: false, detached: false },
+              changes: 0,
+            },
+        );
         if (!isCurrentScan()) return;
         ws[r.path] = await worktrees(r.path).catch(() => []);
         if (!isCurrentScan()) return;
@@ -173,9 +177,7 @@ export default function App() {
     try {
       const inbound = await prepareInboundRepository(action.path);
       if (sequence !== openSequenceRef.current) return;
-      const match = reposRef.current.find((repo) =>
-        sameRepositoryKey(repo.canonicalKey, inbound.canonicalKey),
-      );
+      const match = reposRef.current.find((repo) => sameRepositoryKey(repo.canonicalKey, inbound.canonicalKey));
       setError(null);
       if (match) {
         setRegistrationDraft(null);
@@ -246,7 +248,7 @@ export default function App() {
     else {
       repositoryContextMenu.close();
       setContextRepo(null);
-      setSelectedRepoKey((selected) => selected && sameRepositoryKey(selected, key) ? null : selected);
+      setSelectedRepoKey((selected) => (selected && sameRepositoryKey(selected, key) ? null : selected));
     }
   }, [contextRepo?.canonicalKey, repos, repositoryContextMenu.close]);
 
@@ -326,15 +328,15 @@ export default function App() {
     }
   };
 
-  const selectedRepo = repos.find((repo) =>
-    sameRepositoryKey(repo.canonicalKey, selectedRepoKey ?? ""),
-  ) ?? null;
+  const selectedRepo = repos.find((repo) => sameRepositoryKey(repo.canonicalKey, selectedRepoKey ?? "")) ?? null;
 
   return (
     <div className="app">
       <header className="toolbar">
         <h1 className="title">Repo Manager</h1>
-        <label className="sr-only" htmlFor="repo-scan-root">탐색 루트</label>
+        <label className="sr-only" htmlFor="repo-scan-root">
+          탐색 루트
+        </label>
         <input
           id="repo-scan-root"
           className="root-input"
@@ -342,9 +344,15 @@ export default function App() {
           onChange={(e) => setRoot(e.currentTarget.value)}
           placeholder="탐색 루트"
         />
-        <button className="btn primary" onClick={() => void scan()}>탐색</button>
+        <button className="btn primary" onClick={() => void scan()}>
+          탐색
+        </button>
       </header>
-      {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+      {error && (
+        <div className="error" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
       {truncated && (
         <div className="note dim">
           탐색 범위가 커서 일부 디렉터리를 건너뛰었습니다 (깊이·개수 상한). 루트를 더 좁혀서 다시 탐색하세요.
@@ -358,8 +366,12 @@ export default function App() {
             <span className="draft-path">{registrationDraft.path}</span>
           </div>
           <span className="draft-help">현재 목록에는 없습니다. 아직 저장하거나 Git 명령을 실행하지 않았습니다.</span>
-          <button className="btn primary" onClick={exploreDraft}>이 경로 탐색</button>
-          <button className="btn" onClick={() => setRegistrationDraft(null)}>취소</button>
+          <button className="btn primary" onClick={exploreDraft}>
+            이 경로 탐색
+          </button>
+          <button className="btn" onClick={() => setRegistrationDraft(null)}>
+            취소
+          </button>
         </section>
       )}
 
@@ -393,11 +405,8 @@ export default function App() {
               onKeyDown={(event) => {
                 if (usesNativeTextContext(event.target)) return;
                 repositoryContextMenu.triggerProps.onKeyDown?.(event);
-                if (
-                  event.defaultPrevented
-                  || event.target !== event.currentTarget
-                  || !isKeyboardActivation(event)
-                ) return;
+                if (event.defaultPrevented || event.target !== event.currentTarget || !isKeyboardActivation(event))
+                  return;
                 event.preventDefault();
                 setSelectedRepoKey(r.canonicalKey);
                 setRegistrationDraft(null);
@@ -436,7 +445,9 @@ export default function App() {
                 </div>
               )}
               <div className="wt-create">
-                <label className="sr-only" htmlFor={branchInputId}>새 브랜치</label>
+                <label className="sr-only" htmlFor={branchInputId}>
+                  새 브랜치
+                </label>
                 <input
                   id={branchInputId}
                   ref={(node) => {
@@ -447,14 +458,18 @@ export default function App() {
                   value={newBranch}
                   onChange={(e) => setNewBranch(e.currentTarget.value)}
                 />
-                <label className="sr-only" htmlFor={directoryInputId}>대상 디렉터리</label>
+                <label className="sr-only" htmlFor={directoryInputId}>
+                  대상 디렉터리
+                </label>
                 <input
                   id={directoryInputId}
                   placeholder="대상 디렉터리"
                   value={newDir}
                   onChange={(e) => setNewDir(e.currentTarget.value)}
                 />
-                <button className="btn" disabled={busy} onClick={() => void onCreate(r.path)}>worktree 생성</button>
+                <button className="btn" disabled={busy} onClick={() => void onCreate(r.path)}>
+                  worktree 생성
+                </button>
               </div>
             </div>
           );
@@ -467,7 +482,9 @@ export default function App() {
       <GitSafetyPanel repo={selectedRepo} />
       <RemoteSyncPanel repo={selectedRepo} />
       <CleanupPanel repo={selectedRepo} />
-      <div className="note dim">force delete·reset·clean은 제공하지 않습니다. 정리는 preview와 안전 차단을 통과한 명시적 선택만 실행합니다.</div>
+      <div className="note dim">
+        force delete·reset·clean은 제공하지 않습니다. 정리는 preview와 안전 차단을 통과한 명시적 선택만 실행합니다.
+      </div>
       <ContextMenu
         open={repositoryContextMenu.open}
         anchor={repositoryContextMenu.anchor}

@@ -231,10 +231,12 @@ export default function TermPane({
   const confirmOpenRef = useRef(false);
   const queuedInputRef = useRef<string[]>([]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     setCwdTracked(false);
   }, [sessionId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     broadcastPendingCommandRef.current = "";
     // A target or mode change invalidates anything still waiting behind a confirmation.
@@ -321,10 +323,13 @@ export default function TermPane({
     termRef.current?.selectAll();
   }, []);
 
-  const getCapabilities = useCallback<TerminalPaneHandle["getCapabilities"]>(() => ({
-    hasSelection: Boolean(termRef.current?.hasSelection()),
-    hasCwd: cwdRef.current !== null,
-  }), []);
+  const getCapabilities = useCallback<TerminalPaneHandle["getCapabilities"]>(
+    () => ({
+      hasSelection: Boolean(termRef.current?.hasSelection()),
+      hasCwd: cwdRef.current !== null,
+    }),
+    [],
+  );
 
   const openLinkRef = useRef<(input: string) => Promise<void>>(async () => undefined);
   openLinkRef.current = async (input: string) => {
@@ -392,6 +397,7 @@ export default function TermPane({
     unregisterTerminalHandle,
   ]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -428,10 +434,12 @@ export default function TermPane({
     term.loadAddon(fit);
     const search = new SearchAddon();
     term.loadAddon(search);
-    term.loadAddon(new WebLinksAddon((event, uri) => {
-      event.preventDefault();
-      void openLinkRef.current(uri);
-    }));
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        event.preventDefault();
+        void openLinkRef.current(uri);
+      }),
+    );
     term.open(el);
     termRef.current = term;
     fitRef.current = fit;
@@ -539,29 +547,32 @@ export default function TermPane({
         return;
       }
       confirmOpenRef.current = true;
-      void askRef.current({
-        kind: "confirm",
-        title: assessment.confirmation,
-        confirmLabel: "보내기",
-        danger: true,
-      }).then((approved) => {
-        confirmOpenRef.current = false;
-        // The confirmation belongs to the exact mode/target generation that opened it. A pane
-        // may close or the user may disarm/change targets while the modal is visible; approving
-        // that stale modal must never send to its captured session list.
-        const currentTargets = broadcastTargetsRef.current;
-        const contextStillCurrent = broadcastRef.current
-          && currentTargets.length === targets.length
-          && currentTargets.every((target, index) => target === targets[index]);
-        if (approved.confirmed && contextStillCurrent) {
-          broadcastPendingCommandRef.current = assessment.nextPendingCommand;
-          sendBroadcast(targets, data);
-        } else if (!contextStillCurrent) {
-          broadcastPendingCommandRef.current = "";
-          queuedInputRef.current = [];
-        }
-        flushQueuedInput();
-      });
+      void askRef
+        .current({
+          kind: "confirm",
+          title: assessment.confirmation,
+          confirmLabel: "보내기",
+          danger: true,
+        })
+        .then((approved) => {
+          confirmOpenRef.current = false;
+          // The confirmation belongs to the exact mode/target generation that opened it. A pane
+          // may close or the user may disarm/change targets while the modal is visible; approving
+          // that stale modal must never send to its captured session list.
+          const currentTargets = broadcastTargetsRef.current;
+          const contextStillCurrent =
+            broadcastRef.current &&
+            currentTargets.length === targets.length &&
+            currentTargets.every((target, index) => target === targets[index]);
+          if (approved.confirmed && contextStillCurrent) {
+            broadcastPendingCommandRef.current = assessment.nextPendingCommand;
+            sendBroadcast(targets, data);
+          } else if (!contextStillCurrent) {
+            broadcastPendingCommandRef.current = "";
+            queuedInputRef.current = [];
+          }
+          flushQueuedInput();
+        });
     };
 
     const dataDisposable = term.onData((data) => {
@@ -619,17 +630,26 @@ export default function TermPane({
       onTerminalErrorRef.current("터미널 출력에 연결하지 못했습니다.");
     });
     let completeOutputWrite: (() => void) | undefined;
-    const stopOutput = isProductHosted() ? connectProductTerminalOutput(sessionId, (data, truncated) => {
-      if (torndown) return Promise.resolve();
-      if (truncated) {
-        term.reset();
-        term.write("\r\n[연결이 끊긴 동안 출력 일부가 생략되었습니다.]\r\n");
-      }
-      return new Promise<void>(resolve => {
-        completeOutputWrite = resolve;
-        term.write(data, () => { completeOutputWrite = undefined; resolve(); });
-      });
-    }, () => onTerminalErrorRef.current("터미널 출력 연결이 중단되었습니다. 창을 다시 열어 재연결해 주세요.")) : () => undefined;
+    const stopOutput = isProductHosted()
+      ? connectProductTerminalOutput(
+          sessionId,
+          (data, truncated) => {
+            if (torndown) return Promise.resolve();
+            if (truncated) {
+              term.reset();
+              term.write("\r\n[연결이 끊긴 동안 출력 일부가 생략되었습니다.]\r\n");
+            }
+            return new Promise<void>((resolve) => {
+              completeOutputWrite = resolve;
+              term.write(data, () => {
+                completeOutputWrite = undefined;
+                resolve();
+              });
+            });
+          },
+          () => onTerminalErrorRef.current("터미널 출력 연결이 중단되었습니다. 창을 다시 열어 재연결해 주세요."),
+        )
+      : () => undefined;
     if (initialCommand) {
       void (isProductHosted() ? writeInitialCommand : writeSession)(sessionId, `${initialCommand}\r`).catch(() => {
         onTerminalErrorRef.current("프로필 시작 명령을 터미널에 전달하지 못했습니다.");
@@ -730,11 +750,7 @@ export default function TermPane({
     }
   }, [active, isFocusedPane, searchOpen]);
 
-  const runSearch = (
-    direction: "next" | "previous",
-    query = searchQuery,
-    modifiers = searchOptions,
-  ) => {
+  const runSearch = (direction: "next" | "previous", query = searchQuery, modifiers = searchOptions) => {
     const addon = searchAddonRef.current;
     if (!addon) return;
     const boundedQuery = query.slice(0, MAX_TERMINAL_SEARCH_CHARACTERS);
@@ -784,7 +800,9 @@ export default function TermPane({
           event.dataTransfer.effectAllowed = "move";
         }}
       >
-        <span className="pane-title" title={title}>{title}</span>
+        <span className="pane-title" title={title}>
+          {title}
+        </span>
         {requestedMultiplexer && requestedMultiplexer !== multiplexer ? (
           <span
             className="pane-badge mux-fallback"
@@ -792,17 +810,21 @@ export default function TermPane({
           >
             {requestedMultiplexer} → {multiplexer}
           </span>
-        ) : multiplexer !== "native" && (
-          <span className="pane-badge" title={`이 팬은 ${multiplexer} 세션으로 실행 중입니다`}>
-            {multiplexer}
-          </span>
+        ) : (
+          multiplexer !== "native" && (
+            <span className="pane-badge" title={`이 팬은 ${multiplexer} 세션으로 실행 중입니다`}>
+              {multiplexer}
+            </span>
+          )
         )}
         <span
           className={`pane-badge ${cwdTracked ? "cwd-tracked" : "cwd-untracked"}`}
           role="status"
-          title={cwdTracked
-            ? "셸이 현재 경로를 보고하고 있어 다음 실행에서 이 팬의 cwd를 복원할 수 있습니다"
-            : "셸 연동 신호를 아직 받지 못해 시작 경로만 저장됩니다"}
+          title={
+            cwdTracked
+              ? "셸이 현재 경로를 보고하고 있어 다음 실행에서 이 팬의 cwd를 복원할 수 있습니다"
+              : "셸 연동 신호를 아직 받지 못해 시작 경로만 저장됩니다"
+          }
         >
           {cwdTracked ? "cwd 추적" : "cwd 미확인"}
         </span>
@@ -817,7 +839,10 @@ export default function TermPane({
           </span>
         )}
         {resumed && (
-          <span className="pane-badge resumed" title="기존 세션에 다시 연결했습니다. 시작 명령은 다시 실행하지 않았습니다.">
+          <span
+            className="pane-badge resumed"
+            title="기존 세션에 다시 연결했습니다. 시작 명령은 다시 실행하지 않았습니다."
+          >
             재연결됨
           </span>
         )}
@@ -854,27 +879,39 @@ export default function TermPane({
             aria-pressed={searchOptions.caseSensitive}
             title="대/소문자 구분"
             onClick={() => toggleSearchOption("caseSensitive")}
-          >Aa</button>
+          >
+            Aa
+          </button>
           <button
             type="button"
             className={`search-option ${searchOptions.wholeWord ? "active" : ""}`}
             aria-pressed={searchOptions.wholeWord}
             title="단어 단위로 일치"
             onClick={() => toggleSearchOption("wholeWord")}
-          >ab|</button>
+          >
+            ab|
+          </button>
           <button
             type="button"
             className={`search-option ${searchOptions.regex ? "active" : ""}`}
             aria-pressed={searchOptions.regex}
             title="정규식으로 검색"
             onClick={() => toggleSearchOption("regex")}
-          >.*</button>
+          >
+            .*
+          </button>
           <span className="search-count" aria-live="polite">
             {searchResult.resultCount > 0 ? `${searchResult.resultIndex + 1}/${searchResult.resultCount}` : "0/0"}
           </span>
-          <button type="button" title="이전 결과 (Shift+Enter)" onClick={() => runSearch("previous")}>↑</button>
-          <button type="button" title="다음 결과 (Enter)" onClick={() => runSearch("next")}>↓</button>
-          <button type="button" title="검색 닫기 (Esc)" onClick={closeSearch}>✕</button>
+          <button type="button" title="이전 결과 (Shift+Enter)" onClick={() => runSearch("previous")}>
+            ↑
+          </button>
+          <button type="button" title="다음 결과 (Enter)" onClick={() => runSearch("next")}>
+            ↓
+          </button>
+          <button type="button" title="검색 닫기 (Esc)" onClick={closeSearch}>
+            ✕
+          </button>
         </div>
       )}
       <div

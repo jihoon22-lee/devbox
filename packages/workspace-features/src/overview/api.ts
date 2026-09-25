@@ -216,12 +216,7 @@ export interface WorkspaceTaskControlDispatch {
   handoffId: string;
 }
 
-export type WorkspaceTaskControlReceiptStatus =
-  | "accepted"
-  | "rejected"
-  | "started"
-  | "stopped"
-  | "failed";
+export type WorkspaceTaskControlReceiptStatus = "accepted" | "rejected" | "started" | "stopped" | "failed";
 
 export interface WorkspaceTaskControlReceipt {
   schemaVersion: number;
@@ -236,7 +231,16 @@ export interface WorkspaceTaskControlReceipt {
 }
 
 const MOCK_PROFILES: ProjectProfile[] = [
-  { id: "p-1", name: "devbox", windowsPath: "C:\\projects\\devbox", wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" }, gitRoot: "C:\\projects\\devbox", expectedPorts: [1420], runManagerServiceIds: ["devbox-dev"], environment: null },
+  {
+    id: "p-1",
+    name: "devbox",
+    windowsPath: "C:\\projects\\devbox",
+    wsl: { distro: "Ubuntu", path: "/mnt/e/projects/devbox" },
+    gitRoot: "C:\\projects\\devbox",
+    expectedPorts: [1420],
+    runManagerServiceIds: ["devbox-dev"],
+    environment: null,
+  },
 ];
 
 export function listProfiles(): Promise<ProjectProfile[]> {
@@ -273,10 +277,7 @@ export function deleteProfileTemplate(id: string, expectedRevision: string): Pro
   });
 }
 
-export function createProfileFromTemplate(
-  templateId: string | null,
-  profile: ProjectProfile,
-): Promise<ProjectProfile> {
+export function createProfileFromTemplate(templateId: string | null, profile: ProjectProfile): Promise<ProjectProfile> {
   if (!isTauri()) return Promise.resolve(profile);
   return invoke<ProjectProfile>("create_profile_from_template", {
     request: { templateId, profile },
@@ -519,13 +520,15 @@ export function wslRuntimeSuggestions(): Promise<RuntimeSuggestions> {
       ports: [
         {
           published: 3000,
-          sources: [{
-            distro: "Ubuntu",
-            container: "web",
-            containerState: "running",
-            target: 3000,
-            protocol: "tcp",
-          }],
+          sources: [
+            {
+              distro: "Ubuntu",
+              container: "web",
+              containerState: "running",
+              target: 3000,
+              protocol: "tcp",
+            },
+          ],
         },
       ],
     });
@@ -599,9 +602,7 @@ export function dispatchWorkspaceTaskControl(
   return invoke<WorkspaceTaskControlDispatch>("dispatch_workspace_task_control", { ...request });
 }
 
-export function getWorkspaceTaskControlReceipt(
-  requestId: string,
-): Promise<WorkspaceTaskControlReceipt | null> {
+export function getWorkspaceTaskControlReceipt(requestId: string): Promise<WorkspaceTaskControlReceipt | null> {
   if (!isTauri()) return Promise.resolve(null);
   return invoke<WorkspaceTaskControlReceipt | null>("get_workspace_task_control_receipt", { requestId });
 }

@@ -153,16 +153,20 @@ const freshRuntimeSuggestions: RuntimeSuggestions = {
   status: "fresh",
   producerVersion: "0.2.1",
   freshnessMs: 12_000,
-  ports: [{
-    published: 8080,
-    sources: [{
-      distro: "Ubuntu",
-      container: "api",
-      containerState: "running",
-      target: 80,
-      protocol: "tcp",
-    }],
-  }],
+  ports: [
+    {
+      published: 8080,
+      sources: [
+        {
+          distro: "Ubuntu",
+          container: "api",
+          containerState: "running",
+          target: 80,
+          protocol: "tcp",
+        },
+      ],
+    },
+  ],
 };
 
 const freshEnvironmentPreview: ProjectEnvironmentPreview = {
@@ -312,9 +316,11 @@ beforeEach(() => {
     { id: "code-pad", displayName: "Code Pad", payloadKind: "workspace" },
     { id: "wsl-desktop", displayName: "WSL Desktop", payloadKind: "path" },
   ]);
-  profileCopyPathMock.mockReset().mockImplementation(async (profileId) => (
-    profileId === firstProfile.id ? firstProfile.windowsPath! : secondProfile.windowsPath!
-  ));
+  profileCopyPathMock
+    .mockReset()
+    .mockImplementation(async (profileId) =>
+      profileId === firstProfile.id ? firstProfile.windowsPath! : secondProfile.windowsPath!,
+    );
   openProfileInMock.mockReset().mockResolvedValue(undefined);
   previewProjectEnvironmentMock.mockReset().mockRejectedValue(new Error("native preview unavailable"));
   wslRuntimeSuggestionsMock.mockReset().mockResolvedValue(freshRuntimeSuggestions);
@@ -374,14 +380,11 @@ describe("Workbench profile context menu", () => {
     ]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
-    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
-      .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).className)
-      .toContain("danger");
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).className).toContain("danger");
     expect(screen.getByRole("menuitem", { name: "삭제" }).className).toContain("danger");
     await waitFor(() => {
-      expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"))
-        .toBeNull();
+      expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled")).toBeNull();
     });
   });
 
@@ -408,12 +411,14 @@ describe("Workbench profile context menu", () => {
     workspacePreflightMock.mockResolvedValueOnce({
       ...readyPreflight,
       ready: false,
-      items: [{
-        key: "required-apps",
-        status: "failure",
-        detail: "필수 devbox 앱이 없습니다. Devbox Manager에서 설치하세요",
-        resources: [{ kind: "app", id: "code-pad:workspace", state: "missing" }],
-      }],
+      items: [
+        {
+          key: "required-apps",
+          status: "failure",
+          detail: "필수 devbox 앱이 없습니다. Devbox Manager에서 설치하세요",
+          resources: [{ kind: "app", id: "code-pad:workspace", state: "missing" }],
+        },
+      ],
     });
 
     render(<App />);
@@ -570,16 +575,12 @@ describe("Workbench profile context menu", () => {
     await waitFor(() => expect(startWorkspaceMock).toHaveBeenCalledWith("p-1"));
 
     fireEvent.contextMenu(second);
-    expect(screen.getByRole("menuitem", { name: "Workspace 시작" }).getAttribute("aria-disabled"))
-      .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
-      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "Workspace 시작" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled")).toBe("true");
 
     fireEvent.contextMenu(first);
-    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
-      .toBeNull();
-    expect(screen.getByRole("menuitem", { name: "삭제" }).getAttribute("aria-disabled"))
-      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "삭제" }).getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }));
     expect(confirmMock).toHaveBeenCalledWith(
       "'devbox'에서 Workbench가 시작한 리소스만 중지할까요? 시작 전부터 실행 중이던 리소스는 유지됩니다.",
@@ -623,12 +624,9 @@ describe("Workbench profile context menu", () => {
 
     fireEvent.contextMenu(profileRow("devbox"));
 
-    expect(screen.getByRole("menuitem", { name: "Workspace 시작" }).getAttribute("aria-disabled"))
-      .toBe("true");
-    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled"))
-      .toBeNull();
-    expect(screen.getByRole("menuitem", { name: "삭제" }).getAttribute("aria-disabled"))
-      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "Workspace 시작" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "내가 시작한 작업 중지" }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "삭제" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("edits the exact context profile", async () => {
@@ -672,10 +670,12 @@ describe("Workbench profile context menu", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
-      ...firstProfile,
-      runManagerServiceIds: ["devbox-dev", "worker"],
-    }));
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({
+        ...firstProfile,
+        runManagerServiceIds: ["devbox-dev", "worker"],
+      }),
+    );
 
     fireEvent.contextMenu(profileRow("devbox"));
     fireEvent.click(screen.getByRole("menuitem", { name: "프로필 편집" }));
@@ -716,8 +716,7 @@ describe("Workbench profile context menu", () => {
 
     fireEvent.contextMenu(target);
     await waitFor(() => {
-      expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"))
-        .toBeNull();
+      expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled")).toBeNull();
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Code Pad" }));
@@ -732,8 +731,7 @@ describe("Workbench profile context menu", () => {
     fireEvent.contextMenu(profileRow("devbox"));
 
     await waitFor(() => expect(screen.getByText("다른 앱으로 열기 대상을 확인하지 못했습니다")).toBeTruthy());
-    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"))
-      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.queryByText("TOP_SECRET")).toBeNull();
   });
 
@@ -770,32 +768,36 @@ describe("Workbench profile context menu", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
-      ...firstProfile,
-      environment: {
-        enabled: false,
-        source: ".env.local",
-        revision: "b".repeat(64),
-        variables: freshEnvironmentPreview.variables.map(({ name, source, conflict, secretReference }) => ({
-          name,
-          source,
-          conflict,
-          secretReference,
-        })),
-      },
-    }));
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({
+        ...firstProfile,
+        environment: {
+          enabled: false,
+          source: ".env.local",
+          revision: "b".repeat(64),
+          variables: freshEnvironmentPreview.variables.map(({ name, source, conflict, secretReference }) => ({
+            name,
+            source,
+            conflict,
+            secretReference,
+          })),
+        },
+      }),
+    );
   });
 
   it("blocks saving an inspected environment with a conflict when enabled", async () => {
     previewProjectEnvironmentMock.mockResolvedValueOnce({
       ...freshEnvironmentPreview,
       hasConflicts: true,
-      variables: [{
-        ...freshEnvironmentPreview.variables[0],
-        name: "PATH",
-        conflict: "reserved",
-        secretReference: null,
-      }],
+      variables: [
+        {
+          ...freshEnvironmentPreview.variables[0],
+          name: "PATH",
+          conflict: "reserved",
+          secretReference: null,
+        },
+      ],
     });
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
@@ -825,11 +827,13 @@ describe("Workbench profile context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     pending.resolve({
       ...freshEnvironmentPreview,
-      variables: [{
-        ...freshEnvironmentPreview.variables[0],
-        name: "DO_NOT_RENDER_LATE_SECRET",
-        maskedValue: "late-secret",
-      }],
+      variables: [
+        {
+          ...freshEnvironmentPreview.variables[0],
+          name: "DO_NOT_RENDER_LATE_SECRET",
+          maskedValue: "late-secret",
+        },
+      ],
     });
 
     await Promise.resolve();
@@ -849,10 +853,12 @@ describe("Workbench profile context menu", () => {
     fireEvent.change(name, { target: { value: "devbox-renamed" } });
     fireEvent.submit(name.closest("form")!);
 
-    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
-      ...firstProfile,
-      name: "devbox-renamed",
-    }));
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({
+        ...firstProfile,
+        name: "devbox-renamed",
+      }),
+    );
     expect(screen.queryByRole("heading", { name: "프로필 편집" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "devbox-renamed 프로필 편집" }));
@@ -910,10 +916,12 @@ describe("Workbench profile context menu", () => {
     expect(updateProfileMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await waitFor(() => expect(updateProfileMock).toHaveBeenCalledWith({
-      ...firstProfile,
-      expectedPorts: [1420, 8080],
-    }));
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({
+        ...firstProfile,
+        expectedPorts: [1420, 8080],
+      }),
+    );
   });
 
   it("requires extra confirmation for stale suggestions and preserves the draft when declined", async () => {
@@ -984,15 +992,15 @@ describe("Workbench profile context menu", () => {
   });
 
   it("does not apply a selection that disappeared during acceptance revalidation", async () => {
-    wslRuntimeSuggestionsMock
-      .mockResolvedValueOnce(freshRuntimeSuggestions)
-      .mockResolvedValueOnce({
-        ...freshRuntimeSuggestions,
-        ports: [{
+    wslRuntimeSuggestionsMock.mockResolvedValueOnce(freshRuntimeSuggestions).mockResolvedValueOnce({
+      ...freshRuntimeSuggestions,
+      ports: [
+        {
           published: 9000,
           sources: freshRuntimeSuggestions.ports[0].sources,
-        }],
-      });
+        },
+      ],
+    });
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "devbox 프로필 편집" }));
@@ -1015,13 +1023,17 @@ describe("Workbench profile context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     pending.resolve({
       ...freshRuntimeSuggestions,
-      ports: [{
-        ...freshRuntimeSuggestions.ports[0],
-        sources: [{
-          ...freshRuntimeSuggestions.ports[0].sources[0],
-          container: "DO_NOT_RENDER_LATE_VALUE",
-        }],
-      }],
+      ports: [
+        {
+          ...freshRuntimeSuggestions.ports[0],
+          sources: [
+            {
+              ...freshRuntimeSuggestions.ports[0].sources[0],
+              container: "DO_NOT_RENDER_LATE_VALUE",
+            },
+          ],
+        },
+      ],
     });
 
     await Promise.resolve();
@@ -1033,9 +1045,9 @@ describe("Workbench profile context menu", () => {
   it("ignores stale health responses after the selected profile changes", async () => {
     const firstHealth = deferred<ProjectHealth>();
     const secondHealth = deferred<ProjectHealth>();
-    projectHealthMock.mockImplementation((profileId) => (
-      profileId === firstProfile.id ? firstHealth.promise : secondHealth.promise
-    ));
+    projectHealthMock.mockImplementation((profileId) =>
+      profileId === firstProfile.id ? firstHealth.promise : secondHealth.promise,
+    );
     render(<App />);
     await screen.findByRole("button", { name: "toolbox" });
     fireEvent.click(screen.getByRole("button", { name: "toolbox" }));
@@ -1094,12 +1106,14 @@ describe("Workbench profile context menu", () => {
     dependencyHealthMock.mockResolvedValueOnce({
       profileId: "p-1",
       ready: false,
-      items: [{
-        key: "ports",
-        status: "failure",
-        detail: "예상 TCP port 충돌이 있습니다",
-        resources: [{ kind: "tcp-port", id: "port-1", state: "conflict" }],
-      }],
+      items: [
+        {
+          key: "ports",
+          status: "failure",
+          detail: "예상 TCP port 충돌이 있습니다",
+          resources: [{ kind: "tcp-port", id: "port-1", state: "conflict" }],
+        },
+      ],
     });
     fireEvent.click(screen.getByRole("button", { name: "의존성 새로고침" }));
     expect(await screen.findByText("예상 TCP port 충돌이 있습니다")).toBeTruthy();
@@ -1116,10 +1130,12 @@ describe("Workbench profile context menu", () => {
     fireEvent.change(screen.getByLabelText("Windows 경로"), { target: { value: "E:\\projects\\node-app" } });
     fireEvent.change(screen.getByLabelText("WSL 경로"), { target: { value: "/mnt/e/projects/node-app" } });
     fireEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
-    await waitFor(() => expect(createProfileFromTemplateMock).toHaveBeenCalledWith(
-      "template-node",
-      expect.objectContaining({ name: "node-app", environment: null }),
-    ));
+    await waitFor(() =>
+      expect(createProfileFromTemplateMock).toHaveBeenCalledWith(
+        "template-node",
+        expect.objectContaining({ name: "node-app", environment: null }),
+      ),
+    );
     expect(dialog).toBeTruthy();
   });
 
@@ -1145,10 +1161,12 @@ describe("Workbench profile context menu", () => {
     await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
     fireEvent.change(screen.getByLabelText("템플릿 이름"), { target: { value: "Node updated" } });
     fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
-    await waitFor(() => expect(updateProfileTemplateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "template-node", name: "Node updated" }),
-      templateSnapshot.revision,
-    ));
+    await waitFor(() =>
+      expect(updateProfileTemplateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "template-node", name: "Node updated" }),
+        templateSnapshot.revision,
+      ),
+    );
   });
 
   it("creates and deletes templates without changing existing profiles", async () => {
@@ -1159,17 +1177,18 @@ describe("Workbench profile context menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ 새 템플릿" }));
     fireEvent.change(screen.getByLabelText("템플릿 이름"), { target: { value: "Generic" } });
     fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
-    await waitFor(() => expect(createProfileTemplateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Generic", windowsPath: null, wsl: null }),
-    ));
+    await waitFor(() =>
+      expect(createProfileTemplateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Generic", windowsPath: null, wsl: null }),
+      ),
+    );
     await waitFor(() => expect(screen.getByRole("button", { name: "템플릿 저장" })).not.toBeDisabled());
 
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByRole("button", { name: "Node 서비스 템플릿 삭제" }));
-    await waitFor(() => expect(deleteProfileTemplateMock).toHaveBeenCalledWith(
-      "template-node",
-      templateSnapshot.revision,
-    ));
+    await waitFor(() =>
+      expect(deleteProfileTemplateMock).toHaveBeenCalledWith("template-node", templateSnapshot.revision),
+    );
     expect(updateProfileMock).not.toHaveBeenCalled();
   });
 
@@ -1187,7 +1206,10 @@ describe("Workbench profile context menu", () => {
       runId: "run-p-1",
       profileId: "p-1",
       steps: [{ name: "open-code-pad", ok: true, detail: "code-pad를 시작했습니다", status: "pass" }],
-      resourceProvenance: [{ kind: "process", id: "wsl-desktop", state: "workbenchStarted" }, { kind: "process", id: "code-pad", state: "workbenchStarted" }],
+      resourceProvenance: [
+        { kind: "process", id: "wsl-desktop", state: "workbenchStarted" },
+        { kind: "process", id: "code-pad", state: "workbenchStarted" },
+      ],
       retryCount: 1,
       canRetry: false,
       failedStep: null,

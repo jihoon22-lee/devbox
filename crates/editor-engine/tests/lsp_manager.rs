@@ -1,4 +1,4 @@
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     initial_catalog, save_to_app_local_data_dir, InstallSource, InstalledServer,
     InstalledServerIndex, LspConfig, LspEvent, LspManager, LspManagerError, LspPosition, ServerRef,
     LSP_CONFIG_SCHEMA_VERSION, LSP_INSTALLED_SCHEMA_VERSION,
@@ -114,7 +114,7 @@ async fn push_diagnostics_are_cached_and_published_with_current_version() {
     assert_eq!(event.response.metadata.version, 1);
     assert_eq!(
         event.response.value.origin,
-        code_pad_lib::lsp::DiagnosticOrigin::Push
+        editor_engine::lsp::DiagnosticOrigin::Push
     );
     assert!(!event.response.stale);
     manager.stop("rust").await.unwrap();
@@ -160,7 +160,7 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
         loop {
             if let LspEvent::Status(event) = events.recv().await.unwrap() {
                 if event.restarting
-                    && event.status.status == code_pad_lib::lsp::ClientStatus::Crashed
+                    && event.status.status == editor_engine::lsp::ClientStatus::Crashed
                 {
                     break;
                 }
@@ -200,7 +200,7 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
         loop {
             if let LspEvent::Status(event) = events.recv().await.unwrap() {
                 if !event.restarting
-                    && event.status.status == code_pad_lib::lsp::ClientStatus::Ready
+                    && event.status.status == editor_engine::lsp::ClientStatus::Ready
                 {
                     break;
                 }
@@ -286,7 +286,7 @@ async fn circuit_open_allows_explicit_restart_after_repeated_crashes() {
         .into_iter()
         .find(|status| status.language_id == "rust")
         .unwrap();
-    assert_eq!(status.status, code_pad_lib::lsp::ClientStatus::Ready);
+    assert_eq!(status.status, editor_engine::lsp::ClientStatus::Ready);
     assert!(!status.auto_restart_disabled);
     manager.stop("rust").await.unwrap();
 }
@@ -593,7 +593,7 @@ async fn rename_previews_disk_files_then_applies_clean_buffers_atomically() {
         .iter()
         .all(|document| document.version == 2 && document.text.starts_with("renamed")));
     assert!(renamed.files.iter().all(|file| {
-        file.status == code_pad_lib::lsp::RenameFileStatus::Applied
+        file.status == editor_engine::lsp::RenameFileStatus::Applied
             && file.mtime_nanos.is_some()
             && file.content_hash.is_some()
     }));
@@ -785,7 +785,7 @@ async fn rename_apply_rechecks_mtime_and_hash_before_writing_any_file() {
             .iter()
             .find(|file| file.path == "main.rs")
             .map(|file| file.status),
-        Some(code_pad_lib::lsp::RenameFileStatus::Conflict)
+        Some(editor_engine::lsp::RenameFileStatus::Conflict)
     );
     assert_eq!(fs::read_to_string(&main).unwrap(), "external\n");
     assert_eq!(fs::read_to_string(&library).unwrap(), "fixture library\n");
@@ -846,7 +846,7 @@ async fn failed_multi_document_mutation_restarts_and_replays_the_authoritative_s
     assert!(result
         .files
         .iter()
-        .any(|file| { file.status == code_pad_lib::lsp::RenameFileStatus::RolledBack }));
+        .any(|file| { file.status == editor_engine::lsp::RenameFileStatus::RolledBack }));
     assert_eq!(fs::read_to_string(&main).unwrap(), "fixture\n");
     assert_eq!(fs::read_to_string(&library).unwrap(), "fixture library\n");
 
@@ -858,7 +858,7 @@ async fn failed_multi_document_mutation_restarts_and_replays_the_authoritative_s
                 .into_iter()
                 .find(|status| status.language_id == "rust");
             if status.is_some_and(|status| {
-                status.status == code_pad_lib::lsp::ClientStatus::Ready
+                status.status == editor_engine::lsp::ClientStatus::Ready
                     && status.document_count == 2
             }) {
                 break;

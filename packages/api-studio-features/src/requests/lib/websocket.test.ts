@@ -50,10 +50,10 @@ describe("WebSocket request bounds", () => {
   });
 
   it("URL-encodes ordinary params but rejects credential-shaped params", () => {
-    expect(buildWebSocketUrl("ws://localhost/socket", [{ key: "q", value: "a b" }]))
-      .toBe("ws://localhost/socket?q=a+b");
-    expect(() => buildWebSocketUrl("ws://localhost/socket", [{ key: "token", value: "secret" }]))
-      .toThrow("credential");
+    expect(buildWebSocketUrl("ws://localhost/socket", [{ key: "q", value: "a b" }])).toBe(
+      "ws://localhost/socket?q=a+b",
+    );
+    expect(() => buildWebSocketUrl("ws://localhost/socket", [{ key: "token", value: "secret" }])).toThrow("credential");
   });
 
   it("keeps message payload and control payload bounds separate", () => {

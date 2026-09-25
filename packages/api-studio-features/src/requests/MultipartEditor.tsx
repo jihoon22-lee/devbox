@@ -65,14 +65,18 @@ export function MultipartEditor({
                 aria-label={`${index + 1}번 part 활성화`}
                 type="checkbox"
                 checked={isMultipartPartEnabled(row)}
-                onChange={(event) => onChange(updateMultipartPart(rows, index, { enabled: event.currentTarget.checked }))}
+                onChange={(event) =>
+                  onChange(updateMultipartPart(rows, index, { enabled: event.currentTarget.checked }))
+                }
               />
               사용
             </label>
             <select
               aria-label={`${index + 1}번 part 종류`}
               value={row.kind}
-              onChange={(event) => onChange(updateMultipartPart(rows, index, { kind: event.currentTarget.value as MultipartPart["kind"] }))}
+              onChange={(event) =>
+                onChange(updateMultipartPart(rows, index, { kind: event.currentTarget.value as MultipartPart["kind"] }))
+              }
             >
               <option value="text">텍스트</option>
               <option value="file">파일</option>
@@ -108,7 +112,9 @@ export function MultipartEditor({
               aria-label={`${index + 1}번 part Content-Type`}
               placeholder="Content-Type (선택)"
               value={row.content_type}
-              onChange={(event) => onChange(updateMultipartPart(rows, index, { content_type: event.currentTarget.value }))}
+              onChange={(event) =>
+                onChange(updateMultipartPart(rows, index, { content_type: event.currentTarget.value }))
+              }
               spellCheck={false}
             />
             {row.kind === "text" ? (
@@ -122,9 +128,15 @@ export function MultipartEditor({
                 }}
               >
                 <option value="">{availableSecrets.length === 0 ? "Secret 없음" : "Secret 참조"}</option>
-                {availableSecrets.map((name) => <option key={name} value={name}>{name}</option>)}
+                {availableSecrets.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
-            ) : <span />}
+            ) : (
+              <span />
+            )}
             <button
               type="button"
               className="btn header-row-action"
@@ -150,14 +162,32 @@ export function MultipartEditor({
           </div>
         ))}
       </div>
-      {pickError && <div className="multipart-row-error" role="alert">{pickError}</div>}
+      {pickError && (
+        <div className="multipart-row-error" role="alert">
+          {pickError}
+        </div>
+      )}
       <div className="multipart-add-actions">
-        <button type="button" className="btn" disabled={rows.length >= MAX_MULTIPART_PARTS} onClick={() => onChange(addMultipartPart(rows, "text"))}>+ 텍스트</button>
-        <button type="button" className="btn" disabled={rows.length >= MAX_MULTIPART_PARTS} onClick={() => onChange(addMultipartPart(rows, "file"))}>+ 파일</button>
+        <button
+          type="button"
+          className="btn"
+          disabled={rows.length >= MAX_MULTIPART_PARTS}
+          onClick={() => onChange(addMultipartPart(rows, "text"))}
+        >
+          + 텍스트
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={rows.length >= MAX_MULTIPART_PARTS}
+          onClick={() => onChange(addMultipartPart(rows, "file"))}
+        >
+          + 파일
+        </button>
       </div>
       <div className="header-notice" role="note">
-        선택한 파일은 앱에 복사하거나 History·Collection에 저장하지 않고 전송할 때만 읽습니다.
-        저장된 요청의 파일은 다시 선택해야 하며 파일당 25 MiB, 전체 50 MiB, 최대 50개 part까지 전송합니다.
+        선택한 파일은 앱에 복사하거나 History·Collection에 저장하지 않고 전송할 때만 읽습니다. 저장된 요청의 파일은 다시
+        선택해야 하며 파일당 25 MiB, 전체 50 MiB, 최대 50개 part까지 전송합니다.
       </div>
     </div>
   );

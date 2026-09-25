@@ -33,9 +33,7 @@ export function encodingOptionValue(encoding: Encoding): string {
  * columns, just as it does inside the editor.
  */
 export function cursorPosition(text: string, cursor: number): { line: number; column: number } {
-  const offset = Number.isFinite(cursor)
-    ? Math.min(Math.max(0, Math.trunc(cursor)), text.length)
-    : 0;
+  const offset = Number.isFinite(cursor) ? Math.min(Math.max(0, Math.trunc(cursor)), text.length) : 0;
   const lineStart = text.lastIndexOf("\n", Math.max(0, offset - 1));
   return {
     line: text.slice(0, offset).split("\n").length,
@@ -43,20 +41,14 @@ export function cursorPosition(text: string, cursor: number): { line: number; co
   };
 }
 
-export function encodingForOption(
-  value: string,
-  intent: "reopen" | "convert",
-): Encoding | null {
+export function encodingForOption(value: string, intent: "reopen" | "convert"): Encoding | null {
   const selected = ENCODING_OPTIONS.find((option) => option.value === value)?.encoding;
   if (!selected) return null;
 
   // A BOM-less UTF-16 document cannot be auto-detected. Reopening is the
   // explicit escape hatch for that case, while conversion creates the
   // conventional BOM-bearing UTF-16 file format.
-  if (
-    intent === "reopen"
-    && (selected.encodingKind === "utf16Le" || selected.encodingKind === "utf16Be")
-  ) {
+  if (intent === "reopen" && (selected.encodingKind === "utf16Le" || selected.encodingKind === "utf16Be")) {
     return { ...selected, bom: false };
   }
   return selected;
@@ -79,13 +71,18 @@ export default function StatusBar({
       <span className="cursor-position" aria-label={`커서 위치 ${position.line}행 ${position.column}열`}>
         Ln {position.line}, Col {position.column}
       </span>
-      <span>{encodingLabel(doc.encoding.encodingKind)}{doc.encoding.bom ? " BOM" : ""}</span>
+      <span>
+        {encodingLabel(doc.encoding.encodingKind)}
+        {doc.encoding.bom ? " BOM" : ""}
+      </span>
       <span>{doc.lineEnding.toUpperCase()}</span>
       <span>{doc.readOnly ? "읽기 전용" : doc.dirty ? "수정됨" : "저장됨"}</span>
       {doc.lossy && <span className="status-warning">인코딩 손실 가능성</span>}
       {doc.durabilityWarning && <span className="status-warning">{doc.durabilityWarning}</span>}
       <span>{zoom}%</span>
-      <span className="status-path" title={doc.path}>{doc.path}</span>
+      <span className="status-path" title={doc.path}>
+        {doc.path}
+      </span>
       <label className="status-control">
         <span className="sr-only">인코딩 다시 열기</span>
         <select
@@ -97,7 +94,11 @@ export default function StatusBar({
           }}
         >
           <option value="">인코딩 다시 열기…</option>
-          {ENCODING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          {ENCODING_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
       </label>
       <label className="status-control">
@@ -111,7 +112,11 @@ export default function StatusBar({
             if (encoding) onEncodingConvert?.(doc.id, encoding);
           }}
         >
-          {ENCODING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          {ENCODING_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
       </label>
       <label className="status-control">

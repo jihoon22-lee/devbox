@@ -215,6 +215,10 @@ jobs:
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
         run: pnpm install --frozen-lockfile
 
+      - name: Check format and hook rules
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        run: pnpm exec biome ci .
+
       - name: Check generated Workspace fixture requests
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
         run: node --test .github/scripts/windows-workspace-registration.test.mjs

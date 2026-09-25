@@ -14,21 +14,9 @@ export const SMART_DETECTION_LIMITS = Object.freeze({
   maxCandidates: 6,
 });
 
-export type SmartInputType =
-  | "text"
-  | "json"
-  | "jwt"
-  | "url"
-  | "base64"
-  | "base64url"
-  | "hex";
+export type SmartInputType = "text" | "json" | "jwt" | "url" | "base64" | "base64url" | "hex";
 
-export type SmartDetectionStatus =
-  | "empty"
-  | "detected"
-  | "ambiguous"
-  | "unsupported"
-  | "too_large";
+export type SmartDetectionStatus = "empty" | "detected" | "ambiguous" | "unsupported" | "too_large";
 
 export interface SmartCandidate {
   readonly kind: Exclude<SmartInputType, "text">;
@@ -60,10 +48,13 @@ const BASE64URL_REASON = "검증된 Base64URL 바이트 표현입니다. 결과�
 const HEX_REASON = "검증된 Hex 바이트 표현입니다. 결과는 메모리에서만 처리합니다.";
 const BINARY_REASON = "바이트 표현을 확인했지만 UTF-8 텍스트로 가정하지 않습니다.";
 
-const SECRET_ASSIGNMENT = /(?:^|[\n\r;,\{])\s*["']?(?:authorization|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|private[_-]?key|token)["']?\s*[:=]\s*["']?\S+/iu;
+const SECRET_ASSIGNMENT =
+  /(?:^|[\n\r;,\{])\s*["']?(?:authorization|auth|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|private[_-]?key|token)["']?\s*[:=]\s*["']?\S+/iu;
 const AUTHORIZATION_VALUE = /^(?:basic|bearer)\s+\S+/iu;
-const COMMON_TOKEN_PREFIX = /^(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AIza[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})$/u;
-const SECRET_QUERY_KEY = /(?:^|[-_])(token|secret|password|passwd|api[-_]?key|access[-_]?token|refresh[-_]?token|authorization|credential|signature|sig)(?:$|[-_])/iu;
+const COMMON_TOKEN_PREFIX =
+  /^(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AIza[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})$/u;
+const SECRET_QUERY_KEY =
+  /(?:^|[-_])(token|secret|password|passwd|api[-_]?key|access[-_]?token|refresh[-_]?token|authorization|credential|signature|sig)(?:$|[-_])/iu;
 const CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
 const WINDOWS_PATH = /^(?:[A-Za-z]:[\\/]|\\\\|file:\/\/)/u;
 const POSIX_PATH = /^(?:\/|~\/|\.\.?(?:[\\/]|$))/u;
@@ -208,9 +199,7 @@ function looksLikeUnsafePath(value: string): boolean {
 
 function hasSecretLikeShape(value: string): boolean {
   const trimmed = value.trim();
-  return SECRET_ASSIGNMENT.test(trimmed)
-    || AUTHORIZATION_VALUE.test(trimmed)
-    || COMMON_TOKEN_PREFIX.test(trimmed);
+  return SECRET_ASSIGNMENT.test(trimmed) || AUTHORIZATION_VALUE.test(trimmed) || COMMON_TOKEN_PREFIX.test(trimmed);
 }
 
 function validEncodedInput(input: string, source: "base64" | "base64url" | "hex"): boolean {
@@ -244,28 +233,38 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
   const candidates: SmartCandidate[] = [];
 
   if (isJson(trimmed)) {
-    candidates.push(candidate({
-      kind: "json",
-      inputType: "json",
-      transformerId: "json-format",
-      toolId: "json-format",
-      label: "JSON 포매터",
-      reason: JSON_REASON,
-      confidence: 0.98,
-    }, sensitive));
+    candidates.push(
+      candidate(
+        {
+          kind: "json",
+          inputType: "json",
+          transformerId: "json-format",
+          toolId: "json-format",
+          label: "JSON 포매터",
+          reason: JSON_REASON,
+          confidence: 0.98,
+        },
+        sensitive,
+      ),
+    );
   }
 
   try {
     parseJwt(trimmed);
-    candidates.push(candidate({
-      kind: "jwt",
-      inputType: "jwt",
-      transformerId: "jwt-decode",
-      toolId: "jwt",
-      label: "JWT 디코더",
-      reason: JWT_REASON,
-      confidence: 0.99,
-    }, true));
+    candidates.push(
+      candidate(
+        {
+          kind: "jwt",
+          inputType: "jwt",
+          transformerId: "jwt-decode",
+          toolId: "jwt",
+          label: "JWT 디코더",
+          reason: JWT_REASON,
+          confidence: 0.99,
+        },
+        true,
+      ),
+    );
   } catch {
     // A compact-looking token with an unsupported algorithm is not a safe
     // recommendation; the normal auth tool will show its fixed error when
@@ -274,60 +273,76 @@ function detectCandidates(trimmed: string, sensitive: boolean): SmartCandidate[]
 
   if (safeHttpUrl(trimmed)) {
     const hasEscape = /%[0-9A-Fa-f]{2}/u.test(trimmed);
-    candidates.push(candidate({
-      kind: "url",
-      inputType: "url",
-      transformerId: "url-decode",
-      toolId: "url-decode",
-      label: "URL 컴포넌트 디코더",
-      reason: URL_REASON,
-      confidence: hasEscape ? 0.91 : 0.72,
-    }, sensitive));
+    candidates.push(
+      candidate(
+        {
+          kind: "url",
+          inputType: "url",
+          transformerId: "url-decode",
+          toolId: "url-decode",
+          label: "URL 컴포넌트 디코더",
+          reason: URL_REASON,
+          confidence: hasEscape ? 0.91 : 0.72,
+        },
+        sensitive,
+      ),
+    );
   }
 
-  const standardBase64 = trimmed.length >= 4
-    && BASE64_STANDARD.test(trimmed)
-    && validEncodedInput(trimmed, "base64");
-  const urlBase64 = trimmed.length >= 4
-    && BASE64_URL.test(trimmed)
-    && validEncodedInput(trimmed, "base64url");
+  const standardBase64 = trimmed.length >= 4 && BASE64_STANDARD.test(trimmed) && validEncodedInput(trimmed, "base64");
+  const urlBase64 = trimmed.length >= 4 && BASE64_URL.test(trimmed) && validEncodedInput(trimmed, "base64url");
   const hasUrlAlphabet = /[-_]/u.test(trimmed);
   if (standardBase64 && !hasUrlAlphabet) {
     const textOutput = validUtf8Output(trimmed, "base64");
-    candidates.push(candidate({
-      kind: "base64",
-      inputType: "base64",
-      transformerId: textOutput ? "base64-decode" : "base64-to-hex",
-      toolId: "byte-codec",
-      label: textOutput ? "Base64 디코더" : "Base64 → Hex",
-      reason: textOutput ? BASE64_REASON : `${BASE64_REASON} ${BINARY_REASON}`,
-      confidence: /[+/=]/u.test(trimmed) ? 0.84 : 0.61,
-    }, sensitive));
+    candidates.push(
+      candidate(
+        {
+          kind: "base64",
+          inputType: "base64",
+          transformerId: textOutput ? "base64-decode" : "base64-to-hex",
+          toolId: "byte-codec",
+          label: textOutput ? "Base64 디코더" : "Base64 → Hex",
+          reason: textOutput ? BASE64_REASON : `${BASE64_REASON} ${BINARY_REASON}`,
+          confidence: /[+/=]/u.test(trimmed) ? 0.84 : 0.61,
+        },
+        sensitive,
+      ),
+    );
   }
   if (urlBase64 && (hasUrlAlphabet || !standardBase64 || !/[+/=]/u.test(trimmed))) {
     const textOutput = validUtf8Output(trimmed, "base64url");
-    candidates.push(candidate({
-      kind: "base64url",
-      inputType: "base64url",
-      transformerId: textOutput ? "base64url-decode" : "base64url-to-hex",
-      toolId: "byte-codec",
-      label: textOutput ? "Base64URL 디코더" : "Base64URL → Hex",
-      reason: textOutput ? BASE64URL_REASON : `${BASE64URL_REASON} ${BINARY_REASON}`,
-      confidence: hasUrlAlphabet ? 0.86 : 0.60,
-    }, sensitive));
+    candidates.push(
+      candidate(
+        {
+          kind: "base64url",
+          inputType: "base64url",
+          transformerId: textOutput ? "base64url-decode" : "base64url-to-hex",
+          toolId: "byte-codec",
+          label: textOutput ? "Base64URL 디코더" : "Base64URL → Hex",
+          reason: textOutput ? BASE64URL_REASON : `${BASE64URL_REASON} ${BINARY_REASON}`,
+          confidence: hasUrlAlphabet ? 0.86 : 0.6,
+        },
+        sensitive,
+      ),
+    );
   }
 
   if (trimmed.length >= 4 && HEX.test(trimmed) && validEncodedInput(trimmed, "hex")) {
     const textOutput = validUtf8Output(trimmed, "hex");
-    candidates.push(candidate({
-      kind: "hex",
-      inputType: "hex",
-      transformerId: textOutput ? "hex-decode" : "hex-to-base64",
-      toolId: "byte-codec",
-      label: textOutput ? "Hex 디코더" : "Hex → Base64",
-      reason: textOutput ? HEX_REASON : `${HEX_REASON} ${BINARY_REASON}`,
-      confidence: 0.86,
-    }, sensitive));
+    candidates.push(
+      candidate(
+        {
+          kind: "hex",
+          inputType: "hex",
+          transformerId: textOutput ? "hex-decode" : "hex-to-base64",
+          toolId: "byte-codec",
+          label: textOutput ? "Hex 디코더" : "Hex → Base64",
+          reason: textOutput ? HEX_REASON : `${HEX_REASON} ${BINARY_REASON}`,
+          confidence: 0.86,
+        },
+        sensitive,
+      ),
+    );
   }
 
   return sortCandidates(candidates).slice(0, SMART_DETECTION_LIMITS.maxCandidates);
@@ -340,9 +355,7 @@ export function detectSmartInput(input: string): SmartDetectionResult {
     return emptyResult("too_large", input.length);
   }
   const inputBytes = utf8ByteLength(input);
-  if (
-    inputBytes > SMART_DETECTION_LIMITS.maxInputBytes
-  ) {
+  if (inputBytes > SMART_DETECTION_LIMITS.maxInputBytes) {
     return emptyResult("too_large", inputBytes);
   }
   if (!hasWellFormedUnicode(input)) return emptyResult("unsupported", inputBytes);
@@ -358,14 +371,12 @@ export function detectSmartInput(input: string): SmartDetectionResult {
     return { ...emptyResult("unsupported", inputBytes), sensitive: sensitiveResult };
   }
   const [first, second] = candidates;
-  const ambiguous = second !== undefined
-    && first !== undefined
-    && first.confidence - second.confidence < 0.12;
+  const ambiguous = second !== undefined && first !== undefined && first.confidence - second.confidence < 0.12;
   return {
     status: ambiguous ? "ambiguous" : "detected",
     inputBytes,
     candidates,
-    recommendedTransformerId: ambiguous ? null : first?.transformerId ?? null,
+    recommendedTransformerId: ambiguous ? null : (first?.transformerId ?? null),
     sensitive: sensitiveResult,
   };
 }

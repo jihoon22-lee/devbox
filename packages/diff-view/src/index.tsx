@@ -43,9 +43,7 @@ export default function ChangeSetPreview({
   onReject,
   onCancel,
 }: Props) {
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(items.map((i) => i.path)),
-  );
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(items.map((i) => i.path)));
 
   const toggle = (path: string) => {
     setSelected((prev) => {
@@ -56,15 +54,9 @@ export default function ChangeSetPreview({
     });
   };
 
-  const allSelected = useMemo(
-    () => items.length > 0 && selected.size === items.length,
-    [items, selected],
-  );
+  const allSelected = useMemo(() => items.length > 0 && selected.size === items.length, [items, selected]);
 
-  const selectedItems = useMemo(
-    () => items.filter((i) => selected.has(i.path)),
-    [items, selected],
-  );
+  const selectedItems = useMemo(() => items.filter((i) => selected.has(i.path)), [items, selected]);
 
   const toggleAll = () => {
     setSelected(allSelected ? new Set() : new Set(items.map((i) => i.path)));
@@ -73,7 +65,9 @@ export default function ChangeSetPreview({
   return (
     <div className="changeset">
       <div className="changeset-head">
-        <span className="changeset-title">{title} ({items.length})</span>
+        <span className="changeset-title">
+          {title} ({items.length})
+        </span>
         {selectable && (
           <button type="button" className="btn mini" disabled={disabled} onClick={toggleAll}>
             {allSelected ? "전체 해제" : "전체 선택"}
@@ -120,7 +114,12 @@ export default function ChangeSetPreview({
           {approveLabel} ({selectable ? selectedItems.length : items.length})
         </button>
         {onReject && (
-          <button type="button" className="btn" disabled={disabled || selectedItems.length === 0} onClick={() => onReject(selectedItems.map((i) => i.path))}>
+          <button
+            type="button"
+            className="btn"
+            disabled={disabled || selectedItems.length === 0}
+            onClick={() => onReject(selectedItems.map((i) => i.path))}
+          >
             폐기 ({selectedItems.length})
           </button>
         )}

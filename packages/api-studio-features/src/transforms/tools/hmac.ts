@@ -63,16 +63,10 @@ function assertInputBound(length: number): void {
   if (length > MAX_HMAC_INPUT_BYTES) fail();
 }
 
-function assertExactOwnKeys(
-  request: object,
-  expected: readonly string[],
-): void {
+function assertExactOwnKeys(request: object, expected: readonly string[]): void {
   const actual = Object.keys(request).sort();
   const sortedExpected = [...expected].sort();
-  if (
-    actual.length !== sortedExpected.length ||
-    actual.some((key, index) => key !== sortedExpected[index])
-  ) {
+  if (actual.length !== sortedExpected.length || actual.some((key, index) => key !== sortedExpected[index])) {
     fail();
   }
 }
@@ -134,11 +128,7 @@ function hexDigit(value: number): number {
   return -1;
 }
 
-function decodeBase64(
-  value: string,
-  urlSafe: boolean,
-  maxBytes: number,
-): Uint8Array {
+function decodeBase64(value: string, urlSafe: boolean, maxBytes: number): Uint8Array {
   const alphabet = urlSafe ? URL_ALPHABET : STANDARD_ALPHABET;
   if (urlSafe) {
     if (value.length % 4 === 1 || value.includes("=")) fail();
@@ -205,10 +195,7 @@ function encodeOutput(value: Uint8Array, encoding: HmacOutputEncoding): string {
   return output;
 }
 
-function prepareRequest(
-  request: HmacRequest,
-  verify = false,
-): PreparedRequest {
+function prepareRequest(request: HmacRequest, verify = false): PreparedRequest {
   if (request === null || typeof request !== "object") fail();
   assertExactOwnKeys(request, verify ? VERIFY_REQUEST_KEYS : GENERATE_REQUEST_KEYS);
   const algorithm = parseAlgorithm(request.algorithm);
@@ -246,9 +233,7 @@ export async function browserHmacGenerate(request: HmacRequest): Promise<string>
       false,
       ["sign"],
     );
-    const tag = new Uint8Array(
-      await globalThis.crypto.subtle.sign("HMAC", cryptoKey, prepared.message),
-    );
+    const tag = new Uint8Array(await globalThis.crypto.subtle.sign("HMAC", cryptoKey, prepared.message));
     return encodeOutput(tag, prepared.outputEncoding);
   } catch {
     throw new Error(HMAC_ERROR);
@@ -270,12 +255,7 @@ export async function browserHmacVerify(request: HmacVerifyRequest): Promise<boo
       false,
       ["verify"],
     );
-    return await globalThis.crypto.subtle.verify(
-      "HMAC",
-      cryptoKey,
-      expected,
-      prepared.message,
-    );
+    return await globalThis.crypto.subtle.verify("HMAC", cryptoKey, expected, prepared.message);
   } catch {
     throw new Error(HMAC_ERROR);
   }

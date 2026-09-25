@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./contextMenu";
 
 function labels(items: ReturnType<typeof buildPaneContextMenu>) {
-  return items.map((item) => item.type === "separator" ? "separator" : item.label);
+  return items.map((item) => (item.type === "separator" ? "separator" : item.label));
 }
 
 describe("WSL Desktop context menu contracts", () => {
@@ -72,11 +72,7 @@ describe("WSL Desktop context menu contracts", () => {
     expect(labels(items)).toEqual(["닫기", "다른 탭 닫기", "이름 변경", "레이아웃 전환"]);
     const layout = items.find((item) => item.type === "submenu" && item.id === "layout");
     expect(layout?.type).toBe("submenu");
-    expect(layout?.type === "submenu" ? labels(layout.items) : []).toEqual([
-      "격자",
-      "세로 분할",
-      "가로 분할",
-    ]);
+    expect(layout?.type === "submenu" ? labels(layout.items) : []).toEqual(["격자", "세로 분할", "가로 분할"]);
     for (const id of ["close", "close-others"]) {
       const item = items.find((candidate) => candidate.type === "item" && candidate.id === id);
       expect(item?.type === "item" && item.danger).toBe(true);
@@ -95,8 +91,9 @@ describe("WSL Desktop context menu contracts", () => {
 describe("pane zoom entry", () => {
   it("확대 상태에 따라 항목 문구가 바뀐다", () => {
     const zoomLabel = (zoomed: boolean) => {
-      const item = buildPaneContextMenu({ busy: false, hasSelection: false, hasCwd: false, zoomed })
-        .find((candidate) => candidate.type === "item" && candidate.id === "zoom");
+      const item = buildPaneContextMenu({ busy: false, hasSelection: false, hasCwd: false, zoomed }).find(
+        (candidate) => candidate.type === "item" && candidate.id === "zoom",
+      );
       return item?.type === "item" ? item.label : null;
     };
     expect(zoomLabel(false)).toBe("확대");

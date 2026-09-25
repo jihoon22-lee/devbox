@@ -1,11 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ImportDialog from "./ImportDialog";
-import {
-  applyWorkspaceTaskImport,
-  cancelWorkspaceTaskImport,
-  previewWorkspaceTaskImport,
-} from "../api";
+import { applyWorkspaceTaskImport, cancelWorkspaceTaskImport, previewWorkspaceTaskImport } from "../api";
 import type { WorkspaceTaskPlan } from "../types";
 
 vi.mock("../api", () => ({
@@ -113,7 +109,7 @@ describe("ImportDialog workspace task mode", () => {
     expect(screen.getByText("^(.+):(\\d+): (.+)$")).toBeTruthy();
     expect(screen.getByText("환경 키: BUILD_TOKEN")).toBeTruthy();
     expect(screen.getByText("node")).toBeTruthy();
-    expect(screen.getByText("[\"build.js\",\"--safe\"]")).toBeTruthy();
+    expect(screen.getByText('["build.js","--safe"]')).toBeTruthy();
     expect(screen.queryByText("PUBLISH_SECRET_VALUE")).toBeNull();
     expect(screen.getByText(/shell task는 가져온 뒤에도 source 승인과 별도의 셸 실행 승인이 필요합니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "선택 task 가져오기 (2)" })).not.toBeDisabled();
@@ -150,24 +146,32 @@ describe("ImportDialog workspace task mode", () => {
     await screen.findByText("Build");
 
     fireEvent.click(screen.getByRole("button", { name: "선택 task 가져오기 (2)" }));
-    await waitFor(() => expect(applyWorkspaceTaskImportMock).toHaveBeenCalledWith(
-      "C:\\work\\demo",
-      plan.sourceRoot,
-      plan.projectIdentity,
-      plan.revision,
-      "windows",
-      null,
-      ["task-ready", "task-shell"],
-      expect.any(String),
-    ));
+    await waitFor(() =>
+      expect(applyWorkspaceTaskImportMock).toHaveBeenCalledWith(
+        "C:\\work\\demo",
+        plan.sourceRoot,
+        plan.projectIdentity,
+        plan.revision,
+        "windows",
+        null,
+        ["task-ready", "task-shell"],
+        expect.any(String),
+      ),
+    );
     expect(onDone).toHaveBeenCalledWith(2, expect.objectContaining({ created: 2, skippedConflicts: 1 }));
     expect(screen.getByText(/생성 2 · 갱신 0 · 사용 불가 전환 0 · 충돌 건너뜀 1/)).toBeTruthy();
     expect(screen.getByText(/비활성·미신뢰 상태/)).toBeTruthy();
   });
 });
 
-it("prefills a registered WSL source without previewing or importing automatically",()=>{
-  render(<ImportDialog initialSource={{path:"/home/fixture/project",targetKind:"wsl",targetDistro:"Fixture"}} onDone={vi.fn()} onClose={vi.fn()}/>);
+it("prefills a registered WSL source without previewing or importing automatically", () => {
+  render(
+    <ImportDialog
+      initialSource={{ path: "/home/fixture/project", targetKind: "wsl", targetDistro: "Fixture" }}
+      onDone={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
   expect(screen.getByDisplayValue("/home/fixture/project")).toBeTruthy();
   expect(screen.getByDisplayValue("Fixture")).toBeTruthy();
   expect(previewWorkspaceTaskImportMock).not.toHaveBeenCalled();

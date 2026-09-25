@@ -4,8 +4,8 @@
 mod observations;
 mod reconnect;
 use crate::{definitions::Definitions, host::Host};
-use log_lens_lib::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
-use port_manager_lib::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
+use logs_engine::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
+use ports_engine::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
 use product_contract::ProjectContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -26,9 +26,9 @@ impl Owners {
         let common = host.component("common")?;
         *self.runtime.get_or_init(|| {
             let initialize = if import_only {
-                run_manager_lib::component::initialize_import_only_with_sources
+                runtime_engine::component::initialize_import_only_with_sources
             } else {
-                run_manager_lib::component::initialize_with_sources
+                runtime_engine::component::initialize_with_sources
             };
             initialize(
                 app,
@@ -44,15 +44,14 @@ impl Owners {
     fn initialize_processes(&self, app: &tauri::AppHandle, host: &Host) -> Result<()> {
         let data = host.component("processes")?;
         *self.processes.get_or_init(|| {
-            port_manager_lib::component::initialize(app, &data)
-                .map_err(|_| "process_owner_unavailable")
+            ports_engine::component::initialize(app, &data).map_err(|_| "process_owner_unavailable")
         })
     }
     fn initialize_logs(&self, app: &tauri::AppHandle, host: &Arc<Host>) -> Result<()> {
         self.initialize_runtime(app, host)?;
         let data = host.component("logs")?;
         *self.logs.get_or_init(|| {
-            log_lens_lib::component::initialize(
+            logs_engine::component::initialize(
                 app,
                 &data,
                 Arc::new(RuntimeLogs {
@@ -72,7 +71,7 @@ struct RuntimeLogs {
 }
 struct OwnedLog {
     host: Arc<Host>,
-    lease: run_manager_lib::component::OwnedRunLog,
+    lease: runtime_engine::component::OwnedRunLog,
 }
 impl RuntimeLogProvider for RuntimeLogs {
     fn validate_source(&self, source: &SourceSpec) -> std::result::Result<(), CoreError> {
@@ -102,7 +101,7 @@ impl RuntimeLogProvider for RuntimeLogs {
         self.host
             .component("runtime")
             .map_err(|_| CoreError::AdapterUnavailable)?;
-        let lease = run_manager_lib::component::log_descriptor(&self.app, run_id)
+        let lease = runtime_engine::component::log_descriptor(&self.app, run_id)
             .map_err(|_| CoreError::AdapterUnavailable)?;
         if lease.revision() != revision {
             return Err(CoreError::StaleOperation);
@@ -143,16 +142,16 @@ pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
         "workspace.runtime" => {
             route == "tasks"
                 && (method == "workspace_task_source"
-                    || run_manager_lib::component::COMMANDS.contains(&method))
-                && !run_manager_lib::component::legacy_control_method(method)
+                    || runtime_engine::component::COMMANDS.contains(&method))
+                && !runtime_engine::component::legacy_control_method(method)
         }
         "workspace.processes" => {
             route == "runtime"
                 && method != "kill_listener"
-                && port_manager_lib::component::COMMANDS.contains(&method)
+                && ports_engine::component::COMMANDS.contains(&method)
         }
         "workspace.process-actions" => route == "runtime" && method == "kill_listener",
-        "workspace.logs" => route == "logs" && log_lens_lib::component::COMMANDS.contains(&method),
+        "workspace.logs" => route == "logs" && logs_engine::component::COMMANDS.contains(&method),
         _ => false,
     }
 }
@@ -255,7 +254,7 @@ fn bindings(
     deadline: u64,
 ) -> ProductBindings {
     ProductBindings {
-        runtime: run_manager_lib::component::port_bindings(app)
+        runtime: runtime_engine::component::port_bindings(app)
             .map_err(|_| SnapshotSourceState::Invalid),
         projects: project_bindings(host, definitions, context, deadline)
             .map_err(|_| SnapshotSourceState::Invalid),
@@ -271,7 +270,7 @@ pub(crate) async fn session_ports(
     definitions: &Mutex<Definitions>,
     context: &ProjectContext,
     deadline: u64,
-) -> Result<port_manager_lib::component::PortObservationSnapshot> {
+) -> Result<ports_engine::component::PortObservationSnapshot> {
     observations::observe(app, host, definitions, Some(context), deadline)
         .await
         .map(|(snapshot, _)| snapshot)
@@ -297,7 +296,7 @@ fn open_log(
         return Err("invalid_request");
     }
     host.component("runtime")?;
-    let lease = run_manager_lib::component::log_descriptor(app, run_id).map_err(issue)?;
+    let lease = runtime_engine::component::log_descriptor(app, run_id).map_err(issue)?;
     let source = SourceSpec::RuntimeRun {
         run_id: run_id.into(),
         stream: stream.into(),
@@ -404,7 +403,7 @@ pub(crate) async fn dispatch(
                         diagnostic_index: u32,
                     }
                     let input: Input = args(value)?;
-                    let target = run_manager_lib::component::diagnostic_target(
+                    let target = runtime_engine::component::diagnostic_target(
                         app,
                         &input.run_id,
                         input.diagnostic_index,
@@ -470,7 +469,7 @@ pub(crate) async fn dispatch(
                     })).map_err(|_| "runtime_navigation_unavailable")?;
                     Ok(Value::Bool(true))
                 }
-                _ => run_manager_lib::component::dispatch(app, method, value)
+                _ => runtime_engine::component::dispatch(app, method, value)
                     .await
                     .map_err(issue),
             }
@@ -522,7 +521,7 @@ pub(crate) async fn dispatch(
                         }
                         match action.owner {
                             ProductPortOwner::Task { id } => {
-                                run_manager_lib::component::offer_product_open(
+                                runtime_engine::component::offer_product_open(
                                     app,
                                     devbox_applink::OpenRequest {
                                         target: devbox_applink::OpenTarget::Task { id },
@@ -546,7 +545,7 @@ pub(crate) async fn dispatch(
                     #[derive(Deserialize)]
                     #[serde(deny_unknown_fields)]
                     struct Input {
-                        request: port_manager_lib::component::KillListenerRequest,
+                        request: ports_engine::component::KillListenerRequest,
                     }
                     let input: Input = args(value)?;
                     input
@@ -560,23 +559,24 @@ pub(crate) async fn dispatch(
                         .validate()
                         .map_err(|_| "invalid_request")?;
                     let observed = match &input.request.identity {
-                        port_manager_lib::component::ListenerIdentity::Windows {
-                            pid,
-                            start_time,
-                        } => run_manager_lib::scheduler::ObservedProcess::Windows {
-                            pid: *pid,
-                            creation_filetime: start_time.parse().map_err(|_| "invalid_request")?,
-                        },
-                        port_manager_lib::component::ListenerIdentity::Wsl {
+                        ports_engine::component::ListenerIdentity::Windows { pid, start_time } => {
+                            runtime_engine::scheduler::ObservedProcess::Windows {
+                                pid: *pid,
+                                creation_filetime: start_time
+                                    .parse()
+                                    .map_err(|_| "invalid_request")?,
+                            }
+                        }
+                        ports_engine::component::ListenerIdentity::Wsl {
                             distro,
                             pid,
                             start_tick,
-                        } => run_manager_lib::scheduler::ObservedProcess::Wsl {
+                        } => runtime_engine::scheduler::ObservedProcess::Wsl {
                             distro: distro.clone(),
                             pid: *pid,
                             start_tick: *start_tick,
                         },
-                        port_manager_lib::component::ListenerIdentity::Container {
+                        ports_engine::component::ListenerIdentity::Container {
                             engine,
                             container_id,
                             distro,
@@ -587,7 +587,7 @@ pub(crate) async fn dispatch(
                             let (container_id, distro) = (container_id.clone(), distro.clone());
                             // The observation owner revalidates the selected endpoint and
                             // container identity. The WSL owner then refreshes its full ID.
-                            port_manager_lib::component::dispatch(
+                            ports_engine::component::dispatch(
                                 app,
                                 "handoff_container_stop",
                                 json!({"request":input.request}),
@@ -598,12 +598,12 @@ pub(crate) async fn dispatch(
                             return Ok(json!({"kind":"terminated"}));
                         }
                     };
-                    let owner = run_manager_lib::component::owning_task(app, observed)
+                    let owner = runtime_engine::component::owning_task(app, observed)
                         .await
                         .map_err(issue)?;
                     crate::files_host::current_deadline(deadline)?;
                     if let Some(id) = owner {
-                        run_manager_lib::component::offer_product_open(
+                        runtime_engine::component::offer_product_open(
                             app,
                             devbox_applink::OpenRequest {
                                 target: devbox_applink::OpenTarget::Task { id: id.clone() },
@@ -614,13 +614,13 @@ pub(crate) async fn dispatch(
                         navigate(app, "tasks", context)?;
                         Ok(json!({"kind":"ownedTask","taskId":id}))
                     } else {
-                        port_manager_lib::component::kill_external_listener(input.request, deadline)
+                        ports_engine::component::kill_external_listener(input.request, deadline)
                             .await
                             .map_err(issue)
                     }
                 }
                 "handoff_container_stop" => Err("runtime_container_owner_unavailable"),
-                _ => port_manager_lib::component::dispatch(app, method, value)
+                _ => ports_engine::component::dispatch(app, method, value)
                     .await
                     .map_err(issue),
             }
@@ -636,7 +636,7 @@ pub(crate) async fn dispatch(
                     crate::selection_logs::begin(
                         value["generation"].as_u64().ok_or("invalid_request")?,
                     );
-                    let result = log_lens_lib::component::dispatch(app, method, value.clone())
+                    let result = logs_engine::component::dispatch(app, method, value.clone())
                         .await
                         .map_err(issue)?;
                     crate::selection_logs::capture(value, &result, context);
@@ -644,7 +644,7 @@ pub(crate) async fn dispatch(
                 }
                 "preview_log_source" | "accept_log_source" | "discard_log_source"
                 | "renew_log_source" => Err("runtime_handoff_review_required"),
-                _ => log_lens_lib::component::dispatch(app, method, value)
+                _ => logs_engine::component::dispatch(app, method, value)
                     .await
                     .map_err(issue),
             }
@@ -666,10 +666,10 @@ mod tests {
             "kill_listener"
         ));
         assert!(!allowed("workspace.processes", "runtime", "kill_listener"));
-        for method in run_manager_lib::component::COMMANDS {
+        for method in runtime_engine::component::COMMANDS {
             assert_eq!(
                 allowed("workspace.runtime", "tasks", method),
-                !run_manager_lib::component::legacy_control_method(method)
+                !runtime_engine::component::legacy_control_method(method)
             );
             assert!(!allowed("workspace.runtime", "runtime", method));
             assert!(!allowed("workspace.process-actions", "runtime", method));

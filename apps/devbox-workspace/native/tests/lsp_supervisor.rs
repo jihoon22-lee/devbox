@@ -1,5 +1,5 @@
 #![cfg(all(target_os = "linux", feature = "helper"))]
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     EnvironmentAllowlist, LspProcess, ProcessSpec, RequestCancellation, ResolvedProcess,
     ResolvedRuntime, RuntimeError, RuntimeKind, RuntimeResolver,
 };
@@ -59,7 +59,7 @@ async fn lsp_root_exit_retires_detached_pipe_holders_before_completion() {
     gone(leaf).await;
     assert!(matches!(
         process.state().await,
-        code_pad_lib::lsp::ProcessState::Exited { code: Some(7) }
+        editor_engine::lsp::ProcessState::Exited { code: Some(7) }
     ));
 }
 

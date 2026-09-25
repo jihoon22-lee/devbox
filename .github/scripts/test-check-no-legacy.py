@@ -11,14 +11,15 @@ class GuardTest(unittest.TestCase):
             (base / "a.rs").write_text('fn x() { legacy_cleanup::run(); }\n')
             (base / "b.md").write_text("legacy_cleanup in docs is fine\n")
             (base / "c.ts").write_text("export const ok = 1;\n")
+            (base / "d.rs").write_text("use life_log_lib::component;\n")
             original = guard.ROOT
             guard.ROOT = base
             try:
                 hits = guard.scan(["."])
             finally:
                 guard.ROOT = original
-            self.assertEqual(len(hits), 1)
-            self.assertTrue(hits[0].startswith("a.rs:1:"))
+            self.assertEqual(len(hits), 2)
+            self.assertEqual({hit.split(":")[0] for hit in hits}, {"a.rs", "d.rs"})
 
 if __name__ == "__main__":
     unittest.main()

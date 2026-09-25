@@ -4,17 +4,28 @@ import { browserTimers, type Timers } from "./timers";
 export const AUTOSAVE_DELAY_MS = 1500;
 export const AUTOSAVE_KEY = "devbox.knowledge.notes.autosave";
 export function readAutosavePreference(storage?: Pick<Storage, "getItem">): boolean {
-  try { return (storage ?? localStorage).getItem(AUTOSAVE_KEY) !== "off"; } catch { return true; }
+  try {
+    return (storage ?? localStorage).getItem(AUTOSAVE_KEY) !== "off";
+  } catch {
+    return true;
+  }
 }
 export function writeAutosavePreference(enabled: boolean, storage?: Pick<Storage, "setItem">): void {
-  try { (storage ?? localStorage).setItem(AUTOSAVE_KEY, enabled ? "on" : "off"); } catch { /* preference only */ }
+  try {
+    (storage ?? localStorage).setItem(AUTOSAVE_KEY, enabled ? "on" : "off");
+  } catch {
+    /* preference only */
+  }
 }
 export interface AutosaveTarget {
   snapshot(): NoteView;
   subscribe(listener: () => void): () => void;
   save(): Promise<boolean>;
 }
-interface SaveState { paused: boolean; attempted: number }
+interface SaveState {
+  paused: boolean;
+  attempted: number;
+}
 const states = new WeakMap<AutosaveTarget, SaveState>();
 
 export class NoteAutosave {
@@ -42,7 +53,10 @@ export class NoteAutosave {
     this.cancel();
     if (enabled) this.schedule();
   }
-  pause() { this.state.paused = true; this.cancel(); }
+  pause() {
+    this.state.paused = true;
+    this.cancel();
+  }
   async flush(): Promise<boolean> {
     this.cancel();
     let view = this.target.snapshot();
@@ -56,10 +70,22 @@ export class NoteAutosave {
     if (!this.eligible()) return !view.dirty && !view.saving;
     return this.runSave();
   }
-  dispose() { this.disposed = true; this.cancel(); this.stop(); }
+  dispose() {
+    this.disposed = true;
+    this.cancel();
+    this.stop();
+  }
   private eligible(): boolean {
     const view = this.target.snapshot();
-    return !this.disposed && this.enabled && !this.state.paused && !!view.path && view.dirty && !view.saving && view.conflict === null;
+    return (
+      !this.disposed &&
+      this.enabled &&
+      !this.state.paused &&
+      !!view.path &&
+      view.dirty &&
+      !view.saving &&
+      view.conflict === null
+    );
   }
   private async runSave(): Promise<boolean> {
     this.state.attempted = this.target.snapshot().sourceVersion;
@@ -67,7 +93,9 @@ export class NoteAutosave {
       const saved = await this.target.save();
       if (saved && !this.disposed) this.onSaved();
       return saved;
-    } catch { return false; } // NoteDocument owns the error and retains the buffer.
+    } catch {
+      return false;
+    } // NoteDocument owns the error and retains the buffer.
   }
   private onChange() {
     const view = this.target.snapshot();
@@ -75,7 +103,11 @@ export class NoteAutosave {
     const finished = this.wasSaving && !view.saving;
     this.lastSource = view.sourceVersion;
     this.wasSaving = view.saving;
-    if (!view.dirty) { this.state.paused = false; this.cancel(); return; }
+    if (!view.dirty) {
+      this.state.paused = false;
+      this.cancel();
+      return;
+    }
     if (changed || finished) this.schedule();
   }
   private schedule() {
@@ -87,6 +119,9 @@ export class NoteAutosave {
     }, this.delayMs);
   }
   private cancel() {
-    if (this.timer !== null) { this.timers.clear(this.timer); this.timer = null; }
+    if (this.timer !== null) {
+      this.timers.clear(this.timer);
+      this.timer = null;
+    }
   }
 }

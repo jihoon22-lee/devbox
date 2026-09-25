@@ -9,7 +9,9 @@ function Harness({ onConfirm = vi.fn() }: { onConfirm?: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>Open confirmation</button>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open confirmation
+      </button>
       {open ? (
         <ConfirmDialog
           title="Confirm action"

@@ -91,9 +91,11 @@ describe("JwtDecoder", () => {
 
   it("blocks duplicate verification while an operation is pending", async () => {
     let resolve: (value: boolean) => void = () => undefined;
-    mocks.verifyJwt.mockReturnValueOnce(new Promise<boolean>((done) => {
-      resolve = done;
-    }));
+    mocks.verifyJwt.mockReturnValueOnce(
+      new Promise<boolean>((done) => {
+        resolve = done;
+      }),
+    );
     render(<JwtDecoder />);
     const { verify } = fillForm();
 
@@ -108,9 +110,11 @@ describe("JwtDecoder", () => {
 
   it("ignores a late native result after unmount and remount", async () => {
     let resolve: (value: boolean) => void = () => undefined;
-    mocks.verifyJwt.mockReturnValueOnce(new Promise<boolean>((done) => {
-      resolve = done;
-    }));
+    mocks.verifyJwt.mockReturnValueOnce(
+      new Promise<boolean>((done) => {
+        resolve = done;
+      }),
+    );
     const rendered = render(<JwtDecoder />);
     const { verify } = fillForm();
     fireEvent.click(verify);
@@ -148,9 +152,7 @@ describe("JwtDecoder", () => {
     const token = screen.getByLabelText("JWT 컴팩트 토큰");
     fireEvent.contextMenu(token, { clientX: 10, clientY: 10 });
     fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "JWT 입력을 클립보드에서 읽지 못했습니다.",
-    );
+    expect((await screen.findByRole("alert")).textContent).toBe("JWT 입력을 클립보드에서 읽지 못했습니다.");
 
     fireEvent.change(token, { target: { value: TOKEN } });
     fireEvent.click(screen.getByRole("button", { name: "디코드" }));
@@ -159,9 +161,9 @@ describe("JwtDecoder", () => {
     fireEvent.contextMenu(output, { clientX: 10, clientY: 10 });
     fireEvent.click(screen.getByRole("menuitem", { name: "복사" }));
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((entry) =>
-        entry.textContent === "JWT 결과 작업을 완료하지 못했습니다.",
-      )).toBe(true);
+      expect(
+        screen.getAllByRole("alert").some((entry) => entry.textContent === "JWT 결과 작업을 완료하지 못했습니다."),
+      ).toBe(true);
     });
   });
 });

@@ -68,10 +68,7 @@ function readyStatus(overrides: Partial<LanguageServerStatus> = {}): LanguageSer
   };
 }
 
-function transportFor(
-  calls: string[],
-  loadedConfig: LspConfig = config(),
-): LspDocumentTransport {
+function transportFor(calls: string[], loadedConfig: LspConfig = config()): LspDocumentTransport {
   return {
     loadConfig: vi.fn().mockResolvedValue({ config: loadedConfig, persist_allowed: true, error: null }),
     statuses: vi.fn().mockResolvedValue([] as LanguageServerStatus[]),
@@ -101,40 +98,52 @@ function transportFor(
       calls.push(`close:${languageId}:${uri}`);
       return { uri };
     }),
-    pullDiagnostics: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspDiagnosticResult>> => ({
-      metadata: { uri, version: 1 },
-      value: { uri, version: 1, diagnostics: [], origin: "pull" },
-      stale: false,
-    })),
-    completion: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspCompletionResult>> => ({
-      metadata: { uri, version: 1 },
-      value: { isIncomplete: false, items: [] },
-      stale: false,
-    })),
-    hover: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspHoverResult | null>> => ({
-      metadata: { uri, version: 1 },
-      value: null,
-      stale: false,
-    })),
-    definition: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspFilteredLocations>> => ({
-      metadata: { uri, version: 1 },
-      value: { locations: [], rejected: 0 },
-      stale: false,
-    })),
-    references: vi.fn(async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspFilteredLocations>> => ({
-      metadata: { uri, version: 1 },
-      value: { locations: [], rejected: 0 },
-      stale: false,
-    })),
+    pullDiagnostics: vi.fn(
+      async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspDiagnosticResult>> => ({
+        metadata: { uri, version: 1 },
+        value: { uri, version: 1, diagnostics: [], origin: "pull" },
+        stale: false,
+      }),
+    ),
+    completion: vi.fn(
+      async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspCompletionResult>> => ({
+        metadata: { uri, version: 1 },
+        value: { isIncomplete: false, items: [] },
+        stale: false,
+      }),
+    ),
+    hover: vi.fn(
+      async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspHoverResult | null>> => ({
+        metadata: { uri, version: 1 },
+        value: null,
+        stale: false,
+      }),
+    ),
+    definition: vi.fn(
+      async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspFilteredLocations>> => ({
+        metadata: { uri, version: 1 },
+        value: { locations: [], rejected: 0 },
+        stale: false,
+      }),
+    ),
+    references: vi.fn(
+      async (_languageId: string, uri: string): Promise<LspFeatureResponse<LspFilteredLocations>> => ({
+        metadata: { uri, version: 1 },
+        value: { locations: [], rejected: 0 },
+        stale: false,
+      }),
+    ),
     rename: vi.fn(async (): Promise<LspRenamePreview> => ({ planId: "", files: [] })),
-    applyRename: vi.fn(async (planId: string): Promise<LspRenameApplyResult> => ({
-      planId,
-      success: false,
-      rolledBack: false,
-      files: [],
-      documents: [],
-      error: null,
-    })),
+    applyRename: vi.fn(
+      async (planId: string): Promise<LspRenameApplyResult> => ({
+        planId,
+        success: false,
+        rolledBack: false,
+        files: [],
+        documents: [],
+        error: null,
+      }),
+    ),
     cancelRename: vi.fn(async () => false),
     discardRename: vi.fn(async () => false),
     formatting: vi.fn(async (): Promise<AppliedDocumentEdits> => ({ documents: [] })),
@@ -170,11 +179,17 @@ describe("LspDocumentSync", () => {
   it("publishes a completed native save after an old change failed and retains a newer buffer", async () => {
     const transport = transportFor([]);
     const sync = new LspDocumentSync(transport);
-    await sync.setWorkspace("/work"); await sync.setConfig(config());
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
     const first = document("baseline", { nativeRevision: "native-1" });
     await sync.open(first);
     let reject!: (reason: Error) => void;
-    vi.mocked(transport.change).mockImplementationOnce(() => new Promise((_resolve, rejectChange) => { reject = rejectChange; }));
+    vi.mocked(transport.change).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, rejectChange) => {
+          reject = rejectChange;
+        }),
+    );
     const changing = sync.change({ ...first, text: "saved text", dirty: true });
     await vi.waitFor(() => expect(reject).toBeTypeOf("function"));
     const saved = { ...first, text: "saved text", dirty: false, nativeRevision: "native-2" };
@@ -183,7 +198,13 @@ describe("LspDocumentSync", () => {
     reject(new Error("old native revision"));
     await Promise.all([changing, saving]);
     expect(transport.save).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "native-2", "saved text");
-    expect(transport.change).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "newer unsaved text", true, "native-2");
+    expect(transport.change).toHaveBeenLastCalledWith(
+      "rust",
+      `file://${first.path}`,
+      "newer unsaved text",
+      true,
+      "native-2",
+    );
     await sync.close(first.id);
   });
 
@@ -199,7 +220,12 @@ describe("LspDocumentSync", () => {
     expect(transport.change).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "edited", true, "native-1");
     await sync.save(first.id, { ...first, text: "edited", dirty: false, nativeRevision: "native-2" });
     expect(transport.save).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "native-2", "edited");
-    sync.acceptStatusEvent({ languageId: "rust", status: readyStatus({ status: "stopped" }), restarting: false, reason: null });
+    sync.acceptStatusEvent({
+      languageId: "rust",
+      status: readyStatus({ status: "stopped" }),
+      restarting: false,
+      reason: null,
+    });
     expect(sync.documentUri(first.id)).toBeNull();
     sync.acceptStatusEvent({ languageId: "rust", status: readyStatus(), restarting: false, reason: null });
     await sync.flush();
@@ -233,8 +259,8 @@ describe("LspDocumentSync", () => {
     await sync.setConfig(config());
 
     const first = document();
-    const second = document("fn main() { println!(\"one\"); }", { dirty: true });
-    const third = document("fn main() { println!(\"two\"); }", { dirty: true });
+    const second = document('fn main() { println!("one"); }', { dirty: true });
+    const third = document('fn main() { println!("two"); }', { dirty: true });
     await sync.open(first);
     const changes = [sync.change(second), sync.change(third)];
     const save = sync.save(first.id);
@@ -244,8 +270,8 @@ describe("LspDocumentSync", () => {
     expect(calls).toEqual([
       "start:rust",
       "open:rust:/work/src/main.rs:fn main() {}",
-      "change:rust:file:///work/src/main.rs:fn main() { println!(\"one\"); }:true",
-      "change:rust:file:///work/src/main.rs:fn main() { println!(\"two\"); }:true",
+      'change:rust:file:///work/src/main.rs:fn main() { println!("one"); }:true',
+      'change:rust:file:///work/src/main.rs:fn main() { println!("two"); }:true',
       "save:rust:file:///work/src/main.rs",
       "close:rust:file:///work/src/main.rs",
     ]);
@@ -271,7 +297,9 @@ describe("LspDocumentSync", () => {
     let resolveOpen!: (value: { uri: string; languageId: string; version: number; text: string }) => void;
     transport.open = vi.fn((languageId: string, path: string, text: string): Promise<LspDidOpen> => {
       calls.push(`open:${languageId}:${path}:${text}`);
-      return new Promise((resolve) => { resolveOpen = resolve; });
+      return new Promise((resolve) => {
+        resolveOpen = resolve;
+      });
     });
     const sync = new LspDocumentSync(transport);
     await sync.setWorkspace("/work");
@@ -332,15 +360,19 @@ describe("LspDocumentSync", () => {
     await sync.open(document());
     transport.rename = vi.fn(async () => ({
       planId: "rename-1",
-      files: [{
-        path: "src/main.rs",
-        ranges: [{
-          range: { start: { line: 0, character: 3 }, end: { line: 0, character: 7 } },
-          newText: "start",
-        }],
-        before: "fn main() {}",
-        after: "fn start() {}",
-      }],
+      files: [
+        {
+          path: "src/main.rs",
+          ranges: [
+            {
+              range: { start: { line: 0, character: 3 }, end: { line: 0, character: 7 } },
+              newText: "start",
+            },
+          ],
+          before: "fn main() {}",
+          after: "fn start() {}",
+        },
+      ],
     }));
     const preview = await sync.requestRename("doc-1", 3, "start");
     expect(preview?.planId).toBe("rename-1");
@@ -353,9 +385,11 @@ describe("LspDocumentSync", () => {
   it("does not offer rename when the server cannot accept didChange", async () => {
     const calls: string[] = [];
     const transport = transportFor(calls);
-    transport.statuses = vi.fn(async () => [readyStatus({
-      capabilities: { ...readyStatus().capabilities, syncKind: null },
-    })]);
+    transport.statuses = vi.fn(async () => [
+      readyStatus({
+        capabilities: { ...readyStatus().capabilities, syncKind: null },
+      }),
+    ]);
     const sync = new LspDocumentSync(transport);
     await sync.setWorkspace("/work");
     await sync.setConfig(config());
@@ -413,10 +447,12 @@ describe("LspDocumentSync", () => {
         value: {
           uri: "file:///work/src/main.rs",
           version: 1,
-          diagnostics: [{
-            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
-            message: "old",
-          }],
+          diagnostics: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+              message: "old",
+            },
+          ],
           origin: "push",
         },
         stale: false,
@@ -463,10 +499,12 @@ describe("LspDocumentSync", () => {
         value: {
           uri: "file:///work/src/main.rs",
           version: 1,
-          diagnostics: [{
-            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
-            message: "current",
-          }],
+          diagnostics: [
+            {
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+              message: "current",
+            },
+          ],
           origin: "push",
         },
         stale: false,
@@ -527,13 +565,15 @@ describe("LspDocumentSync", () => {
     let resolveFirst!: (value: LspFeatureResponse<LspCompletionResult>) => void;
     let resolveSecond!: (value: LspFeatureResponse<LspCompletionResult>) => void;
     let completionCalls = 0;
-    transport.completion = vi.fn(async (_languageId, _uri, _position): Promise<LspFeatureResponse<LspCompletionResult>> => {
-      completionCalls += 1;
-      return new Promise((resolve) => {
-        if (completionCalls === 1) resolveFirst = resolve;
-        else resolveSecond = resolve;
-      });
-    });
+    transport.completion = vi.fn(
+      async (_languageId, _uri, _position): Promise<LspFeatureResponse<LspCompletionResult>> => {
+        completionCalls += 1;
+        return new Promise((resolve) => {
+          if (completionCalls === 1) resolveFirst = resolve;
+          else resolveSecond = resolve;
+        });
+      },
+    );
     const sync = new LspDocumentSync(transport);
     await sync.setWorkspace("/work");
     await sync.setConfig(config());
@@ -541,10 +581,18 @@ describe("LspDocumentSync", () => {
     const first = sync.requestCompletion("doc-1", 1);
     await vi.waitFor(() => expect(transport.completion).toHaveBeenCalledTimes(1));
     const second = sync.requestCompletion("doc-1", 2);
-    resolveFirst({ metadata: { uri: "file:///work/src/main.rs", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false });
+    resolveFirst({
+      metadata: { uri: "file:///work/src/main.rs", version: 1 },
+      value: { isIncomplete: false, items: [] },
+      stale: false,
+    });
     await expect(first).resolves.toBeNull();
     await vi.waitFor(() => expect(transport.completion).toHaveBeenCalledTimes(2));
-    resolveSecond({ metadata: { uri: "file:///work/src/main.rs", version: 1 }, value: { isIncomplete: false, items: [] }, stale: false });
+    resolveSecond({
+      metadata: { uri: "file:///work/src/main.rs", version: 1 },
+      value: { isIncomplete: false, items: [] },
+      stale: false,
+    });
     await expect(second).resolves.toMatchObject({ value: { items: [] } });
   });
 
@@ -552,20 +600,13 @@ describe("LspDocumentSync", () => {
     const calls: string[] = [];
     const transport = transportFor(calls);
     transport.statuses = vi.fn().mockResolvedValue([readyStatus()]);
-    transport.pullDiagnostics = vi.fn(
-      () => new Promise<LspFeatureResponse<LspDiagnosticResult>>(() => undefined),
-    );
+    transport.pullDiagnostics = vi.fn(() => new Promise<LspFeatureResponse<LspDiagnosticResult>>(() => undefined));
     const sync = new LspDocumentSync(transport);
     await sync.setWorkspace("/work");
     await sync.setConfig(config());
     await sync.open(document());
     void sync.pullDiagnostics("doc-1");
     await sync.change(document("edited", { dirty: true }));
-    expect(transport.change).toHaveBeenCalledWith(
-      "rust",
-      "file:///work/src/main.rs",
-      "edited",
-      true,
-    );
+    expect(transport.change).toHaveBeenCalledWith("rust", "file:///work/src/main.rs", "edited", true);
   });
 });

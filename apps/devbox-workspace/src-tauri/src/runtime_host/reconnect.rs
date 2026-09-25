@@ -1,6 +1,6 @@
 //! Reconnect saved current-product Runtime logs without acquiring retired sources.
 use super::*;
-use log_lens_lib::core::{runtime_views, FilterSpec};
+use logs_engine::core::{runtime_views, FilterSpec};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Input {
@@ -9,7 +9,7 @@ struct Input {
 }
 fn reconnect(value: Value, mut revision: impl FnMut(&str) -> Option<String>) -> Result<Value> {
     let mut input: Input = args(value)?;
-    log_lens_lib::core::validate_source_list(&input.sources)
+    logs_engine::core::validate_source_list(&input.sources)
         .map_err(|_| "runtime_settings_invalid")?;
     input
         .filter
@@ -27,7 +27,7 @@ fn reconnect(value: Value, mut revision: impl FnMut(&str) -> Option<String>) -> 
 }
 pub(super) fn execute(app: &tauri::AppHandle, value: Value, deadline: u64) -> Result<Value> {
     let result = reconnect(value, |run| {
-        let lease = run_manager_lib::component::log_descriptor(app, run).ok()?;
+        let lease = runtime_engine::component::log_descriptor(app, run).ok()?;
         lease.revalidate().ok()?;
         Some(lease.revision().into())
     })?;

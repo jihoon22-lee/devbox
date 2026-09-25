@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 
 const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
 const helpers = await import("./windows-packaged-smoke.mjs");
-for (const name of ["windowsProcessIsElevated", "inspectElevatedCdpPolicy", "installElevatedCdpPolicy", "restoreElevatedCdpPolicy"]) {
+for (const name of [
+  "windowsProcessIsElevated",
+  "inspectElevatedCdpPolicy",
+  "installElevatedCdpPolicy",
+  "restoreElevatedCdpPolicy",
+]) {
   assert.equal(typeof helpers[name], "function");
 }
 assert.deepEqual([process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")], before);

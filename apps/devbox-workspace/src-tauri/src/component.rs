@@ -67,7 +67,7 @@ struct Runtime {
     lsp_requests: Pool,
     lsp_operations: crate::core::source_operations::Operations,
     lsp_workers: Arc<tokio::sync::Semaphore>,
-    lsp_shutdown: code_pad_lib::lsp::RequestCancellation,
+    lsp_shutdown: editor_engine::lsp::RequestCancellation,
 }
 impl Default for Runtime {
     fn default() -> Self {
@@ -309,7 +309,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "workspace.source" => {
             route == "source"
                 && (crate::source_host::management(method)
-                    || repo_manager_lib::component::SOURCE_COMMANDS.contains(&method))
+                    || repositories_engine::component::SOURCE_COMMANDS.contains(&method))
         }
         "workspace.definitions" => {
             route == "overview"
@@ -852,12 +852,16 @@ async fn execute_dependencies(
     let remaining = deadline.checked_sub(now).ok_or("request_expired")?;
     match tokio::time::timeout(
         Duration::from_millis(remaining),
-        repo_manager_lib::component::dispatch_dependencies(access, &request.method, request.args),
+        repositories_engine::component::dispatch_dependencies(
+            access,
+            &request.method,
+            request.args,
+        ),
     )
     .await
     {
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(repo_manager_lib::component::dependency_issue(&error)),
+        Ok(Err(error)) => Err(repositories_engine::component::dependency_issue(&error)),
         Err(_) => Err("request_expired"),
     }
 }
@@ -891,7 +895,7 @@ async fn execute_source(
     };
     let app = window.app_handle().clone();
     let operation_key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
-    if repo_manager_lib::component::source_cancel(&request.method) {
+    if repositories_engine::component::source_cancel(&request.method) {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         struct CancelId {
@@ -906,7 +910,7 @@ async fn execute_source(
         let admitted = runtime
             .source_operations
             .cancel(&operation_key, &cancel.request.operation_id)?;
-        let running = repo_manager_lib::component::dispatch_source_cancel(
+        let running = repositories_engine::component::dispatch_source_cancel(
             &app,
             &operation_key,
             &request.method,
@@ -1028,7 +1032,7 @@ async fn execute_source(
     };
     match tokio::time::timeout(
         remaining()?,
-        repo_manager_lib::component::dispatch_source(&app, access, &method, args),
+        repositories_engine::component::dispatch_source(&app, access, &method, args),
     )
     .await
     {
@@ -1136,7 +1140,7 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             struct SaveTemplate {
                 revision: u64,
                 id: Option<String>,
-                template: workbench_lib::component::ProfileTemplate,
+                template: projects_engine::component::ProfileTemplate,
             }
             let value: SaveTemplate = input(args)?;
             Ok(json!(host.projects()?.save_template(
@@ -1869,8 +1873,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let owner = window.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if (run_manager_lib::component::is_initialized(owner.app_handle())
-                        || wsl_desktop_lib::component::is_product(owner.app_handle()))
+                    if (runtime_engine::component::is_initialized(owner.app_handle())
+                        || terminal_engine::component::is_product(owner.app_handle()))
                         && !owner
                             .state::<Runtime>()
                             .exit_authorized
@@ -1910,11 +1914,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let exit_code = code.unwrap_or(0);
             tauri::async_runtime::spawn(async move {
                 let _ = runtime.sessions.request_shutdown();
-                if run_manager_lib::component::is_initialized(&app) {
-                    run_manager_lib::component::request_shutdown(&app);
+                if runtime_engine::component::is_initialized(&app) {
+                    runtime_engine::component::request_shutdown(&app);
                 }
-                if log_lens_lib::component::is_initialized(&app) {
-                    let _ = log_lens_lib::component::request_shutdown(&app);
+                if logs_engine::component::is_initialized(&app) {
+                    let _ = logs_engine::component::request_shutdown(&app);
                 }
                 // Cancellation interrupts downloads; the LSP worker retains its
                 // request permit until archive IO/index work actually retires.
@@ -1931,7 +1935,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .await
                 .is_ok();
                 let manager = app
-                    .try_state::<Arc<code_pad_lib::lsp::LspManager>>()
+                    .try_state::<Arc<editor_engine::lsp::LspManager>>()
                     .map(|manager| manager.inner().clone());
                 let actor_stopped = runtime.retire_lsp().await.is_ok();
                 let stopped = match manager {
@@ -1943,13 +1947,13 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 #[cfg(not(windows))]
                 let files_stopped = true;
                 let sessions_stopped = runtime.sessions.shutdown().await.is_ok();
-                let runtime_stopped = if run_manager_lib::component::is_initialized(&app) {
-                    run_manager_lib::component::shutdown(&app).await.is_ok()
+                let runtime_stopped = if runtime_engine::component::is_initialized(&app) {
+                    runtime_engine::component::shutdown(&app).await.is_ok()
                 } else {
                     true
                 };
-                let logs_stopped = if log_lens_lib::component::is_initialized(&app) {
-                    log_lens_lib::component::shutdown(&app).await.is_ok()
+                let logs_stopped = if logs_engine::component::is_initialized(&app) {
+                    logs_engine::component::shutdown(&app).await.is_ok()
                 } else {
                     true
                 };
@@ -2015,9 +2019,9 @@ pub(crate) fn operation_rows(
     if let Ok(host) = runtime.host() {
         if let Ok(root) = host.component("runtime") {
             use product_contract::operations::{Phase, Row};
-            match run_manager_lib::component::search::read(
+            match runtime_engine::component::search::read(
                 &root,
-                run_manager_lib::component::search::Source::Runs,
+                runtime_engine::component::search::Source::Runs,
             ) {
                 Ok(snapshot) => {
                     for entry in snapshot.entries.into_iter().take(63) {

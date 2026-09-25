@@ -84,9 +84,11 @@ beforeEach(() => {
     branch: { current: "main", ahead: 0, behind: 0, dirty: false, detached: false },
     changes: 0,
   }));
-  worktreesMock.mockReset().mockImplementation(async (path) => path === repositories[0].path
-    ? [repositories[0].path, "C:\\projects\\devbox-wt"]
-    : [path]);
+  worktreesMock
+    .mockReset()
+    .mockImplementation(async (path) =>
+      path === repositories[0].path ? [repositories[0].path, "C:\\projects\\devbox-wt"] : [path],
+    );
   createWorktreeMock.mockReset().mockImplementation(async (_repoPath, _branch, targetDir) => ({ path: targetDir }));
   repoCleanupPreviewMock.mockReset().mockResolvedValue({
     revision: "cleanup-0123456789abcdef",
@@ -147,8 +149,16 @@ describe("Repo Manager repository context menu", () => {
     let resolveOlder: ((value: { repos: RepoEntry[]; truncated: boolean }) => void) | undefined;
     let resolveNewest: ((value: { repos: RepoEntry[]; truncated: boolean }) => void) | undefined;
     scanRootMock
-      .mockReturnValueOnce(new Promise((resolve) => { resolveOlder = resolve; }))
-      .mockReturnValueOnce(new Promise((resolve) => { resolveNewest = resolve; }));
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOlder = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveNewest = resolve;
+        }),
+      );
     render(<App />);
     await waitFor(() => expect(scanRootMock).toHaveBeenCalledWith("C:\\projects"));
 
@@ -211,7 +221,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("우클릭한 exact repository를 선택하고 설계의 네 항목만 표시한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("E:\\projects\\sample 저장소")) as HTMLDivElement;
 
     fireEvent.contextMenu(target, { clientX: 16, clientY: 24 });
 
@@ -224,7 +234,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("catalog submenu action은 exact repository와 target ID를 backend에 전달한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("E:\\projects\\sample 저장소")) as HTMLDivElement;
     await screen.findAllByRole("button", { name: "Code Pad" });
 
     fireEvent.contextMenu(target);
@@ -237,7 +247,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("Shift+F10 경로 복사는 backend 재검증 결과만 쓰고 focus를 복원한다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("E:\\projects\\sample 저장소")) as HTMLDivElement;
     target.focus();
 
     fireEvent.keyDown(target, { key: "F10", code: "F10", shiftKey: true });
@@ -250,7 +260,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("Menu key로 exact repository 폴더를 연다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("C:\\projects\\devbox 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("C:\\projects\\devbox 저장소")) as HTMLDivElement;
     target.focus();
 
     fireEvent.keyDown(target, { key: "ContextMenu", code: "ContextMenu" });
@@ -262,7 +272,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("worktree 생성 action은 exact repository의 기존 입력으로 이동하고 자동 생성하지 않는다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("E:\\projects\\sample 저장소")) as HTMLDivElement;
     const branchInput = within(target).getByPlaceholderText("새 브랜치");
 
     fireEvent.contextMenu(target);
@@ -274,7 +284,7 @@ describe("Repo Manager repository context menu", () => {
 
   it("worktree 텍스트 입력의 기본 context menu와 Shift+F10을 가로채지 않는다", async () => {
     render(<App />);
-    const target = await screen.findByLabelText("E:\\projects\\sample 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("E:\\projects\\sample 저장소")) as HTMLDivElement;
     const branchInput = within(target).getByPlaceholderText("새 브랜치");
 
     branchInput.focus();
@@ -289,20 +299,19 @@ describe("Repo Manager repository context menu", () => {
   it("target discovery 실패는 raw 오류를 숨기고 submenu를 fail-closed로 둔다", async () => {
     openTargetsMock.mockRejectedValueOnce(new Error("credential-raw-error"));
     render(<App />);
-    const target = await screen.findByLabelText("C:\\projects\\devbox 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("C:\\projects\\devbox 저장소")) as HTMLDivElement;
     await screen.findByText("다른 앱으로 열기 대상을 확인하지 못했습니다");
 
     fireEvent.contextMenu(target);
 
-    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"))
-      .toBe("true");
+    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled")).toBe("true");
     expect(document.body.textContent?.includes("credential-raw-error")).toBe(false);
   });
 
   it("copy 실패는 backend 경로나 상세 오류를 화면에 반향하지 않는다", async () => {
     repositoryCopyPathMock.mockRejectedValueOnce(new Error("C:\\secret\\repo"));
     render(<App />);
-    const target = await screen.findByLabelText("C:\\projects\\devbox 저장소") as HTMLDivElement;
+    const target = (await screen.findByLabelText("C:\\projects\\devbox 저장소")) as HTMLDivElement;
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "경로 복사" }));

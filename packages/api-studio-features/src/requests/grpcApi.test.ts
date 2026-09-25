@@ -64,15 +64,17 @@ function validConnection(overrides: Partial<GrpcConnectResult> = {}): GrpcConnec
       credentialUsed: false,
       serverNameOverridden: false,
     },
-    methods: [{
-      service: "Greeter",
-      method: "SayHello",
-      fullName: "Greeter.SayHello",
-      inputType: "HelloRequest",
-      outputType: "HelloReply",
-      rpcKind: "unary",
-      inputTemplate: { name: "fixture" },
-    }],
+    methods: [
+      {
+        service: "Greeter",
+        method: "SayHello",
+        fullName: "Greeter.SayHello",
+        inputType: "HelloRequest",
+        outputType: "HelloReply",
+        rpcKind: "unary",
+        inputTemplate: { name: "fixture" },
+      },
+    ],
     rpcTimeoutMs: 30_000,
     ...overrides,
   };
@@ -90,8 +92,9 @@ describe("gRPC native IPC boundary", () => {
     await expect(pickGrpcProto()).rejects.toThrow("grpc_native_required");
     await expect(listGrpcTlsCredentials()).rejects.toThrow("grpc_native_required");
     await expect(connectGrpc(reflectionProfile)).rejects.toThrow("grpc_native_required");
-    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", ["{}"]))
-      .rejects.toThrow("grpc_native_required");
+    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", ["{}"])).rejects.toThrow(
+      "grpc_native_required",
+    );
     await expect(cancelGrpc(CONNECTION_ID, "request-1")).rejects.toThrow("grpc_native_required");
     await expect(disconnectGrpc(CONNECTION_ID)).rejects.toThrow("grpc_native_required");
     await expect(exportGrpcSummary(summary)).rejects.toThrow("grpc_native_required");
@@ -137,12 +140,14 @@ describe("gRPC native IPC boundary", () => {
       privateKeyPem: "-----BEGIN PRIVATE KEY-----SECRET",
     });
 
-    await expect(importGrpcTlsCredential({
-      label: "fixture mTLS",
-      caSelectionId: SELECTION_ID,
-      clientCertificateSelectionId: SELECTION_ID,
-      clientKeySelectionId: SELECTION_ID,
-    })).resolves.toEqual({
+    await expect(
+      importGrpcTlsCredential({
+        label: "fixture mTLS",
+        caSelectionId: SELECTION_ID,
+        clientCertificateSelectionId: SELECTION_ID,
+        clientKeySelectionId: SELECTION_ID,
+      }),
+    ).resolves.toEqual({
       credentialId: CREDENTIAL_ID,
       label: "fixture mTLS",
       hasCustomCa: true,
@@ -156,28 +161,30 @@ describe("gRPC native IPC boundary", () => {
       clientKeySelectionId: SELECTION_ID,
     });
 
-    invokeMock.mockResolvedValueOnce([{
-      credentialId: CREDENTIAL_ID,
-      label: "fixture mTLS",
-      hasCustomCa: true,
-      hasClientIdentity: true,
-      createdAtMs: 1_700_000_000_000,
-      path: "C:\\Users\\secret\\client-key.pem",
-      pem: "-----BEGIN PRIVATE KEY-----SECRET",
-    }]);
-    await expect(listGrpcTlsCredentials()).resolves.toEqual([{
-      credentialId: CREDENTIAL_ID,
-      label: "fixture mTLS",
-      hasCustomCa: true,
-      hasClientIdentity: true,
-      createdAtMs: 1_700_000_000_000,
-    }]);
+    invokeMock.mockResolvedValueOnce([
+      {
+        credentialId: CREDENTIAL_ID,
+        label: "fixture mTLS",
+        hasCustomCa: true,
+        hasClientIdentity: true,
+        createdAtMs: 1_700_000_000_000,
+        path: "C:\\Users\\secret\\client-key.pem",
+        pem: "-----BEGIN PRIVATE KEY-----SECRET",
+      },
+    ]);
+    await expect(listGrpcTlsCredentials()).resolves.toEqual([
+      {
+        credentialId: CREDENTIAL_ID,
+        label: "fixture mTLS",
+        hasCustomCa: true,
+        hasClientIdentity: true,
+        createdAtMs: 1_700_000_000_000,
+      },
+    ]);
   });
 
   it("cleans up a connection when the native projection is malformed", async () => {
-    invokeMock
-      .mockResolvedValueOnce(validConnection({ methods: [] }))
-      .mockResolvedValueOnce(undefined);
+    invokeMock.mockResolvedValueOnce(validConnection({ methods: [] })).mockResolvedValueOnce(undefined);
 
     await expect(connectGrpc(reflectionProfile)).rejects.toThrow("grpc_protocol_failed");
     expect(invokeMock).toHaveBeenNthCalledWith(1, "connect_grpc", { profile: reflectionProfile });
@@ -189,103 +196,125 @@ describe("gRPC native IPC boundary", () => {
   it("validates method projections before returning the connection", async () => {
     invokeMock.mockResolvedValueOnce({
       ...validConnection(),
-      methods: [{
-        ...validConnection().methods[0],
-        inputTemplate: { nested: ["safe"] },
-        path: "C:\\Users\\secret\\fixture.proto",
-      }],
+      methods: [
+        {
+          ...validConnection().methods[0],
+          inputTemplate: { nested: ["safe"] },
+          path: "C:\\Users\\secret\\fixture.proto",
+        },
+      ],
     });
 
     await expect(connectGrpc(reflectionProfile)).resolves.toEqual({
       ...validConnection(),
-      methods: [{
-        ...validConnection().methods[0],
-        inputTemplate: { nested: ["safe"] },
-      }],
+      methods: [
+        {
+          ...validConnection().methods[0],
+          inputTemplate: { nested: ["safe"] },
+        },
+      ],
     });
   });
 
   it("rejects inconsistent source, TLS, and descriptor projections", async () => {
     invokeMock
-      .mockResolvedValueOnce(validConnection({
-        tls: {
-          mode: "plaintext",
-          encrypted: true,
-          credentialUsed: false,
-          serverNameOverridden: false,
-        },
-      }))
+      .mockResolvedValueOnce(
+        validConnection({
+          tls: {
+            mode: "plaintext",
+            encrypted: true,
+            credentialUsed: false,
+            serverNameOverridden: false,
+          },
+        }),
+      )
       .mockResolvedValueOnce(undefined);
     await expect(connectGrpc(reflectionProfile)).rejects.toThrow("grpc_protocol_failed");
 
     invokeMock
-      .mockResolvedValueOnce(validConnection({
-        source: {
-          kind: "reflection-v1",
-          label: "secret.proto",
-          descriptorFileCount: 1,
-          serviceCount: 1,
-        },
-      }))
+      .mockResolvedValueOnce(
+        validConnection({
+          source: {
+            kind: "reflection-v1",
+            label: "secret.proto",
+            descriptorFileCount: 1,
+            serviceCount: 1,
+          },
+        }),
+      )
       .mockResolvedValueOnce(undefined);
     await expect(connectGrpc(reflectionProfile)).rejects.toThrow("grpc_protocol_failed");
 
     invokeMock
-      .mockResolvedValueOnce(validConnection({
-        methods: [{
-          ...validConnection().methods[0],
-          fullName: "Other.SayHello",
-        }],
-      }))
+      .mockResolvedValueOnce(
+        validConnection({
+          methods: [
+            {
+              ...validConnection().methods[0],
+              fullName: "Other.SayHello",
+            },
+          ],
+        }),
+      )
       .mockResolvedValueOnce(undefined);
     await expect(connectGrpc(reflectionProfile)).rejects.toThrow("grpc_protocol_failed");
   });
 
   it("rejects invalid request identifiers and enforces message count and byte bounds", async () => {
-    await expect(invokeGrpc("z".repeat(32), "request-1", "Greeter.SayHello", ["{}"]))
-      .rejects.toThrow("grpc_request_invalid");
-    await expect(invokeGrpc(CONNECTION_ID, "request with spaces", "Greeter.SayHello", ["{}"]))
-      .rejects.toThrow("grpc_request_invalid");
-    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter SayHello", ["{}"]))
-      .rejects.toThrow("grpc_request_invalid");
-    await expect(invokeGrpc(
-      CONNECTION_ID,
-      "request-1",
-      "Greeter.SayHello",
-      Array.from({ length: 101 }, () => "{}"),
-    )).rejects.toThrow("grpc_request_invalid");
+    await expect(invokeGrpc("z".repeat(32), "request-1", "Greeter.SayHello", ["{}"])).rejects.toThrow(
+      "grpc_request_invalid",
+    );
+    await expect(invokeGrpc(CONNECTION_ID, "request with spaces", "Greeter.SayHello", ["{}"])).rejects.toThrow(
+      "grpc_request_invalid",
+    );
+    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter SayHello", ["{}"])).rejects.toThrow(
+      "grpc_request_invalid",
+    );
+    await expect(
+      invokeGrpc(
+        CONNECTION_ID,
+        "request-1",
+        "Greeter.SayHello",
+        Array.from({ length: 101 }, () => "{}"),
+      ),
+    ).rejects.toThrow("grpc_request_invalid");
 
     const oversizedMessage = JSON.stringify("x".repeat(1024 * 1024));
-    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", [oversizedMessage]))
-      .rejects.toThrow("grpc_request_too_large");
+    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", [oversizedMessage])).rejects.toThrow(
+      "grpc_request_too_large",
+    );
 
     const chunk = JSON.stringify("x".repeat(900_000));
-    await expect(invokeGrpc(
-      CONNECTION_ID,
-      "request-1",
-      "Greeter.SayHello",
-      [chunk, chunk, chunk, chunk, chunk],
-    )).rejects.toThrow("grpc_request_too_large");
+    await expect(
+      invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", [chunk, chunk, chunk, chunk, chunk]),
+    ).rejects.toThrow("grpc_request_too_large");
 
-    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", ["not-json"]))
-      .rejects.toThrow("grpc_request_invalid");
+    await expect(invokeGrpc(CONNECTION_ID, "request-1", "Greeter.SayHello", ["not-json"])).rejects.toThrow(
+      "grpc_request_invalid",
+    );
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("rejects out-of-bounds summary exports before crossing IPC", async () => {
-    await expect(exportGrpcSummary({
-      ...summary,
-      requestMessageCount: 2,
-    })).rejects.toThrow("grpc_export_failed");
-    await expect(exportGrpcSummary({
-      ...summary,
-      tlsMode: "plaintext",
-      credentialUsed: true,
-    })).rejects.toThrow("grpc_export_failed");
-    await expect(exportGrpcSummary({
-      ...summary,
-      startedAtMs: 8_640_000_000_000_001,
-    })).rejects.toThrow("grpc_export_failed");
+    await expect(
+      exportGrpcSummary({
+        ...summary,
+        requestMessageCount: 2,
+      }),
+    ).rejects.toThrow("grpc_export_failed");
+    await expect(
+      exportGrpcSummary({
+        ...summary,
+        tlsMode: "plaintext",
+        credentialUsed: true,
+      }),
+    ).rejects.toThrow("grpc_export_failed");
+    await expect(
+      exportGrpcSummary({
+        ...summary,
+        startedAtMs: 8_640_000_000_000_001,
+      }),
+    ).rejects.toThrow("grpc_export_failed");
     expect(invokeMock).not.toHaveBeenCalled();
   });
 });

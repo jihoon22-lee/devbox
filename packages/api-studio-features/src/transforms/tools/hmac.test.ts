@@ -43,25 +43,22 @@ describe("HMAC wire codecs", () => {
   });
 
   it("enforces the decoded byte bound and rejects extra wire fields", async () => {
-    expect(decodeHmacInput("k".repeat(MAX_HMAC_INPUT_BYTES), "utf8")).toHaveLength(
-      MAX_HMAC_INPUT_BYTES,
-    );
-    expect(() =>
-      decodeHmacInput("k".repeat(MAX_HMAC_INPUT_BYTES + 1), "utf8"),
-    ).toThrow(HMAC_ERROR);
+    expect(decodeHmacInput("k".repeat(MAX_HMAC_INPUT_BYTES), "utf8")).toHaveLength(MAX_HMAC_INPUT_BYTES);
+    expect(() => decodeHmacInput("k".repeat(MAX_HMAC_INPUT_BYTES + 1), "utf8")).toThrow(HMAC_ERROR);
 
-    await expect(
-      browserHmacGenerate({ ...baseRequest, secret: "unexpected" } as HmacRequest),
-    ).rejects.toThrow(HMAC_ERROR);
+    await expect(browserHmacGenerate({ ...baseRequest, secret: "unexpected" } as HmacRequest)).rejects.toThrow(
+      HMAC_ERROR,
+    );
   });
 
   it("produces the RFC 4231 SHA-256 vector through the browser Web Crypto path", async () => {
-    const sign = vi.fn().mockResolvedValue(
-      Uint8Array.from(
-        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843".match(/../g)!,
-        (part) => Number.parseInt(part, 16),
-      ),
-    );
+    const sign = vi
+      .fn()
+      .mockResolvedValue(
+        Uint8Array.from("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843".match(/../g)!, (part) =>
+          Number.parseInt(part, 16),
+        ),
+      );
     vi.stubGlobal("crypto", {
       subtle: {
         importKey: vi.fn().mockResolvedValue({}),
@@ -70,9 +67,7 @@ describe("HMAC wire codecs", () => {
     });
     try {
       const result = await browserHmacGenerate(baseRequest);
-      expect(result).toBe(
-        "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
-      );
+      expect(result).toBe("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
       expect(sign).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
@@ -90,8 +85,7 @@ describe("HMAC wire codecs", () => {
     try {
       const result = await browserHmacVerify({
         ...baseRequest,
-        expectedTag:
-          "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+        expectedTag: "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
       });
       expect(result).toBe(true);
       expect(verify).toHaveBeenCalledTimes(1);

@@ -4,7 +4,9 @@ import { NativeEditorMirror } from "./nativeEditorMirror";
 const document = { id: "text", path: "/work/notes.txt", nativeRevision: "native-1", text: "draft" };
 function deferred() {
   let resolve!: (value: boolean) => void;
-  const promise = new Promise<boolean>(done => { resolve = done; });
+  const promise = new Promise<boolean>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -20,9 +22,15 @@ describe("native editor buffer mirror", () => {
   it("includes unsupported and cross-language files, while standalone documents make no calls", async () => {
     const send = vi.fn().mockResolvedValue(true);
     const mirror = new NativeEditorMirror(send);
-    await mirror.flush([document, { ...document, id: "python", path: "/work/a.py" },
-      { ...document, id: "legacy", nativeRevision: undefined }]);
-    expect(send.mock.calls).toEqual([[document.path, "native-1", "draft"], ["/work/a.py", "native-1", "draft"]]);
+    await mirror.flush([
+      document,
+      { ...document, id: "python", path: "/work/a.py" },
+      { ...document, id: "legacy", nativeRevision: undefined },
+    ]);
+    expect(send.mock.calls).toEqual([
+      [document.path, "native-1", "draft"],
+      ["/work/a.py", "native-1", "draft"],
+    ]);
   });
 
   it("coalesces queued edits and waits for edits arriving during a flush", async () => {
@@ -37,7 +45,9 @@ describe("native editor buffer mirror", () => {
     first.resolve(true);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
     let complete = false;
-    void flushing.then(() => { complete = true; });
+    void flushing.then(() => {
+      complete = true;
+    });
     await Promise.resolve();
     expect(complete).toBe(false);
     last.resolve(true);

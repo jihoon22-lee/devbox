@@ -74,12 +74,17 @@ beforeEach(() => {
 describe("MCP typed IPC boundary", () => {
   it("never sends MCP network work from browser preview", async () => {
     isTauriMock.mockReturnValue(false);
-    await expect(connectMcpHttp({
-      endpoint: "https://example.test/mcp",
-      era: "auto",
-      headers: [],
-      timeoutMs: 10_000,
-    }, [])).rejects.toThrow("native_required");
+    await expect(
+      connectMcpHttp(
+        {
+          endpoint: "https://example.test/mcp",
+          era: "auto",
+          headers: [],
+          timeoutMs: 10_000,
+        },
+        [],
+      ),
+    ).rejects.toThrow("native_required");
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
@@ -98,20 +103,30 @@ describe("MCP typed IPC boundary", () => {
       timeline,
     };
     invokeMock.mockResolvedValueOnce(fixture);
-    await expect(connectMcpHttp({
-      endpoint: "https://example.test/mcp",
-      era: "auto",
-      headers: [],
-      timeoutMs: 10_000,
-    }, [])).resolves.toEqual(fixture);
+    await expect(
+      connectMcpHttp(
+        {
+          endpoint: "https://example.test/mcp",
+          era: "auto",
+          headers: [],
+          timeoutMs: 10_000,
+        },
+        [],
+      ),
+    ).resolves.toEqual(fixture);
 
     invokeMock.mockResolvedValueOnce({ ...fixture, sessionManaged: true });
-    await expect(connectMcpHttp({
-      endpoint: "https://example.test/mcp",
-      era: "auto",
-      headers: [],
-      timeoutMs: 10_000,
-    }, [])).rejects.toThrow("mcp_message_invalid");
+    await expect(
+      connectMcpHttp(
+        {
+          endpoint: "https://example.test/mcp",
+          era: "auto",
+          headers: [],
+          timeoutMs: 10_000,
+        },
+        [],
+      ),
+    ).rejects.toThrow("mcp_message_invalid");
     expect(invokeMock).toHaveBeenNthCalledWith(3, "disconnect_mcp_http", {
       connectionId: "a".repeat(32),
     });
@@ -120,12 +135,17 @@ describe("MCP typed IPC boundary", () => {
       ...fixture,
       server: { ...fixture.server, protocolVersion: "2025-11-25" },
     });
-    await expect(connectMcpHttp({
-      endpoint: "https://example.test/mcp",
-      era: "auto",
-      headers: [],
-      timeoutMs: 10_000,
-    }, [])).rejects.toThrow("mcp_message_invalid");
+    await expect(
+      connectMcpHttp(
+        {
+          endpoint: "https://example.test/mcp",
+          era: "auto",
+          headers: [],
+          timeoutMs: 10_000,
+        },
+        [],
+      ),
+    ).rejects.toThrow("mcp_message_invalid");
     expect(invokeMock).toHaveBeenNthCalledWith(5, "disconnect_mcp_http", {
       connectionId: "a".repeat(32),
     });
@@ -139,12 +159,9 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: null,
       timeline: timeline.map((entry) => ({ ...entry, sequence: entry.sequence + 1 })),
     });
-    await expect(invokeMcpHttp("a".repeat(32), "mcp-1", "tools/list", {}))
-      .rejects.toThrow("mcp_message_invalid");
-    expect(safeMcpErrorCode(new Error("C:\\Users\\name\\secret")))
-      .toBe("mcp_transport_failed");
-    expect(safeMcpErrorCode(new Error("mcp_request_timeout")))
-      .toBe("mcp_request_timeout");
+    await expect(invokeMcpHttp("a".repeat(32), "mcp-1", "tools/list", {})).rejects.toThrow("mcp_message_invalid");
+    expect(safeMcpErrorCode(new Error("C:\\Users\\name\\secret"))).toBe("mcp_transport_failed");
+    expect(safeMcpErrorCode(new Error("mcp_request_timeout"))).toBe("mcp_request_timeout");
   });
 
   it("rejects internally inconsistent error and pagination projections", async () => {
@@ -155,8 +172,7 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: null,
       timeline,
     });
-    await expect(invokeMcpHttp("a".repeat(32), "mcp-1", "tools/call", {}))
-      .rejects.toThrow("mcp_message_invalid");
+    await expect(invokeMcpHttp("a".repeat(32), "mcp-1", "tools/call", {})).rejects.toThrow("mcp_message_invalid");
 
     invokeMock.mockResolvedValueOnce({
       result: null,
@@ -165,8 +181,7 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: "must-not-survive-an-error",
       timeline,
     });
-    await expect(invokeMcpHttp("a".repeat(32), "mcp-2", "tools/call", {}))
-      .rejects.toThrow("mcp_message_invalid");
+    await expect(invokeMcpHttp("a".repeat(32), "mcp-2", "tools/call", {})).rejects.toThrow("mcp_message_invalid");
 
     invokeMock.mockResolvedValueOnce({
       result: { tools: [], nextCursor: "cursor-from-result" },
@@ -175,8 +190,7 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: "different-projection",
       timeline,
     });
-    await expect(invokeMcpHttp("a".repeat(32), "mcp-3", "tools/list", {}))
-      .rejects.toThrow("mcp_message_invalid");
+    await expect(invokeMcpHttp("a".repeat(32), "mcp-3", "tools/list", {})).rejects.toThrow("mcp_message_invalid");
 
     invokeMock.mockResolvedValueOnce({
       result: { tools: [], nextCursor: "[PRESENT]" },
@@ -185,8 +199,9 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: "opaque-cursor",
       timeline: invokeTimeline("tools/list", "mcp-4"),
     });
-    await expect(invokeMcpHttp("a".repeat(32), "mcp-4", "tools/list", {}))
-      .resolves.toMatchObject({ nextCursor: "opaque-cursor" });
+    await expect(invokeMcpHttp("a".repeat(32), "mcp-4", "tools/list", {})).resolves.toMatchObject({
+      nextCursor: "opaque-cursor",
+    });
 
     invokeMock.mockResolvedValueOnce({
       result: { tools: [], nextCursor: "opaque-cursor" },
@@ -195,8 +210,7 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: "opaque-cursor",
       timeline: invokeTimeline("tools/list", "mcp-5"),
     });
-    await expect(invokeMcpHttp("a".repeat(32), "mcp-5", "tools/list", {}))
-      .rejects.toThrow("mcp_message_invalid");
+    await expect(invokeMcpHttp("a".repeat(32), "mcp-5", "tools/list", {})).rejects.toThrow("mcp_message_invalid");
   });
 
   it("wraps native selection commands, including a cancelled picker, without raw paths", async () => {
@@ -262,12 +276,9 @@ describe("MCP typed IPC boundary", () => {
       nextCursor: null,
       timeline: invokeTimeline("tools/call", "mcp-stdio-1"),
     });
-    await expect(invokeMcpStdio(
-      connection.connectionId,
-      "mcp-stdio-1",
-      "tools/call",
-      { name: "fixture", arguments: {} },
-    )).resolves.toMatchObject({ result: { resultType: "complete" } });
+    await expect(
+      invokeMcpStdio(connection.connectionId, "mcp-stdio-1", "tools/call", { name: "fixture", arguments: {} }),
+    ).resolves.toMatchObject({ result: { resultType: "complete" } });
     expect(invokeMock).toHaveBeenLastCalledWith("invoke_mcp_stdio", {
       connectionId: connection.connectionId,
       requestId: "mcp-stdio-1",
@@ -292,13 +303,18 @@ describe("MCP typed IPC boundary", () => {
   it("keeps all stdio commands native-only", async () => {
     isTauriMock.mockReturnValue(false);
     await expect(pickMcpStdioExecutable()).rejects.toThrow("native_required");
-    await expect(connectMcpStdio({
-      executableSelectionId: "b".repeat(32),
-      era: "auto",
-      args: [],
-      environment: [],
-      timeoutMs: 10_000,
-    }, [])).rejects.toThrow("native_required");
+    await expect(
+      connectMcpStdio(
+        {
+          executableSelectionId: "b".repeat(32),
+          era: "auto",
+          args: [],
+          environment: [],
+          timeoutMs: 10_000,
+        },
+        [],
+      ),
+    ).rejects.toThrow("native_required");
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
@@ -315,13 +331,9 @@ describe("MCP typed IPC boundary", () => {
       callbackCode: "must-not-survive-projection",
     };
     invokeMock.mockResolvedValueOnce(grant);
-    const authorized = await authorizeMcpHttp(
-      "oauth-request-1",
-      "https://example.test/mcp",
-      null,
-      "public-client",
-      ["tools"],
-    );
+    const authorized = await authorizeMcpHttp("oauth-request-1", "https://example.test/mcp", null, "public-client", [
+      "tools",
+    ]);
     expect(authorized).toEqual({
       grantId: "d".repeat(32),
       issuer: "https://issuer.example",
@@ -363,13 +375,9 @@ describe("MCP typed IPC boundary", () => {
   });
 
   it("rejects malformed OAuth inputs and duplicate native projections", async () => {
-    await expect(authorizeMcpHttp(
-      "bad request",
-      "https://example.test/mcp",
-      null,
-      "public-client",
-      [],
-    )).rejects.toThrow("mcp_oauth_request_invalid");
+    await expect(
+      authorizeMcpHttp("bad request", "https://example.test/mcp", null, "public-client", []),
+    ).rejects.toThrow("mcp_oauth_request_invalid");
     expect(invokeMock).not.toHaveBeenCalled();
 
     const malformed = {
@@ -389,12 +397,8 @@ describe("MCP typed IPC boundary", () => {
       scopes: ["tools", "tools"],
       token: "must-not-be-accepted",
     });
-    await expect(authorizeMcpHttp(
-      "oauth-request-2",
-      "https://example.test/mcp",
-      undefined,
-      "public-client",
-      [],
-    )).rejects.toThrow("mcp_oauth_request_invalid");
+    await expect(
+      authorizeMcpHttp("oauth-request-2", "https://example.test/mcp", undefined, "public-client", []),
+    ).rejects.toThrow("mcp_oauth_request_invalid");
   });
 });

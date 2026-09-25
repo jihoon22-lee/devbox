@@ -15,22 +15,28 @@ import {
 
 describe("multipart part model", () => {
   it("kind별 불필요한 값을 제거하고 enabled 누락을 true로 정규화한다", () => {
-    expect(normalizeMultipartParts([{
-      kind: "text",
-      name: "note",
-      value: "hello",
-      file_path: "C:\\secret.txt",
-      file_name: "secret.txt",
-      content_type: "text/plain",
-    }])).toEqual([{
-      kind: "text",
-      name: "note",
-      value: "hello",
-      file_path: "",
-      file_name: "",
-      content_type: "text/plain",
-      enabled: true,
-    }]);
+    expect(
+      normalizeMultipartParts([
+        {
+          kind: "text",
+          name: "note",
+          value: "hello",
+          file_path: "C:\\secret.txt",
+          file_name: "secret.txt",
+          content_type: "text/plain",
+        },
+      ]),
+    ).toEqual([
+      {
+        kind: "text",
+        name: "note",
+        value: "hello",
+        file_path: "",
+        file_name: "",
+        content_type: "text/plain",
+        enabled: true,
+      },
+    ]);
   });
 
   it("kind 전환, 파일 선택, 복제와 삭제가 원본을 변경하지 않는다", () => {
@@ -47,12 +53,11 @@ describe("multipart part model", () => {
   it("50개 상한을 적용하고 초과 입력은 명시적으로 거부한다", () => {
     const full = Array.from({ length: MAX_MULTIPART_PARTS }, () => emptyMultipartPart());
     expect(addMultipartPart(full)).toHaveLength(MAX_MULTIPART_PARTS);
-    expect(validateMultipartParts([...full, { ...emptyMultipartPart(), name: "overflow" }]))
-      .toContainEqual({
-        index: MAX_MULTIPART_PARTS,
-        field: "parts",
-        message: "multipart는 최대 50개 part까지 사용할 수 있습니다.",
-      });
+    expect(validateMultipartParts([...full, { ...emptyMultipartPart(), name: "overflow" }])).toContainEqual({
+      index: MAX_MULTIPART_PARTS,
+      field: "parts",
+      message: "multipart는 최대 50개 part까지 사용할 수 있습니다.",
+    });
   });
 
   it("이름, content type, file 재선택과 text byte 상한을 검증한다", () => {

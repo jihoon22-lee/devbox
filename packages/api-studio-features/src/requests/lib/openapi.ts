@@ -1,15 +1,7 @@
 import { OPENAPI_LIMITS } from "./openapiLimits";
 export { OPENAPI_LIMITS } from "./openapiLimits";
-import {
-  parseBoundedOpenApiDocument,
-} from "@devbox/openapi";
-import type {
-  AuthConfig,
-  KeyValue,
-  MultipartPart,
-  RequestHeader,
-  RequestTemplate,
-} from "../types";
+import { parseBoundedOpenApiDocument } from "@devbox/openapi";
+import type { AuthConfig, KeyValue, MultipartPart, RequestHeader, RequestTemplate } from "../types";
 import { MAX_REQUEST_COOKIE_ROWS } from "./cookies";
 import { MAX_REQUEST_HEADER_ROWS } from "./headers";
 import { MAX_MULTIPART_PARTS } from "./multipart";
@@ -20,7 +12,6 @@ import { MAX_MULTIPART_PARTS } from "./multipart";
  * into a secret-bearing request. Keep these limits in one place so every
  * source enforces the same parser contract.
  */
-
 
 export type OpenApiFormat = "json" | "yaml";
 export type OpenApiIssueScope = "document" | "operation";
@@ -123,9 +114,7 @@ export interface OpenApiImportPreview {
   sourceName?: string;
 }
 
-export type OpenApiImportResult =
-  | { ok: true; preview: OpenApiImportPreview }
-  | { ok: false; error: OpenApiIssue };
+export type OpenApiImportResult = { ok: true; preview: OpenApiImportPreview } | { ok: false; error: OpenApiIssue };
 
 export type OpenApiSource =
   | { kind: "file"; name: string; format?: OpenApiFormat; text: string }
@@ -135,8 +124,10 @@ const METHOD_ORDER = ["get", "post", "put", "patch", "delete"] as const;
 const METHOD_SET = new Set<string>(METHOD_ORDER);
 const PATH_ITEM_METADATA = new Set(["parameters", "$ref", "summary", "description", "servers"]);
 const HTTP_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-const SENSITIVE_NAME = /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?(?:key|token)|client[-_]?key|refresh[-_]?token|token|secret|password|passwd|credential|private[-_]?key|user[-_]?name|(?:^|[-_.])key(?:$|[-_.]))/i;
-const KNOWN_CREDENTIAL = /(?:sk-|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|(?:[A-Za-z0-9_-]{10,}\.){2}[A-Za-z0-9_-]{10,}/;
+const SENSITIVE_NAME =
+  /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?(?:key|token)|client[-_]?key|refresh[-_]?token|token|secret|password|passwd|credential|private[-_]?key|user[-_]?name|(?:^|[-_.])key(?:$|[-_.]))/i;
+const KNOWN_CREDENTIAL =
+  /(?:sk-|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}|AKIA[A-Z0-9]{16}|(?:[A-Za-z0-9_-]{10,}\.){2}[A-Za-z0-9_-]{10,}/;
 const SECRET_REFERENCE = /\{\{\s*[A-Za-z0-9_.-]+\s*\}\}|\$\{\s*[A-Za-z0-9_.-]+\s*\}/;
 const AUTH_VALUE = /^(?:bearer|basic)\s+\S+$/i;
 
@@ -176,12 +167,7 @@ const ISSUE_MESSAGES: Readonly<Record<OpenApiIssueCode, string>> = {
   SECURITY_INVALID: "security 요구사항 구조가 올바르지 않습니다.",
 };
 
-function issue(
-  code: OpenApiIssueCode,
-  scope: OpenApiIssueScope,
-  path?: string,
-  method?: string,
-): OpenApiIssue {
+function issue(code: OpenApiIssueCode, scope: OpenApiIssueScope, path?: string, method?: string): OpenApiIssue {
   return { code, message: ISSUE_MESSAGES[code], scope, ...(path ? { path } : {}), ...(method ? { method } : {}) };
 }
 
@@ -231,10 +217,12 @@ function parseSource(text: string, format: OpenApiFormat): unknown {
 }
 
 function isOpenApiIssue(value: unknown): value is OpenApiIssue {
-  return isRecord(value)
-    && typeof value.code === "string"
-    && typeof value.message === "string"
-    && (value.scope === "document" || value.scope === "operation");
+  return (
+    isRecord(value) &&
+    typeof value.code === "string" &&
+    typeof value.message === "string" &&
+    (value.scope === "document" || value.scope === "operation")
+  );
 }
 
 function versionOf(value: unknown): "3.0" | "3.1" | null {
@@ -250,13 +238,22 @@ function isSafePath(value: string): boolean {
   if (segments.some((segment) => segment === "." || segment === "..")) return false;
   try {
     const decoded = decodeURIComponent(value);
-    if (isSensitiveValue(decoded) || decoded.includes("\\") || decoded.includes("?") || decoded.includes("#") || /[\u0000-\u001f\u007f]/.test(decoded) || decoded.split("/").some((segment) => segment === "." || segment === "..")) return false;
+    if (
+      isSensitiveValue(decoded) ||
+      decoded.includes("\\") ||
+      decoded.includes("?") ||
+      decoded.includes("#") ||
+      /[\u0000-\u001f\u007f]/.test(decoded) ||
+      decoded.split("/").some((segment) => segment === "." || segment === "..")
+    )
+      return false;
   } catch {
     return false;
   }
   for (let index = 0; index < value.length; index += 1) {
     const character = value[index];
-    if (character === "\\" || character === "?" || character === "#" || /[\u0000-\u001f\u007f]/.test(character)) return false;
+    if (character === "\\" || character === "?" || character === "#" || /[\u0000-\u001f\u007f]/.test(character))
+      return false;
     if (character === "}") return false;
     if (character === "{") {
       const end = value.indexOf("}", index + 1);
@@ -280,12 +277,18 @@ function isSensitiveValue(value: string): boolean {
 }
 
 function validParameterName(value: string, location: OpenApiParameterLocation): boolean {
-  if (value.length === 0 || value.length > OPENAPI_LIMITS.maxParameterNameLength || /[\u0000-\u001f\u007f]/.test(value)) return false;
+  if (value.length === 0 || value.length > OPENAPI_LIMITS.maxParameterNameLength || /[\u0000-\u001f\u007f]/.test(value))
+    return false;
   return location === "query" || HTTP_TOKEN.test(value);
 }
 
 function safeScalar(value: unknown): string | null {
-  if (typeof value === "string") return value.length <= OPENAPI_LIMITS.maxStringLength && !/[\u0000-\u001f\u007f]/.test(value) && !isSensitiveValue(value) ? value : null;
+  if (typeof value === "string")
+    return value.length <= OPENAPI_LIMITS.maxStringLength &&
+      !/[\u0000-\u001f\u007f]/.test(value) &&
+      !isSensitiveValue(value)
+      ? value
+      : null;
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   if (typeof value === "boolean") return String(value);
   if (value === null) return "null";
@@ -328,8 +331,10 @@ function exampleFrom(value: Record<string, unknown>): ExampleValue {
 }
 
 function mediaType(value: string): boolean {
-  return value.length <= 256
-    && /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+(?:\s*;\s*[A-Za-z0-9!#$&^_.+-]+=[A-Za-z0-9!#$&^_.+-]+)*$/.test(value);
+  return (
+    value.length <= 256 &&
+    /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+(?:\s*;\s*[A-Za-z0-9!#$&^_.+-]+=[A-Za-z0-9!#$&^_.+-]+)*$/.test(value)
+  );
 }
 
 function hasRef(value: unknown): boolean {
@@ -393,11 +398,17 @@ function serverUrlWithVariables(value: unknown): string | null {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > OPENAPI_LIMITS.maxStringLength) return null;
   if (/[\u0000-\u0020\u007f]/.test(raw)) return null;
   const variableRecord = own(value, "variables");
-  const variables = isRecord(variableRecord) ? variableRecord : Object.create(null) as Record<string, unknown>;
+  const variables = isRecord(variableRecord) ? variableRecord : (Object.create(null) as Record<string, unknown>);
   const substituted = raw.replace(/\{([A-Za-z0-9_.-]{1,120})\}/g, (_match, name: string) => {
     const variable = variables[name];
-    if (!isRecord(variable) || typeof variable.default !== "string" || isSensitiveName(name)) throw issue("SERVER_VARIABLE_INVALID", "document");
-    if (variable.default.length > OPENAPI_LIMITS.maxStringLength || /[\u0000-\u0020\u007f]/.test(variable.default) || isSensitiveValue(variable.default)) throw issue("SERVER_VARIABLE_INVALID", "document");
+    if (!isRecord(variable) || typeof variable.default !== "string" || isSensitiveName(name))
+      throw issue("SERVER_VARIABLE_INVALID", "document");
+    if (
+      variable.default.length > OPENAPI_LIMITS.maxStringLength ||
+      /[\u0000-\u0020\u007f]/.test(variable.default) ||
+      isSensitiveValue(variable.default)
+    )
+      throw issue("SERVER_VARIABLE_INVALID", "document");
     return variable.default;
   });
   return serverUrl(substituted);
@@ -421,7 +432,10 @@ function sortedMethods(pathItem: Record<string, unknown>): string[] {
   return METHOD_ORDER.filter((method) => Object.prototype.hasOwnProperty.call(pathItem, method));
 }
 
-function sanitizeBodyValue(value: unknown, propertyName?: string): { value: unknown; redacted: boolean; safe: boolean } {
+function sanitizeBodyValue(
+  value: unknown,
+  propertyName?: string,
+): { value: unknown; redacted: boolean; safe: boolean } {
   if (propertyName && isSensitiveName(propertyName)) return { value: "", redacted: true, safe: true };
   if (typeof value === "string") {
     if (isSensitiveValue(value)) return { value: "", redacted: true, safe: true };
@@ -450,7 +464,8 @@ function sanitizeBodyValue(value: unknown, propertyName?: string): { value: unkn
   const result = Object.create(null) as Record<string, unknown>;
   let redacted = false;
   for (const key of Object.keys(value).sort()) {
-    if (key.length > OPENAPI_LIMITS.maxStringLength || /[\u0000-\u001f\u007f]/.test(key)) return { value: Object.create(null), redacted: false, safe: false };
+    if (key.length > OPENAPI_LIMITS.maxStringLength || /[\u0000-\u001f\u007f]/.test(key))
+      return { value: Object.create(null), redacted: false, safe: false };
     const safe = sanitizeBodyValue(value[key], key);
     if (!safe.safe) return { value: Object.create(null), redacted: false, safe: false };
     result[key] = safe.value;
@@ -499,27 +514,64 @@ function bodySample(content: Record<string, unknown>): { value: unknown; found: 
 }
 
 function sortedObjectEntries(value: Record<string, unknown>): [string, unknown][] {
-  return Object.keys(value).sort().map((key) => [key, value[key]]);
+  return Object.keys(value)
+    .sort()
+    .map((key) => [key, value[key]]);
 }
 
 function bodyForMedia(
   media: string,
   content: Record<string, unknown>,
-): { kind: string; body: string; multipart: MultipartPart[]; exampleIncluded: boolean; redacted: boolean; warning: OpenApiIssueCode | null } {
+): {
+  kind: string;
+  body: string;
+  multipart: MultipartPart[];
+  exampleIncluded: boolean;
+  redacted: boolean;
+  warning: OpenApiIssueCode | null;
+} {
   const normalized = media.split(";", 1)[0].trim().toLowerCase();
   const sample = bodySample(content);
   if (!sample.found) {
-    return { kind: normalized === "multipart/form-data" ? "multipart" : normalized === "application/x-www-form-urlencoded" ? "form" : normalized.includes("json") ? "json" : "raw", body: "", multipart: [], exampleIncluded: false, redacted: false, warning: null };
+    return {
+      kind:
+        normalized === "multipart/form-data"
+          ? "multipart"
+          : normalized === "application/x-www-form-urlencoded"
+            ? "form"
+            : normalized.includes("json")
+              ? "json"
+              : "raw",
+      body: "",
+      multipart: [],
+      exampleIncluded: false,
+      redacted: false,
+      warning: null,
+    };
   }
   // A scalar document-level example has no property name to classify. Treat a
   // non-empty string as opaque so a bearer/password literal cannot be copied
   // into a draft merely because it was documented as an example.
   if ((typeof sample.value === "string" && sample.value.length > 0) || Array.isArray(sample.value)) {
-    return { kind: "none", body: "", multipart: [], exampleIncluded: false, redacted: false, warning: "BODY_EXAMPLE_OMITTED" };
+    return {
+      kind: "none",
+      body: "",
+      multipart: [],
+      exampleIncluded: false,
+      redacted: false,
+      warning: "BODY_EXAMPLE_OMITTED",
+    };
   }
   const sanitized = sanitizeBodyValue(sample.value);
   if (!sanitized.safe) {
-    return { kind: "none", body: "", multipart: [], exampleIncluded: false, redacted: false, warning: "BODY_EXAMPLE_OMITTED" };
+    return {
+      kind: "none",
+      body: "",
+      multipart: [],
+      exampleIncluded: false,
+      redacted: false,
+      warning: "BODY_EXAMPLE_OMITTED",
+    };
   }
   if (normalized === "multipart/form-data") {
     const multipart: MultipartPart[] = [];
@@ -528,19 +580,56 @@ function bodyForMedia(
       for (const [name, value] of sortedObjectEntries(sanitized.value)) {
         const scalar = safeScalar(value);
         if (scalar === null || name.length > 120 || !HTTP_TOKEN.test(name)) {
-          return { kind: "multipart", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_EXAMPLE_OMITTED" };
+          return {
+            kind: "multipart",
+            body: "",
+            multipart: [],
+            exampleIncluded: false,
+            redacted: sanitized.redacted,
+            warning: "BODY_EXAMPLE_OMITTED",
+          };
         }
         multipartBytes += byteLength(name) + byteLength(scalar);
         if (multipart.length >= MAX_MULTIPART_PARTS || multipartBytes > OPENAPI_LIMITS.maxBodyBytes) {
-          return { kind: "multipart", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_TOO_LARGE" };
+          return {
+            kind: "multipart",
+            body: "",
+            multipart: [],
+            exampleIncluded: false,
+            redacted: sanitized.redacted,
+            warning: "BODY_TOO_LARGE",
+          };
         }
-        multipart.push({ kind: "text", name, value: scalar, file_path: "", file_name: "", content_type: "", enabled: true });
+        multipart.push({
+          kind: "text",
+          name,
+          value: scalar,
+          file_path: "",
+          file_name: "",
+          content_type: "",
+          enabled: true,
+        });
       }
     }
-    return { kind: "multipart", body: "", multipart, exampleIncluded: true, redacted: sanitized.redacted, warning: null };
+    return {
+      kind: "multipart",
+      body: "",
+      multipart,
+      exampleIncluded: true,
+      redacted: sanitized.redacted,
+      warning: null,
+    };
   }
   if (normalized === "application/x-www-form-urlencoded") {
-    if (!isRecord(sanitized.value)) return { kind: "form", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_EXAMPLE_OMITTED" };
+    if (!isRecord(sanitized.value))
+      return {
+        kind: "form",
+        body: "",
+        multipart: [],
+        exampleIncluded: false,
+        redacted: sanitized.redacted,
+        warning: "BODY_EXAMPLE_OMITTED",
+      };
     const form = new URLSearchParams();
     for (const [name, value] of sortedObjectEntries(sanitized.value)) {
       const scalar = safeScalar(value);
@@ -548,7 +637,14 @@ function bodyForMedia(
     }
     const body = form.toString();
     return byteLength(body) > OPENAPI_LIMITS.maxBodyBytes
-      ? { kind: "form", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_TOO_LARGE" }
+      ? {
+          kind: "form",
+          body: "",
+          multipart: [],
+          exampleIncluded: false,
+          redacted: sanitized.redacted,
+          warning: "BODY_TOO_LARGE",
+        }
       : { kind: "form", body, multipart: [], exampleIncluded: true, redacted: sanitized.redacted, warning: null };
   }
   if (normalized === "application/json" || normalized.endsWith("+json")) {
@@ -556,29 +652,58 @@ function bodyForMedia(
     try {
       body = JSON.stringify(sanitized.value, null, 2);
     } catch {
-      return { kind: "json", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_EXAMPLE_OMITTED" };
+      return {
+        kind: "json",
+        body: "",
+        multipart: [],
+        exampleIncluded: false,
+        redacted: sanitized.redacted,
+        warning: "BODY_EXAMPLE_OMITTED",
+      };
     }
     if (byteLength(body) > OPENAPI_LIMITS.maxBodyBytes) {
-      return { kind: "json", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_TOO_LARGE" };
+      return {
+        kind: "json",
+        body: "",
+        multipart: [],
+        exampleIncluded: false,
+        redacted: sanitized.redacted,
+        warning: "BODY_TOO_LARGE",
+      };
     }
     return { kind: "json", body, multipart: [], exampleIncluded: true, redacted: sanitized.redacted, warning: null };
   }
   // Non-JSON raw examples can be legitimate documentation, but may also be a
   // bearer/password value. Leave them out unless the source was structured.
-  return { kind: "raw", body: "", multipart: [], exampleIncluded: false, redacted: sanitized.redacted, warning: "BODY_EXAMPLE_OMITTED" };
+  return {
+    kind: "raw",
+    body: "",
+    multipart: [],
+    exampleIncluded: false,
+    redacted: sanitized.redacted,
+    warning: "BODY_EXAMPLE_OMITTED",
+  };
 }
 
 function chooseMedia(content: Record<string, unknown>): string | null {
-  const keys = Object.keys(content).filter((key) => mediaType(key)).sort();
+  const keys = Object.keys(content)
+    .filter((key) => mediaType(key))
+    .sort();
   if (keys.length === 0) return null;
   const json = keys.find((key) => key.toLowerCase().split(";", 1)[0] === "application/json");
-  return json ?? keys.find((key) => key.toLowerCase().split(";", 1)[0].endsWith("+json"))
-    ?? keys.find((key) => key.toLowerCase().split(";", 1)[0] === "application/x-www-form-urlencoded")
-    ?? keys.find((key) => key.toLowerCase().split(";", 1)[0] === "multipart/form-data")
-    ?? keys[0];
+  return (
+    json ??
+    keys.find((key) => key.toLowerCase().split(";", 1)[0].endsWith("+json")) ??
+    keys.find((key) => key.toLowerCase().split(";", 1)[0] === "application/x-www-form-urlencoded") ??
+    keys.find((key) => key.toLowerCase().split(";", 1)[0] === "multipart/form-data") ??
+    keys[0]
+  );
 }
 
-function parameterValue(parameter: Record<string, unknown>, name: string): { value: string; source: ExampleValue["source"]; redacted: boolean; warning: OpenApiIssueCode | null } {
+function parameterValue(
+  parameter: Record<string, unknown>,
+  name: string,
+): { value: string; source: ExampleValue["source"]; redacted: boolean; warning: OpenApiIssueCode | null } {
   if (isSensitiveName(name)) return { value: "", source: "empty", redacted: true, warning: null };
   const example = exampleFrom(parameter);
   if (!example.found) return { value: "", source: "empty", redacted: false, warning: null };
@@ -628,7 +753,11 @@ function parametersFor(
       }
       const location = own(raw, "in");
       const name = own(raw, "name");
-      if ((location !== "path" && location !== "query" && location !== "header" && location !== "cookie") || typeof name !== "string" || !validParameterName(name, location)) {
+      if (
+        (location !== "path" && location !== "query" && location !== "header" && location !== "cookie") ||
+        typeof name !== "string" ||
+        !validParameterName(name, location)
+      ) {
         errors.push(issue("PARAMETER_INVALID", "operation", path, method));
         continue;
       }
@@ -658,7 +787,9 @@ function parametersFor(
     const leftLocation = String(own(left, "in"));
     const rightLocation = String(own(right, "in"));
     const rank = (location: string) => ["path", "query", "header", "cookie"].indexOf(location);
-    return rank(leftLocation) - rank(rightLocation) || compareText(String(own(left, "name")), String(own(right, "name")));
+    return (
+      rank(leftLocation) - rank(rightLocation) || compareText(String(own(left, "name")), String(own(right, "name")))
+    );
   });
   const previews: OpenApiParameterPreview[] = [];
   const headers: RequestHeader[] = [];
@@ -676,9 +807,9 @@ function parametersFor(
     else params.push({ key: name, value: resolved.value });
   }
   if (
-    headers.length > MAX_REQUEST_HEADER_ROWS
-    || cookies.length > MAX_REQUEST_COOKIE_ROWS
-    || params.length > OPENAPI_LIMITS.maxRequestRows
+    headers.length > MAX_REQUEST_HEADER_ROWS ||
+    cookies.length > MAX_REQUEST_COOKIE_ROWS ||
+    params.length > OPENAPI_LIMITS.maxRequestRows
   ) {
     errors.push(issue("REQUEST_ROW_LIMIT", "operation", path, method));
   }
@@ -730,7 +861,15 @@ function securityFor(
   path: string,
   method: string,
 ): SecurityResult {
-  const none: SecurityResult = { auth: emptyAuth(), metadata: null, params: [], headers: [], cookies: [], warnings: [], errors: [] };
+  const none: SecurityResult = {
+    auth: emptyAuth(),
+    metadata: null,
+    params: [],
+    headers: [],
+    cookies: [],
+    warnings: [],
+    errors: [],
+  };
   if (rawSecurity === undefined) return none;
   if (!Array.isArray(rawSecurity)) return { ...none, errors: [issue("SECURITY_INVALID", "operation", path, method)] };
   if (rawSecurity.length === 0) return none;
@@ -758,9 +897,8 @@ function securityFor(
         break;
       }
       const type = own(scheme, "type");
-      const httpScheme = typeof own(scheme, "scheme") === "string"
-        ? (own(scheme, "scheme") as string).toLowerCase()
-        : null;
+      const httpScheme =
+        typeof own(scheme, "scheme") === "string" ? (own(scheme, "scheme") as string).toLowerCase() : null;
       if (type === "http" && httpScheme === "basic") {
         resolved.auth = { ...emptyAuth(), kind: "basic" };
         resolved.metadata = { kind: "basic", location: "header", name: "Authorization", valuesInjected: false };
@@ -770,7 +908,11 @@ function securityFor(
       } else if (type === "apiKey") {
         const location = own(scheme, "in");
         const key = own(scheme, "name");
-        if ((location !== "header" && location !== "query" && location !== "cookie") || typeof key !== "string" || !validParameterName(key, location)) {
+        if (
+          (location !== "header" && location !== "query" && location !== "cookie") ||
+          typeof key !== "string" ||
+          !validParameterName(key, location)
+        ) {
           valid = false;
           unsupported = true;
           break;
@@ -806,22 +948,27 @@ function operationPreview(
   const errors: OpenApiIssue[] = [];
   const warnings: OpenApiIssue[] = [];
   const server = servers[0];
-  const url = server ? joinServerPath(server.url, path) ?? path : path;
+  const url = server ? (joinServerPath(server.url, path) ?? path) : path;
   const request = emptyRequest(method.toUpperCase(), url);
   // Inspect only the path item's own `$ref`. Recursing through the full path
   // item would see references inside sibling methods and break operation-level
   // error isolation.
   const pathItemHasRef = Object.prototype.hasOwnProperty.call(pathItem, "$ref");
   if (!isRecord(operation) || hasRef(operation) || pathItemHasRef) {
-    errors.push(issue(hasRef(operation) || pathItemHasRef ? "UNSUPPORTED_REF" : "OPERATION_INVALID", "operation", path, method));
+    errors.push(
+      issue(hasRef(operation) || pathItemHasRef ? "UNSUPPORTED_REF" : "OPERATION_INVALID", "operation", path, method),
+    );
   }
-  const operationRecord = isRecord(operation) ? operation : Object.create(null) as Record<string, unknown>;
+  const operationRecord = isRecord(operation) ? operation : (Object.create(null) as Record<string, unknown>);
   if (!server) errors.push(issue("NO_SERVER", "operation", path, method));
   if (server && !joinServerPath(server.url, path)) errors.push(issue("SERVER_INVALID", "operation", path, method));
   // Existing RequestTemplate has one document-wide server selector. Applying
   // a path/operation override without representing its precedence would make
   // the preview point at a different endpoint than the source describes.
-  if (Object.prototype.hasOwnProperty.call(pathItem, "servers") || Object.prototype.hasOwnProperty.call(operationRecord, "servers")) {
+  if (
+    Object.prototype.hasOwnProperty.call(pathItem, "servers") ||
+    Object.prototype.hasOwnProperty.call(operationRecord, "servers")
+  ) {
     errors.push(issue("SERVER_OVERRIDE_UNSUPPORTED", "operation", path, method));
   }
 
@@ -854,12 +1001,15 @@ function operationPreview(
         errors.push(issue("REQUEST_BODY_INVALID", "operation", path, method));
       } else {
         const mediaKeys = Object.keys(content);
-        if (mediaKeys.length > OPENAPI_LIMITS.maxMediaTypes) errors.push(issue("MEDIA_TYPE_LIMIT", "operation", path, method));
+        if (mediaKeys.length > OPENAPI_LIMITS.maxMediaTypes)
+          errors.push(issue("MEDIA_TYPE_LIMIT", "operation", path, method));
         const media = chooseMedia(content);
         if (media) {
           const mediaContent = content[media];
           if (!isRecord(mediaContent) || hasRef(mediaContent)) {
-            errors.push(issue(hasRef(mediaContent) ? "UNSUPPORTED_REF" : "REQUEST_BODY_INVALID", "operation", path, method));
+            errors.push(
+              issue(hasRef(mediaContent) ? "UNSUPPORTED_REF" : "REQUEST_BODY_INVALID", "operation", path, method),
+            );
           } else {
             const body = bodyForMedia(media, mediaContent);
             request.body_kind = body.kind;
@@ -867,7 +1017,11 @@ function operationPreview(
             request.multipart = body.multipart;
             requestBody = { mediaType: media, exampleIncluded: body.exampleIncluded, redacted: body.redacted };
             if (body.warning) warnings.push(issue(body.warning, "operation", path, method));
-            if (body.kind !== "none" && body.kind !== "multipart" && !request.headers.some((header) => header.key.toLowerCase() === "content-type")) {
+            if (
+              body.kind !== "none" &&
+              body.kind !== "multipart" &&
+              !request.headers.some((header) => header.key.toLowerCase() === "content-type")
+            ) {
               request.headers.push({ key: "Content-Type", value: media, enabled: true });
             }
           }
@@ -893,9 +1047,9 @@ function operationPreview(
   // pass. Apply the cap again at the final request boundary so an otherwise
   // valid document cannot produce an oversized editor or request payload.
   if (
-    request.headers.length > MAX_REQUEST_HEADER_ROWS
-    || request.cookies.length > MAX_REQUEST_COOKIE_ROWS
-    || request.params.length > OPENAPI_LIMITS.maxRequestRows
+    request.headers.length > MAX_REQUEST_HEADER_ROWS ||
+    request.cookies.length > MAX_REQUEST_COOKIE_ROWS ||
+    request.params.length > OPENAPI_LIMITS.maxRequestRows
   ) {
     errors.push(issue("REQUEST_ROW_LIMIT", "operation", path, method));
     request.headers = request.headers.slice(0, MAX_REQUEST_HEADER_ROWS);
@@ -906,11 +1060,12 @@ function operationPreview(
   request.headers.sort((left, right) => compareText(left.key, right.key));
   request.params.sort((left, right) => compareText(left.key, right.key));
   request.cookies.sort((left, right) => compareText(left.name, right.name));
-  const uniqueIssues = (entries: OpenApiIssue[]) => entries.filter(
-    (entry, index) => entries.findIndex((candidate) => candidate.code === entry.code) === index,
-  );
+  const uniqueIssues = (entries: OpenApiIssue[]) =>
+    entries.filter((entry, index) => entries.findIndex((candidate) => candidate.code === entry.code) === index);
   const uniqueErrors = uniqueIssues(errors);
-  const uniqueWarnings = uniqueIssues(warnings.filter((entry) => !uniqueErrors.some((error) => error.code === entry.code)));
+  const uniqueWarnings = uniqueIssues(
+    warnings.filter((entry) => !uniqueErrors.some((error) => error.code === entry.code)),
+  );
   const id = `openapi-${operationIndex + 1}`;
   return {
     id,
@@ -932,9 +1087,15 @@ function operationPreview(
 function parsePreview(source: unknown, format: OpenApiFormat): OpenApiImportPreview {
   if (!isRecord(source)) throw issue("ROOT_INVALID", "document");
   const version = versionOf(own(source, "openapi"));
-  if (!version) throw issue(typeof own(source, "openapi") === "string" ? "VERSION_UNSUPPORTED" : "ROOT_INVALID", "document");
+  if (!version)
+    throw issue(typeof own(source, "openapi") === "string" ? "VERSION_UNSUPPORTED" : "ROOT_INVALID", "document");
   const info = own(source, "info");
-  if (!isRecord(info) || typeof own(info, "title") !== "string" || typeof own(info, "version") !== "string" || !isRecord(own(source, "paths"))) {
+  if (
+    !isRecord(info) ||
+    typeof own(info, "title") !== "string" ||
+    typeof own(info, "version") !== "string" ||
+    !isRecord(own(source, "paths"))
+  ) {
     throw issue("ROOT_INVALID", "document");
   }
 
@@ -956,15 +1117,20 @@ function parsePreview(source: unknown, format: OpenApiFormat): OpenApiImportPrev
   }
 
   const components = own(source, "components");
-  const securitySchemes = isRecord(components) && isRecord(own(components, "securitySchemes"))
-    ? own(components, "securitySchemes") as Record<string, unknown>
-    : Object.create(null) as Record<string, unknown>;
-  if (Object.keys(securitySchemes).length > OPENAPI_LIMITS.maxSecuritySchemes) throw issue("SECURITY_SCHEME_LIMIT", "document");
+  const securitySchemes =
+    isRecord(components) && isRecord(own(components, "securitySchemes"))
+      ? (own(components, "securitySchemes") as Record<string, unknown>)
+      : (Object.create(null) as Record<string, unknown>);
+  if (Object.keys(securitySchemes).length > OPENAPI_LIMITS.maxSecuritySchemes)
+    throw issue("SECURITY_SCHEME_LIMIT", "document");
   const paths = own(source, "paths") as Record<string, unknown>;
-  const pathKeys = Object.keys(paths).filter((key) => key.startsWith("/") || key === "").sort();
+  const pathKeys = Object.keys(paths)
+    .filter((key) => key.startsWith("/") || key === "")
+    .sort();
   if (pathKeys.length > OPENAPI_LIMITS.maxPaths) throw issue("PATH_LIMIT", "document");
   const allPathKeys = Object.keys(paths);
-  if (allPathKeys.some((key) => !key.startsWith("/") && !key.startsWith("x-"))) errors.push(issue("PATH_INVALID", "document"));
+  if (allPathKeys.some((key) => !key.startsWith("/") && !key.startsWith("x-")))
+    errors.push(issue("PATH_INVALID", "document"));
 
   let operationCount = 0;
   let parameterCount = 0;
@@ -985,12 +1151,23 @@ function parsePreview(source: unknown, format: OpenApiFormat): OpenApiImportPrev
     if (operationCount > OPENAPI_LIMITS.maxOperations) throw issue("OPERATION_LIMIT", "document");
     const methods = sortedMethods(pathItem);
     for (const method of methods) {
-      const { declaredParameterCount, ...operation } = operationPreview(path, method, pathItem, pathItem[method], servers, securitySchemes, rootSecurity, operations.length);
+      const { declaredParameterCount, ...operation } = operationPreview(
+        path,
+        method,
+        pathItem,
+        pathItem[method],
+        servers,
+        securitySchemes,
+        rootSecurity,
+        operations.length,
+      );
       parameterCount += declaredParameterCount;
       if (parameterCount > OPENAPI_LIMITS.maxParameters) throw issue("PARAMETER_LIMIT", "document");
       operations.push(operation);
     }
-    const unsupportedMethods = Object.keys(pathItem).filter((key) => !METHOD_SET.has(key) && !PATH_ITEM_METADATA.has(key) && !key.startsWith("x-"));
+    const unsupportedMethods = Object.keys(pathItem).filter(
+      (key) => !METHOD_SET.has(key) && !PATH_ITEM_METADATA.has(key) && !key.startsWith("x-"),
+    );
     for (const unsupportedMethod of unsupportedMethods) {
       errors.push(issue("METHOD_UNSUPPORTED", "operation", path, unsupportedMethod.toUpperCase()));
     }
@@ -1011,16 +1188,19 @@ export function parseOpenApi(text: string, format: OpenApiFormat = "yaml"): Open
 export const parseOpenApiDocument = parseOpenApi;
 
 export function parseOpenApiSource(source: OpenApiSource): OpenApiImportResult {
-  const format = source.kind === "url" ? source.format : source.format ?? detectOpenApiFormat(source.name);
+  const format = source.kind === "url" ? source.format : (source.format ?? detectOpenApiFormat(source.name));
   const result = parseOpenApi(source.text, format);
   return result.ok
     ? {
-      ok: true,
-      preview: {
-        ...result.preview,
-        sourceName: source.kind === "file" ? safeFileName(source.name) : `remote-openapi.${format === "json" ? "json" : "yaml"}`,
-      },
-    }
+        ok: true,
+        preview: {
+          ...result.preview,
+          sourceName:
+            source.kind === "file"
+              ? safeFileName(source.name)
+              : `remote-openapi.${format === "json" ? "json" : "yaml"}`,
+        },
+      }
     : result;
 }
 
@@ -1032,8 +1212,17 @@ export function selectOpenApiServer(preview: OpenApiImportPreview, serverIndex: 
     operations: preview.operations.map((operation) => {
       const url = joinServerPath(server.url, operation.path);
       if (!url) {
-        const errors = [...operation.errors.filter((entry) => entry.code !== "SERVER_INVALID"), issue("SERVER_INVALID", "operation", operation.path, operation.method)];
-        return { ...operation, serverIndex, request: { ...operation.request, url: operation.path }, errors, applyable: false };
+        const errors = [
+          ...operation.errors.filter((entry) => entry.code !== "SERVER_INVALID"),
+          issue("SERVER_INVALID", "operation", operation.path, operation.method),
+        ];
+        return {
+          ...operation,
+          serverIndex,
+          request: { ...operation.request, url: operation.path },
+          errors,
+          applyable: false,
+        };
       }
       const errors = operation.errors.filter((entry) => entry.code !== "NO_SERVER" && entry.code !== "SERVER_INVALID");
       return {

@@ -64,17 +64,8 @@ function outcomeLabel(outcome: CleanupResult["items"][number]["outcome"]): strin
 }
 
 function safeCleanupError(cause: unknown): string {
-  const message = typeof cause === "string"
-    ? cause
-    : cause instanceof Error
-      ? cause.message
-      : "";
-  return new Set([
-    GIT_CLEANUP_ERROR,
-    GIT_CLEANUP_CANCELLED,
-    GIT_CLEANUP_BUSY,
-    GIT_CLEANUP_STATE_CHANGED,
-  ]).has(message)
+  const message = typeof cause === "string" ? cause : cause instanceof Error ? cause.message : "";
+  return new Set([GIT_CLEANUP_ERROR, GIT_CLEANUP_CANCELLED, GIT_CLEANUP_BUSY, GIT_CLEANUP_STATE_CHANGED]).has(message)
     ? message
     : GIT_CLEANUP_ERROR;
 }
@@ -94,10 +85,7 @@ function eligibleWorktrees(preview: CleanupPreview | null): WorktreeCleanupEntry
   return (preview?.worktrees ?? []).filter((worktree) => worktree.eligible);
 }
 
-function cleanupConfirmationSummary(pending: {
-  branches: string[];
-  worktrees: string[];
-}): string[] {
+function cleanupConfirmationSummary(pending: { branches: string[]; worktrees: string[] }): string[] {
   return [
     `local branch ${pending.branches.length}개와 worktree ${pending.worktrees.length}개를 정리합니다.`,
     "정리 대상:",
@@ -132,9 +120,17 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
   const operationIdRef = useRef<string | null>(null);
   const cancelledOperationRef = useRef<string | null>(null);
 
-  useEffect(() => {onBusyChange?.(busy || confirmation !== null);}, [busy, confirmation, onBusyChange]);
-  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
+  useEffect(() => {
+    onBusyChange?.(busy || confirmation !== null);
+  }, [busy, confirmation, onBusyChange]);
+  useEffect(
+    () => () => {
+      onBusyChange?.(false);
+    },
+    [onBusyChange],
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     mountedRef.current = true;
     sequenceRef.current += 1;
@@ -167,8 +163,7 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
 
   if (!repo) return null;
 
-  const isCurrent = (sequence: number) =>
-    mountedRef.current && sequence === sequenceRef.current;
+  const isCurrent = (sequence: number) => mountedRef.current && sequence === sequenceRef.current;
 
   const loadPreview = async () => {
     if (busyRef.current) return;
@@ -266,14 +261,14 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
   const runCleanup = async (pending: NonNullable<typeof confirmation>) => {
     if (busyRef.current) return;
     if (
-      !preview
-      || pending.repositoryKey !== repo.canonicalKey
-      || pending.repositoryPath !== repo.path
-      || pending.revision !== preview.revision
-      || pending.branches.length !== selectedBranches.size
-      || pending.branches.some((name) => !selectedBranches.has(name))
-      || pending.worktrees.length !== selectedWorktrees.size
-      || pending.worktrees.some((path) => !selectedWorktrees.has(path))
+      !preview ||
+      pending.repositoryKey !== repo.canonicalKey ||
+      pending.repositoryPath !== repo.path ||
+      pending.revision !== preview.revision ||
+      pending.branches.length !== selectedBranches.size ||
+      pending.branches.some((name) => !selectedBranches.has(name)) ||
+      pending.worktrees.length !== selectedWorktrees.size ||
+      pending.worktrees.some((path) => !selectedWorktrees.has(path))
     ) {
       setConfirmation(null);
       setPreview(null);
@@ -297,13 +292,7 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
     setResult(null);
     setStatus("선택한 branch·worktree를 정리하는 중입니다.");
     try {
-      const next = await repoCleanup(
-        repo.path,
-        pending.branches,
-        pending.worktrees,
-        pending.revision,
-        operationId,
-      );
+      const next = await repoCleanup(repo.path, pending.branches, pending.worktrees, pending.revision, operationId);
       if (!isCurrent(sequence)) return;
       if (next.previewRevision !== pending.revision) {
         setPreview(null);
@@ -393,7 +382,11 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
         ) : null}
       </div>
 
-      {error ? <div className="error cleanup-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="error cleanup-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="cleanup-status" role="status" aria-live="polite" aria-atomic="true">
         {busy && action === "preview" && !cancelPending
           ? "정리 후보를 확인하는 중입니다."
@@ -453,8 +446,16 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
             </fieldset>
           </div>
           <div className="cleanup-footer">
-            <span className="dim">main·현재 worktree·현재 branch·locked·dirty·untracked 대상은 항상 차단합니다. force delete/reset/clean은 실행하지 않습니다.</span>
-            <button type="button" className="btn primary" disabled={busy || selectedCount === 0} onClick={requestCleanup}>
+            <span className="dim">
+              main·현재 worktree·현재 branch·locked·dirty·untracked 대상은 항상 차단합니다. force delete/reset/clean은
+              실행하지 않습니다.
+            </span>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy || selectedCount === 0}
+              onClick={requestCleanup}
+            >
               선택 항목 정리 ({selectedCount})
             </button>
           </div>
@@ -464,14 +465,20 @@ export default function CleanupPanel({ repo, onBusyChange }: Props) {
       {result ? (
         <div className="cleanup-result" role="status" aria-live="polite">
           <strong>정리 결과</strong>
-          <span>{result.removed}개 제거 · {result.attempted}개 실행</span>
+          <span>
+            {result.removed}개 제거 · {result.attempted}개 실행
+          </span>
           {result.items.some((item) => item.outcome !== "removed") ? (
-            <span>{result.items.filter((item) => item.outcome !== "removed").length}개 항목은 차단 또는 실패했습니다.</span>
+            <span>
+              {result.items.filter((item) => item.outcome !== "removed").length}개 항목은 차단 또는 실패했습니다.
+            </span>
           ) : null}
           <ul className="cleanup-result-items" aria-label="정리 결과 항목">
             {result.items.map((item) => (
               <li key={`${item.kind}:${item.target}`}>
-                <span className="cleanup-target mono">{item.kind === "branch" ? "branch" : "worktree"} {item.target}</span>
+                <span className="cleanup-target mono">
+                  {item.kind === "branch" ? "branch" : "worktree"} {item.target}
+                </span>
                 <span>{outcomeLabel(item.outcome)}</span>
                 {item.reason ? <span className="dim">{blockLabel(item.reason)}</span> : null}
               </li>

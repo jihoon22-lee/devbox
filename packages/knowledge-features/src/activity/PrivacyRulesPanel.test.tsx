@@ -10,12 +10,16 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("./api", async (original) => ({ ...(await original<typeof import("./api")>()), ...api }));
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("line helpers", () => {
   it("keeps commas and inner spaces, drops blank lines", () => {
     expect(fromLines("patient \\d{1,3}\n\n  InPrivate - Microsoft Edge  \n")).toEqual([
-      "patient \\d{1,3}", "InPrivate - Microsoft Edge",
+      "patient \\d{1,3}",
+      "InPrivate - Microsoft Edge",
     ]);
     expect(toLines(["a", "b"])).toBe("a\nb");
   });

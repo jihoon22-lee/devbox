@@ -1,6 +1,6 @@
 //! Private Windows/native LSP transport. A proof is supplied only by the
 //! Windows Files owner after reading its authenticated native Files pipe.
-use code_pad_lib::{core::encoding::Encoding, lsp::LspPosition};
+use editor_engine::{core::encoding::Encoding, lsp::LspPosition};
 use product_contract::ProjectContext;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -43,7 +43,7 @@ impl DocumentProof {
             || self.revision.len() > 128
             || self.parents.is_empty()
             || self.parents.len() > 128
-            || self.size > code_pad_lib::core::guard::MAX_EDITABLE_BYTES
+            || self.size > editor_engine::core::guard::MAX_EDITABLE_BYTES
             || self.content_hash.len() != 64
             || !self
                 .content_hash

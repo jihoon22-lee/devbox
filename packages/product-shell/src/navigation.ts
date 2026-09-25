@@ -1,4 +1,7 @@
-export interface Navigation { entries: string[]; cursor: number }
+export interface Navigation {
+  entries: string[];
+  cursor: number;
+}
 export const HISTORY_LIMIT = 64;
 export function navigate(state: Navigation, route: string): Navigation {
   if (state.entries[state.cursor] === route) return state;

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MAX_LINE_BYTES,
-  SseEventBuffer,
-  SseParseError,
-  SseParser,
-} from "./sse";
+import { MAX_LINE_BYTES, SseEventBuffer, SseParseError, SseParser } from "./sse";
 
 function bytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);
@@ -18,24 +13,22 @@ function parse(chunks: Uint8Array[]): ReturnType<SseParser["feed"]> {
 
 describe("SseParser", () => {
   it("handles BOM, comments, CRLF and multiline data", () => {
-    const events = parse([bytes("\ufeff: heartbeat\r\nevent: update\r\ndata: one\r\ndata: two\r\nid: 42\r\nretry: 1500\r\n\r\n")]);
-    expect(events).toEqual([{
-      event: "update",
-      data: "one\ntwo",
-      id: "42",
-      retryMs: 1500,
-    }]);
+    const events = parse([
+      bytes("\ufeff: heartbeat\r\nevent: update\r\ndata: one\r\ndata: two\r\nid: 42\r\nretry: 1500\r\n\r\n"),
+    ]);
+    expect(events).toEqual([
+      {
+        event: "update",
+        data: "one\ntwo",
+        id: "42",
+        retryMs: 1500,
+      },
+    ]);
   });
 
   it("keeps UTF-8 code points split across byte chunks and flushes EOF", () => {
     const value = bytes("\ufeffdata: café");
-    const events = parse([
-      new Uint8Array(),
-      value.slice(0, 2),
-      value.slice(2, 9),
-      value.slice(9),
-      bytes("\n"),
-    ]);
+    const events = parse([new Uint8Array(), value.slice(0, 2), value.slice(2, 9), value.slice(9), bytes("\n")]);
     expect(events).toEqual([{ event: "message", data: "café" }]);
   });
 

@@ -131,13 +131,7 @@ export interface WorkspaceTaskApplyResult {
   skippedConflicts: number;
 }
 
-export type WorkspaceTaskOperationStatus =
-  | "queued"
-  | "running"
-  | "stopping"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+export type WorkspaceTaskOperationStatus = "queued" | "running" | "stopping" | "succeeded" | "failed" | "cancelled";
 export type WorkspaceTaskOperationRunStatus =
   | "pending"
   | "launching"
@@ -342,12 +336,7 @@ export type ServiceField =
 
 export type ServiceFieldErrors = Partial<Record<ServiceField, string>>;
 
-export type ServiceInstanceState =
-  | "stopped"
-  | "starting"
-  | "running"
-  | "stopping"
-  | "retry_waiting";
+export type ServiceInstanceState = "stopped" | "starting" | "running" | "stopping" | "retry_waiting";
 
 export interface ServiceInstance {
   jobId: string;

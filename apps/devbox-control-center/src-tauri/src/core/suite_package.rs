@@ -108,7 +108,7 @@ impl Release {
             "https://github.com/jihoon22-lee/devbox/releases/download/{}/{}",
             self.release_tag, asset.name
         );
-        if !devbox_manager_lib::core::url_policy::is_allowed(&url) {
+        if !installation_tools::core::url_policy::is_allowed(&url) {
             return Err("suite_asset_url_denied");
         }
         Ok(url)

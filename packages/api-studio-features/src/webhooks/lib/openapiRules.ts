@@ -1,8 +1,4 @@
-import {
-  OPENAPI_DOCUMENT_LIMITS,
-  parseBoundedOpenApiDocument,
-  type OpenApiDocumentFormat,
-} from "@devbox/openapi";
+import { OPENAPI_DOCUMENT_LIMITS, parseBoundedOpenApiDocument, type OpenApiDocumentFormat } from "@devbox/openapi";
 import type { ResponseRule } from "../api";
 
 const MAX_PATHS = 250;
@@ -77,15 +73,17 @@ function byteLength(value: string): number {
 }
 
 function safePath(path: string): boolean {
-  return path.startsWith("/")
-    && path.length <= OPENAPI_DOCUMENT_LIMITS.maxStringLength
-    && byteLength(path) <= MAX_PATH_BYTES
-    && /^[\x20-\x7e]+$/u.test(path)
-    && !/[\u0000-\u001f\u007f]/.test(path)
-    && !path.includes("?")
-    && !path.includes("#")
-    && !path.includes("*")
-    && !path.split("/").some((segment) => segment === "." || segment === "..");
+  return (
+    path.startsWith("/") &&
+    path.length <= OPENAPI_DOCUMENT_LIMITS.maxStringLength &&
+    byteLength(path) <= MAX_PATH_BYTES &&
+    /^[\x20-\x7e]+$/u.test(path) &&
+    !/[\u0000-\u001f\u007f]/.test(path) &&
+    !path.includes("?") &&
+    !path.includes("#") &&
+    !path.includes("*") &&
+    !path.split("/").some((segment) => segment === "." || segment === "..")
+  );
 }
 
 function safeSourceName(value: string): string {

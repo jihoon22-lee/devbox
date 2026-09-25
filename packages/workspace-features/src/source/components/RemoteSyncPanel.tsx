@@ -40,11 +40,7 @@ const FIXED_REMOTE_ERRORS = new Set([
 ]);
 
 function safeRemoteError(error: unknown): string {
-  const message = typeof error === "string"
-    ? error
-    : error instanceof Error
-      ? error.message
-      : "";
+  const message = typeof error === "string" ? error : error instanceof Error ? error.message : "";
   return FIXED_REMOTE_ERRORS.has(message) ? message : GIT_REMOTE_ERROR;
 }
 
@@ -123,9 +119,17 @@ export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
   const [cancelPending, setCancelPending] = useState(false);
   const [remoteConfirmation, setRemoteConfirmation] = useState<RemoteConfirmation | null>(null);
 
-  useEffect(() => {onBusyChange?.(busy || remoteConfirmation !== null);}, [busy, remoteConfirmation, onBusyChange]);
-  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
+  useEffect(() => {
+    onBusyChange?.(busy || remoteConfirmation !== null);
+  }, [busy, remoteConfirmation, onBusyChange]);
+  useEffect(
+    () => () => {
+      onBusyChange?.(false);
+    },
+    [onBusyChange],
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     mountedRef.current = true;
     sequenceRef.current += 1;
@@ -211,11 +215,12 @@ export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
 
     let operation: Promise<void>;
     try {
-      operation = nextAction === "fetch"
-        ? repoFetch(path, operationId)
-        : nextAction === "pull"
-          ? repoPull(path, operationId)
-          : repoPush(path, operationId);
+      operation =
+        nextAction === "fetch"
+          ? repoFetch(path, operationId)
+          : nextAction === "pull"
+            ? repoPull(path, operationId)
+            : repoPush(path, operationId);
     } catch (reason) {
       if (isCurrent(sequence)) {
         setError(safeRemoteError(reason));
@@ -302,11 +307,12 @@ export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
   const confirmAction = () => {
     const pending = remoteConfirmation;
     if (!pending) return;
-    const stillCurrent = pending.repositoryKey === repo.canonicalKey
-      && pending.repositoryPath === repo.path
-      && state !== null
-      && pending.stateSignature === remoteStateSignature(state)
-      && blockedReason(state, pending.action) === null;
+    const stillCurrent =
+      pending.repositoryKey === repo.canonicalKey &&
+      pending.repositoryPath === repo.path &&
+      state !== null &&
+      pending.stateSignature === remoteStateSignature(state) &&
+      blockedReason(state, pending.action) === null;
     setRemoteConfirmation(null);
     if (!stillCurrent) {
       setError(GIT_REMOTE_STATE_CHANGED);
@@ -359,17 +365,36 @@ export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
         </div>
       </div>
 
-      {error ? <div className="error remote-sync-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="error remote-sync-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="remote-sync-status" role="status" aria-live="polite" aria-atomic="true">
         {busy && action && !cancelPending ? `${ACTION_LABELS[action]} 처리 중입니다.` : status}
       </div>
 
       <dl className="remote-state-grid">
-        <div><dt>branch</dt><dd className="mono">{state?.detached ? "(detached)" : state?.currentBranch ?? "—"}</dd></div>
-        <div><dt>upstream</dt><dd className="mono">{state?.upstream ?? "없음"}</dd></div>
-        <div><dt>ahead / behind</dt><dd className="mono">{state ? `${state.ahead} / ${state.behind}` : "—"}</dd></div>
-        <div><dt>working tree</dt><dd>{state ? (state.dirty ? "dirty" : "clean") : "—"}</dd></div>
-        <div><dt>operation</dt><dd>{state?.operationInProgress ? "진행 중" : "없음"}</dd></div>
+        <div>
+          <dt>branch</dt>
+          <dd className="mono">{state?.detached ? "(detached)" : (state?.currentBranch ?? "—")}</dd>
+        </div>
+        <div>
+          <dt>upstream</dt>
+          <dd className="mono">{state?.upstream ?? "없음"}</dd>
+        </div>
+        <div>
+          <dt>ahead / behind</dt>
+          <dd className="mono">{state ? `${state.ahead} / ${state.behind}` : "—"}</dd>
+        </div>
+        <div>
+          <dt>working tree</dt>
+          <dd>{state ? (state.dirty ? "dirty" : "clean") : "—"}</dd>
+        </div>
+        <div>
+          <dt>operation</dt>
+          <dd>{state?.operationInProgress ? "진행 중" : "없음"}</dd>
+        </div>
       </dl>
 
       <div className="remote-sync-buttons" aria-label="Git 원격 작업">
@@ -385,7 +410,7 @@ export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
           type="button"
           className="btn primary"
           disabled={busy || pullBlocked}
-          title={state ? blockedReason(state, "pull") ?? "fast-forward 전용 pull" : undefined}
+          title={state ? (blockedReason(state, "pull") ?? "fast-forward 전용 pull") : undefined}
           onClick={() => requestAction("pull")}
         >
           Pull (FF only)
@@ -394,7 +419,7 @@ export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
           type="button"
           className="btn primary"
           disabled={busy || pushBlocked}
-          title={state ? blockedReason(state, "push") ?? "현재 브랜치 push" : undefined}
+          title={state ? (blockedReason(state, "push") ?? "현재 브랜치 push") : undefined}
           onClick={() => requestAction("push")}
         >
           Push

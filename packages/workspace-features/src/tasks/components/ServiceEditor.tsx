@@ -67,9 +67,7 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
     setDraft((current) => ({
       ...current,
       environmentAction: "replace",
-      environment: current.environment.map((entry) =>
-        entry.id === id ? { ...entry, [field]: value } : entry,
-      ),
+      environment: current.environment.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry)),
     }));
     setErrors((current) => ({ ...current, env: undefined }));
   };
@@ -116,9 +114,7 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
     } catch (cause) {
       const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
       const backendErrors = serviceFieldErrorFromBackend(raw);
-      setErrors(Object.keys(backendErrors).length > 0
-        ? backendErrors
-        : { name: friendlyErrorMessage(cause) });
+      setErrors(Object.keys(backendErrors).length > 0 ? backendErrors : { name: friendlyErrorMessage(cause) });
     } finally {
       setSaving(false);
     }
@@ -156,7 +152,11 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                 aria-invalid={Boolean(errors.name)}
                 autoFocus
               />
-              {errors.name ? <small className="field-error" role="alert">{errors.name}</small> : null}
+              {errors.name ? (
+                <small className="field-error" role="alert">
+                  {errors.name}
+                </small>
+              ) : null}
             </label>
             <label className="field field-wide">
               <span>명령</span>
@@ -169,10 +169,16 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                 aria-invalid={Boolean(errors.command)}
                 placeholder="npm start"
               />
-              {errors.command ? <small className="field-error" role="alert">{errors.command}</small> : null}
+              {errors.command ? (
+                <small className="field-error" role="alert">
+                  {errors.command}
+                </small>
+              ) : null}
             </label>
             <label className="field field-wide">
-              <span>작업 디렉터리 <em>(선택)</em></span>
+              <span>
+                작업 디렉터리 <em>(선택)</em>
+              </span>
               <input
                 aria-label="서비스 작업 디렉터리"
                 value={draft.cwd}
@@ -193,7 +199,10 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                   checked={draft.targetKind === "windows"}
                   onChange={() => updateTarget("windows")}
                 />
-                <span><strong>Windows</strong><small>호스트에서 실행</small></span>
+                <span>
+                  <strong>Windows</strong>
+                  <small>호스트에서 실행</small>
+                </span>
               </label>
               <label className={`target-option ${draft.targetKind === "wsl" ? "selected" : ""}`}>
                 <input
@@ -203,7 +212,10 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                   checked={draft.targetKind === "wsl"}
                   onChange={() => updateTarget("wsl")}
                 />
-                <span><strong>WSL</strong><small>지정한 배포판에서 실행</small></span>
+                <span>
+                  <strong>WSL</strong>
+                  <small>지정한 배포판에서 실행</small>
+                </span>
               </label>
             </div>
             {draft.targetKind === "wsl" ? (
@@ -216,11 +228,17 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                   placeholder="Ubuntu"
                   aria-invalid={Boolean(errors.targetDistro)}
                 />
-                {errors.targetDistro ? <small className="field-error" role="alert">{errors.targetDistro}</small> : null}
+                {errors.targetDistro ? (
+                  <small className="field-error" role="alert">
+                    {errors.targetDistro}
+                  </small>
+                ) : null}
               </label>
             ) : null}
             {draft.targetKind === "windows" && errors.targetDistro ? (
-              <small className="field-error" role="alert">{errors.targetDistro}</small>
+              <small className="field-error" role="alert">
+                {errors.targetDistro}
+              </small>
             ) : null}
           </fieldset>
 
@@ -239,7 +257,10 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                   checked={draft.autoStart}
                   onChange={(event) => update("autoStart", event.target.checked)}
                 />
-                <span><strong>자동 시작</strong><small>Run Manager 기동 시 시작 대상으로 표시합니다.</small></span>
+                <span>
+                  <strong>자동 시작</strong>
+                  <small>Run Manager 기동 시 시작 대상으로 표시합니다.</small>
+                </span>
               </label>
               <label className="field">
                 <span>재시작 정책</span>
@@ -270,7 +291,10 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                 checked={draft.healthTcpEnabled}
                 onChange={(event) => update("healthTcpEnabled", event.target.checked)}
               />
-              <span><strong>TCP probe 사용</strong><small>프로세스 생존과 함께 지정한 로컬 포트를 확인합니다.</small></span>
+              <span>
+                <strong>TCP probe 사용</strong>
+                <small>프로세스 생존과 함께 지정한 로컬 포트를 확인합니다.</small>
+              </span>
             </label>
             {draft.healthTcpEnabled ? (
               <div className="service-health-grid">
@@ -283,7 +307,11 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                     placeholder="127.0.0.1"
                     aria-invalid={Boolean(errors.healthTcpAddress)}
                   />
-                  {errors.healthTcpAddress ? <small className="field-error" role="alert">{errors.healthTcpAddress}</small> : null}
+                  {errors.healthTcpAddress ? (
+                    <small className="field-error" role="alert">
+                      {errors.healthTcpAddress}
+                    </small>
+                  ) : null}
                 </label>
                 <label className="field">
                   <span>포트</span>
@@ -295,7 +323,11 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                     placeholder="3000"
                     aria-invalid={Boolean(errors.healthTcpPort)}
                   />
-                  {errors.healthTcpPort ? <small className="field-error" role="alert">{errors.healthTcpPort}</small> : null}
+                  {errors.healthTcpPort ? (
+                    <small className="field-error" role="alert">
+                      {errors.healthTcpPort}
+                    </small>
+                  ) : null}
                 </label>
               </div>
             ) : null}
@@ -308,7 +340,9 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
             <div className="section-heading">
               <div>
                 <h3 id="service-environment-title">환경변수</h3>
-                <p className="section-description">보호된 환경변수 값은 읽기 API에서 마스킹되며 이 화면에도 평문으로 표시하지 않습니다.</p>
+                <p className="section-description">
+                  보호된 환경변수 값은 읽기 API에서 마스킹되며 이 화면에도 평문으로 표시하지 않습니다.
+                </p>
               </div>
             </div>
             <div className="adapter-warning" role="note">
@@ -317,20 +351,33 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                 : "새 환경변수 값은 Windows 사용자 범위 DPAPI로 암호화되어 저장되며 다시 표시되지 않습니다."}
             </div>
             <div className="section-heading">
-              <button type="button" className="button-secondary small" onClick={addEnvironment}>변수 추가</button>
+              <button type="button" className="button-secondary small" onClick={addEnvironment}>
+                변수 추가
+              </button>
             </div>
-            {service?.envReconnectRequired && <div role="note">
-              <p>기존 비밀 환경 변수는 아직 연결되지 않았습니다. 변수를 다시 입력하거나, 사용하지 않기로 선택한 뒤 저장해 주세요.</p>
-              <button type="button" className="button-secondary small" onClick={replacePersistedEnvironment}>환경 변수 다시 입력</button>
-              <button type="button" className="button-secondary small" onClick={clearPersistedEnvironment}>기존 비밀 사용 안 함</button>
-            </div>}
+            {service?.envReconnectRequired && (
+              <div role="note">
+                <p>
+                  기존 비밀 환경 변수는 아직 연결되지 않았습니다. 변수를 다시 입력하거나, 사용하지 않기로 선택한 뒤
+                  저장해 주세요.
+                </p>
+                <button type="button" className="button-secondary small" onClick={replacePersistedEnvironment}>
+                  환경 변수 다시 입력
+                </button>
+                <button type="button" className="button-secondary small" onClick={clearPersistedEnvironment}>
+                  기존 비밀 사용 안 함
+                </button>
+              </div>
+            )}
             {draft.environment.length === 0 ? <p className="muted">설정된 환경변수가 없습니다.</p> : null}
             <div className="environment-list">
               {draft.environment.map((entry) =>
                 entry.persisted ? (
                   <div className="environment-row persisted" key={entry.id}>
                     <span className="masked-key">저장된 환경변수</span>
-                    <span className="masked-value" aria-label="마스킹된 환경변수 값">••••••••</span>
+                    <span className="masked-value" aria-label="마스킹된 환경변수 값">
+                      ••••••••
+                    </span>
                     <span className="muted">DPAPI 보호됨</span>
                     <button
                       type="button"
@@ -340,10 +387,20 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                     >
                       유지
                     </button>
-                    <button type="button" className="button-secondary small" aria-label="기존 환경변수 교체" onClick={replacePersistedEnvironment}>
+                    <button
+                      type="button"
+                      className="button-secondary small"
+                      aria-label="기존 환경변수 교체"
+                      onClick={replacePersistedEnvironment}
+                    >
                       교체
                     </button>
-                    <button type="button" className="button-secondary small" aria-label="기존 환경변수 삭제" onClick={clearPersistedEnvironment}>
+                    <button
+                      type="button"
+                      className="button-secondary small"
+                      aria-label="기존 환경변수 삭제"
+                      onClick={clearPersistedEnvironment}
+                    >
                       삭제
                     </button>
                   </div>
@@ -366,10 +423,12 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                       type="button"
                       className="icon-button"
                       aria-label="환경변수 삭제"
-                      onClick={() => setDraft((current) => ({
-                        ...current,
-                        environment: current.environment.filter((item) => item.id !== entry.id),
-                      }))}
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          environment: current.environment.filter((item) => item.id !== entry.id),
+                        }))
+                      }
                     >
                       ×
                     </button>
@@ -377,7 +436,11 @@ export default function ServiceEditor({ service, onSave, onCancel }: ServiceEdit
                 ),
               )}
             </div>
-            {errors.env ? <small className="field-error" role="alert">{errors.env}</small> : null}
+            {errors.env ? (
+              <small className="field-error" role="alert">
+                {errors.env}
+              </small>
+            ) : null}
           </section>
         </section>
       </div>

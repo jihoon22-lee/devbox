@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Private fixture export requires a hosted runner' }
-$names = @('knowledge_base_lib', 'everything_plus_lib', 'devbox_knowledge_lib')
+$names = @('knowledge_vault_engine', 'content_index_engine', 'devbox_knowledge_lib')
 $artifacts = @{}
 & cargo test -p devbox-knowledge-vault-engine -p devbox-content-index-engine -p devbox-knowledge --lib --no-run --message-format=json | ForEach-Object {
   $message = $_ | ConvertFrom-Json

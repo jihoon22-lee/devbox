@@ -2,13 +2,13 @@
 //! host's bounded IO worker, with a freshly admitted ProjectLease when used.
 //! Neither a renderer path nor its supplied hash can grant write authority.
 use crate::storage_paths::ProtectedStorage;
-use code_pad_lib::commands::file::{
-    self, ExpectedFileSnapshot, FileActionRequest, OpenFileRequest, OpenedFileWire,
-    RenameFileRequest, RenamedFileWire, SaveFileRequest, SavedFileWire,
-};
 use devbox_filesystem::{
     ensure_no_links, filesystem_identity, open_filesystem_object, parse_safe_project_path,
     FilesystemIdentity, ProjectPathKind,
+};
+use editor_engine::commands::file::{
+    self, ExpectedFileSnapshot, FileActionRequest, OpenFileRequest, OpenedFileWire,
+    RenameFileRequest, RenamedFileWire, SaveFileRequest, SavedFileWire,
 };
 use product_contract::ProjectContext;
 use serde::{Deserialize, Serialize};
@@ -190,8 +190,8 @@ struct Document {
     size: u64,
     hash: String,
     lossy: bool,
-    encoding: code_pad_lib::core::encoding::Encoding,
-    line_ending: code_pad_lib::core::line_ending::LineEnding,
+    encoding: editor_engine::core::encoding::Encoding,
+    line_ending: editor_engine::core::line_ending::LineEnding,
     revision: String,
     baseline_text_hash: [u8; 32],
     buffer_text_hash: [u8; 32],
@@ -863,7 +863,7 @@ impl FileOwner {
             .documents
             .get(&key(&path)?)
             .ok_or("file_selection_required")?;
-        if document.size > code_pad_lib::core::guard::MAX_EDITABLE_BYTES {
+        if document.size > editor_engine::core::guard::MAX_EDITABLE_BYTES {
             return Err("file_limit");
         }
         self.editor_snapshot(

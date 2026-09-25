@@ -34,8 +34,22 @@ const MOCK_OPEN_TARGETS: EverythingOpenTarget[] = [];
 
 const MOCK_FILES: FileEntry[] = [
   { id: 1, path: "C:\\projects\\devbox\\PLAN.md", name: "PLAN.md", ext: "md", size: 3555, modified_ts: 0 },
-  { id: 2, path: "C:\\projects\\devbox\\apps\\port-manager\\src\\App.tsx", name: "App.tsx", ext: "tsx", size: 5120, modified_ts: 0 },
-  { id: 3, path: "C:\\projects\\devbox\\src-tauri\\tauri.conf.json", name: "tauri.conf.json", ext: "json", size: 1100, modified_ts: 0 },
+  {
+    id: 2,
+    path: "C:\\projects\\devbox\\apps\\port-manager\\src\\App.tsx",
+    name: "App.tsx",
+    ext: "tsx",
+    size: 5120,
+    modified_ts: 0,
+  },
+  {
+    id: 3,
+    path: "C:\\projects\\devbox\\src-tauri\\tauri.conf.json",
+    name: "tauri.conf.json",
+    ext: "json",
+    size: 1100,
+    modified_ts: 0,
+  },
 ];
 
 const MOCK_CONTENT: ContentResult[] = [
@@ -79,14 +93,15 @@ export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise
 }
 
 function filterIsEmpty(filter?: SearchFilter): boolean {
-  return !filter || (
-    !(filter.extensions?.length) &&
-    filter.modifiedAfter == null &&
-    filter.modifiedBefore == null &&
-    filter.minSize == null &&
-    filter.maxSize == null &&
-    filter.sourceRootId == null &&
-    !filter.contentStatus
+  return (
+    !filter ||
+    (!filter.extensions?.length &&
+      filter.modifiedAfter == null &&
+      filter.modifiedBefore == null &&
+      filter.minSize == null &&
+      filter.maxSize == null &&
+      filter.sourceRootId == null &&
+      !filter.contentStatus)
   );
 }
 
@@ -100,15 +115,20 @@ function matchesFilter(file: FileEntry | ContentResult, filter?: SearchFilter): 
   if (filter?.sourceRootId != null && file.root_id !== filter.sourceRootId) return false;
   if (filter?.contentStatus) {
     const status = file.content_status;
-    const truncated = file.truncated ?? (
-      "content_truncated" in file ? file.content_truncated : false
-    );
+    const truncated = file.truncated ?? ("content_truncated" in file ? file.content_truncated : false);
     if (filter.contentStatus === "not_indexed" && status) return false;
     if (filter.contentStatus === "failed" && (!status || status === "indexed")) return false;
-    if ((filter.contentStatus === "truncated" || filter.contentStatus === "partial") &&
-      (status !== "indexed" || !truncated)) return false;
+    if (
+      (filter.contentStatus === "truncated" || filter.contentStatus === "partial") &&
+      (status !== "indexed" || !truncated)
+    )
+      return false;
     if (filter.contentStatus === "indexed" && (status !== "indexed" || truncated)) return false;
-    if (!["not_indexed", "failed", "truncated", "partial", "indexed"].includes(filter.contentStatus) && status !== filter.contentStatus) return false;
+    if (
+      !["not_indexed", "failed", "truncated", "partial", "indexed"].includes(filter.contentStatus) &&
+      status !== filter.contentStatus
+    )
+      return false;
   }
   return true;
 }
@@ -128,7 +148,9 @@ export async function searchFiles(query: string, limit?: number, filter?: Search
 
 export async function searchContent(query: string, limit?: number, filter?: SearchFilter): Promise<ContentResult[]> {
   if (!isTauri()) {
-    return MOCK_CONTENT.filter((f) => f.snippet.toLowerCase().includes(query.toLowerCase()) && matchesFilter(f, filter));
+    return MOCK_CONTENT.filter(
+      (f) => f.snippet.toLowerCase().includes(query.toLowerCase()) && matchesFilter(f, filter),
+    );
   }
   return invoke<ContentResult[]>("search_content", invokeSearchArgs(query, limit, filter));
 }
@@ -165,14 +187,16 @@ export async function cancelIndex(): Promise<void> {
 
 export async function watcherStatuses(): Promise<RootStatus[]> {
   if (!isTauri()) {
-    return [{
-      root: "C:\\projects\\devbox",
-      sourceKind: "native",
-      watchMode: "native",
-      lastSyncedAt: Date.now(),
-      pending: 0,
-      error: null,
-    }];
+    return [
+      {
+        root: "C:\\projects\\devbox",
+        sourceKind: "native",
+        watchMode: "native",
+        lastSyncedAt: Date.now(),
+        pending: 0,
+        error: null,
+      },
+    ];
   }
   return invoke<RootStatus[]>("watcher_statuses");
 }
@@ -201,7 +225,7 @@ export async function openTargets(): Promise<EverythingOpenTarget[]> {
 
 export async function openIn(appId: string, path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
-  await invoke("open_in", isProductHosted()?{appId,reference}:{appId,path});
+  await invoke("open_in", isProductHosted() ? { appId, reference } : { appId, path });
 }
 
 export async function listSavedQueries(): Promise<SavedQuery[]> {
@@ -213,7 +237,7 @@ export async function saveSavedQuery(request: SaveSavedQueryRequest): Promise<Sa
   if (!isTauri()) {
     const now = Date.now();
     const saved: SavedQuery = {
-      id: request.id ?? (mockSavedQueries.reduce((max, item) => Math.max(max, item.id), 0) + 1),
+      id: request.id ?? mockSavedQueries.reduce((max, item) => Math.max(max, item.id), 0) + 1,
       name: request.name.trim(),
       query: request.query.trim(),
       filter: request.filter,
@@ -242,34 +266,79 @@ export interface SourceSnapshot {
   source: SearchSource;
   state: "running" | "complete" | "cancelled" | "timed_out" | "unsupported" | "unavailable";
   partial: boolean;
-  rows: Array<{ source: string; rootIdentity: string; reference: string | null; availability: string; indexStale?: boolean; value: FileEntry & ContentResult }>;
+  rows: Array<{
+    source: string;
+    rootIdentity: string;
+    reference: string | null;
+    availability: string;
+    indexStale?: boolean;
+    value: FileEntry & ContentResult;
+  }>;
 }
 export async function searchSource(
-  source: SearchSource, query: string, mode: "name" | "content", limit: number,
-  filter: SearchFilter, signal: AbortSignal, update: (snapshot: SourceSnapshot) => void,
+  source: SearchSource,
+  query: string,
+  mode: "name" | "content",
+  limit: number,
+  filter: SearchFilter,
+  signal: AbortSignal,
+  update: (snapshot: SourceSnapshot) => void,
 ): Promise<Array<FileEntry & ContentResult>> {
   if (!isTauri()) {
-    const rows = source === "files" ? (mode === "name" ? await searchFiles(query, limit, filter) : await searchContent(query, limit, filter)) : [];
-    const snapshot: SourceSnapshot = { generation: "fixture", storeGeneration: "fixture", source, state: source === "files" ? "complete" : "unsupported", partial: false, rows: rows.map(value => ({ source, rootIdentity: "fixture", reference: null, availability: "unverified", value: value as FileEntry & ContentResult })) };
+    const rows =
+      source === "files"
+        ? mode === "name"
+          ? await searchFiles(query, limit, filter)
+          : await searchContent(query, limit, filter)
+        : [];
+    const snapshot: SourceSnapshot = {
+      generation: "fixture",
+      storeGeneration: "fixture",
+      source,
+      state: source === "files" ? "complete" : "unsupported",
+      partial: false,
+      rows: rows.map((value) => ({
+        source,
+        rootIdentity: "fixture",
+        reference: null,
+        availability: "unverified",
+        value: value as FileEntry & ContentResult,
+      })),
+    };
     if (!signal.aborted) update(snapshot);
-    return snapshot.rows.map(row => row.value);
+    return snapshot.rows.map((row) => row.value);
   }
   let generation: string | undefined;
-  const cancel = () => { if (generation) void invoke("source_cancel", { generation }).catch(() => undefined); };
+  const cancel = () => {
+    if (generation) void invoke("source_cancel", { generation }).catch(() => undefined);
+  };
   signal.addEventListener("abort", cancel, { once: true });
   try {
     let snapshot = await invoke<SourceSnapshot>("source_query", { source, query, mode, limit, filter });
     generation = snapshot.generation;
-    const project = (value: SourceSnapshot) => value.rows.map(row => ({ ...row.value, source: row.source, sourceRoot: row.rootIdentity, reference: row.reference, availability: row.availability, indexStale: row.indexStale }));
+    const project = (value: SourceSnapshot) =>
+      value.rows.map((row) => ({
+        ...row.value,
+        source: row.source,
+        sourceRoot: row.rootIdentity,
+        reference: row.reference,
+        availability: row.availability,
+        indexStale: row.indexStale,
+      }));
     while (!signal.aborted) {
-      if (snapshot.generation !== generation || snapshot.source !== source) throw new Error("검색 응답의 출처를 확인하지 못했습니다.");
+      if (snapshot.generation !== generation || snapshot.source !== source)
+        throw new Error("검색 응답의 출처를 확인하지 못했습니다.");
       update(snapshot);
       if (snapshot.state !== "running") return project(snapshot);
-      await new Promise(resolve => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 80));
       if (!signal.aborted) snapshot = await invoke<SourceSnapshot>("source_poll", { generation });
     }
     cancel();
     return [];
-  } catch (error) { cancel(); throw error; }
-  finally { if (signal.aborted || !generation) signal.removeEventListener("abort", cancel); }
+  } catch (error) {
+    cancel();
+    throw error;
+  } finally {
+    if (signal.aborted || !generation) signal.removeEventListener("abort", cancel);
+  }
 }

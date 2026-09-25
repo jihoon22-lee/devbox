@@ -892,7 +892,10 @@
   background: var(--bg);
   color: var(--text);
   white-space: pre-wrap;
-  font: 12px/1.55 "Cascadia Code", Consolas, monospace;
+  font:
+    12px / 1.55 "Cascadia Code",
+    Consolas,
+    monospace;
 }
 
 .knowledge-feature-notes .handoff-size {
@@ -1186,4 +1189,6 @@
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
 }
-.knowledge-feature-notes .recovery-banner ul { padding-left: 20px; }
+.knowledge-feature-notes .recovery-banner ul {
+  padding-left: 20px;
+}

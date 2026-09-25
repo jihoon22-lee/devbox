@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::{Manager, WebviewWindow};
-use wsl_desktop_lib::component::TerminalOwner;
+use terminal_engine::component::TerminalOwner;
 
 type Result<T> = std::result::Result<T, &'static str>;
 const RECORDS: &str = "terminal-sessions.json";
@@ -58,7 +58,7 @@ pub(crate) struct Terminals {
 #[serde(rename_all = "camelCase")]
 struct PendingLog {
     id: String,
-    source: log_lens_lib::core::SourceSpec,
+    source: logs_engine::core::SourceSpec,
     context: Option<ProjectContext>,
     #[serde(skip)]
     created: std::time::Instant,
@@ -230,7 +230,7 @@ impl Terminals {
             peers: HashMap::new(),
         };
         save(&inner)?;
-        wsl_desktop_lib::component::initialize(app, inner.root.path())
+        terminal_engine::component::initialize(app, inner.root.path())
             .map_err(|_| "terminal_owner_unavailable")?;
         *selected = Some(inner);
         Ok(())
@@ -252,7 +252,7 @@ impl Terminals {
                 wsl_path: String,
             }
             let input: File = parse(args)?;
-            log_lens_lib::core::SourceSpec::WslFile {
+            logs_engine::core::SourceSpec::WslFile {
                 distro: input.distro,
                 path: input.wsl_path,
             }
@@ -264,7 +264,7 @@ impl Terminals {
                 unit: Option<String>,
             }
             let input: Journal = parse(args)?;
-            log_lens_lib::core::SourceSpec::WslJournal {
+            logs_engine::core::SourceSpec::WslJournal {
                 distro: input.distro,
                 unit: input.unit,
             }
@@ -376,7 +376,7 @@ impl Terminals {
             ));
         }
         if method == "dashboard_snapshot" {
-            return tauri::async_runtime::block_on(wsl_desktop_lib::component::dispatch(
+            return tauri::async_runtime::block_on(terminal_engine::component::dispatch(
                 window.app_handle(),
                 method,
                 args,
@@ -632,7 +632,7 @@ impl Terminals {
         let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
         let profiles =
             crate::terminal_profiles::dispatch(&inner.root, "list_workspace_profiles", json!({}))?;
-        let profiles: Vec<wsl_desktop_lib::component::WorkspaceProfile> =
+        let profiles: Vec<terminal_engine::component::WorkspaceProfile> =
             serde_json::from_value(profiles["profiles"].clone())
                 .map_err(|_| "terminal_profiles_invalid")?;
         let profiles = profiles
@@ -744,7 +744,7 @@ impl Terminals {
         app: &tauri::AppHandle,
         host: &Host,
         id: &str,
-    ) -> Result<(wsl_desktop_lib::component::WorkspaceProfile, String)> {
+    ) -> Result<(terminal_engine::component::WorkspaceProfile, String)> {
         self.initialize(app, host)?;
         let inner = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
         crate::terminal_profiles::snapshot(
@@ -759,7 +759,7 @@ impl Terminals {
         host: &Host,
         header: &RouteRequest,
         operation_id: &str,
-        layout: Option<wsl_desktop_lib::component::WorkspaceProfile>,
+        layout: Option<terminal_engine::component::WorkspaceProfile>,
     ) -> Result<Value> {
         self.open_window(window, host, header, operation_id, layout, None)
     }
@@ -770,7 +770,7 @@ impl Terminals {
         host: &Host,
         header: &RouteRequest,
         operation_id: &str,
-        mut layout: Option<wsl_desktop_lib::component::WorkspaceProfile>,
+        mut layout: Option<terminal_engine::component::WorkspaceProfile>,
         restoration: Option<(&str, u64)>,
     ) -> Result<Value> {
         self.initialize(window.app_handle(), host)?;
@@ -1050,7 +1050,7 @@ impl Terminals {
             let lease =
                 crate::platform::terminal_launch::capture_running(host, distro, header.deadline_ms)
                     .map_err(|_| "wsl_target_unavailable")?;
-            let result = wsl_desktop_lib::component::shell_integration_owned(
+            let result = terminal_engine::component::shell_integration_owned(
                 window.app_handle(),
                 method,
                 args,
@@ -1109,7 +1109,7 @@ impl Terminals {
                 | "detect_multiplexers"
                 | "windows_build_number"
         ) {
-            return wsl_desktop_lib::component::dispatch(window.app_handle(), method, args)
+            return terminal_engine::component::dispatch(window.app_handle(), method, args)
                 .await
                 .map_err(|_| "terminal_operation_failed");
         }

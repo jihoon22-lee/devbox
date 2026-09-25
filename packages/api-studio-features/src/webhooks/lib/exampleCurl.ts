@@ -18,10 +18,21 @@ export const MAX_EXAMPLE_DELAY_MS = 60_000;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const BODY_UNSAFE_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const SENSITIVE_NAME = /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password|passwd|private[-_]?key)/i;
+const SENSITIVE_NAME =
+  /(authorization|proxy-authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password|passwd|private[-_]?key)/i;
 const REFERENCE = /\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\}/;
 const WHOLE_REFERENCE = /^(?:\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\})$/;
-const KNOWN_TOKEN_PREFIXES = ["sk-", "ghp_", "github_pat_", "glpat-", "xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-"] as const;
+const KNOWN_TOKEN_PREFIXES = [
+  "sk-",
+  "ghp_",
+  "github_pat_",
+  "glpat-",
+  "xoxb-",
+  "xoxa-",
+  "xoxp-",
+  "xoxr-",
+  "xoxs-",
+] as const;
 const TOKEN_SUFFIX = /^[A-Za-z0-9_.-]+$/;
 const JWT_SEGMENT = /^[A-Za-z0-9_-]+$/;
 const PRIVATE_KEY = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
@@ -79,8 +90,7 @@ function isKnownTokenCandidate(candidate: string): boolean {
     if (key.length === 20 && /^AKIA[A-Z0-9]{16}$/.test(key)) return true;
   }
   const jwt = candidate.split(".");
-  return jwt.length === 3
-    && jwt.every((segment) => segment.length >= 10 && JWT_SEGMENT.test(segment));
+  return jwt.length === 3 && jwt.every((segment) => segment.length >= 10 && JWT_SEGMENT.test(segment));
 }
 
 function isSensitiveName(name: string): boolean {
@@ -101,8 +111,10 @@ function redactKnownTokenPatterns(value: string): string {
     if (isKnownTokenCandidate(candidate)) output = output.split(candidate).join(REDACTED);
   }
   return output
-    .replace(/\b(Bearer|Basic)\s+([^\s,;]+)/gi, (_match, scheme: string, token: string) =>
-      `${scheme} ${isWholeReference(token) ? token : REDACTED}`)
+    .replace(
+      /\b(Bearer|Basic)\s+([^\s,;]+)/gi,
+      (_match, scheme: string, token: string) => `${scheme} ${isWholeReference(token) ? token : REDACTED}`,
+    )
     .replace(
       /((?:authorization|cookie|api[-_]?key|token|secret|password)\s*[:=]\s*)([^\s,;&]+)/gi,
       (_match, prefix: string, token: string) => `${prefix}${isWholeReference(token) ? token : REDACTED}`,
@@ -113,12 +125,7 @@ interface JsonBudget {
   nodes: number;
 }
 
-function sanitizeJsonValue(
-  value: unknown,
-  key: string,
-  depth: number,
-  budget: JsonBudget,
-): unknown {
+function sanitizeJsonValue(value: unknown, key: string, depth: number, budget: JsonBudget): unknown {
   if (depth > MAX_EXAMPLE_JSON_DEPTH || budget.nodes >= MAX_EXAMPLE_JSON_NODES) {
     throw new Error("json budget exceeded");
   }
@@ -138,10 +145,8 @@ function sanitizeJsonValue(
       Object.entries(value as Record<string, unknown>).map(([childKey, child]) => {
         // Placeholders are only meaningful as values. Keeping one in a key would
         // make the emitted response metadata look like a template expression.
-        if (
-          childKey.length > MAX_EXAMPLE_JSON_STRING_CHARS
-          || containsReference(childKey)
-        ) throw new Error("json key is outside the safe metadata boundary");
+        if (childKey.length > MAX_EXAMPLE_JSON_STRING_CHARS || containsReference(childKey))
+          throw new Error("json key is outside the safe metadata boundary");
         return [childKey, sanitizeJsonValue(child, childKey, depth + 1, budget)];
       }),
     );
@@ -199,15 +204,15 @@ function decodeUriComponentStrict(value: string): string | null {
 
 function sanitizePath(path: string): string | null {
   if (
-    !path
-    || path.length > MAX_EXAMPLE_PATH_CHARS
-    || path !== path.trim()
-    || !path.startsWith("/")
-    || path.startsWith("//")
-    || path.includes("#")
-    || CONTROL_CHARACTERS.test(path)
-    || !URI_SAFE_CHARACTERS.test(path)
-    || hasInvalidPercentEncoding(path)
+    !path ||
+    path.length > MAX_EXAMPLE_PATH_CHARS ||
+    path !== path.trim() ||
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    path.includes("#") ||
+    CONTROL_CHARACTERS.test(path) ||
+    !URI_SAFE_CHARACTERS.test(path) ||
+    hasInvalidPercentEncoding(path)
   ) {
     return null;
   }
@@ -218,46 +223,51 @@ function sanitizePath(path: string): string | null {
   // query would either leak a token or stop matching the exact backend route.
   const decodedPathname = decodeUriComponentStrict(pathname);
   if (
-    decodedPathname === null
-    || /\s/.test(decodedPathname)
-    || CONTROL_CHARACTERS.test(decodedPathname)
-    || decodedPathname.startsWith("//")
-    || containsReference(path)
-    || containsReference(decodedPathname)
-    || containsKnownToken(pathname)
-    || containsKnownToken(decodedPathname)
-  ) return null;
+    decodedPathname === null ||
+    /\s/.test(decodedPathname) ||
+    CONTROL_CHARACTERS.test(decodedPathname) ||
+    decodedPathname.startsWith("//") ||
+    containsReference(path) ||
+    containsReference(decodedPathname) ||
+    containsKnownToken(pathname) ||
+    containsKnownToken(decodedPathname)
+  )
+    return null;
   if (queryStart < 0) return pathname;
 
-  const query = path.slice(queryStart + 1).split("&").map((part) => {
-    if (!part) return part;
-    const separator = part.indexOf("=");
-    const rawKey = separator < 0 ? part : part.slice(0, separator);
-    const rawValue = separator < 0 ? "" : part.slice(separator + 1);
-    const key = decodeUriComponentStrict(rawKey);
-    const decodedValue = decodeUriComponentStrict(rawValue);
-    if (key === null || decodedValue === null) throw new Error("unsafe URI encoding");
-    if (
-      /\s/.test(key)
-      || /\s/.test(decodedValue)
-      || CONTROL_CHARACTERS.test(key)
-      || CONTROL_CHARACTERS.test(decodedValue)
-      || containsMixedReference(rawValue)
-      || containsReference(key)
-      || containsReference(decodedValue)
-      || containsKnownToken(key)
-      || containsKnownToken(decodedValue)
-    ) {
-      throw new Error("unsafe URI token");
-    }
-    if (isSensitiveName(key) && rawValue && !isWholeReference(rawValue)) {
-      // Masking a query value changes the exact route that the webhook matcher sees.
-      throw new Error("sensitive query cannot be masked without changing route");
-    }
-    const safeValue = redactKnownTokenPatterns(rawValue);
-    if (safeValue !== rawValue) throw new Error("query normalization changes route");
-    return separator < 0 ? rawKey : `${rawKey}=${safeValue}`;
-  }).join("&");
+  const query = path
+    .slice(queryStart + 1)
+    .split("&")
+    .map((part) => {
+      if (!part) return part;
+      const separator = part.indexOf("=");
+      const rawKey = separator < 0 ? part : part.slice(0, separator);
+      const rawValue = separator < 0 ? "" : part.slice(separator + 1);
+      const key = decodeUriComponentStrict(rawKey);
+      const decodedValue = decodeUriComponentStrict(rawValue);
+      if (key === null || decodedValue === null) throw new Error("unsafe URI encoding");
+      if (
+        /\s/.test(key) ||
+        /\s/.test(decodedValue) ||
+        CONTROL_CHARACTERS.test(key) ||
+        CONTROL_CHARACTERS.test(decodedValue) ||
+        containsMixedReference(rawValue) ||
+        containsReference(key) ||
+        containsReference(decodedValue) ||
+        containsKnownToken(key) ||
+        containsKnownToken(decodedValue)
+      ) {
+        throw new Error("unsafe URI token");
+      }
+      if (isSensitiveName(key) && rawValue && !isWholeReference(rawValue)) {
+        // Masking a query value changes the exact route that the webhook matcher sees.
+        throw new Error("sensitive query cannot be masked without changing route");
+      }
+      const safeValue = redactKnownTokenPatterns(rawValue);
+      if (safeValue !== rawValue) throw new Error("query normalization changes route");
+      return separator < 0 ? rawKey : `${rawKey}=${safeValue}`;
+    })
+    .join("&");
   return `${pathname}?${query}`;
 }
 
@@ -292,36 +302,34 @@ function concreteRequestPath(path: string): { value: string; wildcard: boolean }
   return { value: `${path.slice(0, -1)}example`, wildcard: true };
 }
 
-function buildExampleCurlUnsafe(
-  rule: ResponseRule,
-  address: string | null,
-  shell: CurlShell,
-): string | null {
+function buildExampleCurlUnsafe(rule: ResponseRule, address: string | null, shell: CurlShell): string | null {
   if (
-    !rule
-    || typeof rule.path !== "string"
-    || (rule.method !== null && typeof rule.method !== "string")
-    || !Array.isArray(rule.headers)
-    || typeof rule.body !== "string"
-    || (shell !== "powershell" && shell !== "posix")
-  ) return null;
+    !rule ||
+    typeof rule.path !== "string" ||
+    (rule.method !== null && typeof rule.method !== "string") ||
+    !Array.isArray(rule.headers) ||
+    typeof rule.body !== "string" ||
+    (shell !== "powershell" && shell !== "posix")
+  )
+    return null;
 
   const destination = normalizeAddress(address);
   const safeRulePath = sanitizePath(rule.path);
   const method = rule.method === null ? "POST" : rule.method;
   const normalizedMethod = method.toUpperCase();
   if (
-    !destination
-    || !safeRulePath
-    || method !== method.trim()
-    || !/^[A-Z][A-Z0-9-]{0,15}$/.test(normalizedMethod)
-    || !Number.isInteger(rule.status)
-    || rule.status < MIN_EXAMPLE_STATUS
-    || rule.status > MAX_EXAMPLE_STATUS
-    || !Number.isInteger(rule.delayMs)
-    || rule.delayMs < 0
-    || rule.delayMs > MAX_EXAMPLE_DELAY_MS
-  ) return null;
+    !destination ||
+    !safeRulePath ||
+    method !== method.trim() ||
+    !/^[A-Z][A-Z0-9-]{0,15}$/.test(normalizedMethod) ||
+    !Number.isInteger(rule.status) ||
+    rule.status < MIN_EXAMPLE_STATUS ||
+    rule.status > MAX_EXAMPLE_STATUS ||
+    !Number.isInteger(rule.delayMs) ||
+    rule.delayMs < 0 ||
+    rule.delayMs > MAX_EXAMPLE_DELAY_MS
+  )
+    return null;
 
   const headers = sanitizeHeaders(rule.headers);
   const body = sanitizeBody(rule.body);
@@ -357,12 +365,13 @@ function sanitizeHeaders(headers: Array<[string, string]>): Array<[string, strin
     if (typeof rawName !== "string" || typeof rawValue !== "string") return null;
     const name = rawName.trim();
     if (
-      !name
-      || name.length > MAX_EXAMPLE_HEADER_NAME_CHARS
-      || rawValue.length > MAX_EXAMPLE_HEADER_VALUE_CHARS
-      || !HTTP_TOKEN.test(name)
-      || CONTROL_CHARACTERS.test(rawValue)
-    ) return null;
+      !name ||
+      name.length > MAX_EXAMPLE_HEADER_NAME_CHARS ||
+      rawValue.length > MAX_EXAMPLE_HEADER_VALUE_CHARS ||
+      !HTTP_TOKEN.test(name) ||
+      CONTROL_CHARACTERS.test(rawValue)
+    )
+      return null;
 
     totalChars += name.length + rawValue.length;
     if (totalChars > MAX_EXAMPLE_HEADER_TOTAL_CHARS) return null;

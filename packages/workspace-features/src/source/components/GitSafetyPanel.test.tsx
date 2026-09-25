@@ -1,11 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  GIT_SAFETY_ERROR,
-  repoPreflight,
-  type GitSafetySnapshot,
-  type RepoEntry,
-} from "../api";
+import { GIT_SAFETY_ERROR, repoPreflight, type GitSafetySnapshot, type RepoEntry } from "../api";
 import GitSafetyPanel from "./GitSafetyPanel";
 
 vi.mock("../api", () => ({
@@ -96,9 +91,11 @@ describe("GitSafetyPanel", () => {
 
   it("drops a late result from a replaced repository", async () => {
     let resolveOlder: ((value: GitSafetySnapshot) => void) | undefined;
-    repoPreflightMock.mockReturnValueOnce(new Promise((resolve) => {
-      resolveOlder = resolve;
-    }));
+    repoPreflightMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOlder = resolve;
+      }),
+    );
     const rendered = render(<GitSafetyPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "상태 검사" }));
     rendered.rerender(<GitSafetyPanel repo={otherRepo} />);
@@ -112,16 +109,17 @@ describe("GitSafetyPanel", () => {
 
   it("ignores duplicate checks and late results after unmount", async () => {
     let resolveCheck: ((value: GitSafetySnapshot) => void) | undefined;
-    repoPreflightMock.mockReturnValueOnce(new Promise((resolve) => {
-      resolveCheck = resolve;
-    }));
+    repoPreflightMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
     const rendered = render(<GitSafetyPanel repo={repo} />);
     const button = screen.getByRole("button", { name: "상태 검사" });
     fireEvent.click(button);
     fireEvent.click(button);
     expect(repoPreflightMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("region", { name: "Git 상태 사전 검사" }).getAttribute("aria-busy"))
-      .toBe("true");
+    expect(screen.getByRole("region", { name: "Git 상태 사전 검사" }).getAttribute("aria-busy")).toBe("true");
 
     rendered.unmount();
     resolveCheck?.(blockedSnapshot);

@@ -1,6 +1,7 @@
-const issues:Record<string,string>={
+const issues: Record<string, string> = {
   runtime_control_in_progress: "같은 실행 요청이 처리 중입니다. 작업 상태를 확인한 뒤 다시 시도해 주세요.",
-  runtime_control_recovery_required: "중단된 요청을 자동으로 다시 실행하지 않았습니다. 실행 요청 복구에서 현재 상태를 확인해 주세요.",
+  runtime_control_recovery_required:
+    "중단된 요청을 자동으로 다시 실행하지 않았습니다. 실행 요청 복구에서 현재 상태를 확인해 주세요.",
   runtime_control_failed: "실행 요청이 실패했습니다. 이력과 실행 상태를 확인한 뒤 새로 시도할 수 있습니다.",
   runtime_control_unavailable: "실행 요청을 저장하거나 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.",
   runtime_control_owner_unsettled: "이전 실행의 종료가 아직 확인되지 않았습니다. 작업 상태를 확인해 주세요.",
@@ -19,7 +20,8 @@ const issues:Record<string,string>={
   runtime_diagnostic_target_mismatch: "진단 파일과 같은 프로젝트를 선택한 뒤 다시 열어 주세요.",
   runtime_log_changed: "로그 소유권이 바뀌었습니다. 해당 실행에서 로그를 다시 열어 주세요.",
   runtime_log_unavailable: "이 실행의 로그가 삭제되었거나 읽을 수 없습니다.",
-  process_owner_unsettled: "실행 중인 작업의 프로세스 소유권을 확인 중입니다. 작업 상태가 확인된 뒤 다시 시도해 주세요.",
+  process_owner_unsettled:
+    "실행 중인 작업의 프로세스 소유권을 확인 중입니다. 작업 상태가 확인된 뒤 다시 시도해 주세요.",
   process_action_stale: "선택한 프로세스 또는 실행이 바뀌었습니다. 새로 고친 뒤 다시 선택해 주세요.",
   process_observation_unavailable: "프로세스와 포트 정보를 읽지 못했습니다. 이전 목록은 유지됩니다.",
   runtime_task_source_changed: "작업 정의가 변경되었습니다. 가져오기와 실행 승인을 다시 확인해 주세요.",
@@ -27,4 +29,6 @@ const issues:Record<string,string>={
   runtime_operation_unavailable: "실행 작업을 완료하지 못했습니다. 작업 상태와 설정을 확인해 주세요.",
   runtime_navigation_unavailable: "선택한 작업이나 로그 화면으로 이동하지 못했습니다.",
 };
-export function runtimeIssueMessage(issue:string):string|undefined{return issues[issue];}
+export function runtimeIssueMessage(issue: string): string | undefined {
+  return issues[issue];
+}

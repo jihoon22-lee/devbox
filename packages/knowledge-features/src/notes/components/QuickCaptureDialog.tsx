@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  discardQuickCapturePreview,
-  previewQuickCapture,
-  readClipboardText,
-  saveQuickCapture,
-} from "../api";
+import { discardQuickCapturePreview, previewQuickCapture, readClipboardText, saveQuickCapture } from "../api";
 import type { QuickCaptureInput, QuickCapturePreview, QuickCaptureSaved } from "../types";
 import {
   isQuickCaptureUtf8Within,
@@ -64,14 +59,9 @@ function errorMessage(cause: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function QuickCaptureDialog({
-  open,
-  active = true,
-  onClose,
-  onSaved,
-  restoreFocusRef,
-}: Props) {
-  const activeRef = useRef(active); activeRef.current = active;
+export default function QuickCaptureDialog({ open, active = true, onClose, onSaved, restoreFocusRef }: Props) {
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const dialogRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const generationRef = useRef(0);
@@ -114,7 +104,9 @@ export default function QuickCaptureDialog({
     busyRef.current = false;
     busyOperationRef.current = null;
     setError(null);
-    const focusTimer = window.setTimeout(() => { if (activeRef.current) titleRef.current?.focus(); }, 0);
+    const focusTimer = window.setTimeout(() => {
+      if (activeRef.current) titleRef.current?.focus();
+    }, 0);
     return () => {
       window.clearTimeout(focusTimer);
       const previewId = previewIdRef.current;
@@ -148,7 +140,9 @@ export default function QuickCaptureDialog({
     setBusyState(false);
     discardPreview();
     onClose();
-    window.setTimeout(() => { if (activeRef.current) restoreFocusRef?.current?.focus(); }, 0);
+    window.setTimeout(() => {
+      if (activeRef.current) restoreFocusRef?.current?.focus();
+    }, 0);
   };
 
   const runPreview = async () => {
@@ -194,7 +188,9 @@ export default function QuickCaptureDialog({
       onSaved(saved);
       generationRef.current += 1;
       onClose();
-      window.setTimeout(() => { if (activeRef.current) restoreFocusRef?.current?.focus(); }, 0);
+      window.setTimeout(() => {
+        if (activeRef.current) restoreFocusRef?.current?.focus();
+      }, 0);
     } catch (cause) {
       if (token === generationRef.current) {
         // Native approval IDs are one-shot even when the filesystem fails.
@@ -311,8 +307,12 @@ export default function QuickCaptureDialog({
             </div>
             <label className="quick-capture-field" htmlFor="quick-capture-title-input">
               제목 <span className="dim">(선택, 비워 두면 기본 제목)</span>
-              <span className={`quick-capture-counter ${titleBytes > MAX_QUICK_CAPTURE_TITLE_BYTES || titleScalars > MAX_QUICK_CAPTURE_TITLE_CHARS ? "over" : ""}`} aria-live="polite">
-                {titleBytes} / {MAX_QUICK_CAPTURE_TITLE_BYTES} bytes · {titleScalars} / {MAX_QUICK_CAPTURE_TITLE_CHARS}자
+              <span
+                className={`quick-capture-counter ${titleBytes > MAX_QUICK_CAPTURE_TITLE_BYTES || titleScalars > MAX_QUICK_CAPTURE_TITLE_CHARS ? "over" : ""}`}
+                aria-live="polite"
+              >
+                {titleBytes} / {MAX_QUICK_CAPTURE_TITLE_BYTES} bytes · {titleScalars} / {MAX_QUICK_CAPTURE_TITLE_CHARS}
+                자
               </span>
               <input
                 id="quick-capture-title-input"
@@ -327,12 +327,18 @@ export default function QuickCaptureDialog({
                 disabled={busy}
                 autoComplete="off"
               />
-              <span id="quick-capture-title-hint" className="sr-only">최대 200자</span>
+              <span id="quick-capture-title-hint" className="sr-only">
+                최대 200자
+              </span>
             </label>
             <label className="quick-capture-field" htmlFor="quick-capture-body-input">
               본문 <span className="dim">(필수)</span>
-              <span className={`quick-capture-counter ${bodyBytes > MAX_QUICK_CAPTURE_BODY_BYTES || rawBodyBytes > MAX_QUICK_CAPTURE_RAW_BODY_BYTES ? "over" : ""}`} aria-live="polite">
-                LF {bodyBytes} / {MAX_QUICK_CAPTURE_BODY_BYTES} bytes · 원문 {rawBodyBytes} / {MAX_QUICK_CAPTURE_RAW_BODY_BYTES} bytes
+              <span
+                className={`quick-capture-counter ${bodyBytes > MAX_QUICK_CAPTURE_BODY_BYTES || rawBodyBytes > MAX_QUICK_CAPTURE_RAW_BODY_BYTES ? "over" : ""}`}
+                aria-live="polite"
+              >
+                LF {bodyBytes} / {MAX_QUICK_CAPTURE_BODY_BYTES} bytes · 원문 {rawBodyBytes} /{" "}
+                {MAX_QUICK_CAPTURE_RAW_BODY_BYTES} bytes
               </span>
               <textarea
                 id="quick-capture-body-input"
@@ -343,11 +349,16 @@ export default function QuickCaptureDialog({
                 disabled={busy}
                 rows={10}
               />
-              <span id="quick-capture-body-hint" className="sr-only">LF 기준 UTF-8 최대 64 KiB</span>
+              <span id="quick-capture-body-hint" className="sr-only">
+                LF 기준 UTF-8 최대 64 KiB
+              </span>
             </label>
             <label className="quick-capture-field" htmlFor="quick-capture-tags-input">
               태그 <span className="dim">(쉼표로 구분, 선택)</span>
-              <span className={`quick-capture-counter ${tagBytes > MAX_QUICK_CAPTURE_TAG_BYTES || parsedTags.length > MAX_QUICK_CAPTURE_TAGS || parsedTags.some((tag) => quickCaptureUtf8Bytes(tag) > MAX_QUICK_CAPTURE_TAG_ITEM_BYTES) ? "over" : ""}`} aria-live="polite">
+              <span
+                className={`quick-capture-counter ${tagBytes > MAX_QUICK_CAPTURE_TAG_BYTES || parsedTags.length > MAX_QUICK_CAPTURE_TAGS || parsedTags.some((tag) => quickCaptureUtf8Bytes(tag) > MAX_QUICK_CAPTURE_TAG_ITEM_BYTES) ? "over" : ""}`}
+                aria-live="polite"
+              >
                 {parsedTags.length} / {MAX_QUICK_CAPTURE_TAGS}개 · {tagBytes} / {MAX_QUICK_CAPTURE_TAG_BYTES} bytes
               </span>
               <input
@@ -359,12 +370,18 @@ export default function QuickCaptureDialog({
                 disabled={busy}
                 autoComplete="off"
               />
-              <span id="quick-capture-tags-hint" className="sr-only">최대 20개, 태그 하나당 48자</span>
+              <span id="quick-capture-tags-hint" className="sr-only">
+                최대 20개, 태그 하나당 48자
+              </span>
             </label>
             <p className="quick-capture-privacy">
               민감한 정보처럼 보이는 credential은 저장하지 않습니다. 클립보드는 이 버튼을 누른 순간에만 한 번 읽습니다.
             </p>
-            {error && <div id="quick-capture-error" className="quick-capture-error" role="alert" aria-live="assertive">{error}</div>}
+            {error && (
+              <div id="quick-capture-error" className="quick-capture-error" role="alert" aria-live="assertive">
+                {error}
+              </div>
+            )}
             <div className="quick-capture-progress" role="status" aria-live="polite" aria-atomic="true">
               {busy ? "미리보기를 확인하는 중…" : ""}
             </div>
@@ -373,12 +390,9 @@ export default function QuickCaptureDialog({
                 클립보드에서 본문 가져오기
               </button>
               <span className="spacer" />
-              <button
-                className="btn"
-                type="button"
-                onClick={close}
-                disabled={busyOperationRef.current === "save"}
-              >취소</button>
+              <button className="btn" type="button" onClick={close} disabled={busyOperationRef.current === "save"}>
+                취소
+              </button>
               <button className="btn primary" type="button" onClick={() => void runPreview()} disabled={busy}>
                 {busy ? "확인 중…" : "미리보기"}
               </button>
@@ -387,15 +401,24 @@ export default function QuickCaptureDialog({
         ) : (
           <div className="quick-capture-preview">
             <div className="quick-capture-preview-meta">
-              <span>저장 위치</span><strong>{preview?.target}</strong>
-              <span>제목</span><strong>{preview?.title}</strong>
-              <span>태그</span><strong>{preview?.tags.length ? preview.tags.join(", ") : "없음"}</strong>
+              <span>저장 위치</span>
+              <strong>{preview?.target}</strong>
+              <span>제목</span>
+              <strong>{preview?.title}</strong>
+              <span>태그</span>
+              <strong>{preview?.tags.length ? preview.tags.join(", ") : "없음"}</strong>
             </div>
             <div className="quick-capture-preview-body">
-              <div className="dim" id="quick-capture-preview-label">본문 미리보기</div>
+              <div className="dim" id="quick-capture-preview-label">
+                본문 미리보기
+              </div>
               <pre aria-labelledby="quick-capture-preview-label">{preview?.body}</pre>
             </div>
-            {error && <div id="quick-capture-error" className="quick-capture-error" role="alert" aria-live="assertive">{error}</div>}
+            {error && (
+              <div id="quick-capture-error" className="quick-capture-error" role="alert" aria-live="assertive">
+                {error}
+              </div>
+            )}
             <div className="quick-capture-progress" role="status" aria-live="polite" aria-atomic="true">
               {busy ? "저장하는 중…" : "미리보기를 확인했습니다. 저장을 누르면 새 노트가 생성됩니다."}
             </div>
@@ -408,19 +431,18 @@ export default function QuickCaptureDialog({
                   discardPreview();
                   setPhase("edit");
                   setError(null);
-                  window.setTimeout(() => { if (activeRef.current) titleRef.current?.focus(); }, 0);
+                  window.setTimeout(() => {
+                    if (activeRef.current) titleRef.current?.focus();
+                  }, 0);
                 }}
                 disabled={busy}
               >
                 수정
               </button>
               <span className="spacer" />
-              <button
-                className="btn"
-                type="button"
-                onClick={close}
-                disabled={busyOperationRef.current === "save"}
-              >취소</button>
+              <button className="btn" type="button" onClick={close} disabled={busyOperationRef.current === "save"}>
+                취소
+              </button>
               <button className="btn primary" type="button" onClick={() => void save()} disabled={busy}>
                 {busy ? "저장 중…" : "저장"}
               </button>

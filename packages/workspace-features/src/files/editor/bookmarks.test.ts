@@ -44,10 +44,7 @@ describe("CM6 editor selection and bookmark extensions", () => {
 
     expect(view.state.facet(EditorState.allowMultipleSelections)).toBe(true);
     view.dispatch({
-      selection: EditorSelection.create([
-        EditorSelection.cursor(1),
-        EditorSelection.cursor(5),
-      ]),
+      selection: EditorSelection.create([EditorSelection.cursor(1), EditorSelection.cursor(5)]),
     });
     expect(view.state.selection.ranges).toHaveLength(2);
     view.destroy();

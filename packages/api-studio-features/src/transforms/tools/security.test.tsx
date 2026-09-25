@@ -24,9 +24,11 @@ describe("UuidTool", () => {
 
   it("locks generation options while an IPC request is pending", async () => {
     let resolve: (value: string[]) => void = () => undefined;
-    mocks.generateIds.mockReturnValueOnce(new Promise<string[]>((done) => {
-      resolve = done;
-    }));
+    mocks.generateIds.mockReturnValueOnce(
+      new Promise<string[]>((done) => {
+        resolve = done;
+      }),
+    );
 
     render(<UuidTool />);
     fireEvent.click(screen.getByRole("button", { name: "생성" }));
@@ -61,9 +63,11 @@ describe("UuidTool", () => {
 
   it("ignores a late response after the tool is unmounted", async () => {
     let resolve: (value: string[]) => void = () => undefined;
-    mocks.generateIds.mockReturnValueOnce(new Promise<string[]>((done) => {
-      resolve = done;
-    }));
+    mocks.generateIds.mockReturnValueOnce(
+      new Promise<string[]>((done) => {
+        resolve = done;
+      }),
+    );
 
     const rendered = render(<UuidTool />);
     fireEvent.click(screen.getByRole("button", { name: "생성" }));

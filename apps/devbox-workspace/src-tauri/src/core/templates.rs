@@ -1,8 +1,8 @@
 //! Destination copies of validated Workbench templates. Creating a concrete
 //! project requires a separate native registration preview.
 use super::profiles::{is_false, valid_origin};
+use projects_engine::component::ProfileTemplate;
 use serde::{Deserialize, Serialize};
-use workbench_lib::component::ProfileTemplate;
 
 type Result<T> = std::result::Result<T, &'static str>;
 

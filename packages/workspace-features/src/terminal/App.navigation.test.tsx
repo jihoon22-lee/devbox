@@ -60,16 +60,18 @@ function snapshot(): DashboardSnapshot {
     revision: 1,
     capturedAtMs: Date.now(),
     staleAfterMs: 30_000,
-    distros: [{
-      name: "Ubuntu",
-      version: 2,
-      default: true,
-      state: "Running",
-      terminalCount: 0,
-      dockerAvailability: "available",
-      containers: [],
-      resource: null,
-    }],
+    distros: [
+      {
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [],
+        resource: null,
+      },
+    ],
   };
 }
 

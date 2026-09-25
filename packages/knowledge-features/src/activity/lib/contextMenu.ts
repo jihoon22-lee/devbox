@@ -12,11 +12,7 @@ export function parseDateKey(value: string): Date | null {
   const date = new Date(0);
   date.setHours(0, 0, 0, 0);
   date.setFullYear(year, month - 1, day);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
     return null;
   }
   return date;

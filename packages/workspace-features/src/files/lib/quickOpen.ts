@@ -84,10 +84,7 @@ export function filterQuickOpenFiles(files: WorkspaceFile[], query: string): Qui
   return files
     .map((file) => ({ file, score: scoreQuickOpen(query, file.relativePath) }))
     .filter((match): match is QuickOpenMatch => match.score !== null)
-    .sort(
-      (left, right) =>
-        right.score - left.score || compareText(left.file.relativePath, right.file.relativePath),
-    );
+    .sort((left, right) => right.score - left.score || compareText(left.file.relativePath, right.file.relativePath));
 }
 
 /**
@@ -115,10 +112,7 @@ function compareDirectories(left: QuickOpenDirectory, right: QuickOpenDirectory)
 }
 
 function bestDirectoryScore(directory: QuickOpenDirectory): number {
-  return Math.max(
-    directory.files[0]?.score ?? -Infinity,
-    ...directory.directories.map(bestDirectoryScore),
-  );
+  return Math.max(directory.files[0]?.score ?? -Infinity, ...directory.directories.map(bestDirectoryScore));
 }
 
 /**

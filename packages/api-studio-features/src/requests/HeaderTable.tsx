@@ -33,11 +33,7 @@ export function HeaderTable({
 
       <div className="header-table" role="table" aria-label="요청 Header 편집">
         {rows.map((row, index) => (
-          <div
-            className={`header-row ${isHeaderEnabled(row) ? "" : "disabled"}`}
-            role="row"
-            key={index}
-          >
+          <div className={`header-row ${isHeaderEnabled(row) ? "" : "disabled"}`} role="row" key={index}>
             <label className="header-enabled">
               <input
                 aria-label={`${index + 1}번 header 활성화`}
@@ -71,10 +67,12 @@ export function HeaderTable({
                 if (reference) onChange(updateHeader(rows, index, { value: reference }));
               }}
             >
-              <option value="">
-                {availableSecrets.length === 0 ? "Secret 없음" : "Secret 참조"}
-              </option>
-              {availableSecrets.map((name) => <option key={name} value={name}>{name}</option>)}
+              <option value="">{availableSecrets.length === 0 ? "Secret 없음" : "Secret 참조"}</option>
+              {availableSecrets.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -107,10 +105,9 @@ export function HeaderTable({
       </button>
 
       <div className="header-notice" role="note">
-        같은 이름의 header를 여러 행으로 유지하며 순서대로 전송합니다. 사용을 끈 행은 History와
-        Collection에는 남지만 요청과 cURL에서는 제외됩니다. Secret 참조는 현재 환경의 봉인된
-        이름으로 행 값 전체를 바꾸며, 봉인된 원문을 읽거나 표시하지 않습니다. 필요한 접두사는
-        값 입력에서 추가할 수 있습니다. 요청 header는 최대 100행입니다.
+        같은 이름의 header를 여러 행으로 유지하며 순서대로 전송합니다. 사용을 끈 행은 History와 Collection에는 남지만
+        요청과 cURL에서는 제외됩니다. Secret 참조는 현재 환경의 봉인된 이름으로 행 값 전체를 바꾸며, 봉인된 원문을
+        읽거나 표시하지 않습니다. 필요한 접두사는 값 입력에서 추가할 수 있습니다. 요청 header는 최대 100행입니다.
       </div>
     </div>
   );

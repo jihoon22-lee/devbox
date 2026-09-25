@@ -12,7 +12,7 @@ vi.mock("../api", () => ({
 }));
 
 const RESULT: QrResult = {
-  svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><path/></svg>",
+  svg: '<svg xmlns="http://www.w3.org/2000/svg"><path/></svg>',
   pngBase64: "cG5n",
   width: 232,
   version: 1,
@@ -70,7 +70,11 @@ describe("QrTool", () => {
 
   it("ignores duplicate clicks while busy and drops a late response after unmount", async () => {
     let resolve: (value: QrResult) => void = () => undefined;
-    generateQrMock.mockReturnValueOnce(new Promise<QrResult>((next) => { resolve = next; }));
+    generateQrMock.mockReturnValueOnce(
+      new Promise<QrResult>((next) => {
+        resolve = next;
+      }),
+    );
     const rendered = render(<QrTool />);
     fireEvent.change(screen.getByRole("textbox", { name: "텍스트 페이로드" }), { target: { value: "hello" } });
     const button = screen.getByRole("button", { name: "QR 생성" });

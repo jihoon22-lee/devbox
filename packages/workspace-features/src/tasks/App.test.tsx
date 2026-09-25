@@ -231,9 +231,9 @@ const cancelledWorkspaceOperation: WorkspaceTaskOperation = {
   ...runningWorkspaceOperation,
   status: "cancelled",
   endedAt: 3_500,
-  runs: runningWorkspaceOperation.runs.map((run) => (
-    run.status === "running" ? { ...run, status: "cancelled" as const } : run
-  )),
+  runs: runningWorkspaceOperation.runs.map((run) =>
+    run.status === "running" ? { ...run, status: "cancelled" as const } : run,
+  ),
 };
 
 const matcherWorkspaceTask: WorkspaceTaskState = {
@@ -257,15 +257,17 @@ const completedWorkspaceOperation: WorkspaceTaskOperation = {
 const workspaceDiagnostics: WorkspaceTaskDiagnostics = {
   runId: "root-run-1",
   truncated: true,
-  items: [{
-    index: 0,
-    file: "src/main.ts",
-    line: 4,
-    column: 2,
-    message: "type error",
-    severity: "error",
-    stream: "stderr",
-  }],
+  items: [
+    {
+      index: 0,
+      file: "src/main.ts",
+      line: 4,
+      column: 2,
+      message: "type error",
+      severity: "error",
+      stream: "stderr",
+    },
+  ],
 };
 
 const taskControlPreview: WorkspaceTaskControlPreview = {
@@ -405,10 +407,12 @@ describe("Run Manager context menus", () => {
 
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByRole("button", { name: "소스 승인" }));
-    await waitFor(() => expect(trustWorkspaceTaskSourceMock).toHaveBeenCalledWith(
-      managedWorkspaceTask.sourceId,
-      managedWorkspaceTask.revision,
-    ));
+    await waitFor(() =>
+      expect(trustWorkspaceTaskSourceMock).toHaveBeenCalledWith(
+        managedWorkspaceTask.sourceId,
+        managedWorkspaceTask.revision,
+      ),
+    );
     expect(confirmMock.mock.calls[1][0]).toContain("task를 실행하거나 프로세스를 시작하지 않습니다");
   });
 
@@ -429,10 +433,12 @@ describe("Run Manager context menus", () => {
     expect(dialog.textContent).toContain("일반 source 승인과 별개");
     fireEvent.click(within(dialog).getByRole("button", { name: "셸 실행 승인" }));
 
-    await waitFor(() => expect(trustWorkspaceTaskShellSourceMock).toHaveBeenCalledWith(
-      managedShellWorkspaceTask.sourceId,
-      managedShellWorkspaceTask.revision,
-    ));
+    await waitFor(() =>
+      expect(trustWorkspaceTaskShellSourceMock).toHaveBeenCalledWith(
+        managedShellWorkspaceTask.sourceId,
+        managedShellWorkspaceTask.revision,
+      ),
+    );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "셸 실행 승인" })).toBeNull());
     expect(screen.getByText(/셸 실행을 승인했습니다/)).toBeTruthy();
   });
@@ -470,24 +476,17 @@ describe("Run Manager context menus", () => {
     };
     listJobsMock.mockResolvedValue([job, secondJob]);
     listWorkspaceTasksMock.mockResolvedValue([managedRunnableWorkspaceTask]);
-    listWorkspaceTaskOperationsMock.mockResolvedValue([
-      runningWorkspaceOperation,
-      sameTimestampHistory,
-    ]);
+    listWorkspaceTaskOperationsMock.mockResolvedValue([runningWorkspaceOperation, sameTimestampHistory]);
     getWorkspaceTaskOperationMock.mockResolvedValue(runningWorkspaceOperation);
     stopWorkspaceTaskOperationMock.mockResolvedValue(cancelledWorkspaceOperation);
     render(<App />);
 
     await screen.findByRole("heading", { name: "백업" });
     const targetCard = card("백업");
-    expect(await within(targetCard).findByLabelText(
-      "workspace task operation 상태: 실행 중",
-    )).toBeTruthy();
+    expect(await within(targetCard).findByLabelText("workspace task operation 상태: 실행 중")).toBeTruthy();
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(within(targetCard).getByRole("button", { name: "오케스트레이션 중지" }));
-    await waitFor(() => expect(stopWorkspaceTaskOperationMock).toHaveBeenCalledWith(
-      runningWorkspaceOperation.id,
-    ));
+    await waitFor(() => expect(stopWorkspaceTaskOperationMock).toHaveBeenCalledWith(runningWorkspaceOperation.id));
   });
 
   it("loads diagnostics only for terminal matcher children and opens the selected item in Code Pad", async () => {
@@ -627,10 +626,9 @@ describe("Run Manager context menus", () => {
     fireEvent.contextMenu(card("보고서"));
     fireEvent.click(screen.getByRole("menuitem", { name: "로그 열기" }));
 
-    await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(
-      secondJob.id,
-      expect.objectContaining({ limit: 50 }),
-    ));
+    await waitFor(() =>
+      expect(listRunsMock).toHaveBeenCalledWith(secondJob.id, expect.objectContaining({ limit: 50 })),
+    );
   });
 
   it("requires confirmation before job deletion and active-run stop", async () => {

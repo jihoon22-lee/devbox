@@ -7,7 +7,7 @@ authors = ["jihoon22.lee"]
 edition = "2021"
 
 [lib]
-name = "code_pad_lib"
+name = "editor_engine"
 crate-type = ["rlib"]
 
 # Product consumers reuse native components without embedding legacy web assets.

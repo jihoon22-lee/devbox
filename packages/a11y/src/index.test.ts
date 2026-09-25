@@ -56,7 +56,9 @@ describe("dialog focus helpers", () => {
     expect(stopPropagation).toHaveBeenCalledOnce();
 
     const onEscape = vi.fn();
-    expect(trapDialogKeyDown({ key: "Escape", shiftKey: false, preventDefault, stopPropagation }, dialog, onEscape)).toBe(true);
+    expect(
+      trapDialogKeyDown({ key: "Escape", shiftKey: false, preventDefault, stopPropagation }, dialog, onEscape),
+    ).toBe(true);
     expect(onEscape).toHaveBeenCalledOnce();
   });
 
@@ -69,7 +71,6 @@ describe("dialog focus helpers", () => {
   });
 });
 
-
 it("separates programmatic focus from visible sequential tab order", () => {
   document.body.innerHTML = `<style>.gone { display:none } .invisible { visibility:hidden }</style>
     <section id="dialog"><div class="gone"><button id="hidden">hidden</button></div>
@@ -80,10 +81,12 @@ it("separates programmatic focus from visible sequential tab order", () => {
     <input type="radio" name="choice" id="unchecked"><input type="radio" name="choice" id="checked" checked>
     </section>`;
   const dialog = document.querySelector("#dialog")!;
-  expect(focusableElements(dialog).map(node => node.id)).toContain("programmatic");
-  expect(tabbableElements(dialog).map(node => node.id)).toEqual(["first", "second", "zero", "summary", "checked"]);
-  const checked = document.querySelector<HTMLElement>("#checked")!; checked.focus();
-  const preventDefault = vi.fn(), stopPropagation = vi.fn();
+  expect(focusableElements(dialog).map((node) => node.id)).toContain("programmatic");
+  expect(tabbableElements(dialog).map((node) => node.id)).toEqual(["first", "second", "zero", "summary", "checked"]);
+  const checked = document.querySelector<HTMLElement>("#checked")!;
+  checked.focus();
+  const preventDefault = vi.fn(),
+    stopPropagation = vi.fn();
   trapDialogKeyDown({ key: "Tab", shiftKey: false, preventDefault, stopPropagation }, dialog);
   expect(document.activeElement?.id).toBe("first");
 });

@@ -1,9 +1,5 @@
 import { isProductHosted, WorkspaceOperationError } from "../transport";
-import {
-  ContextMenu,
-  useContextMenu,
-  type ContextMenuEntry,
-} from "@devbox/context-menu";
+import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getProcessInfo,
@@ -85,63 +81,28 @@ export function matches(row: PortRow, query: string): boolean {
         correlation.label,
         correlation.confidence,
       ].some((value) => value.toLowerCase().includes(q)),
-    ) ?? false)
+    ) ??
+      false)
   );
 }
 
 export function portRowKey(row: PortRow): string {
   const identity = row.identity;
   if (identity?.kind === "windows") {
-    return (
-      row.proto +
-      ":" +
-      row.local_addr +
-      ":" +
-      identity.pid +
-      ":" +
-      identity.start_time
-    );
+    return row.proto + ":" + row.local_addr + ":" + identity.pid + ":" + identity.start_time;
   }
   if (identity?.kind === "wsl") {
-    return (
-      row.proto +
-      ":" +
-      row.local_addr +
-      ":" +
-      identity.distro +
-      ":" +
-      identity.pid +
-      ":" +
-      identity.start_tick
-    );
+    return row.proto + ":" + row.local_addr + ":" + identity.distro + ":" + identity.pid + ":" + identity.start_tick;
   }
   if (identity?.kind === "container") {
     return (
-      row.proto +
-      ":" +
-      row.local_addr +
-      ":" +
-      identity.engine +
-      ":" +
-      identity.distro +
-      ":" +
-      identity.container_id
+      row.proto + ":" + row.local_addr + ":" + identity.engine + ":" + identity.distro + ":" + identity.container_id
     );
   }
   // An identity-less row is keyed by its complete endpoint and source.  A
   // PID-only fallback can collide for two source rows or for malformed
   // fixtures whose address does not include the port.
-  return (
-    (row.source ?? "windows") +
-    ":" +
-    row.proto +
-    ":" +
-    row.local_addr +
-    ":" +
-    row.port +
-    ":" +
-    (row.pid ?? 0)
-  );
+  return (row.source ?? "windows") + ":" + row.proto + ":" + row.local_addr + ":" + row.port + ":" + (row.pid ?? 0);
 }
 
 export function localhostUrl(row: PortRow): string | null {
@@ -198,16 +159,11 @@ export function isCurrentRequest(request: number, current: number): boolean {
 }
 
 export function correlationSummary(correlation: PortCorrelation): string {
-  return [
-    correlation.source_app,
-    correlation.target_kind,
-    correlation.target_id,
-  ].join(" · ");
+  return [correlation.source_app, correlation.target_kind, correlation.target_id].join(" · ");
 }
 
 export function sourceStatusLabel(source: SnapshotSourceStatus): string {
-  const freshness =
-    source.freshness_ms == null ? "최신 상태 알 수 없음" : `${source.freshness_ms}ms 전`;
+  const freshness = source.freshness_ms == null ? "최신 상태 알 수 없음" : `${source.freshness_ms}ms 전`;
   return `${source.producer} · ${source.state} · ${freshness}`;
 }
 
@@ -252,19 +208,12 @@ function displayValue(value: string | number | null | undefined): string {
 
 function clonePreferences(value: PortManagerPreferences): PortManagerPreferences {
   const rawInterval = Number(value?.refresh_interval_ms);
-  const interval = Number.isFinite(rawInterval)
-    ? Math.round(rawInterval)
-    : DEFAULT_PREFERENCES.refresh_interval_ms;
+  const interval = Number.isFinite(rawInterval) ? Math.round(rawInterval) : DEFAULT_PREFERENCES.refresh_interval_ms;
   const favoritePorts = Array.isArray(value?.favorite_ports) ? value.favorite_ports : [];
-  const favoriteProcesses = Array.isArray(value?.favorite_processes)
-    ? value.favorite_processes
-    : [];
+  const favoriteProcesses = Array.isArray(value?.favorite_processes) ? value.favorite_processes : [];
   return {
     schema_version: 1,
-    refresh_interval_ms: Math.min(
-      MAX_REFRESH_INTERVAL_MS,
-      Math.max(MIN_REFRESH_INTERVAL_MS, interval),
-    ),
+    refresh_interval_ms: Math.min(MAX_REFRESH_INTERVAL_MS, Math.max(MIN_REFRESH_INTERVAL_MS, interval)),
     pinned_only: value?.pinned_only === true,
     favorite_ports: favoritePorts.slice(0, MAX_FAVORITES_PER_KIND),
     favorite_processes: favoriteProcesses.slice(0, MAX_FAVORITES_PER_KIND),
@@ -277,27 +226,42 @@ type ProcessPathState = {
 };
 
 function runtimeOwner(row: PortRow): PortCorrelation | undefined {
-  return isProductHosted() ? row.correlations?.find(owner => owner.source_app === "run-manager" && owner.confidence === "verified") : undefined;
+  return isProductHosted()
+    ? row.correlations?.find((owner) => owner.source_app === "run-manager" && owner.confidence === "verified")
+    : undefined;
 }
 
-export default function App({ active = true, settingsRevision = 0, openPort, onPortConsumed }: { active?: boolean; settingsRevision?:number; openPort?:{id:string;port:number}|null;onPortConsumed?:(id:string)=>void }) {
+export default function App({
+  active = true,
+  settingsRevision = 0,
+  openPort,
+  onPortConsumed,
+}: {
+  active?: boolean;
+  settingsRevision?: number;
+  openPort?: { id: string; port: number } | null;
+  onPortConsumed?: (id: string) => void;
+}) {
   const activeRef = useRef(active);
   const previousActive = useRef(active);
   activeRef.current = active;
   const [ports, setPorts] = useState<PortRow[]>([]);
   const [query, setQuery] = useState("");
-  const [focusedPort,setFocusedPort]=useState<number|null>(null);
+  const [focusedPort, setFocusedPort] = useState<number | null>(null);
   const [protoFilter, setProtoFilter] = useState<ProtoFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
-  const consumedPort = useRef<string|null>(null);
-  useEffect(()=>{
-    if(!active||!openPort||consumedPort.current===openPort.id)return;
-    consumedPort.current=openPort.id;
-    if(Number.isInteger(openPort.port)&&openPort.port>0&&openPort.port<=65535){
-      setQuery(String(openPort.port));setFocusedPort(openPort.port);setProtoFilter("all");setStateFilter("all");
+  const consumedPort = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || !openPort || consumedPort.current === openPort.id) return;
+    consumedPort.current = openPort.id;
+    if (Number.isInteger(openPort.port) && openPort.port > 0 && openPort.port <= 65535) {
+      setQuery(String(openPort.port));
+      setFocusedPort(openPort.port);
+      setProtoFilter("all");
+      setStateFilter("all");
     }
     onPortConsumed?.(openPort.id);
-  },[active,openPort,onPortConsumed]);
+  }, [active, openPort, onPortConsumed]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyRowKey, setBusyRowKey] = useState<string | null>(null);
@@ -368,9 +332,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
           markSnapshotHealthy(true);
 
           const nextByKey = new Map(next.map((row) => [portRowKey(row), row]));
-          setSelectedRowKey((selected) =>
-            selected && nextByKey.has(selected) ? selected : null,
-          );
+          setSelectedRowKey((selected) => (selected && nextByKey.has(selected) ? selected : null));
           setContextRow((current) => {
             if (!current) return null;
             return nextByKey.get(portRowKey(current)) ?? null;
@@ -472,9 +434,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
       const current = preferencesRef.current;
       const exists = isProcessFavorite(row, current.favorite_processes);
       const favorite_processes = exists
-        ? current.favorite_processes.filter(
-            (candidate) => !sameProcessFavorite(candidate, favorite),
-          )
+        ? current.favorite_processes.filter((candidate) => !sameProcessFavorite(candidate, favorite))
         : [...current.favorite_processes, favorite];
       void savePreferences({ ...current, favorite_processes });
     },
@@ -527,12 +487,12 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
     };
   }, [initialize, markSnapshotHealthy]);
 
-  const loadedSettingsRevision=useRef(settingsRevision);
-  useEffect(()=>{
-    if(!active || loadedSettingsRevision.current===settingsRevision)return;
-    loadedSettingsRevision.current=settingsRevision;
+  const loadedSettingsRevision = useRef(settingsRevision);
+  useEffect(() => {
+    if (!active || loadedSettingsRevision.current === settingsRevision) return;
+    loadedSettingsRevision.current = settingsRevision;
     void initialize();
-  },[active,settingsRevision,initialize]);
+  }, [active, settingsRevision, initialize]);
 
   useEffect(() => {
     if (!active || !preferencesReady || autoRefreshPaused) return;
@@ -557,10 +517,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
     return { total: ports.length, listening };
   }, [ports]);
 
-  const unhealthySources = useMemo(
-    () => sources.filter((source) => source.state !== "available"),
-    [sources],
-  );
+  const unhealthySources = useMemo(() => sources.filter((source) => source.state !== "available"), [sources]);
 
   const runAction = useCallback(async (action: () => Promise<void>) => {
     if (!mounted.current) return;
@@ -584,9 +541,13 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
       return;
     }
     const owner = runtimeOwner(row);
-    if (owner) { await onOpenCorrelation(owner); return; }
+    if (owner) {
+      await onOpenCorrelation(owner);
+      return;
+    }
     const processLabel = row.process_name ? " (" + row.process_name + ")" : "";
-    const actionLabel = row.source === "container" ? (isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지") : "리스너 종료";
+    const actionLabel =
+      row.source === "container" ? (isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지") : "리스너 종료";
     if (!window.confirm(row.local_addr + processLabel + " " + actionLabel + "할까요?")) return;
 
     const rowKey = portRowKey(row);
@@ -602,9 +563,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
       if (result.kind === "ownedTask") {
         if (mounted.current) setHandoff("Workspace가 소유한 실행입니다. 해당 작업에서 중지하거나 재시작해 주세요.");
       } else if (result.kind === "handoff" && mounted.current) {
-        setHandoff(
-          "WSL Desktop에서 " + result.handoff.container_id + " 컨테이너를 중지하세요.",
-        );
+        setHandoff("WSL Desktop에서 " + result.handoff.container_id + " 컨테이너를 중지하세요.");
       } else {
         await refreshAfterMutation();
       }
@@ -624,31 +583,28 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
     await runAction(() => openBrowser(url));
   };
 
-  const onOpenCorrelation = useCallback(
-    async (correlation: PortCorrelation, stream?: LogStream) => {
-      if (!mounted.current || !correlation.action_key) return;
-      const busyKey = `${correlation.action_key}:${stream ?? "owner"}`;
-      if (busyCorrelationActionRef.current !== null) return;
-      busyCorrelationActionRef.current = busyKey;
-      setBusyCorrelationAction(busyKey);
-      setError(null);
-      try {
-        if (stream) {
-          await openPortLog(correlation.action_key, stream);
-        } else {
-          await openPortOwner(correlation.action_key);
-        }
-      } catch (caught) {
-        if (mounted.current) setError(safeActionError(caught));
-      } finally {
-        if (busyCorrelationActionRef.current === busyKey) {
-          busyCorrelationActionRef.current = null;
-          if (mounted.current) setBusyCorrelationAction(null);
-        }
+  const onOpenCorrelation = useCallback(async (correlation: PortCorrelation, stream?: LogStream) => {
+    if (!mounted.current || !correlation.action_key) return;
+    const busyKey = `${correlation.action_key}:${stream ?? "owner"}`;
+    if (busyCorrelationActionRef.current !== null) return;
+    busyCorrelationActionRef.current = busyKey;
+    setBusyCorrelationAction(busyKey);
+    setError(null);
+    try {
+      if (stream) {
+        await openPortLog(correlation.action_key, stream);
+      } else {
+        await openPortOwner(correlation.action_key);
       }
-    },
-    [],
-  );
+    } catch (caught) {
+      if (mounted.current) setError(safeActionError(caught));
+    } finally {
+      if (busyCorrelationActionRef.current === busyKey) {
+        busyCorrelationActionRef.current = null;
+        if (mounted.current) setBusyCorrelationAction(null);
+      }
+    }
+  }, []);
 
   const prepareContextRow = useCallback(
     (target: HTMLElement) => {
@@ -698,11 +654,12 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
         if (!disposed && activeRef.current) await refresh();
       })();
     }
-    return () => { disposed = true; };
+    return () => {
+      disposed = true;
+    };
   }, [active, preferencesReady, autoRefreshPaused, refresh, contextMenu.close, markSnapshotHealthy]);
 
-  const contextPath =
-    contextRow && processPath?.rowKey === portRowKey(contextRow) ? processPath.path : null;
+  const contextPath = contextRow && processPath?.rowKey === portRowKey(contextRow) ? processPath.path : null;
   const contextMenuItems = useMemo<readonly ContextMenuEntry[]>(() => {
     if (!contextRow) return [];
     const url = localhostUrl(contextRow);
@@ -755,8 +712,10 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
         label: isContainer
           ? isBusy
             ? "전달 준비 중…"
-            : isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지"
-            : isBusy
+            : isProductHosted()
+              ? "컨테이너 중지"
+              : "WSL Desktop에서 중지"
+          : isBusy
             ? "종료 중…"
             : "리스너 종료",
         disabled: !snapshotHealthy || !request || !isListener(contextRow) || isBusy,
@@ -813,9 +772,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
     }
   };
 
-  const selectedRow = selectedRowKey
-    ? ports.find((row) => portRowKey(row) === selectedRowKey) ?? null
-    : null;
+  const selectedRow = selectedRowKey ? (ports.find((row) => portRowKey(row) === selectedRowKey) ?? null) : null;
 
   return (
     <div className="app">
@@ -826,7 +783,10 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
           aria-label="리스너 검색"
           placeholder="검색 (포트 / 프로토콜 / PID / 프로세스)..."
           value={query}
-          onChange={(event) => {setFocusedPort(null);setQuery(event.currentTarget.value);}}
+          onChange={(event) => {
+            setFocusedPort(null);
+            setQuery(event.currentTarget.value);
+          }}
           onCompositionStart={() => setIsComposing(true)}
           onCompositionEnd={() => setIsComposing(false)}
           onKeyDown={(event) => {
@@ -882,11 +842,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
             disabled={!preferencesReady || preferencesSaving}
             onChange={(event) => {
               const value = Number(event.currentTarget.value);
-              if (
-                Number.isInteger(value) &&
-                value >= MIN_REFRESH_INTERVAL_MS &&
-                value <= MAX_REFRESH_INTERVAL_MS
-              ) {
+              if (Number.isInteger(value) && value >= MIN_REFRESH_INTERVAL_MS && value <= MAX_REFRESH_INTERVAL_MS) {
                 void savePreferences({ ...preferencesRef.current, refresh_interval_ms: value });
               }
             }}
@@ -897,9 +853,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
               </option>
             ))}
             {!REFRESH_INTERVALS.includes(preferences.refresh_interval_ms) && (
-              <option value={preferences.refresh_interval_ms}>
-                {preferences.refresh_interval_ms / 1_000}s
-              </option>
+              <option value={preferences.refresh_interval_ms}>{preferences.refresh_interval_ms / 1_000}s</option>
             )}
           </select>
         </label>
@@ -940,8 +894,8 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
 
       {unavailableWsl.length > 0 && (
         <div className="warn" role="status">
-          WSL 포트 조회 불가: {unavailableWsl.join(", ")}. 배포판의 포트 조회 지원과 권한을 확인하세요.
-          다른 출처의 결과는 계속 표시하며, 마지막 정상 비교 기준은 보존합니다.
+          WSL 포트 조회 불가: {unavailableWsl.join(", ")}. 배포판의 포트 조회 지원과 권한을 확인하세요. 다른 출처의
+          결과는 계속 표시하며, 마지막 정상 비교 기준은 보존합니다.
         </div>
       )}
 
@@ -949,11 +903,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
         <section className="source-diagnostics" aria-label="연결 출처 상태">
           <div className="source-heading">
             <strong>연결 출처</strong>
-            <span>
-              {unhealthySources.length === 0
-                ? "모두 사용 가능"
-                : `${unhealthySources.length}개 사용 불가`}
-            </span>
+            <span>{unhealthySources.length === 0 ? "모두 사용 가능" : `${unhealthySources.length}개 사용 불가`}</span>
           </div>
           <ul>
             {sources.map((source) => (
@@ -1093,9 +1043,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                       type="button"
                       className="btn favorite"
                       aria-label={
-                        isPortFavorite(row, preferences.favorite_ports)
-                          ? "포트 즐겨찾기 해제"
-                          : "포트 즐겨찾기"
+                        isPortFavorite(row, preferences.favorite_ports) ? "포트 즐겨찾기 해제" : "포트 즐겨찾기"
                       }
                       aria-pressed={isPortFavorite(row, preferences.favorite_ports)}
                       disabled={preferencesSaving || row.port <= 0}
@@ -1124,7 +1072,13 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                         type="button"
                         className="btn danger"
                         aria-label={
-                          runtimeOwner(row) ? "작업에서 중지 또는 재시작" : row.source === "container" ? (isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지") : "리스너 종료"
+                          runtimeOwner(row)
+                            ? "작업에서 중지 또는 재시작"
+                            : row.source === "container"
+                              ? isProductHosted()
+                                ? "컨테이너 중지"
+                                : "WSL Desktop에서 중지"
+                              : "리스너 종료"
                         }
                         disabled={busy || !snapshotHealthy}
                         onClick={() => void onKill(row)}
@@ -1135,7 +1089,9 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                             : "종료 중..."
                           : row.source === "container"
                             ? "중지"
-                            : runtimeOwner(row) ? "작업 열기" : "종료"}
+                            : runtimeOwner(row)
+                              ? "작업 열기"
+                              : "종료"}
                       </button>
                     )}
                     {row.port > 0 && isListening(row) && (
@@ -1185,21 +1141,15 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
             </div>
             <div>
               <dt>명령줄</dt>
-              <dd className="mono details-value">
-                {displayValue(selectedRow.command_line)}
-              </dd>
+              <dd className="mono details-value">{displayValue(selectedRow.command_line)}</dd>
             </div>
             <div>
               <dt>실행 파일 경로</dt>
-              <dd className="mono details-value">
-                {displayValue(selectedRow.executable_path)}
-              </dd>
+              <dd className="mono details-value">{displayValue(selectedRow.executable_path)}</dd>
             </div>
             <div>
               <dt>프로세스 시작 시간</dt>
-              <dd className="mono">
-                {displayValue(selectedRow.process_start_time)}
-              </dd>
+              <dd className="mono">{displayValue(selectedRow.process_start_time)}</dd>
             </div>
             {selectedRow.wsl_distro && (
               <div>
@@ -1236,16 +1186,12 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                   return (
                     <li key={correlation.action_key} className="correlation-detail">
                       <div className="correlation-detail-heading">
-                        <span
-                          className={`correlation-badge confidence-${correlation.confidence}`}
-                        >
+                        <span className={`correlation-badge confidence-${correlation.confidence}`}>
                           {correlation.confidence}
                         </span>
                         <strong>{correlation.label}</strong>
                       </div>
-                      <div className="correlation-meta">
-                        {correlationSummary(correlation)}
-                      </div>
+                      <div className="correlation-meta">{correlationSummary(correlation)}</div>
                       <div className="correlation-actions">
                         <button
                           type="button"
@@ -1265,9 +1211,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                               disabled={busyCorrelationAction !== null || !correlation.action_key}
                               onClick={() => void onOpenCorrelation(correlation, "stdout")}
                             >
-                              {busyCorrelationAction === stdoutBusyKey
-                                ? "여는 중…"
-                                : "Log Lens에서 stdout 열기"}
+                              {busyCorrelationAction === stdoutBusyKey ? "여는 중…" : "Log Lens에서 stdout 열기"}
                             </button>
                             <button
                               type="button"
@@ -1276,9 +1220,7 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                               disabled={busyCorrelationAction !== null || !correlation.action_key}
                               onClick={() => void onOpenCorrelation(correlation, "stderr")}
                             >
-                              {busyCorrelationAction === stderrBusyKey
-                                ? "여는 중…"
-                                : "Log Lens에서 stderr 열기"}
+                              {busyCorrelationAction === stderrBusyKey ? "여는 중…" : "Log Lens에서 stderr 열기"}
                             </button>
                           </>
                         )}
@@ -1296,17 +1238,13 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
               type="button"
               className="btn favorite"
               aria-label={
-                isPortFavorite(selectedRow, preferences.favorite_ports)
-                  ? "포트 즐겨찾기 해제"
-                  : "포트 즐겨찾기"
+                isPortFavorite(selectedRow, preferences.favorite_ports) ? "포트 즐겨찾기 해제" : "포트 즐겨찾기"
               }
               aria-pressed={isPortFavorite(selectedRow, preferences.favorite_ports)}
               disabled={preferencesSaving || selectedRow.port <= 0}
               onClick={() => togglePortFavorite(selectedRow)}
             >
-              {isPortFavorite(selectedRow, preferences.favorite_ports)
-                ? "포트 즐겨찾기 해제"
-                : "포트 즐겨찾기"}
+              {isPortFavorite(selectedRow, preferences.favorite_ports) ? "포트 즐겨찾기 해제" : "포트 즐겨찾기"}
             </button>
             {selectedRow.identity && (
               <button
@@ -1314,8 +1252,8 @@ export default function App({ active = true, settingsRevision = 0, openPort, onP
                 className="btn favorite"
                 aria-label={
                   isProcessFavorite(selectedRow, preferences.favorite_processes)
-                  ? "프로세스 즐겨찾기 해제"
-                  : "프로세스 즐겨찾기"
+                    ? "프로세스 즐겨찾기 해제"
+                    : "프로세스 즐겨찾기"
                 }
                 aria-pressed={isProcessFavorite(selectedRow, preferences.favorite_processes)}
                 disabled={preferencesSaving}

@@ -13,7 +13,8 @@
   --amber: var(--db-color-warn);
 }
 
-.manager-tools, .manager-tools * {
+.manager-tools,
+.manager-tools * {
   box-sizing: border-box;
 }
 
@@ -1312,7 +1313,11 @@
   padding: 7px 8px;
   background: var(--panel);
   color: var(--text);
-  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font:
+    12px / 1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
 }
 
 .manager-tools .query-panel textarea:focus-visible {

@@ -9,9 +9,14 @@ export function configureProductTransport(transport: Transport): void {
   if (productTransport) throw new Error("제품 연결이 이미 설정되어 있습니다.");
   productTransport = transport;
 }
-export function isProductHosted(): boolean { return productTransport !== undefined; }
+export function isProductHosted(): boolean {
+  return productTransport !== undefined;
+}
 export function componentInvoke(component: Component) {
   return <T>(method: string, args?: Record<string, unknown>): Promise<T> =>
-    productTransport ? productTransport<T>(component, method, args ?? {})
-      : args === undefined ? legacyInvoke<T>(method) : legacyInvoke<T>(method, args);
+    productTransport
+      ? productTransport<T>(component, method, args ?? {})
+      : args === undefined
+        ? legacyInvoke<T>(method)
+        : legacyInvoke<T>(method, args);
 }

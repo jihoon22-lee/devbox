@@ -36,17 +36,9 @@ export type ResponseRulePayload = Omit<ResponseRule, "priority"> & {
   priority?: number | null;
 };
 
-export type RuleConflictKind =
-  | "candidateShadowsExisting"
-  | "existingShadowsCandidate"
-  | "partialOverlap";
+export type RuleConflictKind = "candidateShadowsExisting" | "existingShadowsCandidate" | "partialOverlap";
 
-export type RuleConflictReason =
-  | "priority"
-  | "exactPath"
-  | "methodSpecific"
-  | "longerWildcardPrefix"
-  | "idTieBreak";
+export type RuleConflictReason = "priority" | "exactPath" | "methodSpecific" | "longerWildcardPrefix" | "idTieBreak";
 
 export interface RuleConflict {
   existingRuleId: string;
@@ -132,10 +124,8 @@ export interface RunDefinitionExport {
   services: RunServiceDefinition[];
 }
 
-const HANDOFF_BROWSER_ERROR =
-  "앱 간 handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
-const REPLAY_BROWSER_ERROR =
-  "replay는 데스크톱 앱에서만 사용할 수 있습니다";
+const HANDOFF_BROWSER_ERROR = "앱 간 handoff는 데스크톱 앱에서만 사용할 수 있습니다. 클립보드로 자동 전환하지 않습니다";
+const REPLAY_BROWSER_ERROR = "replay는 데스크톱 앱에서만 사용할 수 있습니다";
 
 // Keep browser previews harmless: this definition has a fixed harmless command,
 // a disabled service, and is never persisted by the mock API.
@@ -143,33 +133,42 @@ const MOCK_RUN_DEFINITION: RunDefinitionExport = {
   schemaVersion: 1,
   exportedAt: "1",
   jobs: [],
-  services: [{
-    id: "00000000-0000-4000-8000-000000000001",
-    kind: "service",
-    name: "Webhook Lab (browser preview)",
-    command: "exit /b 1",
-    cwd: null,
-    targetKind: "windows",
-    targetDistro: null,
-    envConfigured: false,
-    cronExpr: null,
-    enabled: false,
-    overlapPolicy: "skip",
-    catchUp: false,
-    lastEvaluatedAt: null,
-    nextQueueSequence: 0,
-    restartPolicy: "never",
-    autoStart: false,
-    healthTcpAddress: "127.0.0.1",
-    healthTcpPort: 9000,
-    healthStartGraceMs: 10_000,
-    createdAt: 1,
-    updatedAt: 1,
-  }],
+  services: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      kind: "service",
+      name: "Webhook Lab (browser preview)",
+      command: "exit /b 1",
+      cwd: null,
+      targetKind: "windows",
+      targetDistro: null,
+      envConfigured: false,
+      cronExpr: null,
+      enabled: false,
+      overlapPolicy: "skip",
+      catchUp: false,
+      lastEvaluatedAt: null,
+      nextQueueSequence: 0,
+      restartPolicy: "never",
+      autoStart: false,
+      healthTcpAddress: "127.0.0.1",
+      healthTcpPort: 9000,
+      healthStartGraceMs: 10_000,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ],
 };
 
 const MOCK_HISTORY: RequestRecord[] = [
-  { id: 1, method: "POST", url: "/hook", headers: [["content-type", "application/json"]], body: '{"event":"push"}', receivedAtMs: Date.now() - 30000 },
+  {
+    id: 1,
+    method: "POST",
+    url: "/hook",
+    headers: [["content-type", "application/json"]],
+    body: '{"event":"push"}',
+    receivedAtMs: Date.now() - 30000,
+  },
   { id: 2, method: "GET", url: "/health", headers: [], body: "", receivedAtMs: Date.now() - 10000 },
 ];
 

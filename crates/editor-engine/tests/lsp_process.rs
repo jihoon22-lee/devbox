@@ -1,4 +1,4 @@
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     IncomingMessage, JsonRpcMessage, LspProcess, ProcessError, ProcessSpec, ProcessState,
     RequestCancellation, RequestError,
 };
@@ -228,7 +228,7 @@ async fn shutdown_sends_exit_then_kills_a_hung_server() {
 #[cfg(windows)]
 mod windows_ownership {
     use super::*;
-    use code_pad_lib::lsp::{
+    use editor_engine::lsp::{
         ResolvedProcess, ResolvedRuntime, RuntimeError, RuntimeKind, RuntimeResolver,
     };
     use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};

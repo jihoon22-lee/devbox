@@ -7,9 +7,16 @@ function Harness({ request }: { request: DialogRequest }) {
   const { ask, pending, answer } = useAppDialog();
   return (
     <div>
-      <button type="button" onClick={() => void ask(request).then((result) => {
-        (globalThis as { lastAnswer?: DialogAnswer }).lastAnswer = result;
-      })}>열기</button>
+      <button
+        type="button"
+        onClick={() =>
+          void ask(request).then((result) => {
+            (globalThis as { lastAnswer?: DialogAnswer }).lastAnswer = result;
+          })
+        }
+      >
+        열기
+      </button>
       <AppDialog pending={pending} onAnswer={answer} />
     </div>
   );
@@ -26,7 +33,11 @@ afterEach(() => {
 
 describe("AppDialog", () => {
   it("확인 대화상자는 접근성 위반 없이 렌더링되고 확인 버튼에 focus를 준다", async () => {
-    const { container } = render(<Harness request={{ kind: "confirm", title: "팬을 닫을까요?", lines: ["실행 중인 작업이 종료될 수 있습니다."] }} />);
+    const { container } = render(
+      <Harness
+        request={{ kind: "confirm", title: "팬을 닫을까요?", lines: ["실행 중인 작업이 종료될 수 있습니다."] }}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "열기" }));
     await screen.findByRole("alertdialog");
     await waitFor(() => expect(document.activeElement).toHaveTextContent("확인"));
@@ -46,9 +57,11 @@ describe("AppDialog", () => {
   });
 
   it("입력 대화상자는 기본값을 채우고 Enter로 값을 확정한다", async () => {
-    render(<Harness request={{ kind: "prompt", title: "탭 이름 변경", inputLabel: "탭 이름", defaultValue: "Ubuntu" }} />);
+    render(
+      <Harness request={{ kind: "prompt", title: "탭 이름 변경", inputLabel: "탭 이름", defaultValue: "Ubuntu" }} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "열기" }));
-    const input = await screen.findByLabelText("탭 이름") as HTMLInputElement;
+    const input = (await screen.findByLabelText("탭 이름")) as HTMLInputElement;
     expect(input.value).toBe("Ubuntu");
 
     fireEvent.change(input, { target: { value: "작업 탭" } });
@@ -82,10 +95,15 @@ describe("AppDialog", () => {
       const { ask, pending, answer } = useAppDialog();
       return (
         <div>
-          <button type="button" onClick={() => {
-            void ask({ kind: "confirm", title: "첫 번째" }).then(() => answers.push("첫 번째"));
-            void ask({ kind: "confirm", title: "두 번째" }).then(() => answers.push("두 번째"));
-          }}>둘 다 열기</button>
+          <button
+            type="button"
+            onClick={() => {
+              void ask({ kind: "confirm", title: "첫 번째" }).then(() => answers.push("첫 번째"));
+              void ask({ kind: "confirm", title: "두 번째" }).then(() => answers.push("두 번째"));
+            }}
+          >
+            둘 다 열기
+          </button>
           <AppDialog pending={pending} onAnswer={answer} />
         </div>
       );
@@ -108,7 +126,9 @@ describe("AppDialog", () => {
       const { ask, pending, answer } = useAppDialog();
       return (
         <div>
-          <button type="button" onClick={() => void ask({ kind: "confirm", title: "확인" }).then(resolved)}>열기</button>
+          <button type="button" onClick={() => void ask({ kind: "confirm", title: "확인" }).then(resolved)}>
+            열기
+          </button>
           <AppDialog pending={pending} onAnswer={answer} />
         </div>
       );

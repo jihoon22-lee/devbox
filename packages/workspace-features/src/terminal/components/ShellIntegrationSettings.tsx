@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { inspectShellIntegration, updateShellIntegration } from "../api";
-import type {
-  ShellIntegrationInfo,
-  ShellIntegrationReport,
-  ShellIntegrationStatus,
-  ShellKind,
-} from "../types";
+import type { ShellIntegrationInfo, ShellIntegrationReport, ShellIntegrationStatus, ShellKind } from "../types";
 import type { AskDialog } from "./AppDialog";
 
 interface ShellIntegrationSettingsProps {
@@ -27,11 +22,7 @@ const SHELL_LABELS: Readonly<Record<ShellKind, string>> = {
   zsh: "Zsh",
 };
 
-export default function ShellIntegrationSettings({
-  distro,
-  ask,
-  onError,
-}: ShellIntegrationSettingsProps) {
+export default function ShellIntegrationSettings({ distro, ask, onError }: ShellIntegrationSettingsProps) {
   const [report, setReport] = useState<ShellIntegrationReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [busyShell, setBusyShell] = useState<ShellKind | null>(null);
@@ -57,7 +48,7 @@ export default function ShellIntegrationSettings({
       setLoading(false);
       return;
     }
-    setReport((current) => current?.distro === distro ? current : null);
+    setReport((current) => (current?.distro === distro ? current : null));
     setLoading(true);
     try {
       const next = await inspectShellIntegration(distro);
@@ -95,23 +86,22 @@ export default function ShellIntegrationSettings({
     setBusyShell(integration.shell);
     setNotice(null);
     try {
-      const result = await updateShellIntegration(
-        distro,
-        integration.shell,
-        action,
-        integration.revision,
-      );
+      const result = await updateShellIntegration(distro, integration.shell, action, integration.revision);
       if (!mounted.current || distroRef.current !== distro) return;
-      setReport((current) => current?.distro === distro ? {
-        ...current,
-        shells: current.shells.map((item) =>
-          item.shell === integration.shell ? result.integration : item
-        ),
-      } : current);
+      setReport((current) =>
+        current?.distro === distro
+          ? {
+              ...current,
+              shells: current.shells.map((item) => (item.shell === integration.shell ? result.integration : item)),
+            }
+          : current,
+      );
       const backup = result.backupFile ? ` 백업: ${result.backupFile}` : "";
-      setNotice(result.changed
-        ? `${SHELL_LABELS[integration.shell]} 연동을 ${installing ? "적용" : "제거"}했습니다.${backup} 새 터미널부터 반영됩니다.`
-        : `이미 요청한 ${SHELL_LABELS[integration.shell]} 연동 상태입니다.`);
+      setNotice(
+        result.changed
+          ? `${SHELL_LABELS[integration.shell]} 연동을 ${installing ? "적용" : "제거"}했습니다.${backup} 새 터미널부터 반영됩니다.`
+          : `이미 요청한 ${SHELL_LABELS[integration.shell]} 연동 상태입니다.`,
+      );
     } catch {
       if (mounted.current) onError("WSL 셸 연동 파일을 변경하지 못했습니다. 상태를 다시 확인해 주세요.");
     } finally {
@@ -148,7 +138,11 @@ export default function ShellIntegrationSettings({
       </div>
 
       {!distro && <div className="banner">먼저 WSL 배포판을 선택하세요.</div>}
-      {distro && loading && !report && <div className="dim" role="status">셸 설정을 확인하는 중…</div>}
+      {distro && loading && !report && (
+        <div className="dim" role="status">
+          셸 설정을 확인하는 중…
+        </div>
+      )}
       {report?.shells.map((integration) => {
         const blocked = integration.status === "conflict" || integration.status === "blocked";
         const installing = integration.status === "missing" || integration.status === "outdated";
@@ -196,13 +190,19 @@ export default function ShellIntegrationSettings({
                   aria-busy={busyShell === integration.shell}
                   aria-label={`${SHELL_LABELS[integration.shell]} 연동 제거`}
                   onClick={() => void apply(integration, "remove")}
-                >제거</button>
+                >
+                  제거
+                </button>
               )}
             </div>
           </div>
         );
       })}
-      {notice && <div className="banner shell-integration-notice" role="status">{notice}</div>}
+      {notice && (
+        <div className="banner shell-integration-notice" role="status">
+          {notice}
+        </div>
+      )}
     </fieldset>
   );
 }

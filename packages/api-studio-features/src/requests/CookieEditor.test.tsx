@@ -5,19 +5,10 @@ import type { RequestCookie } from "./types";
 
 afterEach(cleanup);
 
-function setup(
-  rows: RequestCookie[],
-  secretNames: string[] = [],
-  hasRawCookieHeader = false,
-) {
+function setup(rows: RequestCookie[], secretNames: string[] = [], hasRawCookieHeader = false) {
   const onChange = vi.fn<(rows: RequestCookie[]) => void>();
   render(
-    <CookieEditor
-      rows={rows}
-      secretNames={secretNames}
-      hasRawCookieHeader={hasRawCookieHeader}
-      onChange={onChange}
-    />,
+    <CookieEditor rows={rows} secretNames={secretNames} hasRawCookieHeader={hasRawCookieHeader} onChange={onChange} />,
   );
   return onChange;
 }
@@ -35,9 +26,7 @@ describe("CookieEditor", () => {
     const rows = [{ name: "session", value: "abc", enabled: true }];
     const onChange = setup(rows);
     fireEvent.click(screen.getByLabelText("1번 cookie 활성화"));
-    expect(onChange).toHaveBeenNthCalledWith(1, [
-      { name: "session", value: "abc", enabled: false },
-    ]);
+    expect(onChange).toHaveBeenNthCalledWith(1, [{ name: "session", value: "abc", enabled: false }]);
     fireEvent.click(screen.getByRole("button", { name: "1번 cookie 복제" }));
     expect(onChange).toHaveBeenNthCalledWith(2, [
       { name: "session", value: "abc", enabled: true },
@@ -48,16 +37,11 @@ describe("CookieEditor", () => {
   });
 
   it("secret 원문 없이 이름 참조만 삽입한다", () => {
-    const onChange = setup(
-      [{ name: "session", value: "", enabled: true }],
-      ["SESSION", "bad name"],
-    );
+    const onChange = setup([{ name: "session", value: "", enabled: true }], ["SESSION", "bad name"]);
     const select = screen.getByLabelText("1번 cookie secret 참조") as HTMLSelectElement;
     expect([...select.options].map((option) => option.text)).toEqual(["Secret 참조", "SESSION"]);
     fireEvent.change(select, { target: { value: "SESSION" } });
-    expect(onChange).toHaveBeenCalledWith([
-      { name: "session", value: "${SESSION}", enabled: true },
-    ]);
+    expect(onChange).toHaveBeenCalledWith([{ name: "session", value: "${SESSION}", enabled: true }]);
   });
 
   it("raw Cookie header 충돌과 잘못된 값의 위치를 표시한다", () => {

@@ -131,7 +131,7 @@ async fn saved_index(
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let generation = search::current_generation(&app).map_err(|_| "knowledge_source_stale")?;
-        let rows = everything_plus_lib::component::saved_query_definitions(&app)
+        let rows = content_index_engine::component::saved_query_definitions(&app)
             .map_err(|_| "knowledge_source_unavailable")?;
         let rows = rows
             .as_array()

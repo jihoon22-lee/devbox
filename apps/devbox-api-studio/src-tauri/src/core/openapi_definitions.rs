@@ -69,7 +69,7 @@ impl Definition {
                 || operation
                     .mock_status
                     .is_some_and(|status| !(100..=599).contains(&status))
-                || api_playground_lib::component::normalize_openapi_request(
+                || http_client_engine::component::normalize_openapi_request(
                     operation.request.clone(),
                 )? != operation.request
             {
@@ -88,7 +88,7 @@ impl Definition {
         };
         for operation in &mut definition.operations {
             operation.request =
-                api_playground_lib::component::sanitize_openapi_request(operation.request.clone())?;
+                http_client_engine::component::sanitize_openapi_request(operation.request.clone())?;
         }
         definition.validate()?;
         let raw = zeroize::Zeroizing::new(serde_json::to_string(&definition).map_err(|_| INVALID)?);
@@ -98,7 +98,7 @@ impl Definition {
         // Same native DPAPI/persistence sanitizer as Collections, including
         // supplied current environment secret references, never saved themselves.
         let safe =
-            api_playground_lib::component::sanitize_saved_json(raw.to_string(), &input.environment)
+            http_client_engine::component::sanitize_saved_json(raw.to_string(), &input.environment)
                 .map_err(|_| INVALID)?;
         let definition: Self = serde_json::from_str(&safe).map_err(|_| INVALID)?;
         definition.validate()?;

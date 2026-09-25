@@ -12,9 +12,10 @@ describe("knowledge applink routing", () => {
   });
 
   it("trims and routes a bounded Query", () => {
-    expect(
-      routeOpenRequest({ target: { kind: "query", text: "  rust ownership  " }, from: null }),
-    ).toEqual({ kind: "search", query: "rust ownership" });
+    expect(routeOpenRequest({ target: { kind: "query", text: "  rust ownership  " }, from: null })).toEqual({
+      kind: "search",
+      query: "rust ownership",
+    });
   });
 
   it("rejects empty, oversized, and unsupported targets with generic messages", () => {
@@ -26,8 +27,9 @@ describe("knowledge applink routing", () => {
       kind: "error",
       message: "요청한 검색어를 사용할 수 없습니다",
     });
-    expect(
-      routeOpenRequest({ target: { kind: "workspace", path: "secret-workspace" }, from: null }),
-    ).toEqual({ kind: "error", message: "지원하지 않는 열기 요청입니다" });
+    expect(routeOpenRequest({ target: { kind: "workspace", path: "secret-workspace" }, from: null })).toEqual({
+      kind: "error",
+      message: "지원하지 않는 열기 요청입니다",
+    });
   });
 });

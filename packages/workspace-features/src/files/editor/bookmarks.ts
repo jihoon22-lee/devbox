@@ -7,13 +7,7 @@ import {
   type Extension,
   type Text,
 } from "@codemirror/state";
-import {
-  GutterMarker,
-  EditorView,
-  gutter,
-  type BlockInfo,
-  type ViewUpdate,
-} from "@codemirror/view";
+import { GutterMarker, EditorView, gutter, type BlockInfo, type ViewUpdate } from "@codemirror/view";
 
 /** Bookmark positions are zero-based line numbers in the session schema. */
 export function normalizeBookmarkLines(text: string, lines: readonly number[]): number[] {
@@ -54,11 +48,7 @@ export const bookmarkField = StateField.define<readonly number[]>({
     let next = transaction.docChanged
       ? mapBookmarkLines(value, transaction.startState.doc, transaction.changes, transaction.state.doc)
       : value;
-    if (
-      transaction.docChanged
-      && next.length === value.length
-      && next.every((line, index) => line === value[index])
-    ) {
+    if (transaction.docChanged && next.length === value.length && next.every((line, index) => line === value[index])) {
       next = value;
     }
     for (const effect of transaction.effects) {
@@ -149,9 +139,11 @@ export interface BookmarkCommands {
 
 export function bookmarkExtension(initialBookmarks: readonly number[] = []): Extension {
   return [
-    bookmarkField.init((state) => Array.from(new Set(initialBookmarks))
-      .filter((line) => Number.isInteger(line) && line >= 0 && line < state.doc.lines)
-      .sort((a, b) => a - b)),
+    bookmarkField.init((state) =>
+      Array.from(new Set(initialBookmarks))
+        .filter((line) => Number.isInteger(line) && line >= 0 && line < state.doc.lines)
+        .sort((a, b) => a - b),
+    ),
     gutter({
       class: "cm-bookmark-gutter",
       markers: markerSet,

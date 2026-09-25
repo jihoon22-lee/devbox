@@ -45,27 +45,18 @@ describe("HeaderTable", () => {
   });
 
   it("현재 환경의 secret 이름만 reference로 삽입하고 원문 값 prop을 요구하지 않는다", () => {
-    const onChange = setup(
-      [{ key: "Authorization", value: "", enabled: true }],
-      ["TOKEN", "bad name", "API_KEY"],
-    );
+    const onChange = setup([{ key: "Authorization", value: "", enabled: true }], ["TOKEN", "bad name", "API_KEY"]);
 
     const select = screen.getByLabelText("1번 header secret 참조") as HTMLSelectElement;
-    expect([...select.options].map((option) => option.text)).toEqual([
-      "Secret 참조",
-      "API_KEY",
-      "TOKEN",
-    ]);
+    expect([...select.options].map((option) => option.text)).toEqual(["Secret 참조", "API_KEY", "TOKEN"]);
     fireEvent.change(select, { target: { value: "TOKEN" } });
-    expect(onChange).toHaveBeenCalledWith([
-      { key: "Authorization", value: "${TOKEN}", enabled: true },
-    ]);
+    expect(onChange).toHaveBeenCalledWith([{ key: "Authorization", value: "${TOKEN}", enabled: true }]);
     expect(screen.getByRole("note").textContent).toContain("봉인된 원문을 읽거나 표시하지 않습니다");
   });
 
   it("secret이 없어도 enabled 기본 행을 추가할 수 있다", () => {
     const onChange = setup([]);
-    expect((screen.getByLabelText("요청 Header 편집").querySelector("select") as HTMLSelectElement | null)).toBeNull();
+    expect(screen.getByLabelText("요청 Header 편집").querySelector("select") as HTMLSelectElement | null).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "+ 헤더 추가" }));
     expect(onChange).toHaveBeenCalledWith([{ key: "", value: "", enabled: true }]);
   });

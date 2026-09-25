@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createInitialEditorState,
-  editorReducer,
-  isEditorStateInvariantValid,
-  stateToSession,
-} from "./documentStore";
+import { createInitialEditorState, editorReducer, isEditorStateInvariantValid, stateToSession } from "./documentStore";
 import type { Doc } from "../types";
 
 function doc(id: string, path = `/workspace/${id}.ts`): Doc {
@@ -34,9 +29,29 @@ describe("document registry transitions", () => {
   it("refreshes native rename revisions for unsupported documents and rejects stale editor versions", () => {
     const original = { ...doc("notes", "/workspace/notes.txt"), nativeRevision: "native-1" };
     const before = withDocs(original);
-    const action = { type: "applyLspRename" as const, documents: [{ docId: "notes", version: 0, text: "renamed", nativeRevision: "native-2", mtimeNanos: "101", size: 7, contentHash: "new" }], expectedRevisions: { notes: 0 } };
+    const action = {
+      type: "applyLspRename" as const,
+      documents: [
+        {
+          docId: "notes",
+          version: 0,
+          text: "renamed",
+          nativeRevision: "native-2",
+          mtimeNanos: "101",
+          size: 7,
+          contentHash: "new",
+        },
+      ],
+      expectedRevisions: { notes: 0 },
+    };
     const after = editorReducer(before, action);
-    expect(after.docs[0]).toMatchObject({ text: "renamed", nativeRevision: "native-2", dirty: false, revision: 1, contentHash: "new" });
+    expect(after.docs[0]).toMatchObject({
+      text: "renamed",
+      nativeRevision: "native-2",
+      dirty: false,
+      revision: 1,
+      contentHash: "new",
+    });
     expect(editorReducer(after, action)).toBe(after);
   });
 

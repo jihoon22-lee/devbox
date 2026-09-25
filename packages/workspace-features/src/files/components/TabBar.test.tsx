@@ -92,15 +92,11 @@ describe("document tab semantics", () => {
     fireEvent.contextMenu(rendered.getByRole("tab", { name: "two.ts" }), { clientX: 40, clientY: 60 });
     expect(onActivate).toHaveBeenLastCalledWith("two");
     const menu = rendered.getByRole("menu", { name: "문서 탭 작업" });
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "닫기",
-      "다른 탭 닫기",
-      "오른쪽 탭 모두 닫기",
-      "경로 복사",
-      "탐색기에서 열기",
-      "이름 변경",
-      "삭제",
-    ]);
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["닫기", "다른 탭 닫기", "오른쪽 탭 모두 닫기", "경로 복사", "탐색기에서 열기", "이름 변경", "삭제"]);
     expect(within(menu).getByRole("menuitem", { name: "삭제" }).classList.contains("danger")).toBe(true);
 
     fireEvent.click(within(menu).getByRole("menuitem", { name: "오른쪽 탭 모두 닫기" }));
@@ -129,7 +125,9 @@ describe("document tab semantics", () => {
     fireEvent.keyDown(tab, { key: "F10", shiftKey: true });
     const menu = rendered.getByRole("menu", { name: "문서 탭 작업" });
     expect(within(menu).getByRole("menuitem", { name: "다른 탭 닫기" }).getAttribute("aria-disabled")).toBe("true");
-    expect(within(menu).getByRole("menuitem", { name: "오른쪽 탭 모두 닫기" }).getAttribute("aria-disabled")).toBe("true");
+    expect(within(menu).getByRole("menuitem", { name: "오른쪽 탭 모두 닫기" }).getAttribute("aria-disabled")).toBe(
+      "true",
+    );
     fireEvent.keyDown(menu, { key: "Escape" });
     await waitFor(() => expect(document.activeElement).toBe(tab));
 

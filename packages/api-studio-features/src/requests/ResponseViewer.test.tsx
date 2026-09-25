@@ -24,14 +24,16 @@ function response(overrides: Partial<ApiResponse> = {}): ApiResponse {
     is_json: true,
     final_url: "https://api.example.com",
     redirects: [],
-    cookies: [{
-      name: "session",
-      value: "[REDACTED]",
-      attributes: [
-        { key: "Path", value: "/" },
-        { key: "HttpOnly", value: "" },
-      ],
-    }],
+    cookies: [
+      {
+        name: "session",
+        value: "[REDACTED]",
+        attributes: [
+          { key: "Path", value: "/" },
+          { key: "HttpOnly", value: "" },
+        ],
+      },
+    ],
     response_id: "response-7",
     raw_headers_available: true,
     headers_truncated: false,
@@ -39,10 +41,7 @@ function response(overrides: Partial<ApiResponse> = {}): ApiResponse {
   };
 }
 
-function renderViewer(
-  value = response(),
-  options: { native?: boolean; responseText?: string } = {},
-) {
+function renderViewer(value = response(), options: { native?: boolean; responseText?: string } = {}) {
   return render(
     <ResponseViewer
       response={value}
@@ -108,9 +107,9 @@ describe("ResponseViewer", () => {
     expect(document.body.textContent).not.toContain("raw-secret");
 
     fireEvent.click(screen.getByRole("button", { name: "마스킹된 헤더 복사" }));
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(
-      "content-type: application/json\nset-cookie: [REDACTED]",
-    ));
+    await waitFor(() =>
+      expect(writeTextMock).toHaveBeenCalledWith("content-type: application/json\nset-cookie: [REDACTED]"),
+    );
     expect(confirmMock).not.toHaveBeenCalled();
     expect(rawCopyMock).not.toHaveBeenCalled();
   });
@@ -127,17 +126,17 @@ describe("ResponseViewer", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(rawButton);
     await waitFor(() => expect(rawCopyMock).toHaveBeenCalledWith("cookies", "response-7"));
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(
-      "set-cookie: session=raw-secret",
-    ));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("set-cookie: session=raw-secret"));
   });
 
   it("keeps raw copy disabled when native retention is unavailable or bounded", () => {
-    renderViewer(response({
-      response_id: null,
-      raw_headers_available: false,
-      headers_truncated: true,
-    }));
+    renderViewer(
+      response({
+        response_id: null,
+        raw_headers_available: false,
+        headers_truncated: true,
+      }),
+    );
     fireEvent.click(screen.getByRole("tab", { name: "헤더 (2)" }));
     const rawHeaders = screen.getByRole("button", { name: "원본 헤더 복사" }) as HTMLButtonElement;
     expect(rawHeaders.disabled).toBe(true);
@@ -155,24 +154,24 @@ describe("ResponseViewer", () => {
     fireEvent.click(screen.getByRole("tab", { name: "쿠키 (1)" }));
     fireEvent.click(screen.getByRole("button", { name: "원본 쿠키 복사" }));
 
-    await waitFor(() => expect(errorMock).toHaveBeenCalledWith(
-      "원문 응답 Set-Cookie를 안전하게 복사하지 못했습니다.",
-    ));
+    await waitFor(() => expect(errorMock).toHaveBeenCalledWith("원문 응답 Set-Cookie를 안전하게 복사하지 못했습니다."));
     expect(document.body.textContent).not.toContain("backend-secret");
   });
 
   it("keeps HTTP status errors distinct from projected GraphQL data and errors", () => {
-    renderViewer(response({
-      status: 400,
-      status_text: "Bad Request",
-      body: '{"data":{"viewer":null},"errors":[{"message":"field failed","path":["viewer"]}]}',
-      graphql: {
-        envelope: "valid",
-        data: { viewer: null },
-        errors: [{ message: "field failed", locations: [], path: ["viewer"] }],
-        errors_truncated: false,
-      },
-    }));
+    renderViewer(
+      response({
+        status: 400,
+        status_text: "Bad Request",
+        body: '{"data":{"viewer":null},"errors":[{"message":"field failed","path":["viewer"]}]}',
+        graphql: {
+          envelope: "valid",
+          data: { viewer: null },
+          errors: [{ message: "field failed", locations: [], path: ["viewer"] }],
+          errors_truncated: false,
+        },
+      }),
+    );
     expect(screen.getByText("HTTP 오류 (400)")).toBeTruthy();
     expect(screen.getByText("GraphQL envelope: valid")).toBeTruthy();
     expect(screen.getByRole("alert", { name: "GraphQL 오류" }).textContent).toContain("field failed");
@@ -180,19 +179,21 @@ describe("ResponseViewer", () => {
   });
 
   it("shows bounded binary type/size/hex previews and saves only after an explicit action", async () => {
-    renderViewer(response({
-      body: "",
-      is_json: false,
-      binary: {
-        media_type: "application/octet-stream",
-        size_bytes: 4,
-        hex_preview: "89504e47",
-        text_preview: null,
-        hex_truncated: false,
-        text_truncated: false,
-        save_available: true,
-      },
-    }));
+    renderViewer(
+      response({
+        body: "",
+        is_json: false,
+        binary: {
+          media_type: "application/octet-stream",
+          size_bytes: 4,
+          hex_preview: "89504e47",
+          text_preview: null,
+          hex_truncated: false,
+          text_truncated: false,
+          save_available: true,
+        },
+      }),
+    );
 
     expect(screen.getByText("application/octet-stream")).toBeTruthy();
     expect(screen.getByText(/4바이트/u)).toBeTruthy();
@@ -204,17 +205,19 @@ describe("ResponseViewer", () => {
   });
 
   it("disables binary save when native retention is unavailable", () => {
-    renderViewer(response({
-      binary: {
-        media_type: "application/octet-stream",
-        size_bytes: 3,
-        hex_preview: "000102",
-        text_preview: null,
-        hex_truncated: false,
-        text_truncated: false,
-        save_available: false,
-      },
-    }));
+    renderViewer(
+      response({
+        binary: {
+          media_type: "application/octet-stream",
+          size_bytes: 3,
+          hex_preview: "000102",
+          text_preview: null,
+          hex_truncated: false,
+          text_truncated: false,
+          save_available: false,
+        },
+      }),
+    );
     const save = screen.getByRole("button", { name: "Binary 저장" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
     const send = screen.getByRole("button", { name: "선택 영역을 Developer Toolbox로 보내기" }) as HTMLButtonElement;

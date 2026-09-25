@@ -369,7 +369,7 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
     let payload_bytes = read(&payload, MAX_RELEASE_BYTES as u64)?;
     verify_payload_owner(&Payload::parse(&payload_bytes)?, &image)?;
-    let verified_root = devbox_manager_lib::core::custom_root::verify_suite_directory(&root)
+    let verified_root = installation_tools::core::custom_root::verify_suite_directory(&root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let owner: InstallOwner =
         serde_json::from_slice(&read(&verified_root.join("suite-owner.json"), 4096)?)

@@ -114,12 +114,10 @@ export default function PaneCanvas({
   const gridCols = activePaneIds.length === 0 ? 1 : Math.ceil(Math.sqrt(activePaneIds.length));
   const gridRows = Math.ceil(activePaneIds.length / gridCols);
   // 트랙 수는 레이아웃이 정한다. 하나뿐인 축에는 구분선을 만들지 않는다.
-  const columnCount = layout === "cols"
-    ? Math.max(1, activePaneIds.length)
-    : layout === "rows" ? 1 : Math.max(1, gridCols);
-  const rowCount = layout === "rows"
-    ? Math.max(1, activePaneIds.length)
-    : layout === "cols" ? 1 : Math.max(1, gridRows);
+  const columnCount =
+    layout === "cols" ? Math.max(1, activePaneIds.length) : layout === "rows" ? 1 : Math.max(1, gridCols);
+  const rowCount =
+    layout === "rows" ? Math.max(1, activePaneIds.length) : layout === "cols" ? 1 : Math.max(1, gridRows);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const placeholderRefs = useRef(new Map<string, HTMLElement>());
@@ -131,33 +129,29 @@ export default function PaneCanvas({
   } | null>(null);
   const baseSizing = previewSizing?.source === sizingSource ? previewSizing.sizing : storedSizing;
   useEffect(() => {
-    setPreviewSizing((current) => current?.source === sizingSource ? current : null);
+    setPreviewSizing((current) => (current?.source === sizingSource ? current : null));
   }, [sizingSource]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (activePaneId && activePaneIds.includes(activePaneId)) {
       placeholderRefs.current.get(activePaneId)?.focus();
     }
   }, [activePaneId, activePaneIds.join("|")]);
-  const columns = zoomed
-    ? [1]
-    : normalizeFractions(baseSizing.columns, columnCount);
-  const rows = zoomed
-    ? [1]
-    : normalizeFractions(baseSizing.rows, rowCount);
+  const columns = zoomed ? [1] : normalizeFractions(baseSizing.columns, columnCount);
+  const rows = zoomed ? [1] : normalizeFractions(baseSizing.rows, rowCount);
 
-  const applySizing = useCallback((axis: "columns" | "rows", next: number[]) => {
-    if (!activeTabId || !activeTab) return;
-    const nextSizing = { ...baseSizing, [axis]: next };
-    setPreviewSizing({ source: sizingSource, sizing: nextSizing });
-    onSizingChange(activeTabId, nextSizing);
-  }, [activeTab, activeTabId, baseSizing, onSizingChange, sizingSource]);
+  const applySizing = useCallback(
+    (axis: "columns" | "rows", next: number[]) => {
+      if (!activeTabId || !activeTab) return;
+      const nextSizing = { ...baseSizing, [axis]: next };
+      setPreviewSizing({ source: sizingSource, sizing: nextSizing });
+      onSizingChange(activeTabId, nextSizing);
+    },
+    [activeTab, activeTabId, baseSizing, onSizingChange, sizingSource],
+  );
 
-  const startDrag = (
-    axis: "columns" | "rows",
-    index: number,
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) => {
+  const startDrag = (axis: "columns" | "rows", index: number, event: ReactPointerEvent<HTMLDivElement>) => {
     const container = containerRef.current;
     if (!container || actionsDisabled) return;
     event.preventDefault();
@@ -276,11 +270,22 @@ export default function PaneCanvas({
                 </button>
               </div>
               <div className="restore-placeholder-body">
-                <strong>{connecting ? "터미널을 복원하고 있습니다" : (pane.restoreError ?? "터미널을 복원하지 못했습니다.")}</strong>
+                <strong>
+                  {connecting ? "터미널을 복원하고 있습니다" : (pane.restoreError ?? "터미널을 복원하지 못했습니다.")}
+                </strong>
                 <dl>
-                  <div><dt>배포판</dt><dd>{pane.distro}</dd></div>
-                  <div><dt>경로</dt><dd title={pane.cwd}>{pane.cwd ?? "기본 경로"}</dd></div>
-                  <div><dt>요청 방식</dt><dd>{pane.requestedMultiplexer ?? pane.multiplexer}</dd></div>
+                  <div>
+                    <dt>배포판</dt>
+                    <dd>{pane.distro}</dd>
+                  </div>
+                  <div>
+                    <dt>경로</dt>
+                    <dd title={pane.cwd}>{pane.cwd ?? "기본 경로"}</dd>
+                  </div>
+                  <div>
+                    <dt>요청 방식</dt>
+                    <dd>{pane.requestedMultiplexer ?? pane.multiplexer}</dd>
+                  </div>
                 </dl>
                 {!connecting && (
                   <button

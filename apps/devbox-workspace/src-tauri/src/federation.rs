@@ -79,7 +79,7 @@ fn runtime_metadata(
     app: &tauri::AppHandle,
     source: &Source,
 ) -> Result<(Index, bool), &'static str> {
-    use run_manager_lib::component::search as runtime;
+    use runtime_engine::component::search as runtime;
     let (kind, entity, selected) = match source {
         Source::Tasks => ("task", EntityKind::Task, runtime::Source::Tasks),
         Source::Services => ("service", EntityKind::Service, runtime::Source::Services),

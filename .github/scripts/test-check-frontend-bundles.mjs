@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -42,13 +37,21 @@ function fixtureApp(root, appName, { indexHtml, files = {}, manifest = undefined
 function writeConfig(root, apps, catalogApps = Object.keys(apps)) {
   const appDirectory = path.join(root, "apps");
   mkdirSync(appDirectory, { recursive: true });
-  writeFileSync(path.join(appDirectory, "catalog.json"), `${JSON.stringify({
-    apps: catalogApps.map((appName) => ({
-      id: appName,
-      appDir: `apps/${appName}`,
-      release: true,
-    })),
-  }, null, 2)}\n`, "utf8");
+  writeFileSync(
+    path.join(appDirectory, "catalog.json"),
+    `${JSON.stringify(
+      {
+        apps: catalogApps.map((appName) => ({
+          id: appName,
+          appDir: `apps/${appName}`,
+          release: true,
+        })),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
   const config = path.join(root, "budgets.json");
   writeFileSync(config, `${JSON.stringify({ schemaVersion: 1, apps }, null, 2)}\n`, "utf8");
   return config;
@@ -80,7 +83,11 @@ try {
     const root = path.join(tempRoot, "malformed-config");
     mkdirSync(root, { recursive: true });
     const config = path.join(path.dirname(root), "malformed.json");
-    writeFileSync(config, '{"schemaVersion":1,"apps":{"code-pad":{"dist":"apps/code-pad/dist","rawBytes":"100","gzipBytes":100}}}\n', "utf8");
+    writeFileSync(
+      config,
+      '{"schemaVersion":1,"apps":{"code-pad":{"dist":"apps/code-pad/dist","rawBytes":"100","gzipBytes":100}}}\n',
+      "utf8",
+    );
     assertFailed(runChecker(root, config, "all"), "invalid rawBytes", "malformed config fixture");
   }
 
@@ -120,9 +127,13 @@ try {
 
   {
     const root = path.join(tempRoot, "catalog-coverage");
-    const config = writeConfig(root, {
-      "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
-    }, ["code-pad", "knowledge-base"]);
+    const config = writeConfig(
+      root,
+      {
+        "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
+      },
+      ["code-pad", "knowledge-base"],
+    );
     assertFailed(runChecker(root, config, "all"), "cover the release catalog exactly", "catalog coverage fixture");
   }
 
@@ -138,12 +149,16 @@ try {
     const root = path.join(tempRoot, "missing-catalog");
     mkdirSync(root, { recursive: true });
     const config = path.join(root, "budgets.json");
-    writeFileSync(config, JSON.stringify({
-      schemaVersion: 1,
-      apps: {
-        "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
-      },
-    }), "utf8");
+    writeFileSync(
+      config,
+      JSON.stringify({
+        schemaVersion: 1,
+        apps: {
+          "code-pad": { dist: "apps/code-pad/dist", rawBytes: 1000, gzipBytes: 1000 },
+        },
+      }),
+      "utf8",
+    );
     assertFailed(runChecker(root, config, "all"), "app catalog is missing", "missing catalog fixture");
   }
 

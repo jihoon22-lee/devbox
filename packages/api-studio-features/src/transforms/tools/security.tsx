@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { generateIds, hash } from "../api";
 import { CopyBtn, ToolOutput, ToolTextArea } from "./common";
-import {
-  IDENTIFIER_GENERATION_ERROR,
-  MAX_IDENTIFIER_BATCH,
-  type IdentifierKind,
-} from "./ids";
+import { IDENTIFIER_GENERATION_ERROR, MAX_IDENTIFIER_BATCH, type IdentifierKind } from "./ids";
 
 const ALGORITHMS = ["md5", "sha256", "sha512"];
 
@@ -56,9 +52,7 @@ export function HashTool() {
           />
         </div>
         <div className="io-col">
-          <div className="io-label">
-            출력 {output && <CopyBtn value={output} />}
-          </div>
+          <div className="io-label">출력 {output && <CopyBtn value={output} />}</div>
           <ToolOutput
             className={`io-output ${error ? "io-error" : ""}`}
             value={error || output}
@@ -99,11 +93,7 @@ export function UuidTool() {
   }, []);
 
   const count = Number(countText);
-  const validCount =
-    countText.trim() !== "" &&
-    Number.isInteger(count) &&
-    count >= 1 &&
-    count <= MAX_IDENTIFIER_BATCH;
+  const validCount = countText.trim() !== "" && Number.isInteger(count) && count >= 1 && count <= MAX_IDENTIFIER_BATCH;
 
   const invalidatePending = () => {
     requestId.current += 1;
@@ -186,9 +176,7 @@ export function UuidTool() {
             inputMode="numeric"
             aria-label="생성 수량"
             aria-describedby={
-              !validCount && countText.trim() !== ""
-                ? "identifier-count-error identifier-help"
-                : "identifier-help"
+              !validCount && countText.trim() !== "" ? "identifier-count-error identifier-help" : "identifier-help"
             }
             aria-invalid={!validCount && countText.trim() !== ""}
             value={countText}
@@ -199,9 +187,7 @@ export function UuidTool() {
             onCompositionEnd={() => {
               composing.current = false;
             }}
-            onChange={(event) =>
-              changeOptions(() => setCountText(event.currentTarget.value))
-            }
+            onChange={(event) => changeOptions(() => setCountText(event.currentTarget.value))}
           />
         </label>
         <label className="id-generator-check">
@@ -212,9 +198,7 @@ export function UuidTool() {
             aria-label="대문자 출력"
             aria-describedby="identifier-help"
             disabled={running}
-            onChange={(event) =>
-              changeOptions(() => setUppercase(event.currentTarget.checked))
-            }
+            onChange={(event) => changeOptions(() => setUppercase(event.currentTarget.checked))}
           />
           <span>대문자</span>
         </label>
@@ -226,18 +210,11 @@ export function UuidTool() {
             aria-label="하이픈 표시"
             aria-describedby="identifier-help"
             disabled={running}
-            onChange={(event) =>
-              changeOptions(() => setHyphens(event.currentTarget.checked))
-            }
+            onChange={(event) => changeOptions(() => setHyphens(event.currentTarget.checked))}
           />
           <span>하이픈 표시</span>
         </label>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => void run()}
-          disabled={running || !validCount}
-        >
+        <button type="button" className="btn" onClick={() => void run()} disabled={running || !validCount}>
           {running ? "생성 중..." : "생성"}
         </button>
       </div>
@@ -251,13 +228,13 @@ export function UuidTool() {
           생성 수량은 1에서 {MAX_IDENTIFIER_BATCH} 사이의 정수여야 합니다.
         </div>
       ) : null}
-      {error ? <div className="id-generator-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="id-generator-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="id-generator-status" role="status" aria-live="polite" aria-atomic="true">
-        {running
-          ? "식별자를 생성하는 중입니다."
-          : list.length > 0
-            ? `${list.length}개 식별자를 생성했습니다.`
-            : ""}
+        {running ? "식별자를 생성하는 중입니다." : list.length > 0 ? `${list.length}개 식별자를 생성했습니다.` : ""}
       </div>
       <ToolOutput
         className="uuid-list"

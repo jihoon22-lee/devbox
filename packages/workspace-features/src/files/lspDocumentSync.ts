@@ -38,10 +38,7 @@ import type {
   LspHoverResult,
   LspPosition,
 } from "./types";
-import type {
-  LspDiagnosticsEvent,
-  LspStatusEvent,
-} from "./types";
+import type { LspDiagnosticsEvent, LspStatusEvent } from "./types";
 import { positionForOffset } from "./lspFeatures";
 
 /** The document-facing language IDs understood by the LSP boundary. */
@@ -97,20 +94,44 @@ export interface LspDocumentTransport {
   start: (languageId: string) => Promise<void>;
   stop: (languageId: string) => Promise<void>;
   open: (languageId: string, path: string, text: string, nativeRevision?: string | null) => Promise<LspDidOpen>;
-  change: (languageId: string, uri: string, text: string, dirty: boolean, nativeRevision?: string | null) => Promise<LspDidChange>;
+  change: (
+    languageId: string,
+    uri: string,
+    text: string,
+    dirty: boolean,
+    nativeRevision?: string | null,
+  ) => Promise<LspDidChange>;
   reload: (languageId: string, uri: string, text: string, nativeRevision?: string | null) => Promise<LspDidChange>;
   save: (languageId: string, uri: string, nativeRevision?: string | null, text?: string) => Promise<LspDidSave>;
   close: (languageId: string, uri: string) => Promise<LspDidClose>;
   pullDiagnostics: (languageId: string, uri: string) => Promise<LspFeatureResponse<LspDiagnosticResult>>;
-  completion: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspCompletionResult>>;
+  completion: (
+    languageId: string,
+    uri: string,
+    position: LspPosition,
+  ) => Promise<LspFeatureResponse<LspCompletionResult>>;
   hover: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspHoverResult | null>>;
-  definition: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspFilteredLocations>>;
-  references: (languageId: string, uri: string, position: LspPosition, includeDeclaration: boolean) => Promise<LspFeatureResponse<LspFilteredLocations>>;
+  definition: (
+    languageId: string,
+    uri: string,
+    position: LspPosition,
+  ) => Promise<LspFeatureResponse<LspFilteredLocations>>;
+  references: (
+    languageId: string,
+    uri: string,
+    position: LspPosition,
+    includeDeclaration: boolean,
+  ) => Promise<LspFeatureResponse<LspFilteredLocations>>;
   rename: (languageId: string, uri: string, position: LspPosition, newName: string) => Promise<LspRenamePreview>;
   applyRename: (planId: string) => Promise<LspRenameApplyResult>;
   cancelRename: (planId: string) => Promise<boolean>;
   discardRename: (planId: string) => Promise<boolean>;
-  formatting: (languageId: string, uri: string, tabSize: number, insertSpaces: boolean) => Promise<AppliedDocumentEdits>;
+  formatting: (
+    languageId: string,
+    uri: string,
+    tabSize: number,
+    insertSpaces: boolean,
+  ) => Promise<AppliedDocumentEdits>;
   restart: (languageId: string) => Promise<void>;
 }
 
@@ -208,10 +229,11 @@ function normalizedPath(path: string): string {
 function pathsEqual(left: string, right: string): boolean {
   const normalizedLeft = normalizedPath(left);
   const normalizedRight = normalizedPath(right);
-  const windowsPath = /^[A-Za-z]:\//u.test(normalizedLeft)
-    || /^[A-Za-z]:\//u.test(normalizedRight)
-    || normalizedLeft.startsWith("//")
-    || normalizedRight.startsWith("//");
+  const windowsPath =
+    /^[A-Za-z]:\//u.test(normalizedLeft) ||
+    /^[A-Za-z]:\//u.test(normalizedRight) ||
+    normalizedLeft.startsWith("//") ||
+    normalizedRight.startsWith("//");
   return windowsPath
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
@@ -221,10 +243,11 @@ function pathWithinWorkspace(path: string, workspaceRoot: string | null): boolea
   if (!workspaceRoot) return false;
   const normalizedPathValue = normalizedPath(path);
   const normalizedRoot = normalizedPath(workspaceRoot);
-  const windowsPath = /^[A-Za-z]:\//u.test(normalizedPathValue)
-    || /^[A-Za-z]:\//u.test(normalizedRoot)
-    || normalizedPathValue.startsWith("//")
-    || normalizedRoot.startsWith("//");
+  const windowsPath =
+    /^[A-Za-z]:\//u.test(normalizedPathValue) ||
+    /^[A-Za-z]:\//u.test(normalizedRoot) ||
+    normalizedPathValue.startsWith("//") ||
+    normalizedRoot.startsWith("//");
   const candidate = windowsPath ? normalizedPathValue.toLowerCase() : normalizedPathValue;
   const root = windowsPath ? normalizedRoot.toLowerCase() : normalizedRoot;
   if (root === "/" || /^[a-z]:\/$/u.test(root)) return candidate.startsWith(root);
@@ -306,7 +329,7 @@ export class LspDocumentSync {
   statusForDocument(documentId: string): LanguageServerStatus | null {
     const state = this.documents.get(documentId);
     return state?.languageId
-      ? this.statusesSnapshot.find((status) => status.languageId === state.languageId) ?? null
+      ? (this.statusesSnapshot.find((status) => status.languageId === state.languageId) ?? null)
       : null;
   }
 
@@ -351,7 +374,8 @@ export class LspDocumentSync {
     else this.publishState();
     if (event.status.status === "ready") {
       for (const state of this.documents.values()) {
-        if (state.active && !state.closing && !state.opened && state.languageId === event.languageId) void this.open(state.doc);
+        if (state.active && !state.closing && !state.opened && state.languageId === event.languageId)
+          void this.open(state.doc);
       }
     }
   }
@@ -362,29 +386,29 @@ export class LspDocumentSync {
     // ignore versionless pushes rather than presenting a late report as
     // current after an editor mutation.
     if (event.response.value.origin === "push" && event.response.value.version == null) return;
-    const entry = [...this.documents.entries()].find(([, state]) =>
-      state.languageId === event.languageId && state.opened?.uri === event.response.metadata.uri,
+    const entry = [...this.documents.entries()].find(
+      ([, state]) => state.languageId === event.languageId && state.opened?.uri === event.response.metadata.uri,
     );
     if (!entry) return;
     const [documentId, state] = entry;
     const currentVersion = state.opened?.version;
     const payloadVersion = event.response.value.version;
-    const stale = currentVersion !== undefined && (
-      event.response.metadata.version !== currentVersion
-      || (payloadVersion !== null && payloadVersion !== undefined && payloadVersion !== currentVersion)
-      || state.opened?.text !== state.doc.text
-    );
+    const stale =
+      currentVersion !== undefined &&
+      (event.response.metadata.version !== currentVersion ||
+        (payloadVersion !== null && payloadVersion !== undefined && payloadVersion !== currentVersion) ||
+        state.opened?.text !== state.doc.text);
     const previous = this.diagnostics.get(documentId);
     const incomingStale = event.response.stale || stale;
     const previousMatchesCurrent = Boolean(
-      previous
-      && currentVersion !== undefined
-      && !previous.response.stale
-      && previous.response.metadata.version === currentVersion
-      && (previous.response.value.version === null
-        || previous.response.value.version === undefined
-        || previous.response.value.version === currentVersion)
-      && state.opened?.text === state.doc.text,
+      previous &&
+        currentVersion !== undefined &&
+        !previous.response.stale &&
+        previous.response.metadata.version === currentVersion &&
+        (previous.response.value.version === null ||
+          previous.response.value.version === undefined ||
+          previous.response.value.version === currentVersion) &&
+        state.opened?.text === state.doc.text,
     );
     // A late push must never replace or stale-mark a diagnostic result that
     // already describes the current native mirror.  This is common when a
@@ -397,18 +421,19 @@ export class LspDocumentSync {
     // snapshot for a document that has never had a current result.
     if (incomingStale && !previous) return;
     const staleVersion = currentVersion ?? previous?.response.metadata.version ?? event.response.metadata.version;
-    const response = incomingStale && previous
-      ? {
-          ...previous.response,
-          metadata: { ...previous.response.metadata, version: staleVersion },
-          value: { ...previous.response.value, version: staleVersion, stale: true },
-          stale: true,
-        }
-      : {
-          ...event.response,
-          value: { ...event.response.value, stale: event.response.value.stale || incomingStale },
-          stale: incomingStale,
-        };
+    const response =
+      incomingStale && previous
+        ? {
+            ...previous.response,
+            metadata: { ...previous.response.metadata, version: staleVersion },
+            value: { ...previous.response.value, version: staleVersion, stale: true },
+            stale: true,
+          }
+        : {
+            ...event.response,
+            value: { ...event.response.value, stale: event.response.value.stale || incomingStale },
+            stale: incomingStale,
+          };
     const snapshot = { documentId, response };
     this.diagnostics.set(documentId, snapshot);
     this.publishDiagnostics(snapshot);
@@ -538,18 +563,29 @@ export class LspDocumentSync {
     const generation = state.generation;
     return this.enqueue(state, async () => {
       if (!this.isCurrent(state, generation, true) || state.languageId !== languageId) return;
-      if (savedDocument.nativeRevision !== undefined && state.doc.nativeRevision !== savedDocument.nativeRevision) return;
+      if (savedDocument.nativeRevision !== undefined && state.doc.nativeRevision !== savedDocument.nativeRevision)
+        return;
       try {
         const opened = await this.ensureOpen(state, generation, languageId, savedDocument.text);
         if (!opened || !this.isCurrent(state, generation, true)) return;
-        const saved = savedDocument.nativeRevision === undefined
-          ? await this.transport.save(languageId, opened.uri)
-          : await this.transport.save(languageId, opened.uri, savedDocument.nativeRevision, savedDocument.text);
+        const saved =
+          savedDocument.nativeRevision === undefined
+            ? await this.transport.save(languageId, opened.uri)
+            : await this.transport.save(languageId, opened.uri, savedDocument.nativeRevision, savedDocument.text);
         opened.version = saved.version;
         opened.text = savedDocument.text;
-        if (current.text !== savedDocument.text && this.isCurrent(state, generation, true)
-          && current.nativeRevision === state.doc.nativeRevision) {
-          const changed = await this.transport.change(languageId, opened.uri, current.text, current.dirty, ...nativeRevision(current));
+        if (
+          current.text !== savedDocument.text &&
+          this.isCurrent(state, generation, true) &&
+          current.nativeRevision === state.doc.nativeRevision
+        ) {
+          const changed = await this.transport.change(
+            languageId,
+            opened.uri,
+            current.text,
+            current.dirty,
+            ...nativeRevision(current),
+          );
           opened.version = changed.version;
           opened.text = current.text;
         }
@@ -562,22 +598,32 @@ export class LspDocumentSync {
 
   requestCompletion(documentId: string, offset: number): Promise<LspFeatureResponse<LspCompletionResult> | null> {
     const token = this.nextFeatureToken(documentId);
-    return this.requestFeature(documentId, token, async (state, opened, status) => {
-      if (status?.capabilities.completion === false) return null;
-      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
-      const response = await this.transport.completion(state.languageId!, opened.uri, position);
-      return this.isFeatureCurrent(documentId, token) ? response : null;
-    }, true);
+    return this.requestFeature(
+      documentId,
+      token,
+      async (state, opened, status) => {
+        if (status?.capabilities.completion === false) return null;
+        const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+        const response = await this.transport.completion(state.languageId!, opened.uri, position);
+        return this.isFeatureCurrent(documentId, token) ? response : null;
+      },
+      true,
+    );
   }
 
   requestHover(documentId: string, offset: number): Promise<LspFeatureResponse<LspHoverResult | null> | null> {
     const token = this.nextFeatureToken(documentId);
-    return this.requestFeature(documentId, token, async (state, opened, status) => {
-      if (status?.capabilities.hover === false) return null;
-      const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
-      const response = await this.transport.hover(state.languageId!, opened.uri, position);
-      return this.isFeatureCurrent(documentId, token) ? response : null;
-    }, true);
+    return this.requestFeature(
+      documentId,
+      token,
+      async (state, opened, status) => {
+        if (status?.capabilities.hover === false) return null;
+        const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
+        const response = await this.transport.hover(state.languageId!, opened.uri, position);
+        return this.isFeatureCurrent(documentId, token) ? response : null;
+      },
+      true,
+    );
   }
 
   requestDefinition(documentId: string, offset: number): Promise<LspFeatureResponse<LspFilteredLocations> | null> {
@@ -599,12 +645,7 @@ export class LspDocumentSync {
     return this.requestFeature(documentId, token, async (state, opened, status) => {
       if (status?.capabilities.references === false) return null;
       const position = positionForOffset(state.doc.text, offset, status?.capabilities.positionEncoding);
-      const response = await this.transport.references(
-        state.languageId!,
-        opened.uri,
-        position,
-        includeDeclaration,
-      );
+      const response = await this.transport.references(state.languageId!, opened.uri, position, includeDeclaration);
       return this.isFeatureCurrent(documentId, token) ? response : null;
     });
   }
@@ -633,11 +674,7 @@ export class LspDocumentSync {
     return this.transport.discardRename(planId);
   }
 
-  requestFormatting(
-    documentId: string,
-    tabSize = 4,
-    insertSpaces = true,
-  ): Promise<AppliedDocumentEdits | null> {
+  requestFormatting(documentId: string, tabSize = 4, insertSpaces = true): Promise<AppliedDocumentEdits | null> {
     const token = this.nextFeatureToken(documentId);
     return this.requestFeature(documentId, token, async (state, opened, status) => {
       if (status?.capabilities.formatting === false) return null;
@@ -647,10 +684,7 @@ export class LspDocumentSync {
   }
 
   /** Advance the native mirror after App atomically accepts a mutation result. */
-  applyDocuments(
-    documents: AppliedDocumentEdits["documents"],
-    saved = false,
-  ): void {
+  applyDocuments(documents: AppliedDocumentEdits["documents"], saved = false): void {
     for (const edited of documents) {
       const match = [...this.documents.values()].find((state) => state.opened?.uri === edited.uri);
       if (match?.opened) {
@@ -675,30 +709,31 @@ export class LspDocumentSync {
   /** Advance rename documents without exposing native absolute URIs to the
    * renderer. The workspace-relative path is matched against the logical
    * editor document and its existing native URI is retained internally. */
-  applyRenameDocuments(
-    documents: LspRenameApplyResult["documents"],
-    saved = true,
-  ): void {
+  applyRenameDocuments(documents: LspRenameApplyResult["documents"], saved = true): void {
     const workspaceRoot = this.workspaceRoot;
     for (const edited of documents) {
-      const state = [...this.documents.values()].find((candidate) =>
-        relativeWorkspacePath(candidate.doc.path, workspaceRoot) === edited.path,
+      const state = [...this.documents.values()].find(
+        (candidate) => relativeWorkspacePath(candidate.doc.path, workspaceRoot) === edited.path,
       );
       if (!state) continue;
       if (state.opened) {
         state.opened.version = edited.version;
         state.opened.text = edited.text;
       }
-      state.doc = { ...state.doc, text: edited.text, dirty: !saved,
-        ...(edited.nativeRevision !== undefined ? { nativeRevision: edited.nativeRevision } : {}) };
+      state.doc = {
+        ...state.doc,
+        text: edited.text,
+        dirty: !saved,
+        ...(edited.nativeRevision !== undefined ? { nativeRevision: edited.nativeRevision } : {}),
+      };
     }
     for (const documentId of this.diagnostics.keys()) {
-      if (documents.some((edited) =>
-        relativeWorkspacePath(
-          this.documents.get(documentId)?.doc.path ?? "",
-          workspaceRoot,
-        ) === edited.path,
-      )) {
+      if (
+        documents.some(
+          (edited) =>
+            relativeWorkspacePath(this.documents.get(documentId)?.doc.path ?? "", workspaceRoot) === edited.path,
+        )
+      ) {
         this.invalidateDiagnostics(documentId);
         this.diagnostics.delete(documentId);
       }
@@ -722,9 +757,10 @@ export class LspDocumentSync {
       if (status?.capabilities.diagnostics === false) return null;
       const response = await this.transport.pullDiagnostics(state.languageId, opened.uri);
       if (!this.isCurrent(state, generation, true)) return null;
-      const stale = opened.version !== response.metadata.version
-        || opened.text !== state.doc.text
-        || (response.value.version !== null && response.value.version !== opened.version);
+      const stale =
+        opened.version !== response.metadata.version ||
+        opened.text !== state.doc.text ||
+        (response.value.version !== null && response.value.version !== opened.version);
       const currentResponse = stale
         ? {
             ...response,
@@ -866,8 +902,7 @@ export class LspDocumentSync {
   }
 
   private isFeatureCurrent(documentId: string, token: number): boolean {
-    return this.featureTokens.get(documentId) === token
-      && Boolean(this.documents.get(documentId)?.active);
+    return this.featureTokens.get(documentId) === token && Boolean(this.documents.get(documentId)?.active);
   }
 
   private requestFeature<T>(
@@ -930,10 +965,12 @@ export class LspDocumentSync {
   }
 
   private isCurrent(state: DocumentState, generation: number, allowClosing = false): boolean {
-    return this.documents.get(state.doc.id) === state
-      && state.generation === generation
-      && this.contextGeneration === generation
-      && (state.active || (allowClosing && state.closing));
+    return (
+      this.documents.get(state.doc.id) === state &&
+      state.generation === generation &&
+      this.contextGeneration === generation &&
+      (state.active || (allowClosing && state.closing))
+    );
   }
 
   private async ensureOpen(
@@ -954,7 +991,11 @@ export class LspDocumentSync {
     }
     const serverEpoch = this.serverEpochs.get(languageId) ?? 0;
     const opened = await this.transport.open(languageId, state.doc.path, text, ...nativeRevision(state.doc));
-    if (!this.isCurrent(state, generation, true) || state.languageId !== languageId || serverEpoch !== (this.serverEpochs.get(languageId) ?? 0)) {
+    if (
+      !this.isCurrent(state, generation, true) ||
+      state.languageId !== languageId ||
+      serverEpoch !== (this.serverEpochs.get(languageId) ?? 0)
+    ) {
       await this.closeWithoutReporting({
         languageId,
         uri: opened.uri,
@@ -968,11 +1009,7 @@ export class LspDocumentSync {
     return state.opened;
   }
 
-  private async ensureLanguage(
-    state: DocumentState,
-    generation: number,
-    languageId: LspLanguageId,
-  ): Promise<boolean> {
+  private async ensureLanguage(state: DocumentState, generation: number, languageId: LspLanguageId): Promise<boolean> {
     await this.loadContextIfNeeded();
     if (!this.isCurrent(state, generation, true) || !this.isEligible(languageId)) return false;
     let status = this.statusesSnapshot.find((item) => item.languageId === languageId);
@@ -996,8 +1033,10 @@ export class LspDocumentSync {
       status = this.statusesSnapshot.find((item) => item.languageId === languageId);
       // A successful start is itself the running boundary. A status refresh
       // can legitimately lag behind a process that just initialized.
-      return this.isCurrent(state, generation, true)
-        && (!status || (status.status !== "stopped" && status.status !== "crashed"));
+      return (
+        this.isCurrent(state, generation, true) &&
+        (!status || (status.status !== "stopped" && status.status !== "crashed"))
+      );
     }
     return true;
   }
@@ -1041,8 +1080,10 @@ export class LspDocumentSync {
   private isEligible(languageId: LspLanguageId): boolean {
     if (!this.config?.enabled || !this.workspaceRoot) return false;
     if (!pathsEqual(this.config.workspace_root, this.workspaceRoot)) return false;
-    return Object.prototype.hasOwnProperty.call(this.config.server_by_language, languageId)
-      || this.config.custom_servers.some((server) => server.language_ids.includes(languageId));
+    return (
+      Object.prototype.hasOwnProperty.call(this.config.server_by_language, languageId) ||
+      this.config.custom_servers.some((server) => server.language_ids.includes(languageId))
+    );
   }
 
   private async reconfigureContext(): Promise<void> {
@@ -1051,10 +1092,8 @@ export class LspDocumentSync {
     const oldQueues = oldStates.map((state) => state.queue.catch(() => undefined));
     const oldLanguages = new Set<string>([
       ...this.startedLanguages,
-      ...oldStates.flatMap((state) => state.opened ? [state.opened.languageId] : []),
-      ...this.statusesSnapshot
-        .filter((status) => status.status !== "stopped")
-        .map((status) => status.languageId),
+      ...oldStates.flatMap((state) => (state.opened ? [state.opened.languageId] : [])),
+      ...this.statusesSnapshot.filter((status) => status.status !== "stopped").map((status) => status.languageId),
     ]);
     const previous = this.transition;
     const transition = previous

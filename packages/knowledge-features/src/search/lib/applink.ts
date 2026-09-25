@@ -43,41 +43,47 @@ function normalizeFilter(value: SearchFilter | null | undefined): SearchFilter |
   // corrupt snapshot/request cannot silently drop the user's filter.
   const extensions = value.extensions === undefined ? [] : value.extensions;
   if (!Array.isArray(extensions) || extensions.length > MAX_EXTENSIONS) return undefined;
-  const normalizedExtensions = [...new Set(extensions.map((extension) => {
-    if (typeof extension !== "string") return "";
-    return extension.trim().replace(/^\.+/, "").toLowerCase();
-  }))];
-  if (normalizedExtensions.some((extension) =>
-    extension.length === 0 ||
-    new TextEncoder().encode(extension).byteLength > MAX_EXTENSION_BYTES ||
-    !/^[a-z0-9_+\-]+$/.test(extension),
-  )) return undefined;
+  const normalizedExtensions = [
+    ...new Set(
+      extensions.map((extension) => {
+        if (typeof extension !== "string") return "";
+        return extension.trim().replace(/^\.+/, "").toLowerCase();
+      }),
+    ),
+  ];
+  if (
+    normalizedExtensions.some(
+      (extension) =>
+        extension.length === 0 ||
+        new TextEncoder().encode(extension).byteLength > MAX_EXTENSION_BYTES ||
+        !/^[a-z0-9_+\-]+$/.test(extension),
+    )
+  )
+    return undefined;
 
   const optionalNumber = (candidate: unknown): number | undefined => {
     if (candidate === undefined || candidate === null) return undefined;
-    return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0
-      ? candidate
-      : Number.NaN;
+    return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0 ? candidate : Number.NaN;
   };
   const modifiedAfter = optionalNumber(value.modifiedAfter);
   const modifiedBefore = optionalNumber(value.modifiedBefore);
   const minSize = optionalNumber(value.minSize);
   const maxSize = optionalNumber(value.maxSize);
-  if ([modifiedAfter, modifiedBefore, minSize, maxSize].some((candidate) => candidate !== undefined && Number.isNaN(candidate))) {
+  if (
+    [modifiedAfter, modifiedBefore, minSize, maxSize].some(
+      (candidate) => candidate !== undefined && Number.isNaN(candidate),
+    )
+  ) {
     return undefined;
   }
   if (modifiedAfter !== undefined && modifiedBefore !== undefined && modifiedAfter > modifiedBefore) return undefined;
   if (minSize !== undefined && maxSize !== undefined && minSize > maxSize) return undefined;
   const sourceRootId = optionalNumber(value.sourceRootId);
-  if ((sourceRootId !== undefined && Number.isNaN(sourceRootId)) || (sourceRootId !== undefined && sourceRootId <= 0)) return undefined;
-  if (
-    value.contentStatus !== undefined &&
-    value.contentStatus !== null &&
-    typeof value.contentStatus !== "string"
-  ) return undefined;
-  const contentStatus = typeof value.contentStatus === "string"
-    ? value.contentStatus.trim().toLowerCase()
-    : undefined;
+  if ((sourceRootId !== undefined && Number.isNaN(sourceRootId)) || (sourceRootId !== undefined && sourceRootId <= 0))
+    return undefined;
+  if (value.contentStatus !== undefined && value.contentStatus !== null && typeof value.contentStatus !== "string")
+    return undefined;
+  const contentStatus = typeof value.contentStatus === "string" ? value.contentStatus.trim().toLowerCase() : undefined;
   if (contentStatus && !CONTENT_STATUSES.has(contentStatus)) return undefined;
 
   const filter: SearchFilter = {};

@@ -87,9 +87,7 @@ describe("JobEditor", () => {
       updatedAt: 1,
     };
     const onSave = vi.fn<(input: JobInput) => Promise<void>>().mockResolvedValue(undefined);
-    const { getByRole, getByLabelText, unmount } = render(
-      <JobEditor job={job} onSave={onSave} onCancel={vi.fn()} />,
-    );
+    const { getByRole, getByLabelText, unmount } = render(<JobEditor job={job} onSave={onSave} onCancel={vi.fn()} />);
 
     fireEvent.click(getByRole("button", { name: "기존 환경변수 교체" }));
     fireEvent.change(getByLabelText("환경변수 이름"), { target: { value: "TOKEN" } });
@@ -103,9 +101,7 @@ describe("JobEditor", () => {
 
     onSave.mockClear();
     unmount();
-    const { getByRole: getByRoleAfterClear } = render(
-      <JobEditor job={job} onSave={onSave} onCancel={vi.fn()} />,
-    );
+    const { getByRole: getByRoleAfterClear } = render(<JobEditor job={job} onSave={onSave} onCancel={vi.fn()} />);
     fireEvent.click(getByRoleAfterClear("button", { name: "기존 환경변수 삭제" }));
     fireEvent.click(getByRoleAfterClear("button", { name: "작업 저장" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -167,14 +163,15 @@ describe("JobEditor", () => {
     fireEvent.click(getByRole("button", { name: "변수 추가" }));
     const envKey = getByLabelText("환경변수 이름");
     expect(envKey.tagName).toBe("SELECT");
-    expect(Array.from((envKey as HTMLSelectElement).options).map((option) => option.value)).toEqual(["", "BUILD_TOKEN"]);
+    expect(Array.from((envKey as HTMLSelectElement).options).map((option) => option.value)).toEqual([
+      "",
+      "BUILD_TOKEN",
+    ]);
   });
 
   it("keeps the edited draft when a job list refresh replaces the job object", () => {
     const job = editableJob();
-    const { getByLabelText, rerender } = render(
-      <JobEditor job={job} onSave={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { getByLabelText, rerender } = render(<JobEditor job={job} onSave={vi.fn()} onCancel={vi.fn()} />);
 
     fireEvent.change(getByLabelText("작업 이름"), { target: { value: "renamed" } });
     expect((getByLabelText("작업 이름") as HTMLInputElement).value).toBe("renamed");
@@ -194,22 +191,16 @@ describe("JobEditor", () => {
     fireEvent.change(getByLabelText("cron 표현식"), { target: { value: "*/5 * * * *" } });
     expect((getByLabelText("cron 표현식") as HTMLInputElement).value).toBe("*/5 * * * *");
 
-    rerender(
-      <JobEditor job={job} workspaceTask={{ ...workspaceTask }} onSave={vi.fn()} onCancel={vi.fn()} />,
-    );
+    rerender(<JobEditor job={job} workspaceTask={{ ...workspaceTask }} onSave={vi.fn()} onCancel={vi.fn()} />);
     expect((getByLabelText("cron 표현식") as HTMLInputElement).value).toBe("*/5 * * * *");
   });
 
   it("still reloads the draft when a different job is opened", () => {
     const job = editableJob();
-    const { getByLabelText, rerender } = render(
-      <JobEditor job={job} onSave={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { getByLabelText, rerender } = render(<JobEditor job={job} onSave={vi.fn()} onCancel={vi.fn()} />);
     fireEvent.change(getByLabelText("작업 이름"), { target: { value: "renamed" } });
 
-    rerender(
-      <JobEditor job={{ ...job, id: "job-other", name: "Other" }} onSave={vi.fn()} onCancel={vi.fn()} />,
-    );
+    rerender(<JobEditor job={{ ...job, id: "job-other", name: "Other" }} onSave={vi.fn()} onCancel={vi.fn()} />);
     expect((getByLabelText("작업 이름") as HTMLInputElement).value).toBe("Other");
   });
 });

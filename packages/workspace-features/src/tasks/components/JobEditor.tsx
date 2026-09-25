@@ -83,12 +83,12 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
     () => new Set(allowedEnvironmentKeys.map((key) => key.toUpperCase())),
     [allowedEnvironmentKeys],
   );
-  const workspaceTaskReady = !managed || (
-    workspaceTask?.trusted === true
-    && workspaceTask.available
-    && workspaceTask.dependsOn.length === 0
-    && (workspaceTask.taskKind !== "shell" || workspaceTask.shellTrusted)
-  );
+  const workspaceTaskReady =
+    !managed ||
+    (workspaceTask?.trusted === true &&
+      workspaceTask.available &&
+      workspaceTask.dependsOn.length === 0 &&
+      (workspaceTask.taskKind !== "shell" || workspaceTask.shellTrusted));
 
   useEffect(() => {
     const requestId = ++previewRequest.current;
@@ -178,15 +178,18 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
         workspaceTask?.dependsOn.length
           ? "의존성이 있는 task는 일정 실행을 지원하지 않습니다. Jobs 화면의 지금 실행에서 orchestration으로 실행하세요."
           : workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
-          ? "셸 실행 승인을 완료한 뒤 workspace task를 활성화하세요."
-          : "소스 승인과 사용 가능 상태를 확인한 뒤 workspace task를 활성화하세요.",
+            ? "셸 실행 승인을 완료한 뒤 workspace task를 활성화하세요."
+            : "소스 승인과 사용 가능 상태를 확인한 뒤 workspace task를 활성화하세요.",
       );
       return;
     }
     if (
-      managed
-      && draft.environmentAction === "replace"
-      && draft.environment.some((entry) => !entry.persisted && entry.key.trim() && !allowedEnvironmentKeySet.has(entry.key.trim().toUpperCase()))
+      managed &&
+      draft.environmentAction === "replace" &&
+      draft.environment.some(
+        (entry) =>
+          !entry.persisted && entry.key.trim() && !allowedEnvironmentKeySet.has(entry.key.trim().toUpperCase()),
+      )
     ) {
       setWorkspaceFieldError("원본에 선언된 환경변수 키만 입력할 수 있습니다.");
       return;
@@ -201,9 +204,7 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
     } catch (cause) {
       const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
       const backendErrors = fieldErrorFromBackend(raw);
-      setErrors(Object.keys(backendErrors).length > 0
-        ? backendErrors
-        : { name: friendlyErrorMessage(cause) });
+      setErrors(Object.keys(backendErrors).length > 0 ? backendErrors : { name: friendlyErrorMessage(cause) });
     } finally {
       setSaving(false);
     }
@@ -214,13 +215,16 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
       <div className="editor-main">
         <header className="editor-header">
           <div>
-          <span className="eyebrow">작업 편집기</span>
+            <span className="eyebrow">작업 편집기</span>
             <h2>{title}</h2>
             <p className="subtitle">예약 실행에 필요한 정의를 저장합니다.</p>
             {managed ? (
               <p className="workspace-editor-notice" role="note">
-                VS Code {workspaceTask?.taskKind ?? "process"} task · 이름·명령·cwd·실행 대상은 source revision이 관리합니다. 일정·중복 정책과 환경 값만 수정할 수 있습니다.
-                {workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted ? " 셸 실행 승인은 별도 확인이 필요합니다." : ""}
+                VS Code {workspaceTask?.taskKind ?? "process"} task · 이름·명령·cwd·실행 대상은 source revision이
+                관리합니다. 일정·중복 정책과 환경 값만 수정할 수 있습니다.
+                {workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
+                  ? " 셸 실행 승인은 별도 확인이 필요합니다."
+                  : ""}
               </p>
             ) : null}
           </div>
@@ -248,7 +252,11 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                 aria-describedby={errors.name ? "name-error" : undefined}
                 autoFocus
               />
-              {errors.name ? <small id="name-error" className="field-error">{errors.name}</small> : null}
+              {errors.name ? (
+                <small id="name-error" className="field-error">
+                  {errors.name}
+                </small>
+              ) : null}
             </label>
             <label className="field field-wide">
               <span>명령</span>
@@ -264,10 +272,16 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                 aria-describedby={errors.command ? "command-error" : undefined}
                 placeholder="python main.py"
               />
-              {errors.command ? <small id="command-error" className="field-error">{errors.command}</small> : null}
+              {errors.command ? (
+                <small id="command-error" className="field-error">
+                  {errors.command}
+                </small>
+              ) : null}
             </label>
             <label className="field field-wide">
-              <span>작업 디렉터리 <em>(선택)</em></span>
+              <span>
+                작업 디렉터리 <em>(선택)</em>
+              </span>
               <input
                 aria-label="작업 디렉터리"
                 value={draft.cwd}
@@ -291,7 +305,10 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                   disabled={managed}
                   onChange={() => updateTarget("windows")}
                 />
-                <span><strong>Windows</strong><small>호스트에서 실행</small></span>
+                <span>
+                  <strong>Windows</strong>
+                  <small>호스트에서 실행</small>
+                </span>
               </label>
               <label className={`target-option ${draft.targetKind === "wsl" ? "selected" : ""}`}>
                 <input
@@ -302,7 +319,10 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                   disabled={managed}
                   onChange={() => updateTarget("wsl")}
                 />
-                <span><strong>WSL</strong><small>지정한 배포판에서 실행</small></span>
+                <span>
+                  <strong>WSL</strong>
+                  <small>지정한 배포판에서 실행</small>
+                </span>
               </label>
             </div>
             {draft.targetKind === "wsl" ? (
@@ -317,11 +337,17 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                   placeholder="Ubuntu"
                   aria-invalid={Boolean(errors.targetDistro)}
                 />
-                {errors.targetDistro ? <small className="field-error" role="alert">{errors.targetDistro}</small> : null}
+                {errors.targetDistro ? (
+                  <small className="field-error" role="alert">
+                    {errors.targetDistro}
+                  </small>
+                ) : null}
               </label>
             ) : null}
             {draft.targetKind === "windows" && errors.targetDistro ? (
-              <small className="field-error" role="alert">{errors.targetDistro}</small>
+              <small className="field-error" role="alert">
+                {errors.targetDistro}
+              </small>
             ) : null}
           </fieldset>
 
@@ -347,18 +373,29 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
             <div className="adapter-warning" role="note">
               값은 Windows 사용자 계정에 연결된 DPAPI로 보호됩니다. 기존 값은 유지하거나 전체 교체·삭제할 수 있습니다.
             </div>
-            {job?.envReconnectRequired && <div role="note">
-              <p>기존 비밀 환경 변수는 아직 연결되지 않았습니다. 변수를 다시 입력하거나, 사용하지 않기로 선택한 뒤 저장해 주세요.</p>
-              <button type="button" className="button-secondary small" onClick={replacePersistedEnvironment}>환경 변수 다시 입력</button>
-              <button type="button" className="button-secondary small" onClick={clearPersistedEnvironment}>기존 비밀 사용 안 함</button>
-            </div>}
+            {job?.envReconnectRequired && (
+              <div role="note">
+                <p>
+                  기존 비밀 환경 변수는 아직 연결되지 않았습니다. 변수를 다시 입력하거나, 사용하지 않기로 선택한 뒤
+                  저장해 주세요.
+                </p>
+                <button type="button" className="button-secondary small" onClick={replacePersistedEnvironment}>
+                  환경 변수 다시 입력
+                </button>
+                <button type="button" className="button-secondary small" onClick={clearPersistedEnvironment}>
+                  기존 비밀 사용 안 함
+                </button>
+              </div>
+            )}
             {draft.environment.length === 0 ? <p className="muted">설정된 환경변수가 없습니다.</p> : null}
             <div className="environment-list">
               {draft.environment.map((entry) =>
                 entry.persisted ? (
                   <div className="environment-row persisted" key={entry.id}>
                     <span className="masked-key">저장된 환경변수</span>
-                    <span className="masked-value" aria-label="마스킹된 환경변수 값">••••••••</span>
+                    <span className="masked-value" aria-label="마스킹된 환경변수 값">
+                      ••••••••
+                    </span>
                     <span className="muted">DPAPI 보호됨</span>
                     <button
                       type="button"
@@ -394,7 +431,11 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                         onChange={(event) => updateEnvironment(entry.id, "key", event.target.value)}
                       >
                         <option value="">키 선택</option>
-                        {allowedEnvironmentKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                        {allowedEnvironmentKeys.map((key) => (
+                          <option key={key} value={key}>
+                            {key}
+                          </option>
+                        ))}
                       </select>
                     ) : (
                       <input
@@ -415,10 +456,12 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                       type="button"
                       className="icon-button"
                       aria-label="환경변수 삭제"
-                      onClick={() => setDraft((current) => ({
-                        ...current,
-                        environment: current.environment.filter((item) => item.id !== entry.id),
-                      }))}
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          environment: current.environment.filter((item) => item.id !== entry.id),
+                        }))
+                      }
                     >
                       ×
                     </button>
@@ -426,8 +469,16 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                 ),
               )}
             </div>
-            {errors.env ? <small className="field-error" role="alert">{errors.env}</small> : null}
-            {workspaceFieldError ? <small className="field-error" role="alert">{workspaceFieldError}</small> : null}
+            {errors.env ? (
+              <small className="field-error" role="alert">
+                {errors.env}
+              </small>
+            ) : null}
+            {workspaceFieldError ? (
+              <small className="field-error" role="alert">
+                {workspaceFieldError}
+              </small>
+            ) : null}
           </section>
 
           <CronBuilder value={draft.cronExpr} onChange={(value) => update("cronExpr", value)} error={errors.cronExpr} />
@@ -442,17 +493,29 @@ export default function JobEditor({ active = true, job, workspaceTask = null, on
                   disabled={managed && !workspaceTaskReady}
                   onChange={(event) => update("enabled", event.target.checked)}
                 />
-                <span><strong>활성화</strong><small>{managed && !workspaceTaskReady
-                  ? workspaceTask?.dependsOn.length
-                    ? "dependency task는 수동 orchestration 전용입니다."
-                    : workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
-                    ? "셸 실행 별도 승인이 필요합니다."
-                    : "source 승인과 사용 가능 상태가 필요합니다."
-                  : "스케줄러가 이 작업을 평가합니다."}</small></span>
+                <span>
+                  <strong>활성화</strong>
+                  <small>
+                    {managed && !workspaceTaskReady
+                      ? workspaceTask?.dependsOn.length
+                        ? "dependency task는 수동 orchestration 전용입니다."
+                        : workspaceTask?.taskKind === "shell" && workspaceTask.trusted && !workspaceTask.shellTrusted
+                          ? "셸 실행 별도 승인이 필요합니다."
+                          : "source 승인과 사용 가능 상태가 필요합니다."
+                      : "스케줄러가 이 작업을 평가합니다."}
+                  </small>
+                </span>
               </label>
               <label className="toggle-field">
-                <input type="checkbox" checked={draft.catchUp} onChange={(event) => update("catchUp", event.target.checked)} />
-                <span><strong>놓친 실행 따라잡기</strong><small>중단 중 마지막 실행 한 번만 재개합니다.</small></span>
+                <input
+                  type="checkbox"
+                  checked={draft.catchUp}
+                  onChange={(event) => update("catchUp", event.target.checked)}
+                />
+                <span>
+                  <strong>놓친 실행 따라잡기</strong>
+                  <small>중단 중 마지막 실행 한 번만 재개합니다.</small>
+                </span>
               </label>
               <label className="field">
                 <span>중복 실행</span>

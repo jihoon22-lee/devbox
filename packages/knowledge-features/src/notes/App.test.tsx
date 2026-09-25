@@ -40,7 +40,10 @@ vi.mock("./api", () => {
     discardOtherVaultJournal: vi.fn().mockResolvedValue(undefined),
     listTree: vi.fn(async () => TREE),
     listTags: vi.fn(async () => [] as string[]),
-    readFile: vi.fn(async (path: string) => ({ content: path.endsWith(".md") ? "# Hello" : "binary-content", revision: "disk-1" })),
+    readFile: vi.fn(async (path: string) => ({
+      content: path.endsWith(".md") ? "# Hello" : "binary-content",
+      revision: "disk-1",
+    })),
     openInboundNote: vi.fn(async () => ({ path: "note.md", content: "# Hello", revision: "disk-1" })),
     takePendingOpen: vi.fn(async () => null),
     onOpenRequest: vi.fn(async () => () => undefined),
@@ -55,11 +58,19 @@ vi.mock("./api", () => {
     saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
     discardQuickCapturePreview: vi.fn(async () => undefined),
     listTemplates: vi.fn(async () => []),
-    createTemplate: vi.fn(async () => { throw new Error("unused"); }),
-    updateTemplate: vi.fn(async () => { throw new Error("unused"); }),
+    createTemplate: vi.fn(async () => {
+      throw new Error("unused");
+    }),
+    updateTemplate: vi.fn(async () => {
+      throw new Error("unused");
+    }),
     deleteTemplate: vi.fn(async () => undefined),
-    previewTemplate: vi.fn(async () => { throw new Error("unused"); }),
-    saveTemplate: vi.fn(async () => { throw new Error("unused"); }),
+    previewTemplate: vi.fn(async () => {
+      throw new Error("unused");
+    }),
+    saveTemplate: vi.fn(async () => {
+      throw new Error("unused");
+    }),
     discardTemplatePreview: vi.fn(async () => undefined),
     readClipboardText: vi.fn(async () => ""),
     writeFile: vi.fn(async (_path: string, content: string) => ({ content, revision: "disk-2" })),
@@ -252,10 +263,12 @@ describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => 
 });
 
 function treeButton(nameOrNode: string | HTMLElement): HTMLButtonElement {
-  const button = typeof nameOrNode === "string"
-    ? Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-tree-path]"))
-        .find((candidate) => candidate.dataset.treePath === nameOrNode) ?? null
-    : nameOrNode.closest("button");
+  const button =
+    typeof nameOrNode === "string"
+      ? (Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-tree-path]")).find(
+          (candidate) => candidate.dataset.treePath === nameOrNode,
+        ) ?? null)
+      : nameOrNode.closest("button");
   if (!(button instanceof HTMLButtonElement)) throw new Error("tree button was not rendered");
   return button;
 }
@@ -282,9 +295,9 @@ describe("knowledge-base App — tree context menu", () => {
       expect(screen.getByRole("menuitem", { name: label })).toBeInTheDocument();
     }
     expect(screen.getByRole("menuitem", { name: "삭제" })).toHaveClass("danger");
-    await waitFor(() => expect(
-      screen.getByRole("menuitem", { name: "다른 앱으로 열기" }),
-    ).not.toHaveAttribute("aria-disabled"));
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" })).not.toHaveAttribute("aria-disabled"),
+    );
   });
 
   it("대상 폴더를 기준으로 새 파일과 새 폴더를 만든다", async () => {
@@ -296,10 +309,7 @@ describe("knowledge-base App — tree context menu", () => {
     promptMock.mockReturnValueOnce("Notes/idea.md");
     fireEvent.contextMenu(notes);
     fireEvent.click(screen.getByRole("menuitem", { name: "새 파일" }));
-    await waitFor(() => expect(createFileMock).toHaveBeenCalledWith(
-      "Notes/idea.md",
-      "---\ntitle: \n---\n\n",
-    ));
+    await waitFor(() => expect(createFileMock).toHaveBeenCalledWith("Notes/idea.md", "---\ntitle: \n---\n\n"));
 
     promptMock.mockReturnValueOnce("Notes/Archive");
     fireEvent.contextMenu(notes);
@@ -315,10 +325,7 @@ describe("knowledge-base App — tree context menu", () => {
 
     fireEvent.contextMenu(nested);
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
-    await waitFor(() => expect(previewRenameMock).toHaveBeenCalledWith(
-      "Notes/nested.md",
-      "Notes/renamed.md",
-    ));
+    await waitFor(() => expect(previewRenameMock).toHaveBeenCalledWith("Notes/nested.md", "Notes/renamed.md"));
     expect(applyRenameMock).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "이름 변경 미리보기" });
     expect(dialog).toHaveTextContent("Projects/source.md");
@@ -374,8 +381,7 @@ describe("knowledge-base App — tree context menu", () => {
     const dialog = await screen.findByRole("dialog", { name: "이름 변경 미리보기" });
     fireEvent.click(within(dialog).getByRole("button", { name: "전체 적용 (2)" }));
 
-    expect(await screen.findByText("이름은 변경했지만 현재 노트를 다시 읽지 못했습니다"))
-      .toBeInTheDocument();
+    expect(await screen.findByText("이름은 변경했지만 현재 노트를 다시 읽지 못했습니다")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("raw filesystem error");
     expect(document.querySelector(".path")?.textContent).toBe("Notes/renamed.md");
     await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe(""));
@@ -429,10 +435,7 @@ describe("knowledge-base App — tree context menu", () => {
     const nested = treeButton(await screen.findByText("nested.md"));
 
     fireEvent.contextMenu(nested);
-    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("menuitem", { name: "탐색기에서 열기" }));
     expect(await screen.findByText("표시 실패")).toBeInTheDocument();
   });
@@ -441,30 +444,31 @@ describe("knowledge-base App — tree context menu", () => {
 it("preserves a dirty note when Daily creation or a product open request is declined", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   vi.mocked(dailyNote).mockClear();
-  const { rerender } = render(<App/>);
+  const { rerender } = render(<App />);
   fireEvent.click(await screen.findByText("note.md"));
   await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe("# Hello"));
   fireEvent.click(screen.getByRole("checkbox", { name: "자동 저장" }));
   const content = document.querySelector<HTMLElement>(".cm-content")!;
   const editor = EditorView.findFromDOM(content)!;
-  act(() => { editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: "# Unsaved note" } }); });
+  act(() => {
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: "# Unsaved note" } });
+  });
   fireEvent.click(screen.getByRole("button", { name: "일일 노트" }));
   await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
   expect(dailyNote).not.toHaveBeenCalled();
   readFileMock.mockClear();
-  rerender(<App openRequest={{ id: 1, path: "Journal/2024-02-29.md" }}/>);
+  rerender(<App openRequest={{ id: 1, path: "Journal/2024-02-29.md" }} />);
   await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
   expect(readFileMock).not.toHaveBeenCalled();
   expect(editor.state.doc.toString()).toBe("# Unsaved note");
 });
-
 
 it("keeps the newest preview when renders complete backwards", async () => {
   const old = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
   const latest = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
   const renderMock = vi.mocked(renderMarkdown);
   renderMock.mockClear().mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
-  const view = render(<App/>);
+  const view = render(<App />);
   fireEvent.click(await screen.findByText("note.md"));
   fireEvent.click(await screen.findByRole("button", { name: "분할" }));
   await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
@@ -472,16 +476,21 @@ it("keeps the newest preview when renders complete backwards", async () => {
   act(() => editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: "newest" } }));
   await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
   const doc = (html: string) => ({ title: null, tags: [], html, mermaid: [] });
-  await act(async () => { latest.resolve(doc("<p>newest preview</p>")); });
+  await act(async () => {
+    latest.resolve(doc("<p>newest preview</p>"));
+  });
   await screen.findByText("newest preview");
-  await act(async () => { old.resolve(doc("<p>obsolete preview</p>")); });
+  await act(async () => {
+    old.resolve(doc("<p>obsolete preview</p>"));
+  });
   expect(screen.queryByText("obsolete preview")).toBeNull();
   expect(screen.getByText("newest preview")).toBeTruthy();
 });
-it.each(["switch", "edit", "unmount"])("invalidates outstanding preview on %s", async action => {
+it.each(["switch", "edit", "unmount"])("invalidates outstanding preview on %s", async (action) => {
   const old = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
-  const renderMock = vi.mocked(renderMarkdown); renderMock.mockClear().mockReturnValueOnce(old.promise);
-  const view = render(<App/>);
+  const renderMock = vi.mocked(renderMarkdown);
+  renderMock.mockClear().mockReturnValueOnce(old.promise);
+  const view = render(<App />);
   fireEvent.click(await screen.findByText("note.md"));
   fireEvent.click(await screen.findByRole("button", { name: "분할" }));
   await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
@@ -494,14 +503,18 @@ it.each(["switch", "edit", "unmount"])("invalidates outstanding preview on %s", 
     await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
   } else if (action === "edit") fireEvent.click(screen.getByRole("button", { name: "편집" }));
   else view.unmount();
-  await act(async () => { old.reject(new Error("obsolete render failure")); });
+  await act(async () => {
+    old.reject(new Error("obsolete render failure"));
+  });
   expect(screen.queryByText("obsolete render failure")).toBeNull();
 });
 
 it("hides the previous document's links while the next preview is pending or failed", async () => {
   const next = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
-  vi.mocked(renderMarkdown).mockResolvedValueOnce({ title: null, tags: [], html: '<a href="./detail.md">old document link</a>', mermaid: [] }).mockReturnValueOnce(next.promise);
-  render(<App/>);
+  vi.mocked(renderMarkdown)
+    .mockResolvedValueOnce({ title: null, tags: [], html: '<a href="./detail.md">old document link</a>', mermaid: [] })
+    .mockReturnValueOnce(next.promise);
+  render(<App />);
   fireEvent.click(await screen.findByText("nested.md"));
   fireEvent.click(await screen.findByRole("button", { name: "분할" }));
   await screen.findByRole("link", { name: "old document link" });
@@ -509,15 +522,19 @@ it("hides the previous document's links while the next preview is pending or fai
   await act(async () => {});
   expect(screen.queryByRole("link", { name: "old document link" })).toBeNull();
   await waitFor(() => expect(renderMarkdown).toHaveBeenLastCalledWith("note.md", "# Hello"));
-  await act(async () => { next.reject(new Error("new preview unavailable")); });
+  await act(async () => {
+    next.reject(new Error("new preview unavailable"));
+  });
   expect(await screen.findByText("new preview unavailable")).toBeTruthy();
   expect(screen.queryByRole("link", { name: "old document link" })).toBeNull();
 });
 
 it("invalidates an identical reopened source and resolves links against its own preview path", async () => {
   const reopened = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
-  vi.mocked(renderMarkdown).mockResolvedValueOnce({ title: null, tags: [], html: '<p>previous opening</p>', mermaid: [] }).mockReturnValueOnce(reopened.promise);
-  render(<App/>);
+  vi.mocked(renderMarkdown)
+    .mockResolvedValueOnce({ title: null, tags: [], html: "<p>previous opening</p>", mermaid: [] })
+    .mockReturnValueOnce(reopened.promise);
+  render(<App />);
   fireEvent.click(await screen.findByText("nested.md"));
   fireEvent.click(await screen.findByRole("button", { name: "분할" }));
   await screen.findByText("previous opening");
@@ -525,18 +542,29 @@ it("invalidates an identical reopened source and resolves links against its own 
   await act(async () => {});
   expect(screen.queryByText("previous opening")).toBeNull();
   await waitFor(() => expect(renderMarkdown).toHaveBeenLastCalledWith("Notes/nested.md", "# Hello"));
-  await act(async () => { reopened.resolve({ title: null, tags: [], html: '<a href="./detail.md">current document link</a>', mermaid: [] }); });
+  await act(async () => {
+    reopened.resolve({ title: null, tags: [], html: '<a href="./detail.md">current document link</a>', mermaid: [] });
+  });
   fireEvent.click(await screen.findByRole("link", { name: "current document link" }));
   await waitFor(() => expect(readFile).toHaveBeenLastCalledWith("Notes/detail.md"));
 });
 
 it("does not reuse an old preview after batched A-B-A openings with identical content", async () => {
   let session: ReturnType<typeof useNoteSession>;
-  function SessionNotes() { session = useNoteSession(); return <App/>; }
+  function SessionNotes() {
+    session = useNoteSession();
+    return <App />;
+  }
   const latest = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
   const renderMock = vi.mocked(renderMarkdown).mockClear();
-  renderMock.mockResolvedValueOnce({ title: null, tags: [], html: "<p>old opening HTML</p>", mermaid: [] }).mockReturnValueOnce(latest.promise);
-  render(<NoteSessionProvider><SessionNotes/></NoteSessionProvider>);
+  renderMock
+    .mockResolvedValueOnce({ title: null, tags: [], html: "<p>old opening HTML</p>", mermaid: [] })
+    .mockReturnValueOnce(latest.promise);
+  render(
+    <NoteSessionProvider>
+      <SessionNotes />
+    </NoteSessionProvider>,
+  );
   fireEvent.click(await screen.findByText("note.md"));
   fireEvent.click(await screen.findByRole("button", { name: "분할" }));
   await screen.findByText("old opening HTML");
@@ -546,34 +574,55 @@ it("does not reuse an old preview after batched A-B-A openings with identical co
   });
   expect(screen.queryByText("old opening HTML")).toBeNull();
   await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
-  await act(async () => { latest.resolve({ title: null, tags: [], html: "<p>current opening HTML</p>", mermaid: [] }); });
+  await act(async () => {
+    latest.resolve({ title: null, tags: [], html: "<p>current opening HTML</p>", mermaid: [] });
+  });
   expect(await screen.findByText("current opening HTML")).toBeTruthy();
 });
 
 it("coalesces watcher bursts and preserves the last complete metadata pair on failure", async () => {
   let changed!: () => void;
-  onDocsChangedMock.mockImplementationOnce(async (listener) => { changed = listener; return () => {}; });
+  onDocsChangedMock.mockImplementationOnce(async (listener) => {
+    changed = listener;
+    return () => {};
+  });
   const old = deferred<Awaited<ReturnType<typeof listTree>>>();
   const latest = deferred<Awaited<ReturnType<typeof listTree>>>();
-  listTreeMock.mockResolvedValueOnce([{ path: "kept.md", is_dir: false }]).mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
-  vi.mocked(listTags).mockResolvedValueOnce(["kept-tag"]).mockResolvedValueOnce(["stale-tag"]).mockResolvedValueOnce(["partial-tag"]);
-  render(<App/>);
+  listTreeMock
+    .mockResolvedValueOnce([{ path: "kept.md", is_dir: false }])
+    .mockReturnValueOnce(old.promise)
+    .mockReturnValueOnce(latest.promise);
+  vi.mocked(listTags)
+    .mockResolvedValueOnce(["kept-tag"])
+    .mockResolvedValueOnce(["stale-tag"])
+    .mockResolvedValueOnce(["partial-tag"]);
+  render(<App />);
   await screen.findByText("kept.md");
-  await act(async () => { changed(); });
+  await act(async () => {
+    changed();
+  });
   expect(listTreeMock).toHaveBeenCalledTimes(2);
-  await act(async () => { for (let i = 0; i < 50; i++) changed(); });
+  await act(async () => {
+    for (let i = 0; i < 50; i++) changed();
+  });
   expect(listTreeMock).toHaveBeenCalledTimes(2);
-  await act(async () => { old.resolve([{ path: "stale.md", is_dir: false }]); });
+  await act(async () => {
+    old.resolve([{ path: "stale.md", is_dir: false }]);
+  });
   expect(listTreeMock).toHaveBeenCalledTimes(3);
   expect(screen.queryByText("stale.md")).toBeNull();
-  await act(async () => { latest.reject(new Error("metadata incomplete")); });
+  await act(async () => {
+    latest.reject(new Error("metadata incomplete"));
+  });
   expect(await screen.findByText("metadata incomplete")).toBeTruthy();
   expect(screen.getByText("kept.md")).toBeTruthy();
   expect(screen.queryByText("partial-tag")).toBeNull();
   expect(screen.getByText("kept-tag")).toBeTruthy();
   listTreeMock.mockResolvedValueOnce([{ path: "current.md", is_dir: false }]);
   vi.mocked(listTags).mockResolvedValueOnce(["current-tag"]);
-  await act(async () => { changed(); });
+  await act(async () => {
+    changed();
+  });
   expect(await screen.findByText("current.md")).toBeTruthy();
   expect(screen.getByText("current-tag")).toBeTruthy();
   expect(screen.queryByText("kept.md")).toBeNull();
@@ -581,17 +630,25 @@ it("coalesces watcher bursts and preserves the last complete metadata pair on fa
 
 it("waits for both metadata reads and ignores an older error after a new refresh intent", async () => {
   let changed!: () => void;
-  onDocsChangedMock.mockImplementationOnce(async (listener) => { changed = listener; return () => {}; });
+  onDocsChangedMock.mockImplementationOnce(async (listener) => {
+    changed = listener;
+    return () => {};
+  });
   const tree = deferred<Awaited<ReturnType<typeof listTree>>>();
   const tags = deferred<string[]>();
   listTreeMock.mockReturnValueOnce(tree.promise).mockResolvedValueOnce([{ path: "fresh.md", is_dir: false }]);
   vi.mocked(listTags).mockReturnValueOnce(tags.promise).mockResolvedValueOnce(["fresh-tag"]);
-  render(<App/>);
+  render(<App />);
   await waitFor(() => expect(listTreeMock).toHaveBeenCalledTimes(1));
-  await act(async () => { changed(); tree.reject(new Error("obsolete metadata error")); });
+  await act(async () => {
+    changed();
+    tree.reject(new Error("obsolete metadata error"));
+  });
   expect(listTreeMock).toHaveBeenCalledTimes(1);
   expect(screen.queryByText("obsolete metadata error")).toBeNull();
-  await act(async () => { tags.resolve(["stale-tag"]); });
+  await act(async () => {
+    tags.resolve(["stale-tag"]);
+  });
   expect(await screen.findByText("fresh.md")).toBeTruthy();
   expect(screen.getByText("fresh-tag")).toBeTruthy();
   expect(screen.queryByText("obsolete metadata error")).toBeNull();

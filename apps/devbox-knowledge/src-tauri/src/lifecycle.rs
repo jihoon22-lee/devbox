@@ -116,7 +116,7 @@ fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 pub fn load(app: &tauri::AppHandle) -> Result<(), String> {
-    let close_to_tray = life_log_lib::component::close_to_tray(app)?;
+    let close_to_tray = activity_engine::component::close_to_tray(app)?;
     app.state::<Lifecycle>()
         .close_to_tray
         .store(close_to_tray, Ordering::Release);
@@ -157,7 +157,7 @@ pub fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
                 request_quit(app);
                 return;
             }
-            let _ = life_log_lib::component::shutdown(app);
+            let _ = activity_engine::component::shutdown(app);
         }
         _ => {}
     }
@@ -181,7 +181,7 @@ pub fn dispatch(
             if close_to_tray && !lifecycle.tray_available.load(Ordering::Acquire) {
                 return Err("tray_unavailable".into());
             }
-            life_log_lib::component::set_close_to_tray(app, close_to_tray)?;
+            activity_engine::component::set_close_to_tray(app, close_to_tray)?;
             lifecycle
                 .close_to_tray
                 .store(close_to_tray, Ordering::Release);

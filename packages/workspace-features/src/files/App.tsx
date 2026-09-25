@@ -37,7 +37,13 @@ import LspNavigationPanel from "./components/LspNavigationPanel";
 import type { TabContextAction } from "./components/TabBar";
 import { currentDocumentWordCompletion } from "./editor/extensions";
 import { APPLINK_OPEN_EVENT, routeOpenRequest } from "./lib/applink";
-import { completionOptions, diagnosticsForCodeMirror, hoverText, offsetForPosition, pathFromFileUri } from "./lspFeatures";
+import {
+  completionOptions,
+  diagnosticsForCodeMirror,
+  hoverText,
+  offsetForPosition,
+  pathFromFileUri,
+} from "./lspFeatures";
 import type { BookmarkCommands } from "./editor/bookmarks";
 import { normalizeBookmarkLines } from "./editor/bookmarks";
 import { LspDocumentSync } from "./lspDocumentSync";
@@ -73,7 +79,7 @@ import type {
 
 function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][number]): Doc {
   return {
-    ...(file.nativeRevision !== undefined ? {nativeRevision:file.nativeRevision} : {}),
+    ...(file.nativeRevision !== undefined ? { nativeRevision: file.nativeRevision } : {}),
     id: metadata?.id ?? docIdForPath(file.path),
     path: file.path,
     text: file.text,
@@ -117,10 +123,11 @@ function relativeWorkspacePath(path: string, workspaceRoot: string): string | nu
   };
   const normalizedPath = normalize(path);
   const normalizedRoot = normalize(workspaceRoot);
-  const windowsPath = /^[A-Za-z]:\//u.test(normalizedPath)
-    || /^[A-Za-z]:\//u.test(normalizedRoot)
-    || normalizedPath.startsWith("//")
-    || normalizedRoot.startsWith("//");
+  const windowsPath =
+    /^[A-Za-z]:\//u.test(normalizedPath) ||
+    /^[A-Za-z]:\//u.test(normalizedRoot) ||
+    normalizedPath.startsWith("//") ||
+    normalizedRoot.startsWith("//");
   const candidate = windowsPath ? normalizedPath.toLowerCase() : normalizedPath;
   const root = windowsPath ? normalizedRoot.toLowerCase() : normalizedRoot;
   if (candidate === root) return "";
@@ -131,12 +138,18 @@ function relativeWorkspacePath(path: string, workspaceRoot: string): string | nu
 
 function renameFileStatusLabel(status: LspRenameApplyResult["files"][number]["status"]): string {
   switch (status) {
-    case "applied": return "적용됨";
-    case "rolledBack": return "되돌림";
-    case "failed": return "실패";
-    case "notApplied": return "미적용";
-    case "conflict": return "충돌";
-    case "rollbackFailed": return "되돌리기 실패";
+    case "applied":
+      return "적용됨";
+    case "rolledBack":
+      return "되돌림";
+    case "failed":
+      return "실패";
+    case "notApplied":
+      return "미적용";
+    case "conflict":
+      return "충돌";
+    case "rollbackFailed":
+      return "되돌리기 실패";
   }
 }
 
@@ -217,12 +230,32 @@ export interface NavEntry {
   cursor: number;
 }
 
-export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null; column?: number | null; receivedReference?:string}
-function isWslContext(context: string): boolean {
-  try { return JSON.parse(context)?.target?.kind === "wsl"; }
-  catch { return false; }
+export interface FileOpenRequest {
+  id: string;
+  contextKey: string;
+  path: string;
+  line: number | null;
+  column?: number | null;
+  receivedReference?: string;
 }
-export default function App({contextKey = "standalone", active = true, onDirtyChange, openRequest}: {contextKey?:string; active?:boolean; onDirtyChange?:(dirty:boolean) => void; openRequest?:FileOpenRequest | null} = {}) {
+function isWslContext(context: string): boolean {
+  try {
+    return JSON.parse(context)?.target?.kind === "wsl";
+  } catch {
+    return false;
+  }
+}
+export default function App({
+  contextKey = "standalone",
+  active = true,
+  onDirtyChange,
+  openRequest,
+}: {
+  contextKey?: string;
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  openRequest?: FileOpenRequest | null;
+} = {}) {
   const handledOpenRequest = useRef<string | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -231,7 +264,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const [state, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const [pathInput, setPathInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [selectionNotice,setSelectionNotice]=useState("");
+  const [selectionNotice, setSelectionNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [watchPending, setWatchPending] = useState(0);
   const [zoom, setZoom] = useState(100);
@@ -261,7 +294,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [editorMirror] = useState(() => new NativeEditorMirror());
   editorMirror.setContext(contextKey);
-  useEffect(() => { editorMirror.update(state.docs); }, [editorMirror, state.docs]);
+  useEffect(() => {
+    editorMirror.update(state.docs);
+  }, [editorMirror, state.docs]);
   const [lspSync] = useState(() => new LspDocumentSync());
   const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
   const [lspDiagnostics, setLspDiagnostics] = useState<Record<DocId, import("@codemirror/lint").Diagnostic[]>>({});
@@ -323,42 +358,56 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const quickOpenRef = useRef<() => void>(() => undefined);
   const appDialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {onDirtyChange?.(state.docs.some(doc => doc.dirty) || busy || watchPending > 0 || !hydrated || recoveryOpen);}, [onDirtyChange, state.docs, busy, watchPending, hydrated, recoveryOpen]);
-  useEffect(() => () => {onDirtyChange?.(false);}, [onDirtyChange]);
+  useEffect(() => {
+    onDirtyChange?.(state.docs.some((doc) => doc.dirty) || busy || watchPending > 0 || !hydrated || recoveryOpen);
+  }, [onDirtyChange, state.docs, busy, watchPending, hydrated, recoveryOpen]);
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
+  );
 
   useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
 
-  useEffect(() => lspSync.subscribeDiagnostics((snapshot) => {
-    const doc = stateRef.current.docs.find((item) => item.id === snapshot.documentId);
-    if (!doc) return;
-    if (snapshot.response.stale) {
-      setLspDiagnostics((current) => {
-        if (!(snapshot.documentId in current)) return current;
-        const next = { ...current };
-        delete next[snapshot.documentId];
-        return next;
-      });
-      return;
-    }
-    const encoding = lspSync.statusForDocument(doc.id)?.capabilities.positionEncoding ?? "utf-16";
-    setLspDiagnostics((current) => ({
-      ...current,
-      [doc.id]: diagnosticsForCodeMirror(doc.text, snapshot.response.value, encoding),
-    }));
-  }), [lspSync]);
+  useEffect(
+    () =>
+      lspSync.subscribeDiagnostics((snapshot) => {
+        const doc = stateRef.current.docs.find((item) => item.id === snapshot.documentId);
+        if (!doc) return;
+        if (snapshot.response.stale) {
+          setLspDiagnostics((current) => {
+            if (!(snapshot.documentId in current)) return current;
+            const next = { ...current };
+            delete next[snapshot.documentId];
+            return next;
+          });
+          return;
+        }
+        const encoding = lspSync.statusForDocument(doc.id)?.capabilities.positionEncoding ?? "utf-16";
+        setLspDiagnostics((current) => ({
+          ...current,
+          [doc.id]: diagnosticsForCodeMirror(doc.text, snapshot.response.value, encoding),
+        }));
+      }),
+    [lspSync],
+  );
 
   // 비정상 종료 후 미저장 버퍼 복구 확인 (§12.1)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     let active = true;
     setRecoveryChecked(false);
     setRecoveryOpen(false);
-    void loadRecovery().then((entries) => {
-      if (!active) return;
-      setRecoveryChecked(true);
-      if (entries.length > 0) {
-        setRecoveryOpen(true);
-      }
-    }).catch(() => undefined);
+    void loadRecovery()
+      .then((entries) => {
+        if (!active) return;
+        setRecoveryChecked(true);
+        if (entries.length > 0) {
+          setRecoveryOpen(true);
+        }
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
@@ -368,24 +417,24 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     let disposed = false;
     let stopDiagnostics: (() => void) | undefined;
     let stopStatus: (() => void) | undefined;
-    void listen<LspDiagnosticsEvent>(
-      "lsp/diagnostics",
-      (event) => {
-        if (!isProductHosted() || matchesLspEventContext(contextRef.current, event.payload.nativeContext)) lspSync.acceptDiagnosticsEvent(event.payload);
-      },
-    ).then((stop) => {
-      if (disposed) stop();
-      else stopDiagnostics = stop;
-    }).catch(() => undefined);
-    void listen<LspStatusEvent>(
-      "lsp/status",
-      (event) => {
-        if (!isProductHosted() || matchesLspEventContext(contextRef.current, event.payload.nativeContext)) lspSync.acceptStatusEvent(event.payload);
-      },
-    ).then((stop) => {
-      if (disposed) stop();
-      else stopStatus = stop;
-    }).catch(() => undefined);
+    void listen<LspDiagnosticsEvent>("lsp/diagnostics", (event) => {
+      if (!isProductHosted() || matchesLspEventContext(contextRef.current, event.payload.nativeContext))
+        lspSync.acceptDiagnosticsEvent(event.payload);
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else stopDiagnostics = stop;
+      })
+      .catch(() => undefined);
+    void listen<LspStatusEvent>("lsp/status", (event) => {
+      if (!isProductHosted() || matchesLspEventContext(contextRef.current, event.payload.nativeContext))
+        lspSync.acceptStatusEvent(event.payload);
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else stopStatus = stop;
+      })
+      .catch(() => undefined);
     return () => {
       disposed = true;
       stopDiagnostics?.();
@@ -395,17 +444,11 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
 
   const externalChange = externalChanges[0] ?? null;
   const enqueueExternalChange = (path: string) => {
-    externalChangeVersionRef.current.set(
-      path,
-      (externalChangeVersionRef.current.get(path) ?? 0) + 1,
-    );
-    setExternalChanges((current) => current.includes(path) ? current : [...current, path]);
+    externalChangeVersionRef.current.set(path, (externalChangeVersionRef.current.get(path) ?? 0) + 1);
+    setExternalChanges((current) => (current.includes(path) ? current : [...current, path]));
   };
   const removeExternalChange = (path: string, expectedVersion?: number) => {
-    if (
-      expectedVersion !== undefined
-      && externalChangeVersionRef.current.get(path) !== expectedVersion
-    ) {
+    if (expectedVersion !== undefined && externalChangeVersionRef.current.get(path) !== expectedVersion) {
       return;
     }
     externalChangeVersionRef.current.delete(path);
@@ -414,9 +457,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
 
   const activeDoc = useMemo(() => activeDocForState(state), [state]);
   const pendingCloseDocId = pendingCloseDocIds[0] ?? null;
-  const pendingCloseDoc = pendingCloseDocId
-    ? state.docs.find((doc) => doc.id === pendingCloseDocId) ?? null
-    : null;
+  const pendingCloseDoc = pendingCloseDocId ? (state.docs.find((doc) => doc.id === pendingCloseDocId) ?? null) : null;
   const appDialogKind = pendingCloseDoc
     ? "close"
     : pendingEncodingReopen
@@ -466,11 +507,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     const nextState = editorReducer(stateRef.current, action);
     stateRef.current = nextState;
     dispatch(action);
-    if (
-      hydratedRef.current &&
-      !persistenceAllowedRef.current &&
-      action.type !== "restoreSession"
-    ) {
+    if (hydratedRef.current && !persistenceAllowedRef.current && action.type !== "restoreSession") {
       persistenceAllowedRef.current = true;
       setSessionPersistenceAllowed(true);
     }
@@ -478,7 +515,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   };
 
   const enqueueWatchOperation = (path: string, operation: () => Promise<void>) => {
-    setWatchPending(count => count + 1);
+    setWatchPending((count) => count + 1);
     const previous = watchOperationRef.current.get(path) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
@@ -487,7 +524,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         if (watchOperationRef.current.get(path) === next) {
           watchOperationRef.current.delete(path);
         }
-        setWatchPending(count => Math.max(0,count - 1));
+        setWatchPending((count) => Math.max(0, count - 1));
       });
     watchOperationRef.current.set(path, next);
     return next;
@@ -517,7 +554,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       }
     });
 
-  const openPath = async (path: string, metadata?: SessionState["docs"][number], receivedReference?:string) => {
+  const openPath = async (path: string, metadata?: SessionState["docs"][number], receivedReference?: string) => {
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
@@ -597,19 +634,26 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       type: "saveDoc",
       docId,
       submittedRevision,
-      ...(doc.nativeRevision !== undefined ? {submittedNativeRevision:doc.nativeRevision} : {}),
+      ...(doc.nativeRevision !== undefined ? { submittedNativeRevision: doc.nativeRevision } : {}),
       submittedText,
       mtimeNanos: saved.mtimeNanos,
       size: saved.size,
       contentHash: saved.contentHash,
       durabilityWarning: saved.durabilityWarning,
-      ...(saved.nativeRevision !== undefined ? {nativeRevision:saved.nativeRevision} : {}),
+      ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
     });
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
-    if (latestDoc) void lspSync.save(docId, {
-      ...doc, text: submittedText, dirty: false,
-      ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
-    }, latestDoc);
+    if (latestDoc)
+      void lspSync.save(
+        docId,
+        {
+          ...doc,
+          text: submittedText,
+          dirty: false,
+          ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
+        },
+        latestDoc,
+      );
     return {
       saved,
       matchedSnapshot:
@@ -704,8 +748,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     return Boolean(status?.capabilities[capability]);
   };
 
-  const lspCapability = (capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"]) =>
-    lspCapabilityFor(activeDoc?.id, capability);
+  const lspCapability = (
+    capability: keyof NonNullable<ReturnType<LspDocumentSync["statusForDocument"]>>["capabilities"],
+  ) => lspCapabilityFor(activeDoc?.id, capability);
 
   const runLspOperation = async <T,>(operation: () => Promise<T>): Promise<T | undefined> => {
     if (lspBusyRef.current) return undefined;
@@ -772,13 +817,15 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       const entry = navBack[navBack.length - 1];
       if (!entry) return;
       setNavBack((prev) => prev.slice(0, -1));
-      if (activeDoc) setNavForward((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
+      if (activeDoc)
+        setNavForward((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
       void navigateTo(entry);
     } else {
       const entry = navForward[navForward.length - 1];
       if (!entry) return;
       setNavForward((prev) => prev.slice(0, -1));
-      if (activeDoc) setNavBack((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
+      if (activeDoc)
+        setNavBack((prev) => [...prev, { docId: activeDoc.id, path: activeDoc.path, cursor: activeDoc.cursor }]);
       void navigateTo(entry);
     }
   };
@@ -801,9 +848,10 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (!sourceDoc || !lspCapabilityFor(sourceDoc.id, kind)) return;
     const requestId = ++lspFeatureRequestRef.current;
     void runLspOperation(async () => {
-      const response = kind === "definition"
-        ? await lspSync.requestDefinition(sourceDoc.id, cursor ?? sourceDoc.cursor)
-        : await lspSync.requestReferences(sourceDoc.id, cursor ?? sourceDoc.cursor);
+      const response =
+        kind === "definition"
+          ? await lspSync.requestDefinition(sourceDoc.id, cursor ?? sourceDoc.cursor)
+          : await lspSync.requestReferences(sourceDoc.id, cursor ?? sourceDoc.cursor);
       if (requestId !== lspFeatureRequestRef.current || !response || response.stale) return;
       setLspNavigation({ kind, locations: response.value.locations, rejected: response.value.rejected });
     });
@@ -818,7 +866,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       throw new Error("LSP가 열려 있지 않은 문서에 변경을 반환했습니다.");
     }
     const typed = documents as Array<EditedLspDocument & { docId: DocId }>;
-    if (typed.some((edited) => stateRef.current.docs.find((doc) => doc.id === edited.docId)?.revision !== snapshots.get(edited.docId))) {
+    if (
+      typed.some(
+        (edited) =>
+          stateRef.current.docs.find((doc) => doc.id === edited.docId)?.revision !== snapshots.get(edited.docId),
+      )
+    ) {
       throw new Error("LSP 변경을 적용하는 동안 문서가 변경되었습니다. 다시 시도하세요.");
     }
     const expectedRevisions = Object.fromEntries(
@@ -853,9 +906,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     const workspaceRoot = stateRef.current.workspaceFolder;
     if (!workspaceRoot) throw new Error("이름 변경 결과의 작업 폴더가 없습니다.");
     const documents = result.documents.map((edited) => {
-      const doc = stateRef.current.docs.find((item) =>
-        relativeWorkspacePath(item.path, workspaceRoot) === edited.path,
-      );
+      const doc = stateRef.current.docs.find((item) => relativeWorkspacePath(item.path, workspaceRoot) === edited.path);
       const docId = doc?.id;
       if (!docId) throw new Error("이름 변경 결과가 열려 있지 않은 문서를 반환했습니다.");
       if (!doc || doc.revision !== revisions.get(docId)) {
@@ -867,7 +918,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       }
       const uri = lspSync.documentUri(docId);
       if (!uri && !isProductHosted()) throw new Error("이름 변경 결과의 LSP 문서가 열려 있지 않습니다.");
-      if (isProductHosted() && !file.nativeRevision) throw new Error("이름 변경은 저장됐지만 파일을 다시 열어야 합니다.");
+      if (isProductHosted() && !file.nativeRevision)
+        throw new Error("이름 변경은 저장됐지만 파일을 다시 열어야 합니다.");
       return {
         ...edited,
         docId,
@@ -890,8 +942,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     lspSync.applyRenameDocuments(result.documents, true);
     for (const file of result.files) {
       if (file.status !== "applied") continue;
-      const document = stateRef.current.docs.find((candidate) =>
-        relativeWorkspacePath(candidate.path, workspaceRoot) === file.path,
+      const document = stateRef.current.docs.find(
+        (candidate) => relativeWorkspacePath(candidate.path, workspaceRoot) === file.path,
       );
       if (document) removeExternalChange(document.path);
     }
@@ -925,20 +977,20 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       const result = await lspSync.applyRename(pending.preview.planId);
       applyLspRenameResult(result, pending.revisions, pending.workspaceRoot);
       return result;
-    }).then((result) => {
-      // A native transport failure consumes the opaque plan before returning
-      // the error. Do not leave an approval dialog whose handle can never be
-      // applied again.
-      if (!result) {
-        setRenamePreview((current) => (
-          current?.preview.planId === pending.preview.planId ? null : current
-        ));
-      }
-    }).finally(() => {
-      renameCancelRequestedRef.current = false;
-      renameApplyBusyRef.current = false;
-      setRenameApplyBusy(false);
-    });
+    })
+      .then((result) => {
+        // A native transport failure consumes the opaque plan before returning
+        // the error. Do not leave an approval dialog whose handle can never be
+        // applied again.
+        if (!result) {
+          setRenamePreview((current) => (current?.preview.planId === pending.preview.planId ? null : current));
+        }
+      })
+      .finally(() => {
+        renameCancelRequestedRef.current = false;
+        renameApplyBusyRef.current = false;
+        setRenameApplyBusy(false);
+      });
   };
 
   const cancelPendingRename = () => {
@@ -968,21 +1020,17 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     const revisions = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
     void runLspOperation(async () => {
       await editorMirror.flush(stateRef.current.docs);
-      const preview = await lspSync.requestRename(
-        requestedDocumentId,
-        requestedCursor,
-        requestedName.trim(),
-      );
+      const preview = await lspSync.requestRename(requestedDocumentId, requestedCursor, requestedName.trim());
       if (!preview || preview.files.length === 0) {
         setError("LSP가 적용할 이름 변경을 반환하지 않았습니다.");
         return;
       }
       const current = stateRef.current.docs.find((doc) => doc.id === requestedDocumentId);
       if (
-        stateRef.current.workspaceFolder !== requestedWorkspaceRoot
-        || workspaceChangeTokenRef.current !== requestedWorkspaceChangeToken
-        || !current
-        || current.revision !== requestedRevision
+        stateRef.current.workspaceFolder !== requestedWorkspaceRoot ||
+        workspaceChangeTokenRef.current !== requestedWorkspaceChangeToken ||
+        !current ||
+        current.revision !== requestedRevision
       ) {
         await lspSync.discardRename(preview.planId);
         setError("문서 또는 작업 폴더가 변경되어 이름 변경 미리보기를 폐기했습니다.");
@@ -1011,52 +1059,57 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const canManuallyRestartLsp = (() => {
     if (!activeDoc) return false;
     const status = lspSync.statusForDocument(activeDoc.id);
-    return Boolean(status && (
-      status.autoRestartDisabled
-      || status.status === "crashed"
-      || status.status === "degraded"
-      || status.status === "stopped"
-    ));
+    return Boolean(
+      status &&
+        (status.autoRestartDisabled ||
+          status.status === "crashed" ||
+          status.status === "degraded" ||
+          status.status === "stopped"),
+    );
   })();
 
-  const completionSourceFor = (docId: DocId): CompletionSource => async (context) => {
-    const response = await lspSync.requestCompletion(docId, context.pos);
-    if (!response || response.stale || response.value.items.length === 0) {
-      return currentDocumentWordCompletion(context);
-    }
-    const text = context.state.doc.toString();
-    const version = lspSync.documentVersion(docId);
-    const encoding = lspSync.statusForDocument(docId)?.capabilities.positionEncoding ?? "utf-16";
-    const options = completionOptions(response.value, {
-      text,
-      encoding,
-      isCurrent: () => lspSync.documentVersion(docId) === version && lspSync.documentText(docId) === text,
-    });
-    if (options.length === 0) return currentDocumentWordCompletion(context);
-    const word = context.matchBefore(/[\w$-]*/u);
-    return {
-      from: word?.from ?? context.pos,
-      options,
+  const completionSourceFor =
+    (docId: DocId): CompletionSource =>
+    async (context) => {
+      const response = await lspSync.requestCompletion(docId, context.pos);
+      if (!response || response.stale || response.value.items.length === 0) {
+        return currentDocumentWordCompletion(context);
+      }
+      const text = context.state.doc.toString();
+      const version = lspSync.documentVersion(docId);
+      const encoding = lspSync.statusForDocument(docId)?.capabilities.positionEncoding ?? "utf-16";
+      const options = completionOptions(response.value, {
+        text,
+        encoding,
+        isCurrent: () => lspSync.documentVersion(docId) === version && lspSync.documentText(docId) === text,
+      });
+      if (options.length === 0) return currentDocumentWordCompletion(context);
+      const word = context.matchBefore(/[\w$-]*/u);
+      return {
+        from: word?.from ?? context.pos,
+        options,
+      };
     };
-  };
 
-  const hoverSourceFor = (docId: DocId): HoverTooltipSource => async (_view, pos) => {
-    const response = await lspSync.requestHover(docId, pos);
-    if (!response || response.stale) return null;
-    const text = hoverText(response.value);
-    if (!text) return null;
-    return {
-      pos,
-      end: pos,
-      above: true,
-      create: () => {
-        const dom = document.createElement("pre");
-        dom.className = "lsp-hover-tooltip";
-        dom.textContent = text;
-        return { dom };
-      },
+  const hoverSourceFor =
+    (docId: DocId): HoverTooltipSource =>
+    async (_view, pos) => {
+      const response = await lspSync.requestHover(docId, pos);
+      if (!response || response.stale) return null;
+      const text = hoverText(response.value);
+      if (!text) return null;
+      return {
+        pos,
+        end: pos,
+        above: true,
+        create: () => {
+          const dom = document.createElement("pre");
+          dom.className = "lsp-hover-tooltip";
+          dom.textContent = text;
+          return { dom };
+        },
+      };
     };
-  };
 
   const handleLineEndingChange = (docId: DocId, lineEnding: LineEnding) => {
     if (renameApplyBusyRef.current) return;
@@ -1080,10 +1133,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       setError("손실 디코딩된 문서는 먼저 명시적 인코딩으로 다시 열어야 합니다.");
       return;
     }
-    if (
-      doc.encoding.encodingKind === encoding.encodingKind
-      && doc.encoding.bom === encoding.bom
-    ) {
+    if (doc.encoding.encodingKind === encoding.encodingKind && doc.encoding.bom === encoding.bom) {
       return;
     }
     void runFileOperation(async () => {
@@ -1179,13 +1229,16 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     const newName = requested?.trim();
     if (!newName || newName === fileNameForPath(doc.path)) return;
     void runFileOperation(async () => {
-      const renamed = await renameFileAction({
-        ...(doc.nativeRevision !== undefined ? {nativeRevision:doc.nativeRevision} : {}),
-        path: doc.path,
-        mtimeNanos: doc.mtimeNanos,
-        size: doc.size,
-        contentHash: doc.contentHash,
-      }, newName);
+      const renamed = await renameFileAction(
+        {
+          ...(doc.nativeRevision !== undefined ? { nativeRevision: doc.nativeRevision } : {}),
+          path: doc.path,
+          mtimeNanos: doc.mtimeNanos,
+          size: doc.size,
+          contentHash: doc.contentHash,
+        },
+        newName,
+      );
       const closeOldLsp = lspSync.close(doc.id);
       const stopOldWatch = unregisterWatch(doc.path);
       removeExternalChange(doc.path);
@@ -1196,12 +1249,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         delete next[doc.id];
         return next;
       });
-      setNavBack((current) => current.map((entry) => entry.docId === doc.id
-        ? { ...entry, path: renamed.path }
-        : entry));
-      setNavForward((current) => current.map((entry) => entry.docId === doc.id
-        ? { ...entry, path: renamed.path }
-        : entry));
+      setNavBack((current) =>
+        current.map((entry) => (entry.docId === doc.id ? { ...entry, path: renamed.path } : entry)),
+      );
+      setNavForward((current) =>
+        current.map((entry) => (entry.docId === doc.id ? { ...entry, path: renamed.path } : entry)),
+      );
       if (!stateRef.current.docs.some((candidate) => candidate.id === doc.id)) {
         await Promise.all([closeOldLsp, stopOldWatch]);
         await refreshCurrentWorkspace();
@@ -1209,7 +1262,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       }
       dispatchAction({
         type: "renameDoc",
-        ...(renamed.nativeRevision !== undefined ? {nativeRevision:renamed.nativeRevision} : {}),
+        ...(renamed.nativeRevision !== undefined ? { nativeRevision: renamed.nativeRevision } : {}),
         docId: doc.id,
         path: renamed.path,
         mtimeNanos: renamed.mtimeNanos,
@@ -1231,7 +1284,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (!confirmed) return;
     void runFileOperation(async () => {
       await deleteFileAction({
-        ...(doc.nativeRevision !== undefined ? {nativeRevision:doc.nativeRevision} : {}),
+        ...(doc.nativeRevision !== undefined ? { nativeRevision: doc.nativeRevision } : {}),
         path: doc.path,
         mtimeNanos: doc.mtimeNanos,
         size: doc.size,
@@ -1242,11 +1295,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     });
   };
 
-  const handleTabContextAction = (
-    view: import("./types").ViewId,
-    docId: DocId,
-    action: TabContextAction,
-  ) => {
+  const handleTabContextAction = (view: import("./types").ViewId, docId: DocId, action: TabContextAction) => {
     if (renameApplyBusyRef.current) return;
     const current = stateRef.current;
     const doc = current.docs.find((candidate) => candidate.id === docId);
@@ -1312,8 +1361,13 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   // line was given. line/column follow 1-based editor convention (not
   // specified by the applink contract itself); column defaults to the start
   // of the line when omitted.
-  const openApplinkPath = async (path: string, line: number | null, column: number | null, receivedReference?:string) => {
-    const doc = await openPath(path,undefined,receivedReference);
+  const openApplinkPath = async (
+    path: string,
+    line: number | null,
+    column: number | null,
+    receivedReference?: string,
+  ) => {
+    const doc = await openPath(path, undefined, receivedReference);
     if (line === null) return;
     const position = {
       line: Math.max(0, line - 1),
@@ -1377,8 +1431,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   // Restore only metadata from session.json. Every buffer is read fresh from
   // disk; missing files are skipped individually. The UI remains gated until
   // all restore reads and watcher registrations have settled.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
-    if (stateRef.current.docs.some(doc => doc.dirty)) {
+    if (stateRef.current.docs.some((doc) => doc.dirty)) {
       setError("프로젝트가 변경되어도 미저장 내용은 보존됩니다. 먼저 현재 편집을 마쳐 주세요.");
       return;
     }
@@ -1389,7 +1444,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     pendingSessionRef.current = null;
     if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
     sessionSaveTimerRef.current = null;
-    setWorkspaceFiles([]); setWorkspaceListingRoot(null); setQuickOpen(false);
+    setWorkspaceFiles([]);
+    setWorkspaceListingRoot(null);
+    setQuickOpen(false);
     for (const doc of stateRef.current.docs) void lspSync.close(doc.id);
     void lspSync.setWorkspace(null);
     let cancelled = false;
@@ -1421,7 +1478,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
             if (cancelled) break;
             restored.push(await restoreDocument(metadata));
           }
-        } else { restored.push(...await Promise.all(loaded.session.docs.map(restoreDocument))); }
+        } else {
+          restored.push(...(await Promise.all(loaded.session.docs.map(restoreDocument))));
+        }
         if (cancelled) return;
         const restoredDocs = restored.filter((doc): doc is Doc => doc !== null);
         if (isProductHosted() && restoredDocs.length < loaded.session.docs.length) {
@@ -1470,28 +1529,39 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       });
     return () => {
       cancelled = true;
-      const paths = new Set([...hydrationWatchPaths, ...stateRef.current.docs.map(doc => doc.path)]);
+      const paths = new Set([...hydrationWatchPaths, ...stateRef.current.docs.map((doc) => doc.path)]);
       for (const path of paths) void unregisterWatch(path);
       hydrationWatchPaths.clear();
     };
     // Routes retain this subtree; only a reviewed clean project transition
     // changes the native view session.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextKey]);
 
   // Product navigation waits for session restore and active file operations.
   // Repeated renders consume one request; a later explicit click gets a new ID.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
-    if (!openRequest || !active || !hydrated || !hydratedRef.current || busyRef.current || renameApplyBusyRef.current
-      || openRequest.contextKey !== contextKey || handledOpenRequest.current === openRequest.id) return;
+    if (
+      !openRequest ||
+      !active ||
+      !hydrated ||
+      !hydratedRef.current ||
+      busyRef.current ||
+      renameApplyBusyRef.current ||
+      openRequest.contextKey !== contextKey ||
+      handledOpenRequest.current === openRequest.id
+    )
+      return;
     handledOpenRequest.current = openRequest.id;
-    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null,openRequest.receivedReference));
+    void runFileOperation(() =>
+      openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null, openRequest.receivedReference),
+    );
     // The operation reads current document refs and retains an existing dirty buffer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest, active, hydrated, busy, renameApplyBusy, contextKey]);
 
   // Native watcher events are authoritative only for disk metadata. A clean
   // document reloads automatically; a dirty document gets an explicit choice.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!hydrated) return;
     let disposed = false;
@@ -1544,7 +1614,10 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
           const reloaded = stateRef.current.docs.find((doc) => doc.id === latest.id);
           if (reloaded) void lspSync.reload(reloaded);
         })
-        .catch(() => { if (eventContext === contextRef.current && epoch === connectionEpochRef.current) enqueueExternalChange(payload.path); });
+        .catch(() => {
+          if (eventContext === contextRef.current && epoch === connectionEpochRef.current)
+            enqueueExternalChange(payload.path);
+        });
     };
     // In browser/Vitest the Tauri bridge is absent; treat that as a disabled
     // watcher rather than creating an unhandled rejection during mount.
@@ -1565,12 +1638,20 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (!isProductHosted()) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<{contextKey: string}>("workspace-file-watch-issue", event => {
+    void listen<{ contextKey: string }>("workspace-file-watch-issue", (event) => {
       if (!disposed && event.payload.contextKey === contextRef.current) {
         setError("WSL 파일 변경 감시가 중단됐습니다. 배포판 연결을 확인해 주세요. 미저장 내용은 편집기에 유지됩니다.");
       }
-    }).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(() => undefined);
-    return () => { disposed = true; unlisten?.(); };
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   // Inbound cross-app open requests (§3): a cold-start argv parse is pulled
@@ -1579,6 +1660,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   // the two paths behave identically. Gated on hydrated — restoreSession
   // replaces the whole docs array, so acting earlier risks the applink open
   // being clobbered by session restore landing after it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!hydrated) return;
     let disposed = false;
@@ -1633,11 +1715,11 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       disposed = true;
       unlisten?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated]);
 
   // Preview requests are tied to the document revision and discarded if a
   // newer edit arrives before the native render returns.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!previewOpen || !activeDoc || !state.workspaceFolder || !isPreviewable(activeDoc.path)) {
       setPreview(null);
@@ -1767,7 +1849,10 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       {recoveryOpen && recoveryChecked && hydrated && (
         <RecoveryDialog
           onDone={(recovered) => {
-            if (!recovered.length) {setRecoveryOpen(false); return;}
+            if (!recovered.length) {
+              setRecoveryOpen(false);
+              return;
+            }
             void runFileOperation(async () => {
               setRecoveryOpen(false);
               for (const path of recovered) await openPath(path);
@@ -1796,36 +1881,74 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
           <button type="button" className="toolbar-button" onClick={handleOpen} disabled={busy || !hydrated}>
             파일 열기
           </button>
-          {isProductHosted() && <button type="button" className="toolbar-button" disabled={busy || !hydrated} onClick={() => void runFileOperation(async () => {
-            for (const path of await pickFiles()) await openPath(path);
-          })}>파일 선택</button>}
-          {isProductHosted() && isWslContext(contextKey) && <button type="button" className="toolbar-button" disabled={busy || !hydrated || renameApplyBusy || recoveryOpen} onClick={() => void runFileOperation(async () => {
-            const context = contextRef.current;
-            reconnectingRef.current = true;
-            connectionEpochRef.current += 1;
-            try {
-              const { reconnectWsl } = await import("./reconnectWsl");
-              await reconnectWsl({
-                current: () => stateRef.current.docs,
-                active: () => contextRef.current === context,
-                replace: doc => dispatchAction({ type: "replaceDoc", doc }),
-                conflict: enqueueExternalChange,
-              });
-            } finally { reconnectingRef.current = false; }
-          })}>WSL 다시 연결</button>}
+          {isProductHosted() && (
+            <button
+              type="button"
+              className="toolbar-button"
+              disabled={busy || !hydrated}
+              onClick={() =>
+                void runFileOperation(async () => {
+                  for (const path of await pickFiles()) await openPath(path);
+                })
+              }
+            >
+              파일 선택
+            </button>
+          )}
+          {isProductHosted() && isWslContext(contextKey) && (
+            <button
+              type="button"
+              className="toolbar-button"
+              disabled={busy || !hydrated || renameApplyBusy || recoveryOpen}
+              onClick={() =>
+                void runFileOperation(async () => {
+                  const context = contextRef.current;
+                  reconnectingRef.current = true;
+                  connectionEpochRef.current += 1;
+                  try {
+                    const { reconnectWsl } = await import("./reconnectWsl");
+                    await reconnectWsl({
+                      current: () => stateRef.current.docs,
+                      active: () => contextRef.current === context,
+                      replace: (doc) => dispatchAction({ type: "replaceDoc", doc }),
+                      conflict: enqueueExternalChange,
+                    });
+                  } finally {
+                    reconnectingRef.current = false;
+                  }
+                })
+              }
+            >
+              WSL 다시 연결
+            </button>
+          )}
           <button type="button" className="toolbar-button" onClick={handleSetWorkspace} disabled={busy || !hydrated}>
             작업 폴더
           </button>
-          <button type="button" className="toolbar-button" onClick={handleQuickOpen} disabled={!hydrated || !state.workspaceFolder}>
+          <button
+            type="button"
+            className="toolbar-button"
+            onClick={handleQuickOpen}
+            disabled={!hydrated || !state.workspaceFolder}
+          >
             빠른 열기
           </button>
-          <button type="button" className="toolbar-button" onClick={handleSave} disabled={busy || !hydrated || !activeDoc}>
+          <button
+            type="button"
+            className="toolbar-button"
+            onClick={handleSave}
+            disabled={busy || !hydrated || !activeDoc}
+          >
             저장
           </button>
         </div>
       </header>
 
-      {!hydrated && <p className="hydration-banner" role="status">세션을 복원하는 중...</p>}
+      {!hydrated && (
+        <p className="hydration-banner" role="status">
+          세션을 복원하는 중...
+        </p>
+      )}
       {lspSyncState.lastError && (
         <p className="lsp-sync-status" role="status" aria-live="polite">
           LSP 동기화가 일시적으로 비활성화되었습니다. 언어 서버 상태를 확인한 뒤 다시 시도하세요.
@@ -1848,11 +1971,25 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
           {state.split ? "분할 닫기" : "뷰 분할"}
         </button>
         <span className="toolbar-divider" />
-        <button type="button" className="toolbar-button" aria-label="편집기 글꼴 크기 축소" onClick={() => setZoom((value) => Math.max(75, value - 10))} disabled={!hydrated}>
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-label="편집기 글꼴 크기 축소"
+          onClick={() => setZoom((value) => Math.max(75, value - 10))}
+          disabled={!hydrated}
+        >
           A−
         </button>
-        <output className="zoom-label" aria-label={`편집기 확대 ${zoom}%`} aria-live="polite">{zoom}%</output>
-        <button type="button" className="toolbar-button" aria-label="편집기 글꼴 크기 확대" onClick={() => setZoom((value) => Math.min(200, value + 10))} disabled={!hydrated}>
+        <output className="zoom-label" aria-label={`편집기 확대 ${zoom}%`} aria-live="polite">
+          {zoom}%
+        </output>
+        <button
+          type="button"
+          className="toolbar-button"
+          aria-label="편집기 글꼴 크기 확대"
+          onClick={() => setZoom((value) => Math.min(200, value + 10))}
+          disabled={!hydrated}
+        >
           A+
         </button>
         <span className="toolbar-divider" />
@@ -1883,7 +2020,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
           ▶
         </button>
         {canPreview && (
-          <button type="button" className={`toolbar-button ${previewOpen ? "selected" : ""}`} onClick={() => setPreviewOpen((open) => !open)} aria-pressed={previewOpen}>
+          <button
+            type="button"
+            className={`toolbar-button ${previewOpen ? "selected" : ""}`}
+            onClick={() => setPreviewOpen((open) => !open)}
+            aria-pressed={previewOpen}
+          >
             프리뷰
           </button>
         )}
@@ -1903,22 +2045,54 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         >
           문제
         </button>
-        <button type="button" className="toolbar-button" onClick={() => goNav("back")} disabled={navBack.length === 0} title="뒤로">
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => goNav("back")}
+          disabled={navBack.length === 0}
+          title="뒤로"
+        >
           ←
         </button>
-        <button type="button" className="toolbar-button" onClick={() => goNav("forward")} disabled={navForward.length === 0} title="앞으로">
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => goNav("forward")}
+          disabled={navForward.length === 0}
+          title="앞으로"
+        >
           →
         </button>
-        <button type="button" className="toolbar-button" onClick={() => handleLspNavigation("definition")} disabled={!hydrated || !lspCapability("definition") || lspBusy}>
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => handleLspNavigation("definition")}
+          disabled={!hydrated || !lspCapability("definition") || lspBusy}
+        >
           정의
         </button>
-        <button type="button" className="toolbar-button" onClick={() => handleLspNavigation("references")} disabled={!hydrated || !lspCapability("references") || lspBusy}>
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={() => handleLspNavigation("references")}
+          disabled={!hydrated || !lspCapability("references") || lspBusy}
+        >
           참조
         </button>
-        <button type="button" className="toolbar-button" onClick={handleLspRename} disabled={!hydrated || !lspCapability("rename") || lspBusy}>
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={handleLspRename}
+          disabled={!hydrated || !lspCapability("rename") || lspBusy}
+        >
           이름 변경
         </button>
-        <button type="button" className="toolbar-button" onClick={handleLspFormatting} disabled={!hydrated || !lspCapability("formatting") || lspBusy}>
+        <button
+          type="button"
+          className="toolbar-button"
+          onClick={handleLspFormatting}
+          disabled={!hydrated || !lspCapability("formatting") || lspBusy}
+        >
           포맷
         </button>
         {canManuallyRestartLsp && (
@@ -1932,7 +2106,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       {error && (
         <div className="error-banner" role="alert">
           <span>{error}</span>
-          <button type="button" aria-label="오류 닫기" onClick={() => setError(null)}>×</button>
+          <button type="button" aria-label="오류 닫기" onClick={() => setError(null)}>
+            ×
+          </button>
         </div>
       )}
 
@@ -1942,8 +2118,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
             디스크에서 파일이 변경되었습니다: <code>{externalChange}</code> · 현재 편집 내용을 어떻게 할까요?
             {externalChanges.length > 1 && ` (대기 중 ${externalChanges.length - 1}개)`}
           </span>
-          <button type="button" onClick={() => reloadExternallyChanged(externalChange)}>다시 읽기</button>
-          <button type="button" onClick={() => removeExternalChange(externalChange)}>현재 내용 유지</button>
+          <button type="button" onClick={() => reloadExternallyChanged(externalChange)}>
+            다시 읽기
+          </button>
+          <button type="button" onClick={() => removeExternalChange(externalChange)}>
+            현재 내용 유지
+          </button>
         </div>
       )}
 
@@ -1984,16 +2164,28 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
               const latest = stateRef.current.docs.find((doc) => doc.id === docId);
               if (before && latest && latest.revision !== before.revision) void lspSync.change(latest);
             }}
-            onTransform={isProductHosted() ? async(docId,from,to,current)=>{
-              setSelectionNotice("");
-              const expectedContext=contextRef.current;
-              const selected=stateRef.current.docs.find(doc=>doc.id===docId);
-              if(!selected?.nativeRevision || selected.readOnly || renameApplyBusyRef.current)throw new Error("편집 가능한 문서를 다시 선택해 주세요.");
-              await editorMirror.flush(stateRef.current.docs);
-              if(contextRef.current!==expectedContext || !current() || !stateRef.current.docs.some(doc=>doc.id===docId && doc.revision===selected.revision))throw new Error("선택 내용이 변경되었습니다. 다시 선택해 주세요.");
-              await sendEditorSelection(selected.path,selected.nativeRevision,selected.text,from,to);
-              setSelectionNotice("API Studio에 검토를 요청했습니다. 기존 변환 입력은 미리보기에서 적용할 때 변경됩니다.");
-            } : undefined}
+            onTransform={
+              isProductHosted()
+                ? async (docId, from, to, current) => {
+                    setSelectionNotice("");
+                    const expectedContext = contextRef.current;
+                    const selected = stateRef.current.docs.find((doc) => doc.id === docId);
+                    if (!selected?.nativeRevision || selected.readOnly || renameApplyBusyRef.current)
+                      throw new Error("편집 가능한 문서를 다시 선택해 주세요.");
+                    await editorMirror.flush(stateRef.current.docs);
+                    if (
+                      contextRef.current !== expectedContext ||
+                      !current() ||
+                      !stateRef.current.docs.some((doc) => doc.id === docId && doc.revision === selected.revision)
+                    )
+                      throw new Error("선택 내용이 변경되었습니다. 다시 선택해 주세요.");
+                    await sendEditorSelection(selected.path, selected.nativeRevision, selected.text, from, to);
+                    setSelectionNotice(
+                      "API Studio에 검토를 요청했습니다. 기존 변환 입력은 미리보기에서 적용할 때 변경됩니다.",
+                    );
+                  }
+                : undefined
+            }
             onCursorChange={(docId, cursor) => dispatchAction({ type: "setCursor", docId, cursor })}
             onBookmarksChange={(docId, bookmarks) => dispatchAction({ type: "setBookmarks", docId, bookmarks })}
             onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
@@ -2005,14 +2197,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
             canNavigate={(docId, kind) => hydrated && lspCapabilityFor(docId, kind)}
             navigationBusy={lspBusy}
             onNavigate={(docId, kind, cursor) => handleLspNavigation(kind, docId, cursor)}
-            onError={(message) => setError(message === null
-              ? null
-              : safeCodePadError(message, "편집기 작업을 완료하지 못했습니다."))}
+            onError={(message) =>
+              setError(message === null ? null : safeCodePadError(message, "편집기 작업을 완료하지 못했습니다."))
+            }
           />
         </section>
-        {previewOpen && activeDoc && (
-          <PreviewPane docPath={activeDoc.path} response={preview} error={previewError} />
-        )}
+        {previewOpen && activeDoc && <PreviewPane docPath={activeDoc.path} response={preview} error={previewError} />}
       </section>
 
       {selectionNotice && <p role="status">{selectionNotice}</p>}
@@ -2048,7 +2238,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         작업 폴더: {state.workspaceFolder ?? "지정되지 않음"} · {workspaceFiles.length}개 파일
         {workspaceTruncated && " · 일부 목록만 표시"}
         {workspaceIncomplete && " · 일부 항목 읽기 실패"}
-        {workspaceCapabilities?.sourceKind === "wsl" && ` · WSL · 5초 폴링 · 편집 가능 · ${workspaceCapabilities.lspSupported ? "WSL 언어 서버" : "호스트 LSP 미지원"}`}
+        {workspaceCapabilities?.sourceKind === "wsl" &&
+          ` · WSL · 5초 폴링 · 편집 가능 · ${workspaceCapabilities.lspSupported ? "WSL 언어 서버" : "호스트 LSP 미지원"}`}
         {workspaceCapabilities?.sourceKind === "native" && " · 네이티브 파일 감시"}
       </p>
 
@@ -2072,9 +2263,15 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
               {pendingCloseDocIds.length > 1 && ` (이후 ${pendingCloseDocIds.length - 1}개 대기)`}
             </p>
             <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" onClick={() => setPendingCloseDocIds([])}>취소</button>
-              <button type="button" className="toolbar-button" onClick={handleDiscardClose}>변경 내용 버리고 닫기</button>
-              <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>저장 후 닫기</button>
+              <button type="button" className="toolbar-button" onClick={() => setPendingCloseDocIds([])}>
+                취소
+              </button>
+              <button type="button" className="toolbar-button" onClick={handleDiscardClose}>
+                변경 내용 버리고 닫기
+              </button>
+              <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>
+                저장 후 닫기
+              </button>
             </div>
           </div>
         </div>
@@ -2133,12 +2330,19 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
                   하나라도 실패하면 이미 바뀐 파일을 백업으로 되돌립니다.
                 </p>
                 <ChangeSetPreview
-                  items={renamePreview.preview.files.map((file): ChangeSetItem => ({
-                    path: file.path,
-                    before: file.before,
-                    after: file.after,
-                    meta: file.ranges.map(({ range }) => `${range.start.line + 1}:${range.start.character + 1}–${range.end.line + 1}:${range.end.character + 1}`).join(", "),
-                  }))}
+                  items={renamePreview.preview.files.map(
+                    (file): ChangeSetItem => ({
+                      path: file.path,
+                      before: file.before,
+                      after: file.after,
+                      meta: file.ranges
+                        .map(
+                          ({ range }) =>
+                            `${range.start.line + 1}:${range.start.character + 1}–${range.end.line + 1}:${range.end.character + 1}`,
+                        )
+                        .join(", "),
+                    }),
+                  )}
                   title="LSP 이름 변경"
                   approveLabel="전체 적용"
                   selectable={false}
@@ -2152,9 +2356,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
             {renameResult && (
               <>
                 <h2>{renameResult.success ? "이름 변경 완료" : "이름 변경 결과"}</h2>
-                <p className="rename-note">
-                  {renameResult.error ?? "변경된 파일별 결과를 확인하세요."}
-                </p>
+                <p className="rename-note">{renameResult.error ?? "변경된 파일별 결과를 확인하세요."}</p>
                 <ul className="rename-results">
                   {renameResult.files.map((file) => (
                     <li key={file.path} className={`rename-result ${file.status}`}>

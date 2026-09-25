@@ -28,6 +28,7 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   (`cargo test -p <crate> --lib <module>`, `pnpm --filter <package> exec vitest run <file>`).
   clippy·전체 build·`pnpm verify:affected`·Windows/WSL 실기 검증은 PR의 모든 과제가 끝난 뒤 모아 실행한다.
   `pnpm verify:all`은 release 준비·CI 검증기 변경·명시적 전체 감사에만 쓴다.
+- 묶음 구현을 마친 뒤 완료 커밋·push 전에 `pnpm exec biome ci .`로 포맷·hook 규칙을 확인한다.
 - 커밋은 과제 단위로 한다. push와 PR 생성은 PR의 상세 검증을 마친 뒤 한 번 한다
   (초안 PR은 CI를 실행하지 않는다). 완료 검증이 실패하면 확인된 수정을 먼저 모두 마치고
   실패·영향 범위만 다시 실행한다. 통과한 무관한 검사는 반복하지 않는다.

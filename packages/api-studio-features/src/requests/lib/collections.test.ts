@@ -190,15 +190,17 @@ describe("collections v2 store", () => {
         folder: "api",
         request: request({
           body_kind: "multipart",
-          multipart: [{
-            kind: "file",
-            name: "upload",
-            value: "raw-bytes",
-            file_path: "C:\\private\\artifact.zip",
-            file_name: "artifact.zip",
-            content_type: "application/zip",
-            enabled: true,
-          }],
+          multipart: [
+            {
+              kind: "file",
+              name: "upload",
+              value: "raw-bytes",
+              file_path: "C:\\private\\artifact.zip",
+              file_name: "artifact.zip",
+              content_type: "application/zip",
+              enabled: true,
+            },
+          ],
         }),
       },
       1000,
@@ -212,9 +214,7 @@ describe("collections v2 store", () => {
       file_name: "artifact.zip",
       value: "",
     });
-    expect(duplicate.collections[0].request.multipart[0]).toEqual(
-      saved.collections[0].request.multipart[0],
-    );
+    expect(duplicate.collections[0].request.multipart[0]).toEqual(saved.collections[0].request.multipart[0]);
     expect(JSON.stringify(duplicate)).not.toContain("C:\\private");
     expect(JSON.stringify(duplicate)).not.toContain("raw-bytes");
   });
@@ -238,9 +238,13 @@ describe("collections v2 store", () => {
     storage.events.length = 0;
 
     await expect(
-      saveStore(emptyStore(), async () => {
-        throw new Error("secret review failed");
-      }, storage),
+      saveStore(
+        emptyStore(),
+        async () => {
+          throw new Error("secret review failed");
+        },
+        storage,
+      ),
     ).rejects.toThrow("secret review failed");
 
     expect(storage.getItem(COLLECTION_V2_LS_KEY)).toBe(existing);
@@ -254,7 +258,9 @@ describe("collections v2 store", () => {
     storage.setItem(COLLECTION_V2_LS_KEY, existing);
     storage.events.length = 0;
     let releaseSanitizer!: () => void;
-    const pending = new Promise<void>((resolve) => { releaseSanitizer = resolve; });
+    const pending = new Promise<void>((resolve) => {
+      releaseSanitizer = resolve;
+    });
     const saving = saveStore(
       addEntry(emptyStore(), { name: "stale", folder: "", request: request() }, 1, () => "c-stale"),
       async (serialized) => {

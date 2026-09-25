@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  exportRunServiceDefinition,
-  sendFixtureToLogLens,
-  sendHistoryToLogLens,
-} from "./api";
+import { exportRunServiceDefinition, sendFixtureToLogLens, sendHistoryToLogLens } from "./api";
 
 describe("Webhook Lab browser API mocks", () => {
   it("returns an import-valid disabled Run Manager definition", async () => {

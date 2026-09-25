@@ -10,7 +10,18 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: openUrlMock }));
 vi.mock("./lib/isTauri", () => ({ isTauri: isTauriMock }));
 
-import { applyDevSetupConfiguration, cancelDevSetupApply, devSetupAudit, discardDevSetupConfiguration, exportDevSetupConfiguration, importDevSetupConfiguration, installRelatedTool, launchRelatedTool, openRelatedToolUrl, relatedTools } from "./api";
+import {
+  applyDevSetupConfiguration,
+  cancelDevSetupApply,
+  devSetupAudit,
+  discardDevSetupConfiguration,
+  exportDevSetupConfiguration,
+  importDevSetupConfiguration,
+  installRelatedTool,
+  launchRelatedTool,
+  openRelatedToolUrl,
+  relatedTools,
+} from "./api";
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -22,14 +33,16 @@ describe("Related Tools API boundary", () => {
   it("rejects tampered catalog metadata and impossible platform state", async () => {
     const valid = await relatedTools();
     isTauriMock.mockReturnValue(true);
-    invokeMock.mockResolvedValueOnce(valid.map((tool, index) => index === 0
-      ? { ...tool, officialUrl: "https://evil.example/download" }
-      : tool));
+    invokeMock.mockResolvedValueOnce(
+      valid.map((tool, index) => (index === 0 ? { ...tool, officialUrl: "https://evil.example/download" } : tool)),
+    );
     await expect(relatedTools()).rejects.toThrow("관련 도구 감지 응답이 올바르지 않습니다.");
 
-    invokeMock.mockResolvedValueOnce(valid.map((tool, index) => index === 0
-      ? { ...tool, platformSupported: false, installed: true, detection: "path" }
-      : tool));
+    invokeMock.mockResolvedValueOnce(
+      valid.map((tool, index) =>
+        index === 0 ? { ...tool, platformSupported: false, installed: true, detection: "path" } : tool,
+      ),
+    );
     await expect(relatedTools()).rejects.toThrow("관련 도구 감지 응답이 올바르지 않습니다.");
   });
 
@@ -38,26 +51,32 @@ describe("Related Tools API boundary", () => {
     const docker = valid.find((tool) => tool.id === "docker-desktop");
     if (!docker?.dockerCapability) throw new Error("Docker fixture missing");
     isTauriMock.mockReturnValue(true);
-    invokeMock.mockResolvedValueOnce(valid.map((tool) => tool.id === "docker-desktop" ? {
-      ...tool,
-      platformSupported: true,
-      detection: "not-found",
-      installState: "unknown",
-      launchState: "unavailable",
-      dockerCapability: {
-        ...docker.dockerCapability,
-        desktopInstall: "unknown",
-        desktopLaunch: "unavailable",
-        windowsCli: "available",
-        wslBackend: "running",
-        evidence: [
-          { source: "desktop-executable", result: "not-observed" },
-          { source: "windows-cli", result: "known-location" },
-          { source: "wsl-registration", result: "registered" },
-          { source: "wsl-runtime", result: "running" },
-        ],
-      },
-    } : tool));
+    invokeMock.mockResolvedValueOnce(
+      valid.map((tool) =>
+        tool.id === "docker-desktop"
+          ? {
+              ...tool,
+              platformSupported: true,
+              detection: "not-found",
+              installState: "unknown",
+              launchState: "unavailable",
+              dockerCapability: {
+                ...docker.dockerCapability,
+                desktopInstall: "unknown",
+                desktopLaunch: "unavailable",
+                windowsCli: "available",
+                wslBackend: "running",
+                evidence: [
+                  { source: "desktop-executable", result: "not-observed" },
+                  { source: "windows-cli", result: "known-location" },
+                  { source: "wsl-registration", result: "registered" },
+                  { source: "wsl-runtime", result: "running" },
+                ],
+              },
+            }
+          : tool,
+      ),
+    );
 
     const result = await relatedTools();
     const capability = result.find((tool) => tool.id === "docker-desktop");
@@ -69,31 +88,43 @@ describe("Related Tools API boundary", () => {
   it("rejects contradictory Docker evidence", async () => {
     const valid = await relatedTools();
     isTauriMock.mockReturnValue(true);
-    invokeMock.mockResolvedValueOnce(valid.map((tool) => tool.id === "docker-desktop" ? {
-      ...tool,
-      dockerCapability: tool.dockerCapability && {
-        ...tool.dockerCapability,
-        desktopInstall: "present",
-      },
-      installState: "present",
-      installed: true,
-    } : tool));
+    invokeMock.mockResolvedValueOnce(
+      valid.map((tool) =>
+        tool.id === "docker-desktop"
+          ? {
+              ...tool,
+              dockerCapability: tool.dockerCapability && {
+                ...tool.dockerCapability,
+                desktopInstall: "present",
+              },
+              installState: "present",
+              installed: true,
+            }
+          : tool,
+      ),
+    );
     await expect(relatedTools()).rejects.toThrow("Docker capability 응답이 올바르지 않습니다.");
   });
 
   it("rejects contradictory WSL registration and runtime evidence", async () => {
     const valid = await relatedTools();
     isTauriMock.mockReturnValue(true);
-    invokeMock.mockResolvedValueOnce(valid.map((tool) => tool.id === "docker-desktop" ? {
-      ...tool,
-      dockerCapability: tool.dockerCapability && {
-        ...tool.dockerCapability,
-        wslBackend: "absent",
-        evidence: tool.dockerCapability.evidence.map((evidence) => (
-          evidence.source === "wsl-runtime" ? { ...evidence, result: "running" } : evidence
-        )),
-      },
-    } : tool));
+    invokeMock.mockResolvedValueOnce(
+      valid.map((tool) =>
+        tool.id === "docker-desktop"
+          ? {
+              ...tool,
+              dockerCapability: tool.dockerCapability && {
+                ...tool.dockerCapability,
+                wslBackend: "absent",
+                evidence: tool.dockerCapability.evidence.map((evidence) =>
+                  evidence.source === "wsl-runtime" ? { ...evidence, result: "running" } : evidence,
+                ),
+              },
+            }
+          : tool,
+      ),
+    );
     await expect(relatedTools()).rejects.toThrow("Docker capability 응답이 올바르지 않습니다.");
   });
 
@@ -114,16 +145,13 @@ describe("Related Tools API boundary", () => {
     });
 
     invokeMock.mockResolvedValueOnce({ toolId: "another-tool", status: "launched" });
-    await expect(launchRelatedTool("vs-code"))
-      .rejects.toThrow("관련 도구 작업 결과가 올바르지 않습니다.");
+    await expect(launchRelatedTool("vs-code")).rejects.toThrow("관련 도구 작업 결과가 올바르지 않습니다.");
   });
 
   it("rejects arbitrary ids and external URLs before a native call", async () => {
     isTauriMock.mockReturnValue(true);
-    await expect(installRelatedTool("vs-code --silent", true))
-      .rejects.toThrow("관련 도구 식별자가 올바르지 않습니다.");
-    await expect(openRelatedToolUrl("https://evil.example/tool"))
-      .rejects.toThrow("공식 링크가 올바르지 않습니다.");
+    await expect(installRelatedTool("vs-code --silent", true)).rejects.toThrow("관련 도구 식별자가 올바르지 않습니다.");
+    await expect(openRelatedToolUrl("https://evil.example/tool")).rejects.toThrow("공식 링크가 올바르지 않습니다.");
     expect(invokeMock).not.toHaveBeenCalled();
     expect(openUrlMock).not.toHaveBeenCalled();
   });
@@ -148,17 +176,15 @@ describe("Dev Setup API boundary", () => {
     isTauriMock.mockReturnValue(true);
     invokeMock.mockResolvedValueOnce({
       ...valid,
-      plan: valid.plan.map((item, index) => index === 0
-        ? { ...item, action: "run-arbitrary-command" }
-        : item),
+      plan: valid.plan.map((item, index) => (index === 0 ? { ...item, action: "run-arbitrary-command" } : item)),
     });
     await expect(devSetupAudit()).rejects.toThrow("Dev Setup 감사 응답이 올바르지 않습니다.");
 
     invokeMock.mockResolvedValueOnce({
       ...valid,
-      capabilities: valid.capabilities.map((capability, index) => index === 0
-        ? { ...capability, evidence: [{ source: "path", result: "C:\\Users\\secret" }] }
-        : capability),
+      capabilities: valid.capabilities.map((capability, index) =>
+        index === 0 ? { ...capability, evidence: [{ source: "path", result: "C:\\Users\\secret" }] } : capability,
+      ),
     });
     await expect(devSetupAudit()).rejects.toThrow("환경 capability 응답이 올바르지 않습니다.");
   });
@@ -168,10 +194,7 @@ describe("Dev Setup API boundary", () => {
     expect(review).not.toBeNull();
     expect(review?.schemaVersion).toBe("0.3");
     expect(review?.previewId).toMatch(/^devsetup-[0-9a-f]{64}$/);
-    expect(review?.packages.map((pkg) => pkg.packageId)).toEqual([
-      "Git.Git",
-      "Microsoft.VisualStudioCode",
-    ]);
+    expect(review?.packages.map((pkg) => pkg.packageId)).toEqual(["Git.Git", "Microsoft.VisualStudioCode"]);
     expect(review?.canApply).toBe(true);
     expect(review?.hasChanges).toBe(true);
 
@@ -184,12 +207,7 @@ describe("Dev Setup API boundary", () => {
     expect(exported.byteCount).toBe(new TextEncoder().encode(exported.content).byteLength);
     expect(exported.sha256).toMatch(/^[0-9a-f]{64}$/);
 
-    const applied = await applyDevSetupConfiguration(
-      review!.previewId,
-      true,
-      true,
-      true,
-    );
+    const applied = await applyDevSetupConfiguration(review!.previewId, true, true, true);
     expect(applied).toMatchObject({
       status: "complete",
       results: [
@@ -226,12 +244,7 @@ describe("Dev Setup API boundary", () => {
       })),
     };
     invokeMock.mockResolvedValueOnce(nativeApply);
-    await expect(applyDevSetupConfiguration(
-      browserReview!.previewId,
-      true,
-      true,
-      true,
-    )).resolves.toEqual(nativeApply);
+    await expect(applyDevSetupConfiguration(browserReview!.previewId, true, true, true)).resolves.toEqual(nativeApply);
     expect(invokeMock).toHaveBeenLastCalledWith("apply_dev_setup_configuration", {
       request: {
         previewId: browserReview!.previewId,
@@ -254,8 +267,9 @@ describe("Dev Setup API boundary", () => {
     expect(invokeMock).toHaveBeenLastCalledWith("discard_dev_setup_configuration", {
       request: { previewId: nextReview!.previewId },
     });
-    await expect(exportDevSetupConfiguration(nextReview!.previewId))
-      .rejects.toThrow("Dev Setup 구성 요청이 올바르지 않습니다.");
+    await expect(exportDevSetupConfiguration(nextReview!.previewId)).rejects.toThrow(
+      "Dev Setup 구성 요청이 올바르지 않습니다.",
+    );
   });
 
   it("rejects review schema, package coherence, and unsafe preview fields", async () => {
@@ -274,9 +288,9 @@ describe("Dev Setup API boundary", () => {
 
     invokeMock.mockResolvedValueOnce({
       ...valid,
-      packages: valid!.packages.map((pkg, index) => index === 0
-        ? { ...pkg, currentState: "unknown", action: "install" }
-        : pkg),
+      packages: valid!.packages.map((pkg, index) =>
+        index === 0 ? { ...pkg, currentState: "unknown", action: "install" } : pkg,
+      ),
     });
     await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
 
@@ -291,17 +305,15 @@ describe("Dev Setup API boundary", () => {
 
     invokeMock.mockResolvedValueOnce({
       ...valid,
-      packages: valid!.packages.map((pkg, index) => index === 0
-        ? { ...pkg, packageId: "--help.Package" }
-        : pkg),
+      packages: valid!.packages.map((pkg, index) => (index === 0 ? { ...pkg, packageId: "--help.Package" } : pkg)),
     });
     await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
 
     invokeMock.mockResolvedValueOnce({
       ...valid,
-      packages: valid!.packages.map((pkg, index) => index === 1
-        ? { ...pkg, currentState: "update-available", action: "update" }
-        : pkg),
+      packages: valid!.packages.map((pkg, index) =>
+        index === 1 ? { ...pkg, currentState: "update-available", action: "update" } : pkg,
+      ),
     });
     await expect(importDevSetupConfiguration()).rejects.toThrow("Dev Setup 구성 검토 응답이 올바르지 않습니다.");
   });
@@ -334,14 +346,17 @@ describe("Dev Setup API boundary", () => {
   it("validates confirmations before native invocation and consumes failed applies", async () => {
     const review = await importDevSetupConfiguration();
     isTauriMock.mockReturnValue(true);
-    await expect(applyDevSetupConfiguration(review!.previewId, true, false, true))
-      .rejects.toThrow("Dev Setup 적용에는 세 가지 확인이 모두 필요합니다.");
+    await expect(applyDevSetupConfiguration(review!.previewId, true, false, true)).rejects.toThrow(
+      "Dev Setup 적용에는 세 가지 확인이 모두 필요합니다.",
+    );
     expect(invokeMock).not.toHaveBeenCalled();
 
     invokeMock.mockRejectedValueOnce(new Error("C:\\Users\\developer\\secret-token"));
-    await expect(applyDevSetupConfiguration(review!.previewId, true, true, true))
-      .rejects.toThrow("Dev Setup 구성 작업을 완료할 수 없습니다.");
-    await expect(exportDevSetupConfiguration(review!.previewId))
-      .rejects.toThrow("Dev Setup 구성 요청이 올바르지 않습니다.");
+    await expect(applyDevSetupConfiguration(review!.previewId, true, true, true)).rejects.toThrow(
+      "Dev Setup 구성 작업을 완료할 수 없습니다.",
+    );
+    await expect(exportDevSetupConfiguration(review!.previewId)).rejects.toThrow(
+      "Dev Setup 구성 요청이 올바르지 않습니다.",
+    );
   });
 });

@@ -92,7 +92,7 @@ impl Drop for Helper {
 }
 #[test]
 fn maximum_read_only_file_crosses_pipe_in_bounded_verified_chunks() {
-    use code_pad_lib::core::guard::MAX_OPENABLE_BYTES;
+    use editor_engine::core::guard::MAX_OPENABLE_BYTES;
     let directory = tempfile::Builder::new()
         .prefix(".wsl-large-file-fixture-")
         .tempdir_in(env!("CARGO_MANIFEST_DIR"))
@@ -620,7 +620,7 @@ fn actual_reveal_requires_open_context_and_rejects_replaced_leaf_or_parent() {
 
 #[test]
 fn lsp_review_uses_closed_context_messages_and_never_executes_scripts_or_servers() {
-    use code_pad_lib::lsp::{LspConfig, ServerRef};
+    use editor_engine::lsp::{LspConfig, ServerRef};
     use std::os::unix::fs::PermissionsExt;
     let fixture = tempfile::Builder::new()
         .prefix(".wsl-lsp-pipe-")

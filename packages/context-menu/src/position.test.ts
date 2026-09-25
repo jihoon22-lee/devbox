@@ -3,23 +3,21 @@ import { placeRootMenu, placeSubmenu } from "./position";
 
 describe("placeRootMenu", () => {
   it("uses the pointer as top-left when the menu fits", () => {
-    expect(
-      placeRootMenu(
-        { x: 100, y: 80 },
-        { width: 180, height: 220 },
-        { width: 800, height: 600 },
-      ),
-    ).toEqual({ x: 100, y: 80, horizontal: "right", vertical: "down" });
+    expect(placeRootMenu({ x: 100, y: 80 }, { width: 180, height: 220 }, { width: 800, height: 600 })).toEqual({
+      x: 100,
+      y: 80,
+      horizontal: "right",
+      vertical: "down",
+    });
   });
 
   it("flips left and up at the bottom-right viewport edge", () => {
-    expect(
-      placeRootMenu(
-        { x: 790, y: 590 },
-        { width: 180, height: 220 },
-        { width: 800, height: 600 },
-      ),
-    ).toEqual({ x: 610, y: 370, horizontal: "left", vertical: "up" });
+    expect(placeRootMenu({ x: 790, y: 590 }, { width: 180, height: 220 }, { width: 800, height: 600 })).toEqual({
+      x: 610,
+      y: 370,
+      horizontal: "left",
+      vertical: "up",
+    });
   });
 
   it("clamps oversized and non-finite input to the safe margin", () => {

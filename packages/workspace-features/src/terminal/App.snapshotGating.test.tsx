@@ -3,16 +3,16 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { dockerAction, getDashboardSnapshot, startSession, listDistros } from "./api";
-import {configureProductTransport} from "../transport";
-import {configureTerminalStorage,initializeTerminalPreferences} from "./lib/storageNamespace";
+import { configureProductTransport } from "../transport";
+import { configureTerminalStorage, initializeTerminalPreferences } from "./lib/storageNamespace";
 import * as workspace from "./lib/workspace";
 import type { DashboardSnapshot } from "./types";
 
 const mocks = vi.hoisted(() => ({ nextSession: 0, hosted: false }));
 
-vi.mock("../transport", async importOriginal => ({
-  ...await importOriginal<typeof import("../transport")>(),
-  isProductHosted:()=>mocks.hosted,
+vi.mock("../transport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../transport")>()),
+  isProductHosted: () => mocks.hosted,
 }));
 
 vi.mock("./components/TermPane", () => ({
@@ -51,16 +51,18 @@ function snapshot(capturedAtMs = Date.now()): DashboardSnapshot {
     revision: 1,
     capturedAtMs,
     staleAfterMs: 30_000,
-    distros: [{
-      name: "Ubuntu",
-      version: 2,
-      default: true,
-      state: "Running",
-      terminalCount: 0,
-      dockerAvailability: "available",
-      containers: [{ id: "abc123", name: "api", image: "api:latest", status: "Created", ports: "" }],
-      resource: null,
-    }],
+    distros: [
+      {
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "available",
+        containers: [{ id: "abc123", name: "api", image: "api:latest", status: "Created", ports: "" }],
+        resource: null,
+      },
+    ],
   };
 }
 
@@ -121,12 +123,20 @@ async function armBroadcast(): Promise<HTMLInputElement> {
   return toggle;
 }
 
-beforeAll(()=>{
-  configureProductTransport(async<T,>(_component:unknown,method:string)=>
-    (method==="terminal_preferences"?{"wsl-desktop:settings":JSON.stringify({version:1,openTerminalOnStart:false})}:null) as T,"fixture-installation");
-  configureTerminalStorage("fixture-installation","12345678-1234-1234-1234-123456789abc");
+beforeAll(() => {
+  configureProductTransport(
+    async <T,>(_component: unknown, method: string) =>
+      (method === "terminal_preferences"
+        ? { "wsl-desktop:settings": JSON.stringify({ version: 1, openTerminalOnStart: false }) }
+        : null) as T,
+    "fixture-installation",
+  );
+  configureTerminalStorage("fixture-installation", "12345678-1234-1234-1234-123456789abc");
 });
-async function hostedPreferences(){ mocks.hosted=true; await initializeTerminalPreferences(); }
+async function hostedPreferences() {
+  mocks.hosted = true;
+  await initializeTerminalPreferences();
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -144,31 +154,50 @@ beforeEach(() => {
   }));
 });
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("snapshot-gated controls", () => {
-  it("restores an explicitly opened product profile using fresh distro identity when telemetry fails", async()=>{
+  it("restores an explicitly opened product profile using fresh distro identity when telemetry fails", async () => {
     await hostedPreferences();
     snapshotMock.mockRejectedValue(new Error("telemetry unavailable"));
-    vi.mocked(listDistros).mockResolvedValue([{name:"Ubuntu",version:2,default:true,state:"Stopped"}]);
-    vi.spyOn(workspace,"saveLastWorkspace").mockResolvedValue();
-    workspace.initializeProductLayout("12345678-1234-1234-1234-123456789abc",{revision:"a".repeat(64),layout:{
-      tabs:[{id:"main",title:"Profile",layout:"grid",paneKeys:["one","two"],sizing:{columns:[0.5,0.5],rows:[1]}}],
-      panes:[{key:"one",distro:"Ubuntu",cwd:"/owned/one",multiplexer:"native"},{key:"two",distro:"Ubuntu",cwd:"/owned/two",multiplexer:"native"}],activeTabId:"main",activePaneKey:"two",
-    }});
-    render(<App/>);
-    await waitFor(()=>expect(startSessionMock).toHaveBeenCalledTimes(2));
-    expect(startSessionMock).toHaveBeenNthCalledWith(1,"Ubuntu","/owned/two","two","native");
-    expect(startSessionMock).toHaveBeenNthCalledWith(2,"Ubuntu","/owned/one","one","native");
+    vi.mocked(listDistros).mockResolvedValue([{ name: "Ubuntu", version: 2, default: true, state: "Stopped" }]);
+    vi.spyOn(workspace, "saveLastWorkspace").mockResolvedValue();
+    workspace.initializeProductLayout("12345678-1234-1234-1234-123456789abc", {
+      revision: "a".repeat(64),
+      layout: {
+        tabs: [
+          {
+            id: "main",
+            title: "Profile",
+            layout: "grid",
+            paneKeys: ["one", "two"],
+            sizing: { columns: [0.5, 0.5], rows: [1] },
+          },
+        ],
+        panes: [
+          { key: "one", distro: "Ubuntu", cwd: "/owned/one", multiplexer: "native" },
+          { key: "two", distro: "Ubuntu", cwd: "/owned/two", multiplexer: "native" },
+        ],
+        activeTabId: "main",
+        activePaneKey: "two",
+      },
+    });
+    render(<App />);
+    await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
+    expect(startSessionMock).toHaveBeenNthCalledWith(1, "Ubuntu", "/owned/two", "two", "native");
+    expect(startSessionMock).toHaveBeenNthCalledWith(2, "Ubuntu", "/owned/one", "one", "native");
     expect(screen.getByText(/WSL resource snapshot을 갱신하지 못했습니다/u)).toBeInTheDocument();
     expect(screen.getByLabelText("동시 입력 활성화")).toBeDisabled();
   });
-  it("does not guess a product target when telemetry and fresh distro discovery both fail",async()=>{
+  it("does not guess a product target when telemetry and fresh distro discovery both fail", async () => {
     await hostedPreferences();
     snapshotMock.mockRejectedValue(new Error("telemetry unavailable"));
     vi.mocked(listDistros).mockRejectedValue(new Error("distro unavailable"));
-    render(<App/>);
-    await waitFor(()=>expect(listDistros).toHaveBeenCalled());
+    render(<App />);
+    await waitFor(() => expect(listDistros).toHaveBeenCalled());
     expect(startSessionMock).not.toHaveBeenCalled();
   });
 
@@ -177,7 +206,10 @@ describe("snapshot-gated controls", () => {
 
     let release: (() => void) | undefined;
     snapshotMock.mockImplementationOnce(
-      () => new Promise((resolve) => { release = () => resolve(snapshot()); }),
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(snapshot());
+        }),
     );
     fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
 
@@ -214,7 +246,10 @@ describe("snapshot-gated controls", () => {
 
     let release: (() => void) | undefined;
     snapshotMock.mockImplementationOnce(
-      () => new Promise((resolve) => { release = () => resolve(snapshot()); }),
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(snapshot());
+        }),
     );
     fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
     await screen.findByText("새로 고치는 중…");

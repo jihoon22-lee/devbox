@@ -3,9 +3,10 @@ import { routeOpenRequest } from "./applink";
 
 describe("Everything+ applink routing", () => {
   it("trims and routes a bounded Query", () => {
-    expect(
-      routeOpenRequest({ target: { kind: "query", text: "  Cargo.toml  " }, from: "devbox-launcher" }),
-    ).toEqual({ kind: "search", query: "Cargo.toml" });
+    expect(routeOpenRequest({ target: { kind: "query", text: "  Cargo.toml  " }, from: "devbox-launcher" })).toEqual({
+      kind: "search",
+      query: "Cargo.toml",
+    });
   });
 
   it("normalizes and applies a bounded v1 filter", () => {

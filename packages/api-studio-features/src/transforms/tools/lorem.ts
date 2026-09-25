@@ -68,12 +68,7 @@ function isLoremUnit(value: unknown): value is LoremUnit {
 }
 
 function isValidCount(value: unknown): value is number {
-  return (
-    typeof value === "number"
-    && Number.isSafeInteger(value)
-    && value >= 1
-    && value <= MAX_LOREM_COUNT
-  );
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= MAX_LOREM_COUNT;
 }
 
 function sentenceAt(index: number): string {
@@ -88,10 +83,7 @@ function makeParagraphs(count: number): string {
   return Array.from({ length: count }, (_, paragraphIndex) => {
     // Rotate the fixed corpus between paragraphs for visual variety while
     // preserving deterministic output and exactly five sentences per paragraph.
-    const sentences = Array.from(
-      { length: SENTENCES.length },
-      (_, offset) => sentenceAt(paragraphIndex * 2 + offset),
-    );
+    const sentences = Array.from({ length: SENTENCES.length }, (_, offset) => sentenceAt(paragraphIndex * 2 + offset));
     return sentences.join(" ");
   }).join("\n\n");
 }
@@ -113,11 +105,12 @@ export function generateLorem(options: LoremOptions): LoremResult {
     return emptyResult({ code: "INVALID_COUNT", message: ERROR_MESSAGES.INVALID_COUNT });
   }
 
-  const output = options.unit === "paragraphs"
-    ? makeParagraphs(options.count)
-    : options.unit === "sentences"
-      ? makeSentences(options.count)
-      : makeWords(options.count);
+  const output =
+    options.unit === "paragraphs"
+      ? makeParagraphs(options.count)
+      : options.unit === "sentences"
+        ? makeSentences(options.count)
+        : makeWords(options.count);
   const byteLength = utf8ByteLength(output);
   if (byteLength > MAX_LOREM_OUTPUT_BYTES) {
     return emptyResult({ code: "OUTPUT_TOO_LARGE", message: ERROR_MESSAGES.OUTPUT_TOO_LARGE });

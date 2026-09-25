@@ -24,10 +24,7 @@ function occurrenceTitle(link: WikilinkOccurrence): string {
   }
 }
 
-function occurrenceDecorations(
-  docLength: number,
-  occurrences: readonly WikilinkOccurrence[],
-): DecorationSet {
+function occurrenceDecorations(docLength: number, occurrences: readonly WikilinkOccurrence[]): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   for (const link of [...occurrences].sort((left, right) => left.from - right.from)) {
     if (link.from < 0 || link.to <= link.from || link.to > docLength) continue;
@@ -88,19 +85,21 @@ export function wikilinkCompletionSource(
     return {
       from: match.from + 2,
       validFor: /^[^\]\n|]{0,256}$/u,
-      options: candidates.map((candidate): Completion => ({
-        label: candidate.title || candidate.link_target,
-        detail: candidate.link_target,
-        type: "text",
-        apply(view, _completion, from, to) {
-          const alreadyClosed = view.state.sliceDoc(to, to + 2) === "]]";
-          const insert = `${candidate.link_target}${alreadyClosed ? "" : "]]"}`;
-          view.dispatch({
-            changes: { from, to, insert },
-            selection: { anchor: from + candidate.link_target.length + 2 },
-          });
-        },
-      })),
+      options: candidates.map(
+        (candidate): Completion => ({
+          label: candidate.title || candidate.link_target,
+          detail: candidate.link_target,
+          type: "text",
+          apply(view, _completion, from, to) {
+            const alreadyClosed = view.state.sliceDoc(to, to + 2) === "]]";
+            const insert = `${candidate.link_target}${alreadyClosed ? "" : "]]"}`;
+            view.dispatch({
+              changes: { from, to, insert },
+              selection: { anchor: from + candidate.link_target.length + 2 },
+            });
+          },
+        }),
+      ),
     };
   };
 }
@@ -115,9 +114,7 @@ export function wikilinkEditorExtensions(
     EditorView.domEventHandlers({
       mousedown(event) {
         if (!(event.ctrlKey || event.metaKey)) return false;
-        const element = (event.target as HTMLElement | null)?.closest<HTMLElement>(
-          ".cm-wikilink[data-wikilink-path]",
-        );
+        const element = (event.target as HTMLElement | null)?.closest<HTMLElement>(".cm-wikilink[data-wikilink-path]");
         const path = element?.dataset.wikilinkPath;
         if (!path) return false;
         event.preventDefault();

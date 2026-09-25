@@ -50,7 +50,9 @@ vi.mock("./api", () => ({
   listRoots: vi.fn(async () => []),
   listSavedQueries: vi.fn(async () => []),
   watcherStatuses: vi.fn(async () => []),
-  searchFiles: vi.fn(async (query: string) => [{ id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 }]),
+  searchFiles: vi.fn(async (query: string) => [
+    { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
+  ]),
   searchContent: vi.fn(async () => []),
   addRoot: vi.fn(async () => undefined),
   removeRoot: vi.fn(async () => undefined),
@@ -117,9 +119,11 @@ beforeEach(() => {
     mocks.openHandler = handler;
     return () => undefined;
   });
-  searchFilesMock.mockReset().mockImplementation(async (query: string) => [
-    { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
-  ]);
+  searchFilesMock
+    .mockReset()
+    .mockImplementation(async (query: string) => [
+      { id: 1, path: `C:\\files\\${query}`, name: query, ext: "", size: 1, modified_ts: 0 },
+    ]);
   searchContentMock.mockReset().mockResolvedValue([]);
   listSavedQueriesMock.mockReset().mockResolvedValue([]);
   saveSavedQueryMock.mockReset().mockResolvedValue({
@@ -212,20 +216,23 @@ describe("Everything+ Query app-link delivery", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith(
-      "cargo",
-      undefined,
-      { extensions: ["rs"], sourceRootId: 3, contentStatus: "truncated" },
-    ));
+    await waitFor(() =>
+      expect(searchFilesMock).toHaveBeenCalledWith("cargo", undefined, {
+        extensions: ["rs"],
+        sourceRootId: 3,
+        contentStatus: "truncated",
+      }),
+    );
     expect(screen.getByText("필터 (3)")).toBeTruthy();
   });
 
   it("does not let an older search response replace the inbound Query results", async () => {
     let resolveOldSearch: ((value: Awaited<ReturnType<typeof searchFiles>>) => void) | undefined;
     searchFilesMock.mockImplementationOnce(
-      () => new Promise((resolve) => {
-        resolveOldSearch = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveOldSearch = resolve;
+        }),
     );
 
     render(<App />);
@@ -320,35 +327,39 @@ describe("Everything+ root watcher status", () => {
   it("marks a WSL UNC root as polling and exposes its source and watcher explanation", async () => {
     const root = "\\\\wsl$\\Ubuntu\\home\\jihoon\\projects\\devbox";
     listRootsMock.mockResolvedValueOnce([{ id: 7, path: root, content: true }]);
-    watcherStatusesMock.mockResolvedValueOnce([{
-      root,
-      sourceKind: "wsl",
-      watchMode: "polling",
-      lastSyncedAt: 1_725_000_000_000,
-      pending: 0,
-      error: null,
-    }]);
+    watcherStatusesMock.mockResolvedValueOnce([
+      {
+        root,
+        sourceKind: "wsl",
+        watchMode: "polling",
+        lastSyncedAt: 1_725_000_000_000,
+        pending: 0,
+        error: null,
+      },
+    ]);
 
     render(<App />);
 
     expect(await screen.findByText("WSL 주기 확인")).toBeTruthy();
     expect(screen.getByText("WSL")).toBeTruthy();
-    expect(screen.getByTitle(
-      "WSL UNC 루트는 Linux 경로 대소문자를 보존하며 제한된 메타데이터 폴링으로 반영합니다.",
-    )).toBeTruthy();
+    expect(
+      screen.getByTitle("WSL UNC 루트는 Linux 경로 대소문자를 보존하며 제한된 메타데이터 폴링으로 반영합니다."),
+    ).toBeTruthy();
   });
 
   it("shows a stable unavailable error while retaining the configured WSL root", async () => {
     const root = "\\\\wsl.localhost\\Ubuntu\\home\\jihoon\\projects\\missing";
     listRootsMock.mockResolvedValueOnce([{ id: 8, path: root, content: false }]);
-    watcherStatusesMock.mockResolvedValueOnce([{
-      root,
-      sourceKind: "wsl",
-      watchMode: "polling",
-      lastSyncedAt: null,
-      pending: 0,
-      error: "root_unavailable",
-    }]);
+    watcherStatusesMock.mockResolvedValueOnce([
+      {
+        root,
+        sourceKind: "wsl",
+        watchMode: "polling",
+        lastSyncedAt: null,
+        pending: 0,
+        error: "root_unavailable",
+      },
+    ]);
 
     render(<App />);
 
@@ -366,7 +377,7 @@ async function renderNamedResults() {
     { id: 2, path: "C:\\files\\beta.md", name: "beta.md", ext: "md", size: 20, modified_ts: 0 },
   ]);
   render(<App />);
-    fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), {
+  fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), {
     target: { value: "fixture" },
   });
   await screen.findByText("beta.md");
@@ -407,18 +418,12 @@ describe("Everything+ result context menu", () => {
 
     expect(beta.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("menu", { name: "검색 결과 작업" })).toBeTruthy();
-    for (const label of [
-      "열기",
-      "폴더에서 보기",
-      "경로 복사",
-      "파일 이름 복사",
-      "다른 앱으로 열기",
-    ]) {
+    for (const label of ["열기", "폴더에서 보기", "경로 복사", "파일 이름 복사", "다른 앱으로 열기"]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
-    await waitFor(() => expect(
-      screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled"),
-    ).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "다른 앱으로 열기" }).getAttribute("aria-disabled")).toBeNull(),
+    );
   });
 
   it("runs row actions with the exact selected path and file name", async () => {
@@ -451,10 +456,7 @@ describe("Everything+ result context menu", () => {
     fireEvent.mouseEnter(submenu);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Code Pad" }));
 
-    await waitFor(() => expect(openInMock).toHaveBeenCalledWith(
-      "code-pad",
-      "C:\\files\\beta.md",
-    ));
+    await waitFor(() => expect(openInMock).toHaveBeenCalledWith("code-pad", "C:\\files\\beta.md"));
   });
 
   it("opens with Shift+F10 and restores focus after selection", async () => {
@@ -516,11 +518,7 @@ describe("Everything+ filters and saved queries", () => {
     fireEvent.change(screen.getByLabelText("파일 확장자"), { target: { value: " .RS, md " } });
     fireEvent.change(screen.getByPlaceholderText("파일 이름 검색..."), { target: { value: "main" } });
 
-    await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith(
-      "main",
-      undefined,
-      { extensions: ["md", "rs"] },
-    ));
+    await waitFor(() => expect(searchFilesMock).toHaveBeenCalledWith("main", undefined, { extensions: ["md", "rs"] }));
     expect(screen.getByText("main.rs")).toBeTruthy();
     expect(screen.getByText("필터 (1)")).toBeTruthy();
   });
@@ -539,11 +537,13 @@ describe("Everything+ filters and saved queries", () => {
     fireEvent.change(screen.getByLabelText("저장된 검색어 이름"), { target: { value: "Rust sources" } });
     fireEvent.click(screen.getByRole("button", { name: "검색어 저장" }));
 
-    await waitFor(() => expect(saveSavedQueryMock).toHaveBeenCalledWith({
-      name: "Rust sources",
-      query: "cargo",
-      filter: {},
-    }));
+    await waitFor(() =>
+      expect(saveSavedQueryMock).toHaveBeenCalledWith({
+        name: "Rust sources",
+        query: "cargo",
+        filter: {},
+      }),
+    );
     expect(await screen.findByRole("button", { name: "Rust sources" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rust sources" }));
     expect((screen.getByPlaceholderText("파일 이름 검색...") as HTMLInputElement).value).toBe("cargo");
@@ -557,9 +557,10 @@ describe("Everything+ filters and saved queries", () => {
   it("does not let the initial saved-query response overwrite a completed save", async () => {
     let resolveInitial: ((value: Awaited<ReturnType<typeof listSavedQueries>>) => void) | undefined;
     listSavedQueriesMock.mockImplementationOnce(
-      () => new Promise((resolve) => {
-        resolveInitial = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
     );
     saveSavedQueryMock.mockResolvedValueOnce({
       id: 9,
@@ -583,23 +584,55 @@ describe("Everything+ filters and saved queries", () => {
   });
 });
 
-
 describe("product source search", () => {
-  function snapshot(generation: string, source: "files" | "notes" | "current_project", reference: string | null = "opaque-note") : SourceSnapshot {
-    return { generation, storeGeneration: "native-store", source, state: "complete", partial: false, rows: [{ source, rootIdentity: `${source}:7`, reference, availability: reference ? "available" : "stale", value: { id: 1, path: "C:/vault/shared.md", name: generation, ext: "md", size: 5, modified_ts: 1, snippet: "" } }] };
+  function snapshot(
+    generation: string,
+    source: "files" | "notes" | "current_project",
+    reference: string | null = "opaque-note",
+  ): SourceSnapshot {
+    return {
+      generation,
+      storeGeneration: "native-store",
+      source,
+      state: "complete",
+      partial: false,
+      rows: [
+        {
+          source,
+          rootIdentity: `${source}:7`,
+          reference,
+          availability: reference ? "available" : "stale",
+          value: {
+            id: 1,
+            path: "C:/vault/shared.md",
+            name: generation,
+            ext: "md",
+            size: 5,
+            modified_ts: 1,
+            snippet: "",
+          },
+        },
+      ],
+    };
   }
   it("cancels superseded work, ignores late rows and opens the exact Notes reference", async () => {
     mocks.product = true;
     const pending: Array<{ signal: AbortSignal; update: (value: SourceSnapshot) => void }> = [];
-    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, signal, update) => { pending.push({ signal, update }); return []; });
+    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, signal, update) => {
+      pending.push({ signal, update });
+      return [];
+    });
     const activate = vi.fn();
-    render(<App onNoteOpen={activate}/>);
+    render(<App onNoteOpen={activate} />);
     fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "shared" } });
     await waitFor(() => expect(pending).toHaveLength(1));
     fireEvent.change(screen.getByRole("combobox", { name: "검색 범위" }), { target: { value: "notes" } });
     await waitFor(() => expect(pending).toHaveLength(2));
     expect(pending[0].signal.aborted).toBe(true);
-    act(() => { pending[1].update(snapshot("new note", "notes")); pending[0].update(snapshot("late file", "files")); });
+    act(() => {
+      pending[1].update(snapshot("new note", "notes"));
+      pending[0].update(snapshot("late file", "files"));
+    });
     expect(screen.queryByText("late file")).not.toBeInTheDocument();
     const row = screen.getByText("new note").closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: "열기" }));
@@ -609,17 +642,23 @@ describe("product source search", () => {
   it("refreshes current-project results on a provider revision and rejects late old rows", async () => {
     mocks.product = true;
     const pending: Array<{ signal: AbortSignal; update: (value: SourceSnapshot) => void }> = [];
-    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, signal, update) => { pending.push({ signal, update }); return []; });
-    const { rerender } = render(<App projectRevision={0}/>);
+    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, signal, update) => {
+      pending.push({ signal, update });
+      return [];
+    });
+    const { rerender } = render(<App projectRevision={0} />);
     fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "shared" } });
     fireEvent.change(screen.getByRole("combobox", { name: "검색 범위" }), { target: { value: "current_project" } });
     await waitFor(() => expect(pending).toHaveLength(1));
     act(() => pending[0].update(snapshot("old project", "current_project")));
     expect(screen.getByText("현재 프로젝트 폴더의 파일 인덱스에서 검색합니다.")).toBeInTheDocument();
-    rerender(<App projectRevision={1}/>);
+    rerender(<App projectRevision={1} />);
     await waitFor(() => expect(pending).toHaveLength(2));
     expect(pending[0].signal.aborted).toBe(true);
-    act(() => { pending[1].update(snapshot("new project", "current_project", "new-scope-reference")); pending[0].update(snapshot("late old project", "current_project")); });
+    act(() => {
+      pending[1].update(snapshot("new project", "current_project", "new-scope-reference"));
+      pending[0].update(snapshot("late old project", "current_project"));
+    });
     expect(screen.queryByText("late old project")).not.toBeInTheDocument();
     const row = screen.getByText("new project").closest("tr")!;
     expect(within(row).getByText(/Current Project/u)).toBeInTheDocument();
@@ -628,8 +667,11 @@ describe("product source search", () => {
   });
   it("preserves an unavailable result for inspection while disabling all opening paths", async () => {
     mocks.product = true;
-    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, _signal, update) => { update(snapshot("offline indexed file", "files", null)); return []; });
-    render(<App/>);
+    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, _signal, update) => {
+      update(snapshot("offline indexed file", "files", null));
+      return [];
+    });
+    render(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "shared" } });
     const row = (await screen.findByText("offline indexed file")).closest("tr")!;
     expect(within(row).getByRole("button", { name: "열기" })).toBeDisabled();

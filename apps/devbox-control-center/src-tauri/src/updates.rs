@@ -74,7 +74,7 @@ fn client() -> Result<reqwest::Client> {
         .timeout(Duration::from_secs(600))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() > 4
-                || !devbox_manager_lib::core::url_policy::is_allowed(attempt.url().as_str())
+                || !installation_tools::core::url_policy::is_allowed(attempt.url().as_str())
             {
                 attempt.error("update_redirect_denied")
             } else {

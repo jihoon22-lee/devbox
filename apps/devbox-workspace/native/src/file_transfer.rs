@@ -9,7 +9,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 pub const CHUNK_BYTES: usize = 1024 * 1024;
 pub const INLINE_BYTES: usize = 5 * 1024 * 1024;
 // Invalid single input bytes can each decode to a three-byte replacement char.
-pub const MAX_TEXT_BYTES: usize = code_pad_lib::core::guard::MAX_OPENABLE_BYTES as usize * 3;
+pub const MAX_TEXT_BYTES: usize = editor_engine::core::guard::MAX_OPENABLE_BYTES as usize * 3;
 
 fn digest(text: &str) -> String {
     Sha256::digest(text.as_bytes())

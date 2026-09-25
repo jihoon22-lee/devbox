@@ -15,7 +15,7 @@ $marker = Join-Path $WslRoot 'fixture-owner.txt'
 if ((Get-Content -LiteralPath $marker -Raw) -ne $Owner) { throw 'Fixture folder owner mismatch' }
 $manifest = Get-Content -LiteralPath (Join-Path $FixtureDirectory 'manifest.json') -Raw | ConvertFrom-Json
 if ($manifest.schemaVersion -ne 1 -or $manifest.source -ne $ExpectedSource -or $manifest.fixtures.Count -ne 3) { throw 'Fixture source manifest mismatch' }
-$expectedFiles = @('knowledge_base_lib.exe', 'everything_plus_lib.exe', 'devbox_knowledge_lib.exe')
+$expectedFiles = @('knowledge_vault_engine.exe', 'content_index_engine.exe', 'devbox_knowledge_lib.exe')
 if (@(Compare-Object ($expectedFiles | Sort-Object) ($manifest.fixtures.file | Sort-Object)).Count) { throw 'Unexpected fixture executables' }
 $evidence = @{ source = $ExpectedSource; artifactRun = $manifest.runId; environment = 'local Windows with actual WSL2 UNC filesystem'; osVersion = [Environment]::OSVersion.Version.ToString(); boundary = 'Owned synthetic folders and in-memory index DB only; no product/legacy profile, distro shutdown or VM suspend'; result = 'failed'; tests = @() }
 $failed = $false

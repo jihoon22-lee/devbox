@@ -20,7 +20,8 @@ const HS512_SIGNING_INPUT =
 const SIGNATURE = "AL_nmexgcwawKDK5uJ0RtfAxT1GguksdPuaahEACpHc";
 const TOKEN = `${SIGNING_INPUT}.${SIGNATURE}`;
 const KEY_HEX = "3031323334353637383930313233343536373839303132333435363738393031";
-const LONG_KEY_HEX = "30313233343536373839303132333435363738393031323334353637383930313031323334353637383930313233343536373839303132333435363738393031";
+const LONG_KEY_HEX =
+  "30313233343536373839303132333435363738393031323334353637383930313031323334353637383930313233343536373839303132333435363738393031";
 
 function encodeBase64UrlBytes(bytes: Uint8Array): string {
   let binary = "";
@@ -68,7 +69,9 @@ describe("JWT bounded decoder", () => {
   });
 
   it("rejects invalid UTF-8 and bounded JSON before rendering", () => {
-    const invalidUtf8Header = encodeBase64UrlBytes(new Uint8Array([0x7b, 0x22, 0x61, 0x6c, 0x67, 0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d]));
+    const invalidUtf8Header = encodeBase64UrlBytes(
+      new Uint8Array([0x7b, 0x22, 0x61, 0x6c, 0x67, 0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d]),
+    );
     expect(() => parseJwt(`${invalidUtf8Header}.${SIGNING_INPUT.split(".")[1]}.${SIGNATURE}`)).toThrowError(JwtError);
 
     const hugeString = "x".repeat(JWT_LIMITS.maxJsonStringBytes + 1);
@@ -87,10 +90,12 @@ describe("JWT bounded decoder", () => {
 
   it("does not format an unbounded verification timestamp", () => {
     const parsed = parseJwt(TOKEN);
-    expect(() => formatJwtDisplay(parsed, {
-      status: "verified",
-      verifiedAtSeconds: Number.POSITIVE_INFINITY,
-    })).toThrowError(JwtError);
+    expect(() =>
+      formatJwtDisplay(parsed, {
+        status: "verified",
+        verifiedAtSeconds: Number.POSITIVE_INFINITY,
+      }),
+    ).toThrowError(JwtError);
   });
 });
 
@@ -128,25 +133,33 @@ describe("JWT key and browser verification boundary", () => {
 
   it("rejects invalid time claims at the direct browser verification boundary", async () => {
     const expired = tokenFor({ alg: "HS256" }, { exp: 0 }).split(".");
-    await expect(browserVerifyJwt({
-      algorithm: "HS256",
-      signingInput: `${expired[0]}.${expired[1]}`,
-      signature: SIGNATURE,
-      key: KEY_HEX,
-      keyEncoding: "hex",
-    })).rejects.toMatchObject({ code: "invalid_claims" });
+    await expect(
+      browserVerifyJwt({
+        algorithm: "HS256",
+        signingInput: `${expired[0]}.${expired[1]}`,
+        signature: SIGNATURE,
+        key: KEY_HEX,
+        keyEncoding: "hex",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_claims" });
   });
 
   it.each([
     ["HS384", HS384_SIGNING_INPUT, "58Hc1lXLsSwvo-Mor4Son_yMVfSf4OA5qsVBjYpWacUeSlLSMVjLgTZ-rk5ORQrr"],
-    ["HS512", HS512_SIGNING_INPUT, "Ck5IG3CaU-sZxfd1TzD9VxRVRbNb45Hv5mO0wzo8cJlVFKgUhVH8ofN1XBNgpq8J9kzS7zfDLKXA-y9bjc4EBw"],
+    [
+      "HS512",
+      HS512_SIGNING_INPUT,
+      "Ck5IG3CaU-sZxfd1TzD9VxRVRbNb45Hv5mO0wzo8cJlVFKgUhVH8ofN1XBNgpq8J9kzS7zfDLKXA-y9bjc4EBw",
+    ],
   ] as const)("supports the %s allow-listed browser primitive", async (algorithm, signingInput, signature) => {
-    await expect(browserVerifyJwt({
-      algorithm,
-      signingInput,
-      signature,
-      key: LONG_KEY_HEX,
-      keyEncoding: "hex",
-    })).resolves.toBe(true);
+    await expect(
+      browserVerifyJwt({
+        algorithm,
+        signingInput,
+        signature,
+        key: LONG_KEY_HEX,
+        keyEncoding: "hex",
+      }),
+    ).resolves.toBe(true);
   });
 });

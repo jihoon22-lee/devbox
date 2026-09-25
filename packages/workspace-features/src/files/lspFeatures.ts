@@ -11,11 +11,7 @@ import type {
 } from "./types";
 
 /** Convert a JavaScript UTF-16 offset to the position encoding negotiated by the server. */
-export function positionForOffset(
-  text: string,
-  offset: number,
-  encoding: LspPositionEncoding = "utf-16",
-): LspPosition {
+export function positionForOffset(text: string, offset: number, encoding: LspPositionEncoding = "utf-16"): LspPosition {
   const safeOffset = Math.min(Math.max(0, offset), text.length);
   const lineStart = text.lastIndexOf("\n", safeOffset - 1) + 1;
   const line = text.slice(0, lineStart).split("\n").length - 1;
@@ -35,9 +31,11 @@ export function offsetForPosition(
   const lines = text.split("\n");
   const line = Math.min(Math.max(0, position.line), Math.max(0, lines.length - 1));
   const lineText = lines[line] ?? "";
-  if (encoding === "utf-16") return Math.min(position.character, lineText.length) + lines
-    .slice(0, line)
-    .reduce((total, item) => total + item.length + 1, 0);
+  if (encoding === "utf-16")
+    return (
+      Math.min(position.character, lineText.length) +
+      lines.slice(0, line).reduce((total, item) => total + item.length + 1, 0)
+    );
   const bytes = new TextEncoder().encode(lineText);
   let byteCount = Math.min(Math.max(0, position.character), bytes.length);
   let codeUnits = 0;
@@ -53,10 +51,14 @@ export function offsetForPosition(
 
 function severityForCodeMirror(severity: number | null | undefined): Diagnostic["severity"] {
   switch (severity) {
-    case 1: return "error";
-    case 2: return "warning";
-    case 4: return "hint";
-    default: return "info";
+    case 1:
+      return "error";
+    case 2:
+      return "warning";
+    case 4:
+      return "hint";
+    default:
+      return "info";
   }
 }
 
@@ -99,9 +101,12 @@ function completionTextEdit(item: LspCompletionItem): CompletionTextEdit | null 
   const start = range.start as { line?: unknown; character?: unknown };
   const end = range.end as { line?: unknown; character?: unknown };
   if (
-    !Number.isInteger(start.line) || !Number.isInteger(start.character)
-    || !Number.isInteger(end.line) || !Number.isInteger(end.character)
-  ) return null;
+    !Number.isInteger(start.line) ||
+    !Number.isInteger(start.character) ||
+    !Number.isInteger(end.line) ||
+    !Number.isInteger(end.character)
+  )
+    return null;
   return {
     range: {
       start: { line: start.line as number, character: start.character as number },
@@ -118,18 +123,12 @@ function plainCompletionText(item: LspCompletionItem, textEdit: CompletionTextEd
   return textEdit?.newText ?? item.insertText ?? item.label;
 }
 
-function strictOffsetForPosition(
-  text: string,
-  position: LspPosition,
-  encoding: LspPositionEncoding,
-): number | null {
+function strictOffsetForPosition(text: string, position: LspPosition, encoding: LspPositionEncoding): number | null {
   if (position.line < 0 || position.character < 0) return null;
   const lines = text.split("\n");
   const lineText = lines[position.line];
   if (lineText === undefined) return null;
-  const maxCharacter = encoding === "utf-8"
-    ? new TextEncoder().encode(lineText).length
-    : lineText.length;
+  const maxCharacter = encoding === "utf-8" ? new TextEncoder().encode(lineText).length : lineText.length;
   if (position.character > maxCharacter) return null;
   const offset = offsetForPosition(text, position, encoding);
   const roundTrip = positionForOffset(text, offset, encoding);
@@ -143,39 +142,39 @@ export interface CompletionOptionsContext {
   isCurrent?: () => boolean;
 }
 
-export function completionOptions(
-  result: LspCompletionResult,
-  context?: CompletionOptionsContext,
-): Completion[] {
+export function completionOptions(result: LspCompletionResult, context?: CompletionOptionsContext): Completion[] {
   return result.items.flatMap((item) => {
     const textEdit = completionTextEdit(item);
     const text = plainCompletionText(item, textEdit);
     if (!text) return [];
-    const editRange = context && textEdit
-      ? {
-          from: strictOffsetForPosition(context.text, textEdit.range.start, context.encoding),
-          to: strictOffsetForPosition(context.text, textEdit.range.end, context.encoding),
-        }
+    const editRange =
+      context && textEdit
+        ? {
+            from: strictOffsetForPosition(context.text, textEdit.range.start, context.encoding),
+            to: strictOffsetForPosition(context.text, textEdit.range.end, context.encoding),
+          }
         : null;
     if (editRange && (editRange.from === null || editRange.to === null || editRange.from > editRange.to)) return [];
-    const fixedRange = editRange && editRange.from !== null && editRange.to !== null
-      ? { from: editRange.from, to: editRange.to }
-      : null;
+    const fixedRange =
+      editRange && editRange.from !== null && editRange.to !== null ? { from: editRange.from, to: editRange.to } : null;
     const apply = context
       ? (view: EditorView, _completion: Completion, from: number, to: number) => {
           if (context.isCurrent && !context.isCurrent()) return;
           if (view.state.doc.toString() !== context.text) return;
           const replacement = fixedRange ?? { from, to };
-          if (replacement.from < 0 || replacement.to > view.state.doc.length || replacement.from > replacement.to) return;
+          if (replacement.from < 0 || replacement.to > view.state.doc.length || replacement.from > replacement.to)
+            return;
           view.dispatch({ changes: { from: replacement.from, to: replacement.to, insert: text } });
         }
       : text;
-    return [{
-      label: item.label,
-      detail: item.detail ?? undefined,
-      type: "text" as const,
-      apply,
-    }];
+    return [
+      {
+        label: item.label,
+        detail: item.detail ?? undefined,
+        type: "text" as const,
+        apply,
+      },
+    ];
   });
 }
 

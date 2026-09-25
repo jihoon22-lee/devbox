@@ -187,20 +187,15 @@ export function LoremTool() {
             spellCheck={false}
           />
         </label>
-        <button
-          type="button"
-          className="btn"
-          disabled={!validCount || actionBusy || isComposing}
-          onClick={run}
-        >
+        <button type="button" className="btn" disabled={!validCount || actionBusy || isComposing} onClick={run}>
           생성
         </button>
       </div>
 
       <div id="lorem-help" className="lorem-help" role="note">
-        고정된 로컬 corpus로 같은 단위·수량에서 항상 같은 결과를 만듭니다. 네트워크 요청,
-        자동 저장, 입력 수집은 없으며 결과는 명시적으로 복사하거나 파일로 저장할 때만 외부로
-        나갑니다. 수량은 1–{MAX_LOREM_COUNT}, 결과는 최대 {MAX_LOREM_OUTPUT_BYTES.toLocaleString()}바이트입니다.
+        고정된 로컬 corpus로 같은 단위·수량에서 항상 같은 결과를 만듭니다. 네트워크 요청, 자동 저장, 입력 수집은 없으며
+        결과는 명시적으로 복사하거나 파일로 저장할 때만 외부로 나갑니다. 수량은 1–{MAX_LOREM_COUNT}, 결과는 최대{" "}
+        {MAX_LOREM_OUTPUT_BYTES.toLocaleString()}바이트입니다.
       </div>
 
       {!validCount && countText.trim() !== "" ? (
@@ -208,7 +203,11 @@ export function LoremTool() {
           {LOREM_ERROR_MESSAGES.INVALID_COUNT}
         </div>
       ) : null}
-      {error ? <div className="lorem-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="lorem-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="lorem-status" role="status" aria-live="polite" aria-atomic="true">
         {generatedCount === null ? "" : `${generatedCount}개 ${unitLabel(unit)}을 생성했습니다.`}
       </div>
@@ -233,7 +232,11 @@ export function LoremTool() {
         value={output}
         downloadName={OUTPUT_FILENAME}
       />
-      {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+      {actionError ? (
+        <div className="context-action-error" role="alert">
+          {actionError}
+        </div>
+      ) : null}
     </div>
   );
 }

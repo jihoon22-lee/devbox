@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { downloadTextResult, ToolOutput, ToolTextField } from "./common";
-import {
-  convertRadix,
-  type RadixInputMode,
-  type RadixOutputs,
-} from "./radix";
+import { convertRadix, type RadixInputMode, type RadixOutputs } from "./radix";
 
 const INPUT_MODES: ReadonlyArray<{ value: RadixInputMode; label: string }> = [
   { value: "auto", label: "자동 · prefix 또는 10진수" },
@@ -26,12 +22,9 @@ const OUTPUT_ROWS: ReadonlyArray<{
 ];
 
 function combinedOutput(outputs: RadixOutputs): string {
-  return [
-    `BIN ${outputs.binary}`,
-    `OCT ${outputs.octal}`,
-    `DEC ${outputs.decimal}`,
-    `HEX ${outputs.hexadecimal}`,
-  ].join("\n");
+  return [`BIN ${outputs.binary}`, `OCT ${outputs.octal}`, `DEC ${outputs.decimal}`, `HEX ${outputs.hexadecimal}`].join(
+    "\n",
+  );
 }
 
 export function RadixTool() {
@@ -40,10 +33,12 @@ export function RadixTool() {
   const [actionError, setActionError] = useState<string | null>(null);
   const result = useMemo(() => convertRadix(input, mode), [input, mode]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => setActionError(null), [input, mode]);
 
   const copy = (value: string) => {
-    void navigator.clipboard.writeText(value)
+    void navigator.clipboard
+      .writeText(value)
       .then(() => setActionError(null))
       .catch(() => setActionError("변환 결과를 클립보드에 복사하지 못했습니다."));
   };
@@ -69,7 +64,9 @@ export function RadixTool() {
             onChange={(event) => setMode(event.currentTarget.value as RadixInputMode)}
           >
             {INPUT_MODES.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
         </label>
@@ -88,10 +85,9 @@ export function RadixTool() {
 
       <div className="conversion-notice" role="note">
         <strong>정수 안내</strong>
-        부호는 prefix 앞에 쓰고 자동 모드는 0b, 0o, 0x를 감지하며 나머지는 10진수로 읽습니다.
-        결과는 signed magnitude이며 two&apos;s complement 해석은 하지 않습니다. 절댓값은 256비트로
-        제한하며 내부 공백과 digit separator는 허용하지 않습니다. 입력과 결과는 자동으로
-        저장하거나 전송하지 않습니다.
+        부호는 prefix 앞에 쓰고 자동 모드는 0b, 0o, 0x를 감지하며 나머지는 10진수로 읽습니다. 결과는 signed
+        magnitude이며 two&apos;s complement 해석은 하지 않습니다. 절댓값은 256비트로 제한하며 내부 공백과 digit
+        separator는 허용하지 않습니다. 입력과 결과는 자동으로 저장하거나 전송하지 않습니다.
       </div>
 
       {result.error ? (
@@ -134,7 +130,11 @@ export function RadixTool() {
         </>
       ) : null}
 
-      {actionError ? <div className="context-action-error" role="alert">{actionError}</div> : null}
+      {actionError ? (
+        <div className="context-action-error" role="alert">
+          {actionError}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -15,7 +15,6 @@ vi.mock("../editor/CodeEditor", () => ({
       mountSpy(props.docId);
       return () => unmountSpy(props.docId);
       // The mocked editor follows the real editor's docId lifetime boundary.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.docId]);
     return <div data-testid={`editor-${props.docId}`} style={props.style} />;
   },

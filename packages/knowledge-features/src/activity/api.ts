@@ -277,7 +277,8 @@ const MIN_CIVIL_DAY_MS = DAY_MS - 3_600_000;
 const MAX_CIVIL_DAY_MS = DAY_MS + 3_600_000;
 const MAX_EXPORT_DAYS = 366;
 const MAX_EXPORT_BYTES = 4 * 1024 * 1024;
-const EXPORT_CSV_HEADER = "record_type,date,range_start_date,range_end_date,id,app,title,start_ts_ms,end_ts_ms,duration_ms,project_path,commits,metric,value,source,available,schema_version,snapshot_version,producer_version,generated_at,freshness_ms,view,scope,error_code";
+const EXPORT_CSV_HEADER =
+  "record_type,date,range_start_date,range_end_date,id,app,title,start_ts_ms,end_ts_ms,duration_ms,project_path,commits,metric,value,source,available,schema_version,snapshot_version,producer_version,generated_at,freshness_ms,view,scope,error_code";
 const EXPORT_INPUT_KEYS = [
   "dayBoundaries",
   "dayEnd",
@@ -303,8 +304,7 @@ const DIGEST_FILTER_KEYS = ["app"] as const;
 function hasExactKeys(value: object, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   const sortedExpected = [...expected].sort();
-  return actual.length === sortedExpected.length
-    && actual.every((key, index) => key === sortedExpected[index]);
+  return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]);
 }
 
 function parseLocalDateKey(value: string): Date | null {
@@ -317,11 +317,7 @@ function parseLocalDateKey(value: string): Date | null {
   const date = new Date(0);
   date.setHours(0, 0, 0, 0);
   date.setFullYear(year, month - 1, day);
-  return date.getFullYear() === year
-    && date.getMonth() === month - 1
-    && date.getDate() === day
-    ? date
-    : null;
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
 }
 
 function nextLocalDateKey(value: string): string {
@@ -353,9 +349,30 @@ function isControlCharacter(character: string): boolean {
 }
 
 const MOCK_SESSIONS: Session[] = [
-  { id: 1, app: "chrome.exe", title: "GitHub", start_ts: new Date(2026, 7, 10, 9, 22).getTime(), end_ts: new Date(2026, 7, 10, 9, 41).getTime(), duration_ms: 1140000 },
-  { id: 2, app: "Code.exe", title: "FamilyCard", start_ts: new Date(2026, 7, 10, 9, 41).getTime(), end_ts: new Date(2026, 7, 10, 10, 8).getTime(), duration_ms: 1620000 },
-  { id: 3, app: "WindowsTerminal.exe", title: "Ubuntu", start_ts: new Date(2026, 7, 10, 10, 8).getTime(), end_ts: new Date(2026, 7, 10, 10, 42).getTime(), duration_ms: 2040000 },
+  {
+    id: 1,
+    app: "chrome.exe",
+    title: "GitHub",
+    start_ts: new Date(2026, 7, 10, 9, 22).getTime(),
+    end_ts: new Date(2026, 7, 10, 9, 41).getTime(),
+    duration_ms: 1140000,
+  },
+  {
+    id: 2,
+    app: "Code.exe",
+    title: "FamilyCard",
+    start_ts: new Date(2026, 7, 10, 9, 41).getTime(),
+    end_ts: new Date(2026, 7, 10, 10, 8).getTime(),
+    duration_ms: 1620000,
+  },
+  {
+    id: 3,
+    app: "WindowsTerminal.exe",
+    title: "Ubuntu",
+    start_ts: new Date(2026, 7, 10, 10, 8).getTime(),
+    end_ts: new Date(2026, 7, 10, 10, 42).getTime(),
+    duration_ms: 2040000,
+  },
 ];
 
 const MOCK_STATS: AppTotal[] = [
@@ -483,12 +500,25 @@ export interface PrivacyRules {
 }
 export type PrivacyRuleField = "excludedProcesses" | "excludedTitlePatterns" | "redactTitlePatterns";
 export type PrivacyRuleProblem = "empty" | "too_long" | "too_many" | "syntax";
-export interface InvalidPrivacyRule { field: PrivacyRuleField; index: number; problem: PrivacyRuleProblem }
-export interface PrivacyRulesView { rules: PrivacyRules; healthy: boolean }
-export interface PrivacySaveResult { saved: boolean; invalid: InvalidPrivacyRule[] }
+export interface InvalidPrivacyRule {
+  field: PrivacyRuleField;
+  index: number;
+  problem: PrivacyRuleProblem;
+}
+export interface PrivacyRulesView {
+  rules: PrivacyRules;
+  healthy: boolean;
+}
+export interface PrivacySaveResult {
+  saved: boolean;
+  invalid: InvalidPrivacyRule[];
+}
 
 export const EMPTY_PRIVACY_RULES: PrivacyRules = {
-  excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: false,
+  excludedProcesses: [],
+  excludedTitlePatterns: [],
+  redactTitlePatterns: [],
+  maskAllTitles: false,
 };
 
 export async function getPrivacyRules(): Promise<PrivacyRulesView> {
@@ -610,45 +640,49 @@ export async function projectAttribution(dayStart: number, dayEnd: number): Prom
 
 /** 명시적인 export action에서만 호출하는 bounded preview 생성. */
 function validateBrowserExportInput(input: ExportInput): void {
-  if (!input
-      || typeof input !== "object"
-      || !hasExactKeys(input, EXPORT_INPUT_KEYS)
-      || typeof input.startDate !== "string"
-      || typeof input.endDate !== "string"
-      || typeof input.timezone !== "string"
-      || !Array.isArray(input.dayBoundaries)
-      || !parseLocalDateKey(input.startDate)
-      || !parseLocalDateKey(input.endDate)
-      || input.startDate > input.endDate
-      || input.dayBoundaries.length < 1
-      || input.dayBoundaries.length > MAX_EXPORT_DAYS
-      || !Number.isSafeInteger(input.dayStart)
-      || !Number.isSafeInteger(input.dayEnd)
-      || input.dayEnd <= input.dayStart
-      || input.timezone.length > 128
-      || new TextEncoder().encode(input.timezone).byteLength > 128
-      || input.timezone.trim() !== input.timezone
-      || [...input.timezone].some(isControlCharacter)
-      || !["markdown", "json", "csv"].includes(input.format)
-      || !Number.isSafeInteger(input.dayEnd - input.dayStart)
-      || input.dayEnd - input.dayStart > DAY_MS * (MAX_EXPORT_DAYS + 1)) {
+  if (
+    !input ||
+    typeof input !== "object" ||
+    !hasExactKeys(input, EXPORT_INPUT_KEYS) ||
+    typeof input.startDate !== "string" ||
+    typeof input.endDate !== "string" ||
+    typeof input.timezone !== "string" ||
+    !Array.isArray(input.dayBoundaries) ||
+    !parseLocalDateKey(input.startDate) ||
+    !parseLocalDateKey(input.endDate) ||
+    input.startDate > input.endDate ||
+    input.dayBoundaries.length < 1 ||
+    input.dayBoundaries.length > MAX_EXPORT_DAYS ||
+    !Number.isSafeInteger(input.dayStart) ||
+    !Number.isSafeInteger(input.dayEnd) ||
+    input.dayEnd <= input.dayStart ||
+    input.timezone.length > 128 ||
+    new TextEncoder().encode(input.timezone).byteLength > 128 ||
+    input.timezone.trim() !== input.timezone ||
+    [...input.timezone].some(isControlCharacter) ||
+    !["markdown", "json", "csv"].includes(input.format) ||
+    !Number.isSafeInteger(input.dayEnd - input.dayStart) ||
+    input.dayEnd - input.dayStart > DAY_MS * (MAX_EXPORT_DAYS + 1)
+  ) {
     throw new Error("브라우저 미리보기 입력이 올바르지 않습니다");
   }
   let previousEnd = input.dayStart;
   let expectedDate = input.startDate;
   for (const boundary of input.dayBoundaries) {
-    if (!boundary
-        || typeof boundary !== "object"
-        || !hasExactKeys(boundary, DAY_BOUNDARY_KEYS)
-        || typeof boundary.date !== "string"
-        || !parseLocalDateKey(boundary.date)
-        || boundary.date !== expectedDate
-        || !Number.isSafeInteger(boundary.startMs)
-        || !Number.isSafeInteger(boundary.endMs)
-        || boundary.startMs !== previousEnd
-        || boundary.endMs <= boundary.startMs
-        || !Number.isSafeInteger(boundary.endMs - boundary.startMs)
-        || !isCivilDaySpan(boundary.endMs - boundary.startMs)) {
+    if (
+      !boundary ||
+      typeof boundary !== "object" ||
+      !hasExactKeys(boundary, DAY_BOUNDARY_KEYS) ||
+      typeof boundary.date !== "string" ||
+      !parseLocalDateKey(boundary.date) ||
+      boundary.date !== expectedDate ||
+      !Number.isSafeInteger(boundary.startMs) ||
+      !Number.isSafeInteger(boundary.endMs) ||
+      boundary.startMs !== previousEnd ||
+      boundary.endMs <= boundary.startMs ||
+      !Number.isSafeInteger(boundary.endMs - boundary.startMs) ||
+      !isCivilDaySpan(boundary.endMs - boundary.startMs)
+    ) {
       throw new Error("브라우저 미리보기 입력이 올바르지 않습니다");
     }
     previousEnd = boundary.endMs;
@@ -689,9 +723,12 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
               },
               rules: {
                 sessionWindow: "start_ts_ms >= range.startMs && start_ts_ms < range.endMs",
-                sessionDuration: "stored durationMs is retained; a session is assigned by start timestamp and is not clipped to the range",
-                dailyBuckets: "daily rows use the supplied local civil-day boundaries; each session belongs to the bucket containing its start timestamp",
-                privacy: "current Life Log privacy rules and obvious credential markers are reapplied before aggregation",
+                sessionDuration:
+                  "stored durationMs is retained; a session is assigned by start timestamp and is not clipped to the range",
+                dailyBuckets:
+                  "daily rows use the supplied local civil-day boundaries; each session belongs to the bucket containing its start timestamp",
+                privacy:
+                  "current Life Log privacy rules and obvious credential markers are reapplied before aggregation",
                 appTotals: "sanitized sessions grouped by app; duration descending then app byte order",
                 gitCommits: "native-only read-only git log; unavailable in browser preview",
                 snapshotScope: "native-only validated snapshots; browser preview includes no local snapshot",
@@ -722,12 +759,38 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
             2,
           ) + "\n"
         : input.format === "csv"
-          ? `${EXPORT_CSV_HEADER}\r\n${[
-              "life-log", "git", "run-manager", "knowledge-base",
-            ].map((source) => [
-              "source", "", input.startDate, input.endDate, "", "", "", "", "", "", "", "", "", "",
-              source, "false", "", "", "", "", "", "", "browser-preview-only", "browser_preview_only",
-            ].map(csvPreviewCell).join(",")).join("\r\n")}\r\n`
+          ? `${EXPORT_CSV_HEADER}\r\n${["life-log", "git", "run-manager", "knowledge-base"]
+              .map((source) =>
+                [
+                  "source",
+                  "",
+                  input.startDate,
+                  input.endDate,
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  source,
+                  "false",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "browser-preview-only",
+                  "browser_preview_only",
+                ]
+                  .map(csvPreviewCell)
+                  .join(","),
+              )
+              .join("\r\n")}\r\n`
           : `# Life Log digest preview\n\n- Export schema: ${EXPORT_SCHEMA_VERSION}\n- Browser preview only: native DB, Git, and local snapshots are not included.\n- Range: ${input.startDate} to ${input.endDate}\n- Timezone: ${markdownPreviewCell(input.timezone)}\n- Day boundaries: ${boundarySummary}\n- Run/Knowledge daily metrics: unavailable (native values are not substituted).\n`;
     const byteLength = new TextEncoder().encode(content).byteLength;
     if (byteLength > MAX_EXPORT_BYTES) throw new Error("브라우저 미리보기 결과가 너무 큽니다");
@@ -735,7 +798,10 @@ export async function exportLifeLog(input: ExportInput): Promise<RenderedExport>
       origin: "browser-preview",
       format: input.format,
       extension: input.format === "markdown" ? "md" : input.format,
-      mimeType: input.format === "markdown" ? "text/markdown;charset=utf-8" : `${input.format === "json" ? "application/json" : "text/csv"};charset=utf-8`,
+      mimeType:
+        input.format === "markdown"
+          ? "text/markdown;charset=utf-8"
+          : `${input.format === "json" ? "application/json" : "text/csv"};charset=utf-8`,
       byteLength,
       content,
     };
@@ -756,21 +822,47 @@ function digestError(): Error {
 function hasSecretMarker(value: string): boolean {
   const lower = value.toLowerCase();
   return [
-    "password", "passwd", "secret", "token", "access_token", "refresh_token",
-    "api_key", "apikey", "client_secret", "credential", "authorization",
-    "bearer ", "basic ", "sk-", "ghp_", "gho_", "ghs_", "ghu_",
-    "github_pat_", "xoxb-", "xoxp-", "npm_", "pypi-", "akia", "ya29.",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "api_key",
+    "apikey",
+    "client_secret",
+    "credential",
+    "authorization",
+    "bearer ",
+    "basic ",
+    "sk-",
+    "ghp_",
+    "gho_",
+    "ghs_",
+    "ghu_",
+    "github_pat_",
+    "xoxb-",
+    "xoxp-",
+    "npm_",
+    "pypi-",
+    "akia",
+    "ya29.",
     "-----begin ",
   ].some((marker) => lower.includes(marker));
 }
 
 /** Shared frontend boundary for native and browser digest requests. */
 export function validateDigestInput(input: DigestInput): void {
-  if (!input || typeof input !== "object" || !hasExactKeys(input, DIGEST_INPUT_KEYS)
-      || !input.filter || typeof input.filter !== "object"
-      || !hasExactKeys(input.filter, DIGEST_FILTER_KEYS)
-      || !["day", "week", "month"].includes(input.period)
-      || (input.filter.app !== null && typeof input.filter.app !== "string")) {
+  if (
+    !input ||
+    typeof input !== "object" ||
+    !hasExactKeys(input, DIGEST_INPUT_KEYS) ||
+    !input.filter ||
+    typeof input.filter !== "object" ||
+    !hasExactKeys(input.filter, DIGEST_FILTER_KEYS) ||
+    !["day", "week", "month"].includes(input.period) ||
+    (input.filter.app !== null && typeof input.filter.app !== "string")
+  ) {
     throw digestError();
   }
   const exportInput: ExportInput = {
@@ -787,19 +879,28 @@ export function validateDigestInput(input: DigestInput): void {
   } catch {
     throw digestError();
   }
-  if (input.filter.app !== null && input.filter.app !== undefined
-      && (input.filter.app.length === 0 || input.filter.app.length > 256
-        || new TextEncoder().encode(input.filter.app).byteLength > 256
-        || [...input.filter.app].some(isControlCharacter) || hasSecretMarker(input.filter.app))) {
+  if (
+    input.filter.app !== null &&
+    input.filter.app !== undefined &&
+    (input.filter.app.length === 0 ||
+      input.filter.app.length > 256 ||
+      new TextEncoder().encode(input.filter.app).byteLength > 256 ||
+      [...input.filter.app].some(isControlCharacter) ||
+      hasSecretMarker(input.filter.app))
+  ) {
     throw digestError();
   }
   const days = input.dayBoundaries.length;
-  if ((input.period === "day" && (days !== 1 || input.startDate !== input.endDate))
-      || (input.period === "week" && (days !== 7 || !isMondayDateKey(input.startDate)))
-      || (input.period === "month" && (days < 28 || days > 31
-        || !input.startDate.endsWith("-01")
-        || input.startDate.slice(0, 7) !== input.endDate.slice(0, 7)
-        || !isMonthEndDateKey(input.endDate)))) {
+  if (
+    (input.period === "day" && (days !== 1 || input.startDate !== input.endDate)) ||
+    (input.period === "week" && (days !== 7 || !isMondayDateKey(input.startDate))) ||
+    (input.period === "month" &&
+      (days < 28 ||
+        days > 31 ||
+        !input.startDate.endsWith("-01") ||
+        input.startDate.slice(0, 7) !== input.endDate.slice(0, 7) ||
+        !isMonthEndDateKey(input.endDate)))
+  ) {
     throw digestError();
   }
 }
@@ -814,25 +915,27 @@ function browserDigestRules(appFilter: string | null): DigestRules {
     gitCommits: "native-only read-only bounded Git counts; unavailable in browser preview",
     snapshotScope: "Run Manager and Knowledge daily snapshots are native-only and unavailable in browser preview",
     privacy: "Life Log privacy rules and obvious credential markers are reapplied before aggregation",
-    externalProcessing: "rule-based local aggregation only; no cloud/local LLM, network, telemetry, or external activity transfer",
+    externalProcessing:
+      "rule-based local aggregation only; no cloud/local LLM, network, telemetry, or external activity transfer",
   };
 }
 
 function markdownPreview(value: string): string {
-  return value.replace(/[|\\]/g, "\\$&").replace(/`/g, "\\`").replace(/[\r\n]/g, " ");
+  return value
+    .replace(/[|\\]/g, "\\$&")
+    .replace(/`/g, "\\`")
+    .replace(/[\r\n]/g, " ");
 }
 
 function browserDigestMarkdown(input: DigestInput, document: DigestDocument): string {
   const filter = input.filter.app ?? "all apps";
-  const daily = document.daily.map((day) =>
-    `| ${day.date} | 0 | 0 | 0 | - | - | - | - |`,
-  ).join("\n");
-  const sources = document.sources.map((source) =>
-    `| ${source.id} | false | ${source.scope} | ${source.errorCode ?? "-"} |`,
-  ).join("\n");
-  const rules = Object.entries(document.rules).map(([name, value]) =>
-    `| ${name} | ${markdownPreview(value)} |`,
-  ).join("\n");
+  const daily = document.daily.map((day) => `| ${day.date} | 0 | 0 | 0 | - | - | - | - |`).join("\n");
+  const sources = document.sources
+    .map((source) => `| ${source.id} | false | ${source.scope} | ${source.errorCode ?? "-"} |`)
+    .join("\n");
+  const rules = Object.entries(document.rules)
+    .map(([name, value]) => `| ${name} | ${markdownPreview(value)} |`)
+    .join("\n");
   return [
     "# Life Log local digest",
     "",
@@ -953,19 +1056,23 @@ function isNullableSafeCount(value: unknown): value is number | null {
 function isRunDigest(value: unknown): value is RunDigest {
   if (!value || typeof value !== "object") return false;
   const run = value as Partial<RunDigest>;
-  return isNullableSafeCount(run.succeeded)
-    && run.succeeded !== null
-    && isNullableSafeCount(run.failed)
-    && run.failed !== null
-    && isNullableSafeInteger(run.lastRunAtMs);
+  return (
+    isNullableSafeCount(run.succeeded) &&
+    run.succeeded !== null &&
+    isNullableSafeCount(run.failed) &&
+    run.failed !== null &&
+    isNullableSafeInteger(run.lastRunAtMs)
+  );
 }
 
 function isKnowledgeDigest(value: unknown): value is KnowledgeDigest {
   if (!value || typeof value !== "object") return false;
   const knowledge = value as Partial<KnowledgeDigest>;
-  return isNullableSafeCount(knowledge.notesModified)
-    && knowledge.notesModified !== null
-    && isNullableSafeInteger(knowledge.lastModifiedAtMs);
+  return (
+    isNullableSafeCount(knowledge.notesModified) &&
+    knowledge.notesModified !== null &&
+    isNullableSafeInteger(knowledge.lastModifiedAtMs)
+  );
 }
 
 /** Keep native responses on the versioned nullable activity contract. */
@@ -981,24 +1088,28 @@ export function validateDigestResponse(value: unknown): DigestResponse {
   const typedDocument = document as Partial<DigestDocument>;
   const summary = typedDocument.summary;
   const daily = typedDocument.daily;
-  if (typedDocument.schemaVersion !== DIGEST_SCHEMA_VERSION
-      || !summary
-      || typeof summary !== "object"
-      || !Object.prototype.hasOwnProperty.call(summary, "run")
-      || !Object.prototype.hasOwnProperty.call(summary, "knowledge")
-      || !Array.isArray(daily)
-      || !daily.every((candidate) => {
-        if (!candidate || typeof candidate !== "object") return false;
-        const day = candidate as Partial<DigestDay>;
-        return Object.prototype.hasOwnProperty.call(day, "runSucceeded")
-          && Object.prototype.hasOwnProperty.call(day, "runFailed")
-          && Object.prototype.hasOwnProperty.call(day, "knowledgeNotesModified")
-          && isNullableSafeCount(day.runSucceeded)
-          && isNullableSafeCount(day.runFailed)
-          && isNullableSafeCount(day.knowledgeNotesModified);
-      })
-      || (summary.run !== null && !isRunDigest(summary.run))
-      || (summary.knowledge !== null && !isKnowledgeDigest(summary.knowledge))) {
+  if (
+    typedDocument.schemaVersion !== DIGEST_SCHEMA_VERSION ||
+    !summary ||
+    typeof summary !== "object" ||
+    !Object.prototype.hasOwnProperty.call(summary, "run") ||
+    !Object.prototype.hasOwnProperty.call(summary, "knowledge") ||
+    !Array.isArray(daily) ||
+    !daily.every((candidate) => {
+      if (!candidate || typeof candidate !== "object") return false;
+      const day = candidate as Partial<DigestDay>;
+      return (
+        Object.prototype.hasOwnProperty.call(day, "runSucceeded") &&
+        Object.prototype.hasOwnProperty.call(day, "runFailed") &&
+        Object.prototype.hasOwnProperty.call(day, "knowledgeNotesModified") &&
+        isNullableSafeCount(day.runSucceeded) &&
+        isNullableSafeCount(day.runFailed) &&
+        isNullableSafeCount(day.knowledgeNotesModified)
+      );
+    }) ||
+    (summary.run !== null && !isRunDigest(summary.run)) ||
+    (summary.knowledge !== null && !isKnowledgeDigest(summary.knowledge))
+  ) {
     throw new Error("digest 응답을 읽을 수 없습니다");
   }
   return value as DigestResponse;
@@ -1024,7 +1135,10 @@ export async function saveDigest(handle: string): Promise<SaveDigestResult> {
 }
 
 /** Native-only explicit handoff. Browser preview never publishes or launches. */
-export async function sendDigestToKnowledge(input: DigestInput, regeneratedFrom: string | null = null): Promise<SendKnowledgeDraftResult> {
+export async function sendDigestToKnowledge(
+  input: DigestInput,
+  regeneratedFrom: string | null = null,
+): Promise<SendKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge handoff는 데스크톱 앱에서 사용할 수 없습니다");
   validateDigestInput(input);
   return invoke<SendKnowledgeDraftResult>("send_digest_to_knowledge", { input, regeneratedFrom });

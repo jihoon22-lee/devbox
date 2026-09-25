@@ -5,8 +5,31 @@ vi.mock("../transport", () => ({ componentInvoke: () => mocks.invoke, isProductH
 vi.mock("./lib/isTauri", () => ({ isTauri: () => true }));
 beforeEach(() => mocks.invoke.mockReset());
 it("revokes a completed generation when its consumer is later cancelled", async () => {
-  const snapshot: SourceSnapshot = { generation: "native-query", storeGeneration: "store", source: "files", state: "complete", partial: false, rows: [{ source: "files", rootIdentity: "files:9", reference: "issued-reference", availability: "available", value: { id: 1, path: "C:/fixture/shared.md", name: "shared.md", ext: "md", size: 1, modified_ts: 1, snippet: "" } }] };
-  mocks.invoke.mockImplementation(async method => method === "source_query" ? snapshot : undefined);
+  const snapshot: SourceSnapshot = {
+    generation: "native-query",
+    storeGeneration: "store",
+    source: "files",
+    state: "complete",
+    partial: false,
+    rows: [
+      {
+        source: "files",
+        rootIdentity: "files:9",
+        reference: "issued-reference",
+        availability: "available",
+        value: {
+          id: 1,
+          path: "C:/fixture/shared.md",
+          name: "shared.md",
+          ext: "md",
+          size: 1,
+          modified_ts: 1,
+          snippet: "",
+        },
+      },
+    ],
+  };
+  mocks.invoke.mockImplementation(async (method) => (method === "source_query" ? snapshot : undefined));
   const controller = new AbortController();
   const update = vi.fn();
   const rows = await searchSource("files", "shared", "name", 200, {}, controller.signal, update);

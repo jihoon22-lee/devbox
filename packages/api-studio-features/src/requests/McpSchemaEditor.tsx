@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  getMcpValueAtPath,
-  initialMcpFieldValue,
-  removeMcpValueAtPath,
-  setMcpValueAtPath,
-} from "./lib/mcp";
+import { getMcpValueAtPath, initialMcpFieldValue, removeMcpValueAtPath, setMcpValueAtPath } from "./lib/mcp";
 
 interface McpSchemaEditorProps {
   schema: Record<string, unknown>;
@@ -16,13 +11,7 @@ interface McpSchemaEditorProps {
 export function McpSchemaEditor({ schema, value, disabled, onChange }: McpSchemaEditorProps) {
   return (
     <div className="mcp-schema-editor" aria-label="MCP tool 인자">
-      <ObjectFields
-        schema={schema}
-        root={value}
-        path={[]}
-        disabled={disabled}
-        onChange={onChange}
-      />
+      <ObjectFields schema={schema} root={value} path={[]} disabled={disabled} onChange={onChange} />
     </div>
   );
 }
@@ -56,14 +45,20 @@ function ObjectFields({
           <fieldset className="mcp-schema-field" key={name} disabled={disabled}>
             <legend>
               <code>{name}</code>
-              {isRequired ? <span className="mcp-required">필수</span> : (
+              {isRequired ? (
+                <span className="mcp-required">필수</span>
+              ) : (
                 <label className="mcp-optional-toggle">
                   <input
                     type="checkbox"
                     checked={enabled}
-                    onChange={(event) => onChange(event.currentTarget.checked
-                      ? setMcpValueAtPath(root, fieldPath, initialMcpFieldValue(child))
-                      : removeMcpValueAtPath(root, fieldPath))}
+                    onChange={(event) =>
+                      onChange(
+                        event.currentTarget.checked
+                          ? setMcpValueAtPath(root, fieldPath, initialMcpFieldValue(child))
+                          : removeMcpValueAtPath(root, fieldPath),
+                      )
+                    }
                   />
                   사용
                 </label>
@@ -124,15 +119,7 @@ function SchemaValue({
   }
   switch (schema.type) {
     case "object":
-      return (
-        <ObjectFields
-          schema={schema}
-          root={root}
-          path={path}
-          disabled={disabled}
-          onChange={onChange}
-        />
-      );
+      return <ObjectFields schema={schema} root={root} path={path} disabled={disabled} onChange={onChange} />;
     case "string":
       return (
         <input

@@ -56,9 +56,9 @@ const INPUT_TYPE_LABELS: Readonly<Record<PipelineValueType, string>> = {
 const FIXED_CLIPBOARD_ERROR = "워크플로 입력을 클립보드에서 읽지 못했습니다.";
 
 function firstCompatibleTransformerId(inputType: PipelineValueType): string {
-  return TRANSFORMERS.find((transformer) => transformer.inputTypes.includes(inputType))?.id
-    ?? TRANSFORMERS[0]?.id
-    ?? "";
+  return (
+    TRANSFORMERS.find((transformer) => transformer.inputTypes.includes(inputType))?.id ?? TRANSFORMERS[0]?.id ?? ""
+  );
 }
 
 function errorForAddStep(
@@ -120,6 +120,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   const [pipelineError, setPipelineError] = useState<PipelineError | null>(null);
 
   const incomingTextRevision = incomingText?.revision;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (incomingTextRevision === undefined || incomingText === null || incomingText === undefined) return;
     // Accepted handoff text is a new draft.  Keep the user's selected input
@@ -130,18 +131,16 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   }, [incomingTextRevision]);
 
   const detection = useMemo(() => detectSmartInput(input), [input]);
-  const currentOutputType = useMemo(
-    () => pipelineOutputType(inputType, steps),
-    [inputType, steps],
-  );
+  const currentOutputType = useMemo(() => pipelineOutputType(inputType, steps), [inputType, steps]);
   const selectedStep = TRANSFORMER_BY_ID.get(selectedStepId) ?? null;
-  const selectedStepCompatible = selectedStep !== null
-    && pipelineCompatibility(currentOutputType, selectedStep.id).compatible;
+  const selectedStepCompatible =
+    selectedStep !== null && pipelineCompatibility(currentOutputType, selectedStep.id).compatible;
 
   useEffect(() => {
     mounted.current = true;
     let active = true;
-    void persistence.load()
+    void persistence
+      .load()
       .then((loadedMetadata) => {
         if (!active || !mounted.current) return;
         const safe = sanitizeWorkflowMetadata(loadedMetadata, {
@@ -222,10 +221,11 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   const applyCandidate = (candidate: SmartCandidate) => {
     const transformer = TRANSFORMER_BY_ID.get(candidate.transformerId);
     if (
-      transformer === undefined
-      || !isPipelineValueType(candidate.inputType)
-      || !transformer.inputTypes.includes(candidate.inputType)
-    ) return;
+      transformer === undefined ||
+      !isPipelineValueType(candidate.inputType) ||
+      !transformer.inputTypes.includes(candidate.inputType)
+    )
+      return;
     setInputType(candidate.inputType);
     const nextSteps = [{ transformerId: candidate.transformerId }];
     setSteps(nextSteps);
@@ -300,15 +300,16 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     setPipelineError(null);
   };
 
-  const displayedDetection = detection.status === "too_large"
-    ? "입력은 1,000,000바이트 이하만 감지합니다."
-    : detection.status === "empty"
-      ? "본문을 입력하면 로컬 구조 감지를 시작합니다."
-      : detection.status === "ambiguous"
-        ? "여러 형식이 가능하므로 추천을 자동 선택하지 않았습니다."
-        : detection.status === "unsupported"
-          ? "지원되는 안전한 구조를 찾지 못했습니다. 경로와 외부 요청은 실행하지 않습니다."
-      : `${detection.inputBytes.toLocaleString("en-US")}바이트 · ${detection.candidates.length}개 후보`;
+  const displayedDetection =
+    detection.status === "too_large"
+      ? "입력은 1,000,000바이트 이하만 감지합니다."
+      : detection.status === "empty"
+        ? "본문을 입력하면 로컬 구조 감지를 시작합니다."
+        : detection.status === "ambiguous"
+          ? "여러 형식이 가능하므로 추천을 자동 선택하지 않았습니다."
+          : detection.status === "unsupported"
+            ? "지원되는 안전한 구조를 찾지 못했습니다. 경로와 외부 요청은 실행하지 않습니다."
+            : `${detection.inputBytes.toLocaleString("en-US")}바이트 · ${detection.candidates.length}개 후보`;
 
   return (
     <section className="smart-workflow" aria-labelledby="smart-workflow-title">
@@ -316,17 +317,21 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         <div>
           <h2 id="smart-workflow-title">스마트 워크플로</h2>
           <p id="smart-workflow-help" className="smart-workflow-help">
-            제한된 입력을 로컬에서 감지하고, 명시적으로 실행한 타입 지정 변환만 연결합니다. 입력·출력은
-            저장하지 않으며 URL을 열거나 셸/API 전달을 실행하지 않습니다.
+            제한된 입력을 로컬에서 감지하고, 명시적으로 실행한 타입 지정 변환만 연결합니다. 입력·출력은 저장하지 않으며
+            URL을 열거나 셸/API 전달을 실행하지 않습니다.
           </p>
         </div>
-        <span className="smart-workflow-mode" role="status">오프라인</span>
+        <span className="smart-workflow-mode" role="status">
+          오프라인
+        </span>
       </div>
 
       <div className="smart-workflow-input-section">
         <div className="io-label">
           스마트 입력
-          <span className="smart-workflow-byte-limit">최대 {SMART_DETECTION_LIMITS.maxInputBytes.toLocaleString("en-US")}바이트</span>
+          <span className="smart-workflow-byte-limit">
+            최대 {SMART_DETECTION_LIMITS.maxInputBytes.toLocaleString("en-US")}바이트
+          </span>
         </div>
         <ToolTextArea
           aria-label="스마트 워크플로 입력"
@@ -341,13 +346,25 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
           clipboardErrorMessage={FIXED_CLIPBOARD_ERROR}
           spellCheck={false}
         />
-        {detection.sensitive ? <div className="smart-workflow-sensitive" role="note">{FIXED_SENSITIVE_REASON}</div> : null}
-        {detection.status === "too_large" ? <div className="smart-workflow-error" role="alert">{displayedDetection}</div> : null}
+        {detection.sensitive ? (
+          <div className="smart-workflow-sensitive" role="note">
+            {FIXED_SENSITIVE_REASON}
+          </div>
+        ) : null}
+        {detection.status === "too_large" ? (
+          <div className="smart-workflow-error" role="alert">
+            {displayedDetection}
+          </div>
+        ) : null}
       </div>
 
       <section className="smart-workflow-detection" aria-labelledby="smart-workflow-detection-title">
-        <div id="smart-workflow-detection-title" className="smart-workflow-section-title">감지</div>
-        <div className="smart-workflow-detection-status" role="status" aria-live="polite">{displayedDetection}</div>
+        <div id="smart-workflow-detection-title" className="smart-workflow-section-title">
+          감지
+        </div>
+        <div className="smart-workflow-detection-status" role="status" aria-live="polite">
+          {displayedDetection}
+        </div>
         {detection.candidates.length > 0 ? (
           <div className="smart-workflow-candidates" role="list">
             {detection.candidates.map((candidate) => (
@@ -382,25 +399,40 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
       </section>
 
       <section className="smart-workflow-pipeline" aria-labelledby="smart-workflow-pipeline-title">
-        <div id="smart-workflow-pipeline-title" className="smart-workflow-section-title">타입 지정 파이프라인</div>
+        <div id="smart-workflow-pipeline-title" className="smart-workflow-section-title">
+          타입 지정 파이프라인
+        </div>
         <div className="smart-workflow-pipeline-toolbar">
           <label>
             입력 형식
-            <select aria-label="파이프라인 입력 형식" value={inputType} onChange={(event) => changeInputType(event.currentTarget.value as PipelineValueType)}>
+            <select
+              aria-label="파이프라인 입력 형식"
+              value={inputType}
+              onChange={(event) => changeInputType(event.currentTarget.value as PipelineValueType)}
+            >
               {(Object.keys(INPUT_TYPE_LABELS) as PipelineValueType[]).map((type) => (
-                <option key={type} value={type}>{INPUT_TYPE_LABELS[type]}</option>
+                <option key={type} value={type}>
+                  {INPUT_TYPE_LABELS[type]}
+                </option>
               ))}
             </select>
           </label>
-          <span className="smart-workflow-arrow" aria-hidden="true">→</span>
+          <span className="smart-workflow-arrow" aria-hidden="true">
+            →
+          </span>
           <label className="smart-workflow-add-step">
             다음 단계
-            <select aria-label="변환 단계 추가" value={selectedStepId} onChange={(event) => setSelectedStepId(event.currentTarget.value)}>
+            <select
+              aria-label="변환 단계 추가"
+              value={selectedStepId}
+              onChange={(event) => setSelectedStepId(event.currentTarget.value)}
+            >
               {TRANSFORMERS.map((transformer) => {
                 const compatibility = pipelineCompatibility(currentOutputType, transformer.id);
                 return (
                   <option key={transformer.id} value={transformer.id} disabled={!compatibility.compatible}>
-                    {transformer.label}{compatibility.compatible ? "" : " · 형식 불일치"}
+                    {transformer.label}
+                    {compatibility.compatible ? "" : " · 형식 불일치"}
                   </option>
                 );
               })}
@@ -417,14 +449,22 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         </div>
 
         <ol className="smart-workflow-step-list" aria-label="현재 파이프라인 단계">
-          {steps.length === 0 ? <li className="smart-workflow-empty-step">감지 후보를 선택하거나 단계를 추가하세요.</li> : null}
+          {steps.length === 0 ? (
+            <li className="smart-workflow-empty-step">감지 후보를 선택하거나 단계를 추가하세요.</li>
+          ) : null}
           {steps.map((step, index) => {
             const transformer = TRANSFORMER_BY_ID.get(step.transformerId);
             return (
               <li key={`${step.transformerId}-${index}`} className="smart-workflow-step">
                 <span className="smart-workflow-step-number">{index + 1}</span>
-                <span id={`smart-workflow-step-${index}`} className="smart-workflow-step-name">{transformer?.label ?? "지원하지 않는 단계"}</span>
-                <span className="smart-workflow-step-type">{transformer ? `${transformer.inputTypes.map((type) => INPUT_TYPE_LABELS[type]).join("/")} → ${INPUT_TYPE_LABELS[transformer.outputType]}` : ""}</span>
+                <span id={`smart-workflow-step-${index}`} className="smart-workflow-step-name">
+                  {transformer?.label ?? "지원하지 않는 단계"}
+                </span>
+                <span className="smart-workflow-step-type">
+                  {transformer
+                    ? `${transformer.inputTypes.map((type) => INPUT_TYPE_LABELS[type]).join("/")} → ${INPUT_TYPE_LABELS[transformer.outputType]}`
+                    : ""}
+                </span>
                 <button
                   type="button"
                   className="btn"
@@ -439,8 +479,17 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         </ol>
 
         <div className="smart-workflow-run-toolbar">
-          <button type="button" className="btn active" onClick={run} disabled={!input || steps.length === 0}>파이프라인 실행</button>
-          <button type="button" className="btn" onClick={savePipeline} disabled={steps.length === 0 || !loaded || !storageWritable}>파이프라인 저장</button>
+          <button type="button" className="btn active" onClick={run} disabled={!input || steps.length === 0}>
+            파이프라인 실행
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={savePipeline}
+            disabled={steps.length === 0 || !loaded || !storageWritable}
+          >
+            파이프라인 저장
+          </button>
           <span className="smart-workflow-current-type">현재 출력 형식: {INPUT_TYPE_LABELS[currentOutputType]}</span>
         </div>
         {pipelineError ? (
@@ -467,23 +516,41 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         <div className="smart-workflow-library-column">
           <div className="smart-workflow-section-title">최근 도구</div>
           <div className="smart-workflow-chip-list">
-            {metadata.recentTools.length === 0 ? <span className="smart-workflow-empty-library">아직 사용한 도구가 없습니다.</span> : null}
+            {metadata.recentTools.length === 0 ? (
+              <span className="smart-workflow-empty-library">아직 사용한 도구가 없습니다.</span>
+            ) : null}
             {metadata.recentTools.map((recent) => {
               const tool = TOOL_BY_ID.get(recent.toolId);
               if (!tool) return null;
-              return <button type="button" className="smart-workflow-chip" key={recent.toolId} onClick={() => onOpenTool(tool.id)}>{tool.name}</button>;
+              return (
+                <button
+                  type="button"
+                  className="smart-workflow-chip"
+                  key={recent.toolId}
+                  onClick={() => onOpenTool(tool.id)}
+                >
+                  {tool.name}
+                </button>
+              );
             })}
           </div>
         </div>
         <div className="smart-workflow-library-column">
           <div className="smart-workflow-section-title">즐겨찾기</div>
           <div className="smart-workflow-chip-list">
-            {metadata.favoriteTools.length === 0 ? <span className="smart-workflow-empty-library">즐겨찾기가 없습니다.</span> : null}
+            {metadata.favoriteTools.length === 0 ? (
+              <span className="smart-workflow-empty-library">즐겨찾기가 없습니다.</span>
+            ) : null}
             {metadata.favoriteTools.map((toolId) => {
               const tool = TOOL_BY_ID.get(toolId);
               if (!tool) return null;
               return (
-                <button type="button" className="smart-workflow-chip favorite" key={tool.id} onClick={() => onOpenTool(tool.id)}>
+                <button
+                  type="button"
+                  className="smart-workflow-chip favorite"
+                  key={tool.id}
+                  onClick={() => onOpenTool(tool.id)}
+                >
                   ★ {tool.name}
                 </button>
               );
@@ -493,10 +560,20 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         <div className="smart-workflow-library-column smart-workflow-library-pipelines">
           <div className="smart-workflow-section-title">저장된 파이프라인</div>
           <div className="smart-workflow-chip-list">
-            {metadata.pipelines.length === 0 ? <span className="smart-workflow-empty-library">저장된 파이프라인이 없습니다.</span> : null}
+            {metadata.pipelines.length === 0 ? (
+              <span className="smart-workflow-empty-library">저장된 파이프라인이 없습니다.</span>
+            ) : null}
             {metadata.pipelines.map((pipeline) => (
-              <button type="button" className={`smart-workflow-chip ${pipeline.id === selectedPipelineId ? "selected" : ""}`} key={pipeline.id} onClick={() => loadPipeline(pipeline.id)}>
-                {pipeline.id}: {pipeline.steps.map((step) => TRANSFORMER_BY_ID.get(step.transformerId)?.label ?? "지원하지 않는 단계").join(" → ")}
+              <button
+                type="button"
+                className={`smart-workflow-chip ${pipeline.id === selectedPipelineId ? "selected" : ""}`}
+                key={pipeline.id}
+                onClick={() => loadPipeline(pipeline.id)}
+              >
+                {pipeline.id}:{" "}
+                {pipeline.steps
+                  .map((step) => TRANSFORMER_BY_ID.get(step.transformerId)?.label ?? "지원하지 않는 단계")
+                  .join(" → ")}
               </button>
             ))}
           </div>
@@ -513,7 +590,11 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         >
           {metadata.favoriteTools.includes(activeToolId) ? "현재 도구 즐겨찾기 해제" : "현재 도구 즐겨찾기"}
         </button>
-        {storageError ? <span className="smart-workflow-storage-error" role="alert">{storageError}</span> : null}
+        {storageError ? (
+          <span className="smart-workflow-storage-error" role="alert">
+            {storageError}
+          </span>
+        ) : null}
       </div>
     </section>
   );

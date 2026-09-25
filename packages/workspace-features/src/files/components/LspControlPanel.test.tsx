@@ -17,12 +17,7 @@ import {
   stopLanguageServer,
   uninstallLsp,
 } from "../api";
-import type {
-  LanguageServerStatus,
-  LoadedLspConfig,
-  ManagedInstallStatus,
-  ManagedServerManifest,
-} from "../types";
+import type { LanguageServerStatus, LoadedLspConfig, ManagedInstallStatus, ManagedServerManifest } from "../types";
 import LspControlPanel from "./LspControlPanel";
 import ManagedInstallerPanel from "./ManagedInstallerPanel";
 
@@ -109,29 +104,29 @@ function fixtureInstallStatus(
     platform: manifest.platform,
     state,
     reason: null,
-    installed: state === "installed" ? {
-      manifest_id: manifest.id,
-      version: manifest.version,
-      platform: manifest.platform,
-      sha256: manifest.artifact.sha256,
-      source_url: manifest.source_url,
-      license: manifest.license,
-      artifact_url: manifest.artifact.url,
-      entrypoint: manifest.files.entrypoint,
-      runtime: manifest.runtime,
-      installed_at: "2026-08-13T00:00:00Z",
-      package_lock_sha256: null,
-      install_source: "local_archive",
-      last_verified_at: "2026-08-13T00:00:00Z",
-    } : null,
+    installed:
+      state === "installed"
+        ? {
+            manifest_id: manifest.id,
+            version: manifest.version,
+            platform: manifest.platform,
+            sha256: manifest.artifact.sha256,
+            source_url: manifest.source_url,
+            license: manifest.license,
+            artifact_url: manifest.artifact.url,
+            entrypoint: manifest.files.entrypoint,
+            runtime: manifest.runtime,
+            installed_at: "2026-08-13T00:00:00Z",
+            package_lock_sha256: null,
+            install_source: "local_archive",
+            last_verified_at: "2026-08-13T00:00:00Z",
+          }
+        : null,
     archive_cached: false,
   };
 }
 
-function fixtureServerStatus(
-  languageId: string,
-  status: LanguageServerStatus["status"],
-): LanguageServerStatus {
+function fixtureServerStatus(languageId: string, status: LanguageServerStatus["status"]): LanguageServerStatus {
   return {
     languageId,
     status,
@@ -191,7 +186,12 @@ describe("LspControlPanel", () => {
     const manifest = fixtureManifest();
     catalogMock.mockResolvedValue([manifest]);
     let finish!: (value: ManagedInstallStatus[]) => void;
-    installedMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    installedMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     const rendered = render(<LspControlPanel workspaceRoot="C:\\work" onClose={() => undefined} />);
     await waitFor(() => expect(installedMock).toHaveBeenCalledTimes(1));
     await act(async () => finish([fixtureInstallStatus(manifest, "installed")]));
@@ -204,30 +204,44 @@ describe("LspControlPanel", () => {
   it("can explicitly reload failed installation metadata without changing configuration", async () => {
     const manifest = fixtureManifest();
     catalogMock.mockResolvedValue([manifest]);
-    installedMock.mockRejectedValueOnce(new Error("busy")).mockResolvedValue([fixtureInstallStatus(manifest,"not_installed")]);
+    installedMock
+      .mockRejectedValueOnce(new Error("busy"))
+      .mockResolvedValue([fixtureInstallStatus(manifest, "not_installed")]);
     const rendered = render(<LspControlPanel workspaceRoot="C:\\work" onClose={() => undefined} />);
     fireEvent.click(await rendered.findByRole("button", { name: "설치 상태 새로 고침" }));
     expect(await rendered.findByRole("button", { name: "설치" })).toBeTruthy();
     expect(installedMock).toHaveBeenCalledTimes(2);
-    expect(saveMock).not.toHaveBeenCalled(); expect(installMock).not.toHaveBeenCalled();
+    expect(saveMock).not.toHaveBeenCalled();
+    expect(installMock).not.toHaveBeenCalled();
   });
 
   it("reloads the native revision after saving before the next configuration write", async () => {
-    loadMock.mockResolvedValueOnce(loadedConfig({ nativeRevision: "revision-one" }))
+    loadMock
+      .mockResolvedValueOnce(loadedConfig({ nativeRevision: "revision-one" }))
       .mockResolvedValue(loadedConfig({ nativeRevision: "revision-two" }));
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     const save = await rendered.findByRole("button", { name: "설정 저장" });
     await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(save);
-    await waitFor(() => expect(saveMock).toHaveBeenNthCalledWith(
-      1, expect.objectContaining({ workspace_root: "C:\\work" }), false, "revision-one",
-    ));
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ workspace_root: "C:\\work" }),
+        false,
+        "revision-one",
+      ),
+    );
     await waitFor(() => expect(loadMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(save);
-    await waitFor(() => expect(saveMock).toHaveBeenNthCalledWith(
-      2, expect.objectContaining({ workspace_root: "C:\\work" }), false, "revision-two",
-    ));
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ workspace_root: "C:\\work" }),
+        false,
+        "revision-two",
+      ),
+    );
   });
 
   it("keeps WSL editing available while explicitly disabling host LSP", async () => {
@@ -247,34 +261,63 @@ describe("LspControlPanel", () => {
     );
 
     expect(await rendered.findByText(/WSL 작업 폴더의 편집과 파일 감시는 지원/u)).toBeTruthy();
-    expect((rendered.getByRole("checkbox", {
-      name: "이 작업 폴더에서 언어 서버 사용",
-    }) as HTMLInputElement).disabled).toBe(true);
+    expect(
+      (
+        rendered.getByRole("checkbox", {
+          name: "이 작업 폴더에서 언어 서버 사용",
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("saves an explicit native WSL Node command without touching the Windows installer", async () => {
     loadMock.mockResolvedValue(loadedConfig());
-    const view = render(<LspControlPanel workspaceRoot="/home/project" workspaceCapabilities={{
-      path: "/home/project", sourceKind: "wsl", watchMode: "polling",
-      editSupported: true, lspSupported: true, lspReason: null,
-    }} onClose={() => undefined} />);
+    const view = render(
+      <LspControlPanel
+        workspaceRoot="/home/project"
+        workspaceCapabilities={{
+          path: "/home/project",
+          sourceKind: "wsl",
+          watchMode: "polling",
+          editSupported: true,
+          lspSupported: true,
+          lspReason: null,
+        }}
+        onClose={() => undefined}
+      />,
+    );
     await view.findByText(/선택한 WSL 배포판에 설치된 서버/);
     fireEvent.click(view.getByRole("checkbox", { name: "이 작업 폴더에서 언어 서버 사용" }));
     fireEvent.change(view.getByLabelText("언어"), { target: { value: "typescript" } });
     fireEvent.change(view.getByLabelText("서버 종류"), { target: { value: "node" } });
-    fireEvent.change(view.getByLabelText("서버 진입 파일 절대 경로"), { target: { value: "/opt/한글 tools/server.mjs" } });
+    fireEvent.change(view.getByLabelText("서버 진입 파일 절대 경로"), {
+      target: { value: "/opt/한글 tools/server.mjs" },
+    });
     fireEvent.change(view.getByLabelText("Node 실행 파일 절대 경로"), { target: { value: "/opt/node/bin/node" } });
-    fireEvent.change(view.getByLabelText("인자 (한 줄에 하나, 셸 문법 사용 안 함)"), { target: { value: "--stdio\nargument with spaces" } });
+    fireEvent.change(view.getByLabelText("인자 (한 줄에 하나, 셸 문법 사용 안 함)"), {
+      target: { value: "--stdio\nargument with spaces" },
+    });
     expect((view.getByText("설정 저장") as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(view.getByText("이 언어 설정 적용"));
     fireEvent.click(view.getByText("설정 저장"));
-    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({
-      enabled: true, workspace_root: "/home/project", server_by_language: {},
-      custom_servers: [expect.objectContaining({ language_ids: ["typescript"],
-        executable: "/opt/한글 tools/server.mjs", args: ["--stdio", "argument with spaces"],
-        runtime: { kind: "node", executable: "/opt/node/bin/node", min_version: null },
-      })],
-    }), false));
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enabled: true,
+          workspace_root: "/home/project",
+          server_by_language: {},
+          custom_servers: [
+            expect.objectContaining({
+              language_ids: ["typescript"],
+              executable: "/opt/한글 tools/server.mjs",
+              args: ["--stdio", "argument with spaces"],
+              runtime: { kind: "node", executable: "/opt/node/bin/node", min_version: null },
+            }),
+          ],
+        }),
+        false,
+      ),
+    );
     expect(catalogMock).not.toHaveBeenCalled();
     expect(installedMock).not.toHaveBeenCalled();
     expect(startMock).not.toHaveBeenCalled();
@@ -284,24 +327,47 @@ describe("LspControlPanel", () => {
 
   it("edits one imported WSL language while preserving sibling configuration and provenance", async () => {
     const config = loadedConfig().config;
-    const original = { language_ids: ["typescript", "javascript"], executable: "/opt/server.mjs",
-      args: ["--stdio"], runtime: { kind: "node" as const, executable: "/opt/node", min_version: ">=22" },
-      source: "user-reviewed-source", license: "MIT", version: "5.3.0" };
+    const original = {
+      language_ids: ["typescript", "javascript"],
+      executable: "/opt/server.mjs",
+      args: ["--stdio"],
+      runtime: { kind: "node" as const, executable: "/opt/node", min_version: ">=22" },
+      source: "user-reviewed-source",
+      license: "MIT",
+      version: "5.3.0",
+    };
     loadMock.mockResolvedValue(loadedConfig({ config: { ...config, custom_servers: [original] } }));
-    const view = render(<LspControlPanel workspaceRoot="/home/project" workspaceCapabilities={{
-      path: "/home/project", sourceKind: "wsl", watchMode: "polling",
-      editSupported: true, lspSupported: true, lspReason: null,
-    }} onClose={() => undefined} />);
+    const view = render(
+      <LspControlPanel
+        workspaceRoot="/home/project"
+        workspaceCapabilities={{
+          path: "/home/project",
+          sourceKind: "wsl",
+          watchMode: "polling",
+          editSupported: true,
+          lspSupported: true,
+          lspReason: null,
+        }}
+        onClose={() => undefined}
+      />,
+    );
     await view.findByText(/선택한 WSL 배포판에 설치된 서버/);
     fireEvent.change(view.getByLabelText("언어"), { target: { value: "typescript" } });
     expect((view.getByLabelText("서버 진입 파일 절대 경로") as HTMLInputElement).value).toBe("/opt/server.mjs");
     fireEvent.change(view.getByLabelText("서버 진입 파일 절대 경로"), { target: { value: "/opt/next.mjs" } });
     fireEvent.click(view.getByText("이 언어 설정 적용"));
     fireEvent.click(view.getByText("설정 저장"));
-    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({
-      custom_servers: [{ ...original, language_ids: ["javascript"] },
-        { ...original, language_ids: ["typescript"], executable: "/opt/next.mjs" }],
-    }), false));
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          custom_servers: [
+            { ...original, language_ids: ["javascript"] },
+            { ...original, language_ids: ["typescript"], executable: "/opt/next.mjs" },
+          ],
+        }),
+        false,
+      ),
+    );
   });
 
   it("keeps one close action in the footer instead of a duplicate header button", async () => {
@@ -325,9 +391,11 @@ describe("LspControlPanel", () => {
     await rendered.findByText("등록된 언어 서버가 없습니다.");
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
 
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-    ));
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      ),
+    );
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     expect(first).toBeTruthy();
@@ -349,16 +417,20 @@ describe("LspControlPanel", () => {
     expect(await rendered.findByText(/저장된 설정이 손상되었습니다/)).toBeTruthy();
     expect(rendered.queryByText("invalid JSON")).toBeNull();
     fireEvent.click(rendered.getByRole("button", { name: "설정 저장" }));
-    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(
-      expect.objectContaining({ workspace_root: "/work/project" }),
-      true,
-    ));
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ workspace_root: "/work/project" }), true),
+    );
   });
 
   it("preserves a native future schema without offering a recovery write", async () => {
-    loadMock.mockResolvedValue(loadedConfig({
-      persist_allowed: false, recoveryAllowed: false, error: "future schema", nativeRevision: "future",
-    }));
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        persist_allowed: false,
+        recoveryAllowed: false,
+        error: "future schema",
+        nativeRevision: "future",
+      }),
+    );
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     expect(await rendered.findByText(/현재 버전에서 저장하거나 복구할 수 없습니다/u)).toBeTruthy();
     const save = rendered.getByRole("button", { name: "설정 저장" });
@@ -370,7 +442,9 @@ describe("LspControlPanel", () => {
   it("stores local server arguments as argv lines without shell parsing", async () => {
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     await rendered.findByText("등록된 언어 서버가 없습니다.");
-    await waitFor(() => expect((rendered.getByRole("button", { name: "설정 저장" }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((rendered.getByRole("button", { name: "설정 저장" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.change(rendered.getByLabelText("실행 파일 절대 경로"), {
       target: { value: "C:\\Tools\\server.exe" },
     });
@@ -380,34 +454,38 @@ describe("LspControlPanel", () => {
     fireEvent.click(rendered.getByRole("button", { name: "이 언어 설정 적용" }));
     fireEvent.click(rendered.getByRole("checkbox", { name: "이 작업 폴더에서 언어 서버 사용" }));
     fireEvent.click(rendered.getByRole("button", { name: "설정 저장" }));
-    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        enabled: true,
-        workspace_root: "C:\\work",
-        server_by_language: {
-          rust: {
-            kind: "local",
-            installed_path: "C:\\Tools\\server.exe",
-            executable: null,
-            args: ["--stdio", "--log file=C:\\my logs\\server.log"],
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enabled: true,
+          workspace_root: "C:\\work",
+          server_by_language: {
+            rust: {
+              kind: "local",
+              installed_path: "C:\\Tools\\server.exe",
+              executable: null,
+              args: ["--stdio", "--log file=C:\\my logs\\server.log"],
+            },
           },
-        },
-      }),
-      false,
-    ));
+        }),
+        false,
+      ),
+    );
   });
 
   it("does not start a server until edited settings are saved", async () => {
-    loadMock.mockResolvedValue(loadedConfig({
-      config: {
-        ...loadedConfig().config,
-        enabled: true,
-        workspace_root: "C:\\work",
-        server_by_language: {
-          rust: { kind: "local", installed_path: "C:\\server.exe", args: [] },
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        config: {
+          ...loadedConfig().config,
+          enabled: true,
+          workspace_root: "C:\\work",
+          server_by_language: {
+            rust: { kind: "local", installed_path: "C:\\server.exe", args: [] },
+          },
         },
-      },
-    }));
+      }),
+    );
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     const start = await rendered.findByRole("button", { name: "시작" });
     await waitFor(() => expect((start as HTMLButtonElement).disabled).toBe(false));
@@ -421,18 +499,20 @@ describe("LspControlPanel", () => {
   });
 
   it("offers restart for crashed servers and stop only for live sessions", async () => {
-    loadMock.mockResolvedValue(loadedConfig({
-      config: {
-        ...loadedConfig().config,
-        enabled: true,
-        workspace_root: "C:\\work",
-        server_by_language: {
-          rust: { kind: "local", installed_path: "C:\\rust.exe", args: [] },
-          typescript: { kind: "local", installed_path: "C:\\typescript.exe", args: [] },
-          python: { kind: "local", installed_path: "C:\\python.exe", args: [] },
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        config: {
+          ...loadedConfig().config,
+          enabled: true,
+          workspace_root: "C:\\work",
+          server_by_language: {
+            rust: { kind: "local", installed_path: "C:\\rust.exe", args: [] },
+            typescript: { kind: "local", installed_path: "C:\\typescript.exe", args: [] },
+            python: { kind: "local", installed_path: "C:\\python.exe", args: [] },
+          },
         },
-      },
-    }));
+      }),
+    );
     statusesMock.mockResolvedValue([
       fixtureServerStatus("rust", "crashed"),
       fixtureServerStatus("typescript", "ready"),
@@ -447,16 +527,18 @@ describe("LspControlPanel", () => {
 
   it("allows an in-progress manual start to be cancelled without waiting for start to finish", async () => {
     const pendingStart = deferred<void>();
-    loadMock.mockResolvedValue(loadedConfig({
-      config: {
-        ...loadedConfig().config,
-        enabled: true,
-        workspace_root: "C:\\work",
-        server_by_language: {
-          rust: { kind: "local", installed_path: "C:\\rust.exe", args: [] },
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        config: {
+          ...loadedConfig().config,
+          enabled: true,
+          workspace_root: "C:\\work",
+          server_by_language: {
+            rust: { kind: "local", installed_path: "C:\\rust.exe", args: [] },
+          },
         },
-      },
-    }));
+      }),
+    );
     statusesMock.mockResolvedValueOnce([]);
     startMock.mockImplementation(() => pendingStart.promise);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
@@ -535,11 +617,7 @@ describe("LspControlPanel", () => {
     expect(rendered.getAllByText(manifest.artifact.url).length).toBeGreaterThanOrEqual(2);
     expect(rendered.getByRole("button", { name: "설치 확인" })).toBeTruthy();
     fireEvent.click(rendered.getByRole("button", { name: "설치 확인" }));
-    await waitFor(() => expect(installMock).toHaveBeenCalledWith(
-      manifest.id,
-      manifest.version,
-      manifest.platform,
-    ));
+    await waitFor(() => expect(installMock).toHaveBeenCalledWith(manifest.id, manifest.version, manifest.platform));
   });
 
   it("keeps the selected local archive private and imports it only after confirmation", async () => {
@@ -556,12 +634,11 @@ describe("LspControlPanel", () => {
     expect(importMock).not.toHaveBeenCalled();
 
     fireEvent.click(rendered.getByRole("button", { name: "가져오기 확인" }));
-    await waitFor(() => expect(importMock).toHaveBeenCalledWith(
-      manifest.id,
-      manifest.version,
-      manifest.platform,
-      ["C:\\Users\\alice\\private-server.zip"],
-    ));
+    await waitFor(() =>
+      expect(importMock).toHaveBeenCalledWith(manifest.id, manifest.version, manifest.platform, [
+        "C:\\Users\\alice\\private-server.zip",
+      ]),
+    );
   });
 
   it("releases archive choices on cancel, unmount and a late picker result", async () => {
@@ -580,7 +657,12 @@ describe("LspControlPanel", () => {
     first.unmount();
     await waitFor(() => expect(release).toHaveBeenCalledWith(["native-token-b"]));
     let resolvePicker!: (value: string[]) => void;
-    pickArchiveMock.mockImplementation(() => new Promise((resolve) => { resolvePicker = resolve; }));
+    pickArchiveMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePicker = resolve;
+        }),
+    );
     const second = render(<ManagedInstallerPanel onChanged={() => undefined} />);
     fireEvent.click(await second.findByRole("button", { name: "local archive 가져오기" }));
     second.unmount();
@@ -607,15 +689,12 @@ describe("LspControlPanel", () => {
     expect(rendered.queryByText("C:\\Users\\alice\\private-dependency.tgz")).toBeNull();
 
     fireEvent.click(rendered.getByRole("button", { name: "가져오기 확인" }));
-    await waitFor(() => expect(importMock).toHaveBeenCalledWith(
-      manifest.id,
-      manifest.version,
-      manifest.platform,
-      [
+    await waitFor(() =>
+      expect(importMock).toHaveBeenCalledWith(manifest.id, manifest.version, manifest.platform, [
         "C:\\Users\\alice\\private-server.tgz",
         "C:\\Users\\alice\\private-dependency.tgz",
-      ],
-    ));
+      ]),
+    );
   });
 
   it("serializes archive picking and the confirmed import mutation", async () => {
@@ -696,15 +775,17 @@ describe("LspControlPanel", () => {
       generated_at: "2026-08-13T00:00:00Z",
     };
     catalogMock.mockResolvedValue([manifest]);
-    installedMock.mockResolvedValue([{
-      manifest_id: manifest.id,
-      version: manifest.version,
-      platform: manifest.platform,
-      state: "installed",
-      reason: null,
-      installed: null,
-      archive_cached: false,
-    }]);
+    installedMock.mockResolvedValue([
+      {
+        manifest_id: manifest.id,
+        version: manifest.version,
+        platform: manifest.platform,
+        state: "installed",
+        reason: null,
+        installed: null,
+        archive_cached: false,
+      },
+    ]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     await rendered.findByText("설치됨");
     expect((rendered.getByRole("button", { name: "최신 버전" }) as HTMLButtonElement).disabled).toBe(true);
@@ -737,29 +818,31 @@ describe("LspControlPanel", () => {
       generated_at: "2026-08-13T00:00:00Z",
     };
     catalogMock.mockResolvedValue([manifest]);
-    installedMock.mockResolvedValue([{
-      manifest_id: manifest.id,
-      version: manifest.version,
-      platform: manifest.platform,
-      state: "needs_reinstall",
-      reason: "managed metadata differs",
-      installed: {
+    installedMock.mockResolvedValue([
+      {
         manifest_id: manifest.id,
         version: manifest.version,
         platform: manifest.platform,
-        sha256: "00".repeat(32),
-        source_url: manifest.source_url,
-        license: manifest.license,
-        artifact_url: manifest.artifact.url,
-        entrypoint: manifest.files.entrypoint,
-        runtime: manifest.runtime,
-        installed_at: "2026-08-13T00:00:00Z",
-        package_lock_sha256: null,
-        install_source: "network",
-        last_verified_at: "2026-08-13T00:00:00Z",
+        state: "needs_reinstall",
+        reason: "managed metadata differs",
+        installed: {
+          manifest_id: manifest.id,
+          version: manifest.version,
+          platform: manifest.platform,
+          sha256: "00".repeat(32),
+          source_url: manifest.source_url,
+          license: manifest.license,
+          artifact_url: manifest.artifact.url,
+          entrypoint: manifest.files.entrypoint,
+          runtime: manifest.runtime,
+          installed_at: "2026-08-13T00:00:00Z",
+          package_lock_sha256: null,
+          install_source: "network",
+          last_verified_at: "2026-08-13T00:00:00Z",
+        },
+        archive_cached: false,
       },
-      archive_cached: false,
-    }]);
+    ]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     await rendered.findByText("재설치 필요");
     expect(rendered.queryByText("managed metadata differs")).toBeNull();
@@ -767,11 +850,7 @@ describe("LspControlPanel", () => {
     expect((rendered.getByRole("button", { name: "먼저 제거" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(rendered.getByRole("button", { name: "제거" }));
     fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
-    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(
-      manifest.id,
-      manifest.version,
-      manifest.platform,
-    ));
+    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(manifest.id, manifest.version, manifest.platform));
   });
 
   it("offers explicit index recovery from only the safe native signal", async () => {
@@ -785,64 +864,57 @@ describe("LspControlPanel", () => {
 
   it("renders catalog-orphaned indexed versions with explicit removal", async () => {
     catalogMock.mockResolvedValue([]);
-    installedMock.mockResolvedValue([{
-      manifest_id: "old-server",
-      version: "0.9.0",
-      platform: "windows-x86_64",
-      state: "needs_reinstall",
-      reason: "installed entry is not present in the reviewed catalog",
-      installed: {
+    installedMock.mockResolvedValue([
+      {
         manifest_id: "old-server",
         version: "0.9.0",
         platform: "windows-x86_64",
-        sha256: "22".repeat(32),
-        source_url: "https://example.com/old-source",
-        license: "Apache-2.0",
-        artifact_url: "https://example.com/old-server.zip",
-        entrypoint: "old-server.exe",
-        runtime: { kind: "native", executable: "old-server.exe", min_version: null },
-        installed_at: "2026-08-13T00:00:00Z",
-        package_lock_sha256: null,
-        install_source: "network",
-        last_verified_at: "2026-08-13T00:00:00Z",
+        state: "needs_reinstall",
+        reason: "installed entry is not present in the reviewed catalog",
+        installed: {
+          manifest_id: "old-server",
+          version: "0.9.0",
+          platform: "windows-x86_64",
+          sha256: "22".repeat(32),
+          source_url: "https://example.com/old-source",
+          license: "Apache-2.0",
+          artifact_url: "https://example.com/old-server.zip",
+          entrypoint: "old-server.exe",
+          runtime: { kind: "native", executable: "old-server.exe", min_version: null },
+          installed_at: "2026-08-13T00:00:00Z",
+          package_lock_sha256: null,
+          install_source: "network",
+          last_verified_at: "2026-08-13T00:00:00Z",
+        },
+        archive_cached: false,
       },
-      archive_cached: false,
-    }]);
+    ]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     expect(await rendered.findByText("0.9.0 · windows-x86_64")).toBeTruthy();
     expect(rendered.getByText("https://example.com/old-source")).toBeTruthy();
     expect(rendered.getByText("카탈로그 없음")).toBeTruthy();
     fireEvent.click(rendered.getByRole("button", { name: "제거" }));
     fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
-    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(
-      "old-server",
-      "0.9.0",
-      "windows-x86_64",
-    ));
+    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith("old-server", "0.9.0", "windows-x86_64"));
   });
 
   it("refreshes managed choices after an explicit install in the same dialog", async () => {
     const manifest = fixtureManifest();
     let installed = false;
     catalogMock.mockResolvedValue([manifest]);
-    installedMock.mockImplementation(async () => [fixtureInstallStatus(
-      manifest,
-      installed ? "installed" : "not_installed",
-    )]);
+    installedMock.mockImplementation(async () => [
+      fixtureInstallStatus(manifest, installed ? "installed" : "not_installed"),
+    ]);
     installMock.mockImplementation(async () => {
       installed = true;
     });
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
     fireEvent.click(await rendered.findByRole("button", { name: "설치" }));
     fireEvent.click(await rendered.findByRole("button", { name: "설치 확인" }));
-    await waitFor(() => expect(installMock).toHaveBeenCalledWith(
-      manifest.id,
-      manifest.version,
-      manifest.platform,
-    ));
-    await waitFor(() => expect(
-      (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
-    ).toBe(false));
+    await waitFor(() => expect(installMock).toHaveBeenCalledWith(manifest.id, manifest.version, manifest.platform));
+    await waitFor(() =>
+      expect((rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled).toBe(false),
+    );
     fireEvent.change(rendered.getByLabelText("서버 종류"), { target: { value: "managed" } });
     expect(await rendered.findByRole("option", { name: /rust-analyzer@2026-08-10\.1/ })).toBeTruthy();
   });
@@ -852,122 +924,119 @@ describe("LspControlPanel", () => {
     catalogMock.mockResolvedValue([manifest]);
     installedMock.mockResolvedValue([fixtureInstallStatus(manifest, "installed")]);
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
-    await waitFor(() => expect(
-      (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
-    ).toBe(false));
+    await waitFor(() =>
+      expect((rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled).toBe(false),
+    );
     // Catalog/status and persisted configuration load independently. The real
     // selector stays disabled until the latter has initialized its draft.
-    await waitFor(() => expect(
-      (rendered.getByLabelText("서버 종류") as HTMLSelectElement).disabled,
-    ).toBe(false));
+    await waitFor(() => expect((rendered.getByLabelText("서버 종류") as HTMLSelectElement).disabled).toBe(false));
     fireEvent.change(rendered.getByLabelText("서버 종류"), { target: { value: "managed" } });
-    await waitFor(() => expect(
-      (rendered.getByLabelText("관리형 서버 버전") as HTMLSelectElement).value,
-    ).toBe(`${manifest.id}\u001f${manifest.version}`));
+    await waitFor(() =>
+      expect((rendered.getByLabelText("관리형 서버 버전") as HTMLSelectElement).value).toBe(
+        `${manifest.id}\u001f${manifest.version}`,
+      ),
+    );
     fireEvent.click(rendered.getByRole("button", { name: "이 언어 설정 적용" }));
     await waitFor(() => expect(rendered.getByText("managed")).toBeTruthy());
     fireEvent.click(rendered.getByRole("button", { name: "설정 저장" }));
-    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        server_by_language: {
-          rust: {
-            kind: "managed",
-            manifest_id: manifest.id,
-            version: manifest.version,
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          server_by_language: {
+            rust: {
+              kind: "managed",
+              manifest_id: manifest.id,
+              version: manifest.version,
+            },
           },
-        },
-      }),
-      false,
-    ));
+        }),
+        false,
+      ),
+    );
   });
 
   it("removes a managed choice after an explicit uninstall in the same dialog", async () => {
     const manifest = fixtureManifest();
     let installed = true;
     catalogMock.mockResolvedValue([manifest]);
-    installedMock.mockImplementation(async () => [fixtureInstallStatus(
-      manifest,
-      installed ? "installed" : "not_installed",
-    )]);
+    installedMock.mockImplementation(async () => [
+      fixtureInstallStatus(manifest, installed ? "installed" : "not_installed"),
+    ]);
     uninstallMock.mockImplementation(async () => {
       installed = false;
     });
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
-    await waitFor(() => expect(
-      (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
-    ).toBe(false));
+    await waitFor(() =>
+      expect((rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled).toBe(false),
+    );
     fireEvent.change(await rendered.findByLabelText("서버 종류"), { target: { value: "managed" } });
     expect(await rendered.findByRole("option", { name: /rust-analyzer@2026-08-10\.1/ })).toBeTruthy();
     fireEvent.click(rendered.getByRole("button", { name: "제거" }));
     fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
-    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(
-      manifest.id,
-      manifest.version,
-      manifest.platform,
-    ));
-    await waitFor(() => expect(
-      rendered.queryByRole("option", { name: /rust-analyzer@2026-08-10\.1/ }),
-    ).toBeNull());
+    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith(manifest.id, manifest.version, manifest.platform));
+    await waitFor(() => expect(rendered.queryByRole("option", { name: /rust-analyzer@2026-08-10\.1/ })).toBeNull());
   });
 
   it("does not overwrite an unsaved local form when managed status refreshes", async () => {
     const manifest = fixtureManifest();
     let installed = true;
     catalogMock.mockResolvedValue([manifest]);
-    installedMock.mockImplementation(async () => [fixtureInstallStatus(
-      manifest,
-      installed ? "installed" : "not_installed",
-    )]);
+    installedMock.mockImplementation(async () => [
+      fixtureInstallStatus(manifest, installed ? "installed" : "not_installed"),
+    ]);
     uninstallMock.mockImplementation(async () => {
       installed = false;
     });
     const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
-    await waitFor(() => expect(
-      (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
-    ).toBe(false));
+    await waitFor(() =>
+      expect((rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled).toBe(false),
+    );
     const executable = rendered.getByLabelText("실행 파일 절대 경로") as HTMLInputElement;
     await waitFor(() => expect(executable.disabled).toBe(false));
     fireEvent.change(executable, { target: { value: "C:\\local\\server.exe" } });
     fireEvent.click(rendered.getByRole("button", { name: "제거" }));
     fireEvent.click(await rendered.findByRole("button", { name: "제거 확인" }));
     await waitFor(() => expect(uninstallMock).toHaveBeenCalled());
-    expect((rendered.getByLabelText("실행 파일 절대 경로") as HTMLInputElement).value)
-      .toBe("C:\\local\\server.exe");
+    expect((rendered.getByLabelText("실행 파일 절대 경로") as HTMLInputElement).value).toBe("C:\\local\\server.exe");
   });
 
   it("offers restart for degraded or circuit-open servers and start only for stopped servers", async () => {
-    loadMock.mockResolvedValue(loadedConfig({
-      config: {
-        ...loadedConfig().config,
-        enabled: true,
-        workspace_root: "/work",
-        server_by_language: {
-          rust: { kind: "local", installed_path: "/server", args: [] },
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        config: {
+          ...loadedConfig().config,
+          enabled: true,
+          workspace_root: "/work",
+          server_by_language: {
+            rust: { kind: "local", installed_path: "/server", args: [] },
+          },
         },
+      }),
+    );
+    statusesMock.mockResolvedValue([
+      {
+        languageId: "rust",
+        status: "degraded",
+        processState: "failed",
+        serverInfo: null,
+        capabilities: {
+          positionEncoding: "utf-16",
+          legacyPositionEncoding: false,
+          syncKind: "full",
+          openClose: true,
+          save: true,
+          completion: true,
+          hover: true,
+          definition: true,
+          references: true,
+          rename: true,
+          formatting: true,
+          diagnostics: true,
+        },
+        documentCount: 0,
+        autoRestartDisabled: true,
       },
-    }));
-    statusesMock.mockResolvedValue([{
-      languageId: "rust",
-      status: "degraded",
-      processState: "failed",
-      serverInfo: null,
-      capabilities: {
-        positionEncoding: "utf-16",
-        legacyPositionEncoding: false,
-        syncKind: "full",
-        openClose: true,
-        save: true,
-        completion: true,
-        hover: true,
-        definition: true,
-        references: true,
-        rename: true,
-        formatting: true,
-        diagnostics: true,
-      },
-      documentCount: 0,
-      autoRestartDisabled: true,
-    }]);
+    ]);
     const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
     const restart = await rendered.findByRole("button", { name: "다시 시도" });
     fireEvent.click(restart);
@@ -976,36 +1045,44 @@ describe("LspControlPanel", () => {
 
   it("shows bounded runtime logs, retry timing, and verified managed cache state", async () => {
     const manifest = fixtureManifest();
-    loadMock.mockResolvedValue(loadedConfig({
-      config: {
-        ...loadedConfig().config,
-        enabled: true,
-        workspace_root: "/work",
-        server_by_language: {
-          rust: { kind: "managed", manifest_id: manifest.id, version: manifest.version },
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        config: {
+          ...loadedConfig().config,
+          enabled: true,
+          workspace_root: "/work",
+          server_by_language: {
+            rust: { kind: "managed", manifest_id: manifest.id, version: manifest.version },
+          },
         },
-      },
-    }));
+      }),
+    );
     catalogMock.mockResolvedValue([manifest]);
     installedMock.mockResolvedValue([fixtureInstallStatus(manifest, "installed")]);
-    statusesMock.mockResolvedValue([{
-      ...fixtureServerStatus("rust", "degraded"),
-      restartFailures: 2,
-      restartDelayMs: 2_400,
-      autoRestartDisabled: false,
-    }]);
-    logsMock.mockResolvedValue([{
-      languageId: "rust",
-      entries: [{
-        sequence: "7",
-        level: "warning",
-        code: "server-stderr",
-        message: "진단 출력은 native 경계에서 정리되었습니다",
-      }],
-      droppedEntries: 3,
-      droppedStderrBytes: 128,
-      stderrTruncated: true,
-    }]);
+    statusesMock.mockResolvedValue([
+      {
+        ...fixtureServerStatus("rust", "degraded"),
+        restartFailures: 2,
+        restartDelayMs: 2_400,
+        autoRestartDisabled: false,
+      },
+    ]);
+    logsMock.mockResolvedValue([
+      {
+        languageId: "rust",
+        entries: [
+          {
+            sequence: "7",
+            level: "warning",
+            code: "server-stderr",
+            message: "진단 출력은 native 경계에서 정리되었습니다",
+          },
+        ],
+        droppedEntries: 3,
+        droppedStderrBytes: 128,
+        stderrTruncated: true,
+      },
+    ]);
 
     const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
     expect(await rendered.findByText("검증된 캐시 사용 가능 · native · rust-analyzer.exe")).toBeTruthy();
@@ -1021,28 +1098,32 @@ describe("LspControlPanel", () => {
   it("ignores an older status and log refresh after a newer request completes", async () => {
     const oldStatuses = deferred<LanguageServerStatus[]>();
     const oldLogs = deferred<Awaited<ReturnType<typeof languageServerLogs>>>();
-    loadMock.mockResolvedValue(loadedConfig({
-      config: {
-        ...loadedConfig().config,
-        enabled: true,
-        workspace_root: "/work",
-        server_by_language: {
-          rust: { kind: "local", installed_path: "/server", args: [] },
+    loadMock.mockResolvedValue(
+      loadedConfig({
+        config: {
+          ...loadedConfig().config,
+          enabled: true,
+          workspace_root: "/work",
+          server_by_language: {
+            rust: { kind: "local", installed_path: "/server", args: [] },
+          },
         },
-      },
-    }));
+      }),
+    );
     statusesMock
       .mockImplementationOnce(() => oldStatuses.promise)
       .mockResolvedValue([fixtureServerStatus("rust", "ready")]);
     logsMock
       .mockImplementationOnce(() => oldLogs.promise)
-      .mockResolvedValue([{
-        languageId: "rust",
-        entries: [{ sequence: "2", level: "info", code: "server-ready", message: "new-log" }],
-        droppedEntries: 0,
-        droppedStderrBytes: 0,
-        stderrTruncated: false,
-      }]);
+      .mockResolvedValue([
+        {
+          languageId: "rust",
+          entries: [{ sequence: "2", level: "info", code: "server-ready", message: "new-log" }],
+          droppedEntries: 0,
+          droppedStderrBytes: 0,
+          stderrTruncated: false,
+        },
+      ]);
 
     const rendered = render(<LspControlPanel workspaceRoot="/work" onClose={() => undefined} />);
     fireEvent.click(await rendered.findByRole("button", { name: "시작" }));
@@ -1051,13 +1132,15 @@ describe("LspControlPanel", () => {
 
     await act(async () => {
       oldStatuses.resolve([fixtureServerStatus("rust", "crashed")]);
-      oldLogs.resolve([{
-        languageId: "rust",
-        entries: [{ sequence: "1", level: "error", code: "start-failed", message: "old-log" }],
-        droppedEntries: 0,
-        droppedStderrBytes: 0,
-        stderrTruncated: false,
-      }]);
+      oldLogs.resolve([
+        {
+          languageId: "rust",
+          entries: [{ sequence: "1", level: "error", code: "start-failed", message: "old-log" }],
+          droppedEntries: 0,
+          droppedStderrBytes: 0,
+          stderrTruncated: false,
+        },
+      ]);
       await Promise.all([oldStatuses.promise, oldLogs.promise]);
     });
     expect(rendered.getByText("준비됨")).toBeTruthy();

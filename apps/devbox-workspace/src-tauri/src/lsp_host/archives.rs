@@ -7,10 +7,10 @@ use crate::{
     },
     private_metadata::MetadataRoot,
 };
-use code_pad_lib::lsp::{installer::validate_external_archive, RequestCancellation};
 use devbox_filesystem::{
     ensure_no_links, filesystem_identity, open_filesystem_object, FilesystemIdentity,
 };
+use editor_engine::lsp::{installer::validate_external_archive, RequestCancellation};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},

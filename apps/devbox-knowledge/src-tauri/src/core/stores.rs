@@ -103,12 +103,12 @@ pub fn create_empty(root: &Path) -> Result<Manifest, String> {
     for component in ["notes", "activity", "search"] {
         fs::create_dir(generation.join(component)).map_err(|_| "store_unavailable")?;
     }
-    knowledge_base_lib::component::create_empty_store(
+    knowledge_vault_engine::component::create_empty_store(
         &generation.join("notes/data.db"),
         &root.join("notes-vault"),
     )?;
-    life_log_lib::component::create_empty_store(&generation.join("activity/data.db"))?;
-    everything_plus_lib::component::create_empty_store(&generation.join("search/data.db"))?;
+    activity_engine::component::create_empty_store(&generation.join("activity/data.db"))?;
+    content_index_engine::component::create_empty_store(&generation.join("search/data.db"))?;
     for component in ["notes", "activity", "search"] {
         directory(root, &manifest, component)?;
     }

@@ -2,17 +2,23 @@ import { componentInvoke, isProductHosted, WorkspaceOperationError } from "../tr
 import { isRuntimeControl, submitRuntimeControl } from "./runtimeControls";
 const nativeInvoke = componentInvoke("workspace.runtime");
 function invoke<T>(method: string, args?: Record<string, unknown>): Promise<T> {
-  return isProductHosted() && isRuntimeControl(method) ? submitRuntimeControl<T>(nativeInvoke, method, args ?? {}) : nativeInvoke<T>(method, args);
+  return isProductHosted() && isRuntimeControl(method)
+    ? submitRuntimeControl<T>(nativeInvoke, method, args ?? {})
+    : nativeInvoke<T>(method, args);
 }
 export interface RuntimeControlReceipt {
-  operationId: string; method: string; targetId: string; state: "pending" | "interrupted";
-  createdAt: number; reviewed: boolean;
+  operationId: string;
+  method: string;
+  targetId: string;
+  state: "pending" | "interrupted";
+  createdAt: number;
+  reviewed: boolean;
 }
 export function listRuntimeControls(): Promise<RuntimeControlReceipt[]> {
   return isProductHosted() ? nativeInvoke("list_runtime_controls") : Promise.resolve([]);
 }
 export function reviewRuntimeControl(operationId: string): Promise<void> {
-  return nativeInvoke("review_runtime_control", {operationId});
+  return nativeInvoke("review_runtime_control", { operationId });
 }
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
@@ -40,9 +46,7 @@ import type {
 } from "./types";
 
 export interface OpenRequest {
-  target:
-    | { kind: "task"; id: string }
-    | { kind: "handoff"; handoffKind: string; id: string };
+  target: { kind: "task"; id: string } | { kind: "handoff"; handoffKind: string; id: string };
   from: string | null;
 }
 
@@ -405,7 +409,10 @@ function createImportOperationId(prefix: "preview" | "apply"): string {
   return `${prefix}-${random ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`}`;
 }
 
-export function previewProjectImport(path: string, operationId = createImportOperationId("preview")): Promise<ProjectImportPlan> {
+export function previewProjectImport(
+  path: string,
+  operationId = createImportOperationId("preview"),
+): Promise<ProjectImportPlan> {
   if (!isTauri()) {
     return Promise.resolve({
       schemaVersion: 1,
@@ -546,14 +553,16 @@ export function runWorkspaceTaskOperation(id: string, failFast: boolean): Promis
       createdAt: now,
       startedAt: now,
       endedAt: now,
-      runs: [{
-        jobId: id,
-        runId: `mock-operation-run-${mockWorkspaceTaskOperationSequence}`,
-        layerIndex: 0,
-        sequence: 0,
-        status: "succeeded",
-        failureCode: null,
-      }],
+      runs: [
+        {
+          jobId: id,
+          runId: `mock-operation-run-${mockWorkspaceTaskOperationSequence}`,
+          layerIndex: 0,
+          sequence: 0,
+          status: "succeeded",
+          failureCode: null,
+        },
+      ],
     };
     mockWorkspaceTaskOperations = [operation, ...mockWorkspaceTaskOperations].slice(0, 50);
     return Promise.resolve(operation);
@@ -579,17 +588,20 @@ export function stopWorkspaceTaskOperation(operationId: string): Promise<Workspa
     if (!operation) return Promise.reject(new Error("workspace-task-operation-not-found"));
     const stopped: WorkspaceTaskOperation = {
       ...operation,
-      status: operation.status === "succeeded" || operation.status === "failed" || operation.status === "cancelled"
-        ? operation.status
-        : "cancelled",
+      status:
+        operation.status === "succeeded" || operation.status === "failed" || operation.status === "cancelled"
+          ? operation.status
+          : "cancelled",
       endedAt: Date.now(),
-      runs: operation.runs.map((run) => (
+      runs: operation.runs.map((run) =>
         run.status === "pending" || run.status === "launching" || run.status === "running"
           ? { ...run, status: "cancelled", failureCode: "workspace-task-operation-cancelled" }
-          : run
-      )),
+          : run,
+      ),
     };
-    mockWorkspaceTaskOperations = mockWorkspaceTaskOperations.map((candidate) => candidate.id === operationId ? stopped : candidate);
+    mockWorkspaceTaskOperations = mockWorkspaceTaskOperations.map((candidate) =>
+      candidate.id === operationId ? stopped : candidate,
+    );
     return Promise.resolve(stopped);
   }
   return invoke<WorkspaceTaskOperation>("stop_workspace_task_operation", { operationId });
@@ -633,18 +645,23 @@ export function listWorkspaceTaskControlReceipts(limit = 20): Promise<WorkspaceT
 }
 
 const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
-  "workspace-task-source-untrusted": "이 workspace task의 소스가 아직 승인되지 않았습니다. 현재 revision을 명시적으로 승인한 뒤 활성화하세요.",
+  "workspace-task-source-untrusted":
+    "이 workspace task의 소스가 아직 승인되지 않았습니다. 현재 revision을 명시적으로 승인한 뒤 활성화하세요.",
   "workspace-task-unavailable": "이 workspace task는 현재 사용할 수 없습니다. 원본을 다시 미리보고 가져오세요.",
-  "workspace-task-source-unavailable": "workspace task 원본을 읽을 수 없습니다. 프로젝트 경로와 .vscode/tasks.json을 확인하세요.",
+  "workspace-task-source-unavailable":
+    "workspace task 원본을 읽을 수 없습니다. 프로젝트 경로와 .vscode/tasks.json을 확인하세요.",
   "workspace-task-source-changed": "원본 tasks.json이 변경되어 승인이 무효화되었습니다. 다시 미리보고 승인하세요.",
   "workspace-task-managed-fields-locked": "workspace task의 이름·명령·작업 디렉터리·대상은 원본이 관리합니다.",
   "workspace-task-environment-key-not-declared": "원본에 선언된 환경변수 키만 입력할 수 있습니다.",
   "workspace-task-configuration-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",
   "workspace-task-definition-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",
-  "workspace-task-shell-untrusted": "이 workspace task의 셸 실행이 아직 승인되지 않았습니다. 위험 내용을 확인한 뒤 셸 실행을 별도로 승인하세요.",
-  "workspace-task-shell-confirmation-required": "셸 실행 승인을 완료하지 못했습니다. 안내된 확인 문구로 다시 시도하세요.",
+  "workspace-task-shell-untrusted":
+    "이 workspace task의 셸 실행이 아직 승인되지 않았습니다. 위험 내용을 확인한 뒤 셸 실행을 별도로 승인하세요.",
+  "workspace-task-shell-confirmation-required":
+    "셸 실행 승인을 완료하지 못했습니다. 안내된 확인 문구로 다시 시도하세요.",
   "workspace-task-shell-not-found": "승인할 셸 workspace task를 찾지 못했습니다. 작업 목록을 다시 불러오세요.",
-  "workspace-task-dependency-selection-incomplete": "선택한 task의 선행 dependency가 빠졌습니다. dependency를 함께 선택한 뒤 다시 가져오세요.",
+  "workspace-task-dependency-selection-incomplete":
+    "선택한 task의 선행 dependency가 빠졌습니다. dependency를 함께 선택한 뒤 다시 가져오세요.",
   "workspace-task-dependency-unavailable": "선행 dependency를 사용할 수 없어 이 task를 실행할 수 없습니다.",
   "workspace-task-dependency-cycle": "task dependency에 순환 참조가 있어 실행할 수 없습니다.",
   "workspace-task-dependency-graph-too-large": "task dependency 그래프가 허용된 크기를 초과했습니다.",
@@ -657,7 +674,8 @@ const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
   "workspace-task-unsupported-problem-matcher-location": "problem matcher의 파일 위치 설정을 지원하지 않습니다.",
   "workspace-task-invalid-problem-matcher": "problem matcher 형식이 올바르지 않습니다.",
   "workspace-task-orchestration-required": "이 workspace task는 dependency가 있어 orchestration 실행이 필요합니다.",
-  "workspace-task-orchestration-manual-only": "dependency가 있는 workspace task는 일정 실행을 지원하지 않습니다. 지금 실행에서 orchestration으로 실행하세요.",
+  "workspace-task-orchestration-manual-only":
+    "dependency가 있는 workspace task는 일정 실행을 지원하지 않습니다. 지금 실행에서 orchestration으로 실행하세요.",
   "workspace-task-not-found": "workspace task를 찾지 못했습니다. 목록을 다시 불러오세요.",
   "workspace-task-operation-active": "이 workspace task에는 이미 실행 중인 orchestration operation이 있습니다.",
   "workspace-task-operation-not-found": "workspace task operation을 찾지 못했습니다. 목록을 다시 불러오세요.",
@@ -712,12 +730,8 @@ export function friendlyErrorMessage(cause: unknown): string {
   if (cause instanceof WorkspaceOperationError) return cause.message;
   const value = cause instanceof Error ? cause.message : String(cause);
   const normalized = value.trim();
-  const code = normalized.startsWith("workspace-task-")
-    ? normalized
-    : `workspace-task-${normalized}`;
-  return FRIENDLY_BACKEND_ERRORS[normalized]
-    ?? FRIENDLY_BACKEND_ERRORS[code]
-    ?? "요청을 완료하지 못했습니다.";
+  const code = normalized.startsWith("workspace-task-") ? normalized : `workspace-task-${normalized}`;
+  return FRIENDLY_BACKEND_ERRORS[normalized] ?? FRIENDLY_BACKEND_ERRORS[code] ?? "요청을 완료하지 못했습니다.";
 }
 
 export function startService(id: string): Promise<ServiceInstance> {
@@ -763,10 +777,7 @@ export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {
   return invoke<CronPreviewItem[]>("preview_cron", { input: { cronExpr } });
 }
 
-export function listRuns(
-  jobId: string | null,
-  options: RunHistoryOptions = {},
-): Promise<Run[]> {
+export function listRuns(jobId: string | null, options: RunHistoryOptions = {}): Promise<Run[]> {
   if (!isTauri()) {
     const source = jobId ? (mockRuns[jobId] ?? []) : Object.values(mockRuns).flat();
     const definitions = [...mockJobs, ...mockServices];
@@ -891,7 +902,14 @@ export function searchRunLogs(runId: string, options: LogSearchOptions): Promise
       scannedBytes: 0,
       truncated: false,
       sources: options.source
-        ? [{ kind: "log-source/v1" as const, sourceId: `run-manager:${runId}:${options.source}`, runId, stream: options.source }]
+        ? [
+            {
+              kind: "log-source/v1" as const,
+              sourceId: `run-manager:${runId}:${options.source}`,
+              runId,
+              stream: options.source,
+            },
+          ]
         : [],
     });
   }

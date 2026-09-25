@@ -2,9 +2,7 @@ import type { OpenRequest } from "../api";
 
 const MAX_PATH_CHARS = 32_767;
 
-export type RepoOpenAction =
-  | { kind: "prepareRepository"; path: string }
-  | { kind: "error"; message: string };
+export type RepoOpenAction = { kind: "prepareRepository"; path: string } | { kind: "error"; message: string };
 
 export function routeOpenRequest(request: OpenRequest): RepoOpenAction {
   if (request.target.kind !== "path") {

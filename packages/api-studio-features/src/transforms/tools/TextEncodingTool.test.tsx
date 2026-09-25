@@ -12,11 +12,7 @@ describe("HTML entity and URL component tool surfaces", () => {
     expect(screen.getByLabelText("출력")).toBeTruthy();
 
     fireEvent.change(input, { target: { value: `<hello & "세계">` } });
-    await waitFor(() =>
-      expect(screen.getByLabelText("출력").textContent).toBe(
-        "&lt;hello &amp; &quot;세계&quot;&gt;",
-      ),
-    );
+    await waitFor(() => expect(screen.getByLabelText("출력").textContent).toBe("&lt;hello &amp; &quot;세계&quot;&gt;"));
   });
 
   it("shows a fixed decoder error without echoing malformed input", async () => {
@@ -26,9 +22,7 @@ describe("HTML entity and URL component tool surfaces", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByLabelText("출력").textContent).toBe(
-        "HTML entity contains malformed or unsupported syntax.",
-      ),
+      expect(screen.getByLabelText("출력").textContent).toBe("HTML entity contains malformed or unsupported syntax."),
     );
     expect(screen.getByLabelText("출력").textContent).not.toContain("super-secret");
   });
@@ -40,9 +34,7 @@ describe("HTML entity and URL component tool surfaces", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByLabelText("출력").textContent).toBe(
-        "URL component contains malformed percent-encoding.",
-      ),
+      expect(screen.getByLabelText("출력").textContent).toBe("URL component contains malformed percent-encoding."),
     );
     expect(screen.getByLabelText("출력").textContent).not.toContain("super-secret");
   });
@@ -64,13 +56,7 @@ describe("bounded transform stale/busy state", () => {
   });
 
   it("clears the previous output and ignores an older completion", async () => {
-    render(
-      <TransformerTool
-        placeholder="Text"
-        run={deferredRun}
-        clearOutputOnInput
-      />,
-    );
+    render(<TransformerTool placeholder="Text" run={deferredRun} clearOutputOnInput />);
     const input = screen.getByRole("textbox", { name: "입력" });
     const output = screen.getByLabelText("출력");
 
@@ -99,13 +85,7 @@ describe("bounded transform stale/busy state", () => {
   });
 
   it("invalidates a pending completion when the tool unmounts", async () => {
-    const { unmount } = render(
-      <TransformerTool
-        placeholder="Text"
-        run={deferredRun}
-        clearOutputOnInput
-      />,
-    );
+    const { unmount } = render(<TransformerTool placeholder="Text" run={deferredRun} clearOutputOnInput />);
     fireEvent.change(screen.getByRole("textbox", { name: "입력" }), {
       target: { value: "pending" },
     });

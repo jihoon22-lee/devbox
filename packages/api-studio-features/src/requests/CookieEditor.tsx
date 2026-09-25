@@ -27,9 +27,7 @@ export function CookieEditor({
   const availableSecrets = availableSecretNames(secretNames);
   const issues = validateCookies(rows);
   const issueByRow = new Map(issues.map((issue) => [issue.index, issue.message]));
-  const activeCount = rows.filter(
-    (row) => isCookieEnabled(row) && Boolean(row.name || row.value),
-  ).length;
+  const activeCount = rows.filter((row) => isCookieEnabled(row) && Boolean(row.name || row.value)).length;
 
   const toggleReveal = (index: number) => {
     setRevealedRows((current) => {
@@ -59,8 +57,7 @@ export function CookieEditor({
 
       {hasRawCookieHeader && activeCount > 0 && (
         <div className="cookie-conflict" role="alert">
-          활성 Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다. Headers 탭의 Cookie
-          행을 끄거나 삭제하세요.
+          활성 Cookie header와 구조화 Cookie를 동시에 전송할 수 없습니다. Headers 탭의 Cookie 행을 끄거나 삭제하세요.
         </div>
       )}
 
@@ -90,9 +87,7 @@ export function CookieEditor({
                 aria-label={`${index + 1}번 cookie 이름`}
                 placeholder="쿠키 이름"
                 value={row.name}
-                onChange={(event) =>
-                  onChange(updateCookie(rows, index, { name: event.currentTarget.value }))
-                }
+                onChange={(event) => onChange(updateCookie(rows, index, { name: event.currentTarget.value }))}
                 spellCheck={false}
               />
               <input
@@ -101,9 +96,7 @@ export function CookieEditor({
                 type={revealed ? "text" : "password"}
                 autoComplete="off"
                 value={row.value}
-                onChange={(event) =>
-                  onChange(updateCookie(rows, index, { value: event.currentTarget.value }))
-                }
+                onChange={(event) => onChange(updateCookie(rows, index, { value: event.currentTarget.value }))}
                 spellCheck={false}
               />
               <button
@@ -127,10 +120,12 @@ export function CookieEditor({
                   }
                 }}
               >
-                <option value="">
-                  {availableSecrets.length === 0 ? "Secret 없음" : "Secret 참조"}
-                </option>
-                {availableSecrets.map((name) => <option key={name} value={name}>{name}</option>)}
+                <option value="">{availableSecrets.length === 0 ? "Secret 없음" : "Secret 참조"}</option>
+                {availableSecrets.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
               <button
                 type="button"
@@ -174,10 +169,9 @@ export function CookieEditor({
       </button>
 
       <div className="header-notice" role="note">
-        이 편집기는 domain/path/만료일을 관리하는 브라우저 cookie jar가 아니라 현재 요청의 Cookie
-        header만 만듭니다. 값은 기본적으로 숨기며 직접 입력한 값은 History·Collection·기본 cURL에
-        평문 저장하지 않습니다. 봉인된 secret은 이름 참조만 삽입합니다. Cookie는 최대 100행이며
-        세미콜론으로 구분되는 하나의 요청 header로 순서대로 전송합니다.
+        이 편집기는 domain/path/만료일을 관리하는 브라우저 cookie jar가 아니라 현재 요청의 Cookie header만 만듭니다.
+        값은 기본적으로 숨기며 직접 입력한 값은 History·Collection·기본 cURL에 평문 저장하지 않습니다. 봉인된 secret은
+        이름 참조만 삽입합니다. Cookie는 최대 100행이며 세미콜론으로 구분되는 하나의 요청 header로 순서대로 전송합니다.
       </div>
     </div>
   );
