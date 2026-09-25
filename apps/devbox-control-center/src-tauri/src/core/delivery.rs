@@ -66,8 +66,8 @@ pub struct HealthCheck {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceEvidence {
-    pub sources: Vec<product_contract::migration_source::Source>,
-    pub namespaces: Vec<super::legacy_sources::Namespace>,
+    pub sources: Vec<super::owner_history::Source>,
+    pub namespaces: Vec<super::owner_history::Namespace>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -91,7 +91,7 @@ impl OwnerEvidence {
             }
         }
         if let Some(source) = &self.sources {
-            product_contract::migration_source::validate(&self.summary.owner, &source.sources)?;
+            super::owner_history::validate(&self.summary.owner, &source.sources)?;
             if source.namespaces.len() != source.sources.len() {
                 return Err("suite_source_invalid");
             }

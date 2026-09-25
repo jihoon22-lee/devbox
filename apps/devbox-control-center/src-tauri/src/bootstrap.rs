@@ -14,7 +14,6 @@ use std::{
     sync::atomic::AtomicBool,
 };
 type Result<T> = std::result::Result<T, &'static str>;
-pub(crate) mod cutover;
 mod data_restore;
 #[cfg(windows)]
 pub(crate) mod interactive;
@@ -632,9 +631,6 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--apply-data-restore",
             "--commit-data-restore",
             "--rollback-data-restore",
-            "--review-import-again",
-            "--activate-reviewed-install",
-            "--commit-reviewed-install",
             "--activate-clean-install",
             "--commit-clean-install",
         ]
@@ -695,18 +691,6 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         resume_or_update_install(&root, &payload, &image)
     } else if arguments[0] == "--prepare-install" {
         prepare_install(&root, &payload, &image)
-    } else if arguments[0] == "--review-import-again" {
-        cutover::return_to_import(&root, &payload, &image)
-    } else if arguments[0] == "--activate-reviewed-install"
-        || arguments[0] == "--commit-reviewed-install"
-    {
-        activate_install(
-            &root,
-            &payload,
-            &image,
-            arguments[0] == "--commit-reviewed-install",
-            true,
-        )
     } else if arguments[0] == "--activate-clean-install" || arguments[0] == "--commit-clean-install"
     {
         activate_clean_install(
@@ -1495,22 +1479,20 @@ fn snapshot_install(
     })
 }
 
-/// Clean first-install activation only. Any legacy data namespace or imported
-/// backup keeps this path closed until a source-aware cutover plan is available.
+/// Clean first-install activation requires four prepared owner observations.
 fn activate_clean_install(
     root: &Path,
     payload_path: &Path,
     own_image: &Path,
     commit: bool,
 ) -> Result<StageResult> {
-    activate_install(root, payload_path, own_image, commit, false)
+    activate_install(root, payload_path, own_image, commit)
 }
 fn activate_install(
     root: &Path,
     payload_path: &Path,
     own_image: &Path,
     commit: bool,
-    reviewed: bool,
 ) -> Result<StageResult> {
     use crate::core::{
         data_checkpoint,
@@ -1626,50 +1608,20 @@ fn activate_install(
                 || evidence.summary.review_required
         })
     {
-        return Err("bootstrap_source_cutover_required");
+        return Err("bootstrap_store_preparation_required");
     }
-    let mut source_guard = if reviewed && !journal.committed {
-        Some(cutover::hold(
-            sources
-                .get("control-center")
-                .ok_or("bootstrap_data_unavailable")?,
-            &journal,
-        )?)
-    } else {
-        None
-    };
-    if !reviewed {
-        if !journal.imports.is_empty()
-            || !journal.backup.is_empty()
-            || journal.owner_evidence.iter().any(|evidence| {
-                !evidence.backups.is_empty()
-                    || evidence
-                        .summary
-                        .mappings
-                        .as_ref()
-                        .is_some_and(|mapping| mapping.record_count != 0)
-            })
-        {
-            return Err("bootstrap_source_cutover_required");
-        }
-        if !journal.committed {
-            #[cfg(windows)]
-            {
-                let installed = crate::legacy_installer::inventory()?;
-                if !installed.complete || !installed.entries.is_empty() {
-                    return Err("bootstrap_legacy_registration_review_required");
-                }
-            }
-            let legacy =
-                devbox_catalog::parse_catalog(include_str!("../../../legacy-v0.7-catalog.json"))
-                    .map_err(|_| "bootstrap_catalog_invalid")?;
-            for app in legacy.apps {
-                if !matches!(fs::symlink_metadata(parent.join(app.identifier)),Err(error) if error.kind() == std::io::ErrorKind::NotFound)
-                {
-                    return Err("bootstrap_source_cutover_required");
-                }
-            }
-        }
+    if !journal.imports.is_empty()
+        || !journal.backup.is_empty()
+        || journal.owner_evidence.iter().any(|evidence| {
+            !evidence.backups.is_empty()
+                || evidence
+                    .summary
+                    .mappings
+                    .as_ref()
+                    .is_some_and(|mapping| mapping.record_count != 0)
+        })
+    {
+        return Err("bootstrap_store_preparation_required");
     }
     if commit {
         if !matches!(
@@ -1743,22 +1695,7 @@ fn activate_install(
         digest = store.write(Some(&digest), journal)?;
         Ok(())
     };
-    if let Some(guard) = &mut source_guard {
-        guard.revalidate()?;
-        cutover::require_closed()?;
-    }
     if commit {
-        if reviewed
-            && !journal.committed
-            && journal.health_checks.iter().any(|health| {
-                !journal.owner_evidence.iter().any(|evidence| {
-                    evidence.summary.owner == health.report.store.owner
-                        && evidence.summary.mappings == health.report.store.mappings
-                })
-            })
-        {
-            return Err("cutover_destination_changed");
-        }
         while matches!(journal.phase, Phase::Health | Phase::Commit) {
             advance(&mut journal)?;
         }
@@ -1783,11 +1720,7 @@ fn activate_install(
     Ok(StageResult {
         operation_id: None,
         state: if commit {
-            if reviewed {
-                "reviewedInstallationCommitted"
-            } else {
-                "cleanInstallationCommitted"
-            }
+            "cleanInstallationCommitted"
         } else {
             "nativeHealthRequired"
         },

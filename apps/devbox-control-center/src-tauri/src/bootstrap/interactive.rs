@@ -96,9 +96,11 @@ pub(crate) struct Request {
 }
 impl Request {
     pub(crate) fn validate(&self) -> bool {
+        if !known_action(&self.action) {
+            return false;
+        }
         match self.action.as_str() {
-            "snapshot" | "activateClean" | "commitClean" | "activateReviewed"
-            | "commitReviewed" | "reviewImportAgain" | "commitReinstall" => self.id.is_empty(),
+            "snapshot" | "activateClean" | "commitClean" | "commitReinstall" => self.id.is_empty(),
             "restore" | "resume" | "commit" | "rollback" | "updateResume" | "updateCommit"
             | "updateRollback" => {
                 uuid::Uuid::parse_str(&self.id).is_ok_and(|id| id.to_string() == self.id)
@@ -159,12 +161,6 @@ pub(crate) fn inventory() -> Result<Value> {
         .map_err(|_| "bootstrap_clock_invalid")?
         .as_millis() as u64;
     let fresh_health = journal.require_recent_health(now).is_ok();
-    let legacy =
-        devbox_catalog::parse_catalog(include_str!("../../../../legacy-v0.7-catalog.json"))
-            .map_err(|_| "bootstrap_catalog_invalid")?;
-    let no_legacy_data = legacy.apps.iter().all(|app| matches!(fs::symlink_metadata(parent.join(&app.identifier)), Err(error) if error.kind() == std::io::ErrorKind::NotFound));
-    let no_legacy_installers = crate::legacy_installer::inventory()
-        .is_ok_and(|value| value.complete && value.entries.is_empty());
     let clean = journal.previous.is_none()
         && journal.imports.is_empty()
         && journal.backup.is_empty()
@@ -180,11 +176,9 @@ pub(crate) fn inventory() -> Result<Value> {
                     .mappings
                     .as_ref()
                     .is_none_or(|mapping| mapping.record_count == 0)
-        })
-        && no_legacy_data
-        && no_legacy_installers;
+        });
     let installation = json!({"phase":journal.phase,"committed":journal.committed,"recordedOwners":journal.owner_evidence.len(),
-        "clean":clean,"reinstall":reinstall::pending(&root)?,"reviewed":cutover::plan(&data,&journal).is_ok(),"freshHealth":fresh_health});
+        "clean":clean,"reinstall":reinstall::pending(&root)?,"freshHealth":fresh_health});
     let checkpoints = journal.data_checkpoints;
     let recovery = parent.join(format!("com.devbox.v08.suite-restore.i{key}"));
     let mut operations = Vec::new();
@@ -312,7 +306,7 @@ pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> 
             && (available["installation"]["clean"] != true
                 || !available["activeOperation"].is_null())
         {
-            return Err("bootstrap_source_cutover_required");
+            return Err("bootstrap_store_preparation_required");
         }
         if request.action == "restore"
             && !available["checkpoints"]
@@ -430,9 +424,6 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
         let result = match request.action.as_str() {
             "snapshot" => snapshot_install(&root, &payload, &image, false),
             "commitReinstall" => reinstall::execute(&root, &payload, &image, true),
-            "reviewImportAgain" => cutover::return_to_import(&root, &payload, &image),
-            "activateReviewed" => activate_install(&root, &payload, &image, false, true),
-            "commitReviewed" => activate_install(&root, &payload, &image, true, true),
             "activateClean" => activate_clean_install(&root, &payload, &image, false),
             "commitClean" => activate_clean_install(&root, &payload, &image, true),
             "updateResume" => {
@@ -510,6 +501,34 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
                 }
                 began = std::time::Instant::now();
             }
+        }
+    }
+}
+
+fn known_action(name: &str) -> bool {
+    matches!(
+        name,
+        "snapshot"
+            | "activateClean"
+            | "commitClean"
+            | "commitReinstall"
+            | "restore"
+            | "resume"
+            | "commit"
+            | "rollback"
+            | "updateResume"
+            | "updateCommit"
+            | "updateRollback"
+    )
+}
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+    #[test]
+    fn only_clean_activation_remains() {
+        assert!(known_action("activateClean") && known_action("commitClean"));
+        for removed in ["activateReviewed", "commitReviewed", "reviewImportAgain"] {
+            assert!(!known_action(removed));
         }
     }
 }

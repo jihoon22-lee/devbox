@@ -32,10 +32,6 @@ pub mod core;
 mod command_receipts;
 mod commands;
 
-mod launcher_import;
-
-#[cfg(windows)]
-mod legacy_cleanup;
 mod tools_host;
 #[cfg(windows)]
 mod updates;
@@ -43,8 +39,4 @@ mod updates;
 pub mod bootstrap;
 
 #[cfg(windows)]
-#[path = "platform/legacy_installer.rs"]
-mod legacy_installer;
-
-#[cfg(windows)]
-mod migration_evidence;
+mod owner_evidence;

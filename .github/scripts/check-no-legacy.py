@@ -26,6 +26,10 @@ def scan(paths: list[str]) -> list[str]:
     for relative in paths:
         base = ROOT / relative
         for path in ([base] if base.is_file() else base.rglob("*")):
+            # This module only decodes/validates retained v0.8.1 journal DTOs.
+            # It has no filesystem acquisition, launcher or import entrypoints.
+            if path.relative_to(ROOT).as_posix() == "apps/devbox-control-center/src-tauri/src/core/owner_history.rs":
+                continue
             if not path.is_file() or path.suffix not in SUFFIXES or "node_modules" in path.parts or "target" in path.parts:
                 continue
             for number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):

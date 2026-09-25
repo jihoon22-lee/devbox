@@ -15,24 +15,40 @@ struct Response {
     operation: Operation,
     value: Value,
 }
+fn component_for(method: &str) -> Option<&'static str> {
+    if matches!(
+        method,
+        "suite_inventory"
+            | "open_installation_folder"
+            | "suite_recovery"
+            | "restore_inventory"
+            | "restore_action"
+            | "record_suite_health"
+            | "check_suite_update"
+            | "suite_update_status"
+            | "download_suite_update"
+            | "cancel_suite_update"
+            | "launch_suite_update"
+    ) {
+        Some("control-center.delivery")
+    } else if ["diagnostics", "recovery", "environment", "tools"]
+        .iter()
+        .any(|route| devbox_manager_lib::component::allowed(route, method))
+    {
+        Some("control-center.tools")
+    } else {
+        None
+    }
+}
+
 #[tauri::command]
 async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Response, Problem> {
-    let cleanup = matches!(
-        request.method.as_str(),
-        "legacy_cleanup_preview" | "legacy_cleanup_apply" | "legacy_cleanup_list"
-    );
-    let cutover = matches!(
-        request.method.as_str(),
-        "cutover_review" | "prepare_cutover"
-    );
     let record_health = request.method == "record_suite_health";
-    let record_owner = record_health || request.method == "record_migration_owner";
     let inventory = request.method == "suite_inventory";
     let open_directory = request.method == "open_installation_folder";
     let recovery = request.method == "suite_recovery";
     let restore_inventory = request.method == "restore_inventory";
     let restore_action = request.method == "restore_action";
-    let legacy = request.method == "legacy_inventory";
     let suite_update = matches!(
         request.method.as_str(),
         "check_suite_update"
@@ -41,61 +57,22 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             | "cancel_suite_update"
             | "launch_suite_update"
     );
-    let component = if cleanup
-        || cutover
-        || inventory
-        || open_directory
-        || recovery
-        || legacy
-        || record_owner
-        || restore_inventory
-        || restore_action
-        || suite_update
-    {
-        "control-center.delivery"
-    } else {
-        "control-center.tools"
-    };
+    let selected = component_for(&request.method);
+    let component = selected.unwrap_or("control-center.dispatch");
     let operation = product_shell_tauri::begin_operation(&window, component, &request.method);
+    if selected.is_none() {
+        return Err(Problem {
+            code: ProblemCode::InvalidRequest,
+            provenance: product_contract::Provenance {
+                product: "control-center".into(),
+                component: "control-center.dispatch".into(),
+                request_id: "rejected".into(),
+                revision: 1,
+            },
+        });
+    }
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
-    let allowed = if cleanup {
-        matches!(request.header.route.as_str(), "migration" | "recovery")
-            && request
-                .args
-                .as_object()
-                .is_some_and(|args| match request.method.as_str() {
-                    "legacy_cleanup_list" => args.is_empty(),
-                    "legacy_cleanup_apply" => {
-                        args.len() == 1
-                            && args.get("id").and_then(Value::as_str).is_some_and(|id| {
-                                uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
-                            })
-                    }
-                    "legacy_cleanup_preview" => {
-                        args.len() == 2
-                            && args
-                                .get("kind")
-                                .and_then(Value::as_str)
-                                .is_some_and(|kind| matches!(kind, "installer" | "portable"))
-                            && args
-                                .get("id")
-                                .and_then(Value::as_str)
-                                .is_some_and(product_contract::commands::opaque_id)
-                    }
-                    _ => false,
-                })
-    } else if cutover {
-        matches!(request.header.route.as_str(), "migration" | "recovery")
-            && if request.method == "cutover_review" {
-                request.args.as_object().is_some_and(|args| args.is_empty())
-            } else {
-                serde_json::from_value::<crate::core::cutover::Request>(request.args.clone())
-                    .is_ok_and(|request| {
-                        request.choices.len() <= 17
-                            && product_contract::commands::revision(&request.revision)
-                    })
-            }
-    } else if suite_update {
+    let allowed = if suite_update {
         request.header.route == "updates"
             && request.args.as_object().is_some_and(|args| {
                 if request.method == "check_suite_update" {
@@ -111,7 +88,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     } else if restore_inventory || restore_action {
         matches!(
             request.header.route.as_str(),
-            "updates" | "recovery" | "products" | "migration"
+            "updates" | "recovery" | "products"
         ) && request.args.as_object().is_some_and(|args| {
             if restore_inventory {
                 return args.is_empty();
@@ -126,8 +103,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                 return false;
             };
             match action {
-                "snapshot" | "activateClean" | "commitClean" | "activateReviewed"
-                | "commitReviewed" | "reviewImportAgain" | "commitReinstall" => id.is_empty(),
+                "snapshot" | "activateClean" | "commitClean" | "commitReinstall" => id.is_empty(),
                 "restore" | "resume" | "commit" | "rollback" | "updateResume" | "updateCommit"
                 | "updateRollback" => {
                     uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
@@ -135,9 +111,8 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                 _ => false,
             }
         })
-    } else if record_owner {
-        (request.header.route == "migration"
-            || (record_health && matches!(request.header.route.as_str(), "updates" | "recovery")))
+    } else if record_health {
+        matches!(request.header.route.as_str(), "updates" | "recovery")
             && request.args.as_object().is_some_and(|args| {
                 args.len() == 1
                     && args
@@ -150,10 +125,10 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     } else if open_directory {
         request.header.route == "products"
             && request.args.as_object().is_some_and(|args| args.is_empty())
-    } else if inventory || recovery || legacy {
+    } else if inventory || recovery {
         matches!(
             request.header.route.as_str(),
-            "products" | "updates" | "components" | "migration" | "recovery"
+            "products" | "updates" | "components" | "recovery"
         ) && request.args.as_object().is_some_and(|args| args.is_empty())
     } else {
         devbox_manager_lib::component::allowed(&request.header.route, &request.method)
@@ -165,37 +140,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             code: ProblemCode::Unauthorized,
         });
     }
-    let value = if cleanup {
-        #[cfg(windows)]
-        let result = {
-            let app = window.app_handle().clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                crate::legacy_cleanup::execute(&app, &request.method, request.args)
-            })
-            .await
-            .map_err(|_| "legacy_cleanup_unavailable")
-            .and_then(|value| value)
-        };
-        #[cfg(not(windows))]
-        let result: Result<Value, &'static str> = Err("suite_windows_required");
-        result.map_err(str::to_owned)
-    } else if cutover {
-        #[cfg(windows)]
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let input = if request.method == "prepare_cutover" {
-                Some(serde_json::from_value(request.args).map_err(|_| "cutover_request_invalid")?)
-            } else {
-                None
-            };
-            crate::bootstrap::cutover::review(input)
-        })
-        .await
-        .map_err(|_| "cutover_worker_unavailable")
-        .and_then(|result| result);
-        #[cfg(not(windows))]
-        let result: Result<Value, &'static str> = Err("suite_windows_required");
-        result.map_err(str::to_owned)
-    } else if suite_update {
+    let value = if suite_update {
         #[cfg(windows)]
         let result = crate::updates::execute(
             window.app_handle().clone(),
@@ -227,33 +172,17 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
         #[cfg(not(windows))]
         let result: Result<Value, &'static str> = Err("suite_windows_required");
         result.map_err(str::to_owned)
-    } else if record_owner {
+    } else if record_health {
         #[cfg(windows)]
-        let result = crate::migration_evidence::record(
+        let result = crate::owner_evidence::record(
             window.app_handle().clone(),
             request.args["product"].as_str().unwrap_or_default().into(),
             request.header.deadline_ms,
-            record_health,
         )
         .await;
         #[cfg(not(windows))]
         let result: Result<Value, &'static str> = Err("suite_windows_required");
         result.map_err(str::to_owned)
-    } else if legacy {
-        let app = window.app_handle().clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let manager = devbox_manager_lib::component::legacy_installations(&app).ok();
-            #[cfg(windows)]
-            let installers = crate::legacy_installer::inventory()
-                .ok()
-                .and_then(|report| serde_json::to_value(report).ok());
-            #[cfg(not(windows))]
-            let installers: Option<Value> = None;
-            Ok(serde_json::json!({"manager":manager,"installers":installers}))
-        })
-        .await
-        .map_err(|_| "legacy_inventory_unavailable".to_string())
-        .and_then(|value| value)
     } else if recovery {
         let root = window.app_handle().path().app_local_data_dir();
         match root {
@@ -334,7 +263,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             OperationState::Failed {
                 code: ProblemCode::Unavailable,
             },
-            if suite_update || cutover || cleanup {
+            if suite_update {
                 serde_json::json!({"issue":issue})
             } else {
                 serde_json::json!({"issue":"manager_tools_unavailable"})
@@ -363,4 +292,31 @@ pub(crate) fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             Ok(())
         })
         .build()
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+    #[test]
+    fn retired_methods_are_not_routed() {
+        for parts in [
+            vec!["legacy", "cleanup", "preview"],
+            vec!["legacy", "cleanup", "apply"],
+            vec!["legacy", "cleanup", "list"],
+            vec!["cutover", "review"],
+            vec!["prepare", "cutover"],
+            vec!["legacy", "inventory"],
+            vec!["record", "migration", "owner"],
+        ] {
+            assert_eq!(component_for(&parts.join("_")), None);
+        }
+        for method in [
+            "suite_inventory",
+            "record_suite_health",
+            "check_suite_update",
+            "restore_inventory",
+        ] {
+            assert_eq!(component_for(method), Some("control-center.delivery"));
+        }
+    }
 }
