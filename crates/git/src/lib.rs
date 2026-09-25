@@ -19,9 +19,6 @@ pub mod execution;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-#[cfg(target_os = "windows")]
-use std::os::windows::io::AsRawHandle;
-
 /// Git for Windows 기본 설치 위치 (우선순위 순). GUI 앱이 물려받은 PATH에
 /// git이 없어도 동작하도록 절대 경로를 우선한다.
 #[cfg(target_os = "windows")]

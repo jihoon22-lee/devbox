@@ -56,12 +56,12 @@ impl ProcessTree {
     pub fn assign_std(child: &std::process::Child) -> Result<Self, ()> {
         #[cfg(windows)]
         {
-            return windows_job::WindowsJob::assign_std(child)
+            windows_job::WindowsJob::assign_std(child)
                 .map(|job| Self {
                     job,
                     terminal_empty: false,
                 })
-                .map_err(|_| ());
+                .map_err(|_| ())
         }
         #[cfg(unix)]
         {
@@ -80,12 +80,12 @@ impl ProcessTree {
     pub fn assign(child: &Child) -> Result<Self, ()> {
         #[cfg(windows)]
         {
-            return windows_job::WindowsJob::assign_to(child)
+            windows_job::WindowsJob::assign_to(child)
                 .map(|job| Self {
                     job,
                     terminal_empty: false,
                 })
-                .map_err(|_| ());
+                .map_err(|_| ())
         }
         #[cfg(unix)]
         {
