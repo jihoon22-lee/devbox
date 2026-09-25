@@ -12,8 +12,6 @@ const Runtime=lazy(()=>import("@devbox/workspace-features/runtime"));
 const Logs=lazy(()=>import("@devbox/workspace-features/logs"));
 const RuntimeWsl=lazy(()=>import("./RuntimeWsl"));
 const IncomingRuntimeReview=lazy(()=>import("./IncomingRuntimeReview"));
-const RuntimeImport=lazy(()=>import("./RuntimeImport"));
-const RuntimeSettingsImport=lazy(()=>import("./RuntimeSettingsImport"));
 type Diagnostic={id:string;relativePath:string;line:number;column:number|null};
 export default function NativeRuntimeRoutes({route,description,navigate,tasksDirty,onDirtyChange,onDiagnostic,externalLogOpen,onExternalLogConsumed,focusRequest,onFocusConsumed}:{route:string;description:Description;navigate:(route:string)=>void;tasksDirty:boolean;onDirtyChange:(dirty:boolean)=>void;onDiagnostic:(request:Diagnostic)=>void;focusRequest?:RuntimeFocusRequest|null;onFocusConsumed?:(id:string)=>void;externalLogOpen?:RuntimeLogOpenRequest|null;onExternalLogConsumed?:(id:string)=>void}) {
   const {review:incoming,clear:clearIncoming}=useIncomingReview();
@@ -53,8 +51,6 @@ export default function NativeRuntimeRoutes({route,description,navigate,tasksDir
   },[externalLogOpen,onExternalLogConsumed]);
   const [runtimeNotice, setRuntimeNotice] = useState("");
   const [navigationReady,setNavigationReady]=useState(false);
-  const [runtimeSettingsRevision,setRuntimeSettingsRevision]=useState(0);
-  const [logSettingsRevision,setLogSettingsRevision]=useState(0);
   const current = useRef({route, context:description.context, navigate, tasksDirty, onDiagnostic});
   current.current = {route, context:description.context, navigate, tasksDirty, onDiagnostic};
   useEffect(() => { setEngineVisited(previous => previous.has(route) ? previous : new Set([...previous, route])); }, [route]);
@@ -86,13 +82,13 @@ export default function NativeRuntimeRoutes({route,description,navigate,tasksDir
   return <>
     {runtimeNotice && <p role="status">{runtimeNotice}</p>}
     {(engineVisited.has("tasks") || route === "tasks") && <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
-      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><IncomingRuntimeReview description={description}/><RuntimeImport description={description} active={route === "tasks"} blocked={tasksDirty}/><Tasks importSource={currentTaskSource} openTask={incomingTask??(focus?.target.kind==="task"?{id:focus.id,jobId:focus.target.jobId}:null)} onTaskConsumed={consumeTask} active={route === "tasks"} onDirtyChange={onDirtyChange}/></Suspense>
+      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><IncomingRuntimeReview description={description}/><Tasks importSource={currentTaskSource} openTask={incomingTask??(focus?.target.kind==="task"?{id:focus.id,jobId:focus.target.jobId}:null)} onTaskConsumed={consumeTask} active={route === "tasks"} onDirtyChange={onDirtyChange}/></Suspense>
     </div>}
     {(engineVisited.has("runtime") || route === "runtime") && <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
-      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "runtime"} kind="runtime" onImported={()=>setRuntimeSettingsRevision(value=>value+1)}/><Runtime openPort={focus?.target.kind==="port"?{id:focus.id,port:focus.target.port}:null} onPortConsumed={onFocusConsumed} active={route === "runtime"} settingsRevision={runtimeSettingsRevision}/><RuntimeWsl description={description} active={route === "runtime"}/></Suspense>
+      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><Runtime openPort={focus?.target.kind==="port"?{id:focus.id,port:focus.target.port}:null} onPortConsumed={onFocusConsumed} active={route === "runtime"}/><RuntimeWsl description={description} active={route === "runtime"}/></Suspense>
     </div>}
     {(engineVisited.has("logs") || route === "logs") && <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
-      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><IncomingWebhookLog description={description} onOpen={acceptWebhook}/><RuntimeSettingsImport description={description} active={route === "logs"} kind="logs" onImported={()=>setLogSettingsRevision(value=>value+1)}/><Logs settingsRevision={logSettingsRevision} active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog}/></Suspense>
+      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><IncomingWebhookLog description={description} onOpen={acceptWebhook}/><Logs active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog}/></Suspense>
     </div>}
   </>;
 }

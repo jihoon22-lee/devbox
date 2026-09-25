@@ -11,26 +11,11 @@ afterEach(cleanup);
 beforeEach(() => {
   call.mockReset();
   call.mockImplementation(async (_component, method) => {
-    if (method === "legacy_snapshot_job") return null;
-    if (method === "list_window_history") return {items:[],unrecognized:0};
-    if (method === "list_legacy_snapshots") return {snapshots:[],unrecognized:0};
     if (method === "status") return {phase:"selected"};
     if (method === "snapshot") return emptyRegistry;
     if (method === "preview_windows") return preview;
     return {};
   });
-});
-it("requires explicit empty startup and preserves a failed store", async () => {
-  call.mockImplementation(async (_component,method)=>method==="status"?{phase:"setup"}:method==="legacy_snapshot_job"?null:{snapshots:[],unrecognized:0});
-  const view = render(<RegistryGate/>);
-  await screen.findByRole("button", {name:"빈 Workspace 시작"});
-  expect(call.mock.calls.some(([,method])=>method === "start_empty")).toBe(false);
-  view.unmount();
-  call.mockResolvedValue({phase:"failed",issue:"invalid_files_store"});
-  render(<RegistryGate/>);
-  await screen.findByRole("alert");
-  expect(screen.queryByRole("button", {name:"빈 Workspace 시작"})).toBeNull();
-  expect(call.mock.calls.some(([,method])=>method === "start_empty")).toBe(false);
 });
 it("previews and cancels registration without granting trust or writing the registry", async () => {
   const {container} = render(<RegistryGate/>);
@@ -44,24 +29,6 @@ it("previews and cancels registration without granting trust or writing the regi
   await waitFor(()=>expect(screen.queryByRole("heading", {name:"등록 확인"})).toBeNull());
   expect(call).toHaveBeenCalledWith("workspace.registry", "cancel_registration", {previewId:"fixture-preview"});
   expect(call.mock.calls.some(([,method])=>method === "apply_registration")).toBe(false);
-});
-it("proposes an imported folder using only its stored native record ID",async()=>{
-  const profile={id:"old-profile",name:"가져온 프로젝트",windowsPath:"C:\\fixture",wsl:null,gitRoot:null,expectedPorts:[3000],runManagerServiceIds:[],environment:null};
-  call.mockImplementation(async(_component,method)=>{
-    if(method==="status")return {phase:"selected"};
-    if(method==="snapshot")return {...emptyRegistry,importedProfiles:[{id:"native-imported",sourceSnapshotId:"snapshot",profile}]};
-    if(method==="legacy_snapshot_job")return null;
-    if(method==="list_window_history")return {items:[],unrecognized:0};
-    if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
-    if(method==="preview_imported_profile_windows")return {...preview,importedProfileId:"native-imported"};
-    return {};
-  });
-  render(<RegistryGate/>);
-  fireEvent.click(await screen.findByRole("button",{name:"Windows 폴더 연결 검토"}));
-  await screen.findByRole("heading",{name:"등록 확인"});
-  expect(call).toHaveBeenCalledWith("workspace.registry","preview_imported_profile_windows",{importedId:"native-imported"});
-  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
-  expect(screen.getByText(/가져온 프로필을 이 폴더에 연결합니다/)).toBeTruthy();
 });
 it("sends only the reviewed preview token on explicit registration", async () => {
   render(<RegistryGate/>);
@@ -97,26 +64,6 @@ it("reviews an explicit Source suggestion without automatically registering or s
   expect(call.mock.calls.filter(([,method])=>method==="preview_windows")).toHaveLength(1);
   expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
   expect((screen.getByLabelText("프로젝트 이름") as HTMLInputElement).value).toBe(suggestedRoot.name);
-});
-
-it("reviews the saved Code Pad workspace through native job identity before registration",async()=>{
-  call.mockImplementation(async(_component,method)=>{
-    if(method==="status")return {phase:"selected"};
-    if(method==="snapshot")return emptyRegistry;
-    if(method==="list_window_history")return {items:[],unrecognized:0};
-    if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
-    if(method==="legacy_snapshot_job")return {id:"verified-job",source:"code-pad",phase:"ready",operation:"verify",manifest:{files:[{name:"session.json",issue:null,records:1}],missing:[]}};
-    if(method==="legacy_workspace")return {path:preview.binding.root,target:"windows"};
-    if(method==="preview_legacy_workspace_windows")return preview;
-    return {};
-  });
-  render(<RegistryGate/>);
-  fireEvent.click(await screen.findByRole("button",{name:"마지막 작업 폴더 등록 검토"}));
-  await screen.findByRole("heading",{name:"등록 확인"});
-  expect(call).toHaveBeenCalledWith("workspace.registry","preview_legacy_workspace_windows",{jobId:"verified-job"});
-  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
-  fireEvent.click(screen.getByRole("button",{name:"취소"}));
-  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","cancel_registration",{previewId:preview.previewId}));
 });
 
 it("reviews a concrete template profile and registers only after explicit approval",async()=>{
@@ -176,25 +123,6 @@ it("reviews a Source worktree proposal in its WSL distro without starting it", a
   expect(await screen.findByDisplayValue(suggestedRoot.name)).toBeTruthy();
 });
 
-
-it("opens the imported WSL profile form and cancels its native binding review without registration",async()=>{
-  const distro={id:"selected-distro",name:"Profile Ubuntu",version:2,running:true};
-  const imported={id:"native-profile",local:true,profile:{id:"old-profile",name:"보관한 Linux 프로젝트",windowsPath:null,wsl:{distro:distro.name,path:"/home/fixture/보관한 프로젝트"},gitRoot:null,expectedPorts:[4321],runManagerServiceIds:[],environment:null}};
-  const wslPreview={...preview,binding:{root:imported.profile.wsl.path,target:{kind:"wsl",distroId:distro.id}},importedProfileId:imported.id};
-  const original=call.getMockImplementation()!;
-  call.mockImplementation(async(component,method,...args)=>method==="snapshot"?{...emptyRegistry,importedProfiles:[imported]}:method==="list_wsl_distros"?[distro]:method==="preview_imported_profile_wsl"?wslPreview:original(component,method,...args));
-  render(<RegistryGate/>);
-  fireEvent.click(await screen.findByRole("button",{name:"WSL 폴더 연결 검토"}));
-  await screen.findByRole("option",{name:"Profile Ubuntu · 실행 중"});
-  fireEvent.click(screen.getByRole("button",{name:"WSL 폴더 확인"}));
-  await screen.findByRole("heading",{name:"등록 확인"});
-  expect(call).toHaveBeenCalledWith("workspace.registry","preview_imported_profile_wsl",{importedId:imported.id,distroId:distro.id,startStopped:false});
-  expect((screen.getByLabelText("프로젝트 이름") as HTMLInputElement).value).toBe(imported.profile.name);
-  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
-  fireEvent.click(screen.getByRole("button",{name:"취소"}));
-  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","cancel_registration",{previewId:preview.previewId}));
-});
-
 it("publishes startup readiness only after its registry snapshot resolves",async()=>{
   let finish!:(value:unknown)=>void;
   const pending=new Promise(resolve=>{finish=resolve;});
@@ -205,4 +133,32 @@ it("publishes startup readiness only after its registry snapshot resolves",async
   expect(call.mock.calls.some(([,method])=>method==="list_legacy_snapshots")).toBe(false);
   finish(emptyRegistry);
   await waitFor(()=>expect(ready).toHaveBeenCalledOnce());
+});
+
+it("starts an empty registry automatically once",async()=>{
+ let started=false;
+ call.mockImplementation(async(_component,method)=>{
+  if(method==="status")return {phase:started?"selected":"setup"};
+  if(method==="start_empty"){started=true;return {};}
+  if(method==="snapshot")return emptyRegistry;
+  throw new Error(method);
+ });
+ render(<RegistryGate/>);
+ await screen.findByLabelText("Windows 프로젝트 폴더");
+ expect(call.mock.calls.filter(([,method])=>method==="start_empty")).toHaveLength(1);
+ expect(screen.queryByRole("button",{name:"빈 Workspace 시작"})).toBeNull();
+});
+it("does not retry a failed automatic start until requested",async()=>{
+ call.mockImplementation(async(_component,method)=>{if(method==="status")return {phase:"setup"};throw new Error("저장소 준비 실패");});
+ render(<RegistryGate/>);
+ await screen.findByText("저장소 준비 실패");
+ await waitFor(()=>expect(call.mock.calls.filter(([,method])=>method==="start_empty")).toHaveLength(1));
+ fireEvent.click(screen.getByRole("button",{name:"다시 시도"}));
+ await waitFor(()=>expect(call.mock.calls.filter(([,method])=>method==="start_empty")).toHaveLength(2));
+});
+it("prepares only the store while Suite activation is pending",async()=>{
+ render(<RegistryGate setupOnly/>);
+ await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","snapshot",{}));
+ expect(screen.queryByLabelText("Windows 프로젝트 폴더")).toBeNull();
+ expect(call.mock.calls.some(([,method])=>method==="preview_windows")).toBe(false);
 });

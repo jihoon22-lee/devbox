@@ -4,7 +4,6 @@ import {fixtureDescription} from "@devbox/product-shell/api";
 import Terminal from "./Terminal";
 import {componentCall} from "./native";
 vi.mock("./native",()=>({componentCall:vi.fn()}));
-vi.mock("./TerminalImport",()=>({default:()=>null}));
 vi.mock("./DevelopmentSessions",()=>({default:()=>null}));
 const call=vi.mocked(componentCall);
 const context={projectId:"project",worktreeId:"tree",target:{kind:"windows" as const},revision:1};
