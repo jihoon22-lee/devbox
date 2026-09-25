@@ -356,27 +356,13 @@ impl Fixture {
             .unwrap();
         assert_eq!(unbound.imported_profiles, registered.imported_profiles);
         assert_eq!(unbound.worktrees, registered.worktrees);
-        assert!(matches!(
-            projects.preview_imported_profile_wsl(
-                resources,
-                &imported_id,
-                &uuid::Uuid::new_v4().to_string(),
-                false
-            ),
-            Err("legacy_profile_distro_mismatch")
-        ));
-        let cancelled = projects
-            .preview_imported_profile_wsl(resources, &imported_id, distro_id, false)
-            .unwrap();
+        // Current templates create a new concrete profile; retired source
+        // profiles are never used as registration authority.
+        let cancelled = preview();
         projects.cancel(&cancelled.preview_id).unwrap();
         assert_eq!(projects.snapshot().unwrap(), unbound);
-        let reviewed = projects
-            .preview_imported_profile_wsl(resources, &imported_id, distro_id, false)
-            .unwrap();
-        assert_eq!(
-            reviewed.imported_profile_id.as_deref(),
-            Some(imported_id.as_str())
-        );
+        let reviewed = preview();
+        assert!(reviewed.imported_profile_id.is_none());
         let (rebound, rebound_context) = projects
             .apply(
                 &reviewed.preview_id,
@@ -385,11 +371,21 @@ impl Fixture {
             )
             .unwrap();
         assert_eq!(rebound_context, context);
-        assert_eq!(rebound.imported_profiles, registered.imported_profiles);
         assert_eq!(
-            rebound.imported_profile_bindings,
-            registered.imported_profile_bindings
+            rebound.imported_profiles.len(),
+            registered.imported_profiles.len() + 1
         );
+        assert!(rebound
+            .imported_profiles
+            .iter()
+            .any(|profile| profile.id == imported_id));
+        let current = rebound.imported_profile_for(&context).unwrap().unwrap();
+        assert_ne!(current.id, imported_id);
+        assert_eq!(
+            current.source_template_id.as_deref(),
+            Some(entry.id.as_str())
+        );
+        assert_eq!(current.profile.expected_ports, vec![4322]);
         assert_eq!(
             fs::read(directory.join("original.txt")).unwrap(),
             b"preserve template fixture"

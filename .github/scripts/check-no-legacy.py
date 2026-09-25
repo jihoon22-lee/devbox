@@ -22,6 +22,7 @@ PATTERNS = [
     r"\blegacy_(inventory|snapshot|workspace|recovery|references|imports)\b",
     r"\b(migration_ledger|(?:window|terminal|recovery)_import|settings_import|runtime_import|prepare_legacy_snapshot|resolve_legacy_reference|MigrationOnly|legacySources|imported_log_descriptor)\b",
     r"\bpreview_(session|profile|template|lsp_config)_import\b",
+    r"\bpreview_imported_profile_(windows|wsl)\b",
     r"\bLegacy(Imports|LspImport|ProfileImport|RecoveryImport|ReferenceLookup|SessionImport|TemplateImport|WindowImport|Workspace)\b",
 
     r"com\.devbox\.(knowledgebase|lifelog|everythingplus|apiplayground|webhooklab|developertoolbox)\b",
