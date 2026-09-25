@@ -69,10 +69,12 @@ import {readFileSync} from "node:fs";
 import {createRequire} from "node:module";
 import {Script} from "node:vm";
 const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
-test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
+test("product renderer probes contain valid decoded JavaScript expressions",()=>{
   let checked=0;
-  for(const name of ["registration","definitions","dependencies","source","files","lsp","performance","runtime","runtime-wsl","runtime-crash","terminal-sessions","tasks-wsl","multiplexer","containers","owned-wsl2"]){
-    const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
+  const workspaceFixtures=["registration","definitions","dependencies","source","files","lsp","performance","runtime","runtime-wsl","runtime-crash","terminal-sessions","tasks-wsl","multiplexer","containers","owned-wsl2"];
+  const fixturePaths=[...workspaceFixtures.map(name=>`./windows-workspace-${name}.mjs`),"./windows-product-foundation.mjs","./windows-knowledge-lifecycle.mjs"];
+  for(const relative of fixturePaths){
+    const filename=new URL(relative,import.meta.url);
     const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));
     function visit(node){
