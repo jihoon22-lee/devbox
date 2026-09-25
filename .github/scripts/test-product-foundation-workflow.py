@@ -61,8 +61,7 @@ assert "runs-on: windows-latest" in windows_job
 assert 'run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"' in windows_job, "Windows domain regressions must execute when affected, not merely compile"
 assert 'RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}' in windows_job
 assert "product-native-authority-" not in workflow, "do not duplicate CI's Windows unit suite"
-assert "windows-knowledge-migration.mjs" in workflow
-assert workflow.index("- name: Verify Knowledge migration") < workflow.index("- name: Verify anchor and product installer coexistence"), "migration claims absent legacy profiles before installer coexistence creates them"
+assert "windows-knowledge-lifecycle.mjs" in workflow
 for source in ("packages/knowledge-features/**", "crates/knowledge-vault-engine/**", "crates/activity-engine/**", "crates/content-index-engine/**"):
     assert source in workflow, "native Knowledge consumers require acceptance on source changes"
 

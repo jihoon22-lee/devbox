@@ -11,7 +11,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
   release 권한을 부여하는 옵션이 아니며 native host가 caller·session·route를 다시 검사한다.
 - 제품 identity는 `com.devbox.v08.apistudio`, 데이터는 installation별 namespace다.
   시작만으로 legacy source를 초기화하거나 원본 경로에 새 데이터를 쓰지 않는다.
-- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·이전·복구 안내](../../docs/windows-guide.md).
+- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·복구 안내](../../docs/windows-guide.md).
 
 ## 유지하는 계약
 
@@ -19,8 +19,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 - Webhook temporary listener와 명시적으로 실행한 service-profile worker의 수명을 분리한다.
 - Transform·response diff·mock·Knowledge note 이동은 owner가 검증한 artifact review를 따른다.
   route 전환만으로 자동 send/replay/network side effect를 실행하지 않는다.
-- API/Webhook/Toolbox 원본을 WAL-consistent snapshot과 닫힌 WebView profile에서 읽는다.
-  원본 DB·설정을 보존하며 미지원 schema·source 변경·destination 충돌을 숨기지 않는다.
+- 처음 실행하면 가져오기 화면 없이 바로 시작한다. 설치본은 Control Center에서 Suite 활성화를 확정한다.
 - Secret은 raw handoff/argv/log에 넣지 않으며 재연결 상태를 유지한다. 비영속 도구는 사용자
   설정처럼 저장하거나 공유 payload에 포함하지 않는다.
 
@@ -62,7 +61,7 @@ registered in the same order.
 
 The native registry explicitly classifies HTTP cancellation, MCP HTTP/stdio cancellation and
 disconnection, OAuth cancellation, gRPC cancellation/disconnection, SSE stop, and WebSocket
-close/disconnection as controls. Webhook stop/product quit and migration cancellation also use
+close/disconnection as controls. Webhook stop/product quit also use
 this class. Controls have eight bounded slots independent of 64 normal component operations.
 Normal saturation cannot deny their admission. Component/route/session validation, argument
 limits and shared replay protection still run; names or prefixes supplied by a renderer do not

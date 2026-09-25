@@ -6,7 +6,7 @@ const scope=process.argv[2];
 const groups={
  'product-shells':[['workspace','workbench','workspace-performance.json'],['control-center','devbox-manager','control-center-performance.json']],
  api:[['api-studio','api-playground','api-lifecycle.json']],
- knowledge:[['knowledge','knowledge-base','knowledge-migration.json'],['knowledge.search','everything-plus','knowledge-migration.json']],
+ knowledge:[['knowledge','knowledge-base','knowledge-lifecycle.json'],['knowledge.search','everything-plus','knowledge-lifecycle.json']],
 };
 assert.ok(Object.hasOwn(groups,scope));
 const baseline=json('performance-baseline/runtime.json');
