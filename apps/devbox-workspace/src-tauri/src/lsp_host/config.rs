@@ -1,5 +1,4 @@
-//! Strict legacy LSP configuration and destination receipts. Conversion never
-//! carries activation or execution authority into a new context.
+//! Current LSP configuration, preserving already stored receipt fields.
 use code_pad_lib::lsp::{LspConfig, LSP_CONFIG_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -123,19 +122,6 @@ impl StoredConfig {
         }
         Ok(bytes)
     }
-    pub fn import(&self, snapshot_id: &str, config: LspConfig) -> Result<Self> {
-        if self.imports.iter().any(|id| id == snapshot_id) {
-            return Ok(self.clone());
-        }
-        if self.imports.len() >= 32 {
-            return Err("legacy_lsp_limit");
-        }
-        let mut next = self.clone();
-        next.config = config;
-        next.imports.push(snapshot_id.into());
-        next.validate()?;
-        Ok(next)
-    }
 }
 pub fn history_id(id: &str) -> bool {
     id.len() == 64
@@ -143,40 +129,17 @@ pub fn history_id(id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-pub fn retarget(mut config: LspConfig, root: &str) -> Result<LspConfig> {
-    config.workspace_root = root.into();
-    config.enabled = false;
-    decode(&serde_json::to_vec(&config).map_err(|_| "lsp_config_invalid")?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn conversion_disables_execution_and_receipts_survive_normal_changes() {
-        let mut raw = serde_json::to_value(LspConfig::default()).unwrap();
-        raw["enabled"] = serde_json::json!(true);
-        raw["workspace_root"] = serde_json::json!("C:/old");
-        raw["server_by_language"] =
-            serde_json::json!({"rust":{"kind":"custom","executable":"missing-server","args":[]}});
-        let config = retarget(
-            decode(&serde_json::to_vec(&raw).unwrap()).unwrap(),
-            "C:/new",
-        )
-        .unwrap();
-        assert!(!config.enabled);
-        assert_eq!(config.workspace_root, "C:/new");
-        assert_eq!(config.server_by_language.len(), 1);
-        let id = "a".repeat(64);
-        let mut stored = StoredConfig::default().import(&id, config.clone()).unwrap();
-        stored.config.server_by_language.clear();
+    fn existing_receipts_survive_normal_changes_and_future_fields_fail() {
+        let raw = serde_json::json!({"schemaVersion":1,"config":LspConfig::default(),"imports":["a".repeat(64)]});
+        let mut stored = StoredConfig::decode(&serde_json::to_vec(&raw).unwrap()).unwrap();
+        stored.config.enabled = true;
         let reloaded = StoredConfig::decode(&stored.encode().unwrap()).unwrap();
-        assert!(reloaded
-            .import(&id, config)
-            .unwrap()
-            .config
-            .server_by_language
-            .is_empty());
+        assert!(reloaded.config.enabled);
+        assert_eq!(reloaded.imports, vec!["a".repeat(64)]);
         let mut future = serde_json::to_value(&reloaded).unwrap();
         future["unknown"] = serde_json::json!(true);
         assert!(matches!(

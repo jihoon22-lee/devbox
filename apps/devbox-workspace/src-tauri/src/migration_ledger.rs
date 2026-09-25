@@ -153,7 +153,7 @@ pub(crate) fn summarize_with_sources(
         for name in names {
             let view = MetadataRoot::open(&views.path().join(&name))?;
             if let Some(bytes) = ledger.read(&view, "session.json")? {
-                let saved = crate::core::legacy_sessions::StoredSession::decode(&bytes)?;
+                let saved = crate::core::editor_sessions::StoredSession::decode(&bytes)?;
                 sources.extend(saved.imports.iter().map(|row| row.snapshot_id.clone()));
                 let count = saved
                     .imports
@@ -178,7 +178,7 @@ pub(crate) fn summarize_with_sources(
             }
             if let Some(lsp) = optional(&view.path().join("lsp"))? {
                 if let Some(bytes) = ledger.read(&lsp, "config.json")? {
-                    let saved = crate::core::legacy_lsp::StoredConfig::decode(&bytes)?;
+                    let saved = crate::lsp_host::config::StoredConfig::decode(&bytes)?;
                     sources.extend(saved.imports.iter().cloned());
                     ledger.add(
                         &format!("{name}/lsp"),
@@ -222,8 +222,8 @@ mod tests {
         assert!(!host.component("runtime").unwrap().join("data.db").exists());
         let view = views.join("single-file");
         std::fs::create_dir_all(&view).unwrap();
-        let mut saved = crate::core::legacy_sessions::StoredSession::default();
-        saved.imports.push(crate::core::legacy_sessions::Receipt {
+        let mut saved = crate::core::editor_sessions::StoredSession::default();
+        saved.imports.push(crate::core::editor_sessions::Receipt {
             snapshot_id: "a".repeat(64),
             document_ids: vec!["retained-source-document".into()],
             recent_files: vec![],

@@ -44,7 +44,7 @@ impl Prepared {
         .validate()
         .map_err(|_| "terminal_import_invalid")?;
         if self.preferences.iter().any(|(key, value)| {
-            !crate::terminal_export::KEYS.contains(&key.as_str())
+            !crate::terminal_profiles::PREFERENCE_KEYS.contains(&key.as_str())
                 || key.ends_with(":last-layout")
                 || value.len() > 1024 * 1024
         }) {
@@ -219,7 +219,7 @@ fn normalize(
             }
         }
     } else {
-        for key in crate::terminal_export::KEYS {
+        for key in crate::terminal_profiles::PREFERENCE_KEYS {
             notice(&mut prepared.notices, key, browser_state);
         }
     }
@@ -721,7 +721,7 @@ mod tests {
     }
     #[test]
     fn invalid_and_future_preferences_are_reported_without_default_replacement() {
-        let mut values = crate::terminal_export::KEYS
+        let mut values = crate::terminal_profiles::PREFERENCE_KEYS
             .iter()
             .map(|key| (key.to_string(), None))
             .collect::<BTreeMap<_, _>>();

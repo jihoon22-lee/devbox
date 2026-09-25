@@ -351,7 +351,7 @@ impl Fixture {
             .unbind_imported_profile(
                 registered.revision,
                 &imported_id,
-                crate::core::legacy_profiles::ProfileTarget::Wsl,
+                crate::core::profiles::ProfileTarget::Wsl,
             )
             .unwrap();
         assert_eq!(unbound.imported_profiles, registered.imported_profiles);

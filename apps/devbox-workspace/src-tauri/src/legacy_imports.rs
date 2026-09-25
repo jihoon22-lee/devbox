@@ -187,7 +187,7 @@ impl LegacyImports {
                 .ok_or("legacy_import_stale")?
         };
         if snapshot.manifest.source != Source::Workbench {
-            return Err("legacy_profiles_unavailable");
+            return Err("profiles_unavailable");
         }
         let inventory = snapshot
             .manifest
@@ -195,14 +195,14 @@ impl LegacyImports {
             .iter()
             .find(|file| file.name == "project-profiles.json")
             .filter(|file| file.issue.is_none())
-            .ok_or("legacy_profiles_unavailable")?;
+            .ok_or("profiles_unavailable")?;
         let bytes = snapshot
             .bytes(&inventory.name)
-            .ok_or("legacy_profiles_unavailable")?;
+            .ok_or("profiles_unavailable")?;
         let profiles = workbench_lib::component::ProfileStore::load(
-            std::str::from_utf8(bytes).map_err(|_| "legacy_profiles_unavailable")?,
+            std::str::from_utf8(bytes).map_err(|_| "profiles_unavailable")?,
         )
-        .map_err(|_| "legacy_profiles_unavailable")?;
+        .map_err(|_| "profiles_unavailable")?;
         Ok((snapshot.id()?, profiles))
     }
     pub(crate) fn template_source(
@@ -218,7 +218,7 @@ impl LegacyImports {
                 .ok_or("legacy_import_stale")?
         };
         if snapshot.manifest.source != Source::Workbench {
-            return Err("legacy_templates_unavailable");
+            return Err("templates_unavailable");
         }
         let inventory = snapshot
             .manifest
@@ -226,14 +226,14 @@ impl LegacyImports {
             .iter()
             .find(|file| file.name == "profile-templates.json")
             .filter(|file| file.issue.is_none())
-            .ok_or("legacy_templates_unavailable")?;
+            .ok_or("templates_unavailable")?;
         let bytes = snapshot
             .bytes(&inventory.name)
-            .ok_or("legacy_templates_unavailable")?;
+            .ok_or("templates_unavailable")?;
         let templates = workbench_lib::component::ProfileTemplateStore::load(
-            std::str::from_utf8(bytes).map_err(|_| "legacy_templates_unavailable")?,
+            std::str::from_utf8(bytes).map_err(|_| "templates_unavailable")?,
         )
-        .map_err(|_| "legacy_templates_unavailable")?;
+        .map_err(|_| "templates_unavailable")?;
         Ok((snapshot.id()?, templates))
     }
     pub(crate) fn session_source(
@@ -321,7 +321,7 @@ impl LegacyImports {
         {
             return Err("legacy_lsp_unavailable");
         }
-        let config = crate::core::legacy_lsp::decode(
+        let config = crate::lsp_host::config::decode(
             snapshot
                 .bytes("lsp/config.json")
                 .ok_or("legacy_lsp_unavailable")?,
@@ -644,7 +644,7 @@ mod tests {
         let next = wait(&owner);
         assert_eq!(
             owner.template_source(&next.id).unwrap_err(),
-            "legacy_templates_unavailable"
+            "templates_unavailable"
         );
     }
     fn wait(owner: &LegacyImports) -> Job {

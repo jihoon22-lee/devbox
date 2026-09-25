@@ -2,7 +2,7 @@
 //! write permit serializes apply with normal settings saves and actor starts.
 use super::{settings::Settings, Result};
 use crate::{
-    core::legacy_lsp::{self, StoredConfig},
+    lsp_host::config::{self, StoredConfig},
     definitions::digest,
     host::Host,
     platform::definition_write::DefinitionTarget,

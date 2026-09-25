@@ -1,6 +1,6 @@
 //! Editable destination templates. Legacy snapshots retain the original bytes;
 //! template edits never change an already instantiated project profile.
-use super::{legacy_templates::ImportedTemplate, registry::Registry};
+use super::{templates::ImportedTemplate, registry::Registry};
 use workbench_lib::component::ProfileTemplate;
 
 type Result<T> = std::result::Result<T, &'static str>;
@@ -106,7 +106,7 @@ pub fn archive(registry: &mut Registry, revision: u64, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::legacy_profiles::{Choice, Decision};
+    use crate::core::profiles::{Choice, Decision};
     use workbench_lib::component::ProfileTemplateStore;
     fn draft(name: &str) -> ProfileTemplate {
         let mut template = ProfileTemplate::new(name);
@@ -182,7 +182,7 @@ mod tests {
                 decision,
             }]
         };
-        crate::core::legacy_templates::Plan::build("a".repeat(64), source.clone(), &registry)
+        crate::core::templates::Plan::build("a".repeat(64), source.clone(), &registry)
             .unwrap()
             .apply(&mut registry, choice(Decision::Import))
             .unwrap();
@@ -194,7 +194,7 @@ mod tests {
         archive(&mut registry, 3, &id).unwrap();
         let before = registry.clone();
         let repeat =
-            crate::core::legacy_templates::Plan::build("a".repeat(64), source.clone(), &registry)
+            crate::core::templates::Plan::build("a".repeat(64), source.clone(), &registry)
                 .unwrap();
         assert!(repeat.rows[0].already_imported);
         assert_eq!(
@@ -211,11 +211,11 @@ mod tests {
             Some("a".repeat(64).as_str())
         );
         let changed =
-            crate::core::legacy_templates::Plan::build("b".repeat(64), source, &registry).unwrap();
+            crate::core::templates::Plan::build("b".repeat(64), source, &registry).unwrap();
         assert!(!changed.rows[0].already_imported);
         assert_eq!(
             changed.rows[0].disposition,
-            crate::core::legacy_profiles::Disposition::Conflict
+            crate::core::profiles::Disposition::Conflict
         );
     }
     #[test]

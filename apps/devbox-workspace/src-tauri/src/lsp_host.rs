@@ -1,5 +1,6 @@
 //! Independent native LSP metadata/installer owner. Installing a reviewed
 //! artifact never grants language-server execution or editor file access.
+pub(crate) mod config;
 mod actor;
 mod approval;
 mod archives;

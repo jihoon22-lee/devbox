@@ -54,24 +54,6 @@ pub struct Worktree {
     pub trusted_digest: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "kebab-case")]
-pub enum LegacyOwner {
-    Workbench,
-    LifeLog,
-    RepoManager,
-    Terminal,
-    Task,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LegacyReference {
-    pub owner: LegacyOwner,
-    pub old_id: String,
-    pub worktree_id: String,
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Registry {
@@ -79,13 +61,14 @@ pub struct Registry {
     pub revision: u64,
     pub projects: Vec<Project>,
     pub worktrees: Vec<Worktree>,
-    pub legacy_references: Vec<LegacyReference>,
+    #[serde(default, rename = "legacyReferences", skip_serializing)]
+    retired_references: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub imported_templates: Vec<super::legacy_templates::ImportedTemplate>,
+    pub imported_templates: Vec<super::templates::ImportedTemplate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub imported_profiles: Vec<super::legacy_profiles::ImportedProfile>,
+    pub imported_profiles: Vec<super::profiles::ImportedProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub imported_profile_bindings: Vec<super::legacy_profiles::ProfileBinding>,
+    pub imported_profile_bindings: Vec<super::profiles::ProfileBinding>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -184,7 +167,7 @@ impl Default for Registry {
             revision: 1,
             projects: vec![],
             worktrees: vec![],
-            legacy_references: vec![],
+            retired_references: vec![],
             imported_templates: vec![],
             imported_profiles: vec![],
             imported_profile_bindings: vec![],
@@ -209,6 +192,9 @@ impl Registry {
         Ok(bytes)
     }
     pub fn validate(&self) -> Result<()> {
+        if !self.retired_references.is_empty() {
+            return Err("registry_retired_import_data");
+        }
         if self.schema_version != 1 {
             return Err("unsupported_registry_version");
         }
@@ -217,7 +203,6 @@ impl Registry {
         }
         if self.projects.len() > MAX_ITEMS
             || self.worktrees.len() > MAX_ITEMS
-            || self.legacy_references.len() > MAX_ITEMS * 8
             || self.imported_templates.len() > MAX_ITEMS
             || self.imported_profiles.len() > MAX_ITEMS
             || self.imported_profile_bindings.len() > MAX_ITEMS * 2
@@ -318,26 +303,17 @@ impl Registry {
                 .iter()
                 .find(|tree| tree.id == binding.worktree_id)
                 .ok_or("invalid_imported_profile_binding")?;
-            if super::legacy_profiles::ProfileTarget::of(&tree.binding.target) != binding.target
+            if super::profiles::ProfileTarget::of(&tree.binding.target) != binding.target
                 || !imported_bindings.insert((&binding.imported_id, binding.target))
                 || !imported_worktrees.insert(&binding.worktree_id)
                 || match binding.target {
-                    super::legacy_profiles::ProfileTarget::Windows => {
+                    super::profiles::ProfileTarget::Windows => {
                         profile.profile.windows_path.is_none()
                     }
-                    super::legacy_profiles::ProfileTarget::Wsl => profile.profile.wsl.is_none(),
+                    super::profiles::ProfileTarget::Wsl => profile.profile.wsl.is_none(),
                 }
             {
                 return Err("invalid_imported_profile_binding");
-            }
-        }
-        let mut references = BTreeSet::new();
-        for reference in &self.legacy_references {
-            if !bounded_text(&reference.old_id, 32_768)
-                || !worktrees.contains(&reference.worktree_id)
-                || !references.insert((&reference.owner, &reference.old_id))
-            {
-                return Err("invalid_legacy_reference");
             }
         }
         Ok(())
@@ -497,15 +473,10 @@ impl Registry {
     pub fn remove(&mut self, expected: u64, context: &ProjectContext) -> Result<()> {
         self.check_revision(expected)?;
         let index = self.context_index(context)?;
-        // References are not cascaded away without an explicit reviewed unlink.
         if self
-            .legacy_references
+            .imported_profile_bindings
             .iter()
-            .any(|r| r.worktree_id == context.worktree_id)
-            || self
-                .imported_profile_bindings
-                .iter()
-                .any(|binding| binding.worktree_id == context.worktree_id)
+            .any(|binding| binding.worktree_id == context.worktree_id)
         {
             return Err("referenced_worktree");
         }
@@ -526,7 +497,7 @@ impl Registry {
         imported_id: &str,
         context: &ProjectContext,
     ) -> Result<()> {
-        use super::legacy_profiles::{ProfileBinding, ProfileTarget};
+        use super::profiles::{ProfileBinding, ProfileTarget};
         self.check_revision(expected)?;
         self.context_index(context)?;
         let binding = ProfileBinding {
@@ -554,7 +525,7 @@ impl Registry {
         &mut self,
         expected: u64,
         imported_id: &str,
-        target: super::legacy_profiles::ProfileTarget,
+        target: super::profiles::ProfileTarget,
     ) -> Result<()> {
         self.check_revision(expected)?;
         let Some(index) = self
@@ -571,7 +542,7 @@ impl Registry {
     pub fn imported_profile_for(
         &self,
         context: &ProjectContext,
-    ) -> Result<Option<&super::legacy_profiles::ImportedProfile>> {
+    ) -> Result<Option<&super::profiles::ImportedProfile>> {
         self.context_index(context)?;
         Ok(self
             .imported_profile_bindings
@@ -582,37 +553,6 @@ impl Registry {
                     .iter()
                     .find(|profile| profile.id == binding.imported_id)
             }))
-    }
-    pub fn map_legacy(&mut self, expected: u64, reference: LegacyReference) -> Result<()> {
-        self.check_revision(expected)?;
-        if let Some(current) = self
-            .legacy_references
-            .iter()
-            .find(|r| r.owner == reference.owner && r.old_id == reference.old_id)
-        {
-            return if current == &reference {
-                Ok(())
-            } else {
-                Err("legacy_mapping_conflict")
-            };
-        }
-        let mut next = self.clone();
-        next.revision += 1;
-        next.legacy_references.push(reference);
-        next.validate()?;
-        *self = next;
-        Ok(())
-    }
-    pub fn unlink_legacy(&mut self, expected: u64, reference: &LegacyReference) -> Result<()> {
-        self.check_revision(expected)?;
-        let index = self
-            .legacy_references
-            .iter()
-            .position(|r| r == reference)
-            .ok_or("legacy_mapping_conflict")?;
-        self.legacy_references.remove(index);
-        self.revision += 1;
-        Ok(())
     }
     pub fn review_trust(
         &mut self,
@@ -710,19 +650,13 @@ mod tests {
         registry.validate().unwrap();
     }
     #[test]
-    fn rebind_requires_review_invalidates_trust_and_preserves_legacy_mapping() {
+    fn rebind_requires_review_and_invalidates_trust() {
         let mut registry = Registry::default();
         let original = binding(r"C:\repo\main", "11", Some("ff"));
         let first = registry.register(1, "project", original.clone()).unwrap();
         let first = registry.review_trust(2, &first, &"a".repeat(64)).unwrap();
         assert!(registry.trusted(&first, &"a".repeat(64)).unwrap());
         assert!(!registry.trusted(&first, &"b".repeat(64)).unwrap());
-        let reference = LegacyReference {
-            owner: LegacyOwner::Workbench,
-            old_id: "legacy-1".into(),
-            worktree_id: first.worktree_id.clone(),
-        };
-        registry.map_legacy(3, reference.clone()).unwrap();
         let moved = binding(r"D:\renamed\main", "11", Some("ff"));
         assert_eq!(
             registry.discover(&moved).unwrap(),
@@ -732,48 +666,29 @@ mod tests {
         );
         let before = registry.clone();
         assert_eq!(
-            registry.register(4, "duplicate", moved.clone()),
+            registry.register(3, "duplicate", moved.clone()),
             Err("binding_review_required")
         );
         assert_eq!(registry, before);
-        let next = registry.rebind(4, &first, moved).unwrap();
+        let next = registry.rebind(3, &first, moved).unwrap();
         assert_eq!(next.worktree_id, first.worktree_id);
-        assert_eq!(registry.legacy_references, [reference]);
         assert_eq!(registry.worktrees[0].aliases, [original.root]);
         assert!(!registry.trusted(&next, &"a".repeat(64)).unwrap());
         assert_eq!(
             registry.trusted(&first, &"a".repeat(64)),
             Err("stale_context")
         );
-        assert_eq!(registry.remove(5, &next), Err("referenced_worktree"));
+        registry.remove(4, &next).unwrap();
     }
     #[test]
-    fn reviewed_unlink_and_remove_touch_only_registry_metadata() {
+    fn remove_touches_only_registry_metadata() {
         let mut registry = Registry::default();
         let context = registry
             .register(1, "project", binding(r"C:\repo", "11", None))
             .unwrap();
-        let reference = LegacyReference {
-            owner: LegacyOwner::Terminal,
-            old_id: "terminal-a".into(),
-            worktree_id: context.worktree_id.clone(),
-        };
-        registry.map_legacy(2, reference.clone()).unwrap();
-        assert_eq!(registry.remove(3, &context), Err("referenced_worktree"));
-        let mut incorrect = reference.clone();
-        incorrect.old_id = "terminal-b".into();
-        assert_eq!(
-            registry.unlink_legacy(3, &incorrect),
-            Err("legacy_mapping_conflict")
-        );
-        registry.unlink_legacy(3, &reference).unwrap();
-        registry.remove(4, &context).unwrap();
-        assert!(
-            registry.projects.is_empty()
-                && registry.worktrees.is_empty()
-                && registry.legacy_references.is_empty()
-        );
-        assert_eq!(registry.revision, 5);
+        registry.remove(2, &context).unwrap();
+        assert!(registry.projects.is_empty() && registry.worktrees.is_empty());
+        assert_eq!(registry.revision, 3);
     }
     #[test]
     fn replaced_root_and_changed_git_metadata_never_become_known() {
@@ -861,36 +776,34 @@ mod tests {
         assert!(Registry::parse(&vec![b' '; MAX_BYTES + 1]).is_err());
     }
     #[test]
-    fn stale_mutations_and_conflicting_imports_are_atomic() {
+    fn stale_mutations_are_atomic() {
         let mut registry = Registry::default();
         let first = registry
             .register(1, "project", binding(r"C:\repo", "11", None))
             .unwrap();
-        let second = registry
+        registry
             .register(2, "other", binding(r"C:\other", "12", None))
             .unwrap();
-        let reference = LegacyReference {
-            owner: LegacyOwner::LifeLog,
-            old_id: "old-project".into(),
-            worktree_id: first.worktree_id.clone(),
-        };
-        registry.map_legacy(3, reference.clone()).unwrap();
-        registry.map_legacy(4, reference.clone()).unwrap();
         let before = registry.clone();
         assert_eq!(
-            registry.rename(3, &first.project_id, "stale"),
+            registry.rename(2, &first.project_id, "stale"),
             Err("stale_registry")
         );
-        assert_eq!(
-            registry.map_legacy(
-                4,
-                LegacyReference {
-                    worktree_id: second.worktree_id,
-                    ..reference
-                }
-            ),
-            Err("legacy_mapping_conflict")
-        );
         assert_eq!(registry, before);
+    }
+    #[test]
+    fn empty_retired_reference_list_is_read_but_not_written() {
+        let raw = r#"{"schemaVersion":1,"revision":3,"projects":[],"worktrees":[],"legacyReferences":[]}"#;
+        let registry: Registry = serde_json::from_str(raw).unwrap();
+        registry.validate().unwrap();
+        let saved = serde_json::to_string(&registry).unwrap();
+        assert!(!saved.contains("legacyReferences"));
+        assert_eq!(serde_json::from_str::<Registry>(&saved).unwrap(), registry);
+    }
+    #[test]
+    fn nonempty_retired_references_are_refused_without_mutation() {
+        let raw = r#"{"schemaVersion":1,"revision":3,"projects":[],"worktrees":[],"legacyReferences":[{"kind":"project","id":"old"}]}"#;
+        let registry: Registry = serde_json::from_str(raw).unwrap();
+        assert_eq!(registry.validate(), Err("registry_retired_import_data"));
     }
 }

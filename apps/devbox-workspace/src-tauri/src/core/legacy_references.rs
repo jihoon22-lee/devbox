@@ -157,7 +157,7 @@ pub fn resolve(registry: &Registry, query: &Query) -> Result<Resolution, &'stati
 mod tests {
     use super::*;
     use crate::core::{
-        legacy_profiles::{ImportedProfile, ProfileTarget},
+        profiles::{ImportedProfile, ProfileTarget},
         registry::{Binding, LegacyReference, ObjectStamp},
     };
 

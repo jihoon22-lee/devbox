@@ -3,7 +3,7 @@
 //! the host calls blocking methods only inside its bounded IO worker.
 use crate::{
     core::{
-        legacy_profiles, legacy_templates,
+        profiles, templates,
         registry::{Binding, Discovery, Registry},
         registry_store::RegistryStore,
     },
@@ -30,7 +30,7 @@ pub struct RegistrationPreview {
     pub binding: Binding,
     pub discovery: Discovery,
     pub imported_profile_id: Option<String>,
-    pub template_profile: Option<legacy_profiles::ImportedProfile>,
+    pub template_profile: Option<profiles::ImportedProfile>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,27 +76,27 @@ struct Pending {
     discovery: Discovery,
     created: Instant,
     imported_profile_id: Option<String>,
-    template_profile: Option<legacy_profiles::ImportedProfile>,
+    template_profile: Option<profiles::ImportedProfile>,
 }
 struct PendingProfileImport {
-    plan: legacy_profiles::Plan,
+    plan: profiles::Plan,
     created: Instant,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileImportPreview {
     preview_id: String,
-    plan: legacy_profiles::Plan,
+    plan: profiles::Plan,
 }
 struct PendingTemplateImport {
-    plan: legacy_templates::Plan,
+    plan: templates::Plan,
     created: Instant,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplateImportPreview {
     preview_id: String,
-    plan: legacy_templates::Plan,
+    plan: templates::Plan,
 }
 pub struct ProjectOwner {
     store: RegistryStore,
@@ -194,7 +194,7 @@ impl ProjectOwner {
         source: workbench_lib::component::ProfileStore,
     ) -> Result<ProfileImportPreview> {
         self.expire()?;
-        let plan = legacy_profiles::Plan::build(snapshot_id, source, &self.snapshot()?)?;
+        let plan = profiles::Plan::build(snapshot_id, source, &self.snapshot()?)?;
         let mut pending = self
             .pending_profile_imports
             .lock()
@@ -222,8 +222,8 @@ impl ProjectOwner {
     pub(crate) fn apply_profile_import(
         &self,
         preview_id: &str,
-        choices: Vec<legacy_profiles::Choice>,
-    ) -> Result<(Registry, legacy_profiles::Applied)> {
+        choices: Vec<profiles::Choice>,
+    ) -> Result<(Registry, profiles::Applied)> {
         let pending = self
             .pending_profile_imports
             .lock()
@@ -263,7 +263,7 @@ impl ProjectOwner {
         source: workbench_lib::component::ProfileTemplateStore,
     ) -> Result<TemplateImportPreview> {
         self.expire()?;
-        let plan = legacy_templates::Plan::build(snapshot_id, source, &self.snapshot()?)?;
+        let plan = templates::Plan::build(snapshot_id, source, &self.snapshot()?)?;
         let mut pending = self
             .pending_template_imports
             .lock()
@@ -291,8 +291,8 @@ impl ProjectOwner {
     pub(crate) fn apply_template_import(
         &self,
         preview_id: &str,
-        choices: Vec<legacy_profiles::Choice>,
-    ) -> Result<(Registry, legacy_profiles::Applied)> {
+        choices: Vec<profiles::Choice>,
+    ) -> Result<(Registry, profiles::Applied)> {
         let pending = self
             .pending_template_imports
             .lock()
@@ -558,7 +558,7 @@ impl ProjectOwner {
         &self,
         revision: u64,
         lease: ProjectLease,
-        template: &legacy_templates::ImportedTemplate,
+        template: &templates::ImportedTemplate,
         profile: workbench_lib::component::ProjectProfile,
     ) -> Result<RegistrationPreview> {
         self.prepare_observed_template_binding(
@@ -572,14 +572,14 @@ impl ProjectOwner {
         &self,
         revision: u64,
         lease: RegistrationLease,
-        template: &legacy_templates::ImportedTemplate,
+        template: &templates::ImportedTemplate,
         mut profile: workbench_lib::component::ProjectProfile,
     ) -> Result<RegistrationPreview> {
         // The native probe, not the supplied spelling, owns the actual binding.
         if lease.binding().target == product_contract::ExecutionTarget::Windows {
             profile.windows_path = Some(lease.binding().root.clone());
         }
-        let candidate = legacy_profiles::ImportedProfile {
+        let candidate = profiles::ImportedProfile {
             id: uuid::Uuid::new_v4().to_string(),
             source_snapshot_id: template.source_snapshot_id.clone(),
             local: template.local,
@@ -593,7 +593,7 @@ impl ProjectOwner {
         &self,
         revision: u64,
         imported_id: &str,
-        target: legacy_profiles::ProfileTarget,
+        target: profiles::ProfileTarget,
     ) -> Result<Registry> {
         self.store
             .update(revision, |registry| {
@@ -617,7 +617,7 @@ impl ProjectOwner {
         revision: u64,
         lease: ProjectLease,
         imported_profile_id: Option<String>,
-        template_profile: Option<legacy_profiles::ImportedProfile>,
+        template_profile: Option<profiles::ImportedProfile>,
     ) -> Result<RegistrationPreview> {
         self.prepare_observed(
             revision,
@@ -631,7 +631,7 @@ impl ProjectOwner {
         revision: u64,
         lease: RegistrationLease,
         imported_profile_id: Option<String>,
-        template_profile: Option<legacy_profiles::ImportedProfile>,
+        template_profile: Option<profiles::ImportedProfile>,
     ) -> Result<RegistrationPreview> {
         let registry = self.store.read()?;
         if revision != registry.revision {
@@ -884,7 +884,7 @@ mod tests {
     }
     #[test]
     fn template_tokens_and_concrete_profile_creation_share_the_native_registry_commit() {
-        use legacy_profiles::{Choice, Decision};
+        use profiles::{Choice, Decision};
         use workbench_lib::component::{
             ProfileTemplate, ProfileTemplateStore, ProjectProfile, WslProfile,
         };
@@ -1032,7 +1032,7 @@ mod tests {
     }
     #[test]
     fn imported_registration_commits_its_binding_atomically_and_keeps_conflicting_metadata() {
-        use crate::core::legacy_profiles::{Choice, Decision};
+        use crate::core::profiles::{Choice, Decision};
         let directory = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         let owner = ProjectOwner::open(directory.path()).unwrap();
@@ -1206,7 +1206,7 @@ mod tests {
     }
     #[test]
     fn profile_import_tokens_are_one_time_and_the_registry_is_the_only_commit_point() {
-        use crate::core::legacy_profiles::{Choice, Decision};
+        use crate::core::profiles::{Choice, Decision};
         let directory = tempfile::tempdir().unwrap();
         let owner = ProjectOwner::open(directory.path()).unwrap();
         let mut profile = workbench_lib::component::ProjectProfile::new("saved profile");

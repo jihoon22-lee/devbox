@@ -1,6 +1,6 @@
 //! Files command owner. Called only after shell admission and inside the
 //! bounded Files IO queue; the renderer cannot restore native picker choices.
-use crate::core::legacy_sessions::{self, Candidate, StoredSession};
+use crate::core::editor_sessions::{self, Candidate, StoredSession};
 use crate::{file_owner::FileOwner, host::Host, private_metadata::MetadataRoot};
 use code_pad_lib::{
     commands::file,
@@ -680,7 +680,7 @@ impl FilesHost {
                     .map(|binding| binding.root)
             })
             .transpose()?;
-        let candidate = legacy_sessions::candidate(snapshot_id, &source, root.clone(), |path| {
+        let candidate = editor_sessions::candidate(snapshot_id, &source, root.clone(), |path| {
             self.session_path_eligible(root.as_deref(), path)
         })?;
         if candidate.session.docs.is_empty() && candidate.session.recent_files.is_empty() {
@@ -770,7 +770,7 @@ impl FilesHost {
             })
             .transpose()?;
         let candidate =
-            legacy_sessions::candidate(id.into(), &stored.session, root.clone(), |path| {
+            editor_sessions::candidate(id.into(), &stored.session, root.clone(), |path| {
                 self.session_path_eligible(root.as_deref(), path)
             })?;
         stored.session = candidate.session.clone();

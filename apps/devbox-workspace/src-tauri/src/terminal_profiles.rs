@@ -1,4 +1,14 @@
 //! One product-owned profile revision shared by the manager and companions.
+pub(crate) const PREFERENCE_KEYS: &[&str] = &[
+    "wsl-desktop:cwd-pinned",
+    "wsl-desktop:cwd-value",
+    "wsl-desktop:recent-paths",
+    "wsl-desktop:copy-on-select",
+    "wsl-desktop:font-size",
+    "wsl-desktop:settings",
+    "wsl-desktop:last-layout",
+];
+
 use crate::private_metadata::MetadataRoot;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -52,7 +62,7 @@ fn decode(bytes: Option<&[u8]>) -> Result<Envelope> {
         return Err("terminal_import_backup_invalid");
     }
     if envelope.preferences.iter().any(|(key, value)| {
-        !crate::terminal_export::KEYS.contains(&key.as_str())
+        !crate::terminal_profiles::PREFERENCE_KEYS.contains(&key.as_str())
             || key.ends_with(":last-layout")
             || value.len() > 1024 * 1024
     }) {
@@ -88,7 +98,7 @@ pub(crate) fn preferences(root: &MetadataRoot, method: &str, args: Value) -> Res
         value: String,
     }
     let input: Set = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    if !crate::terminal_export::KEYS.contains(&input.key.as_str())
+    if !crate::terminal_profiles::PREFERENCE_KEYS.contains(&input.key.as_str())
         || input.key.ends_with(":last-layout")
         || input.value.len() > 1024 * 1024
     {

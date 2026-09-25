@@ -1371,7 +1371,7 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             struct Unbind {
                 revision: u64,
                 imported_id: String,
-                target: crate::core::legacy_profiles::ProfileTarget,
+                target: crate::core::profiles::ProfileTarget,
             }
             let value: Unbind = input(args)?;
             Ok(json!(host.projects()?.unbind_imported_profile(
@@ -1385,7 +1385,7 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
             struct Apply {
                 preview_id: String,
-                choices: Vec<crate::core::legacy_profiles::Choice>,
+                choices: Vec<crate::core::profiles::Choice>,
             }
             let value: Apply = input(args)?;
             let (registry, result) = host
@@ -1408,7 +1408,7 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
             struct Apply {
                 preview_id: String,
-                choices: Vec<crate::core::legacy_profiles::Choice>,
+                choices: Vec<crate::core::profiles::Choice>,
             }
             let value: Apply = input(args)?;
             let (registry, result) = host
