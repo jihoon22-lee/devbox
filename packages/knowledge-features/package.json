@@ -10,7 +10,16 @@
     "./search": "./src/search/App.tsx",
     "./transport": "./src/transport.ts",
     "./activity/api": "./src/activity/api.ts",
-    "./activity/issues": "./src/activity/issues.ts"
+    "./activity/issues": "./src/activity/issues.ts",
+    "./notes/api": "./src/notes/api.ts",
+    "./notes/issues": "./src/notes/issues.ts",
+    "./search/api": "./src/search/api.ts",
+    "./search/issues": "./src/search/issues.ts",
+    "./setup/api": "./src/setup/api.ts",
+    "./setup/issues": "./src/setup/issues.ts",
+    "./commands/api": "./src/commands/api.ts",
+    "./commands/issues": "./src/commands/issues.ts",
+    "./generated/*": "./src/generated/*.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

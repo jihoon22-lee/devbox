@@ -1,5 +1,8 @@
-import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke("knowledge.notes");
+import { isProductHosted } from "../transport";
+import { typedCall } from "../typed";
+import type { KnowledgeNotesCall } from "../generated/KnowledgeNotesCall";
+import type { NotesResults } from "../generated/notes-results";
+export const notesCall = typedCall<KnowledgeNotesCall, NotesResults>("knowledge.notes");
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
 import {
@@ -36,147 +39,41 @@ import {
   QUICK_CAPTURE_TARGET,
 } from "./lib/quickCapture";
 
-export type OpenTarget =
-  | { kind: "path"; path: string; line: number | null; column: number | null }
-  | { kind: "profile"; id: string }
-  | { kind: "workspace"; path: string }
-  | { kind: "query"; text: string }
-  | { kind: "task"; id: string }
-  | { kind: "install"; appId: string }
-  | { kind: "handoff"; handoffKind: string; id: string };
+export type OpenTarget = import("../generated/OpenTarget").OpenTarget;
 
-export interface OpenRequest {
-  target: OpenTarget;
-  from: string | null;
-}
+export type OpenRequest = import("../generated/OpenRequest").OpenRequest;
 
-export interface NoteSnapshot {
-  content: string | null;
-  revision: string;
-  saveOutcome?: {
-    state: "applied" | "appliedWithConflict" | "unknown";
-    recoveryDirectory: string | null;
-    warning: string;
-  };
-}
+export type NoteSnapshot = import("../generated/NoteSnapshot").NoteSnapshot;
 
-export interface InboundNote {
-  revision: string;
-  path: string;
-  content: string;
-}
+export type InboundNote = import("../generated/InboundNote").InboundNote;
 
-export interface KnowledgeOpenTarget {
-  id: string;
-  displayName: string;
-}
+export type KnowledgeOpenTarget = import("../generated/OpenTargetChoice").OpenTargetChoice;
 
-export interface RenameDiffItem {
-  path: string;
-  before: string;
-  after: string;
-  meta: string;
-}
+export type RenameDiffItem = import("../generated/RenameDiffItem").RenameDiffItem;
 
-export interface RenamePreview {
-  planId: string;
-  from: string;
-  to: string;
-  isDir: boolean;
-  items: RenameDiffItem[];
-}
+export type RenamePreview = import("../generated/RenamePreview").RenamePreview;
 
-export interface RenameApplied {
-  from: string;
-  to: string;
-}
+export type RenameApplied = import("../generated/RenameApplied").RenameApplied;
 
-export interface KnowledgeDraftSummary {
-  period: "day" | "week" | "month";
-  startDate: string;
-  endDate: string;
-  timezone: string;
-  filter: string | null;
-  pcUsageMs: number;
-  sessionCount: number;
-  activeDays: number;
-  totalDays: number;
-  averageDailyUsageMs: number;
-  gitCommits: number;
-  topApp: string | null;
-}
+export type KnowledgeDraftSummary = import("../generated/KnowledgeDraftSummary").KnowledgeDraftSummary;
 
-export interface KnowledgeDraftSource {
-  id: string;
-  available: boolean;
-  schemaVersion: number | null;
-  snapshotVersion: number | null;
-  producerVersion: string | null;
-  generatedAt: string | null;
-  freshnessMs: number | null;
-  view: string | null;
-  scope: string;
-  errorCode: string | null;
-}
+export type KnowledgeDraftSource = import("../generated/KnowledgeDraftSource").KnowledgeDraftSource;
 
-export interface KnowledgeDraftPreview {
-  id: string;
-  kind: "knowledge-draft/v1" | "knowledge-draft/v2" | "knowledge-session/v1" | "knowledge-result/v1";
-  producerId: "life-log" | "developer-toolbox" | "devbox-workspace";
-  expiresAtMs: number;
-  leaseUntilMs: number;
-  title: string;
-  body: string;
-  tags: string[];
-  summary: KnowledgeDraftSummary | null;
-  sources: KnowledgeDraftSource[];
-}
+export type KnowledgeDraftPreview = import("../generated/KnowledgeDraftPreview").KnowledgeDraftPreview;
 
-export interface SaveKnowledgeDraftResult {
-  saved: boolean;
-  path: string;
-  handoffDeleted: boolean;
-  handoffStatusRecorded?: boolean;
-}
+export type SaveKnowledgeDraftResult = import("../generated/SaveKnowledgeDraftResult").SaveKnowledgeDraftResult;
 
-export interface RenewKnowledgeDraftResult {
-  leaseUntilMs: number;
-}
+export type RenewKnowledgeDraftResult = import("../generated/RenewKnowledgeDraftResult").RenewKnowledgeDraftResult;
 
-export interface NoteTemplate {
-  id: number;
-  name: string;
-  content: string;
-  createdAtMs: number;
-  updatedAtMs: number;
-}
+export type NoteTemplate = import("../generated/NoteTemplate").NoteTemplate;
 
-export interface TemplateDraft {
-  name: string;
-  content: string;
-}
+export type TemplateDraft = import("../generated/TemplateDraft").TemplateDraft;
 
-export interface TemplateApplyInput {
-  templateId: number;
-  target: string;
-  title: string;
-  date: string;
-  time: string;
-}
+export type TemplateApplyInput = import("../generated/TemplateApplyInput").TemplateApplyInput;
 
-export interface TemplatePreview {
-  previewId: string;
-  templateId: number;
-  templateUpdatedAtMs: number;
-  target: string;
-  content: string;
-  byteLength: number;
-}
+export type TemplatePreview = import("../generated/TemplatePreview").TemplatePreview;
 
-export interface SaveTemplateResult {
-  saved: boolean;
-  path: string;
-}
+export type SaveTemplateResult = import("../generated/SaveTemplateResult").SaveTemplateResult;
 
 const MOCK_OPEN_TARGETS: KnowledgeOpenTarget[] = [
   { id: "code-pad", displayName: "Code Pad" },
@@ -338,7 +235,7 @@ let mockTemplatePreviewExpiresAtMs = 0;
 
 export async function getRoot(): Promise<string> {
   if (!isTauri()) return "C:\\Users\\me\\Documents\\Knowledge";
-  return invoke<string>("get_root");
+  return notesCall("get_root", {});
 }
 
 export async function listTree(): Promise<TreeEntry[]> {
@@ -348,7 +245,7 @@ export async function listTree(): Promise<TreeEntry[]> {
       { path: "Projects/devbox.md", is_dir: false },
     ];
   }
-  return invoke<TreeEntry[]>("list_tree");
+  return notesCall("list_tree", {});
 }
 
 export async function onDocsChanged(cb: () => void): Promise<() => void> {
@@ -366,7 +263,7 @@ export async function knowledgeWatcherStatus(): Promise<KnowledgeWatcherStatus> 
       error: null,
     };
   }
-  return invoke<KnowledgeWatcherStatus>("knowledge_watcher_status");
+  return notesCall("knowledge_watcher_status", {});
 }
 
 export async function onKnowledgeWatcherStatus(cb: (status: KnowledgeWatcherStatus) => void): Promise<() => void> {
@@ -379,7 +276,7 @@ export async function readFile(rel: string): Promise<NoteSnapshot> {
   if (!isTauri()) {
     return { content: rel.endsWith(".md") ? "# Mock note\n\nEdit me." : "", revision: "mock-revision" };
   }
-  return invoke<NoteSnapshot>("read_file", { rel });
+  return notesCall("read_file", { rel });
 }
 
 export async function openInboundNote(path: string): Promise<InboundNote> {
@@ -391,13 +288,13 @@ export async function openInboundNote(path: string): Promise<InboundNote> {
       revision: "mock-revision",
     };
   }
-  return invoke<InboundNote>("open_inbound_note", { path });
+  return notesCall("open_inbound_note", { path });
 }
 
 /** Cold start 또는 같은 실행 중 instance가 남긴 요청을 한 번 가져온다. */
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return invoke<OpenRequest | null>("take_pending_open");
+  return notesCall("take_pending_open", {});
 }
 
 /** Hot-instance relaunch 알림. payload 대신 pending pull을 authoritative하게 사용한다. */
@@ -409,17 +306,17 @@ export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise
 
 export async function writeFile(rel: string, content: string, expectedRevision: string): Promise<NoteSnapshot> {
   if (!isTauri()) return { content, revision: crypto.randomUUID() };
-  return invoke<NoteSnapshot>("write_file", { rel, content, expectedRevision });
+  return notesCall("write_file", { rel, content, expectedRevision });
 }
 
 export async function createFile(rel: string, content?: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("create_file", { rel, content });
+  await notesCall("create_file", { rel, content });
 }
 
 export async function createDirectory(rel: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("create_directory", { rel });
+  await notesCall("create_directory", { rel });
 }
 
 export async function previewRename(from: string, to: string): Promise<RenamePreview> {
@@ -432,19 +329,19 @@ export async function previewRename(from: string, to: string): Promise<RenamePre
       items: [{ path: `이름 변경 · ${from}`, before: from, after: to, meta: "파일 이동" }],
     };
   }
-  return invoke<RenamePreview>("preview_rename", { from, to });
+  return notesCall("preview_rename", { from, to });
 }
 
 export async function applyRename(planId: string): Promise<RenameApplied> {
   if (!isTauri()) {
     return { from: "", to: "" };
   }
-  return invoke<RenameApplied>("apply_rename", { planId });
+  return notesCall("apply_rename", { planId });
 }
 
 export async function discardRenamePreview(planId: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("discard_rename_preview", { planId });
+  await notesCall("discard_rename_preview", { planId });
 }
 
 const draftMessages: Record<string, string> = {
@@ -467,30 +364,30 @@ export async function previewKnowledgeDraft(
   kind: KnowledgeDraftPreview["kind"] = "knowledge-draft/v1",
 ): Promise<KnowledgeDraftPreview> {
   if (!isTauri()) throw new Error("Knowledge 초안 미리보기는 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id, kind }).catch(normalizeDraftError);
+  return notesCall("preview_knowledge_draft", { id, kind }).catch(normalizeDraftError);
 }
 
 /** Save a confirmed preview and acknowledge/delete the one-time handoff. */
 export async function saveKnowledgeDraft(id: string): Promise<SaveKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge 초안 저장은 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<SaveKnowledgeDraftResult>("save_knowledge_draft", { id }).catch(normalizeDraftError);
+  return notesCall("save_knowledge_draft", { id }).catch(normalizeDraftError);
 }
 
 /** Restore a claimed draft without creating a note. */
 export async function discardKnowledgeDraft(id: string): Promise<void> {
   if (!isTauri()) throw new Error("Knowledge 초안 취소는 데스크톱 앱에서 사용할 수 없습니다");
-  await invoke("discard_knowledge_draft", { id }).catch(normalizeDraftError);
+  await notesCall("discard_knowledge_draft", { id }).catch(normalizeDraftError);
 }
 
 /** Keep a long-running preview within the bounded claim lease. */
 export async function renewKnowledgeDraft(id: string): Promise<RenewKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge 초안 갱신은 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<RenewKnowledgeDraftResult>("renew_knowledge_draft", { id }).catch(normalizeDraftError);
+  return notesCall("renew_knowledge_draft", { id }).catch(normalizeDraftError);
 }
 
 export async function listTemplates(): Promise<NoteTemplate[]> {
   if (!isTauri()) return mockTemplates.map((template) => ({ ...template }));
-  return invoke<NoteTemplate[]>("list_templates");
+  return notesCall("list_templates", {});
 }
 
 export async function createTemplate(draft: TemplateDraft): Promise<NoteTemplate> {
@@ -506,7 +403,7 @@ export async function createTemplate(draft: TemplateDraft): Promise<NoteTemplate
     mockTemplates = [...mockTemplates, template];
     return template;
   }
-  return invoke<NoteTemplate>("create_template", { draft });
+  return notesCall("create_template", { draft });
 }
 
 export async function updateTemplate(id: number, draft: TemplateDraft): Promise<NoteTemplate> {
@@ -526,7 +423,7 @@ export async function updateTemplate(id: number, draft: TemplateDraft): Promise<
     mockTemplates = mockTemplates.map((item, itemIndex) => (itemIndex === index ? template : item));
     return template;
   }
-  return invoke<NoteTemplate>("update_template", { id, draft });
+  return notesCall("update_template", { id, draft });
 }
 
 export async function deleteTemplate(id: number): Promise<void> {
@@ -537,7 +434,7 @@ export async function deleteTemplate(id: number): Promise<void> {
     mockTemplates = mockTemplates.filter((template) => template.id !== id);
     return;
   }
-  await invoke("delete_template", { id });
+  await notesCall("delete_template", { id });
 }
 
 export async function previewTemplate(input: TemplateApplyInput): Promise<TemplatePreview> {
@@ -556,7 +453,7 @@ export async function previewTemplate(input: TemplateApplyInput): Promise<Templa
     mockTemplatePreviewExpiresAtMs = Date.now() + TEMPLATE_PREVIEW_TTL_MS;
     return mockTemplatePreview;
   }
-  return invoke<TemplatePreview>("preview_template", { approval: input });
+  return notesCall("preview_template", { approval: input });
 }
 
 export async function saveTemplate(previewId: string): Promise<SaveTemplateResult> {
@@ -582,7 +479,7 @@ export async function saveTemplate(previewId: string): Promise<SaveTemplateResul
     mockTemplatePreviewExpiresAtMs = 0;
     return result;
   }
-  return invoke<SaveTemplateResult>("save_template", { previewId });
+  return notesCall("save_template", { previewId });
 }
 
 export async function discardTemplatePreview(previewId: string): Promise<void> {
@@ -593,32 +490,32 @@ export async function discardTemplatePreview(previewId: string): Promise<void> {
     }
     return;
   }
-  await invoke("discard_template_preview", { previewId });
+  await notesCall("discard_template_preview", { previewId });
 }
 
 export async function deleteFile(rel: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("delete_file", { rel });
+  await notesCall("delete_file", { rel });
 }
 
 export async function entryPath(rel: string): Promise<string> {
   if (!isTauri()) return rel;
-  return invoke<string>("entry_path", { rel });
+  return notesCall("entry_path", { rel });
 }
 
 export async function revealEntry(rel: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("reveal_entry", { rel });
+  await notesCall("reveal_entry", { rel });
 }
 
 export async function openTargets(): Promise<KnowledgeOpenTarget[]> {
   if (!isTauri()) return MOCK_OPEN_TARGETS;
-  return invoke<KnowledgeOpenTarget[]>("open_targets");
+  return notesCall("open_targets", {});
 }
 
 export async function openIn(appId: string, rel: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("open_in", { appId, rel });
+  await notesCall("open_in", { appId, rel });
 }
 
 /** 편집기 메뉴에서 사용자가 Paste를 선택한 순간에만 plain text를 읽는다. */
@@ -626,7 +523,7 @@ export async function readClipboardText(maxBytes?: number): Promise<string> {
   const text = !isTauri()
     ? await navigator.clipboard.readText()
     : isProductHosted()
-      ? await invoke<string>("read_clipboard_text")
+      ? await notesCall("read_clipboard_text", {})
       : await readText();
   if (maxBytes !== undefined && !isQuickCaptureUtf8Within(text, maxBytes)) {
     throw new Error("본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요");
@@ -662,7 +559,7 @@ export async function saveImageAsset(noteRel: string, bytes: Uint8Array): Promis
   }
   if (bytes.byteLength > MAX_IMAGE_ASSET_BYTES) throw new Error(IMAGE_TOO_LARGE_ERROR);
   if (!isTauri()) throw new Error(IMAGE_DESKTOP_ONLY_ERROR);
-  const result = await invoke<ImageAsset>("save_image_asset", {
+  const result = await notesCall("save_image_asset", {
     request: { noteRel, bytesBase64: bytesToBase64(bytes) },
   });
   return validateImageAssetResult(noteRel, result);
@@ -675,17 +572,17 @@ export async function searchDocs(query: string): Promise<SearchResult[]> {
       title: t.path.split("/").pop() ?? t.path,
     }));
   }
-  return invoke<SearchResult[]>("search_docs", { query });
+  return (await notesCall("search_docs", { query })).map(([path, title]) => ({ path, title }));
 }
 
 export async function listTags(): Promise<string[]> {
   if (!isTauri()) return ["rust", "tauri", "daily"];
-  return invoke<string[]>("list_tags");
+  return notesCall("list_tags", {});
 }
 
 export async function analyzeWikilinks(content: string): Promise<WikilinkOccurrence[]> {
   if (!isTauri()) return [];
-  return invoke<WikilinkOccurrence[]>("analyze_wikilinks", { content });
+  return notesCall("analyze_wikilinks", { content });
 }
 
 export async function wikilinkCandidates(query: string): Promise<WikilinkCandidate[]> {
@@ -700,17 +597,17 @@ export async function wikilinkCandidates(query: string): Promise<WikilinkCandida
         link_target: entry.path.replace(/\.md$/iu, ""),
       }));
   }
-  return invoke<WikilinkCandidate[]>("wikilink_candidates", { query });
+  return notesCall("wikilink_candidates", { query });
 }
 
 export async function backlinks(rel: string): Promise<Backlink[]> {
   if (!isTauri()) return [];
-  return invoke<Backlink[]>("backlinks", { rel });
+  return notesCall("backlinks", { rel });
 }
 
 export async function dailyNote(): Promise<[string, string]> {
   if (!isTauri()) return ["Journal/2026-08-11.md", "# Today\n"];
-  return invoke<[string, string]>("daily_note");
+  throw new Error("일일 기록 화면에서 미리보기를 확인한 뒤 저장해 주세요.");
 }
 
 const QUICK_CAPTURE_UNAVAILABLE = "빠른 캡처 저장은 Knowledge 앱에서만 사용할 수 있습니다";
@@ -809,7 +706,7 @@ export async function previewQuickCapture(input: QuickCaptureInput): Promise<Qui
     return { previewId: "qc-1", target: QUICK_CAPTURE_TARGET, ...normalized };
   }
   try {
-    const preview = await invoke<unknown>("preview_quick_capture", { input: normalized });
+    const preview = await notesCall("preview_quick_capture", { input: normalized });
     return parseQuickCapturePreview(preview);
   } catch (error) {
     throw safeQuickCaptureError(error, QUICK_CAPTURE_PREVIEW_FAILED);
@@ -820,7 +717,7 @@ export async function saveQuickCapture(previewId: string): Promise<QuickCaptureS
   const safePreviewId = safeQuickCaptureApprovalId(previewId);
   if (!isTauri()) throw new Error(QUICK_CAPTURE_UNAVAILABLE);
   try {
-    const saved = await invoke<unknown>("save_quick_capture", {
+    const saved = await notesCall("save_quick_capture", {
       approval: { previewId: safePreviewId },
     });
     if (!isRecord(saved) || !isSafeQuickCapturePath(saved.path)) {
@@ -835,7 +732,7 @@ export async function saveQuickCapture(previewId: string): Promise<QuickCaptureS
 export async function discardQuickCapturePreview(previewId: string): Promise<void> {
   if (!isTauri() || !isSafeQuickCapturePreviewId(previewId)) return;
   try {
-    await invoke("discard_quick_capture_preview", {
+    await notesCall("discard_quick_capture_preview", {
       approval: { previewId },
     });
   } catch {
@@ -850,7 +747,7 @@ export async function quickCaptureShortcutStatus(): Promise<QuickCaptureShortcut
     return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unsupported" };
   }
   try {
-    return safeQuickCaptureShortcutStatus(await invoke<QuickCaptureShortcutStatus>("shortcut_status"));
+    return safeQuickCaptureShortcutStatus(await notesCall("shortcut_status", {}));
   } catch {
     return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unavailable" };
   }
@@ -882,7 +779,7 @@ export async function renderMarkdown(rel: string, content: string): Promise<Rend
     // 목업: 실제 마크다운 파서 없이도 프리뷰 레이아웃을 확인할 수 있게 원문을 그대로 보여준다.
     return { title: null, tags: [], html: `<pre>${escapeHtml(content)}</pre>`, mermaid: [] };
   }
-  return invoke<RenderedDoc>("render_markdown", { rel, content });
+  return notesCall("render_markdown", { rel, content });
 }
 
 /** 외부 URL을 기본 브라우저로 연다. Tauri 밖(브라우저 미리보기)에서는 새 탭으로 대신 연다. */
@@ -892,37 +789,29 @@ export async function openExternal(url: string): Promise<void> {
     return;
   }
   if (isProductHosted()) {
-    await invoke("open_external_url", { url });
+    await notesCall("open_external_url", { url });
     return;
   }
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }
 
-export interface NoteJournalEntry {
-  path: string;
-  content: string;
-  baseRevision: string;
-  savedAtMs: number;
-}
-export interface NoteJournalView {
-  entries: NoteJournalEntry[];
-  otherVaultCount: number;
-}
+export type NoteJournalEntry = import("../generated/JournalEntryView").JournalEntryView;
+export type NoteJournalView = import("../generated/JournalView").JournalView;
 
 export async function saveNoteJournal(path: string, content: string, baseRevision: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("save_note_journal", { path, content, baseRevision });
+  await notesCall("save_note_journal", { path, content, baseRevision });
 }
 export async function clearNoteJournal(path: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("clear_note_journal", { path });
+  await notesCall("clear_note_journal", { path });
 }
 export async function loadNoteJournal(): Promise<NoteJournalView> {
   if (!isTauri()) return { entries: [], otherVaultCount: 0 };
-  return invoke<NoteJournalView>("load_note_journal");
+  return notesCall("load_note_journal", {});
 }
 export async function discardOtherVaultJournal(): Promise<void> {
   if (!isTauri()) return;
-  await invoke("discard_other_vault_journal", {});
+  await notesCall("discard_other_vault_journal", {});
 }

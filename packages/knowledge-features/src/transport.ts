@@ -6,7 +6,7 @@ export type Component =
   | "knowledge.search"
   | "knowledge.search-settings"
   | "knowledge.opener"
-  | "knowledge.migration"
+  | "knowledge.setup"
   | "knowledge.commands";
 export type Transport = <T>(component: Component, method: string, args: Record<string, unknown>) => Promise<T>;
 let productTransport: Transport | undefined;
@@ -19,26 +19,9 @@ export function isProductHosted(): boolean {
   return productTransport !== undefined;
 }
 
-const searchSettings = new Set([
-  "add_root",
-  "remove_root",
-  "index_now",
-  "cancel_index",
-  "save_saved_query",
-  "delete_saved_query",
-]);
-const searchOpeners = new Set(["open_file", "reveal_file", "open_targets", "open_in"]);
 export function componentInvoke(component: Component) {
   return <T>(method: string, args?: Record<string, unknown>): Promise<T> => {
     if (!productTransport) return args === undefined ? legacyInvoke<T>(method) : legacyInvoke<T>(method, args);
-    const owner =
-      component === "knowledge.search"
-        ? searchSettings.has(method)
-          ? "knowledge.search-settings"
-          : searchOpeners.has(method)
-            ? "knowledge.opener"
-            : component
-        : component;
-    return productTransport<T>(owner, method, args ?? {});
+    return productTransport<T>(component, method, args ?? {});
   };
 }

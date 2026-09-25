@@ -1,5 +1,16 @@
-import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke("knowledge.search");
+import { isProductHosted } from "../transport";
+import { typedCall } from "../typed";
+import type { KnowledgeSearchCall } from "../generated/KnowledgeSearchCall";
+import type { KnowledgeSearchSettingsCall } from "../generated/KnowledgeSearchSettingsCall";
+import type { KnowledgeOpenerCall } from "../generated/KnowledgeOpenerCall";
+import type { SearchResults } from "../generated/search-results";
+import type { SearchSettingsResults } from "../generated/search-settings-results";
+import type { OpenerResults } from "../generated/opener-results";
+export const searchCall = typedCall<KnowledgeSearchCall, SearchResults>("knowledge.search");
+export const searchSettingsCall = typedCall<KnowledgeSearchSettingsCall, SearchSettingsResults>(
+  "knowledge.search-settings",
+);
+export const openerCall = typedCall<KnowledgeOpenerCall, OpenerResults>("knowledge.opener");
 import { isTauri } from "./lib/isTauri";
 import type {
   ContentResult,
@@ -12,23 +23,11 @@ import type {
   SearchFilter,
 } from "./types";
 
-export type OpenTarget =
-  | { kind: "path"; path: string; line: number | null; column: number | null }
-  | { kind: "profile"; id: string }
-  | { kind: "workspace"; path: string }
-  | { kind: "query"; text: string; filter?: SearchFilter | null }
-  | { kind: "task"; id: string }
-  | { kind: "install"; appId: string };
+export type OpenTarget = import("../generated/OpenTarget").OpenTarget;
 
-export interface OpenRequest {
-  target: OpenTarget;
-  from: string | null;
-}
+export type OpenRequest = import("../generated/OpenRequest").OpenRequest;
 
-export interface EverythingOpenTarget {
-  id: string;
-  displayName: string;
-}
+export type EverythingOpenTarget = import("../generated/OpenTargetChoice").OpenTargetChoice;
 
 const MOCK_OPEN_TARGETS: EverythingOpenTarget[] = [];
 
@@ -83,7 +82,7 @@ const MOCK_STATUS: IndexStatus = {
 
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return invoke<OpenRequest | null>("take_pending_open");
+  return searchCall("take_pending_open", {});
 }
 
 export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<() => void> {
@@ -143,7 +142,7 @@ export async function searchFiles(query: string, limit?: number, filter?: Search
   if (!isTauri()) {
     return MOCK_FILES.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()) && matchesFilter(f, filter));
   }
-  return invoke<FileEntry[]>("search_files", invokeSearchArgs(query, limit, filter));
+  return searchCall("search_files", invokeSearchArgs(query, limit, filter));
 }
 
 export async function searchContent(query: string, limit?: number, filter?: SearchFilter): Promise<ContentResult[]> {
@@ -152,37 +151,37 @@ export async function searchContent(query: string, limit?: number, filter?: Sear
       (f) => f.snippet.toLowerCase().includes(query.toLowerCase()) && matchesFilter(f, filter),
     );
   }
-  return invoke<ContentResult[]>("search_content", invokeSearchArgs(query, limit, filter));
+  return searchCall("search_content", invokeSearchArgs(query, limit, filter));
 }
 
 export async function addRoot(path: string, indexContent: boolean): Promise<void> {
   if (!isTauri()) return;
-  await invoke("add_root", { path, indexContent });
+  await searchSettingsCall("add_root", { path, indexContent });
 }
 
 export async function removeRoot(path: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("remove_root", { path });
+  await searchSettingsCall("remove_root", { path });
 }
 
 export async function listRoots(): Promise<RootInfo[]> {
   if (!isTauri()) return [{ id: 1, path: "C:\\projects\\devbox", content: true }];
-  return invoke<RootInfo[]>("list_roots");
+  return searchCall("list_roots", {});
 }
 
 export async function indexStatus(): Promise<IndexStatus> {
   if (!isTauri()) return MOCK_STATUS;
-  return invoke<IndexStatus>("index_status");
+  return searchCall("index_status", {});
 }
 
 export async function indexNow(): Promise<void> {
   if (!isTauri()) return;
-  await invoke("index_now");
+  await searchSettingsCall("index_now", {});
 }
 
 export async function cancelIndex(): Promise<void> {
   if (!isTauri()) return;
-  await invoke("cancel_index");
+  await searchSettingsCall("cancel_index", {});
 }
 
 export async function watcherStatuses(): Promise<RootStatus[]> {
@@ -198,7 +197,7 @@ export async function watcherStatuses(): Promise<RootStatus[]> {
       },
     ];
   }
-  return invoke<RootStatus[]>("watcher_statuses");
+  return searchCall("watcher_statuses", {});
 }
 
 export async function openFile(path: string, reference?: string | null): Promise<void> {
@@ -206,12 +205,12 @@ export async function openFile(path: string, reference?: string | null): Promise
     window.open("about:blank", "_blank");
     return;
   }
-  await invoke("open_file", isProductHosted() ? { reference } : { path });
+  await openerCall("open_file", { reference: reference ?? "" });
 }
 
 export async function revealFile(path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
-  await invoke("reveal_file", isProductHosted() ? { reference } : { path });
+  await openerCall("reveal_file", { reference: reference ?? "" });
 }
 
 export async function copyPath(path: string): Promise<void> {
@@ -220,17 +219,17 @@ export async function copyPath(path: string): Promise<void> {
 
 export async function openTargets(): Promise<EverythingOpenTarget[]> {
   if (!isTauri()) return MOCK_OPEN_TARGETS;
-  return invoke<EverythingOpenTarget[]>("open_targets");
+  return openerCall("open_targets", {});
 }
 
 export async function openIn(appId: string, path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
-  await invoke("open_in", isProductHosted() ? { appId, reference } : { appId, path });
+  await openerCall("open_in", { appId, reference: reference ?? "" });
 }
 
 export async function listSavedQueries(): Promise<SavedQuery[]> {
   if (!isTauri()) return [...mockSavedQueries];
-  return invoke<SavedQuery[]>("list_saved_queries");
+  return searchCall("list_saved_queries", {});
 }
 
 export async function saveSavedQuery(request: SaveSavedQueryRequest): Promise<SavedQuery> {
@@ -247,7 +246,7 @@ export async function saveSavedQuery(request: SaveSavedQueryRequest): Promise<Sa
     mockSavedQueries = [saved, ...mockSavedQueries.filter((item) => item.id !== saved.id)];
     return saved;
   }
-  return invoke<SavedQuery>("save_saved_query", { request });
+  return searchSettingsCall("save_saved_query", { request });
 }
 
 export async function deleteSavedQuery(id: number): Promise<void> {
@@ -255,26 +254,11 @@ export async function deleteSavedQuery(id: number): Promise<void> {
     mockSavedQueries = mockSavedQueries.filter((item) => item.id !== id);
     return;
   }
-  await invoke("delete_saved_query", { id });
+  await searchSettingsCall("delete_saved_query", { id });
 }
 
 export type SearchSource = "notes" | "files" | "current_project";
-export interface SourceSnapshot {
-  projectContext?: { projectId: string; worktreeId: string; revision: number };
-  generation: string;
-  storeGeneration: string;
-  source: SearchSource;
-  state: "running" | "complete" | "cancelled" | "timed_out" | "unsupported" | "unavailable";
-  partial: boolean;
-  rows: Array<{
-    source: string;
-    rootIdentity: string;
-    reference: string | null;
-    availability: string;
-    indexStale?: boolean;
-    value: FileEntry & ContentResult;
-  }>;
-}
+export type SourceSnapshot = import("../generated/SourceSnapshot").SourceSnapshot;
 export async function searchSource(
   source: SearchSource,
   query: string,
@@ -310,11 +294,11 @@ export async function searchSource(
   }
   let generation: string | undefined;
   const cancel = () => {
-    if (generation) void invoke("source_cancel", { generation }).catch(() => undefined);
+    if (generation) void searchCall("source_cancel", { generation }).catch(() => undefined);
   };
   signal.addEventListener("abort", cancel, { once: true });
   try {
-    let snapshot = await invoke<SourceSnapshot>("source_query", { source, query, mode, limit, filter });
+    let snapshot = await searchCall("source_query", { source, query, mode, limit, filter });
     generation = snapshot.generation;
     const project = (value: SourceSnapshot) =>
       value.rows.map((row) => ({
@@ -331,7 +315,7 @@ export async function searchSource(
       update(snapshot);
       if (snapshot.state !== "running") return project(snapshot);
       await new Promise((resolve) => setTimeout(resolve, 80));
-      if (!signal.aborted) snapshot = await invoke<SourceSnapshot>("source_poll", { generation });
+      if (!signal.aborted) snapshot = await searchCall("source_poll", { generation });
     }
     cancel();
     return [];

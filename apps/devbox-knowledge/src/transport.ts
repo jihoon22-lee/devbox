@@ -10,7 +10,16 @@ const routeFor: Record<Component, string> = {
   "knowledge.search": "search",
   "knowledge.search-settings": "search",
   "knowledge.opener": "search",
-  "knowledge.migration": "notes",
+  "knowledge.setup": "notes",
+};
+const commandFor: Record<Component, string> = {
+  "knowledge.activity": "plugin:knowledge|activity",
+  "knowledge.notes": "plugin:knowledge|notes",
+  "knowledge.search": "plugin:knowledge|search",
+  "knowledge.search-settings": "plugin:knowledge|search_settings",
+  "knowledge.opener": "plugin:knowledge|opener",
+  "knowledge.setup": "plugin:knowledge|setup",
+  "knowledge.commands": "plugin:knowledge|commands",
 };
 import { issueError } from "./issues";
 export { issueError } from "./issues";
@@ -28,10 +37,7 @@ configureProductTransport(
     };
     let response: { operation: Operation; value: T };
     try {
-      response =
-        component === "knowledge.activity"
-          ? await invoke("plugin:knowledge|activity", { request: { header, method, args } })
-          : await invoke("plugin:knowledge|execute", { request: { header, component, method, args } });
+      response = await invoke(commandFor[component], { request: { header, method, args } });
     } catch (problem) {
       throw new Error(problemMessage(problem, provenance));
     }

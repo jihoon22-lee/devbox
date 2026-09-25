@@ -11,7 +11,7 @@ export default function VaultSetup({ onActivated }: { onActivated: () => void })
   const previewRef = useRef<VaultPreview | null>(null);
   useEffect(() => {
     alive.current = true;
-    void vaultInvoke<{ schedule: VaultSchedule | null }>("vault_change_status")
+    void vaultInvoke("vault_change_status", {})
       .then((value) => {
         if (alive.current) setSchedule(value.schedule);
       })
@@ -37,20 +37,15 @@ export default function VaultSetup({ onActivated }: { onActivated: () => void })
     setError(null);
     try {
       if (apply) {
-        const result = await vaultJob<{ active: boolean }>(
-          "apply_vault_change",
-          { id: preview!.previewId },
-          controller.signal,
-          () => {
-            if (alive.current) setCommitted(true);
-          },
-        );
+        const result = await vaultJob("apply_vault_change", { id: preview!.previewId }, controller.signal, () => {
+          if (alive.current) setCommitted(true);
+        });
         if (alive.current && !controller.signal.aborted && result.active) {
           previewRef.current = null;
           onActivated();
         }
       } else {
-        const result = await vaultJob<VaultPreview>("prepare_vault_change", {}, controller.signal, () => undefined);
+        const result = await vaultJob("prepare_vault_change", {}, controller.signal, () => undefined);
         if (alive.current && !controller.signal.aborted) {
           previewRef.current = result;
           setPreview(result);
@@ -69,9 +64,9 @@ export default function VaultSetup({ onActivated }: { onActivated: () => void })
     setBusy(true);
     setError(null);
     try {
-      await vaultInvoke("cancel_vault_change");
+      await vaultInvoke("cancel_vault_change", {});
       previewRef.current = null;
-      const result = await vaultInvoke<{ active: boolean }>("continue_existing");
+      const result = await vaultInvoke("continue_existing", {});
       if (alive.current && result.active) onActivated();
     } catch (error) {
       if (alive.current) setError(error instanceof Error ? error.message : "현재 폴더로 계속하지 못했습니다.");

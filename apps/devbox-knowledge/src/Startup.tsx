@@ -1,8 +1,8 @@
 import { recoveryLazy } from "./recoveryLazy";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
-import { componentInvoke } from "@devbox/knowledge-features/transport";
-const invoke = componentInvoke("knowledge.migration");
+import { setupCall } from "@devbox/knowledge-features/setup/api";
+
 const VaultSettings = recoveryLazy(() => import("./VaultSettings"));
 const VaultSetup = recoveryLazy(() => import("./VaultSetup"));
 export function Startup({ children }: { children: ReactNode }) {
@@ -18,13 +18,7 @@ export function Startup({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!nativeMode) return;
     let alive = true;
-    void invoke<{
-      active: boolean;
-      prepared?: boolean;
-      hasExisting?: boolean;
-      vaultChange?: boolean;
-      bindingUnavailable?: boolean;
-    }>("status")
+    void setupCall("status", {})
       .then((value) => {
         if (alive) {
           setActive(value.active === true || value.prepared === true);
@@ -61,9 +55,7 @@ export function Startup({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const value = await invoke<{ active: boolean; prepared?: boolean }>(
-        hasExisting ? "continue_existing" : "start_empty",
-      );
+      const value = await setupCall(hasExisting ? "continue_existing" : "start_empty");
       setActive(value.active === true || value.prepared === true);
     } catch (error) {
       setError(error instanceof Error ? error.message : "저장소를 준비하지 못했습니다.");

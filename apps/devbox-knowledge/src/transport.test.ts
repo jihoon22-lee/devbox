@@ -66,3 +66,30 @@ it("does not reflect an unknown native error value into the Activity screen", as
     "활동 작업을 완료하지 못했습니다",
   );
 });
+it.each([
+  ["knowledge.notes", "notes", "notes"],
+  ["knowledge.search", "search", "search"],
+  ["knowledge.search-settings", "search_settings", "search"],
+  ["knowledge.opener", "opener", "search"],
+  ["knowledge.setup", "setup", "notes"],
+  ["knowledge.commands", "commands", "notes"],
+])("uses the declared native command for %s", async (component, command, route) => {
+  native.invoke.mockImplementation(async (name, { request }) => {
+    expect(name).toBe(`plugin:knowledge|${command}`);
+    expect(request.header.route).toBe(route);
+    expect(request).not.toHaveProperty("component");
+    return {
+      operation: {
+        provenance: {
+          product: "knowledge",
+          component,
+          requestId: request.header.requestId,
+          revision: catalog.catalogRevision,
+        },
+        outcome: { state: "succeeded" },
+      },
+      value: null,
+    };
+  });
+  await expect(native.transport!(component, "synthetic", {})).resolves.toBeNull();
+});

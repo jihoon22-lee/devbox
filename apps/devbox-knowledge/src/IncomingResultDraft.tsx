@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { componentInvoke } from "@devbox/knowledge-features/transport";
-const invoke = componentInvoke("knowledge.notes");
+import { notesCall } from "@devbox/knowledge-features/notes/api";
+
 export default function IncomingResultDraft() {
   const { review } = useIncomingReview();
   const [issue, setIssue] = useState(""),
@@ -16,7 +16,7 @@ export default function IncomingResultDraft() {
     let active = true;
     setIssue("");
     setNotice("");
-    void invoke<{ state: string }>("open_result_draft", {
+    void notesCall("open_result_draft", {
       id,
       operationId: incoming.operationId,
       revision: incoming.commandRevision,

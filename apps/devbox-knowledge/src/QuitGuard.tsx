@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { componentInvoke } from "@devbox/knowledge-features/transport";
+import { quitCall } from "@devbox/knowledge-features/commands/api";
 import { hasUnsavedNote, saveNoteBeforeQuit, settleNoteBeforeQuit } from "@devbox/knowledge-features/notes-lifecycle";
 import { nativeMode } from "@devbox/product-shell/api";
 import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
-const invoke = componentInvoke("knowledge.commands");
 
 export default function QuitGuard() {
   const [request, setRequest] = useState<string | null>(null);
@@ -19,9 +18,9 @@ export default function QuitGuard() {
       if (handling.current) return;
       handling.current = true;
       try {
-        const id = await invoke<string | null>("pending_quit");
+        const id = await quitCall("pending_quit", {});
         if (disposed || !id) return;
-        if (!hasUnsavedNote()) await invoke("decide_quit", { id, quit: true });
+        if (!hasUnsavedNote()) await quitCall("decide_quit", { id, quit: true });
         else {
           setRequest(id);
           setError("");
@@ -69,7 +68,7 @@ export default function QuitGuard() {
         setError("저장을 완료하지 못했습니다. 종료를 취소한 뒤 저장 오류나 파일 충돌을 확인해 주세요.");
         return;
       }
-      await invoke("decide_quit", { id: request, quit: action !== "cancel" });
+      await quitCall("decide_quit", { id: request, quit: action !== "cancel" });
       setRequest(null);
     } catch {
       setError("종료를 완료하지 못했습니다. 현재 편집 내용은 유지됩니다.");
