@@ -72,6 +72,8 @@ jobs:
         if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         run: |
           python3 .github/scripts/check-dependencies.py check
+          python3 .github/scripts/test-check-workspace-deps.py
+          python3 .github/scripts/check-workspace-deps.py
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-check-no-legacy.py
           python3 .github/scripts/check-no-legacy.py --scope all

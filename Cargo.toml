@@ -82,6 +82,13 @@ windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Security"
 zeroize = { version = "1.9.0", features = ["zeroize_derive"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate", "deflate-flate2"] }
 
+# Keep file:line in backtraces while skipping full variable debug info.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
 [profile.release]
 lto = true
 strip = true
