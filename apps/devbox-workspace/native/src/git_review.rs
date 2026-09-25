@@ -174,7 +174,8 @@ impl Review {
         .map_err(|_| "source_context_changed")?
         .with_linux_supervisor()
         .map_err(|_| "source_context_changed")?;
-        let mut access = repo_manager_lib::component::SourceAccess::for_project(root, key, policy);
+        let mut access =
+            repositories_engine::component::SourceAccess::for_project(root, key, policy);
         if let Some(creation) = creation {
             access = access.with_creation(creation);
         }
@@ -182,7 +183,7 @@ impl Review {
             .enable_all()
             .build()
             .map_err(|_| "source_operation_unavailable")?;
-        let result = runtime.block_on(repo_manager_lib::component::dispatch_source_native(
+        let result = runtime.block_on(repositories_engine::component::dispatch_source_native(
             access, method, args,
         ));
         // Native headless workers belong to this runtime. The binary additionally

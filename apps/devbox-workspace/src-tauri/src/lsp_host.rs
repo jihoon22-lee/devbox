@@ -15,7 +15,7 @@ mod wsl_approval;
 use crate::{
     host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
 };
-use code_pad_lib::lsp::{InstallError, ManagedInstaller, RequestCancellation};
+use editor_engine::lsp::{InstallError, ManagedInstaller, RequestCancellation};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -624,7 +624,7 @@ impl LspHost {
                     settings::Settings::open(host, context)?.view()
                 } else {
                     Ok(
-                        json!({"config":code_pad_lib::lsp::LspConfig::default(),"persist_allowed":false,"recoveryAllowed":false,"error":null,"nativeRevision":null}),
+                        json!({"config":editor_engine::lsp::LspConfig::default(),"persist_allowed":false,"recoveryAllowed":false,"error":null,"nativeRevision":null}),
                     )
                 }
             }
@@ -650,7 +650,7 @@ impl LspHost {
                     .try_state::<Arc<ManagedInstaller>>()
                     .ok_or("lsp_unavailable")?;
                 let statuses =
-                    code_pad_lib::commands::installer::public_installed_status(&installer)
+                    editor_engine::commands::installer::public_installed_status(&installer)
                         .map_err(installer_error)?;
                 serde_json::to_value(statuses).map_err(|_| "lsp_install_status_invalid")
             }
@@ -754,7 +754,7 @@ impl LspHost {
                 } else if method == "lsp_recover_installed" {
                     self.retire().await?;
                 }
-                code_pad_lib::component::dispatch(app, method, args)
+                editor_engine::component::dispatch(app, method, args)
                     .await
                     .map_err(|_| "lsp_unavailable")
             }

@@ -22,7 +22,7 @@ impl Creation {
         path: &str,
         deadline: u64,
     ) -> Result<Self> {
-        if !repo_manager_lib::component::source_branch_valid(&branch) {
+        if !repositories_engine::component::source_branch_valid(&branch) {
             return Err("worktree_branch_invalid");
         }
         let target = WorktreeTarget::capture_with_admission(
@@ -48,7 +48,7 @@ impl Creation {
         deadline: u64,
     ) -> Result<(
         Arc<WorktreeTarget>,
-        repo_manager_lib::component::SourceCreation,
+        repositories_engine::component::SourceCreation,
     )> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -68,7 +68,7 @@ impl Creation {
             .ok_or("worktree_target_invalid")?
             .to_owned();
         let target = self.target.clone();
-        let creation = repo_manager_lib::component::SourceCreation::new(
+        let creation = repositories_engine::component::SourceCreation::new(
             self.branch,
             path,
             input.operation_id,

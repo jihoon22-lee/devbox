@@ -1,5 +1,5 @@
 //! Current LSP configuration, preserving already stored receipt fields.
-use code_pad_lib::lsp::{LspConfig, LSP_CONFIG_SCHEMA_VERSION};
+use editor_engine::lsp::{LspConfig, LSP_CONFIG_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 type Result<T> = std::result::Result<T, &'static str>;

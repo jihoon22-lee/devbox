@@ -13,7 +13,7 @@ use crate::{
         storage_paths::{display, ProtectedStorage},
     },
 };
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     DocumentError, EnvironmentAllowlist, LspConfig, LspExecutionAuthority, LspManagerError,
     ManagedInstaller, ResolvedProcess, ReviewedLspExecution, RuntimeKind, RuntimeResolver,
     ServerRef,
@@ -251,7 +251,7 @@ pub(super) struct Snapshot {
     approval_bytes: Option<Vec<u8>>,
     digest: String,
     pub(super) active: AtomicBool,
-    owner_shutdown: std::sync::OnceLock<code_pad_lib::lsp::RequestCancellation>,
+    owner_shutdown: std::sync::OnceLock<editor_engine::lsp::RequestCancellation>,
     activities: std::sync::OnceLock<Activities>,
     files: std::sync::OnceLock<Arc<std::sync::Mutex<crate::files_host::FilesHost>>>,
 }
@@ -413,7 +413,7 @@ impl Snapshot {
     pub(super) fn context(&self) -> &ProjectContext {
         &self.settings.context
     }
-    pub(super) fn bind_owner(&self, shutdown: code_pad_lib::lsp::RequestCancellation) {
+    pub(super) fn bind_owner(&self, shutdown: editor_engine::lsp::RequestCancellation) {
         let _ = self.owner_shutdown.set(shutdown);
     }
     pub(super) fn bind_files(&self, files: Arc<std::sync::Mutex<crate::files_host::FilesHost>>) {
@@ -504,8 +504,8 @@ impl Snapshot {
         &self,
         files: &mut crate::files_host::FilesHost,
         path: &str,
-        file: &code_pad_lib::lsp::RenameFileResult,
-    ) -> Result<Option<(code_pad_lib::commands::file::OpenedFileWire, String)>> {
+        file: &editor_engine::lsp::RenameFileResult,
+    ) -> Result<Option<(editor_engine::commands::file::OpenedFileWire, String)>> {
         self.validate_document(Path::new(path))?;
         files.refresh_after_rename(Some((self.context(), &self.lease)), path, file)
     }

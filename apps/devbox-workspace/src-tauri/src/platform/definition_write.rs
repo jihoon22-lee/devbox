@@ -1,8 +1,8 @@
 //! Reviewed JSON writes. Existing files reuse the editor's native conflict
 //! checks; first creation publishes a complete sibling without overwriting.
 use crate::private_metadata::MetadataRoot;
-use code_pad_lib::commands::file::{self, ExpectedFileSnapshot, OpenedFile};
 use devbox_filesystem::{ensure_no_links, filesystem_identity};
+use editor_engine::commands::file::{self, ExpectedFileSnapshot, OpenedFile};
 use std::{
     fs,
     io::Write,
@@ -82,12 +82,12 @@ impl DefinitionTarget {
                 &self.path,
                 std::str::from_utf8(bytes).map_err(|_| "invalid_manifest")?,
                 if force_utf8 {
-                    code_pad_lib::core::encoding::Encoding::utf8()
+                    editor_engine::core::encoding::Encoding::utf8()
                 } else {
                     opened.encoding
                 },
                 if force_utf8 {
-                    code_pad_lib::core::line_ending::LineEnding::Lf
+                    editor_engine::core::line_ending::LineEnding::Lf
                 } else {
                     opened.line_ending
                 },

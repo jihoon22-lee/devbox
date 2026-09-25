@@ -31,13 +31,13 @@ uuid = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-git = { package = "git", path = "../../../crates/git" }
-workbench_lib = { package = "devbox-projects-engine", path = "../../../crates/projects-engine", default-features = false }
-code_pad_lib = { package = "devbox-editor-engine", path = "../../../crates/editor-engine", default-features = false, features = ["desktop"] }
-repo_manager_lib = { package = "devbox-repositories-engine", path = "../../../crates/repositories-engine", default-features = false, features = ["desktop"] }
-run_manager_lib = { package = "devbox-runtime-engine", path = "../../../crates/runtime-engine", default-features = false, features = ["desktop"] }
-port_manager_lib = { package = "devbox-ports-engine", path = "../../../crates/ports-engine", default-features = false, features = ["desktop"] }
-wsl_desktop_lib = { package = "devbox-terminal-engine", path = "../../../crates/terminal-engine", default-features = false, features = ["desktop"] }
-log_lens_lib = { package = "devbox-logs-engine", path = "../../../crates/logs-engine", default-features = false, features = ["desktop"] }
+projects_engine = { package = "devbox-projects-engine", path = "../../../crates/projects-engine", default-features = false }
+editor_engine = { package = "devbox-editor-engine", path = "../../../crates/editor-engine", default-features = false, features = ["desktop"] }
+repositories_engine = { package = "devbox-repositories-engine", path = "../../../crates/repositories-engine", default-features = false, features = ["desktop"] }
+runtime_engine = { package = "devbox-runtime-engine", path = "../../../crates/runtime-engine", default-features = false, features = ["desktop"] }
+ports_engine = { package = "devbox-ports-engine", path = "../../../crates/ports-engine", default-features = false, features = ["desktop"] }
+terminal_engine = { package = "devbox-terminal-engine", path = "../../../crates/terminal-engine", default-features = false, features = ["desktop"] }
+logs_engine = { package = "devbox-logs-engine", path = "../../../crates/logs-engine", default-features = false, features = ["desktop"] }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 tauri-plugin-notification = { workspace = true }

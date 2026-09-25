@@ -104,24 +104,24 @@ enum FileMethod {
     #[serde(rename = "files_open")]
     Open {
         context: ProjectContext,
-        request: code_pad_lib::commands::file::OpenFileRequest,
+        request: editor_engine::commands::file::OpenFileRequest,
     },
     #[serde(rename = "files_save")]
     Save {
         context: ProjectContext,
-        request: code_pad_lib::commands::file::SaveFileRequest,
+        request: editor_engine::commands::file::SaveFileRequest,
         native_revision: String,
     },
     #[serde(rename = "files_rename")]
     Rename {
         context: ProjectContext,
-        request: code_pad_lib::commands::file::RenameFileRequest,
+        request: editor_engine::commands::file::RenameFileRequest,
         native_revision: String,
     },
     #[serde(rename = "files_delete")]
     Delete {
         context: ProjectContext,
-        request: code_pad_lib::commands::file::FileActionRequest,
+        request: editor_engine::commands::file::FileActionRequest,
         native_revision: String,
     },
     #[serde(rename = "files_close")]
@@ -424,7 +424,7 @@ impl Engine {
         root.observation.revalidate()?;
         let budget = Duration::from_millis(u64::from(request.budget_ms));
         let expires = Instant::now() + budget;
-        let report = repo_manager_lib::component::native_dependency_inventory(
+        let report = repositories_engine::component::native_dependency_inventory(
             root.observation.root(),
             budget.min(Duration::from_millis(u64::from(args.budget_ms))),
             &|path| {
@@ -832,7 +832,7 @@ impl Engine {
                 access
                     .owner
                     .admitted_path(Some((&access.context, &lease)), &path)?;
-                let result = code_pad_lib::commands::preview::render_preview_guarded(
+                let result = editor_engine::commands::preview::render_preview_guarded(
                     &path,
                     &content,
                     &workspace_root,
@@ -850,7 +850,7 @@ impl Engine {
                 if Path::new(&path) != lease.root() {
                     return Err("file_context_changed");
                 }
-                let result = code_pad_lib::commands::folder::list_workspace_files_guarded(
+                let result = editor_engine::commands::folder::list_workspace_files_guarded(
                     lease.root(),
                     &|path| access.owner.ensure_user_path(path).map_err(str::to_string),
                     &|| guard().map_err(str::to_string),
@@ -1176,7 +1176,7 @@ mod tests {
     use super::*;
     #[test]
     fn lsp_review_pins_context_code_mode_and_settings_without_starting_a_program() {
-        use code_pad_lib::lsp::{CustomServer, LspConfig, RuntimeKind, RuntimeSpec, ServerRef};
+        use editor_engine::lsp::{CustomServer, LspConfig, RuntimeKind, RuntimeSpec, ServerRef};
         use std::os::unix::fs::PermissionsExt;
         let fixture = tempfile::Builder::new()
             .prefix(".wsl-lsp-review-")

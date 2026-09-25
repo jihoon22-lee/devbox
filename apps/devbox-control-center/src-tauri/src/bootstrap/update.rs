@@ -463,7 +463,7 @@ pub(super) fn prepare(root: &Path, payload_path: &Path, image: &Path) -> Result<
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     #[cfg(windows)]
     let _pins = crate::suite::platform::component_scope::pin_directories(&root)?;
@@ -627,7 +627,7 @@ pub(super) fn prepare(root: &Path, payload_path: &Path, image: &Path) -> Result<
 pub(super) fn install(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     verify_payload_owner(&Payload::parse(&bytes)?, image)?;
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "update_owner_invalid")?;
@@ -683,7 +683,7 @@ pub(super) fn execute(
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     #[cfg(windows)]
     let _pins = crate::suite::platform::component_scope::pin_directories(&root)?;

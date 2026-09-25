@@ -6,7 +6,7 @@ use crate::{
     private_metadata::MetadataRoot,
 };
 use product_contract::{ProjectContext, RouteRequest};
-use run_manager_lib::component::sessions::{
+use runtime_engine::component::sessions::{
     self as runtime, PreparedJob, RuntimeLease, RuntimeStartWitness,
 };
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ struct Document {
 #[derive(Clone)]
 struct Plan {
     jobs: Vec<PreparedJob>,
-    profile: Option<(wsl_desktop_lib::component::WorkspaceProfile, String)>,
+    profile: Option<(terminal_engine::component::WorkspaceProfile, String)>,
     revision: String,
     preflight: crate::session_preflight::Report,
 }
@@ -965,7 +965,7 @@ impl Sessions {
             let operation = uuid::Uuid::new_v4().to_string();
             let kind = if job.task().is_some() {
                 ResourceKind::TaskOperation
-            } else if job.job().kind == run_manager_lib::core::models::JobKind::Service {
+            } else if job.job().kind == runtime_engine::core::models::JobKind::Service {
                 ResourceKind::Service
             } else {
                 ResourceKind::Job

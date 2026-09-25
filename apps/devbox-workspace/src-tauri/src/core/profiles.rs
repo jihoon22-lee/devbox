@@ -1,6 +1,6 @@
 //! Current stored profiles and their explicit project bindings.
+use projects_engine::component::ProjectProfile;
 use serde::{Deserialize, Serialize};
-use workbench_lib::component::ProjectProfile;
 
 type Result<T> = std::result::Result<T, &'static str>;
 

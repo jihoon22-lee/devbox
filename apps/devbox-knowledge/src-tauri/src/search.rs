@@ -4,7 +4,7 @@ use crate::core::{
     source_search::{Candidate, ProjectReference, SearchJobs, VerifiedProject, Work},
     stores,
 };
-use everything_plus_lib::component::query::{self, SearchFilter};
+use content_index_engine::component::query::{self, SearchFilter};
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -178,7 +178,7 @@ fn candidates(
         return Ok(Vec::new());
     }
     if request.source == "notes" {
-        let rows = knowledge_base_lib::component::search_projection(
+        let rows = knowledge_vault_engine::component::search_projection(
             conn,
             &request.query,
             limit.min(100),
@@ -265,13 +265,13 @@ fn run(
             project.as_ref().map(|p| p.project.root.as_str()),
         )?;
         if request.source == "notes" {
-            let (offline, stale) = knowledge_base_lib::component::product_index_health(&app);
+            let (offline, stale) = knowledge_vault_engine::component::product_index_health(&app);
             for row in &mut rows {
                 row.offline = offline;
                 row.index_stale = stale;
             }
         } else {
-            let health = everything_plus_lib::component::product_root_health(&app);
+            let health = content_index_engine::component::product_root_health(&app);
             for row in &mut rows {
                 let key = row.root.to_string_lossy().replace('\\', "/");
                 let status = health
@@ -593,7 +593,7 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
                 return serde_json::to_value(proof).map_err(|_| "search_stale".into());
             }
             if source == "notes" && !reveal {
-                knowledge_base_lib::component::offer_product_path(&app, &row.path)?;
+                knowledge_vault_engine::component::offer_product_path(&app, &row.path)?;
             } else {
                 use tauri_plugin_opener::OpenerExt;
                 if reveal {
@@ -646,8 +646,8 @@ mod tests {
         std::fs::create_dir(&vault).unwrap();
         let note_db = directory.path().join("notes.db");
         let file_db = directory.path().join("files.db");
-        knowledge_base_lib::component::create_empty_store(&note_db, &vault).unwrap();
-        everything_plus_lib::component::create_empty_store(&file_db).unwrap();
+        knowledge_vault_engine::component::create_empty_store(&note_db, &vault).unwrap();
+        content_index_engine::component::create_empty_store(&file_db).unwrap();
         let notes = Connection::open(&note_db).unwrap();
         notes.execute("INSERT INTO docs(path,title,body,tags,modified_ts) VALUES('shared.md','shared','onlynote','[]',100)", []).unwrap();
         let files = Connection::open(&file_db).unwrap();
@@ -694,7 +694,7 @@ mod tests {
     fn reader_cannot_mutate_and_deadline_interrupts_expensive_sql() {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("notes.db");
-        knowledge_base_lib::component::create_empty_store(&database, directory.path()).unwrap();
+        knowledge_vault_engine::component::create_empty_store(&database, directory.path()).unwrap();
         let conn =
             read_connection(&database, None, Instant::now() + Duration::from_secs(1)).unwrap();
         assert!(conn.execute("DELETE FROM settings", []).is_err());

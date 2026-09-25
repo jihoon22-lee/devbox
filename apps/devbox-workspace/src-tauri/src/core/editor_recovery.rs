@@ -1,6 +1,6 @@
 //! Reviewed recovery conversion keeps all existing buffers unless a conflicting
 //! path is explicitly replaced. Bounds reject the whole write; nothing is evicted.
-use code_pad_lib::core::recovery::{RecoveryEntry, RecoveryFile};
+use editor_engine::core::recovery::{RecoveryEntry, RecoveryFile};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 type Result<T> = std::result::Result<T, &'static str>;
@@ -97,5 +97,5 @@ fn validate_recovery(bytes: &[u8]) -> Result<()> {
     if !super::editor_sessions::known_shape(&raw, &normalized, false) {
         return Err("invalid_files_store");
     }
-    code_pad_lib::component::validate_persistent_file("recovery.json", bytes)
+    editor_engine::component::validate_persistent_file("recovery.json", bytes)
 }

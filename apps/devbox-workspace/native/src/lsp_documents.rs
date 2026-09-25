@@ -6,7 +6,7 @@ use crate::{
     lsp_authority::Lease,
     lsp_wire::{DocumentMethod as Method, DocumentProof, ProofRequest},
 };
-use code_pad_lib::{commands::file::OpenFileRequest, lsp::LspManager};
+use editor_engine::{commands::file::OpenFileRequest, lsp::LspManager};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 type Result<T> = std::result::Result<T, &'static str>;

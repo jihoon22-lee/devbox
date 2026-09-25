@@ -15,7 +15,7 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     // A running executable cannot remove itself. The installer/uninstaller must
     // retain its independently verified inputs outside the owned package root.

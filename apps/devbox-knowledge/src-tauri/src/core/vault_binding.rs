@@ -176,7 +176,7 @@ mod tests {
         fs::write(old.join("original.md"), "original").unwrap();
         fs::write(new.join("existing.md"), "existing").unwrap();
         let database = root.path().join("notes.db");
-        knowledge_base_lib::component::create_empty_store(&database, &old).unwrap();
+        knowledge_vault_engine::component::create_empty_store(&database, &old).unwrap();
         let conn = Connection::open(&database).unwrap();
         conn.execute("INSERT INTO note_templates(name,content,created_ts,updated_ts) VALUES('keep','body',1,1)", []).unwrap();
         conn.execute("INSERT INTO docs(path,title,body,tags,modified_ts) VALUES('original.md','original','body','[]',1)", []).unwrap();
@@ -237,7 +237,7 @@ mod tests {
     fn failed_index_cleanup_rolls_back_binding_and_approval_together() {
         let root = tempfile::tempdir().unwrap();
         let database = root.path().join("notes.db");
-        knowledge_base_lib::component::create_empty_store(&database, root.path()).unwrap();
+        knowledge_vault_engine::component::create_empty_store(&database, root.path()).unwrap();
         let conn = Connection::open(&database).unwrap();
         conn.execute("INSERT INTO docs(path,title,body,tags,modified_ts) VALUES('keep.md','keep','body','[]',1)", []).unwrap();
         conn.execute_batch("CREATE TRIGGER fail_rebind BEFORE DELETE ON docs BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();

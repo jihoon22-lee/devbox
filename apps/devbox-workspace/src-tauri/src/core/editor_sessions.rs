@@ -1,6 +1,6 @@
 //! Product session metadata with retained receipt decoding. No file
 //! path here grants access: the native Files owner supplies eligible paths.
-use code_pad_lib::core::session::Session;
+use editor_engine::core::session::Session;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 type Result<T> = std::result::Result<T, &'static str>;
@@ -51,7 +51,7 @@ impl StoredSession {
         let record: Self = if raw.get("schemaVersion").is_some() {
             serde_json::from_value(raw).map_err(|_| "invalid_files_store")?
         } else {
-            code_pad_lib::component::validate_persistent_file("session.json", bytes)?;
+            editor_engine::component::validate_persistent_file("session.json", bytes)?;
             Self {
                 session: serde_json::from_value(raw).map_err(|_| "invalid_files_store")?,
                 ..Self::default()

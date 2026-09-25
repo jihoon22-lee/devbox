@@ -1,6 +1,6 @@
 //! Frozen, explicitly allowlisted Linux LSP environment. No runtime probe runs
 //! while inspecting PATH or resolving an installed target.
-use code_pad_lib::lsp::{EnvironmentAllowlist, RuntimeResolver};
+use editor_engine::lsp::{EnvironmentAllowlist, RuntimeResolver};
 use std::{
     collections::BTreeSet,
     ffi::OsString,

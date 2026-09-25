@@ -26,7 +26,7 @@ use crate::private_metadata::MetadataRoot;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use wsl_desktop_lib::component::{ProfileStore, WorkspaceProfile};
+use terminal_engine::component::{ProfileStore, WorkspaceProfile};
 
 type Result<T> = std::result::Result<T, &'static str>;
 const FILE: &str = "product-profiles-v1.json";

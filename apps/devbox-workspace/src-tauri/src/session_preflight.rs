@@ -4,7 +4,7 @@ use crate::{
     host::Host,
 };
 use product_contract::{ExecutionTarget, ProjectContext};
-use run_manager_lib::{component::sessions::PreparedJob, core::models::JobKind};
+use runtime_engine::{component::sessions::PreparedJob, core::models::JobKind};
 use serde::Serialize;
 use std::{collections::BTreeSet, sync::Mutex};
 #[derive(Clone, Serialize)]
@@ -214,7 +214,7 @@ async fn capture_inner(
                 job.id.clone(),
                 if task.trusted
                     && (task.task_kind
-                        != run_manager_lib::core::workspace_tasks::WorkspaceTaskKind::Shell
+                        != runtime_engine::core::workspace_tasks::WorkspaceTaskKind::Shell
                         || task.shell_trusted)
                 {
                     "reviewed"
@@ -223,7 +223,7 @@ async fn capture_inner(
                 },
                 !task.trusted
                     || task.task_kind
-                        == run_manager_lib::core::workspace_tasks::WorkspaceTaskKind::Shell
+                        == runtime_engine::core::workspace_tasks::WorkspaceTaskKind::Shell
                         && !task.shell_trusted,
             );
         }
@@ -273,22 +273,23 @@ async fn capture_inner(
                             .as_ref()
                             .is_some_and(|name| snapshot.unavailable_wsl.contains(name)));
                 for port in ports {
-                    let rows =
-                        snapshot
-                            .rows
-                            .iter()
-                            .filter(|row| {
-                                row.row.port.port == port
-                                    && row.row.port.proto.to_ascii_uppercase().starts_with("TCP")
-                                    && match context.target {
-                                        ExecutionTarget::Windows => row.row.source
-                                            == port_manager_lib::component::ListenerSource::Windows,
-                                        ExecutionTarget::Wsl { .. } => {
-                                            row.row.wsl_distro.as_ref() == distro_name.as_ref()
-                                        }
+                    let rows = snapshot
+                        .rows
+                        .iter()
+                        .filter(|row| {
+                            row.row.port.port == port
+                                && row.row.port.proto.to_ascii_uppercase().starts_with("TCP")
+                                && match context.target {
+                                    ExecutionTarget::Windows => {
+                                        row.row.source
+                                            == ports_engine::component::ListenerSource::Windows
                                     }
-                            })
-                            .collect::<Vec<_>>();
+                                    ExecutionTarget::Wsl { .. } => {
+                                        row.row.wsl_distro.as_ref() == distro_name.as_ref()
+                                    }
+                                }
+                        })
+                        .collect::<Vec<_>>();
                     let owned = !rows.is_empty()
                         && rows.iter().all(|row| {
                             row.row.identity.is_some()
@@ -296,7 +297,7 @@ async fn capture_inner(
                                     correlation.source_app == "run-manager"
                                 && borrowable.contains(&correlation.target_id)
                                 && correlation.confidence
-                                    != port_manager_lib::component::CorrelationConfidence::Expected
+                                    != ports_engine::component::CorrelationConfidence::Expected
                                 })
                         });
                     let (state, blocking) = if unavailable {

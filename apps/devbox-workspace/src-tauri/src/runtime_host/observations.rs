@@ -2,15 +2,15 @@
 //! process-mode tasks without a configured service health port. The same exact
 //! identity/endpoint/run reference is reconstructed before each navigation.
 use super::*;
-use port_manager_lib::component::{
+use ports_engine::component::{
     CorrelationConfidence, ListenerIdentity, PortCorrelation, PortObservationSnapshot,
     ProductPortAction,
 };
 use std::collections::BTreeMap;
-fn process(identity: &ListenerIdentity) -> Option<run_manager_lib::scheduler::ObservedProcess> {
+fn process(identity: &ListenerIdentity) -> Option<runtime_engine::scheduler::ObservedProcess> {
     match identity {
         ListenerIdentity::Windows { pid, start_time } => {
-            Some(run_manager_lib::scheduler::ObservedProcess::Windows {
+            Some(runtime_engine::scheduler::ObservedProcess::Windows {
                 pid: *pid,
                 creation_filetime: start_time.parse().ok()?,
             })
@@ -19,7 +19,7 @@ fn process(identity: &ListenerIdentity) -> Option<run_manager_lib::scheduler::Ob
             distro,
             pid,
             start_tick,
-        } => Some(run_manager_lib::scheduler::ObservedProcess::Wsl {
+        } => Some(runtime_engine::scheduler::ObservedProcess::Wsl {
             distro: distro.clone(),
             pid: *pid,
             start_tick: *start_tick,
@@ -34,7 +34,7 @@ pub(super) async fn observe(
     context: Option<&ProjectContext>,
     deadline: u64,
 ) -> Result<(PortObservationSnapshot, BTreeMap<String, ProductPortAction>)> {
-    let mut snapshot = port_manager_lib::component::observe_product(bindings(
+    let mut snapshot = ports_engine::component::observe_product(bindings(
         app,
         host,
         definitions,
@@ -68,7 +68,7 @@ pub(super) async fn observe(
                 snapshot.correlations_truncated = true;
                 continue;
             }
-            let owner = run_manager_lib::component::process_owner(app, process).await;
+            let owner = runtime_engine::component::process_owner(app, process).await;
             if owner.is_err() {
                 snapshot.correlations_truncated = true;
             }
@@ -136,7 +136,7 @@ pub(super) async fn resolve(
         let (_, mut actions) = observe(app, host, definitions, context, deadline).await?;
         actions.remove(key).ok_or("process_action_stale")
     } else {
-        port_manager_lib::component::resolve_product_action(
+        ports_engine::component::resolve_product_action(
             bindings(app, host, definitions, context, deadline),
             key,
         )

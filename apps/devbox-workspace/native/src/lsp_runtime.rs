@@ -6,8 +6,8 @@ use crate::{
     lsp_review::Review,
     lsp_wire::{Command, DocumentProof, Event, EventName, LifecycleMethod, Reply},
 };
-use code_pad_lib::lsp::{LspEvent, LspManager, LspManagerError};
 use devbox_filesystem::project::ProjectObservation;
+use editor_engine::lsp::{LspEvent, LspManager, LspManagerError};
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 type Result<T> = std::result::Result<T, &'static str>;

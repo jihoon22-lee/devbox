@@ -7,7 +7,7 @@ authors = ["jihoon22.lee"]
 edition = "2021"
 
 [lib]
-name = "log_lens_lib"
+name = "logs_engine"
 crate-type = ["rlib"]
 
 # Product consumers reuse commands without embedding the standalone frontend.

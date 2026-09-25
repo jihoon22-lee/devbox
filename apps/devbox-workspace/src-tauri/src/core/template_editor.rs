@@ -1,7 +1,7 @@
 //! Editable destination templates. Legacy snapshots retain the original bytes;
 //! template edits never change an already instantiated project profile.
 use super::{registry::Registry, templates::ImportedTemplate};
-use workbench_lib::component::ProfileTemplate;
+use projects_engine::component::ProfileTemplate;
 
 type Result<T> = std::result::Result<T, &'static str>;
 

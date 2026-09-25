@@ -1,7 +1,7 @@
 //! Editor grants bind renderer document commands to native open-file snapshots.
 use super::{actor::control_error, approval::Snapshot, input};
 use crate::{file_owner::EditorSnapshot, files_host::FilesHost};
-use code_pad_lib::lsp::{LspManager, LspPosition};
+use editor_engine::lsp::{LspManager, LspPosition};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -302,7 +302,7 @@ impl Documents {
         }
         let mut documents = Vec::new();
         for (index, file) in result.files.iter().enumerate() {
-            if file.status != code_pad_lib::lsp::RenameFileStatus::Applied {
+            if file.status != editor_engine::lsp::RenameFileStatus::Applied {
                 continue;
             }
             let relative = std::path::Path::new(&file.path);

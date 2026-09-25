@@ -358,7 +358,7 @@ fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<Stag
     let payload = Payload::parse(&bytes)?;
     let revision = hash(&bytes);
     verify_payload_owner(&payload, own_image)?;
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -509,7 +509,7 @@ fn resume_or_update_install(root: &Path, payload_path: &Path, image: &Path) -> R
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, image)?;
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "bootstrap_owner_invalid")?;
@@ -765,7 +765,7 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     // NSIS delegates even the first directory creation to this native policy.
     // In particular, it cannot create an unreviewed UNC/junction target first.
     if fs::symlink_metadata(root).is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) {
-        let candidate = devbox_manager_lib::core::custom_root::preview_new_suite_directory(root)
+        let candidate = installation_tools::core::custom_root::preview_new_suite_directory(root)
             .map_err(|_| "bootstrap_root_unsafe")?;
         let parent = candidate.parent().ok_or("bootstrap_root_unsafe")?;
         #[cfg(windows)]
@@ -780,7 +780,7 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
             return Err("bootstrap_root_changed");
         }
     }
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, root_identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -1051,7 +1051,7 @@ fn recover_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     let payload = Payload::parse(&payload_bytes)?;
     verify_payload_owner(&payload, own_image)?;
     let payload_revision = hash(&payload_bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -1161,7 +1161,7 @@ fn restart_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, own_image)?;
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -1241,7 +1241,7 @@ fn open_install(
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, own_image)?;
     let payload_revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -1366,7 +1366,7 @@ fn snapshot_install(
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, own_image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -1504,7 +1504,7 @@ fn activate_install(
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, own_image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
@@ -1763,7 +1763,7 @@ fn prepare_data_restore(
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, own_image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;

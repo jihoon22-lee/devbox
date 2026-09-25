@@ -7,8 +7,8 @@ edition.workspace = true
 [features]
 default = ["helper"]
 test-fixtures = ["helper"]
-helper = ["git", "files", "dep:libc", "code_pad_lib/preview", "dep:repo_manager_lib", "dep:tokio"]
-files = ["dep:code_pad_lib", "dep:product-contract", "dep:devbox-wsl", "dep:devbox-filesystem", "dep:sha2", "dep:windows"]
+helper = ["git", "files", "dep:libc", "editor_engine/preview", "dep:repositories_engine", "dep:tokio"]
+files = ["dep:editor_engine", "dep:product-contract", "dep:devbox-wsl", "dep:devbox-filesystem", "dep:sha2", "dep:windows"]
 
 git = ["files", "dep:devbox-git", "dep:gix-config"]
 
@@ -31,7 +31,7 @@ sha2 = { workspace = true, optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true, optional = true }
 
-[dependencies.code_pad_lib]
+[dependencies.editor_engine]
 package = "devbox-editor-engine"
 path = "../../../crates/editor-engine"
 default-features = false
@@ -57,7 +57,7 @@ package = "git"
 path = "../../../crates/git"
 optional = true
 
-[dependencies.repo_manager_lib]
+[dependencies.repositories_engine]
 package = "devbox-repositories-engine"
 path = "../../../crates/repositories-engine"
 default-features = false

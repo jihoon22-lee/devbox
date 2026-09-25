@@ -250,7 +250,7 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, image)?;
     let revision = hash(&bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let _pins = crate::suite::platform::component_scope::pin_directories(&root)?;
     let _gate = writer_gate(&root, false)?;

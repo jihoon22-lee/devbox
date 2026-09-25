@@ -178,8 +178,8 @@ impl Documents {
                     .content_hash
                     .bytes()
                     .all(|byte| byte.is_ascii_hexdigit())
-                || code_pad_lib::commands::file::parse_epoch_nanos(&snapshot.mtime_nanos).is_err()
-                || snapshot.size > code_pad_lib::core::guard::MAX_OPENABLE_BYTES
+                || editor_engine::commands::file::parse_epoch_nanos(&snapshot.mtime_nanos).is_err()
+                || snapshot.size > editor_engine::core::guard::MAX_OPENABLE_BYTES
             {
                 return Err("wsl_protocol_invalid");
             }

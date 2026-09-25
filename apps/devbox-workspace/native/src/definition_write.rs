@@ -2,8 +2,8 @@
 //! descriptors and never replaces a concurrent creator. Only owned staging
 //! names are removed; failure can leave an empty owned .devbox directory.
 use crate::{files::RootLease, project_files::ProjectFiles};
-use code_pad_lib::commands::file::{self, ExpectedFileSnapshot, FileError};
 use devbox_filesystem::{filesystem_identity, opened_filesystem_identity, FilesystemIdentity};
+use editor_engine::commands::file::{self, ExpectedFileSnapshot, FileError};
 use sha2::{Digest, Sha256};
 use std::{
     cell::Cell,

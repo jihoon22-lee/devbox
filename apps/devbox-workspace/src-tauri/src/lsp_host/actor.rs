@@ -1,7 +1,7 @@
 //! One owned OS thread keeps native LSP work and automatic retries off Tauri's
 //! shared async executor. Retirement retains the thread until confirmed cleanup.
 use super::{approval::Snapshot, documents, input};
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     LspEvent, LspManager, LspManagerError, ManagedInstaller, RequestCancellation,
 };
 use product_contract::ProjectContext;
@@ -328,7 +328,7 @@ impl Actor {
         &self.context
     }
     pub(super) fn uses_installation(&self, id: &str, version: &str) -> bool {
-        self.snapshot.config().server_by_language.values().any(|server|matches!(server,code_pad_lib::lsp::ServerRef::Managed {manifest_id,version:configured,..} if manifest_id==id&&configured==version))
+        self.snapshot.config().server_by_language.values().any(|server|matches!(server,editor_engine::lsp::ServerRef::Managed {manifest_id,version:configured,..} if manifest_id==id&&configured==version))
     }
     pub(super) fn finished(&self) -> bool {
         self.confirmed.load(Ordering::Acquire)
@@ -563,7 +563,7 @@ mod tests {
 
     #[tokio::test]
     async fn owned_actor_documents_require_native_grants_and_saved_disk_revisions() {
-        use code_pad_lib::commands::file::{OpenFileRequest, SaveFileRequest};
+        use editor_engine::commands::file::{OpenFileRequest, SaveFileRequest};
         let (fixture, marker) = fixture("documents");
         let path = fixture.path().join("main.rs");
         fs::write(&path, b"let value = 1;\r\n").unwrap();

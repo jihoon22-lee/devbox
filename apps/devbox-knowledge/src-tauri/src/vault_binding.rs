@@ -2,7 +2,7 @@
 //! untouched. Remote filesystem work precedes the short local activation gate.
 use crate::core::retirement::{Lease, Pool};
 use crate::core::{stores, vault_binding as data};
-use knowledge_base_lib::component::ProductVault;
+use knowledge_vault_engine::component::ProductVault;
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -404,7 +404,7 @@ mod tests {
     fn preview_recovers_owned_hot_journal_without_allowing_setting_writes() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("notes.db");
-        knowledge_base_lib::component::create_empty_store(&path, root.path()).unwrap();
+        knowledge_vault_engine::component::create_empty_store(&path, root.path()).unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",

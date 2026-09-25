@@ -2,7 +2,7 @@
 //! It intentionally writes protocol data only to stdout and diagnostics only to
 //! stderr, matching the boundary required of real language servers.
 
-use code_pad_lib::lsp::{JsonRpcMessage, JsonRpcReader, JsonRpcWriter, RpcError, RpcId};
+use editor_engine::lsp::{JsonRpcMessage, JsonRpcReader, JsonRpcWriter, RpcError, RpcId};
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::env;

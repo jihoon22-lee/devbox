@@ -27,8 +27,8 @@ pub fn run(id: String, mut context: tauri::Context<tauri::Wry>) -> tauri::Result
         .ok_or(tauri::Error::UnknownPath)?
         .join(&context.config().identifier)
         .join("webhooks");
-    let worker = webhook_lab_lib::component::OwnedProfile::start(&root, &id)
-        .map_err(std::io::Error::other)?;
+    let worker =
+        webhook_host::component::OwnedProfile::start(&root, &id).map_err(std::io::Error::other)?;
     worker.wait().map_err(std::io::Error::other)?;
     Ok(())
 }

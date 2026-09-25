@@ -136,7 +136,7 @@ impl Controls {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|_| "wsl_target_unavailable")?
                 .as_millis() as u64;
-            let action = wsl_desktop_lib::component::docker_action_owned(
+            let action = terminal_engine::component::docker_action_owned(
                 &input.distro,
                 &input.container_id,
                 &input.action,

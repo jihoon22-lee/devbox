@@ -18,7 +18,7 @@ pub(crate) async fn send(
     operation: String,
     deadline: u64,
 ) -> Result<Value, String> {
-    let payload = webhook_lab_lib::component::prepare_log_handoff(app, args, saved)?;
+    let payload = webhook_host::component::prepare_log_handoff(app, args, saved)?;
     let artifact = store().lock().map_err(|_| "webhook_log_busy")?.publish(
         uuid::Uuid::new_v4().simple().to_string(),
         payload,

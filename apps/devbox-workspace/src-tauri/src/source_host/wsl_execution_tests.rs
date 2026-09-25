@@ -34,7 +34,7 @@ impl Fixture {
         let path = format!("{}/큰 파일.txt", self.root);
         let disk = self.unc.join("큰 파일.txt");
         let mut expected =
-            "\u{1}".repeat(code_pad_lib::core::guard::MAX_OPENABLE_BYTES as usize - 6);
+            "\u{1}".repeat(editor_engine::core::guard::MAX_OPENABLE_BYTES as usize - 6);
         expected.push_str("한글");
         fs::write(&disk, expected.as_bytes()).unwrap();
         let projects = self.host.projects().unwrap();
@@ -63,7 +63,7 @@ impl Fixture {
         assert_eq!(opened["readOnly"], true);
         assert_eq!(
             opened["size"],
-            code_pad_lib::core::guard::MAX_OPENABLE_BYTES
+            editor_engine::core::guard::MAX_OPENABLE_BYTES
         );
         assert!(opened.get("textTransfer").is_none());
         files.documents.revision(&path).unwrap();
@@ -256,7 +256,7 @@ impl Fixture {
         let access =
             crate::dependencies_host::access(self.host.clone(), self.context.clone(), deadline, ())
                 .unwrap();
-        tauri::async_runtime::block_on(repo_manager_lib::component::dispatch_dependencies(
+        tauri::async_runtime::block_on(repositories_engine::component::dispatch_dependencies(
             access,
             "dependency_inventory",
             json!({"request":{"path":self.root}}),
@@ -264,7 +264,7 @@ impl Fixture {
         .unwrap()
     }
     fn check_wsl_profiles(&self) {
-        use workbench_lib::component::{ProfileTemplate, WslProfile};
+        use projects_engine::component::{ProfileTemplate, WslProfile};
         let projects = self.host.projects().unwrap();
         let resources = self.host.helper_directory().unwrap();
         let product_contract::ExecutionTarget::Wsl { distro_id } = &self.context.target else {

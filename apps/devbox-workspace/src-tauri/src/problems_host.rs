@@ -461,7 +461,7 @@ pub(crate) fn manage(
             } else {
                 None
             };
-            let mut ids = run_manager_lib::component::sessions::running_project_runs(
+            let mut ids = runtime_engine::component::sessions::running_project_runs(
                 app,
                 &root,
                 identity.as_deref(),
@@ -505,7 +505,7 @@ pub(crate) fn manage(
             if !crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id) {
                 return Err("problem_stale");
             }
-            let value = tauri::async_runtime::block_on(run_manager_lib::component::dispatch(
+            let value = tauri::async_runtime::block_on(runtime_engine::component::dispatch(
                 app,
                 "list_workspace_task_diagnostics",
                 json!({"runId":run_id}),
@@ -530,10 +530,10 @@ pub(crate) fn manage(
                 context.target,
                 product_contract::ExecutionTarget::Wsl { .. }
             ) {
-                run_manager_lib::core::workspace_diagnostics::relative_diagnostic_file(relative)
+                runtime_engine::core::workspace_diagnostics::relative_diagnostic_file(relative)
                     .map_err(|_| "problem_target_missing")?;
             } else {
-                run_manager_lib::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
+                runtime_engine::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
                     &binding.root,
                     relative,
                 )
@@ -565,7 +565,7 @@ pub(crate) fn manage(
             }
             if offset.is_some() {
                 let diagnostics =
-                    tauri::async_runtime::block_on(run_manager_lib::component::dispatch(
+                    tauri::async_runtime::block_on(runtime_engine::component::dispatch(
                         app,
                         "list_workspace_task_diagnostics",
                         json!({"runId":run_id}),
@@ -578,7 +578,7 @@ pub(crate) fn manage(
                     return Err("problem_stale");
                 }
             }
-            let lease = run_manager_lib::component::log_descriptor(app, &run_id)
+            let lease = runtime_engine::component::log_descriptor(app, &run_id)
                 .map_err(|_| "problem_log_expired")?;
             lease.revalidate().map_err(|_| "problem_log_expired")?;
             return Ok(
@@ -631,7 +631,7 @@ pub(crate) fn begin_observation(
     let owner = owner(app).ok()?;
     let ticket = if let Some(run) = &run_id {
         let (source_root, job, generation) =
-            run_manager_lib::component::diagnostic_identity(app, run).ok()?;
+            runtime_engine::component::diagnostic_identity(app, run).ok()?;
         let _ = source_root;
         if !crate::platform::task_sources::diagnostic_matches(app, host?, context, run) {
             return None;

@@ -24,9 +24,9 @@ tauri = { workspace = true }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 
 product-contract = { path = "../../../crates/product-contract" }
-knowledge_base_lib = { package = "devbox-knowledge-vault-engine", path = "../../../crates/knowledge-vault-engine", default-features = false }
-life_log_lib = { package = "devbox-activity-engine", path = "../../../crates/activity-engine", default-features = false }
-everything_plus_lib = { package = "devbox-content-index-engine", path = "../../../crates/content-index-engine", default-features = false }
+knowledge_vault_engine = { package = "devbox-knowledge-vault-engine", path = "../../../crates/knowledge-vault-engine", default-features = false }
+activity_engine = { package = "devbox-activity-engine", path = "../../../crates/activity-engine", default-features = false }
+content_index_engine = { package = "devbox-content-index-engine", path = "../../../crates/content-index-engine", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

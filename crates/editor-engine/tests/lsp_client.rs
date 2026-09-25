@@ -1,4 +1,4 @@
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     CapabilitySet, ClientStatus, IncomingMessage, InitializeConfig, JsonRpcMessage, LspClient,
     LspProcess, PositionEncoding, ProcessSpec, SyncKind, WorkspaceRoot,
 };

@@ -33,7 +33,7 @@ fn component_for(method: &str) -> Option<&'static str> {
         Some("control-center.delivery")
     } else if ["diagnostics", "recovery", "environment", "tools"]
         .iter()
-        .any(|route| devbox_manager_lib::component::allowed(route, method))
+        .any(|route| installation_tools::component::allowed(route, method))
     {
         Some("control-center.tools")
     } else {
@@ -131,7 +131,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             "products" | "updates" | "components" | "recovery"
         ) && request.args.as_object().is_some_and(|args| args.is_empty())
     } else {
-        devbox_manager_lib::component::allowed(&request.header.route, &request.method)
+        installation_tools::component::allowed(&request.header.route, &request.method)
     };
     if !allowed || serde_json::to_vec(&request.args).map_or(true, |value| value.len() > 512 * 1024)
     {
@@ -249,7 +249,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
         .map_err(|_| "inventory_worker_unavailable".to_string())
         .and_then(|value| value)
     } else {
-        devbox_manager_lib::component::dispatch(
+        installation_tools::component::dispatch(
             window.app_handle(),
             &request.header.route,
             &request.method,
@@ -288,7 +288,7 @@ pub(crate) fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .setup(|app, _| {
             #[cfg(windows)]
             app.manage(crate::updates::Updates::default());
-            devbox_manager_lib::component::initialize(app).map_err(std::io::Error::other)?;
+            installation_tools::component::initialize(app).map_err(std::io::Error::other)?;
             Ok(())
         })
         .build()

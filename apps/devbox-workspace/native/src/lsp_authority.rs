@@ -1,10 +1,10 @@
 //! Native retained approval and project path authority. Windows supplies a
 //! fresh one-use callback for each driven request; it owns durable approval.
 use crate::{engine::SourceAuthorization, files::RootLease, lsp_review::Review};
-use code_pad_lib::lsp::{
+use devbox_filesystem::{ensure_no_links, filesystem_identity, project::ProjectObservation};
+use editor_engine::lsp::{
     DocumentError, LspConfig, LspExecutionAuthority, LspManagerError, ResolvedProcess,
 };
-use devbox_filesystem::{ensure_no_links, filesystem_identity, project::ProjectObservation};
 use product_contract::ProjectContext;
 use std::{
     path::Path,

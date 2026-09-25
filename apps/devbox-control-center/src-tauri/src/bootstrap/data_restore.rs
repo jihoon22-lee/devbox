@@ -148,7 +148,7 @@ pub(super) fn execute(
     let payload = Payload::parse(&payload_bytes)?;
     verify_payload_owner(&payload, image)?;
     let revision = hash(&payload_bytes);
-    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+    let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;

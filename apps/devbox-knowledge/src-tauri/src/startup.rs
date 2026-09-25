@@ -181,7 +181,7 @@ pub fn owner(app: &tauri::AppHandle, manifest: &stores::Manifest) -> Result<Vaul
     let state = app.state::<Startup>();
     let (vault, external) = binding(&state.root, manifest)?;
     if !external {
-        knowledge_base_lib::component::create_private_vault(&vault)?;
+        knowledge_vault_engine::component::create_private_vault(&vault)?;
     }
     vault_owner::acquire(&state.lease_base, &vault)
 }
@@ -205,18 +205,18 @@ pub fn activate_with_owner(
     state.initialized.store(true, Ordering::Release);
     let result = (|| {
         let integration = state.root.join("integration");
-        knowledge_base_lib::component::initialize(
+        knowledge_vault_engine::component::initialize(
             app,
             &stores::directory(&state.root, manifest, "notes")?,
             Some(integration.clone()),
         )
         .map_err(|_| "component_initialization_failed")?;
-        life_log_lib::component::initialize(
+        activity_engine::component::initialize(
             app,
             &stores::directory(&state.root, manifest, "activity")?,
             integration.clone(),
         )?;
-        everything_plus_lib::component::initialize(
+        content_index_engine::component::initialize(
             app,
             &stores::directory(&state.root, manifest, "search")?,
             Some(integration),

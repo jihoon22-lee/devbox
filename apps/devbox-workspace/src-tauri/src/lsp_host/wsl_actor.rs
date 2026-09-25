@@ -2,7 +2,7 @@
 //! native startup ticket keeps its Windows permits until native acknowledgement.
 use super::{actor::Events, approval::Activities, wsl_approval::Snapshot};
 use crate::{core::context_activity::ContextPermit, files_host::FilesHost};
-use code_pad_lib::lsp::RequestCancellation;
+use editor_engine::lsp::RequestCancellation;
 use product_contract::ProjectContext;
 use serde_json::{json, Value};
 use std::{

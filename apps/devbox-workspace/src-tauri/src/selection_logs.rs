@@ -1,5 +1,5 @@
 //! Selection resolves exact native read rows, never renderer-supplied log text.
-use log_lens_lib::core::{export_records, LogRecord};
+use logs_engine::core::{export_records, LogRecord};
 use product_contract::{transform_selection::Selection, ProjectContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -161,7 +161,7 @@ pub(crate) async fn revalidate(app: &tauri::AppHandle, proof: &Proof, deadline: 
         crate::files_host::current_deadline(deadline)?;
         let mut request = group.request.clone();
         request["operationId"] = Value::String(uuid::Uuid::new_v4().to_string());
-        let current = log_lens_lib::component::dispatch(app, "read_sources", request)
+        let current = logs_engine::component::dispatch(app, "read_sources", request)
             .await
             .map_err(|_| "selection_stale")?;
         let rows = current["records"].as_array().ok_or("selection_stale")?;

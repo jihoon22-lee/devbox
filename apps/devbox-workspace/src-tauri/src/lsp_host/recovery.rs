@@ -11,7 +11,7 @@ use crate::{
     },
     private_metadata::MetadataRoot,
 };
-use code_pad_lib::lsp::{
+use editor_engine::lsp::{
     manager::recovery::{list_rename_recovery, RenameRecoveryPlan},
     DocumentError, LspDocumentAuthority, WorkspaceRoot,
 };
@@ -344,7 +344,7 @@ mod tests {
             owner
                 .open(
                     Some((&self.context, &lease)),
-                    code_pad_lib::commands::file::OpenFileRequest {
+                    editor_engine::commands::file::OpenFileRequest {
                         path: display(&self.target).unwrap().to_str().unwrap().into(),
                         encoding: None,
                     },
