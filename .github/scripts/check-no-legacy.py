@@ -5,6 +5,7 @@ import argparse, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCOPES: dict[str, list[str]] = {
+    "workspace": ["apps/devbox-workspace", "packages/workspace-features", "crates/runtime-engine"],
     "knowledge-api-studio": ["apps/devbox-knowledge", "apps/devbox-api-studio", "packages/knowledge-features", "packages/api-studio-features", "crates/http-client-engine"],
     "control-center": [
         "apps/devbox-control-center",
@@ -13,6 +14,11 @@ SCOPES: dict[str, list[str]] = {
     ],
 }
 PATTERNS = [
+    r"\blegacy_(inventory|snapshot|workspace|recovery|references|imports)\b",
+    r"\b(migration_ledger|(?:window|terminal|recovery)_import|settings_import|runtime_import|prepare_legacy_snapshot|resolve_legacy_reference|MigrationOnly|legacySources|imported_log_descriptor)\b",
+    r"\bpreview_(session|profile|template|lsp_config)_import\b",
+    r"\bLegacy(Imports|LspImport|ProfileImport|RecoveryImport|ReferenceLookup|SessionImport|TemplateImport|WindowImport|Workspace)\b",
+
     r"com\.devbox\.(knowledgebase|lifelog|everythingplus|apiplayground|webhooklab|developertoolbox)\b",
     r"\b(MigrationStartup|MigrationSetup|import_plan|import_rows|list_import_sources|prepare_migration|migration_export|legacy_profile)\b",
     r"legacy[-_]v0\.7", r"legacy-v0\.7-catalog", r"\blegacy_cleanup\b", r"\blauncher_import\b",
