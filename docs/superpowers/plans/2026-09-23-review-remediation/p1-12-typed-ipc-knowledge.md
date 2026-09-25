@@ -14,7 +14,7 @@
 
 - `00-roadmap.md` §3 전부 적용. P1-11의 와이어 호환·권한·생성 파일 규칙을 그대로 따른다.
 - 메서드 목록(빠짐없이 옮긴다):
-  - notes(engine 38): `save_image_asset, take_pending_open, get_root, list_tree, read_file, open_inbound_note, write_file, create_file, create_directory, preview_rename, apply_rename, discard_rename_preview, delete_file, entry_path, reveal_entry, preview_quick_capture, save_quick_capture, discard_quick_capture_preview, list_templates, create_template, update_template, delete_template, preview_template, save_template, discard_template_preview, search_docs, list_tags, shortcut_status, preview_knowledge_draft, save_knowledge_draft, discard_knowledge_draft, renew_knowledge_draft, render_markdown, analyze_wikilinks, wikilink_candidates, backlinks, knowledge_watcher_status` + P0-03의 `save_note_journal, clear_note_journal, load_note_journal`(engine 쪽에 있으면 engine, host에 있으면 host)
+  - notes(engine 38): `save_image_asset, take_pending_open, get_root, list_tree, read_file, open_inbound_note, write_file, create_file, create_directory, preview_rename, apply_rename, discard_rename_preview, delete_file, entry_path, reveal_entry, preview_quick_capture, save_quick_capture, discard_quick_capture_preview, list_templates, create_template, update_template, delete_template, preview_template, save_template, discard_template_preview, search_docs, list_tags, shortcut_status, preview_knowledge_draft, save_knowledge_draft, discard_knowledge_draft, renew_knowledge_draft, render_markdown, analyze_wikilinks, wikilink_candidates, backlinks, knowledge_watcher_status` + P0-03의 `save_note_journal, clear_note_journal, load_note_journal, discard_other_vault_journal`(engine 소유; P0-03의 2026-09-25 합의 반영)
   - notes(host): `read_clipboard_text, open_external_url, preview_session_summary, open_session_summary, open_result_draft`와 고정 응답 `set_root`(항상 `vault_binding_unavailable`), `open_targets`(항상 `[]`), `open_in`(항상 `provider_unavailable`)
   - daily: `preview_daily, save_daily, discard_daily`(`daily_note`은 계속 허용하지 않는다)
   - search(engine 7): `take_pending_open, list_roots, index_status, search_files, search_content, list_saved_queries, watcher_statuses` / search(host 5): `source_query, source_poll, source_cancel, source_reference, source_saved_reference`
@@ -23,6 +23,7 @@
   - setup: `status, start_empty, continue_existing` + 노트 폴더 7개(`vault_change_status, schedule_vault_change, cancel_vault_change, prepare_vault_change, apply_vault_change, discard_vault_preview, vault_change_job`)
   - commands: `pending_quit, decide_quit`
   - activity(P1-11)의 host 메서드 `get_close_policy, set_close_policy`는 이미 옮겼다.
+- 저널 계약은 P0-03 Task 4·5를 유지한다. `save_note_journal {path, content, baseRevision}`·`clear_note_journal {path}` 입력을 바꾸지 않고 native가 캐시한 현재 루트를 사용한다. `load_note_journal {}` 결과는 `JournalView { entries: JournalEntryView[], otherVaultCount }`이며 entries는 현재 폴더만 포함한다. `discard_other_vault_journal {}`는 `null`을 반환한다. 저장용 `vaultRoot`는 생성된 응답 타입에 노출하지 않는다. 전체 8개 한도에서 자동 삭제하지 않는 정책·명시적 삭제·연결 장애 시 캐시 경계를 유지한다.
 - 요청 전 부수 작업을 그대로 옮긴다: search의 `source_query`가 `current_project`일 때, opener 전체, activity 일부에서 `project_provider::refresh`; notes의 디스크 작업은 `spawn_blocking`(기존 `notes_dispatch`); setup·commands는 `startup::require_active`를 건너뛴다.
 
 ## Review Focus
@@ -65,6 +66,11 @@ mod tests {
         assert_eq!(call.method(), "read_file");
         let daily: DailyCall = serde_json::from_str(r#"{"method":"discard_daily","args":{"previewId":"p"}}"#).unwrap();
         assert_eq!(daily.method(), "discard_daily");
+        for method in ["save_note_journal", "clear_note_journal", "load_note_journal", "discard_other_vault_journal"] {
+            assert!(NOTES_METHODS.contains(&method), "missing journal method: {method}");
+        }
+        let discard: NotesCall = serde_json::from_str(r#"{"method":"discard_other_vault_journal","args":{}}"#).unwrap();
+        assert_eq!(discard.method(), "discard_other_vault_journal");
     }
 
     #[test]
@@ -80,7 +86,7 @@ mod tests {
   (`read_file`·`discard_daily`의 실제 인자 이름은 각 shim의 `Input`을 보고 맞춘다.)
 
 - [ ] **Step 2: 실패 확인** — Run: `source ~/.cargo/env && cargo test -p devbox-knowledge-vault-engine --lib api` → 컴파일 실패.
-- [ ] **Step 3: 구현** — P1-11 Task 3과 같은 방식으로 `NotesCall`(위 목록의 engine 메서드), `DailyCall`(daily 3개; `commands/daily.rs`의 문자열 `dispatch`를 enum 인자로), `NOTES_METHODS`, `NotesIssue`(engine 오류 문자열 전부 + P0-03 코드: `quick_capture_*`, `preview_stale`, `preview_expired`, `journal_unavailable`, `journal_limit`), `classify`, `dispatch`, `daily_dispatch`를 만든다. 입력·결과 타입에 `ts_rs::TS`를 붙이고 `__component_*` shim과 `#[tauri::command]` 속성을 지운다. `component.rs`에는 `initialize`·`configure_document_helper`·`offer_product_draft`·`create_private_vault` 같은 host용 공개 함수만 남긴다.
+- [ ] **Step 3: 구현** — P1-11 Task 3과 같은 방식으로 `NotesCall`(위 목록의 engine 메서드), `DailyCall`(daily 3개; `commands/daily.rs`의 문자열 `dispatch`를 enum 인자로), `NOTES_METHODS`, `NotesIssue`(engine 오류 문자열 전부 + P0-03 코드: `quick_capture_*`, `preview_stale`, `preview_expired`, `journal_unavailable`, `journal_limit`), `classify`, `dispatch`, `daily_dispatch`를 만든다. 입력·결과 타입에 `ts_rs::TS`를 붙인다. 저널은 응답용 `JournalEntryView`·`JournalView`를 생성하고, `notes-results.ts`의 load 결과를 배열로 되돌리지 않으며 discard 결과는 null로 고정한다. `__component_*` shim을 지우기 전에 새 메서드의 순수 dispatch와 오류 분류를 연결한다. 이후 `__component_*` shim과 `#[tauri::command]` 속성을 지운다. `component.rs`에는 `initialize`·`configure_document_helper`·`offer_product_draft`·`create_private_vault` 같은 host용 공개 함수만 남긴다.
 - [ ] **Step 4: 통과 확인** — Run: `cargo test -p devbox-knowledge-vault-engine --lib` → PASS.
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "refactor(devbox-knowledge): give the vault engine a typed API"`
 
