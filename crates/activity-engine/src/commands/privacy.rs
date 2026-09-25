@@ -9,7 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 pub(crate) const RULES_KEY: &str = "privacy_rules";
-const MAX_RULES_JSON_BYTES: usize = 256 * 1024;
+// Cover all three maximum-length lists, including JSON escaping of each character.
+const MAX_RULES_JSON_BYTES: usize =
+    3 * crate::core::privacy::MAX_RULES_PER_LIST * (crate::core::privacy::MAX_RULE_CHARS * 6 + 3)
+        + 128;
 
 /// Compiled rules plus whether the stored value was readable.
 pub struct PrivacyState {
@@ -234,6 +237,23 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         crate::core::db::migrate(&conn).unwrap();
         crate::commands::tracking::test_state(conn)
+    }
+
+    #[test]
+    fn valid_maximum_unicode_rules_survive_reload() {
+        let state = state();
+        let pattern = "😀".repeat(512);
+        let rules = PrivacyRules {
+            excluded_processes: vec![pattern.clone(); 64],
+            excluded_title_patterns: vec![pattern.clone()],
+            redact_title_patterns: vec![pattern; 64],
+            mask_all_titles: false,
+        };
+        assert!(serde_json::to_vec(&rules).unwrap().len() > 256 * 1024);
+        assert!(save_rules(&state, rules.clone()).unwrap().saved);
+        let conn = state.db.lock().unwrap();
+        assert!(PrivacyState::load(&conn).healthy());
+        assert_eq!(stored_rules(&conn).unwrap(), rules);
     }
 
     #[test]

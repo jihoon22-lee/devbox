@@ -194,7 +194,7 @@ impl CompiledRules {
     /// `None` drops the whole session. `Some((app, title))` is what may be stored.
     pub fn apply(&self, app: &str, title: &str) -> Option<(String, String)> {
         let app_lower = app.to_lowercase();
-        if self.excluded_processes.iter().any(|p| *p == app_lower) {
+        if self.excluded_processes.contains(&app_lower) {
             return None;
         }
         if self.mask_all_titles || self.excluded_titles.is_match(title) {

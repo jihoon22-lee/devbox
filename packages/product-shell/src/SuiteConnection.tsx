@@ -1,4 +1,4 @@
-import {lazy,Suspense,useCallback,useEffect,useState} from "react";
+import {lazy,Suspense,useCallback,useEffect,useRef,useState} from "react";
 import {listen} from "@tauri-apps/api/event";
 import {invoke} from "@tauri-apps/api/core";
 import {makeRequest,nativeMode,type Description} from "./api";
@@ -15,6 +15,7 @@ const issues:Record<string,string>={
 export default function SuiteConnection({description,route}:{description:Description;route:string}){
   const [review,setReview]=useState<Review|null>(null),[status,setStatus]=useState<ConnectionStatus|null>(null);
   const [busy,setBusy]=useState(false),[issue,setIssue]=useState("");
+  const statusRevision=useRef(0);
   const call=useCallback(async<T,>(method:object):Promise<T>=>{
     if(!nativeMode)throw new Error("브라우저 미리보기에서는 제품을 연결할 수 없습니다.");
     const header=makeRequest(description.handshake,route,Date.now(),description.context);
@@ -25,17 +26,17 @@ export default function SuiteConnection({description,route}:{description:Descrip
     return response.value;
   },[description,route]);
   const perform=async(action:()=>Promise<void>)=>{
-    if(busy)return;setBusy(true);setIssue("");
+    if(busy)return;statusRevision.current++;setBusy(true);setIssue("");
     try{await action();}catch{setIssue("제품 연결을 완료하지 못했습니다. 설치 상태를 확인한 뒤 다시 시도해 주세요.");}
-    finally{setBusy(false);}
+    finally{statusRevision.current++;setBusy(false);}
   };
   useEffect(()=>{
     if(!nativeMode)return;
-    let active=true, revision=0;
+    let active=true;
     const removers:(()=>void)[]=[];
     const refresh=()=>{
-      const request=++revision;
-      void call<ConnectionStatus>({kind:"status"}).then(value=>{if(active&&request===revision)setStatus(value);}).catch(()=>{if(active&&request===revision)setIssue("제품 연결 상태를 확인하지 못했습니다.");});
+      const request=++statusRevision.current;
+      void call<ConnectionStatus>({kind:"status"}).then(value=>{if(active&&request===statusRevision.current)setStatus(value);}).catch(()=>{if(active&&request===statusRevision.current)setIssue("제품 연결 상태를 확인하지 못했습니다.");});
     };
     void (async()=>{
       try {
@@ -46,7 +47,7 @@ export default function SuiteConnection({description,route}:{description:Descrip
       } catch { /* The initial status remains available if listening fails. */ }
       if(active)refresh();
     })();
-    return()=>{active=false;revision++;removers.forEach(remove=>remove());};
+    return()=>{active=false;statusRevision.current++;removers.forEach(remove=>remove());};
   },[call]);
   return <section aria-label="제품 연결">
     <h2>제품 연결</h2>

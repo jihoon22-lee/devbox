@@ -311,18 +311,34 @@ async fn resume(
         let _permit = permit;
         let scope = capture_own(product, version)?;
         let preference = platform::connection_preference::read(&storage_app)?;
-        if !crate::preference::should_auto_connect(preference.as_ref(), product, &scope.installation_key) {
+        if !crate::preference::should_auto_connect(
+            preference.as_ref(),
+            product,
+            &scope.installation_key,
+        ) {
             return Ok::<_, &'static str>(None);
         }
         Ok(Some(Arc::new(scope)))
-    }).await;
+    })
+    .await;
     // Every startup outcome must yield to a newer manual decision.
-    let Ok(mut state) = state.lock() else { return; };
-    if state.epoch != 0 || state.approved.is_some() { return; }
+    let Ok(mut state) = state.lock() else {
+        return;
+    };
+    if state.epoch != 0 || state.approved.is_some() {
+        return;
+    }
     let connection = match captured {
-        Ok(Ok(Some(scope))) => handler(product, app.clone(), state.navigation.clone(), domain, sources, state.queries.clone())
-            .and_then(|handler| platform::component_bus::Bus::start(scope.clone(), product, handler))
-            .map(|bus| Some((scope, bus))),
+        Ok(Ok(Some(scope))) => handler(
+            product,
+            app.clone(),
+            state.navigation.clone(),
+            domain,
+            sources,
+            state.queries.clone(),
+        )
+        .and_then(|handler| platform::component_bus::Bus::start(scope.clone(), product, handler))
+        .map(|bus| Some((scope, bus))),
         Ok(Ok(None)) => Ok(None),
         Ok(Err(issue)) => Err(issue),
         Err(_) => Err("suite_worker_unavailable"),
@@ -334,13 +350,20 @@ async fn resume(
             state.mode = crate::preference::Mode::Auto;
             state.issue = None;
         }
-        Ok(None) => { state.mode = crate::preference::Mode::Off; state.issue = None; }
-        Err(issue) => { state.issue = Some(issue); }
+        Ok(None) => {
+            state.mode = crate::preference::Mode::Off;
+            state.issue = None;
+        }
+        Err(issue) => {
+            state.issue = Some(issue);
+        }
     }
     let connected = state.approved.is_some();
     drop(state);
     use tauri::Emitter;
-    if connected { let _ = app.emit("suite-connected", ()); }
+    if connected {
+        let _ = app.emit("suite-connected", ());
+    }
     let _ = app.emit("suite-connection-status", ());
 }
 
@@ -575,7 +598,11 @@ async fn execute(
             )?;
             platform::connection_preference::write(
                 &app,
-                &crate::preference::Preference::new(product, &scope.installation_key, crate::preference::Mode::Auto),
+                &crate::preference::Preference::new(
+                    product,
+                    &scope.installation_key,
+                    crate::preference::Mode::Auto,
+                ),
             )?;
             state.epoch = state.epoch.wrapping_add(1);
             let _ = remember; // Keep the existing request shape.
@@ -599,8 +626,14 @@ async fn execute(
                     Some(scope) => scope.installation_key.clone(),
                     None => capture_own(product, host_version(&storage_app))?.installation_key,
                 };
-                platform::connection_preference::write(&storage_app,
-                    &crate::preference::Preference::new(product, &installation, crate::preference::Mode::Off))?;
+                platform::connection_preference::write(
+                    &storage_app,
+                    &crate::preference::Preference::new(
+                        product,
+                        &installation,
+                        crate::preference::Mode::Off,
+                    ),
+                )?;
                 state.epoch = state.epoch.wrapping_add(1);
                 state.mode = crate::preference::Mode::Off;
                 state.issue = None;

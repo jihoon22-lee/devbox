@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listeners: new Map<string,()=>void>() }));
@@ -26,8 +27,9 @@ it("shows the automatic connection and turns it off", async () => {
       : { connected: true, generation: "g1", mode: "auto", issue: null };
     return reply(value, args);
   });
-  render(<SuiteConnection description={description} route="overview" />);
+  const {container}=render(<SuiteConnection description={description} route="overview" />);
   expect(await screen.findByText("이 설치의 제품이 연결되어 있습니다.")).toBeTruthy();
+  await assertNoA11yViolations(container);
   fireEvent.click(screen.getByRole("button", { name: "자동 연결 끄기" }));
   expect(await screen.findByText("자동 연결이 꺼져 있습니다.")).toBeTruthy();
 });
@@ -47,4 +49,22 @@ it("refreshes after startup automatic connection completes", async () => {
   connected=true;
   tauri.listeners.get("suite-connection-status")?.();
   expect(await screen.findByText("이 설치의 제품이 연결되어 있습니다.")).toBeTruthy();
+});
+
+it("does not let a delayed status overwrite a manual disconnect", async () => {
+  const connected={connected:true,generation:"g1",mode:"auto",issue:null};
+  let complete:(()=>void)|undefined;
+  tauri.invoke.mockImplementationOnce(async (_cmd:string,args:ConnectionArgs)=>reply(connected,args));
+  tauri.invoke.mockImplementation(async (_cmd:string,args:ConnectionArgs)=>{
+    if(args.request.method.kind==="disconnect")return reply({connected:false,generation:null,mode:"off",issue:null},args);
+    return new Promise(resolve=>{complete=()=>resolve(reply(connected,args));});
+  });
+  render(<SuiteConnection description={description} route="overview" />);
+  await screen.findByText("이 설치의 제품이 연결되어 있습니다.");
+  act(()=>tauri.listeners.get("suite-connection-status")?.());
+  await waitFor(()=>expect(complete).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("button",{name:"자동 연결 끄기"}));
+  await screen.findByText("자동 연결이 꺼져 있습니다.");
+  await act(async()=>{complete!();});
+  expect(screen.getByText("자동 연결이 꺼져 있습니다.")).toBeTruthy();
 });
