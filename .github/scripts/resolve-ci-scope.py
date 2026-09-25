@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 AGENT_POLICY_PATH = ".agents/skills/devbox-release/agents/openai.yaml"
 SCOPE_DRIVER_PATHS = {
+    "apps/catalog.json",
     ".github/scripts/check-product-foundation.py",
     ".github/scripts/verify-resources.py",
     ".github/scripts/test-verification-resources.py",
@@ -37,28 +38,14 @@ FRONTEND_DRIVER_PATHS = {
 # catalog.json is imported directly rather than through a package manifest, so
 # these virtual build edges complement the dependency graph. The regression
 # test deliberately locks the current consumers to this set.
-CATALOG_FRONTEND_CONSUMERS = {
-    "apps/devbox-control-center",
-    "packages/workspace-features",
-    "packages/control-center-features",
-    "packages/knowledge-features",
-}
-CATALOG_RUST_CONSUMERS = {
-    "catalog",
-    "devbox-installation-tools",
-    "devbox-control-center",
-    "launch",
-    "devbox-logs-engine",
-}
+CATALOG_FRONTEND_CONSUMERS: set[str] = set()
+CATALOG_RUST_CONSUMERS: set[str] = set()
 
 # Native platform modules are compiled by both products without linking another
 # product's application crate. Keep their exact source edges visible to CI.
 RUST_SHARED_PLATFORM_CONSUMERS = {
     "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs": {"devbox-control-center"},
     "crates/http-client-engine/src/commands/process_tree.rs": {"devbox-workspace"},
-    "apps/devbox-api-studio/src-tauri/src/platform/browser_profile.rs": {"devbox-workspace"},
-    "apps/devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs": {"devbox-workspace"},
-    "apps/devbox-api-studio/src-tauri/src/platform/owned_copy.rs": {"devbox-workspace"},
 }
 
 

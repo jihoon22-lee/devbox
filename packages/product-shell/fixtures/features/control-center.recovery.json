@@ -1,7 +1,7 @@
 {
-  "featureId": "control-center.migration",
+  "featureId": "control-center.recovery",
   "owner": "control-center",
-  "route": "migration",
+  "route": "recovery",
   "authority": "shell-read",
   "availability": "foundation"
 }

@@ -14,11 +14,10 @@
 
 engine은 독립 실행 앱이 아니며 Tauri bootstrap·installer·공개 카드를 갖지 않는다.
 순수 로직은 engine의 `core/`, Windows 처리와 command adapter는 host 계층에 남는다.
-공유 계약은 product-contract·product-shell-tauri·suite-runtime·data-migration에 있다.
+공유 계약은 product-contract·product-shell-tauri·suite-runtime에 있다.
 실제 workspace member와 의존성은 루트 Cargo.toml 및 각 package.json이 원장이다.
 
-이전 사용자 데이터·Manager 설치 provenance를 읽는 `apps/legacy-v0.7-catalog.json`은
-고정된 15개 원본 목록이다. 공개 제품 선택·새 실행 권한으로 사용하지 않는다.
+이전 15개 앱과 데이터 전환의 근거는 비공개 보관소에 보존한다.
 [572개 기능 및 데이터 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md), [v0.7 역사적 목록](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/projects.md).
 
 Suite의 native bus·installation/peer identity·health 구현은 `crates/suite-runtime`이

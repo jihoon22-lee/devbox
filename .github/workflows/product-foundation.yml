@@ -77,7 +77,7 @@ on:
         type: string
         default: ''
       delivery_remaining_only:
-        description: Finish updated uninstall, updated uninstall and restore/reinstall; retain restore/reinstall evidence
+        description: Finish updated uninstall; retain restore/reinstall evidence
         type: boolean
         default: false
       delivery_rebuild_control_center:

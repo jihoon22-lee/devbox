@@ -56,6 +56,12 @@ try {
  }
  if(mode!=="committed") {
   for(const member of manifest.members) {
+   const readyDeadline=Date.now()+30000;let ready=false;
+   while(Date.now()<readyDeadline){
+    const status=value(await call(center,"plugin:suite|connection",{method:{kind:"readHealthStatus",product:member.product}},"recovery"));
+    if(status.nativeStoreReady){ready=true;break;}await delay(100);
+   }
+   assert.ok(ready,`native store preparation timed out: ${member.product}`);
    const method="record_suite_health";
    const result=value(await call(center,"plugin:control-center|execute",{method,args:{product:member.product}},"recovery"));
    assert.equal(result.recorded,true);evidence.checks[`recorded_${member.product}`]=true;

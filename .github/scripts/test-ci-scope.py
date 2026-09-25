@@ -95,12 +95,7 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 4
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["devbox-control-center", "devbox-knowledge", "devbox-workspace"]
-assert "packages/workspace-features" in catalog.frontend_packages
-assert "packages/knowledge-features" in catalog.frontend_packages
-assert "catalog" in catalog.rust_packages
-assert "launch" in catalog.rust_packages
-assert "devbox-editor-engine" not in catalog.rust_packages
+assert catalog.frontend_scope == catalog.rust_scope == "all"
 
 catalog_frontend_importers = {
     "/".join(source.relative_to(ROOT).parts[:2])
