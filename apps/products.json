@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 15,
+  "catalogRevision": 16,
   "channel": "stable",
   "products": [
     {
@@ -142,9 +142,9 @@
       "protocolVersion": 1
     },
     {
-      "id": "knowledge.migration",
+      "id": "knowledge.setup",
       "owner": "knowledge",
-      "authority": "legacy-import",
+      "authority": "store-setup",
       "lifecycle": "product",
       "protocolVersion": 1
     },

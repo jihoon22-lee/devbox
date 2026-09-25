@@ -78,7 +78,7 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             | ("knowledge", "knowledge.search", "search-read")
             | ("knowledge", "knowledge.search-settings", "search-admin")
             | ("knowledge", "knowledge.opener", "result-open")
-            | ("knowledge", "knowledge.migration", "legacy-import")
+            | ("knowledge", "knowledge.setup", "store-setup")
             | ("workspace", "workspace.definitions", "project-definition")
             | ("workspace", "workspace.dependencies", "dependency-review")
             | ("workspace", "workspace.source", "git-execution")
