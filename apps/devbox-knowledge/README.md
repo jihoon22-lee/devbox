@@ -11,7 +11,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
   release 권한을 부여하는 옵션이 아니며 native host가 caller·session·route를 다시 검사한다.
 - 제품 identity는 `com.devbox.v08.knowledge`, 데이터는 installation별 namespace다.
   시작만으로 legacy source를 초기화하거나 원본 경로에 새 데이터를 쓰지 않는다.
-- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·이전·복구 안내](../../docs/windows-guide.md).
+- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·복구 안내](../../docs/windows-guide.md).
 
 ## 유지하는 계약
 
@@ -19,10 +19,8 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 - Activity의 day boundary/timezone/source provenance를 유지하고 선택한 요약만 preview 후 삽입한다.
 - Search는 파일/노트 source별 bounded query·timeout·partial·cancel·freshness와 saved query/root/
   exclusion을 지원한다. 사용자 설정은 파생 index DB와 별도로 이전한다.
-- 세 legacy source의 consistent snapshot을 새 generation에 반영한다. source ID와 import receipt는
-  재실행에서 destination 편집·삭제를 보존한다. corrupt/future pointer를 자동 초기화하지 않는다.
-- 신규 store 시작과 원본 import를 분리한다. 이전의 collection consent·살아 있는 작업은
-  자동 재개하지 않으며 API/Activity artifact는 source authority와 명시적 review로 수신한다.
+- 처음 실행하면 저장소를 자동으로 준비하고 바로 시작한다. 오류가 나면 명시적으로 다시 시도한다.
+  corrupt/future pointer를 자동 초기화하지 않으며, 외부 노트 폴더는 승인한 연결만 받는다.
 - Notes는 읽은 파일의 native revision으로 조건부 저장한다. 외부 수정·삭제·교체가 감지되면
   초안을 유지하고 디스크와 비교, 재읽기 또는 검토한 revision에 대한 명시적 덮어쓰기를 제공한다.
   watcher 알림이 늦어도 저장 시 다시 확인한다. 원자적 파일 교체와 충돌 검사는 별도 보장이다.
@@ -35,16 +33,15 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
   화면 안에서 한 번 확인한다. 전체 8개 한도에 도달해도 기존 복구본을 자동 삭제하지 않으며 새 임시 저장의 실패를 알린다.
   이미 문서를 열어 폴더를 확인한 뒤 연결이 끊긴 경우에도 캐시한 폴더 정보로 로컬 저널을 기록한다.
   아직 폴더를 확인하지 못한 상태나 저널 기록 전의 강제 종료까지 복구를 보장하지 않는다.
-- 이전 활성화 의도를 기록한 뒤 저장소 포인터를 쓰기 전에 중단돼도 재개·되돌리기·취소할 수 있다.
 
 ## 구현과 근거
 
 기능 코드는 이 제품 host와 `packages/` feature UI, 이름을 가진 `crates/` engine에 있다.
 기존 15개 앱의 standalone shell·Tauri bootstrap은 제거했다. 현재 소유권은
 [projects](../../docs/projects.md), 기능/데이터 및 R01–R26/S01–S08 대응은
-[acceptance trace](../../docs/v0.8-acceptance.md)를 참조한다.
+[acceptance trace](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 참조한다.
 
-[이전 개발 단계의 상세 README](../../docs/history/v0.8-development/knowledge.md)는 당시 구현
+[이전 개발 단계의 상세 README](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.8-development/knowledge.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
 

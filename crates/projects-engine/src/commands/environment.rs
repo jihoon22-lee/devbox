@@ -1,26 +1,13 @@
-//! Native project `.env` reader and execution-time injection boundary.
-//!
-//! The only input returned by the preview command is metadata plus masked
-//! values.  A profile stores the same metadata and an opaque file revision.
-//! At Start Workspace time the file is read again, the revision and metadata
-//! are compared, and only then are short-lived values resolved for child
-//! processes.  This keeps a stale preview, a renamed file, and a changed
-//! secret from silently becoming an execution authority.
-
+//! Native project `.env` preview returns bounded metadata and masked values.
 use crate::commands::workspace::RunRegistry;
 use crate::core::environment::{
     parse_environment, preview, EnvironmentError, ParsedEnvironment, ProjectEnvironmentPreview,
     MAX_ENV_FILE_BYTES,
 };
-use crate::core::operation::{
-    wait_for_change, OperationBudget, OperationClaim, OperationError, OperationToken,
-};
-use crate::core::profile::{ProjectProfile, WslProfile};
-use crate::platform::resolve_secret_for_execution;
+use crate::core::operation::{wait_for_change, OperationBudget, OperationError, OperationToken};
+use crate::core::profile::WslProfile;
 use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
 use serde::Deserialize;
-use std::collections::BTreeMap;
-use std::fmt;
 use std::fs::Metadata;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -28,8 +15,6 @@ use std::time::Duration;
 use zeroize::Zeroizing;
 
 const ENVIRONMENT_READ_ERROR: &str = "환경 파일을 안전하게 읽을 수 없습니다";
-const ENVIRONMENT_STALE_ERROR: &str = "환경 파일이 변경되어 다시 확인해야 합니다";
-const ENVIRONMENT_SECRET_ERROR: &str = "환경 secret을 안전하게 준비할 수 없습니다";
 const MAX_WSL_DISTRO_CHARS: usize = 128;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,33 +27,6 @@ pub struct ProjectEnvironmentPreviewRequest {
     pub source: String,
     #[serde(default)]
     pub request_id: Option<String>,
-}
-
-/// Values in this type live only until the child process has been spawned.
-/// It has no Serialize implementation and its Debug output is redacted.
-pub struct EnvironmentInjection {
-    values: BTreeMap<String, Zeroizing<String>>,
-}
-
-impl fmt::Debug for EnvironmentInjection {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EnvironmentInjection")
-            .field("variable_count", &self.values.len())
-            .field("values", &"<redacted>")
-            .finish()
-    }
-}
-
-impl EnvironmentInjection {
-    /// Borrow the values for `Command::envs`; no clone or serialization is
-    /// performed.  The returned references cannot outlive this owner.
-    pub fn pairs(&self) -> Vec<(&str, &str)> {
-        self.values
-            .iter()
-            .map(|(key, value)| (key.as_str(), value.as_str()))
-            .collect()
-    }
 }
 
 /// Preview a user-selected source.  Paths are accepted only as project root
@@ -135,101 +93,6 @@ pub fn cancel_project_environment(
 }
 
 #[cfg(test)]
-pub fn resolve_profile_environment(
-    profile: &ProjectProfile,
-) -> Result<Option<EnvironmentInjection>, String> {
-    resolve_profile_environment_with_control(
-        profile,
-        OperationToken::new(),
-        OperationBudget::from_now(Duration::from_secs(5)),
-    )
-}
-
-/// Async command-layer wrapper for the blocking file/secret preparation.
-/// Keeping the resolver off the Tokio runtime thread lets Start Workspace
-/// observe cancellation while a filesystem read or platform sealer is in
-/// progress, then join the worker before discarding its result.
-pub async fn resolve_profile_environment_async_with_control(
-    profile: ProjectProfile,
-    token: OperationToken,
-    budget: OperationBudget,
-    claim: &OperationClaim,
-) -> Result<Option<EnvironmentInjection>, String> {
-    budget.check(&token).map_err(OperationError::message)?;
-    let worker_guard = claim.worker_guard().map_err(str::to_string)?;
-    let worker_token = token.clone();
-    let worker = tokio::task::spawn_blocking(move || {
-        let _worker_guard = worker_guard;
-        resolve_profile_environment_with_control(&profile, worker_token, budget)
-    });
-    tokio::pin!(worker);
-    let result = tokio::select! {
-        result = &mut worker => result
-            .map_err(|_| ENVIRONMENT_READ_ERROR.to_string())?,
-        control = wait_for_change(token.clone(), budget) => {
-            token.cancel();
-            let _ = worker.await;
-            Err(control.message().to_string())
-        }
-    }?;
-    budget.check(&token).map_err(OperationError::message)?;
-    Ok(result)
-}
-
-/// Resolve the immutable, short-lived child overlay while observing the
-/// Start Workspace operation's cancellation/deadline. A caller must keep the
-/// returned holder alive only until its spawn boundary.
-pub fn resolve_profile_environment_with_control(
-    profile: &ProjectProfile,
-    token: OperationToken,
-    budget: OperationBudget,
-) -> Result<Option<EnvironmentInjection>, String> {
-    budget.check(&token).map_err(OperationError::message)?;
-    let Some(config) = profile.environment.as_ref() else {
-        return Ok(None);
-    };
-    if !config.enabled {
-        // Disabled configuration is intentionally not read.  This permits a
-        // user to retain metadata for a temporarily unavailable `.env` while
-        // ensuring no secret or path is touched during Start Workspace.
-        return Ok(None);
-    }
-    let parsed =
-        read_profile_source_with_control(profile, &token, budget).map_err(|error| match error {
-            EnvironmentError::Cancelled => OperationError::Cancelled.message().to_string(),
-            EnvironmentError::TimedOut => OperationError::TimedOut.message().to_string(),
-            _ => ENVIRONMENT_READ_ERROR.to_string(),
-        })?;
-    budget.check(&token).map_err(OperationError::message)?;
-    if parsed.revision() != config.revision || parsed.metadata() != config.variables {
-        return Err(ENVIRONMENT_STALE_ERROR.to_string());
-    }
-    if parsed.has_conflicts() {
-        return Err("환경 파일에 해결되지 않은 충돌이 있습니다".to_string());
-    }
-    let injection = build_injection(&parsed).map(Some)?;
-    budget.check(&token).map_err(OperationError::message)?;
-    Ok(injection)
-}
-
-fn build_injection(parsed: &ParsedEnvironment) -> Result<EnvironmentInjection, String> {
-    if parsed.has_conflicts() {
-        return Err("환경 파일에 해결되지 않은 충돌이 있습니다".to_string());
-    }
-    let mut values = BTreeMap::new();
-    for entry in parsed.entries() {
-        let value = if entry.metadata.secret_reference.is_some() {
-            resolve_secret_for_execution(entry.value.as_str())
-                .map_err(|_| ENVIRONMENT_SECRET_ERROR.to_string())?
-        } else {
-            Zeroizing::new(entry.value.to_string())
-        };
-        values.insert(entry.metadata.name.clone(), value);
-    }
-    Ok(EnvironmentInjection { values })
-}
-
-#[cfg(test)]
 fn read_request_source(
     request: &ProjectEnvironmentPreviewRequest,
 ) -> Result<ParsedEnvironment, EnvironmentError> {
@@ -249,27 +112,6 @@ fn read_request_source_with_control(
     read_source_file_with_root_control(
         &root.path,
         &request.source,
-        token,
-        budget,
-        Some(root.identity),
-    )
-}
-
-fn read_profile_source_with_control(
-    profile: &ProjectProfile,
-    token: &OperationToken,
-    budget: OperationBudget,
-) -> Result<ParsedEnvironment, EnvironmentError> {
-    budget.check(token).map_err(environment_operation_error)?;
-    let config = profile
-        .environment
-        .as_ref()
-        .ok_or(EnvironmentError::InvalidMetadata)?;
-    let root = project_root(profile.windows_path.as_deref(), profile.wsl.as_ref())
-        .map_err(|_| EnvironmentError::InvalidSource)?;
-    read_source_file_with_root_control(
-        &root.path,
-        &config.source,
         token,
         budget,
         Some(root.identity),
@@ -597,7 +439,7 @@ pub(crate) async fn __component_cancel_project_environment(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::environment::{preview, ProjectEnvironmentConfig};
+    use crate::core::environment::preview;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
@@ -691,51 +533,5 @@ mod tests {
             read_request_source(&request),
             Err(EnvironmentError::InvalidSource)
         ));
-    }
-
-    #[test]
-    fn stale_metadata_prevents_injection() {
-        let root = fixture_root("stale");
-        std::fs::write(root.join(".env"), b"NAME=before").unwrap();
-        let parsed = read_source_file(&root, ".env").unwrap();
-        let mut profile = ProjectProfile::new("project");
-        profile.windows_path = Some(root.to_string_lossy().into_owned());
-        profile.environment = Some(ProjectEnvironmentConfig {
-            enabled: true,
-            source: ".env".into(),
-            revision: parsed.revision().into(),
-            variables: parsed.metadata(),
-        });
-        std::fs::write(root.join(".env"), b"NAME=after").unwrap();
-        assert_eq!(
-            resolve_profile_environment(&profile).unwrap_err(),
-            ENVIRONMENT_STALE_ERROR
-        );
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn disabled_environment_does_not_read_missing_source() {
-        let mut profile = ProjectProfile::new("project");
-        profile.windows_path = Some("C:\\does-not-exist".into());
-        profile.environment = Some(ProjectEnvironmentConfig {
-            enabled: false,
-            source: ".env".into(),
-            revision: "0".repeat(64),
-            variables: Vec::new(),
-        });
-        assert!(resolve_profile_environment(&profile).unwrap().is_none());
-    }
-
-    #[test]
-    fn empty_source_is_a_valid_noop_overlay() {
-        let root = fixture_root("empty");
-        std::fs::write(root.join(".env"), b"# intentionally empty\n").unwrap();
-        let parsed = read_source_file(&root, ".env").unwrap();
-        assert!(parsed.entries().is_empty());
-        assert!(!parsed.has_conflicts());
-        let injection = build_injection(&parsed).unwrap();
-        assert!(injection.pairs().is_empty());
-        let _ = std::fs::remove_dir_all(root);
     }
 }

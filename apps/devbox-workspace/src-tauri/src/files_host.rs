@@ -1,6 +1,6 @@
 //! Files command owner. Called only after shell admission and inside the
 //! bounded Files IO queue; the renderer cannot restore native picker choices.
-use crate::core::legacy_sessions::{self, Candidate, StoredSession};
+use crate::core::editor_sessions::StoredSession;
 use crate::{file_owner::FileOwner, host::Host, private_metadata::MetadataRoot};
 use code_pad_lib::{
     commands::file,
@@ -22,7 +22,7 @@ use std::{
 };
 use tauri::Manager;
 
-mod recovery_import;
+mod recovery_store;
 #[cfg(windows)]
 mod wsl;
 
@@ -72,24 +72,6 @@ fn write_session(view: &MetadataRoot, session: &Session, revision: &str) -> Resu
     view.write("session.json", &bytes)?;
     Ok(session_revision(view, Some(&bytes)))
 }
-fn session_history_id(id: &str) -> bool {
-    id.len() == 64
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-fn read_session_history(history: &MetadataRoot, id: &str) -> Result<StoredSession> {
-    if !session_history_id(id) {
-        return Err("invalid_request");
-    }
-    let bytes = history
-        .read(&format!("{id}.json"))?
-        .ok_or("files_store_unavailable")?;
-    if crate::core::legacy_inventory::digest(&bytes) != id {
-        return Err("files_store_changed");
-    }
-    StoredSession::decode(&bytes)
-}
 
 pub struct Invocation<'a> {
     pub context: Option<&'a ProjectContext>,
@@ -120,16 +102,6 @@ pub fn allowed(component: &str, method: &str) -> bool {
                 | "render_preview"
                 | "load_session"
                 | "save_session"
-                | "preview_session_import"
-                | "apply_session_import"
-                | "cancel_session_import"
-                | "list_session_history"
-                | "preview_session_restore"
-                | "preview_recovery_import"
-                | "apply_recovery_import"
-                | "cancel_recovery_import"
-                | "list_recovery_history"
-                | "preview_recovery_restore"
                 | "load_recovery"
                 | "save_recovery"
                 | "discard_recovery"
@@ -185,13 +157,6 @@ struct RecoveryPreview {
     temporary: bool,
     created: Instant,
 }
-struct SessionImportPreview {
-    candidate: Candidate,
-    revision: String,
-    context: Option<ProjectContext>,
-    created: Instant,
-    restore: Option<StoredSession>,
-}
 struct ReceivedFile {
     _object: std::fs::File,
     proof: product_contract::file_reference::Proof,
@@ -208,8 +173,6 @@ pub struct FilesHost {
     views: Option<MetadataRoot>,
     previews: HashMap<String, RecoveryPreview>,
     watched: HashMap<String, PathBuf>,
-    session_imports: HashMap<String, SessionImportPreview>,
-    recovery_imports: HashMap<String, recovery_import::ImportPreview>,
 }
 impl FilesHost {
     #[cfg(windows)]
@@ -226,9 +189,6 @@ impl FilesHost {
             request,
             deadline,
         )
-    }
-    pub(crate) fn has_documents(&self) -> bool {
-        self.document_count() != 0
     }
     fn document_count(&self) -> usize {
         let count = self.owner.document_count();
@@ -269,13 +229,6 @@ impl FilesHost {
             return self.close_wsl(context, path);
         }
         self.owner.close_for_context(context, path).map(|_| ())
-    }
-    fn session_path_eligible(&self, root: Option<&str>, path: &str) -> bool {
-        #[cfg(windows)]
-        if wsl::posix(path) {
-            return root.is_some_and(|root| crate::core::wsl_files::eligible(root, path));
-        }
-        self.owner.session_path_eligible(root, path)
     }
     fn validate_metadata_paths(
         &self,
@@ -663,188 +616,9 @@ impl FilesHost {
             .child(&name)
     }
     fn recovery(view: &MetadataRoot) -> Result<RecoveryFile> {
-        Ok(recovery_import::read_recovery(view)?.0.recovery)
+        Ok(recovery_store::read_recovery(view)?.0.recovery)
     }
 
-    fn preview_session_import(
-        &mut self,
-        host: &Host,
-        context: Option<&ProjectContext>,
-        job_id: &str,
-    ) -> Result<Value> {
-        let (snapshot_id, source) = host.legacy.session_source(job_id)?;
-        let root = context
-            .map(|context| {
-                host.projects()?
-                    .binding(context)
-                    .map(|binding| binding.root)
-            })
-            .transpose()?;
-        let candidate = legacy_sessions::candidate(snapshot_id, &source, root.clone(), |path| {
-            self.session_path_eligible(root.as_deref(), path)
-        })?;
-        if candidate.session.docs.is_empty() && candidate.session.recent_files.is_empty() {
-            return Err("legacy_session_no_files");
-        }
-        self.session_preview(host, context, candidate, None)
-    }
-    fn session_preview(
-        &mut self,
-        host: &Host,
-        context: Option<&ProjectContext>,
-        candidate: Candidate,
-        restore: Option<StoredSession>,
-    ) -> Result<Value> {
-        if self.has_documents() {
-            return Err("legacy_session_documents_open");
-        }
-        self.session_imports
-            .retain(|_, preview| preview.created.elapsed() < Duration::from_secs(180));
-        if self.session_imports.len() >= 4 {
-            return Err("legacy_session_review_limit");
-        }
-        let view = self.view(host, context)?;
-        let before = view.read("session.json")?;
-        let stored = before
-            .as_deref()
-            .map(StoredSession::decode)
-            .transpose()?
-            .unwrap_or_default();
-        let id = uuid::Uuid::new_v4().to_string();
-        let response = json!({"previewId":id,"candidate":candidate,"currentDocuments":stored.session.docs.len(),
-            "currentRecentFiles":stored.session.recent_files.len(),"conflict":stored.session!=Session::empty(),"alreadyImported":restore.is_none()&&stored.imports.contains(&candidate.receipt),"restoring":restore.is_some()});
-        self.session_imports.insert(
-            id,
-            SessionImportPreview {
-                candidate,
-                revision: session_revision(&view, before.as_deref()),
-                context: context.cloned(),
-                created: Instant::now(),
-                restore,
-            },
-        );
-        Ok(response)
-    }
-    fn session_history(&mut self, host: &Host, context: Option<&ProjectContext>) -> Result<Value> {
-        let history = self.view(host, context)?.child("session-history")?;
-        let mut items = Vec::new();
-        let mut unrecognized = 0;
-        for entry in fs::read_dir(history.path())
-            .map_err(|_| "files_store_unavailable")?
-            .take(33)
-        {
-            let entry = entry.map_err(|_| "files_store_unavailable")?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let Some(id) = name
-                .strip_suffix(".json")
-                .filter(|id| session_history_id(id))
-            else {
-                unrecognized += 1;
-                continue;
-            };
-            match read_session_history(&history,id) {
-                Ok(stored)=>items.push(json!({"id":id,"documents":stored.session.docs.len(),"recentFiles":stored.session.recent_files.len(),"issue":null})),
-                Err(issue)=>items.push(json!({"id":id,"documents":null,"recentFiles":null,"issue":issue})),
-            }
-        }
-        items.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
-        history.revalidate()?;
-        Ok(json!({"items":items,"unrecognized":unrecognized}))
-    }
-    fn preview_session_restore(
-        &mut self,
-        host: &Host,
-        context: Option<&ProjectContext>,
-        id: &str,
-    ) -> Result<Value> {
-        if !session_history_id(id) {
-            return Err("invalid_request");
-        }
-        let history = self.view(host, context)?.child("session-history")?;
-        let mut stored = read_session_history(&history, id)?;
-        let root = context
-            .map(|context| {
-                host.projects()?
-                    .binding(context)
-                    .map(|binding| binding.root)
-            })
-            .transpose()?;
-        let candidate =
-            legacy_sessions::candidate(id.into(), &stored.session, root.clone(), |path| {
-                self.session_path_eligible(root.as_deref(), path)
-            })?;
-        stored.session = candidate.session.clone();
-        self.session_preview(host, context, candidate, Some(stored))
-    }
-    fn apply_session_import(
-        &mut self,
-        host: &Host,
-        context: Option<&ProjectContext>,
-        id: &str,
-        replace_existing: bool,
-        deadline: u64,
-    ) -> Result<Value> {
-        let preview = self
-            .session_imports
-            .remove(id)
-            .ok_or("legacy_session_review_stale")?;
-        if preview.created.elapsed() >= Duration::from_secs(180)
-            || preview.context.as_ref() != context
-        {
-            return Err("legacy_session_review_stale");
-        }
-        if self.has_documents() {
-            return Err("legacy_session_documents_open");
-        }
-        current_deadline(deadline)?;
-        let view = self.view(host, context)?;
-        let before = view.read("session.json")?;
-        if session_revision(&view, before.as_deref()) != preview.revision {
-            return Err("files_session_changed");
-        }
-        let stored = before
-            .as_deref()
-            .map(StoredSession::decode)
-            .transpose()?
-            .unwrap_or_default();
-        if preview.restore.is_none() && stored.imports.contains(&preview.candidate.receipt) {
-            return Ok(json!({"importedDocuments":0,"importedRecentFiles":0,"reused":true}));
-        }
-        let restoring = preview.restore.is_some();
-        let next = if let Some(restore) = preview.restore {
-            if stored.session != Session::empty() && !replace_existing {
-                return Err("legacy_session_conflict");
-            }
-            restore
-        } else {
-            stored.apply(&preview.candidate, replace_existing)?
-        };
-        let bytes = next.encode()?;
-        if let Some(before) = &before {
-            let history = view.child("session-history")?;
-            let name = format!("{}.json", crate::core::legacy_inventory::digest(before));
-            if history.read(&name)?.is_none()
-                && fs::read_dir(history.path())
-                    .map_err(|_| "files_store_unavailable")?
-                    .take(32)
-                    .count()
-                    >= 32
-            {
-                return Err("legacy_session_limit");
-            }
-            history.preserve(&name, before)?;
-        }
-        current_deadline(deadline)?;
-        if view.read("session.json")? != before {
-            return Err("files_session_changed");
-        }
-        // One atomic publication commits both consumer metadata and its receipt.
-        // The unchanged preimage is durable before this point, even on retry.
-        view.write("session.json", &bytes)?;
-        Ok(
-            json!({"importedDocuments":preview.candidate.session.docs.len(),"importedRecentFiles":preview.candidate.session.recent_files.len(),"reused":false,"restored":restoring}),
-        )
-    }
     fn open_recovery_document(
         &mut self,
         host: &Host,
@@ -1162,106 +936,6 @@ impl FilesHost {
         );
         current_deadline(deadline)?;
         match method {
-            "list_session_history" => {
-                empty(&args)?;
-                self.session_history(host, context)
-            }
-            "preview_session_restore" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    backup_id: String,
-                }
-                let request: Input = input(args)?;
-                self.preview_session_restore(host, context, &request.backup_id)
-            }
-            "preview_session_import" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    job_id: String,
-                }
-                let request: Input = input(args)?;
-                self.preview_session_import(host, context, &request.job_id)
-            }
-            "apply_session_import" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    preview_id: String,
-                    replace_existing: bool,
-                }
-                let request: Input = input(args)?;
-                self.apply_session_import(
-                    host,
-                    context,
-                    &request.preview_id,
-                    request.replace_existing,
-                    deadline,
-                )
-            }
-            "cancel_session_import" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    preview_id: String,
-                }
-                let request: Input = input(args)?;
-                Ok(json!(self
-                    .session_imports
-                    .remove(&request.preview_id)
-                    .is_some()))
-            }
-            "list_recovery_history" => {
-                empty(&args)?;
-                self.recovery_history(host, context)
-            }
-            "preview_recovery_restore" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    backup_id: String,
-                }
-                let request: Input = input(args)?;
-                self.preview_recovery_restore(host, context, &request.backup_id)
-            }
-            "preview_recovery_import" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    job_id: String,
-                }
-                let request: Input = input(args)?;
-                self.preview_recovery_import(host, context, &request.job_id)
-            }
-            "apply_recovery_import" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    preview_id: String,
-                    replace_existing: bool,
-                }
-                let request: Input = input(args)?;
-                self.apply_recovery_import(
-                    host,
-                    context,
-                    &request.preview_id,
-                    request.replace_existing,
-                    deadline,
-                )
-            }
-            "cancel_recovery_import" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Input {
-                    preview_id: String,
-                }
-                let request: Input = input(args)?;
-                Ok(json!(self
-                    .recovery_imports
-                    .remove(&request.preview_id)
-                    .is_some()))
-            }
             "sync_editor_document" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1485,8 +1159,7 @@ impl FilesHost {
             }
             "load_recovery" => {
                 empty(&args)?;
-                let (stored, revision) =
-                    recovery_import::read_recovery(&self.view(host, context)?)?;
+                let (stored, revision) = recovery_store::read_recovery(&self.view(host, context)?)?;
                 Ok(json!({"entries":stored.recovery.entries,"nativeRevision":revision}))
             }
             "save_recovery" => {
@@ -1506,10 +1179,10 @@ impl FilesHost {
                         .collect::<Vec<_>>(),
                 )?;
                 let view = self.view(host, context)?;
-                let (stored, _) = recovery_import::read_recovery(&view)?;
+                let (stored, _) = recovery_store::read_recovery(&view)?;
                 let next = stored.merge(&request.entries)?;
                 let revision =
-                    recovery_import::write_recovery(&view, &next, &request.native_revision)?;
+                    recovery_store::write_recovery(&view, &next, &request.native_revision)?;
                 Ok(json!({"nativeRevision":revision}))
             }
             "discard_recovery" => {
@@ -1521,14 +1194,14 @@ impl FilesHost {
                 }
                 let request: Input = input(args)?;
                 let view = self.view(host, context)?;
-                let (mut stored, _) = recovery_import::read_recovery(&view)?;
+                let (mut stored, _) = recovery_store::read_recovery(&view)?;
                 if let Some(path) = &request.path {
                     stored.recovery.remove(path);
                 } else {
                     stored.recovery.entries.clear();
                 }
                 let revision =
-                    recovery_import::write_recovery(&view, &stored, &request.native_revision)?;
+                    recovery_store::write_recovery(&view, &stored, &request.native_revision)?;
                 let invalidated = self
                     .previews
                     .iter()
@@ -1601,168 +1274,6 @@ fn client_path(path: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
-    #[test]
-    fn verified_session_import_preserves_preimage_and_receipt_and_rejects_stale_review() {
-        use crate::core::legacy_inventory::Source;
-        use code_pad_lib::core::session::SessionDoc;
-        let base = tempfile::tempdir().unwrap();
-        let root = base.path().join("workspace");
-        fs::create_dir(&root).unwrap();
-        let source_root = base.path().join(Source::CodePad.identifier());
-        fs::create_dir(&source_root).unwrap();
-        let selected_path = base.path().join("선택한 파일.txt");
-        fs::write(&selected_path, b"unchanged user file").unwrap();
-        let host = Host::open(&root).unwrap();
-        host.start_empty().unwrap();
-        let mut files = files(&host);
-        let selected = files
-            .owner
-            .approve_native_selection(&selected_path)
-            .unwrap();
-        let mut source = Session::empty();
-        source.docs = vec![SessionDoc {
-            id: "old-document-id".into(),
-            path: selected.clone(),
-            cursor: 3,
-            bookmarks: vec![1, 5],
-        }];
-        source.views[1].push("old-document-id".into());
-        source.active_view = 1;
-        source.active_doc_by_view[1] = Some("old-document-id".into());
-        source.recent_files.push(selected);
-        let source_bytes = serde_json::to_vec(&source).unwrap();
-        fs::write(source_root.join("session.json"), &source_bytes).unwrap();
-        let job = json!(host.legacy.start(Source::CodePad).unwrap());
-        let job_id = job["id"].as_str().unwrap();
-        let start = Instant::now();
-        while json!(host.legacy.status().unwrap())["phase"] != "ready" {
-            assert!(start.elapsed() < Duration::from_secs(5));
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        let view = files.view(&host, None).unwrap();
-        let (_, revision) = read_session(&view).unwrap();
-        let mut previous = Session::empty();
-        previous.recent_files.push(source.recent_files[0].clone());
-        let revision = write_session(&view, &previous, &revision).unwrap();
-        let before = view.read("session.json").unwrap().unwrap();
-        let preview = files.preview_session_import(&host, None, job_id).unwrap();
-        assert_eq!(preview["conflict"], true);
-        let token = preview["previewId"].as_str().unwrap();
-        assert_eq!(
-            files.apply_session_import(&host, None, token, false, u64::MAX),
-            Err("legacy_session_conflict")
-        );
-        assert_eq!(view.read("session.json").unwrap().unwrap(), before);
-        assert_eq!(
-            files.apply_session_import(&host, None, token, true, u64::MAX),
-            Err("legacy_session_review_stale")
-        );
-        let preview = files.preview_session_import(&host, None, job_id).unwrap();
-        let result = files
-            .apply_session_import(
-                &host,
-                None,
-                preview["previewId"].as_str().unwrap(),
-                true,
-                u64::MAX,
-            )
-            .unwrap();
-        assert_eq!(result["importedDocuments"], 1);
-        assert_eq!(read_session(&view).unwrap().0, source);
-        let history = view.child("session-history").unwrap();
-        assert_eq!(
-            history
-                .read(&format!(
-                    "{}.json",
-                    crate::core::legacy_inventory::digest(&before)
-                ))
-                .unwrap()
-                .unwrap(),
-            before
-        );
-        assert_eq!(
-            write_session(&view, &previous, &revision),
-            Err("files_session_changed")
-        );
-        let (mut edited, revision) = read_session(&view).unwrap();
-        edited.docs[0].cursor = 99;
-        write_session(&view, &edited, &revision).unwrap();
-        let preview = files.preview_session_import(&host, None, job_id).unwrap();
-        assert_eq!(preview["alreadyImported"], true);
-        assert_eq!(
-            files
-                .apply_session_import(
-                    &host,
-                    None,
-                    preview["previewId"].as_str().unwrap(),
-                    false,
-                    u64::MAX
-                )
-                .unwrap()["reused"],
-            true
-        );
-        assert_eq!(read_session(&view).unwrap().0.docs[0].cursor, 99);
-        let preview = files.preview_session_import(&host, None, job_id).unwrap();
-        let (_, revision) = read_session(&view).unwrap();
-        edited.docs[0].cursor = 100;
-        write_session(&view, &edited, &revision).unwrap();
-        assert_eq!(
-            files.apply_session_import(
-                &host,
-                None,
-                preview["previewId"].as_str().unwrap(),
-                true,
-                u64::MAX
-            ),
-            Err("files_session_changed")
-        );
-        let backup_id = crate::core::legacy_inventory::digest(&before);
-        assert_eq!(
-            files.session_history(&host, None).unwrap()["items"]
-                .as_array()
-                .unwrap()
-                .len(),
-            1
-        );
-        let restore = files
-            .preview_session_restore(&host, None, &backup_id)
-            .unwrap();
-        assert_eq!(restore["restoring"], true);
-        files
-            .apply_session_import(
-                &host,
-                None,
-                restore["previewId"].as_str().unwrap(),
-                true,
-                u64::MAX,
-            )
-            .unwrap();
-        assert_eq!(read_session(&view).unwrap().0, previous);
-        assert_eq!(
-            files.session_history(&host, None).unwrap()["items"]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
-        history
-            .write(&format!("{backup_id}.json"), b"changed history")
-            .unwrap();
-        assert_eq!(
-            files.preview_session_restore(&host, None, &backup_id),
-            Err("files_store_changed")
-        );
-        assert_eq!(
-            history.preserve(&format!("{backup_id}.json"), &before),
-            Err("files_store_changed")
-        );
-        assert_eq!(
-            fs::read(source_root.join("session.json")).unwrap(),
-            source_bytes
-        );
-        assert_eq!(fs::read(selected_path).unwrap(), b"unchanged user file");
-        assert!(!files.owner.has_documents());
-    }
     #[test]
     fn session_revisions_preserve_imports_against_old_autosave_and_other_views() {
         let storage = tempfile::tempdir().unwrap();

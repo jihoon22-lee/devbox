@@ -56,7 +56,7 @@ export async function measureWorkspaceStartup({cdp, child, executable, env, star
     assert.equal(child.exitCode, null); assert.equal(child.signalCode, null);
     const after = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
     assert.deepEqual(after.handshake, before.handshake);
-    if (product.id === "workspace") assert.equal(await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "빈 Workspace 시작" && !button.disabled)'), true);
+    if (product.id === "workspace") assert.equal(await cdp.evaluate('!!document.getElementById("workspace-project-path")'), true);
     measured.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
     identities();
     measured.budget = evaluateBudgets(measured, config, product.id);

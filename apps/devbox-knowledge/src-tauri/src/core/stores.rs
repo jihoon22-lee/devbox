@@ -159,3 +159,106 @@ mod tests {
         }
     }
 }
+
+use rusqlite::Connection;
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StoreKind {
+    Notes,
+    Activity,
+    Search,
+}
+impl StoreKind {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Notes => "notes",
+            Self::Activity => "activity",
+            Self::Search => "search",
+        }
+    }
+}
+
+fn sql<T>(value: rusqlite::Result<T>) -> Result<T, String> {
+    value.map_err(|_| "import_database_invalid".into())
+}
+fn inventory(connection: &Connection, source: StoreKind) -> Result<(), String> {
+    let allowed: &[&str] = match source {
+        StoreKind::Notes => &[
+            "settings",
+            "note_templates",
+            "docs",
+            "docs_fts",
+            "docs_fts_data",
+            "docs_fts_idx",
+            "docs_fts_docsize",
+            "docs_fts_config",
+            "doc_link_keys",
+            "wikilinks",
+        ],
+        StoreKind::Activity => &["settings", "sessions", "knowledge_draft_history"],
+        StoreKind::Search => &[
+            "roots",
+            "files",
+            "files_fts",
+            "files_fts_data",
+            "files_fts_idx",
+            "files_fts_docsize",
+            "files_fts_config",
+            "file_content",
+            "file_content_fts",
+            "file_content_fts_data",
+            "file_content_fts_idx",
+            "file_content_fts_docsize",
+            "file_content_fts_config",
+            "meta",
+            "saved_queries",
+        ],
+    };
+    let mut statement = sql(connection.prepare(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name LIMIT 65",
+    ))?;
+    let rows = sql(statement.query_map([], |r| r.get::<_, String>(0)))?;
+    for (index, name) in rows.enumerate() {
+        let name = sql(name)?;
+        if index >= 64
+            || (!allowed.contains(&name.as_str())
+                && !name.starts_with("sqlite_")
+                && name != "knowledge_import_rows_v1")
+        {
+            return Err("import_schema_unsupported".into());
+        }
+    }
+    Ok(())
+}
+pub fn validate_store(connection: &Connection, source: StoreKind) -> Result<(), String> {
+    inventory(connection, source)?;
+    let version: i64 = sql(connection.query_row("PRAGMA user_version", [], |row| row.get(0)))?;
+    if version != 0 {
+        return Err("import_schema_unsupported".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod readiness_validation_tests {
+    use super::*;
+    #[test]
+    fn validation_preserves_receipts_but_rejects_unknown_tables_and_versions() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE settings(key TEXT,value TEXT); CREATE TABLE knowledge_import_rows_v1(source TEXT);").unwrap();
+        validate_store(&connection, StoreKind::Notes).unwrap();
+        connection.execute_batch("CREATE TABLE future_documents(body TEXT); INSERT INTO future_documents VALUES('preserve');").unwrap();
+        assert!(validate_store(&connection, StoreKind::Notes).is_err());
+        assert_eq!(
+            connection
+                .query_row("SELECT body FROM future_documents", [], |r| r
+                    .get::<_, String>(0))
+                .unwrap(),
+            "preserve"
+        );
+        connection
+            .execute_batch("DROP TABLE future_documents; PRAGMA user_version=999;")
+            .unwrap();
+        assert!(validate_store(&connection, StoreKind::Notes).is_err());
+    }
+}

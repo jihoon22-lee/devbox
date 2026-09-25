@@ -92,7 +92,7 @@ try {
   stage("start-four-products");
   const apps={};for(const product of catalog.products)apps[product.id]=await start(product.id,installation);
   const workspace=apps.workspace,api=apps["api-studio"],knowledge=apps.knowledge,center=apps["control-center"];
-  await domain(workspace,"workspace.migration","start_empty");
+  await domain(workspace,"workspace.migration","status");
   await domain(knowledge,"knowledge.migration","start_empty");
   await reload(workspace);await reload(knowledge);
   for(const item of Object.values(apps))await approve(item);

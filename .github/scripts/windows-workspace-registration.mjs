@@ -1,6 +1,5 @@
 import {exerciseWorkspaceTerminalSessions} from "./windows-workspace-terminal-sessions.mjs";
 import {exerciseWorkspaceRuntimeWsl} from "./windows-workspace-runtime-wsl.mjs";
-import {exerciseWorkspaceRuntimeImport} from "./windows-workspace-runtime-import.mjs";
 import {exerciseWorkspaceRuntime} from "./windows-workspace-runtime.mjs";
 // Actual hidden Workspace native admission/registration with owned fixtures.
 import assert from "node:assert/strict";
@@ -8,9 +7,6 @@ import {mkdirSync, writeFileSync, readFileSync, realpathSync} from "node:fs";
 import path from "node:path";
 import {exerciseWorkspaceLspInstaller} from "./windows-workspace-lsp.mjs";
 import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
-import {exerciseWorkspaceWindowImport} from "./windows-workspace-window-import.mjs";
-import {exerciseWorkspaceTemplateImport} from "./windows-workspace-template-import.mjs";
-import {exerciseWorkspaceSessionImport} from "./windows-workspace-session-import.mjs";
 import {exerciseWorkspaceDependencies} from "./windows-workspace-dependencies.mjs";
 import {exerciseWorkspaceDefinitions} from "./windows-workspace-definitions.mjs";
 import {exerciseWorkspaceSource} from "./windows-workspace-source.mjs";
@@ -85,8 +81,6 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
     await cdp.evaluate(`Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled).click()`);
   };
   const fill = async (id, value) => cdp.evaluate(`(() => {const input=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
-  assert.equal(success(await call("workspace.migration","status")).phase,"setup");
-  await click("빈 Workspace 시작");
   await waitForRenderer(cdp,'!!document.getElementById("workspace-project-path")',"Workspace registry did not activate");
   assert.equal(success(await call("workspace.registry","snapshot")).projects.length,0);
   const authority = await cdp.evaluate(`(async () => {
@@ -138,10 +132,6 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   const definitions = await exerciseWorkspaceDefinitions({cdp, root:canonicalRoot, call, success, waitForRenderer});
   const record = (feature, checks) => writeFileSync(`product-foundation-evidence/workspace-${feature}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks},null,2));
   record("definitions", definitions);
-  const templateImport=await exerciseWorkspaceTemplateImport({cdp,directory,call,success,waitForRenderer});
-  record("template-import",templateImport);
-  const windowImport=await exerciseWorkspaceWindowImport({cdp,call,success,waitForRenderer});
-  record("window-import",windowImport);
   registry = success(await call("workspace.registry","snapshot"));
   const dependencies = await exerciseWorkspaceDependencies({cdp, root:canonicalRoot, call, success, waitForRenderer});
   record("dependencies", dependencies);
@@ -150,14 +140,10 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   registry = success(await call("workspace.registry","snapshot"));
   const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer, processId, executable});
   record("files", files);
-  const sessionImport=await exerciseWorkspaceSessionImport({cdp,root:canonicalRoot,call,success,waitForRenderer});
-  record("session-import",sessionImport);
   const runtime=await exerciseWorkspaceRuntime({cdp,directory,call,success,waitForRenderer,measurePerformance:suffix==="a"&&process.env.DEVBOX_FIXTURE_PROFILE==="release"});
   record("runtime",runtime);
   const runtimeWsl=await exerciseWorkspaceRuntimeWsl({call,success});
   record("runtime-wsl",runtimeWsl);
-  const runtimeImport=await exerciseWorkspaceRuntimeImport({cdp,directory,call,success});
-  record("runtime-import",runtimeImport);
   const terminalSessions=await exerciseWorkspaceTerminalSessions({cdp,directory,call,success,connectTerminal});
   record("terminal-sessions",terminalSessions);
   // The native Session fixture restores its original project through IPC. Its
@@ -187,5 +173,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,definitions,templateImport,windowImport,dependencies,source,files,lspInstaller,runtime,runtimeWsl,runtimeImport,terminalSessions,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP and importer acceptance are separate"};
+  return {authority,definitions,dependencies,source,files,lspInstaller,runtime,runtimeWsl,terminalSessions,automaticPreparation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP acceptance are separate"};
 }

@@ -34,7 +34,7 @@ try {
  main=await connect(port,child);await waitForRenderer(main,"!!window.__TAURI_INTERNALS__","Workspace did not start");
  const success=result=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
  const call=(component,method,args={})=>main.evaluate(workspaceRequestExpression(component,method,args,29000),{timeoutMs:35000});
- success(await call("workspace.migration","start_empty"));
+ success(await call("workspace.migration","status"));
  const root=path.join(artifact,"synthetic-project");mkdirSync(root);const registration=success(await call("workspace.registry","preview_windows",{root}));
  const context=success(await call("workspace.registry","apply_registration",{previewId:registration.previewId,name:"Terminal diagnostic",action:"register"})).context;
  success(await call("workspace.registry","select_project",{context}));

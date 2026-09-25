@@ -12,33 +12,32 @@ name = "devbox_control_center_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { workspace = true }
 
 [dependencies]
 suite-runtime = { path = "../../../crates/suite-runtime" }
-dirs = "6.0.0"
-zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
+dirs = { workspace = true }
+zip = { workspace = true }
 devbox_manager_lib = { package = "devbox-installation-tools",path="../../../crates/installation-tools",default-features=false}
-tauri-plugin-dialog="2"
-tauri-plugin-opener="2"
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
 product-contract = { path = "../../../crates/product-contract" }
-data-migration = { path = "../../../crates/data-migration" }
-tauri = { version = "2", features = [] }
+tauri = { workspace = true }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
-rusqlite = { version = "0.32", features = ["bundled", "backup"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sha2 = "0.11.0"
-reqwest = { version = "0.13.4", features = ["json", "stream"] }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { workspace = true, features = ["default"] }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 
-uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["net", "sync", "rt", "time", "io-util", "macros"] }
+uuid = { workspace = true }
+tokio = { workspace = true }
 
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_Com", "Win32_Security", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

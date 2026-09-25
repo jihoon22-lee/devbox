@@ -24,7 +24,8 @@ pub struct KnowledgeActivity {
     pub last_modified_at_ms: Option<i64>,
     pub identified_notes: usize,
     pub identifiers_complete: bool,
-    pub legacy_snapshot: bool,
+    #[serde(rename = "legacy_snapshot")]
+    pub older_snapshot: bool,
 }
 
 /// integration snapshot source 상태 (UI 표시용).
@@ -348,7 +349,7 @@ fn read_knowledge_activity(
                 last_modified_at_ms: legacy.last_modified_at_ms,
                 identified_notes: 0,
                 identifiers_complete: legacy.notes_modified_today == 0,
-                legacy_snapshot: true,
+                older_snapshot: true,
             },
             snapshot.freshness_ms,
         ));
@@ -385,7 +386,7 @@ fn read_knowledge_activity(
             last_modified_at_ms: payload.last_modified_at_ms,
             identified_notes: payload.note_ids.len(),
             identifiers_complete: !payload.identifiers_truncated,
-            legacy_snapshot: false,
+            older_snapshot: false,
         },
         freshness_ms,
     ))
@@ -819,7 +820,7 @@ mod tests {
                 last_modified_at_ms: Some(1_800_000_000_000),
                 identified_notes: 2,
                 identifiers_complete: true,
-                legacy_snapshot: false,
+                older_snapshot: false,
             })
         );
     }
@@ -850,7 +851,7 @@ mod tests {
                 last_modified_at_ms: Some(1_800_000_000_000),
                 identified_notes: 0,
                 identifiers_complete: false,
-                legacy_snapshot: true,
+                older_snapshot: true,
             })
         );
     }

@@ -61,8 +61,7 @@ assert "runs-on: windows-latest" in windows_job
 assert 'run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"' in windows_job, "Windows domain regressions must execute when affected, not merely compile"
 assert 'RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}' in windows_job
 assert "product-native-authority-" not in workflow, "do not duplicate CI's Windows unit suite"
-assert "windows-knowledge-migration.mjs" in workflow
-assert workflow.index("- name: Verify Knowledge migration") < workflow.index("- name: Verify anchor and product installer coexistence"), "migration claims absent legacy profiles before installer coexistence creates them"
+assert "windows-knowledge-lifecycle.mjs" in workflow
 for source in ("packages/knowledge-features/**", "crates/knowledge-vault-engine/**", "crates/activity-engine/**", "crates/content-index-engine/**"):
     assert source in workflow, "native Knowledge consumers require acceptance on source changes"
 
@@ -70,41 +69,8 @@ import subprocess
 subprocess.run(["node", str(root / ".github/scripts/check-api-studio-routes.mjs"), "--self-test"], check=True)
 subprocess.run(["node", str(root / ".github/scripts/check-knowledge-routes.mjs"), "--self-test"], check=True)
 
-# Acceptance is an explicit evidence-bearing state, not a synonym for a mapped
-# path. Mutate only in-memory metadata; source/capability files remain read-only.
 check = runpy.run_path(str(root / ".github/scripts/check-product-foundation.py"))["check"]
-parity_path = root / "apps/v0.8-feature-parity.json"
-inventory_path = root / "apps/v0.8-data-inventory.json"
-parity = json.loads(parity_path.read_text())
-inventory = json.loads(inventory_path.read_text())
 original_read = Path.read_text
-def rejects_acceptance(change):
-    changed_parity, changed_inventory = copy.deepcopy(parity), copy.deepcopy(inventory)
-    change(changed_parity, changed_inventory)
-    def read(path, *args, **kwargs):
-        if path == parity_path:
-            return json.dumps(changed_parity)
-        if path == inventory_path:
-            return json.dumps(changed_inventory)
-        return original_read(path, *args, **kwargs)
-    with patch.object(Path, "read_text", read), redirect_stdout(io.StringIO()):
-        try:
-            check(root)
-        except AssertionError:
-            return
-    raise AssertionError("invalid acceptance metadata was accepted")
-
-internal = next(index for index, feature in enumerate(parity["features"]) if feature["status"] == "verified")
-imported = next(index for index, group in enumerate(inventory["groups"]) if group["importerStatus"] == "verified")
-def unowned_provider(p, _):
-    p["features"][internal].update(status="pending", producerVerified=True)
-    p["features"][internal].pop("integrationOwnerIssue", None)
-rejects_acceptance(lambda p, _: p["features"][internal].pop("verifiedSourceCommit"))
-rejects_acceptance(lambda p, _: p["features"][internal].update(status="pending"))
-rejects_acceptance(unowned_provider)
-rejects_acceptance(lambda _, d: d["groups"][imported].update(evidence=[]))
-rejects_acceptance(lambda _, d: d["groups"][imported].update(importerStatus="assumed"))
-print("Unverified internal features, unowned provider handoffs and unevidenced imports are rejected: PASS")
 
 for source in ("packages/workspace-features/**", "crates/projects-engine/**",
                "crates/repositories-engine/**", "crates/editor-engine/**",
@@ -116,8 +82,7 @@ for source in ("packages/workspace-features/**", "crates/projects-engine/**",
 for filename, changed_fields in [
     ("terminal.json", {"windows": ["*"]}),
     ("terminal.json", {"permissions": ["core:default", "workspace:allow-execute"]}),
-    ("terminal-export.json", {"windows": ["main"]}),
-    ("terminal-export.json", {"remote": {"urls": ["https://example.invalid"]}}),
+    ("terminal.json", {"remote": {"urls": ["https://example.invalid"]}}),
 ]:
     capability_path = root / "apps/devbox-workspace/src-tauri/capabilities" / filename
     capability = json.loads(original_read(capability_path))
@@ -130,4 +95,4 @@ for filename, changed_fields in [
         except AssertionError:
             continue
     raise AssertionError("broadened Terminal capability was accepted")
-print("Terminal companion/export capabilities remain separate and local: PASS")
+print("Terminal companion capabilities remain separate and local: PASS")

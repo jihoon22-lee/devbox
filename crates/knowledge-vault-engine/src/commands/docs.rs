@@ -16,8 +16,7 @@ use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::core::entry_actions::{
-    canonical_existing_entry, prepare_open_request, select_open_targets, validated_new_entry,
-    KnowledgeOpenTarget,
+    canonical_existing_entry, validated_new_entry, KnowledgeOpenTarget,
 };
 
 /// 앱 전역 상태
@@ -408,7 +407,7 @@ pub fn delete_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Resul
 }
 
 fn available_open_targets() -> Vec<KnowledgeOpenTarget> {
-    select_open_targets("knowledge-base", devbox_launch::installed_targets("path"))
+    Vec::new()
 }
 
 fn resolve_entry_for_action(
@@ -454,11 +453,8 @@ pub fn open_in(
     app_id: String,
     rel: String,
 ) -> Result<(), String> {
-    let entry = resolve_entry_for_action(&state, &rel)?;
-    let targets = available_open_targets();
-    let (target_id, request) =
-        prepare_open_request(&targets, &app_id, &entry).map_err(str::to_string)?;
-    devbox_launch::launch_open(&target_id, &request).map(|_| ())
+    let _ = (state, app_id, rel);
+    Err("provider_unavailable".into())
 }
 
 fn validate_capture_inbox(vault: &VaultIdentity) -> Result<PathBuf, String> {

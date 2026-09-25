@@ -19,4 +19,4 @@ pnpm 9·React 19·TypeScript·Rust·Tauri v2를 사용한다. 앱은 네 `apps/d
 Windows Cargo job은 2개다. 네 제품 build.rs는 공유 Tauri staging 복사 구간만 file lock으로
 직렬화한다. 전체 Rust 빌드를 직렬화하지 않으며 CI 캐시는 실패해도 dependency codegen을 보존한다.
 
-source 전환 전 설명은 [v0.7 개발 기록](history/v0.7/development.md)에 보존한다.
+source 전환 전 설명은 [v0.7 개발 기록](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/development.md)에 보존한다.

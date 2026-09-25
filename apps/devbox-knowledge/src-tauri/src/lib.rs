@@ -2,14 +2,12 @@ mod component;
 mod core;
 mod federation;
 mod lifecycle;
-mod migration;
 mod project_provider;
 mod search;
 mod session_receive;
 pub use search::{disconnect_project_provider, install_project_snapshot};
 use suite_runtime as suite;
 mod startup;
-mod storage_space;
 mod vault_owner;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

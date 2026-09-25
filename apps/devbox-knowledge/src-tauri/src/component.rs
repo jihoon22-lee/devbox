@@ -52,7 +52,6 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "knowledge.migration" => {
             route == "notes"
                 && (crate::startup::COMMANDS.contains(&method)
-                    || crate::migration::METHODS.contains(&method)
                     || crate::vault_binding::METHODS.contains(&method))
         }
         "knowledge.notes" => {

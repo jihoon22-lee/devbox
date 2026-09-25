@@ -372,7 +372,7 @@ pub fn run_with(
                 .ok_or_else(|| std::io::Error::other("suite_setup_requires_installation"))?;
         Some(
             match marker.phase {
-                product_contract::activation::Phase::Import => "migration",
+                product_contract::activation::Phase::Import => "recovery",
                 product_contract::activation::Phase::Recover => "recovery",
                 product_contract::activation::Phase::Committed => "products",
                 product_contract::activation::Phase::Health => "updates",

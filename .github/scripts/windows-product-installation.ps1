@@ -15,8 +15,6 @@ $output = Join-Path (Get-Location) 'product-foundation-evidence/installation.jso
 if (Test-Path -LiteralPath $output) { Fail 'refusing to overwrite installation evidence' }
 [IO.Directory]::CreateDirectory((Split-Path -Parent $output)) | Out-Null
 $baseline = Read-Json "$PSScriptRoot/product-foundation-baseline.json"
-$configuration = Read-Json "$PSScriptRoot/legacy-v0.7-windows-installer-acceptance-config.json"
-$smokeConfiguration = Read-Json "$PSScriptRoot/legacy-v0.7-windows-packaged-smoke-config.json"
 $report = [ordered]@{ schemaVersion = 1; source = $env:GITHUB_SHA; baseline = $baseline.tag; baselineCommit = $baseline.commit; environment = 'github-hosted-windows'; result = 'failed'; products = @(); failure = $null }
 $allMarkers = @()
 $appDefinitions = @{}
@@ -99,7 +97,7 @@ try {
   foreach ($app in $manifest.apps) { $baselineRelease.byId[$app.id] = $app }
   foreach ($pair in $baseline.anchors.PSObject.Properties) {
     $product = $pair.Name; $anchorId = [string]$pair.Value
-    $anchor = @($configuration.apps | Where-Object { $_.id -ceq $anchorId })[0]
+    $anchor = @($baseline.anchorInstallations | Where-Object { $_.id -ceq $anchorId })[0]
     $config = Read-Json (Join-Path (Get-Location) "apps/devbox-$product/src-tauri/tauri.conf.json")
     $candidate = [pscustomobject]@{ id = "devbox-$product"; productName = $config.productName; binaryName = "devbox-$product.exe"; identifier = $config.identifier; legacyIdentifiers = @() }
     foreach ($app in @($anchor, $candidate)) {
@@ -128,7 +126,7 @@ try {
       $productState = $script:ownedInstalls[$candidate.id]
       if ($anchorState.ProviderPath -ieq $productState.ProviderPath -or $anchorState.InstallDir -ieq $productState.InstallDir) { Fail 'anchor and product installer identities collide' }
       $beforeData = @(Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Directory -Filter "$($candidate.identifier).i*" | ForEach-Object { $_.FullName })
-      $anchorTitle = @($smokeConfiguration.apps | Where-Object { $_.id -ceq $anchor.id })[0].title
+      $anchorTitle = @($baseline.anchorInstallations | Where-Object { $_.id -ceq $anchor.id })[0].title
       $anchorWindow = Start-Fixture-Window $anchorState.Binary $anchorTitle
       $productWindow = Start-Fixture-Window $productState.Binary $config.app.windows[0].title
       if ($anchorWindow.Process.HasExited -or $productWindow.Process.HasExited) { Fail 'anchor and product mutex identities collide' }

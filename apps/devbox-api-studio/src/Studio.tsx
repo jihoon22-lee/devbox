@@ -4,7 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import { nativeMode, productDataAvailable } from "@devbox/product-shell/api";
 import { componentInvoke } from "@devbox/api-studio-features/transport";
 const invokeNavigation = componentInvoke("api-studio.api");
-import { MigrationStartup } from "./migration/Startup";
 const ListenerControls = lazy(() => import("./ListenerControls").then(module => ({ default: module.ListenerControls })));
 const IncomingSelection = lazy(() => import("./IncomingSelection"));
 const Requests = lazy(() => import("@devbox/api-studio-features/requests"));
@@ -55,7 +54,6 @@ function Content({ route, navigate }: ShellContentProps) {
 }
 export default function Studio() { return <ProductShell product="api-studio" renderContent={(props) => {
   const available=productDataAvailable(props.description);
-  const pending=<p role="status">데이터 이전을 마친 뒤 Control Center에서 Suite 활성화를 완료해 주세요.</p>;
-  if(!available&&props.description.deliveryState!=="import")return pending;
-  return <MigrationStartup>{available?<Content {...props}/>:pending}</MigrationStartup>;
+  const pending=<p role="status">제품 상태를 기록한 뒤 Control Center에서 Suite 활성화를 완료해 주세요.</p>;
+  return available?<Content {...props}/>:pending;
 }}/>; }

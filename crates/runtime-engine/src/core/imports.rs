@@ -22,6 +22,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use toml_08 as toml;
 
 pub const PROJECT_IMPORT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_PROJECT_ROOT_BYTES: usize = 4_096;

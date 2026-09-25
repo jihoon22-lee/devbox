@@ -47,7 +47,6 @@ impl Selected {
 }
 pub struct Host {
     stores: Arc<StoreRoot>,
-    pub(crate) legacy: crate::legacy_imports::LegacyImports,
     source_environment: crate::platform::git_trust::SourceEnvironment,
     helper_directory: Option<std::path::PathBuf>,
     selected: RwLock<Option<Selected>>,
@@ -77,7 +76,6 @@ impl Host {
             .map(|generation| Selected::open(&stores, generation))
             .transpose()?;
         Ok(Self {
-            legacy: crate::legacy_imports::LegacyImports::new(stores.clone())?,
             stores,
             source_environment: crate::platform::git_trust::SourceEnvironment::capture(),
             helper_directory,

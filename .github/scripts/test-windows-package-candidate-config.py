@@ -23,7 +23,7 @@ assert 'fake-lsp-server.exe' not in a and 'resources/suite/devbox-suite-bootstra
 assert 'resources/wsl/devbox-workspace-wsl' in a and 'resources/wsl/manifest.json' in a
 for scope in ['product-shells', 'api', 'knowledge', 'cross-product']:
     assert scope in w
-for script in ['windows-product-foundation.mjs', 'windows-api-migration.mjs', 'windows-api-lifecycle.mjs', 'windows-api-workflow.mjs', 'windows-knowledge-migration.mjs', 'windows-suite-workflows.mjs', 'windows-suite-delivery.ps1', 'windows-workspace-owned-wsl2.ps1', 'compare-product-performance.mjs']:
+for script in ['windows-product-foundation.mjs',  'windows-api-lifecycle.mjs', 'windows-api-workflow.mjs', 'windows-knowledge-lifecycle.mjs', 'windows-suite-workflows.mjs', 'windows-suite-delivery.ps1', 'windows-workspace-owned-wsl2.ps1', 'compare-product-performance.mjs']:
     assert script in w, script
 runtime = w.split('\n  packaged-runtime:', 1)[1]
 assert 'cargo build' not in runtime and 'tauri build' not in runtime

@@ -70,7 +70,6 @@ assert resolve("packages/api-studio-features/src/requests/api.ts").frontend_apps
 assert resolve("crates/api-protocols/src/core/grpc.rs").rust_packages == ["api-protocols", "devbox-api-studio", "devbox-http-client-engine"]
 for crate, engine in [("webhook-core", "devbox-webhook-host"), ("transforms-core", "devbox-toolbox-engine")]:
     assert resolve(f"crates/{crate}/src/lib.rs").rust_packages == sorted([crate, engine, "devbox-api-studio"])
-assert resolve("crates/data-migration/src/lib.rs").rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-runtime-engine", "devbox-workspace"]
 for engine in ["runtime-engine", "ports-engine", "logs-engine"]:
     assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-workspace"])
 assert resolve("crates/http-client-engine/src/component.rs").rust_packages == ["devbox-api-studio", "devbox-http-client-engine"]
@@ -96,12 +95,7 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 4
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["devbox-control-center", "devbox-knowledge", "devbox-workspace"]
-assert "packages/workspace-features" in catalog.frontend_packages
-assert "packages/knowledge-features" in catalog.frontend_packages
-assert "catalog" in catalog.rust_packages
-assert "launch" in catalog.rust_packages
-assert "devbox-editor-engine" not in catalog.rust_packages
+assert catalog.frontend_scope == catalog.rust_scope == "all"
 
 catalog_frontend_importers = {
     "/".join(source.relative_to(ROOT).parts[:2])
@@ -128,7 +122,7 @@ assert dependency_metadata.frontend_scope == "none"
 assert dependency_metadata.rust_scope == "none"
 assert dependency_metadata.dependency_scope == "all"
 
-docs = resolve("docs/development.md", "workthrough/example.md", "README.md")
+docs = resolve("docs/development.md", "docs/adr/0001-four-products.md", "README.md")
 assert docs.frontend_scope == "none"
 assert docs.rust_scope == "none"
 assert docs.dependency_scope == "none"
@@ -188,9 +182,6 @@ for path in ("apps/products.json", "packages/product-shell/fixtures/route-reques
     assert products.frontend_scope == "apps"
     assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
     assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
-parity = resolve("apps/v0.8-feature-parity.json")
-assert parity.frontend_scope == parity.rust_scope == "all"
-
 # Discover every explicit include and propagate consumers through shared modules.
 # Same-crate includes require no manual edge unless the including file itself
 # is compiled by a different crate (suite.rs -> platform/mod.rs, for example).
@@ -273,11 +264,6 @@ for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
 
 hotkey = resolve("apps/devbox-control-center/src-tauri/src/platform/hotkey.rs")
 assert hotkey.rust_packages == ["devbox-control-center"]
-
-# The frozen migration catalog must still reach native readers and browser fixtures.
-legacy_catalog = resolve("apps/legacy-v0.7-catalog.json")
-assert legacy_catalog.rust_packages == catalog.rust_packages
-assert legacy_catalog.frontend_packages == catalog.frontend_packages
 
 # Explicit crate edges replace source-inclusion exceptions for Suite ownership.
 suite = resolve("crates/suite-runtime/src/lib.rs")

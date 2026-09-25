@@ -1,17 +1,9 @@
-pub mod asset;
-pub mod batch;
-pub mod catalog;
 pub mod custom_root;
-pub mod data_inspector;
 pub mod dev_setup_configuration;
-pub mod download;
 pub mod environment_capabilities;
-pub mod layout;
-pub mod local_quality;
-pub mod managed_install;
-pub mod manifest;
 pub mod related_tools;
-pub mod removal;
-pub mod runtime_metadata;
 pub mod support_bundle;
 pub mod url_policy;
+
+pub mod install_root;
+pub mod redaction;

@@ -24,7 +24,7 @@ use crate::core::history_diff::{
     HistoryResult, GIT_VIEW_ERROR, MAX_DETAIL_OUTPUT_BYTES, MAX_DIFF_OUTPUT_BYTES,
     MAX_HISTORY_LIMIT, MAX_HISTORY_OUTPUT_BYTES,
 };
-use crate::core::open_targets::{select_repo_open_targets, RepoOpenTarget};
+use crate::core::open_targets::RepoOpenTarget;
 use crate::core::remote_sync::{
     parse_remote_status, preflight_remote, RemoteAction, RemoteState, GIT_REMOTE_BUSY,
     GIT_REMOTE_CANCELLED, GIT_REMOTE_ERROR, GIT_REMOTE_STATE_CHANGED, MAX_REMOTE_BRANCH_BYTES,
@@ -3141,11 +3141,7 @@ pub fn repo_local_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
 }
 
 fn available_open_targets() -> Vec<RepoOpenTarget> {
-    select_repo_open_targets(
-        "repo-manager",
-        devbox_launch::installed_targets("path"),
-        devbox_launch::installed_targets("workspace"),
-    )
+    Vec::new()
 }
 
 /// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
@@ -3287,14 +3283,8 @@ pub fn prepare_inbound_repository(path: String) -> Result<RepoEntry, String> {
 
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_in(app_id: String, path: String) -> Result<(), String> {
-    let app_id = app_id.to_lowercase();
-    let target = available_open_targets()
-        .into_iter()
-        .find(|target| target.id == app_id)
-        .ok_or_else(|| "사용 가능한 대상 앱이 아닙니다".to_string())?;
-    let path = validated_repository(&path).map_err(str::to_string)?.path;
-    let req = target.request(path);
-    devbox_launch::launch_open(&target.id, &req).map(|_| ())
+    let _ = (app_id, path);
+    Err("provider_unavailable".into())
 }
 
 /// 사용자가 명시적으로 복사를 선택한 순간에만 현재 Git repository 경로를 반환한다.

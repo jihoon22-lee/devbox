@@ -212,13 +212,7 @@ pub(crate) fn handle(
     cancellation: Option<Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
-        if matches!(
-            &call,
-            Call::ReadMigrationStatus {}
-                | Call::VerifyMigrationSources {}
-                | Call::ListMigrationBackups {}
-                | Call::VerifyMigrationBackup { .. }
-        ) {
+        if matches!(&call, Call::ReadMigrationStatus {}) {
             static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
                 std::sync::OnceLock::new();
             let permit = READERS
@@ -228,14 +222,7 @@ pub(crate) fn handle(
                 .map_err(|_| "migration_busy")?;
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                match call {
-                    Call::VerifyMigrationSources {} => crate::migration::suite_sources(&app),
-                    Call::ListMigrationBackups {} => crate::migration::suite_backups(&app, None),
-                    Call::VerifyMigrationBackup { id } => {
-                        crate::migration::suite_backups(&app, Some(&id))
-                    }
-                    _ => crate::migration::suite_status(&app),
-                }
+                crate::startup::suite_status(&app)
             })
             .await
             .map_err(|_| "migration_unavailable")?;
@@ -245,11 +232,7 @@ pub(crate) fn handle(
             &call,
             Call::ReadOperations {} | Call::ReviewOperation { .. }
         ) {
-            return crate::suite::project_operations(
-                &app,
-                &call,
-                crate::migration::operation_rows(&app)?,
-            );
+            return crate::suite::project_operations(&app, &call, Vec::new());
         }
         match call {
             Call::DeliverKnowledgeDraft {

@@ -97,11 +97,9 @@ impl Definition {
         }
         // Same native DPAPI/persistence sanitizer as Collections, including
         // supplied current environment secret references, never saved themselves.
-        let safe = api_playground_lib::component::sanitize_legacy_json(
-            raw.to_string(),
-            &input.environment,
-        )
-        .map_err(|_| INVALID)?;
+        let safe =
+            api_playground_lib::component::sanitize_saved_json(raw.to_string(), &input.environment)
+                .map_err(|_| INVALID)?;
         let definition: Self = serde_json::from_str(&safe).map_err(|_| INVALID)?;
         definition.validate()?;
         Ok(definition)
@@ -142,7 +140,7 @@ impl Store {
         Ok(self.directory.join(format!("{id}.json")))
     }
     pub fn get(&self, id: &str) -> Result<Definition, String> {
-        let raw = super::import_repository::read_file(&self.path(id)?, MAX_BYTES)
+        let raw = super::store_file::read_file(&self.path(id)?, MAX_BYTES)
             .map_err(|_| STORAGE)?
             .ok_or(INVALID)?;
         let definition: Definition = serde_json::from_str(&raw).map_err(|_| INVALID)?;

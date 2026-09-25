@@ -33,7 +33,6 @@ struct Preview {
 struct Binding {
     root: PathBuf,
     lease_base: PathBuf,
-    legacy: PathBuf,
     job: Arc<Mutex<Option<Job>>>,
     preview: Arc<Mutex<Option<Preview>>>,
     retirement: Mutex<Option<Arc<Pool<ProductVault>>>>,
@@ -55,7 +54,6 @@ pub fn initialize(
     let pending = data::read(&root);
     if !app.manage(Binding {
         root,
-        legacy: lease_base.join("com.devbox.knowledgebase/data.db"),
         lease_base,
         job: Arc::default(),
         preview: Arc::default(),
@@ -100,7 +98,7 @@ fn open_database(
         conn.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON")
             .map_err(|_| "vault_change_invalid")?;
     }
-    crate::core::import_rows::validate_owned_store(&conn, crate::core::import_rows::Source::Notes)?;
+    crate::core::stores::validate_store(&conn, crate::core::stores::StoreKind::Notes)?;
     Ok(conn)
 }
 
@@ -120,9 +118,6 @@ fn current_schedule(state: &Binding, schedule: &data::Schedule) -> Result<(), St
         return Err("vault_change_stale".into());
     }
     Ok(())
-}
-fn legacy_guard_path(state: &Binding) -> Option<&Path> {
-    state.legacy.exists().then_some(state.legacy.as_path())
 }
 fn prepare(
     app: &tauri::AppHandle,
@@ -156,8 +151,7 @@ fn prepare(
         return Err("vault_change_stale".into());
     }
     let vault = pool.hold(vault).ok_or("store_busy")?;
-    let owner =
-        crate::vault_owner::acquire(&state.lease_base, vault.path(), legacy_guard_path(&state))?;
+    let owner = crate::vault_owner::acquire(&state.lease_base, vault.path())?;
     vault.revalidate()?;
     drop(owner);
     boundary(&cancel, deadline)?;
@@ -197,11 +191,7 @@ fn apply(
     };
     current_schedule(&state, &preview.schedule)?;
     boundary(&cancel, deadline)?;
-    let owner = crate::vault_owner::acquire(
-        &state.lease_base,
-        preview.vault.path(),
-        legacy_guard_path(&state),
-    )?;
+    let owner = crate::vault_owner::acquire(&state.lease_base, preview.vault.path())?;
     preview.vault.revalidate()?;
     // Approved creation affects only fixed empty layout folders. Cancellation
     // or a later DB failure never deletes those folders or existing vault bytes.
@@ -276,9 +266,6 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 crate::startup::require_uninitialized(app)?;
             }
             crate::startup::configure(app, || {
-                if crate::migration::scheduled(app) {
-                    return Err("vault_change_conflict".into());
-                }
                 let base = stores::read(&state.root)?.ok_or("setup_required")?;
                 let conn = database(
                     &state.root,

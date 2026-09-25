@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import {emptyProfileTemplateDraft, templateDraftFromTemplate, validateProfileTemplateDraft, type ProfileTemplateDraft} from "@devbox/workspace-features/overview-template-editor";
 import {nativeCall} from "./native";
-import {TemplateMetadata, type ImportedTemplate} from "./LegacyTemplateImport";
+import {TemplateMetadata, type ImportedTemplate} from "./ProfileMetadata";
 import type {Registry} from "./RegistryGate";
 
 type Edit = {id:string|null; revision:number; draft:ProfileTemplateDraft};

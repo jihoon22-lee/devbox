@@ -11,24 +11,23 @@ name = "devbox_workspace_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-sha2 = "0.11.0"
-serde_json = "1"
-tauri-build = { version = "2", features = [] }
+sha2 = { workspace = true }
+serde_json = { workspace = true }
+tauri-build = { workspace = true }
 
 [dependencies]
 suite-runtime = { path = "../../../crates/suite-runtime" }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
-data-migration = { path = "../../../crates/data-migration" }
 workspace-wsl = { path = "../native", default-features = false, features = ["files", "git"] }
-tauri = { version = "2", features = [] }
+tauri = { workspace = true }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 product-contract = { path = "../../../crates/product-contract" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-chrono = { version = "0.4", features = ["clock"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true, features = ["default"] }
 window-state = { path = "../../../crates/window-state" }
 window-state-tauri = { path = "../../../crates/window-state-tauri" }
-uuid = { version = "1", features = ["v4"] }
+uuid = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-git = { package = "git", path = "../../../crates/git" }
@@ -41,17 +40,17 @@ wsl_desktop_lib = { package = "devbox-terminal-engine", path = "../../../crates/
 log_lens_lib = { package = "devbox-logs-engine", path = "../../../crates/logs-engine", default-features = false, features = ["desktop"] }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
-tauri-plugin-notification = "2"
+tauri-plugin-notification = { workspace = true }
 
-sha2 = "0.11.0"
-tokio = { version = "1", features = ["time", "sync", "process", "io-util", "rt", "macros", "net"] }
-tauri-plugin-dialog = "2"
-tauri-plugin-clipboard-manager = "2"
-tauri-plugin-opener = "2"
+sha2 = { workspace = true }
+tokio = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-opener = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-webview2-com = "0.38.2"
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_System_Pipes"] }
+webview2-com = { workspace = true }
+windows = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

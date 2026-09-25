@@ -24,4 +24,4 @@ stable tag push 또는 명시적 workflow_dispatch를 사용한다. 공개 RC/pr
 없이 만들지 않는다. prerelease tag push는 거부하고, 요청된 경우에만 dispatch의
 `allow_prerelease: true`를 사용한다. 그 별도 build를 stable candidate라고 취급하지 않는다.
 
-[과거 release evidence](release-evidence.md), [최종 수용 추적](v0.8-acceptance.md).
+[과거 release evidence](release-evidence.md), [최종 수용 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md).

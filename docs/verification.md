@@ -145,3 +145,12 @@ RSS 합계는 공유 페이지 중복과 샘플 사이의 peak 누락이 가능�
 양수/음수 tabindex, radio 그룹, 실제 Tab/Shift+Tab 이동과 dialog 순환을 확인한다.
 Linux의 Google Chrome/Chromium 또는 `DEVBOX_TEST_CHROME`으로 지정한 실행 파일을 사용한다.
 브라우저가 없으면 미실행을 성공으로 숨기지 않고 실패한다. 사용자 프로필과 기존 창은 건드리지 않는다.
+
+공유 외부 Rust 의존성의 버전과 feature 합집합은 루트 `[workspace.dependencies]`에서 관리한다.
+member는 `workspace = true`로 가져오며, 원래 기본 feature가 필요한 member는 이를 명시한다.
+TOML 0.8과 1.1 파서는 기존 해석 동작을 유지하도록 별도 이름으로 선언한다.
+개발·테스트 빌드는 `line-tables-only`로 파일·행 backtrace를 유지하면서 변수 debug 정보를 줄인다.
+
+`target`이 커지면 `cargo install cargo-sweep` 후 한 달에 한 번 `cargo sweep --time 30`으로
+30일 넘게 쓰지 않은 산출물을 지울 수 있다. 전체 삭제(`cargo clean`)는 다음 빌드가 오래
+걸리므로 마지막 수단이다. 검증 중인 다른 worktree가 있을 때는 산출물을 정리하지 않는다.

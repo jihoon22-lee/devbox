@@ -1,10 +1,8 @@
 //! 환경 진단 (§15.4, Stage 5 — Devbox Manager 탭으로 먼저 검증).
 //! read-only. 자동 설치·registry 수정·WSL reset을 하지 않는다.
 
-use crate::core::catalog::CatalogApp;
-use crate::core::data_inspector;
+use crate::core::redaction;
 use serde::Serialize;
-use std::fs;
 use std::io::{ErrorKind, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,7 +28,6 @@ use windows::Win32::System::JobObjects::{
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 
-const CATALOG_JSON: &str = include_str!("../../../../apps/legacy-v0.7-catalog.json");
 const DIAGNOSIS_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_DIAGNOSIS_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_DIAGNOSIS_LINE_CHARS: usize = 256;
@@ -53,7 +50,7 @@ fn version_of(cmd: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Option<String>
     if line.is_empty() {
         return None;
     }
-    let redacted = data_inspector::redact_text(line, "doctor");
+    let redacted = redaction::redact_text(line, "doctor");
     let redacted = redacted
         .chars()
         .take(MAX_DIAGNOSIS_LINE_CHARS)
@@ -302,7 +299,7 @@ impl DiagnosisProcessTree {
 
 /// 전체 진단을 수집한다 (read-only). Support bundle도 이 고정된 진단 DTO를
 /// 재사용하므로 filesystem 경로나 OS 오류를 public 결과에 넣지 않는다.
-pub(crate) fn collect_diagnosis(app: &tauri::AppHandle) -> Vec<DiagnosisItem> {
+pub(crate) fn collect_diagnosis(_app: &tauri::AppHandle) -> Vec<DiagnosisItem> {
     let mut items = Vec::new();
 
     // WSL
@@ -402,77 +399,6 @@ pub(crate) fn collect_diagnosis(app: &tauri::AppHandle) -> Vec<DiagnosisItem> {
         }),
     }
 
-    // devbox 앱 데이터 디렉터리 + 카탈로그 정합
-    let catalog = crate::core::catalog::parse_catalog(CATALOG_JSON).unwrap_or_else(|_| {
-        crate::core::catalog::Catalog {
-            schema_version: 0,
-            catalog_revision: None,
-            apps: vec![],
-        }
-    });
-    let mut dir_ok = 0;
-    for app in &catalog.apps {
-        let dir_ok_for_app = dirs::data_local_dir().is_some_and(|base| {
-            let path = base.join(&app.identifier);
-            data_inspector::safe_derived_path(&base, &path)
-                && fs::symlink_metadata(path)
-                    .ok()
-                    .is_some_and(|metadata| metadata.is_dir())
-        });
-        if dir_ok_for_app {
-            dir_ok += 1;
-        }
-    }
-    items.push(DiagnosisItem {
-        name: "devbox-data".into(),
-        ok: dir_ok > 0,
-        detail: format!(
-            "카탈로그 {}개 · 데이터 디렉터리 존재 {}개",
-            catalog.apps.len(),
-            dir_ok
-        ),
-    });
-
-    // 카탈로그 identifier 정합 (com.devbox. 접두사)
-    let bad_ids: Vec<&String> = catalog
-        .apps
-        .iter()
-        .map(|a: &CatalogApp| &a.identifier)
-        .filter(|id| !id.starts_with("com.devbox."))
-        .collect();
-    items.push(DiagnosisItem {
-        name: "catalog-ids".into(),
-        ok: bad_ids.is_empty(),
-        detail: if bad_ids.is_empty() {
-            "모든 identifier가 com.devbox.*".into()
-        } else {
-            format!("비정상 identifier {}개", bad_ids.len())
-        },
-    });
-
-    let metadata_ok = crate::commands::manager::data_dir_path(app)
-        .ok()
-        .zip(devbox_launch::runtime_catalog_path())
-        .and_then(|(manager_root, catalog_path)| {
-            catalog_path.parent().map(|common_root| {
-                crate::core::runtime_metadata::runtime_metadata_consistent(
-                    &manager_root,
-                    common_root,
-                    CATALOG_JSON,
-                )
-            })
-        })
-        .unwrap_or(false);
-    items.push(DiagnosisItem {
-        name: "runtime-metadata".into(),
-        ok: metadata_ok,
-        detail: if metadata_ok {
-            "runtime catalog와 install-root locator 정합".into()
-        } else {
-            "runtime metadata를 다음 실행에 재동기화해야 함".into()
-        },
-    });
-
     items
 }
 
@@ -528,5 +454,18 @@ mod tests {
         assert_eq!(DIAGNOSIS_TIMEOUT, Duration::from_secs(2));
         assert_eq!(MAX_DIAGNOSIS_OUTPUT_BYTES, 64 * 1024);
         assert_eq!(MAX_DIAGNOSIS_LINE_CHARS, 256);
+    }
+}
+
+#[cfg(test)]
+mod retired_catalog_tests {
+    #[test]
+    fn doctor_has_no_v07_catalog_checks() {
+        let source = include_str!("doctor.rs");
+        for name in ["devbox-data", "catalog-ids", "runtime-metadata"] {
+            let needle = format!("name: \"{name}\".into()");
+            assert!(!source.contains(&needle), "{name}");
+        }
+        assert!(!source.contains(&["CATALOG", "_JSON"].concat()));
     }
 }

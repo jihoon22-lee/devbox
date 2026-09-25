@@ -6,16 +6,16 @@ edition = "2021"
 description = "Shared transforms-core validation and persistence codecs"
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-hmac = "0.13.0"
-base64 = "0.22.1"
-sha2 = "0.11.0"
-qrcode = { version = "0.14.1", default-features = false }
-png = "0.18.1"
-chrono = { version = "0.4", features = ["clock"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hmac = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+qrcode = { workspace = true }
+png = { workspace = true }
+chrono = { workspace = true, features = ["default"] }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

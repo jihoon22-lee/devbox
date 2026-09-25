@@ -22,14 +22,14 @@ required-features = ["helper"]
 
 [dependencies]
 gix-config = { version = "=0.60.0", default-features = false, features = ["sha1"], optional = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem", optional = true }
-sha2 = { version = "0.11.0", optional = true }
+sha2 = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = { version = "0.2", optional = true }
+libc = { workspace = true, optional = true }
 
 [dependencies.code_pad_lib]
 package = "devbox-editor-engine"
@@ -47,10 +47,10 @@ path = "../../../crates/wsl"
 optional = true
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"], optional = true }
+windows = { workspace = true, optional = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [dependencies.devbox-git]
 package = "git"
@@ -64,8 +64,7 @@ default-features = false
 optional = true
 
 [dependencies.tokio]
-version = "1"
-features = ["rt", "time", "sync"]
+workspace = true
 optional = true
 
 [[bin]]

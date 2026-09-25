@@ -140,11 +140,10 @@ function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
   return error ? `${source} · ${error}` : source;
 }
 
-export default function App({ active = true, onActivate, onDaily, onImport, onVaultSettings, openRequest, captureRequest }: {
+export default function App({ active = true, onActivate, onDaily, onVaultSettings, openRequest, captureRequest }: {
   active?: boolean;
   onActivate?: () => void;
   onDaily?: () => void;
-  onImport?: () => void;
   onVaultSettings?: () => void;
   openRequest?: { id: number; path: string };
   captureRequest?:string;
@@ -1110,7 +1109,6 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
             일일 노트
           </button>
           {onVaultSettings && <button className="btn small" type="button" onClick={onVaultSettings}>노트 폴더</button>}
-          {onImport && <button className="btn small" type="button" onClick={onImport}>기존 데이터 가져오기</button>}
           <button className="btn small" onClick={() => setTemplateManagerOpen(true)}>
             템플릿
           </button>

@@ -11,38 +11,37 @@ name = "devbox_api_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { workspace = true }
 
 [dependencies]
 suite-runtime = { path = "../../../crates/suite-runtime" }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
-dirs = "6.0.0"
-rusqlite = { version = "0.32", features = ["bundled", "backup"] }
-uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["process", "time", "rt", "net", "sync", "io-util", "macros"] }
-sha2 = "0.11.0"
+dirs = { workspace = true }
+rusqlite = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+sha2 = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
-data-migration = { path = "../../../crates/data-migration" }
 webhook-core = { path = "../../../crates/webhook-core" }
 transforms-core = { path = "../../../crates/transforms-core" }
-tauri = { version = "2", features = [] }
+tauri = { workspace = true }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 product-contract = { path = "../../../crates/product-contract" }
 api_playground_lib = { package = "devbox-http-client-engine", path = "../../../crates/http-client-engine", default-features = false }
 webhook_lab_lib = { package = "devbox-webhook-host", path = "../../../crates/webhook-host", default-features = false }
 developer_toolbox_lib = { package = "devbox-toolbox-engine", path = "../../../crates/toolbox-engine", default-features = false }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tauri-plugin-clipboard-manager = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
 applink = { path = "../../../crates/applink" }
-zeroize = "1"
+zeroize = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-windows = { version = "0.61", features = ["Win32_System_Com", "Win32_System_Console", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_System_Pipes", "Win32_Security"] }
-webview2-com = "0.38.2"
+tauri = { workspace = true }
+windows = { workspace = true }
+webview2-com = { workspace = true }

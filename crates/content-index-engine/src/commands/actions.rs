@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::commands::indexing::AppState;
 use crate::core::db;
-use crate::core::open_targets::{prepare_open_request, select_open_targets, EverythingOpenTarget};
+use crate::core::open_targets::EverythingOpenTarget;
 use tauri_plugin_opener::OpenerExt;
 
 const INVALID_RESULT_PATH: &str = "검색 결과 파일 경로가 올바르지 않습니다";
@@ -71,7 +71,7 @@ pub async fn reveal_file(
 }
 
 fn available_open_targets() -> Vec<EverythingOpenTarget> {
-    select_open_targets("everything-plus", devbox_launch::installed_targets("path"))
+    Vec::new()
 }
 
 /// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
@@ -87,12 +87,8 @@ pub fn open_in(
     app_id: String,
     path: String,
 ) -> Result<(), String> {
-    validate_indexed_path(&state, &path).map_err(str::to_string)?;
-    validate_result_path(&path).map_err(str::to_string)?;
-    let targets = available_open_targets();
-    let (target_id, request) =
-        prepare_open_request(&targets, &app_id, &path).map_err(str::to_string)?;
-    devbox_launch::launch_open(&target_id, &request).map(|_| ())
+    let _ = (state, app_id, path);
+    Err("provider_unavailable".into())
 }
 
 /// Typed product adapter; the caller enforces native owner/session authorization.

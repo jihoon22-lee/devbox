@@ -1,6 +1,5 @@
 import { componentInvoke, isProductHosted } from "../transport";
 const invoke = componentInvoke(method => method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source");
-import catalogJson from "../../../../apps/legacy-v0.7-catalog.json";
 import { isTauri } from "./lib/isTauri";
 
 export interface RepoEntry {
@@ -480,19 +479,7 @@ const MOCK_ENRICHMENT_REPORT: DependencyEnrichmentReport = {
   ],
 };
 
-const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
-  id: string;
-  displayName: string;
-  accepts: string[];
-}>;
-
-const MOCK_OPEN_TARGETS: RepoOpenTarget[] = MOCK_CATALOG_APPS
-  .filter((app) => app.id !== "repo-manager" && app.accepts.includes("path"))
-  .map((app) => ({
-    id: app.id,
-    displayName: app.displayName,
-    payloadKind: app.accepts.includes("workspace") ? "workspace" : "path",
-  }));
+const MOCK_OPEN_TARGETS: RepoOpenTarget[] = [];
 
 export function scanRoot(root: string): Promise<ScanResult> {
   if (!isTauri()) return Promise.resolve(MOCK_RESULT);

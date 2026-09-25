@@ -23,11 +23,10 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     if (command === "plugin:product-shell|describe") return fixtureDescription("api-studio");
     if (command !== "plugin:api-studio|execute" || !args) throw new Error(`unexpected fixture command ${command}`);
     const request = args.request;
+    if (request.component.endsWith(".migration")) throw new Error("retired startup must not be called");
     let value: unknown;
-    if (request.method === "migration_status") value = { busy: false, reviewNeeded: false, pending: null, sources: [] };
-    else if (request.method === "api_workspace_state") value = { document: {schemaVersion:1,revision:0,selectedId:null,workspaces:[]}, currentProjectId:null,mockProfiles:[] };
+    if (request.method === "api_workspace_state") value = { document: {schemaVersion:1,revision:0,selectedId:null,workspaces:[]}, currentProjectId:null,mockProfiles:[] };
     else if (request.method === "list_openapi_definitions") value = [];
-    else if (request.method === "finish_startup") value = null;
     else if (request.method === "peek_pending_navigation") value = navigation;
     else if (request.method === "ack_pending_navigation") { value = null; navigation = null; }
     else if (request.method === "take_pending_open") {

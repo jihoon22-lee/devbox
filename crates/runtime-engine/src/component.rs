@@ -1,7 +1,6 @@
 //! Native component entry points; the product host admits caller and operation.
 //! Calling these does not start the standalone application or select its stores.
 
-mod imports;
 pub mod search;
 use std::{
     fs::File,
@@ -203,22 +202,6 @@ pub fn port_bindings(
     Ok(entries)
 }
 
-pub fn imported_log_descriptor(
-    app: &tauri::AppHandle,
-    run_id: &str,
-) -> Result<OwnedRunLog, String> {
-    let database = app
-        .try_state::<Arc<crate::storage::DatabaseState>>()
-        .ok_or("component_state_unavailable")?;
-    if !database
-        .imported_run(run_id)
-        .map_err(|_| "runtime_log_unavailable")?
-    {
-        return Err("runtime_log_unavailable".into());
-    }
-    log_descriptor(app, run_id)
-}
-
 pub fn log_descriptor(app: &tauri::AppHandle, run_id: &str) -> Result<OwnedRunLog, String> {
     if !is_initialized(app) {
         return Err("component_state_unavailable".into());
@@ -323,23 +306,17 @@ pub fn common_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// Called once by the product's serialized native initialization, before any
 /// command is admitted. Importing definitions never calls this initializer.
 /// No standalone migration, tray, integration writer or legacy path is used.
-pub fn initialize(
-    app: &tauri::AppHandle,
-    data: &Path,
-    common: &Path,
-    legacy_base: &Path,
-) -> Result<(), String> {
-    initialize_with_sources(app, data, common, legacy_base, None)
+pub fn initialize(app: &tauri::AppHandle, data: &Path, common: &Path) -> Result<(), String> {
+    initialize_with_sources(app, data, common, None)
 }
 
 pub fn initialize_with_sources(
     app: &tauri::AppHandle,
     data: &Path,
     common: &Path,
-    legacy_base: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
 ) -> Result<(), String> {
-    initialize_owner(app, data, common, legacy_base, sources, true)
+    initialize_owner(app, data, common, sources, true)
 }
 
 /// Import-only Workspace initialization does not start cron, services or the
@@ -348,16 +325,14 @@ pub fn initialize_import_only_with_sources(
     app: &tauri::AppHandle,
     data: &Path,
     common: &Path,
-    legacy_base: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
 ) -> Result<(), String> {
-    initialize_owner(app, data, common, legacy_base, sources, false)
+    initialize_owner(app, data, common, sources, false)
 }
 fn initialize_owner(
     app: &tauri::AppHandle,
     data: &Path,
     common: &Path,
-    legacy_base: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
     background_work: bool,
 ) -> Result<(), String> {
@@ -451,8 +426,6 @@ fn initialize_owner(
         .ok_or("component_window_unavailable")?;
     crate::platform::install_session_end_hook(&window, app, runtime.clone())
         .map_err(|_| "component_shutdown_hook_unavailable")?;
-    let import_owner = Arc::new(imports::ImportOwner::new(data, legacy_base)?);
-    app.manage(import_owner);
     app.manage(paths);
     app.manage(database.clone());
     app.manage(Arc::new(ImportOperationRegistry::default()));
@@ -474,9 +447,6 @@ pub fn is_initialized(app: &tauri::AppHandle) -> bool {
 /// Resolves only after owned process trees and scheduler writes are retired.
 /// The Workspace exit owner must also finish its other components before exit.
 pub fn request_shutdown(app: &tauri::AppHandle) {
-    if let Some(owner) = app.try_state::<Arc<imports::ImportOwner>>() {
-        owner.request_shutdown();
-    }
     if let Some(runtime) = app.try_state::<Arc<crate::lifecycle::RuntimeState>>() {
         runtime.request_shutdown();
     }
@@ -488,12 +458,6 @@ pub async fn shutdown(app: &tauri::AppHandle) -> Result<(), String> {
         .ok_or("component_state_unavailable")?
         .inner()
         .clone();
-    if let Some(owner) = app.try_state::<Arc<imports::ImportOwner>>() {
-        let owner = owner.inner().clone();
-        tauri::async_runtime::spawn_blocking(move || owner.join())
-            .await
-            .map_err(|_| "runtime_import_failed")?;
-    }
     crate::lifecycle::shutdown_owner(&runtime).await;
     Ok(())
 }
@@ -514,13 +478,6 @@ pub fn offer_product_open(
 }
 
 pub const COMMANDS: &[&str] = &[
-    "runtime_import_prepare",
-    "runtime_import_resume",
-    "runtime_import_apply",
-    "runtime_import_cancel",
-    "runtime_import_status",
-    "runtime_import_catalog",
-    "runtime_import_reviews",
     "runtime_control",
     "runtime_control_status",
     "list_runtime_controls",
@@ -593,13 +550,6 @@ pub async fn dispatch(
     data_root(app)?;
     common_root(app)?;
     let result = match method {
-        "runtime_import_prepare"
-        | "runtime_import_resume"
-        | "runtime_import_apply"
-        | "runtime_import_cancel"
-        | "runtime_import_status"
-        | "runtime_import_catalog"
-        | "runtime_import_reviews" => imports::dispatch(app, method, args),
         "runtime_control" => control::execute(app, args).await,
         "runtime_control_status" | "list_runtime_controls" | "review_runtime_control" => {
             control::metadata(app, method, args)
@@ -756,50 +706,4 @@ pub async fn dispatch(
         }
     }
     Ok(value)
-}
-
-/// Read-only product migration ledger; never initializes execution owners.
-pub fn migration_mapping_summary(root: &Path) -> Result<(u64, String), String> {
-    crate::storage::imports::mapping_summary(root)
-}
-
-pub fn migration_backup_digest(root: &Path) -> Result<Option<(String, bool)>, String> {
-    Ok(crate::core::runtime_backup::receipt(root)?
-        .map(|(digest, binding)| (digest, binding.is_some())))
-}
-pub fn verify_migration_backup(
-    root: &Path,
-    digest: &str,
-) -> Result<(u64, u32, String, bool), String> {
-    crate::core::runtime_backup::verify(root, digest)
-}
-
-/// Reacquire SQLite + retained logs from the fixed legacy namespace. No execution
-/// owner/scheduler is opened and no source path comes from an IPC request.
-pub fn migration_source_current(root: &Path, source: &Path) -> Result<Option<String>, String> {
-    let Some((digest, binding)) = crate::core::runtime_backup::receipt(root)? else {
-        return Ok(None);
-    };
-    let Some(binding) = binding else {
-        return Ok(None);
-    };
-    crate::core::runtime_backup::verify(root, &digest)?;
-    let stage = root.join(format!("source-check-{}", uuid::Uuid::new_v4()));
-    struct Scratch(std::path::PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-    let _scratch = Scratch(stage.clone());
-    let fresh = crate::core::runtime_import::PreparedImport::acquire(
-        source,
-        &stage,
-        &std::sync::atomic::AtomicBool::new(false),
-    )
-    .and_then(|prepared| Ok(prepared.digest() == digest && prepared.backup_digest()? == binding));
-    Ok(fresh
-        .ok()
-        .filter(|current| *current)
-        .map(|_| format!("runtime_{digest}")))
 }

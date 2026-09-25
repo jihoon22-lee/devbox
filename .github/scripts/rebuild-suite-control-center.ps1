@@ -9,12 +9,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Retained source must be an ancestor of this pr
 $changes = @(git diff --name-only $receipt.sourceSha HEAD)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot compare retained product inputs' }
 $privateNative = @(
-  'apps/devbox-control-center/src-tauri/src/platform/legacy_installer.rs',
-  'apps/devbox-control-center/src-tauri/src/tools_host.rs',
-  'apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs'
+  'apps/devbox-control-center/src-tauri/src/tools_host.rs'
 )
 foreach ($change in $changes) {
-  if ($change -notmatch '^(\.github/|docs/|workthrough/|apps/devbox-control-center/src/)' -and $change -notin $privateNative -and $change -notin @('apps/v0.8-feature-parity.json','apps/v0.8-data-inventory.json','apps/devbox-control-center/README.md')) {
+  if ($change -notmatch '^(\.github/|docs/|workthrough/|apps/devbox-control-center/src/)' -and $change -notin $privateNative -and $change -notin @('apps/devbox-control-center/README.md')) {
     throw "Changed input requires rebuilding the full Suite: $change"
   }
 }

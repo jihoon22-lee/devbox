@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 AGENT_POLICY_PATH = ".agents/skills/devbox-release/agents/openai.yaml"
 SCOPE_DRIVER_PATHS = {
-    "apps/v0.8-feature-parity.json",
+    "apps/catalog.json",
     ".github/scripts/check-product-foundation.py",
     ".github/scripts/verify-resources.py",
     ".github/scripts/test-verification-resources.py",
@@ -38,28 +38,14 @@ FRONTEND_DRIVER_PATHS = {
 # catalog.json is imported directly rather than through a package manifest, so
 # these virtual build edges complement the dependency graph. The regression
 # test deliberately locks the current consumers to this set.
-CATALOG_FRONTEND_CONSUMERS = {
-    "apps/devbox-control-center",
-    "packages/workspace-features",
-    "packages/control-center-features",
-    "packages/knowledge-features",
-}
-CATALOG_RUST_CONSUMERS = {
-    "catalog",
-    "devbox-installation-tools",
-    "devbox-control-center",
-    "launch",
-    "devbox-logs-engine",
-}
+CATALOG_FRONTEND_CONSUMERS: set[str] = set()
+CATALOG_RUST_CONSUMERS: set[str] = set()
 
 # Native platform modules are compiled by both products without linking another
 # product's application crate. Keep their exact source edges visible to CI.
 RUST_SHARED_PLATFORM_CONSUMERS = {
     "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs": {"devbox-control-center"},
     "crates/http-client-engine/src/commands/process_tree.rs": {"devbox-workspace"},
-    "apps/devbox-api-studio/src-tauri/src/platform/browser_profile.rs": {"devbox-workspace"},
-    "apps/devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs": {"devbox-workspace"},
-    "apps/devbox-api-studio/src-tauri/src/platform/owned_copy.rs": {"devbox-workspace"},
 }
 
 
@@ -227,7 +213,7 @@ def load_rust_graph(root: Path = ROOT) -> WorkspaceGraph:
 def _is_documentation(path: str) -> bool:
     name = PurePosixPath(path).name
     return (
-        path.startswith(("docs/", "workthrough/"))
+        path.startswith("docs/")
         or name.endswith(".md")
         or name in {"README", "LICENSE"}
         or path == ".gitignore"
@@ -341,7 +327,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             reasons.append(f"Rust workspace configuration changed: {path}")
             continue
 
-        if path in {"apps/catalog.json", "apps/legacy-v0.7-catalog.json"}:
+        if path == "apps/catalog.json":
             for directory in CATALOG_FRONTEND_CONSUMERS:
                 node_name = frontend.by_directory.get(directory)
                 if node_name is None:

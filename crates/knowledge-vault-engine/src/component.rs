@@ -64,7 +64,7 @@ pub fn offer_product_path(app: &tauri::AppHandle, path: &std::path::Path) -> Res
         },
         from: Some("everything-plus".into()),
     };
-    devbox_applink::build_argv(&request).map_err(|_| "search_stale")?;
+    devbox_applink::validate_request(&request).map_err(|_| "search_stale")?;
     app.try_state::<crate::applink::PendingOpen>()
         .ok_or("search_unavailable")?
         .offer(request)?;
@@ -195,7 +195,7 @@ pub fn offer_product_draft(
     let producer_matches = producer_matches
         || matches!((&request.target,request.from.as_deref()),
         (devbox_applink::OpenTarget::Handoff { kind, .. },Some(product_contract::knowledge_draft::PRODUCER)) if kind == product_contract::knowledge_draft::KIND);
-    if !producer_matches || devbox_applink::build_argv(request).is_err() {
+    if !producer_matches || devbox_applink::validate_request(request).is_err() {
         return Err("draft_delivery_invalid".into());
     }
     app.try_state::<crate::applink::PendingOpen>()

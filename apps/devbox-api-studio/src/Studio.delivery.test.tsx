@@ -9,7 +9,6 @@ vi.mock("@devbox/product-shell",async()=>{
  const {fixtureDescription}=await import("@devbox/product-shell/api");
  return {ProductShell:({renderContent}:{renderContent:(props:ShellContentProps)=>ReactNode})=>renderContent({description:{...fixtureDescription("api-studio"),deliveryState:mode.phase},route:"requests",navigate:()=>{},refreshContext:async()=>{}})};
 });
-vi.mock("./migration/Startup",()=>({MigrationStartup:({children}:{children:ReactNode})=><>{children}</>}));
 vi.mock("@devbox/api-studio-features/requests",async()=>{
  const {useEffect}=await import("react");
  return {default:()=>{useEffect(()=>{localStorage.setItem("delivery-writer","mounted");},[]);return <div>Business request view</div>;}};

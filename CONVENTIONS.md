@@ -58,7 +58,6 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 앱 ID와 실행 파일은 `devbox-<product>`, `devbox-<product>.exe`다.
 - 현재 모듈 소유권은 [projects](docs/projects.md), workspace members는 Cargo.toml이 원장이다.
 - `apps/catalog.json`은 네 공개 제품, `apps/products.json`은 typed route·component 계약이다.
-- `apps/legacy-v0.7-catalog.json`은 원본 발견·설치 provenance·역사적 fixture 전용이다.
 - engine에는 standalone bootstrap·installer를 두지 않는다. 순수 로직은 core/, OS 처리는
   command/platform 계층으로 분리한다. B09 추출은 이미 사용 중인 엔진의 소유 위치 변경이다.
 
@@ -247,7 +246,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
   반드시 1:1일 필요가 없다.
 - 같은 앱·같은 사용자 흐름에 속하고 구현 기반, 상태 모델, migration/reindex, 보안·자원
   제한, 테스트 fixture를 공유하는 형식별 변형이나 밀접한 보강은 여러 이슈를 한 PR로
-  묶을 수 있다. 관련 README·architecture·roadmap·workthrough 갱신도 그 PR에 포함한다.
+  묶을 수 있다. 관련 README·architecture·roadmap과 PR·ledger 갱신도 그 PR에 포함한다.
 - 독립적으로 배포하거나 되돌려야 하는 작업, 권한·비밀·외부 mutation처럼 위험 경계가 다른
   작업, 선행 작업 없이는 검증할 수 없는 작업, 한 번에 리뷰하기 과도한 작업은 별도 PR로
   유지한다. 단순히 같은 앱이라는 이유만으로 묶지 않는다.
@@ -334,7 +333,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
   함께 추가하고, notices를 수동 편집하지 않는다.
 
 기능별 판단과 v0.5.0 적용 범위는
-[`docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md`](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
+[`docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
 기준으로 한다.
 
 ## 10. 제품 통합
@@ -342,9 +341,11 @@ docs/<scope>           문서 작업   예: docs/roadmap
 제품은 owner가 검증한 typed context와 source-owned ArtifactRef/SecretRef를 교환한다.
 경로 문자열이나 UI route만으로 다른 제품 권한을 얻지 않는다. legacy exe fallback은 금지한다.
 기존 engine의 command adapter는 제품 host가 명시적으로 허용한 메서드만 등록한다.
-상세 계약과 기능/데이터 수용은 [v0.8 acceptance](docs/v0.8-acceptance.md)를 따른다.
+상세 계약과 기능/데이터 수용은 [v0.8 acceptance](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 따른다.
 
 ## 11. Codex 지침·스킬·작업 기록
+
+결정의 이유는 [docs/adr/](docs/adr/README.md)를 본다.
 
 - 루트 AGENTS는 필수 제약과 문서 탐색 경로를 담는다. 공통 규약은 이 문서가 원장이며,
   상세 절차는 관련 문서를 필요할 때 읽는다. 과거 SHA·workflow·실기 기록은

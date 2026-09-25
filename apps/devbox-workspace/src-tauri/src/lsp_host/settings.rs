@@ -1,7 +1,7 @@
 //! Context-owned configuration only. Saving settings performs no project IO,
 //! executable resolution, runtime probe or execution approval.
 use super::{input, Result};
-use crate::core::legacy_lsp::{decode, StoredConfig};
+use crate::lsp_host::config::{decode, StoredConfig};
 use crate::{
     core::registry::Binding, definitions::digest, host::Host,
     platform::definition_write::DefinitionTarget, private_metadata::MetadataRoot,

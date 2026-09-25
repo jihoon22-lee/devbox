@@ -60,23 +60,3 @@ it("reviews WSL template defaults against the selected distro without registerin
   expect(call).toHaveBeenCalledWith("workspace.registry","preview_template_profile_wsl",{templateId:template.id,distroId:distro.id,root:preview.binding.root,name:template.template.name,startStopped:false});
   expect(call.mock.calls.some(([,method])=>/apply|select_project|trust/.test(method))).toBe(false);
 });
-
-it("keeps an imported WSL profile unavailable until its saved distro exists and explicit start is selected",async()=>{
-  const profile={id:"imported-profile",local:true,profile:{id:"original-profile",name:"보관한 WSL 프로필",windowsPath:null,wsl:{distro:distro.name.toLowerCase(),path:preview.binding.root},gitRoot:null,expectedPorts:[4321],runManagerServiceIds:[],environment:null}};
-  let present=false;
-  call.mockImplementation(async(_component,method)=>method==="list_wsl_distros"?(present?[distro]:[{...distro,name:"Other distribution"}]):preview);
-  const reviewed=vi.fn();
-  render(<WslProjectForm profile={profile} disabled={false} onBusyChange={()=>{}} onReviewed={reviewed}/>);
-  await screen.findByText(/프로필의 배포판.*찾을 수 없습니다/);
-  expect((screen.getByRole("button",{name:"WSL 폴더 확인"}) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByLabelText("Linux 프로젝트 폴더") as HTMLInputElement).readOnly).toBe(true);
-  expect(call.mock.calls.map(([,method])=>method)).toEqual(["list_wsl_distros"]);
-  present=true;
-  fireEvent.click(screen.getByRole("button",{name:"WSL 목록 새로 고침"}));
-  await screen.findByRole("checkbox");
-  expect((screen.getByRole("button",{name:"WSL 폴더 확인"}) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("checkbox"));
-  fireEvent.click(screen.getByRole("button",{name:"WSL 폴더 확인"}));
-  await waitFor(()=>expect(reviewed).toHaveBeenCalledWith(preview,profile.profile.name));
-  expect(call).toHaveBeenCalledWith("workspace.registry","preview_imported_profile_wsl",{importedId:profile.id,distroId:distro.id,startStopped:true});
-});

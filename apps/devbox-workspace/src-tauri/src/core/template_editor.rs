@@ -1,6 +1,6 @@
 //! Editable destination templates. Legacy snapshots retain the original bytes;
 //! template edits never change an already instantiated project profile.
-use super::{legacy_templates::ImportedTemplate, registry::Registry};
+use super::{registry::Registry, templates::ImportedTemplate};
 use workbench_lib::component::ProfileTemplate;
 
 type Result<T> = std::result::Result<T, &'static str>;
@@ -106,8 +106,6 @@ pub fn archive(registry: &mut Registry, revision: u64, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::legacy_profiles::{Choice, Decision};
-    use workbench_lib::component::ProfileTemplateStore;
     fn draft(name: &str) -> ProfileTemplate {
         let mut template = ProfileTemplate::new(name);
         template.id.clear();
@@ -166,57 +164,6 @@ mod tests {
             Err("invalid_revision")
         );
         assert_eq!(registry, before);
-    }
-    #[test]
-    fn repeated_import_preserves_destination_edits_archive_and_source_provenance() {
-        let template = ProfileTemplate::new("원본");
-        let source = ProfileTemplateStore {
-            version: 1,
-            templates: vec![template.clone()],
-        };
-        let source_bytes = serde_json::to_vec(&source).unwrap();
-        let mut registry = Registry::default();
-        let choice = |decision| {
-            vec![Choice {
-                source_id: template.id.clone(),
-                decision,
-            }]
-        };
-        crate::core::legacy_templates::Plan::build("a".repeat(64), source.clone(), &registry)
-            .unwrap()
-            .apply(&mut registry, choice(Decision::Import))
-            .unwrap();
-        let id = registry.imported_templates[0].id.clone();
-        let mut edit = template.clone();
-        edit.name = "Workspace 수정".into();
-        edit.expected_ports = vec![9090];
-        save(&mut registry, 2, Some(&id), edit).unwrap();
-        archive(&mut registry, 3, &id).unwrap();
-        let before = registry.clone();
-        let repeat =
-            crate::core::legacy_templates::Plan::build("a".repeat(64), source.clone(), &registry)
-                .unwrap();
-        assert!(repeat.rows[0].already_imported);
-        assert_eq!(
-            repeat
-                .apply(&mut registry, choice(Decision::Reuse))
-                .unwrap()
-                .reused,
-            1
-        );
-        assert_eq!(registry, before);
-        assert_eq!(serde_json::to_vec(&source).unwrap(), source_bytes);
-        assert_eq!(
-            registry.imported_templates[0].source_snapshot_id.as_deref(),
-            Some("a".repeat(64).as_str())
-        );
-        let changed =
-            crate::core::legacy_templates::Plan::build("b".repeat(64), source, &registry).unwrap();
-        assert!(!changed.rows[0].already_imported);
-        assert_eq!(
-            changed.rows[0].disposition,
-            crate::core::legacy_profiles::Disposition::Conflict
-        );
     }
     #[test]
     fn malformed_origin_secret_fields_and_capacity_fail_without_replacement() {

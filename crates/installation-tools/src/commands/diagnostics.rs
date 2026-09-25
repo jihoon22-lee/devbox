@@ -1,18 +1,14 @@
 //! Tauri command boundary for the Manager's diagnostics tools.
 //!
-//! Commands accept catalog app IDs and opaque preview/cancel IDs only. Raw
+//! Commands accept opaque preview/cancel IDs only. Raw
 //! filesystem paths never come from the frontend and are never reflected in
 //! public errors.
 
 use crate::commands::doctor::DiagnosisItem;
-use crate::core::catalog::parse_catalog;
-use crate::core::data_inspector::{
-    self, DataExport, DataInspectorSnapshot, DataQueryRequest, DataQueryResult, ExportFormat,
-    QueryFailure,
-};
+use crate::core::redaction;
 use crate::core::support_bundle::{
     self, BundleFailure, SupportBundleExport, SupportBundlePreview, SupportDiagnostic,
-    SupportInstalledApp, SUPPORT_PREVIEW_TTL_MS,
+    SUPPORT_PREVIEW_TTL_MS,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -22,37 +18,18 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CATALOG_JSON: &str = include_str!("../../../../apps/legacy-v0.7-catalog.json");
-const MAX_STORED_QUERY_PREVIEWS: usize = 16;
-const MAX_STORED_QUERY_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
 const MAX_STORED_BUNDLE_PREVIEWS: usize = 8;
 
 #[derive(Default)]
 pub struct DiagnosticsState {
-    active_queries: Mutex<HashMap<String, Arc<AtomicBool>>>,
     active_bundles: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    query_previews: Mutex<HashMap<String, StoredQueryPreview>>,
     bundle_previews: Mutex<HashMap<String, StoredBundlePreview>>,
-}
-
-#[derive(Debug, Clone)]
-struct StoredQueryPreview {
-    result: DataQueryResult,
 }
 
 #[derive(Debug, Clone)]
 struct StoredBundlePreview {
     expires_at_ms: u64,
-    catalog_revision: Option<u64>,
-    source_revision: String,
     draft: support_bundle::BundleDraft,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DataExportRequest {
-    pub preview_id: String,
-    pub format: ExportFormat,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,10 +50,6 @@ fn data_root() -> Result<PathBuf, String> {
         .ok_or_else(|| "devbox 데이터 경로를 안전하게 확인할 수 없습니다.".to_string())
 }
 
-fn catalog() -> Result<crate::core::catalog::Catalog, String> {
-    parse_catalog(CATALOG_JSON).map_err(|_| "catalog를 안전하게 읽을 수 없습니다.".to_string())
-}
-
 fn lock_map<T>(map: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, String> {
     map.lock()
         .map_err(|_| "진단 작업을 시작할 수 없습니다.".to_string())
@@ -84,7 +57,7 @@ fn lock_map<T>(map: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, String> {
 
 fn validate_operation_id(value: &str) -> Result<(), String> {
     if value.is_empty()
-        || value.len() > data_inspector::MAX_QUERY_ID_BYTES
+        || value.len() > 128
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
@@ -114,22 +87,8 @@ fn finish_operation(map: &Mutex<HashMap<String, Arc<AtomicBool>>>, id: &str) {
     }
 }
 
-fn query_error(error: QueryFailure) -> String {
-    error.message().to_string()
-}
-
 fn bundle_error(error: BundleFailure) -> String {
     error.message().to_string()
-}
-
-fn take_query_preview(
-    state: &DiagnosticsState,
-    preview_id: &str,
-) -> Result<StoredQueryPreview, String> {
-    let mut previews = lock_map(&state.query_previews)?;
-    previews
-        .remove(preview_id)
-        .ok_or_else(|| "조회 미리 보기가 만료되었거나 없습니다.".to_string())
 }
 
 fn take_bundle_preview(
@@ -154,113 +113,14 @@ fn generated_id(prefix: &str, input: &str) -> String {
     digest.update(input.as_bytes());
     digest.update(sequence.to_le_bytes());
     digest.update(now.to_le_bytes());
-    format!("{prefix}-{:x}", digest.finalize())
-}
-
-#[tauri::command]
-pub async fn inspect_data_databases(
-    state: tauri::State<'_, DiagnosticsState>,
-    operation_id: String,
-) -> Result<DataInspectorSnapshot, String> {
-    let cancel = register_operation(&state.active_queries, &operation_id)?;
-    let task = tauri::async_runtime::spawn_blocking(move || {
-        let catalog = catalog()?;
-        let root = data_root()?;
-        data_inspector::inspect_databases(&catalog, &root, Some(cancel)).map_err(query_error)
-    });
-    let result = match task.await {
-        Ok(result) => result,
-        Err(_) => Err("데이터베이스 진단 작업을 완료할 수 없습니다.".to_string()),
-    };
-    finish_operation(&state.active_queries, &operation_id);
-    result
-}
-
-#[tauri::command]
-pub async fn preview_data_query(
-    state: tauri::State<'_, DiagnosticsState>,
-    request: DataQueryRequest,
-) -> Result<DataQueryResult, String> {
-    let operation_id = request.query_id.clone();
-    let cancel = register_operation(&state.active_queries, &operation_id)?;
-    let task = tauri::async_runtime::spawn_blocking(move || {
-        let catalog = catalog()?;
-        let root = data_root()?;
-        data_inspector::preview_query(&catalog, &root, &request, cancel)
-            .map(|(result, _)| result)
-            .map_err(query_error)
-    });
-    let result = match task.await {
-        Ok(result) => result,
-        Err(_) => Err("읽기 전용 조회 작업을 완료할 수 없습니다.".to_string()),
-    };
-    finish_operation(&state.active_queries, &operation_id);
-    let mut result = result?;
-    result.preview_id = generated_id("query", &operation_id);
-    let mut previews = lock_map(&state.query_previews)?;
-    let mut retained_bytes = previews
-        .values()
-        .map(|preview| preview.result.result_bytes)
-        .sum::<usize>();
-    while previews.len() >= MAX_STORED_QUERY_PREVIEWS
-        || retained_bytes.saturating_add(result.result_bytes) > MAX_STORED_QUERY_PREVIEW_BYTES
-    {
-        if let Some(key) = previews.keys().next().cloned() {
-            if let Some(evicted) = previews.remove(&key) {
-                retained_bytes = retained_bytes.saturating_sub(evicted.result.result_bytes);
-            }
-        } else {
-            break;
-        }
-    }
-    previews.insert(
-        result.preview_id.clone(),
-        StoredQueryPreview {
-            result: result.clone(),
-        },
-    );
-    Ok(result)
-}
-
-#[tauri::command]
-pub fn cancel_data_diagnostics(
-    state: tauri::State<'_, DiagnosticsState>,
-    request: CancelDiagnosticsRequest,
-) -> Result<SupportBundleStatus, String> {
-    validate_operation_id(&request.operation_id)?;
-    let operations = lock_map(&state.active_queries)?;
-    if let Some(cancel) = operations.get(&request.operation_id) {
-        cancel.store(true, Ordering::Relaxed);
-        return Ok(SupportBundleStatus {
-            status: "cancel-requested".to_string(),
-            message: "진단 취소를 요청했습니다.".to_string(),
-        });
-    }
-    Err("진단 작업이 이미 끝났거나 없습니다.".to_string())
-}
-
-#[tauri::command]
-pub async fn export_data_preview(
-    state: tauri::State<'_, DiagnosticsState>,
-    request: DataExportRequest,
-) -> Result<DataExport, String> {
-    validate_operation_id(&request.preview_id)?;
-    // Claim the preview under the mutex. Looking it up, doing revision I/O,
-    // and removing it later would allow concurrent export commands to clone
-    // the same one-time result.
-    let stored = take_query_preview(&state, &request.preview_id)?;
-    let app_id = stored.result.app_id.clone();
-    let current_revision = tauri::async_runtime::spawn_blocking(move || {
-        let catalog = catalog()?;
-        let root = data_root()?;
-        data_inspector::database_revision(&catalog, &root, &app_id).map_err(query_error)
-    })
-    .await
-    .map_err(|_| "조회 원본 상태를 확인할 수 없습니다.".to_string())??;
-    if current_revision != stored.result.database_revision {
-        return Err(QueryFailure::Stale.message().to_string());
-    }
-    data_inspector::export_query(&stored.result, request.format).map_err(query_error)
+    format!(
+        "{prefix}-{}",
+        digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
 }
 
 fn diagnosis_for_bundle(app: &tauri::AppHandle) -> Vec<SupportDiagnostic> {
@@ -320,19 +180,14 @@ fn operation_summaries(
         .into_iter()
         .map(|(product, dir)| support_bundle::OperationLogSummary {
             product,
-            summary: product_contract::operation_log::summarize(&dir, 100, 2 * 1024 * 1024),
-        })
-        .collect()
-}
-
-fn installed_for_bundle(app: &tauri::AppHandle) -> Vec<SupportInstalledApp> {
-    crate::commands::manager::installed(app.clone())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|item| SupportInstalledApp {
-            app_id: item.app,
-            version: item.version,
-            mode: item.mode,
+            summary: if redaction::safe_derived_path(data_root, &dir) {
+                product_contract::operation_log::summarize(&dir, 100, 2 * 1024 * 1024)
+            } else {
+                product_contract::operation_log::Summary {
+                    state: "unreadable".into(),
+                    ..Default::default()
+                }
+            },
         })
         .collect()
 }
@@ -345,40 +200,43 @@ pub async fn preview_support_bundle(
 ) -> Result<SupportBundlePreview, String> {
     let cancel = register_operation(&state.active_bundles, &operation_id)?;
     let task = tauri::async_runtime::spawn_blocking(move || {
-        let catalog = catalog()?;
+        let catalog =
+            devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE)
+                .map_err(str::to_owned)?;
         let root = data_root()?;
         let draft = support_bundle::build_bundle(
-            &catalog,
-            &root,
             diagnosis_for_bundle(&app),
-            installed_for_bundle(&app),
+            catalog
+                .products
+                .iter()
+                .map(|product| support_bundle::SupportProduct {
+                    id: product.id.clone(),
+                    version: app.package_info().version.to_string(),
+                })
+                .collect(),
             operation_summaries(&app, &root),
             cancel,
         )
         .map_err(bundle_error)?;
-        Ok::<_, String>((draft, catalog.catalog_revision))
+        Ok::<_, String>(draft)
     });
     let result = match task.await {
         Ok(result) => result,
         Err(_) => Err("지원 번들 작업을 완료할 수 없습니다.".to_string()),
     };
     finish_operation(&state.active_bundles, &operation_id);
-    let (draft, catalog_revision) = result?;
+    let draft = result?;
     let preview_id = generated_id("support", &operation_id);
     let expires_at_ms = now_ms().saturating_add(SUPPORT_PREVIEW_TTL_MS);
     let preview = SupportBundlePreview {
         preview_id: preview_id.clone(),
-        catalog_revision,
         expires_at_ms,
         estimated_bytes: draft.bytes.len(),
-        database_count: draft.available_database_count(),
+        database_count: 0,
         included_sections: vec![
-            "app-metadata".to_string(),
-            "catalog-metadata".to_string(),
-            "schema-metadata".to_string(),
-            "log-metadata".to_string(),
-            "operation-log".to_string(),
-            "diagnosis".to_string(),
+            "diagnosis".into(),
+            "products".into(),
+            "operation-log".into(),
         ],
         omitted_sections: vec![
             "raw-database".to_string(),
@@ -388,7 +246,7 @@ pub async fn preview_support_bundle(
             "credentials".to_string(),
             "authorization".to_string(),
         ],
-        redaction_version: data_inspector::REDACTION_VERSION.to_string(),
+        redaction_version: redaction::REDACTION_VERSION.to_string(),
     };
     let mut previews = lock_map(&state.bundle_previews)?;
     if previews.len() >= MAX_STORED_BUNDLE_PREVIEWS {
@@ -400,8 +258,6 @@ pub async fn preview_support_bundle(
         preview_id,
         StoredBundlePreview {
             expires_at_ms,
-            catalog_revision,
-            source_revision: draft.source_revision.clone(),
             draft,
         },
     );
@@ -438,24 +294,6 @@ pub async fn export_support_bundle(
     if now_ms() >= stored.expires_at_ms {
         return Err("지원 번들 미리 보기가 만료되었습니다. 다시 미리 확인하세요.".to_string());
     }
-    let expected_catalog_revision = stored.catalog_revision;
-    let expected_source_revision = stored.source_revision.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let catalog = catalog()?;
-        let root = data_root()?;
-        let current_source_revision =
-            support_bundle::current_source_revision(&catalog, &root).map_err(bundle_error)?;
-        if catalog.catalog_revision != expected_catalog_revision
-            || current_source_revision != expected_source_revision
-        {
-            return Err(
-                "진단 상태가 바뀌었습니다. 최신 지원 번들을 다시 미리 확인하세요.".to_string(),
-            );
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|_| "지원 번들 원본 상태를 확인할 수 없습니다.".to_string())??;
     support_bundle::export_bundle(&stored.draft).map_err(bundle_error)
 }
 
@@ -502,42 +340,28 @@ mod tests {
     use super::*;
     use std::thread;
 
-    fn query_preview() -> StoredQueryPreview {
-        StoredQueryPreview {
-            result: DataQueryResult {
-                preview_id: "preview".into(),
-                query_id: "query".into(),
-                app_id: "app".into(),
-                database_revision: "revision".into(),
-                columns: vec!["value".into()],
-                rows: vec![vec![serde_json::Value::String("ok".into())]],
-                row_count: 1,
-                result_bytes: 4,
-                truncated: false,
-                elapsed_ms: 1,
-            },
-        }
-    }
-
     #[test]
-    fn one_time_query_preview_claim_allows_only_one_concurrent_export() {
+    fn one_time_bundle_preview_claim_allows_only_one_export() {
         let state = Arc::new(DiagnosticsState::default());
-        state
-            .query_previews
-            .lock()
-            .unwrap()
-            .insert("preview".into(), query_preview());
-        let handles = (0..2)
+        state.bundle_previews.lock().unwrap().insert(
+            "preview".into(),
+            StoredBundlePreview {
+                expires_at_ms: u64::MAX,
+                draft: support_bundle::BundleDraft { bytes: vec![] },
+            },
+        );
+        let workers: Vec<_> = (0..2)
             .map(|_| {
-                let state = Arc::clone(&state);
-                thread::spawn(move || take_query_preview(&state, "preview").is_ok())
+                let state = state.clone();
+                thread::spawn(move || take_bundle_preview(&state, "preview").is_ok())
             })
-            .collect::<Vec<_>>();
-        let claimed = handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap())
-            .filter(|claimed| *claimed)
-            .count();
-        assert_eq!(claimed, 1);
+            .collect();
+        assert_eq!(
+            workers
+                .into_iter()
+                .map(|worker| usize::from(worker.join().unwrap()))
+                .sum::<usize>(),
+            1
+        );
     }
 }

@@ -283,8 +283,8 @@ jobs:
         run: |
           $scripts = switch ('${{ matrix.scope }}') {
             'product-shells' { @('windows-product-foundation.mjs') }
-            'api' { @('windows-api-migration.mjs','windows-api-lifecycle.mjs','windows-api-workflow.mjs') }
-            'knowledge' { @('windows-knowledge-migration.mjs') }
+            'api' { @('windows-api-lifecycle.mjs','windows-api-workflow.mjs') }
+            'knowledge' { @('windows-knowledge-lifecycle.mjs') }
             'cross-product' { @('windows-suite-workflows.mjs') }
           }
           $failed = @()

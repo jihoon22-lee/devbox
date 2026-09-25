@@ -22,31 +22,22 @@ default = []
 
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite", "hooks"] }
-tokio = { version = "1.53.1", features = ["process", "time"] }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+tokio = { workspace = true }
 devbox-git = { package = "git", path = "../git" }
-dirs = "6.0.0"
+dirs = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-applink = { package = "applink", path = "../applink" }
-devbox-launch = { package = "launch", path = "../launch" }
-sysinfo = "0.39.6"
-regex = "1"
+sysinfo = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
-windows = { version = "0.58", features = [
-    "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_Controls_Dialogs",
-    "Win32_System_SystemInformation",
-    "Win32_System_Threading",
-    "Win32_System_ProcessStatus",
-] }
+windows = { workspace = true }

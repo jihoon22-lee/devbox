@@ -19,7 +19,7 @@ dependency, version, catalog or release artifact changes accompany it.
 Source read in full: `src/App.tsx`, `src/components/*`, `src/lib/*`,
 `src-tauri/src/commands/terminal.rs`, `src-tauri/src/commands/multiplexer.rs`,
 `src/App.css`, plus the owning design spec
-[`2026-08-17-wsl-desktop-terminal-design.md`](../specs/2026-08-17-wsl-desktop-terminal-design.md).
+[`2026-08-17-wsl-desktop-terminal-design.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md).
 
 ```text
 pnpm install --frozen-lockfile      PASS

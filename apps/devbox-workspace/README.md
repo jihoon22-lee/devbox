@@ -10,8 +10,8 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 - Browser `?route=overview`와 debug `--route=overview`는 개발용 route 선택이다.
   release 권한을 부여하는 옵션이 아니며 native host가 caller·session·route를 다시 검사한다.
 - 제품 identity는 `com.devbox.v08.workspace`, 데이터는 installation별 namespace다.
-  시작만으로 legacy source를 초기화하거나 원본 경로에 새 데이터를 쓰지 않는다.
-- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·이전·복구 안내](../../docs/windows-guide.md).
+  처음 실행하면 프로젝트 저장소를 자동으로 준비한다. 오류가 나면 다시 시도할 수 있다.
+- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·복구 안내](../../docs/windows-guide.md).
 
 ## 유지하는 계약
 
@@ -30,9 +30,9 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 기능 코드는 이 제품 host와 `packages/` feature UI, 이름을 가진 `crates/` engine에 있다.
 기존 15개 앱의 standalone shell·Tauri bootstrap은 제거했다. 현재 소유권은
 [projects](../../docs/projects.md), 기능/데이터 및 R01–R26/S01–S08 대응은
-[acceptance trace](../../docs/v0.8-acceptance.md)를 참조한다.
+[acceptance trace](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 참조한다.
 
-[이전 개발 단계의 상세 README](../../docs/history/v0.8-development/workspace.md)는 당시 구현
+[이전 개발 단계의 상세 README](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.8-development/workspace.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
 

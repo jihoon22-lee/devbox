@@ -23,3 +23,8 @@ it("shows global shortcut settings on the shortcuts route", async () => {
   render(<ProductShell product="control-center" renderContent={Content} />);
   expect(await screen.findByText("전역 단축키")).toBeTruthy();
 });
+
+it("has only current routes after retiring migration", () => {
+  expect(catalog.features.filter(feature => feature.owner === "control-center").map(feature => feature.route))
+    .toEqual(["products", "updates", "components", "environment", "recovery", "shortcuts", "diagnostics", "tools"]);
+});

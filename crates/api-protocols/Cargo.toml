@@ -6,20 +6,20 @@ edition = "2021"
 description = "Shared API protocol validation and codecs"
 
 [dependencies]
-base64 = "0.22"
-bytes = "1"
-getrandom = "0.4.3"
-prost = "0.14"
-prost-reflect = { version = "0.16.5", features = ["serde"] }
+base64 = { workspace = true }
+bytes = { workspace = true }
+getrandom = { workspace = true }
+prost = { workspace = true }
+prost-reflect = { workspace = true }
 protox = "0.9.1"
-reqwest = { version = "0.13.4", default-features = false }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sha2 = "0.11.0"
-tonic = { version = "0.14.6", default-features = false }
-url = "2"
-zeroize = "1"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tonic = { workspace = true }
+url = { workspace = true }
+zeroize = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

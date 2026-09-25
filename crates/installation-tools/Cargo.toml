@@ -22,37 +22,23 @@ crate-type = ["rlib"]
 
 [dependencies]
 product-contract = { path = "../product-contract" }
-tauri = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tauri = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml_ng = "0.10.0"
-semver = "1.0.28"
-rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite", "hooks", "limits"] }
-reqwest = { version = "0.13.4", features = ["json", "stream"] }
-sha2 = "0.10"
-getrandom = "0.4.3"
-zeroize = "1"
-futures-util = "0.3"
+sha2 = { workspace = true }
+getrandom = { workspace = true }
+zeroize = { workspace = true }
 devbox-wsl = { package = "wsl", path = "../wsl" }
 devbox-git = { package = "git", path = "../git" }
-dirs = "6.0.0"
+dirs = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-catalog = { package = "catalog", path = "../catalog" }
-devbox-launch = { package = "launch", path = "../launch" }
-devbox-applink = { package = "applink", path = "../applink" }
-devbox-integration = { package = "integration", path = "../integration" }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-    "Win32_System_JobObjects",
-    "Win32_System_SystemInformation",
-    "Win32_System_Threading",
-] }
+windows = { workspace = true }

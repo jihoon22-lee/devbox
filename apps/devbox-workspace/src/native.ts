@@ -93,6 +93,7 @@ const issues: Record<string, string> = {
   invalid_legacy_snapshot: "보관 기록을 검증하지 못했습니다. 기존 파일은 유지됩니다.",
   legacy_snapshot_limit: "보관 작업이 32개 한도에 도달했습니다. 기존 보관 파일은 유지됩니다.",
   store_pointer_changed: "저장소가 변경되었습니다. 앱을 다시 시작해 주세요.",
+  registry_retired_import_data: "v0.7에서 가져온 프로젝트 정보가 남아 있어 열 수 없습니다. v0.8.1에서 프로젝트를 다시 등록한 뒤 업데이트해 주세요.",
   invalid_registry: "프로젝트 목록을 읽지 못했습니다. 기존 파일을 확인해 주세요.",
   invalid_files_store: "편집기 설정이나 복구 파일을 읽지 못했습니다. 기존 파일을 확인해 주세요.",
   invalid_overview_store: "프로젝트 설정을 읽지 못했습니다. 기존 파일을 확인해 주세요.",

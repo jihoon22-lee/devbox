@@ -1,6 +1,6 @@
 //! Embedded Manager tools only. The suite's installer does not use legacy batch
 //! install, cleanup_partials, startup migration or a legacy executable fallback.
-use crate::commands::{dev_setup, diagnostics, doctor, local_quality, related_tools};
+use crate::commands::{dev_setup, diagnostics, doctor, related_tools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Manager;
@@ -20,11 +20,6 @@ pub fn allowed(route: &str, method: &str) -> bool {
         "diagnostics" | "recovery" => matches!(
             method,
             "run_diagnosis"
-                | "inspect_local_quality"
-                | "inspect_data_databases"
-                | "preview_data_query"
-                | "cancel_data_diagnostics"
-                | "export_data_preview"
                 | "preview_support_bundle"
                 | "cancel_support_bundle"
                 | "export_support_bundle"
@@ -95,27 +90,6 @@ pub async fn dispatch(
             empty(args)?;
             value(doctor::run_diagnosis(app.clone()).await)
         }
-        "inspect_local_quality" => {
-            empty(args)?;
-            value(local_quality::inspect_local_quality(app.clone()).await)
-        }
-        "inspect_data_databases" => value(
-            diagnostics::inspect_data_databases(
-                app.state(),
-                input::<Operation>(args)?.operation_id,
-            )
-            .await,
-        ),
-        "preview_data_query" => {
-            value(diagnostics::preview_data_query(app.state(), nested(args)?).await)
-        }
-        "cancel_data_diagnostics" => value(diagnostics::cancel_data_diagnostics(
-            app.state(),
-            nested(args)?,
-        )),
-        "export_data_preview" => {
-            value(diagnostics::export_data_preview(app.state(), nested(args)?).await)
-        }
         "preview_support_bundle" => value(
             diagnostics::preview_support_bundle(
                 app.clone(),
@@ -184,46 +158,4 @@ pub async fn dispatch(
         }
         _ => Err("manager_method_denied".into()),
     }
-}
-
-/// Existing Manager-owned registrations are read from their original namespace;
-/// the Control Center host must not reinterpret its own empty app-data directory
-/// as an empty legacy installation inventory.
-pub(crate) fn legacy_default_root(
-    app: &tauri::AppHandle,
-) -> Result<Option<std::path::PathBuf>, String> {
-    if app.try_state::<EmbeddedTools>().is_none() {
-        return Ok(None);
-    }
-    app.path()
-        .local_data_dir()
-        .map(|root| Some(root.join("com.devbox.devboxmanager")))
-        .map_err(|_| "legacy_manager_root_unavailable".into())
-}
-pub fn legacy_installations(app: &tauri::AppHandle) -> Result<Value, String> {
-    value(crate::commands::manager::installed(app.clone()))
-}
-
-pub(crate) fn legacy_catalog_revision(app: &tauri::AppHandle) -> Option<u64> {
-    app.try_state::<EmbeddedTools>().map(|_| 18)
-}
-
-/// Only the committed Suite cleanup coordinator calls this native adapter.
-/// It does not add Manager's removal commands to the embedded webview surface.
-pub fn cleanup_legacy_portable(
-    app: tauri::AppHandle,
-    request: Value,
-    version: &str,
-    target: &std::path::Path,
-) -> Result<(), String> {
-    let request = serde_json::from_value(request).map_err(|_| "legacy_portable_request_invalid")?;
-    crate::commands::manager::cleanup_legacy_portable(app, request, version, target)
-}
-
-pub use crate::commands::manager::RemovePreviewView as LegacyPortablePreview;
-pub fn preview_legacy_portable(
-    app: tauri::AppHandle,
-    id: String,
-) -> Result<LegacyPortablePreview, String> {
-    crate::commands::manager::preview_remove_app(app, id)
 }

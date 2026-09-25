@@ -7,25 +7,18 @@
 
 use super::ports::{collect_ports, collect_ports_with_status, PortRow};
 use crate::core::listeners::{ListenerIdentity, ListenerSource};
-use devbox_applink::{
-    CreateHandoff, HandoffDescriptor, HandoffError, HandoffPublication, HandoffStore,
-    LogSourceStream, OpenRequest, OpenTarget,
-};
+use devbox_applink::LogSourceStream;
 use devbox_integration::{PortBindingEntry, PortBindingProcess, PortBindingTargetKind};
 use serde::Serialize;
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard, OnceLock, TryLockError};
 
 const RUN_MANAGER: &str = "run-manager";
 const WORKBENCH: &str = "workbench";
-const PORT_MANAGER: &str = "port-manager";
 const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 const MAX_SNAPSHOT_AGE_MS: u64 = 180_000;
 const MAX_CLOCK_SKEW_MS: u64 = 30_000;
 const MAX_CORRELATIONS_PER_ROW: usize = 64;
 const MAX_TOTAL_CORRELATIONS: usize = 4_096;
-const LOG_LENS_CAPABILITY: &str = "handoff:log-source/v1";
-static LOG_DISPATCH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -123,29 +116,8 @@ pub async fn list_port_observations() -> Result<PortObservationSnapshot, String>
 
 #[tauri::command]
 pub async fn open_port_owner(action_key: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let resolved = resolve_current_action(&action_key)?;
-        let target = match resolved.public.target_kind.as_str() {
-            "task" if resolved.public.source_app == RUN_MANAGER => OpenTarget::Task {
-                id: resolved.public.target_id,
-            },
-            "profile" if resolved.public.source_app == WORKBENCH => OpenTarget::Profile {
-                id: resolved.public.target_id,
-            },
-            _ => return Err("port action is unavailable".to_string()),
-        };
-        devbox_launch::launch_open(
-            &resolved.public.source_app,
-            &OpenRequest {
-                target,
-                from: Some(PORT_MANAGER.into()),
-            },
-        )
-        .map(|_| ())
-        .map_err(|_| "port action launch failed".to_string())
-    })
-    .await
-    .map_err(|_| "port action is unavailable".to_string())?
+    let _ = (action_key,);
+    Err("port action is unavailable".into())
 }
 
 #[tauri::command]
@@ -158,94 +130,9 @@ pub async fn open_port_log(
         .map_err(|_| "log source handoff is unavailable".to_string())?
 }
 
-fn resolve_current_action(action_key: &str) -> Result<ResolvedCorrelation, String> {
-    if !valid_action_key(action_key) {
-        return Err("port action is unavailable".into());
-    }
-    let rows = collect_ports().map_err(|_| "port action is unavailable".to_string())?;
-    let observed = correlate_rows_in(&devbox_integration::integration_root(), rows, now_ms());
-    observed
-        .rows
-        .into_iter()
-        .flat_map(|(_, correlations)| correlations)
-        .find(|correlation| correlation.public.action_key == action_key)
-        .ok_or_else(|| "port action is stale".to_string())
-}
-
 fn dispatch_log(action_key: String, stream: LogSourceStream) -> Result<LogLensDispatch, String> {
-    let _guard = dispatch_lock()?;
-    let resolved = resolve_current_action(&action_key)?;
-    if resolved.public.source_app != RUN_MANAGER || !resolved.public.logs_available {
-        return Err("log source is unavailable".into());
-    }
-    let run_id = resolved
-        .run_id
-        .ok_or_else(|| "log source is unavailable".to_string())?;
-    if !devbox_launch::installed_targets(LOG_LENS_CAPABILITY)
-        .iter()
-        .any(|target| target.id == devbox_applink::LOG_SOURCE_TARGET_APP)
-    {
-        return Err("log lens is unavailable".into());
-    }
-    let payload = devbox_applink::run_log_source_payload(&run_id, stream)
-        .map_err(|_| "log source is unavailable".to_string())?;
-    let now = now_ms();
-    if now == 0 {
-        return Err("log source handoff is unavailable".into());
-    }
-    let store = handoff_store();
-    let publication = store
-        .create_with_publication(
-            CreateHandoff {
-                kind: devbox_applink::LOG_SOURCE_HANDOFF_KIND.into(),
-                source_app: PORT_MANAGER.into(),
-                target_app: Some(devbox_applink::LOG_SOURCE_TARGET_APP.into()),
-                payload,
-            },
-            now,
-        )
-        .map_err(|_| "log source handoff is unavailable".to_string())?;
-    let request = OpenRequest {
-        target: HandoffDescriptor {
-            id: publication.descriptor.id.clone(),
-            kind: publication.descriptor.kind.clone(),
-        }
-        .into(),
-        from: Some(PORT_MANAGER.into()),
-    };
-    match devbox_launch::launch_open(devbox_applink::LOG_SOURCE_TARGET_APP, &request) {
-        Ok(_) => Ok(LogLensDispatch {
-            handoff_id: publication.descriptor.id,
-        }),
-        Err(_) => {
-            cleanup_publication(&store, &publication)?;
-            Err("log lens launch failed".into())
-        }
-    }
-}
-
-fn dispatch_lock() -> Result<MutexGuard<'static, ()>, String> {
-    match LOG_DISPATCH_LOCK.get_or_init(|| Mutex::new(())).try_lock() {
-        Ok(guard) => Ok(guard),
-        Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
-        Err(TryLockError::WouldBlock) => Err("log source handoff is busy".into()),
-    }
-}
-
-fn cleanup_publication(
-    store: &HandoffStore,
-    publication: &HandoffPublication,
-) -> Result<(), String> {
-    match store.remove_pending(publication) {
-        Ok(()) | Err(HandoffError::Missing) => Ok(()),
-        Err(_) => Err("log source handoff cleanup failed".into()),
-    }
-}
-
-fn handoff_store() -> HandoffStore {
-    HandoffStore::new(devbox_applink::handoff_root_in(
-        &devbox_integration::common_root(),
-    ))
+    let _ = (action_key, stream);
+    Err("log lens is unavailable".into())
 }
 
 fn valid_action_key(value: &str) -> bool {

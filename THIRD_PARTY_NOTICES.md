@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `92ac9e058e0b6ae6c6b3d8a052f1b04a466d88ffda60b402afa959046a702a13`
+- Cargo.lock SHA-256: `b32015dda4aa284e331c379a14abba8d06c23cb4e57ad7e9d848baf9f3afa114`
 - pnpm-lock.yaml SHA-256: `093939c11df19878434e08c62f99592c6f905866544aed3ae653e7a8500f2168`
 
 ## Rust dependencies
@@ -658,29 +658,23 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | winapi-util | 0.1.11 | Unlicense OR MIT | https://github.com/BurntSushi/winapi-util | `sha256:c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22` |
 | winapi-x86_64-pc-windows-gnu | 0.4.0 | MIT/Apache-2.0 | https://github.com/retep998/winapi-rs | `sha256:712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f` |
 | window-vibrancy | 0.6.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri-plugin-vibrancy | `sha256:d9bec5a31f3f9362f2258fd0e9c9dd61a9ca432e7306cc78c444258f0dce9a9c` |
-| windows | 0.58.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6` |
 | windows | 0.61.3 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893` |
 | windows | 0.62.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580` |
 | windows-collections | 0.2.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8` |
 | windows-collections | 0.3.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610` |
-| windows-core | 0.58.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99` |
 | windows-core | 0.61.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3` |
 | windows-core | 0.62.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb` |
 | windows-future | 0.2.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e` |
 | windows-future | 0.3.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb` |
-| windows-implement | 0.58.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:2bbd5b46c938e506ecbce286b6628a02171d56153ba733b6c741fc627ec9579b` |
 | windows-implement | 0.60.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf` |
-| windows-interface | 0.58.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:053c4c462dc91d3b1504c6fe5a726dd15e216ba718e84a0e46a88fbe5ded3515` |
 | windows-interface | 0.59.3 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358` |
 | windows-link | 0.1.3 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a` |
 | windows-link | 0.2.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5` |
 | windows-numerics | 0.2.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1` |
 | windows-numerics | 0.3.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26` |
 | windows-registry | 0.6.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720` |
-| windows-result | 0.2.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:1d1043d8214f791817bab27572aaa8af63732e11bf84aa21a45a78d6c317ae0e` |
 | windows-result | 0.3.4 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6` |
 | windows-result | 0.4.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5` |
-| windows-strings | 0.1.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:4cd9b125c486025df0eabcb585e62173c6c9eddcec5d117d3b6e8c30e2ee4d10` |
 | windows-strings | 0.4.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57` |
 | windows-strings | 0.5.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091` |
 | windows-sys | 0.45.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | `sha256:75283be5efb2831d37ea142365f009c02ec203cd29a3ebecbc093d52315b66d0` |

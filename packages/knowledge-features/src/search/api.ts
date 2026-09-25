@@ -1,6 +1,5 @@
 import { componentInvoke, isProductHosted } from "../transport";
 const invoke = componentInvoke("knowledge.search");
-import catalogJson from "../../../../apps/legacy-v0.7-catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type {
   ContentResult,
@@ -31,15 +30,7 @@ export interface EverythingOpenTarget {
   displayName: string;
 }
 
-const MOCK_CATALOG_APPS = catalogJson.apps as Array<{
-  id: string;
-  displayName: string;
-  accepts: string[];
-}>;
-
-const MOCK_OPEN_TARGETS: EverythingOpenTarget[] = MOCK_CATALOG_APPS
-  .filter((app) => app.id !== "everything-plus" && app.accepts.includes("path"))
-  .map(({ id, displayName }) => ({ id, displayName }));
+const MOCK_OPEN_TARGETS: EverythingOpenTarget[] = [];
 
 const MOCK_FILES: FileEntry[] = [
   { id: 1, path: "C:\\projects\\devbox\\PLAN.md", name: "PLAN.md", ext: "md", size: 3555, modified_ts: 0 },

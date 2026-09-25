@@ -157,12 +157,8 @@ pub async fn send_digest_to_knowledge(
     input: DigestInput,
     regenerated_from: Option<String>,
 ) -> Result<SendKnowledgeDraftResult, String> {
-    send_with_delivery(state, input, regenerated_from, true, |request| {
-        devbox_launch::launch_open("knowledge-base", request)
-            .map(|_| ())
-            .map_err(|_| "Knowledge 앱을 실행할 수 없습니다".to_owned())
-    })
-    .await
+    let _ = (state, input, regenerated_from);
+    Err("Knowledge 앱을 실행할 수 없습니다".into())
 }
 
 /// The product supplies a native delivery callback for an opaque draft reference.
@@ -195,11 +191,7 @@ where
         // payload behind.  A launch race can still leave an expiring pending
         // item, which contains only the bounded summary and is retryable.
         draft_history::validate_regenerated_from(regenerated_from.as_deref())?;
-        if require_installation
-            && !devbox_launch::installed_targets("handoff:knowledge-draft/v1")
-                .iter()
-                .any(|target| target.id == "knowledge-base")
-        {
+        if require_installation {
             return Err("Knowledge 앱을 실행할 수 없습니다".into());
         }
         // Reuse the digest command's single-flight/cancellation boundary so

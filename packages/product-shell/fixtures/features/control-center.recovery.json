@@ -1,0 +1,7 @@
+{
+  "featureId": "control-center.recovery",
+  "owner": "control-center",
+  "route": "recovery",
+  "authority": "shell-read",
+  "availability": "foundation"
+}

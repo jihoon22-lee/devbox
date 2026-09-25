@@ -36,13 +36,7 @@ pub(crate) fn handle(
     _cancel: Option<Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
-        if matches!(
-            &call,
-            Call::ReadMigrationStatus {}
-                | Call::VerifyMigrationSources {}
-                | Call::ListMigrationBackups {}
-                | Call::VerifyMigrationBackup { .. }
-        ) {
+        if matches!(&call, Call::ReadMigrationStatus {}) {
             static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
                 std::sync::OnceLock::new();
             let permit = READERS
@@ -52,14 +46,7 @@ pub(crate) fn handle(
                 .map_err(|_| "migration_busy")?;
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                match call {
-                    Call::VerifyMigrationSources {} => crate::migration::suite_sources(&app),
-                    Call::ListMigrationBackups {} => crate::migration::suite_backups(&app, None),
-                    Call::VerifyMigrationBackup { id } => {
-                        crate::migration::suite_backups(&app, Some(&id))
-                    }
-                    _ => crate::migration::suite_status(&app),
-                }
+                status_summary()
             })
             .await
             .map_err(|_| "migration_unavailable")?;
@@ -70,7 +57,7 @@ pub(crate) fn handle(
             Call::ReadOperations {} | Call::ReviewOperation { .. }
         ) {
             return crate::suite::project_operations(&app, &call, {
-                let mut rows = crate::migration::operation_rows(&app)?;
+                let mut rows = Vec::new();
                 rows.extend(crate::lifecycle::operation_rows(&app)?);
                 rows
             });
@@ -91,4 +78,27 @@ pub(crate) fn handle(
             _ => Err("api_source_unavailable"),
         }
     })
+}
+
+pub(crate) fn status_summary() -> Result<Value, &'static str> {
+    let summary = product_contract::migration_status::Summary::new(
+        "api-studio",
+        env!("CARGO_PKG_VERSION"),
+        false,
+        true,
+        false,
+        b"api-studio-store-ready",
+    )?;
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
+}
+#[cfg(test)]
+mod store_readiness_tests {
+    #[test]
+    fn api_studio_reports_a_ready_store_without_imports() {
+        let value = super::status_summary().unwrap();
+        assert_eq!(value["setupSelected"], true);
+        assert_eq!(value["reviewRequired"], false);
+        assert_eq!(value["busy"], false);
+        assert!(value.get("mappings").is_none_or(serde_json::Value::is_null));
+    }
 }
