@@ -5,6 +5,7 @@ import argparse, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCOPES: dict[str, list[str]] = {
+    "shared": ["crates", "Cargo.toml", ".github/scripts", ".github/workflows"],
     "workspace": ["apps/devbox-workspace", "packages/workspace-features", "crates/runtime-engine"],
     "knowledge-api-studio": ["apps/devbox-knowledge", "apps/devbox-api-studio", "packages/knowledge-features", "packages/api-studio-features", "crates/http-client-engine"],
     "control-center": [
@@ -14,6 +15,10 @@ SCOPES: dict[str, list[str]] = {
     ],
 }
 PATTERNS = [
+    r"\bdevbox_launch\b", r"\bdevbox-launch\b", r"crates/launch\b", r"\bdata[-_]migration\b",
+    r"\bVerifyMigrationSources\b", r"\bListMigrationBackups\b", r"\bVerifyMigrationBackup\b", r"\bmigration_source\b",
+    r"v0\.8-feature-parity", r"v0\.8-data-inventory",
+
     r"\blegacy_(inventory|snapshot|workspace|recovery|references|imports)\b",
     r"\b(migration_ledger|(?:window|terminal|recovery)_import|settings_import|runtime_import|prepare_legacy_snapshot|resolve_legacy_reference|MigrationOnly|legacySources|imported_log_descriptor)\b",
     r"\bpreview_(session|profile|template|lsp_config)_import\b",
@@ -27,7 +32,7 @@ PATTERNS = [
     r"\blegacy_installations\b", r"\bcleanup_legacy_portable\b", r"\binspect_data_databases\b",
     r"\binspect_local_quality\b", r"com\.devbox\.devboxmanager",
 ]
-SUFFIXES = {".rs", ".ts", ".tsx", ".json", ".toml", ".mjs", ".ps1", ".py"}
+SUFFIXES = {".rs", ".ts", ".tsx", ".json", ".toml", ".mjs", ".ps1", ".py", ".yml", ".yaml"}
 
 def scan(paths: list[str]) -> list[str]:
     compiled = [re.compile(pattern) for pattern in PATTERNS]
@@ -35,6 +40,8 @@ def scan(paths: list[str]) -> list[str]:
     for relative in paths:
         base = ROOT / relative
         for path in ([base] if base.is_file() else base.rglob("*")):
+            if path.name in {"check-no-legacy.py", "test-check-no-legacy.py"}:
+                continue
             # This module only decodes/validates retained v0.8.1 journal DTOs.
             # It has no filesystem acquisition, launcher or import entrypoints.
             if path.relative_to(ROOT).as_posix() == "apps/devbox-control-center/src-tauri/src/core/owner_history.rs":

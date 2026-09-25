@@ -74,7 +74,7 @@ jobs:
           python3 .github/scripts/check-dependencies.py check
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-check-no-legacy.py
-          python3 .github/scripts/check-no-legacy.py --scope control-center && python3 .github/scripts/check-no-legacy.py --scope knowledge-api-studio && python3 .github/scripts/check-no-legacy.py --scope workspace
+          python3 .github/scripts/check-no-legacy.py --scope all
           python3 .github/scripts/test-build-manifest.py
           python3 .github/scripts/test-build-suite-installer.py
           python3 .github/scripts/test-suite-release-contract.py
