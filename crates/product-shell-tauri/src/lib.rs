@@ -34,6 +34,7 @@ struct Description {
     features: Vec<Feature>,
     context: Option<ProjectContext>,
     delivery_state: &'static str,
+    agent: &'static str,
 }
 
 fn local_main(window: &WebviewWindow) -> bool {
@@ -47,6 +48,18 @@ fn local_main(window: &WebviewWindow) -> bool {
                 && matches!(url.port(), Some(1430..=1433));
             packaged || dev
         })
+}
+
+#[tauri::command]
+fn agent_status(window: WebviewWindow) -> Result<&'static str, &'static str> {
+    if !local_main(&window) {
+        return Err("unauthorized");
+    }
+    Ok(window
+        .app_handle()
+        .try_state::<agent_client::AgentClient>()
+        .map(|client| client.status())
+        .unwrap_or("unsupported"))
 }
 
 #[tauri::command]
@@ -85,6 +98,11 @@ async fn describe(
         Err(_) => "unavailable",
     };
     Ok(Description {
+        agent: window
+            .app_handle()
+            .try_state::<agent_client::AgentClient>()
+            .map(|client| client.status())
+            .unwrap_or("unsupported"),
         delivery_state,
         handshake,
         context,
@@ -322,7 +340,11 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
         }))
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("product-shell")
-                .invoke_handler(tauri::generate_handler![describe, route_status])
+                .invoke_handler(tauri::generate_handler![
+                    describe,
+                    route_status,
+                    agent_status
+                ])
                 .build(),
         )
         .setup(move |app| {
@@ -350,6 +372,17 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 version: app.package_info().version.to_string(),
             });
             app.manage(ActiveRequests::default());
+            if let Some(client) = app.try_state::<agent_client::AgentClient>() {
+                let mut changes = client.subscribe();
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    while changes.changed().await.is_ok() {
+                        let status = *changes.borrow_and_update();
+                        let _ = app.emit("product-shell://agent-status", status);
+                    }
+                });
+            }
             operation_log::initialize(app, product);
             window_state_tauri::restore_main_window(app.handle());
             Ok(())

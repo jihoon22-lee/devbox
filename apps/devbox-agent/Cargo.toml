@@ -12,6 +12,7 @@ tauri-build = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-single-instance = "2"
 product-shell-tauri = { path = "../../crates/product-shell-tauri" }
+agent-client = { path = "../../crates/agent-client" }
 agent-protocol = { path = "../../crates/agent-protocol" }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,0 +1,14 @@
+[package]
+name = "agent-client"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+agent-protocol = { path = "../agent-protocol" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

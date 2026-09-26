@@ -10,3 +10,6 @@ pub(crate) mod connection_preference;
 
 #[cfg(windows)]
 pub mod agent_peer;
+
+#[cfg(windows)]
+pub(crate) mod agent_transport;

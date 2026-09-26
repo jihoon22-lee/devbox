@@ -17,6 +17,7 @@ export interface Handshake {
   sessionId: string;
 }
 export interface Description {
+  agent?: import("./AgentStatus").AgentState;
   handshake: Handshake;
   product: (typeof catalog.products)[number];
   features: Feature[];

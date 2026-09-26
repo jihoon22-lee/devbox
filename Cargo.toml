@@ -12,6 +12,7 @@ members = [
     "crates/product-contract",
     "crates/product-ipc",
     "crates/agent-protocol",
+    "crates/agent-client",
     "crates/api-protocols",
     "crates/webhook-core",
     "crates/transforms-core",

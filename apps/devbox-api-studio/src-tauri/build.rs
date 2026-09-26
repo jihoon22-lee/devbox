@@ -9,7 +9,7 @@ fn main() {
             )
             .plugin(
                 "product-shell",
-                tauri_build::InlinedPlugin::new().commands(&["describe", "route_status"]),
+                tauri_build::InlinedPlugin::new().commands(&["describe", "route_status", "agent_status"]),
             )
             .plugin(
                 "api-studio",

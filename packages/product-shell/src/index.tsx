@@ -1,3 +1,4 @@
+import AgentStatus from "./AgentStatus";
 import { UndoProvider } from "./undo";
 import { currentDescription, publishDescription, invalidateDescription } from "./api";
 import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
@@ -134,6 +135,7 @@ function ReadyShell({
             <button aria-expanded={operationsOpen} onClick={() => setOperationsOpen((value) => !value)}>
               작업 상태
             </button>
+            <AgentStatus initial={description.agent} native={nativeMode} />
           </div>
           {nativeMode && (
             <Suspense fallback={null}>

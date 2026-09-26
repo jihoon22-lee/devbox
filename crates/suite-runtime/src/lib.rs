@@ -1062,6 +1062,10 @@ pub fn plugin(
     tauri::plugin::Builder::new("suite")
         .invoke_handler(tauri::generate_handler![connection])
         .setup(move |app, _| {
+            #[cfg(windows)]
+            app.manage(platform::agent_transport::create(product, version));
+            #[cfg(not(windows))]
+            app.manage(agent_client::AgentClient::unsupported());
             app.manage(Suite {
                 product,
                 version,
