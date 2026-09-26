@@ -330,9 +330,7 @@ use product_contract::Provenance;
 use serde_json::{json, Value};
 use std::{sync::atomic::Ordering, time::Duration};
 use tauri::{Manager, WebviewWindow};
-pub(crate) fn input<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, &'static str> {
-    serde_json::from_value(value).map_err(|_| "invalid_request")
-}
+
 pub(crate) fn empty(value: &Value) -> Result<(), &'static str> {
     if value.as_object().is_some_and(|object| object.is_empty()) {
         Ok(())

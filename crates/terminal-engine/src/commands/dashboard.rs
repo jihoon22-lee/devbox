@@ -23,7 +23,7 @@ const SAFE_DOCKER_ERROR: &str = "Docker 상태를 안전하게 처리하지 못�
 /// Return one complete, single-flight dashboard snapshot. Resource data, Docker state and
 /// terminal counts are collected by the same producer path that writes the read-only runtime
 /// integration snapshot, so the UI never mixes generations.
-#[tauri::command]
+
 pub async fn dashboard_snapshot(
     state: State<'_, Arc<SessionState>>,
 ) -> Result<crate::core::runtime_snapshot::DashboardSnapshot, String> {
@@ -34,7 +34,7 @@ const DOCKER_PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{
 
 /// WSL 배포판 목록을 조회한다. distro 모델은 `DistroInfo` 하나로 통일됐다
 /// (wsl-dashboard의 `parse_wsl_list` 채택. 터미널 UI는 `.name`만 쓴다).
-#[tauri::command]
+
 pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<DistroInfo>, String> {
     let output = run_wsl(&["-l", "-v"], None).await?;
     let distros = parse_wsl_list_checked(&output).map_err(|_| SAFE_WSL_ERROR.to_owned())?;
@@ -43,7 +43,7 @@ pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<Dis
 }
 
 /// Docker 컨테이너 목록을 조회한다 (기본 distro에서 docker CLI 실행).
-#[tauri::command]
+
 pub async fn docker_ps(
     state: State<'_, Arc<SessionState>>,
     distro: String,
@@ -73,7 +73,7 @@ pub async fn docker_ps(
 }
 
 /// Docker 컨테이너를 start/stop/restart 한다.
-#[tauri::command]
+
 pub async fn docker_action(
     distro: String,
     container_id: String,
@@ -288,91 +288,6 @@ async fn drain_bounded<R: AsyncRead + Unpin>(mut reader: R, max_bytes: usize) ->
 async fn terminate_child(child: &mut Child) {
     let _ = child.kill().await;
     let _ = child.wait().await;
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_distros(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = list_distros(app.try_state().ok_or("terminal_state_unavailable")?).await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_dashboard_snapshot(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = dashboard_snapshot(app.try_state().ok_or("terminal_state_unavailable")?).await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_docker_ps(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = docker_ps(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.distro,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_docker_action(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-        container_id: String,
-        action: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    docker_action(input.distro, input.container_id, input.action).await?;
-    Ok(serde_json::Value::Null)
 }
 
 #[cfg(test)]

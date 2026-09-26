@@ -126,49 +126,7 @@ impl RuntimeLogLease for OwnedLog {
             .map_err(|_| CoreError::StaleOperation)
     }
 }
-pub(crate) fn component(name: &str) -> bool {
-    matches!(
-        name,
-        "workspace.runtime"
-            | "workspace.processes"
-            | "workspace.process-actions"
-            | "workspace.logs"
-    )
-}
-pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
-    if component == "workspace.logs" && route == "logs" && method == "open_webhook_log" {
-        return true;
-    }
-    match component {
-        "workspace.runtime" => {
-            route == "tasks"
-                && (method == "workspace_task_source"
-                    || runtime_engine::component::COMMANDS.contains(&method))
-                && !runtime_engine::component::legacy_control_method(method)
-        }
-        "workspace.processes" => {
-            route == "runtime"
-                && method != "kill_listener"
-                && ports_engine::component::COMMANDS.contains(&method)
-        }
-        "workspace.process-actions" => route == "runtime" && method == "kill_listener",
-        "workspace.logs" => route == "logs" && logs_engine::component::COMMANDS.contains(&method),
-        _ => false,
-    }
-}
-pub(crate) fn stops(method: &str) -> bool {
-    matches!(
-        method,
-        "runtime_import_cancel"
-            | "stop_service"
-            | "stop_active_run"
-            | "stop_workspace_task_operation"
-            | "cancel_read"
-            | "quit_app"
-            | "cancel_workspace_task_import"
-            | "cancel_project_import"
-    )
-}
+
 fn args<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
     if !value.is_object() {
         return Err("invalid_request");
@@ -668,6 +626,7 @@ pub(crate) async fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::allow_table::permits as allowed;
     #[test]
     fn execution_secret_authority_and_external_process_action_never_share_a_role() {
         assert!(allowed(
@@ -676,14 +635,22 @@ mod tests {
             "kill_listener"
         ));
         assert!(!allowed("workspace.processes", "runtime", "kill_listener"));
-        for method in runtime_engine::component::COMMANDS {
-            assert_eq!(
-                allowed("workspace.runtime", "tasks", method),
-                !runtime_engine::component::legacy_control_method(method)
-            );
+        for method in runtime_engine::api::METHODS {
+            assert_eq!(allowed("workspace.runtime", "tasks", method), true);
             assert!(!allowed("workspace.runtime", "runtime", method));
             assert!(!allowed("workspace.process-actions", "runtime", method));
             assert!(!allowed("workspace.logs", "tasks", method));
+        }
+        for method in [
+            "run_job_now",
+            "stop_active_run",
+            "start_service",
+            "stop_service",
+            "restart_service",
+            "run_workspace_task_operation",
+            "stop_workspace_task_operation",
+        ] {
+            assert!(!allowed("workspace.runtime", "tasks", method));
         }
         for (role, route) in [
             ("workspace.logs", "logs"),

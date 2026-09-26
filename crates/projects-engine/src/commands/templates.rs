@@ -240,7 +240,6 @@ fn ensure_template_revision(current: &str, expected: &str) -> Result<(), String>
     Ok(())
 }
 
-#[tauri::command]
 pub fn list_profile_templates(app: AppHandle) -> Result<ProfileTemplateSnapshot, String> {
     let document = load_template_document(&app)?;
     Ok(ProfileTemplateSnapshot {
@@ -249,7 +248,6 @@ pub fn list_profile_templates(app: AppHandle) -> Result<ProfileTemplateSnapshot,
     })
 }
 
-#[tauri::command]
 pub fn create_profile_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
@@ -276,7 +274,6 @@ pub fn create_profile_template(
     Ok(created)
 }
 
-#[tauri::command]
 pub fn update_profile_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
@@ -293,7 +290,6 @@ pub fn update_profile_template(
     save_template_document(&app, &document, &store)
 }
 
-#[tauri::command]
 pub fn delete_profile_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
@@ -316,7 +312,7 @@ pub fn delete_profile_template(
 /// Create a concrete profile using a template's defaults.  The template is
 /// looked up and validated inside the same profile writer lock as the profile
 /// store, and the incoming environment is ignored by the template contract.
-#[tauri::command]
+
 pub fn create_profile_from_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
@@ -362,107 +358,6 @@ pub fn create_profile_from_template(
         .ok_or_else(|| TEMPLATE_WRITE_ERROR.to_string())?;
     save_store_document(&app, &document, &store)?;
     Ok(created)
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_list_profile_templates(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_profile_templates(_component_app.clone())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_create_profile_template(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        template: ProfileTemplate,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = create_profile_template(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.template,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_update_profile_template(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: UpdateProfileTemplateRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    update_profile_template(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.request,
-    )?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_delete_profile_template(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: DeleteProfileTemplateRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    delete_profile_template(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.request,
-    )?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_create_profile_from_template(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: CreateProfileFromTemplateRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = create_profile_from_template(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.request,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

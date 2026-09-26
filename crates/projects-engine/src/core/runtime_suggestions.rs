@@ -115,7 +115,7 @@ struct PortMapping {
 
 /// Tauri command entry point. Missing and corrupt producers are normal,
 /// distinguishable read states rather than raw IPC failures.
-#[tauri::command]
+
 pub fn wsl_runtime_suggestions() -> RuntimeSuggestions {
     read_runtime_suggestions_in(&crate::component::integration_root())
 }
@@ -345,19 +345,6 @@ fn looks_sensitive(value: &str) -> bool {
         || lower.contains("credential")
         || lower.contains("api_key")
         || lower.contains("apikey")
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_wsl_runtime_suggestions(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = wsl_runtime_suggestions();
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

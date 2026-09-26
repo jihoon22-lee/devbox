@@ -81,40 +81,6 @@ pub struct Invocation<'a> {
     pub deadline: u64,
 }
 
-pub fn allowed(component: &str, method: &str) -> bool {
-    match component {
-        "workspace.files" => matches!(
-            method,
-            "pick_files"
-                | "open_file"
-                | "reconnect_wsl_files"
-                | "sync_editor_document"
-                | "send_editor_selection"
-                | "save_file"
-                | "rename_file_action"
-                | "delete_file_action"
-                | "reveal_file_action"
-                | "validate_encoding"
-                | "read_clipboard_text"
-                | "list_workspace_files"
-                | "canonicalize_workspace"
-                | "workspace_capabilities"
-                | "render_preview"
-                | "load_session"
-                | "save_session"
-                | "load_recovery"
-                | "save_recovery"
-                | "discard_recovery"
-                | "prepare_recovery"
-                | "apply_recovery_preview"
-                | "cancel_recovery_preview"
-                | "watch_file"
-                | "unwatch_file"
-                | "take_pending_open"
-        ),
-        _ => false,
-    }
-}
 fn input<T: DeserializeOwned>(value: Value) -> Result<T> {
     serde_json::from_value(value).map_err(|_| "invalid_request")
 }
@@ -1285,6 +1251,9 @@ fn client_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn allowed(component: &str, method: &str) -> bool {
+        component == "workspace.files" && crate::ipc::files::routes_for(method).contains(&"files")
+    }
     use std::fs;
     #[test]
     fn session_revisions_preserve_imports_against_old_autosave_and_other_views() {

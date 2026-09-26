@@ -256,10 +256,13 @@ impl Fixture {
         let access =
             crate::dependencies_host::access(self.host.clone(), self.context.clone(), deadline, ())
                 .unwrap();
-        tauri::async_runtime::block_on(repositories_engine::component::dispatch_dependencies(
+        tauri::async_runtime::block_on(repositories_engine::api::dispatch_dependencies(
             access,
-            "dependency_inventory",
-            json!({"request":{"path":self.root}}),
+            repositories_engine::api::DependenciesCall::DependencyInventory {
+                request: repositories_engine::commands::DependencyInventoryRequest {
+                    path: self.root.clone(),
+                },
+            },
         ))
         .unwrap()
     }

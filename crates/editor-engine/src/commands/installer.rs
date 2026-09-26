@@ -13,12 +13,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
-#[tauri::command]
 pub fn lsp_catalog() -> Result<Vec<ServerManifest>, String> {
     Ok(initial_catalog())
 }
 
-#[tauri::command]
 pub fn lsp_installed(
     installer: State<'_, Arc<ManagedInstaller>>,
 ) -> Result<Vec<ManagedInstallStatus>, String> {
@@ -35,14 +33,12 @@ pub fn public_installed_status(
         .map(|statuses| statuses.into_iter().map(public_install_status).collect())
 }
 
-#[tauri::command]
 pub fn lsp_recover_installed(installer: State<'_, Arc<ManagedInstaller>>) -> Result<(), String> {
     installer
         .recover_installed_index()
         .map_err(|_| "관리형 서버 설치 목록을 복구하지 못했습니다".into())
 }
 
-#[tauri::command]
 pub async fn lsp_install(
     installer: State<'_, Arc<ManagedInstaller>>,
     manifest_id: String,
@@ -60,7 +56,7 @@ pub async fn lsp_install(
 /// paths. The installer resolves the exact catalog manifest and reviewed Node
 /// lock, performs all digest/archive checks, and never reflects a selected
 /// path or parser detail across IPC.
-#[tauri::command]
+
 pub async fn lsp_import_archive(
     installer: State<'_, Arc<ManagedInstaller>>,
     manifest_id: String,
@@ -79,7 +75,6 @@ pub async fn lsp_import_archive(
     .map_err(public_install_error)
 }
 
-#[tauri::command]
 pub async fn lsp_uninstall(
     manager: State<'_, Arc<LspManager>>,
     installer: State<'_, Arc<ManagedInstaller>>,
@@ -111,138 +106,6 @@ fn public_install_error(error: InstallError) -> String {
         InstallError::IndexCorrupt => "관리형 서버 설치 목록 복구가 필요합니다".into(),
         _ => "관리형 서버 작업을 완료하지 못했습니다".into(),
     }
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_lsp_catalog(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = lsp_catalog()?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_lsp_installed(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = lsp_installed(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_lsp_recover_installed(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    lsp_recover_installed(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_lsp_install(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        manifest_id: String,
-        version: String,
-        platform: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    lsp_install(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.manifest_id,
-        input.version,
-        input.platform,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_lsp_import_archive(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        manifest_id: String,
-        version: String,
-        platform: String,
-        archive_paths: Vec<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    lsp_import_archive(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.manifest_id,
-        input.version,
-        input.platform,
-        input.archive_paths,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_lsp_uninstall(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        manifest_id: String,
-        version: String,
-        platform: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    lsp_uninstall(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.manifest_id,
-        input.version,
-        input.platform,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

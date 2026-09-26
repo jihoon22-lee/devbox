@@ -44,7 +44,6 @@ pub struct TaskControlDispatch {
     pub handoff_id: String,
 }
 
-#[tauri::command]
 pub fn dispatch_workspace_task_control(
     task_id: String,
     action: TaskControlAction,
@@ -54,7 +53,6 @@ pub fn dispatch_workspace_task_control(
     Err("task-control-run-manager-unavailable".into())
 }
 
-#[tauri::command]
 pub fn list_workspace_task_controls() -> Result<Vec<WorkspaceTaskControlItem>, String> {
     let envelope = devbox_integration::read_named_view_snapshot_in(
         &crate::component::integration_root(),
@@ -100,7 +98,6 @@ pub fn list_workspace_task_controls() -> Result<Vec<WorkspaceTaskControlItem>, S
     Ok(tasks)
 }
 
-#[tauri::command]
 pub fn get_workspace_task_control_receipt(
     request_id: String,
 ) -> Result<Option<TaskControlReceipt>, String> {
@@ -183,52 +180,6 @@ fn valid_receipt(receipt: &TaskControlReceipt) -> bool {
         "started" | "stopped" => operation_valid && receipt.failure_code.is_none(),
         _ => false,
     }
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_dispatch_workspace_task_control(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        task_id: String,
-        action: TaskControlAction,
-        expected_revision: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value =
-        dispatch_workspace_task_control(input.task_id, input.action, input.expected_revision)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_list_workspace_task_controls(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_workspace_task_controls()?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_get_workspace_task_control_receipt(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = get_workspace_task_control_receipt(input.request_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

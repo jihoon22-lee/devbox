@@ -304,7 +304,6 @@ async fn inspect_one(
     Ok(integration_info(shell, &snapshot, default_shell))
 }
 
-#[tauri::command]
 pub async fn inspect_shell_integration(distro: String) -> Result<ShellIntegrationReport, String> {
     inspect_bound(&Execution { lease: None }, distro).await
 }
@@ -371,7 +370,6 @@ async fn write_temp(
     Err(SAFE_ERROR.into())
 }
 
-#[tauri::command]
 pub async fn update_shell_integration(
     state: State<'_, ShellIntegrationState>,
     distro: String,
@@ -489,57 +487,6 @@ async fn update_bound(
         backup_file,
         integration: integration_info(shell, &updated, default_shell.as_deref()),
     })
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_inspect_shell_integration(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = inspect_shell_integration(input.distro).await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_update_shell_integration(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-        shell: ShellKind,
-        action: ShellIntegrationAction,
-        expected_revision: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = update_shell_integration(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.distro,
-        input.shell,
-        input.action,
-        input.expected_revision,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }
 
 /// The product supplies a retained native running-distro/executable binding.

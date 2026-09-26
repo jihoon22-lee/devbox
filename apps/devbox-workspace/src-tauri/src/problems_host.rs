@@ -508,10 +508,11 @@ pub(crate) fn manage(
             if !crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id) {
                 return Err("problem_stale");
             }
-            let value = tauri::async_runtime::block_on(runtime_engine::component::dispatch(
+            let value = tauri::async_runtime::block_on(runtime_engine::api::dispatch(
                 app,
-                "list_workspace_task_diagnostics",
-                json!({"runId":run_id}),
+                runtime_engine::api::RuntimeCall::ListWorkspaceTaskDiagnostics {
+                    run_id: run_id.clone(),
+                },
             ))
             .map_err(|_| "problem_log_expired")?;
             if crate::definitions::digest(
@@ -567,13 +568,13 @@ pub(crate) fn manage(
                 return Err("problem_stale");
             }
             if offset.is_some() {
-                let diagnostics =
-                    tauri::async_runtime::block_on(runtime_engine::component::dispatch(
-                        app,
-                        "list_workspace_task_diagnostics",
-                        json!({"runId":run_id}),
-                    ))
-                    .map_err(|_| "problem_log_expired")?;
+                let diagnostics = tauri::async_runtime::block_on(runtime_engine::api::dispatch(
+                    app,
+                    runtime_engine::api::RuntimeCall::ListWorkspaceTaskDiagnostics {
+                        run_id: run_id.clone(),
+                    },
+                ))
+                .map_err(|_| "problem_log_expired")?;
                 if crate::definitions::digest(
                     &serde_json::to_vec(&diagnostics).map_err(|_| "problem_invalid")?,
                 ) != input.revision

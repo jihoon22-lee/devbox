@@ -64,133 +64,6 @@ pub fn offer_product_open(
         .map_err(|_| "component_delivery_unavailable".into())
 }
 
-pub const COMMANDS: &[&str] = &[
-    "take_pending_open",
-    "scan_root",
-    "prepare_inbound_repository",
-    "repo_status",
-    "worktrees",
-    "create_worktree",
-    "worktree_clean",
-    "repo_cleanup_preview",
-    "repo_cleanup",
-    "repo_cleanup_cancel",
-    "repo_preflight",
-    "repo_history",
-    "repo_commit_detail",
-    "repo_diff",
-    "dependency_inventory",
-    "dependency_enrichment_preview",
-    "dependency_enrichment_execute",
-    "repo_changes",
-    "repo_stage",
-    "repo_unstage",
-    "repo_commit_preview",
-    "repo_commit",
-    "repo_local_cancel",
-    "repo_remote_status",
-    "repo_fetch",
-    "repo_pull",
-    "repo_push",
-    "repo_remote_cancel",
-    "open_targets",
-    "open_in",
-    "repository_copy_path",
-    "open_repository_folder",
-];
-
-#[cfg(feature = "desktop")]
-pub async fn dispatch(
-    app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    if is_product() && matches!(method, "open_targets" | "open_in") {
-        return Err("provider_unavailable".into());
-    }
-    if SOURCE_COMMANDS.contains(&method) {
-        return dispatch_source_method(method, args).await;
-    }
-    match method {
-        "take_pending_open" => crate::applink::__component_take_pending_open(app, args).await,
-        "scan_root" => crate::commands::__component_scan_root(args).await,
-        "prepare_inbound_repository" => {
-            crate::commands::__component_prepare_inbound_repository(args).await
-        }
-        "dependency_inventory" => crate::commands::__component_dependency_inventory(args).await,
-        "dependency_enrichment_preview" => {
-            crate::commands::dependency_enrichment::__component_dependency_enrichment_preview(args)
-                .await
-        }
-        "dependency_enrichment_execute" => {
-            crate::commands::dependency_enrichment::__component_dependency_enrichment_execute(args)
-                .await
-        }
-        "open_targets" => crate::commands::__component_open_targets(args).await,
-        "open_in" => crate::commands::__component_open_in(args).await,
-        "repository_copy_path" => crate::commands::__component_repository_copy_path(args).await,
-        "open_repository_folder" => {
-            crate::commands::__component_open_repository_folder(app, args).await
-        }
-        _ => Err("component_method_invalid".into()),
-    }
-}
-
-async fn dispatch_source_method(
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    match method {
-        "create_worktree" => crate::commands::__component_create_worktree(args).await,
-        "repo_status" => crate::commands::__component_repo_status(args).await,
-        "worktrees" => crate::commands::__component_worktrees(args).await,
-        "worktree_clean" => crate::commands::__component_worktree_clean(args).await,
-        "repo_preflight" => crate::commands::__component_repo_preflight(args).await,
-        "repo_history" => crate::commands::__component_repo_history(args).await,
-        "repo_commit_detail" => crate::commands::__component_repo_commit_detail(args).await,
-        "repo_diff" => crate::commands::__component_repo_diff(args).await,
-        "repo_changes" => crate::commands::__component_repo_changes(args).await,
-        "repo_stage" => crate::commands::__component_repo_stage(args).await,
-        "repo_unstage" => crate::commands::__component_repo_unstage(args).await,
-        "repo_commit_preview" => crate::commands::__component_repo_commit_preview(args).await,
-        "repo_commit" => crate::commands::__component_repo_commit(args).await,
-        "repo_local_cancel" => crate::commands::__component_repo_local_cancel(args).await,
-        "repo_remote_status" => crate::commands::__component_repo_remote_status(args).await,
-        "repo_fetch" => crate::commands::__component_repo_fetch(args).await,
-        "repo_pull" => crate::commands::__component_repo_pull(args).await,
-        "repo_push" => crate::commands::__component_repo_push(args).await,
-        "repo_remote_cancel" => crate::commands::__component_repo_remote_cancel(args).await,
-        "repo_cleanup_preview" => crate::commands::__component_repo_cleanup_preview(args).await,
-        "repo_cleanup" => crate::commands::__component_repo_cleanup(args).await,
-        "repo_cleanup_cancel" => crate::commands::__component_repo_cleanup_cancel(args).await,
-        _ => Err("component_method_invalid".into()),
-    }
-}
-
-pub const SOURCE_COMMANDS: &[&str] = &[
-    "create_worktree",
-    "repo_status",
-    "worktrees",
-    "worktree_clean",
-    "repo_preflight",
-    "repo_history",
-    "repo_commit_detail",
-    "repo_diff",
-    "repo_changes",
-    "repo_stage",
-    "repo_unstage",
-    "repo_commit_preview",
-    "repo_commit",
-    "repo_local_cancel",
-    "repo_remote_status",
-    "repo_fetch",
-    "repo_pull",
-    "repo_push",
-    "repo_remote_cancel",
-    "repo_cleanup_preview",
-    "repo_cleanup",
-    "repo_cleanup_cancel",
-];
 pub fn source_cancel(method: &str) -> bool {
     matches!(
         method,
@@ -308,29 +181,6 @@ pub async fn dispatch_source_native(
     dispatch_source_typed_native(access, call).await
 }
 
-/// Desktop startup and its immutable generation remain mandatory on Windows.
-#[cfg(feature = "desktop")]
-pub async fn dispatch_source(
-    _app: &tauri::AppHandle,
-    access: SourceAccess,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    if !is_product() {
-        return Err("component_method_invalid".into());
-    }
-    dispatch_source_native(access, method, args).await
-}
-#[cfg(feature = "desktop")]
-pub async fn dispatch_source_cancel(
-    _app: &tauri::AppHandle,
-    key: &str,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    dispatch_source_cancel_native(key, method, args).await
-}
-
 /// Dependencies accept only a native-created project capability. This adapter
 /// never resolves a renderer path or invokes Git to admit a product request.
 #[derive(Clone)]
@@ -416,7 +266,7 @@ impl DependencyAccess {
         self.verify()?;
         Ok(report)
     }
-    #[cfg(any(feature = "desktop", test))]
+    #[cfg(test)]
     pub(crate) fn legacy(path: &str) -> Result<Self, String> {
         crate::commands::legacy_dependency_access(path)
     }
@@ -445,16 +295,6 @@ impl DependencyAccess {
     pub(crate) fn verify(&self) -> Result<(), String> {
         (self.verify)()
     }
-}
-
-pub async fn dispatch_dependencies(
-    access: DependencyAccess,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
-        .map_err(|_| "component_args_invalid")?;
-    crate::api::dispatch_dependencies(access, call).await
 }
 
 /// Only fixed issue codes cross into the product's provenance-checked response.

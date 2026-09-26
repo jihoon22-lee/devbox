@@ -204,7 +204,7 @@ pub fn list_workspace_files_guarded(
 /// The limit is applied by `collect_limited` while walking, never after a full
 /// tree has been materialized in the frontend.
 #[cfg(feature = "desktop")]
-#[tauri::command]
+
 pub async fn list_workspace_files(path: String) -> Result<WorkspaceFiles, String> {
     tauri::async_runtime::spawn_blocking(move || list_workspace_files_blocking(&path))
         .await
@@ -267,7 +267,7 @@ fn capabilities_for_path(path: &Path) -> WorkspaceCapabilities {
 /// for session restoration, preview boundaries, and subsequent Quick Open
 /// snapshots.
 #[cfg(feature = "desktop")]
-#[tauri::command]
+
 pub async fn canonicalize_workspace(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         canonical_workspace(Path::new(&path)).map(|path| path.to_string_lossy().into_owned())
@@ -279,61 +279,13 @@ pub async fn canonicalize_workspace(path: String) -> Result<String, String> {
 /// Returns the canonical workspace path and the independently supported edit,
 /// watcher, and host-LSP capabilities for that path.
 #[cfg(feature = "desktop")]
-#[tauri::command]
+
 pub async fn workspace_capabilities(path: String) -> Result<WorkspaceCapabilities, String> {
     tauri::async_runtime::spawn_blocking(move || {
         canonical_workspace(Path::new(&path)).map(|path| capabilities_for_path(&path))
     })
     .await
     .map_err(|error| format!("작업 폴더 확인 작업이 중단되었습니다: {error}"))?
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_workspace_files(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_workspace_files(input.path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_canonicalize_workspace(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = canonicalize_workspace(input.path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_workspace_capabilities(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = workspace_capabilities(input.path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

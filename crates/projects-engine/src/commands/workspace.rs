@@ -317,14 +317,12 @@ pub fn profile_store_state() -> Arc<ProfileStoreState> {
     })
 }
 
-#[tauri::command]
 pub fn list_profiles(app: AppHandle) -> Result<Vec<ProjectProfile>, String> {
     let store = load_store(&app)?;
     crate::integration::publish_profiles_best_effort(&store);
     Ok(store.profiles)
 }
 
-#[tauri::command]
 pub fn create_profile(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
@@ -354,7 +352,6 @@ pub fn create_profile(
     Ok(created)
 }
 
-#[tauri::command]
 pub fn update_profile(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,
@@ -372,7 +369,6 @@ pub fn update_profile(
     Ok(())
 }
 
-#[tauri::command]
 pub fn delete_profile(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
@@ -406,7 +402,7 @@ pub fn delete_profile(
 }
 
 /// wsl-desktop의 gitStatus 이관 (§3.1, §15.2). 프로젝트 경로들의 git 상태.
-#[tauri::command]
+
 pub async fn git_status(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     projects: Vec<String>,
@@ -829,7 +825,7 @@ fn port_open_with_control(
 }
 
 /// read-only project health. run-manager 서비스는 integration snapshot(§10.1)으로 읽는다.
-#[tauri::command]
+
 pub async fn project_health(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
@@ -858,7 +854,7 @@ pub async fn project_health(
 /// Cancel a health request only when the caller still owns its exact profile
 /// key. This covers selection clearing/window teardown, where no newer health
 /// request would otherwise claim the single-flight slot.
-#[tauri::command]
+
 pub fn cancel_project_health(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     profile_id: String,
@@ -1572,7 +1568,7 @@ async fn revalidate_start_profile(
 /// Explicit cancellation for the long-running Start Workspace transition.
 /// The command sets the same sticky bit observed by Git, WSL and port waits;
 /// it does not merely dismiss a frontend spinner.
-#[tauri::command]
+
 pub fn cancel_start_workspace(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     profile_id: String,
@@ -1673,7 +1669,6 @@ async fn wait_for_expected_ports(
     })
 }
 
-#[tauri::command]
 pub async fn start_workspace(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
@@ -1857,7 +1852,7 @@ fn process_step(app_id: &str, outcome: ChildLaunchOutcome) -> Option<RunStep> {
 /// authoritative until the new attempt has finished; newly spawned receipts
 /// are held by a separate guard and are rolled back if profile/revision/budget
 /// validation fails.
-#[tauri::command]
+
 pub async fn retry_workspace(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
@@ -2023,7 +2018,7 @@ fn terminate_started_process(process: &StartedProcess) -> bool {
 }
 
 /// Workbench가 시작한 것만 정리한다 (이미 실행 중이던 자원은 건드리지 않는다).
-#[tauri::command]
+
 pub fn stop_workspace(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     run_id: String,
@@ -2083,7 +2078,7 @@ pub fn stop_workspace(
 
 /// frontend reload 뒤에도 backend가 추적 중인 단일 run ownership을 복원한다.
 /// start claim이 추가 run을 막으므로 둘 이상이면 손상 상태로 보고 fail-closed한다.
-#[tauri::command]
+
 pub fn current_workspace_run(
     registry: tauri::State<'_, Arc<RunRegistry>>,
 ) -> Result<Option<WorkspaceRunOwnership>, String> {
@@ -2258,268 +2253,6 @@ fn profile_from_life_log_entry(
     profile.wsl = imported_wsl;
     profile.git_root = Some(windows_path);
     Ok(Some(profile))
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_list_profiles(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_profiles(_component_app.clone())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_create_profile(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile: ProjectProfile,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = create_profile(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_update_profile(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile: ProjectProfile,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    update_profile(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile,
-    )?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_delete_profile(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    delete_profile(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.id,
-    )?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_git_status(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        projects: Vec<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = git_status(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.projects,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_project_health(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        request_id: Option<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = project_health(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-        input.request_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_cancel_project_health(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = cancel_project_health(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-        input.request_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_cancel_start_workspace(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = cancel_start_workspace(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_start_workspace(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = start_workspace(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_retry_workspace(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        run_id: String,
-        profile_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = retry_workspace(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.run_id,
-        input.profile_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_stop_workspace(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        run_id: String,
-        profile_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = stop_workspace(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.run_id,
-        input.profile_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_current_workspace_run(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = current_workspace_run(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { sendSessionSummary } from "@devbox/product-shell/commands";

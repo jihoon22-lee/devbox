@@ -296,7 +296,6 @@ pub(crate) async fn resolve_for_launch(
     }
 }
 
-#[tauri::command]
 pub async fn detect_multiplexers(distro: String) -> Vec<MultiplexerAvailability> {
     vec![
         availability(
@@ -343,26 +342,6 @@ pub(crate) async fn session_is_running(
                     .is_some_and(|value| zellij_session_is_running(value, &expected))
         }
     }
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_detect_multiplexers(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = detect_multiplexers(input.distro).await;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }
 
 #[cfg(test)]

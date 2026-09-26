@@ -83,7 +83,7 @@ pub struct PortObservationSnapshot {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(ts_rs::TS)]
-#[ts(rename="PortLogDispatch")]
+#[ts(rename = "PortLogDispatch")]
 pub struct LogLensDispatch {
     pub handoff_id: String,
 }
@@ -106,7 +106,6 @@ struct CorrelationResult {
     truncated: bool,
 }
 
-#[tauri::command]
 pub async fn list_port_observations() -> Result<PortObservationSnapshot, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let collection = collect_ports_with_status().map_err(|error| error.to_string())?;
@@ -122,13 +121,11 @@ pub async fn list_port_observations() -> Result<PortObservationSnapshot, String>
     .map_err(|_| "listener 정보를 가져오지 못했습니다.".to_string())?
 }
 
-#[tauri::command]
 pub async fn open_port_owner(action_key: String) -> Result<(), String> {
     let _ = (action_key,);
     Err("port action is unavailable".into())
 }
 
-#[tauri::command]
 pub async fn open_port_log(
     action_key: String,
     stream: LogSourceStream,
@@ -605,53 +602,6 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
         .unwrap_or(0)
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_port_observations(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_port_observations().await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_open_port_owner(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        action_key: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    open_port_owner(input.action_key).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_open_port_log(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        action_key: String,
-        stream: LogSourceStream,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = open_port_log(input.action_key, input.stream).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

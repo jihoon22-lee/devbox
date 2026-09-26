@@ -316,21 +316,13 @@ async fn execute(
     call: RuntimeCall,
 ) -> Result<serde_json::Value, String> {
     match call {
-        RuntimeCall::ReviewRuntimeControl { operation_id } => crate::component::control::metadata(
-            _component_app,
-            "review_runtime_control",
-            serde_json::json!({"operationId":operation_id}),
-        ),
-        RuntimeCall::ListRuntimeControls {} => crate::component::control::metadata(
-            _component_app,
-            "list_runtime_controls",
-            serde_json::json!({}),
-        ),
-        RuntimeCall::RuntimeControlStatus { operation_id } => crate::component::control::metadata(
-            _component_app,
-            "runtime_control_status",
-            serde_json::json!({"operationId":operation_id}),
-        ),
+        RuntimeCall::ReviewRuntimeControl { operation_id } => {
+            crate::component::control::review(_component_app, &operation_id)
+        }
+        RuntimeCall::ListRuntimeControls {} => crate::component::control::list(_component_app),
+        RuntimeCall::RuntimeControlStatus { operation_id } => {
+            crate::component::control::status(_component_app, &operation_id)
+        }
         RuntimeCall::RuntimeControl(input) => {
             crate::component::control::execute_typed(_component_app, input).await
         }

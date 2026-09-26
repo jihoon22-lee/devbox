@@ -561,7 +561,7 @@ fn preflight_operation_key(kind: &str, profile_id: &str, request_id: Option<&str
 
 /// Read-only preflight command. It never starts an app, service, WSL distro,
 /// or project process.
-#[tauri::command]
+
 pub async fn workspace_preflight(
     app: tauri::AppHandle,
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
@@ -582,7 +582,7 @@ pub async fn workspace_preflight(
 /// Read-only dependency inspection for the selected profile.  This is an
 /// explicit health surface in addition to the Start Workspace review, but it
 /// deliberately shares the exact bounded probes and resource provenance.
-#[tauri::command]
+
 pub async fn dependency_health(
     app: tauri::AppHandle,
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
@@ -600,7 +600,6 @@ pub async fn dependency_health(
     .await
 }
 
-#[tauri::command]
 pub fn cancel_workspace_preflight(
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
     profile_id: String,
@@ -618,7 +617,6 @@ pub fn cancel_workspace_preflight(
         .map_err(str::to_string)
 }
 
-#[tauri::command]
 pub fn cancel_dependency_health(
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
     profile_id: String,
@@ -634,102 +632,6 @@ pub fn cancel_dependency_health(
             Some(&request_id),
         ))
         .map_err(str::to_string)
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_workspace_preflight(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        request_id: Option<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = workspace_preflight(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-        input.request_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_dependency_health(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        request_id: Option<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = dependency_health(
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-        input.request_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_cancel_workspace_preflight(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = cancel_workspace_preflight(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-        input.request_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_cancel_dependency_health(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = cancel_dependency_health(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.profile_id,
-        input.request_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

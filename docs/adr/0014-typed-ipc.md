@@ -18,7 +18,13 @@ CommandArg를 별도로 구현하지 않는다. Tauri의 기본 역직렬화에�
 
 ## 결과
 
-계약 변경을 컴파일과 생성물 검사로 확인할 수 있다. P1-11–P1-14 구현과 검증이 끝나기 전에는 이 설계를 구현 완료로 취급하지 않는다.
+네 제품 모두 component별 타입 command로 소스 전환을 마쳤다. Workspace의 main 창은 14개 command를 사용하며 기존 `execute` 명령은 제거했다. 보조 터미널 창은 별도의 peer·session 권한을 검사하는 타입 경계를 유지한다. 엔진은 미등록 Tauri command와 `__component_*` shim 대신 닫힌 enum API를 제공한다.
+
+Workspace의 실행 차로 표와 deadline 예산은 Rust가 소유한다. 요청 수와 worker 수는 기존 값을 유지하고, 파일 시스템·context permit을 worker보다 먼저 얻는 순서와 중지·취소의 별도 여유를 보존한다. Workspace에 새로운 전역 quota를 겹쳐 적용하지 않으며, 세션·재전송·route 검사와 운영 로그는 공통 admission을 거친다. 큰 본문 크기는 JSON 재직렬화 없이 검사하고, 기존 native Files/LSP owner에 넘기는 임시 DTO는 작업 대기 전에 해제한다.
+
+`workspace.setup`만 Workspace의 activation import 단계에서 허용한다. 등록 snapshot 등 일반 command에는 같은 예외를 주지 않는다. 현재 프로젝트 정의·Registry는 Workspace owner가, 의존성 분석은 repositories engine이 실행한다. WSL helper의 내부 Source protocol adapter도 같은 닫힌 call enum과 native SourceAccess를 사용한다.
+
+입력·결과 타입과 프런트 deadline 표를 함께 생성하고, 기존 route 허용 표 338개와 비교해 권한 확대를 검사한다. 묶음 검증·CI·Windows 실기 수용 상태는 ledger와 PR을 따른다.
 
 ## 근거
 

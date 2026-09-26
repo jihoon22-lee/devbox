@@ -2,7 +2,6 @@
 //! committed before invoking the existing owner. An interrupted submission
 //! requires state review; retry never guesses that no side effect occurred.
 use crate::storage::{ControlReservation, DatabaseState, RuntimeControlReceipt};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -19,13 +18,7 @@ fn replay(receipt: RuntimeControlReceipt) -> Result<Value, String> {
         _ => Err("runtime_control_recovery_required".into()),
     }
 }
-pub(super) async fn execute(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
-    execute_typed(
-        app,
-        serde_json::from_value(args).map_err(|_| "component_args_invalid")?,
-    )
-    .await
-}
+
 pub(crate) async fn execute_typed(app: &tauri::AppHandle, input: Control) -> Result<Value, String> {
     let method = input.action.method();
     let wire = serde_json::to_value(&input.action).map_err(|_| "component_args_invalid")?;
@@ -82,39 +75,32 @@ pub(crate) async fn execute_typed(app: &tauri::AppHandle, input: Control) -> Res
         .map_err(|_| "runtime_control_recovery_required")?;
     result.map_err(|_| "runtime_control_failed".into())
 }
-pub(crate) fn metadata(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Id {
-        operation_id: String,
-    }
+
+pub(crate) fn list(app: &tauri::AppHandle) -> Result<Value, String> {
     let database = app
         .try_state::<Arc<DatabaseState>>()
         .ok_or("component_state_unavailable")?;
-    match method {
-        "list_runtime_controls" => {
-            if args.as_object().is_none_or(|value| !value.is_empty()) {
-                return Err("component_args_invalid".into());
-            }
-            Ok(json!(database
-                .unresolved_runtime_controls()
-                .map_err(|_| "runtime_control_unavailable")?))
-        }
-        "runtime_control_status" => {
-            let input: Id = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            let receipt = database
-                .runtime_control(&input.operation_id)
-                .map_err(|_| "runtime_control_unavailable")?
-                .ok_or("runtime_control_unavailable")?;
-            replay(receipt)
-        }
-        "review_runtime_control" => {
-            let input: Id = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            database
-                .review_runtime_control(&input.operation_id)
-                .map_err(|_| "runtime_control_owner_unsettled")?;
-            Ok(Value::Null)
-        }
-        _ => Err("component_method_invalid".into()),
-    }
+    Ok(json!(database
+        .unresolved_runtime_controls()
+        .map_err(|_| "runtime_control_unavailable")?))
+}
+pub(crate) fn status(app: &tauri::AppHandle, operation_id: &str) -> Result<Value, String> {
+    let database = app
+        .try_state::<Arc<DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    replay(
+        database
+            .runtime_control(operation_id)
+            .map_err(|_| "runtime_control_unavailable")?
+            .ok_or("runtime_control_unavailable")?,
+    )
+}
+pub(crate) fn review(app: &tauri::AppHandle, operation_id: &str) -> Result<Value, String> {
+    let database = app
+        .try_state::<Arc<DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    database
+        .review_runtime_control(operation_id)
+        .map_err(|_| "runtime_control_owner_unsettled")?;
+    Ok(Value::Null)
 }

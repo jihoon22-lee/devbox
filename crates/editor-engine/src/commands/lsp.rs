@@ -10,7 +10,6 @@ use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
 
-#[tauri::command]
 pub async fn load_lsp_config(
     manager: State<'_, Arc<LspManager>>,
 ) -> Result<LoadedLspConfig, String> {
@@ -20,7 +19,6 @@ pub async fn load_lsp_config(
     Ok(public_loaded_config(loaded))
 }
 
-#[tauri::command]
 pub async fn save_lsp_config(
     manager: State<'_, Arc<LspManager>>,
     config: LspConfig,
@@ -32,7 +30,6 @@ pub async fn save_lsp_config(
     manager.stop_all().await.map_err(public_control_error)
 }
 
-#[tauri::command]
 pub async fn start_language_server(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -43,7 +40,6 @@ pub async fn start_language_server(
         .map_err(public_control_error)
 }
 
-#[tauri::command]
 pub async fn stop_language_server(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -54,7 +50,6 @@ pub async fn stop_language_server(
         .map_err(public_control_error)
 }
 
-#[tauri::command]
 pub async fn restart_language_server(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -65,19 +60,16 @@ pub async fn restart_language_server(
         .map_err(public_control_error)
 }
 
-#[tauri::command]
 pub async fn stop_all_language_servers(manager: State<'_, Arc<LspManager>>) -> Result<(), String> {
     manager.stop_all().await.map_err(public_control_error)
 }
 
-#[tauri::command]
 pub async fn language_server_statuses(
     manager: State<'_, Arc<LspManager>>,
 ) -> Result<Vec<LanguageServerStatus>, String> {
     Ok(manager.statuses().await)
 }
 
-#[tauri::command]
 pub async fn language_server_logs(
     manager: State<'_, Arc<LspManager>>,
 ) -> Result<Vec<LanguageServerLog>, String> {
@@ -98,552 +90,6 @@ fn public_loaded_config(mut loaded: LoadedLspConfig) -> LoadedLspConfig {
         loaded.error = Some("저장된 LSP 설정이 손상되었습니다".into());
     }
     loaded
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_load_lsp_config(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = load_lsp_config(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_save_lsp_config(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        config: LspConfig,
-        recover_invalid: bool,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    save_lsp_config(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.config,
-        input.recover_invalid,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_start_language_server(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    start_language_server(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_stop_language_server(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    stop_language_server(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_restart_language_server(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    restart_language_server(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_stop_all_language_servers(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    stop_all_language_servers(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )
-    .await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_language_server_statuses(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = language_server_statuses(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_language_server_logs(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = language_server_logs(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_open_lsp_document(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        path: String,
-        text: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = open_lsp_document(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.path,
-        input.text,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_change_lsp_document(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        text: String,
-        dirty: bool,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = change_lsp_document(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.text,
-        input.dirty,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_reload_lsp_document(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        text: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = reload_lsp_document(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.text,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_save_lsp_document(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = save_lsp_document(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_close_lsp_document(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = close_lsp_document(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_pull_lsp_diagnostics(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = pull_lsp_diagnostics(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_request_lsp_completion(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        position: LspPosition,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = request_lsp_completion(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.position,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_request_lsp_hover(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        position: LspPosition,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = request_lsp_hover(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.position,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_request_lsp_definition(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        position: LspPosition,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = request_lsp_definition(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.position,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_request_lsp_references(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        position: LspPosition,
-        include_declaration: bool,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = request_lsp_references(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.position,
-        input.include_declaration,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_request_lsp_rename(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        position: LspPosition,
-        new_name: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = request_lsp_rename(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.position,
-        input.new_name,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_apply_lsp_rename(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        plan_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = apply_lsp_rename(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.plan_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_cancel_lsp_rename(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        plan_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = cancel_lsp_rename(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.plan_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_discard_lsp_rename(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        plan_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = discard_lsp_rename(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.plan_id,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_request_lsp_formatting(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        language_id: String,
-        uri: String,
-        tab_size: u32,
-        insert_spaces: bool,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = request_lsp_formatting(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        input.language_id,
-        input.uri,
-        input.tab_size,
-        input.insert_spaces,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
@@ -692,7 +138,6 @@ mod tests {
     }
 }
 
-#[tauri::command]
 pub async fn open_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -705,7 +150,6 @@ pub async fn open_lsp_document(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn change_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -719,7 +163,6 @@ pub async fn change_lsp_document(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn reload_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -732,7 +175,6 @@ pub async fn reload_lsp_document(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn save_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -744,7 +186,6 @@ pub async fn save_lsp_document(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn close_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -756,7 +197,6 @@ pub async fn close_lsp_document(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn pull_lsp_diagnostics(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -768,7 +208,6 @@ pub async fn pull_lsp_diagnostics(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn request_lsp_completion(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -781,7 +220,6 @@ pub async fn request_lsp_completion(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn request_lsp_hover(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -794,7 +232,6 @@ pub async fn request_lsp_hover(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn request_lsp_definition(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -807,7 +244,6 @@ pub async fn request_lsp_definition(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn request_lsp_references(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -821,7 +257,6 @@ pub async fn request_lsp_references(
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub async fn request_lsp_rename(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -835,7 +270,6 @@ pub async fn request_lsp_rename(
         .map_err(public_rename_error)
 }
 
-#[tauri::command]
 pub async fn apply_lsp_rename(
     manager: State<'_, Arc<LspManager>>,
     plan_id: String,
@@ -846,7 +280,6 @@ pub async fn apply_lsp_rename(
         .map_err(public_rename_error)
 }
 
-#[tauri::command]
 pub async fn cancel_lsp_rename(
     manager: State<'_, Arc<LspManager>>,
     plan_id: String,
@@ -854,7 +287,6 @@ pub async fn cancel_lsp_rename(
     Ok(manager.cancel_rename(&plan_id).await)
 }
 
-#[tauri::command]
 pub async fn discard_lsp_rename(
     manager: State<'_, Arc<LspManager>>,
     plan_id: String,
@@ -879,7 +311,6 @@ fn public_rename_error(error: LspManagerError) -> String {
     }
 }
 
-#[tauri::command]
 pub async fn request_lsp_formatting(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,

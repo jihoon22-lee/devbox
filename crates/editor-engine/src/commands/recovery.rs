@@ -27,7 +27,7 @@ fn write_atomic(path: &PathBuf, json: &str) -> Result<(), String> {
 }
 
 /// 미저장 버퍼 스냅샷을 저장한다 (bounded).
-#[tauri::command]
+
 pub fn save_recovery(app: AppHandle, entries: Vec<RecoveryEntry>) -> Result<(), String> {
     let path = recovery_path(&app)?;
     if let Some(parent) = path.parent() {
@@ -42,13 +42,13 @@ pub fn save_recovery(app: AppHandle, entries: Vec<RecoveryEntry>) -> Result<(), 
 }
 
 /// 저장된 recovery 항목 목록.
-#[tauri::command]
+
 pub fn load_recovery(app: AppHandle) -> Vec<RecoveryEntry> {
     read_current(&app).entries
 }
 
 /// recovery를 폐기한다. path가 없으면 전체를 비운다.
-#[tauri::command]
+
 pub fn discard_recovery(app: AppHandle, path: Option<String>) -> Result<(), String> {
     let recovery_path = recovery_path(&app)?;
     let mut file = read_current(&app);
@@ -61,66 +61,7 @@ pub fn discard_recovery(app: AppHandle, path: Option<String>) -> Result<(), Stri
 }
 
 /// 사용자가 승인한 recovery를 파일에 적용한다 (복구 = 덮어쓰기 승인).
-#[tauri::command]
+
 pub fn apply_recovery(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_save_recovery(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        entries: Vec<RecoveryEntry>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    save_recovery(_component_app.clone(), input.entries)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_load_recovery(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = load_recovery(_component_app.clone());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_discard_recovery(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: Option<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    discard_recovery(_component_app.clone(), input.path)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_apply_recovery(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-        content: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    apply_recovery(input.path, input.content)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }

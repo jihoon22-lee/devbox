@@ -116,7 +116,6 @@ fn finalize_rejected_claim(
     Ok(receipt)
 }
 
-#[tauri::command]
 pub fn preview_workspace_task_control(
     handoff_id: String,
     pending: State<'_, PendingTaskControl>,
@@ -213,7 +212,6 @@ pub fn preview_workspace_task_control(
     Ok(preview)
 }
 
-#[tauri::command]
 pub fn renew_workspace_task_control(
     request_id: String,
     pending: State<'_, PendingTaskControl>,
@@ -235,7 +233,6 @@ pub fn renew_workspace_task_control(
     Ok(renewed.lease_until_ms)
 }
 
-#[tauri::command]
 pub fn reject_workspace_task_control(
     request_id: String,
     pending: State<'_, PendingTaskControl>,
@@ -258,7 +255,6 @@ pub fn reject_workspace_task_control(
     )
 }
 
-#[tauri::command]
 pub async fn accept_workspace_task_control(
     request_id: String,
     pending: State<'_, PendingTaskControl>,
@@ -358,7 +354,6 @@ async fn perform_action(
     }
 }
 
-#[tauri::command]
 pub fn list_workspace_task_control_receipts(
     limit: Option<usize>,
     database: State<'_, Arc<DatabaseState>>,
@@ -366,129 +361,6 @@ pub fn list_workspace_task_control_receipts(
     database
         .list_workspace_task_control_receipts(limit.unwrap_or(20))
         .map_err(|_| "task-control-receipt-storage".to_owned())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_preview_workspace_task_control(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = preview_workspace_task_control(
-        input.handoff_id,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_renew_workspace_task_control(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = renew_workspace_task_control(
-        input.request_id,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_reject_workspace_task_control(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = reject_workspace_task_control(
-        input.request_id,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_accept_workspace_task_control(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = accept_workspace_task_control(
-        input.request_id,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_workspace_task_control_receipts(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        limit: Option<usize>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_workspace_task_control_receipts(
-        input.limit,
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
