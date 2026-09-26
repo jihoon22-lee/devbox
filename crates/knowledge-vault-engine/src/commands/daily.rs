@@ -215,7 +215,11 @@ mod tests {
         assert!(saved.indexed);
         assert_eq!(
             saved.revision,
-            crate::core::document::read(&path).unwrap().revision
+            // Use the same canonical logical path as the native read command.
+            // Windows adds its extended-length prefix during vault inspection.
+            crate::core::document::read(&path.canonicalize().unwrap())
+                .unwrap()
+                .revision
         );
         let bytes = std::fs::read(&path).unwrap();
         assert!(String::from_utf8(bytes.clone())
