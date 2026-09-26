@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 const { invoke, hosted } = vi.hoisted(() => ({ invoke: vi.fn(), hosted: { value: false } }));
 vi.mock("../transport", () => ({ componentInvoke: () => invoke, isProductHosted: () => hosted.value }));
 import {
+  languageServerStatuses,
   deleteFileAction,
   renameFileAction,
   loadRecovery,
@@ -101,4 +102,21 @@ it("threads recovery revisions only through the product owner", async () => {
   hosted.value = false;
   await discardRecovery(null, "ignored");
   expect(invoke).toHaveBeenLastCalledWith("discard_recovery", { path: null });
+});
+
+it("normalizes the native LSP encoding spellings at the view boundary", async () => {
+  hosted.value = true;
+  invoke.mockResolvedValueOnce([
+    { language_id: "utf8", capabilities: { positionEncoding: "utf8" } },
+    { language_id: "utf16", capabilities: { positionEncoding: "utf16" } },
+  ]);
+  const statuses = await languageServerStatuses();
+  expect(statuses.map((status) => status.capabilities.positionEncoding)).toEqual(["utf-8", "utf-16"]);
+});
+
+it("rejects a missing hosted revision through the Promise API before sending a mutation", async () => {
+  hosted.value = true;
+  const snapshot = { path: "C:/fixture.txt", mtimeNanos: "1", size: 1, contentHash: "fixture" };
+  await expect(renameFileAction(snapshot, "renamed.txt")).rejects.toThrow("파일 상태");
+  expect(invoke).not.toHaveBeenCalled();
 });

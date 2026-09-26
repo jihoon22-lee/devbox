@@ -754,7 +754,7 @@ impl LspHost {
                 } else if method == "lsp_recover_installed" {
                     self.retire().await?;
                 }
-                editor_engine::component::dispatch(app, method, args)
+                editor_engine::api::dispatch_lsp(app, input(json!({"method":method,"args":args}))?)
                     .await
                     .map_err(|_| "lsp_unavailable")
             }

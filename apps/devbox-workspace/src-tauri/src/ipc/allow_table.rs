@@ -3,7 +3,22 @@
 use std::collections::BTreeSet;
 type Row = (String, String, String);
 pub(crate) fn committed() -> Vec<Row> {
-    serde_json::from_str(include_str!("../../tests/fixtures/allow-table.json")).unwrap()
+    {
+        let rows: Vec<Row> =
+            serde_json::from_str(include_str!("../../tests/fixtures/allow-table.json")).unwrap();
+        let mut rows: Vec<_> = rows
+            .into_iter()
+            .map(|(component, route, method)| {
+                (
+                    component.replace("workspace.migration", "workspace.setup"),
+                    route,
+                    method,
+                )
+            })
+            .collect();
+        rows.sort();
+        rows
+    }
 }
 pub(crate) fn current_allow_table() -> Vec<Row> {
     let catalog: serde_json::Value =
@@ -28,7 +43,7 @@ pub(crate) fn current_allow_table() -> Vec<Row> {
     for component in components {
         for route in &routes {
             for method in &methods {
-                if crate::component::allowed(component, route, method) {
+                if permits(component, route, method) {
                     rows.push((component.into(), (*route).into(), method.clone()));
                 }
             }
@@ -40,4 +55,25 @@ pub(crate) fn current_allow_table() -> Vec<Row> {
 #[test]
 fn allow_table_matches_the_committed_fixture() {
     assert_eq!(current_allow_table(), committed());
+}
+
+pub(crate) fn permits(component: &str, route: &str, method: &str) -> bool {
+    let routes = match component {
+        "workspace.runtime" => super::runtime::routes_for(method),
+        "workspace.processes" => super::processes::routes_for(method),
+        "workspace.process-actions" => super::process_actions::routes_for(method),
+        "workspace.logs" => super::logs::routes_for(method),
+        "workspace.terminal" => super::terminal::routes_for(method),
+        "workspace.problems" => super::problems::routes_for(method),
+        "workspace.commands" => super::commands::routes_for(method),
+        "workspace.files" => super::files::routes_for(method),
+        "workspace.lsp" => super::lsp::routes_for(method),
+        "workspace.source" => super::source::routes_for(method),
+        "workspace.registry" => super::registry::routes_for(method),
+        "workspace.setup" => super::setup::routes_for(method),
+        "workspace.definitions" => super::definitions::routes_for(method),
+        "workspace.dependencies" => super::dependencies::routes_for(method),
+        _ => &[],
+    };
+    routes.contains(&route)
 }

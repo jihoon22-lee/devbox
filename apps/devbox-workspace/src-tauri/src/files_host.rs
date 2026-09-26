@@ -411,9 +411,10 @@ impl FilesHost {
             .sync_editor_document(Some(context), path, revision, text)
     }
     fn document_value<T: serde::Serialize>(&self, path: &str, document: T) -> Result<Value> {
-        let mut result = value(document)?;
-        result["nativeRevision"] = json!(self.owner.document_revision(path).ok());
-        Ok(result)
+        value(crate::ipc::files::FileDocument {
+            document,
+            native_revision: self.owner.document_revision(path).ok(),
+        })
     }
     fn validate_revision(&self, request: &Value) -> Result<()> {
         let path = request["path"].as_str().ok_or("invalid_request")?;
@@ -1038,10 +1039,17 @@ impl FilesHost {
                     return Ok(Value::Null);
                 }
                 let canonical = fs::canonicalize(&path).map_err(|_| "file_changed")?;
-                let result = tauri::async_runtime::block_on(editor_engine::component::dispatch(
+                let result = tauri::async_runtime::block_on(editor_engine::api::dispatch_files(
                     app,
-                    method,
-                    json!({"path":path}),
+                    if method == "watch_file" {
+                        editor_engine::api::FilesCall::WatchFile {
+                            path: path.to_string_lossy().into_owned(),
+                        }
+                    } else {
+                        editor_engine::api::FilesCall::RevealFileAction {
+                            path: path.to_string_lossy().into_owned(),
+                        }
+                    },
                 ))
                 .map_err(|_| "file_action_unavailable")?;
                 if self.owner.admitted_path(scope, &request.path).is_err() {
@@ -1242,10 +1250,14 @@ impl FilesHost {
                 self.cancel_preview(&request.preview_id);
                 Ok(Value::Null)
             }
-            "take_pending_open" | "validate_encoding" => tauri::async_runtime::block_on(
-                editor_engine::component::dispatch(app, method, args),
-            )
-            .map_err(|_| "file_action_unavailable"),
+            "take_pending_open" | "validate_encoding" => {
+                tauri::async_runtime::block_on(editor_engine::api::dispatch_files(
+                    app,
+                    serde_json::from_value(json!({"method":method,"args":args}))
+                        .map_err(|_| "invalid_request")?,
+                ))
+                .map_err(|_| "file_action_unavailable")
+            }
             "read_clipboard_text" => {
                 use tauri_plugin_clipboard_manager::ClipboardExt;
                 empty(&args)?;

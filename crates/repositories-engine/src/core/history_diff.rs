@@ -69,6 +69,7 @@ pub struct CommitDetail {
 pub struct DiffResult {
     /// `workingTree` compares `HEAD` with tracked current index/worktree changes. `commit`
     /// compares one selected commit with its parent (including root commits).
+    #[ts(type = "\"workingTree\" | \"commit\"")]
     pub scope: String,
     pub commit_id: Option<String>,
     pub files: Vec<DiffFile>,
@@ -83,6 +84,7 @@ pub struct DiffFile {
     /// repository path here; `/dev/null` is never exposed as a user path.
     pub path: String,
     pub old_path: Option<String>,
+    #[ts(type = "\"modified\" | \"added\" | \"deleted\" | \"renamed\"")]
     pub status: String,
     pub binary: bool,
     pub patch: String,

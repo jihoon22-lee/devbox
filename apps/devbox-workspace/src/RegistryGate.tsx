@@ -1,3 +1,8 @@
+import type { SetupCall } from "@devbox/workspace-features/generated/SetupCall";
+import type { SetupResults } from "@devbox/workspace-features/generated/setup-results";
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { RegistryCall } from "@devbox/workspace-features/generated/RegistryCall";
+import type { RegistryResults } from "@devbox/workspace-features/generated/registry-results";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
@@ -7,7 +12,8 @@ const WslProjectForm = lazy(() => import("./WslProjectForm"));
 import { TemplateMetadata, type ImportedTemplate } from "./ProfileMetadata";
 import { ProfileMetadata, type ImportedProfile, type ProfileBinding } from "./ProfileMetadata";
 
-type Status = { phase: "loading" | "setup" | "selected" | "failed"; issue?: string };
+type Status = import("@devbox/workspace-features/generated/SetupStatus").SetupStatus;
+const setupCall = bindTypedCall<SetupCall, SetupResults>((method, args) => nativeCall("workspace.setup", method, args));
 export interface Worktree {
   id: string;
   projectId: string;
@@ -30,8 +36,9 @@ export interface Preview {
   templateProfile?: ImportedProfile | null;
   discovery: { kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot" };
 }
-const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) =>
-  nativeCall<T>("workspace.registry", method, args);
+const registryCall = bindTypedCall<RegistryCall, RegistryResults>((method, args) =>
+  nativeCall("workspace.registry", method, args),
+);
 const discoveryLabels = {
   known: "이미 등록한 폴더입니다.",
   newProject: "새 프로젝트로 등록합니다.",
@@ -95,10 +102,10 @@ export default function RegistryGate({
   }, [status.phase, onReady]);
   async function refresh() {
     const requestId = ++loadId.current;
-    const next = await nativeCall<Status>("workspace.migration", "status");
+    const next = await setupCall("status");
     if (!alive.current || loadId.current !== requestId) return;
     if (next.phase === "selected") {
-      const snapshot = await registryCall<Registry>("snapshot");
+      const snapshot = await registryCall("snapshot", {});
       if (alive.current && loadId.current === requestId) setRegistry(snapshot);
     }
     if (alive.current && loadId.current === requestId) setStatus(next);
@@ -119,14 +126,14 @@ export default function RegistryGate({
     async function load() {
       const requestId = ++loadId.current;
       try {
-        const next = await nativeCall<Status>("workspace.migration", "status");
+        const next = await setupCall("status");
         if (disposed || !alive.current || loadId.current !== requestId) return;
         if (next.phase === "loading")
           timer = setTimeout(() => {
             void load();
           }, 300);
         if (next.phase === "selected") {
-          const snapshot = await registryCall<Registry>("snapshot");
+          const snapshot = await registryCall("snapshot", {});
           if (!disposed && alive.current && loadId.current === requestId) setRegistry(snapshot);
         }
         // Publish readiness only after the registry read; otherwise dependent
@@ -170,12 +177,12 @@ export default function RegistryGate({
       setTemplateId("");
       const next =
         suggestedRoot.target?.kind === "wsl"
-          ? await registryCall<Preview>("preview_wsl", {
+          ? await registryCall("preview_wsl", {
               distroId: suggestedRoot.target.distroId,
               root: suggestedRoot.path,
               startStopped: false,
             })
-          : await registryCall<Preview>("preview_windows", { root: suggestedRoot.path });
+          : await registryCall("preview_windows", { root: suggestedRoot.path });
       if (!alive.current) {
         await registryCall("cancel_registration", { previewId: next.previewId });
         return;
@@ -191,7 +198,7 @@ export default function RegistryGate({
       setTemplateId("");
   }, [registry, templateId]);
   async function startRegistry() {
-    await nativeCall("workspace.migration", "start_empty");
+    await setupCall("start_empty");
     await refresh();
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
@@ -233,7 +240,7 @@ export default function RegistryGate({
                 disabled={busy || editing}
                 onClick={() =>
                   void act(async () => {
-                    await registryCall("clear_project");
+                    await registryCall("clear_project", {});
                     await onContextChanged();
                   })
                 }
@@ -252,7 +259,7 @@ export default function RegistryGate({
                 void act(async () => {
                   if (preview) await cancelPreview();
                   const next = templateId
-                    ? await registryCall<Preview>("preview_template_profile_windows", {
+                    ? await registryCall("preview_template_profile_windows", {
                         templateId,
                         root,
                         name:
@@ -260,7 +267,7 @@ export default function RegistryGate({
                           registry?.importedTemplates?.find((template) => template.id === templateId)?.template.name ||
                           "새 프로젝트",
                       })
-                    : await registryCall<Preview>("preview_windows", { root });
+                    : await registryCall("preview_windows", { root });
                   if (!alive.current) {
                     await registryCall("cancel_registration", { previewId: next.previewId });
                     return;

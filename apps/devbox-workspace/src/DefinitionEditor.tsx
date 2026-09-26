@@ -1,8 +1,15 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { WorkspaceDefinitionsCall } from "@devbox/workspace-features/generated/WorkspaceDefinitionsCall";
+import type { DefinitionsResults } from "@devbox/workspace-features/generated/definitions-results";
 import { useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall, nativeCall } from "./native";
 
 type Target = "project" | "local";
+const cancelDefinition = bindTypedCall<WorkspaceDefinitionsCall, DefinitionsResults>((method, args) =>
+  nativeCall("workspace.definitions", method, args),
+);
+
 interface Preview {
   previewId: string;
   target: Target;
@@ -34,8 +41,9 @@ export default function DefinitionEditor({ description, view, disabled, onDirtyC
   const sequence = useRef(0),
     pending = useRef<string | null>(null),
     working = useRef(false);
-  const call = <T,>(method: string, args: Record<string, unknown>) =>
-    componentCall<T>(description, "workspace.definitions", method, args, "overview");
+  const call = bindTypedCall<WorkspaceDefinitionsCall, DefinitionsResults>((method, args) =>
+    componentCall(description, "workspace.definitions", method, args, "overview"),
+  );
   useEffect(() => {
     onDirtyChange(draft !== null || busy);
   }, [draft, busy, onDirtyChange]);
@@ -43,8 +51,7 @@ export default function DefinitionEditor({ description, view, disabled, onDirtyC
     () => () => {
       sequence.current++;
       onDirtyChange(false);
-      if (pending.current)
-        void nativeCall("workspace.definitions", "cancel", { previewId: pending.current }).catch(() => {});
+      if (pending.current) void cancelDefinition("cancel", { previewId: pending.current }).catch(() => {});
     },
     [onDirtyChange],
   );
@@ -142,9 +149,9 @@ export default function DefinitionEditor({ description, view, disabled, onDirtyC
                 disabled={disabled || busy}
                 onClick={() =>
                   void act(async (request) => {
-                    const next = await call<Preview>("preview_edit", { target, content: draft, editRevision: base });
+                    const next = await call("preview_edit", { target, content: draft, editRevision: base });
                     if (sequence.current !== request) {
-                      void nativeCall("workspace.definitions", "cancel", { previewId: next.previewId }).catch(() => {});
+                      void cancelDefinition("cancel", { previewId: next.previewId }).catch(() => {});
                       return;
                     }
                     pending.current = next.previewId;
@@ -194,7 +201,7 @@ export default function DefinitionEditor({ description, view, disabled, onDirtyC
                     pending.current = null;
                     setPreview(null);
                     try {
-                      const saved = await call<{ saved: boolean; warning: string | null }>("apply_edit", {
+                      const saved = await call("apply_edit", {
                         previewId: token,
                       });
                       if (sequence.current !== request) return;

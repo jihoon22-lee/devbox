@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 16,
+  "catalogRevision": 17,
   "channel": "stable",
   "products": [
     {
@@ -86,9 +86,9 @@
       "protocolVersion": 1
     },
     {
-      "id": "workspace.migration",
+      "id": "workspace.setup",
       "owner": "workspace",
-      "authority": "legacy-import",
+      "authority": "store-setup",
       "lifecycle": "product",
       "protocolVersion": 1
     },

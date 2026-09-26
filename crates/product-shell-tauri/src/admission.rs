@@ -107,6 +107,8 @@ fn admit_with_guard<C: ComponentCall>(
 ) -> Result<Admission, Problem> {
     let provenance = if C::INSTALLATION_REVIEW {
         crate::authorize_installation_review(window, header)?
+    } else if C::IMPORT_PHASE {
+        crate::authorize_owner_migration(window, header, C::COMPONENT)?
     } else {
         crate::authorize(window, header, C::COMPONENT)?
     };

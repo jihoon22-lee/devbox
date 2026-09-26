@@ -31,10 +31,12 @@ impl SessionDoc {
 /// without introducing a third split mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Session {
+    #[ts(type = "1")]
     pub version: u32,
     pub workspace_folder: Option<String>,
     pub docs: Vec<SessionDoc>,
     pub views: [Vec<String>; 2],
+    #[ts(type = "0 | 1")]
     pub active_view: u8,
     pub active_doc_by_view: [Option<String>; 2],
     pub recent_files: Vec<String>,

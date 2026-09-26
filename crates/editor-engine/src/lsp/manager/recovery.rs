@@ -8,6 +8,7 @@ const CONFLICT: &str = "복구 대상이 변경되었거나 접근할 수 없습
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameRecoveryRecord {
     pub journal_id: String,
     pub files: usize,
@@ -15,12 +16,14 @@ pub struct RenameRecoveryRecord {
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameRecoveryListing {
     pub records: Vec<RenameRecoveryRecord>,
     pub truncated: bool,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameRecoveryFile {
     pub path: String,
     pub restore: bool,
@@ -31,6 +34,7 @@ pub struct RenameRecoveryFile {
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameRecoveryResult {
     pub complete: bool,
     pub restored: Vec<String>,

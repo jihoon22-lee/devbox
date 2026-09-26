@@ -112,8 +112,10 @@ pub struct WorktreeCleanupEntry {
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
 pub struct CleanupItemResult {
+    #[ts(type = "\"branch\" | \"worktree\"")]
     pub kind: String,
     pub target: String,
+    #[ts(type = "\"removed\" | \"blocked\" | \"failed\"")]
     pub outcome: String,
     pub reason: Option<String>,
 }

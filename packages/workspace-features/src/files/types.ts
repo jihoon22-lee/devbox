@@ -73,18 +73,8 @@ export interface FileChangedEvent {
  * here is typed `| null` rather than `?:`
  * (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §1.2).
  */
-export type OpenTarget =
-  | { kind: "path"; path: string; line: number | null; column: number | null }
-  | { kind: "profile"; id: string }
-  | { kind: "workspace"; path: string }
-  | { kind: "query"; text: string }
-  | { kind: "task"; id: string }
-  | { kind: "install"; appId: string };
-
-export interface OpenRequest {
-  target: OpenTarget;
-  from: string | null;
-}
+export type OpenTarget = import("../generated/OpenTarget").OpenTarget;
+export type OpenRequest = import("../generated/OpenRequest").OpenRequest;
 
 export interface MarkdownPreviewResponse {
   kind: "markdown";
@@ -389,51 +379,12 @@ export interface LspDidClose {
   uri: string;
 }
 
-export type LspServerRef =
-  | {
-      kind: "managed";
-      manifest_id: string;
-      version: string;
-      /** Optional explicit Node runtime executable. The install path is never
-       * persisted at the UI boundary; the native side resolves it from its
-       * process-owned index. */
-      node_path?: string | null;
-    }
-  | {
-      kind: "local";
-      installed_path: string;
-      executable?: string | null;
-      args: string[];
-    }
-  | {
-      kind: "custom";
-      executable: string;
-      args: string[];
-    };
+export type LspServerRef = import("../generated/ServerRef").ServerRef;
 
-export interface LspCustomServer {
-  language_ids: string[];
-  executable: string;
-  args: string[];
-  runtime: {
-    kind: "native" | "node";
-    executable: string;
-    min_version?: string | null;
-  };
-  source: string;
-  license: string;
-  version: string;
-}
+export type LspCustomServer = import("../generated/CustomServer").CustomServer;
 
 /** Persisted schema intentionally uses snake_case and is passed through unchanged. */
-export interface LspConfig {
-  version: 1;
-  enabled: boolean;
-  workspace_root: string;
-  server_by_language: Record<string, LspServerRef>;
-  custom_servers: LspCustomServer[];
-  update_policy: "manual";
-}
+export type LspConfig = import("../generated/LspConfig").LspConfig;
 
 export interface LoadedLspConfig {
   nativeRevision?: string | null;
@@ -447,61 +398,15 @@ export type ManagedInstallState = "not_installed" | "installed" | "needs_reinsta
 
 export type ManagedInstallSource = "network" | "archive_cache" | "local_archive" | "unknown";
 
-export interface ManagedArtifact {
-  kind: "zip" | "npm_tarball";
-  url: string;
-  sha256: string;
-  size_bytes: number | null;
-  allowed_redirect_hosts: string[];
-  archive_root: string;
-}
+export type ManagedArtifact = import("../generated/Artifact").Artifact;
 
-export interface ManagedServerManifest {
-  id: string;
-  version: string;
-  platform: string;
-  languages: Array<{
-    language_id: string;
-    extensions: string[];
-    command?: { executable: string; args: string[] } | null;
-  }>;
-  source_url: string;
-  license: string;
-  artifact: ManagedArtifact;
-  runtime: { kind: "native" | "node"; executable: string; min_version: string | null };
-  command: { executable: string; args: string[] };
-  files: { entrypoint: string; package_lock_sha256: string | null };
-  capabilities_hint: Record<string, boolean> | null;
-  generated_at: string;
-}
+export type ManagedServerManifest = import("../generated/ServerManifest").ServerManifest;
 
 /** Safe managed-install metadata returned by lsp_installed. Paths stay in the
  * process-owned index and are never exposed to the UI. */
-export interface InstalledServerMetadata {
-  manifest_id: string;
-  version: string;
-  platform: string;
-  sha256: string;
-  source_url: string;
-  license: string;
-  artifact_url: string;
-  entrypoint: string;
-  runtime: { kind: "native" | "node"; executable: string; min_version: string | null };
-  installed_at: string;
-  package_lock_sha256: string | null;
-  install_source: ManagedInstallSource;
-  last_verified_at: string | null;
-}
+export type InstalledServerMetadata = import("../generated/InstalledServerMetadata").InstalledServerMetadata;
 
-export interface ManagedInstallStatus {
-  manifest_id: string;
-  version: string;
-  platform: string;
-  state: ManagedInstallState;
-  reason: string | null;
-  installed: InstalledServerMetadata | null;
-  archive_cached: boolean;
-}
+export type ManagedInstallStatus = import("../generated/ManagedInstallStatus").ManagedInstallStatus;
 
 export function displayNameForPath(path: string): string {
   const normalized = path.split("\\").join("/");

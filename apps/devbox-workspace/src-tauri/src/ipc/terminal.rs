@@ -345,3 +345,93 @@ pub fn result_types(
 pub fn deadline_budget_for(method: &str) -> u64 {
     super::deadlines::budget("workspace.terminal", method)
 }
+
+use super::Request;
+use crate::component::Runtime;
+use product_contract::RouteRequest;
+use serde_json::Value;
+use std::{sync::atomic::Ordering, time::Duration};
+use tauri::{Manager, WebviewWindow};
+
+pub(crate) async fn terminal_worker(
+    window: WebviewWindow,
+    runtime: Runtime,
+    header: RouteRequest,
+    method: String,
+    args: Value,
+    companion: bool,
+    lane: Lane,
+    context: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    let permit = runtime.lanes.try_enter(lane)?;
+    let host = runtime.host()?;
+    let workers = runtime.lanes.workers(lane);
+    // The native worker owns the request even if its renderer disappears.
+    tauri::async_runtime::spawn(async move {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis() as u64;
+        let worker = tokio::time::timeout(
+            Duration::from_millis(header.deadline_ms.saturating_sub(now).min(30_000)),
+            workers.acquire_owned(),
+        )
+        .await
+        .map_err(|_| "request_expired")?
+        .map_err(|_| "request_cancelled")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_permit, _worker, _context) = (permit, worker, context);
+            crate::files_host::current_deadline(header.deadline_ms)?;
+            if runtime.shutdown_started.load(Ordering::Acquire) {
+                return Err("request_cancelled");
+            }
+            if companion {
+                tauri::async_runtime::block_on(
+                    runtime
+                        .terminals
+                        .execute(&window, &host, &header, &method, args),
+                )
+            } else if crate::development_host::Sessions::handles(&method) {
+                runtime
+                    .engines
+                    .initialize_runtime(window.app_handle(), &host)?;
+                runtime.sessions.manage(
+                    &window,
+                    &host,
+                    &runtime.terminals,
+                    &runtime.definitions,
+                    &header,
+                    &method,
+                    args,
+                )
+            } else {
+                runtime
+                    .terminals
+                    .manage(&window, &host, &header, &method, args)
+            }
+        })
+        .await
+        .unwrap_or(Err("worker_unavailable"))
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
+}
+
+pub(crate) async fn execute_terminal_main(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    terminal_worker(
+        window.clone(),
+        runtime.clone(),
+        request.header,
+        request.method,
+        request.args,
+        false,
+        request.typed.lane(),
+        context,
+    )
+    .await
+}

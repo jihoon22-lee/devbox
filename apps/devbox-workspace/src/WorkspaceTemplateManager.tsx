@@ -1,3 +1,6 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { RegistryCall } from "@devbox/workspace-features/generated/RegistryCall";
+import type { RegistryResults } from "@devbox/workspace-features/generated/registry-results";
 import { useEffect, useRef, useState } from "react";
 import {
   emptyProfileTemplateDraft,
@@ -8,6 +11,10 @@ import {
 import { nativeCall } from "./native";
 import { TemplateMetadata, type ImportedTemplate } from "./ProfileMetadata";
 import type { Registry } from "./RegistryGate";
+
+const registryCall = bindTypedCall<RegistryCall, RegistryResults>((method, args) =>
+  nativeCall("workspace.registry", method, args),
+);
 
 type Edit = { id: string | null; revision: number; draft: ProfileTemplateDraft };
 const fields: [keyof Omit<ProfileTemplateDraft, "id">, string][] = [
@@ -113,11 +120,12 @@ export default function WorkspaceTemplateManager({
               setError(Object.values(result.errors).filter(Boolean).join(" "));
               return;
             }
+            const template = result.template;
             void act(async () => {
-              await nativeCall("workspace.registry", "save_template", {
+              await registryCall("save_template", {
                 revision: edit.revision,
                 id: edit.id,
-                template: result.template,
+                template,
               });
               if (alive.current) setEdit(null);
               await onSaved();
@@ -160,7 +168,7 @@ export default function WorkspaceTemplateManager({
             disabled={disabled || busy}
             onClick={() =>
               void act(async () => {
-                await nativeCall("workspace.registry", "archive_template", {
+                await registryCall("archive_template", {
                   revision: archive.revision,
                   id: archive.entry.id,
                 });

@@ -31,10 +31,13 @@ pub struct WorkspaceFiles {
 #[derive(ts_rs::TS)]
 pub struct WorkspaceCapabilities {
     pub path: String,
+    #[ts(type = "\"native\" | \"wsl\"")]
     pub source_kind: String,
+    #[ts(type = "\"native\" | \"polling\"")]
     pub watch_mode: String,
     pub edit_supported: bool,
     pub lsp_supported: bool,
+    #[ts(type = "\"host_lsp_wsl_unsupported\" | \"project_untrusted\" | null")]
     pub lsp_reason: Option<String>,
 }
 

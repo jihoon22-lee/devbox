@@ -197,3 +197,10 @@ pub(crate) enum ProcessActionReply {
 pub(crate) enum OwnedTaskAction {
     OwnedTask { task_id: String },
 }
+
+#[derive(serde::Serialize, ts_rs::TS)]
+pub(crate) struct EmptyReply {}
+#[derive(serde::Serialize, ts_rs::TS)]
+pub(crate) struct ContextCleared {
+    pub context: Option<product_contract::ProjectContext>,
+}

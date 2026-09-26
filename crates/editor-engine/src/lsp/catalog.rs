@@ -85,6 +85,7 @@ pub struct Artifact {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct RuntimeSpec {
     pub kind: RuntimeKind,
     pub executable: String,
@@ -168,6 +169,7 @@ pub struct CustomServer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub enum ServerRef {
     Managed {
         manifest_id: String,
@@ -248,6 +250,7 @@ impl ServerRef {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct LspConfig {
+    #[ts(type = "1")]
     pub version: u32,
     pub enabled: bool,
     /// Empty means that no workspace has been selected yet. A non-empty value

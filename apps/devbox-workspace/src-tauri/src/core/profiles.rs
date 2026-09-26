@@ -6,6 +6,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ImportedProfile {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -19,6 +20,7 @@ pub struct ImportedProfile {
 pub use projects_engine::api::ProfileTarget;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProfileBinding {
     pub imported_id: String,
     pub target: ProfileTarget,

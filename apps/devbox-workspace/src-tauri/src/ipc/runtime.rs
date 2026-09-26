@@ -226,3 +226,69 @@ impl<'de> serde::Deserialize<'de> for WorkspaceRuntimeCall {
         )
     }
 }
+
+use super::Request;
+use crate::component::Runtime;
+use serde_json::Value;
+use std::{sync::atomic::Ordering, time::Duration};
+use tauri::{Manager, WebviewWindow};
+
+pub(crate) async fn execute_runtime(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context_permit: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    let lane = request.typed.lane();
+    let permit = runtime.lanes.try_enter(lane)?;
+    let host = runtime.host()?;
+    let owners = runtime.engines.clone();
+    let terminals = runtime.terminals.clone();
+    let definitions = runtime.definitions.clone();
+    let shutdown = runtime.shutdown_started.clone();
+    let workers = runtime.lanes.workers(lane);
+    let app = window.app_handle().clone();
+    // The spawned owner retains permits even if the renderer abandons its IPC
+    // future. Cancellation/stop requests have independent execution capacity.
+    tauri::async_runtime::spawn(async move {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis();
+        let remaining = u128::from(request.header.deadline_ms)
+            .saturating_sub(now)
+            .min(30_000) as u64;
+        let worker =
+            tokio::time::timeout(Duration::from_millis(remaining), workers.acquire_owned())
+                .await
+                .map_err(|_| "request_expired")?
+                .map_err(|_| "request_cancelled")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_permit, _context, _worker) = (permit, context_permit, worker);
+            crate::files_host::current_deadline(request.header.deadline_ms)?;
+            if shutdown.load(Ordering::Acquire) {
+                return Err("request_cancelled");
+            }
+            tauri::async_runtime::block_on(crate::runtime_host::dispatch(
+                &app,
+                &host,
+                &owners,
+                &definitions,
+                crate::runtime_host::EngineRequest {
+                    component: &request.component,
+                    method: &request.method,
+                    value: request.args,
+                    context: request.header.context.as_ref(),
+                    deadline: request.header.deadline_ms,
+                    operation_id: &request.header.request_id,
+                    terminals: &terminals,
+                    typed: request.typed,
+                },
+            ))
+        })
+        .await
+        .unwrap_or(Err("worker_unavailable"))
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
+}

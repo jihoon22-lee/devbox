@@ -83,7 +83,7 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             | ("workspace", "workspace.dependencies", "dependency-review")
             | ("workspace", "workspace.source", "git-execution")
             | ("workspace", "workspace.registry", "project-registry")
-            | ("workspace", "workspace.migration", "legacy-import")
+            | ("workspace", "workspace.setup", "store-setup")
             | ("workspace", "workspace.files", "file-edit")
             | ("workspace", "workspace.lsp", "language-service")
             | ("workspace", "workspace.runtime", "runtime-execution")

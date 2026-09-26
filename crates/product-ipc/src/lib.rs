@@ -31,9 +31,17 @@ impl IncomingRequest {
         if !C::valid_arguments(&self.method, &self.args) {
             return Err(DecodeError);
         }
+        // Move the existing argument tree into deserialization. json! would
+        // serialize a borrowed Value and copy large editor/log bodies again.
         let call: C =
-            serde_json::from_value(serde_json::json!({"method": self.method, "args": self.args}))
-                .map_err(|_| DecodeError)?;
+            serde_json::from_value(serde_json::Value::Object(serde_json::Map::from_iter([
+                (
+                    "method".into(),
+                    serde_json::Value::String(self.method.clone()),
+                ),
+                ("args".into(), self.args),
+            ])))
+            .map_err(|_| DecodeError)?;
         // Accepted method spellings must be declared by the native enum.
         if call.method() != self.method {
             return Err(DecodeError);
@@ -57,6 +65,7 @@ pub enum ExecutionClass {
 pub trait ComponentCall: DeserializeOwned + Send + 'static {
     const COMPONENT: &'static str;
     const INSTALLATION_REVIEW: bool = false;
+    const IMPORT_PHASE: bool = false;
     const SHARED_REQUEST_LIMIT: bool = true;
     fn valid_arguments(_method: &str, args: &serde_json::Value) -> bool {
         args.is_object()

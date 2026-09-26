@@ -11,6 +11,7 @@ use std::{
 type Result<T> = std::result::Result<T, &'static str>;
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct Distro {
     pub id: String,
     pub name: String,

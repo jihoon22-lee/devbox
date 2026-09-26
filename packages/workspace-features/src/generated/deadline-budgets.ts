@@ -255,10 +255,17 @@ export const companionDeadlineBudgets: Readonly<Record<string, number>> = {
 };
 export const componentCommands: Readonly<Record<string, string>> = {
   "workspace.commands": "commands",
+  "workspace.definitions": "definitions",
+  "workspace.dependencies": "dependencies",
+  "workspace.files": "files",
   "workspace.logs": "logs",
+  "workspace.lsp": "lsp",
   "workspace.problems": "problems",
   "workspace.process-actions": "process_actions",
   "workspace.processes": "processes",
+  "workspace.registry": "registry",
   "workspace.runtime": "runtime",
+  "workspace.setup": "setup",
+  "workspace.source": "source",
   "workspace.terminal": "terminal",
 };

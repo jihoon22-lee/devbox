@@ -1,3 +1,7 @@
+import type { SourceCall } from "@devbox/workspace-features/generated/SourceCall";
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { SourceHostCall } from "@devbox/workspace-features/generated/SourceHostCall";
+import type { SourceResults } from "@devbox/workspace-features/generated/source-results";
 import { useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall } from "./native";
@@ -26,8 +30,9 @@ export default function SourceWorktree({ description, enabled, onBusyChange, onD
   const alive = useRef(true);
   const pending = useRef<string | null>(null);
   const operation = useRef<string | null>(null);
-  const call = <T,>(method: string, args: Record<string, unknown>) =>
-    componentCall<T>(description, "workspace.source", method, args, "source");
+  const call = bindTypedCall<SourceHostCall | Extract<SourceCall, { method: "repo_local_cancel" }>, SourceResults>(
+    (method, args) => componentCall(description, "workspace.source", method, args, "source"),
+  );
   useEffect(() => {
     onBusyChange(busy || preview !== null);
   }, [busy, preview, onBusyChange]);
@@ -75,7 +80,7 @@ export default function SourceWorktree({ description, enabled, onBusyChange, onD
           event.preventDefault();
           if (!enabled) return;
           void act(async () => {
-            const next = await call<Preview>("preview_worktree", { branch, targetDir: target });
+            const next = await call("preview_worktree", { branch, targetDir: target });
             if (!alive.current) {
               void call("cancel_worktree", { previewId: next.previewId }).catch(() => {});
               return;
@@ -136,7 +141,7 @@ export default function SourceWorktree({ description, enabled, onBusyChange, onD
                 const operationId = crypto.randomUUID();
                 operation.current = operationId;
                 try {
-                  const result = await call<{ path: string }>("create_worktree", { previewId, operationId });
+                  const result = await call("create_worktree", { previewId, operationId });
                   if (alive.current) {
                     setCreated(result.path);
                     setBranch("");

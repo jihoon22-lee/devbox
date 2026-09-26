@@ -22,7 +22,7 @@ it("accepts a bounded large-file read that completes after the old five-second U
       operation: {
         provenance: {
           product: "workspace",
-          component: request.component,
+          component: "workspace.files",
           requestId: request.header.requestId,
           revision: catalog.catalogRevision,
         },
@@ -41,6 +41,7 @@ it("accepts a bounded large-file read that completes after the old five-second U
   const assertion = expect(result).resolves.toEqual({ readOnly: true });
   await vi.advanceTimersByTimeAsync(6_000);
   await assertion;
+  expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("plugin:workspace|files");
 });
 
 it("uses a native typed command without a renderer-selected owner field", async () => {

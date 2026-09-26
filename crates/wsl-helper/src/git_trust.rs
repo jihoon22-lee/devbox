@@ -131,6 +131,7 @@ impl GitEnvironment {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ReviewedSource {
     pub path: String,
     pub kind: String,
@@ -138,6 +139,7 @@ pub struct ReviewedSource {
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct GitReview {
     pub executable: String,
     pub sources: Vec<ReviewedSource>,

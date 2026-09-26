@@ -109,7 +109,7 @@ export async function exerciseWorkspaceSource({
       window.__workspaceHistoryRestore=()=>{window.__TAURI_INTERNALS__.invoke=original;};
       window.__TAURI_INTERNALS__.invoke=async function(command,args,...rest) {
         const request=args?.request;
-        if(command!=="plugin:workspace|execute"||request?.component!=="workspace.source"||!["repo_history","repo_commit_detail","repo_diff"].includes(request.method))return original.call(this,command,args,...rest);
+        if(command!=="plugin:workspace|source"||!["repo_history","repo_commit_detail","repo_diff"].includes(request.method))return original.call(this,command,args,...rest);
         const started=performance.now();
         const fixed=value=>typeof value==="string"&&/^[a-z_]{1,80}$/.test(value)?value:null;
         try {

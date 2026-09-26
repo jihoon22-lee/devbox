@@ -36,6 +36,9 @@ pub struct ChangeEntry {
     /// `?` is the untracked worktree marker.
     pub index_status: String,
     pub worktree_status: String,
+    #[ts(
+        type = "\"untracked\" | \"renamed\" | \"copied\" | \"added\" | \"deleted\" | \"modified\""
+    )]
     pub kind: String,
     pub staged: bool,
     pub unstaged: bool,

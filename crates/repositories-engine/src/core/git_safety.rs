@@ -55,6 +55,9 @@ pub struct GitSafetySnapshot {
     pub safe: bool,
     /// Stable machine-readable issue IDs in deterministic order. The UI owns
     /// the localized explanation and never receives raw Git output.
+    #[ts(
+        type = "Array<\"dirty\" | \"detached\" | \"noUpstream\" | \"diverged\" | \"rebaseInProgress\" | \"mergeInProgress\">"
+    )]
     pub issues: Vec<String>,
 }
 

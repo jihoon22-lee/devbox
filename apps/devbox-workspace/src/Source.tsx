@@ -1,3 +1,6 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { SourceHostCall } from "@devbox/workspace-features/generated/SourceHostCall";
+import type { SourceResults } from "@devbox/workspace-features/generated/source-results";
 import { useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import SourcePanel from "@devbox/workspace-features/source-panel";
@@ -55,8 +58,9 @@ export default function Source({
   const busyRef = useRef(false);
   const pending = useRef<string | null>(null);
   const contextKey = JSON.stringify(description.context);
-  const call = <T,>(method: string, args: Record<string, unknown> = {}) =>
-    componentCall<T>(description, "workspace.source", method, args, "source");
+  const call = bindTypedCall<SourceHostCall, SourceResults>((method, args) =>
+    componentCall(description, "workspace.source", method, args, "source"),
+  );
   useEffect(() => {
     onBusyChange(busy || panelsBusy || worktreeBusy || cleanupBusy || preview !== null);
   }, [busy, panelsBusy, worktreeBusy, cleanupBusy, preview, onBusyChange]);
@@ -71,7 +75,7 @@ export default function Source({
     [onBusyChange, onDirtyChange],
   );
   async function load(request: number) {
-    const next = await call<Status>("trust_status");
+    const next = await call("trust_status", {});
     if (sequence.current !== request) return;
     setStatus(next);
     if (next.approved) setPanelsVisited(true);
@@ -140,7 +144,7 @@ export default function Source({
               disabled={busy || panelsBusy || worktreeBusy || cleanupBusy}
               onClick={() =>
                 void act(async (request) => {
-                  const next = await call<Preview>("preview_trust");
+                  const next = await call("preview_trust", {});
                   if (sequence.current !== request) {
                     void call("cancel_trust", { previewId: next.previewId }).catch(() => {});
                     return;
@@ -158,7 +162,7 @@ export default function Source({
                 disabled={busy || panelsBusy || worktreeBusy || cleanupBusy}
                 onClick={() =>
                   void act(async (request) => {
-                    await call("revoke_trust");
+                    await call("revoke_trust", {});
                     if (sequence.current === request) {
                       setStatus((previous) => (previous ? { ...previous, approved: false, hasApproval: false } : null));
                       setNotice("Git 실행 승인을 철회했습니다.");

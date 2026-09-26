@@ -98,7 +98,7 @@ test("native registration probe executes generated requests with the described c
     });
     assert.equal(result, "native-result");
     assert.equal(calls.length, 2);
-    assert.equal(calls[1].command, "plugin:workspace|execute");
+    assert.equal(calls[1].command, "plugin:workspace|registry");
     const request = JSON.parse(JSON.stringify(calls[1].input.request));
     assert.deepEqual(request, {
       header: {
@@ -110,7 +110,6 @@ test("native registration probe executes generated requests with the described c
         route: "overview",
         ...(context ? { context } : {}),
       },
-      component: "workspace.registry",
       method: "preview_windows",
       args,
     });
@@ -374,9 +373,9 @@ test("native editor trace observes IPC with Tauri's immutable invoke and preserv
   const window = { fetch, __TAURI_INTERNALS__: internals };
   runInNewContext(`(${installWorkspaceEditorTrace.toString()})()`, { window, URL, performance });
   assert.equal(internals.invoke, originalInvoke);
-  const response = await window.fetch("http://ipc.localhost/plugin%3Aworkspace%7Cexecute", {
+  const response = await window.fetch("http://ipc.localhost/plugin%3Aworkspace%7Clsp", {
     body: JSON.stringify({
-      request: { component: "workspace.lsp", method: "save_lsp_document", args: { text: "synthetic private buffer" } },
+      request: { method: "save_lsp_document", args: { text: "synthetic private buffer" } },
     }),
   });
   assert.deepEqual(await response.json(), value);
@@ -402,11 +401,11 @@ test("native editor trace ignores unrelated bodies and retains only static failu
   const window = { fetch: async () => new Response(JSON.stringify(value)) };
   runInNewContext(`(${installWorkspaceEditorTrace.toString()})()`, { window, URL, performance });
   const body = JSON.stringify({
-    request: { component: "workspace.files", method: "save_file", args: { text: "synthetic input" } },
+    request: { method: "save_file", args: { text: "synthetic input" } },
   });
   await window.fetch("https://example.test/", { body });
   assert.equal(window.__workspaceLspTrace.rows.length, 0);
-  await window.fetch("http://ipc.localhost/plugin%3Aworkspace%7Cexecute", { body });
+  await window.fetch("http://ipc.localhost/plugin%3Aworkspace%7Cfiles", { body });
   const deadline = Date.now() + 1000;
   while (window.__workspaceLspTrace.rows[0]?.phase === "pending" && Date.now() < deadline)
     await new Promise((resolve) => setTimeout(resolve, 5));

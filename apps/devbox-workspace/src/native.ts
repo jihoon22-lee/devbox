@@ -36,9 +36,8 @@ export async function componentCall<T>(
   let response: { operation: unknown; value: T & { issue?: string } };
   try {
     const command = componentCommands[component];
-    response = command
-      ? await invoke(`plugin:workspace|${command}`, { request: { header, method, args } })
-      : await invoke("plugin:workspace|execute", { request: { header, component, method, args } });
+    if (!command) throw new Error("component_method_invalid");
+    response = await invoke(`plugin:workspace|${command}`, { request: { header, method, args } });
   } catch (problem) {
     throw new WorkspaceOperationError(problemMessage(problem, provenance));
   }

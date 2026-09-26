@@ -1,3 +1,6 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { SourceHostCall } from "@devbox/workspace-features/generated/SourceHostCall";
+import type { SourceResults } from "@devbox/workspace-features/generated/source-results";
 import { useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall } from "./native";
@@ -39,8 +42,9 @@ export default function SourceCleanupScope({
   const alive = useRef(true);
   const busyRef = useRef(false);
   const pending = useRef<string | null>(null);
-  const call = <T,>(method: string, args: Record<string, unknown> = {}) =>
-    componentCall<T>(description, "workspace.source", method, args, "source");
+  const call = bindTypedCall<SourceHostCall, SourceResults>((method, args) =>
+    componentCall(description, "workspace.source", method, args, "source"),
+  );
   const dirty =
     status !== null &&
     (selected.length !== status.selectedIds.length || selected.some((id) => !status.selectedIds.includes(id)));
@@ -62,7 +66,7 @@ export default function SourceCleanupScope({
     // Parent retains this surface across routes and keys it by native context.
   }, []);
   async function load() {
-    const next = await call<Status>("cleanup_scope_status");
+    const next = await call("cleanup_scope_status", {});
     if (alive.current) {
       setStatus(next);
       setSelected(next.selectedIds);
@@ -138,7 +142,7 @@ export default function SourceCleanupScope({
                 disabled={blocked || !enabled || busy || selected.length === 0 || selected.length > 8}
                 onClick={() =>
                   void act(async () => {
-                    const next = await call<Preview>("preview_cleanup_scope", { worktreeIds: selected });
+                    const next = await call("preview_cleanup_scope", { worktreeIds: selected });
                     if (!alive.current) {
                       void call("cancel_cleanup_scope", { previewId: next.previewId }).catch(() => {});
                       return;
@@ -158,7 +162,7 @@ export default function SourceCleanupScope({
               disabled={blocked || busy}
               onClick={() =>
                 void act(async () => {
-                  await call("revoke_cleanup_scope");
+                  await call("revoke_cleanup_scope", {});
                   if (!alive.current) return;
                   onChange();
                   await load();

@@ -5467,6 +5467,7 @@ name = "secrets"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "ts-rs",
  "windows 0.61.3",
  "zeroize",
 ]
@@ -8332,6 +8333,7 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "tokio",
+ "ts-rs",
  "uuid",
  "windows 0.61.3",
  "wsl",

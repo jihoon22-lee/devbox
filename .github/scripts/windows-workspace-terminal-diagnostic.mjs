@@ -102,7 +102,7 @@ try {
   };
   const call = (component, method, args = {}) =>
     main.evaluate(workspaceRequestExpression(component, method, args, 29000), { timeoutMs: 35000 });
-  success(await call("workspace.migration", "status"));
+  success(await call("workspace.setup", "status"));
   const root = path.join(artifact, "synthetic-project");
   mkdirSync(root);
   const registration = success(await call("workspace.registry", "preview_windows", { root }));

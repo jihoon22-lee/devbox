@@ -269,7 +269,11 @@ pub struct CompletionItemWire {
 #[allow(dead_code)]
 pub enum CompletionDocumentation {
     Text(String),
-    Markup { kind: String, value: String },
+    Markup {
+        #[ts(type = "\"markdown\" | \"plaintext\"")]
+        kind: String,
+        value: String,
+    },
 }
 
 /// A normalized hover result.  `MarkedString` language blocks are represented

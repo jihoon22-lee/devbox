@@ -11,7 +11,7 @@ use crate::{
     platform::project_probe::{probe_windows, ProjectLease},
 };
 use product_contract::ProjectContext;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     collections::HashMap,
     path::Path,
@@ -25,6 +25,7 @@ const MAX_PREVIEWS: usize = 8;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RegistrationPreview {
     pub preview_id: String,
     pub registry_revision: u64,
