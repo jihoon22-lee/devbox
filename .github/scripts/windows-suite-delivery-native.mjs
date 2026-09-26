@@ -182,6 +182,19 @@ try {
       assert.equal(result.nativeStoreReady, true);
     }
     evidence.checks.fourCommittedNativeOwners = true;
+    // A real Workspace owner request starts the installed background service.
+    value(await call(apps.workspace, "plugin:workspace|runtime", { method: "list_jobs", args: {} }, "tasks"));
+    const agentImage = realpathSync.native(
+      path.join(root, "generations", manifest.generation, "products/control-center/resources/suite/devbox-agent.exe"),
+    );
+    const agents = () =>
+      allWindowsProcesses().filter(
+        (row) => path.resolve(row.Path).toLowerCase() === path.resolve(agentImage).toLowerCase(),
+      );
+    const deadline = Date.now() + 15000;
+    while (agents().length === 0 && Date.now() < deadline) await delay(100);
+    assert.equal(agents().length, 1, "one installed agent serves the four products");
+    evidence.agent = agents()[0];
   }
   evidence.result = "passed";
 } catch (error) {

@@ -59,6 +59,7 @@ export type DeliveryIssue =
   | "update_asset_missing"
   | "update_asset_topology_invalid"
   | "update_busy"
+  | "update_agent_busy"
   | "update_cache_changed"
   | "update_cache_conflict"
   | "update_cache_unavailable"

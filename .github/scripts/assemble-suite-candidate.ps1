@@ -23,7 +23,7 @@ foreach ($shard in Get-ChildItem -LiteralPath $Shards -Directory) {
     if ($product -cnotin @('workspace','api-studio','knowledge','control-center') -or -not $seen.Add($product)) { throw 'Missing/duplicate/unknown shard product.' }
     [void]$required.Add("$product/devbox-$product.exe")
     if ($product -in @('workspace','knowledge')) { [void]$required.Add("$product/resources/wsl/manifest.json"); [void]$required.Add("$product/resources/wsl/devbox-workspace-wsl") }
-    if ($product -eq 'control-center') { [void]$required.Add('control-center/resources/suite/devbox-suite-bootstrap.exe') }
+    if ($product -eq 'control-center') { [void]$required.Add('control-center/resources/suite/devbox-suite-bootstrap.exe'); [void]$required.Add('control-center/resources/suite/devbox-agent.exe') }
   }
   foreach ($file in $receipt.files) {
     if (-not $required.Remove($file.name)) { throw 'Duplicate/unexpected shard file.' }

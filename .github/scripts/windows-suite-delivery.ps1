@@ -139,8 +139,12 @@ try {
     [IO.File]::WriteAllText($nextPayload, ($payload | ConvertTo-Json -Depth 30 -Compress) + "`n ")
     Require ((Get-FileHash $nextPayload).Hash -ne (Get-FileHash $payloadPath).Hash) 'distinctReviewedGenerationPayload'
     $previousManifest = [IO.File]::ReadAllText((Join-Path $install 'devbox-installation.json'))
+    Native $install 'committed'
+    $oldGeneration = ($previousManifest | ConvertFrom-Json).generation
+    $oldAgent = [IO.Path]::GetFullPath((Join-Path $install "generations/$oldGeneration/products/control-center/resources/suite/devbox-agent.exe"))
     $update = Helper @('--prepare-update',$install,$nextPayload)
     Helper @('--apply-update',$install,$nextPayload,$update.operationId) | Out-Null
+    Require (@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $oldAgent }).Count -eq 0) 'updateRetiresOldGenerationAgent'
     Helper @('--commit-update',$install,$nextPayload,$update.operationId) 'suite_health_required'
     Helper @('--rollback-update',$install,$nextPayload,$update.operationId) | Out-Null
     Require ([IO.File]::ReadAllText((Join-Path $install 'devbox-installation.json')) -eq $previousManifest) 'updateRollbackRestoresExactPackageSelection'
@@ -167,6 +171,22 @@ try {
   foreach ($ownedInstall in $installations) {
     $ownedKey = $ownedInstall.key
     if ($ownedKey -notmatch '^[0-9a-f]{64}$') { $cleanupFailures.Add('invalid captured fixture key'); continue }
+    try {
+      $manifestPath = Join-Path $ownedInstall.root 'devbox-installation.json'
+      if (Test-Path -LiteralPath $manifestPath) {
+        $current = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+        $center = $current.members | Where-Object product -eq 'control-center'
+        $centerImage = Join-Path $ownedInstall.root $center.executable
+        $agentImage = Join-Path (Split-Path $centerImage) 'resources/suite/devbox-agent.exe'
+        if ((Test-Path -LiteralPath $centerImage) -and (Test-Path -LiteralPath $agentImage)) {
+          $relay = Start-Process -FilePath $centerImage -ArgumentList '--stop-agent-for-update' -PassThru
+          if (-not $relay.WaitForExit(15000)) { $relay.Kill(); $relay.WaitForExit(); throw 'Owned agent shutdown timed out' }
+          if ($relay.ExitCode -ne 0) { throw 'Owned agent shutdown failed' }
+        }
+      }
+    } catch { $cleanupFailures.Add($_.Exception.Message) }
+    $agentData = Join-Path $env:LOCALAPPDATA "com.devbox.v08.agent.i$ownedKey"
+    try { if (Test-Path -LiteralPath $agentData) { Remove-Item -LiteralPath $agentData -Recurse -Force } } catch { $cleanupFailures.Add($_.Exception.Message) }
     foreach ($product in $payload.products) {
       $definition = $catalog.products | Where-Object id -eq $product.id
       $ownedData = Join-Path $env:LOCALAPPDATA "$($definition.identifier).i$ownedKey"

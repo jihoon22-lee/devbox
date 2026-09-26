@@ -197,6 +197,53 @@ impl AgentClient {
         }
         Err(AgentError::Unavailable)
     }
+    /// Update callers never start an absent service. Missing is the only
+    /// transport failure that proves it is gone; busy/unverified is fail-closed.
+    pub async fn shutdown_if_running(&self, session: &str) -> Result<(), AgentError> {
+        let transport = self.0.transport.as_ref().ok_or(AgentError::Unavailable)?;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let mut connected = match transport.connect().await {
+                Ok(connection) => connection,
+                Err(Connect::Missing) => return Ok(()),
+                _ => return Err(AgentError::Unavailable),
+            };
+            (connected.verify)()?;
+            wire::write(
+                &mut connected.stream,
+                &ClientMessage::Hello {
+                    protocol: agent_protocol::PROTOCOL_VERSION,
+                    product: self.0.product.clone(),
+                    session: session.into(),
+                },
+            )
+            .await
+            .map_err(|_| AgentError::Unavailable)?;
+            match wire::read::<_, AgentMessage>(&mut connected.stream).await {
+                Ok(AgentMessage::Welcome {
+                    protocol,
+                    generation,
+                    ..
+                }) if protocol == agent_protocol::PROTOCOL_VERSION
+                    && generation == transport.generation() => {}
+                _ => return Err(AgentError::Unavailable),
+            }
+            (connected.verify)()?;
+            wire::write(&mut connected.stream, &ClientMessage::Shutdown {})
+                .await
+                .map_err(|_| AgentError::Unavailable)?;
+            drop(connected);
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                match transport.connect().await {
+                    Err(Connect::Missing) => return Ok(()),
+                    Ok(_) | Err(Connect::Unavailable) => {}
+                    Err(Connect::Rejected(_)) => return Err(AgentError::Unavailable),
+                }
+            }
+        })
+        .await
+        .map_err(|_| AgentError::Unavailable)?
+    }
     pub async fn call(&self, component: &str, request: Value) -> Result<Value, AgentError> {
         if self.0.unsupported {
             return Err(AgentError::Unsupported);
@@ -459,6 +506,19 @@ mod tests {
         assert!(Arc::ptr_eq(&a.unwrap(), &b.unwrap()));
         assert_eq!(transport.launches.load(Ordering::SeqCst), 1);
         assert_eq!(transport.attempts.load(Ordering::SeqCst), 3);
+    }
+    #[tokio::test]
+    async fn update_shutdown_never_launches_a_missing_agent() {
+        let transport = Arc::new(Fake {
+            attempts: AtomicUsize::new(0),
+            launches: AtomicUsize::new(0),
+            missing: 100,
+            drop_first: AtomicBool::new(false),
+        });
+        let client = AgentClient::with_transport("control-center", transport.clone());
+        client.shutdown_if_running("update").await.unwrap();
+        assert_eq!(transport.attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 0);
     }
     #[tokio::test]
     async fn portable_builds_are_unsupported() {

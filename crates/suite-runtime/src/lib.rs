@@ -1209,3 +1209,17 @@ mod host_identity_tests {
         );
     }
 }
+
+/// A verified installed product can retire its installation's agent without
+/// creating windows or starting a missing agent. Used by Control Center's CLI.
+#[cfg(windows)]
+pub fn stop_agent_for_update(version: &str) -> Result<(), &'static str> {
+    let client = platform::agent_transport::create("control-center", version);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| "update_agent_busy")?;
+    runtime
+        .block_on(client.shutdown_if_running(&uuid::Uuid::new_v4().to_string()))
+        .map_err(|_| "update_agent_busy")
+}

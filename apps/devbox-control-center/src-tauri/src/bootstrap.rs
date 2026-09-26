@@ -1004,6 +1004,9 @@ fn writer_gate(root: &Path, create: bool) -> Result<Lock> {
     }
 }
 fn writer_gate_for_restore(root: &Path, create: bool) -> Result<Lock> {
+    if !create {
+        update::stop_agent(root)?;
+    }
     let path = root.join("suite-writers.lock");
     let open = |new: bool| {
         let mut options = OpenOptions::new();

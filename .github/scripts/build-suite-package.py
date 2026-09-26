@@ -52,7 +52,7 @@ def portables(payload, output, version, source):
         if product in {"workspace", "knowledge"}:
             names += ["resources/wsl/manifest.json", "resources/wsl/devbox-workspace-wsl"]
         if product == "control-center":
-            names += ["resources/suite/devbox-suite-bootstrap.exe"]
+            names += ["resources/suite/devbox-suite-bootstrap.exe", "resources/suite/devbox-agent.exe"]
         files = [asset(root / name, name) for name in names]
         executable = files[0]
         portable_manifest = {

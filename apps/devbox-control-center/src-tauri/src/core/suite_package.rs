@@ -62,7 +62,11 @@ pub fn product_file(product: &str, name: &str) -> bool {
                 name,
                 "resources/wsl/manifest.json" | "resources/wsl/devbox-workspace-wsl"
             ))
-        || (product == "control-center" && name == "resources/suite/devbox-suite-bootstrap.exe")
+        || (product == "control-center"
+            && matches!(
+                name,
+                "resources/suite/devbox-suite-bootstrap.exe" | "resources/suite/devbox-agent.exe"
+            ))
 }
 impl Release {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
@@ -157,6 +161,13 @@ fn validate_products(products: &[ProductPackage], version: &str, notices: &Asset
         }
         if product.id == "control-center" {
             expected.push("resources/suite/devbox-suite-bootstrap.exe");
+            // Public 0.8.x rollback/removal payloads predate the component.
+            let release: Vec<u32> = version.split('.').filter_map(|p| p.parse().ok()).collect();
+            if release.as_slice() >= [0, 9, 0].as_slice()
+                || names.contains("resources/suite/devbox-agent.exe")
+            {
+                expected.push("resources/suite/devbox-agent.exe");
+            }
         }
         if names != expected.into_iter().collect() {
             return Err("suite_package_incomplete");
@@ -254,6 +265,44 @@ mod tests {
             products,
             notices: item("THIRD_PARTY_NOTICES.md"),
         }
+    }
+    #[test]
+    fn control_center_owns_the_agent_and_old_payloads_remain_readable() {
+        assert!(product_file(
+            "control-center",
+            "resources/suite/devbox-agent.exe"
+        ));
+        assert!(!product_file(
+            "workspace",
+            "resources/suite/devbox-agent.exe"
+        ));
+        let mut payload = fixture(true);
+        assert!(Payload::parse(&serde_json::to_vec(&payload).unwrap()).is_ok());
+        payload
+            .products
+            .iter_mut()
+            .find(|p| p.id == "control-center")
+            .unwrap()
+            .files
+            .push(item("resources/suite/devbox-agent.exe"));
+        assert!(Payload::parse(&serde_json::to_vec(&payload).unwrap()).is_ok());
+        payload.suite_version = "0.9.0".into();
+        for product in &mut payload.products {
+            product.version = "0.9.0".into();
+            product.portable.name = format!("devbox-{}_0.9.0_x64.zip", product.id);
+        }
+        assert!(Payload::parse(&serde_json::to_vec(&payload).unwrap()).is_ok());
+        payload
+            .products
+            .iter_mut()
+            .find(|p| p.id == "control-center")
+            .unwrap()
+            .files
+            .retain(|f| f.name != "resources/suite/devbox-agent.exe");
+        assert_eq!(
+            Payload::parse(&serde_json::to_vec(&payload).unwrap()).unwrap_err(),
+            "suite_package_incomplete"
+        );
     }
     #[test]
     fn accepts_both_legacy_and_helper_backed_knowledge_generations() {

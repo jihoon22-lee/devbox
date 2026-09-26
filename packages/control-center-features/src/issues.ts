@@ -67,6 +67,7 @@ export const deliveryMessages: Record<DeliveryIssue, string> = {
   update_asset_changed: "다운로드한 파일의 크기 또는 해시가 공식 배포 정보와 다릅니다. 실행하지 않았습니다.",
   update_asset_missing: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
   update_asset_topology_invalid: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
+  update_agent_busy: "백그라운드 서비스를 종료하지 못했습니다. 모든 제품을 닫고 다시 시도해 주세요.",
   update_busy: "진행 중인 업데이트 요청이 있습니다.",
   update_cache_changed: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
   update_cache_conflict: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",

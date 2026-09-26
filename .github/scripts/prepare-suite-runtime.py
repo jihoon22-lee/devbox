@@ -27,7 +27,7 @@ def prepare(assets, repository, source):
                 with archive.open(member['name']) as src,target.open('xb') as dst:shutil.copyfileobj(src,dst,65536)
             names = [f"devbox-{product['id']}.exe"]
             if product['id'] in {'workspace','knowledge'}:names += ['resources/wsl/manifest.json','resources/wsl/devbox-workspace-wsl']
-            if product['id']=='control-center':names += ['resources/suite/devbox-suite-bootstrap.exe']
+            if product['id']=='control-center':names += [f['name'] for f in product['files'] if f['name'].startswith('resources/suite/')]
             for name in names:
                 if name.startswith('resources/wsl/'):
                     target=repository/f"apps/devbox-{product['id']}/src-tauri"/name

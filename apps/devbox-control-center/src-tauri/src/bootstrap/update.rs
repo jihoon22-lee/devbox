@@ -458,6 +458,93 @@ pub(super) fn resume_before_shell(image: &Path) -> Result<bool> {
     }
     Err("update_caller_untrusted")
 }
+// The installer helper is deliberately not an authenticated product peer.
+// Ask the verified current Control Center image to send Shutdown without UI.
+pub(super) fn stop_agent(root: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // A durable recovery gate means admission is already closed. Do not
+        // require coherent active records during a partially published switch;
+        // the exclusive writer lock below still proves all writers are gone.
+        for marker in ["suite-update.block", "suite-data-restore.block"] {
+            if fs::symlink_metadata(root.join(marker)).is_ok() {
+                return Ok(());
+            }
+        }
+        if matches!(fs::symlink_metadata(root.join("devbox-installation.json")), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+        {
+            return Ok(());
+        }
+        let records = records(root)?;
+        let payload = Payload::parse(&records.payload)?;
+        let package = payload
+            .products
+            .iter()
+            .find(|p| p.id == "control-center")
+            .ok_or("update_agent_busy")?;
+        if !package
+            .files
+            .iter()
+            .any(|file| file.name == "resources/suite/devbox-agent.exe")
+        {
+            return Ok(());
+        }
+        let member = records
+            .manifest
+            .members
+            .iter()
+            .find(|p| p.product == "control-center")
+            .ok_or("update_agent_busy")?;
+        let image = root.join(&member.executable);
+        if matches!(fs::symlink_metadata(&image), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+        {
+            return Ok(());
+        }
+        let asset = package
+            .files
+            .iter()
+            .find(|f| f.name == "devbox-control-center.exe")
+            .ok_or("update_agent_busy")?;
+        verified_file(&image, asset)?;
+        let _scope = crate::suite::platform::component_scope::CapturedScope::capture(
+            root,
+            "control-center",
+            &image,
+            &records.manifest.suite_version,
+        )?
+        .capture_agent_image()?;
+        let mut child = std::process::Command::new(&image)
+            .arg("--stop-agent-for-update")
+            .creation_flags(0x08000000)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|_| "update_agent_busy")?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+        loop {
+            match child.try_wait().map_err(|_| "update_agent_busy")? {
+                Some(status) if status.success() => return Ok(()),
+                Some(_) => return Err("update_agent_busy"),
+                None if std::time::Instant::now() >= deadline => {
+                    // Only the child we just created is ours to stop. Never kill
+                    // the agent or an arbitrary PID when graceful shutdown fails.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("update_agent_busy");
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(50)),
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = root;
+        Ok(())
+    }
+}
+
 pub(super) fn prepare(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
