@@ -414,6 +414,19 @@ importers:
         specifier: ~5.8.3
         version: 5.8.3
 
+  packages/hooks:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+
   packages/knowledge-features:
     dependencies:
       '@codemirror/autocomplete':
