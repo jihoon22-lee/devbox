@@ -1,3 +1,6 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { ProblemsCall } from "@devbox/workspace-features/generated/ProblemsCall";
+import type { ProblemsResults } from "@devbox/workspace-features/generated/problems-results";
 import { useEffect, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall } from "./native";
@@ -21,17 +24,14 @@ export default function ContextStatus({
     if (!description.context) return;
     let disposed = false,
       pending = false;
+    const call = bindTypedCall<ProblemsCall, ProblemsResults>((method, args) =>
+      componentCall(description, "workspace.problems", method, args, "overview"),
+    );
     const read = async () => {
       if (pending) return;
       pending = true;
       try {
-        const value = await componentCall<ProblemsSnapshot>(
-          description,
-          "workspace.problems",
-          "snapshot",
-          {},
-          "overview",
-        );
+        const value = await call("snapshot");
         if (!disposed) setSnapshot(value);
       } catch {
         if (!disposed) setSnapshot(null);

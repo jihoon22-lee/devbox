@@ -94,7 +94,7 @@ pub(crate) async fn execute_definitions(
         None => Ok(None),
     }
     .and_then(|permit| {
-        if product_shell_tauri::workspace_context(&window).map_err(|_| "stale_context")?
+        if product_shell_tauri::workspace_context(window).map_err(|_| "stale_context")?
             != request.header.context
         {
             return Err("stale_context");

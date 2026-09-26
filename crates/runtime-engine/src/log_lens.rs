@@ -26,7 +26,6 @@ pub struct LogLensDispatch {
 /// Publish one selected run stream and launch the installed Log Lens target.
 /// The run database is consulted only to prove that the selected app-owned
 /// log exists; its relative path is never copied into the payload or argv.
-
 pub fn open_run_log_in_log_lens(
     run_id: String,
     stream: LogStream,

@@ -353,16 +353,26 @@ use serde_json::Value;
 use std::{sync::atomic::Ordering, time::Duration};
 use tauri::{Manager, WebviewWindow};
 
+pub(crate) struct TerminalRequest {
+    pub header: RouteRequest,
+    pub method: String,
+    pub args: Value,
+    pub lane: Lane,
+}
+
 pub(crate) async fn terminal_worker(
     window: WebviewWindow,
     runtime: Runtime,
-    header: RouteRequest,
-    method: String,
-    args: Value,
+    request: TerminalRequest,
     companion: bool,
-    lane: Lane,
     context: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
+    let TerminalRequest {
+        header,
+        method,
+        args,
+        lane,
+    } = request;
     let permit = runtime.lanes.try_enter(lane)?;
     let host = runtime.host()?;
     let workers = runtime.lanes.workers(lane);
@@ -426,11 +436,13 @@ pub(crate) async fn execute_terminal_main(
     terminal_worker(
         window.clone(),
         runtime.clone(),
-        request.header,
-        request.method,
-        request.args,
+        TerminalRequest {
+            header: request.header,
+            method: request.method,
+            args: request.args,
+            lane: request.typed.lane(),
+        },
         false,
-        request.typed.lane(),
         context,
     )
     .await

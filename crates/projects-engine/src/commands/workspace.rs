@@ -402,7 +402,6 @@ pub fn delete_profile(
 }
 
 /// wsl-desktop의 gitStatus 이관 (§3.1, §15.2). 프로젝트 경로들의 git 상태.
-
 pub async fn git_status(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     projects: Vec<String>,
@@ -825,7 +824,6 @@ fn port_open_with_control(
 }
 
 /// read-only project health. run-manager 서비스는 integration snapshot(§10.1)으로 읽는다.
-
 pub async fn project_health(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
@@ -854,7 +852,6 @@ pub async fn project_health(
 /// Cancel a health request only when the caller still owns its exact profile
 /// key. This covers selection clearing/window teardown, where no newer health
 /// request would otherwise claim the single-flight slot.
-
 pub fn cancel_project_health(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     profile_id: String,
@@ -1568,7 +1565,6 @@ async fn revalidate_start_profile(
 /// Explicit cancellation for the long-running Start Workspace transition.
 /// The command sets the same sticky bit observed by Git, WSL and port waits;
 /// it does not merely dismiss a frontend spinner.
-
 pub fn cancel_start_workspace(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     profile_id: String,
@@ -1852,7 +1848,6 @@ fn process_step(app_id: &str, outcome: ChildLaunchOutcome) -> Option<RunStep> {
 /// authoritative until the new attempt has finished; newly spawned receipts
 /// are held by a separate guard and are rolled back if profile/revision/budget
 /// validation fails.
-
 pub async fn retry_workspace(
     app: AppHandle,
     registry: tauri::State<'_, Arc<RunRegistry>>,
@@ -2018,7 +2013,6 @@ fn terminate_started_process(process: &StartedProcess) -> bool {
 }
 
 /// Workbench가 시작한 것만 정리한다 (이미 실행 중이던 자원은 건드리지 않는다).
-
 pub fn stop_workspace(
     registry: tauri::State<'_, Arc<RunRegistry>>,
     run_id: String,
@@ -2078,7 +2072,6 @@ pub fn stop_workspace(
 
 /// frontend reload 뒤에도 backend가 추적 중인 단일 run ownership을 복원한다.
 /// start claim이 추가 run을 막으므로 둘 이상이면 손상 상태로 보고 fail-closed한다.
-
 pub fn current_workspace_run(
     registry: tauri::State<'_, Arc<RunRegistry>>,
 ) -> Result<Option<WorkspaceRunOwnership>, String> {

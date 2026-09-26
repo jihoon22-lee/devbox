@@ -643,7 +643,6 @@ fn validate_import_definition(job: &Job, expected_kind: JobKind) -> Result<(), S
 }
 
 /// 정의 export JSON을 파싱하고, 기존 정의와 충돌하는지 계획을 만든다.
-
 pub fn import_definitions(
     json: String,
     state: State<'_, Arc<DatabaseState>>,
@@ -702,7 +701,6 @@ fn job_enabled_draft(job: &Job) -> String {
 }
 
 /// 선택한 항목을 실제로 생성한다. 충돌 항목·미선택 항목은 건너뛴다.
-
 pub fn apply_import(
     json: String,
     selected: Vec<String>,
@@ -820,7 +818,6 @@ fn workspace_plan_with_conflicts(
 
 /// Read one bounded `.vscode/tasks.json` source. Preview is offline and never
 /// executes a task, extension, command variable, shell, or package manager.
-
 pub fn preview_workspace_task_import(
     path: String,
     target_kind: crate::core::models::TargetKind,
@@ -858,7 +855,6 @@ pub fn cancel_workspace_task_import(
 /// Re-read the exact source revision and atomically materialize only selected
 /// process tasks as disabled, untrusted drafts.
 #[allow(clippy::too_many_arguments)]
-
 pub fn apply_workspace_task_import(
     path: String,
     source_root: String,
@@ -912,7 +908,6 @@ pub fn list_workspace_tasks(
 /// Authorize one exact source revision. The filesystem claim is verified both
 /// before and after the durable CAS; a racing change clears trust and disables
 /// every task in the source before this command can report success.
-
 pub fn trust_workspace_task_source(
     source_id: String,
     revision: String,
@@ -971,7 +966,6 @@ const SHELL_RISK_ACKNOWLEDGEMENT: &str = "execute-shell-tasks";
 /// Grant the separate shell boundary for an already trusted exact revision.
 /// A distinct fixed acknowledgement prevents an ordinary source-trust action
 /// from being accidentally reused as shell authorization.
-
 pub fn trust_workspace_task_shell_source(
     source_id: String,
     revision: String,
@@ -1026,7 +1020,6 @@ pub fn trust_workspace_task_shell_source(
 
 /// Build and persist one exact-revision dependency operation, then hand it to
 /// the ordinary scheduler. Raw command/cwd values never cross this boundary.
-
 pub fn run_workspace_task_operation(
     id: String,
     fail_fast: bool,
@@ -1148,7 +1141,6 @@ pub async fn open_workspace_task_diagnostic(
 /// Preview package scripts and Cargo targets from a local project root.  The
 /// operation is read-only and offline; no package manager or Cargo process is
 /// started.
-
 pub fn preview_project_import(
     path: String,
     operation_id: String,
@@ -1166,7 +1158,6 @@ pub fn preview_project_import(
 /// Cancel one in-flight bounded preview/apply operation. Cancellation is
 /// cooperative and never rolls back an already committed database transaction;
 /// project apply builds one atomic batch and checks the flag before saving.
-
 pub fn cancel_project_import(
     operation_id: String,
     operations: State<'_, Arc<ImportOperationRegistry>>,
@@ -1179,7 +1170,6 @@ pub fn cancel_project_import(
 /// Re-read and apply only the selected preview items.  Source revision and
 /// canonical root are checked first, and every resulting definition is
 /// disabled with a fixed manual-review schedule.
-
 pub fn apply_project_import(
     path: String,
     source_root: String,
@@ -1392,7 +1382,6 @@ fn history_command_error(filter: &RunHistoryFilter, _error: StorageError) -> Str
 
 /// Explicit alias for callers that prefer a single filter object.  The
 /// legacy `list_runs` command above remains available for existing clients.
-
 pub fn list_run_history(
     input: RunHistoryFilter,
     state: State<'_, Arc<DatabaseState>>,
@@ -1422,7 +1411,6 @@ fn scheduler_command_error(error: SchedulerError) -> String {
 
 /// Start one explicit run through the same overlap policy, protected
 /// environment boundary, logs, and process adapter as scheduled work.
-
 pub async fn run_job_now(
     id: String,
     runtime: State<'_, Arc<RuntimeState>>,
@@ -1441,7 +1429,6 @@ pub async fn run_job_now(
 
 /// Stop the active process tree for one job. A null result means the job has
 /// no active process run; durable queued intents are left untouched.
-
 pub async fn stop_active_run(
     id: String,
     state: State<'_, Arc<RuntimeState>>,
@@ -1494,7 +1481,6 @@ pub struct CronPreviewItem {
 /// The command deliberately accepts only an expression; the reference clock
 /// remains the daemon's local system clock so preview and scheduling use the
 /// same timezone semantics.
-
 pub fn preview_cron(input: CronPreviewInput) -> Result<Vec<CronPreviewItem>, String> {
     let after = Local::now();
     crate::core::cron::preview_occurrences(&input.cron_expr, after)
@@ -1517,7 +1503,6 @@ pub fn preview_cron(input: CronPreviewInput) -> Result<Vec<CronPreviewItem>, Str
 /// The database value is only a relative identifier. Resolve it against the
 /// current app-local root before opening the stream so a stale or tampered row
 /// cannot turn this command into an arbitrary file reader.
-
 pub async fn tail_log(
     app: AppHandle,
     input: TailLogInput,
@@ -1547,7 +1532,6 @@ pub async fn tail_log(
 /// Search the currently retained app-owned stdout/stderr snapshots for one
 /// run. The command returns only bounded line metadata; it never stores,
 /// forwards, or re-emits matching log text.
-
 pub async fn search_run_logs(
     app: AppHandle,
     input: LogSearchRequest,

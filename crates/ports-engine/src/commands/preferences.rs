@@ -12,7 +12,6 @@ fn preferences_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String
 
 /// Load bounded, app-owned view state. Invalid or corrupt state is rejected
 /// by the core parser; the frontend can then use its safe defaults.
-
 pub async fn load_port_manager_preferences(
     app: tauri::AppHandle,
 ) -> Result<PortManagerPreferences, String> {
@@ -27,7 +26,6 @@ pub async fn load_port_manager_preferences(
 /// Persist only the strict preference DTO. The shared writer makes the file
 /// replacement atomic and the core validator rejects paths/secrets/unknown
 /// control fields before any bytes reach disk.
-
 pub async fn save_port_manager_preferences(
     app: tauri::AppHandle,
     preferences: PortManagerPreferences,

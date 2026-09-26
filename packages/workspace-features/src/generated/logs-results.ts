@@ -12,6 +12,7 @@ import type { SourceSnapshot } from "./SourceSnapshot";
 import type { SourceSpec } from "./SourceSpec";
 import type { SourceSummary } from "./SourceSummary";
 import type { SourcesSnapshot } from "./SourcesSnapshot";
+import type { WebhookLogSource } from "./WebhookLogSource";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 export type LogsResults = {
@@ -24,7 +25,7 @@ export type LogsResults = {
   filter_log_records: Array<LogRecord>;
   fixed_adapter: AdapterPlan | null;
   list_saved_views: SavedViewsDocument;
-  open_webhook_log: JsonValue;
+  open_webhook_log: WebhookLogSource;
   preview_legacy_runtime_settings: JsonValue;
   preview_log_source: LogSourcePreview;
   read_source: SourceSnapshot;

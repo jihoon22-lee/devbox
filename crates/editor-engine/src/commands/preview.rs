@@ -59,7 +59,6 @@ pub fn strip_frontmatter(content: &str) -> String {
 /// Renders the current in-memory document.  The workspace root is supplied by
 /// the frontend so a preview cannot load an image from an unrelated folder.
 #[cfg(feature = "desktop")]
-
 pub async fn render_preview(
     path: String,
     content: String,

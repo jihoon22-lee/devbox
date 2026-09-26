@@ -1134,7 +1134,6 @@ pub fn delete_path_guarded(
 
 /// Tauri command for opening one file.
 #[cfg(feature = "desktop")]
-
 pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
         open_path_with_encoding(Path::new(&request.path), request.encoding)
@@ -1148,7 +1147,6 @@ pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, Strin
 /// Tauri command for saving one file. The timestamp is intentionally a decimal
 /// string (`expectedMtimeNanos`) so JavaScript cannot round an epoch `i64`.
 #[cfg(feature = "desktop")]
-
 pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let expected_mtime =
@@ -1177,7 +1175,6 @@ pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String
 /// Error strings are deliberately generic so arbitrary paths and OS details do
 /// not cross the command boundary.
 #[cfg(feature = "desktop")]
-
 pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let expected = expected_snapshot(&request.file)
@@ -1191,7 +1188,6 @@ pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFil
 
 /// Delete only the currently-open regular file after an exact snapshot check.
 #[cfg(feature = "desktop")]
-
 pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let expected =
@@ -1206,7 +1202,6 @@ pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String
 /// Reveal a canonical existing regular file without returning its path or the
 /// platform opener's detailed error to the frontend.
 #[cfg(feature = "desktop")]
-
 pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let canonical =
         canonical_file(Path::new(&path)).map_err(|_| "파일 위치를 열 수 없습니다.".to_string())?;
@@ -1219,7 +1214,6 @@ pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(
 /// This is used by the status-bar conversion control so a metadata change is
 /// only committed after CP949 (or another strict encoder) accepts the buffer.
 #[cfg(feature = "desktop")]
-
 pub async fn validate_encoding(request: ValidateEncodingRequest) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         encoding::encode(&request.text, request.encoding)

@@ -51,7 +51,6 @@ pub struct ToolboxDispatch {
 /// Publish the explicit selected-record export through the one-time text
 /// handoff. Source descriptors, paths, commands, and the clipboard are not
 /// read by this boundary.
-
 pub fn send_selection_to_toolbox(text: String) -> Result<ToolboxDispatch, String> {
     let _ = (text,);
     Err(TOOLBOX_UNAVAILABLE.into())
@@ -72,7 +71,6 @@ pub fn fixed_adapter(source: SourceSpec) -> Result<Option<crate::core::AdapterPl
 /// Load one bounded snapshot. `operationId` is caller-generated and opaque;
 /// starting another generation cancels the previous one. The command returns
 /// no raw path or process diagnostics in errors.
-
 pub async fn read_source(
     state: State<'_, AppState>,
     source: SourceSpec,

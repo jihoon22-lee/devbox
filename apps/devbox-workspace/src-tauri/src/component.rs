@@ -1,5 +1,5 @@
 //! Native product command admission. Route names do not grant Registry writes.
-use crate::ipc::terminal::terminal_worker;
+use crate::ipc::terminal::{terminal_worker, TerminalRequest};
 use crate::{
     host::Host,
     ipc::lanes::{Lane, Lanes},
@@ -12,7 +12,7 @@ use std::sync::{
 use std::time::Duration;
 use tauri::{Manager, State, WebviewWindow};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct Runtime {
     pub(crate) lanes: Lanes,
     pub(crate) shutdown_started: Arc<AtomicBool>,
@@ -31,29 +31,6 @@ pub(crate) struct Runtime {
     pub(crate) lsp: Arc<Mutex<Option<Arc<crate::lsp_host::LspHost>>>>,
     pub(crate) lsp_operations: crate::core::source_operations::Operations,
     pub(crate) lsp_shutdown: editor_engine::lsp::RequestCancellation,
-}
-impl Default for Runtime {
-    fn default() -> Self {
-        Self {
-            lanes: Lanes::default(),
-            shutdown_started: Arc::default(),
-            ui_ready: Arc::default(),
-            engines: Arc::default(),
-            terminals: Arc::default(),
-            sessions: Arc::default(),
-            exit_authorized: Arc::default(),
-            context_activity: Default::default(),
-            filesystem_activity: Default::default(),
-            definitions: Arc::default(),
-            source: Arc::default(),
-            source_operations: Default::default(),
-            host: Arc::default(),
-            files: Arc::default(),
-            lsp: Arc::default(),
-            lsp_operations: Default::default(),
-            lsp_shutdown: Default::default(),
-        }
-    }
 }
 impl Runtime {
     pub(crate) fn shutting_down(&self) -> bool {
@@ -222,19 +199,18 @@ async fn terminal_execute(
     terminal_worker(
         window,
         runtime.inner().clone(),
-        request.header,
-        method,
-        args,
+        TerminalRequest {
+            header: request.header,
+            method,
+            args,
+            lane,
+        },
         true,
-        lane,
         None,
     )
     .await
     .map_err(str::to_owned)
 }
-
-/// Private editor recovery/session writes remain available while Git owns the
-/// worktree. User-file reads/writes coordinate with Git until workers retire.
 
 fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
@@ -724,7 +700,11 @@ mod tests {
             assert!(!allowed(component, route, &method));
         }
         assert!(allowed("workspace.setup", "overview", "start_empty"));
-        assert!(!<crate::ipc::registry::RegistryCall as product_ipc::ComponentCall>::IMPORT_PHASE);
+        const {
+            assert!(
+                !<crate::ipc::registry::RegistryCall as product_ipc::ComponentCall>::IMPORT_PHASE
+            );
+        }
         assert!(allowed("workspace.registry", "overview", "save_template"));
         assert!(allowed(
             "workspace.registry",

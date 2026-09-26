@@ -1,7 +1,14 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { WorkspaceRuntimeCall } from "@devbox/workspace-features/generated/WorkspaceRuntimeCall";
+import type { RuntimeResults } from "@devbox/workspace-features/generated/runtime-results";
 import { useEffect, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall } from "./native";
+const runtimeCall = (description: Description) =>
+  bindTypedCall<WorkspaceRuntimeCall, RuntimeResults>((method, args) =>
+    componentCall(description, "workspace.runtime", method, args, "tasks"),
+  );
 interface Run {
   id: string;
   jobId: string;
@@ -24,7 +31,7 @@ export default function IncomingRuntimeReview({ description }: { description: De
     setRun(null);
     setIssue("");
     if (id)
-      void componentCall<Run | null>(description, "workspace.runtime", "get_run", { id }, "tasks")
+      void runtimeCall(description)("get_run", { id })
         .then((value) => {
           if (current) {
             if (value?.id === id) setRun(value);
@@ -39,11 +46,11 @@ export default function IncomingRuntimeReview({ description }: { description: De
     };
   }, [description, id]);
   if (!id) return null;
-  const openLog = async (stream: string) => {
+  const openLog = async (stream: "stdout" | "stderr") => {
     setBusy(true);
     setIssue("");
     try {
-      await componentCall(description, "workspace.runtime", "open_run_log_in_log_lens", { runId: id, stream }, "tasks");
+      await runtimeCall(description)("open_run_log_in_log_lens", { runId: id, stream });
       clear();
     } catch {
       setIssue("현재 실행 로그를 열지 못했습니다.");

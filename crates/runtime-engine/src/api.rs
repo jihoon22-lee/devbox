@@ -977,21 +977,6 @@ pub fn result_types(
 ("open_run_log_in_log_lens",export.register::<crate::log_lens::LogLensDispatch>()?),
 ])
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn unknown_methods_and_extra_arguments_are_rejected() {
-        assert!(serde_json::from_str::<RuntimeCall>(r#"{"method":"unknown","args":{}}"#).is_err());
-    }
-    #[test]
-    fn method_names_are_unique() {
-        let mut names = METHODS.to_vec();
-        names.sort();
-        names.dedup();
-        assert_eq!(names.len(), METHODS.len());
-    }
-}
 
 #[cfg(feature = "desktop")]
 pub async fn dispatch(
@@ -1045,6 +1030,22 @@ pub async fn dispatch(
         }
     }
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unknown_methods_and_extra_arguments_are_rejected() {
+        assert!(serde_json::from_str::<RuntimeCall>(r#"{"method":"unknown","args":{}}"#).is_err());
+    }
+    #[test]
+    fn method_names_are_unique() {
+        let mut names = METHODS.to_vec();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), METHODS.len());
+    }
 }
 
 #[cfg(test)]

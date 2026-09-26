@@ -174,6 +174,35 @@ impl ts_rs::TypeVisitor for TypeExporter<'_> {
     }
 }
 
+/// Product overrides own their argument shape; a rejected host call must not
+/// silently retry deserialization as a retired standalone engine method.
+pub fn decode_host_first<'de, D, H, E, R>(
+    deserializer: D,
+    host_methods: &[&str],
+    host: fn(H) -> R,
+    engine: fn(Box<E>) -> R,
+) -> Result<R, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    H: DeserializeOwned,
+    E: DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value
+        .get("method")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|method| host_methods.contains(&method))
+    {
+        serde_json::from_value(value)
+            .map(host)
+            .map_err(serde::de::Error::custom)
+    } else {
+        serde_json::from_value(value)
+            .map(|call| engine(Box::new(call)))
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,34 +340,5 @@ mod tests {
             ),
             "export type DemoResults = {\n  get_day: DaySummary;\n  stop_tracking: null;\n};\n"
         );
-    }
-}
-
-/// Product overrides own their argument shape; a rejected host call must not
-/// silently retry deserialization as a retired standalone engine method.
-pub fn decode_host_first<'de, D, H, E, R>(
-    deserializer: D,
-    host_methods: &[&str],
-    host: fn(H) -> R,
-    engine: fn(Box<E>) -> R,
-) -> Result<R, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    H: DeserializeOwned,
-    E: DeserializeOwned,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    if value
-        .get("method")
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|method| host_methods.contains(&method))
-    {
-        serde_json::from_value(value)
-            .map(host)
-            .map_err(serde::de::Error::custom)
-    } else {
-        serde_json::from_value(value)
-            .map(|call| engine(Box::new(call)))
-            .map_err(serde::de::Error::custom)
     }
 }

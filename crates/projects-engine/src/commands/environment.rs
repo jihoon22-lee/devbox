@@ -31,7 +31,6 @@ pub struct ProjectEnvironmentPreviewRequest {
 
 /// Preview a user-selected source.  Paths are accepted only as project root
 /// plus a `.env` filename; no absolute source path is returned.
-
 pub async fn preview_project_environment(
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
     request: ProjectEnvironmentPreviewRequest,
@@ -78,7 +77,6 @@ pub async fn preview_project_environment(
 /// Cancel the currently active preview request. The request id is generated
 /// and retained by the frontend API wrapper; native work observes the same
 /// sticky bit as its file reader.
-
 pub fn cancel_project_environment(
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
     request_id: String,

@@ -87,7 +87,6 @@ pub enum ListenerActionResult {
 
 /// List native, WSL, and published-container listeners. All platform work is
 /// kept off the Tauri command thread and every child output is bounded.
-
 pub async fn list_ports() -> Result<Vec<PortRow>, String> {
     tauri::async_runtime::spawn_blocking(collect_ports)
         .await
@@ -98,7 +97,6 @@ pub async fn list_ports() -> Result<Vec<PortRow>, String> {
 /// Re-query the endpoint and identity immediately before a process action.
 /// A container row returns a validated handoff descriptor and never invokes a
 /// process termination API.
-
 pub async fn kill_listener(request: KillListenerRequest) -> Result<ListenerActionResult, String> {
     tauri::async_runtime::spawn_blocking(move || kill_listener_sync(request))
         .await
@@ -166,7 +164,6 @@ fn kill_listener_sync_until(
 /// Return the validated handoff descriptor for a container row. The current
 /// container identity is re-read through list_ports first, so a stale
 /// selection cannot be handed off silently.
-
 pub async fn handoff_container_stop(
     request: KillListenerRequest,
 ) -> Result<ContainerStopHandoff, String> {
@@ -200,7 +197,6 @@ pub async fn handoff_container_stop(
 
 /// PID-only process detail lookup remains read-only. Process control uses
 /// kill_listener and therefore cannot be reached with a bare PID.
-
 pub fn get_process_info(pid: u32) -> Result<ProcessInfo, String> {
     if pid == 0 {
         return Err(ListenerError::InvalidRequest.to_string());
@@ -233,7 +229,6 @@ pub fn get_process_info(pid: u32) -> Result<ProcessInfo, String> {
 
 /// PID is resolved again by the backend; the frontend cannot provide an
 /// arbitrary path to the opener. Errors intentionally use fixed text.
-
 pub async fn reveal_process(app: tauri::AppHandle, pid: u32) -> Result<(), String> {
     if pid == 0 {
         return Err(ListenerError::InvalidRequest.to_string());
@@ -255,7 +250,6 @@ pub async fn reveal_process(app: tauri::AppHandle, pid: u32) -> Result<(), Strin
 
 /// Open only a URL produced from a validated listener row. The command keeps
 /// the existing API for browser actions but does not echo the URL on failure.
-
 pub async fn open_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
     if !is_safe_browser_url(&url) {
         return Err(ListenerError::InvalidRequest.to_string());

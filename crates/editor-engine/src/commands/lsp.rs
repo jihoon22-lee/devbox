@@ -92,52 +92,6 @@ fn public_loaded_config(mut loaded: LoadedLspConfig) -> LoadedLspConfig {
     loaded
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{public_control_error, public_loaded_config, public_rename_error};
-    use crate::lsp::{LoadedLspConfig, LspConfig, LspManagerError};
-
-    #[test]
-    fn management_errors_do_not_echo_protocol_paths_or_credentials() {
-        let secret = r#"C:\Users\dev\private token=raw-secret"#;
-        for error in [
-            LspManagerError::Config(secret.into()),
-            LspManagerError::Protocol(secret.into()),
-        ] {
-            let public = public_control_error(error);
-            assert_eq!(public, "언어 서버 작업을 완료하지 못했습니다");
-            assert!(!public.contains("Users"));
-            assert!(!public.contains("raw-secret"));
-        }
-    }
-
-    #[test]
-    fn corrupt_config_detail_is_replaced_before_ipc() {
-        let loaded = public_loaded_config(LoadedLspConfig {
-            config: LspConfig::empty(),
-            persist_allowed: false,
-            error: Some(r#"invalid file at C:\Users\dev\lsp.json token=secret"#.into()),
-        });
-        assert_eq!(
-            loaded.error.as_deref(),
-            Some("저장된 LSP 설정이 손상되었습니다")
-        );
-    }
-
-    #[test]
-    fn rename_errors_do_not_echo_paths_or_server_details() {
-        let secret = r#"C:\Users\dev\workspace\token=raw-secret"#;
-        assert_eq!(
-            public_rename_error(LspManagerError::Protocol(secret.into())),
-            "이름 변경을 준비하거나 적용하지 못했습니다"
-        );
-        assert_eq!(
-            public_rename_error(LspManagerError::NotRunning(secret.into())),
-            "이름 변경을 적용할 언어 서버가 실행 중이 아닙니다"
-        );
-    }
-}
-
 pub async fn open_lsp_document(
     manager: State<'_, Arc<LspManager>>,
     language_id: String,
@@ -322,4 +276,50 @@ pub async fn request_lsp_formatting(
         .formatting(&language_id, &uri, tab_size, insert_spaces)
         .await
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{public_control_error, public_loaded_config, public_rename_error};
+    use crate::lsp::{LoadedLspConfig, LspConfig, LspManagerError};
+
+    #[test]
+    fn management_errors_do_not_echo_protocol_paths_or_credentials() {
+        let secret = r#"C:\Users\dev\private token=raw-secret"#;
+        for error in [
+            LspManagerError::Config(secret.into()),
+            LspManagerError::Protocol(secret.into()),
+        ] {
+            let public = public_control_error(error);
+            assert_eq!(public, "언어 서버 작업을 완료하지 못했습니다");
+            assert!(!public.contains("Users"));
+            assert!(!public.contains("raw-secret"));
+        }
+    }
+
+    #[test]
+    fn corrupt_config_detail_is_replaced_before_ipc() {
+        let loaded = public_loaded_config(LoadedLspConfig {
+            config: LspConfig::empty(),
+            persist_allowed: false,
+            error: Some(r#"invalid file at C:\Users\dev\lsp.json token=secret"#.into()),
+        });
+        assert_eq!(
+            loaded.error.as_deref(),
+            Some("저장된 LSP 설정이 손상되었습니다")
+        );
+    }
+
+    #[test]
+    fn rename_errors_do_not_echo_paths_or_server_details() {
+        let secret = r#"C:\Users\dev\workspace\token=raw-secret"#;
+        assert_eq!(
+            public_rename_error(LspManagerError::Protocol(secret.into())),
+            "이름 변경을 준비하거나 적용하지 못했습니다"
+        );
+        assert_eq!(
+            public_rename_error(LspManagerError::NotRunning(secret.into())),
+            "이름 변경을 적용할 언어 서버가 실행 중이 아닙니다"
+        );
+    }
 }

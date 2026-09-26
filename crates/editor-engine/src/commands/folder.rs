@@ -204,7 +204,6 @@ pub fn list_workspace_files_guarded(
 /// The limit is applied by `collect_limited` while walking, never after a full
 /// tree has been materialized in the frontend.
 #[cfg(feature = "desktop")]
-
 pub async fn list_workspace_files(path: String) -> Result<WorkspaceFiles, String> {
     tauri::async_runtime::spawn_blocking(move || list_workspace_files_blocking(&path))
         .await
@@ -267,7 +266,6 @@ fn capabilities_for_path(path: &Path) -> WorkspaceCapabilities {
 /// for session restoration, preview boundaries, and subsequent Quick Open
 /// snapshots.
 #[cfg(feature = "desktop")]
-
 pub async fn canonicalize_workspace(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         canonical_workspace(Path::new(&path)).map(|path| path.to_string_lossy().into_owned())
@@ -279,7 +277,6 @@ pub async fn canonicalize_workspace(path: String) -> Result<String, String> {
 /// Returns the canonical workspace path and the independently supported edit,
 /// watcher, and host-LSP capabilities for that path.
 #[cfg(feature = "desktop")]
-
 pub async fn workspace_capabilities(path: String) -> Result<WorkspaceCapabilities, String> {
     tauri::async_runtime::spawn_blocking(move || {
         canonical_workspace(Path::new(&path)).map(|path| capabilities_for_path(&path))

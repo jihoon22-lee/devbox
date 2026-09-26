@@ -75,7 +75,7 @@ function fixtureManifest(): ManagedServerManifest {
     id: "rust-analyzer",
     version: "2026-08-10.1",
     platform: "windows-x86_64",
-    languages: [{ language_id: "rust", extensions: [".rs"] }],
+    languages: [{ language_id: "rust", extensions: [".rs"], command: null }],
     source_url: "https://example.com/rust-analyzer",
     license: "MIT",
     artifact: {
@@ -566,7 +566,7 @@ describe("LspControlPanel", () => {
       id: "rust-analyzer",
       version: "2026-08-10.1",
       platform: "windows-x86_64",
-      languages: [{ language_id: "rust", extensions: [".rs"] }],
+      languages: [{ language_id: "rust", extensions: [".rs"], command: null }],
       source_url: "https://github.com/rust-lang/rust-analyzer",
       license: "MIT OR Apache-2.0",
       artifact: {
@@ -757,7 +757,7 @@ describe("LspControlPanel", () => {
       id: "fixture-server",
       version: "1.2.3",
       platform: "windows-x86_64",
-      languages: [{ language_id: "fixture", extensions: [".fixture"] }],
+      languages: [{ language_id: "fixture", extensions: [".fixture"], command: null }],
       source_url: "https://example.com/source",
       license: "MIT",
       artifact: {
@@ -800,7 +800,7 @@ describe("LspControlPanel", () => {
       id: "fixture-server",
       version: "1.2.3",
       platform: "windows-x86_64",
-      languages: [{ language_id: "fixture", extensions: [".fixture"] }],
+      languages: [{ language_id: "fixture", extensions: [".fixture"], command: null }],
       source_url: "https://example.com/source",
       license: "MIT",
       artifact: {

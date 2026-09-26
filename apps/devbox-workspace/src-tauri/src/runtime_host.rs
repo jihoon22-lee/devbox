@@ -636,7 +636,7 @@ mod tests {
         ));
         assert!(!allowed("workspace.processes", "runtime", "kill_listener"));
         for method in runtime_engine::api::METHODS {
-            assert_eq!(allowed("workspace.runtime", "tasks", method), true);
+            assert!(allowed("workspace.runtime", "tasks", method));
             assert!(!allowed("workspace.runtime", "runtime", method));
             assert!(!allowed("workspace.process-actions", "runtime", method));
             assert!(!allowed("workspace.logs", "tasks", method));

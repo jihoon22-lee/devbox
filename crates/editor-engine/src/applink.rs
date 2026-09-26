@@ -29,7 +29,6 @@ impl PendingOpen {
 }
 
 /// 프론트가 마운트 시 호출해 대기 중인 열기 요청을 가져간다.
-
 pub fn take_pending_open(state: tauri::State<'_, PendingOpen>) -> Option<OpenRequest> {
     state.take()
 }

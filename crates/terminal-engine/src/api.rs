@@ -383,21 +383,6 @@ pub fn result_types(
         ),
     ])
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn unknown_methods_and_extra_arguments_are_rejected() {
-        assert!(serde_json::from_str::<TerminalCall>(r#"{"method":"unknown","args":{}}"#).is_err());
-    }
-    #[test]
-    fn method_names_are_unique() {
-        let mut names = METHODS.to_vec();
-        names.sort();
-        names.dedup();
-        assert_eq!(names.len(), METHODS.len());
-    }
-}
 
 #[cfg(feature = "desktop")]
 pub async fn dispatch(
@@ -441,6 +426,22 @@ pub(crate) async fn dispatch_owned(
     let result = execute(app, call).await;
     crate::component::data_root(app)?;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unknown_methods_and_extra_arguments_are_rejected() {
+        assert!(serde_json::from_str::<TerminalCall>(r#"{"method":"unknown","args":{}}"#).is_err());
+    }
+    #[test]
+    fn method_names_are_unique() {
+        let mut names = METHODS.to_vec();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), METHODS.len());
+    }
 }
 
 #[cfg(test)]

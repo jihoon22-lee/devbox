@@ -12,10 +12,8 @@ use serde::Deserialize;
 #[ts(optional_fields = nullable)]
 pub enum CommandsCall {}
 pub const METHODS: &[&str] = &[];
-pub fn routes_for(method: &str) -> &'static [&'static str] {
-    match method {
-        _ => &[],
-    }
+pub fn routes_for(_method: &str) -> &'static [&'static str] {
+    &[]
 }
 impl ComponentCall for CommandsCall {
     const COMPONENT: &'static str = "workspace.commands";

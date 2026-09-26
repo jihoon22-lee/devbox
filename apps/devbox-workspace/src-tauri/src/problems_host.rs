@@ -590,7 +590,7 @@ pub(crate) fn manage(
                 target: ResolvedProblemTarget::Navigation(ProblemNavigation::Log {
                     request: ProblemLogRequest {
                         id: uuid::Uuid::new_v4().simple().to_string(),
-                        source: logs_engine::core::SourceSpec::RuntimeRun {
+                        source: crate::ipc::results::ProblemLogSource::RuntimeRun {
                             run_id,
                             stream,
                             revision: lease.revision().into()

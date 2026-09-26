@@ -381,23 +381,6 @@ pub async fn dispatch_source_cancel(
 ) -> Result<serde_json::Value, String> {
     crate::component::dispatch_source_cancel_typed_native(key, call).await
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use product_ipc::workspace::Lane;
-    #[test]
-    fn source_calls_exclude_retired_root_scanning_and_keep_cancellation() {
-        let status: SourceCall =
-            serde_json::from_str(r#"{"method":"repo_status","args":{"path":"fixture"}}"#).unwrap();
-        assert_eq!(status.lane(), Lane::Source);
-        assert_eq!(status.deadline_budget_ms(), 29_000);
-        assert!(serde_json::from_str::<SourceCall>(
-            r#"{"method":"scan_root","args":{"root":"fixture"}}"#
-        )
-        .is_err());
-        assert!(serde_json::from_str::<SourceCall>(r#"{"method":"create_worktree","args":{"repoPath":"fixture","branch":"unsafe","targetDir":"target"}}"#).is_err());
-    }
-}
 
 #[derive(serde::Deserialize, ts_rs::TS)]
 #[serde(
@@ -505,4 +488,22 @@ pub fn dependencies_result_types(
             export.register::<DependencyCancelled>()?,
         ),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use product_ipc::workspace::Lane;
+    #[test]
+    fn source_calls_exclude_retired_root_scanning_and_keep_cancellation() {
+        let status: SourceCall =
+            serde_json::from_str(r#"{"method":"repo_status","args":{"path":"fixture"}}"#).unwrap();
+        assert_eq!(status.lane(), Lane::Source);
+        assert_eq!(status.deadline_budget_ms(), 29_000);
+        assert!(serde_json::from_str::<SourceCall>(
+            r#"{"method":"scan_root","args":{"root":"fixture"}}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<SourceCall>(r#"{"method":"create_worktree","args":{"repoPath":"fixture","branch":"unsafe","targetDir":"target"}}"#).is_err());
+    }
 }

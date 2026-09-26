@@ -16,7 +16,6 @@ fn profile(
 
 /// 선택한 profile이 안전하게 만들 수 있고 현재 설치된 capability target만
 /// 반환한다. executable과 profile path는 frontend에 노출하지 않는다.
-
 pub fn profile_open_targets(
     app: tauri::AppHandle,
     profile_id: String,
@@ -27,7 +26,6 @@ pub fn profile_open_targets(
 
 /// 사용자가 명시적으로 "경로 복사"를 선택했을 때만 현재 저장소를 다시 읽어
 /// 검증한 project path를 반환한다.
-
 pub fn profile_copy_path(app: tauri::AppHandle, profile_id: String) -> Result<String, String> {
     let profile = profile(&app, &profile_id)?;
     safe_profile_path(&profile).map_err(|_| "프로필 경로를 확인할 수 없습니다".to_string())

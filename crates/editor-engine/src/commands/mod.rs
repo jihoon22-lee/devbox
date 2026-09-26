@@ -18,7 +18,6 @@ pub mod watch {
 
     /// Registering/unregistering is separate from the pure file open command
     /// so the latter remains directly testable without a Tauri AppHandle.
-
     pub async fn watch_file(
         path: String,
         manager: State<'_, Arc<WatcherManager>>,

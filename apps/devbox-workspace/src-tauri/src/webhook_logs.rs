@@ -153,5 +153,7 @@ pub(crate) async fn open(app: &tauri::AppHandle, args: Value, deadline: u64) -> 
     // Duplicate delivery of the same accepted operation returns the same source
     // identity; the Logs consumer deduplicates by the operation ID and payload.
     crate::suite::require_reviewed(app, &input.operation_id, &input.revision, "logs", &target)?;
-    Ok(json!({"kind":"webhookCapture","capture":artifact.payload}))
+    Ok(json!(crate::ipc::logs::WebhookLogSource::WebhookCapture {
+        capture: artifact.payload
+    }))
 }

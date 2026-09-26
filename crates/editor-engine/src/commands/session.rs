@@ -180,7 +180,6 @@ fn sync_parent(_path: &Path) -> io::Result<()> {
 
 /// Tauri command for restoring persisted metadata.
 #[cfg(feature = "desktop")]
-
 pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
     let path = session_path(&app)?;
     tauri::async_runtime::spawn_blocking(move || load_from_path_with_status(&path))
@@ -191,7 +190,6 @@ pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
 /// Tauri command for writing persisted metadata.  The core validator rejects
 /// malformed view/document relationships before anything reaches disk.
 #[cfg(feature = "desktop")]
-
 pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String> {
     session.validate().map_err(|error| error.to_string())?;
     let json = session

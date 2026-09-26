@@ -181,6 +181,18 @@ pub fn result_types(
         ("save_port_manager_preferences", export.register::<()>()?),
     ])
 }
+
+#[cfg(feature = "desktop")]
+pub async fn dispatch(
+    app: &tauri::AppHandle,
+    call: PortsCall,
+) -> Result<serde_json::Value, String> {
+    crate::component::data_root(app)?;
+    let result = execute(app, call).await;
+    crate::component::data_root(app)?;
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,15 +207,4 @@ mod tests {
         names.dedup();
         assert_eq!(names.len(), METHODS.len());
     }
-}
-
-#[cfg(feature = "desktop")]
-pub async fn dispatch(
-    app: &tauri::AppHandle,
-    call: PortsCall,
-) -> Result<serde_json::Value, String> {
-    crate::component::data_root(app)?;
-    let result = execute(app, call).await;
-    crate::component::data_root(app)?;
-    result
 }

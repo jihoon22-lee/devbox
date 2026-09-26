@@ -30,6 +30,7 @@ export function routeOpenRequest(request: OpenRequest): CodePadOpenAction {
     case "query":
     case "task":
     case "install":
+    case "handoff":
       return { kind: "noop", reason: `code-pad는 "${target.kind}" 타깃을 받지 않는다 (설계 §1.4)` };
   }
 }

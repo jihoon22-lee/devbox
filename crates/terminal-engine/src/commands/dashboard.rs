@@ -23,7 +23,6 @@ const SAFE_DOCKER_ERROR: &str = "Docker 상태를 안전하게 처리하지 못�
 /// Return one complete, single-flight dashboard snapshot. Resource data, Docker state and
 /// terminal counts are collected by the same producer path that writes the read-only runtime
 /// integration snapshot, so the UI never mixes generations.
-
 pub async fn dashboard_snapshot(
     state: State<'_, Arc<SessionState>>,
 ) -> Result<crate::core::runtime_snapshot::DashboardSnapshot, String> {
@@ -34,7 +33,6 @@ const DOCKER_PS_FORMAT: &str = "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{
 
 /// WSL 배포판 목록을 조회한다. distro 모델은 `DistroInfo` 하나로 통일됐다
 /// (wsl-dashboard의 `parse_wsl_list` 채택. 터미널 UI는 `.name`만 쓴다).
-
 pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<DistroInfo>, String> {
     let output = run_wsl(&["-l", "-v"], None).await?;
     let distros = parse_wsl_list_checked(&output).map_err(|_| SAFE_WSL_ERROR.to_owned())?;
@@ -43,7 +41,6 @@ pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<Dis
 }
 
 /// Docker 컨테이너 목록을 조회한다 (기본 distro에서 docker CLI 실행).
-
 pub async fn docker_ps(
     state: State<'_, Arc<SessionState>>,
     distro: String,
@@ -73,7 +70,6 @@ pub async fn docker_ps(
 }
 
 /// Docker 컨테이너를 start/stop/restart 한다.
-
 pub async fn docker_action(
     distro: String,
     container_id: String,

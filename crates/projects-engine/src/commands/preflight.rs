@@ -561,7 +561,6 @@ fn preflight_operation_key(kind: &str, profile_id: &str, request_id: Option<&str
 
 /// Read-only preflight command. It never starts an app, service, WSL distro,
 /// or project process.
-
 pub async fn workspace_preflight(
     app: tauri::AppHandle,
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
@@ -582,7 +581,6 @@ pub async fn workspace_preflight(
 /// Read-only dependency inspection for the selected profile.  This is an
 /// explicit health surface in addition to the Start Workspace review, but it
 /// deliberately shares the exact bounded probes and resource provenance.
-
 pub async fn dependency_health(
     app: tauri::AppHandle,
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,

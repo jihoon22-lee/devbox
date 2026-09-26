@@ -1,10 +1,10 @@
 //! Native domain engine and product-host adapter; no standalone application.
+pub mod api;
+pub mod api_control;
 mod applink;
 pub mod cleanup;
 pub(crate) mod commands;
 pub mod component;
-pub mod api;
-pub mod api_control;
 pub mod core;
 pub mod integration;
 pub(crate) mod lifecycle;

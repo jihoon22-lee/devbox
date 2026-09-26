@@ -115,7 +115,6 @@ struct PortMapping {
 
 /// Tauri command entry point. Missing and corrupt producers are normal,
 /// distinguishable read states rather than raw IPC failures.
-
 pub fn wsl_runtime_suggestions() -> RuntimeSuggestions {
     read_runtime_suggestions_in(&crate::component::integration_root())
 }

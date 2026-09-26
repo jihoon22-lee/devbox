@@ -127,9 +127,15 @@ mod tests {
         let setup: setup::SetupCall =
             serde_json::from_str(r#"{"method":"start_empty","args":{}}"#).unwrap();
         assert_eq!(setup::SetupCall::COMPONENT, "workspace.setup");
-        assert!(setup::SetupCall::IMPORT_PHASE);
-        assert!(!registry::RegistryCall::IMPORT_PHASE);
-        assert!(!files::WorkspaceFilesCall::IMPORT_PHASE);
+        const {
+            assert!(setup::SetupCall::IMPORT_PHASE);
+        }
+        const {
+            assert!(!registry::RegistryCall::IMPORT_PHASE);
+        }
+        const {
+            assert!(!files::WorkspaceFilesCall::IMPORT_PHASE);
+        }
         assert_eq!(setup.lane(), Lane::EngineBackground);
         let files: files::WorkspaceFilesCall =
             serde_json::from_str(r#"{"method":"list_workspace_files","args":{"path":"."}}"#)

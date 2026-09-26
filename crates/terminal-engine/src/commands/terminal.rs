@@ -216,7 +216,6 @@ static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Returns the Windows build number used by xterm's ConPTY heuristics.
 /// Linux/WSL development builds intentionally return `None`.
-
 pub fn windows_build_number() -> Option<u32> {
     #[cfg(target_os = "windows")]
     {
@@ -301,7 +300,6 @@ fn build_workspace_session_command(
 /// (프론트가 출력 핸들러를 등록하기 전에 방출을 시작하면, 등록 전 데이터는
 /// `App.tsx`의 옵셔널 체이닝으로 조용히 버려지고 이스케이프 시퀀스 중간에서
 /// 잘린 첫 청크가 리터럴 쓰레기로 렌더된다.)
-
 pub async fn start_session(
     state: tauri::State<'_, Arc<SessionState>>,
     distro: String,
@@ -457,7 +455,6 @@ pub(crate) async fn start_owned_or_legacy(
 /// 닫혔으면(맵에 없음) 조용히 무시한다 — `write_session` 등 다른 커맨드와 같은
 /// 관례다. attach가 오지 않아도 `close_session`은 세션을 정리할 수 있다
 /// (reader/writer/master/child가 전부 `SessionHandle`에 있으므로 drop만으로 정리된다).
-
 pub fn attach_session(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<SessionState>>,
@@ -649,7 +646,6 @@ pub(crate) fn retire_owned(
 }
 
 /// 세션에 키 입력을 전달한다.
-
 pub fn write_session(
     state: tauri::State<'_, Arc<SessionState>>,
     session_id: String,
@@ -742,7 +738,6 @@ pub fn broadcast(
 /// PTY 크기를 바꾼다. 탭 전환·분할 변경·창 크기 변경 시 프론트가
 /// 실제 패인 크기(rows/cols)로 맞춰 호출한다. `openpty`가 세션 시작 시
 /// 고정 크기(30x100)로 한 번만 설정하던 것을 세션 생존 동안 갱신 가능하게 한다.
-
 pub fn resize_session(
     state: tauri::State<'_, Arc<SessionState>>,
     session_id: String,

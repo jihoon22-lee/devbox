@@ -163,7 +163,7 @@ pub(crate) struct ProblemResolution {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProblemLogRequest {
     pub id: String,
-    pub source: logs_engine::core::SourceSpec,
+    pub source: ProblemLogSource,
     pub offset: Option<String>,
 }
 #[derive(Serialize, ts_rs::TS)]
@@ -203,4 +203,19 @@ pub(crate) struct EmptyReply {}
 #[derive(serde::Serialize, ts_rs::TS)]
 pub(crate) struct ContextCleared {
     pub context: Option<product_contract::ProjectContext>,
+}
+
+#[derive(Serialize, ts_rs::TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(crate) enum ProblemLogSource {
+    RuntimeRun {
+        run_id: String,
+        #[ts(type = "\"stdout\" | \"stderr\"")]
+        stream: String,
+        revision: String,
+    },
 }

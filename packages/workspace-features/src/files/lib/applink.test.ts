@@ -47,3 +47,9 @@ describe("code-pad applink routing", () => {
     });
   });
 });
+
+it("keeps generic handoffs outside the editor's file-opening authority", () => {
+  expect(routeOpenRequest({ target: { kind: "handoff", handoffKind: "fixture/v1", id: "owned" }, from: null })).toEqual(
+    { kind: "noop", reason: expect.stringContaining("handoff") },
+  );
+});

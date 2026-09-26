@@ -98,7 +98,6 @@ fn preview_restore_error(
 
 /// Claim and validate a pending producer envelope.  The response contains a
 /// bounded source summary and no claim token, path, command, or log bytes.
-
 pub fn preview_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,
@@ -146,7 +145,6 @@ pub fn preview_log_source(
 /// A confirmed preview becomes a Log Lens source and consumes the one-time
 /// envelope. The source itself remains read-only and is loaded separately by
 /// the existing bounded reader.
-
 pub fn accept_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,
@@ -179,7 +177,6 @@ pub fn accept_log_source(
 }
 
 /// Restore a claimed preview without adding a source.
-
 pub fn discard_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,
@@ -203,7 +200,6 @@ pub struct RenewLogSourceResult {
 
 /// Keep an open preview within the generic 60-second lease without extending
 /// the envelope's ten-minute TTL.
-
 pub fn renew_log_source(
     pending: tauri::State<'_, PendingLogSource>,
     id: String,

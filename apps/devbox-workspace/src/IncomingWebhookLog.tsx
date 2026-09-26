@@ -1,3 +1,6 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { WorkspaceLogsCall } from "@devbox/workspace-features/generated/WorkspaceLogsCall";
+import type { LogsResults } from "@devbox/workspace-features/generated/logs-results";
 import { useEffect, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
 import type { Description } from "@devbox/product-shell/api";
@@ -21,13 +24,10 @@ export default function IncomingWebhookLog({
     if (!incoming || !id) return;
     let active = true;
     setIssue("");
-    void componentCall<RuntimeLogOpenRequest["source"]>(
-      description,
-      "workspace.logs",
-      "open_webhook_log",
-      { id, revision: incoming.commandRevision, operationId: incoming.operationId },
-      "logs",
-    )
+    const call = bindTypedCall<WorkspaceLogsCall, LogsResults>((method, args) =>
+      componentCall(description, "workspace.logs", method, args, "logs"),
+    );
+    void call("open_webhook_log", { id, revision: incoming.commandRevision, operationId: incoming.operationId })
       .then((source) => {
         if (active) {
           if (source.kind !== "webhookCapture") throw new Error("invalid source");

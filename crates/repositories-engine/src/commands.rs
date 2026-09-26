@@ -136,7 +136,6 @@ pub struct ScanResult {
 
 /// root 아래 Git repository를 재귀 탐색한다 (canonical identity로 중복 제거).
 /// node_modules·target·AppData 등 흔한 비-repo 디렉터리는 진입 전에 가지치기한다.
-
 pub fn scan_root(root: String) -> Result<ScanResult, String> {
     let mut repos = Vec::new();
     let mut visited = 0usize;
@@ -1967,7 +1966,6 @@ pub struct RepoPreflightRequest {
 /// The status and marker reads are independently bounded and every failure is
 /// mapped to the same redacted error. This command never changes repository
 /// files, refs, index state, remotes, or credentials.
-
 pub async fn repo_preflight(request: RepoPreflightRequest) -> Result<GitSafetySnapshot, String> {
     spawn_git_task(GIT_SAFETY_ERROR, move || {
         let path = validated_git_path(&request.path).map_err(|_| GIT_SAFETY_ERROR.to_string())?;
@@ -2125,7 +2123,6 @@ async fn create_worktree_with_admission(
 }
 
 /// remove 전 uncommitted/untracked 검사. 없으면 true.
-
 pub async fn worktree_clean(path: String) -> Result<bool, String> {
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
@@ -3114,7 +3111,6 @@ pub async fn repo_push(request: RemoteOperationRequest) -> Result<(), String> {
 /// operation remains owned by its original command until the child exits, so
 /// a caller can safely ignore the result and rely on the command's fixed
 /// cancellation error. No Git command is run by this handler.
-
 pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     // Cancellation is addressed only by the opaque ID. It deliberately does
     // not re-canonicalize or touch the repository path, so unmount/deletion
@@ -3128,7 +3124,6 @@ pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> 
 /// Cancel an in-flight selected stage/unstage/commit operation. The shared ID
 /// registry also prevents a local and remote operation from reusing one ID or
 /// mutating the same common Git directory concurrently.
-
 pub fn repo_local_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     if !valid_remote_operation_id(&request.operation_id) {
         return Err(GIT_MUTATION_ERROR.to_string());
@@ -3142,7 +3137,6 @@ fn available_open_targets() -> Vec<RepoOpenTarget> {
 
 /// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
 /// 경로는 frontend에 노출하지 않는다.
-
 pub fn open_targets() -> Vec<RepoOpenTarget> {
     available_open_targets()
 }
@@ -3272,7 +3266,6 @@ fn is_device_path(path: &str) -> bool {
 
 /// Inbound Path를 임의 등록하거나 Git 명령을 실행하지 않고, 기존 목록 선택 또는
 /// frontend 등록 초안에 쓸 검증된 metadata로만 변환한다.
-
 pub fn prepare_inbound_repository(path: String) -> Result<RepoEntry, String> {
     validated_repository(&path).map_err(str::to_string)
 }
@@ -3283,7 +3276,6 @@ pub fn open_in(app_id: String, path: String) -> Result<(), String> {
 }
 
 /// 사용자가 명시적으로 복사를 선택한 순간에만 현재 Git repository 경로를 반환한다.
-
 pub fn repository_copy_path(path: String) -> Result<String, String> {
     validated_repository(&path)
         .map(|entry| entry.path)
@@ -3292,7 +3284,6 @@ pub fn repository_copy_path(path: String) -> Result<String, String> {
 
 /// 현재도 유효한 Git repository만 OS file manager로 연다. opener 상세 오류와 raw path는
 /// frontend error에 반향하지 않는다.
-
 #[cfg(feature = "desktop")]
 pub fn open_repository_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let repository = validated_repository(&path).map_err(str::to_string)?;

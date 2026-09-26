@@ -161,7 +161,7 @@ pub fn result_types(
         export.register::<ReconnectedLogs>()?,
     ));
     results.retain(|(method, _)| *method != "open_webhook_log");
-    results.push(("open_webhook_log", export.register::<serde_json::Value>()?));
+    results.push(("open_webhook_log", export.register::<WebhookLogSource>()?));
     results.retain(|(method, _)| *method != "send_selection_to_toolbox");
     results.push((
         "send_selection_to_toolbox",
@@ -199,4 +199,12 @@ impl<'de> serde::Deserialize<'de> for WorkspaceLogsCall {
             Self::Engine,
         )
     }
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum WebhookLogSource {
+    WebhookCapture {
+        capture: devbox_applink::WebhookLogPayload,
+    },
 }

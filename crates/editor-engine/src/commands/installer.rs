@@ -56,7 +56,6 @@ pub async fn lsp_install(
 /// paths. The installer resolves the exact catalog manifest and reviewed Node
 /// lock, performs all digest/archive checks, and never reflects a selected
 /// path or parser detail across IPC.
-
 pub async fn lsp_import_archive(
     installer: State<'_, Arc<ManagedInstaller>>,
     manifest_id: String,

@@ -312,7 +312,6 @@ pub fn delete_profile_template(
 /// Create a concrete profile using a template's defaults.  The template is
 /// looked up and validated inside the same profile writer lock as the profile
 /// store, and the incoming environment is ignored by the template contract.
-
 pub fn create_profile_from_template(
     app: AppHandle,
     store_state: tauri::State<'_, Arc<ProfileStoreState>>,

@@ -27,7 +27,6 @@ fn write_atomic(path: &PathBuf, json: &str) -> Result<(), String> {
 }
 
 /// 미저장 버퍼 스냅샷을 저장한다 (bounded).
-
 pub fn save_recovery(app: AppHandle, entries: Vec<RecoveryEntry>) -> Result<(), String> {
     let path = recovery_path(&app)?;
     if let Some(parent) = path.parent() {
@@ -42,13 +41,11 @@ pub fn save_recovery(app: AppHandle, entries: Vec<RecoveryEntry>) -> Result<(), 
 }
 
 /// 저장된 recovery 항목 목록.
-
 pub fn load_recovery(app: AppHandle) -> Vec<RecoveryEntry> {
     read_current(&app).entries
 }
 
 /// recovery를 폐기한다. path가 없으면 전체를 비운다.
-
 pub fn discard_recovery(app: AppHandle, path: Option<String>) -> Result<(), String> {
     let recovery_path = recovery_path(&app)?;
     let mut file = read_current(&app);
@@ -61,7 +58,6 @@ pub fn discard_recovery(app: AppHandle, path: Option<String>) -> Result<(), Stri
 }
 
 /// 사용자가 승인한 recovery를 파일에 적용한다 (복구 = 덮어쓰기 승인).
-
 pub fn apply_recovery(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }

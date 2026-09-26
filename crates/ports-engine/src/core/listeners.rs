@@ -178,8 +178,7 @@ pub enum KillAction {
 
 /// Validated intent for the WSL Desktop-owned container stop action. The
 /// one-time applink store is intentionally owned by the applink issue.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(ts_rs::TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ContainerStopHandoff {
     pub target_app: String,
     pub action: String,
