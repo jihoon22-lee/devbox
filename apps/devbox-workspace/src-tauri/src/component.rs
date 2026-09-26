@@ -15,7 +15,7 @@ use std::time::Duration;
 use tauri::{Manager, State, WebviewWindow};
 
 #[derive(Clone)]
-struct Runtime {
+pub(crate) struct Runtime {
     lanes: Lanes,
     shutdown_started: Arc<AtomicBool>,
     ui_ready: Arc<AtomicBool>,
@@ -58,6 +58,9 @@ impl Default for Runtime {
     }
 }
 impl Runtime {
+    pub(crate) fn shutting_down(&self) -> bool {
+        self.shutdown_started.load(Ordering::Acquire)
+    }
     /// A file write waits before entering a worker or taking the Files mutex.
     /// The existing bounded request pool owns the waiter; admission is not an
     /// IO retry and never repeats authentication or a partially executed save.
@@ -186,16 +189,18 @@ impl Runtime {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Request {
-    header: RouteRequest,
-    component: String,
-    method: String,
-    args: Value,
+pub(crate) struct Request {
+    pub(crate) header: RouteRequest,
+    pub(crate) component: String,
+    pub(crate) method: String,
+    pub(crate) args: Value,
+    #[serde(skip)]
+    pub(crate) typed: Option<crate::ipc::Call>,
 }
 #[derive(Serialize)]
-struct Response {
-    operation: Operation,
-    value: Value,
+pub(crate) struct Response {
+    pub(crate) operation: Operation,
+    pub(crate) value: Value,
 }
 fn migration_method(component: &str, method: &str) -> bool {
     match component {
@@ -319,6 +324,7 @@ async fn terminal_worker(
     method: String,
     args: Value,
     companion: bool,
+    typed_lane: Option<Lane>,
     context: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
     let io = matches!(
@@ -335,13 +341,13 @@ async fn terminal_worker(
         method.as_str(),
         "close_session" | "stop_terminal" | "stop_development_session"
     );
-    let lane = if io {
+    let lane = typed_lane.unwrap_or(if io {
         Lane::TerminalIo
     } else if stopping {
         Lane::TerminalStop
     } else {
         Lane::Terminal
-    };
+    });
     let permit = runtime.lanes.try_enter(lane)?;
     let host = runtime.host()?;
     let workers = runtime.lanes.workers(lane);
@@ -408,6 +414,7 @@ async fn execute_terminal_main(
         request.method,
         request.args,
         false,
+        request.typed.as_ref().map(crate::ipc::Call::lane),
         context,
     )
     .await
@@ -419,28 +426,22 @@ fn terminal_describe(window: WebviewWindow, runtime: State<'_, Runtime>) -> Resu
     }
     runtime.terminals.describe(&window).map_err(str::to_owned)
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TerminalRequest {
-    header: RouteRequest,
-    method: String,
-    args: Value,
-}
 #[tauri::command]
 async fn terminal_execute(
     window: WebviewWindow,
     runtime: State<'_, Runtime>,
-    request: TerminalRequest,
+    request: product_ipc::IncomingRequest,
 ) -> Result<Value, String> {
     if runtime.shutdown_started.load(Ordering::Acquire) {
         return Err("request_cancelled".into());
     }
-    if request.method.len() > 96
-        || !request.args.is_object()
-        || serde_json::to_vec(&request.args).map_or(true, |bytes| bytes.len() > 2 * 1024 * 1024)
-    {
-        return Err("terminal_args_invalid".into());
-    }
+    use product_ipc::ComponentCall;
+    let args = request.args.clone();
+    let request = request
+        .decode::<crate::ipc::companion::CompanionCall>()
+        .map_err(|_| "terminal_args_invalid")?;
+    let method = request.call.method().to_owned();
+    let lane = request.call.lane();
     runtime
         .terminals
         .authorize(&window, &request.header)
@@ -449,9 +450,10 @@ async fn terminal_execute(
         window,
         runtime.inner().clone(),
         request.header,
-        request.method,
-        request.args,
+        method,
+        args,
         true,
+        Some(lane),
         None,
     )
     .await
@@ -474,11 +476,15 @@ async fn execute_runtime(
         &request.method
     };
     let stopping = crate::runtime_host::stops(control_method);
-    let lane = if stopping {
-        Lane::EngineStop
-    } else {
-        Lane::Engine
-    };
+    let lane = request
+        .typed
+        .as_ref()
+        .map(crate::ipc::Call::lane)
+        .unwrap_or(if stopping {
+            Lane::EngineStop
+        } else {
+            Lane::Engine
+        });
     let permit = runtime.lanes.try_enter(lane)?;
     let host = runtime.host()?;
     let owners = runtime.engines.clone();
@@ -521,6 +527,7 @@ async fn execute_runtime(
                     deadline: request.header.deadline_ms,
                     operation_id: &request.header.request_id,
                     terminals: &terminals,
+                    typed: request.typed,
                 },
             ))
         })
@@ -1242,8 +1249,29 @@ async fn execute(
     runtime: State<'_, Runtime>,
     request: Request,
 ) -> Result<Response, Problem> {
-    let operation =
-        product_shell_tauri::begin_operation(&window, &request.component, &request.method);
+    // Migrated identities are reachable only through their native typed command.
+    if crate::ipc::migrated_component(&request.component) {
+        return Err(Problem {
+            code: ProblemCode::Unauthorized,
+            provenance: Provenance {
+                product: "workspace".into(),
+                component: "workspace.dispatch".into(),
+                request_id: "rejected".into(),
+                revision: 1,
+            },
+        });
+    }
+    execute_admitted(window, runtime, request, None).await
+}
+pub(crate) async fn execute_admitted(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    request: Request,
+    admission: Option<product_shell_tauri::Admission>,
+) -> Result<Response, Problem> {
+    let operation = admission.is_none().then(|| {
+        product_shell_tauri::begin_operation(&window, &request.component, &request.method)
+    });
     let rejected = |code| Problem {
         code,
         provenance: Provenance {
@@ -1256,24 +1284,25 @@ async fn execute(
     if runtime.shutdown_started.load(Ordering::Acquire) {
         return Err(rejected(ProblemCode::Unavailable));
     }
-    if !allowed(&request.component, &request.header.route, &request.method)
-        || !request.args.is_object()
-        || serde_json::to_vec(&request.args).map_or(true, |bytes| {
-            bytes.len()
-                > if request.component == "workspace.files"
-                    || request.component == "workspace.logs"
-                    || (request.component == "workspace.lsp"
-                        && crate::lsp_host::text_request(&request.method))
-                {
-                    64 * 1024 * 1024
-                } else if request.component == "workspace.definitions"
-                    || request.component == "workspace.runtime"
-                {
-                    2 * 1024 * 1024
-                } else {
-                    64 * 1024
-                }
-        })
+    if admission.is_none()
+        && (!allowed(&request.component, &request.header.route, &request.method)
+            || !request.args.is_object()
+            || serde_json::to_vec(&request.args).map_or(true, |bytes| {
+                bytes.len()
+                    > if request.component == "workspace.files"
+                        || request.component == "workspace.logs"
+                        || (request.component == "workspace.lsp"
+                            && crate::lsp_host::text_request(&request.method))
+                    {
+                        64 * 1024 * 1024
+                    } else if request.component == "workspace.definitions"
+                        || request.component == "workspace.runtime"
+                    {
+                        2 * 1024 * 1024
+                    } else {
+                        64 * 1024
+                    }
+            }))
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
@@ -1288,7 +1317,9 @@ async fn execute(
     let context_change = changes_context(&request.method);
     // Authenticate/replay-check once before waiting. A single bounded waiter
     // holds no context permit, so active file/metadata workers can retire.
-    let provenance = if migration_method(&request.component, &request.method) {
+    let provenance = if let Some(admission) = &admission {
+        admission.provenance().clone()
+    } else if migration_method(&request.component, &request.method) {
         product_shell_tauri::authorize_owner_migration(
             &window,
             &request.header,
@@ -1657,6 +1688,13 @@ async fn execute(
         observation,
         &result,
     );
+    if let Some(admission) = admission {
+        let response = admission.finish(result.map_err(str::to_owned), crate::ipc::classify);
+        return Ok(Response {
+            operation: response.operation,
+            value: response.value,
+        });
+    }
     let (outcome, value) = match result {
         Ok(value) => (OperationState::Succeeded {}, value),
         Err(issue) => (
@@ -1666,7 +1704,7 @@ async fn execute(
             json!({"issue":issue}),
         ),
     };
-    operation.finish(
+    operation.expect("legacy request operation guard").finish(
         &outcome,
         value.get("issue").and_then(serde_json::Value::as_str),
     );
@@ -1712,6 +1750,13 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
         .invoke_handler(tauri::generate_handler![
             execute,
+            crate::ipc::runtime::runtime,
+            crate::ipc::processes::processes,
+            crate::ipc::process_actions::process_actions,
+            crate::ipc::logs::logs,
+            crate::ipc::terminal::terminal,
+            crate::ipc::problems::problems,
+            crate::ipc::commands::commands,
             terminal_describe,
             terminal_execute
         ])

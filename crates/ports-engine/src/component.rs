@@ -1,6 +1,7 @@
 //! Native component entry points; the product host admits caller and operation.
 //! Calling these does not start the standalone application or select its stores.
 
+pub use crate::commands::ports::ListenerActionResult;
 pub use crate::core::listeners::{KillListenerRequest, ListenerIdentity, ListenerSource};
 pub use crate::core::{preferences::PortManagerPreferences, product_preferences};
 use std::{

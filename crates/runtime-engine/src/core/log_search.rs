@@ -51,6 +51,7 @@ pub enum LogSearchMode {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[derive(ts_rs::TS)]
+#[ts(rename = "RuntimeLogLevel")]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -113,6 +114,7 @@ pub struct LogSearchRequest {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(rename = "RuntimeLogSourceRef")]
 pub struct LogSourceRef {
     pub kind: String,
     pub source_id: String,

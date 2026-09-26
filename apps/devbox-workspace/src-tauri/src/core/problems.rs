@@ -11,6 +11,7 @@ const MAX_BATCHES: usize = 256;
 const MAX_PROBLEMS: usize = 2048;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum Severity {
     Error,
     Warning,
@@ -23,6 +24,8 @@ pub enum Severity {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ProblemTarget")]
 pub enum Target {
     File {
         relative_path: String,
@@ -52,6 +55,8 @@ pub enum Target {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ProblemItem")]
 pub struct Item {
     pub severity: Severity,
     pub message: String,
@@ -61,6 +66,8 @@ pub struct Item {
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "WorkspaceProblem")]
 pub struct Problem {
     pub id: String,
     pub source: String,
@@ -78,6 +85,7 @@ pub struct Ticket {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SourceState {
     pub source: String,
     pub identity: String,
@@ -99,6 +107,8 @@ pub struct Store {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ProblemSnapshot")]
 pub struct Snapshot {
     pub context: ProjectContext,
     pub initialized: bool,

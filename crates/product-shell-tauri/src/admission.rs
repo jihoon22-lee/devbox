@@ -55,7 +55,7 @@ pub struct Reply {
 
 pub struct Admission {
     provenance: Provenance,
-    _reservation: Reservation,
+    _reservation: Option<Reservation>,
     guard: OperationGuard,
 }
 
@@ -117,12 +117,18 @@ fn admit_with_guard<C: ComponentCall>(
     if !call.routes().contains(&header.route.as_str()) {
         return Err(problem(ProblemCode::Unauthorized));
     }
-    let active = window
-        .try_state::<ActiveRequests>()
-        .ok_or_else(|| problem(ProblemCode::Unavailable))?;
-    let reservation = active
-        .reserve(&header.request_id, call.class())
-        .map_err(problem)?;
+    let reservation = if C::SHARED_REQUEST_LIMIT {
+        let active = window
+            .try_state::<ActiveRequests>()
+            .ok_or_else(|| problem(ProblemCode::Unavailable))?;
+        Some(
+            active
+                .reserve(&header.request_id, call.class())
+                .map_err(problem)?,
+        )
+    } else {
+        None
+    };
     Ok(Admission {
         provenance,
         _reservation: reservation,

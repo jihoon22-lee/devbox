@@ -3,7 +3,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { fixtureDescription } from "@devbox/product-shell/api";
 import Terminal from "./Terminal";
 import { componentCall } from "./native";
-vi.mock("./native", () => ({ componentCall: vi.fn() }));
+vi.mock("./native", () => {
+  const componentCall = vi.fn();
+  return {
+    componentCall,
+    typedComponentCall:
+      (description: unknown, component: string, route: string) =>
+      (method: string, args: Record<string, unknown> = {}) =>
+        componentCall(description, component, method, args, route),
+  };
+});
 vi.mock("./DevelopmentSessions", () => ({ default: () => null }));
 const call = vi.mocked(componentCall);
 const context = { projectId: "project", worktreeId: "tree", target: { kind: "windows" as const }, revision: 1 };
@@ -74,4 +83,24 @@ it("reuses the restore generation and operation after an ambiguous reply", async
   await waitFor(() => expect(requests).toHaveLength(2));
   expect(requests[0]).toEqual(requests[1]);
   expect(requests[0]).toMatchObject({ expectedGeneration: 3, operationId: expect.any(String) });
+});
+
+it("keeps focus and stop actions bound to the selected native terminal", async () => {
+  const id = "10000000-0000-4000-8000-000000000001";
+  call.mockImplementation(async (_description, _component, method) => {
+    if (method === "terminal_sessions") return [{ id, context, state: "active", restoreGeneration: 0 }];
+    if (method === "terminal_commands") return { profiles: [] };
+    return null;
+  });
+  render(<Terminal description={description} registry={null} />);
+  fireEvent.click(await screen.findByRole("button", { name: "창 표시" }));
+  await waitFor(() =>
+    expect(call).toHaveBeenCalledWith(description, "workspace.terminal", "focus_terminal", { id }, "terminal"),
+  );
+  const stop = screen.getByRole("button", { name: "이 터미널 종료" });
+  await waitFor(() => expect(stop.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(stop);
+  await waitFor(() =>
+    expect(call).toHaveBeenCalledWith(description, "workspace.terminal", "stop_terminal", { id }, "terminal"),
+  );
 });

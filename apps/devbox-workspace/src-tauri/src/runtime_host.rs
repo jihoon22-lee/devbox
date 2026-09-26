@@ -315,6 +315,7 @@ fn open_log(
 /// The dispatcher retains a bounded request/context/worker permit around this
 /// future, including after a renderer drops its awaiting request.
 pub(crate) struct EngineRequest<'a> {
+    pub typed: Option<crate::ipc::Call>,
     pub component: &'a str,
     pub method: &'a str,
     pub value: Value,
@@ -338,6 +339,7 @@ pub(crate) async fn dispatch(
         deadline,
         operation_id,
         terminals,
+        typed,
     } = request;
     crate::files_host::current_deadline(deadline)?;
     if component == "workspace.logs" && method == "open_webhook_log" {
@@ -469,7 +471,7 @@ pub(crate) async fn dispatch(
                     })).map_err(|_| "runtime_navigation_unavailable")?;
                     Ok(Value::Bool(true))
                 }
-                _ => runtime_engine::component::dispatch(app, method, value)
+                _ => crate::ipc::dispatch_engine(app, typed, method, value)
                     .await
                     .map_err(issue),
             }
@@ -620,7 +622,7 @@ pub(crate) async fn dispatch(
                     }
                 }
                 "handoff_container_stop" => Err("runtime_container_owner_unavailable"),
-                _ => ports_engine::component::dispatch(app, method, value)
+                _ => crate::ipc::dispatch_engine(app, typed, method, value)
                     .await
                     .map_err(issue),
             }
@@ -636,7 +638,7 @@ pub(crate) async fn dispatch(
                     crate::selection_logs::begin(
                         value["generation"].as_u64().ok_or("invalid_request")?,
                     );
-                    let result = logs_engine::component::dispatch(app, method, value.clone())
+                    let result = crate::ipc::dispatch_engine(app, typed, method, value.clone())
                         .await
                         .map_err(issue)?;
                     crate::selection_logs::capture(value, &result, context);
@@ -644,7 +646,7 @@ pub(crate) async fn dispatch(
                 }
                 "preview_log_source" | "accept_log_source" | "discard_log_source"
                 | "renew_log_source" => Err("runtime_handoff_review_required"),
-                _ => logs_engine::component::dispatch(app, method, value)
+                _ => crate::ipc::dispatch_engine(app, typed, method, value)
                     .await
                     .map_err(issue),
             }

@@ -1,7 +1,6 @@
 //! Closed typed engine calls. Product ownership checks remain at the host boundary.
 use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
 use serde::Deserialize;
-use tauri::Manager as _;
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(
     tag = "method",

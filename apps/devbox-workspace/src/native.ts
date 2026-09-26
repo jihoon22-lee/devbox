@@ -1,3 +1,4 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
 import { invoke } from "@tauri-apps/api/core";
 import { currentDescription, makeRequest, type Description } from "@devbox/product-shell/api";
 import { isOperation, problemMessage } from "@devbox/product-shell/operation";
@@ -263,7 +264,19 @@ export async function componentCall<T>(
   };
   let response: { operation: unknown; value: T & { issue?: string } };
   try {
-    response = await invoke("plugin:workspace|execute", { request: { header, component, method, args } });
+    const commands: Record<string, string> = {
+      "workspace.runtime": "runtime",
+      "workspace.processes": "processes",
+      "workspace.process-actions": "process_actions",
+      "workspace.logs": "logs",
+      "workspace.terminal": "terminal",
+      "workspace.problems": "problems",
+      "workspace.commands": "commands",
+    };
+    const command = commands[component];
+    response = command
+      ? await invoke(`plugin:workspace|${command}`, { request: { header, method, args } })
+      : await invoke("plugin:workspace|execute", { request: { header, component, method, args } });
   } catch (problem) {
     throw new WorkspaceOperationError(problemMessage(problem, provenance));
   }
@@ -278,4 +291,12 @@ export async function componentCall<T>(
     throw new WorkspaceOperationError(message ?? issueMessage(issue), issue);
   }
   return response.value;
+}
+
+/** Bind generated call/result types to the exact context rendered by this view. */
+export function typedComponentCall<
+  Calls extends { method: string; args: unknown },
+  Results extends Record<Calls["method"], unknown>,
+>(description: Description, component: string, route: string) {
+  return bindTypedCall<Calls, Results>((method, args) => componentCall(description, component, method, args, route));
 }

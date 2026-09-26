@@ -9,6 +9,13 @@
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
     "workspace:allow-execute",
-    "suite:allow-connection"
+    "suite:allow-connection",
+    "workspace:allow-runtime",
+    "workspace:allow-processes",
+    "workspace:allow-process-actions",
+    "workspace:allow-logs",
+    "workspace:allow-terminal",
+    "workspace:allow-problems",
+    "workspace:allow-commands"
   ]
 }

@@ -5,6 +5,7 @@ publish = false
 edition.workspace = true
 
 [dependencies]
+ts-rs = { workspace = true }
 serde = { workspace = true }
 sysinfo = { workspace = true }
 

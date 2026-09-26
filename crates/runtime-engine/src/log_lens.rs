@@ -18,6 +18,7 @@ use tauri::{AppHandle, State};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
+#[ts(rename="RuntimeLogDispatch")]
 pub struct LogLensDispatch {
     pub handoff_id: String,
 }

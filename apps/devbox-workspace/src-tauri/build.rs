@@ -27,6 +27,14 @@ fn main() {
                 "workspace",
                 tauri_build::InlinedPlugin::new().commands(&[
                     "execute",
+                    "runtime",
+                    "processes",
+                    "process_actions",
+                    "logs",
+                    "terminal",
+                    "problems",
+                    "commands",
+
                     "terminal_describe",
                     "terminal_execute",
                 ]),

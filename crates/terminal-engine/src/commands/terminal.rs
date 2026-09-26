@@ -62,7 +62,6 @@ impl SessionState {
 }
 
 /// PTY 세션 하나
-#[derive(ts_rs::TS)]
 pub(crate) struct OwnedOutput {
     pub buffer: Mutex<crate::core::terminal_output::OutputBuffer>,
     pub reader_done: AtomicBool,

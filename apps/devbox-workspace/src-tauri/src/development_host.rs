@@ -23,7 +23,9 @@ const FILE: &str = "development-sessions.json";
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Intent {
+#[derive(ts_rs::TS)]
+#[ts(rename = "DevelopmentIntent")]
+pub(crate) struct Intent {
     jobs: Vec<String>,
     #[serde(default)]
     terminal_profile: Option<String>,

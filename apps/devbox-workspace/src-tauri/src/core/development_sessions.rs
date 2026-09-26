@@ -13,6 +13,8 @@ const MAX_OPERATIONS: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DevelopmentPhase")]
 pub enum Phase {
     Preflight,
     Review,
@@ -27,12 +29,15 @@ pub enum Phase {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum Mode {
     RestoreOnly,
     StartReviewed,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DevelopmentResourceKind")]
 pub enum ResourceKind {
     Job,
     Service,
@@ -42,6 +47,8 @@ pub enum ResourceKind {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DevelopmentResourceIdentity")]
 pub struct ResourceIdentity {
     pub kind: ResourceKind,
     pub owner_id: String,
@@ -50,6 +57,8 @@ pub struct ResourceIdentity {
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DevelopmentResource")]
 pub struct Resource {
     pub identity: ResourceIdentity,
     pub context: ProjectContext,
@@ -65,6 +74,8 @@ pub struct Resource {
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "DevelopmentSession")]
 pub struct Session {
     pub id: String,
     pub context: ProjectContext,

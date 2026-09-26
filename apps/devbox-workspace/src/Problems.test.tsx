@@ -4,7 +4,16 @@ import { fixtureDescription } from "@devbox/product-shell/api";
 import Problems from "./Problems";
 import { componentCall } from "./native";
 
-vi.mock("./native", () => ({ componentCall: vi.fn() }));
+vi.mock("./native", () => {
+  const componentCall = vi.fn();
+  return {
+    componentCall,
+    typedComponentCall:
+      (description: unknown, component: string, route: string) =>
+      (method: string, args: Record<string, unknown> = {}) =>
+        componentCall(description, component, method, args, route),
+  };
+});
 const call = vi.mocked(componentCall);
 const context = { projectId: "project", worktreeId: "first", target: { kind: "windows" as const }, revision: 1 };
 const description = { ...fixtureDescription("workspace"), context };

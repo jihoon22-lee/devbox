@@ -28,10 +28,7 @@ pub const MAX_ARGUMENT_BYTES: usize = 20 * 1024 * 1024;
 
 impl IncomingRequest {
     pub fn decode<C: ComponentCall>(self) -> Result<ComponentRequest<C>, DecodeError> {
-        if !self.args.is_object()
-            || serde_json::to_vec(&self.args)
-                .map_or(true, |bytes| bytes.len() > C::MAX_ARGUMENT_BYTES)
-        {
+        if !C::valid_arguments(&self.method, &self.args) {
             return Err(DecodeError);
         }
         let call: C =
@@ -60,6 +57,11 @@ pub enum ExecutionClass {
 pub trait ComponentCall: DeserializeOwned + Send + 'static {
     const COMPONENT: &'static str;
     const INSTALLATION_REVIEW: bool = false;
+    const SHARED_REQUEST_LIMIT: bool = true;
+    fn valid_arguments(_method: &str, args: &serde_json::Value) -> bool {
+        args.is_object()
+            && serde_json::to_vec(args).is_ok_and(|bytes| bytes.len() <= Self::MAX_ARGUMENT_BYTES)
+    }
     const MAX_ARGUMENT_BYTES: usize = crate::MAX_ARGUMENT_BYTES;
     fn method(&self) -> &'static str;
     fn routes(&self) -> &'static [&'static str];

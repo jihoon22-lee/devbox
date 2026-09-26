@@ -17,7 +17,9 @@ const MAX_WINDOWS: usize = 8;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Record {
+#[derive(ts_rs::TS)]
+#[ts(rename = "TerminalRecord")]
+pub(crate) struct Record {
     id: String,
     context: Option<ProjectContext>,
     state: String,
@@ -56,7 +58,9 @@ pub(crate) struct Terminals {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PendingLog {
+#[derive(ts_rs::TS)]
+#[ts(rename = "PendingTerminalLog")]
+pub(crate) struct PendingLog {
     id: String,
     source: logs_engine::core::SourceSpec,
     context: Option<ProjectContext>,

@@ -83,6 +83,7 @@ pub struct PortObservationSnapshot {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(ts_rs::TS)]
+#[ts(rename="PortLogDispatch")]
 pub struct LogLensDispatch {
     pub handoff_id: String,
 }

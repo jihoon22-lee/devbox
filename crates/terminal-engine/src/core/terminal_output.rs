@@ -18,6 +18,7 @@ pub struct Frame {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OutputBatch {
     pub frames: Vec<Frame>,
     pub cursor: u64,
@@ -28,7 +29,6 @@ pub struct OutputBatch {
 }
 
 #[derive(Default)]
-#[derive(ts_rs::TS)]
 pub struct OutputBuffer {
     frames: VecDeque<Frame>,
     bytes: usize,
