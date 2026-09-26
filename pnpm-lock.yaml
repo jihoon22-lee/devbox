@@ -480,6 +480,9 @@ importers:
       '@devbox/mermaid-renderer':
         specifier: workspace:*
         version: link:../mermaid-renderer
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens

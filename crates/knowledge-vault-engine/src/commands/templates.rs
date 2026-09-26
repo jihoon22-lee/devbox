@@ -115,12 +115,18 @@ impl TemplatePreviewStore {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
 pub struct SaveTemplateResult {
     pub saved: bool,
     pub path: String,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub(crate) revision: String,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub(crate) vault: VaultIdentity,
 }
 
 pub fn list_templates(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<NoteTemplate>, String> {
@@ -371,6 +377,13 @@ pub fn save_template(
     }
     let (temporary, identity) = stage_template_file(&vault, &pending.target, &pending.content)
         .map_err(|_| "템플릿을 저장할 수 없습니다".to_string())?;
+    let revision = match crate::core::document::created_revision(&temporary, &target) {
+        Ok(revision) => revision,
+        Err(error) => {
+            vault::cleanup_file_by_identity(&temporary, &identity);
+            return Err(error);
+        }
+    };
     // Hold the DB writer lock from the revision check through publication and
     // index commit. A template update can therefore not land between the
     // final revision check and the file/index mutation.
@@ -381,7 +394,10 @@ pub fn save_template(
             return Err("템플릿을 저장할 수 없습니다".into());
         }
     };
-    if !template_revision_matches(&connection, &pending) {
+    let current_vault = resolve_configured_root(&connection)
+        .ok()
+        .and_then(|root| VaultIdentity::inspect(&root).ok());
+    if current_vault.as_ref() != Some(&vault) || !template_revision_matches(&connection, &pending) {
         drop(connection);
         vault::cleanup_file_by_identity(&temporary, &identity);
         return Err("preview_stale".into());
@@ -424,6 +440,22 @@ pub fn save_template(
     Ok(SaveTemplateResult {
         saved: true,
         path: pending.target,
+        revision,
+        vault,
+    })
+}
+
+pub fn create_note_from_template(
+    state: tauri::State<'_, Arc<AppState>>,
+    input: TemplateApplyInput,
+) -> Result<crate::commands::docs::CreatedNote, String> {
+    let mut receipts = state.created_notes.lock().map_err(|_| "note_unavailable")?;
+    let preview = preview_template(state.clone(), input)?;
+    let result = save_template(state.clone(), preview.preview_id)?;
+    receipts.record(result.vault, result.path.clone(), result.revision.clone());
+    Ok(crate::commands::docs::CreatedNote {
+        path: result.path,
+        revision: result.revision,
     })
 }
 

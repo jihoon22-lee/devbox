@@ -1,4 +1,4 @@
-//! Product-only Daily workflow. Preparing a date never creates a note.
+//! Product-only Daily workflow. Opening creates a missing note in one native call.
 use crate::commands::{docs, handoff};
 use crate::core::{db, templates, vault::VaultIdentity};
 use rusqlite::Connection;
@@ -31,6 +31,7 @@ pub struct DailyPreviews {
 pub struct DailySaved {
     path: String,
     indexed: bool,
+    revision: String,
 }
 impl DailyPreviews {
     fn prepare(
@@ -90,6 +91,7 @@ impl DailyPreviews {
             exists: false,
         })
     }
+    #[cfg(test)]
     fn discard(&mut self, id: &str) {
         if self
             .pending
@@ -119,21 +121,29 @@ impl DailyPreviews {
         let target = vault
             .new_entry(&pending.path)
             .map_err(|_| "daily_preview_stale")?;
-        handoff::write_new_note(&vault, &target, pending.content.as_bytes()).map_err(|error| {
-            match error {
-                handoff::NewNoteError::Exists => "daily_target_exists",
-                handoff::NewNoteError::Stale => "daily_preview_stale",
-                handoff::NewNoteError::Storage => "daily_write_failed",
-            }
-        })?;
+        let (_, revision) =
+            handoff::write_new_note_with_revision(&vault, &target, pending.content.as_bytes())
+                .map_err(|error| match error {
+                    handoff::NewNoteError::Exists => "daily_target_exists",
+                    handoff::NewNoteError::Stale => "daily_preview_stale",
+                    handoff::NewNoteError::Storage => "daily_write_failed",
+                })?;
         // Markdown is authoritative. A derived-index failure does not remove a
         // successfully published note or present a retry that could duplicate it.
         let indexed = db::index_doc(connection, &pending.path, &pending.content).is_ok();
         Ok(DailySaved {
             path: pending.path,
             indexed,
+            revision,
         })
     }
+}
+#[derive(Serialize, ts_rs::TS)]
+pub struct DailyOpened {
+    path: String,
+    created: bool,
+    revision: String,
+    indexed: bool,
 }
 pub fn dispatch(
     app: &tauri::AppHandle,
@@ -146,26 +156,37 @@ pub fn dispatch(
         .try_into()
         .map_err(|_| "daily_preview_stale")?;
     let state = app.state::<Arc<docs::AppState>>();
+    let mut receipts = state.created_notes.lock().map_err(|_| "note_unavailable")?;
     let previews = app.state::<Mutex<DailyPreviews>>();
     let mut previews = previews.lock().map_err(|_| "daily_write_failed")?;
-    let value = match call {
-        crate::api::DailyCall::PreviewDaily { date } => {
-            let connection = state.db.lock().map_err(|_| "daily_vault_unavailable")?;
-            serde_json::to_value(previews.prepare(&connection, &date, now)?)
+    let connection = state.db.lock().map_err(|_| "daily_vault_unavailable")?;
+    let crate::api::DailyCall::OpenDaily { date } = call;
+    let preview = previews.prepare(&connection, &date, now)?;
+    let opened = if preview.exists {
+        DailyOpened {
+            path: preview.path,
+            created: false,
+            revision: String::new(),
+            indexed: true,
         }
-        crate::api::DailyCall::SaveDaily { preview_id } => {
-            let connection = state.db.lock().map_err(|_| "daily_write_failed")?;
-            let result = previews.save(&connection, &preview_id, now)?;
-            let _ =
-                crate::integration::write_snapshot(&connection, state.integration_root.as_deref());
-            serde_json::to_value(result)
-        }
-        crate::api::DailyCall::DiscardDaily { preview_id } => {
-            previews.discard(&preview_id);
-            Ok(serde_json::Value::Null)
+    } else {
+        let saved = previews.save(
+            &connection,
+            &preview.preview_id.ok_or("daily_preview_stale")?,
+            now,
+        )?;
+        let vault = VaultIdentity::inspect(&docs::resolve_configured_root(&connection)?)
+            .map_err(|_| "daily_vault_unavailable")?;
+        receipts.record(vault, saved.path.clone(), saved.revision.clone());
+        let _ = crate::integration::write_snapshot(&connection, state.integration_root.as_deref());
+        DailyOpened {
+            path: saved.path,
+            created: true,
+            revision: saved.revision,
+            indexed: saved.indexed,
         }
     };
-    value.map_err(|_| "component_response_invalid".into())
+    serde_json::to_value(opened).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
@@ -190,7 +211,12 @@ mod tests {
         assert!(previews.save(&connection, &id, 2).is_err());
         let preview = previews.prepare(&connection, "2024-02-29", 3).unwrap();
         let id = preview.preview_id.unwrap();
-        assert!(previews.save(&connection, &id, 4).unwrap().indexed);
+        let saved = previews.save(&connection, &id, 4).unwrap();
+        assert!(saved.indexed);
+        assert_eq!(
+            saved.revision,
+            crate::core::document::read(&path).unwrap().revision
+        );
         let bytes = std::fs::read(&path).unwrap();
         assert!(String::from_utf8(bytes.clone())
             .unwrap()

@@ -5,6 +5,8 @@ import App from "./App";
 import { NoteSessionProvider, useNoteSession } from "./lifecycle";
 import { EditorView } from "@codemirror/view";
 import {
+  captureNote,
+  undoCreatedNote,
   applyRename,
   createDirectory,
   createFile,
@@ -50,13 +52,8 @@ vi.mock("./api", () => {
     onQuickCaptureRequested: vi.fn(async () => () => undefined),
     onQuickCaptureShortcutStatusChanged: vi.fn(async () => () => undefined),
     quickCaptureShortcutStatus: vi.fn(async () => ({ shortcut: "Ctrl+Alt+K", state: "registered" })),
-    previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
-      previewId: "qc-1",
-      target: "Inbox",
-      ...input,
-    })),
-    saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
-    discardQuickCapturePreview: vi.fn(async () => undefined),
+    captureNote: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md", revision: "r1" })),
+    undoCreatedNote: vi.fn(async () => ({ removed: true })),
     listTemplates: vi.fn(async () => []),
     createTemplate: vi.fn(async () => {
       throw new Error("unused");
@@ -652,4 +649,16 @@ it("waits for both metadata reads and ignores an older error after a new refresh
   expect(await screen.findByText("fresh.md")).toBeTruthy();
   expect(screen.getByText("fresh-tag")).toBeTruthy();
   expect(screen.queryByText("obsolete metadata error")).toBeNull();
+});
+
+it("keeps a created-note undo offer after the capture dialog closes", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /빠른 캡처/ }));
+  const dialog = await screen.findByRole("dialog", { name: "빠른 캡처" });
+  fireEvent.change(within(dialog).getByLabelText(/본문/), { target: { value: "new body" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "빠른 캡처" })).toBeNull());
+  expect(captureNote).toHaveBeenCalledWith({ title: "", body: "new body", tags: [] });
+  fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(undoCreatedNote).toHaveBeenCalledWith("Inbox/quick-capture-test.md", "r1"));
 });

@@ -701,29 +701,37 @@ async function start(product, suffix) {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route }, component, method, args } });
         const notes = (method, args) => call("knowledge.notes", "daily", method, args);
         const date = "2024-02-29", path = "Journal/2024-02-29.md";
-        const preview = await notes("preview_daily", { date });
         const before = await notes("read_file", { rel: path });
-        await notes("discard_daily", { previewId: preview.value.previewId });
-        const cancelled = await notes("save_daily", { previewId: preview.value.previewId });
-        const next = await notes("preview_daily", { date });
-        const saved = await notes("save_daily", { previewId: next.value.previewId });
-        const repeated = await notes("save_daily", { previewId: next.value.previewId });
-        const existing = await notes("preview_daily", { date });
+        const created = await notes("open_daily", { date });
+        const existing = await notes("open_daily", { date });
         const content = await notes("read_file", { rel: path });
+        const undo = await notes("undo_created_note", { path, revision: created.value.revision });
+        const repeated = await notes("undo_created_note", { path, revision: created.value.revision });
+        const absent = await notes("read_file", { rel: path });
+        const recreated = await notes("open_daily", { date });
+        const snapshot = await notes("read_file", { rel: path });
+        const edited = await notes("write_file", { rel: path, content: "# edited daily", expectedRevision: snapshot.value.revision });
+        const refused = await notes("undo_created_note", { path, revision: recreated.value.revision });
+        const retained = await notes("read_file", { rel: path });
         let legacyDailyRejected = false;
         try { await notes("daily_note"); } catch { legacyDailyRejected = true; }
-        return { previewDoesNotWrite: before.operation.outcome.state === "succeeded" && before.value.content === null, cancelPreventsWrite: cancelled.operation.outcome.state === "failed",
-          explicitSave: saved.operation.outcome.state === "succeeded", repeatRejected: repeated.operation.outcome.state === "failed",
-          existingOnlyOpens: existing.value.exists === true && existing.value.previewId === null,
-          civilDate: content.value.content.includes("# 2024-02-29"), legacyDailyRejected };
+        return { absentBeforeAction: before.value.content === null,
+          immediateCreate: created.operation.outcome.state === "succeeded" && created.value.created,
+          existingOnlyOpens: existing.value.created === false,
+          civilDate: content.value.content.includes("# 2024-02-29"),
+          undoRemoves: undo.value.removed && absent.value.content === null,
+          oneShotUndo: repeated.value.removed === false,
+          editedNoteRetained: edited.operation.outcome.state === "succeeded" && refused.value.removed === false && retained.value.content === "# edited daily",
+          legacyDailyRejected };
       })()`);
         assert.deepEqual(componentProbe.daily, {
-          previewDoesNotWrite: true,
-          cancelPreventsWrite: true,
-          explicitSave: true,
-          repeatRejected: true,
+          absentBeforeAction: true,
+          immediateCreate: true,
           existingOnlyOpens: true,
           civilDate: true,
+          undoRemoves: true,
+          oneShotUndo: true,
+          editedNoteRetained: true,
           legacyDailyRejected: true,
         });
         componentProbe.closePolicy = await cdp.evaluate(`(async () => {

@@ -1,3 +1,5 @@
+import { useUndo } from "@devbox/product-shell/undo";
+import { undoCreated } from "./undoCreated";
 import { usePolling } from "@devbox/hooks";
 import { NoteAutosave, readAutosavePreference, writeAutosavePreference } from "./autosave";
 import { NoteJournal } from "./journal";
@@ -189,6 +191,7 @@ export default function App({
   const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
   const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
+  const { offer: offerUndo, toast: undoToast } = useUndo();
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   useEffect(() => {
     if (captureRequest) {
@@ -1049,13 +1052,17 @@ export default function App({
 
   return (
     <div className="app">
+      {undoToast}
       {quickCaptureOpen && (
         <QuickCaptureDialog
           open={quickCaptureOpen}
           active={active}
           onClose={() => setQuickCaptureOpen(false)}
-          onSaved={() => {
-            setQuickCaptureNotice("빠른 캡처를 Inbox에 저장했습니다");
+          onSaved={(created) => {
+            offerUndo("노트를 만들었습니다.", async () => {
+              await undoCreated(created, editorDocument);
+              await loadMeta();
+            });
             void loadMeta();
           }}
           restoreFocusRef={quickCaptureButtonRef}
@@ -1067,11 +1074,10 @@ export default function App({
           onClose={() => setTemplateManagerOpen(false)}
           onSaved={(result) => {
             setTemplateManagerOpen(false);
-            setNotice(
-              result.saved
-                ? `템플릿으로 새 노트를 만들었습니다: ${result.path}`
-                : "브라우저 미리보기에서는 파일을 만들지 않았습니다. 데스크톱 앱에서 적용하세요.",
-            );
+            offerUndo("노트를 만들었습니다.", async () => {
+              await undoCreated(result, editorDocument);
+              await loadMeta();
+            });
             void loadMeta();
           }}
         />

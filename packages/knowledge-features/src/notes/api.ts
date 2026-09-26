@@ -18,7 +18,6 @@ import type {
   Backlink,
   RenderedDoc,
   QuickCaptureInput,
-  QuickCapturePreview,
   QuickCaptureSaved,
   QuickCaptureShortcutStatus,
   SearchResult,
@@ -28,16 +27,7 @@ import type {
   ImageAsset,
   KnowledgeWatcherStatus,
 } from "./types";
-import {
-  isSafeQuickCapturePath,
-  isSafeQuickCapturePreviewId,
-  isQuickCaptureUtf8Within,
-  normalizeQuickCapture,
-  MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES,
-  MAX_QUICK_CAPTURE_TAGS,
-  MAX_QUICK_CAPTURE_TAG_ITEM_BYTES,
-  QUICK_CAPTURE_TARGET,
-} from "./lib/quickCapture";
+import { isSafeQuickCapturePath, isQuickCaptureUtf8Within, normalizeQuickCapture } from "./lib/quickCapture";
 
 export type OpenTarget = import("../generated/OpenTarget").OpenTarget;
 
@@ -607,11 +597,10 @@ export async function backlinks(rel: string): Promise<Backlink[]> {
 
 export async function dailyNote(): Promise<[string, string]> {
   if (!isTauri()) return ["Journal/2026-08-11.md", "# Today\n"];
-  throw new Error("일일 기록 화면에서 미리보기를 확인한 뒤 저장해 주세요.");
+  throw new Error("일일 기록 화면에서 일일 노트를 열어 주세요.");
 }
 
 const QUICK_CAPTURE_UNAVAILABLE = "빠른 캡처 저장은 Knowledge 앱에서만 사용할 수 있습니다";
-const QUICK_CAPTURE_PREVIEW_FAILED = "빠른 캡처 미리보기를 만들 수 없습니다";
 const QUICK_CAPTURE_SAVE_FAILED = "빠른 캡처를 저장하지 못했습니다";
 const QUICK_CAPTURE_SHORTCUT = "Ctrl+Alt+K";
 const QUICK_CAPTURE_SHORTCUT_STATES: QuickCaptureShortcutStatus["state"][] = [
@@ -670,75 +659,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseQuickCapturePreview(value: unknown): QuickCapturePreview {
-  if (!isRecord(value)) throw new Error("invalid quick capture preview");
-  const previewId = value.previewId;
-  const target = value.target;
-  const title = value.title;
-  const body = value.body;
-  const tags = value.tags;
-  if (
-    !isSafeQuickCapturePreviewId(previewId) ||
-    previewId.length > MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES ||
-    target !== QUICK_CAPTURE_TARGET ||
-    typeof title !== "string" ||
-    typeof body !== "string" ||
-    !Array.isArray(tags) ||
-    tags.length > MAX_QUICK_CAPTURE_TAGS ||
-    tags.some((tag) => typeof tag !== "string" || !isQuickCaptureUtf8Within(tag, MAX_QUICK_CAPTURE_TAG_ITEM_BYTES))
-  ) {
-    throw new Error("invalid quick capture preview");
-  }
-  const normalized = normalizeQuickCapture({ title, body, tags });
-  return { previewId, target: QUICK_CAPTURE_TARGET, ...normalized };
-}
-
-function safeQuickCaptureApprovalId(value: string): string {
-  if (!isSafeQuickCapturePreviewId(value)) {
-    throw new Error("빠른 캡처 미리보기가 오래되어 다시 확인하세요");
-  }
-  return value;
-}
-
-export async function previewQuickCapture(input: QuickCaptureInput): Promise<QuickCapturePreview> {
+export async function captureNote(input: QuickCaptureInput): Promise<QuickCaptureSaved> {
   const normalized = normalizeQuickCapture(input);
-  if (!isTauri()) {
-    return { previewId: "qc-1", target: QUICK_CAPTURE_TARGET, ...normalized };
-  }
-  try {
-    const preview = await notesCall("preview_quick_capture", { input: normalized });
-    return parseQuickCapturePreview(preview);
-  } catch (error) {
-    throw safeQuickCaptureError(error, QUICK_CAPTURE_PREVIEW_FAILED);
-  }
-}
-
-export async function saveQuickCapture(previewId: string): Promise<QuickCaptureSaved> {
-  const safePreviewId = safeQuickCaptureApprovalId(previewId);
   if (!isTauri()) throw new Error(QUICK_CAPTURE_UNAVAILABLE);
   try {
-    const saved = await notesCall("save_quick_capture", {
-      approval: { previewId: safePreviewId },
-    });
-    if (!isRecord(saved) || !isSafeQuickCapturePath(saved.path)) {
-      throw new Error("unexpected save path");
+    const saved = await notesCall("capture_note", { input: normalized });
+    if (
+      !isRecord(saved) ||
+      !isSafeQuickCapturePath(saved.path) ||
+      typeof saved.revision !== "string" ||
+      !saved.revision
+    ) {
+      throw new Error("unexpected created note");
     }
-    return { path: saved.path as string };
+    return { path: saved.path, revision: saved.revision };
   } catch (error) {
     throw safeQuickCaptureError(error, QUICK_CAPTURE_SAVE_FAILED);
   }
 }
 
-export async function discardQuickCapturePreview(previewId: string): Promise<void> {
-  if (!isTauri() || !isSafeQuickCapturePreviewId(previewId)) return;
-  try {
-    await notesCall("discard_quick_capture_preview", {
-      approval: { previewId },
-    });
-  } catch {
-    // Discard is best-effort during modal teardown.  The native slot is
-    // one-shot and issuing a new preview also replaces any older slot.
-  }
+export async function undoCreatedNote(path: string, revision: string): Promise<{ removed: boolean }> {
+  if (!isTauri()) return { removed: false };
+  return notesCall("undo_created_note", { path, revision });
+}
+
+export async function createNoteFromTemplate(input: TemplateApplyInput): Promise<QuickCaptureSaved> {
+  if (!isTauri()) throw new Error("템플릿 노트 저장은 Knowledge 앱에서만 사용할 수 있습니다");
+  return notesCall("create_note_from_template", { input });
 }
 
 export async function quickCaptureShortcutStatus(): Promise<QuickCaptureShortcutStatus> {

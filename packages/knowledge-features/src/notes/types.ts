@@ -28,9 +28,7 @@ export interface EditorCursorRequest {
 
 export type QuickCaptureInput = import("../generated/QuickCaptureInput").QuickCaptureInput;
 
-export type QuickCapturePreview = import("../generated/QuickCapturePreview").QuickCapturePreview;
-
-export type QuickCaptureSaved = import("../generated/QuickCaptureSaved").QuickCaptureSaved;
+export type QuickCaptureSaved = import("../generated/CreatedNote").CreatedNote;
 
 export type QuickCaptureShortcutState = import("../generated/ShortcutRegistration").ShortcutRegistration | "managed";
 

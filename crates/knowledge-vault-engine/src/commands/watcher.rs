@@ -1107,9 +1107,7 @@ mod tests {
             integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
-            quick_capture_previews: Mutex::new(
-                crate::commands::docs::QuickCapturePreviewStore::default(),
-            ),
+            created_notes: Mutex::new(crate::core::created_notes::CreatedNotes::default()),
             template_previews: Mutex::new(
                 crate::commands::templates::TemplatePreviewStore::default(),
             ),
@@ -1156,9 +1154,7 @@ mod tests {
             integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
-            quick_capture_previews: Mutex::new(
-                crate::commands::docs::QuickCapturePreviewStore::default(),
-            ),
+            created_notes: Mutex::new(crate::core::created_notes::CreatedNotes::default()),
             template_previews: Mutex::new(
                 crate::commands::templates::TemplatePreviewStore::default(),
             ),
@@ -1194,9 +1190,7 @@ mod tests {
             integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
-            quick_capture_previews: Mutex::new(
-                crate::commands::docs::QuickCapturePreviewStore::default(),
-            ),
+            created_notes: Mutex::new(crate::core::created_notes::CreatedNotes::default()),
             template_previews: Mutex::new(
                 crate::commands::templates::TemplatePreviewStore::default(),
             ),

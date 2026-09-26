@@ -1,4 +1,4 @@
-use crate::core::capture::{self, QuickCaptureApproval, QuickCaptureInput};
+use crate::core::capture::{self, QuickCaptureInput};
 use crate::core::db;
 use crate::core::store;
 use crate::core::vault::{EntryIdentity, VaultIdentity};
@@ -24,7 +24,7 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub metadata_scans: crate::core::metadata::ScanControl,
     pub rename_plans: Mutex<crate::core::rename::RenamePlanStore>,
-    pub quick_capture_previews: Mutex<QuickCapturePreviewStore>,
+    pub created_notes: Mutex<crate::core::created_notes::CreatedNotes>,
     pub template_previews: Mutex<crate::commands::templates::TemplatePreviewStore>,
     /// 렌더 프리뷰용 이미지 인라인 캐시: (경로, mtime)이 같으면 base64 재인코딩을
     /// 건너뛴다. 항목 32개를 넘기면 통째로 비운다(LRU까지 갈 필요 없음).
@@ -46,75 +46,18 @@ pub struct InboundNote {
     pub revision: String,
 }
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(ts_rs::TS)]
-pub struct QuickCapturePreview {
-    pub preview_id: String,
-    pub target: String,
-    pub title: String,
-    pub body: String,
-    pub tags: Vec<String>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
-pub struct QuickCaptureSaved {
+pub struct CreatedNote {
     /// Root-relative only.  The absolute Knowledge path never crosses IPC.
     pub path: String,
+    pub revision: String,
 }
 
-struct PendingQuickCapture {
-    id: String,
-    vault: VaultIdentity,
-    capture: capture::NormalizedCapture,
-}
-
-/// App-managed one-shot slot for the edit → preview → save approval.
-///
-/// The normalized body/title/tags never live in a serialized plan or a
-/// frontend save request.  Issuing a new preview replaces the previous slot;
-/// a save/discard attempt consumes only the matching opaque ID.
-#[derive(Default)]
-pub struct QuickCapturePreviewStore {
-    next_id: u64,
-    pending: Option<PendingQuickCapture>,
-}
-
-impl QuickCapturePreviewStore {
-    fn issue(&mut self, vault: VaultIdentity, capture: capture::NormalizedCapture) -> String {
-        self.next_id = self.next_id.saturating_add(1).max(1);
-        let id = format!("qc-{}", self.next_id);
-        self.pending = Some(PendingQuickCapture {
-            id: id.clone(),
-            vault,
-            capture,
-        });
-        id
-    }
-
-    fn take(&mut self, id: &str) -> Option<PendingQuickCapture> {
-        if self
-            .pending
-            .as_ref()
-            .is_some_and(|pending| pending.id == id)
-        {
-            self.pending.take()
-        } else {
-            None
-        }
-    }
-
-    fn discard(&mut self, id: &str) {
-        if self
-            .pending
-            .as_ref()
-            .is_some_and(|pending| pending.id == id)
-        {
-            self.pending = None;
-        }
-    }
+#[derive(Serialize, ts_rs::TS)]
+pub struct UndoResult {
+    pub removed: bool,
 }
 
 /// KnowledgeRoot 경로를 반환한다. 미설정이면 Documents/Knowledge로 초기화.
@@ -438,54 +381,6 @@ fn ensure_capture_inbox(vault: &VaultIdentity) -> Result<PathBuf, String> {
     validate_capture_inbox(vault)
 }
 
-#[cfg(test)]
-fn capture_preview(
-    vault: &VaultIdentity,
-    input: QuickCaptureInput,
-    preview_id: String,
-) -> Result<QuickCapturePreview, String> {
-    let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
-    validate_capture_inbox(vault)?;
-    Ok(QuickCapturePreview {
-        preview_id,
-        target: capture::INBOX_DIR.to_string(),
-        title: normalized.title,
-        body: normalized.body,
-        tags: normalized.tags,
-    })
-}
-
-pub fn preview_quick_capture(
-    state: tauri::State<'_, Arc<AppState>>,
-    input: QuickCaptureInput,
-) -> Result<QuickCapturePreview, String> {
-    // Do not hold the DB mutex while taking the preview-slot mutex. Save takes
-    // the slot first and then the DB, so keeping one lock order avoids a
-    // concurrent preview/save deadlock.
-    let root = {
-        let conn = state
-            .db
-            .lock()
-            .map_err(|_| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())?;
-        resolve_configured_root(&conn)?
-    };
-    let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
-    let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
-    validate_capture_inbox(&vault)?;
-    let mut previews = state
-        .quick_capture_previews
-        .lock()
-        .map_err(|_| "빠른 캡처 미리보기를 만들 수 없습니다".to_string())?;
-    let preview_id = previews.issue(vault, normalized.clone());
-    Ok(QuickCapturePreview {
-        preview_id,
-        target: capture::INBOX_DIR.to_string(),
-        title: normalized.title,
-        body: normalized.body,
-        tags: normalized.tags,
-    })
-}
-
 fn stage_capture_file(
     vault: &VaultIdentity,
     inbox: &Path,
@@ -641,7 +536,7 @@ fn save_capture_in_root(
     conn: &Connection,
     root: &Path,
     input: QuickCaptureInput,
-) -> Result<QuickCaptureSaved, String> {
+) -> Result<CreatedNote, String> {
     let vault = VaultIdentity::inspect(root).map_err(|error| error.to_string())?;
     save_capture_at(conn, &vault, input, current_epoch_seconds())
 }
@@ -652,7 +547,7 @@ fn save_capture_at(
     vault: &VaultIdentity,
     input: QuickCaptureInput,
     now_seconds: i64,
-) -> Result<QuickCaptureSaved, String> {
+) -> Result<CreatedNote, String> {
     let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
     save_normalized_capture_at(conn, vault, normalized, now_seconds)
 }
@@ -662,12 +557,12 @@ fn save_normalized_capture_at(
     vault: &VaultIdentity,
     normalized: capture::NormalizedCapture,
     now_seconds: i64,
-) -> Result<QuickCaptureSaved, String> {
+) -> Result<CreatedNote, String> {
     let document =
         capture::render_markdown(&normalized).map_err(|error| error.code().to_string())?;
     let inbox = ensure_capture_inbox(vault)?;
 
-    let mut selected: Option<(String, PathBuf, EntryIdentity)> = None;
+    let mut selected: Option<(String, PathBuf, EntryIdentity, String)> = None;
     for ordinal in 1..=capture::MAX_COLLISION_ATTEMPTS {
         vault.revalidate().map_err(|error| error.to_string())?;
         let filename = capture::filename_for_timestamp(now_seconds, ordinal);
@@ -692,6 +587,13 @@ fn save_normalized_capture_at(
             Err(error) => {
                 cleanup_vault_file(vault, &temporary, &temporary_identity);
                 return Err(error.to_string());
+            }
+        };
+        let revision = match crate::core::document::created_revision(&temporary, &current_path) {
+            Ok(revision) => revision,
+            Err(error) => {
+                cleanup_vault_file(vault, &temporary, &temporary_identity);
+                return Err(error);
             }
         };
         let publication = if vault.revalidate().is_ok() {
@@ -719,7 +621,7 @@ fn save_normalized_capture_at(
                     // or remove the competing regular file by path.
                     return Err("preview_stale".to_string());
                 }
-                selected = Some((rel, path, target_identity));
+                selected = Some((rel, path, target_identity, revision));
                 break;
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -738,7 +640,7 @@ fn save_normalized_capture_at(
             }
         }
     }
-    let Some((rel, path, path_identity)) = selected else {
+    let Some((rel, path, path_identity, revision)) = selected else {
         return Err("quick_capture_save_failed".to_string());
     };
 
@@ -776,7 +678,10 @@ fn save_normalized_capture_at(
     if let Err(error) = vault.revalidate() {
         return Err(error.to_string());
     }
-    Ok(QuickCaptureSaved { path: rel })
+    Ok(CreatedNote {
+        path: rel,
+        revision,
+    })
 }
 
 fn current_epoch_seconds() -> i64 {
@@ -786,61 +691,58 @@ fn current_epoch_seconds() -> i64 {
         .unwrap_or(0)
 }
 
-pub fn save_quick_capture(
+pub fn capture_note(
     state: tauri::State<'_, Arc<AppState>>,
-    approval: QuickCaptureApproval,
-) -> Result<QuickCaptureSaved, String> {
-    if !capture::is_valid_preview_id(&approval.preview_id) {
-        return Err("preview_stale".to_string());
-    }
-
-    // Consume before doing filesystem work.  A timeout, duplicate click, or
-    // stale caller cannot replay the same approved body.  The UI must create a
-    // fresh preview after any failed save attempt.
-    let pending = state
-        .quick_capture_previews
-        .lock()
-        .map_err(|_| "quick_capture_save_failed".to_string())?
-        .take(&approval.preview_id)
-        .ok_or_else(|| "preview_stale".to_string())?;
-
-    let conn = state
-        .db
-        .lock()
-        .map_err(|_| "quick_capture_save_failed".to_string())?;
-    let root =
-        resolve_configured_root(&conn).map_err(|_| "quick_capture_save_failed".to_string())?;
-    let current_vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
-    if current_vault != pending.vault {
-        return Err("preview_stale".to_string());
-    }
-    let result = save_normalized_capture_at(
-        &conn,
-        &current_vault,
-        pending.capture,
-        current_epoch_seconds(),
-    )?;
-    drop(conn);
-    // The snapshot contains counts and opaque IDs only; never capture content.
-    if let Ok(conn) = state.db.lock() {
-        let _ = crate::integration::write_snapshot(&conn, state.integration_root.as_deref());
-    }
+    input: QuickCaptureInput,
+) -> Result<CreatedNote, String> {
+    capture_note_inner(state.inner(), input)
+}
+fn capture_note_inner(state: &AppState, input: QuickCaptureInput) -> Result<CreatedNote, String> {
+    let mut receipts = state.created_notes.lock().map_err(|_| "note_unavailable")?;
+    let connection = state.db.lock().map_err(|_| "note_unavailable")?;
+    let root = resolve_configured_root(&connection)?;
+    let vault = VaultIdentity::inspect(&root).map_err(|_| "note_unavailable")?;
+    let normalized = capture::normalize(input).map_err(|error| error.code().to_string())?;
+    let result =
+        save_normalized_capture_at(&connection, &vault, normalized, current_epoch_seconds())?;
+    receipts.record(vault, result.path.clone(), result.revision.clone());
+    let _ = crate::integration::write_snapshot(&connection, state.integration_root.as_deref());
     Ok(result)
 }
-
-pub fn discard_quick_capture_preview(
+pub fn undo_created_note(
     state: tauri::State<'_, Arc<AppState>>,
-    approval: QuickCaptureApproval,
-) -> Result<(), String> {
-    if !capture::is_valid_preview_id(&approval.preview_id) {
-        return Ok(());
+    path: String,
+    revision: String,
+) -> Result<UndoResult, String> {
+    undo_created_note_inner(state.inner(), &path, &revision)
+}
+fn undo_created_note_inner(
+    state: &AppState,
+    path: &str,
+    revision: &str,
+) -> Result<UndoResult, String> {
+    let mut receipts = state.created_notes.lock().map_err(|_| "note_unavailable")?;
+    let mut connection = state.db.lock().map_err(|_| "note_unavailable")?;
+    let root = resolve_configured_root(&connection)?;
+    let vault = VaultIdentity::inspect(&root).map_err(|_| "note_unavailable")?;
+    if !receipts.take(&vault, path, revision) {
+        return Ok(UndoResult { removed: false });
     }
-    state
-        .quick_capture_previews
-        .lock()
-        .map_err(|_| "빠른 캡처 미리보기를 폐기하지 못했습니다".to_string())?
-        .discard(&approval.preview_id);
-    Ok(())
+    let target = vault.new_entry(path).map_err(|_| "note_unavailable")?;
+    let parent = target.parent().ok_or("note_unavailable")?;
+    let _lease = vault
+        .lease_existing_directory(parent)
+        .map_err(|_| "note_unavailable")?;
+    let transaction = connection.transaction().map_err(|_| "note_unavailable")?;
+    db::remove_docs_under(&transaction, path).map_err(|_| "note_unavailable")?;
+    if !crate::core::document::delete_if_unchanged(&target, revision)? {
+        return Ok(UndoResult { removed: false });
+    }
+    transaction
+        .commit()
+        .map_err(|_| "note_applied_postprocessing_failed")?;
+    let _ = crate::integration::write_snapshot(&connection, state.integration_root.as_deref());
+    Ok(UndoResult { removed: true })
 }
 
 pub fn search_docs(
@@ -869,6 +771,90 @@ mod tests {
         db::migrate(&conn).unwrap();
         db::set_setting(&conn, "root", root.to_str().unwrap()).unwrap();
         Mutex::new(conn)
+    }
+
+    fn creation_state(root: &Path) -> AppState {
+        AppState {
+            journal: Arc::new(super::super::journal::NoteJournalStore::new(
+                root.join("journal.json"),
+            )),
+            integration_root: None,
+            db: metadata_database(root),
+            metadata_scans: Default::default(),
+            rename_plans: Default::default(),
+            created_notes: Default::default(),
+            template_previews: Default::default(),
+            image_cache: Default::default(),
+        }
+    }
+
+    #[test]
+    fn undo_removes_only_unchanged_native_created_notes_and_updates_index() {
+        let root = tempfile::tempdir().unwrap();
+        let state = creation_state(root.path());
+        let created =
+            capture_note_inner(&state, capture_input("original searchable body")).unwrap();
+        assert!(!db::search(&state.db.lock().unwrap(), "searchable", 10)
+            .unwrap()
+            .is_empty());
+        assert!(
+            undo_created_note_inner(&state, &created.path, &created.revision)
+                .unwrap()
+                .removed
+        );
+        assert!(!root.path().join(&created.path).exists());
+        assert!(db::search(&state.db.lock().unwrap(), "searchable", 10)
+            .unwrap()
+            .is_empty());
+        assert!(
+            !undo_created_note_inner(&state, &created.path, &created.revision)
+                .unwrap()
+                .removed
+        );
+
+        let created = capture_note_inner(&state, capture_input("second searchable body")).unwrap();
+        let target = root.path().join(&created.path);
+        std::fs::write(&target, "edited body").unwrap();
+        assert!(
+            !undo_created_note_inner(&state, &created.path, &created.revision)
+                .unwrap()
+                .removed
+        );
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "edited body");
+        // A refused undo rolls its index deletion back.
+        assert!(!db::search(&state.db.lock().unwrap(), "searchable", 10)
+            .unwrap()
+            .is_empty());
+        let current = crate::core::document::read(&target).unwrap();
+        assert!(
+            !undo_created_note_inner(&state, &created.path, &current.revision)
+                .unwrap()
+                .removed
+        );
+    }
+
+    #[test]
+    fn undo_cannot_cross_the_selected_note_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let state = creation_state(root.path());
+        let created = capture_note_inner(&state, capture_input("body")).unwrap();
+        let target = other.path().join(&created.path);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::copy(root.path().join(&created.path), &target).unwrap();
+        db::set_setting(
+            &state.db.lock().unwrap(),
+            "root",
+            other.path().to_str().unwrap(),
+        )
+        .unwrap();
+        assert!(
+            !undo_created_note_inner(&state, &created.path, &created.revision)
+                .unwrap()
+                .removed
+        );
+        assert!(target.exists());
+        assert!(root.path().join(&created.path).exists());
     }
 
     #[test]
@@ -955,53 +941,6 @@ mod tests {
             resolve_configured_root(&conn).unwrap_err(),
             "빠른 캡처 미리보기를 만들 수 없습니다"
         );
-    }
-
-    #[test]
-    fn quick_capture_preview_store_replaces_and_consumes_approvals_once() {
-        let root = tempfile::tempdir().unwrap();
-        let vault = VaultIdentity::inspect(root.path()).unwrap();
-        let mut store = QuickCapturePreviewStore::default();
-        let first = store.issue(
-            vault.clone(),
-            capture::normalize(capture_input("first")).unwrap(),
-        );
-        let second = store.issue(vault, capture::normalize(capture_input("second")).unwrap());
-
-        assert!(store.take(&first).is_none());
-        let pending = store.take(&second).expect("latest preview is pending");
-        assert_eq!(pending.capture.body, "second");
-        assert!(store.take(&second).is_none());
-
-        let third = store.issue(
-            VaultIdentity::inspect(root.path()).unwrap(),
-            capture::normalize(capture_input("third")).unwrap(),
-        );
-        store.discard(&third);
-        assert!(store.take(&third).is_none());
-    }
-
-    #[test]
-    fn quick_capture_preview_has_fixed_inbox_target_and_normalized_values() {
-        let root = tempfile::tempdir().unwrap();
-        crate::core::store::ensure_layout(root.path()).unwrap();
-        let vault = VaultIdentity::inspect(root.path()).unwrap();
-        let preview = capture_preview(
-            &vault,
-            QuickCaptureInput {
-                title: "  Captured idea  ".into(),
-                body: "first\r\nsecond".into(),
-                tags: vec!["rust".into(), "rust".into()],
-            },
-            "qc-test".into(),
-        )
-        .unwrap();
-        assert_eq!(preview.preview_id, "qc-test");
-        assert_eq!(preview.target, "Inbox");
-        assert_eq!(preview.title, "Captured idea");
-        assert_eq!(preview.body, "first\nsecond");
-        assert_eq!(preview.tags, ["rust"]);
-        assert!(!root.path().join(capture::INBOX_DIR).exists());
     }
 
     #[test]
@@ -1126,8 +1065,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         symlink(outside.path(), root.path().join("Inbox")).unwrap();
-        let vault = VaultIdentity::inspect(root.path()).unwrap();
-        let result = capture_preview(&vault, capture_input("would escape"), "qc-test".into());
+        let state = creation_state(root.path());
+        let result = capture_note_inner(&state, capture_input("would escape"));
         assert_eq!(
             result.err().as_deref(),
             Some("Knowledge 항목 경로가 올바르지 않습니다")
