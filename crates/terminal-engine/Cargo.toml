@@ -35,6 +35,7 @@ devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 uuid = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
