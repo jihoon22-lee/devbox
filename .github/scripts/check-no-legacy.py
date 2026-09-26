@@ -41,7 +41,7 @@ SUFFIXES = {".rs", ".ts", ".tsx", ".json", ".toml", ".mjs", ".ps1", ".py", ".yml
 COMPATIBILITY_LINES = {
     "crates/activity-engine/src/commands/life.rs": {'#[serde(rename = "legacy_snapshot")]'},
     "packages/knowledge-features/src/generated/KnowledgeActivity.ts": {"legacy_snapshot: boolean;"},
-    "packages/knowledge-features/src/activity/App.tsx": {
+    "packages/knowledge-features/src/activity/components/DataSourceRow.tsx": {
         '{activity.legacy_snapshot && " · 구버전 snapshot"}',
         '!activity.legacy_snapshot &&',
     },
