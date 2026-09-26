@@ -204,10 +204,15 @@ try {
   ui.cdp.socket.removeEventListener("message", answerPrompt);
   assert.equal(promptAnswered, true);
   assert.equal(promptError, false);
-  assert.equal(
-    await ui.cdp.evaluate(`localStorage.getItem("apip-environments").includes(${JSON.stringify(secret)})`),
-    false,
-  );
+  const storedEnvironments = await success("api-studio.store", "load", { kind: "environments" });
+  assert.ok(storedEnvironments && storedEnvironments.revision > 0);
+  assert.equal(storedEnvironments.body.includes(secret), false);
+  const storedSecret = JSON.parse(storedEnvironments.body)
+    .environments.find((environment) => environment.id === "s03-env")
+    ?.variables.find((variable) => variable.key === "WEBHOOK_SECRET");
+  assert.equal(storedSecret?.secret, true);
+  assert.ok(storedSecret.value.length > 0, "native store must retain the DPAPI sealed value");
+  assert.equal(await ui.cdp.evaluate('localStorage.getItem("apip-environments")'), null);
   await click(".api-feature-requests .tabs", "HEADERS");
   const headerIndex = await ui.cdp.evaluate(
     'Array.from(document.querySelectorAll(".header-row")).findIndex(row=>row.querySelector("input[placeholder=\\"헤더 이름\\"]").value.toLowerCase()==="authorization")',
