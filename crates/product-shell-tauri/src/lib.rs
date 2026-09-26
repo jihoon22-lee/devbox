@@ -5,7 +5,7 @@ mod installation;
 pub use admission::{admit, admit_request, ActiveRequests, Admission, Reply};
 mod operation_log;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
-pub use installation::WriterGuard;
+pub use installation::{component_namespace, WriterGuard};
 pub use operation_log::{begin_operation, OperationGuard};
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,

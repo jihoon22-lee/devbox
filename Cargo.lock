@@ -1231,6 +1231,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-agent"
+version = "0.8.1"
+dependencies = [
+ "product-shell-tauri",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-single-instance",
+]
+
+[[package]]
 name = "devbox-api-studio"
 version = "0.8.1"
 dependencies = [

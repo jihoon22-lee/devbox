@@ -39,3 +39,7 @@ Knowledge·Workspace의 살균된 Markdown HTML과 Mermaid 블록은 `packages/m
 제공하는 순수 계약 crate다. Cargo workspace 검증에 포함되며 제품 카탈로그 항목은 아니다.
 Phase 1에서는 실행 프로세스나 제품 transport를 바꾸지 않는다. 프로세스·배포·writer lease
 연결은 [ADR 0015](adr/0015-devbox-agent.md)의 Phase 2 설계를 따른다.
+
+`apps/devbox-agent`는 Control Center가 배포하는 창 없는 내부 구성요소다.
+검증된 설치 owner의 namespace와 writer lease를 사용하며 공개 제품 카탈로그에는 넣지 않는다.
+portable에서는 실행하지 않는다. 백그라운드 기능은 리뷰 후속 B9에서 순서대로 연결한다.

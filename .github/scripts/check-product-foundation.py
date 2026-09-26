@@ -59,6 +59,12 @@ def check(root=ROOT):
                 "opener:allow-open-url",
             }
         assert {path.name for path in capability_dir.glob("*.json")} == expected_files
+    agent = root / "apps/devbox-agent"
+    agent_config = json.loads((agent / "tauri.conf.json").read_text())
+    agent_cargo = tomllib.loads((agent / "Cargo.toml").read_text())
+    assert agent_config["version"] == agent_cargo["package"]["version"] == config["version"]
+    assert agent_config["app"]["windows"] == [] and agent_config["bundle"]["active"] is False
+    assert all(entry["id"] != "devbox-agent" for entry in public["apps"])
     for source in (root / "crates/suite-runtime/src").rglob("*.rs"):
         assert "CARGO_PKG_VERSION" not in source.read_text(), "Suite library metadata is not product identity"
     workflow = (root / ".github/workflows/product-foundation.yml").read_text()

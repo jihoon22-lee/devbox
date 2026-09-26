@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Devbox Agent",
+  "version": "0.8.1",
+  "identifier": "com.devbox.v08.agent",
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": false,
+    "resources": [
+      "../../THIRD_PARTY_NOTICES.md"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/32x32.png"
+    ]
+  }
+}

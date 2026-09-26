@@ -1,0 +1,14 @@
+[package]
+name = "devbox-agent"
+version = "0.8.1"
+publish = false
+edition = "2021"
+description = "Devbox installed Suite background component"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+tauri-plugin-single-instance = "2"
+product-shell-tauri = { path = "../../crates/product-shell-tauri" }

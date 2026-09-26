@@ -219,11 +219,53 @@ pub(crate) fn namespace(executable: &Path, product: &str, version: &str) -> Resu
     ))
 }
 
+fn component_owner(component: &Path, product: &str) -> Result<std::path::PathBuf> {
+    if !["workspace", "api-studio", "knowledge", "control-center"].contains(&product)
+        || component.file_name().and_then(|name| name.to_str()) != Some("devbox-agent.exe")
+    {
+        return Err("component_path_invalid");
+    }
+    let suite = component.parent().ok_or("component_path_invalid")?;
+    let resources = suite.parent().ok_or("component_path_invalid")?;
+    let owner = resources.parent().ok_or("component_path_invalid")?;
+    if suite.file_name().and_then(|s| s.to_str()) != Some("suite")
+        || resources.file_name().and_then(|s| s.to_str()) != Some("resources")
+        || owner.file_name().and_then(|s| s.to_str()) != Some(product)
+    {
+        return Err("component_path_invalid");
+    }
+    devbox_filesystem::ensure_no_links(component).map_err(|_| "component_path_invalid")?;
+    devbox_filesystem::open_filesystem_object(component, false)
+        .map_err(|_| "component_path_invalid")?;
+    let executable = owner.join(format!("devbox-{product}.exe"));
+    if generation_root(&executable).is_none() {
+        return Err("component_path_invalid");
+    }
+    Ok(executable)
+}
+
+/// Internal components inherit only their verified installed owner's namespace.
+/// This grants no component IPC authority and never falls back to a portable key.
+pub fn component_namespace(component: &Path, owner: &str, version: &str) -> Result<String> {
+    namespace(&component_owner(component, owner)?, owner, version)
+}
+
 /// Held by every product UI and its dedicated browser/service worker through
 /// shutdown. The updater's exclusive lease prevents a late writer from starting.
 #[must_use = "the writer lease must be retained through product shutdown"]
 pub struct WriterGuard(Option<File>);
 impl WriterGuard {
+    /// Retain through all component workers' shutdown, just like a product guard.
+    pub fn acquire_component(component: &Path, owner: &str, version: &str) -> Result<Self> {
+        let executable = component_owner(component, owner)?;
+        let guard = Self::acquire(&executable)?;
+        namespace(&executable, owner, version)?;
+        if guard.0.is_none() {
+            return Err("component_path_invalid");
+        }
+        Ok(guard)
+    }
+
     pub(crate) fn acquire(executable: &Path) -> Result<Self> {
         let parent = executable.parent().ok_or("installation_path_invalid")?;
         let Some(products) = parent
@@ -291,6 +333,38 @@ impl Drop for WriterGuard {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_suite_component_shares_its_owner_namespace_and_writer_gate() {
+        let root = Fixture::new();
+        let owner = root.generation("one");
+        let component = owner
+            .parent()
+            .unwrap()
+            .join("resources/suite/devbox-agent.exe");
+        fs::create_dir_all(component.parent().unwrap()).unwrap();
+        fs::write(&component, b"agent").unwrap();
+        assert_eq!(
+            component_namespace(&component, "workspace", "0.8.0").unwrap(),
+            namespace(&owner, "workspace", "0.8.0").unwrap()
+        );
+        assert!(
+            WriterGuard::acquire_component(&component, "workspace", "0.8.0").is_err(),
+            "never use an empty guard for a component"
+        );
+        fs::write(root.0.join("suite-writers.lock"), b"").unwrap();
+        let guard = WriterGuard::acquire_component(&component, "workspace", "0.8.0").unwrap();
+        assert!(guard.0.is_some());
+        drop(guard);
+        fs::write(root.0.join("suite-update.block"), b"blocked").unwrap();
+        assert!(WriterGuard::acquire_component(&component, "workspace", "0.8.0").is_err());
+        let stray = root.0.join("devbox-agent.exe");
+        fs::write(&stray, b"agent").unwrap();
+        assert!(component_namespace(&stray, "workspace", "0.8.0").is_err());
+        assert!(component_namespace(&component, "knowledge", "0.8.0").is_err());
+        root.generation("two");
+        assert!(component_namespace(&component, "workspace", "0.8.0").is_err());
+    }
+
     #[test]
     fn activation_cache_reuses_a_verified_marker_until_it_changes() {
         use product_contract::activation::Phase;
