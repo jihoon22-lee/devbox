@@ -200,22 +200,6 @@ impl TerminalOwner {
                         .collect(),
                 ))
             }
-            "terminal_output" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Read {
-                    session_id: String,
-                    after: u64,
-                }
-                let input: Read = parse(args)?;
-                let output = self.output(&input.session_id)?;
-                let buffer = output
-                    .buffer
-                    .lock()
-                    .map_err(|_| "terminal_state_unavailable")?;
-                serde_json::to_value(buffer.read(input.after)?)
-                    .map_err(|_| "terminal_response_invalid".into())
-            }
             "attach_session" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -322,6 +306,14 @@ impl TerminalOwner {
             }
             _ => Err("terminal_method_invalid".into()),
         }
+    }
+
+    /// Exposes only the replay buffer of a PTY belonging to this immutable owner.
+    pub fn output_buffer(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<Mutex<crate::core::terminal_output::OutputBuffer>>, String> {
+        Ok(self.output(session_id)?.buffer.clone())
     }
 
     fn output(&self, session_id: &str) -> Result<Arc<OwnedOutput>, String> {

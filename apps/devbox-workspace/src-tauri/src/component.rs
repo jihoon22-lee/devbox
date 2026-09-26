@@ -259,9 +259,17 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             crate::ipc::terminal::terminal,
             crate::ipc::problems::problems,
             crate::ipc::commands::commands,
+            crate::ipc::output_stream::terminal_output_stream,
             terminal_describe,
             terminal_execute
         ])
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                if let Some(runtime) = webview.try_state::<Runtime>() {
+                    runtime.terminals.retire_output_streams(webview.label());
+                }
+            }
+        })
         .setup(|app, _| {
             let runtime = Runtime::default();
             app.manage(runtime.clone());
@@ -375,6 +383,17 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             });
         })
         .on_event(|app, event| {
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = event
+            {
+                app.state::<Runtime>()
+                    .terminals
+                    .retire_output_streams(label);
+            }
+
             if matches!(event, tauri::RunEvent::Ready) {
                 app.state::<Runtime>()
                     .ui_ready

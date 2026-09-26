@@ -8,7 +8,8 @@ export type CompanionHost =
   | { method: "terminal_layout"; args: Record<symbol, never> }
   | { method: "save_terminal_layout"; args: { expectedRevision: string; layout?: WorkspaceProfile | null } }
   | { method: "reset_failed_pane"; args: { paneKey: string } }
-  | { method: "terminal_output"; args: { sessionId: string; after: number } }
+  | { method: "ack_terminal_output"; args: { subscriptionId: string; cursor: number } }
+  | { method: "unsubscribe_terminal_output"; args: { subscriptionId: string } }
   | { method: "write_initial_command"; args: { sessionId: string; data: string } }
   | { method: "docker_action"; args: { operationId: string; distro: string; containerId: string; action: string } }
   | { method: "wsl_control_status"; args: { operationId: string } }

@@ -42,6 +42,7 @@ fn main() {
                     "commands",
                     "terminal_describe",
                     "terminal_execute",
+                    "terminal_output_stream",
                 ]),
             ),
     )

@@ -52,6 +52,7 @@ struct Peer {
 pub(crate) struct Terminals {
     inner: Mutex<Option<Inner>>,
     controls: crate::wsl_controls::Controls,
+    subscriptions: Arc<crate::terminal_subscriptions::Subscriptions>,
     pending_logs: Mutex<VecDeque<PendingLog>>,
     summons: Mutex<crate::core::terminal_commands::Summons>,
 }
@@ -996,6 +997,68 @@ impl Terminals {
         result
     }
 
+    pub(crate) fn retire_output_streams(&self, window: &str) {
+        self.subscriptions.remove_window(window);
+    }
+
+    pub(crate) fn subscribe_output(
+        &self,
+        window: &WebviewWindow,
+        host: &Host,
+        header: &RouteRequest,
+        session_id: String,
+        after: u64,
+        channel: tauri::ipc::Channel<terminal_engine::core::terminal_output::OutputBatch>,
+    ) -> Result<crate::ipc::output_stream::Subscription> {
+        let peer = self.peer(window.label())?;
+        require_peer_session(&peer, header)?;
+        crate::files_host::current_deadline(header.deadline_ms)?;
+        if let Some(context) = &peer.record.context {
+            host.projects()?.binding(context)?;
+        }
+        let buffer = peer
+            .terminal
+            .output_buffer(&session_id)
+            .map_err(|_| "terminal_session_denied")?;
+        let changes = {
+            let output = buffer.lock().map_err(|_| "terminal_stream_unavailable")?;
+            output.read(after)?;
+            output.subscribe()
+        };
+        let owner = crate::terminal_subscriptions::Owner {
+            window: window.label().into(),
+            session: header.session_id.clone(),
+        };
+        let (ack_tx, ack_rx) = tokio::sync::mpsc::channel(1);
+        let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+        let id = self
+            .subscriptions
+            .insert(owner.clone(), session_id, ack_tx, stop_tx)?;
+        let subscriptions = self.subscriptions.clone();
+        let task_id = id.clone();
+        tauri::async_runtime::spawn(async move {
+            terminal_engine::core::output_stream::pump(
+                move |after| {
+                    buffer
+                        .lock()
+                        .map_err(|_| "terminal_stream_unavailable")?
+                        .read(after)
+                },
+                changes,
+                move |batch| channel.send(batch.clone()).is_ok(),
+                ack_rx,
+                stop_rx,
+                after,
+                std::time::Duration::from_secs(10),
+            )
+            .await;
+            let _ = subscriptions.remove(&owner, &task_id);
+        });
+        Ok(crate::ipc::output_stream::Subscription {
+            subscription_id: id,
+        })
+    }
+
     pub(crate) async fn execute(
         &self,
         window: &WebviewWindow,
@@ -1013,6 +1076,30 @@ impl Terminals {
             if let Some(context) = &peer.record.context {
                 host.projects()?.binding(context)?;
             }
+        }
+        if matches!(
+            method,
+            "ack_terminal_output" | "unsubscribe_terminal_output"
+        ) {
+            let owner = crate::terminal_subscriptions::Owner {
+                window: window.label().into(),
+                session: header.session_id.clone(),
+            };
+            let call: crate::ipc::companion::CompanionHost =
+                parse(json!({"method": method, "args": args}))?;
+            match call {
+                crate::ipc::companion::CompanionHost::AckTerminalOutput {
+                    subscription_id,
+                    cursor,
+                } => self.subscriptions.ack(&owner, &subscription_id, cursor)?,
+                crate::ipc::companion::CompanionHost::UnsubscribeTerminalOutput {
+                    subscription_id,
+                } => {
+                    self.subscriptions.remove(&owner, &subscription_id)?;
+                }
+                _ => return Err("terminal_args_invalid"),
+            }
+            return Ok(Value::Null);
         }
         if method == "terminal_window_policy" {
             #[derive(Deserialize)]
@@ -1137,6 +1224,7 @@ impl Terminals {
         self.peer(label).is_ok()
     }
     pub(crate) fn shutdown(&self, app: &tauri::AppHandle) -> Result<()> {
+        self.subscriptions.clear();
         let peers: Vec<_> = {
             let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
             if let Some(inner) = selected.as_mut() {
