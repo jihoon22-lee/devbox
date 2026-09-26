@@ -200,7 +200,6 @@ export default function App({
     }
   }, [captureRequest]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
-  const [quickCaptureNotice, setQuickCaptureNotice] = useState<string | null>(null);
   const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<QuickCaptureShortcutStatus | null>(null);
   const [draftPreview, setDraftPreview] = useState<KnowledgeDraftPreview | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
@@ -519,12 +518,6 @@ export default function App({
       stopStatus?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (!quickCaptureNotice) return;
-    const timer = window.setTimeout(() => setQuickCaptureNotice(null), 4_000);
-    return () => window.clearTimeout(timer);
-  }, [quickCaptureNotice]);
 
   const confirmDiscard = useCallback(() => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"), []);
   const openFile = async (path: string, fragment?: string) => {
@@ -1196,11 +1189,7 @@ export default function App({
           {error}
         </div>
       )}
-      {quickCaptureNotice && (
-        <div className="quick-capture-notice" role="status">
-          {quickCaptureNotice}
-        </div>
-      )}
+
       {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
         <div className="quick-capture-shortcut-warning" role="status">
           전역 단축키 {quickCaptureShortcut.shortcut}를 등록하지 못했습니다. 다른 앱이 사용 중일 수 있습니다. 해당 앱의
