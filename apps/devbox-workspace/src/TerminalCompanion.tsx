@@ -1,8 +1,10 @@
+import { recordIssue } from "@devbox/product-shell/issues";
+import { knownIssueMessage } from "@devbox/workspace-features/issues/shared";
 import { companionDeadlineBudgets } from "@devbox/workspace-features/generated/deadline-budgets";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { isProjectContext, makeRequest, type Handshake, type ProjectContext } from "@devbox/product-shell/api";
-import { configureProductTransport } from "@devbox/workspace-features/transport";
+import { configureProductTransport, WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import { initializeProductLayout } from "@devbox/workspace-features/terminal-layout";
 import { configureTerminalStorage, initializeTerminalPreferences } from "@devbox/workspace-features/terminal-storage";
 
@@ -30,13 +32,27 @@ function connect(): Promise<Peer> {
       const header = makeRequest(peer.handshake, "terminal", Date.now(), peer.context);
       // Output acknowledgements expire promptly in the native replay cache.
       header.deadlineMs = Date.now() + (companionDeadlineBudgets[method] ?? 30_000);
-      if (method === "terminal_output_stream") {
-        return invoke<T>("plugin:workspace|terminal_output_stream", {
-          request: { header, method: "subscribe", args: { sessionId: args.sessionId, after: args.after } },
-          channel: args.channel,
-        });
-      }
-      return invoke<T>("plugin:workspace|terminal_execute", { request: { header, method, args } });
+      const execution =
+        method === "terminal_output_stream"
+          ? invoke<T>("plugin:workspace|terminal_output_stream", {
+              request: { header, method: "subscribe", args: { sessionId: args.sessionId, after: args.after } },
+              channel: args.channel,
+            })
+          : invoke<T>("plugin:workspace|terminal_execute", { request: { header, method, args } });
+      return execution.catch((cause: unknown) => {
+        const known = typeof cause === "string" ? knownIssueMessage(cause) : undefined;
+        const error = new WorkspaceOperationError(
+          known ?? "터미널 작업을 완료하지 못했습니다.",
+          known ? (cause as string) : "unavailable",
+          {
+            component,
+            method: method === "terminal_output_stream" ? "subscribe" : method,
+            requestId: header.requestId,
+          },
+        );
+        recordIssue(error);
+        throw error;
+      });
     }, peer.handshake.installationId);
     await initializeTerminalPreferences();
     const header = makeRequest(peer.handshake, "terminal", Date.now(), peer.context);

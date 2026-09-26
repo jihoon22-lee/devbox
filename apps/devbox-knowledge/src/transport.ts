@@ -1,7 +1,8 @@
+import { issueFailure } from "@devbox/product-shell/issues";
 import { invoke } from "@tauri-apps/api/core";
 import { configureProductTransport, type Component } from "@devbox/knowledge-features/transport";
 import { currentDescription, makeRequest, nativeMode } from "@devbox/product-shell/api";
-import { isOperation, problemMessage, type Operation } from "@devbox/product-shell/operation";
+import { isOperation, problemCode, problemMessage, type Operation } from "@devbox/product-shell/operation";
 import catalog from "../../../apps/products.json";
 const routeFor: Record<Component, string> = {
   "knowledge.commands": "notes",
@@ -39,13 +40,22 @@ configureProductTransport(
     try {
       response = await invoke(commandFor[component], { request: { header, method, args } });
     } catch (problem) {
-      throw new Error(problemMessage(problem, provenance));
+      throw issueFailure(problemMessage(problem, provenance), {
+        ...provenance,
+        method,
+        code: problemCode(problem, provenance),
+      });
     }
     if (!response || !isOperation(response.operation, provenance))
-      throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
+      throw issueFailure("작업 응답의 출처를 확인할 수 없습니다.", { ...provenance, method, code: "invalid_response" });
     if (response.operation.outcome.state !== "succeeded") {
       const value = response.value as { issue?: unknown } | null;
-      throw issueError(value?.issue, component);
+      const error = issueError(value?.issue, component);
+      throw issueFailure(error.message, {
+        ...provenance,
+        method,
+        code: error.name === "Error" ? "unavailable" : error.name,
+      });
     }
     return response.value;
   },

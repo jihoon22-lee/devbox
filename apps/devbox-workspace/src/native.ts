@@ -1,13 +1,14 @@
+import { recordIssue } from "@devbox/product-shell/issues";
 import { componentCommands, deadlineBudgets } from "@devbox/workspace-features/generated/deadline-budgets";
 import { bindTypedCall } from "@devbox/workspace-features/typed";
 import { invoke } from "@tauri-apps/api/core";
 import { currentDescription, makeRequest, type Description } from "@devbox/product-shell/api";
-import { isOperation, problemMessage } from "@devbox/product-shell/operation";
+import { isOperation, problemCode, problemMessage } from "@devbox/product-shell/operation";
 import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 export { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
-import { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
+import { knownIssueMessage, workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
 export async function nativeCall<T>(
   component: string,
   method: string,
@@ -33,15 +34,21 @@ export async function componentCall<T>(
     requestId: header.requestId,
     revision: catalog.catalogRevision,
   };
+  const failure = (message: string, code: string) => {
+    const error = new WorkspaceOperationError(message, code, { component, method, requestId: header.requestId });
+    recordIssue(error);
+    return error;
+  };
   let response: { operation: unknown; value: T & { issue?: string } };
   try {
     const command = componentCommands[component];
     if (!command) throw new Error("component_method_invalid");
     response = await invoke(`plugin:workspace|${command}`, { request: { header, method, args } });
   } catch (problem) {
-    throw new WorkspaceOperationError(problemMessage(problem, provenance));
+    throw failure(problemMessage(problem, provenance), problemCode(problem, provenance));
   }
-  if (!response || !isOperation(response.operation, provenance)) throw new Error("응답을 확인하지 못했습니다.");
+  if (!response || !isOperation(response.operation, provenance))
+    throw failure("응답을 확인하지 못했습니다.", "invalid_response");
   if (response.operation.outcome.state !== "succeeded") {
     const issue = response.value?.issue ?? "operation_failed";
     const message = /^(runtime_|process_|logs_owner_)/.test(issue)
@@ -49,7 +56,7 @@ export async function componentCall<T>(
       : issue.startsWith("wsl_")
         ? await import("./wslIssues").then((module) => module.wslIssueMessage(issue)).catch(() => undefined)
         : undefined;
-    throw new WorkspaceOperationError(message ?? issueMessage(issue), issue);
+    throw failure(message ?? issueMessage(issue), knownIssueMessage(issue) === undefined ? "unavailable" : issue);
   }
   return response.value;
 }

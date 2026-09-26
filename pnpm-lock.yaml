@@ -559,6 +559,9 @@ importers:
       '@devbox/a11y':
         specifier: workspace:*
         version: link:../a11y
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens
@@ -661,6 +664,9 @@ importers:
       '@devbox/mermaid-renderer':
         specifier: workspace:*
         version: link:../mermaid-renderer
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens

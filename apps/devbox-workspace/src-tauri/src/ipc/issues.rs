@@ -1,5 +1,8 @@
 //! Fixed native issues only; method names and raw OS/remote text are never issues.
 product_ipc::issue_codes! { pub enum WorkspaceIssue {
+TerminalStreamDenied="terminal_stream_denied",
+TerminalStreamLimit="terminal_stream_limit",
+TerminalStreamUnavailable="terminal_stream_unavailable",
 Unavailable="unavailable",
 Code0="alias_limit",
 Code1="binding_review_required",

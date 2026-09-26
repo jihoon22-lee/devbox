@@ -1,8 +1,9 @@
+import { issueFailure } from "@devbox/product-shell/issues";
 import { toolsMessages } from "@devbox/control-center-features/issues";
 import ManagerTools, { type ToolsMode } from "@devbox/control-center-features/manager";
 import { configureProductTransport, type Component } from "@devbox/control-center-features/transport";
 import { currentDescription, makeRequest, nativeMode } from "@devbox/product-shell/api";
-import { isOperation } from "@devbox/product-shell/operation";
+import { isOperation, problemCode, problemMessage } from "@devbox/product-shell/operation";
 import { invoke } from "@tauri-apps/api/core";
 import catalog from "../../../apps/products.json";
 const routeFor = (method: string) =>
@@ -19,16 +20,26 @@ configureProductTransport(
       requestId: header.requestId,
       revision: catalog.catalogRevision,
     };
-    const response = await invoke<{ operation: unknown; value: T }>("plugin:control-center|tools", {
-      request: { header, method, args },
-    });
-    if (!isOperation(response.operation, provenance) || response.operation.outcome.state !== "succeeded") {
+    let response: { operation: unknown; value: T };
+    try {
+      response = await invoke("plugin:control-center|tools", { request: { header, method, args } });
+    } catch (problem) {
+      throw issueFailure(problemMessage(problem, provenance), {
+        ...provenance,
+        method,
+        code: problemCode(problem, provenance),
+      });
+    }
+    if (!response || !isOperation(response.operation, provenance))
+      throw issueFailure(toolsMessages.unavailable, { ...provenance, method, code: "invalid_response" });
+    if (response.operation.outcome.state !== "succeeded") {
       const issue = (response.value as { issue?: unknown } | null)?.issue;
-      throw new Error(
-        typeof issue === "string" && Object.prototype.hasOwnProperty.call(toolsMessages, issue)
-          ? toolsMessages[issue as keyof typeof toolsMessages]
-          : toolsMessages.unavailable,
-      );
+      const known = typeof issue === "string" && Object.prototype.hasOwnProperty.call(toolsMessages, issue);
+      throw issueFailure(known ? toolsMessages[issue as keyof typeof toolsMessages] : toolsMessages.unavailable, {
+        ...provenance,
+        method,
+        code: known ? (issue as string) : "unavailable",
+      });
     }
     return response.value;
   },

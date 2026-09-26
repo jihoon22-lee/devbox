@@ -1,3 +1,4 @@
+import { ProductIssueError } from "@devbox/product-shell/issues";
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 
 export type Component =
@@ -19,12 +20,13 @@ export type Transport = <T>(component: Component, method: string, args: Record<s
 let productTransport: Transport | undefined;
 let installationId: string | undefined;
 /** Only the native product bridge constructs this from fixed, validated messages. */
-export class WorkspaceOperationError extends Error {
+export class WorkspaceOperationError extends ProductIssueError {
   constructor(
     message: string,
-    readonly code?: string,
+    code = "unavailable",
+    fields = { component: "workspace.shell", method: "unknown", requestId: "unavailable" },
   ) {
-    super(message);
+    super(message, { ...fields, product: "workspace", code });
   }
 }
 

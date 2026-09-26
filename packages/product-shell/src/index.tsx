@@ -1,3 +1,4 @@
+import { UndoProvider } from "./undo";
 import { currentDescription, publishDescription, invalidateDescription } from "./api";
 import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { isImeComposing } from "@devbox/a11y";
@@ -234,6 +235,8 @@ export function ProductShell({ product, renderContent }: { product: ProductId; r
       </main>
     );
   return (
-    <ReadyShell key={product} description={description} renderContent={renderContent} refreshContext={refreshContext} />
+    <UndoProvider key={product}>
+      <ReadyShell description={description} renderContent={renderContent} refreshContext={refreshContext} />
+    </UndoProvider>
   );
 }
