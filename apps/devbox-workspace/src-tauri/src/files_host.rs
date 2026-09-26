@@ -18,7 +18,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 use tauri::Manager;
 
@@ -103,17 +103,8 @@ fn empty(value: &Value) -> Result<()> {
 fn value<T: serde::Serialize>(item: T) -> Result<Value> {
     serde_json::to_value(item).map_err(|_| "files_response_invalid")
 }
-pub(crate) fn current_deadline(deadline: u64) -> Result<()> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| "request_expired")?
-        .as_millis();
-    if now >= u128::from(deadline) {
-        Err("request_expired")
-    } else {
-        Ok(())
-    }
-}
+pub(crate) use workspace_core::current_deadline;
+
 struct RecoveryPreview {
     path: String,
     content: String,

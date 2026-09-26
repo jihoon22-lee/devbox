@@ -43,3 +43,7 @@ Phase 1에서는 실행 프로세스나 제품 transport를 바꾸지 않는다.
 `apps/devbox-agent`는 Control Center가 배포하는 창 없는 내부 구성요소다.
 검증된 설치 owner의 namespace와 writer lease를 사용하며 공개 제품 카탈로그에는 넣지 않는다.
 portable에서는 실행하지 않는다. 백그라운드 기능은 리뷰 후속 B9에서 순서대로 연결한다.
+
+`crates/workspace-core`는 Workspace와 agent가 공유하는 프로젝트 host·registry·저장소 선택·Git/WSL 실행 증거 계층이다.
+agent의 읽기 전용 host는 registry owner 잠금을 가져가거나 파일을 만들지 않으며,
+쓰기 owner의 원자적 변경을 매번 다시 읽는다. 제품 UI의 파일·터미널 수명은 Workspace에 남는다.

@@ -1,0 +1,32 @@
+[package]
+name = "workspace-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+test-fixtures = []
+
+[dependencies]
+editor_engine = { package = "devbox-editor-engine", path = "../editor-engine", default-features = false, features = ["desktop"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+ts-rs = { workspace = true }
+tauri = { workspace = true }
+tokio = { workspace = true }
+product-contract = { path = "../product-contract" }
+devbox-filesystem = { package = "filesystem", path = "../filesystem" }
+devbox-wsl = { package = "wsl", path = "../wsl" }
+devbox-git = { package = "git", path = "../git" }
+workspace-wsl = { path = "../wsl-helper", default-features = false, features = ["files", "git"] }
+projects_engine = { package = "devbox-projects-engine", path = "../projects-engine", default-features = false }
+runtime_engine = { package = "devbox-runtime-engine", path = "../runtime-engine", default-features = false, features = ["desktop"] }
+terminal_engine = { package = "devbox-terminal-engine", path = "../terminal-engine", default-features = false, features = ["desktop"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

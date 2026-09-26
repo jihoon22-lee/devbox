@@ -11,7 +11,6 @@ use crate::{
 };
 use product_contract::ProjectContext;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     time::{Duration, Instant},
@@ -22,12 +21,7 @@ const MANIFEST: &str = ".devbox/project.json";
 const OVERLAY: &str = "local-overlay.json";
 const TTL: Duration = Duration::from_secs(180);
 const MAX_PREVIEWS: usize = 4;
-pub(crate) fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
+pub(crate) use workspace_core::digest;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

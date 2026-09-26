@@ -1,2 +1,1 @@
-//! Shared bounded Git execution evidence for the native Windows owner.
-pub use workspace_wsl::git_files::*;
+pub use workspace_core::platform::git_files::*;

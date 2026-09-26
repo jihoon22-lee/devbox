@@ -1737,6 +1737,7 @@ dependencies = [
  "window-state",
  "window-state-tauri",
  "windows 0.61.3",
+ "workspace-core",
  "workspace-wsl",
  "wsl",
 ]
@@ -8353,6 +8354,30 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",
+]
+
+[[package]]
+name = "workspace-core"
+version = "0.1.0"
+dependencies = [
+ "devbox-editor-engine",
+ "devbox-projects-engine",
+ "devbox-runtime-engine",
+ "devbox-terminal-engine",
+ "filesystem",
+ "git",
+ "product-contract",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tempfile",
+ "tokio",
+ "ts-rs",
+ "uuid",
+ "windows 0.61.3",
+ "workspace-wsl",
+ "wsl",
 ]
 
 [[package]]
