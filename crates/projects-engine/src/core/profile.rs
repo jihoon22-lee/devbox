@@ -44,6 +44,7 @@ pub struct ProjectProfile {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct WslProfile {
     pub distro: String,
     pub path: String,

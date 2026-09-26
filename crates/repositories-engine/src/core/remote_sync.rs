@@ -34,6 +34,7 @@ pub enum RemoteStateParseError {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RemoteState {
     /// `None` means detached HEAD.  A branch name is returned only after the
     /// fixed status parser has checked its size and control characters.

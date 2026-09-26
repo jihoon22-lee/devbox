@@ -38,7 +38,7 @@ pub fn config_path_from_app_local_data_dir(app_local_data_dir: impl AsRef<Path>)
 /// not an I/O failure: it starts an empty in-memory config, preserves the
 /// original file, and marks persistence as disallowed until the caller makes
 /// an explicit recovery decision.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ts_rs::TS)]
 pub struct LoadedLspConfig {
     pub config: LspConfig,
     pub persist_allowed: bool,

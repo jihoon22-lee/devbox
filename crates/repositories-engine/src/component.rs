@@ -197,6 +197,7 @@ pub fn source_cancel(method: &str) -> bool {
         "repo_local_cancel" | "repo_remote_cancel" | "repo_cleanup_cancel"
     )
 }
+#[cfg(test)]
 fn bind_source_operation(key: &str, args: &mut serde_json::Value) -> Result<(), String> {
     use sha2::{Digest, Sha256};
     let Some(request) = args
@@ -285,59 +286,26 @@ impl SourceAccess {
 pub async fn dispatch_source_cancel_native(
     key: &str,
     method: &str,
-    mut args: serde_json::Value,
+    args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    if !source_cancel(method) {
+    if !crate::api::SourceCall::METHODS.contains(&method) {
         return Err("component_method_invalid".into());
     }
-    bind_source_operation(key, &mut args)?;
-    dispatch_source_method(method, args).await
+    let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
+        .map_err(|_| "component_args_invalid")?;
+    dispatch_source_cancel_typed_native(key, call).await
 }
 pub async fn dispatch_source_native(
-    mut access: SourceAccess,
+    access: SourceAccess,
     method: &str,
-    mut args: serde_json::Value,
+    args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    if !SOURCE_COMMANDS.contains(&method) || source_cancel(method) {
+    if !crate::api::SourceCall::METHODS.contains(&method) {
         return Err("component_method_invalid".into());
     }
-    if method == "create_worktree" {
-        if !args.as_object().is_some_and(|object| object.is_empty()) {
-            return Err("component_args_invalid".into());
-        }
-        let mut creation = access.creation.take().ok_or("worktree_review_required")?;
-        let mut operation = serde_json::json!({"request":{"operationId":creation.operation_id}});
-        bind_source_operation(&access.key, &mut operation)?;
-        creation.operation_id = operation["request"]["operationId"]
-            .as_str()
-            .ok_or("component_args_invalid")?
-            .to_owned();
-        let _cancel = access.policy.cancel_on_drop();
-        let root = access
-            .root
-            .to_str()
-            .ok_or("source_context_changed")?
-            .to_owned();
-        let result = access
-            .policy
-            .scope_future(crate::commands::create_reviewed_worktree(root, creation))
-            .await?;
-        return serde_json::to_value(result).map_err(|_| "component_response_invalid".into());
-    }
-    let path = if matches!(method, "repo_status" | "worktrees" | "worktree_clean") {
-        args.get("path")
-    } else {
-        args.get("request").and_then(|request| request.get("path"))
-    };
-    if path.and_then(serde_json::Value::as_str) != access.root.to_str() {
-        return Err("source_context_changed".into());
-    }
-    bind_source_operation(&access.key, &mut args)?;
-    let _cancel = access.policy.cancel_on_drop();
-    access
-        .policy
-        .scope_future(dispatch_source_method(method, args))
-        .await
+    let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
+        .map_err(|_| "component_args_invalid")?;
+    dispatch_source_typed_native(access, call).await
 }
 
 /// Desktop startup and its immutable generation remain mandatory on Windows.
@@ -484,59 +452,9 @@ pub async fn dispatch_dependencies(
     method: &str,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    use crate::commands::dependency_enrichment as remote;
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Input<T> {
-        request: T,
-    }
-    fn input<T: serde::de::DeserializeOwned>(args: serde_json::Value) -> Result<T, String> {
-        serde_json::from_value::<Input<T>>(args)
-            .map(|value| value.request)
-            .map_err(|_| "component_args_invalid".into())
-    }
-    // Legacy UI paths are a projection only, checked for stale UI selection.
-    let check_path = |path: &str| {
-        if path == access.root.to_string_lossy() {
-            Ok(())
-        } else {
-            Err("dependency_context_changed".to_string())
-        }
-    };
-    match method {
-        "dependency_inventory" => {
-            let request: crate::commands::DependencyInventoryRequest = input(args)?;
-            check_path(&request.path)?;
-            serde_json::to_value(crate::commands::dependency_inventory_with_access(access).await?)
-                .map_err(|_| "component_response_invalid".into())
-        }
-        "dependency_enrichment_preview" => {
-            let request: remote::DependencyEnrichmentPreviewRequest = input(args)?;
-            check_path(&request.path)?;
-            serde_json::to_value(
-                remote::preview_with_access(access, request.services, request.force_refresh)
-                    .await?,
-            )
-            .map_err(|_| "component_response_invalid".into())
-        }
-        "dependency_enrichment_execute" => {
-            let request: remote::DependencyEnrichmentExecuteRequest = input(args)?;
-            check_path(&request.path)?;
-            serde_json::to_value(remote::execute_with_access(access, request.preview_token).await?)
-                .map_err(|_| "component_response_invalid".into())
-        }
-        "dependency_enrichment_cancel" => {
-            let request: remote::DependencyEnrichmentExecuteRequest = input(args)?;
-            check_path(&request.path)?;
-            crate::runtime::spawn_blocking(move || {
-                remote::cancel_with_access(&access, &request.preview_token)
-            })
-            .await
-            .map_err(|_| "component_worker_unavailable")??;
-            Ok(serde_json::json!({}))
-        }
-        _ => Err("component_method_invalid".into()),
-    }
+    let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
+        .map_err(|_| "component_args_invalid")?;
+    crate::api::dispatch_dependencies(access, call).await
 }
 
 /// Only fixed issue codes cross into the product's provenance-checked response.
@@ -656,5 +574,84 @@ mod worktree_admission_tests {
             request,
         ));
         assert_eq!(result.unwrap_err(), "review changed before IO");
+    }
+}
+
+fn bind_source_id(key: &str, id: &mut String) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("component_args_invalid".into());
+    }
+    let mut hash = Sha256::new();
+    hash.update((key.len() as u64).to_be_bytes());
+    hash.update(key.as_bytes());
+    hash.update(id.as_bytes());
+    *id = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(())
+}
+pub(crate) async fn dispatch_source_cancel_typed_native(
+    key: &str,
+    mut call: crate::api::SourceCall,
+) -> Result<serde_json::Value, String> {
+    if !call.is_cancel() {
+        return Err("component_method_invalid".into());
+    }
+    if let Some(id) = call.operation_id_mut() {
+        bind_source_id(key, id)?;
+    }
+    crate::api::execute_source(call).await
+}
+pub(crate) async fn dispatch_source_typed_native(
+    mut access: SourceAccess,
+    mut call: crate::api::SourceCall,
+) -> Result<serde_json::Value, String> {
+    if call.is_cancel() {
+        return Err("component_method_invalid".into());
+    }
+    if matches!(call, crate::api::SourceCall::CreateWorktree {}) {
+        let mut creation = access.creation.take().ok_or("worktree_review_required")?;
+        bind_source_id(&access.key, &mut creation.operation_id)?;
+        let _cancel = access.policy.cancel_on_drop();
+        let root = access
+            .root
+            .to_str()
+            .ok_or("source_context_changed")?
+            .to_owned();
+        let result = access
+            .policy
+            .scope_future(crate::commands::create_reviewed_worktree(root, creation))
+            .await?;
+        return serde_json::to_value(result).map_err(|_| "component_response_invalid".into());
+    }
+    if call.path() != access.root.to_str() {
+        return Err("source_context_changed".into());
+    }
+    if let Some(id) = call.operation_id_mut() {
+        bind_source_id(&access.key, id)?;
+    }
+    let _cancel = access.policy.cancel_on_drop();
+    access
+        .policy
+        .scope_future(crate::api::execute_source(call))
+        .await
+}
+#[cfg(test)]
+mod typed_source_tests {
+    #[test]
+    fn operation_scope_keeps_the_existing_namespace_fingerprint() {
+        let mut old = serde_json::json!({"request":{"operationId":"operation-1"}});
+        super::bind_source_operation("context", &mut old).unwrap();
+        let mut id = "operation-1".to_owned();
+        super::bind_source_id("context", &mut id).unwrap();
+        assert_eq!(old["request"]["operationId"], id);
     }
 }

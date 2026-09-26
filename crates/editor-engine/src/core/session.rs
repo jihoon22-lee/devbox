@@ -7,7 +7,7 @@ pub const SESSION_VERSION: u32 = 1;
 
 /// One persisted document entry. The editable buffer is intentionally absent;
 /// it is reconstructed from disk when the session is restored.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct SessionDoc {
     pub id: String,
     pub path: String,
@@ -29,7 +29,7 @@ impl SessionDoc {
 
 /// Persisted top-level state. Arrays with two entries encode the two fixed views
 /// without introducing a third split mode.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Session {
     pub version: u32,
     pub workspace_folder: Option<String>,

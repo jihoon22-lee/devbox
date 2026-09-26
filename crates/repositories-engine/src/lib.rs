@@ -3,6 +3,8 @@
 mod applink;
 pub mod commands;
 pub mod component;
-mod core;
+pub(crate) mod core;
 mod integration;
 mod runtime;
+
+pub mod api;

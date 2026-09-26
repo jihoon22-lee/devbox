@@ -20,6 +20,9 @@ default = []
 
 
 [dependencies]
+product-contract = { path = "../product-contract" }
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 process-tree = { workspace = true, features = ["tokio"] }
 tauri = { workspace = true }
 serde = { workspace = true }

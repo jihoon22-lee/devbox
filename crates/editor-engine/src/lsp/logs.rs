@@ -15,6 +15,7 @@ const MAX_MESSAGE_CHARS: usize = 2_048;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum LspLogLevel {
     Info,
     Warning,
@@ -23,6 +24,7 @@ pub enum LspLogLevel {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LspLogEntry {
     pub sequence: String,
     pub level: LspLogLevel,
@@ -32,6 +34,7 @@ pub struct LspLogEntry {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LanguageServerLog {
     pub language_id: String,
     pub entries: Vec<LspLogEntry>,

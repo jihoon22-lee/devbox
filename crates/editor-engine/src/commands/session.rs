@@ -22,6 +22,7 @@ pub const SESSION_FILE_NAME: &str = "session.json";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LoadedSession {
     pub session: Session,
     /// False means the on-disk file was corrupt or had an unknown schema. The

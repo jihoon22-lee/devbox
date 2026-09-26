@@ -203,19 +203,7 @@ pub struct TrustPreview {
     preview_id: String,
     definition: DefinitionView,
 }
-#[derive(Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum EditTarget {
-    Project,
-    Local,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EditRequest {
-    target: EditTarget,
-    content: String,
-    edit_revision: String,
-}
+pub use projects_engine::api::{EditRequest, EditTarget};
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EditPreview {

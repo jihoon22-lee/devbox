@@ -33,22 +33,7 @@ pub struct RegistrationPreview {
     pub imported_profile_id: Option<String>,
     pub template_profile: Option<profiles::ImportedProfile>,
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum RegistrationAction {
-    Register,
-    Rebind,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct WslTemplateRequest {
-    template_id: String,
-    distro_id: String,
-    root: String,
-    name: String,
-    start_stopped: bool,
-}
+pub use projects_engine::api::{RegistrationAction, WslTemplateRequest};
 
 enum RegistrationLease {
     Local(Box<ProjectLease>),

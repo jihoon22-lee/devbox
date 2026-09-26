@@ -273,6 +273,7 @@ fn components_equal(left: Component<'_>, right: Component<'_>) -> bool {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum SyncKind {
     Full,
     Incremental,
@@ -280,6 +281,7 @@ pub enum SyncKind {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct TextChange {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<LspRange>,
@@ -288,6 +290,7 @@ pub struct TextChange {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DidOpen {
     pub uri: String,
     pub language_id: String,
@@ -297,6 +300,7 @@ pub struct DidOpen {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DidChange {
     pub uri: String,
     pub version: i32,
@@ -305,6 +309,7 @@ pub struct DidChange {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DidSave {
     pub uri: String,
     pub version: i32,
@@ -312,6 +317,7 @@ pub struct DidSave {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DidClose {
     pub uri: String,
 }

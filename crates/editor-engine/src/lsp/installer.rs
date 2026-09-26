@@ -90,13 +90,14 @@ pub struct ManagedInstallResolution {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum ManagedInstallState {
     NotInstalled,
     Installed,
     NeedsReinstall,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ManagedInstallStatus {
     pub manifest_id: String,
     pub version: String,
@@ -115,7 +116,7 @@ pub struct ManagedInstallStatus {
 /// Safe status metadata exposed to the UI. The process keeps the canonical
 /// install path in the private index, but never sends it over the Tauri
 /// boundary.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct InstalledServerMetadata {
     pub manifest_id: String,
     pub version: String,

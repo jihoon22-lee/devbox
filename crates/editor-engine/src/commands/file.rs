@@ -50,6 +50,7 @@ pub struct OpenedFile {
 /// JavaScript `number` cannot represent an `i64` timestamp losslessly.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OpenedFileWire {
     pub path: String,
     pub text: String,
@@ -100,6 +101,7 @@ pub struct SavedFile {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SavedFileWire {
     pub path: String,
     pub mtime_nanos: String,
@@ -129,6 +131,7 @@ impl From<SavedFile> for SavedFileWire {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveFileRequest {
     pub path: String,
     pub text: String,
@@ -145,6 +148,7 @@ pub struct SaveFileRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct FileActionRequest {
     pub path: String,
     pub expected_mtime_nanos: String,
@@ -154,6 +158,7 @@ pub struct FileActionRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameFileRequest {
     #[serde(flatten)]
     pub file: FileActionRequest,
@@ -162,6 +167,7 @@ pub struct RenameFileRequest {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamedFileWire {
     pub path: String,
     pub mtime_nanos: String,
@@ -193,6 +199,7 @@ pub(crate) struct CreatedBackup {
 /// `invoke("open_file", { path })` and `invoke("save_file", payload)` are natural.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OpenFileRequest {
     pub path: String,
     /// `None` performs detection; `Some` performs strict explicit decoding.
@@ -201,6 +208,7 @@ pub struct OpenFileRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ValidateEncodingRequest {
     pub text: String,
     pub encoding: Encoding,

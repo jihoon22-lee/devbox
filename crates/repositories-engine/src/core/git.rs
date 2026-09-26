@@ -4,6 +4,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct BranchState {
     pub current: String,
     pub ahead: i64,
@@ -58,6 +59,7 @@ pub fn parse_status(path: &str, input: &str) -> RepoSnapshot {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RepoSnapshot {
     pub path: String,
     pub branch: BranchState,

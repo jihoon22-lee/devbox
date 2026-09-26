@@ -8,3 +8,6 @@ pub mod core;
 pub mod lsp;
 #[cfg(feature = "desktop")]
 pub mod watcher;
+
+#[cfg(feature = "desktop")]
+pub mod api;

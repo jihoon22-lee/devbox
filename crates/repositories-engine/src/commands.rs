@@ -1,6 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
 
-mod commit_review;
+pub(crate) mod commit_review;
 pub(crate) mod dependency_enrichment;
 
 use crate::core::cleanup::{
@@ -1959,6 +1959,7 @@ pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
 /// request.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RepoPreflightRequest {
     pub path: String,
 }
@@ -2031,6 +2032,7 @@ pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorktreeCreate {
     pub path: String,
 }
@@ -2142,6 +2144,7 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
 /// candidates as eligible.  No branch, ref, index, or worktree is changed.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CleanupPreviewRequest {
     pub path: String,
     /// Frontend-owned opaque ID so an unmounted panel can cancel a long
@@ -2154,6 +2157,7 @@ pub struct CleanupPreviewRequest {
 /// snapshot and rejects stale or hand-crafted targets before Git runs.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CleanupRequest {
     pub path: String,
     pub branch_names: Vec<String>,
@@ -2706,6 +2710,7 @@ pub fn repo_cleanup_cancel(request: RemoteCancelRequest) -> Result<bool, String>
 /// exporter.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct HistoryRequest {
     pub path: String,
     pub limit: usize,
@@ -2715,6 +2720,7 @@ pub struct HistoryRequest {
 /// accepted; arbitrary rev expressions and pathspecs never reach Git.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CommitDetailRequest {
     pub path: String,
     pub commit_id: String,
@@ -2725,6 +2731,7 @@ pub struct CommitDetailRequest {
 /// deliberately not represented by this request.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DiffRequest {
     pub path: String,
     pub commit_id: Option<String>,
@@ -2735,6 +2742,7 @@ pub struct DiffRequest {
 /// format override and therefore cannot widen the scanner's fixed allowlist.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyInventoryRequest {
     pub path: String,
 }
@@ -2882,6 +2890,7 @@ pub async fn repo_diff(request: DiffRequest) -> Result<DiffResult, String> {
 /// Request for the file-level staged/unstaged working-tree view.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RepoChangesRequest {
     pub path: String,
 }
@@ -2891,6 +2900,7 @@ pub struct RepoChangesRequest {
 /// pathspec.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct StagePathsRequest {
     pub path: String,
     pub paths: Vec<String>,
@@ -2900,6 +2910,7 @@ pub struct StagePathsRequest {
 /// Explicit selected paths to unstage from the index.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct UnstagePathsRequest {
     pub path: String,
     pub paths: Vec<String>,
@@ -2910,6 +2921,7 @@ pub struct UnstagePathsRequest {
 /// never adds all files implicitly and never stores credential material.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CommitRequest {
     pub path: String,
     pub message: String,
@@ -3039,6 +3051,7 @@ pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
 /// Git configuration and are never supplied by the frontend.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RemoteSyncRequest {
     pub path: String,
 }
@@ -3049,6 +3062,7 @@ pub struct RemoteSyncRequest {
 /// repository has unmounted.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RemoteOperationRequest {
     pub path: String,
     pub operation_id: String,
@@ -3056,6 +3070,7 @@ pub struct RemoteOperationRequest {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RemoteCancelRequest {
     pub operation_id: String,
 }

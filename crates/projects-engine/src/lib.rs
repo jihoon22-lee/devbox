@@ -5,3 +5,5 @@ pub mod component;
 mod core;
 mod integration;
 mod platform;
+
+pub mod api;

@@ -36,6 +36,7 @@ const USER_AGENT: &str = "devbox-repo-manager/dependency-lens";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentPreviewRequest {
     pub path: String,
     pub services: EnrichmentSelection,
@@ -45,6 +46,7 @@ pub struct DependencyEnrichmentPreviewRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentExecuteRequest {
     pub path: String,
     pub preview_token: String,

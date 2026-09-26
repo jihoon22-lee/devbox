@@ -10,6 +10,7 @@ pub const QUICK_OPEN_MAX_ENTRIES: usize = 50_000;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceFile {
     /// Canonical absolute path used when opening the file.
     pub path: String,
@@ -18,7 +19,7 @@ pub struct WorkspaceFile {
     pub size: u64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ts_rs::TS)]
 pub struct WorkspaceFiles {
     pub files: Vec<WorkspaceFile>,
     pub truncated: bool,
@@ -27,6 +28,7 @@ pub struct WorkspaceFiles {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceCapabilities {
     pub path: String,
     pub source_kind: String,

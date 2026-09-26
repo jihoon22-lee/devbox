@@ -10,6 +10,7 @@ const MAX_IMAGE_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct PreviewResponse {
     /// `markdown` returns sanitized HTML and mermaid blocks; `mermaid` returns
     /// the complete source of a standalone `.mmd` file.

@@ -306,3 +306,7 @@ pub async fn dispatch(
         _ => Err("component_method_invalid".into()),
     }
 }
+
+pub(crate) fn is_product() -> bool {
+    PRODUCT_DATA.get().is_some()
+}
