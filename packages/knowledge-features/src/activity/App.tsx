@@ -1,6 +1,35 @@
-import { usePolling } from "@devbox/hooks";
-import PrivacyRulesPanel from "./PrivacyRulesPanel";
-import { projectAssociationLabel } from "./types";
+export {
+  toDateStr,
+  formatNullableCount,
+  formatNullableTimestamp,
+  formatRunSummary,
+  formatKnowledgeSummary,
+  formatDailyActivity,
+  weekRange,
+  monthRange,
+  digestSourceExplanation,
+  digestInputFromResponse,
+  buildDigestInput,
+  FIXED_SOURCE_EXPLANATIONS,
+  buildExportInput,
+} from "./lib/activityPresentation";
+export { DataSourceRow } from "./components/DataSourceRow";
+import { ActivityExportDialog } from "./components/ActivityExportDialog";
+import { ActivityToolbar } from "./components/ActivityToolbar";
+import { ActivitySummary } from "./components/ActivitySummary";
+import { ActivityTimeline } from "./components/ActivityTimeline";
+import { ActivitySettings } from "./components/ActivitySettings";
+import {
+  safeNativeErrorCode,
+  toDateStr,
+  type ViewTab,
+  buildDigestInput,
+  digestInputFromResponse,
+  rangeFromDigest,
+  dayFromDigest,
+  buildExportInput,
+} from "./lib/activityPresentation";
+import { usePolling, useOperation } from "@devbox/hooks";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -19,8 +48,6 @@ import {
   isTracking,
   projectAttribution,
   probeProject,
-  setAutostart,
-  setIdleThreshold,
   EMPTY_PRIVACY_RULES,
   setProjects,
   saveLifeLog,
@@ -28,15 +55,9 @@ import {
   sendDigestToKnowledge,
   startTracking,
   stopTracking,
-  type ExportDayBoundary,
   type ExportInput,
   type ExportFormat,
-  type DigestInput,
-  type DigestDay,
-  type DigestPeriod,
   type DigestResponse,
-  type KnowledgeDigest,
-  type RunDigest,
   type AttributionResult,
   type AutostartStatus,
   type PrivacyRules,
@@ -48,408 +69,6 @@ import { buildDateContextMenu, parseDateKey } from "./lib/contextMenu";
 import { isTauri } from "./lib/isTauri";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 import "./App.css";
-
-function fmtDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
-}
-
-function shortApp(app: string): string {
-  return Array.from(app.replace(/\.exe$/i, ""))
-    .slice(0, 22)
-    .join("");
-}
-
-function safeNativeErrorCode(error: unknown): string | null {
-  const value = error instanceof Error ? error.message : String(error ?? "");
-  return /^[a-z][a-z0-9_]{0,63}$/.test(value) ? value : null;
-}
-
-export function toDateStr(d: Date): string {
-  return `${String(d.getFullYear()).padStart(4, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function fmtDay(dayMs: number): string {
-  const d = new Date(dayMs);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-export function formatNullableCount(value: number | null): string {
-  return value == null ? "—" : value.toLocaleString();
-}
-
-export function formatNullableTimestamp(value: number | null): string {
-  return value == null ? "—" : new Date(value).toLocaleString();
-}
-
-export function formatRunSummary(run: RunDigest | null): string {
-  return run == null ? "—" : `${formatNullableCount(run.succeeded)}건 성공 · ${formatNullableCount(run.failed)}건 실패`;
-}
-
-export function formatKnowledgeSummary(knowledge: KnowledgeDigest | null): string {
-  return knowledge == null ? "—" : `${formatNullableCount(knowledge.notesModified)}건 수정`;
-}
-
-export function formatDailyActivity(
-  day: Pick<DigestDay, "runSucceeded" | "runFailed" | "knowledgeNotesModified">,
-): string {
-  const runs =
-    day.runSucceeded == null || day.runFailed == null
-      ? "Run Manager —"
-      : `Run Manager ${formatNullableCount(day.runSucceeded)}/${formatNullableCount(day.runFailed)}`;
-  const notes =
-    day.knowledgeNotesModified == null
-      ? "Knowledge —"
-      : `Knowledge ${formatNullableCount(day.knowledgeNotesModified)}건`;
-  return `${runs} · ${notes}`;
-}
-
-type ViewTab = "day" | "week" | "month" | "timeline" | "settings";
-
-const VIEW_LABELS: Record<ViewTab, string> = {
-  day: "일",
-  week: "주",
-  month: "월",
-  timeline: "타임라인",
-  settings: "설정",
-};
-
-export function weekRange(date: Date): { start: number; end: number } {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7; // 월요일 시작
-  d.setDate(d.getDate() - day);
-  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const endDate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
-  return { start, end: endDate.getTime() };
-}
-
-export function monthRange(date: Date): { start: number; end: number } {
-  const start = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime();
-  return { start, end };
-}
-
-function periodDateKeys(date: Date, period: DigestPeriod): { startDate: string; endDate: string } {
-  if (period === "day") {
-    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const dateKey = toDateStr(day);
-    return { startDate: dateKey, endDate: dateKey };
-  }
-  if (period === "week") {
-    const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const day = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - day);
-    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
-    return { startDate: toDateStr(start), endDate: toDateStr(end) };
-  }
-  const start = new Date(date.getFullYear(), date.getMonth(), 1);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  return { startDate: toDateStr(start), endDate: toDateStr(end) };
-}
-
-export function buildDigestInput(date: Date, period: DigestPeriod, app: string | null = null): DigestInput | null {
-  const { startDate, endDate } = periodDateKeys(date, period);
-  const range = buildExportInput(startDate, endDate, "json");
-  if (!range) return null;
-  // `format` belongs to the export DTO but not to the digest wire contract.
-  return {
-    startDate: range.startDate,
-    endDate: range.endDate,
-    timezone: range.timezone,
-    dayStart: range.dayStart,
-    dayEnd: range.dayEnd,
-    dayBoundaries: range.dayBoundaries,
-    period,
-    filter: { app },
-  };
-}
-
-export function digestInputFromResponse(response: DigestResponse): DigestInput {
-  const { document } = response;
-  return {
-    startDate: document.range.startDate,
-    endDate: document.range.endDate,
-    timezone: document.range.timezone,
-    dayStart: document.range.startMs,
-    dayEnd: document.range.endMs,
-    dayBoundaries: document.range.dayBoundaries.map((boundary) => ({ ...boundary })),
-    period: document.period,
-    filter: { ...document.filter },
-  };
-}
-
-function rangeFromDigest(response: DigestResponse, label: string): RangeSummary {
-  return {
-    label,
-    pc_usage_ms: response.document.summary.pcUsageMs,
-    app_totals: response.document.appTotals.map((app) => ({
-      app: app.app,
-      duration_ms: app.durationMs,
-      sessions: app.sessions,
-    })),
-    git: {
-      projects: response.document.git.projects.map((project) => ({
-        path: project.path,
-        commits: project.commits,
-        error_code: project.errorCode,
-        projectAssociation: response.projectAssociations?.[project.path],
-      })),
-      total_commits: response.document.git.totalCommits,
-    },
-    daily: response.document.daily.map((day) => ({
-      day_ms: day.startMs,
-      pc_usage_ms: day.pcUsageMs,
-    })),
-  };
-}
-
-function dayFromDigest(response: DigestResponse): DaySummary {
-  return {
-    date: response.document.range.startDate,
-    pc_usage_ms: response.document.summary.pcUsageMs,
-    app_totals: response.document.appTotals.map((app) => ({
-      app: app.app,
-      duration_ms: app.durationMs,
-      sessions: app.sessions,
-    })),
-    git: {
-      projects: response.document.git.projects.map((project) => ({
-        path: project.path,
-        commits: project.commits,
-        error_code: project.errorCode,
-        projectAssociation: response.projectAssociations?.[project.path],
-      })),
-      total_commits: response.document.git.totalCommits,
-    },
-  };
-}
-
-function digestSourceDetails(source: DigestResponse["document"]["sources"][number]): string | null {
-  const details: string[] = [];
-  if (Number.isSafeInteger(source.schemaVersion) && source.schemaVersion != null && source.schemaVersion > 0) {
-    details.push(`schema v${source.schemaVersion}`);
-  }
-  if (Number.isSafeInteger(source.snapshotVersion) && source.snapshotVersion != null && source.snapshotVersion > 0) {
-    details.push(`snapshot v${source.snapshotVersion}`);
-  }
-  if (
-    source.producerVersion &&
-    /^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/.test(source.producerVersion)
-  ) {
-    details.push(source.producerVersion);
-  }
-  if (source.generatedAt && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(source.generatedAt)) {
-    details.push(source.generatedAt);
-  }
-  if (Number.isSafeInteger(source.freshnessMs) && source.freshnessMs != null && source.freshnessMs >= 0) {
-    details.push(`${fmtDuration(source.freshnessMs)} 전`);
-  }
-  if (source.view === "activity" || source.view === "legacy-data" || source.view === "daily-activity")
-    details.push(source.view);
-  return details.length > 0 ? details.join(" · ") : null;
-}
-
-function digestSourceId(value: string): string {
-  return ["life-log", "git", "run-manager", "knowledge-base"].includes(value) ? value : "알 수 없는 소스";
-}
-
-function digestSourceScope(value: string): string {
-  return [
-    "live-local",
-    "requested-range",
-    "requested-range-partial",
-    "latest-snapshot-out-of-range",
-    "browser-preview-only",
-    "unavailable",
-  ].includes(value)
-    ? value
-    : "범위 없음";
-}
-
-function sourceFreshnessState(
-  freshnessMs: number | null,
-  available: boolean,
-  errorCode?: string | null,
-): "fresh" | "stale" | "expired" | "unknown" | "error" {
-  if (errorCode === "snapshot_stale") return "stale";
-  if (errorCode || !available) return errorCode ? "error" : "unknown";
-  if (freshnessMs == null || freshnessMs < 0) return "unknown";
-  if (freshnessMs <= 120_000) return "fresh";
-  if (freshnessMs <= 900_000) return "stale";
-  return "expired";
-}
-
-function sourceFreshnessLabel(state: ReturnType<typeof sourceFreshnessState>): string {
-  return {
-    fresh: "최신",
-    stale: "오래됨",
-    expired: "만료됨",
-    unknown: "최신 여부 알 수 없음",
-    error: "오류",
-  }[state];
-}
-
-export const FIXED_SOURCE_EXPLANATIONS = {
-  snapshot_range_partial:
-    "선택한 기간의 일부 daily snapshot만 일치해 나머지 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
-  snapshot_range_unavailable:
-    "선택한 기간에 일치하는 daily snapshot이 없어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
-  snapshot_boundary_mismatch:
-    "daily snapshot의 날짜·시간대 경계가 요청 범위와 일치하지 않아 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
-  snapshot_stale: "daily snapshot이 오래되어 native 지표는 사용 불가로 표시하며 최신값으로 대체하지 않습니다.",
-} as const;
-
-type DigestSource = DigestResponse["document"]["sources"][number];
-
-type SourceFreshness = ReturnType<typeof sourceFreshnessState>;
-
-function fixedSourceExplanation(
-  source: Pick<DigestSource, "scope" | "errorCode" | "available" | "freshnessMs"> & {
-    freshnessState?: SourceFreshness;
-  },
-): string | null {
-  if (source.errorCode && source.errorCode in FIXED_SOURCE_EXPLANATIONS) {
-    return FIXED_SOURCE_EXPLANATIONS[source.errorCode as keyof typeof FIXED_SOURCE_EXPLANATIONS];
-  }
-  if (source.scope === "requested-range-partial") {
-    return FIXED_SOURCE_EXPLANATIONS.snapshot_range_partial;
-  }
-  const freshness =
-    source.freshnessState ?? sourceFreshnessState(source.freshnessMs, source.available, source.errorCode);
-  if (freshness === "stale" || freshness === "expired") {
-    return FIXED_SOURCE_EXPLANATIONS.snapshot_stale;
-  }
-  return null;
-}
-
-export function digestSourceExplanation(source: DigestResponse["document"]["sources"][number]): string {
-  const fixed = fixedSourceExplanation(source);
-  if (fixed) return fixed;
-  if (source.scope === "browser-preview-only") {
-    return "브라우저 미리보기에서는 native DB와 local snapshot을 읽지 않습니다.";
-  }
-  if (source.id === "life-log") return "Life Log 로컬 DB를 선택한 날짜 범위와 필터로 집계합니다.";
-  if (source.id === "git") return "설정된 프로젝트의 read-only Git count를 요청 범위로 제한합니다.";
-  if (source.id === "run-manager")
-    return "Run Manager 최신 snapshot은 provenance로만 표시하며 활동 통계에 합치지 않습니다.";
-  if (source.id === "knowledge-base") return "Knowledge 최신 snapshot은 provenance로만 표시하며 원문을 읽지 않습니다.";
-  return "이 source는 통계에 조용히 합치지 않도록 별도로 표시됩니다.";
-}
-
-function digestActivitySourceNotice(document: DigestResponse["document"]): string | null {
-  const notices: string[] = [];
-  for (const source of document.sources) {
-    if (source.id !== "run-manager" && source.id !== "knowledge-base") continue;
-    const explanation = fixedSourceExplanation(source);
-    if (explanation) {
-      notices.push(`${source.id === "run-manager" ? "Run Manager" : "Knowledge"}: ${explanation}`);
-    }
-  }
-  return notices.length > 0 ? notices.join(" ") : null;
-}
-
-export function buildExportInput(startDate: string, endDate: string, format: ExportFormat): ExportInput | null {
-  const start = parseDateKey(startDate);
-  const end = parseDateKey(endDate);
-  if (!start || !end) return null;
-  if (end.getTime() < start.getTime()) return null;
-
-  // Keep each civil-day boundary instead of deriving later days by adding a
-  // fixed 24 hours. This preserves local calendar semantics across DST.
-  const dayBoundaries: ExportDayBoundary[] = [];
-  let cursor = new Date(start.getTime());
-  while (cursor.getTime() <= end.getTime()) {
-    if (dayBoundaries.length >= 366) return null;
-    const date = toDateStr(cursor);
-    const dayStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()).getTime();
-    const next = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
-    const dayEnd = next.getTime();
-    if (dayEnd <= dayStart) return null;
-    dayBoundaries.push({ date, startMs: dayStart, endMs: dayEnd });
-    cursor = next;
-  }
-  const first = dayBoundaries[0];
-  const last = dayBoundaries[dayBoundaries.length - 1];
-  if (!first || !last || last.date !== endDate) return null;
-  return {
-    startDate,
-    endDate,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
-    dayStart: first.startMs,
-    dayEnd: last.endMs,
-    dayBoundaries,
-    format,
-  };
-}
-
-export function DataSourceRow({ source }: { source: SourceStatus }) {
-  const diagnostics = [
-    source.schemaVersion != null ? `v${source.schemaVersion}` : null,
-    source.producerVersion,
-    source.freshnessMs != null ? `${fmtDuration(source.freshnessMs)} 전 갱신` : null,
-  ].filter((value): value is string => value != null);
-  const activity = source.knowledgeActivity;
-  const freshness = sourceFreshnessState(source.freshnessMs, source.available, source.errorCode ?? source.error);
-  const sourceMetadata: DigestSource = {
-    id: source.producer,
-    available: source.available,
-    schemaVersion: source.schemaVersion,
-    snapshotVersion: null,
-    producerVersion: source.producerVersion,
-    generatedAt: source.generatedAt,
-    freshnessMs: source.freshnessMs,
-    view: null,
-    scope: source.scope ?? "unavailable",
-    errorCode: source.errorCode ?? null,
-  };
-  const fixedExplanation = fixedSourceExplanation({
-    ...sourceMetadata,
-    freshnessState:
-      source.freshnessState === "fresh" ||
-      source.freshnessState === "stale" ||
-      source.freshnessState === "expired" ||
-      source.freshnessState === "error"
-        ? source.freshnessState
-        : "unknown",
-  });
-
-  return (
-    <div className="git-row source-row">
-      <span className="mono">{source.producer}</span>
-      <div className="source-details">
-        <span className={`freshness-badge freshness-${freshness}`}>{sourceFreshnessLabel(freshness)}</span>
-        {diagnostics.length > 0 && <span className="dim">{diagnostics.join(" · ")}</span>}
-        <span className="dim">{source.scope ?? "범위 없음"}</span>
-        <span className="source-explanation">
-          {fixedExplanation ?? source.explanation ?? digestSourceExplanation(sourceMetadata)}
-        </span>
-        {source.available && activity && (
-          <span className="source-activity">
-            오늘 작성·수정 {activity.notesModifiedToday}개
-            {activity.lastModifiedAtMs != null &&
-              ` · 마지막 수정 ${new Date(activity.lastModifiedAtMs).toLocaleString()}`}
-            {activity.legacy_snapshot && " · 구버전 snapshot"}
-            {!activity.identifiersComplete &&
-              !activity.legacy_snapshot &&
-              ` · 식별자 ${activity.identifiedNotes}개만 포함`}
-          </span>
-        )}
-        {!source.available && (
-          <span role="alert" className="source-error">
-            {source.errorCode ? `${source.errorCode} · ` : ""}
-            {fixedExplanation ? "사용할 수 없음" : (source.error ?? "사용할 수 없음")}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export default function App({
   active = true,
@@ -495,7 +114,7 @@ export default function App({
   const [tracking, setTracking] = useState(false);
   const [projects, setProjectsState] = useState<string[]>([]);
   const [projectInput, setProjectInput] = useState("");
-  const [projectSaving, setProjectSaving] = useState(false);
+  const { busy: projectSaving, run: runProjectOperation } = useOperation();
   const [projectProbePath, setProjectProbePath] = useState<string | null>(null);
   const [projectProbes, setProjectProbes] = useState<Record<string, ProjectProbe>>({});
   const [idleThreshold, setIdleThresholdState] = useState(300000);
@@ -507,7 +126,9 @@ export default function App({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [contextDate, setContextDate] = useState<string | null>(null);
-  const [contextActionBusy, setContextActionBusy] = useState(false);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const { busy: clipboardBusy, run: runClipboardOperation } = useOperation();
+  const contextActionBusy = transferBusy || clipboardBusy;
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportStartDate, setExportStartDate] = useState(dateStr);
   const [exportEndDate, setExportEndDate] = useState(dateStr);
@@ -587,18 +208,17 @@ export default function App({
   const copyContextDate = async () => {
     const value = contextDate;
     if (!value || !parseDateKey(value) || contextActionBusy || loading || exportBusyRef.current) return;
-    setContextActionBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
-      await navigator.clipboard.writeText(value);
-      setNotice(`${value} 날짜를 복사했습니다.`);
-    } catch {
-      setError("날짜를 클립보드에 복사하지 못했습니다.");
-    } finally {
-      setContextActionBusy(false);
-    }
+    return runClipboardOperation(async () => {
+      setError(null);
+      setNotice(null);
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+        await navigator.clipboard.writeText(value);
+        setNotice(`${value} 날짜를 복사했습니다.`);
+      } catch {
+        setError("날짜를 클립보드에 복사하지 못했습니다.");
+      }
+    });
   };
 
   const saveOrDownloadExport = async (input: ExportInput): Promise<{ saved: boolean; preview: boolean }> => {
@@ -647,7 +267,7 @@ export default function App({
     exportBusyRef.current = true;
     const request = exportRequestRef.current + 1;
     exportRequestRef.current = request;
-    setContextActionBusy(true);
+    setTransferBusy(true);
     setError(null);
     setNotice(null);
     return request;
@@ -658,7 +278,7 @@ export default function App({
   const finishExport = (request: number) => {
     if (!isCurrentExport(request)) return;
     exportBusyRef.current = false;
-    setContextActionBusy(false);
+    setTransferBusy(false);
   };
 
   const exportNotice = (format: ExportFormat, preview: boolean): string =>
@@ -720,7 +340,7 @@ export default function App({
     digestBusyRef.current = true;
     const request = digestRequestRef.current + 1;
     digestRequestRef.current = request;
-    setContextActionBusy(true);
+    setTransferBusy(true);
     setError(null);
     setNotice(null);
     return { request, loadRequest: loadRequestRef.current };
@@ -729,7 +349,7 @@ export default function App({
   const finishDigestAction = (action: { request: number; loadRequest: number }) => {
     if (digestRequestRef.current !== action.request) return;
     digestBusyRef.current = false;
-    setContextActionBusy(false);
+    setTransferBusy(false);
   };
 
   const isCurrentDigestAction = (action: { request: number; loadRequest: number }): boolean =>
@@ -1079,43 +699,41 @@ export default function App({
     const p = projectInput.trim();
     if (!p || projectSaving) return;
     const next = projects.includes(p) ? projects : [...projects, p];
-    setProjectSaving(true);
-    setError(null);
-    try {
-      const saved = await setProjects(next);
-      projectSettingsRequestRef.current += 1;
-      setProjectsState(saved);
-      setProjectInput("");
-      setNotice("Git 프로젝트 경로를 저장했습니다.");
-    } catch (reason) {
-      const code = safeNativeErrorCode(reason);
-      setError(`Git 프로젝트 경로를 저장하지 못했습니다.${code ? ` (${code})` : ""}`);
-    } finally {
-      setProjectSaving(false);
-    }
+    return runProjectOperation(async () => {
+      setError(null);
+      try {
+        const saved = await setProjects(next);
+        projectSettingsRequestRef.current += 1;
+        setProjectsState(saved);
+        setProjectInput("");
+        setNotice("Git 프로젝트 경로를 저장했습니다.");
+      } catch (reason) {
+        const code = safeNativeErrorCode(reason);
+        setError(`Git 프로젝트 경로를 저장하지 못했습니다.${code ? ` (${code})` : ""}`);
+      }
+    });
   };
 
   const removeProject = async (p: string) => {
     if (projectSaving) return;
     const next = projects.filter((x) => x !== p);
-    setProjectSaving(true);
-    setError(null);
-    try {
-      const saved = await setProjects(next);
-      projectSettingsRequestRef.current += 1;
-      setProjectsState(saved);
-      setProjectProbes((current) => {
-        const copy = { ...current };
-        delete copy[p];
-        return copy;
-      });
-      setNotice("Git 프로젝트 경로를 제거했습니다.");
-    } catch (reason) {
-      const code = safeNativeErrorCode(reason);
-      setError(`Git 프로젝트 경로를 제거하지 못했습니다.${code ? ` (${code})` : ""}`);
-    } finally {
-      setProjectSaving(false);
-    }
+    return runProjectOperation(async () => {
+      setError(null);
+      try {
+        const saved = await setProjects(next);
+        projectSettingsRequestRef.current += 1;
+        setProjectsState(saved);
+        setProjectProbes((current) => {
+          const copy = { ...current };
+          delete copy[p];
+          return copy;
+        });
+        setNotice("Git 프로젝트 경로를 제거했습니다.");
+      } catch (reason) {
+        const code = safeNativeErrorCode(reason);
+        setError(`Git 프로젝트 경로를 제거하지 못했습니다.${code ? ` (${code})` : ""}`);
+      }
+    });
   };
 
   const checkProject = async (path: string) => {
@@ -1213,82 +831,20 @@ export default function App({
 
   return (
     <div className="app">
-      <header className="toolbar">
-        {onDaily && (
-          <button type="button" className="btn" disabled={contextActionBusy} onClick={onDaily}>
-            이 날짜의 일일 기록
-          </button>
-        )}
-        <button
-          type="button"
-          className="btn"
-          aria-label="이전 날짜"
-          onClick={() => shift(-1)}
-          disabled={contextActionBusy}
-        >
-          ◀
-        </button>
-        <input
-          type="date"
-          className="date-input"
-          value={dateStr}
-          data-date={dateStr}
-          aria-label={`${dateStr} 선택된 날짜`}
-          disabled={contextActionBusy}
-          onChange={(e) => {
-            const parsed = parseDateKey(e.currentTarget.value);
-            if (parsed) selectDate(parsed);
-          }}
-          onContextMenu={dateContextMenu.triggerProps.onContextMenu}
-          onKeyDown={dateContextMenu.triggerProps.onKeyDown}
-        />
-        <button
-          type="button"
-          className="btn"
-          aria-label="다음 날짜"
-          onClick={() => shift(1)}
-          disabled={contextActionBusy}
-        >
-          ▶
-        </button>
-        <button type="button" className="btn" onClick={() => selectDate(new Date())} disabled={contextActionBusy}>
-          오늘
-        </button>
-        <span className="spacer" />
-        {loading && (
-          <>
-            <span className="loading" role="status" aria-live="polite">
-              불러오는 중…
-            </span>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void cancelCurrentLoad()}
-              aria-label="데이터 불러오기 취소"
-            >
-              취소
-            </button>
-          </>
-        )}
-        {(["day", "week", "month", "timeline", "settings"] as const).map((t) => (
-          <button
-            type="button"
-            key={t}
-            className={`btn ${view === t ? "active" : ""}`}
-            aria-pressed={view === t}
-            onClick={() => selectView(t)}
-            disabled={contextActionBusy}
-          >
-            {VIEW_LABELS[t]}
-          </button>
-        ))}
-        <button type="button" className="btn refresh" onClick={() => void load()} disabled={contextActionBusy}>
-          새로 고침
-        </button>
-        <button type="button" className="btn" onClick={openExportDialog} disabled={contextActionBusy || loading}>
-          {isTauri() ? "기간 내보내기" : "내보내기 미리보기"}
-        </button>
-      </header>
+      <ActivityToolbar
+        onDaily={onDaily}
+        contextActionBusy={contextActionBusy}
+        shift={shift}
+        dateStr={dateStr}
+        selectDate={selectDate}
+        dateContextMenu={dateContextMenu}
+        loading={loading}
+        cancelCurrentLoad={cancelCurrentLoad}
+        view={view}
+        selectView={selectView}
+        load={load}
+        openExportDialog={openExportDialog}
+      />
 
       {error && (
         <div className="error" role="alert">
@@ -1302,620 +858,84 @@ export default function App({
       )}
 
       {view === "settings" ? (
-        <div className="settings">
-          {lifecycleSettings}
-          <section className="panel">
-            <h2>데이터 소스</h2>
-            {sources.length === 0 && <div className="dim">등록된 소스가 없습니다.</div>}
-            {sources.map((s) => (
-              <DataSourceRow
-                key={`${s.producer}:v${s.schemaVersion ?? "unknown"}:${s.available ? "ok" : "error"}`}
-                source={s}
-              />
-            ))}
-            <div className="dim">
-              소스는 devbox 공용 루트의 읽기 전용 snapshot을 통해 읽습니다(다른 앱의 DB를 직접 읽지 않음).
-            </div>
-          </section>
-
-          <section className="panel" aria-label="Knowledge 초안 handoff 기록">
-            <div className="panel-heading-row">
-              <div>
-                <h2>Knowledge handoff 기록</h2>
-                <div className="dim">
-                  상태와 집계 요약/소스 참조만 보존합니다. 활동 원문·경로·자격 증명은 저장하지 않습니다.
-                </div>
-              </div>
-              <button
-                className="btn small"
-                type="button"
-                onClick={() => void refreshDraftHistory()}
-                disabled={contextActionBusy}
-              >
-                새로 고침
-              </button>
-            </div>
-            {draftHistory.length === 0 ? (
-              <div className="dim">아직 보낸 초안이 없습니다.</div>
-            ) : (
-              draftHistory.map((entry) => (
-                <div className="handoff-history-row" key={entry.handoffId}>
-                  <div className="handoff-history-main">
-                    <span className={`handoff-status handoff-status-${entry.status}`}>{entry.status}</span>
-                    <strong>
-                      {entry.summary.startDate} ~ {entry.summary.endDate}
-                    </strong>
-                    <span className="dim">
-                      {entry.summary.period} · {entry.summary.timezone}
-                    </span>
-                    <span className="dim">
-                      세션 {entry.summary.sessionCount}개 · {fmtDuration(entry.summary.pcUsageMs)} · 커밋{" "}
-                      {entry.summary.gitCommits}개
-                    </span>
-                  </div>
-                  <div className="handoff-history-sources">
-                    {entry.sources.map((source) => (
-                      <span key={source.id} className={source.available ? "source-ok" : "source-error"}>
-                        {source.id} · {digestSourceScope(source.scope)}
-                        {source.errorCode ? ` · ${source.errorCode}` : ""}
-                      </span>
-                    ))}
-                  </div>
-                  <button
-                    className="btn small"
-                    type="button"
-                    onClick={() => void regenerateDraft(entry)}
-                    disabled={!isTauri() || !digest || contextActionBusy || loading}
-                  >
-                    다시 생성
-                  </button>
-                </div>
-              ))
-            )}
-          </section>
-
-          <section className="panel">
-            <h2>Git 프로젝트 경로</h2>
-            {projects.map((p) => (
-              <div key={p} className="git-row">
-                <div className="git-project-details">
-                  <span className="mono">{p}</span>
-                  {projectProbes[p] && (
-                    <span className={projectProbes[p].repository ? "project-probe-ok" : "project-probe-error"}>
-                      {projectProbes[p].repository
-                        ? `Git 저장소 확인됨 · ${projectProbes[p].target === "wsl" ? "WSL" : "Windows"}`
-                        : `확인 실패 · ${projectProbes[p].errorCode ?? "git_failed"}`}
-                    </span>
-                  )}
-                </div>
-                <div className="git-project-actions">
-                  <button
-                    className="mini"
-                    onClick={() => void checkProject(p)}
-                    disabled={projectProbePath !== null || projectSaving}
-                  >
-                    {projectProbePath === p ? "확인 중…" : "연결 확인"}
-                  </button>
-                  <button
-                    className="mini"
-                    onClick={() => void removeProject(p)}
-                    disabled={projectSaving}
-                    aria-label={`${p} 제거`}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-            <div className="row">
-              <input
-                placeholder="C:\projects\devbox 또는 \\wsl$\Ubuntu\home\user\project"
-                value={projectInput}
-                onChange={(e) => setProjectInput(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (!isImeComposing(e) && e.key === "Enter") void addProject();
-                }}
-                disabled={projectSaving}
-              />
-              <button
-                className="btn"
-                onClick={() => void addProject()}
-                disabled={projectSaving || !projectInput.trim()}
-              >
-                {projectSaving ? "저장 중…" : "추가"}
-              </button>
-            </div>
-            <div className="dim">
-              연결 확인은 중지된 WSL 배포판을 시작할 수 있습니다. 경로 저장만으로는 배포판을 시작하지 않습니다.
-            </div>
-            <div className="dim">
-              {lifecycleSettings
-                ? "활동 수집을 켜면 세션이 기록됩니다. 수집 중지는 활동 화면에서 선택할 수 있습니다."
-                : "활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다."}
-            </div>
-          </section>
-
-          <section className="panel">
-            <h2>유휴 감지</h2>
-            <div className="row">
-              <span className="dim">자리를 비운 지 (분):</span>
-              <input
-                type="number"
-                min={1}
-                value={Math.round(idleThreshold / 60000)}
-                onChange={(e) => {
-                  const minutes = Number(e.currentTarget.value);
-                  if (Number.isFinite(minutes) && minutes >= 1) {
-                    setIdleThresholdState(minutes * 60000);
-                    void setIdleThreshold(minutes * 60000);
-                  }
-                }}
-              />
-            </div>
-            <div className="dim">이 시간 이상 입력이 없으면 해당 구간을 사용 시간에서 제외합니다.</div>
-          </section>
-
-          <section className="panel">
-            <h2>자동 시작</h2>
-            {autoStart?.supported ? (
-              <label className="row">
-                <input
-                  type="checkbox"
-                  checked={autoStart.enabled}
-                  onChange={(e) => {
-                    setError(null);
-                    setNotice(null);
-                    void (async () => {
-                      try {
-                        const next = await setAutostart(e.currentTarget.checked);
-                        setAutoStart(next);
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : String(err));
-                      }
-                    })();
-                  }}
-                />
-                Windows 로그인 시 자동 시작
-              </label>
-            ) : (
-              <div className="dim">이 플랫폼에서는 자동 시작을 지원하지 않습니다.</div>
-            )}
-          </section>
-
-          <PrivacyRulesPanel
-            initial={privacy}
-            healthy={privacyHealthy}
-            onSaved={(rules) => {
-              setPrivacy(rules);
-              setPrivacyHealthy(true);
-            }}
-          />
-        </div>
+        <ActivitySettings
+          lifecycleSettings={lifecycleSettings}
+          sources={sources}
+          refreshDraftHistory={refreshDraftHistory}
+          contextActionBusy={contextActionBusy}
+          draftHistory={draftHistory}
+          regenerateDraft={regenerateDraft}
+          digest={digest}
+          loading={loading}
+          projects={projects}
+          projectProbes={projectProbes}
+          checkProject={checkProject}
+          projectProbePath={projectProbePath}
+          projectSaving={projectSaving}
+          removeProject={removeProject}
+          projectInput={projectInput}
+          setProjectInput={setProjectInput}
+          addProject={addProject}
+          idleThreshold={idleThreshold}
+          setIdleThresholdState={setIdleThresholdState}
+          autoStart={autoStart}
+          setError={setError}
+          setNotice={setNotice}
+          setAutoStart={setAutoStart}
+          privacy={privacy}
+          privacyHealthy={privacyHealthy}
+          setPrivacy={setPrivacy}
+          setPrivacyHealthy={setPrivacyHealthy}
+        />
       ) : view === "timeline" ? (
-        <div className="timeline">
-          <div className="timeline-head">
-            <span className={tracking ? "status-on" : "status-off"}>● {tracking ? "추적 중" : "중지됨"}</span>
-            <button className={`btn ${tracking ? "danger" : ""}`} onClick={() => void toggleTracking()}>
-              {tracking ? "추적 중지" : "추적 시작"}
-            </button>
-            <span className="dim">합계: {fmtDuration(sessions.reduce((acc, s) => acc + s.duration_ms, 0))}</span>
-          </div>
-          {sessions.map((s) => (
-            <div key={s.id} className="session">
-              <span className="time">{fmtTime(s.start_ts)}</span>
-              <span className="app">{shortApp(s.app)}</span>
-              <span className="title dim">{s.title || "-"}</span>
-              <span className="dur dim">{fmtDuration(s.duration_ms)}</span>
-            </div>
-          ))}
-          {sessions.length === 0 && <div className="empty">오늘 기록된 활동이 없습니다</div>}
-
-          {stats.length > 0 && (
-            <section className="panel">
-              <h2>앱 사용량</h2>
-              {stats.map((a) => (
-                <div key={a.app} className="stat-row">
-                  <span className="stat-app">{shortApp(a.app)}</span>
-                  <div className="stat-bar">
-                    <div
-                      className="stat-fill"
-                      style={{ width: `${Math.min(100, (a.duration_ms / maxStatDuration) * 100)}%` }}
-                    />
-                  </div>
-                  <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
-                  <span className="dim">세션 {a.sessions}개</span>
-                </div>
-              ))}
-            </section>
-          )}
-        </div>
+        <ActivityTimeline
+          tracking={tracking}
+          toggleTracking={toggleTracking}
+          sessions={sessions}
+          stats={stats}
+          maxStatDuration={maxStatDuration}
+        />
       ) : (
-        <div className="day">
-          {summary && (
-            <>
-              <div className="cards">
-                <div className="card">
-                  <div className="card-label">PC 사용</div>
-                  <div className="card-value">{fmtDuration(summary.pc_usage_ms)}</div>
-                </div>
-                <div className="card">
-                  <div className="card-label">Git 커밋 · 기간 전체</div>
-                  <div className="card-value">{summary.git.total_commits}</div>
-                </div>
-                <div className="card">
-                  <div className="card-label">가장 활발한 앱</div>
-                  <div className="card-value">
-                    {topApp ? shortApp(topApp.app) : summary.app_totals[0] ? shortApp(summary.app_totals[0].app) : "-"}
-                  </div>
-                </div>
-              </div>
-
-              {(view === "day" || view === "week" || view === "month") && (
-                <section className="panel digest-panel" aria-busy={loading || contextActionBusy}>
-                  <div className="digest-heading">
-                    <div>
-                      <h2>
-                        {view === "day" ? "일간 로컬 요약" : view === "month" ? "월간 로컬 요약" : "주간 로컬 요약"}
-                      </h2>
-                      <p className="dim">결정론적 규칙으로만 계산하며 네트워크·AI·외부 전송을 사용하지 않습니다.</p>
-                    </div>
-                    <div className="digest-actions">
-                      {loading && (
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => void cancelCurrentLoad()}
-                          aria-label="digest 불러오기 취소"
-                        >
-                          취소
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => void copyDigest()}
-                        disabled={!digest || contextActionBusy || loading}
-                      >
-                        요약 복사
-                      </button>
-                      <button
-                        type="button"
-                        className="btn active"
-                        onClick={() => void downloadDigest()}
-                        disabled={!digest || contextActionBusy || loading}
-                      >
-                        {isTauri() ? "요약 저장" : "미리보기 다운로드"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => void sendDigestDraft()}
-                        disabled={!isTauri() || !digest || contextActionBusy || loading}
-                        title={isTauri() ? undefined : "Knowledge handoff는 native 데스크톱에서만 사용할 수 있습니다"}
-                      >
-                        Knowledge로 보내기
-                      </button>
-                    </div>
-                  </div>
-                  {digest ? (
-                    <>
-                      <div className="digest-toolbar">
-                        <label htmlFor="life-log-digest-app-filter">
-                          애플리케이션 필터
-                          <select
-                            id="life-log-digest-app-filter"
-                            value={digestAppFilter ?? ""}
-                            onChange={(event) => selectDigestFilter(event.currentTarget.value || null)}
-                            disabled={contextActionBusy || loading}
-                          >
-                            <option value="">모든 애플리케이션</option>
-                            {digestAppOptions.map((app) => (
-                              <option key={app} value={app}>
-                                {shortApp(app)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <span className="dim scope-note" role="status" aria-live="polite">
-                          {digest.origin === "browser-preview"
-                            ? "브라우저 미리보기만 사용 · 네이티브 로컬 데이터 사용 불가 · "
-                            : "네이티브 로컬 요약 · "}
-                          {digest.document.range.startDate} ~ {digest.document.range.endDate} ·{" "}
-                          {digest.document.range.timezone} · Git 커밋은 요청한 전체 기간을 사용하며 이 앱 필터를
-                          무시합니다.
-                        </span>
-                      </div>
-                      {digestActivitySourceNotice(digest.document) && (
-                        <p className="activity-source-notice" role="note">
-                          {digestActivitySourceNotice(digest.document)}
-                        </p>
-                      )}
-                      <div className="digest-cards">
-                        <div className="card">
-                          <div className="card-label">PC 사용</div>
-                          <div className="card-value">{fmtDuration(digest.document.summary.pcUsageMs)}</div>
-                        </div>
-                        <div className="card">
-                          <div className="card-label">활동일</div>
-                          <div className="card-value">
-                            {digest.document.summary.activeDays}/{digest.document.summary.totalDays}
-                          </div>
-                        </div>
-                        <div className="card">
-                          <div className="card-label">세션</div>
-                          <div className="card-value">{digest.document.summary.sessionCount}</div>
-                        </div>
-                        <div className="card">
-                          <div className="card-label">Git 커밋 · 기간 전체</div>
-                          <div className="card-value">{digest.document.summary.gitCommits}</div>
-                        </div>
-                        <div className="card activity-card" data-testid="run-summary">
-                          <div className="card-label">Run Manager · 기간 전체</div>
-                          <div className="card-value">{formatRunSummary(digest.document.summary.run)}</div>
-                          <div className="dim">
-                            마지막 실행 {formatNullableTimestamp(digest.document.summary.run?.lastRunAtMs ?? null)}
-                          </div>
-                        </div>
-                        <div className="card activity-card" data-testid="knowledge-summary">
-                          <div className="card-label">Knowledge 노트 · 기간 전체</div>
-                          <div className="card-value">{formatKnowledgeSummary(digest.document.summary.knowledge)}</div>
-                          <div className="dim">
-                            마지막 수정{" "}
-                            {formatNullableTimestamp(digest.document.summary.knowledge?.lastModifiedAtMs ?? null)}
-                          </div>
-                        </div>
-                      </div>
-                      <p className="digest-headline">{digest.document.headline}</p>
-                      {digest.document.summary.activeDays === 0 && digest.document.summary.gitCommits === 0 && (
-                        <div className="empty">선택한 기간과 필터에 기록된 활동이 없습니다.</div>
-                      )}
-                      <div className="digest-days" aria-label="일별 digest">
-                        {digest.document.daily.map((day) => (
-                          <div key={day.date} className={`digest-day ${day.hasActivity ? "" : "empty-day"}`}>
-                            <span className="mono">{day.date}</span>
-                            <span>{fmtDuration(day.pcUsageMs)}</span>
-                            <span className="dim">
-                              세션 {day.sessionCount}개 · 커밋 {day.gitCommits}개
-                            </span>
-                            <span className="dim">{day.topApp ? shortApp(day.topApp) : "-"}</span>
-                            <span className="dim daily-activity">{formatDailyActivity(day)}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <details className="digest-details">
-                        <summary>소스와 집계 규칙</summary>
-                        <div className="digest-source-list">
-                          {digest.document.sources.map((source) => (
-                            <div
-                              key={`${digestSourceId(source.id)}:${digestSourceScope(source.scope)}`}
-                              className="git-row"
-                            >
-                              <span className="mono">{digestSourceId(source.id)}</span>
-                              <span className="source-details">
-                                <span className={source.available ? "source-ok" : "source-error"}>
-                                  {source.available
-                                    ? "사용 가능"
-                                    : source.errorCode === "browser_preview_only"
-                                      ? "브라우저 미리보기만"
-                                      : "사용 불가"}
-                                  {` · ${digestSourceScope(source.scope)}`}
-                                </span>
-                                <span
-                                  className={`freshness-badge freshness-${sourceFreshnessState(source.freshnessMs, source.available, source.errorCode)}`}
-                                >
-                                  {sourceFreshnessLabel(
-                                    sourceFreshnessState(source.freshnessMs, source.available, source.errorCode),
-                                  )}
-                                </span>
-                                <span className="source-explanation">{digestSourceExplanation(source)}</span>
-                                {source.errorCode && (
-                                  <span className="source-error">오류 코드: {source.errorCode}</span>
-                                )}
-                                {digestSourceDetails(source) && (
-                                  <span className="dim">{digestSourceDetails(source)}</span>
-                                )}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="digest-rules">
-                          {Object.entries(digest.document.rules).map(([name, rule]) => (
-                            <div key={name} className="digest-rule">
-                              <span>{name}</span>
-                              <span className="dim">{rule}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    </>
-                  ) : (
-                    <div className="empty">Digest를 준비하는 중입니다…</div>
-                  )}
-                </section>
-              )}
-
-              {view !== "day" && range && (
-                <section className="panel">
-                  <h2>{range.label} — 일별 사용량</h2>
-                  <div className="daily-chart">
-                    {range.daily.map((p, index) => {
-                      const pointDate = new Date(p.day_ms);
-                      const pointDateStr = toDateStr(pointDate);
-                      return (
-                        <button
-                          key={p.day_ms}
-                          type="button"
-                          className="daily-col"
-                          title={`${fmtDay(p.day_ms)}: ${fmtDuration(p.pc_usage_ms)}`}
-                          data-date={pointDateStr}
-                          aria-label={`${pointDateStr} 날짜`}
-                          aria-current={pointDateStr === dateStr ? "date" : undefined}
-                          aria-roledescription="일별 사용량"
-                          tabIndex={pointDateStr === dateStr ? 0 : -1}
-                          ref={(element) => {
-                            dailyChartRefs.current[index] = element;
-                          }}
-                          onKeyDown={(event) => onDailyChartKeyDown(event, index, range.daily)}
-                          onClick={() => selectDate(pointDate)}
-                          {...dateContextMenu.triggerProps}
-                        >
-                          <div
-                            className="daily-bar"
-                            style={{ height: `${Math.max(2, (p.pc_usage_ms / maxDaily) * 100)}%` }}
-                          />
-                          <div className="daily-label">{fmtDay(p.day_ms)}</div>
-                        </button>
-                      );
-                    })}
-                    {range.daily.length === 0 && <div className="empty">이 기간에 활동이 없습니다</div>}
-                  </div>
-                </section>
-              )}
-
-              {summary.app_totals.length > 0 && (
-                <section className="panel">
-                  <h2>앱 사용량</h2>
-                  {summary.app_totals.map((a) => (
-                    <div key={a.app} className="stat-row">
-                      <span className="stat-app">{shortApp(a.app)}</span>
-                      <div className="stat-bar">
-                        <div
-                          className="stat-fill"
-                          style={{ width: `${Math.min(100, (a.duration_ms / maxSummaryDuration) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="stat-dur">{fmtDuration(a.duration_ms)}</span>
-                    </div>
-                  ))}
-                </section>
-              )}
-
-              {attribution && attribution.profileCount > 0 && (
-                <section className="panel">
-                  <h2>프로젝트 귀속 · 모든 애플리케이션</h2>
-                  {attribution.attributed.map((a) => (
-                    <div key={a.projectId} className="git-row">
-                      <span className="mono dim">
-                        {a.projectId}
-                        {a.projectAssociation && <small> · {projectAssociationLabel(a.projectAssociation)}</small>}
-                      </span>
-                      <span className="git-count">
-                        세션 {a.sessions}개 · {fmtDuration(a.durationMs)}
-                      </span>
-                    </div>
-                  ))}
-                  {attribution.unattributed.sessions > 0 && (
-                    <div className="git-row">
-                      <span className="dim">미귀속</span>
-                      <span className="git-count">
-                        세션 {attribution.unattributed.sessions}개 · {fmtDuration(attribution.unattributed.durationMs)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="dim">
-                    귀속은 창 제목의 프로젝트 이름 매치 기준이며 애플리케이션 필터와 독립적입니다(가장 긴 이름 우선,
-                    중복 집계 없음).
-                  </div>
-                </section>
-              )}
-
-              {summary.git.projects.length > 0 && (
-                <section className="panel">
-                  <h2>Git</h2>
-                  <p className="dim">
-                    같은 저장소의 동일 커밋은 한 번만 집계하며, 경로 순서상 첫 프로젝트에 귀속합니다. 조회하지 못한
-                    프로젝트는 합계에서 제외합니다.
-                  </p>
-                  {summary.git.projects.map((p) => (
-                    <div key={p.path} className="git-row">
-                      <span className="mono dim">
-                        {p.path}
-                        {p.projectAssociation && <small> · {projectAssociationLabel(p.projectAssociation)}</small>}
-                      </span>
-                      <span className="git-count">
-                        {p.error_code ? "조회할 수 없음 · 경로와 Git 연결 확인" : `커밋 ${p.commits}개`}
-                      </span>
-                    </div>
-                  ))}
-                </section>
-              )}
-            </>
-          )}
-        </div>
+        <ActivitySummary
+          summary={summary}
+          topApp={topApp}
+          view={view}
+          loading={loading}
+          contextActionBusy={contextActionBusy}
+          cancelCurrentLoad={cancelCurrentLoad}
+          copyDigest={copyDigest}
+          digest={digest}
+          downloadDigest={downloadDigest}
+          sendDigestDraft={sendDigestDraft}
+          digestAppFilter={digestAppFilter}
+          selectDigestFilter={selectDigestFilter}
+          digestAppOptions={digestAppOptions}
+          range={range}
+          dateStr={dateStr}
+          dailyChartRefs={dailyChartRefs}
+          onDailyChartKeyDown={onDailyChartKeyDown}
+          selectDate={selectDate}
+          dateContextMenu={dateContextMenu}
+          maxDaily={maxDaily}
+          maxSummaryDuration={maxSummaryDuration}
+          attribution={attribution}
+        />
       )}
       {exportDialogOpen && (
         <div className="export-backdrop" role="presentation">
-          <section
-            className="export-dialog"
-            ref={exportDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="life-log-export-title"
-            aria-describedby="life-log-export-description"
-            aria-busy={contextActionBusy}
-            tabIndex={-1}
-          >
-            <h2 id="life-log-export-title">Life Log 내보내기</h2>
-            <p id="life-log-export-description" className="dim">
-              {isTauri()
-                ? "선택한 기간의 활동·Git·검증된 로컬 소스 요약을 파일로 저장합니다."
-                : "브라우저 미리보기는 로컬 DB·Git·snapshot을 포함하지 않습니다."}
-            </p>
-            <div className="export-fields">
-              <label htmlFor="life-log-export-start">
-                시작 날짜
-                <input
-                  id="life-log-export-start"
-                  ref={exportFirstFieldRef}
-                  type="date"
-                  value={exportStartDate}
-                  onChange={(event) => setExportStartDate(event.currentTarget.value)}
-                  disabled={contextActionBusy}
-                />
-              </label>
-              <label htmlFor="life-log-export-end">
-                종료 날짜
-                <input
-                  id="life-log-export-end"
-                  type="date"
-                  value={exportEndDate}
-                  onChange={(event) => setExportEndDate(event.currentTarget.value)}
-                  disabled={contextActionBusy}
-                />
-              </label>
-              <label htmlFor="life-log-export-format">
-                형식
-                <select
-                  id="life-log-export-format"
-                  value={exportFormat}
-                  onChange={(event) => setExportFormat(event.currentTarget.value as ExportFormat)}
-                  disabled={contextActionBusy}
-                >
-                  <option value="markdown">Markdown</option>
-                  <option value="json">JSON</option>
-                  <option value="csv">CSV</option>
-                </select>
-              </label>
-            </div>
-            <div className="export-actions">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setExportDialogOpen(false)}
-                disabled={contextActionBusy}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="btn active"
-                onClick={() => void submitRangeExport()}
-                disabled={contextActionBusy}
-              >
-                {contextActionBusy ? "내보내는 중…" : isTauri() ? "저장" : "미리보기 다운로드"}
-              </button>
-            </div>
-          </section>
+          <ActivityExportDialog
+            exportDialogRef={exportDialogRef}
+            contextActionBusy={contextActionBusy}
+            exportFirstFieldRef={exportFirstFieldRef}
+            exportStartDate={exportStartDate}
+            setExportStartDate={setExportStartDate}
+            exportEndDate={exportEndDate}
+            setExportEndDate={setExportEndDate}
+            exportFormat={exportFormat}
+            setExportFormat={setExportFormat}
+            setExportDialogOpen={setExportDialogOpen}
+            submitRangeExport={submitRangeExport}
+          />
         </div>
       )}
       <ContextMenu
