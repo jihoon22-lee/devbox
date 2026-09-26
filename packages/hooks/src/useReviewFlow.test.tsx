@@ -152,4 +152,36 @@ describe("useReviewFlow", () => {
     expect(result.current.state).toBe("idle");
     expect(discard).toHaveBeenCalledTimes(2);
   });
+  it("retains the old preview when cleanup for its replacement fails", async () => {
+    let reject!: (error: Error) => void;
+    const discard = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, fail) => {
+            reject = fail;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const preview = vi.fn().mockResolvedValueOnce("old").mockResolvedValue("new");
+    const { result } = renderHook(() =>
+      useReviewFlow<string, string>({ preview, apply: async (value) => value, discard }),
+    );
+    await act(async () => result.current.start());
+    let replacement!: Promise<void>;
+    act(() => {
+      replacement = result.current.start();
+    });
+    await act(async () => result.current.reset());
+    await act(async () => {
+      reject(new Error("cleanup failed"));
+      await replacement;
+    });
+    expect(result.current.preview).toBe("old");
+    expect(result.current.state).toBe("failed");
+    expect(preview).toHaveBeenCalledTimes(1);
+    await act(async () => result.current.start());
+    expect(result.current.preview).toBe("new");
+    expect(discard.mock.calls).toEqual([["old"], ["old"]]);
+  });
 });

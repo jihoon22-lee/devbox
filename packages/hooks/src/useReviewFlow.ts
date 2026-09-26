@@ -49,13 +49,17 @@ export function useReviewFlow<P, R>(steps: ReviewSteps<P, R>) {
     controller.current = abort;
     const owner = latest.current;
     const previous = pending.current;
-    pending.current = null;
-    phase.current = "previewing";
-    setCurrent({ state: "previewing", preview: null, result: null, issue: null });
+    phase.current = previous ? "applying" : "previewing";
+    setCurrent({ state: phase.current, preview: previous?.value ?? null, result: null, issue: null });
     const owned = () => mounted.current && id === sequence.current && !abort.signal.aborted;
     try {
-      if (previous) await previous.owner.discard?.(previous.value);
+      if (previous) {
+        await previous.owner.discard?.(previous.value);
+        if (pending.current === previous) pending.current = null;
+      }
       if (!owned()) return;
+      phase.current = "previewing";
+      setCurrent({ state: "previewing", preview: null, result: null, issue: null });
       const value = await owner.preview(abort.signal);
       const entry = { value, owner };
       if (!owned()) {
@@ -68,7 +72,7 @@ export function useReviewFlow<P, R>(steps: ReviewSteps<P, R>) {
     } catch (error) {
       if (owned()) {
         phase.current = "failed";
-        setCurrent({ state: "failed", preview: null, result: null, issue: messageOf(error) });
+        setCurrent({ state: "failed", preview: pending.current?.value ?? null, result: null, issue: messageOf(error) });
       }
     }
   }, []);
