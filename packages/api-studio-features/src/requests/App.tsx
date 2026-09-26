@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { OpenApiDefinitions, type DefinitionSummary } from "./OpenApiDefinitions";
 import { ApiWorkspacePanel, type ApiWorkspace } from "./ApiWorkspace";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
@@ -495,27 +496,25 @@ export default function App({
     };
   }, []);
 
-  useEffect(() => {
-    if (!handoffPreview) return undefined;
-    let disposed = false;
-    const handoffId = handoffPreview.handoffId;
-    const interval = window.setInterval(() => {
-      if (handoffBusyRef.current || handoffPreviewRef.current?.handoffId !== handoffId) return;
-      void renewApiRequest(handoffId).catch((cause) => {
-        if (disposed || !mountedRef.current || handoffPreviewRef.current?.handoffId !== handoffId) return;
+  usePolling(
+    async () => {
+      const preview = handoffPreviewRef.current;
+      if (!preview || handoffBusyRef.current) return;
+      const id = preview.handoffId;
+      try {
+        await renewApiRequest(id);
+      } catch (cause) {
+        if (!mountedRef.current || handoffPreviewRef.current?.handoffId !== id) return;
         const message = safeHandoffError(cause);
         if (isTerminalHandoffError(message)) {
           handoffPreviewRef.current = null;
           setHandoffPreview(null);
         }
         setError(message);
-      });
-    }, 30_000);
-    return () => {
-      disposed = true;
-      window.clearInterval(interval);
-    };
-  }, [handoffPreview]);
+      }
+    },
+    { intervalMs: 30_000, active: Boolean(handoffPreview), immediate: false },
+  );
 
   const prepareHistoryContext = useCallback(
     (target: HTMLElement) => {

@@ -32,6 +32,9 @@ importers:
       '@devbox/api-studio-features':
         specifier: workspace:*
         version: link:../../packages/api-studio-features
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@devbox/product-shell':
         specifier: workspace:*
         version: link:../../packages/product-shell
@@ -176,6 +179,9 @@ importers:
       '@devbox/a11y':
         specifier: workspace:*
         version: link:../../packages/a11y
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@devbox/product-shell':
         specifier: workspace:*
         version: link:../../packages/product-shell
@@ -243,6 +249,9 @@ importers:
       '@devbox/context-menu':
         specifier: workspace:*
         version: link:../context-menu
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/openapi':
         specifier: workspace:*
         version: link:../openapi
@@ -462,6 +471,9 @@ importers:
       '@devbox/editor':
         specifier: workspace:*
         version: link:../editor
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/markdown-view':
         specifier: workspace:*
         version: link:../markdown-view
@@ -640,6 +652,9 @@ importers:
       '@devbox/editor':
         specifier: workspace:*
         version: link:../editor
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/markdown-view':
         specifier: workspace:*
         version: link:../markdown-view

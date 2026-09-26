@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { isProductHosted } from "../transport";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isImeComposing } from "@devbox/a11y";
@@ -499,32 +500,26 @@ export default function App() {
     setDockerMissing(entry.dockerAvailability === "missing");
   }, [dashboardSnapshot, selected]);
 
-  useEffect(() => {
+  const updateFreshness = useCallback(() => {
     if (!dashboardSnapshot) return;
-    const updateFreshness = () => {
-      dashboardClockRef.current = Date.now();
-      const expired = isSnapshotExpired(dashboardSnapshot, dashboardClockRef.current);
-      // Tracked even while a collection is in flight: a refresh that runs past the TTL must
-      // still close snapshot-gated actions, and a fast one must not.
-      setSnapshotExpired(expired);
-      if (dashboardRequestRef.current) return;
-      setDashboardState((current) => (current === "error" ? current : expired ? "stale" : "fresh"));
-    };
-    updateFreshness();
-    const timer = window.setInterval(updateFreshness, 1_000);
-    return () => window.clearInterval(timer);
+    dashboardClockRef.current = Date.now();
+    const expired = isSnapshotExpired(dashboardSnapshot, dashboardClockRef.current);
+    setSnapshotExpired(expired);
+    if (dashboardRequestRef.current) return;
+    setDashboardState((current) => (current === "error" ? current : expired ? "stale" : "fresh"));
   }, [dashboardSnapshot]);
-
-  useEffect(() => {
-    if (!dashboardSnapshot) return;
-    // Refresh before a successful snapshot can remain stale indefinitely. Bounds protect the
-    // renderer from a corrupt/native-regressed TTL while the promise ref keeps this single-flight.
-    const intervalMs = Math.min(60_000, Math.max(5_000, dashboardSnapshot.staleAfterMs));
-    const timer = window.setInterval(() => {
-      void refreshDashboard().catch(() => undefined);
-    }, intervalMs);
-    return () => window.clearInterval(timer);
-  }, [dashboardSnapshot, refreshDashboard]);
+  useEffect(updateFreshness, [updateFreshness]);
+  usePolling(updateFreshness, { intervalMs: 1_000, active: Boolean(dashboardSnapshot), immediate: false });
+  usePolling(
+    async () => {
+      await refreshDashboard().catch(() => undefined);
+    },
+    {
+      intervalMs: Math.min(60_000, Math.max(5_000, dashboardSnapshot?.staleAfterMs ?? 5_000)),
+      active: Boolean(dashboardSnapshot),
+      immediate: false,
+    },
+  );
 
   // One rule for every snapshot-gated control. An in-flight collection is not by itself a
   // reason to close them; a failed or expired one is.

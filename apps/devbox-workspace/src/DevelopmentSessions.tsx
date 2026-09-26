@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { useMemo, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
@@ -133,7 +134,12 @@ export default function DevelopmentSessions({
     () => typedComponentCall<WorkspaceTerminalCall, TerminalResults>(description, "workspace.terminal", "terminal"),
     [description],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  const pollSessionsCallback = useRef<() => Promise<void> | void>(() => {});
+  const { refresh: pollSessions } = usePolling(() => pollSessionsCallback.current(), {
+    intervalMs: 1000,
+    active: true,
+    immediate: false,
+  });
   useEffect(() => {
     let disposed = false;
     let pending = false;
@@ -147,31 +153,32 @@ export default function DevelopmentSessions({
       pending = true;
       try {
         const value = await call("development_sessions", {});
-        if (!disposed) setSnapshot(value);
+        if (!disposed && current.current === contextKey) setSnapshot(value);
       } catch {
-        if (!disposed) setIssue("세션 상태를 읽지 못했습니다. 잠시 후 다시 확인해 주세요.");
+        if (!disposed && current.current === contextKey)
+          setIssue("세션 상태를 읽지 못했습니다. 잠시 후 다시 확인해 주세요.");
       } finally {
         pending = false;
       }
     };
     void call("development_candidates")
       .then((value) => {
-        if (!disposed) {
+        if (!disposed && current.current === contextKey) {
           setJobs(value.jobs);
           setTruncated(value.truncated);
           setProfiles(value.profiles ?? []);
         }
       })
       .catch(() => {
-        if (!disposed) setIssue("실행할 작업 목록을 읽지 못했습니다.");
+        if (!disposed && current.current === contextKey) setIssue("실행할 작업 목록을 읽지 못했습니다.");
       });
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 1000);
+    pollSessionsCallback.current = refresh;
+    pollSessions();
     return () => {
       disposed = true;
-      window.clearInterval(timer);
+      pollSessionsCallback.current = () => {};
     };
-  }, [call, contextKey]);
+  }, [call, contextKey, pollSessions]);
 
   const prepare = async (ids = selected, profile = selectedProfile) => {
     const context = contextKey;

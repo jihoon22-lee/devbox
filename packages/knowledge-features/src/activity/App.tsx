@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import PrivacyRulesPanel from "./PrivacyRulesPanel";
 import { projectAssociationLabel } from "./types";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
@@ -1056,18 +1057,8 @@ export default function App({
     void loadSettings();
   }, [loadSettings]);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    const timer = window.setInterval(() => void refreshDraftHistory(), 30_000);
-    return () => window.clearInterval(timer);
-  }, [refreshDraftHistory]);
-
-  // 타임라인은 추적 중에는 주기적으로 갱신한다 (세션 자동 반영).
-  useEffect(() => {
-    if (view !== "timeline") return;
-    const id = setInterval(() => void load(), 30_000);
-    return () => clearInterval(id);
-  }, [view, load]);
+  usePolling(refreshDraftHistory, { intervalMs: 30_000, active: isTauri(), immediate: false });
+  usePolling(load, { intervalMs: 30_000, active: view === "timeline", immediate: false });
 
   const toggleTracking = async () => {
     setError(null);

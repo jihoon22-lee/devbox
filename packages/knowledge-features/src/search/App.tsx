@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { sourceRowValue } from "./sourceResult";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isProductHosted } from "../transport";
@@ -264,11 +265,7 @@ export default function App({
   }, []);
 
   // 인덱싱 중에는 진행률을 주기적으로 갱신
-  useEffect(() => {
-    if (!status.indexing) return;
-    const id = setInterval(() => void loadMeta(), 500);
-    return () => clearInterval(id);
-  }, [status.indexing, loadMeta]);
+  usePolling(loadMeta, { intervalMs: 500, active: status.indexing, immediate: false });
 
   useEffect(() => {
     void loadMeta();

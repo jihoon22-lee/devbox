@@ -1,7 +1,8 @@
+import { usePolling } from "@devbox/hooks";
 import { bindTypedCall } from "@devbox/workspace-features/typed";
 import type { ProblemsCall } from "@devbox/workspace-features/generated/ProblemsCall";
 import type { ProblemsResults } from "@devbox/workspace-features/generated/problems-results";
-import { useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall } from "./native";
 import { sameRuntimeContext } from "./runtimeNavigation";
@@ -20,6 +21,12 @@ export default function ContextStatus({
   navigate: (route: string) => void;
 }) {
   const [snapshot, setSnapshot] = useState<ProblemsSnapshot | null>(null);
+  const pollContextCallback = useRef<() => Promise<void> | void>(() => {});
+  const { refresh: pollContext } = usePolling(() => pollContextCallback.current(), {
+    intervalMs: 5000,
+    active: Boolean(description.context),
+    immediate: false,
+  });
   useEffect(() => {
     if (!description.context) return;
     let disposed = false,
@@ -39,13 +46,13 @@ export default function ContextStatus({
         pending = false;
       }
     };
-    void read();
-    const timer = setInterval(() => void read(), 5000);
+    pollContextCallback.current = read;
+    pollContext();
     return () => {
       disposed = true;
-      clearInterval(timer);
+      pollContextCallback.current = () => {};
     };
-  }, [description]);
+  }, [description, pollContext]);
   const current = snapshot && sameRuntimeContext(snapshot.context, description.context) ? snapshot : null;
   if (!description.context) return null;
   return (

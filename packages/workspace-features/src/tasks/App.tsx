@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isKeyboardActivation } from "@devbox/a11y";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -333,8 +334,8 @@ export default function App({
   const taskControlCancelRef = useRef<HTMLButtonElement>(null);
   const taskControlRestoreRef = useRef<HTMLElement | null>(null);
   const taskControlRenewTimerRef = useRef<number | null>(null);
-  const taskControlRenewIntervalRef = useRef<number | null>(null);
-  const taskControlRenewCountRef = useRef(0);
+  const [taskControlRenewReady, setTaskControlRenewReady] = useState<string | null>(null);
+  const taskControlRenewCallback = useRef<() => Promise<void> | void>(() => {});
   const workspaceDiagnosticsRequestedRef = useRef(new Set<string>());
   const workspaceOperationTimersRef = useRef(new Map<string, number>());
   const workspaceOperationPollHealthyAtRef = useRef(new Map<string, number>());
@@ -572,10 +573,6 @@ export default function App({
         window.clearTimeout(taskControlRenewTimerRef.current);
         taskControlRenewTimerRef.current = null;
       }
-      if (taskControlRenewIntervalRef.current !== null) {
-        window.clearInterval(taskControlRenewIntervalRef.current);
-        taskControlRenewIntervalRef.current = null;
-      }
     };
   }, [visible]);
 
@@ -673,57 +670,47 @@ export default function App({
     }
   }, [busy, closeTaskControlPreview, refreshTaskControlReceipts, taskControlPreview]);
 
+  usePolling(() => taskControlRenewCallback.current(), {
+    intervalMs: TASK_CONTROL_RENEW_INTERVAL_MS,
+    active: visible && Boolean(taskControlPreview) && taskControlRenewReady === taskControlPreview?.requestId,
+  });
   useEffect(() => {
     const preview = taskControlPreview;
+    setTaskControlRenewReady(null);
     if (!visible || !preview) return;
+    let disposed = false;
     let renewCount = 0;
-    let renewing = false;
-    const renew = async () => {
-      if (!mountedRef.current || !taskControlPreview || renewing) return;
+    taskControlRenewCallback.current = async () => {
+      if (disposed || !mountedRef.current) return;
       if (renewCount >= TASK_CONTROL_MAX_RENEWALS) {
-        if (taskControlRenewIntervalRef.current !== null) {
-          window.clearInterval(taskControlRenewIntervalRef.current);
-          taskControlRenewIntervalRef.current = null;
-        }
+        setTaskControlRenewReady(null);
         setError(friendlyErrorMessage("task-control-lease-expired"));
         return;
       }
-      renewing = true;
       try {
         const leaseUntil = await renewWorkspaceTaskControl(preview.requestId);
-        if (mountedRef.current && taskControlPreview?.requestId === preview.requestId) {
+        if (!disposed && mountedRef.current) {
           renewCount += 1;
-          taskControlRenewCountRef.current = renewCount;
           setTaskControlLeaseUntil(leaseUntil);
         }
       } catch (cause) {
-        if (mountedRef.current && taskControlPreview?.requestId === preview.requestId) {
+        if (!disposed && mountedRef.current) {
           setError(friendlyErrorMessage(cause));
+          setTaskControlRenewReady(null);
         }
-        if (taskControlRenewIntervalRef.current !== null) {
-          window.clearInterval(taskControlRenewIntervalRef.current);
-          taskControlRenewIntervalRef.current = null;
-        }
-      } finally {
-        renewing = false;
       }
     };
-    taskControlRenewCountRef.current = 0;
     taskControlRenewTimerRef.current = window.setTimeout(() => {
       taskControlRenewTimerRef.current = null;
-      void renew();
-      taskControlRenewIntervalRef.current = window.setInterval(() => void renew(), TASK_CONTROL_RENEW_INTERVAL_MS);
+      setTaskControlRenewReady(preview.requestId);
     }, TASK_CONTROL_RENEW_AFTER_MS);
     return () => {
+      disposed = true;
+      taskControlRenewCallback.current = () => {};
       if (taskControlRenewTimerRef.current !== null) {
         window.clearTimeout(taskControlRenewTimerRef.current);
         taskControlRenewTimerRef.current = null;
       }
-      if (taskControlRenewIntervalRef.current !== null) {
-        window.clearInterval(taskControlRenewIntervalRef.current);
-        taskControlRenewIntervalRef.current = null;
-      }
-      taskControlRenewCountRef.current = 0;
     };
   }, [visible, taskControlPreview]);
 
@@ -1083,14 +1070,12 @@ export default function App({
     }
   }, [contextService?.id, serviceContextMenu.close, services]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const timer = window.setInterval(() => {
-      void refreshStatus();
-      void refreshActiveRuns();
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [visible, refreshActiveRuns, refreshStatus]);
+  usePolling(
+    async () => {
+      await Promise.all([refreshStatus(), refreshActiveRuns()]);
+    },
+    { intervalMs: 1_000, active: visible, immediate: false },
+  );
 
   useEffect(() => {
     onDirtyChange?.(screen === "editor" || screen === "service-editor" || importOpen || busy);

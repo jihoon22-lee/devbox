@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -373,11 +374,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     if (visible) void refresh();
   }, [visible, refresh]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const timer = window.setInterval(() => void refresh(), 1_000);
-    return () => window.clearInterval(timer);
-  }, [visible, refresh]);
+  usePolling(refresh, { intervalMs: 1_000, active: visible, immediate: false });
 
   const selectedDefinition = jobs.find((job) => job.id === jobId) ?? null;
   const activeRun =

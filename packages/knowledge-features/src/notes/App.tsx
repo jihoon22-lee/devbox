@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { NoteAutosave, readAutosavePreference, writeAutosavePreference } from "./autosave";
 import { NoteJournal } from "./journal";
 import RecoveryControls from "./components/RecoveryControls";
@@ -748,31 +749,30 @@ export default function App({
   // A preview may outlive the generic 60-second claim lease. Renewal never
   // extends the envelope TTL. Expiry/invalid claims close the preview with a
   // fixed regeneration message; transient failures leave it visible.
-  useEffect(() => {
-    if (!draftPreview) return;
-    const id = draftPreview.id;
-    const renew = () => {
-      void renewKnowledgeDraft(id)
-        .then((result) => {
-          if (!draftMountedRef.current) return;
-          setDraftPreview((current) =>
-            current?.id === id ? { ...current, leaseUntilMs: result.leaseUntilMs } : current,
-          );
-        })
-        .catch((cause) => {
-          if (draftPreviewRef.current?.id !== id || !draftMountedRef.current) return;
-          if (draftNeedsRegeneration(cause)) {
-            draftPreviewRef.current = null;
-            setDraftPreview(null);
-            setError("Knowledge 초안이 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
-          } else {
-            setError("Knowledge 초안 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
-          }
-        });
-    };
-    const timer = window.setInterval(renew, 30_000);
-    return () => window.clearInterval(timer);
-  }, [draftPreview]);
+  usePolling(
+    async () => {
+      const preview = draftPreviewRef.current;
+      if (!preview) return;
+      const id = preview.id;
+      try {
+        const result = await renewKnowledgeDraft(id);
+        if (!draftMountedRef.current) return;
+        setDraftPreview((current) =>
+          current?.id === id ? { ...current, leaseUntilMs: result.leaseUntilMs } : current,
+        );
+      } catch (cause) {
+        if (draftPreviewRef.current?.id !== id || !draftMountedRef.current) return;
+        if (draftNeedsRegeneration(cause)) {
+          draftPreviewRef.current = null;
+          setDraftPreview(null);
+          setError("Knowledge 초안이 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
+        } else {
+          setError("Knowledge 초안 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
+        }
+      }
+    },
+    { intervalMs: 30_000, active: Boolean(draftPreview), immediate: false },
+  );
 
   const runSearch = async (requestedQuery = query) => {
     const normalized = requestedQuery.trim();

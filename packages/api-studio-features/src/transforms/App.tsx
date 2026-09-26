@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
@@ -211,27 +212,22 @@ export default function App() {
   // Keep the claim alive while the explicit preview is open. Renewal extends
   // only the short claim lease; the handoff's own expiry shown in the modal
   // never changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
-  useEffect(() => {
-    if (!handoffPreview) return undefined;
-    const id = handoffPreview.handoffId;
-    let disposed = false;
-    const interval = window.setInterval(() => {
-      if (disposed || handoffBusyRef.current || handoffPreviewRef.current?.handoffId !== id) return;
-      void Promise.resolve()
-        .then(() => renewToolboxText(id))
-        .catch((cause) => {
-          if (disposed || !mountedRef.current || handoffPreviewRef.current?.handoffId !== id) return;
-          const message = safeToolboxTextError(cause);
-          if (isTerminalToolboxTextError(message)) clearHandoffPreview();
-          setHandoffError(message);
-        });
-    }, 30_000);
-    return () => {
-      disposed = true;
-      window.clearInterval(interval);
-    };
-  }, [handoffPreview]);
+  usePolling(
+    async () => {
+      const preview = handoffPreviewRef.current;
+      if (!preview || handoffBusyRef.current) return;
+      const id = preview.handoffId;
+      try {
+        await renewToolboxText(id);
+      } catch (cause) {
+        if (!mountedRef.current || handoffPreviewRef.current?.handoffId !== id) return;
+        const message = safeToolboxTextError(cause);
+        if (isTerminalToolboxTextError(message)) clearHandoffPreview();
+        setHandoffError(message);
+      }
+    },
+    { intervalMs: 30_000, active: Boolean(handoffPreview), immediate: false },
+  );
 
   const onApplyHandoff = async () => {
     const preview = handoffPreviewRef.current;

@@ -1,6 +1,7 @@
+import { usePolling } from "@devbox/hooks";
 import type { LifecycleCall } from "@devbox/api-studio-features/generated/LifecycleCall";
 import { webhookCall } from "@devbox/api-studio-features/calls";
-import { useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
 
 interface Status {
@@ -15,6 +16,12 @@ export function ListenerControls() {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pollListenerCallback = useRef<() => Promise<void> | void>(() => {});
+  const { refresh: pollListener } = usePolling(() => pollListenerCallback.current(), {
+    intervalMs: 2000,
+    active: nativeMode,
+    immediate: false,
+  });
   useEffect(() => {
     if (!nativeMode) return;
     let alive = true,
@@ -31,15 +38,13 @@ export function ListenerControls() {
         pending = false;
       }
     };
-    void refresh();
-    const timer = setInterval(() => {
-      void refresh();
-    }, 2000);
+    pollListenerCallback.current = refresh;
+    pollListener();
     return () => {
       alive = false;
-      clearInterval(timer);
+      pollListenerCallback.current = () => {};
     };
-  }, []);
+  }, [pollListener]);
   async function act<M extends LifecycleCall["method"]>(
     method: M,
     args: Extract<LifecycleCall, { method: M }> extends { args: infer A } ? A : never,

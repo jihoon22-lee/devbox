@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("../transport", () => ({ componentInvoke: () => native.invoke }));
@@ -21,11 +21,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("Mock draft recipient", () => {
-  it("focuses a queued preview only after its product route becomes visible", async () => {
+  it("reads and focuses a queued preview only after its product route becomes visible", async () => {
     native.invoke.mockResolvedValue(preview);
     const onApply = vi.fn();
     const view = render(<MockDraftReceiver active={false} disabled={false} onApply={onApply} />);
-    await waitFor(() => expect(native.invoke).toHaveBeenCalledWith("peek_mock_draft", {}));
+    await act(async () => {});
+    expect(native.invoke).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
     view.rerender(<MockDraftReceiver active disabled={false} onApply={onApply} />);
     await screen.findByRole("dialog");

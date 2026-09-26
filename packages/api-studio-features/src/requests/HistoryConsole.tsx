@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { usePolling } from "@devbox/hooks";
+import { useRef, useMemo, useState } from "react";
 import type { HistoryItem } from "./types";
 import { filterHistory, historyDisplayLabel, historyMethod, projectHistoryForReplay } from "./lib/history";
 import { GRPC_HISTORY_KEY, parseGrpcHistory, type GrpcHistoryStore } from "./lib/grpc";
@@ -17,22 +18,18 @@ export function HistoryConsole({ history, activity, canApply, onApply }: Props) 
     parseGrpcHistory(localStorage.getItem(GRPC_HISTORY_KEY)),
   );
   const [grpcInvalid, setGrpcInvalid] = useState(false);
-  useEffect(() => {
-    let last: string | null | undefined;
-    const refresh = () => {
+  const lastGrpc = useRef<string | null | undefined>(undefined);
+  usePolling(
+    () => {
       const raw = localStorage.getItem(GRPC_HISTORY_KEY);
-      if (raw === last) return;
-      last = raw;
+      if (raw === lastGrpc.current) return;
+      lastGrpc.current = raw;
       const parsed = parseGrpcHistory(raw);
       setGrpc(parsed);
       setGrpcInvalid(raw !== null && !parsed);
-    };
-    refresh();
-    // Protocol sessions stay mounted elsewhere. Read only their bounded summary
-    // store while this screen is visible; never collect message/timeline payloads.
-    const timer = setInterval(refresh, 1000);
-    return () => clearInterval(timer);
-  }, []);
+    },
+    { intervalMs: 1000 },
+  );
   const visible = useMemo(() => filterHistory(history, { query, method: "", status: "all" }), [history, query]);
   const selected = history.find((item) => item.id === selectedId);
   const safe = selected ? projectHistoryForReplay(selected) : null;

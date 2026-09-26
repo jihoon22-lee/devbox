@@ -105,3 +105,29 @@ it("opens a revalidated port selection without requesting a process action", asy
     ),
   ).toBe(true);
 });
+
+it("pauses native snapshots while hidden and refreshes immediately when visible", async () => {
+  vi.useFakeTimers();
+  const visibility = (hidden: boolean) => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: hidden });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+  try {
+    visibility(false);
+    call.mockResolvedValue(snapshot);
+    render(<Problems description={description} onFile={vi.fn()} onLog={vi.fn()} navigate={vi.fn()} />);
+    await act(async () => {});
+    expect(call).toHaveBeenCalledTimes(1);
+    act(() => visibility(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(call).toHaveBeenCalledTimes(1);
+    await act(async () => visibility(false));
+    expect(call).toHaveBeenCalledTimes(2);
+  } finally {
+    cleanup();
+    visibility(false);
+    vi.useRealTimers();
+  }
+});

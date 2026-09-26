@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { usePolling } from "@devbox/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { focusFirst, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
   languageServerLogs,
@@ -190,7 +191,7 @@ export default function LspControlPanel({
 
   const selectedManagedManifest = managedOptions.find((manifest) => managedSelectionKey(manifest) === managedSelection);
 
-  const refreshRuntime = async () => {
+  const refreshRuntime = useCallback(async () => {
     const generation = ++runtimeRefreshGenerationRef.current;
     try {
       const [nextStatuses, nextLogs] = await Promise.all([languageServerStatuses(), languageServerLogs()]);
@@ -204,7 +205,7 @@ export default function LspControlPanel({
         setError("언어 서버 상태와 로그를 새로 고치지 못했습니다.");
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -217,9 +218,11 @@ export default function LspControlPanel({
     };
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  const dialogInitial = useRef({ workspaceRoot, lspAvailable });
+  const { refresh: pollRuntime } = usePolling(refreshRuntime, { intervalMs: 2_000, immediate: false });
   useEffect(() => {
     let cancelled = false;
+    const { workspaceRoot, lspAvailable } = dialogInitial.current;
     runtimeRefreshActiveRef.current = true;
     void loadLspConfig()
       .then((nextLoaded) => {
@@ -239,19 +242,17 @@ export default function LspControlPanel({
       .catch(() => {
         if (!cancelled) setError("LSP 설정을 불러오지 못했습니다.");
       });
-    void refreshRuntime();
+    pollRuntime();
     // The installer panel owns catalog/status loading and publishes the same
     // snapshot to the server selector. Parallel duplicate status reads collide
     // with the native installer's operation lease after an archive is installed.
-    const timer = window.setInterval(() => void refreshRuntime(), 2_000);
     return () => {
       cancelled = true;
       runtimeRefreshActiveRef.current = false;
       runtimeRefreshGenerationRef.current += 1;
-      window.clearInterval(timer);
     };
     // The dialog loads one persisted snapshot when opened.
-  }, []);
+  }, [pollRuntime]);
 
   useEffect(() => {
     const command = editableCommand(config.server_by_language[selectedLanguage]);
