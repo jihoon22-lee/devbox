@@ -1002,9 +1002,9 @@ impl Terminals {
     }
 
     pub(crate) fn subscribe_output(
-        &self,
+        self: &Arc<Self>,
         window: &WebviewWindow,
-        host: &Host,
+        host: &Arc<Host>,
         header: &RouteRequest,
         session_id: String,
         after: u64,
@@ -1036,9 +1036,20 @@ impl Terminals {
             .insert(owner.clone(), session_id, ack_tx, stop_tx)?;
         let subscriptions = self.subscriptions.clone();
         let task_id = id.clone();
+        let terminals = Arc::downgrade(self);
+        let host = host.clone();
         tauri::async_runtime::spawn(async move {
             terminal_engine::core::output_stream::pump(
                 move |after| {
+                    // A push must retain the same revocation boundary as each old pull.
+                    let terminals = terminals.upgrade().ok_or("terminal_owner_unavailable")?;
+                    let current = terminals.peer(peer.terminal.window())?;
+                    if !Arc::ptr_eq(&current, &peer) {
+                        return Err("terminal_owner_changed");
+                    }
+                    if let Some(context) = &peer.record.context {
+                        host.projects()?.binding(context)?;
+                    }
                     buffer
                         .lock()
                         .map_err(|_| "terminal_stream_unavailable")?

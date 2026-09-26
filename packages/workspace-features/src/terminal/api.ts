@@ -1,11 +1,8 @@
 import { runDockerControl } from "./wslControl";
 import { isProductHosted } from "../transport";
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
-import { typedCall } from "../typed";
-import type { CompanionHost } from "../generated/CompanionHost";
-import type { CompanionCall } from "../generated/CompanionCall";
-import type { CompanionResults } from "../generated/companion-results";
-import { followTerminalOutput } from "./lib/terminalReplay";
+import { streamTerminalOutput } from "./lib/terminalStream";
+import { terminalCall as invoke } from "./api-transport";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -23,9 +20,6 @@ import type {
   WorkspaceProfile,
 } from "./types";
 import type { QuickSummonShortcut } from "./lib/settings";
-const invoke = typedCall<CompanionHost | Exclude<CompanionCall, { method: CompanionHost["method"] }>, CompanionResults>(
-  "workspace.terminal",
-);
 const productClosedListeners = new Set<(payload: TerminalOutput) => void>();
 
 export function connectProductTerminalOutput(
@@ -34,8 +28,8 @@ export function connectProductTerminalOutput(
   failed: () => void,
 ): () => void {
   if (!isProductHosted()) return () => undefined;
-  return followTerminalOutput(
-    (after) => invoke("terminal_output", { sessionId, after }),
+  return streamTerminalOutput(
+    sessionId,
     write,
     () => {
       for (const listener of productClosedListeners) listener({ session_id: sessionId, data: "" });

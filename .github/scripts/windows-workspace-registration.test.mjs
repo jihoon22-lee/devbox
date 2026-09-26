@@ -1,3 +1,4 @@
+import "./windows-terminal-output.test.mjs";
 import "./fixture-network-safety.test.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -14,13 +15,7 @@ test("ConPTY prompt readiness accepts erased trailing blanks while still requiri
 });
 
 test("multiplexer busy polling repeats only bounded read-only requests with fresh IDs", async () => {
-  for (const method of [
-    "terminal_output",
-    "list_sessions",
-    "terminal_layout",
-    "write_session",
-    "save_terminal_layout",
-  ]) {
+  for (const method of ["list_sessions", "terminal_layout", "write_session", "save_terminal_layout"]) {
     let calls = 0,
       id = 0;
     const requests = [];
@@ -54,7 +49,7 @@ test("multiplexer busy polling repeats only bounded read-only requests with fres
   for (const problem of ["busy", "unauthorized"]) {
     let calls = 0;
     await assert.rejects(
-      runInNewContext(multiplexerRequestExpression("terminal_output"), {
+      runInNewContext(multiplexerRequestExpression("list_sessions"), {
         window: {
           __TAURI_INTERNALS__: {
             invoke: async (command) => {

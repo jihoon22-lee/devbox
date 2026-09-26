@@ -1,3 +1,4 @@
+import { terminalOutputExpression } from "./windows-terminal-output.mjs";
 import { exerciseNativeWslTasks } from "./windows-workspace-tasks-wsl.mjs";
 // Actual Workspace companions and native Session ownership, using owned fixture data only.
 import assert from "node:assert/strict";
@@ -416,7 +417,7 @@ export async function exerciseTerminalSessionFixture({
       await invoke("write_session", { sessionId: nativeId, data: "printf '" + encoded + "\\n'\r" });
       try {
         await until(async () => {
-          const batch = await invoke("terminal_output", { sessionId: nativeId, after: cursor });
+          const batch = await companion.evaluate(terminalOutputExpression(nativeId, cursor));
           cursor = batch.cursor;
           if (batch.truncated) raw = "";
           raw = (raw + batch.frames.map((frame) => frame.data).join("")).slice(-512 * 1024);
@@ -437,7 +438,7 @@ export async function exerciseTerminalSessionFixture({
       startupOutput = "";
     try {
       await until(async () => {
-        const batch = await invoke("terminal_output", { sessionId: nativeId, after: startupCursor });
+        const batch = await companion.evaluate(terminalOutputExpression(nativeId, startupCursor));
         startupCursor = batch.cursor;
         startupOutput = (startupOutput + batch.frames.map((frame) => frame.data).join("")).slice(-512 * 1024);
         return /[#$] /.test(stripVTControlCharacters(startupOutput));

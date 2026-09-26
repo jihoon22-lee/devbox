@@ -28,8 +28,14 @@ function connect(): Promise<Peer> {
     configureProductTransport(<T,>(component: string, method: string, args: Record<string, unknown>) => {
       if (component !== "workspace.terminal") return Promise.reject(new Error("이 창에서 사용할 수 없는 기능입니다."));
       const header = makeRequest(peer.handshake, "terminal", Date.now(), peer.context);
-      // Frequent bounded output pulls expire promptly in the native replay cache.
+      // Output acknowledgements expire promptly in the native replay cache.
       header.deadlineMs = Date.now() + (companionDeadlineBudgets[method] ?? 30_000);
+      if (method === "terminal_output_stream") {
+        return invoke<T>("plugin:workspace|terminal_output_stream", {
+          request: { header, method: "subscribe", args: { sessionId: args.sessionId, after: args.after } },
+          channel: args.channel,
+        });
+      }
       return invoke<T>("plugin:workspace|terminal_execute", { request: { header, method, args } });
     }, peer.handshake.installationId);
     await initializeTerminalPreferences();
