@@ -99,6 +99,64 @@ fn read_at(path: &Path, logical_path: &Path) -> Result<Snapshot, String> {
     })
 }
 
+/// Mint the undo revision from our staged object, never from a later external edit.
+pub fn created_revision(staged: &Path, target: &Path) -> Result<String, String> {
+    let snapshot = read_at(staged, target)?;
+    if snapshot.content.is_none() {
+        return Err(UNAVAILABLE.into());
+    }
+    Ok(snapshot.revision)
+}
+
+pub fn delete_if_unchanged(path: &Path, expected_revision: &str) -> Result<bool, String> {
+    delete_with(path, expected_revision, |_| {})
+}
+
+fn delete_with(
+    path: &Path,
+    expected_revision: &str,
+    mut hook: impl FnMut(Phase),
+) -> Result<bool, String> {
+    if expected_revision.len() != 64 {
+        return Err("note_invalid".into());
+    }
+    let original = read(path)?;
+    if original.content.is_none() || original.revision != expected_revision {
+        return Ok(false);
+    }
+    hook(Phase::Validated);
+    let directory = prepare(path, "")?;
+    let submitted = directory.join("submitted.md");
+    let previous = directory.join("previous.md");
+    fs::remove_file(&submitted).map_err(|_| UNAVAILABLE)?;
+    if read(path).map_or(true, |snapshot| snapshot.revision != expected_revision) {
+        let _ = fs::remove_dir(&directory);
+        return Ok(false);
+    }
+    hook(Phase::Publishing);
+    // Atomic displacement closes the check/unlink race. Validate the actual
+    // displaced object before deletion; a replacement is restored without overwrite.
+    if document_publish::create(path, &previous).is_err() {
+        let _ = fs::remove_dir(&directory); // Only remove an empty staging directory.
+        return Err("note_commit_unknown".into());
+    }
+    hook(Phase::Published);
+    if read_at(&previous, path).map_or(true, |snapshot| snapshot.revision != expected_revision) {
+        document_publish::create(&previous, path).map_err(|_| "note_commit_unknown")?;
+        let _ = document_publish::sync_parent(path);
+        let _ = fs::remove_dir(&directory);
+        return Ok(false);
+    }
+    if fs::remove_file(&previous).is_err() {
+        let _ = document_publish::create(&previous, path);
+        let _ = fs::remove_dir(&directory);
+        return Err("note_commit_unknown".into());
+    }
+    let _ = fs::remove_dir(&directory);
+    document_publish::sync_parent(path).map_err(|_| "note_applied_postprocessing_failed")?;
+    Ok(true)
+}
+
 /// An overwrite is also conditional: callers must review a fresh Snapshot.
 /// A missing-file revision permits explicit recreation, never implicit repair.
 pub fn save(path: &Path, content: &str, expected_revision: &str) -> Result<Snapshot, String> {
@@ -456,5 +514,77 @@ mod tests {
         let review = read(&path).unwrap();
         let saved = save(&path, "overwrite", &review.revision).unwrap();
         assert_ne!(saved.revision, review.revision);
+    }
+}
+
+#[cfg(test)]
+mod undo_tests {
+    use super::*;
+    #[test]
+    fn undo_requires_the_same_file_revision_and_never_removes_a_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("note.md");
+        fs::write(&path, "created").unwrap();
+        let original = read(&path).unwrap().revision;
+        fs::write(&path, "edited").unwrap();
+        assert!(!delete_if_unchanged(&path, &original).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "edited");
+        let original = read(&path).unwrap().revision;
+        fs::rename(&path, root.path().join("kept.md")).unwrap();
+        fs::write(&path, "edited").unwrap();
+        assert!(!delete_if_unchanged(&path, &original).unwrap());
+        let current = read(&path).unwrap().revision;
+        assert!(delete_if_unchanged(&path, &current).unwrap());
+        assert!(!path.exists());
+        assert_eq!(
+            fs::read_to_string(root.path().join("kept.md")).unwrap(),
+            "edited"
+        );
+    }
+    #[test]
+    fn an_edit_at_the_deletion_boundary_is_restored_without_being_deleted() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("note.md");
+        fs::write(&path, "created").unwrap();
+        let original = read(&path).unwrap().revision;
+        let removed = delete_with(&path, &original, |phase| {
+            if phase == Phase::Publishing {
+                fs::write(&path, "external edit").unwrap();
+            }
+        })
+        .unwrap();
+        assert!(!removed);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "external edit");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn a_competing_creator_after_displacement_is_not_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("note.md");
+        fs::write(&path, "created").unwrap();
+        let original = read(&path).unwrap().revision;
+        assert!(delete_with(&path, &original, |phase| {
+            if phase == Phase::Published {
+                fs::write(&path, "new file").unwrap();
+            }
+        })
+        .unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new file");
+    }
+    #[test]
+    fn creation_revision_is_captured_before_publication_and_binds_the_logical_parent() {
+        let root = tempfile::tempdir().unwrap();
+        let staged = root.path().join("staged.md");
+        let path = root.path().join("note.md");
+        fs::write(&staged, "created").unwrap();
+        let revision = created_revision(&staged, &path).unwrap();
+        document_publish::create(&staged, &path).unwrap();
+        assert_eq!(read(&path).unwrap().revision, revision);
+        let other = root.path().join("other");
+        fs::create_dir(&other).unwrap();
+        let moved = other.join("note.md");
+        fs::rename(&path, &moved).unwrap();
+        assert!(!delete_if_unchanged(&moved, &revision).unwrap());
+        assert!(moved.exists());
     }
 }

@@ -15,3 +15,5 @@ pub mod vault;
 pub mod wikilink;
 
 pub mod journal;
+
+pub mod created_notes;
