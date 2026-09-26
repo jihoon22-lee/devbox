@@ -1,5 +1,9 @@
-import { componentInvoke } from "../transport";
-const invoke = componentInvoke((method) =>
+import { typedCall } from "../typed";
+import type { ProcessesCall } from "../generated/ProcessesCall";
+import type { ProcessActionsCall } from "../generated/ProcessActionsCall";
+import type { ProcessesResults } from "../generated/processes-results";
+import type { ProcessActionsResults } from "../generated/process-actions-results";
+const invoke = typedCall<ProcessesCall | ProcessActionsCall, ProcessesResults & ProcessActionsResults>((method) =>
   method === "kill_listener" ? "workspace.process-actions" : "workspace.processes",
 );
 import { isTauri } from "./lib/isTauri";
@@ -136,7 +140,7 @@ export async function listPorts(): Promise<PortRow[]> {
   if (!isTauri()) {
     return MOCK_PORTS;
   }
-  return invoke<PortRow[]>("list_ports");
+  return invoke("list_ports", {});
 }
 
 export async function listPortObservations(): Promise<PortObservationSnapshot> {
@@ -147,7 +151,7 @@ export async function listPortObservations(): Promise<PortObservationSnapshot> {
       correlations_truncated: MOCK_OBSERVATIONS.correlations_truncated,
     };
   }
-  return invoke<PortObservationSnapshot>("list_port_observations");
+  return invoke("list_port_observations", {});
 }
 
 export async function loadPortManagerPreferences(): Promise<PortManagerPreferences> {
@@ -158,7 +162,7 @@ export async function loadPortManagerPreferences(): Promise<PortManagerPreferenc
       favorite_processes: [...mockPreferences.favorite_processes],
     };
   }
-  return invoke<PortManagerPreferences>("load_port_manager_preferences");
+  return invoke("load_port_manager_preferences", {});
 }
 
 export async function savePortManagerPreferences(preferences: PortManagerPreferences): Promise<void> {
@@ -177,7 +181,7 @@ export async function killListener(request: ListenerKillRequest): Promise<Listen
   if (!isTauri()) {
     return { kind: "terminated" };
   }
-  return invoke<ListenerActionResult>("kill_listener", { request });
+  return invoke("kill_listener", { request });
 }
 
 export async function handoffContainerStop(request: ListenerKillRequest): Promise<ContainerStopHandoff> {
@@ -193,7 +197,7 @@ export async function handoffContainerStop(request: ListenerKillRequest): Promis
       distro: request.identity.distro,
     };
   }
-  return invoke<ContainerStopHandoff>("handoff_container_stop", { request });
+  return invoke("handoff_container_stop", { request });
 }
 
 export async function openBrowser(url: string): Promise<void> {
@@ -219,7 +223,7 @@ export async function getProcessInfo(pid: number): Promise<ProcessInfo> {
       process_start_time: row.process_start_time ?? null,
     };
   }
-  return invoke<ProcessInfo>("get_process_info", { pid });
+  return invoke("get_process_info", { pid });
 }
 
 /** PID를 백엔드에서 다시 조회해 해당 실행 파일만 탐색기에 표시한다. */
@@ -237,5 +241,5 @@ export async function openPortLog(actionKey: string, stream: LogStream): Promise
   if (!isTauri()) {
     return { handoff_id: `mock-log-${stream}` };
   }
-  return invoke<PortLogDispatch>("open_port_log", { actionKey, stream });
+  return invoke("open_port_log", { actionKey, stream });
 }

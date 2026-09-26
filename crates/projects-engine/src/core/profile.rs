@@ -24,6 +24,7 @@ const MAX_WSL_DISTRO_CHARS: usize = 128;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProjectProfile {
     pub id: String,
     pub name: String,
@@ -44,6 +45,7 @@ pub struct ProjectProfile {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct WslProfile {
     pub distro: String,
     pub path: String,

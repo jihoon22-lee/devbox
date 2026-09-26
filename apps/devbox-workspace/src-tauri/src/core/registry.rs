@@ -14,6 +14,8 @@ type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RegistryProject")]
 pub struct Project {
     pub id: String,
     pub name: String,
@@ -24,6 +26,8 @@ pub struct Project {
 /// Stored evidence must be checked again before admitting a runtime operation.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RegistryObjectStamp")]
 pub struct ObjectStamp {
     pub scope: String,
     pub object: String,
@@ -31,6 +35,8 @@ pub struct ObjectStamp {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RegistryBinding")]
 pub struct Binding {
     pub target: ExecutionTarget,
     /// Canonical Windows absolute path or WSL POSIX path, not a display alias.
@@ -43,6 +49,8 @@ pub struct Binding {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RegistryWorktree")]
 pub struct Worktree {
     pub id: String,
     pub project_id: String,
@@ -56,6 +64,8 @@ pub struct Worktree {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "WorkspaceRegistry")]
 pub struct Registry {
     pub schema_version: u32,
     pub revision: u64,
@@ -73,6 +83,8 @@ pub struct Registry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RegistryDiscovery")]
 pub enum Discovery {
     Known { context: ProjectContext },
     AliasOrMove { context: ProjectContext },

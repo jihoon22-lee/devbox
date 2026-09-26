@@ -22,7 +22,7 @@ it("accepts a bounded large-file read that completes after the old five-second U
       operation: {
         provenance: {
           product: "workspace",
-          component: request.component,
+          component: "workspace.files",
           requestId: request.header.requestId,
           revision: catalog.catalogRevision,
         },
@@ -41,4 +41,31 @@ it("accepts a bounded large-file read that completes after the old five-second U
   const assertion = expect(result).resolves.toEqual({ readOnly: true });
   await vi.advanceTimersByTimeAsync(6_000);
   await assertion;
+  expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("plugin:workspace|files");
+});
+
+it("uses a native typed command without a renderer-selected owner field", async () => {
+  const description = await describeProduct("workspace");
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    expect(command).toBe("plugin:workspace|runtime");
+    const { request } = args as { request: { header: RouteRequest; method: string; args: Record<string, never> } };
+    expect(Object.keys(request).sort()).toEqual(["args", "header", "method"]);
+    expect(request.method).toBe("runtime_status");
+    expect(request.header.deadlineMs - Date.now()).toBeGreaterThan(28_000);
+    return {
+      operation: {
+        provenance: {
+          product: "workspace",
+          component: "workspace.runtime",
+          requestId: request.header.requestId,
+          revision: catalog.catalogRevision,
+        },
+        outcome: { state: "succeeded" },
+      },
+      value: { ready: true },
+    };
+  });
+  await expect(componentCall(description, "workspace.runtime", "runtime_status", {}, "tasks")).resolves.toEqual({
+    ready: true,
+  });
 });

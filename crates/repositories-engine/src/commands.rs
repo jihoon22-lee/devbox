@@ -1,6 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
 
-mod commit_review;
+pub(crate) mod commit_review;
 pub(crate) mod dependency_enrichment;
 
 use crate::core::cleanup::{
@@ -136,7 +136,6 @@ pub struct ScanResult {
 
 /// root 아래 Git repository를 재귀 탐색한다 (canonical identity로 중복 제거).
 /// node_modules·target·AppData 등 흔한 비-repo 디렉터리는 진입 전에 가지치기한다.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn scan_root(root: String) -> Result<ScanResult, String> {
     let mut repos = Vec::new();
     let mut visited = 0usize;
@@ -1928,7 +1927,6 @@ fn resolve_current_selection(
     Ok(expanded)
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
     spawn_git_task(GIT_STATUS_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_STATUS_ERROR.to_string())?;
@@ -1959,6 +1957,7 @@ pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
 /// request.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RepoPreflightRequest {
     pub path: String,
 }
@@ -1967,7 +1966,6 @@ pub struct RepoPreflightRequest {
 /// The status and marker reads are independently bounded and every failure is
 /// mapped to the same redacted error. This command never changes repository
 /// files, refs, index state, remotes, or credentials.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_preflight(request: RepoPreflightRequest) -> Result<GitSafetySnapshot, String> {
     spawn_git_task(GIT_SAFETY_ERROR, move || {
         let path = validated_git_path(&request.path).map_err(|_| GIT_SAFETY_ERROR.to_string())?;
@@ -1988,7 +1986,6 @@ pub async fn repo_preflight(request: RepoPreflightRequest) -> Result<GitSafetySn
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
@@ -2031,11 +2028,11 @@ pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorktreeCreate {
     pub path: String,
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn create_worktree(
     repo_path: String,
     branch: String,
@@ -2126,7 +2123,6 @@ async fn create_worktree_with_admission(
 }
 
 /// remove 전 uncommitted/untracked 검사. 없으면 true.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn worktree_clean(path: String) -> Result<bool, String> {
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
@@ -2142,6 +2138,7 @@ pub async fn worktree_clean(path: String) -> Result<bool, String> {
 /// candidates as eligible.  No branch, ref, index, or worktree is changed.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CleanupPreviewRequest {
     pub path: String,
     /// Frontend-owned opaque ID so an unmounted panel can cancel a long
@@ -2154,6 +2151,7 @@ pub struct CleanupPreviewRequest {
 /// snapshot and rejects stale or hand-crafted targets before Git runs.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CleanupRequest {
     pub path: String,
     pub branch_names: Vec<String>,
@@ -2608,7 +2606,6 @@ fn run_cleanup_request(
     })
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_cleanup_preview(
     request: CleanupPreviewRequest,
 ) -> Result<CleanupPreview, String> {
@@ -2663,7 +2660,6 @@ pub async fn repo_cleanup_preview(
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_cleanup(request: CleanupRequest) -> Result<CleanupResult, String> {
     if request.branch_names.len() > MAX_CLEANUP_SELECTIONS
         || request.worktree_paths.len() > MAX_CLEANUP_SELECTIONS
@@ -2693,7 +2689,6 @@ pub async fn repo_cleanup(request: CleanupRequest) -> Result<CleanupResult, Stri
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repo_cleanup_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     if !valid_remote_operation_id(&request.operation_id) {
         return Err(GIT_CLEANUP_ERROR.to_string());
@@ -2706,6 +2701,7 @@ pub fn repo_cleanup_cancel(request: RemoteCancelRequest) -> Result<bool, String>
 /// exporter.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct HistoryRequest {
     pub path: String,
     pub limit: usize,
@@ -2715,6 +2711,7 @@ pub struct HistoryRequest {
 /// accepted; arbitrary rev expressions and pathspecs never reach Git.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CommitDetailRequest {
     pub path: String,
     pub commit_id: String,
@@ -2725,6 +2722,7 @@ pub struct CommitDetailRequest {
 /// deliberately not represented by this request.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DiffRequest {
     pub path: String,
     pub commit_id: Option<String>,
@@ -2735,11 +2733,11 @@ pub struct DiffRequest {
 /// format override and therefore cannot widen the scanner's fixed allowlist.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyInventoryRequest {
     pub path: String,
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn dependency_inventory(
     request: DependencyInventoryRequest,
 ) -> Result<DependencyReport, String> {
@@ -2834,7 +2832,6 @@ pub(crate) async fn dependency_inventory_with_access(
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_history(request: HistoryRequest) -> Result<HistoryResult, String> {
     if !(1..=MAX_HISTORY_LIMIT).contains(&request.limit) {
         return Err(GIT_VIEW_ERROR.to_string());
@@ -2851,7 +2848,6 @@ pub async fn repo_history(request: HistoryRequest) -> Result<HistoryResult, Stri
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_commit_detail(request: CommitDetailRequest) -> Result<CommitDetail, String> {
     let commit_id = validate_commit_id(&request.commit_id)?;
     spawn_git_task(GIT_VIEW_ERROR, move || {
@@ -2862,7 +2858,6 @@ pub async fn repo_commit_detail(request: CommitDetailRequest) -> Result<CommitDe
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_diff(request: DiffRequest) -> Result<DiffResult, String> {
     let (args, scope, commit_id) = match request.commit_id {
         Some(value) => {
@@ -2882,6 +2877,7 @@ pub async fn repo_diff(request: DiffRequest) -> Result<DiffResult, String> {
 /// Request for the file-level staged/unstaged working-tree view.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RepoChangesRequest {
     pub path: String,
 }
@@ -2891,6 +2887,7 @@ pub struct RepoChangesRequest {
 /// pathspec.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct StagePathsRequest {
     pub path: String,
     pub paths: Vec<String>,
@@ -2900,6 +2897,7 @@ pub struct StagePathsRequest {
 /// Explicit selected paths to unstage from the index.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct UnstagePathsRequest {
     pub path: String,
     pub paths: Vec<String>,
@@ -2910,6 +2908,7 @@ pub struct UnstagePathsRequest {
 /// never adds all files implicitly and never stores credential material.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CommitRequest {
     pub path: String,
     pub message: String,
@@ -2917,7 +2916,6 @@ pub struct CommitRequest {
     pub index_revision: String,
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_changes(request: RepoChangesRequest) -> Result<Vec<ChangeEntry>, String> {
     spawn_git_task(GIT_MUTATION_ERROR, move || {
         let path = validated_git_path(&request.path).map_err(|_| GIT_MUTATION_ERROR.to_string())?;
@@ -2927,7 +2925,6 @@ pub async fn repo_changes(request: RepoChangesRequest) -> Result<Vec<ChangeEntry
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_stage(request: StagePathsRequest) -> Result<(), String> {
     let paths = validated_selected_paths(&request.paths)?;
     let operation = begin_git_operation(
@@ -2959,7 +2956,6 @@ pub async fn repo_stage(request: StagePathsRequest) -> Result<(), String> {
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
     let paths = validated_selected_paths(&request.paths)?;
     let operation = begin_git_operation(
@@ -2992,7 +2988,6 @@ pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_commit_preview(
     request: RepoChangesRequest,
 ) -> Result<commit_review::Review, String> {
@@ -3003,7 +2998,6 @@ pub async fn repo_commit_preview(
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
     let message = validate_commit_message(&request.message)?;
     let operation = begin_git_operation(
@@ -3039,6 +3033,7 @@ pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
 /// Git configuration and are never supplied by the frontend.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RemoteSyncRequest {
     pub path: String,
 }
@@ -3049,6 +3044,7 @@ pub struct RemoteSyncRequest {
 /// repository has unmounted.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RemoteOperationRequest {
     pub path: String,
     pub operation_id: String,
@@ -3056,6 +3052,7 @@ pub struct RemoteOperationRequest {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RemoteCancelRequest {
     pub operation_id: String,
 }
@@ -3090,7 +3087,6 @@ async fn run_remote_request(
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_remote_status(request: RemoteSyncRequest) -> Result<RemoteState, String> {
     spawn_git_task(GIT_REMOTE_ERROR, move || {
         let context = validated_repository_context(&request.path, GIT_REMOTE_ERROR)?;
@@ -3099,17 +3095,14 @@ pub async fn repo_remote_status(request: RemoteSyncRequest) -> Result<RemoteStat
     .await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_fetch(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Fetch).await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_pull(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Pull).await
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_push(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Push).await
 }
@@ -3118,7 +3111,6 @@ pub async fn repo_push(request: RemoteOperationRequest) -> Result<(), String> {
 /// operation remains owned by its original command until the child exits, so
 /// a caller can safely ignore the result and rely on the command's fixed
 /// cancellation error. No Git command is run by this handler.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     // Cancellation is addressed only by the opaque ID. It deliberately does
     // not re-canonicalize or touch the repository path, so unmount/deletion
@@ -3132,7 +3124,6 @@ pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> 
 /// Cancel an in-flight selected stage/unstage/commit operation. The shared ID
 /// registry also prevents a local and remote operation from reusing one ID or
 /// mutating the same common Git directory concurrently.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repo_local_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     if !valid_remote_operation_id(&request.operation_id) {
         return Err(GIT_MUTATION_ERROR.to_string());
@@ -3146,7 +3137,6 @@ fn available_open_targets() -> Vec<RepoOpenTarget> {
 
 /// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
 /// 경로는 frontend에 노출하지 않는다.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_targets() -> Vec<RepoOpenTarget> {
     available_open_targets()
 }
@@ -3276,19 +3266,16 @@ fn is_device_path(path: &str) -> bool {
 
 /// Inbound Path를 임의 등록하거나 Git 명령을 실행하지 않고, 기존 목록 선택 또는
 /// frontend 등록 초안에 쓸 검증된 metadata로만 변환한다.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn prepare_inbound_repository(path: String) -> Result<RepoEntry, String> {
     validated_repository(&path).map_err(str::to_string)
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_in(app_id: String, path: String) -> Result<(), String> {
     let _ = (app_id, path);
     Err("provider_unavailable".into())
 }
 
 /// 사용자가 명시적으로 복사를 선택한 순간에만 현재 Git repository 경로를 반환한다.
-#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repository_copy_path(path: String) -> Result<String, String> {
     validated_repository(&path)
         .map(|entry| entry.path)
@@ -3297,421 +3284,12 @@ pub fn repository_copy_path(path: String) -> Result<String, String> {
 
 /// 현재도 유효한 Git repository만 OS file manager로 연다. opener 상세 오류와 raw path는
 /// frontend error에 반향하지 않는다.
-#[cfg_attr(feature = "desktop", tauri::command)]
 #[cfg(feature = "desktop")]
 pub fn open_repository_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let repository = validated_repository(&path).map_err(str::to_string)?;
     app.opener()
         .open_path(repository.path, None::<&str>)
         .map_err(|_| "repository 폴더를 열 수 없습니다".to_string())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_scan_root(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        root: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = scan_root(input.root)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_prepare_inbound_repository(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = prepare_inbound_repository(input.path)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_status(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_status(input.path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_worktrees(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = worktrees(input.path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_create_worktree(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        repo_path: String,
-        branch: String,
-        target_dir: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = create_worktree(input.repo_path, input.branch, input.target_dir).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_worktree_clean(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = worktree_clean(input.path).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_cleanup_preview(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: CleanupPreviewRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_cleanup_preview(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_cleanup(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: CleanupRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_cleanup(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_cleanup_cancel(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteCancelRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_cleanup_cancel(input.request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_preflight(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RepoPreflightRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_preflight(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_history(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: HistoryRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_history(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_commit_detail(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: CommitDetailRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_commit_detail(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_diff(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: DiffRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_diff(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_dependency_inventory(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: DependencyInventoryRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = dependency_inventory(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_changes(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RepoChangesRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_changes(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_stage(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: StagePathsRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    repo_stage(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_unstage(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: UnstagePathsRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    repo_unstage(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_commit_preview(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Input {
-        request: RepoChangesRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    serde_json::to_value(repo_commit_preview(input.request).await?)
-        .map_err(|_| "component_response_invalid".into())
-}
-
-pub(crate) async fn __component_repo_commit(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: CommitRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    repo_commit(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_local_cancel(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteCancelRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_local_cancel(input.request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_remote_status(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteSyncRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_remote_status(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_fetch(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteOperationRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    repo_fetch(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_pull(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteOperationRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    repo_pull(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_push(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteOperationRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    repo_push(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repo_remote_cancel(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RemoteCancelRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repo_remote_cancel(input.request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_open_targets(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = open_targets();
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_open_in(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        app_id: String,
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    open_in(input.app_id, input.path)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_repository_copy_path(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = repository_copy_path(input.path)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_open_repository_folder(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    open_repository_folder(_component_app.clone(), input.path)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

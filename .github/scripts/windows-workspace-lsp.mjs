@@ -295,21 +295,23 @@ export function installWorkspaceEditorTrace() {
   const original = window.fetch,
     rows = [];
   const wrapped = function (input, init) {
-    let request;
+    let request, component;
     try {
       const url = new URL(typeof input === "string" ? input : input.url);
       if (
         url.hostname === "ipc.localhost" &&
-        decodeURIComponent(url.pathname) === "/plugin:workspace|execute" &&
+        ["/plugin:workspace|files", "/plugin:workspace|lsp"].includes(decodeURIComponent(url.pathname)) &&
         typeof init?.body === "string"
-      )
+      ) {
+        component = decodeURIComponent(url.pathname).endsWith("|lsp") ? "workspace.lsp" : "workspace.files";
         request = JSON.parse(init.body).request;
+      }
     } catch {
       /* Non-IPC fetches remain untouched. */
     }
     const method = request?.method;
     const tracked =
-      (request?.component === "workspace.lsp" &&
+      (component === "workspace.lsp" &&
         (/^(open|change|reload|save|close)_lsp_document$/.test(method) ||
           /^lsp_recovery_(list|preview|apply|cancel)$/.test(method) ||
           /^lsp_execution_(preview|approve|cancel|revoke)$/.test(method) ||
@@ -321,7 +323,7 @@ export function installWorkspaceEditorTrace() {
             "stop_language_server",
             "stop_all_language_servers",
           ].includes(method))) ||
-      (request?.component === "workspace.files" && ["save_file", "sync_editor_document"].includes(method));
+      (component === "workspace.files" && ["save_file", "sync_editor_document"].includes(method));
     if (!tracked) return original.call(this, input, init);
     const row = { method, phase: "pending", elapsedMs: 0 },
       started = performance.now();

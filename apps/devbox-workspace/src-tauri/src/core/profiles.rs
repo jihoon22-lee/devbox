@@ -6,6 +6,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ImportedProfile {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -16,27 +17,16 @@ pub struct ImportedProfile {
     pub source_template_id: Option<String>,
     pub profile: ProjectProfile,
 }
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "kebab-case")]
-pub enum ProfileTarget {
-    Windows,
-    Wsl,
-}
+pub use projects_engine::api::ProfileTarget;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProfileBinding {
     pub imported_id: String,
     pub target: ProfileTarget,
     pub worktree_id: String,
 }
-impl ProfileTarget {
-    pub fn of(target: &product_contract::ExecutionTarget) -> Self {
-        match target {
-            product_contract::ExecutionTarget::Windows => Self::Windows,
-            product_contract::ExecutionTarget::Wsl { .. } => Self::Wsl,
-        }
-    }
-}
+
 impl ImportedProfile {
     pub fn validate(&self) -> Result<()> {
         if uuid::Uuid::parse_str(&self.id).is_err()

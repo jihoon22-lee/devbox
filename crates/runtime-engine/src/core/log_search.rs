@@ -40,6 +40,7 @@ pub const LOG_SOURCE_KIND: &str = "log-source/v1";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum LogSearchMode {
     /// The default and safest mode: the query is treated as plain text.
     Literal,
@@ -49,6 +50,8 @@ pub enum LogSearchMode {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RuntimeLogLevel")]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -91,6 +94,7 @@ impl LogLevel {
 /// source.  Time bounds are half-open epoch-millisecond bounds.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct LogSearchRequest {
     pub run_id: String,
     pub query: String,
@@ -109,7 +113,10 @@ pub struct LogSearchRequest {
 /// absolute path, command, environment value, credential, or remote address.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RuntimeLogSourceRef")]
 pub struct LogSourceRef {
+    #[ts(type = "\"log-source/v1\"")]
     pub kind: String,
     pub source_id: String,
     pub run_id: String,
@@ -120,6 +127,7 @@ pub struct LogSourceRef {
 /// retained snapshot for that stream; it can start later after rotation.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LogSearchMatch {
     pub source_id: String,
     pub stream: LogStream,
@@ -130,6 +138,7 @@ pub struct LogSearchMatch {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LogSearchResponse {
     pub matches: Vec<LogSearchMatch>,
     pub scanned_lines: usize,

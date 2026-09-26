@@ -12,6 +12,7 @@ import {
   previewLogSource,
   removeSavedView,
   renewLogSource,
+  readSources,
   saveSavedView,
   sendSelectionToToolbox,
   takePendingOpen,
@@ -352,4 +353,31 @@ describe("Log Lens handoff API", () => {
       expect(error instanceof Error ? error.message : String(error)).toBe("handoff-restore-failed");
     });
   });
+});
+
+it("normalizes omitted native log fields before the table reads them", async () => {
+  Reflect.set(window, "__TAURI_INTERNALS__", {});
+  const record = {
+    sourceId: "source",
+    sequence: 0,
+    timestampMillis: null,
+    level: null,
+    message: "plain line",
+    format: "plain",
+    truncated: false,
+  };
+  invokeMock.mockResolvedValueOnce({
+    operationId: "read-fixture",
+    generation: 1,
+    sources: [],
+    records: [record],
+    cursors: [null],
+    statuses: ["initial"],
+    truncated: false,
+    droppedRecords: 0,
+    droppedBytes: 0,
+  });
+  const result = await readSources([{ kind: "localFile", path: "C:/fixture.log" }], [null], [0], 1, "read-fixture");
+  expect(result.records[0].fields).toEqual({});
+  expect(Object.prototype.hasOwnProperty.call(record, "fields")).toBe(false);
 });

@@ -41,9 +41,7 @@ impl Activation {
         if product == "control-center" && component == "control-center.delivery" {
             return true;
         }
-        self.phase == Phase::Import
-            && (component == format!("{product}.migration")
-                || component == format!("{product}.setup"))
+        self.phase == Phase::Import && component == format!("{product}.setup")
     }
 }
 #[cfg(test)]
@@ -59,7 +57,7 @@ mod tests {
             revision: 0,
             phase: Phase::Import,
         };
-        assert!(a.allows("knowledge", "knowledge.migration"));
+        assert!(!a.allows("knowledge", "knowledge.migration"));
         assert!(a.allows("knowledge", "knowledge.setup"));
         assert!(!a.allows("knowledge", "knowledge.notes"));
         assert!(a.allows("workspace", "workspace.shell"));

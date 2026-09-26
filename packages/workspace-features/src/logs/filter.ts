@@ -77,12 +77,12 @@ export function filterRecords(records: LogRecord[], filter: FilterSpec): LogReco
   if (
     utf8ByteLength(filter.text) > MAX_FILTER_BYTES ||
     hasControl(filter.text) ||
-    (filter.field !== undefined && (utf8ByteLength(filter.field) > MAX_FIELD_BYTES || hasControl(filter.field))) ||
-    (filter.fieldValue !== undefined &&
+    (filter.field != null && (utf8ByteLength(filter.field) > MAX_FIELD_BYTES || hasControl(filter.field))) ||
+    (filter.fieldValue != null &&
       (utf8ByteLength(filter.fieldValue) > MAX_FIELD_BYTES || hasControl(filter.fieldValue))) ||
-    (filter.startAt !== undefined && !Number.isSafeInteger(filter.startAt)) ||
-    (filter.endAt !== undefined && !Number.isSafeInteger(filter.endAt)) ||
-    (filter.startAt !== undefined && filter.endAt !== undefined && filter.startAt > filter.endAt)
+    (filter.startAt != null && !Number.isSafeInteger(filter.startAt)) ||
+    (filter.endAt != null && !Number.isSafeInteger(filter.endAt)) ||
+    (filter.startAt != null && filter.endAt != null && filter.startAt > filter.endAt)
   )
     return [];
 
@@ -94,12 +94,11 @@ export function filterRecords(records: LogRecord[], filter: FilterSpec): LogReco
   return records.filter((record) => {
     if (filter.sourceId && record.sourceId !== filter.sourceId) return false;
     if (filter.level && record.level !== filter.level) return false;
-    if (filter.startAt !== undefined && (record.timestampMillis === null || record.timestampMillis < filter.startAt))
+    if (filter.startAt != null && (record.timestampMillis === null || record.timestampMillis < filter.startAt))
       return false;
-    if (filter.endAt !== undefined && (record.timestampMillis === null || record.timestampMillis >= filter.endAt))
+    if (filter.endAt != null && (record.timestampMillis === null || record.timestampMillis >= filter.endAt))
       return false;
-    if (filter.field && filter.fieldValue !== undefined && record.fields[filter.field] !== filter.fieldValue)
-      return false;
+    if (filter.field && filter.fieldValue != null && record.fields[filter.field] !== filter.fieldValue) return false;
     if (!filter.text) return true;
     if (matcher) {
       return (

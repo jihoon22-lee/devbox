@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { WorkspaceTerminalCall } from "@devbox/workspace-features/generated/WorkspaceTerminalCall";
+import type { TerminalResults } from "@devbox/workspace-features/generated/terminal-results";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import {
   DistroPanel,
@@ -23,9 +26,11 @@ export default function RuntimeWsl({ description, active }: { description: Descr
   const actionPending = useRef(false);
   const lastGood = useRef<DashboardSnapshot | null>(null);
   const mounted = useRef(true);
-  const call = useCallback(
-    <T,>(method: string, args: Record<string, unknown> = {}) =>
-      componentCall<T>(latest.current.description, "workspace.terminal", method, args, "runtime"),
+  const call = useMemo(
+    () =>
+      bindTypedCall<WorkspaceTerminalCall, TerminalResults>((method, args) =>
+        componentCall(latest.current.description, "workspace.terminal", method, args, "runtime"),
+      ),
     [],
   );
   const refresh = useCallback(async () => {
@@ -33,7 +38,7 @@ export default function RuntimeWsl({ description, active }: { description: Descr
     inFlight.current = true;
     setFreshness(lastGood.current ? "refreshing" : "loading");
     try {
-      const value = await call<DashboardSnapshot>("dashboard_snapshot");
+      const value = await call("dashboard_snapshot", {});
       if (!mounted.current) return;
       if (!lastGood.current || value.revision >= lastGood.current.revision) {
         lastGood.current = value;

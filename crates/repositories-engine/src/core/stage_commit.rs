@@ -26,6 +26,7 @@ fn fixed_error() -> String {
 /// A Git porcelain-v1 status record exposed to the frontend.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ChangeEntry {
     /// New-side repository-relative path.  For a rename this is the path Git
     /// expects in a stage/unstage pathspec.
@@ -35,6 +36,9 @@ pub struct ChangeEntry {
     /// `?` is the untracked worktree marker.
     pub index_status: String,
     pub worktree_status: String,
+    #[ts(
+        type = "\"untracked\" | \"renamed\" | \"copied\" | \"added\" | \"deleted\" | \"modified\""
+    )]
     pub kind: String,
     pub staged: bool,
     pub unstaged: bool,

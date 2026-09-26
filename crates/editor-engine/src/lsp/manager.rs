@@ -157,6 +157,7 @@ fn ensure_host_workspace_supported(path: &str) -> Result<(), LspManagerError> {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LanguageServerStatus {
     pub language_id: String,
     pub status: ClientStatus,
@@ -197,6 +198,7 @@ pub enum LspEvent {
 /// disk-backed rename marks them clean only after the native save boundary.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct AppliedDocumentEdits {
     pub documents: Vec<EditedDocument>,
 }
@@ -206,6 +208,7 @@ pub struct AppliedDocumentEdits {
 /// native side retains absolute paths, snapshots, encodings, and full buffers.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamePreview {
     pub plan_id: String,
     pub files: Vec<RenamePreviewFile>,
@@ -213,6 +216,7 @@ pub struct RenamePreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamePreviewFile {
     /// Workspace-relative display path. Absolute paths never cross this IPC
     /// boundary as part of a rename preview.
@@ -226,6 +230,7 @@ pub struct RenamePreviewFile {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamePreviewRange {
     pub range: LspRange,
     pub new_text: String,
@@ -233,6 +238,7 @@ pub struct RenamePreviewRange {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum RenameFileStatus {
     Applied,
     RolledBack,
@@ -244,6 +250,7 @@ pub enum RenameFileStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameFileResult {
     /// Workspace-relative display path; see [`RenamePreviewFile::path`].
     pub path: String,
@@ -257,6 +264,7 @@ pub struct RenameFileResult {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameApplyResult {
     pub plan_id: String,
     pub success: bool,
@@ -271,6 +279,7 @@ pub struct RenameApplyResult {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamedDocument {
     pub path: String,
     pub version: i32,
@@ -279,6 +288,7 @@ pub struct RenamedDocument {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct EditedDocument {
     pub uri: String,
     pub version: i32,

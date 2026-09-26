@@ -32,6 +32,7 @@ const FNV_PRIME: u64 = 0x0000_0001_0000_01b3;
 /// The two process output streams are separate files and separate locks.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum LogStream {
     Stdout,
     Stderr,
@@ -92,6 +93,7 @@ pub struct TailRequest {
 /// frontend must not round-trip logical offsets through a JavaScript number.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct TailResponse {
     pub data: Vec<u8>,
     pub retained_start_offset: String,

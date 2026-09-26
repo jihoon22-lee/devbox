@@ -19,6 +19,7 @@ const MAX_ID_BYTES: usize = 128;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum Layout {
     #[default]
     Grid,
@@ -28,6 +29,7 @@ pub enum Layout {
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum MultiplexerKind {
     #[default]
     Native,
@@ -37,6 +39,7 @@ pub enum MultiplexerKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspacePane {
     pub key: String,
     pub distro: String,
@@ -50,6 +53,7 @@ pub struct WorkspacePane {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct PaneSizing {
     pub columns: Vec<f64>,
     pub rows: Vec<f64>,
@@ -57,6 +61,7 @@ pub struct PaneSizing {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTab {
     pub id: String,
     pub title: String,
@@ -70,6 +75,7 @@ pub struct WorkspaceTab {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceProfile {
     #[serde(default)]
     pub id: String,

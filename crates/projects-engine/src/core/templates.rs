@@ -21,6 +21,7 @@ const MAX_WSL_DISTRO_CHARS: usize = 128;
 /// project in the wizard.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProfileTemplate {
     pub id: String,
     pub name: String,

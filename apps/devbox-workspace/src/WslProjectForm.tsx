@@ -1,7 +1,14 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { RegistryCall } from "@devbox/workspace-features/generated/RegistryCall";
+import type { RegistryResults } from "@devbox/workspace-features/generated/registry-results";
 import { useEffect, useRef, useState } from "react";
 import { nativeCall } from "./native";
 import type { Preview } from "./RegistryGate";
 import { TemplateMetadata, type ImportedTemplate } from "./ProfileMetadata";
+
+const registryCall = bindTypedCall<RegistryCall, RegistryResults>((method, args) =>
+  nativeCall("workspace.registry", method, args),
+);
 
 interface Distro {
   id: string;
@@ -41,7 +48,7 @@ export default function WslProjectForm({
     setError("");
     setStart(false);
     try {
-      const values = await nativeCall<Distro[]>("workspace.registry", "list_wsl_distros");
+      const values = await registryCall("list_wsl_distros", {});
       if (alive.current && request === generation.current) {
         setDistros(values);
         setId((current) => (values.some((distro) => distro.id === current) ? current : ""));
@@ -82,16 +89,16 @@ export default function WslProjectForm({
               if (templateId && !template) throw new Error("선택한 템플릿이 변경되었습니다. 다시 선택하세요.");
               const startStopped = !selected.running && start;
               const preview = template
-                ? await nativeCall<Preview>("workspace.registry", "preview_template_profile_wsl", {
+                ? await registryCall("preview_template_profile_wsl", {
                     templateId: template.id,
                     distroId: id,
                     root,
                     name: template.template.name,
                     startStopped,
                   })
-                : await nativeCall<Preview>("workspace.registry", "preview_wsl", { distroId: id, root, startStopped });
+                : await registryCall("preview_wsl", { distroId: id, root, startStopped });
               if (!alive.current) {
-                await nativeCall("workspace.registry", "cancel_registration", { previewId: preview.previewId });
+                await registryCall("cancel_registration", { previewId: preview.previewId });
                 return;
               }
               onReviewed(preview, template?.template.name ?? root.split("/").filter(Boolean).pop() ?? selected.name);

@@ -49,6 +49,7 @@ impl InitializeConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum ClientStatus {
     Starting,
     Ready,
@@ -59,6 +60,7 @@ pub enum ClientStatus {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ServerInfo {
     pub name: String,
     pub version: Option<String>,
@@ -66,6 +68,7 @@ pub struct ServerInfo {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CapabilitySet {
     pub position_encoding: PositionEncoding,
     pub legacy_position_encoding: bool,

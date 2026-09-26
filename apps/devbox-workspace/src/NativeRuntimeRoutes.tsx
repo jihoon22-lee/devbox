@@ -11,7 +11,9 @@ import {
   sameRuntimeContext,
   type RuntimeFocusRequest,
 } from "./runtimeNavigation";
-import { componentCall } from "./native";
+import { typedComponentCall } from "./native";
+import type { WorkspaceRuntimeCall } from "@devbox/workspace-features/generated/WorkspaceRuntimeCall";
+import type { RuntimeResults } from "@devbox/workspace-features/generated/runtime-results";
 type TaskSource = { path: string; targetKind: "windows" | "wsl"; targetDistro: string | null };
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
 const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
@@ -57,13 +59,11 @@ export default function NativeRuntimeRoutes({
   useEffect(() => {
     if (route !== "tasks" || !description.context) return;
     let disposed = false;
-    void componentCall<{ context: Description["context"]; source: TaskSource }>(
+    void typedComponentCall<WorkspaceRuntimeCall, RuntimeResults>(
       description,
       "workspace.runtime",
-      "workspace_task_source",
-      {},
       "tasks",
-    )
+    )("workspace_task_source", {})
       .then((value) => {
         if (!disposed) setTaskSource(value);
       })

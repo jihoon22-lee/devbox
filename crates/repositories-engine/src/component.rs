@@ -64,139 +64,13 @@ pub fn offer_product_open(
         .map_err(|_| "component_delivery_unavailable".into())
 }
 
-pub const COMMANDS: &[&str] = &[
-    "take_pending_open",
-    "scan_root",
-    "prepare_inbound_repository",
-    "repo_status",
-    "worktrees",
-    "create_worktree",
-    "worktree_clean",
-    "repo_cleanup_preview",
-    "repo_cleanup",
-    "repo_cleanup_cancel",
-    "repo_preflight",
-    "repo_history",
-    "repo_commit_detail",
-    "repo_diff",
-    "dependency_inventory",
-    "dependency_enrichment_preview",
-    "dependency_enrichment_execute",
-    "repo_changes",
-    "repo_stage",
-    "repo_unstage",
-    "repo_commit_preview",
-    "repo_commit",
-    "repo_local_cancel",
-    "repo_remote_status",
-    "repo_fetch",
-    "repo_pull",
-    "repo_push",
-    "repo_remote_cancel",
-    "open_targets",
-    "open_in",
-    "repository_copy_path",
-    "open_repository_folder",
-];
-
-#[cfg(feature = "desktop")]
-pub async fn dispatch(
-    app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    if is_product() && matches!(method, "open_targets" | "open_in") {
-        return Err("provider_unavailable".into());
-    }
-    if SOURCE_COMMANDS.contains(&method) {
-        return dispatch_source_method(method, args).await;
-    }
-    match method {
-        "take_pending_open" => crate::applink::__component_take_pending_open(app, args).await,
-        "scan_root" => crate::commands::__component_scan_root(args).await,
-        "prepare_inbound_repository" => {
-            crate::commands::__component_prepare_inbound_repository(args).await
-        }
-        "dependency_inventory" => crate::commands::__component_dependency_inventory(args).await,
-        "dependency_enrichment_preview" => {
-            crate::commands::dependency_enrichment::__component_dependency_enrichment_preview(args)
-                .await
-        }
-        "dependency_enrichment_execute" => {
-            crate::commands::dependency_enrichment::__component_dependency_enrichment_execute(args)
-                .await
-        }
-        "open_targets" => crate::commands::__component_open_targets(args).await,
-        "open_in" => crate::commands::__component_open_in(args).await,
-        "repository_copy_path" => crate::commands::__component_repository_copy_path(args).await,
-        "open_repository_folder" => {
-            crate::commands::__component_open_repository_folder(app, args).await
-        }
-        _ => Err("component_method_invalid".into()),
-    }
-}
-
-async fn dispatch_source_method(
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    match method {
-        "create_worktree" => crate::commands::__component_create_worktree(args).await,
-        "repo_status" => crate::commands::__component_repo_status(args).await,
-        "worktrees" => crate::commands::__component_worktrees(args).await,
-        "worktree_clean" => crate::commands::__component_worktree_clean(args).await,
-        "repo_preflight" => crate::commands::__component_repo_preflight(args).await,
-        "repo_history" => crate::commands::__component_repo_history(args).await,
-        "repo_commit_detail" => crate::commands::__component_repo_commit_detail(args).await,
-        "repo_diff" => crate::commands::__component_repo_diff(args).await,
-        "repo_changes" => crate::commands::__component_repo_changes(args).await,
-        "repo_stage" => crate::commands::__component_repo_stage(args).await,
-        "repo_unstage" => crate::commands::__component_repo_unstage(args).await,
-        "repo_commit_preview" => crate::commands::__component_repo_commit_preview(args).await,
-        "repo_commit" => crate::commands::__component_repo_commit(args).await,
-        "repo_local_cancel" => crate::commands::__component_repo_local_cancel(args).await,
-        "repo_remote_status" => crate::commands::__component_repo_remote_status(args).await,
-        "repo_fetch" => crate::commands::__component_repo_fetch(args).await,
-        "repo_pull" => crate::commands::__component_repo_pull(args).await,
-        "repo_push" => crate::commands::__component_repo_push(args).await,
-        "repo_remote_cancel" => crate::commands::__component_repo_remote_cancel(args).await,
-        "repo_cleanup_preview" => crate::commands::__component_repo_cleanup_preview(args).await,
-        "repo_cleanup" => crate::commands::__component_repo_cleanup(args).await,
-        "repo_cleanup_cancel" => crate::commands::__component_repo_cleanup_cancel(args).await,
-        _ => Err("component_method_invalid".into()),
-    }
-}
-
-pub const SOURCE_COMMANDS: &[&str] = &[
-    "create_worktree",
-    "repo_status",
-    "worktrees",
-    "worktree_clean",
-    "repo_preflight",
-    "repo_history",
-    "repo_commit_detail",
-    "repo_diff",
-    "repo_changes",
-    "repo_stage",
-    "repo_unstage",
-    "repo_commit_preview",
-    "repo_commit",
-    "repo_local_cancel",
-    "repo_remote_status",
-    "repo_fetch",
-    "repo_pull",
-    "repo_push",
-    "repo_remote_cancel",
-    "repo_cleanup_preview",
-    "repo_cleanup",
-    "repo_cleanup_cancel",
-];
 pub fn source_cancel(method: &str) -> bool {
     matches!(
         method,
         "repo_local_cancel" | "repo_remote_cancel" | "repo_cleanup_cancel"
     )
 }
+#[cfg(test)]
 fn bind_source_operation(key: &str, args: &mut serde_json::Value) -> Result<(), String> {
     use sha2::{Digest, Sha256};
     let Some(request) = args
@@ -285,82 +159,26 @@ impl SourceAccess {
 pub async fn dispatch_source_cancel_native(
     key: &str,
     method: &str,
-    mut args: serde_json::Value,
+    args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    if !source_cancel(method) {
+    if !crate::api::SourceCall::METHODS.contains(&method) {
         return Err("component_method_invalid".into());
     }
-    bind_source_operation(key, &mut args)?;
-    dispatch_source_method(method, args).await
+    let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
+        .map_err(|_| "component_args_invalid")?;
+    dispatch_source_cancel_typed_native(key, call).await
 }
 pub async fn dispatch_source_native(
-    mut access: SourceAccess,
-    method: &str,
-    mut args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    if !SOURCE_COMMANDS.contains(&method) || source_cancel(method) {
-        return Err("component_method_invalid".into());
-    }
-    if method == "create_worktree" {
-        if !args.as_object().is_some_and(|object| object.is_empty()) {
-            return Err("component_args_invalid".into());
-        }
-        let mut creation = access.creation.take().ok_or("worktree_review_required")?;
-        let mut operation = serde_json::json!({"request":{"operationId":creation.operation_id}});
-        bind_source_operation(&access.key, &mut operation)?;
-        creation.operation_id = operation["request"]["operationId"]
-            .as_str()
-            .ok_or("component_args_invalid")?
-            .to_owned();
-        let _cancel = access.policy.cancel_on_drop();
-        let root = access
-            .root
-            .to_str()
-            .ok_or("source_context_changed")?
-            .to_owned();
-        let result = access
-            .policy
-            .scope_future(crate::commands::create_reviewed_worktree(root, creation))
-            .await?;
-        return serde_json::to_value(result).map_err(|_| "component_response_invalid".into());
-    }
-    let path = if matches!(method, "repo_status" | "worktrees" | "worktree_clean") {
-        args.get("path")
-    } else {
-        args.get("request").and_then(|request| request.get("path"))
-    };
-    if path.and_then(serde_json::Value::as_str) != access.root.to_str() {
-        return Err("source_context_changed".into());
-    }
-    bind_source_operation(&access.key, &mut args)?;
-    let _cancel = access.policy.cancel_on_drop();
-    access
-        .policy
-        .scope_future(dispatch_source_method(method, args))
-        .await
-}
-
-/// Desktop startup and its immutable generation remain mandatory on Windows.
-#[cfg(feature = "desktop")]
-pub async fn dispatch_source(
-    _app: &tauri::AppHandle,
     access: SourceAccess,
     method: &str,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    if !is_product() {
+    if !crate::api::SourceCall::METHODS.contains(&method) {
         return Err("component_method_invalid".into());
     }
-    dispatch_source_native(access, method, args).await
-}
-#[cfg(feature = "desktop")]
-pub async fn dispatch_source_cancel(
-    _app: &tauri::AppHandle,
-    key: &str,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    dispatch_source_cancel_native(key, method, args).await
+    let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
+        .map_err(|_| "component_args_invalid")?;
+    dispatch_source_typed_native(access, call).await
 }
 
 /// Dependencies accept only a native-created project capability. This adapter
@@ -448,7 +266,7 @@ impl DependencyAccess {
         self.verify()?;
         Ok(report)
     }
-    #[cfg(any(feature = "desktop", test))]
+    #[cfg(test)]
     pub(crate) fn legacy(path: &str) -> Result<Self, String> {
         crate::commands::legacy_dependency_access(path)
     }
@@ -476,66 +294,6 @@ impl DependencyAccess {
     }
     pub(crate) fn verify(&self) -> Result<(), String> {
         (self.verify)()
-    }
-}
-
-pub async fn dispatch_dependencies(
-    access: DependencyAccess,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use crate::commands::dependency_enrichment as remote;
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Input<T> {
-        request: T,
-    }
-    fn input<T: serde::de::DeserializeOwned>(args: serde_json::Value) -> Result<T, String> {
-        serde_json::from_value::<Input<T>>(args)
-            .map(|value| value.request)
-            .map_err(|_| "component_args_invalid".into())
-    }
-    // Legacy UI paths are a projection only, checked for stale UI selection.
-    let check_path = |path: &str| {
-        if path == access.root.to_string_lossy() {
-            Ok(())
-        } else {
-            Err("dependency_context_changed".to_string())
-        }
-    };
-    match method {
-        "dependency_inventory" => {
-            let request: crate::commands::DependencyInventoryRequest = input(args)?;
-            check_path(&request.path)?;
-            serde_json::to_value(crate::commands::dependency_inventory_with_access(access).await?)
-                .map_err(|_| "component_response_invalid".into())
-        }
-        "dependency_enrichment_preview" => {
-            let request: remote::DependencyEnrichmentPreviewRequest = input(args)?;
-            check_path(&request.path)?;
-            serde_json::to_value(
-                remote::preview_with_access(access, request.services, request.force_refresh)
-                    .await?,
-            )
-            .map_err(|_| "component_response_invalid".into())
-        }
-        "dependency_enrichment_execute" => {
-            let request: remote::DependencyEnrichmentExecuteRequest = input(args)?;
-            check_path(&request.path)?;
-            serde_json::to_value(remote::execute_with_access(access, request.preview_token).await?)
-                .map_err(|_| "component_response_invalid".into())
-        }
-        "dependency_enrichment_cancel" => {
-            let request: remote::DependencyEnrichmentExecuteRequest = input(args)?;
-            check_path(&request.path)?;
-            crate::runtime::spawn_blocking(move || {
-                remote::cancel_with_access(&access, &request.preview_token)
-            })
-            .await
-            .map_err(|_| "component_worker_unavailable")??;
-            Ok(serde_json::json!({}))
-        }
-        _ => Err("component_method_invalid".into()),
     }
 }
 
@@ -656,5 +414,84 @@ mod worktree_admission_tests {
             request,
         ));
         assert_eq!(result.unwrap_err(), "review changed before IO");
+    }
+}
+
+fn bind_source_id(key: &str, id: &mut String) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("component_args_invalid".into());
+    }
+    let mut hash = Sha256::new();
+    hash.update((key.len() as u64).to_be_bytes());
+    hash.update(key.as_bytes());
+    hash.update(id.as_bytes());
+    *id = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(())
+}
+pub(crate) async fn dispatch_source_cancel_typed_native(
+    key: &str,
+    mut call: crate::api::SourceCall,
+) -> Result<serde_json::Value, String> {
+    if !call.is_cancel() {
+        return Err("component_method_invalid".into());
+    }
+    if let Some(id) = call.operation_id_mut() {
+        bind_source_id(key, id)?;
+    }
+    crate::api::execute_source(call).await
+}
+pub(crate) async fn dispatch_source_typed_native(
+    mut access: SourceAccess,
+    mut call: crate::api::SourceCall,
+) -> Result<serde_json::Value, String> {
+    if call.is_cancel() {
+        return Err("component_method_invalid".into());
+    }
+    if matches!(call, crate::api::SourceCall::CreateWorktree {}) {
+        let mut creation = access.creation.take().ok_or("worktree_review_required")?;
+        bind_source_id(&access.key, &mut creation.operation_id)?;
+        let _cancel = access.policy.cancel_on_drop();
+        let root = access
+            .root
+            .to_str()
+            .ok_or("source_context_changed")?
+            .to_owned();
+        let result = access
+            .policy
+            .scope_future(crate::commands::create_reviewed_worktree(root, creation))
+            .await?;
+        return serde_json::to_value(result).map_err(|_| "component_response_invalid".into());
+    }
+    if call.path() != access.root.to_str() {
+        return Err("source_context_changed".into());
+    }
+    if let Some(id) = call.operation_id_mut() {
+        bind_source_id(&access.key, id)?;
+    }
+    let _cancel = access.policy.cancel_on_drop();
+    access
+        .policy
+        .scope_future(crate::api::execute_source(call))
+        .await
+}
+#[cfg(test)]
+mod typed_source_tests {
+    #[test]
+    fn operation_scope_keeps_the_existing_namespace_fingerprint() {
+        let mut old = serde_json::json!({"request":{"operationId":"operation-1"}});
+        super::bind_source_operation("context", &mut old).unwrap();
+        let mut id = "operation-1".to_owned();
+        super::bind_source_id("context", &mut id).unwrap();
+        assert_eq!(old["request"]["operationId"], id);
     }
 }

@@ -17,7 +17,9 @@ const MAX_WINDOWS: usize = 8;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Record {
+#[derive(ts_rs::TS)]
+#[ts(rename = "TerminalRecord")]
+pub(crate) struct Record {
     id: String,
     context: Option<ProjectContext>,
     state: String,
@@ -56,7 +58,9 @@ pub(crate) struct Terminals {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PendingLog {
+#[derive(ts_rs::TS)]
+#[ts(rename = "PendingTerminalLog")]
+pub(crate) struct PendingLog {
     id: String,
     source: logs_engine::core::SourceSpec,
     context: Option<ProjectContext>,
@@ -154,18 +158,6 @@ fn peer_layout(
         return Err("terminal_session_stopping");
     }
     crate::terminal_profiles::layout(&inner.root, &peer.record.id, method, args)
-}
-
-pub(crate) fn wsl_management(method: &str) -> bool {
-    matches!(
-        method,
-        "dashboard_snapshot"
-            | "docker_action"
-            | "wsl_control_status"
-            | "open_distro_terminal"
-            | "open_wsl_file_in_log_lens"
-            | "open_wsl_journal_in_log_lens"
-    )
 }
 
 impl Terminals {
@@ -376,10 +368,9 @@ impl Terminals {
             ));
         }
         if method == "dashboard_snapshot" {
-            return tauri::async_runtime::block_on(terminal_engine::component::dispatch(
+            return tauri::async_runtime::block_on(terminal_engine::api::dispatch(
                 window.app_handle(),
-                method,
-                args,
+                terminal_engine::api::TerminalCall::DashboardSnapshot {},
             ))
             .map_err(|_| "wsl_snapshot_unavailable");
         }
@@ -1109,9 +1100,13 @@ impl Terminals {
                 | "detect_multiplexers"
                 | "windows_build_number"
         ) {
-            return terminal_engine::component::dispatch(window.app_handle(), method, args)
-                .await
-                .map_err(|_| "terminal_operation_failed");
+            return terminal_engine::api::dispatch(
+                window.app_handle(),
+                serde_json::from_value(json!({"method":method,"args":args}))
+                    .map_err(|_| "terminal_args_invalid")?,
+            )
+            .await
+            .map_err(|_| "terminal_operation_failed");
         }
         let factory = crate::platform::terminal_launch::Factory {
             host,

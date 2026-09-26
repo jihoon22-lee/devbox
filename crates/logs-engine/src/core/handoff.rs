@@ -52,6 +52,7 @@ pub struct WslJournalPayload {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LogSourcePreview {
     pub id: String,
     pub kind: String,

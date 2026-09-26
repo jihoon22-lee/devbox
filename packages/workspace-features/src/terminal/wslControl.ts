@@ -1,6 +1,13 @@
+type DockerControlCall = {
+  (
+    method: "docker_action",
+    args: { operationId: string; distro: string; containerId: string; action: string },
+  ): Promise<unknown>;
+  (method: "wsl_control_status", args: { operationId: string }): Promise<{ state: string }>;
+};
 /** Preserve the same native receipt after renderer loss or an ambiguous reply. */
 export async function runDockerControl(
-  call: <T>(method: string, args: Record<string, unknown>) => Promise<T>,
+  call: DockerControlCall,
   distro: string,
   containerId: string,
   action: string,
@@ -13,7 +20,7 @@ export async function runDockerControl(
     sessionStorage.removeItem(key);
   } catch (error) {
     try {
-      const receipt = await call<{ state: string }>("wsl_control_status", { operationId });
+      const receipt = await call("wsl_control_status", { operationId });
       if (receipt.state === "completed") {
         sessionStorage.removeItem(key);
         return;

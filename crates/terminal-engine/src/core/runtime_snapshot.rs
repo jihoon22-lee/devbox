@@ -64,6 +64,7 @@ pub struct PortMapping {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum DockerAvailability {
     Available,
     Missing,
@@ -75,6 +76,7 @@ pub enum DockerAvailability {
 /// the UI never combines a new resource reading with an older distro/session list.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DashboardDistro {
     pub name: String,
     pub version: u32,
@@ -88,6 +90,7 @@ pub struct DashboardDistro {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DashboardSnapshot {
     pub revision: u64,
     pub captured_at_ms: u64,

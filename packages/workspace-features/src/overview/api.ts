@@ -1,5 +1,11 @@
-import { componentInvoke } from "../transport";
-const invoke = componentInvoke("workspace.overview");
+import { isProductHosted } from "../transport";
+import { invoke as standaloneInvoke } from "@tauri-apps/api/core";
+// The old Workbench UI is a browser/standalone fixture. Product Overview uses
+// the generated registry/definitions commands in the Workspace application.
+function invoke<T>(method: string, args?: Record<string, unknown>): Promise<T> {
+  if (isProductHosted()) return Promise.reject(new Error("Workspace에서 지원하지 않는 작업입니다."));
+  return args === undefined ? standaloneInvoke<T>(method) : standaloneInvoke<T>(method, args);
+}
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
 

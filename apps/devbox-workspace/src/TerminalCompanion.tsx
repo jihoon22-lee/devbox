@@ -1,3 +1,4 @@
+import { companionDeadlineBudgets } from "@devbox/workspace-features/generated/deadline-budgets";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { isProjectContext, makeRequest, type Handshake, type ProjectContext } from "@devbox/product-shell/api";
@@ -28,7 +29,7 @@ function connect(): Promise<Peer> {
       if (component !== "workspace.terminal") return Promise.reject(new Error("이 창에서 사용할 수 없는 기능입니다."));
       const header = makeRequest(peer.handshake, "terminal", Date.now(), peer.context);
       // Frequent bounded output pulls expire promptly in the native replay cache.
-      header.deadlineMs = Date.now() + (method === "terminal_output" ? 1000 : 30_000);
+      header.deadlineMs = Date.now() + (companionDeadlineBudgets[method] ?? 30_000);
       return invoke<T>("plugin:workspace|terminal_execute", { request: { header, method, args } });
     }, peer.handshake.installationId);
     await initializeTerminalPreferences();

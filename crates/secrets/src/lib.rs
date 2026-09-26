@@ -19,7 +19,9 @@ pub const SECRET_REFERENCE_VERSION: &str = "secret-ref/v1";
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SecretReference {
+    #[ts(type = "\"secret-ref/v1\"")]
     pub kind: String,
     pub name: String,
 }

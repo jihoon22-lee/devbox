@@ -1,120 +1,45 @@
 //! Native product command admission. Route names do not grant Registry writes.
-use crate::{host::Host, project_owner::RegistrationAction};
-use product_contract::{Operation, OperationState, Problem, ProblemCode, Provenance, RouteRequest};
-use serde::{Deserialize, Serialize};
+use crate::ipc::terminal::{terminal_worker, TerminalRequest};
+use crate::{
+    host::Host,
+    ipc::lanes::{Lane, Lanes},
+};
 use serde_json::{json, Value};
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, Ordering},
     Arc, Mutex, OnceLock,
 };
 use std::time::Duration;
 use tauri::{Manager, State, WebviewWindow};
 
 #[derive(Clone, Default)]
-struct Pool(Arc<AtomicUsize>);
-struct Permit(Arc<AtomicUsize>);
-impl Pool {
-    fn reserve(&self) -> Result<Permit, &'static str> {
-        self.reserve_with_limit(2)
-    }
-    fn reserve_with_limit(&self, limit: usize) -> Result<Permit, &'static str> {
-        self.0
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < limit).then_some(n + 1)
-            })
-            .map_err(|_| "busy")?;
-        Ok(Permit(self.0.clone()))
-    }
-}
-impl Drop for Permit {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
-    }
-}
-#[derive(Clone)]
-struct Runtime {
-    shutdown_started: Arc<AtomicBool>,
-    ui_ready: Arc<AtomicBool>,
-    engines: Arc<crate::runtime_host::Owners>,
-    terminals: Arc<crate::terminal_host::Terminals>,
-    sessions: Arc<crate::development_host::Sessions>,
-    terminal_requests: Pool,
-    terminal_io_requests: Pool,
-    terminal_stop_requests: Pool,
-    terminal_io_workers: Arc<tokio::sync::Semaphore>,
-    terminal_workers: Arc<tokio::sync::Semaphore>,
-    terminal_stop_workers: Arc<tokio::sync::Semaphore>,
-    engine_requests: Pool,
-    engine_workers: Arc<tokio::sync::Semaphore>,
-    engine_stop_workers: Arc<tokio::sync::Semaphore>,
-    exit_authorized: Arc<AtomicBool>,
-    context_activity: crate::core::context_activity::ContextActivity,
-    context_waiters: Pool,
-    filesystem_activity: crate::core::context_activity::ContextActivity,
-    definitions: Arc<Mutex<crate::definitions::Definitions>>,
-    source: Arc<Mutex<crate::source_host::SourceHost>>,
-    source_requests: Pool,
-    source_operations: crate::core::source_operations::Operations,
-    source_workers: Arc<tokio::sync::Semaphore>,
-    host: Arc<OnceLock<Result<Arc<Host>, &'static str>>>,
-    metadata: Pool,
-    probes: Pool,
-    files: Arc<Mutex<crate::files_host::FilesHost>>,
-    file_requests: Pool,
-    file_workers: Arc<tokio::sync::Semaphore>,
-    dialogs: Pool,
-    lsp: Arc<Mutex<Option<Arc<crate::lsp_host::LspHost>>>>,
-    lsp_requests: Pool,
-    lsp_operations: crate::core::source_operations::Operations,
-    lsp_workers: Arc<tokio::sync::Semaphore>,
-    lsp_shutdown: editor_engine::lsp::RequestCancellation,
-}
-impl Default for Runtime {
-    fn default() -> Self {
-        Self {
-            shutdown_started: Arc::default(),
-            ui_ready: Arc::default(),
-            engines: Arc::default(),
-            terminals: Arc::default(),
-            sessions: Arc::default(),
-            terminal_requests: Pool::default(),
-            terminal_io_requests: Pool::default(),
-            terminal_stop_requests: Pool::default(),
-            terminal_io_workers: Arc::new(tokio::sync::Semaphore::new(4)),
-            terminal_workers: Arc::new(tokio::sync::Semaphore::new(4)),
-            terminal_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            engine_requests: Pool::default(),
-            engine_workers: Arc::new(tokio::sync::Semaphore::new(4)),
-            engine_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            exit_authorized: Arc::default(),
-            context_activity: Default::default(),
-            context_waiters: Pool::default(),
-            filesystem_activity: Default::default(),
-            definitions: Arc::default(),
-            source: Arc::default(),
-            source_requests: Pool::default(),
-            source_operations: Default::default(),
-            source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            host: Arc::default(),
-            metadata: Pool::default(),
-            probes: Pool::default(),
-            files: Arc::default(),
-            file_requests: Pool::default(),
-            file_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            dialogs: Pool::default(),
-            lsp: Arc::default(),
-            lsp_requests: Pool::default(),
-            lsp_operations: Default::default(),
-            lsp_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            lsp_shutdown: Default::default(),
-        }
-    }
+pub(crate) struct Runtime {
+    pub(crate) lanes: Lanes,
+    pub(crate) shutdown_started: Arc<AtomicBool>,
+    pub(crate) ui_ready: Arc<AtomicBool>,
+    pub(crate) engines: Arc<crate::runtime_host::Owners>,
+    pub(crate) terminals: Arc<crate::terminal_host::Terminals>,
+    pub(crate) sessions: Arc<crate::development_host::Sessions>,
+    pub(crate) exit_authorized: Arc<AtomicBool>,
+    pub(crate) context_activity: crate::core::context_activity::ContextActivity,
+    pub(crate) filesystem_activity: crate::core::context_activity::ContextActivity,
+    pub(crate) definitions: Arc<Mutex<crate::definitions::Definitions>>,
+    pub(crate) source: Arc<Mutex<crate::source_host::SourceHost>>,
+    pub(crate) source_operations: crate::core::source_operations::Operations,
+    pub(crate) host: Arc<OnceLock<Result<Arc<Host>, &'static str>>>,
+    pub(crate) files: Arc<Mutex<crate::files_host::FilesHost>>,
+    pub(crate) lsp: Arc<Mutex<Option<Arc<crate::lsp_host::LspHost>>>>,
+    pub(crate) lsp_operations: crate::core::source_operations::Operations,
+    pub(crate) lsp_shutdown: editor_engine::lsp::RequestCancellation,
 }
 impl Runtime {
+    pub(crate) fn shutting_down(&self) -> bool {
+        self.shutdown_started.load(Ordering::Acquire)
+    }
     /// A file write waits before entering a worker or taking the Files mutex.
     /// The existing bounded request pool owns the waiter; admission is not an
     /// IO retry and never repeats authentication or a partially executed save.
-    async fn filesystem_permit(
+    pub(crate) async fn filesystem_permit(
         &self,
         write: bool,
         deadline: u64,
@@ -172,8 +97,8 @@ impl Runtime {
                     continue;
                 }
                 let (Ok(queued), Ok(worker), Ok(filesystem)) = (
-                    runtime.file_requests.reserve_with_limit(1),
-                    runtime.file_workers.clone().try_acquire_owned(),
+                    runtime.lanes.try_enter(Lane::FilesWatch),
+                    runtime.lanes.workers(Lane::Files).try_acquire_owned(),
                     runtime.filesystem_activity.enter(false),
                 ) else {
                     continue;
@@ -198,7 +123,7 @@ impl Runtime {
     #[cfg(windows)]
     async fn retire_files(&self) -> Result<(), &'static str> {
         tokio::time::timeout(Duration::from_secs(30), async {
-            while self.file_requests.0.load(Ordering::Acquire) != 0 {
+            while self.lanes.active(Lane::Files) != 0 {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })
@@ -215,262 +140,35 @@ impl Runtime {
         .await
         .map_err(|_| "worker_unavailable")?
     }
-    async fn retire_lsp(&self) -> Result<(), &'static str> {
+    pub(crate) async fn retire_lsp(&self) -> Result<(), &'static str> {
         let owner = self.lsp.lock().map_err(|_| "lsp_unavailable")?.clone();
         if let Some(owner) = owner {
             owner.retire().await?;
         }
         Ok(())
     }
-    fn host(&self) -> Result<Arc<Host>, &'static str> {
+    pub(crate) fn host(&self) -> Result<Arc<Host>, &'static str> {
         // Initialization publishes once. Concurrent metadata readers must not
         // compete for a mutable lock or become spurious admission failures.
         self.host.get().cloned().unwrap_or(Err("initializing"))
     }
-    fn status(&self) -> Value {
+    pub(crate) fn status(&self) -> Value {
         match self.host().and_then(|host| host.status()) {
             Ok(status) => {
-                json!({"phase": if status["selected"] == true {"selected"} else {"setup"}})
+                json!(if status["selected"] == true {
+                    crate::ipc::setup::SetupStatus::Selected
+                } else {
+                    crate::ipc::setup::SetupStatus::Setup
+                })
             }
-            Err("initializing") => json!({"phase":"loading"}),
-            Err(issue) => json!({"phase":"failed", "issue":issue}),
+            Err("initializing") => json!(crate::ipc::setup::SetupStatus::Loading),
+            Err(issue) => json!(crate::ipc::setup::SetupStatus::Failed {
+                issue: issue.into()
+            }),
         }
-    }
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Request {
-    header: RouteRequest,
-    component: String,
-    method: String,
-    args: Value,
-}
-#[derive(Serialize)]
-struct Response {
-    operation: Operation,
-    value: Value,
-}
-fn migration_method(component: &str, method: &str) -> bool {
-    match component {
-        "workspace.migration" => matches!(method, "status" | "start_empty"),
-        "workspace.registry" => method == "snapshot",
-        _ => false,
     }
 }
 
-fn allowed(component: &str, route: &str, method: &str) -> bool {
-    if component == "workspace.problems" {
-        return matches!(
-            route,
-            "overview"
-                | "source"
-                | "files"
-                | "dependencies"
-                | "tasks"
-                | "runtime"
-                | "logs"
-                | "terminal"
-                | "problems"
-        ) && matches!(method, "snapshot" | "resolve");
-    }
-    if component == "workspace.terminal" {
-        if matches!(route, "terminal" | "runtime") && crate::terminal_host::wsl_management(method) {
-            return true;
-        }
-        return route == "terminal"
-            && (crate::development_host::Sessions::handles(method)
-                || matches!(
-                    method,
-                    "terminal_sessions"
-                        | "terminal_commands"
-                        | "summon_terminal"
-                        | "open_terminal_profile"
-                        | "restore_terminal"
-                        | "read_terminal_log"
-                        | "ack_terminal_log"
-                        | "open_terminal"
-                        | "focus_terminal"
-                        | "stop_terminal"
-                        | "list_workspace_profiles"
-                        | "save_workspace_profile"
-                        | "delete_workspace_profile"
-                ));
-    }
-    if crate::runtime_host::component(component) {
-        return crate::runtime_host::allowed(component, route, method);
-    }
-    if !matches!(
-        route,
-        "overview" | "source" | "files" | "dependencies" | "tasks" | "runtime" | "logs"
-    ) {
-        return false;
-    }
-    match component {
-        "workspace.source" => {
-            route == "source"
-                && (crate::source_host::management(method)
-                    || repositories_engine::component::SOURCE_COMMANDS.contains(&method))
-        }
-        "workspace.definitions" => {
-            route == "overview"
-                && matches!(
-                    method,
-                    "load"
-                        | "preview_trust"
-                        | "approve_trust"
-                        | "revoke_trust"
-                        | "cancel"
-                        | "preview_edit"
-                        | "apply_edit"
-                )
-        }
-        "workspace.dependencies" => {
-            route == "dependencies"
-                && matches!(
-                    method,
-                    "dependency_inventory"
-                        | "dependency_enrichment_preview"
-                        | "dependency_enrichment_execute"
-                        | "dependency_enrichment_cancel"
-                )
-        }
-        "workspace.files" => route == "files" && crate::files_host::allowed(component, method),
-        "workspace.lsp" => route == "files" && crate::lsp_host::allowed(method),
-        "workspace.migration" => matches!(method, "status" | "start_empty"),
-        "workspace.registry" => {
-            (route == "overview"
-                && matches!(
-                    method,
-                    "save_template"
-                        | "archive_template"
-                        | "list_wsl_distros"
-                        | "preview_wsl"
-                        | "preview_template_profile_wsl"
-                ))
-                || matches!(
-                    method,
-                    "snapshot"
-                        | "preview_windows"
-                        | "preview_template_profile_windows"
-                        | "unbind_imported_profile"
-                        | "cancel_registration"
-                        | "apply_registration"
-                        | "rename"
-                        | "remove"
-                        | "select_project"
-                        | "clear_project"
-                )
-        }
-        _ => false,
-    }
-}
-
-async fn terminal_worker(
-    window: WebviewWindow,
-    runtime: Runtime,
-    header: RouteRequest,
-    method: String,
-    args: Value,
-    companion: bool,
-    context: Option<crate::core::context_activity::ContextPermit>,
-) -> Result<Value, &'static str> {
-    let io = matches!(
-        method.as_str(),
-        "write_session"
-            | "write_initial_command"
-            | "broadcast"
-            | "resize_session"
-            | "terminal_output"
-            | "attach_session"
-            | "list_sessions"
-    );
-    let stopping = matches!(
-        method.as_str(),
-        "close_session" | "stop_terminal" | "stop_development_session"
-    );
-    let permit = if io {
-        &runtime.terminal_io_requests
-    } else if stopping {
-        &runtime.terminal_stop_requests
-    } else {
-        &runtime.terminal_requests
-    }
-    .reserve_with_limit(64)?;
-    let host = runtime.host()?;
-    let workers = if io {
-        runtime.terminal_io_workers.clone()
-    } else if stopping {
-        runtime.terminal_stop_workers.clone()
-    } else {
-        runtime.terminal_workers.clone()
-    };
-    // The native worker owns the request even if its renderer disappears.
-    tauri::async_runtime::spawn(async move {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| "request_expired")?
-            .as_millis() as u64;
-        let worker = tokio::time::timeout(
-            Duration::from_millis(header.deadline_ms.saturating_sub(now).min(30_000)),
-            workers.acquire_owned(),
-        )
-        .await
-        .map_err(|_| "request_expired")?
-        .map_err(|_| "request_cancelled")?;
-        tauri::async_runtime::spawn_blocking(move || {
-            let (_permit, _worker, _context) = (permit, worker, context);
-            crate::files_host::current_deadline(header.deadline_ms)?;
-            if runtime.shutdown_started.load(Ordering::Acquire) {
-                return Err("request_cancelled");
-            }
-            if companion {
-                tauri::async_runtime::block_on(
-                    runtime
-                        .terminals
-                        .execute(&window, &host, &header, &method, args),
-                )
-            } else if crate::development_host::Sessions::handles(&method) {
-                runtime
-                    .engines
-                    .initialize_runtime(window.app_handle(), &host)?;
-                runtime.sessions.manage(
-                    &window,
-                    &host,
-                    &runtime.terminals,
-                    &runtime.definitions,
-                    &header,
-                    &method,
-                    args,
-                )
-            } else {
-                runtime
-                    .terminals
-                    .manage(&window, &host, &header, &method, args)
-            }
-        })
-        .await
-        .unwrap_or(Err("worker_unavailable"))
-    })
-    .await
-    .unwrap_or(Err("worker_unavailable"))
-}
-async fn execute_terminal_main(
-    window: &WebviewWindow,
-    runtime: &Runtime,
-    request: Request,
-    context: Option<crate::core::context_activity::ContextPermit>,
-) -> Result<Value, &'static str> {
-    terminal_worker(
-        window.clone(),
-        runtime.clone(),
-        request.header,
-        request.method,
-        request.args,
-        false,
-        context,
-    )
-    .await
-}
 #[tauri::command]
 fn terminal_describe(window: WebviewWindow, runtime: State<'_, Runtime>) -> Result<Value, String> {
     if runtime.shutdown_started.load(Ordering::Acquire) {
@@ -478,28 +176,22 @@ fn terminal_describe(window: WebviewWindow, runtime: State<'_, Runtime>) -> Resu
     }
     runtime.terminals.describe(&window).map_err(str::to_owned)
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TerminalRequest {
-    header: RouteRequest,
-    method: String,
-    args: Value,
-}
 #[tauri::command]
 async fn terminal_execute(
     window: WebviewWindow,
     runtime: State<'_, Runtime>,
-    request: TerminalRequest,
+    request: product_ipc::IncomingRequest,
 ) -> Result<Value, String> {
     if runtime.shutdown_started.load(Ordering::Acquire) {
         return Err("request_cancelled".into());
     }
-    if request.method.len() > 96
-        || !request.args.is_object()
-        || serde_json::to_vec(&request.args).map_or(true, |bytes| bytes.len() > 2 * 1024 * 1024)
-    {
-        return Err("terminal_args_invalid".into());
-    }
+    use product_ipc::ComponentCall;
+    let args = request.args.clone();
+    let request = request
+        .decode::<crate::ipc::companion::CompanionCall>()
+        .map_err(|_| "terminal_args_invalid")?;
+    let method = request.call.method().to_owned();
+    let lane = request.call.lane();
     runtime
         .terminals
         .authorize(&window, &request.header)
@@ -507,9 +199,12 @@ async fn terminal_execute(
     terminal_worker(
         window,
         runtime.inner().clone(),
-        request.header,
-        request.method,
-        request.args,
+        TerminalRequest {
+            header: request.header,
+            method,
+            args,
+            lane,
+        },
         true,
         None,
     )
@@ -517,1229 +212,6 @@ async fn terminal_execute(
     .map_err(str::to_owned)
 }
 
-async fn execute_runtime(
-    window: &WebviewWindow,
-    runtime: &Runtime,
-    request: Request,
-    context_permit: Option<crate::core::context_activity::ContextPermit>,
-) -> Result<Value, &'static str> {
-    let control_method = if request.method == "runtime_control" {
-        request
-            .args
-            .get("method")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-    } else {
-        &request.method
-    };
-    let stopping = crate::runtime_host::stops(control_method);
-    let permit = runtime
-        .engine_requests
-        .reserve_with_limit(if stopping { 32 } else { 24 })?;
-    let host = runtime.host()?;
-    let owners = runtime.engines.clone();
-    let terminals = runtime.terminals.clone();
-    let definitions = runtime.definitions.clone();
-    let shutdown = runtime.shutdown_started.clone();
-    let workers = if stopping {
-        runtime.engine_stop_workers.clone()
-    } else {
-        runtime.engine_workers.clone()
-    };
-    let app = window.app_handle().clone();
-    // The spawned owner retains permits even if the renderer abandons its IPC
-    // future. Cancellation/stop requests have independent execution capacity.
-    tauri::async_runtime::spawn(async move {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| "request_expired")?
-            .as_millis();
-        let remaining = u128::from(request.header.deadline_ms)
-            .saturating_sub(now)
-            .min(30_000) as u64;
-        let worker =
-            tokio::time::timeout(Duration::from_millis(remaining), workers.acquire_owned())
-                .await
-                .map_err(|_| "request_expired")?
-                .map_err(|_| "request_cancelled")?;
-        tauri::async_runtime::spawn_blocking(move || {
-            let (_permit, _context, _worker) = (permit, context_permit, worker);
-            crate::files_host::current_deadline(request.header.deadline_ms)?;
-            if shutdown.load(Ordering::Acquire) {
-                return Err("request_cancelled");
-            }
-            tauri::async_runtime::block_on(crate::runtime_host::dispatch(
-                &app,
-                &host,
-                &owners,
-                &definitions,
-                crate::runtime_host::EngineRequest {
-                    component: &request.component,
-                    method: &request.method,
-                    value: request.args,
-                    context: request.header.context.as_ref(),
-                    deadline: request.header.deadline_ms,
-                    operation_id: &request.header.request_id,
-                    terminals: &terminals,
-                },
-            ))
-        })
-        .await
-        .unwrap_or(Err("worker_unavailable"))
-    })
-    .await
-    .unwrap_or(Err("worker_unavailable"))
-}
-
-async fn execute_lsp(
-    window: &WebviewWindow,
-    runtime: &Runtime,
-    request: Request,
-    context_permit: Option<crate::core::context_activity::ContextPermit>,
-) -> Result<Value, &'static str> {
-    use tauri_plugin_dialog::DialogExt;
-    let queued =
-        runtime
-            .lsp_requests
-            .reserve_with_limit(if crate::lsp_host::stops(&request.method) {
-                10
-            } else {
-                8
-            })?;
-    let (operation_id, cancelled) =
-        crate::lsp_host::admission(&request.method, request.args.clone())?;
-    let context_key =
-        serde_json::to_string(&request.header.context).map_err(|_| "invalid_request")?;
-    for id in cancelled {
-        runtime.lsp_operations.cancel(&context_key, &id)?;
-    }
-    let start = operation_id
-        .as_deref()
-        .map(|id| runtime.lsp_operations.register(&context_key, Some(id)))
-        .transpose()
-        .map_err(|issue| {
-            if issue == "source_cancelled" {
-                "lsp_operation_cancelled"
-            } else {
-                issue
-            }
-        })?;
-    let _cancel = start.as_ref().map(|start| start.cancel_on_drop());
-    if runtime.lsp_shutdown.is_cancelled() {
-        return Err("lsp_operation_cancelled");
-    }
-    let mut deadline = request.header.deadline_ms;
-    let chosen = if request.method == "pick_lsp_archives" {
-        empty(&request.args)?;
-        let dialog = runtime.dialogs.reserve_with_limit(1)?;
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        window
-            .dialog()
-            .file()
-            .set_parent(window)
-            .set_title("관리형 LSP archive 선택")
-            .add_filter("LSP archive", &["zip", "tgz", "gz"])
-            .pick_files(move |paths| {
-                let _dialog = dialog;
-                let _ = sender.send(paths);
-            });
-        let Some(paths) = receiver.await.map_err(|_| "file_dialog_unavailable")? else {
-            return Ok(json!([]));
-        };
-        let mut admitted = request.header.clone();
-        admitted.request_id = uuid::Uuid::new_v4().to_string();
-        admitted.deadline_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| "request_expired")?
-            .as_millis() as u64
-            + 29_000;
-        product_shell_tauri::authorize(window, &admitted, "workspace.lsp")
-            .map_err(|_| "file_selection_expired")?;
-        deadline = admitted.deadline_ms;
-        Some(
-            paths
-                .into_iter()
-                .map(|path| path.into_path().map_err(|_| "invalid_file_path"))
-                .collect::<Result<Vec<_>, _>>()?,
-        )
-    } else {
-        None
-    };
-    let worker = if crate::lsp_host::worker_required(&request.method) {
-        Some(
-            runtime
-                .lsp_workers
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| "worker_unavailable")?,
-        )
-    } else {
-        None
-    };
-    let runtime = runtime.clone();
-    let app = window.app_handle().clone();
-    let host = runtime.host()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let (_queued, _worker, _context) = (queued, worker, context_permit);
-        crate::files_host::current_deadline(deadline)?;
-        if runtime.lsp_shutdown.is_cancelled() {
-            return Err("lsp_operation_cancelled");
-        }
-        let owner = {
-            let mut slot = runtime.lsp.lock().map_err(|_| "lsp_unavailable")?;
-            if slot.is_none() {
-                // Files and LSP share only initialization. No installer/server
-                // wait holds the editor's mutex or filesystem/context permit.
-                let mut files = runtime.files.try_lock().map_err(|_| "files_unavailable")?;
-                files.initialize(&app, &host)?;
-                *slot = Some(Arc::new(crate::lsp_host::LspHost::new(
-                    &app,
-                    &host,
-                    runtime.context_activity.clone(),
-                    runtime.filesystem_activity.clone(),
-                    runtime.files.clone(),
-                )?));
-            }
-            slot.as_ref().ok_or("lsp_unavailable")?.clone()
-        };
-        crate::files_host::current_deadline(deadline)?;
-        if runtime.lsp_shutdown.is_cancelled() {
-            return Err("lsp_operation_cancelled");
-        }
-        if let Some(paths) = chosen {
-            owner.choose(&host, &paths, deadline)
-        } else if crate::lsp_host::review_method(&request.method) {
-            owner.execute_review(
-                &app,
-                &host,
-                &request.method,
-                request.args,
-                request.header.context.as_ref(),
-                deadline,
-            )
-        } else {
-            tauri::async_runtime::block_on(owner.execute(
-                &app,
-                &host,
-                crate::lsp_host::Invocation {
-                    method: &request.method,
-                    args: request.args,
-                    context: request.header.context.as_ref(),
-                    deadline,
-                    start,
-                },
-                &runtime.lsp_shutdown,
-            ))
-        }
-    })
-    .await
-    .unwrap_or(Err("worker_unavailable"))
-}
-
-async fn execute_files(
-    window: &WebviewWindow,
-    runtime: &Runtime,
-    request: Request,
-    context_permit: crate::core::context_activity::ContextPermit,
-) -> Result<Value, &'static str> {
-    use tauri_plugin_dialog::DialogExt;
-    let queued = runtime.file_requests.reserve_with_limit(16)?;
-    let mut deadline = request.header.deadline_ms;
-    let chosen = if request.method == "pick_files" {
-        empty(&request.args)?;
-        let dialog = runtime.dialogs.reserve_with_limit(1)?;
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        window
-            .dialog()
-            .file()
-            .set_parent(window)
-            .pick_files(move |paths| {
-                // Retain the sole dialog slot until the native chooser closes.
-                let _dialog = dialog;
-                let _ = sender.send(paths);
-            });
-        let Some(paths) = receiver.await.map_err(|_| "file_dialog_unavailable")? else {
-            return Ok(json!([]));
-        };
-        // The explicit native user choice can outlive the original RPC's
-        // deadline. Re-admit the same installation/session/context/window with
-        // a native request before using any returned path or saving a choice.
-        let mut admitted = request.header.clone();
-        admitted.request_id = uuid::Uuid::new_v4().to_string();
-        admitted.deadline_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| "request_expired")?
-            .as_millis() as u64
-            + 5000;
-        product_shell_tauri::authorize(window, &admitted, "workspace.files")
-            .map_err(|_| "file_selection_expired")?;
-        deadline = admitted.deadline_ms;
-        Some(
-            paths
-                .into_iter()
-                .map(|path| path.into_path().map_err(|_| "invalid_file_path"))
-                .collect::<Result<Vec<_>, _>>()?,
-        )
-    } else {
-        None
-    };
-    let filesystem = match file_access(&request.method) {
-        Some(write) => Some(runtime.filesystem_permit(write, deadline).await?),
-        None => None,
-    };
-    // The context permit prevents a project switch while waiting. A closed or
-    // replaced window must still not admit a delayed file operation.
-    if product_shell_tauri::workspace_context(window).map_err(|_| "file_context_changed")?
-        != request.header.context
-    {
-        return Err("file_context_changed");
-    }
-    crate::files_host::current_deadline(deadline)?;
-    let worker = runtime
-        .file_workers
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|_| "worker_unavailable")?;
-    let files = runtime.files.clone();
-    let host = runtime.host()?;
-    let app = window.app_handle().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let (_queued, _worker, _context, _filesystem) =
-            (queued, worker, context_permit, filesystem);
-        let mut files = files.lock().map_err(|_| "files_unavailable")?;
-        crate::files_host::current_deadline(deadline)?;
-        files.initialize(&app, &host)?;
-        if let Some(paths) = chosen {
-            files.approve_native_selection(&paths)
-        } else {
-            files.execute(
-                &app,
-                &host,
-                crate::files_host::Invocation {
-                    context: request.header.context.as_ref(),
-                    component: &request.component,
-                    method: &request.method,
-                    args: request.args,
-                    deadline,
-                },
-            )
-        }
-    })
-    .await
-    .unwrap_or(Err("worker_unavailable"))
-}
-async fn execute_dependencies(
-    runtime: &Runtime,
-    request: Request,
-    context_permit: crate::core::context_activity::ContextPermit,
-) -> Result<Value, &'static str> {
-    let host = runtime.host()?;
-    let permit = runtime.probes.reserve()?;
-    let deadline = request.header.deadline_ms;
-    let context = request.header.context.ok_or("project_selection_required")?;
-    let access = tauri::async_runtime::spawn_blocking(move || {
-        crate::dependencies_host::access(host, context, deadline, (permit, context_permit))
-    })
-    .await
-    .unwrap_or(Err("worker_unavailable"))?;
-    crate::files_host::current_deadline(deadline)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| "request_expired")?
-        .as_millis() as u64;
-    let remaining = deadline.checked_sub(now).ok_or("request_expired")?;
-    match tokio::time::timeout(
-        Duration::from_millis(remaining),
-        repositories_engine::component::dispatch_dependencies(
-            access,
-            &request.method,
-            request.args,
-        ),
-    )
-    .await
-    {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(repositories_engine::component::dependency_issue(&error)),
-        Err(_) => Err("request_expired"),
-    }
-}
-
-async fn execute_source(
-    window: &WebviewWindow,
-    runtime: &Runtime,
-    request: Request,
-    context_permit: crate::core::context_activity::ContextPermit,
-) -> Result<Value, &'static str> {
-    let context = request.header.context.ok_or("project_selection_required")?;
-    let deadline = request.header.deadline_ms;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| "request_expired")?
-        .as_millis() as u64;
-    let span = deadline
-        .checked_sub(now)
-        .ok_or("request_expired")?
-        .min(product_contract::MAX_DEADLINE_MS);
-    let budget = crate::source_host::Budget {
-        deadline_ms: deadline,
-        expires: std::time::Instant::now() + Duration::from_millis(span),
-    };
-    let remaining = || -> Result<Duration, &'static str> {
-        budget.check()?;
-        budget
-            .expires
-            .checked_duration_since(std::time::Instant::now())
-            .ok_or("request_expired")
-    };
-    let app = window.app_handle().clone();
-    let operation_key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
-    if repositories_engine::component::source_cancel(&request.method) {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase", deny_unknown_fields)]
-        struct CancelId {
-            operation_id: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Cancel {
-            request: CancelId,
-        }
-        let cancel: Cancel = input(request.args.clone())?;
-        let admitted = runtime
-            .source_operations
-            .cancel(&operation_key, &cancel.request.operation_id)?;
-        let running = repositories_engine::component::dispatch_source_cancel(
-            &app,
-            &operation_key,
-            &request.method,
-            request.args,
-        )
-        .await
-        .map_err(|error| crate::source_host::issue(&error))?;
-        return Ok(json!(admitted || running.as_bool() == Some(true)));
-    }
-    let filesystem = if matches!(
-        request.method.as_str(),
-        "cancel_trust"
-            | "revoke_trust"
-            | "cancel_worktree"
-            | "cancel_cleanup_scope"
-            | "revoke_cleanup_scope"
-            | "cleanup_scope_status"
-    ) {
-        None
-    } else {
-        Some(
-            runtime
-                .filesystem_activity
-                .enter(source_mutation(&request.method))?,
-        )
-    };
-    let queued = runtime.source_requests.reserve_with_limit(16)?;
-    let operation_id = if request.method == "create_worktree" {
-        request.args.get("operationId")
-    } else {
-        request
-            .args
-            .get("request")
-            .and_then(|value| value.get("operationId"))
-    };
-    let operation_id = operation_id
-        .map(|value| value.as_str().ok_or("invalid_request"))
-        .transpose()?;
-    let admitted = runtime
-        .source_operations
-        .register(&operation_key, operation_id)?;
-    let _cancel_on_drop = admitted.cancel_on_drop();
-    let worker_slot = tokio::time::timeout(
-        remaining()?,
-        admitted.until_cancelled(runtime.source_workers.clone().acquire_owned()),
-    )
-    .await
-    .map_err(|_| "request_expired")??
-    .map_err(|_| "source_owner_unavailable")?;
-    let host = runtime.host()?;
-    let source = runtime.source.clone();
-    let definitions = runtime.definitions.clone();
-    let worker_app = app.clone();
-    let method = request.method;
-    let args = request.args;
-    if crate::source_host::management(&method) {
-        let worker_admission = admitted.clone();
-        let worker = tauri::async_runtime::spawn_blocking(move || {
-            let _retained = (queued, worker_slot, context_permit, filesystem);
-            worker_admission.check()?;
-            crate::files_host::current_deadline(deadline)?;
-            let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
-            let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
-            crate::files_host::current_deadline(deadline)?;
-            source.initialize(&worker_app, &host)?;
-            let result = source.manage(&host, &mut definitions, &context, &method, args, budget)?;
-            worker_admission.check()?;
-            Ok(result)
-        });
-        return tokio::time::timeout(remaining()?, admitted.until_cancelled(worker))
-            .await
-            .map_err(|_| "request_expired")??
-            .unwrap_or(Err("worker_unavailable"))
-            .map_err(crate::source_host::issue);
-    }
-    let worker_admission = admitted.clone();
-    let worker_method = method.clone();
-    let files = runtime.files.clone();
-    let worker = tauri::async_runtime::spawn_blocking(move || {
-        worker_admission.check()?;
-        let retained = (
-            queued,
-            worker_slot,
-            context_permit,
-            filesystem,
-            worker_admission.clone(),
-        );
-        crate::files_host::current_deadline(deadline)?;
-        let prepared = {
-            let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
-            let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
-            crate::files_host::current_deadline(deadline)?;
-            source.initialize(&worker_app, &host)?;
-            source.access(
-                host,
-                &mut definitions,
-                crate::source_host::Invocation {
-                    files,
-                    context,
-                    method: worker_method,
-                    args,
-                    budget,
-                    admitted: worker_admission,
-                },
-                retained,
-            )?
-        };
-        prepared.finish_on_worker()
-    });
-    let prepared = tokio::time::timeout(remaining()?, admitted.until_cancelled(worker))
-        .await
-        .map_err(|_| "request_expired")??
-        .unwrap_or(Err("worker_unavailable"))
-        .map_err(crate::source_host::issue)?;
-    let (access, args) = match prepared {
-        crate::source_host::ReadySource::Native(access) => *access,
-        #[cfg(windows)]
-        crate::source_host::ReadySource::Complete(value) => return Ok(value),
-    };
-    match tokio::time::timeout(
-        remaining()?,
-        repositories_engine::component::dispatch_source(&app, access, &method, args),
-    )
-    .await
-    {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(crate::source_host::issue(&error)),
-        Err(_) => Err("request_expired"),
-    }
-}
-
-fn source_mutation(method: &str) -> bool {
-    matches!(
-        method,
-        "repo_stage"
-            | "repo_unstage"
-            | "repo_commit"
-            | "repo_fetch"
-            | "repo_pull"
-            | "repo_push"
-            | "repo_cleanup"
-            | "create_worktree"
-    )
-}
-/// Private editor recovery/session writes remain available while Git owns the
-/// worktree. User-file reads/writes coordinate with Git until workers retire.
-fn definition_access(method: &str) -> Option<bool> {
-    match method {
-        "apply_edit" => Some(true),
-        "load" | "preview_edit" | "preview_trust" | "approve_trust" => Some(false),
-        _ => None,
-    }
-}
-fn file_access(method: &str) -> Option<bool> {
-    match method {
-        "save_file" | "rename_file_action" | "delete_file_action" | "apply_recovery_preview" => {
-            Some(true)
-        }
-        "sync_editor_document"
-        | "load_session"
-        | "save_session"
-        | "load_recovery"
-        | "save_recovery"
-        | "discard_recovery"
-        | "cancel_recovery_preview"
-        | "take_pending_open"
-        | "read_clipboard_text"
-        | "validate_encoding"
-        | "lsp_catalog"
-        | "lsp_installed"
-        | "load_lsp_config"
-        | "preview_lsp_config_restore" => None,
-        _ => Some(false),
-    }
-}
-
-fn input<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, &'static str> {
-    serde_json::from_value(value).map_err(|_| "invalid_request")
-}
-fn empty(value: &Value) -> Result<(), &'static str> {
-    if value.as_object().is_some_and(|object| object.is_empty()) {
-        Ok(())
-    } else {
-        Err("invalid_request")
-    }
-}
-fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static str> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Root {
-        root: String,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct PreviewId {
-        preview_id: String,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Apply {
-        preview_id: String,
-        name: String,
-        action: RegistrationAction,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Rename {
-        revision: u64,
-        project_id: String,
-        name: String,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Remove {
-        revision: u64,
-        context: product_contract::ProjectContext,
-    }
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Select {
-        context: product_contract::ProjectContext,
-    }
-    match method {
-        "save_template" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct SaveTemplate {
-                revision: u64,
-                id: Option<String>,
-                template: projects_engine::component::ProfileTemplate,
-            }
-            let value: SaveTemplate = input(args)?;
-            Ok(json!(host.projects()?.save_template(
-                value.revision,
-                value.id.as_deref(),
-                value.template
-            )?))
-        }
-        "archive_template" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct ArchiveTemplate {
-                revision: u64,
-                id: String,
-            }
-            let value: ArchiveTemplate = input(args)?;
-            Ok(json!(host
-                .projects()?
-                .archive_template(value.revision, &value.id)?))
-        }
-        "preview_template_profile_wsl" => Ok(json!(host
-            .projects()?
-            .preview_template_profile_wsl(host.helper_directory()?, input(args)?)?)),
-        "preview_template_profile_windows" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Template {
-                template_id: String,
-                root: String,
-                name: String,
-            }
-            let value: Template = input(args)?;
-            Ok(json!(host.projects()?.preview_template_profile_windows(
-                &value.template_id,
-                &value.root,
-                &value.name
-            )?))
-        }
-        "unbind_imported_profile" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Unbind {
-                revision: u64,
-                imported_id: String,
-                target: crate::core::profiles::ProfileTarget,
-            }
-            let value: Unbind = input(args)?;
-            Ok(json!(host.projects()?.unbind_imported_profile(
-                value.revision,
-                &value.imported_id,
-                value.target
-            )?))
-        }
-        "start_empty" => {
-            empty(&args)?;
-            host.start_empty()?;
-            Ok(json!({}))
-        }
-        "snapshot" => {
-            empty(&args)?;
-            Ok(json!(host.projects()?.snapshot()?))
-        }
-        "select_project" => {
-            let value: Select = input(args)?;
-            let binding = if cfg!(windows)
-                && matches!(
-                    value.context.target,
-                    product_contract::ExecutionTarget::Wsl { .. }
-                ) {
-                host.projects()?
-                    .admit_selection(host.helper_directory()?, &value.context)?
-            } else {
-                host.projects()?.admit(&value.context)?.binding().clone()
-            };
-            Ok(json!({"context":value.context,"binding":binding}))
-        }
-        "list_wsl_distros" => {
-            empty(&args)?;
-            Ok(json!(crate::platform::wsl_distro::list()?))
-        }
-        "preview_wsl" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct WslRoot {
-                distro_id: String,
-                root: String,
-                start_stopped: bool,
-            }
-            let value: WslRoot = input(args)?;
-            Ok(json!(host.projects()?.preview_wsl(
-                host.helper_directory()?,
-                &value.distro_id,
-                &value.root,
-                value.start_stopped
-            )?))
-        }
-        "preview_windows" => {
-            let value: Root = input(args)?;
-            Ok(json!(host.projects()?.preview_windows(&value.root)?))
-        }
-        "cancel_registration" => {
-            let value: PreviewId = input(args)?;
-            host.projects()?.cancel(&value.preview_id)?;
-            Ok(json!({}))
-        }
-        "apply_registration" => {
-            let value: Apply = input(args)?;
-            let (registry, context) =
-                host.projects()?
-                    .apply(&value.preview_id, &value.name, value.action)?;
-            Ok(json!({"registry":registry,"context":context}))
-        }
-        "rename" => {
-            let value: Rename = input(args)?;
-            Ok(json!(host.projects()?.rename(
-                value.revision,
-                &value.project_id,
-                &value.name
-            )?))
-        }
-        "remove" => {
-            let value: Remove = input(args)?;
-            Ok(json!(host
-                .projects()?
-                .remove(value.revision, &value.context)?))
-        }
-        _ => Err("invalid_request"),
-    }
-}
-fn project_probe(method: &str) -> bool {
-    matches!(
-        method,
-        "preview_template_profile_wsl"
-            | "preview_windows"
-            | "list_wsl_distros"
-            | "preview_wsl"
-            | "preview_template_profile_windows"
-            | "select_project"
-    )
-}
-fn changes_context(method: &str) -> bool {
-    matches!(
-        method,
-        "select_project"
-            | "clear_project"
-            | "apply_registration"
-            | "remove"
-            | "apply_edit"
-            | "approve_cleanup_scope"
-            | "revoke_cleanup_scope"
-            | "approve_trust"
-            | "revoke_trust"
-            | "save_lsp_config"
-            | "lsp_execution_approve"
-            | "lsp_execution_revoke"
-    )
-}
-#[tauri::command]
-async fn execute(
-    window: WebviewWindow,
-    runtime: State<'_, Runtime>,
-    request: Request,
-) -> Result<Response, Problem> {
-    let operation =
-        product_shell_tauri::begin_operation(&window, &request.component, &request.method);
-    let rejected = |code| Problem {
-        code,
-        provenance: Provenance {
-            product: "workspace".into(),
-            component: "workspace.dispatch".into(),
-            request_id: "rejected".into(),
-            revision: 1,
-        },
-    };
-    if runtime.shutdown_started.load(Ordering::Acquire) {
-        return Err(rejected(ProblemCode::Unavailable));
-    }
-    if !allowed(&request.component, &request.header.route, &request.method)
-        || !request.args.is_object()
-        || serde_json::to_vec(&request.args).map_or(true, |bytes| {
-            bytes.len()
-                > if request.component == "workspace.files"
-                    || request.component == "workspace.logs"
-                    || (request.component == "workspace.lsp"
-                        && crate::lsp_host::text_request(&request.method))
-                {
-                    64 * 1024 * 1024
-                } else if request.component == "workspace.definitions"
-                    || request.component == "workspace.runtime"
-                {
-                    2 * 1024 * 1024
-                } else {
-                    64 * 1024
-                }
-        })
-    {
-        return Err(rejected(ProblemCode::InvalidRequest));
-    }
-    let problems = request.component == "workspace.problems";
-    let terminal = request.component == "workspace.terminal";
-    let engine = crate::runtime_host::component(&request.component);
-    let files = request.component == "workspace.files";
-    let lsp = request.component == "workspace.lsp";
-    let definitions = request.component == "workspace.definitions";
-    let dependencies = request.component == "workspace.dependencies";
-    let source = request.component == "workspace.source";
-    let context_change = changes_context(&request.method);
-    // Authenticate/replay-check once before waiting. A single bounded waiter
-    // holds no context permit, so active file/metadata workers can retire.
-    let provenance = if migration_method(&request.component, &request.method) {
-        product_shell_tauri::authorize_owner_migration(
-            &window,
-            &request.header,
-            &request.component,
-        )?
-    } else {
-        product_shell_tauri::authorize(&window, &request.header, &request.component)?
-    };
-    let problem = |code| Problem {
-        code,
-        provenance: provenance.clone(),
-    };
-    let context_permit = if problems
-        || terminal
-        || engine
-        || files
-        || definitions
-        || dependencies
-        || source
-        || context_change
-        || (lsp && crate::lsp_host::contextual(&request.method))
-    {
-        if context_change {
-            let _waiting = runtime
-                .context_waiters
-                .reserve_with_limit(1)
-                .map_err(|_| problem(ProblemCode::Overloaded))?;
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| problem(ProblemCode::Expired))?
-                .as_millis();
-            let remaining = u128::from(request.header.deadline_ms)
-                .saturating_sub(now)
-                .min(30_000) as u64;
-            let deadline = std::time::Instant::now() + Duration::from_millis(remaining);
-            Some(
-                runtime
-                    .context_activity
-                    .enter_change(deadline, &runtime.shutdown_started)
-                    .await
-                    .map_err(|issue| {
-                        problem(if issue == "context_expired" {
-                            ProblemCode::Expired
-                        } else {
-                            ProblemCode::Unavailable
-                        })
-                    })?,
-            )
-        } else {
-            Some(
-                runtime
-                    .context_activity
-                    .enter(false)
-                    .map_err(|_| problem(ProblemCode::Unavailable))?,
-            )
-        }
-    } else {
-        None
-    };
-    if context_permit.is_some() {
-        // Selection may have changed between authentication and admission.
-        // Recheck under the retained permit without replaying authorization.
-        if product_shell_tauri::workspace_context(&window)
-            .map_err(|_| problem(ProblemCode::Unavailable))?
-            != request.header.context
-        {
-            return Err(problem(ProblemCode::StaleContext));
-        }
-        crate::files_host::current_deadline(request.header.deadline_ms)
-            .map_err(|_| problem(ProblemCode::Expired))?;
-        if runtime.shutdown_started.load(Ordering::Acquire) {
-            return Err(problem(ProblemCode::Unavailable));
-        }
-    }
-    let document_observation = if lsp
-        && matches!(
-            request.method.as_str(),
-            "open_lsp_document"
-                | "change_lsp_document"
-                | "reload_lsp_document"
-                | "close_lsp_document"
-        ) {
-        request.header.context.clone().map(|context| {
-            (
-                context,
-                request.method.clone(),
-                request
-                    .args
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-            )
-        })
-    } else {
-        None
-    };
-    let observation = crate::problems_host::begin_observation(
-        window.app_handle(),
-        runtime.host().ok().as_deref(),
-        request.header.context.as_ref(),
-        &request.component,
-        &request.method,
-        &request.args,
-    );
-    let notify_registry = request.component == "workspace.registry"
-        && matches!(request.method.as_str(), "apply_registration" | "remove");
-    let select = request.method == "select_project";
-    let expected_context = request.header.context.clone();
-    let deadline = request.header.deadline_ms;
-    let retired = if matches!(
-        request.method.as_str(),
-        "select_project" | "clear_project" | "apply_registration" | "remove" | "apply_edit"
-    ) {
-        runtime.retire_lsp().await
-    } else {
-        Ok(())
-    };
-    let mut result = if let Err(issue) = retired {
-        Err(issue)
-    } else if files && request.method == "send_editor_selection" {
-        crate::selection_send::send(
-            window.app_handle(),
-            request.args,
-            request.header.deadline_ms,
-        )
-        .await
-    } else if problems {
-        let host = runtime.host();
-        match (host, runtime.metadata.reserve()) {
-            (Ok(host), Ok(permit)) => {
-                let app = window.app_handle().clone();
-                let retained_context = context_permit.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let _retained = (permit, retained_context);
-                    crate::files_host::current_deadline(request.header.deadline_ms)?;
-                    crate::problems_host::manage(
-                        &app,
-                        &host,
-                        request.header.context.as_ref(),
-                        &request.method,
-                        request.args,
-                    )
-                })
-                .await
-                .unwrap_or(Err("problems_unavailable"))
-            }
-            (Err(issue), _) | (_, Err(issue)) => Err(issue),
-        }
-    } else if terminal {
-        execute_terminal_main(&window, &runtime, request, context_permit.clone()).await
-    } else if engine {
-        execute_runtime(&window, &runtime, request, context_permit.clone()).await
-    } else if lsp {
-        execute_lsp(&window, &runtime, request, context_permit.clone()).await
-    } else if files {
-        execute_files(
-            &window,
-            &runtime,
-            request,
-            context_permit.clone().expect("file context permit"),
-        )
-        .await
-    } else if source {
-        execute_source(
-            &window,
-            &runtime,
-            request,
-            context_permit.clone().expect("source context permit"),
-        )
-        .await
-    } else if dependencies {
-        execute_dependencies(
-            &runtime,
-            request,
-            context_permit.clone().expect("dependency context permit"),
-        )
-        .await
-    } else if definitions {
-        let host = runtime.host();
-        let owner = runtime.definitions.clone();
-        let permit = runtime.probes.reserve();
-        let filesystem = match definition_access(&request.method) {
-            Some(write) => runtime.filesystem_permit(write, deadline).await.map(Some),
-            None => Ok(None),
-        }
-        .and_then(|permit| {
-            if product_shell_tauri::workspace_context(&window).map_err(|_| "stale_context")?
-                != request.header.context
-            {
-                return Err("stale_context");
-            }
-            Ok(permit)
-        });
-        match (host, permit, filesystem) {
-            (Ok(host), Ok(permit), Ok(filesystem)) => {
-                let worker_context = context_permit.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let (_permit, _context, _filesystem) = (permit, worker_context, filesystem);
-                    crate::files_host::current_deadline(deadline)?;
-                    let mut owner = owner.lock().map_err(|_| "definition_owner_busy")?;
-                    crate::files_host::current_deadline(deadline)?;
-                    let context = request
-                        .header
-                        .context
-                        .as_ref()
-                        .ok_or("project_selection_required")?;
-                    #[derive(Deserialize)]
-                    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                    struct Token {
-                        preview_id: String,
-                    }
-                    #[derive(Deserialize)]
-                    #[serde(deny_unknown_fields)]
-                    struct Revision {
-                        revision: u64,
-                    }
-                    match request.method.as_str() {
-                        "load" => {
-                            empty(&request.args)?;
-                            Ok(json!(owner.load(&host, context, deadline)?))
-                        }
-                        "preview_edit" => Ok(json!(owner.preview_edit(
-                            &host,
-                            context,
-                            input(request.args)?,
-                            deadline
-                        )?)),
-                        "apply_edit" => {
-                            let token: Token = input(request.args)?;
-                            Ok(json!(owner.apply_edit(
-                                &host,
-                                context,
-                                &token.preview_id,
-                                deadline
-                            )?))
-                        }
-                        "preview_trust" => {
-                            empty(&request.args)?;
-                            Ok(json!(owner.preview_trust(&host, context, deadline)?))
-                        }
-                        "approve_trust" => {
-                            let token: Token = input(request.args)?;
-                            Ok(json!(owner.approve_trust(
-                                &host,
-                                context,
-                                &token.preview_id,
-                                deadline
-                            )?))
-                        }
-                        "revoke_trust" => {
-                            let revision: Revision = input(request.args)?;
-                            Ok(json!(owner.revoke_trust(
-                                &host,
-                                context,
-                                revision.revision
-                            )?))
-                        }
-                        "cancel" => {
-                            let token: Token = input(request.args)?;
-                            owner.cancel(&token.preview_id);
-                            Ok(Value::Null)
-                        }
-                        _ => Err("invalid_request"),
-                    }
-                })
-                .await
-                .unwrap_or(Err("worker_unavailable"))
-            }
-            (Err(issue), _, _) | (_, Err(issue), _) | (_, _, Err(issue)) => Err(issue),
-        }
-    } else if request.method == "start_empty" {
-        let host = runtime.host();
-        let owners = runtime.engines.clone();
-        let app = window.app_handle().clone();
-        let permit = runtime.engine_requests.reserve();
-        let shutdown = runtime.shutdown_started.clone();
-        match (host, permit) {
-            (Ok(host), Ok(permit)) => tauri::async_runtime::spawn_blocking(move || {
-                let _permit = permit;
-                crate::files_host::current_deadline(deadline)?;
-                if shutdown.load(Ordering::Acquire) {
-                    return Err("request_cancelled");
-                }
-                empty(&request.args)?;
-                host.start_empty()?;
-                owners.initialize_runtime(&app, &host)?;
-                host.status()
-            })
-            .await
-            .unwrap_or(Err("worker_unavailable")),
-            (Err(issue), _) | (_, Err(issue)) => Err(issue),
-        }
-    } else if request.method == "clear_project" {
-        empty(&request.args).and_then(|()| {
-            product_shell_tauri::replace_project_context(
-                &window,
-                expected_context.as_ref(),
-                None,
-                deadline,
-            )?;
-            Ok(json!({"context":null}))
-        })
-    } else if request.method == "status" {
-        empty(&request.args).map(|()| runtime.status())
-    } else {
-        let preview = project_probe(&request.method);
-        let pool = if preview {
-            &runtime.probes
-        } else {
-            &runtime.metadata
-        };
-        match (runtime.host(), pool.reserve()) {
-            (Ok(host), Ok(permit)) => {
-                let worker_context = context_permit.clone();
-                let worker = tauri::async_runtime::spawn_blocking(move || {
-                    // A timed-out probe keeps its permit until the OS returns.
-                    // A late preview cannot register or grant trust by itself.
-                    let (_permit, _context) = (permit, worker_context);
-                    dispatch(&host, &request.method, request.args)
-                });
-                if preview {
-                    match tokio::time::timeout(Duration::from_secs(15), worker).await {
-                        Ok(result) => result.unwrap_or(Err("worker_unavailable")),
-                        Err(_) => Err("project_probe_timeout"),
-                    }
-                } else {
-                    worker.await.unwrap_or(Err("worker_unavailable"))
-                }
-            }
-            (Err(issue), _) | (_, Err(issue)) => Err(issue),
-        }
-    };
-    if notify_registry && result.is_ok() {
-        use tauri::Emitter;
-        let _ = window.emit("workspace-context-changed", ());
-    }
-    if select {
-        result = result.and_then(|value| {
-            // The worker produced this context after native Registry/object
-            // admission. A timed-out worker never reaches session mutation.
-            let context = serde_json::from_value(value["context"].clone())
-                .map_err(|_| "context_unavailable")?;
-            product_shell_tauri::replace_project_context(
-                &window,
-                expected_context.as_ref(),
-                Some(context),
-                deadline,
-            )?;
-            Ok(value)
-        });
-    }
-    if let (Some((context, method, uri)), Ok(value)) = (document_observation, &result) {
-        if let Ok(owner) = crate::problems_host::owner(window.app_handle()) {
-            let uri = value.get("uri").and_then(Value::as_str).unwrap_or(&uri);
-            let version = value
-                .get("version")
-                .and_then(Value::as_i64)
-                .and_then(|value| i32::try_from(value).ok());
-            owner.document_changed(&context, uri, version, method == "close_lsp_document");
-        }
-    }
-    crate::problems_host::finish_observation(
-        window.app_handle(),
-        runtime.host().ok().as_deref(),
-        observation,
-        &result,
-    );
-    let (outcome, value) = match result {
-        Ok(value) => (OperationState::Succeeded {}, value),
-        Err(issue) => (
-            OperationState::Failed {
-                code: ProblemCode::Unavailable,
-            },
-            json!({"issue":issue}),
-        ),
-    };
-    operation.finish(
-        &outcome,
-        value.get("issue").and_then(serde_json::Value::as_str),
-    );
-    Ok(Response {
-        operation: Operation {
-            provenance,
-            outcome,
-        },
-        value,
-    })
-}
 fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -1773,7 +245,20 @@ fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
         .invoke_handler(tauri::generate_handler![
-            execute,
+            crate::ipc::files::files,
+            crate::ipc::lsp::lsp,
+            crate::ipc::source::source,
+            crate::ipc::registry::registry,
+            crate::ipc::setup::setup,
+            crate::ipc::definitions::definitions,
+            crate::ipc::dependencies::dependencies,
+            crate::ipc::runtime::runtime,
+            crate::ipc::processes::processes,
+            crate::ipc::process_actions::process_actions,
+            crate::ipc::logs::logs,
+            crate::ipc::terminal::terminal,
+            crate::ipc::problems::problems,
+            crate::ipc::commands::commands,
             terminal_describe,
             terminal_execute
         ])
@@ -1808,9 +293,10 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
                 if !runtime.shutdown_started.load(Ordering::Acquire) {
-                    if let (Ok(host), Ok(permit)) =
-                        (runtime.host(), runtime.engine_requests.reserve())
-                    {
+                    if let (Ok(host), Ok(permit)) = (
+                        runtime.host(),
+                        runtime.lanes.try_enter(Lane::EngineBackground),
+                    ) {
                         let owners = runtime.engines.clone();
                         let shutdown = runtime.shutdown_started.clone();
                         let worker_app = app.clone();
@@ -1830,7 +316,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 }
                 loop {
                     tokio::time::sleep(Duration::from_secs(10)).await;
-                    if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
+                    if let (Ok(host), Ok(permit)) =
+                        (runtime.host(), runtime.lanes.try_enter(Lane::Metadata))
+                    {
                         let definitions = runtime.definitions.clone();
                         let source = runtime.source.clone();
                         let lsp = runtime.lsp.clone();
@@ -1923,11 +411,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 // Cancellation interrupts downloads; the LSP worker retains its
                 // request permit until archive IO/index work actually retires.
                 let retired = tokio::time::timeout(Duration::from_secs(5), async {
-                    while runtime.lsp_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.engine_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.terminal_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.terminal_io_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.terminal_stop_requests.0.load(Ordering::Acquire) != 0
+                    while runtime.lanes.active(Lane::Lsp) != 0
+                        || runtime.lanes.active(Lane::EngineBackground) != 0
+                        || runtime.lanes.active(Lane::Terminal) != 0
+                        || runtime.lanes.active(Lane::TerminalIo) != 0
+                        || runtime.lanes.active(Lane::TerminalStop) != 0
                     {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -1965,11 +453,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .await
                 .is_ok_and(|result| result.is_ok());
                 let retired = retired
-                    || (runtime.lsp_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.engine_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.terminal_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.terminal_io_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.terminal_stop_requests.0.load(Ordering::Acquire) == 0);
+                    || (runtime.lanes.active(Lane::Lsp) == 0
+                        && runtime.lanes.active(Lane::EngineBackground) == 0
+                        && runtime.lanes.active(Lane::Terminal) == 0
+                        && runtime.lanes.active(Lane::TerminalIo) == 0
+                        && runtime.lanes.active(Lane::TerminalStop) == 0);
                 if retired
                     && sessions_stopped
                     && terminals_stopped
@@ -2091,8 +579,8 @@ pub(crate) async fn editor_selection_proof(
     let context = product_shell_tauri::workspace_context(&window)?;
     let filesystem = runtime.filesystem_permit(false, deadline).await?;
     let worker = runtime
-        .file_workers
-        .clone()
+        .lanes
+        .workers(Lane::Files)
         .try_acquire_owned()
         .map_err(|_| "file_busy")?;
     tokio::task::spawn_blocking(move || {
@@ -2122,8 +610,8 @@ pub(crate) async fn approve_received_file(
     let window = app.get_webview_window("main").ok_or("window_unavailable")?;
     let context = product_shell_tauri::workspace_context(&window)?;
     let permit = runtime
-        .file_workers
-        .clone()
+        .lanes
+        .workers(Lane::Files)
         .try_acquire_owned()
         .map_err(|_| "file_busy")?;
     let app = app.clone();
@@ -2175,11 +663,15 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::{
+        allow_table::permits as allowed, changes_context, definitions::definition_access,
+        files::file_access, source::source_mutation,
+    };
     #[test]
     fn retired_import_methods_are_denied_and_current_templates_remain() {
         for (component, route, parts) in [
             (
-                "workspace.migration",
+                "workspace.setup",
                 "overview",
                 vec!["prepare", "legacy", "snapshot"],
             ),
@@ -2206,10 +698,13 @@ mod tests {
         ] {
             let method = parts.join("_");
             assert!(!allowed(component, route, &method));
-            assert!(!migration_method(component, &method));
         }
-        assert!(allowed("workspace.migration", "overview", "start_empty"));
-        assert!(migration_method("workspace.registry", "snapshot"));
+        assert!(allowed("workspace.setup", "overview", "start_empty"));
+        const {
+            assert!(
+                !<crate::ipc::registry::RegistryCall as product_ipc::ComponentCall>::IMPORT_PHASE
+            );
+        }
         assert!(allowed("workspace.registry", "overview", "save_template"));
         assert!(allowed(
             "workspace.registry",
@@ -2274,29 +769,26 @@ mod tests {
         let _restores = (0..4)
             .map(|_| {
                 runtime
-                    .terminal_workers
-                    .clone()
+                    .lanes
+                    .workers(Lane::Terminal)
                     .try_acquire_owned()
                     .unwrap()
             })
             .collect::<Vec<_>>();
         let _queued = (0..64)
-            .map(|_| runtime.terminal_requests.reserve_with_limit(64).unwrap())
+            .map(|_| runtime.lanes.try_enter(Lane::Terminal).unwrap())
             .collect::<Vec<_>>();
-        assert!(runtime.terminal_requests.reserve_with_limit(64).is_err());
-        let _input = runtime.terminal_io_requests.reserve_with_limit(64).unwrap();
+        assert!(runtime.lanes.try_enter(Lane::Terminal).is_err());
+        let _input = runtime.lanes.try_enter(Lane::TerminalIo).unwrap();
         let _input_worker = runtime
-            .terminal_io_workers
-            .clone()
+            .lanes
+            .workers(Lane::TerminalIo)
             .try_acquire_owned()
             .unwrap();
-        let _stop = runtime
-            .terminal_stop_requests
-            .reserve_with_limit(64)
-            .unwrap();
+        let _stop = runtime.lanes.try_enter(Lane::TerminalStop).unwrap();
         let _stop_worker = runtime
-            .terminal_stop_workers
-            .clone()
+            .lanes
+            .workers(Lane::TerminalStop)
             .try_acquire_owned()
             .unwrap();
     }
@@ -2329,7 +821,7 @@ mod tests {
             for route in ["source", "files", "dependencies", "runtime"] {
                 assert!(!allowed("workspace.registry", route, method));
             }
-            for component in ["workspace.migration", "workspace.source", "workspace.files"] {
+            for component in ["workspace.setup", "workspace.source", "workspace.files"] {
                 assert!(!allowed(component, "overview", method));
             }
         }
@@ -2390,19 +882,35 @@ mod tests {
     #[test]
     fn saturated_lsp_workers_leave_files_and_project_selection_available() {
         let runtime = Runtime::default();
-        let _first = runtime.lsp_workers.clone().try_acquire_owned().unwrap();
-        let _second = runtime.lsp_workers.clone().try_acquire_owned().unwrap();
-        assert!(runtime.lsp_workers.clone().try_acquire_owned().is_err());
-        let _editor = runtime.file_workers.clone().try_acquire_owned().unwrap();
+        let _first = runtime
+            .lanes
+            .workers(Lane::Lsp)
+            .try_acquire_owned()
+            .unwrap();
+        let _second = runtime
+            .lanes
+            .workers(Lane::Lsp)
+            .try_acquire_owned()
+            .unwrap();
+        assert!(runtime
+            .lanes
+            .workers(Lane::Lsp)
+            .try_acquire_owned()
+            .is_err());
+        let _editor = runtime
+            .lanes
+            .workers(Lane::Files)
+            .try_acquire_owned()
+            .unwrap();
         let _file_owner = runtime.files.try_lock().unwrap();
         let _selection = runtime.context_activity.enter(true).unwrap();
         let _private_install = runtime.lsp.lock().unwrap();
-        let request = runtime.lsp_requests.reserve().unwrap();
-        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 1);
+        let request = runtime.lanes.try_enter(Lane::Lsp).unwrap();
+        assert_eq!(runtime.lanes.active(Lane::Lsp), 1);
         runtime.lsp_shutdown.cancel();
-        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 1);
+        assert_eq!(runtime.lanes.active(Lane::Lsp), 1);
         drop(request);
-        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 0);
+        assert_eq!(runtime.lanes.active(Lane::Lsp), 0);
     }
 
     #[test]
@@ -2465,7 +973,7 @@ mod tests {
         let components = catalog["components"].as_array().unwrap();
         for (component, route, method) in [
             ("workspace.registry", "overview", "snapshot"),
-            ("workspace.migration", "overview", "status"),
+            ("workspace.setup", "overview", "status"),
             ("workspace.definitions", "overview", "load"),
             (
                 "workspace.dependencies",

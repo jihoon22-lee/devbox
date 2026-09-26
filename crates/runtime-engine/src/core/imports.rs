@@ -92,6 +92,7 @@ impl std::error::Error for ProjectImportError {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ProjectImportFile {
     pub path: String,
     pub bytes: u64,
@@ -99,6 +100,7 @@ pub struct ProjectImportFile {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum ProjectImportSource {
     PackageScript,
     CargoTarget,
@@ -115,6 +117,7 @@ impl ProjectImportSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ProjectImportItem {
     /// Opaque, deterministic within the preview source.  It is not a path and
     /// is not accepted as a command or filesystem value.
@@ -137,6 +140,7 @@ pub struct ProjectImportItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ProjectImportPlan {
     pub schema_version: u32,
     /// Canonical root displayed for the explicit user confirmation step.
@@ -149,6 +153,7 @@ pub struct ProjectImportPlan {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ProjectImportApplyResult {
     pub created: u32,
     pub skipped_conflicts: u32,

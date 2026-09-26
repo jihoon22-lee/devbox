@@ -50,6 +50,7 @@ pub struct OpenedFile {
 /// JavaScript `number` cannot represent an `i64` timestamp losslessly.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OpenedFileWire {
     pub path: String,
     pub text: String,
@@ -100,6 +101,7 @@ pub struct SavedFile {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SavedFileWire {
     pub path: String,
     pub mtime_nanos: String,
@@ -129,6 +131,7 @@ impl From<SavedFile> for SavedFileWire {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveFileRequest {
     pub path: String,
     pub text: String,
@@ -145,6 +148,7 @@ pub struct SaveFileRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct FileActionRequest {
     pub path: String,
     pub expected_mtime_nanos: String,
@@ -154,6 +158,7 @@ pub struct FileActionRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameFileRequest {
     #[serde(flatten)]
     pub file: FileActionRequest,
@@ -162,6 +167,7 @@ pub struct RenameFileRequest {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamedFileWire {
     pub path: String,
     pub mtime_nanos: String,
@@ -193,6 +199,7 @@ pub(crate) struct CreatedBackup {
 /// `invoke("open_file", { path })` and `invoke("save_file", payload)` are natural.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OpenFileRequest {
     pub path: String,
     /// `None` performs detection; `Some` performs strict explicit decoding.
@@ -201,6 +208,7 @@ pub struct OpenFileRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ValidateEncodingRequest {
     pub text: String,
     pub encoding: Encoding,
@@ -1126,7 +1134,6 @@ pub fn delete_path_guarded(
 
 /// Tauri command for opening one file.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
         open_path_with_encoding(Path::new(&request.path), request.encoding)
@@ -1140,7 +1147,6 @@ pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, Strin
 /// Tauri command for saving one file. The timestamp is intentionally a decimal
 /// string (`expectedMtimeNanos`) so JavaScript cannot round an epoch `i64`.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let expected_mtime =
@@ -1169,7 +1175,6 @@ pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String
 /// Error strings are deliberately generic so arbitrary paths and OS details do
 /// not cross the command boundary.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let expected = expected_snapshot(&request.file)
@@ -1183,7 +1188,6 @@ pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFil
 
 /// Delete only the currently-open regular file after an exact snapshot check.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let expected =
@@ -1198,7 +1202,6 @@ pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String
 /// Reveal a canonical existing regular file without returning its path or the
 /// platform opener's detailed error to the frontend.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let canonical =
         canonical_file(Path::new(&path)).map_err(|_| "파일 위치를 열 수 없습니다.".to_string())?;
@@ -1211,7 +1214,6 @@ pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(
 /// This is used by the status-bar conversion control so a metadata change is
 /// only committed after CP949 (or another strict encoder) accepts the buffer.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn validate_encoding(request: ValidateEncodingRequest) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         encoding::encode(&request.text, request.encoding)
@@ -1658,102 +1660,6 @@ fn sync_parent(target: &Path) -> Result<(), FileError> {
 #[cfg(not(unix))]
 fn sync_parent(_target: &Path) -> Result<(), FileError> {
     Ok(())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_open_file(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: OpenFileRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = open_file(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_save_file(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: SaveFileRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = save_file(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_rename_file_action(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: RenameFileRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = rename_file_action(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_delete_file_action(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: FileActionRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    delete_file_action(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_reveal_file_action(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    reveal_file_action(_component_app.clone(), input.path).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_validate_encoding(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: ValidateEncodingRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    validate_encoding(input.request).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

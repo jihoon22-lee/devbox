@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
-import { componentCall } from "./native";
+import { typedComponentCall } from "./native";
+import type { ProblemsCall } from "@devbox/workspace-features/generated/ProblemsCall";
+import type { ProblemsResults } from "@devbox/workspace-features/generated/problems-results";
 import { sameRuntimeContext, type RuntimeFocusTarget } from "./runtimeNavigation";
 import "./Problems.css";
 
@@ -72,16 +74,15 @@ export default function Problems({
   latest.current = description.context;
   const mounted = useRef(true),
     pending = useRef(false);
-  const call = useCallback(
-    <T,>(method: string, args: Record<string, unknown> = {}) =>
-      componentCall<T>(description, "workspace.problems", method, args, "problems"),
+  const call = useMemo(
+    () => typedComponentCall<ProblemsCall, ProblemsResults>(description, "workspace.problems", "problems"),
     [description],
   );
   const refresh = useCallback(async () => {
     if (!description.context || pending.current) return;
     pending.current = true;
     try {
-      const value = await call<ProblemsSnapshot>("snapshot");
+      const value = await call("snapshot", {});
       if (mounted.current && sameRuntimeContext(value.context, latest.current)) {
         setSnapshot(value);
         setIssue("");
@@ -112,10 +113,7 @@ export default function Problems({
     setIssue("");
     const context = description.context;
     try {
-      const result = await call<{
-        context: Description["context"];
-        target: Target | { kind: "log"; request: RuntimeLogOpenRequest };
-      }>("resolve", { id: item.id, revision: item.revision, log });
+      const result = await call("resolve", { id: item.id, revision: item.revision, log });
       if (
         !mounted.current ||
         !sameRuntimeContext(context, latest.current) ||

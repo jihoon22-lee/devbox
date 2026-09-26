@@ -31,6 +31,7 @@ fn fixed_error() -> String {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CommitSummary {
     pub id: String,
     pub short_id: String,
@@ -43,6 +44,7 @@ pub struct CommitSummary {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct HistoryResult {
     pub entries: Vec<CommitSummary>,
     pub has_more: bool,
@@ -50,6 +52,7 @@ pub struct HistoryResult {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CommitDetail {
     pub id: String,
     pub parents: Vec<String>,
@@ -62,9 +65,11 @@ pub struct CommitDetail {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DiffResult {
     /// `workingTree` compares `HEAD` with tracked current index/worktree changes. `commit`
     /// compares one selected commit with its parent (including root commits).
+    #[ts(type = "\"workingTree\" | \"commit\"")]
     pub scope: String,
     pub commit_id: Option<String>,
     pub files: Vec<DiffFile>,
@@ -73,11 +78,13 @@ pub struct DiffResult {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DiffFile {
     /// The new-side repository-relative path. Deleted files retain their
     /// repository path here; `/dev/null` is never exposed as a user path.
     pub path: String,
     pub old_path: Option<String>,
+    #[ts(type = "\"modified\" | \"added\" | \"deleted\" | \"renamed\"")]
     pub status: String,
     pub binary: bool,
     pub patch: String,

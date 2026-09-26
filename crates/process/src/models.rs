@@ -5,7 +5,7 @@ use serde::Serialize;
 ///
 /// This value contains only parsed data. It intentionally does not contain
 /// UI-specific process details or any platform command state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ts_rs::TS)]
 pub struct PortInfo {
     /// Protocol (for example, `TCP`, `TCP6`, or `UDP`).
     pub proto: String,

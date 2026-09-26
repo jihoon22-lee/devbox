@@ -1,6 +1,7 @@
 //! Native domain engine and product-host adapter; no standalone application.
+pub mod api;
 mod applink;
-mod commands;
+pub(crate) mod commands;
 pub mod component;
 pub mod core;
-mod handoff;
+pub(crate) mod handoff;

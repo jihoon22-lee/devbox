@@ -12,6 +12,7 @@ const MAX_PANES: usize = 32;
 
 #[derive(Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 struct Start {
     distro: String,
     cwd: Option<String>,
@@ -254,7 +255,7 @@ impl TerminalOwner {
                     session_id: String,
                     data: String,
                 }
-                let input: Initial = parse(args.clone())?;
+                let input: Initial = parse(args)?;
                 self.output(&input.session_id)?;
                 if input.data.len() > 16 * 1024 {
                     return Err("terminal_args_invalid".into());
@@ -274,9 +275,16 @@ impl TerminalOwner {
                         };
                     }
                     // Reserve before any write; failure or renderer loss never resends input.
-                    commands.insert(input.session_id.clone(), (input.data, false));
+                    commands.insert(input.session_id.clone(), (input.data.clone(), false));
                 }
-                let result = terminal::__component_write_session(app, args).await?;
+                let result = crate::api::dispatch_owned(
+                    app,
+                    crate::api::TerminalCall::WriteSession {
+                        session_id: input.session_id.clone(),
+                        data: input.data,
+                    },
+                )
+                .await?;
                 if let Some((_, completed)) = self
                     .initial_commands
                     .lock()
@@ -308,11 +316,9 @@ impl TerminalOwner {
                             .ok_or("terminal_args_invalid")?,
                     )?;
                 }
-                match method {
-                    "write_session" => terminal::__component_write_session(app, args).await,
-                    "resize_session" => terminal::__component_resize_session(app, args).await,
-                    _ => terminal::__component_broadcast(app, args).await,
-                }
+                let call = serde_json::from_value(serde_json::json!({"method":method,"args":args}))
+                    .map_err(|_| "terminal_args_invalid")?;
+                crate::api::dispatch_owned(app, call).await
             }
             _ => Err("terminal_method_invalid".into()),
         }

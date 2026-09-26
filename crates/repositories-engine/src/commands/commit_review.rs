@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 pub(super) const STALE: &str = "commit_review_stale";
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct Review {
     pub revision: String,
     pub staged_paths: Vec<String>,

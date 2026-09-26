@@ -1,7 +1,14 @@
+import { bindTypedCall } from "@devbox/workspace-features/typed";
+import type { WorkspaceDefinitionsCall } from "@devbox/workspace-features/generated/WorkspaceDefinitionsCall";
+import type { DefinitionsResults } from "@devbox/workspace-features/generated/definitions-results";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 const DefinitionEditor = lazy(() => import("./DefinitionEditor"));
 import { componentCall, nativeCall } from "./native";
+
+const cancelDefinition = bindTypedCall<WorkspaceDefinitionsCall, DefinitionsResults>((method, args) =>
+  nativeCall("workspace.definitions", method, args),
+);
 
 interface View {
   registryRevision: number;
@@ -38,8 +45,9 @@ export default function ProjectDefinitions({ description, onDirtyChange, onChang
   const pending = useRef<string | null>(null);
   const busyRef = useRef(false);
   const contextKey = JSON.stringify(description.context);
-  const call = <T,>(method: string, args: Record<string, unknown> = {}) =>
-    componentCall<T>(description, "workspace.definitions", method, args, "overview");
+  const call = bindTypedCall<WorkspaceDefinitionsCall, DefinitionsResults>((method, args) =>
+    componentCall(description, "workspace.definitions", method, args, "overview"),
+  );
   useEffect(() => {
     onDirtyChange(busy || !!preview || editing);
   }, [busy, preview, editing, onDirtyChange]);
@@ -54,8 +62,7 @@ export default function ProjectDefinitions({ description, onDirtyChange, onChang
     busyRef.current = false;
     return () => {
       sequence.current += 1;
-      if (pending.current)
-        void nativeCall("workspace.definitions", "cancel", { previewId: pending.current }).catch(() => {});
+      if (pending.current) void cancelDefinition("cancel", { previewId: pending.current }).catch(() => {});
       pending.current = null;
     };
   }, [contextKey]);
@@ -78,7 +85,7 @@ export default function ProjectDefinitions({ description, onDirtyChange, onChang
     }
   }
   async function load(request: number) {
-    const value = await call<View>("load");
+    const value = await call("load", {});
     if (sequence.current === request) setView(value);
   }
   async function cancel(request: number) {
@@ -153,11 +160,9 @@ export default function ProjectDefinitions({ description, onDirtyChange, onChang
                   disabled={busy || view.unavailableSources.length > 0}
                   onClick={() =>
                     void act(async (request) => {
-                      const next = await call<Preview>("preview_trust");
+                      const next = await call("preview_trust", {});
                       if (sequence.current !== request) {
-                        void nativeCall("workspace.definitions", "cancel", { previewId: next.previewId }).catch(
-                          () => {},
-                        );
+                        void cancelDefinition("cancel", { previewId: next.previewId }).catch(() => {});
                         return;
                       }
                       pending.current = next.previewId;

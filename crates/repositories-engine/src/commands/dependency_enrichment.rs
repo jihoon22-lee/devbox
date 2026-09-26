@@ -36,6 +36,7 @@ const USER_AGENT: &str = "devbox-repo-manager/dependency-lens";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentPreviewRequest {
     pub path: String,
     pub services: EnrichmentSelection,
@@ -45,6 +46,7 @@ pub struct DependencyEnrichmentPreviewRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentExecuteRequest {
     pub path: String,
     pub preview_token: String,
@@ -141,18 +143,6 @@ impl EnrichmentEndpoints {
     }
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
-#[cfg(feature = "desktop")]
-pub async fn dependency_enrichment_preview(
-    request: DependencyEnrichmentPreviewRequest,
-) -> Result<DependencyEnrichmentPreview, String> {
-    let access = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
-        DependencyAccess::legacy(&request.path)
-    })
-    .await?;
-    preview_with_access(access, request.services, request.force_refresh).await
-}
-
 pub(crate) async fn preview_with_access(
     access: DependencyAccess,
     services: EnrichmentSelection,
@@ -199,18 +189,6 @@ pub(crate) async fn preview_with_access(
             now_ms,
         );
     Ok(preview)
-}
-
-#[cfg_attr(feature = "desktop", tauri::command)]
-#[cfg(feature = "desktop")]
-pub async fn dependency_enrichment_execute(
-    request: DependencyEnrichmentExecuteRequest,
-) -> Result<DependencyEnrichmentReport, String> {
-    let access = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
-        DependencyAccess::legacy(&request.path)
-    })
-    .await?;
-    execute_with_access(access, request.preview_token).await
 }
 
 pub(crate) async fn execute_with_access(
@@ -604,36 +582,6 @@ fn prepare_cache_directory(
         .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())
 }
 
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_dependency_enrichment_preview(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: DependencyEnrichmentPreviewRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = dependency_enrichment_preview(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_dependency_enrichment_execute(
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: DependencyEnrichmentExecuteRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = dependency_enrichment_execute(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -852,17 +800,23 @@ mod tests {
             },
         )
         .unwrap();
-        let wrong = crate::runtime::block_on(crate::component::dispatch_dependencies(
+        let wrong = crate::runtime::block_on(crate::api::dispatch_dependencies(
             access.clone(),
-            "dependency_inventory",
-            json!({"request":{"path":"/another-root"}}),
+            crate::api::DependenciesCall::DependencyInventory {
+                request: crate::commands::DependencyInventoryRequest {
+                    path: "/another-root".into(),
+                },
+            },
         ));
         assert_eq!(wrong.unwrap_err(), "dependency_context_changed");
         assert_eq!(reads.load(Ordering::SeqCst), 0);
-        let result = crate::runtime::block_on(crate::component::dispatch_dependencies(
+        let result = crate::runtime::block_on(crate::api::dispatch_dependencies(
             access.clone(),
-            "dependency_inventory",
-            json!({"request":{"path":logical}}),
+            crate::api::DependenciesCall::DependencyInventory {
+                request: crate::commands::DependencyInventoryRequest {
+                    path: logical.clone(),
+                },
+            },
         ))
         .unwrap();
         assert_eq!(result["packageCount"], 1);
@@ -932,10 +886,13 @@ mod tests {
         assert_eq!(report.package_count, 1);
         assert!(report.summary_published);
         assert!(!root.path().join(".git").exists());
-        let wrong = crate::runtime::block_on(crate::component::dispatch_dependencies(
+        let wrong = crate::runtime::block_on(crate::api::dispatch_dependencies(
             access.clone(),
-            "dependency_inventory",
-            json!({"request":{"path":common.path().to_string_lossy()}}),
+            crate::api::DependenciesCall::DependencyInventory {
+                request: crate::commands::DependencyInventoryRequest {
+                    path: common.path().to_string_lossy().into_owned(),
+                },
+            },
         ));
         assert_eq!(wrong.unwrap_err(), "dependency_context_changed");
         let selection = EnrichmentSelection {

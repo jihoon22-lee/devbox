@@ -5,6 +5,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum PositionEncoding {
     Utf16,
     Utf8,
@@ -30,6 +31,7 @@ impl PositionEncoding {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LspPosition {
     pub line: u32,
     pub character: u32,
@@ -43,6 +45,7 @@ impl LspPosition {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LspRange {
     pub start: LspPosition,
     pub end: LspPosition,

@@ -1,6 +1,7 @@
 //! Native component entry points; the product host admits caller and operation.
 //! Calling these does not start the standalone application or select its stores.
 
+pub use crate::commands::ports::ListenerActionResult;
 pub use crate::core::listeners::{KillListenerRequest, ListenerIdentity, ListenerSource};
 pub use crate::core::{preferences::PortManagerPreferences, product_preferences};
 use std::{
@@ -71,76 +72,6 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path) -> Result<(), String> {
 pub async fn kill_external_listener(
     request: KillListenerRequest,
     deadline_ms: u64,
-) -> Result<serde_json::Value, String> {
-    let result = crate::commands::ports::kill_product_listener(request, deadline_ms).await?;
-    serde_json::to_value(result).map_err(|_| "component_response_invalid".into())
-}
-
-pub const COMMANDS: &[&str] = &[
-    "preview_legacy_runtime_settings",
-    "apply_legacy_runtime_settings",
-    "list_port_observations",
-    "open_port_owner",
-    "open_port_log",
-    "list_ports",
-    "kill_listener",
-    "handoff_container_stop",
-    "get_process_info",
-    "reveal_process",
-    "open_browser",
-    "load_port_manager_preferences",
-    "save_port_manager_preferences",
-];
-
-#[cfg(feature = "desktop")]
-pub async fn dispatch(
-    app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    data_root(app)?;
-    let result = match method {
-        "list_port_observations" => {
-            crate::commands::correlation::__component_list_port_observations(app, args).await
-        }
-        "open_port_owner" => {
-            crate::commands::correlation::__component_open_port_owner(app, args).await
-        }
-        "open_port_log" => crate::commands::correlation::__component_open_port_log(app, args).await,
-        "list_ports" => crate::commands::ports::__component_list_ports(app, args).await,
-        "kill_listener" => crate::commands::ports::__component_kill_listener(app, args).await,
-        "handoff_container_stop" => {
-            crate::commands::ports::__component_handoff_container_stop(app, args).await
-        }
-        "get_process_info" => crate::commands::ports::__component_get_process_info(app, args).await,
-        "reveal_process" => crate::commands::ports::__component_reveal_process(app, args).await,
-        "open_browser" => crate::commands::ports::__component_open_browser(app, args).await,
-        "load_port_manager_preferences" => {
-            #[derive(serde::Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Input {}
-            let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            serde_json::to_value(
-                crate::core::product_preferences::load(&data_root(app)?)
-                    .map_err(str::to_owned)?
-                    .preferences,
-            )
-            .map_err(|_| "component_response_invalid".into())
-        }
-        "save_port_manager_preferences" => {
-            #[derive(serde::Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Input {
-                preferences: crate::core::preferences::PortManagerPreferences,
-            }
-            let input: Input =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-            crate::core::product_preferences::save(&data_root(app)?, input.preferences)
-                .map_err(str::to_owned)?;
-            Ok(serde_json::Value::Null)
-        }
-        _ => Err("component_method_invalid".into()),
-    };
-    data_root(app)?;
-    result
+) -> Result<ListenerActionResult, String> {
+    crate::commands::ports::kill_product_listener(request, deadline_ms).await
 }

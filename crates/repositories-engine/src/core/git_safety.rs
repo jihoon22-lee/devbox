@@ -40,6 +40,7 @@ pub struct ParsedSafetyStatus {
 /// or perform any Git operation.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GitSafetySnapshot {
     pub branch: String,
     pub upstream: Option<String>,
@@ -54,6 +55,9 @@ pub struct GitSafetySnapshot {
     pub safe: bool,
     /// Stable machine-readable issue IDs in deterministic order. The UI owns
     /// the localized explanation and never receives raw Git output.
+    #[ts(
+        type = "Array<\"dirty\" | \"detached\" | \"noUpstream\" | \"diverged\" | \"rebaseInProgress\" | \"mergeInProgress\">"
+    )]
     pub issues: Vec<String>,
 }
 

@@ -39,6 +39,7 @@ const CACHE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum EnrichmentService {
     Osv,
     DepsDev,
@@ -46,6 +47,7 @@ pub enum EnrichmentService {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct EnrichmentSelection {
     pub osv: bool,
     pub deps_dev: bool,
@@ -59,6 +61,7 @@ impl EnrichmentSelection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct EnrichmentCoordinatePreview {
     pub ecosystem: String,
     pub name: String,
@@ -69,6 +72,7 @@ pub struct EnrichmentCoordinatePreview {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct EnrichmentServicePreview {
     pub service: EnrichmentService,
     pub host: String,
@@ -81,6 +85,7 @@ pub struct EnrichmentServicePreview {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentPreview {
     pub token: String,
     pub revision: String,
@@ -91,6 +96,7 @@ pub struct DependencyEnrichmentPreview {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum EnrichmentValueState {
     Fresh,
     Cached,
@@ -101,6 +107,7 @@ pub enum EnrichmentValueState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OsvEnrichmentValue {
     pub state: EnrichmentValueState,
     pub fetched_at_ms: Option<u64>,
@@ -111,6 +118,7 @@ pub struct OsvEnrichmentValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DepsDevEnrichmentValue {
     pub state: EnrichmentValueState,
     pub fetched_at_ms: Option<u64>,
@@ -125,6 +133,7 @@ pub struct DepsDevEnrichmentValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentEntry {
     pub package_ids: Vec<String>,
     pub osv: OsvEnrichmentValue,
@@ -133,6 +142,7 @@ pub struct DependencyEnrichmentEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct EnrichmentServiceSummary {
     pub service: EnrichmentService,
     pub target_count: usize,
@@ -145,6 +155,7 @@ pub struct EnrichmentServiceSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DependencyEnrichmentReport {
     pub revision: String,
     pub completed_at_ms: u64,

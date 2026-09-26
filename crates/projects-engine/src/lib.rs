@@ -1,7 +1,10 @@
 //! Native domain engine and product-host adapter; no standalone application.
 mod applink;
-mod commands;
+// Native Rust services remain available without any Tauri command registration.
+pub mod commands;
 pub mod component;
-mod core;
+pub mod core;
 mod integration;
 mod platform;
+
+pub mod api;

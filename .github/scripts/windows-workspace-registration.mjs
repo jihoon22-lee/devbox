@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { exerciseWorkspaceTerminalSessions } from "./windows-workspace-terminal-sessions.mjs";
 import { exerciseWorkspaceRuntimeWsl } from "./windows-workspace-runtime-wsl.mjs";
 import { exerciseWorkspaceRuntime } from "./windows-workspace-runtime.mjs";
@@ -40,12 +41,12 @@ export function workspaceRequestExpression(
                     ? "source"
                     : "overview";
   return `(async () => {
-    const invoke = window.__TAURI_INTERNALS__.invoke;
+    const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
     const d = await invoke("plugin:product-shell|describe");
     const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${budgetMs},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
     for(let attempt=0;;attempt++) {
       try {
-        const result=await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({ component, method, args })}}});
+        const result=await invokeComponent("workspace",{request:{header,...${JSON.stringify({ component, method, args })}}});
         // A registry snapshot is read-only. The foreground UI and this probe
         // may briefly contend for its lease after Source retires a context.
         // Only this exact, authenticated busy result may be queried again.
@@ -143,15 +144,15 @@ export async function exerciseWorkspaceRegistration({
   );
   assert.equal(success(await call("workspace.registry", "snapshot")).projects.length, 0);
   const authority = await cdp.evaluate(`(async () => {
-    const invoke=window.__TAURI_INTERNALS__.invoke;
+    const invoke=window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
     const d=await invoke("plugin:product-shell|describe");
     const header=()=>({protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"overview"});
     const request={header:header(),component:"workspace.registry",method:"snapshot",args:{}};
-    await invoke("plugin:workspace|execute",{request});
+    await invokeComponent("workspace",{request});
     let replay=false,role=false,installation=false;
-    try {await invoke("plugin:workspace|execute",{request});} catch {replay=true;}
-    try {await invoke("plugin:workspace|execute",{request:{...request,header:header(),component:"workspace.migration",method:"apply_registration"}});} catch {role=true;}
-    try {await invoke("plugin:workspace|execute",{request:{...request,header:{...header(),installationId:"foreign-installation"}}});} catch {installation=true;}
+    try {await invokeComponent("workspace",{request});} catch {replay=true;}
+    try {await invokeComponent("workspace",{request:{...request,header:header(),component:"workspace.setup",method:"apply_registration"}});} catch {role=true;}
+    try {await invokeComponent("workspace",{request:{...request,header:{...header(),installationId:"foreign-installation"}}});} catch {installation=true;}
     return {replay,role,installation};
   })()`);
   assert.deepEqual(authority, { replay: true, role: true, installation: true });
@@ -193,10 +194,10 @@ export async function exerciseWorkspaceRegistration({
   const selected = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
   assert.equal(selected.context.worktreeId, registry.worktrees[0].id);
   const staleContext = await cdp.evaluate(`(async () => {
-    const invoke=window.__TAURI_INTERNALS__.invoke;
+    const invoke=window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
     const d=await invoke("plugin:product-shell|describe");
     const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"overview"};
-    try {await invoke("plugin:workspace|execute",{request:{header,component:"workspace.registry",method:"snapshot",args:{}}});return null;} catch (error) {return error.code;}
+    try {await invokeComponent("workspace",{request:{header,component:"workspace.registry",method:"snapshot",args:{}}});return null;} catch (error) {return error.code;}
   })()`);
   assert.equal(staleContext, "stale-context");
   assert.equal(

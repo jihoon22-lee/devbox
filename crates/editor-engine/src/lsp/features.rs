@@ -24,6 +24,7 @@ use url::Url;
 /// guard and are not part of most LSP request parameter objects.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RequestMetadata {
     pub uri: String,
     pub version: i32,
@@ -39,7 +40,7 @@ impl RequestMetadata {
 }
 
 /// A response paired with the request snapshot that it belongs to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ts_rs::TS)]
 pub struct FeatureResponse<T> {
     pub metadata: RequestMetadata,
     pub value: T,
@@ -60,6 +61,7 @@ impl<T> FeatureResponse<T> {
 /// as their version because LSP's pull report itself has no document version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum DiagnosticOrigin {
     Push,
     Pull,
@@ -68,6 +70,7 @@ pub enum DiagnosticOrigin {
 /// A diagnostic representation safe to pass to a frontend lint adapter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ValidatedDiagnostic {
     pub range: LspRange,
     pub severity: Option<u32>,
@@ -79,6 +82,7 @@ pub struct ValidatedDiagnostic {
 /// A validated push or pull diagnostic result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DiagnosticResult {
     pub uri: String,
     pub version: Option<i32>,
@@ -204,6 +208,7 @@ impl From<&DiagnosticResult> for DiagnosticResult {
 /// LocationLink).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LocationTarget {
     pub uri: String,
     pub range: LspRange,
@@ -213,6 +218,7 @@ pub struct LocationTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct FilteredLocations {
     pub locations: Vec<LocationTarget>,
     pub rejected: usize,
@@ -223,9 +229,51 @@ pub struct FilteredLocations {
 /// execution is outside this bounded feature surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CompletionResult {
     pub is_incomplete: bool,
+    #[ts(as = "Vec<CompletionItemWire>")]
     pub items: Vec<lsp::CompletionItem>,
+}
+
+/// TypeScript view of the external LSP completion payload. Protocol edits and
+/// commands stay opaque: the frontend validates edits and never executes commands.
+/// This does not replace or transform the LSP serializer used on the wire.
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(optional_fields)]
+#[allow(dead_code)]
+pub struct CompletionItemWire {
+    pub label: String,
+    pub label_details: Option<Value>,
+    pub kind: Option<u32>,
+    pub detail: Option<String>,
+    pub documentation: Option<CompletionDocumentation>,
+    pub deprecated: Option<bool>,
+    pub preselect: Option<bool>,
+    pub sort_text: Option<String>,
+    pub filter_text: Option<String>,
+    pub insert_text: Option<String>,
+    pub insert_text_format: Option<u32>,
+    pub insert_text_mode: Option<u32>,
+    pub text_edit: Option<Value>,
+    pub additional_text_edits: Option<Vec<Value>>,
+    pub command: Option<Value>,
+    pub commit_characters: Option<Vec<String>>,
+    pub data: Option<Value>,
+    pub tags: Option<Vec<u32>>,
+}
+
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[serde(untagged)]
+#[allow(dead_code)]
+pub enum CompletionDocumentation {
+    Text(String),
+    Markup {
+        #[ts(type = "\"markdown\" | \"plaintext\"")]
+        kind: String,
+        value: String,
+    },
 }
 
 /// A normalized hover result.  `MarkedString` language blocks are represented
@@ -248,6 +296,7 @@ pub struct HoverResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SanitizedHover {
     pub text: String,
     pub markdown: bool,

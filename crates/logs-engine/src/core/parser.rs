@@ -27,6 +27,7 @@ pub struct ParseBatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ExportedText {
     pub text: String,
     pub truncated: bool,

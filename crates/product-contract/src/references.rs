@@ -68,6 +68,7 @@ pub fn publish_api_selection(
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum SecretOwner {
     ApiEnvironment,
     RuntimeEnvironment,
@@ -76,6 +77,7 @@ pub enum SecretOwner {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct OwnedSecretReference {
     pub provenance: Provenance,
     pub owner: SecretOwner,

@@ -38,6 +38,7 @@ const MAX_CLOCK_SKEW_MS: u64 = 5 * 60 * 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub enum DependencyEcosystem {
     Cargo,
     Pnpm,
@@ -60,6 +61,7 @@ impl DependencyEcosystem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub enum DependencySourceStatus {
     Ready,
     MissingLockfile,
@@ -70,6 +72,7 @@ pub enum DependencySourceStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencySource {
     pub ecosystem: DependencyEcosystem,
     /// Repository-relative manifest or lockfile path. Absolute paths never
@@ -84,6 +87,7 @@ pub struct DependencySource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyPackage {
     pub id: String,
     pub ecosystem: DependencyEcosystem,
@@ -97,6 +101,7 @@ pub struct DependencyPackage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DuplicateDependency {
     pub ecosystem: DependencyEcosystem,
     pub name: String,
@@ -105,6 +110,7 @@ pub struct DuplicateDependency {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DependencyReport {
     pub revision: String,
     pub sources: Vec<DependencySource>,

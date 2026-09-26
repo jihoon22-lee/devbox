@@ -81,7 +81,7 @@ assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-content-ind
 for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engine"]:
     assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge"])
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == sorted(["devbox-activity-engine", "devbox-content-index-engine", "devbox-toolbox-engine", "devbox-webhook-host", "product-ipc", "devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
+assert secrets.rust_packages == sorted(["devbox-editor-engine", "devbox-repositories-engine", "devbox-logs-engine", "devbox-ports-engine", "devbox-terminal-engine", "devbox-activity-engine", "devbox-content-index-engine", "devbox-toolbox-engine", "devbox-webhook-host", "product-ipc", "devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
 
 shared_tree = resolve("crates/process-tree/src/lib.rs")
 assert shared_tree.frontend_scope == "none"
@@ -286,6 +286,7 @@ assert {"suite-runtime", "devbox-workspace", "devbox-api-studio", "devbox-knowle
 
 for prefix, owner in [
     ("packages/knowledge-features", "devbox-knowledge"),
+    ("packages/workspace-features", "devbox-workspace"),
     ("packages/api-studio-features", "devbox-api-studio"),
     ("packages/control-center-features", "devbox-control-center"),
 ]:

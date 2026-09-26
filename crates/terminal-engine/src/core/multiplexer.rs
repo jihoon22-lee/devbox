@@ -19,6 +19,7 @@ pub const PRINTENV_EXECUTABLES: [&str; 2] = ["/usr/bin/printenv", "/bin/printenv
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum MultiplexerSource {
     Path,
     UserLocal,

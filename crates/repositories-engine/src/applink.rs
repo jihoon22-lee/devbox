@@ -16,32 +16,10 @@ impl PendingOpen {
         *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
     }
 
+    #[cfg(test)]
     pub fn take(&self) -> Option<OpenRequest> {
         self.0.lock().expect("PendingOpen mutex poisoned").take()
     }
-}
-
-#[tauri::command]
-pub fn take_pending_open(state: tauri::State<'_, PendingOpen>) -> Option<OpenRequest> {
-    state.take()
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_take_pending_open(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = take_pending_open(
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    );
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

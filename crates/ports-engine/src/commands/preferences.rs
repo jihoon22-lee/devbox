@@ -12,7 +12,6 @@ fn preferences_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String
 
 /// Load bounded, app-owned view state. Invalid or corrupt state is rejected
 /// by the core parser; the frontend can then use its safe defaults.
-#[tauri::command]
 pub async fn load_port_manager_preferences(
     app: tauri::AppHandle,
 ) -> Result<PortManagerPreferences, String> {
@@ -27,7 +26,6 @@ pub async fn load_port_manager_preferences(
 /// Persist only the strict preference DTO. The shared writer makes the file
 /// replacement atomic and the core validator rejects paths/secrets/unknown
 /// control fields before any bytes reach disk.
-#[tauri::command]
 pub async fn save_port_manager_preferences(
     app: tauri::AppHandle,
     preferences: PortManagerPreferences,
@@ -38,34 +36,4 @@ pub async fn save_port_manager_preferences(
     })
     .await
     .map_err(|_| PREFERENCES_ERROR.to_owned())?
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_load_port_manager_preferences(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = load_port_manager_preferences(_component_app.clone()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_save_port_manager_preferences(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        preferences: PortManagerPreferences,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    save_port_manager_preferences(_component_app.clone(), input.preferences).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }

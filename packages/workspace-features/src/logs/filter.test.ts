@@ -96,3 +96,18 @@ describe("Log Lens filter", () => {
     });
   });
 });
+
+it("treats native null filter fields as absent constraints", () => {
+  expect(
+    filterRecords(records, {
+      text: "",
+      regex: false,
+      sourceId: null,
+      level: null,
+      startAt: null,
+      endAt: null,
+      field: null,
+      fieldValue: null,
+    }),
+  ).toEqual(records);
+});

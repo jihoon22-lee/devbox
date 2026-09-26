@@ -160,8 +160,8 @@ try {
     }
     const blocked = await call(
       apps.workspace,
-      "plugin:workspace|execute",
-      { component: "workspace.runtime", method: "list_jobs", args: {} },
+      "plugin:workspace|runtime",
+      { method: "list_jobs", args: {} },
       "tasks",
     ).catch(() => null);
     assert.ok(

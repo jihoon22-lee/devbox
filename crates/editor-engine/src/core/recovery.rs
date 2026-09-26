@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub const RECOVERY_VERSION: u32 = 1;
 
 /// 항목 하나: 파일 경로 + 저장하지 않은 버퍼 스냅샷.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct RecoveryEntry {
     pub path: String,
     pub content: String,

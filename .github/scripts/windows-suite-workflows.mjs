@@ -164,10 +164,8 @@ const domain = async (item, component, method, args = {}) =>
   value(
     await request(
       item,
-      item.product === "workspace"
-        ? `plugin:${item.product}|execute`
-        : `plugin:${item.product}|${component.split(".")[1].replaceAll("-", "_")}`,
-      item.product === "workspace" ? { component, method, args } : { method, args },
+      `plugin:${item.product}|${component.split(".")[1].replaceAll("-", "_")}`,
+      { method, args },
       routeFor(component),
     ),
     `${component}.${method}`,
@@ -240,7 +238,7 @@ try {
     api = apps["api-studio"],
     knowledge = apps.knowledge,
     center = apps["control-center"];
-  await domain(workspace, "workspace.migration", "status");
+  await domain(workspace, "workspace.setup", "status");
   // Startup owns fresh-store initialization. A second start_empty races its
   // reservation and intermittently fails with busy on real Windows launches.
   await until(async () => {

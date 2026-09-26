@@ -1,5 +1,12 @@
 import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke("workspace.logs");
+import { typedCall } from "../typed";
+import type { WorkspaceLogsCallHost } from "../generated/WorkspaceLogsCallHost";
+import type { WorkspaceLogsCall } from "../generated/WorkspaceLogsCall";
+import type { LogsResults } from "../generated/logs-results";
+const invoke = typedCall<
+  WorkspaceLogsCallHost | Exclude<WorkspaceLogsCall, { method: WorkspaceLogsCallHost["method"] }>,
+  LogsResults
+>("workspace.logs");
 import { listen } from "@tauri-apps/api/event";
 import { browserSnapshot } from "./browserFixture";
 import { filterRecords as applyFilter, utf8ByteLength } from "./filter";
@@ -378,7 +385,7 @@ function parseWebhookLogPayload(value: unknown): WebhookLogPayload | null {
 
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  const request = parseOpenRequest(await invoke<unknown>("take_pending_open"));
+  const request = parseOpenRequest(await invoke("take_pending_open", {}));
   return request;
 }
 
@@ -396,7 +403,7 @@ export async function previewLogSource(
     throw new HandoffApiError("handoff-invalid");
   let response: unknown;
   try {
-    response = await invoke<unknown>("preview_log_source", { handoffKind, id });
+    response = await invoke("preview_log_source", { handoffKind, id });
   } catch (error) {
     throw sanitizedHandoffError(error, "handoff-claim-storage-failed");
   }
@@ -531,7 +538,7 @@ let browserSavedViews: SavedViewsDocument = { schemaVersion: 1, revision: 0, vie
 
 export async function listSavedViews(): Promise<SavedViewsDocument> {
   if (!isTauri()) return structuredClone(browserSavedViews);
-  const document = parseSavedViewsDocument(await invoke<unknown>("list_saved_views"));
+  const document = parseSavedViewsDocument(await invoke("list_saved_views", {}));
   if (!document) throw new Error("저장된 뷰 응답이 유효하지 않습니다");
   return document;
 }
@@ -546,7 +553,7 @@ export async function saveSavedView(expectedRevision: number, view: SavedView): 
     browserSavedViews = { schemaVersion: 1, revision: expectedRevision + 1, views: nextViews };
     return structuredClone(browserSavedViews);
   }
-  const document = parseSavedViewsDocument(await invoke<unknown>("save_saved_view", { expectedRevision, view }));
+  const document = parseSavedViewsDocument(await invoke("save_saved_view", { expectedRevision, view }));
   if (!document) throw new Error("저장된 뷰 응답이 유효하지 않습니다");
   return document;
 }
@@ -560,7 +567,7 @@ export async function removeSavedView(expectedRevision: number, name: string): P
     browserSavedViews = { schemaVersion: 1, revision: expectedRevision + 1, views };
     return structuredClone(browserSavedViews);
   }
-  const document = parseSavedViewsDocument(await invoke<unknown>("delete_saved_view", { expectedRevision, name }));
+  const document = parseSavedViewsDocument(await invoke("delete_saved_view", { expectedRevision, name }));
   if (!document) throw new Error("저장된 뷰 응답이 유효하지 않습니다");
   return document;
 }
@@ -570,7 +577,7 @@ export async function acceptLogSource(id: string): Promise<SourceSpec> {
   if (!HANDOFF_ID_PATTERN.test(id)) throw new HandoffApiError("handoff-invalid");
   let response: unknown;
   try {
-    response = await invoke<unknown>("accept_log_source", { id });
+    response = await invoke("accept_log_source", { id });
   } catch (error) {
     throw sanitizedHandoffError(error, "handoff-storage-failed");
   }
@@ -594,7 +601,7 @@ export async function renewLogSource(id: string): Promise<number> {
   if (!HANDOFF_ID_PATTERN.test(id)) throw new HandoffApiError("handoff-invalid");
   let response: unknown;
   try {
-    response = await invoke<unknown>("renew_log_source", { id });
+    response = await invoke("renew_log_source", { id });
   } catch (error) {
     throw sanitizedHandoffError(error, "handoff-storage-failed");
   }
@@ -609,7 +616,7 @@ export async function renewLogSource(id: string): Promise<number> {
 
 export async function summarizeSource(source: SourceSpec): Promise<SourceSummary> {
   if (!isTauri()) return browserSnapshot([source]).sources[0];
-  return invoke<SourceSummary>("summarize_source", { source });
+  return invoke("summarize_source", { source });
 }
 
 export async function readSources(
@@ -620,13 +627,18 @@ export async function readSources(
   operationId: string,
 ): Promise<SourcesSnapshot> {
   if (!isTauri()) return browserSnapshot(sources, operationId, generation);
-  return invoke<SourcesSnapshot>("read_sources", {
+  const snapshot = await invoke("read_sources", {
     sources,
     cursors,
     sequenceStarts,
     generation,
     operationId,
   });
+  return { ...snapshot, records: snapshot.records.map(normalizeRecord) };
+}
+
+function normalizeRecord(record: import("../generated/LogRecord").LogRecord): LogRecord {
+  return { ...record, fields: record.fields ?? {} };
 }
 
 export async function cancelRead(operationId: string): Promise<void> {
@@ -653,7 +665,8 @@ function parseToolboxDispatch(value: unknown): ToolboxDispatch | null {
 /** Publish only the current explicit log selection to Developer Toolbox. */
 export async function sendSelectionToToolbox(text: string): Promise<ToolboxDispatch> {
   if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
-  const response = await invoke<unknown>("send_selection_to_toolbox", { text });
+  if (isProductHosted()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
+  const response = await componentInvoke("workspace.logs")("send_selection_to_toolbox", { text });
   const dispatch = parseToolboxDispatch(response);
   if (!dispatch) throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
   return dispatch;
@@ -663,7 +676,7 @@ export async function filterRecords(records: LogRecord[], filter: FilterSpec): P
   if (!isTauri()) {
     return applyFilter(records, filter);
   }
-  return invoke<LogRecord[]>("filter_log_records", { records, filter });
+  return (await invoke("filter_log_records", { records, filter })).map(normalizeRecord);
 }
 
 function escapeLogfmtValue(value: string): string {
@@ -713,7 +726,7 @@ export async function exportRecords(records: LogRecord[]): Promise<ExportedText>
     }
     return { text, truncated };
   }
-  return invoke<ExportedText>("export_log_records", { records });
+  return invoke("export_log_records", { records });
 }
 
 export async function reconnectRuntimeSources(
@@ -725,7 +738,7 @@ export async function reconnectRuntimeSources(
 }
 
 export async function sendNativeLogSelection(generation: number, records: LogRecord[]): Promise<ToolboxDispatch> {
-  const response = await invoke<unknown>("send_selection_to_toolbox", {
+  const response = await invoke("send_selection_to_toolbox", {
     generation,
     keys: records.map((record) => ({ sourceId: record.sourceId, sequence: record.sequence })),
   });

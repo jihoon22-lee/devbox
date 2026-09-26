@@ -1,6 +1,11 @@
 import { runDockerControl } from "./wslControl";
-import { componentInvoke, isProductHosted } from "../transport";
-import { followTerminalOutput, type OutputBatch } from "./lib/terminalReplay";
+import { isProductHosted } from "../transport";
+import { invoke as legacyInvoke } from "@tauri-apps/api/core";
+import { typedCall } from "../typed";
+import type { CompanionHost } from "../generated/CompanionHost";
+import type { CompanionCall } from "../generated/CompanionCall";
+import type { CompanionResults } from "../generated/companion-results";
+import { followTerminalOutput } from "./lib/terminalReplay";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -18,7 +23,9 @@ import type {
   WorkspaceProfile,
 } from "./types";
 import type { QuickSummonShortcut } from "./lib/settings";
-const invoke = componentInvoke("workspace.terminal");
+const invoke = typedCall<CompanionHost | Exclude<CompanionCall, { method: CompanionHost["method"] }>, CompanionResults>(
+  "workspace.terminal",
+);
 const productClosedListeners = new Set<(payload: TerminalOutput) => void>();
 
 export function connectProductTerminalOutput(
@@ -28,7 +35,7 @@ export function connectProductTerminalOutput(
 ): () => void {
   if (!isProductHosted()) return () => undefined;
   return followTerminalOutput(
-    (after) => invoke<OutputBatch>("terminal_output", { sessionId, after }),
+    (after) => invoke("terminal_output", { sessionId, after }),
     write,
     () => {
       for (const listener of productClosedListeners) listener({ session_id: sessionId, data: "" });
@@ -92,7 +99,7 @@ let nextMockSession = 0;
 let mockDashboardRevision = 0;
 
 export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
-  if (isTauri()) return invoke<DashboardSnapshot>("dashboard_snapshot");
+  if (isTauri()) return invoke("dashboard_snapshot", {});
   mockDashboardRevision += 1;
   return {
     revision: mockDashboardRevision,
@@ -119,23 +126,23 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
 
 export async function listDistros(): Promise<DistroInfo[]> {
   if (!isTauri()) return MOCK_DISTROS;
-  return invoke<DistroInfo[]>("list_distros");
+  return invoke("list_distros", {});
 }
 
 export async function getWindowsBuildNumber(): Promise<number | null> {
   if (!isTauri()) return null;
-  return invoke<number | null>("windows_build_number");
+  return invoke("windows_build_number", {});
 }
 
 export async function dockerPs(distro: string): Promise<ContainerInfo[]> {
   if (!isTauri()) return MOCK_CONTAINERS;
-  return invoke<ContainerInfo[]>("docker_ps", { distro });
+  return invoke("docker_ps", { distro });
 }
 
 export async function dockerAction(distro: string, containerId: string, action: string): Promise<void> {
   if (!isTauri()) return;
   if (!isProductHosted()) {
-    await invoke("docker_action", { distro, containerId, action });
+    await legacyInvoke("docker_action", { distro, containerId, action });
     return;
   }
   await runDockerControl(invoke, distro, containerId, action);
@@ -170,7 +177,7 @@ export async function startSession(
     nextMockSession += 1;
     return { sessionId: `mock-${Date.now()}-${nextMockSession}`, resumed: false, multiplexer: "native" };
   }
-  return invoke<StartedSession>("start_session", {
+  return invoke("start_session", {
     distro,
     cwd: cwd ?? null,
     paneKey,
@@ -195,7 +202,7 @@ export async function detectMultiplexers(distro: string): Promise<MultiplexerAva
       { kind: "tmux", status: "missing", version: null, source: null },
       { kind: "zellij", status: "missing", version: null, source: null },
     ];
-  return invoke<MultiplexerAvailability[]>("detect_multiplexers", { distro });
+  return invoke("detect_multiplexers", { distro });
 }
 
 export async function inspectShellIntegration(distro: string): Promise<ShellIntegrationReport> {
@@ -212,7 +219,7 @@ export async function inspectShellIntegration(distro: string): Promise<ShellInte
         defaultShell: shell === "bash",
       })),
     };
-  return invoke<ShellIntegrationReport>("inspect_shell_integration", { distro });
+  return invoke("inspect_shell_integration", { distro });
 }
 
 export async function updateShellIntegration(
@@ -231,7 +238,7 @@ export async function updateShellIntegration(
       integration: { ...integration, status: action === "install" ? "current" : "missing" },
     };
   }
-  return invoke<ShellIntegrationMutation>("update_shell_integration", {
+  return invoke("update_shell_integration", {
     distro,
     shell,
     action,
@@ -242,7 +249,7 @@ export async function updateShellIntegration(
 /** Apply the renderer-persisted summon preferences to native process state.
  * Browser preview mirrors the successful state without reserving a system key. */
 export async function configureQuickSummon(config: QuickSummonConfig): Promise<QuickSummonStatus> {
-  if (isProductHosted()) return invoke<QuickSummonStatus>("terminal_window_policy", {});
+  if (isProductHosted()) return invoke("terminal_window_policy", {});
   if (!isTauri())
     return {
       shortcutRegistered: config.shortcutEnabled,
@@ -251,7 +258,7 @@ export async function configureQuickSummon(config: QuickSummonConfig): Promise<Q
       closeBehavior: config.keepInTray ? "hideToTray" : "exit",
       issues: [],
     };
-  return invoke<QuickSummonStatus>("configure_quick_summon", { config });
+  return legacyInvoke<QuickSummonStatus>("configure_quick_summon", { config });
 }
 
 let mockProfiles: WorkspaceProfile[] = [];
@@ -260,13 +267,13 @@ let profileRevision: string | undefined;
 export async function listWorkspaceProfiles(): Promise<WorkspaceProfile[]> {
   if (!isTauri()) return mockProfiles;
   if (isProductHosted()) {
-    const result = await invoke<{ revision: string; profiles: WorkspaceProfile[] }>("list_workspace_profiles");
+    const result = await invoke("list_workspace_profiles", {});
     if (!/^[a-f0-9]{64}$/.test(result.revision) || !Array.isArray(result.profiles))
       throw new Error("프로필 응답을 확인하지 못했습니다.");
     profileRevision = result.revision;
     return result.profiles;
   }
-  return invoke<WorkspaceProfile[]>("list_workspace_profiles");
+  return legacyInvoke<WorkspaceProfile[]>("list_workspace_profiles");
 }
 
 export async function saveWorkspaceProfile(profile: WorkspaceProfile): Promise<WorkspaceProfile> {
@@ -277,14 +284,14 @@ export async function saveWorkspaceProfile(profile: WorkspaceProfile): Promise<W
   }
   if (isProductHosted()) {
     if (!profileRevision) throw new Error("프로필 목록을 먼저 확인해 주세요.");
-    const result = await invoke<{ revision: string; profile: WorkspaceProfile }>("save_workspace_profile", {
+    const result = await invoke("save_workspace_profile", {
       profile,
       expectedRevision: profileRevision,
     });
     profileRevision = result.revision;
     return result.profile;
   }
-  return invoke<WorkspaceProfile>("save_workspace_profile", { profile });
+  return legacyInvoke<WorkspaceProfile>("save_workspace_profile", { profile });
 }
 
 export async function deleteWorkspaceProfile(id: string): Promise<void> {
@@ -294,14 +301,14 @@ export async function deleteWorkspaceProfile(id: string): Promise<void> {
   }
   if (isProductHosted()) {
     if (!profileRevision) throw new Error("프로필 목록을 먼저 확인해 주세요.");
-    const result = await invoke<{ revision: string }>("delete_workspace_profile", {
+    const result = await invoke("delete_workspace_profile", {
       id,
       expectedRevision: profileRevision,
     });
     profileRevision = result.revision;
     return;
   }
-  await invoke("delete_workspace_profile", { id });
+  await legacyInvoke("delete_workspace_profile", { id });
 }
 
 export async function writeSession(sessionId: string, data: string): Promise<void> {
@@ -335,7 +342,7 @@ export async function closeSession(sessionId: string): Promise<void> {
 
 export async function listSessions(): Promise<SessionInfo[]> {
   if (!isTauri()) return [];
-  return invoke<SessionInfo[]>("list_sessions");
+  return invoke("list_sessions", {});
 }
 
 export async function onTerminalOutput(cb: (payload: TerminalOutput) => void): Promise<UnlistenFn> {
@@ -364,7 +371,7 @@ export async function onTerminalClosed(cb: (payload: TerminalOutput) => void): P
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (isProductHosted()) return null;
   if (!isTauri()) return null;
-  return invoke<OpenRequest | null>("take_pending_open");
+  return legacyInvoke<OpenRequest | null>("take_pending_open");
 }
 
 /** Fired when an already-running instance is relaunched with argv (§3). */

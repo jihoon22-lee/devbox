@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { Description } from "@devbox/product-shell/api";
 import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
-import { componentCall } from "./native";
+import { typedComponentCall } from "./native";
+import type { WorkspaceTerminalCall } from "@devbox/workspace-features/generated/WorkspaceTerminalCall";
+import type { TerminalResults } from "@devbox/workspace-features/generated/terminal-results";
 import { terminalLogRequest } from "./runtimeNavigation";
 
 /** The cold shell consumes only native intent metadata; it starts no collector. */
@@ -35,13 +37,11 @@ export default function TerminalLogBridge({
       try {
         do {
           again = false;
-          const value = await componentCall<unknown>(
+          const value = await typedComponentCall<WorkspaceTerminalCall, TerminalResults>(
             latest.current.description,
             "workspace.terminal",
-            "read_terminal_log",
-            {},
             "terminal",
-          );
+          )("read_terminal_log", {});
           if (disposed) return;
           const request = terminalLogRequest(value, latest.current.description.context);
           if (request) latest.current.onOpen(request);
@@ -76,13 +76,11 @@ export default function TerminalLogBridge({
     void (async () => {
       for (let attempt = 0; attempt < 3 && !disposed; attempt++) {
         try {
-          await componentCall(
+          await typedComponentCall<WorkspaceTerminalCall, TerminalResults>(
             latest.current.description,
             "workspace.terminal",
-            "ack_terminal_log",
-            { id: consumedId },
             "terminal",
-          );
+          )("ack_terminal_log", { id: consumedId });
           acknowledged.current = consumedId;
           await refresh.current();
           return;

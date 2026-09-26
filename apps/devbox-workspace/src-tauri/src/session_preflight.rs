@@ -9,6 +9,8 @@ use serde::Serialize;
 use std::{collections::BTreeSet, sync::Mutex};
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SessionPreflightEntry")]
 pub(crate) struct Entry {
     kind: &'static str,
     key: String,
@@ -17,6 +19,8 @@ pub(crate) struct Entry {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "SessionPreflight")]
 pub(crate) struct Report {
     pub definitions_revision: Option<String>,
     pub restore_blocked: bool,

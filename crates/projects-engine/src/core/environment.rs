@@ -26,6 +26,7 @@ pub const ENVIRONMENT_REVISION_BYTES: usize = 64;
 /// execution while the profile is enabled.
 #[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum EnvironmentConflict {
     None,
     Duplicate,
@@ -51,6 +52,7 @@ impl EnvironmentConflict {
 /// Metadata safe to persist in `ProjectProfile` and send over IPC.
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct EnvironmentVariableMetadata {
     pub name: String,
     /// Relative project source name, for example `.env` or `.env.local`.
@@ -64,6 +66,7 @@ pub struct EnvironmentVariableMetadata {
 /// used to prevent applying a preview after the source changed.
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProjectEnvironmentConfig {
     pub enabled: bool,
     pub source: String,

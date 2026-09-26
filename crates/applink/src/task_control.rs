@@ -10,6 +10,7 @@ pub const TASK_CONTROL_TARGET_APP: &str = "run-manager";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum TaskControlAction {
     Start,
     Stop,

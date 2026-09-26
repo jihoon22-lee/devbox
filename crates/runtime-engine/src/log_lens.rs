@@ -17,6 +17,8 @@ use tauri::{AppHandle, State};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(rename = "RuntimeLogDispatch")]
 pub struct LogLensDispatch {
     pub handoff_id: String,
 }
@@ -24,7 +26,6 @@ pub struct LogLensDispatch {
 /// Publish one selected run stream and launch the installed Log Lens target.
 /// The run database is consulted only to prove that the selected app-owned
 /// log exists; its relative path is never copied into the payload or argv.
-#[tauri::command]
 pub fn open_run_log_in_log_lens(
     run_id: String,
     stream: LogStream,
@@ -33,31 +34,6 @@ pub fn open_run_log_in_log_lens(
 ) -> Result<LogLensDispatch, String> {
     let _ = (run_id, stream, app, state);
     Err("log-lens-unavailable".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_open_run_log_in_log_lens(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        run_id: String,
-        stream: LogStream,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = open_run_log_in_log_lens(
-        input.run_id,
-        input.stream,
-        _component_app.clone(),
-        _component_app
-            .try_state()
-            .ok_or("component_state_unavailable")?,
-    )?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

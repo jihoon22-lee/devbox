@@ -22,6 +22,7 @@ pub const SESSION_FILE_NAME: &str = "session.json";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LoadedSession {
     pub session: Session,
     /// False means the on-disk file was corrupt or had an unknown schema. The
@@ -179,7 +180,6 @@ fn sync_parent(_path: &Path) -> io::Result<()> {
 
 /// Tauri command for restoring persisted metadata.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
     let path = session_path(&app)?;
     tauri::async_runtime::spawn_blocking(move || load_from_path_with_status(&path))
@@ -190,7 +190,6 @@ pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
 /// Tauri command for writing persisted metadata.  The core validator rejects
 /// malformed view/document relationships before anything reaches disk.
 #[cfg(feature = "desktop")]
-#[tauri::command]
 pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String> {
     session.validate().map_err(|error| error.to_string())?;
     let json = session
@@ -201,36 +200,6 @@ pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String
         .await
         .map_err(|error| format!("세션 저장 작업이 중단되었습니다: {error}"))?
         .map_err(|error| format!("세션을 저장할 수 없습니다: {error}"))
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_load_session(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = load_session(_component_app.clone()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_save_session(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session: Session,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    save_session(_component_app.clone(), input.session).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

@@ -47,6 +47,7 @@ impl StartupShortcut {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct StartupShortcutStatus {
     pub supported: bool,
     pub enabled: bool,

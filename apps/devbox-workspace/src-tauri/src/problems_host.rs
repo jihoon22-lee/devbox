@@ -1,5 +1,8 @@
 //! Native-only producer bridge. Renderer requests can read/select, never publish.
 use crate::core::problems::{Item, Severity, Snapshot, Store, Target, Ticket};
+use crate::ipc::results::{
+    ProblemLogRequest, ProblemNavigation, ProblemResolution, ResolvedProblemTarget,
+};
 use product_contract::ProjectContext;
 use serde_json::{json, Value};
 use std::{
@@ -505,10 +508,11 @@ pub(crate) fn manage(
             if !crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id) {
                 return Err("problem_stale");
             }
-            let value = tauri::async_runtime::block_on(runtime_engine::component::dispatch(
+            let value = tauri::async_runtime::block_on(runtime_engine::api::dispatch(
                 app,
-                "list_workspace_task_diagnostics",
-                json!({"runId":run_id}),
+                runtime_engine::api::RuntimeCall::ListWorkspaceTaskDiagnostics {
+                    run_id: run_id.clone(),
+                },
             ))
             .map_err(|_| "problem_log_expired")?;
             if crate::definitions::digest(
@@ -564,13 +568,13 @@ pub(crate) fn manage(
                 return Err("problem_stale");
             }
             if offset.is_some() {
-                let diagnostics =
-                    tauri::async_runtime::block_on(runtime_engine::component::dispatch(
-                        app,
-                        "list_workspace_task_diagnostics",
-                        json!({"runId":run_id}),
-                    ))
-                    .map_err(|_| "problem_log_expired")?;
+                let diagnostics = tauri::async_runtime::block_on(runtime_engine::api::dispatch(
+                    app,
+                    runtime_engine::api::RuntimeCall::ListWorkspaceTaskDiagnostics {
+                        run_id: run_id.clone(),
+                    },
+                ))
+                .map_err(|_| "problem_log_expired")?;
                 if crate::definitions::digest(
                     &serde_json::to_vec(&diagnostics).map_err(|_| "problem_invalid")?,
                 ) != input.revision
@@ -581,9 +585,20 @@ pub(crate) fn manage(
             let lease = runtime_engine::component::log_descriptor(app, &run_id)
                 .map_err(|_| "problem_log_expired")?;
             lease.revalidate().map_err(|_| "problem_log_expired")?;
-            return Ok(
-                json!({"context":context,"target":{"kind":"log","request":{"id":uuid::Uuid::new_v4().simple().to_string(),"source":{"kind":"runtimeRun","runId":run_id,"stream":stream,"revision":lease.revision()},"offset":offset}}}),
-            );
+            return Ok(json!(ProblemResolution {
+                context: context.clone(),
+                target: ResolvedProblemTarget::Navigation(ProblemNavigation::Log {
+                    request: ProblemLogRequest {
+                        id: uuid::Uuid::new_v4().simple().to_string(),
+                        source: crate::ipc::results::ProblemLogSource::RuntimeRun {
+                            run_id,
+                            stream,
+                            revision: lease.revision().into()
+                        },
+                        offset
+                    }
+                })
+            }));
         }
         Target::SessionResource {
             session_id,
@@ -593,11 +608,17 @@ pub(crate) fn manage(
                 .try_state::<Arc<crate::development_host::Sessions>>()
                 .ok_or("problem_stale")?;
             let job = sessions.problem_resource(context, &session_id, &resource_key)?;
-            return Ok(json!({"context":context,"target":{"kind":"task","jobId":job}}));
+            return Ok(json!(ProblemResolution {
+                context: context.clone(),
+                target: ResolvedProblemTarget::Navigation(ProblemNavigation::Task { job_id: job })
+            }));
         }
         target => target,
     };
-    Ok(json!({"context":context,"target":target}))
+    Ok(json!(ProblemResolution {
+        context: context.clone(),
+        target: ResolvedProblemTarget::Native(target)
+    }))
 }
 
 pub(crate) struct Observation {

@@ -56,6 +56,7 @@ pub struct WorktreeStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CleanupPreview {
     /// Opaque revision for the exact bounded preview.  It is used only to
     /// reject a stale confirmation; it is not a persistent identifier.
@@ -68,6 +69,7 @@ pub struct CleanupPreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct BranchCleanupEntry {
     pub name: String,
     pub head: String,
@@ -88,6 +90,7 @@ pub struct BranchCleanupEntry {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorktreeCleanupEntry {
     pub path: String,
     pub head: Option<String>,
@@ -107,15 +110,19 @@ pub struct WorktreeCleanupEntry {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CleanupItemResult {
+    #[ts(type = "\"branch\" | \"worktree\"")]
     pub kind: String,
     pub target: String,
+    #[ts(type = "\"removed\" | \"blocked\" | \"failed\"")]
     pub outcome: String,
     pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CleanupResult {
     pub preview_revision: String,
     pub attempted: u32,

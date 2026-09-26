@@ -22,7 +22,7 @@ type PendingAction = {
 type RuntimeMetadata = {
   kind: "native" | "node";
   executable: string;
-  min_version: string | null;
+  min_version?: string | null;
 };
 
 function statusLabel(state: ManagedInstallState): string {

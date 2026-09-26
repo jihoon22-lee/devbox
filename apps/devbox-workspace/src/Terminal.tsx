@@ -1,8 +1,10 @@
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo, useEffect, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
-import { componentCall } from "./native";
+import { typedComponentCall } from "./native";
+import type { WorkspaceTerminalCall } from "@devbox/workspace-features/generated/WorkspaceTerminalCall";
+import type { TerminalResults } from "@devbox/workspace-features/generated/terminal-results";
 import { sameRuntimeContext } from "./runtimeNavigation";
 import DevelopmentSessions from "./DevelopmentSessions";
 
@@ -29,22 +31,18 @@ export default function Terminal({ description, registry }: { description: Descr
   const [sessions, setSessions] = useState<Session[]>([]);
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState("");
-  const call = useCallback(
-    <T,>(method: string, args: Record<string, unknown> = {}) =>
-      componentCall<T>(description, "workspace.terminal", method, args, "terminal"),
+  const call = useMemo(
+    () => typedComponentCall<WorkspaceTerminalCall, TerminalResults>(description, "workspace.terminal", "terminal"),
     [description],
   );
   const refresh = useCallback(async () => {
-    const [sessions, commands] = await Promise.all([
-      call<Session[]>("terminal_sessions"),
-      call<Commands>("terminal_commands"),
-    ]);
+    const [sessions, commands] = await Promise.all([call("terminal_sessions", {}), call("terminal_commands", {})]);
     setSessions(sessions);
     setCommands(commands);
   }, [call]);
   useEffect(() => {
     let current = true;
-    void Promise.all([call<Session[]>("terminal_sessions"), call<Commands>("terminal_commands")])
+    void Promise.all([call("terminal_sessions", {}), call("terminal_commands", {})])
       .then(([sessions, commands]) => {
         if (current) {
           setSessions(sessions);
@@ -67,7 +65,7 @@ export default function Terminal({ description, registry }: { description: Descr
       return;
     let disposed = false;
     const id = incoming.target.id;
-    void call<Commands>("terminal_commands")
+    void call("terminal_commands", {})
       .then((value) => {
         if (disposed) return;
         setCommands(value);
@@ -86,11 +84,11 @@ export default function Terminal({ description, registry }: { description: Descr
     };
   }, [incoming, call, clearIncoming]);
 
-  const action = async (method: string, args: Record<string, unknown>) => {
+  const action = async (operation: () => Promise<unknown>) => {
     setBusy(true);
     setIssue("");
     try {
-      await call(method, args);
+      await operation();
       await refresh();
     } catch {
       setIssue("터미널 작업을 완료하지 못했습니다. 상태를 새로 고친 뒤 다시 확인해 주세요.");
@@ -228,7 +226,7 @@ export default function Terminal({ description, registry }: { description: Descr
               · {labels[session.state] ?? "상태 확인 필요"}
             </span>{" "}
             {session.state === "active" && (
-              <button disabled={busy} onClick={() => void action("focus_terminal", { id: session.id })}>
+              <button disabled={busy} onClick={() => void action(() => call("focus_terminal", { id: session.id }))}>
                 창 표시
               </button>
             )}{" "}
@@ -238,7 +236,7 @@ export default function Terminal({ description, registry }: { description: Descr
               </button>
             )}{" "}
             {["active", "stopping"].includes(session.state) && (
-              <button disabled={busy} onClick={() => void action("stop_terminal", { id: session.id })}>
+              <button disabled={busy} onClick={() => void action(() => call("stop_terminal", { id: session.id }))}>
                 이 터미널 종료
               </button>
             )}

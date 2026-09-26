@@ -3,6 +3,7 @@ use product_contract::RouteRequest;
 use serde::{de::DeserializeOwned, Deserialize};
 
 pub use ts_rs;
+pub mod workspace;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", bound = "C: DeserializeOwned")]
@@ -27,15 +28,20 @@ pub const MAX_ARGUMENT_BYTES: usize = 20 * 1024 * 1024;
 
 impl IncomingRequest {
     pub fn decode<C: ComponentCall>(self) -> Result<ComponentRequest<C>, DecodeError> {
-        if !self.args.is_object()
-            || serde_json::to_vec(&self.args)
-                .map_or(true, |bytes| bytes.len() > C::MAX_ARGUMENT_BYTES)
-        {
+        if !C::valid_arguments(&self.method, &self.args) {
             return Err(DecodeError);
         }
+        // Move the existing argument tree into deserialization. json! would
+        // serialize a borrowed Value and copy large editor/log bodies again.
         let call: C =
-            serde_json::from_value(serde_json::json!({"method": self.method, "args": self.args}))
-                .map_err(|_| DecodeError)?;
+            serde_json::from_value(serde_json::Value::Object(serde_json::Map::from_iter([
+                (
+                    "method".into(),
+                    serde_json::Value::String(self.method.clone()),
+                ),
+                ("args".into(), self.args),
+            ])))
+            .map_err(|_| DecodeError)?;
         // Accepted method spellings must be declared by the native enum.
         if call.method() != self.method {
             return Err(DecodeError);
@@ -59,6 +65,12 @@ pub enum ExecutionClass {
 pub trait ComponentCall: DeserializeOwned + Send + 'static {
     const COMPONENT: &'static str;
     const INSTALLATION_REVIEW: bool = false;
+    const IMPORT_PHASE: bool = false;
+    const SHARED_REQUEST_LIMIT: bool = true;
+    fn valid_arguments(_method: &str, args: &serde_json::Value) -> bool {
+        args.is_object()
+            && serde_json::to_vec(args).is_ok_and(|bytes| bytes.len() <= Self::MAX_ARGUMENT_BYTES)
+    }
     const MAX_ARGUMENT_BYTES: usize = crate::MAX_ARGUMENT_BYTES;
     fn method(&self) -> &'static str;
     fn routes(&self) -> &'static [&'static str];
@@ -159,6 +171,35 @@ impl ts_rs::TypeVisitor for TypeExporter<'_> {
         }
         T::visit_dependencies(self);
         T::visit_generics(self);
+    }
+}
+
+/// Product overrides own their argument shape; a rejected host call must not
+/// silently retry deserialization as a retired standalone engine method.
+pub fn decode_host_first<'de, D, H, E, R>(
+    deserializer: D,
+    host_methods: &[&str],
+    host: fn(H) -> R,
+    engine: fn(Box<E>) -> R,
+) -> Result<R, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    H: DeserializeOwned,
+    E: DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value
+        .get("method")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|method| host_methods.contains(&method))
+    {
+        serde_json::from_value(value)
+            .map(host)
+            .map_err(serde::de::Error::custom)
+    } else {
+        serde_json::from_value(value)
+            .map(|call| engine(Box::new(call)))
+            .map_err(serde::de::Error::custom)
     }
 }
 

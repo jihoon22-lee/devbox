@@ -16,7 +16,6 @@ fn profile(
 
 /// 선택한 profile이 안전하게 만들 수 있고 현재 설치된 capability target만
 /// 반환한다. executable과 profile path는 frontend에 노출하지 않는다.
-#[tauri::command]
 pub fn profile_open_targets(
     app: tauri::AppHandle,
     profile_id: String,
@@ -27,13 +26,11 @@ pub fn profile_open_targets(
 
 /// 사용자가 명시적으로 "경로 복사"를 선택했을 때만 현재 저장소를 다시 읽어
 /// 검증한 project path를 반환한다.
-#[tauri::command]
 pub fn profile_copy_path(app: tauri::AppHandle, profile_id: String) -> Result<String, String> {
     let profile = profile(&app, &profile_id)?;
     safe_profile_path(&profile).map_err(|_| "프로필 경로를 확인할 수 없습니다".to_string())
 }
 
-#[tauri::command]
 pub fn open_profile_in(
     app: tauri::AppHandle,
     profile_id: String,
@@ -41,50 +38,4 @@ pub fn open_profile_in(
 ) -> Result<(), String> {
     let _ = (app, profile_id, app_id);
     Err("provider_unavailable".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_profile_open_targets(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = profile_open_targets(_component_app.clone(), input.profile_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_profile_copy_path(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = profile_copy_path(_component_app.clone(), input.profile_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; the native host owns caller/session/owner admission.
-pub(crate) async fn __component_open_profile_in(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile_id: String,
-        app_id: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    open_profile_in(_component_app.clone(), input.profile_id, input.app_id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }

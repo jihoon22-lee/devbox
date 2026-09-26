@@ -1,12 +1,15 @@
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 
 export type Component =
-  | "workspace.overview"
   | "workspace.source"
   | "workspace.dependencies"
   | "workspace.files"
   | "workspace.lsp"
-  | "workspace.migration"
+  | "workspace.problems"
+  | "workspace.commands"
+  | "workspace.setup"
+  | "workspace.registry"
+  | "workspace.definitions"
   | "workspace.runtime"
   | "workspace.processes"
   | "workspace.process-actions"

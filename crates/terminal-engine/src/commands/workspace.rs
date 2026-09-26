@@ -28,7 +28,6 @@ fn save_store(app: &AppHandle, store: &ProfileStore) -> Result<(), String> {
         .map_err(|_| "터미널 프로필을 원자적으로 저장할 수 없습니다".to_string())
 }
 
-#[tauri::command]
 pub fn list_workspace_profiles(app: AppHandle) -> Vec<WorkspaceProfile> {
     let Ok(store) = load_store(&app) else {
         // Preserve the prior read-only UI contract while refusing to publish
@@ -42,7 +41,6 @@ pub fn list_workspace_profiles(app: AppHandle) -> Vec<WorkspaceProfile> {
     profiles
 }
 
-#[tauri::command]
 pub fn save_workspace_profile(
     app: AppHandle,
     mut profile: WorkspaceProfile,
@@ -59,7 +57,6 @@ pub fn save_workspace_profile(
     Ok(profile)
 }
 
-#[tauri::command]
 pub fn delete_workspace_profile(app: AppHandle, id: String) -> Result<(), String> {
     let mut store = load_store(&app)?;
     if !store.remove(&id) {
@@ -70,62 +67,4 @@ pub fn delete_workspace_profile(app: AppHandle, id: String) -> Result<(), String
         let _ = crate::integration::publish_profile_snapshot(&store);
     }
     Ok(())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_workspace_profiles(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = list_workspace_profiles(app.clone());
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_save_workspace_profile(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        profile: WorkspaceProfile,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = save_workspace_profile(app.clone(), input.profile)?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_delete_workspace_profile(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    delete_workspace_profile(app.clone(), input.id)?;
-    Ok(serde_json::Value::Null)
 }

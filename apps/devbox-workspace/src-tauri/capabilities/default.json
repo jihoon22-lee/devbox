@@ -8,7 +8,21 @@
     "core:default",
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
-    "workspace:allow-execute",
-    "suite:allow-connection"
+
+    "workspace:allow-files",
+    "workspace:allow-lsp",
+    "workspace:allow-source",
+    "workspace:allow-registry",
+    "workspace:allow-setup",
+    "workspace:allow-definitions",
+    "workspace:allow-dependencies",
+    "suite:allow-connection",
+    "workspace:allow-runtime",
+    "workspace:allow-processes",
+    "workspace:allow-process-actions",
+    "workspace:allow-logs",
+    "workspace:allow-terminal",
+    "workspace:allow-problems",
+    "workspace:allow-commands"
   ]
 }

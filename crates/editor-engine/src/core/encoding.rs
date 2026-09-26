@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 /// The encodings exposed by the Code Pad status bar and encoding picker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub enum EncodingKind {
     #[serde(rename = "utf8", alias = "UTF-8", alias = "utf-8")]
     Utf8,
@@ -42,7 +42,7 @@ impl EncodingKind {
 }
 
 /// Encoding plus the independent BOM-preservation bit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Encoding {
     #[serde(rename = "encodingKind", alias = "encoding_kind", alias = "kind")]
     pub encoding_kind: EncodingKind,

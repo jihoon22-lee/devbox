@@ -1,7 +1,18 @@
 import { componentInvoke, isProductHosted } from "../transport";
-const invoke = componentInvoke((method) =>
-  method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source",
-);
+import { typedCall } from "../typed";
+import type { SourceCall } from "../generated/SourceCall";
+import type { WorkspaceDependenciesCall } from "../generated/WorkspaceDependenciesCall";
+import type { SourceResults } from "../generated/source-results";
+import type { DependenciesResults } from "../generated/dependencies-results";
+const invoke = typedCall<
+  Exclude<SourceCall, { method: "create_worktree" }> | WorkspaceDependenciesCall,
+  SourceResults & DependenciesResults
+>((method) => (method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source"));
+const oldInvoke = componentInvoke("workspace.source");
+function legacyInvoke<T>(method: string, args?: Record<string, unknown>): Promise<T> {
+  if (isProductHosted()) return Promise.reject(new Error("Workspace에서 지원하지 않는 작업입니다."));
+  return oldInvoke<T>(method, args);
+}
 import { isTauri } from "./lib/isTauri";
 
 export interface RepoEntry {
@@ -488,7 +499,7 @@ const MOCK_OPEN_TARGETS: RepoOpenTarget[] = [];
 
 export function scanRoot(root: string): Promise<ScanResult> {
   if (!isTauri()) return Promise.resolve(MOCK_RESULT);
-  return invoke<ScanResult>("scan_root", { root });
+  return legacyInvoke<ScanResult>("scan_root", { root });
 }
 
 export function prepareInboundRepository(path: string): Promise<RepoEntry> {
@@ -500,12 +511,12 @@ export function prepareInboundRepository(path: string): Promise<RepoEntry> {
       hasWorktrees: false,
     });
   }
-  return invoke<RepoEntry>("prepare_inbound_repository", { path });
+  return legacyInvoke<RepoEntry>("prepare_inbound_repository", { path });
 }
 
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return invoke<OpenRequest | null>("take_pending_open");
+  return legacyInvoke<OpenRequest | null>("take_pending_open");
 }
 
 export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<() => void> {
@@ -522,27 +533,27 @@ export function repoStatus(path: string): Promise<RepoSnapshot> {
       changes: 0,
     });
   }
-  return invoke<RepoSnapshot>("repo_status", { path });
+  return invoke("repo_status", { path });
 }
 
 export function repoPreflight(path: string): Promise<GitSafetySnapshot> {
   if (!isTauri()) return Promise.resolve({ ...MOCK_SAFETY });
-  return invoke<GitSafetySnapshot>("repo_preflight", { request: { path } });
+  return invoke("repo_preflight", { request: { path } });
 }
 
 export function worktrees(path: string): Promise<string[]> {
   if (!isTauri()) return Promise.resolve(["C:\\projects\\devbox", "C:\\projects\\devbox-wt"]);
-  return invoke<string[]>("worktrees", { path });
+  return invoke("worktrees", { path });
 }
 
 export function createWorktree(repoPath: string, branch: string, targetDir: string): Promise<{ path: string }> {
   if (!isTauri()) return Promise.resolve({ path: targetDir });
-  return invoke<{ path: string }>("create_worktree", { repoPath, branch, targetDir });
+  return legacyInvoke<{ path: string }>("create_worktree", { repoPath, branch, targetDir });
 }
 
 export function worktreeClean(path: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(true);
-  return invoke<boolean>("worktree_clean", { path });
+  return invoke("worktree_clean", { path });
 }
 
 export const GIT_CLEANUP_ERROR = "Git 정리 작업을 실행하지 못했습니다.";
@@ -648,7 +659,7 @@ const MOCK_CLEANUP_PREVIEW: CleanupPreview = {
 
 export function repoCleanupPreview(path: string, operationId: string): Promise<CleanupPreview> {
   if (!isTauri()) return Promise.resolve({ ...MOCK_CLEANUP_PREVIEW });
-  return invoke<CleanupPreview>("repo_cleanup_preview", { request: { path, operationId } });
+  return invoke("repo_cleanup_preview", { request: { path, operationId } });
 }
 
 export function repoCleanup(
@@ -679,14 +690,14 @@ export function repoCleanup(
       ],
     });
   }
-  return invoke<CleanupResult>("repo_cleanup", {
+  return invoke("repo_cleanup", {
     request: { path, branchNames, worktreePaths, previewRevision, operationId },
   });
 }
 
 export function repoCleanupCancel(operationId: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
-  return invoke<boolean>("repo_cleanup_cancel", { request: { operationId } });
+  return invoke("repo_cleanup_cancel", { request: { operationId } });
 }
 
 export function repoHistory(path: string, limit: number): Promise<HistoryResult> {
@@ -696,19 +707,19 @@ export function repoHistory(path: string, limit: number): Promise<HistoryResult>
       hasMore: MOCK_HISTORY.entries.length > limit,
     });
   }
-  return invoke<HistoryResult>("repo_history", { request: { path, limit } });
+  return invoke("repo_history", { request: { path, limit } });
 }
 
 export function repoCommitDetail(path: string, commitId: string): Promise<CommitDetail> {
   if (!isTauri()) return Promise.resolve(MOCK_DETAIL);
-  return invoke<CommitDetail>("repo_commit_detail", { request: { path, commitId } });
+  return invoke("repo_commit_detail", { request: { path, commitId } });
 }
 
 export function repoDiff(path: string, commitId: string | null): Promise<DiffResult> {
   if (!isTauri()) {
     return Promise.resolve({ ...MOCK_DIFF, commitId, scope: commitId ? "commit" : "workingTree" });
   }
-  return invoke<DiffResult>("repo_diff", { request: { path, commitId } });
+  return invoke("repo_diff", { request: { path, commitId } });
 }
 
 export function dependencyInventory(path: string): Promise<DependencyReport> {
@@ -726,7 +737,7 @@ export function dependencyInventory(path: string): Promise<DependencyReport> {
       })),
     });
   }
-  return invoke<DependencyReport>("dependency_inventory", { request: { path } });
+  return invoke("dependency_inventory", { request: { path } });
 }
 
 export function dependencyEnrichmentPreview(
@@ -747,7 +758,7 @@ export function dependencyEnrichmentPreview(
         })),
     });
   }
-  return invoke<DependencyEnrichmentPreview>("dependency_enrichment_preview", {
+  return invoke("dependency_enrichment_preview", {
     request: { path, services, forceRefresh },
   });
 }
@@ -769,24 +780,24 @@ export function dependencyEnrichmentExecute(path: string, previewToken: string):
       services: MOCK_ENRICHMENT_REPORT.services.map((service) => ({ ...service })),
     });
   }
-  return invoke<DependencyEnrichmentReport>("dependency_enrichment_execute", {
+  return invoke("dependency_enrichment_execute", {
     request: { path, previewToken },
   });
 }
 
 export function repoChanges(path: string): Promise<ChangeEntry[]> {
   if (!isTauri()) return Promise.resolve(MOCK_CHANGES.map((change) => ({ ...change })));
-  return invoke<ChangeEntry[]>("repo_changes", { request: { path } });
+  return invoke("repo_changes", { request: { path } });
 }
 
 export function repoStage(path: string, paths: string[], operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_stage", { request: { path, paths, operationId } });
+  return Promise.resolve(invoke("repo_stage", { request: { path, paths, operationId } })).then(() => undefined);
 }
 
 export function repoUnstage(path: string, paths: string[], operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_unstage", { request: { path, paths, operationId } });
+  return Promise.resolve(invoke("repo_unstage", { request: { path, paths, operationId } })).then(() => undefined);
 }
 
 export interface CommitReview {
@@ -799,61 +810,63 @@ export function repoCommitPreview(path: string): Promise<CommitReview> {
       revision: "browser-fixture",
       stagedPaths: MOCK_CHANGES.filter((change) => change.staged).map((change) => change.path),
     });
-  return invoke<CommitReview>("repo_commit_preview", { request: { path } });
+  return invoke("repo_commit_preview", { request: { path } });
 }
 export function repoCommit(path: string, message: string, operationId: string, indexRevision: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_commit", { request: { path, message, operationId, indexRevision } });
+  return Promise.resolve(invoke("repo_commit", { request: { path, message, operationId, indexRevision } })).then(
+    () => undefined,
+  );
 }
 
 export function repoLocalCancel(operationId: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
-  return invoke<boolean>("repo_local_cancel", { request: { operationId } });
+  return invoke("repo_local_cancel", { request: { operationId } });
 }
 
 export function repoRemoteStatus(path: string): Promise<RemoteState> {
   if (!isTauri()) return Promise.resolve({ ...MOCK_REMOTE_STATE });
-  return invoke<RemoteState>("repo_remote_status", { request: { path } });
+  return invoke("repo_remote_status", { request: { path } });
 }
 
 export function repoFetch(path: string, operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_fetch", { request: { path, operationId } });
+  return Promise.resolve(invoke("repo_fetch", { request: { path, operationId } })).then(() => undefined);
 }
 
 export function repoPull(path: string, operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_pull", { request: { path, operationId } });
+  return Promise.resolve(invoke("repo_pull", { request: { path, operationId } })).then(() => undefined);
 }
 
 export function repoPush(path: string, operationId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_push", { request: { path, operationId } });
+  return Promise.resolve(invoke("repo_push", { request: { path, operationId } })).then(() => undefined);
 }
 
 export function repoRemoteCancel(operationId: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
-  return invoke<boolean>("repo_remote_cancel", { request: { operationId } });
+  return invoke("repo_remote_cancel", { request: { operationId } });
 }
 
 export function openTargets(): Promise<RepoOpenTarget[]> {
   if (!isTauri()) return Promise.resolve(MOCK_OPEN_TARGETS);
-  return invoke<RepoOpenTarget[]>("open_targets");
+  return legacyInvoke<RepoOpenTarget[]>("open_targets");
 }
 
 export function openIn(appId: string, path: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("open_in", { appId, path });
+  return legacyInvoke<void>("open_in", { appId, path });
 }
 
 export function repositoryCopyPath(path: string): Promise<string> {
   if (!isTauri()) return Promise.resolve(path);
-  return invoke<string>("repository_copy_path", { path });
+  return legacyInvoke<string>("repository_copy_path", { path });
 }
 
 export function openRepositoryFolder(path: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("open_repository_folder", { path });
+  return legacyInvoke<void>("open_repository_folder", { path });
 }
 
 /** Product preview ownership is explicitly discarded on cancel or stale UI. */

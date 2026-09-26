@@ -1,24 +1,23 @@
 import { componentInvoke, isProductHosted, WorkspaceOperationError } from "../transport";
+import { bindTypedCall, typedCall } from "../typed";
+import type { WorkspaceRuntimeCall } from "../generated/WorkspaceRuntimeCall";
+import type { ControlAction } from "../generated/ControlAction";
+import type { RuntimeResults } from "../generated/runtime-results";
+import type { ControlResults } from "../generated/control-results";
 import { isRuntimeControl, submitRuntimeControl } from "./runtimeControls";
-const nativeInvoke = componentInvoke("workspace.runtime");
-function invoke<T>(method: string, args?: Record<string, unknown>): Promise<T> {
-  return isProductHosted() && isRuntimeControl(method)
-    ? submitRuntimeControl<T>(nativeInvoke, method, args ?? {})
-    : nativeInvoke<T>(method, args);
-}
-export interface RuntimeControlReceipt {
-  operationId: string;
-  method: string;
-  targetId: string;
-  state: "pending" | "interrupted";
-  createdAt: number;
-  reviewed: boolean;
-}
+const rawInvoke = componentInvoke("workspace.runtime");
+const nativeInvoke = typedCall<WorkspaceRuntimeCall, RuntimeResults>("workspace.runtime");
+const invoke = bindTypedCall<WorkspaceRuntimeCall | ControlAction, RuntimeResults & ControlResults>((method, args) =>
+  isProductHosted() && isRuntimeControl(method)
+    ? submitRuntimeControl(rawInvoke, method, args)
+    : rawInvoke(method, args),
+);
+export type RuntimeControlReceipt = import("../generated/RuntimeControlReceipt").RuntimeControlReceipt;
 export function listRuntimeControls(): Promise<RuntimeControlReceipt[]> {
-  return isProductHosted() ? nativeInvoke("list_runtime_controls") : Promise.resolve([]);
+  return isProductHosted() ? nativeInvoke("list_runtime_controls", {}) : Promise.resolve([]);
 }
-export function reviewRuntimeControl(operationId: string): Promise<void> {
-  return nativeInvoke("review_runtime_control", { operationId });
+export async function reviewRuntimeControl(operationId: string): Promise<void> {
+  await nativeInvoke("review_runtime_control", { operationId });
 }
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
@@ -52,7 +51,11 @@ export interface OpenRequest {
 
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return invoke<OpenRequest | null>("take_pending_open");
+  const request = await invoke("take_pending_open", {});
+  if (request === null) return null;
+  if (request.target.kind === "task" || request.target.kind === "handoff")
+    return { ...request, target: request.target };
+  throw new Error("작업 열기 응답을 확인하지 못했습니다.");
 }
 
 export function onOpenRequest(handler: () => void): Promise<UnlistenFn> {
@@ -76,17 +79,17 @@ export function loadRuntimeStatus(): Promise<RuntimeStatus> {
       databasePath: "%LOCALAPPDATA%\\com.devbox.runmanager\\data.db",
     });
   }
-  return invoke<RuntimeStatus>("runtime_status");
+  return invoke("runtime_status", {});
 }
 
-export function hideMainWindow(): Promise<void> {
+export async function hideMainWindow(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("hide_main_window");
+  await invoke("hide_main_window", {});
 }
 
-export function quitApp(): Promise<void> {
+export async function quitApp(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("quit_app");
+  await invoke("quit_app", {});
 }
 
 export function loadStartupShortcutStatus(): Promise<StartupShortcutStatus> {
@@ -97,17 +100,17 @@ export function loadStartupShortcutStatus(): Promise<StartupShortcutStatus> {
       shortcutPath: "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Run Manager.lnk",
     });
   }
-  return invoke<StartupShortcutStatus>("startup_shortcut_status");
+  return invoke("startup_shortcut_status", {});
 }
 
 export function setStartupShortcutEnabled(enabled: boolean): Promise<StartupShortcutStatus> {
   if (!isTauri()) return loadStartupShortcutStatus();
-  return invoke<StartupShortcutStatus>("set_startup_shortcut_enabled", { enabled });
+  return invoke("set_startup_shortcut_enabled", { enabled });
 }
 
 export function listJobs(): Promise<Job[]> {
   if (!isTauri()) return Promise.resolve([...mockJobs]);
-  return invoke<Job[]>("list_jobs");
+  return invoke("list_jobs", {});
 }
 
 export function createJob(input: JobInput): Promise<Job> {
@@ -139,7 +142,7 @@ export function createJob(input: JobInput): Promise<Job> {
     mockJobs = [...mockJobs, job];
     return Promise.resolve(job);
   }
-  return invoke<Job>("create_job", { input });
+  return invoke("create_job", { input });
 }
 
 export function updateJob(id: string, input: JobInput): Promise<Job> {
@@ -173,7 +176,7 @@ export function updateJob(id: string, input: JobInput): Promise<Job> {
     mockJobs = mockJobs.map((job) => (job.id === id ? updated : job));
     return Promise.resolve(updated);
   }
-  return invoke<Job>("update_job", { id, input });
+  return invoke("update_job", { id, input });
 }
 
 export function setJobEnabled(id: string, enabled: boolean): Promise<Job> {
@@ -190,7 +193,7 @@ export function setJobEnabled(id: string, enabled: boolean): Promise<Job> {
     mockJobs = mockJobs.map((job) => (job.id === id ? updated : job));
     return Promise.resolve(updated);
   }
-  return invoke<Job>("set_job_enabled", { id, enabled });
+  return invoke("set_job_enabled", { id, enabled });
 }
 
 export function deleteJob(id: string): Promise<boolean> {
@@ -199,17 +202,17 @@ export function deleteJob(id: string): Promise<boolean> {
     mockJobs = mockJobs.filter((job) => job.id !== id);
     return Promise.resolve(before !== mockJobs.length);
   }
-  return invoke<boolean>("delete_job", { id });
+  return invoke("delete_job", { id });
 }
 
 export function listServices(): Promise<Job[]> {
   if (!isTauri()) return Promise.resolve([...mockServices]);
-  return invoke<Job[]>("list_services");
+  return invoke("list_services", {});
 }
 
 export function getService(id: string): Promise<Job | null> {
   if (!isTauri()) return Promise.resolve(mockServices.find((service) => service.id === id) ?? null);
-  return invoke<Job | null>("get_service", { id });
+  return invoke("get_service", { id });
 }
 
 export function createService(input: ServiceInput): Promise<Job> {
@@ -241,7 +244,7 @@ export function createService(input: ServiceInput): Promise<Job> {
     mockServices = [...mockServices, service];
     return Promise.resolve(service);
   }
-  return invoke<Job>("create_service", { input });
+  return invoke("create_service", { input });
 }
 
 export function updateService(id: string, input: ServiceInput): Promise<Job> {
@@ -265,7 +268,7 @@ export function updateService(id: string, input: ServiceInput): Promise<Job> {
     mockServices = mockServices.map((service) => (service.id === id ? updated : service));
     return Promise.resolve(updated);
   }
-  return invoke<Job>("update_service", { id, input });
+  return invoke("update_service", { id, input });
 }
 
 export function deleteService(id: string): Promise<boolean> {
@@ -274,14 +277,14 @@ export function deleteService(id: string): Promise<boolean> {
     mockServices = mockServices.filter((service) => service.id !== id);
     return Promise.resolve(before !== mockServices.length);
   }
-  return invoke<boolean>("delete_service", { id });
+  return invoke("delete_service", { id });
 }
 
 export function getServiceInstance(id: string): Promise<ServiceInstance | null> {
   if (!isTauri()) {
     return Promise.resolve(mockServiceInstance(id));
   }
-  return invoke<ServiceInstance | null>("get_service_instance", { id });
+  return invoke("get_service_instance", { id });
 }
 
 export interface ServiceObservability {
@@ -330,79 +333,41 @@ export function getServiceObservability(id: string): Promise<ServiceObservabilit
       nextRetryAt: null,
     });
   }
-  return invoke<ServiceObservability | null>("service_observability", { id });
+  return invoke("service_observability", { id });
 }
 
 export function exportDefinitions(): Promise<DefinitionExport | null> {
   if (!isTauri()) {
     return Promise.resolve(null);
   }
-  return invoke<DefinitionExport | null>("export_definitions");
+  return invoke("export_definitions", {});
 }
 
-export interface ImportItem {
-  id: string;
-  name: string;
-  kind: "job" | "service";
-  status: "new" | "conflict";
-  detail: string;
-  cwd: string | null;
-  environmentKeys: string[];
-  requiresConfirmation: boolean;
-}
+export type ImportItem = import("../generated/ImportItem").ImportItem;
 
-export interface ImportPlan {
-  schemaVersion: number;
-  revision: string;
-  items: ImportItem[];
-}
+export type ImportPlan = import("../generated/ImportPlan").ImportPlan;
 
 export function importDefinitions(json: string): Promise<ImportPlan> {
   if (!isTauri()) {
     return Promise.resolve({ schemaVersion: 1, revision: "", items: [] });
   }
-  return invoke<ImportPlan>("import_definitions", { json });
+  return invoke("import_definitions", { json });
 }
 
 export function applyImport(json: string, selected: string[], revision?: string): Promise<number> {
   if (!isTauri()) return Promise.resolve(0);
-  return invoke<number>("apply_import", { json, selected, revision: revision ?? null });
+  return invoke("apply_import", { json, selected, revision: revision ?? null });
 }
 
 export type ProjectImportSource = "package-script" | "cargo-target";
 
-export interface ProjectImportFile {
-  path: string;
-  bytes: number;
-}
+export type ProjectImportFile = import("../generated/ProjectImportFile").ProjectImportFile;
 
-export interface ProjectImportItem {
-  id: string;
-  name: string;
-  command: string;
-  kind: "job";
-  status: "new" | "conflict";
-  source: ProjectImportSource;
-  sourceName: string;
-  sourcePath: string;
-  cwd: string;
-  environmentKeys: string[];
-  requiresConfirmation: boolean;
-  detail: string;
-}
+export type ProjectImportItem = import("../generated/ProjectImportItem").ProjectImportItem;
 
-export interface ProjectImportPlan {
-  schemaVersion: number;
-  sourceRoot: string;
-  revision: string;
-  files: ProjectImportFile[];
-  items: ProjectImportItem[];
-}
+export type ProjectImportPlan = import("../generated/ProjectImportPlan").ProjectImportPlan;
 
-export interface ProjectImportApplyResult {
-  created: number;
-  skippedConflicts: number;
-}
+export type ProjectImportApplyResult = import("../generated/ProjectImportApplyResult").ProjectImportApplyResult;
 
 function createImportOperationId(prefix: "preview" | "apply"): string {
   const random = globalThis.crypto?.randomUUID?.();
@@ -422,7 +387,7 @@ export function previewProjectImport(
       items: [],
     });
   }
-  return invoke<ProjectImportPlan>("preview_project_import", { path, operationId });
+  return invoke("preview_project_import", { path, operationId });
 }
 
 export function applyProjectImport(
@@ -433,7 +398,7 @@ export function applyProjectImport(
   operationId = createImportOperationId("apply"),
 ): Promise<ProjectImportApplyResult> {
   if (!isTauri()) return Promise.resolve({ created: selected.length, skippedConflicts: 0 });
-  return invoke<ProjectImportApplyResult>("apply_project_import", {
+  return invoke("apply_project_import", {
     path,
     sourceRoot,
     revision,
@@ -444,7 +409,7 @@ export function applyProjectImport(
 
 export function cancelProjectImport(operationId: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
-  return invoke<boolean>("cancel_project_import", { operationId });
+  return invoke("cancel_project_import", { operationId });
 }
 
 function createWorkspaceTaskOperationId(prefix: "preview" | "apply"): string {
@@ -471,7 +436,7 @@ export function previewWorkspaceTaskImport(
       items: [],
     });
   }
-  return invoke<WorkspaceTaskPlan>("preview_workspace_task_import", {
+  return invoke("preview_workspace_task_import", {
     path,
     targetKind,
     targetDistro,
@@ -481,7 +446,7 @@ export function previewWorkspaceTaskImport(
 
 export function cancelWorkspaceTaskImport(operationId: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
-  return invoke<boolean>("cancel_workspace_task_import", { operationId });
+  return invoke("cancel_workspace_task_import", { operationId });
 }
 
 export function applyWorkspaceTaskImport(
@@ -503,7 +468,7 @@ export function applyWorkspaceTaskImport(
       skippedConflicts: 0,
     });
   }
-  return invoke<WorkspaceTaskApplyResult>("apply_workspace_task_import", {
+  return invoke("apply_workspace_task_import", {
     path,
     sourceRoot,
     projectIdentity,
@@ -517,12 +482,12 @@ export function applyWorkspaceTaskImport(
 
 export function listWorkspaceTasks(): Promise<WorkspaceTaskState[]> {
   if (!isTauri()) return Promise.resolve([]);
-  return invoke<WorkspaceTaskState[]>("list_workspace_tasks");
+  return invoke("list_workspace_tasks", {});
 }
 
 export function trustWorkspaceTaskSource(sourceId: string, revision: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(true);
-  return invoke<boolean>("trust_workspace_task_source", { sourceId, revision });
+  return invoke("trust_workspace_task_source", { sourceId, revision });
 }
 
 /**
@@ -532,7 +497,7 @@ export function trustWorkspaceTaskSource(sourceId: string, revision: string): Pr
  */
 export function trustWorkspaceTaskShellSource(sourceId: string, revision: string): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(true);
-  return invoke<boolean>("trust_workspace_task_shell_source", {
+  return invoke("trust_workspace_task_shell_source", {
     sourceId,
     revision,
     acknowledgement: "execute-shell-tasks",
@@ -567,19 +532,19 @@ export function runWorkspaceTaskOperation(id: string, failFast: boolean): Promis
     mockWorkspaceTaskOperations = [operation, ...mockWorkspaceTaskOperations].slice(0, 50);
     return Promise.resolve(operation);
   }
-  return invoke<WorkspaceTaskOperation>("run_workspace_task_operation", { id, failFast });
+  return invoke("run_workspace_task_operation", { id, failFast });
 }
 
 export function getWorkspaceTaskOperation(operationId: string): Promise<WorkspaceTaskOperation | null> {
   if (!isTauri()) {
     return Promise.resolve(mockWorkspaceTaskOperations.find((operation) => operation.id === operationId) ?? null);
   }
-  return invoke<WorkspaceTaskOperation | null>("get_workspace_task_operation", { operationId });
+  return invoke("get_workspace_task_operation", { operationId });
 }
 
 export function listWorkspaceTaskOperations(limit = 20): Promise<WorkspaceTaskOperation[]> {
   if (!isTauri()) return Promise.resolve(mockWorkspaceTaskOperations.slice(0, Math.max(1, Math.min(limit, 100))));
-  return invoke<WorkspaceTaskOperation[]>("list_workspace_task_operations", { limit });
+  return invoke("list_workspace_task_operations", { limit });
 }
 
 export function stopWorkspaceTaskOperation(operationId: string): Promise<WorkspaceTaskOperation> {
@@ -604,44 +569,44 @@ export function stopWorkspaceTaskOperation(operationId: string): Promise<Workspa
     );
     return Promise.resolve(stopped);
   }
-  return invoke<WorkspaceTaskOperation>("stop_workspace_task_operation", { operationId });
+  return invoke("stop_workspace_task_operation", { operationId });
 }
 
 export function listWorkspaceTaskDiagnostics(runId: string): Promise<WorkspaceTaskDiagnostics> {
   if (!isTauri()) {
     return Promise.resolve({ runId, items: [], truncated: false });
   }
-  return invoke<WorkspaceTaskDiagnostics>("list_workspace_task_diagnostics", { runId });
+  return invoke("list_workspace_task_diagnostics", { runId });
 }
 
 export function openWorkspaceTaskDiagnostic(runId: string, diagnosticIndex: number): Promise<boolean> {
   if (!isTauri()) return Promise.resolve(false);
-  return invoke<boolean>("open_workspace_task_diagnostic", { runId, diagnosticIndex });
+  return invoke("open_workspace_task_diagnostic", { runId, diagnosticIndex });
 }
 
 export function previewWorkspaceTaskControl(handoffId: string): Promise<WorkspaceTaskControlPreview> {
   if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
-  return invoke<WorkspaceTaskControlPreview>("preview_workspace_task_control", { handoffId });
+  return invoke("preview_workspace_task_control", { handoffId });
 }
 
 export function acceptWorkspaceTaskControl(requestId: string): Promise<WorkspaceTaskControlReceipt> {
   if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
-  return invoke<WorkspaceTaskControlReceipt>("accept_workspace_task_control", { requestId });
+  return invoke("accept_workspace_task_control", { requestId });
 }
 
 export function rejectWorkspaceTaskControl(requestId: string): Promise<WorkspaceTaskControlReceipt> {
   if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
-  return invoke<WorkspaceTaskControlReceipt>("reject_workspace_task_control", { requestId });
+  return invoke("reject_workspace_task_control", { requestId });
 }
 
 export function renewWorkspaceTaskControl(requestId: string): Promise<number> {
   if (!isTauri()) return Promise.reject(new Error("task-control-unavailable"));
-  return invoke<number>("renew_workspace_task_control", { requestId });
+  return invoke("renew_workspace_task_control", { requestId });
 }
 
 export function listWorkspaceTaskControlReceipts(limit = 20): Promise<WorkspaceTaskControlReceipt[]> {
   if (!isTauri()) return Promise.resolve([]);
-  return invoke<WorkspaceTaskControlReceipt[]>("list_workspace_task_control_receipts", { limit });
+  return invoke("list_workspace_task_control_receipts", { limit });
 }
 
 const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
@@ -739,7 +704,7 @@ export function startService(id: string): Promise<ServiceInstance> {
     mockServiceState.set(id, "running");
     return Promise.resolve(mockServiceInstance(id)!);
   }
-  return invoke<ServiceInstance>("start_service", { id });
+  return invoke("start_service", { id });
 }
 
 export function stopService(id: string): Promise<ServiceInstance | null> {
@@ -747,7 +712,7 @@ export function stopService(id: string): Promise<ServiceInstance | null> {
     mockServiceState.set(id, "stopped");
     return Promise.resolve(mockServiceInstance(id));
   }
-  return invoke<ServiceInstance | null>("stop_service", { id });
+  return invoke("stop_service", { id });
 }
 
 export function restartService(id: string): Promise<ServiceInstance> {
@@ -755,7 +720,7 @@ export function restartService(id: string): Promise<ServiceInstance> {
     mockServiceState.set(id, "running");
     return Promise.resolve(mockServiceInstance(id)!);
   }
-  return invoke<ServiceInstance>("restart_service", { id });
+  return invoke("restart_service", { id });
 }
 
 const mockServiceState = new Map<string, "stopped" | "running">();
@@ -774,7 +739,7 @@ function mockServiceInstance(id: string): ServiceInstance | null {
 
 export function previewCron(cronExpr: string): Promise<CronPreviewItem[]> {
   if (!isTauri()) return Promise.resolve(mockPreview(cronExpr));
-  return invoke<CronPreviewItem[]>("preview_cron", { input: { cronExpr } });
+  return invoke("preview_cron", { input: { cronExpr } });
 }
 
 export function listRuns(jobId: string | null, options: RunHistoryOptions = {}): Promise<Run[]> {
@@ -799,7 +764,7 @@ export function listRuns(jobId: string | null, options: RunHistoryOptions = {}):
     const limit = Math.max(1, Math.min(options.limit ?? 50, 500));
     return Promise.resolve(filtered.slice(0, limit));
   }
-  return invoke<Run[]>("list_runs", {
+  return invoke("list_runs", {
     jobId: jobId ?? null,
     limit: options.limit ?? 50,
     startAt: options.startAt ?? null,
@@ -831,7 +796,7 @@ export function runJobNow(jobId: string): Promise<Run> {
     mockRuns = { ...mockRuns, [jobId]: [run, ...(mockRuns[jobId] ?? [])] };
     return Promise.resolve(run);
   }
-  return invoke<Run>("run_job_now", { id: jobId });
+  return invoke("run_job_now", { id: jobId });
 }
 
 export function stopActiveRun(jobId: string): Promise<Run | null> {
@@ -843,7 +808,7 @@ export function stopActiveRun(jobId: string): Promise<Run | null> {
     mockRuns = { ...mockRuns, [jobId]: current.map((run) => (run.id === active.id ? stopped : run)) };
     return Promise.resolve(stopped);
   }
-  return invoke<Run | null>("stop_active_run", { id: jobId });
+  return invoke("stop_active_run", { id: jobId });
 }
 
 export function getActiveRun(jobId: string): Promise<Run | null> {
@@ -852,7 +817,7 @@ export function getActiveRun(jobId: string): Promise<Run | null> {
       (mockRuns[jobId] ?? []).find((run) => ["starting", "running", "stopping"].includes(run.status)) ?? null,
     );
   }
-  return invoke<Run | null>("get_active_run", { id: jobId });
+  return invoke("get_active_run", { id: jobId });
 }
 
 export function listActiveRuns(): Promise<Run[]> {
@@ -863,7 +828,7 @@ export function listActiveRuns(): Promise<Run[]> {
         .filter((run) => ["starting", "running", "stopping"].includes(run.status)),
     );
   }
-  return invoke<Run[]>("list_active_runs");
+  return invoke("list_active_runs", {});
 }
 
 export function tailLog(
@@ -880,7 +845,7 @@ export function tailLog(
       truncated: false,
     });
   }
-  return invoke<TailResponse>("tail_log", {
+  return invoke("tail_log", {
     input: { runId, stream, cursor, maxBytes },
   });
 }
@@ -913,7 +878,7 @@ export function searchRunLogs(runId: string, options: LogSearchOptions): Promise
         : [],
     });
   }
-  return invoke<LogSearchResponse>("search_run_logs", { input });
+  return invoke("search_run_logs", { input });
 }
 
 /** Start the explicit Run Manager -> Log Lens handoff. Browser fixtures never

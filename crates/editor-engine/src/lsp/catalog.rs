@@ -19,6 +19,7 @@ pub const WINDOWS_X86_64_PLATFORM: &str = "windows-x86_64";
 /// clients.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum UpdatePolicy {
     #[default]
     Manual,
@@ -26,6 +27,7 @@ pub enum UpdatePolicy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum ArtifactKind {
     Zip,
     #[serde(rename = "npm_tarball")]
@@ -34,6 +36,7 @@ pub enum ArtifactKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum RuntimeKind {
     Native,
     Node,
@@ -44,6 +47,7 @@ pub enum RuntimeKind {
 /// was available; new installs always record one of the concrete sources.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum InstallSource {
     #[default]
     Unknown,
@@ -52,7 +56,7 @@ pub enum InstallSource {
     LocalArchive,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct LanguageSupport {
     pub language_id: String,
     pub extensions: Vec<String>,
@@ -62,7 +66,7 @@ pub struct LanguageSupport {
     pub command: Option<CommandSpec>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Artifact {
     pub kind: ArtifactKind,
     pub url: String,
@@ -80,7 +84,8 @@ pub struct Artifact {
     pub archive_root: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct RuntimeSpec {
     pub kind: RuntimeKind,
     pub executable: String,
@@ -88,14 +93,14 @@ pub struct RuntimeSpec {
     pub min_version: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CommandSpec {
     pub executable: String,
     #[serde(default)]
     pub args: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ManifestFiles {
     pub entrypoint: String,
     #[serde(default)]
@@ -104,7 +109,7 @@ pub struct ManifestFiles {
 
 /// UI-only hints. The initialize response from a real server remains the
 /// authority; these fields must never be used to enable an LSP request.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CapabilitiesHint {
     #[serde(default)]
     pub diagnostics: bool,
@@ -124,7 +129,7 @@ pub struct CapabilitiesHint {
 
 /// A catalog entry describes one exact, managed server release. It is not a
 /// process command and does not imply that the artifact has been installed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct ServerManifest {
     pub id: String,
     pub version: String,
@@ -144,7 +149,7 @@ pub struct ServerManifest {
 /// User-selected server metadata. A custom server is never a download source:
 /// source/license/version are informational values supplied by the user and
 /// are retained for trust/status UI.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CustomServer {
     pub language_ids: Vec<String>,
     pub executable: String,
@@ -163,6 +168,8 @@ pub struct CustomServer {
 /// { "kind": "custom", ... }.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub enum ServerRef {
     Managed {
         manifest_id: String,
@@ -241,8 +248,9 @@ impl ServerRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct LspConfig {
+    #[ts(type = "1")]
     pub version: u32,
     pub enabled: bool,
     /// Empty means that no workspace has been selected yet. A non-empty value

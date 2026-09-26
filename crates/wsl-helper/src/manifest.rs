@@ -11,6 +11,7 @@ const MAX_ENTRIES: usize = 128;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum TaskSourceKind {
     PackageScript,
     Taskfile,
@@ -18,6 +19,8 @@ pub enum TaskSourceKind {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ManifestTask")]
 pub struct Task {
     pub kind: TaskSourceKind,
     pub source: String,
@@ -25,6 +28,7 @@ pub struct Task {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct Toolchain {
     pub tool: String,
     pub version: String,
@@ -33,11 +37,15 @@ pub struct Toolchain {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ManifestSession")]
 pub struct Session {
     pub tasks: Vec<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "ProjectManifest")]
 pub struct Manifest {
     pub schema_version: u32,
     #[serde(default)]
@@ -68,6 +76,7 @@ impl Default for Manifest {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct LocalOverlay {
     pub schema_version: u32,
     /// Resolves through the native registry; roots and distro names are not
@@ -93,6 +102,7 @@ pub struct LocalOverlay {
 }
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DefinitionDiff {
     pub added: Vec<String>,
     pub changed: Vec<String>,

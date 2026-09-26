@@ -3,6 +3,7 @@
 //! executable, database discovery or generic spawn/unseal command is exposed.
 mod observations;
 mod reconnect;
+use crate::ipc::results::{OwnedTaskAction, ProcessActionReply};
 use crate::{definitions::Definitions, host::Host};
 use logs_engine::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
 use ports_engine::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
@@ -125,49 +126,7 @@ impl RuntimeLogLease for OwnedLog {
             .map_err(|_| CoreError::StaleOperation)
     }
 }
-pub(crate) fn component(name: &str) -> bool {
-    matches!(
-        name,
-        "workspace.runtime"
-            | "workspace.processes"
-            | "workspace.process-actions"
-            | "workspace.logs"
-    )
-}
-pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
-    if component == "workspace.logs" && route == "logs" && method == "open_webhook_log" {
-        return true;
-    }
-    match component {
-        "workspace.runtime" => {
-            route == "tasks"
-                && (method == "workspace_task_source"
-                    || runtime_engine::component::COMMANDS.contains(&method))
-                && !runtime_engine::component::legacy_control_method(method)
-        }
-        "workspace.processes" => {
-            route == "runtime"
-                && method != "kill_listener"
-                && ports_engine::component::COMMANDS.contains(&method)
-        }
-        "workspace.process-actions" => route == "runtime" && method == "kill_listener",
-        "workspace.logs" => route == "logs" && logs_engine::component::COMMANDS.contains(&method),
-        _ => false,
-    }
-}
-pub(crate) fn stops(method: &str) -> bool {
-    matches!(
-        method,
-        "runtime_import_cancel"
-            | "stop_service"
-            | "stop_active_run"
-            | "stop_workspace_task_operation"
-            | "cancel_read"
-            | "quit_app"
-            | "cancel_workspace_task_import"
-            | "cancel_project_import"
-    )
-}
+
 fn args<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
     if !value.is_object() {
         return Err("invalid_request");
@@ -315,6 +274,7 @@ fn open_log(
 /// The dispatcher retains a bounded request/context/worker permit around this
 /// future, including after a renderer drops its awaiting request.
 pub(crate) struct EngineRequest<'a> {
+    pub typed: crate::ipc::Call,
     pub component: &'a str,
     pub method: &'a str,
     pub value: Value,
@@ -338,6 +298,7 @@ pub(crate) async fn dispatch(
         deadline,
         operation_id,
         terminals,
+        typed,
     } = request;
     crate::files_host::current_deadline(deadline)?;
     if component == "workspace.logs" && method == "open_webhook_log" {
@@ -469,9 +430,10 @@ pub(crate) async fn dispatch(
                     })).map_err(|_| "runtime_navigation_unavailable")?;
                     Ok(Value::Bool(true))
                 }
-                _ => runtime_engine::component::dispatch(app, method, value)
-                    .await
-                    .map_err(issue),
+                _ => {
+                    drop(value);
+                    crate::ipc::dispatch_engine(app, typed).await.map_err(issue)
+                }
             }
         }
         "workspace.processes" | "workspace.process-actions" => {
@@ -587,10 +549,11 @@ pub(crate) async fn dispatch(
                             let (container_id, distro) = (container_id.clone(), distro.clone());
                             // The observation owner revalidates the selected endpoint and
                             // container identity. The WSL owner then refreshes its full ID.
-                            ports_engine::component::dispatch(
+                            ports_engine::api::dispatch(
                                 app,
-                                "handoff_container_stop",
-                                json!({"request":input.request}),
+                                ports_engine::api::PortsCall::HandoffContainerStop {
+                                    request: input.request,
+                                },
                             )
                             .await
                             .map_err(issue)?;
@@ -612,17 +575,21 @@ pub(crate) async fn dispatch(
                         )
                         .map_err(issue)?;
                         navigate(app, "tasks", context)?;
-                        Ok(json!({"kind":"ownedTask","taskId":id}))
+                        Ok(json!(ProcessActionReply::Owned(
+                            OwnedTaskAction::OwnedTask { task_id: id }
+                        )))
                     } else {
                         ports_engine::component::kill_external_listener(input.request, deadline)
                             .await
+                            .map(|value| json!(ProcessActionReply::Native(value)))
                             .map_err(issue)
                     }
                 }
                 "handoff_container_stop" => Err("runtime_container_owner_unavailable"),
-                _ => ports_engine::component::dispatch(app, method, value)
-                    .await
-                    .map_err(issue),
+                _ => {
+                    drop(value);
+                    crate::ipc::dispatch_engine(app, typed).await.map_err(issue)
+                }
             }
         }
         "workspace.logs" => {
@@ -636,7 +603,7 @@ pub(crate) async fn dispatch(
                     crate::selection_logs::begin(
                         value["generation"].as_u64().ok_or("invalid_request")?,
                     );
-                    let result = logs_engine::component::dispatch(app, method, value.clone())
+                    let result = crate::ipc::dispatch_engine(app, typed)
                         .await
                         .map_err(issue)?;
                     crate::selection_logs::capture(value, &result, context);
@@ -644,9 +611,10 @@ pub(crate) async fn dispatch(
                 }
                 "preview_log_source" | "accept_log_source" | "discard_log_source"
                 | "renew_log_source" => Err("runtime_handoff_review_required"),
-                _ => logs_engine::component::dispatch(app, method, value)
-                    .await
-                    .map_err(issue),
+                _ => {
+                    drop(value);
+                    crate::ipc::dispatch_engine(app, typed).await.map_err(issue)
+                }
             }
         }
         _ => Err("invalid_request"),
@@ -658,6 +626,7 @@ pub(crate) async fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::allow_table::permits as allowed;
     #[test]
     fn execution_secret_authority_and_external_process_action_never_share_a_role() {
         assert!(allowed(
@@ -666,14 +635,22 @@ mod tests {
             "kill_listener"
         ));
         assert!(!allowed("workspace.processes", "runtime", "kill_listener"));
-        for method in runtime_engine::component::COMMANDS {
-            assert_eq!(
-                allowed("workspace.runtime", "tasks", method),
-                !runtime_engine::component::legacy_control_method(method)
-            );
+        for method in runtime_engine::api::METHODS {
+            assert!(allowed("workspace.runtime", "tasks", method));
             assert!(!allowed("workspace.runtime", "runtime", method));
             assert!(!allowed("workspace.process-actions", "runtime", method));
             assert!(!allowed("workspace.logs", "tasks", method));
+        }
+        for method in [
+            "run_job_now",
+            "stop_active_run",
+            "start_service",
+            "stop_service",
+            "restart_service",
+            "run_workspace_task_operation",
+            "stop_workspace_task_operation",
+        ] {
+            assert!(!allowed("workspace.runtime", "tasks", method));
         }
         for (role, route) in [
             ("workspace.logs", "logs"),

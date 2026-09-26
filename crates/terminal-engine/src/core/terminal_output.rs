@@ -10,6 +10,7 @@ pub const MAX_FRAME_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct Frame {
     pub sequence: u64,
     pub data: String,
@@ -17,6 +18,7 @@ pub struct Frame {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct OutputBatch {
     pub frames: Vec<Frame>,
     pub cursor: u64,

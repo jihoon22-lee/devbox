@@ -24,7 +24,7 @@ type WslProcessDetails = Option<(u64, Option<String>)>;
 type WslProcessDetailCache = HashMap<(String, u32), WslProcessDetails>;
 
 /// Process details retained for the detail panel and identity-safe actions.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
@@ -45,7 +45,7 @@ pub struct ProcessInfo {
 /// A port row contains display metadata and an opaque identity precondition.
 /// The executable path/command line are display-only values; they are never
 /// accepted as process-control input.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct PortRow {
     #[serde(flatten)]
     pub port: devbox_process::PortInfo,
@@ -79,6 +79,7 @@ impl PortRow {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum ListenerActionResult {
     Terminated,
     Handoff { handoff: ContainerStopHandoff },
@@ -86,7 +87,6 @@ pub enum ListenerActionResult {
 
 /// List native, WSL, and published-container listeners. All platform work is
 /// kept off the Tauri command thread and every child output is bounded.
-#[tauri::command]
 pub async fn list_ports() -> Result<Vec<PortRow>, String> {
     tauri::async_runtime::spawn_blocking(collect_ports)
         .await
@@ -97,7 +97,6 @@ pub async fn list_ports() -> Result<Vec<PortRow>, String> {
 /// Re-query the endpoint and identity immediately before a process action.
 /// A container row returns a validated handoff descriptor and never invokes a
 /// process termination API.
-#[tauri::command]
 pub async fn kill_listener(request: KillListenerRequest) -> Result<ListenerActionResult, String> {
     tauri::async_runtime::spawn_blocking(move || kill_listener_sync(request))
         .await
@@ -165,7 +164,6 @@ fn kill_listener_sync_until(
 /// Return the validated handoff descriptor for a container row. The current
 /// container identity is re-read through list_ports first, so a stale
 /// selection cannot be handed off silently.
-#[tauri::command]
 pub async fn handoff_container_stop(
     request: KillListenerRequest,
 ) -> Result<ContainerStopHandoff, String> {
@@ -199,7 +197,6 @@ pub async fn handoff_container_stop(
 
 /// PID-only process detail lookup remains read-only. Process control uses
 /// kill_listener and therefore cannot be reached with a bare PID.
-#[tauri::command]
 pub fn get_process_info(pid: u32) -> Result<ProcessInfo, String> {
     if pid == 0 {
         return Err(ListenerError::InvalidRequest.to_string());
@@ -232,7 +229,6 @@ pub fn get_process_info(pid: u32) -> Result<ProcessInfo, String> {
 
 /// PID is resolved again by the backend; the frontend cannot provide an
 /// arbitrary path to the opener. Errors intentionally use fixed text.
-#[tauri::command]
 pub async fn reveal_process(app: tauri::AppHandle, pid: u32) -> Result<(), String> {
     if pid == 0 {
         return Err(ListenerError::InvalidRequest.to_string());
@@ -254,7 +250,6 @@ pub async fn reveal_process(app: tauri::AppHandle, pid: u32) -> Result<(), Strin
 
 /// Open only a URL produced from a validated listener row. The command keeps
 /// the existing API for browser actions but does not echo the URL on failure.
-#[tauri::command]
 pub async fn open_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
     if !is_safe_browser_url(&url) {
         return Err(ListenerError::InvalidRequest.to_string());
@@ -984,100 +979,6 @@ fn identity_sort_key(row: &PortRow) -> String {
         }) => format!("container:{engine}:{distro}:{container_id}"),
         None => String::new(),
     }
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_ports(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_ports().await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_kill_listener(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: KillListenerRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = kill_listener(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_handoff_container_stop(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: KillListenerRequest,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = handoff_container_stop(input.request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_get_process_info(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        pid: u32,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = get_process_info(input.pid)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_reveal_process(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        pid: u32,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    reveal_process(_component_app.clone(), input.pid).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_open_browser(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        url: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    open_browser(_component_app.clone(), input.url).await?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(all(test, target_os = "windows"))]

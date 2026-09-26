@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { sendSessionSummary } from "@devbox/product-shell/commands";
-import { componentCall } from "./native";
+import { typedComponentCall } from "./native";
+import type { WorkspaceTerminalCall } from "@devbox/workspace-features/generated/WorkspaceTerminalCall";
+import type { TerminalResults } from "@devbox/workspace-features/generated/terminal-results";
 import { sameRuntimeContext } from "./runtimeNavigation";
 
 interface SummaryPreview {
@@ -127,12 +129,10 @@ export default function DevelopmentSessions({
   const contextKey = JSON.stringify(description.context);
   const current = useRef(contextKey);
   current.current = contextKey;
-  const call = useCallback(
-    <T,>(method: string, args: Record<string, unknown> = {}) =>
-      componentCall<T>(description, "workspace.terminal", method, args, "terminal"),
+  const call = useMemo(
+    () => typedComponentCall<WorkspaceTerminalCall, TerminalResults>(description, "workspace.terminal", "terminal"),
     [description],
   );
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     let disposed = false;
@@ -146,7 +146,7 @@ export default function DevelopmentSessions({
       if (pending || disposed) return;
       pending = true;
       try {
-        const value = await call<Snapshot>("development_sessions");
+        const value = await call("development_sessions", {});
         if (!disposed) setSnapshot(value);
       } catch {
         if (!disposed) setIssue("세션 상태를 읽지 못했습니다. 잠시 후 다시 확인해 주세요.");
@@ -154,9 +154,7 @@ export default function DevelopmentSessions({
         pending = false;
       }
     };
-    void call<{ jobs: Candidate[]; truncated: boolean; profiles?: Array<{ id: string; name: string }> }>(
-      "development_candidates",
-    )
+    void call("development_candidates")
       .then((value) => {
         if (!disposed) {
           setJobs(value.jobs);
@@ -185,7 +183,7 @@ export default function DevelopmentSessions({
     try {
       const operationId = sessionStorage.getItem(key) ?? crypto.randomUUID();
       sessionStorage.setItem(key, operationId);
-      const next = await call<Plan>("prepare_development_session", {
+      const next = await call("prepare_development_session", {
         operationId,
         jobs: ids,
         terminalProfile: profile,
@@ -219,7 +217,7 @@ export default function DevelopmentSessions({
       });
       if (current.current === context) {
         setPlan(null);
-        setSnapshot(await call<Snapshot>("development_sessions"));
+        setSnapshot(await call("development_sessions", {}));
       }
     } catch {
       if (current.current === context)
@@ -234,7 +232,7 @@ export default function DevelopmentSessions({
     setIssue("");
     try {
       await call("stop_development_session", { id });
-      const next = await call<Snapshot>("development_sessions");
+      const next = await call("development_sessions", {});
       if (current.current === context) setSnapshot(next);
     } catch {
       if (current.current === context)
@@ -249,7 +247,7 @@ export default function DevelopmentSessions({
     setIssue("");
     try {
       await call("archive_development_session", { id });
-      setSnapshot(await call<Snapshot>("development_sessions"));
+      setSnapshot(await call("development_sessions", {}));
     } catch {
       setIssue("진행 중인 정리나 공유 참조가 있어 기록을 정리하지 못했습니다.");
     } finally {
@@ -269,7 +267,7 @@ export default function DevelopmentSessions({
         operationId = crypto.randomUUID();
         sessionStorage.setItem(key, operationId);
       }
-      const preview = await call<SummaryPreview>("prepare_session_summary", {
+      const preview = await call("prepare_session_summary", {
         operationId,
         sessionId: session.id,
         revision: session.revision,

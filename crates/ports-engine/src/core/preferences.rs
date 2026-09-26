@@ -25,6 +25,7 @@ pub const PREFERENCES_FILE_NAME: &str = "port-manager-preferences-v1.json";
 /// path, command line, or free-form secret-bearing metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct PortFavorite {
     pub source: ListenerSource,
     pub proto: String,
@@ -37,6 +38,7 @@ pub struct PortFavorite {
 /// kill request when loaded from disk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ProcessFavorite {
     pub source: ListenerSource,
     pub identity: ListenerIdentity,
@@ -44,7 +46,9 @@ pub struct ProcessFavorite {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct PortManagerPreferences {
+    #[ts(type = "1")]
     pub schema_version: u8,
     pub refresh_interval_ms: u32,
     pub pinned_only: bool,

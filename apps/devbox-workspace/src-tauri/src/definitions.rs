@@ -10,7 +10,7 @@ use crate::{
     private_metadata::MetadataRoot,
 };
 use product_contract::ProjectContext;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -31,6 +31,7 @@ pub(crate) fn digest(bytes: &[u8]) -> String {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DefinitionView {
     context: ProjectContext,
     registry_revision: u64,
@@ -199,29 +200,21 @@ struct Pending {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct TrustPreview {
     preview_id: String,
     definition: DefinitionView,
 }
-#[derive(Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum EditTarget {
-    Project,
-    Local,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EditRequest {
-    target: EditTarget,
-    content: String,
-    edit_revision: String,
-}
+pub use projects_engine::api::{EditRequest, EditTarget};
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct EditPreview {
     preview_id: String,
     target: EditTarget,
+    #[ts(as = "std::collections::BTreeMap<String,serde_json::Value>")]
     before: serde_json::Value,
+    #[ts(as = "std::collections::BTreeMap<String,serde_json::Value>")]
     after: serde_json::Value,
     effective_diff: manifest::DefinitionDiff,
 }
@@ -233,6 +226,7 @@ struct PendingEdit {
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct EditSaved {
     saved: bool,
     warning: Option<String>,

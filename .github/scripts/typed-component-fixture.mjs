@@ -3,6 +3,21 @@
 export function typedComponentInvoke(invoke, product, payload) {
   const { component, ...request } = payload.request;
   const commands = {
+    "workspace.runtime": "plugin:workspace|runtime",
+    "workspace.processes": "plugin:workspace|processes",
+    "workspace.process-actions": "plugin:workspace|process_actions",
+    "workspace.logs": "plugin:workspace|logs",
+    "workspace.terminal": "plugin:workspace|terminal",
+    "workspace.problems": "plugin:workspace|problems",
+    "workspace.commands": "plugin:workspace|commands",
+    "workspace.files": "plugin:workspace|files",
+    "workspace.lsp": "plugin:workspace|lsp",
+    "workspace.source": "plugin:workspace|source",
+    "workspace.registry": "plugin:workspace|registry",
+    "workspace.setup": "plugin:workspace|setup",
+    "workspace.definitions": "plugin:workspace|definitions",
+    "workspace.dependencies": "plugin:workspace|dependencies",
+
     "knowledge.activity": "plugin:knowledge|activity",
     "knowledge.notes": "plugin:knowledge|notes",
     "knowledge.search": "plugin:knowledge|search",
