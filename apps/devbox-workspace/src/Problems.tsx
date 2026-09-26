@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { useCallback, useMemo, useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
@@ -97,15 +98,16 @@ export default function Problems({
       pending.current = false;
     }
   }, [call, description.context]);
+  const pollRequest = useRef(refresh);
+  const { refresh: poll } = usePolling(() => pollRequest.current(), { intervalMs: 2000, immediate: false });
   useEffect(() => {
     mounted.current = true;
-    void refresh();
-    const timer = setInterval(() => void refresh(), 2000);
+    pollRequest.current = refresh;
+    poll();
     return () => {
       mounted.current = false;
-      clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refresh, poll]);
   const current = snapshot && sameRuntimeContext(snapshot.context, description.context) ? snapshot : null;
   const open = async (item: Item, log = false) => {
     if (busy || item.stale || unavailable) return;

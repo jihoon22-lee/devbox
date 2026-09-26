@@ -33,9 +33,12 @@ pub enum CompanionHost {
     ResetFailedPane {
         pane_key: String,
     },
-    TerminalOutput {
-        session_id: String,
-        after: u64,
+    AckTerminalOutput {
+        subscription_id: String,
+        cursor: u64,
+    },
+    UnsubscribeTerminalOutput {
+        subscription_id: String,
     },
     WriteInitialCommand {
         session_id: String,
@@ -77,7 +80,8 @@ impl CompanionHost {
             Self::TerminalLayout { .. } => "terminal_layout",
             Self::SaveTerminalLayout { .. } => "save_terminal_layout",
             Self::ResetFailedPane { .. } => "reset_failed_pane",
-            Self::TerminalOutput { .. } => "terminal_output",
+            Self::AckTerminalOutput { .. } => "ack_terminal_output",
+            Self::UnsubscribeTerminalOutput { .. } => "unsubscribe_terminal_output",
             Self::WriteInitialCommand { .. } => "write_initial_command",
             Self::DockerAction { .. } => "docker_action",
             Self::WslControlStatus { .. } => "wsl_control_status",
@@ -110,14 +114,19 @@ impl CompanionCall {
         match self {
             Self::Engine(call) => call.lane(),
             Self::Host(
-                CompanionHost::WriteInitialCommand { .. } | CompanionHost::TerminalOutput { .. },
+                CompanionHost::WriteInitialCommand { .. }
+                | CompanionHost::AckTerminalOutput { .. }
+                | CompanionHost::UnsubscribeTerminalOutput { .. },
             ) => Lane::TerminalIo,
             _ => Lane::Terminal,
         }
     }
 }
 pub fn deadline_budget_for(method: &str) -> u64 {
-    if method == "terminal_output" {
+    if matches!(
+        method,
+        "ack_terminal_output" | "unsubscribe_terminal_output"
+    ) {
         1_000
     } else {
         30_000
@@ -178,11 +187,11 @@ pub fn result_types(
     results.push(("save_terminal_layout", export.register::<TerminalLayout>()?));
     results.retain(|(name, _)| *name != "reset_failed_pane");
     results.push(("reset_failed_pane", export.register::<()>()?));
-    results.retain(|(name, _)| *name != "terminal_output");
-    results.push((
-        "terminal_output",
-        export.register::<terminal_engine::core::terminal_output::OutputBatch>()?,
-    ));
+    export.register::<super::output_stream::TerminalStreamCall>()?;
+    export.register::<super::output_stream::Subscription>()?;
+    export.register::<terminal_engine::core::terminal_output::OutputBatch>()?;
+    results.push(("ack_terminal_output", export.register::<()>()?));
+    results.push(("unsubscribe_terminal_output", export.register::<()>()?));
     results.retain(|(name, _)| *name != "write_initial_command");
     results.push(("write_initial_command", export.register::<()>()?));
     results.retain(|(name, _)| *name != "docker_action");
@@ -236,7 +245,11 @@ mod tests {
             r#"{"method":"open_terminal","args":{"operationId":"x"}}"#
         )
         .is_err());
-        assert_eq!(deadline_budget_for("terminal_output"), 1000);
+        assert_eq!(deadline_budget_for("ack_terminal_output"), 1000);
+        assert!(serde_json::from_str::<CompanionCall>(
+            r#"{"method":"terminal_output","args":{"sessionId":"s","after":0}}"#
+        )
+        .is_err());
     }
 }
 
@@ -268,7 +281,8 @@ impl<'de> serde::Deserialize<'de> for CompanionCall {
                 "terminal_layout",
                 "save_terminal_layout",
                 "reset_failed_pane",
-                "terminal_output",
+                "ack_terminal_output",
+                "unsubscribe_terminal_output",
                 "write_initial_command",
                 "docker_action",
                 "wsl_control_status",

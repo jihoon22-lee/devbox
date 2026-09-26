@@ -63,13 +63,13 @@ impl SessionState {
 
 /// PTY 세션 하나
 pub(crate) struct OwnedOutput {
-    pub buffer: Mutex<crate::core::terminal_output::OutputBuffer>,
+    pub buffer: Arc<Mutex<crate::core::terminal_output::OutputBuffer>>,
     pub reader_done: AtomicBool,
 }
 impl Default for OwnedOutput {
     fn default() -> Self {
         Self {
-            buffer: Mutex::default(),
+            buffer: Arc::default(),
             reader_done: AtomicBool::new(false),
         }
     }

@@ -8,3 +8,7 @@ export const webhookCall = typedCall<StudioWebhookCall, WebhookResults>("api-stu
 import type { StudioTransformCall } from "./generated/StudioTransformCall";
 import type { TransformResults } from "./generated/transform-results";
 export const transformCall = typedCall<StudioTransformCall, TransformResults>("api-studio.transforms");
+
+import type { StoreCall } from "./generated/StoreCall";
+import type { StoreResults } from "./generated/store-results";
+export const storeCall = typedCall<StoreCall, StoreResults>("api-studio.store");

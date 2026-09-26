@@ -2,6 +2,9 @@ import type { WorkspaceIssue } from "../generated/WorkspaceIssue";
 const unavailable = "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요.";
 /** Native static codes are exhaustive; unknown text never becomes user-visible diagnostics. */
 export const workspaceMessages: Record<WorkspaceIssue, string> = {
+  terminal_stream_denied: "터미널 출력 연결이 변경되었습니다. 창을 다시 열어 주세요.",
+  terminal_stream_limit: "터미널 출력 연결이 너무 많습니다. 닫힌 화면을 확인해 주세요.",
+  terminal_stream_unavailable: "터미널 출력을 확인하지 못했습니다. 창을 다시 열어 주세요.",
   alias_limit: unavailable,
   binding_review_required: unavailable,
   busy: "앞선 작업이 끝난 뒤 다시 시도해 주세요.",

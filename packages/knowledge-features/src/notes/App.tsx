@@ -1,3 +1,6 @@
+import { useUndo } from "@devbox/product-shell/undo";
+import { undoCreated } from "./undoCreated";
+import { usePolling } from "@devbox/hooks";
 import { NoteAutosave, readAutosavePreference, writeAutosavePreference } from "./autosave";
 import { NoteJournal } from "./journal";
 import RecoveryControls from "./components/RecoveryControls";
@@ -188,6 +191,7 @@ export default function App({
   const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
   const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
+  const { offer: offerUndo, toast: undoToast } = useUndo();
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   useEffect(() => {
     if (captureRequest) {
@@ -196,7 +200,6 @@ export default function App({
     }
   }, [captureRequest]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
-  const [quickCaptureNotice, setQuickCaptureNotice] = useState<string | null>(null);
   const [quickCaptureShortcut, setQuickCaptureShortcut] = useState<QuickCaptureShortcutStatus | null>(null);
   const [draftPreview, setDraftPreview] = useState<KnowledgeDraftPreview | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
@@ -333,14 +336,14 @@ export default function App({
     writeAutosavePreference(autosaveEnabled);
   }, [autosaveEnabled]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: editorDocument identifies the metadata subscription lifetime; replacing it must restart observation even when request identity is stable.
   useEffect(() => {
     metadataRefresh.start();
     void loadMeta();
     return () => metadataRefresh.stop();
   }, [loadMeta, metadataRefresh, editorDocument]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: metadataRevision invalidates link targets on disk even when content and selected path are unchanged.
   useEffect(() => {
     let disposed = false;
     if (!isMarkdown(selected)) {
@@ -366,7 +369,7 @@ export default function App({
     };
   }, [content, metadataRevision, selected]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: metadataRevision invalidates backlinks after another note changes without changing the selected path.
   useEffect(() => {
     let disposed = false;
     if (!isMarkdown(selected)) {
@@ -516,13 +519,7 @@ export default function App({
     };
   }, []);
 
-  useEffect(() => {
-    if (!quickCaptureNotice) return;
-    const timer = window.setTimeout(() => setQuickCaptureNotice(null), 4_000);
-    return () => window.clearTimeout(timer);
-  }, [quickCaptureNotice]);
-
-  const confirmDiscard = () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?");
+  const confirmDiscard = useCallback(() => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"), []);
   const openFile = async (path: string, fragment?: string) => {
     if (recoveryBusyRef.current) return;
     setError(null);
@@ -607,7 +604,6 @@ export default function App({
     }
   }, [draftPreview]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   const commitDraftPreview = useCallback(async () => {
     const preview = draftPreview;
     if (!preview || draftBusyRef.current) return;
@@ -656,7 +652,7 @@ export default function App({
       draftBusyRef.current = false;
       if (draftMountedRef.current) setDraftBusy(false);
     }
-  }, [draftPreview, loadMeta, editorDocument]);
+  }, [draftPreview, loadMeta, editorDocument, confirmDiscard]);
 
   const openDraftPreview = useCallback(
     async (id: string, kind: KnowledgeDraftPreview["kind"]) => {
@@ -748,31 +744,30 @@ export default function App({
   // A preview may outlive the generic 60-second claim lease. Renewal never
   // extends the envelope TTL. Expiry/invalid claims close the preview with a
   // fixed regeneration message; transient failures leave it visible.
-  useEffect(() => {
-    if (!draftPreview) return;
-    const id = draftPreview.id;
-    const renew = () => {
-      void renewKnowledgeDraft(id)
-        .then((result) => {
-          if (!draftMountedRef.current) return;
-          setDraftPreview((current) =>
-            current?.id === id ? { ...current, leaseUntilMs: result.leaseUntilMs } : current,
-          );
-        })
-        .catch((cause) => {
-          if (draftPreviewRef.current?.id !== id || !draftMountedRef.current) return;
-          if (draftNeedsRegeneration(cause)) {
-            draftPreviewRef.current = null;
-            setDraftPreview(null);
-            setError("Knowledge 초안이 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
-          } else {
-            setError("Knowledge 초안 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
-          }
-        });
-    };
-    const timer = window.setInterval(renew, 30_000);
-    return () => window.clearInterval(timer);
-  }, [draftPreview]);
+  usePolling(
+    async () => {
+      const preview = draftPreviewRef.current;
+      if (!preview) return;
+      const id = preview.id;
+      try {
+        const result = await renewKnowledgeDraft(id);
+        if (!draftMountedRef.current) return;
+        setDraftPreview((current) =>
+          current?.id === id ? { ...current, leaseUntilMs: result.leaseUntilMs } : current,
+        );
+      } catch (cause) {
+        if (draftPreviewRef.current?.id !== id || !draftMountedRef.current) return;
+        if (draftNeedsRegeneration(cause)) {
+          draftPreviewRef.current = null;
+          setDraftPreview(null);
+          setError("Knowledge 초안이 만료되었거나 더 이상 유효하지 않습니다. 보낸 앱에서 새로 생성하세요.");
+        } else {
+          setError("Knowledge 초안 미리보기 시간이 만료될 수 있습니다. 저장하거나 취소하세요.");
+        }
+      }
+    },
+    { intervalMs: 30_000, active: Boolean(draftPreview), immediate: false },
+  );
 
   const runSearch = async (requestedQuery = query) => {
     const normalized = requestedQuery.trim();
@@ -1050,13 +1045,17 @@ export default function App({
 
   return (
     <div className="app">
+      {undoToast}
       {quickCaptureOpen && (
         <QuickCaptureDialog
           open={quickCaptureOpen}
           active={active}
           onClose={() => setQuickCaptureOpen(false)}
-          onSaved={() => {
-            setQuickCaptureNotice("빠른 캡처를 Inbox에 저장했습니다");
+          onSaved={(created) => {
+            offerUndo("노트를 만들었습니다.", async () => {
+              await undoCreated(created, editorDocument);
+              await loadMeta();
+            });
             void loadMeta();
           }}
           restoreFocusRef={quickCaptureButtonRef}
@@ -1068,11 +1067,10 @@ export default function App({
           onClose={() => setTemplateManagerOpen(false)}
           onSaved={(result) => {
             setTemplateManagerOpen(false);
-            setNotice(
-              result.saved
-                ? `템플릿으로 새 노트를 만들었습니다: ${result.path}`
-                : "브라우저 미리보기에서는 파일을 만들지 않았습니다. 데스크톱 앱에서 적용하세요.",
-            );
+            offerUndo("노트를 만들었습니다.", async () => {
+              await undoCreated(result, editorDocument);
+              await loadMeta();
+            });
             void loadMeta();
           }}
         />
@@ -1191,11 +1189,7 @@ export default function App({
           {error}
         </div>
       )}
-      {quickCaptureNotice && (
-        <div className="quick-capture-notice" role="status">
-          {quickCaptureNotice}
-        </div>
-      )}
+
       {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
         <div className="quick-capture-shortcut-warning" role="status">
           전역 단축키 {quickCaptureShortcut.shortcut}를 등록하지 못했습니다. 다른 앱이 사용 중일 수 있습니다. 해당 앱의

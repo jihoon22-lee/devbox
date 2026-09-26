@@ -20,6 +20,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1658,6 +1666,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tempfile",
+ "tokio",
  "ts-rs",
  "uuid",
  "webhook-core",

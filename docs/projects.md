@@ -34,3 +34,8 @@ helper artifact를 사용한다. 각 제품이 별도로 해시를 고정해 패
 
 Knowledge·Workspace의 살균된 Markdown HTML과 Mermaid 블록은 `packages/markdown-view`를
 공유한다. 노트 링크·wikilink·앵커 이동과 각 제품의 미리보기 상태는 소비자가 소유한다.
+
+`crates/agent-protocol`은 사용자별 agent의 길이 제한 framing·메시지·handshake 검사를
+제공하는 순수 계약 crate다. Cargo workspace 검증에 포함되며 제품 카탈로그 항목은 아니다.
+Phase 1에서는 실행 프로세스나 제품 transport를 바꾸지 않는다. 프로세스·배포·writer lease
+연결은 [ADR 0015](adr/0015-devbox-agent.md)의 Phase 2 설계를 따른다.

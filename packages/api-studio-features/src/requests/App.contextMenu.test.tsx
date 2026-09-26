@@ -1,10 +1,14 @@
+import { browserDocumentStorage } from "../storage/documentStorage";
+import { previewDocumentKey, seedPreviewDocument } from "../storage/testDocuments";
+const COLLECTION_V2_LS_KEY = previewDocumentKey("collections");
+const HISTORY_V2_LS_KEY = previewDocumentKey("history");
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { sanitizePersistedJson } from "./api";
-import { COLLECTION_V2_LS_KEY, type CollectionStore } from "./lib/collections";
-import { HISTORY_V2_LS_KEY, sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
+import { type CollectionStore } from "./lib/collections";
+import { sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
 import type { RequestTemplate } from "./types";
 
 vi.mock("./api", () => ({
@@ -71,8 +75,8 @@ function seedStores() {
       },
     ],
   };
-  localStorage.setItem(HISTORY_V2_LS_KEY, JSON.stringify(history));
-  localStorage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(collections));
+  seedPreviewDocument("history", JSON.stringify(history));
+  seedPreviewDocument("collections", JSON.stringify(collections));
 }
 
 async function renderReady() {
@@ -208,4 +212,48 @@ describe("API Playground History and Collection context menus", () => {
     expect(await screen.findByText("마스킹된 cURL을 복사하지 못했습니다.")).toBeTruthy();
     expect(document.body.textContent?.includes(RAW_SECRET)).toBe(false);
   });
+});
+
+it("keeps rapid environment edits in order while the native-style save is delayed", async () => {
+  seedPreviewDocument(
+    "environments",
+    JSON.stringify({
+      version: 1,
+      environments: [{ id: "e", name: "fixture-env", variables: [{ key: "VALUE", value: "initial", secret: false }] }],
+    }),
+  );
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "fixture-env" }));
+  const input = screen.getByDisplayValue("initial");
+  const storage = browserDocumentStorage();
+  const save = storage.save.bind(storage);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const writes: string[] = [];
+  const spy = vi.spyOn(storage, "save").mockImplementation(async (kind, body, expected) => {
+    if (kind === "environments") {
+      writes.push(body);
+      if (writes.length === 1) await gate;
+    }
+    return save(kind, body, expected);
+  });
+  try {
+    fireEvent.change(input, { target: { value: "a" } });
+    await waitFor(() => expect(writes).toHaveLength(1));
+    fireEvent.change(input, { target: { value: "ab" } });
+    expect((input as HTMLInputElement).value).toBe("ab");
+    release();
+    await waitFor(() =>
+      expect(
+        JSON.parse(localStorage.getItem(previewDocumentKey("environments")) ?? "null").environments[0].variables[0]
+          .value,
+      ).toBe("ab"),
+    );
+    expect(writes.map((body) => JSON.parse(body).environments[0].variables[0].value)).toEqual(["a", "ab"]);
+  } finally {
+    release();
+    spy.mockRestore();
+  }
 });

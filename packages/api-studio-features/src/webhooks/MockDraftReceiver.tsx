@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { webhookCall } from "../calls";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -75,6 +76,11 @@ export function MockDraftReceiver({
   const revision = useRef(0);
   const dialog = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  const pollMockCallback = useRef<() => Promise<void> | void>(() => {});
+  const { refresh: pollMock } = usePolling(() => pollMockCallback.current(), {
+    intervalMs: 15_000,
+    active: isTauri() && active,
+  });
   useEffect(() => {
     if (!isTauri()) return;
     let alive = true;
@@ -100,9 +106,8 @@ export function MockDraftReceiver({
         checking = false;
       }
     }
-    const wake = () => {
-      void refresh();
-    };
+    pollMockCallback.current = refresh;
+    const wake = pollMock;
     void listen("api-studio://mock-draft", wake)
       .then((stop) => {
         if (alive) {
@@ -111,24 +116,23 @@ export function MockDraftReceiver({
         } else stop();
       })
       .catch(wake);
-    const timer = setInterval(wake, 15_000);
     return () => {
       alive = false;
       mounted.current = false;
       revision.current += 1;
       unlisten?.();
-      clearInterval(timer);
+      pollMockCallback.current = () => {};
     };
-  }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  }, [pollMock]);
+  const previewId = preview?.id;
   useLayoutEffect(() => {
-    if (!preview || !active) return;
+    if (!previewId || !active) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancel.current?.focus();
     return () => {
       restoreFocus(previous);
     };
-  }, [preview?.id, active]);
+  }, [previewId, active]);
   async function finish(apply: boolean) {
     if (!preview || running.current || (apply && disabled)) return;
     running.current = true;

@@ -1,3 +1,4 @@
+import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 // environment 정의와 {{variable}} 치환 (순수 로직).
 
 export const ENVIRONMENT_LS_KEY = "apip-environments";
@@ -26,17 +27,15 @@ export function emptyStore(): EnvironmentStore {
   return { version: ENVIRONMENT_VERSION, environments: [] };
 }
 
-export function loadStore(): EnvironmentStore {
-  try {
-    return parseStore(localStorage.getItem(ENVIRONMENT_LS_KEY)) ?? emptyStore();
-  } catch {
-    // Storage access can be denied by the host WebView; treat it like a
-    // corrupted store without surfacing the raw browser error.
-    return emptyStore();
-  }
+export async function loadStore(storage: DocumentStorage = documentStorage()): Promise<EnvironmentStore> {
+  const document = await documentSession("environments", storage).load();
+  if (!document) return emptyStore();
+  const parsed = parseStore(document.body);
+  if (!parsed) throw new Error("Environment 저장 형식이 올바르지 않습니다");
+  return parsed;
 }
 
-/** Parse only the bounded environment wire shape used by localStorage. */
+/** Parse only the bounded environment wire shape used by document storage. */
 export function parseStore(raw: string | null): EnvironmentStore | null {
   try {
     const parsed = JSON.parse(raw ?? "null") as Partial<EnvironmentStore> | null;
@@ -59,25 +58,17 @@ export function parseStore(raw: string | null): EnvironmentStore | null {
   }
 }
 
-/** Persist with read-back verification and restore the previous value on failure. */
-export function saveStore(store: EnvironmentStore, storage: Storage = localStorage): EnvironmentStore {
-  const previous = storage.getItem(ENVIRONMENT_LS_KEY);
-  const serialized = JSON.stringify(store);
-  try {
-    storage.setItem(ENVIRONMENT_LS_KEY, serialized);
-    const readBack = parseStore(storage.getItem(ENVIRONMENT_LS_KEY));
-    if (!readBack) throw new Error("Environment 안전 저장을 확인할 수 없습니다");
-    return readBack;
-  } catch (cause) {
-    try {
-      if (previous === null) storage.removeItem(ENVIRONMENT_LS_KEY);
-      else storage.setItem(ENVIRONMENT_LS_KEY, previous);
-    } catch {
-      // Preserve the original persistence failure; callers must not treat a
-      // failed rollback as a successful environment mutation.
-    }
-    throw cause;
-  }
+/** Persist the validated shape with the revision observed by this document session. */
+export async function saveStore(
+  store: EnvironmentStore,
+  storage: DocumentStorage = documentStorage(),
+): Promise<EnvironmentStore> {
+  const session = documentSession("environments", storage);
+  const expected = (await session.snapshot())?.revision ?? null;
+  const parsed = parseStore(JSON.stringify(store));
+  if (!parsed) throw new Error("Environment 저장 형식이 올바르지 않습니다");
+  await session.save(JSON.stringify(parsed), expected);
+  return parsed;
 }
 
 export function addEnvironment(store: EnvironmentStore, name: string, makeId: () => string): EnvironmentStore {

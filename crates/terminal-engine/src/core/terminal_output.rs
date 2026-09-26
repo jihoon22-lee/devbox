@@ -1,7 +1,8 @@
 //! A PTY has one reader and a bounded replay log independent of renderer lifetime.
-//! Product consumers pull ordered frames; output never enters a global event queue.
+//! Product consumers stream ordered frames; output never enters a global event queue.
 use serde::Serialize;
 use std::collections::VecDeque;
+use tokio::sync::watch;
 
 pub const MAX_REPLAY_BYTES: usize = 512 * 1024;
 pub const MAX_REPLAY_FRAMES: usize = 512;
@@ -16,7 +17,7 @@ pub struct Frame {
     pub data: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
 pub struct OutputBatch {
@@ -28,12 +29,24 @@ pub struct OutputBatch {
     pub more: bool,
 }
 
-#[derive(Default)]
 pub struct OutputBuffer {
     frames: VecDeque<Frame>,
     bytes: usize,
     sequence: u64,
     closed: bool,
+    changes: watch::Sender<u64>,
+}
+
+impl Default for OutputBuffer {
+    fn default() -> Self {
+        Self {
+            frames: VecDeque::new(),
+            bytes: 0,
+            sequence: 0,
+            closed: false,
+            changes: watch::channel(0).0,
+        }
+    }
 }
 
 impl OutputBuffer {
@@ -61,6 +74,13 @@ impl OutputBuffer {
                 }
             }
         }
+        if !text.is_empty() {
+            self.changes.send_replace(self.sequence);
+        }
+    }
+
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.changes.subscribe()
     }
 
     pub fn is_closed(&self) -> bool {
@@ -69,6 +89,7 @@ impl OutputBuffer {
 
     pub fn close(&mut self) {
         self.closed = true;
+        self.changes.send_replace(self.sequence);
     }
 
     pub fn read(&self, after: u64) -> Result<OutputBatch, &'static str> {

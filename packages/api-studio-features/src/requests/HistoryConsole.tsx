@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { documentSession } from "../storage/documentStorage";
+import { usePolling } from "@devbox/hooks";
+import { useRef, useMemo, useState } from "react";
 import type { HistoryItem } from "./types";
 import { filterHistory, historyDisplayLabel, historyMethod, projectHistoryForReplay } from "./lib/history";
-import { GRPC_HISTORY_KEY, parseGrpcHistory, type GrpcHistoryStore } from "./lib/grpc";
+import { parseGrpcHistory, type GrpcHistoryStore } from "./lib/grpc";
 import "./HistoryConsole.css";
 import { KnowledgeDraftShelf } from "../knowledge/KnowledgeDraftShelf";
 interface Props {
@@ -13,26 +15,26 @@ interface Props {
 export function HistoryConsole({ history, activity, canApply, onApply }: Props) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [grpc, setGrpc] = useState<GrpcHistoryStore | null>(() =>
-    parseGrpcHistory(localStorage.getItem(GRPC_HISTORY_KEY)),
-  );
+  const [grpc, setGrpc] = useState<GrpcHistoryStore | null>(null);
   const [grpcInvalid, setGrpcInvalid] = useState(false);
-  useEffect(() => {
-    let last: string | null | undefined;
-    const refresh = () => {
-      const raw = localStorage.getItem(GRPC_HISTORY_KEY);
-      if (raw === last) return;
-      last = raw;
+  const lastGrpc = useRef<string | null | undefined>(undefined);
+  usePolling(
+    async () => {
+      let raw: string | null;
+      try {
+        raw = (await documentSession("grpc_history").load())?.body ?? null;
+      } catch {
+        setGrpcInvalid(true);
+        return;
+      }
+      if (raw === lastGrpc.current) return;
+      lastGrpc.current = raw;
       const parsed = parseGrpcHistory(raw);
       setGrpc(parsed);
       setGrpcInvalid(raw !== null && !parsed);
-    };
-    refresh();
-    // Protocol sessions stay mounted elsewhere. Read only their bounded summary
-    // store while this screen is visible; never collect message/timeline payloads.
-    const timer = setInterval(refresh, 1000);
-    return () => clearInterval(timer);
-  }, []);
+    },
+    { intervalMs: 1000 },
+  );
   const visible = useMemo(() => filterHistory(history, { query, method: "", status: "all" }), [history, query]);
   const selected = history.find((item) => item.id === selectedId);
   const safe = selected ? projectHistoryForReplay(selected) : null;

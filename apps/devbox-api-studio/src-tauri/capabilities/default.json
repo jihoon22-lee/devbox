@@ -8,7 +8,7 @@
     "core:default",
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
-    "api-studio:allow-api", "api-studio:allow-webhooks", "api-studio:allow-transforms",
+    "api-studio:allow-api", "api-studio:allow-webhooks", "api-studio:allow-transforms", "api-studio:allow-store",
     "suite:allow-connection"
   ]
 }

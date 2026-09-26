@@ -40,7 +40,7 @@ def check(root=ROOT):
         if product["id"] == "workspace":
             expected_permissions.update({"workspace:allow-runtime","workspace:allow-processes","workspace:allow-process-actions","workspace:allow-logs","workspace:allow-terminal","workspace:allow-problems","workspace:allow-commands","workspace:allow-files","workspace:allow-lsp","workspace:allow-source","workspace:allow-registry","workspace:allow-setup","workspace:allow-definitions","workspace:allow-dependencies"})
         if product["id"] == "api-studio":
-            expected_permissions.update({"api-studio:allow-api", "api-studio:allow-webhooks", "api-studio:allow-transforms"})
+            expected_permissions.update({"api-studio:allow-api", "api-studio:allow-webhooks", "api-studio:allow-transforms", "api-studio:allow-store"})
         if product["id"] == "knowledge":
             expected_permissions.update({"knowledge:allow-activity", "knowledge:allow-notes", "knowledge:allow-search", "knowledge:allow-search-settings", "knowledge:allow-opener", "knowledge:allow-setup", "knowledge:allow-commands"})
         if product["id"] == "control-center":
@@ -55,7 +55,7 @@ def check(root=ROOT):
             assert "remote" not in terminal and not terminal.get("webviews")
             assert set(terminal["permissions"]) == {
                 "core:default", "workspace:allow-terminal-describe",
-                "workspace:allow-terminal-execute", "clipboard-manager:allow-read-text",
+                "workspace:allow-terminal-execute", "workspace:allow-terminal-output-stream", "clipboard-manager:allow-read-text",
                 "opener:allow-open-url",
             }
         assert {path.name for path in capability_dir.glob("*.json")} == expected_files

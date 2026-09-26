@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 17,
+  "catalogRevision": 18,
   "channel": "stable",
   "products": [
     {
@@ -250,6 +250,13 @@
       "id": "workspace.problems",
       "owner": "workspace",
       "authority": "problem-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.store",
+      "owner": "api-studio",
+      "authority": "local-store",
       "lifecycle": "product",
       "protocolVersion": 1
     }

@@ -1,3 +1,4 @@
+import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 import type { GrpcExchangeSummary, GrpcRpcKind, GrpcSourceKind, GrpcStatusName, GrpcTlsMode } from "../grpcApi";
 import { parseTree, type ParseError } from "jsonc-parser";
 
@@ -70,8 +71,12 @@ export function parseGrpcHistory(raw: string | null): GrpcHistoryStore | null {
   }
 }
 
-export function loadGrpcHistory(storage: Storage = localStorage): GrpcHistoryStore {
-  return parseGrpcHistory(storage.getItem(GRPC_HISTORY_KEY)) ?? emptyGrpcHistory();
+export async function loadGrpcHistory(storage: DocumentStorage = documentStorage()): Promise<GrpcHistoryStore> {
+  const document = await documentSession("grpc_history", storage).load();
+  if (!document) return emptyGrpcHistory();
+  const parsed = parseGrpcHistory(document.body);
+  if (!parsed) throw new Error("grpc_history_failed");
+  return parsed;
 }
 
 export function appendGrpcHistory(store: GrpcHistoryStore, summary: GrpcExchangeSummary): GrpcHistoryStore {
@@ -82,31 +87,23 @@ export function appendGrpcHistory(store: GrpcHistoryStore, summary: GrpcExchange
   };
 }
 
-export function saveGrpcHistory(store: GrpcHistoryStore, storage: Storage = localStorage): GrpcHistoryStore {
+export async function saveGrpcHistory(
+  store: GrpcHistoryStore,
+  storage: DocumentStorage = documentStorage(),
+): Promise<GrpcHistoryStore> {
+  const session = documentSession("grpc_history", storage);
+  const expected = (await session.snapshot())?.revision ?? null;
   const safe: GrpcHistoryStore = {
     schema: GRPC_HISTORY_SCHEMA,
     entries: store.entries.slice(0, MAX_GRPC_HISTORY).map(projectSummary),
   };
   const serialized = JSON.stringify(safe);
   if (utf8Bytes(serialized) > MAX_STORE_BYTES) throw new Error("grpc_history_failed");
-  const previous = storage.getItem(GRPC_HISTORY_KEY);
-  try {
-    storage.setItem(GRPC_HISTORY_KEY, serialized);
-    const readBack = parseGrpcHistory(storage.getItem(GRPC_HISTORY_KEY));
-    if (!readBack) throw new Error("grpc_history_failed");
-    return readBack;
-  } catch (cause) {
-    try {
-      if (previous === null) storage.removeItem(GRPC_HISTORY_KEY);
-      else storage.setItem(GRPC_HISTORY_KEY, previous);
-    } catch {
-      // Preserve the original storage failure.
-    }
-    throw cause instanceof Error ? cause : new Error("grpc_history_failed");
-  }
+  await session.save(serialized, expected);
+  return safe;
 }
 
-export function clearGrpcHistory(storage: Storage = localStorage): GrpcHistoryStore {
+export function clearGrpcHistory(storage: DocumentStorage = documentStorage()): Promise<GrpcHistoryStore> {
   return saveGrpcHistory(emptyGrpcHistory(), storage);
 }
 

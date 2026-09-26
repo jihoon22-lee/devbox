@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { isProductHosted, WorkspaceOperationError } from "../transport";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -494,13 +495,11 @@ export default function App({
     void initialize();
   }, [active, settingsRevision, initialize]);
 
-  useEffect(() => {
-    if (!active || !preferencesReady || autoRefreshPaused) return;
-    const timer = window.setInterval(() => {
-      void refresh();
-    }, preferences.refresh_interval_ms);
-    return () => window.clearInterval(timer);
-  }, [active, autoRefreshPaused, preferences.refresh_interval_ms, preferencesReady, refresh]);
+  usePolling(refresh, {
+    intervalMs: preferences.refresh_interval_ms,
+    active: active && preferencesReady && !autoRefreshPaused,
+    immediate: false,
+  });
 
   const visible = useMemo(() => {
     return ports.filter(

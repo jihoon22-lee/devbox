@@ -32,6 +32,9 @@ importers:
       '@devbox/api-studio-features':
         specifier: workspace:*
         version: link:../../packages/api-studio-features
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@devbox/product-shell':
         specifier: workspace:*
         version: link:../../packages/product-shell
@@ -176,6 +179,9 @@ importers:
       '@devbox/a11y':
         specifier: workspace:*
         version: link:../../packages/a11y
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@devbox/product-shell':
         specifier: workspace:*
         version: link:../../packages/product-shell
@@ -243,6 +249,9 @@ importers:
       '@devbox/context-menu':
         specifier: workspace:*
         version: link:../context-menu
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/openapi':
         specifier: workspace:*
         version: link:../openapi
@@ -414,6 +423,19 @@ importers:
         specifier: ~5.8.3
         version: 5.8.3
 
+  packages/hooks:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+
   packages/knowledge-features:
     dependencies:
       '@codemirror/autocomplete':
@@ -449,12 +471,18 @@ importers:
       '@devbox/editor':
         specifier: workspace:*
         version: link:../editor
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/markdown-view':
         specifier: workspace:*
         version: link:../markdown-view
       '@devbox/mermaid-renderer':
         specifier: workspace:*
         version: link:../mermaid-renderer
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens
@@ -534,6 +562,9 @@ importers:
       '@devbox/a11y':
         specifier: workspace:*
         version: link:../a11y
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens
@@ -627,12 +658,18 @@ importers:
       '@devbox/editor':
         specifier: workspace:*
         version: link:../editor
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/markdown-view':
         specifier: workspace:*
         version: link:../markdown-view
       '@devbox/mermaid-renderer':
         specifier: workspace:*
         version: link:../mermaid-renderer
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens

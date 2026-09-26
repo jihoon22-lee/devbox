@@ -1,3 +1,4 @@
+import { RecentIssues } from "./RecentIssues";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { makeRequest, nativeMode, type Description } from "./api";
@@ -73,7 +74,7 @@ export default function Operations({ description, route }: { description: Descri
     },
     [description, route],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is the explicit refresh signal; removing it would make the refresh button stop refetching native operations.
   useEffect(() => {
     if (!nativeMode) return;
     let active = true,
@@ -181,6 +182,7 @@ export default function Operations({ description, route }: { description: Descri
             </section>
           );
         })}
+      <RecentIssues product={description.product.id} />
       <p role="status" aria-live="polite">
         {notice}
       </p>

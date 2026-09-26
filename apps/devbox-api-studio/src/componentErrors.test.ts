@@ -33,3 +33,12 @@ it("preserves the binary webhook handoff explanation", () => {
   expect(componentFailure("api-studio.webhooks", { issue }).message).toBe(message);
   expect(componentFailure("api-studio.api", { issue }).message).toBe("작업을 완료하지 못했습니다.");
 });
+
+it("projects document conflicts by their exact code without exposing stored data", () => {
+  const conflict = componentFailure("api-studio.store", { issue: "store_revision_conflict" });
+  expect(conflict.name).toBe("store_revision_conflict");
+  expect(conflict.message).toBe("다른 곳에서 바뀌었습니다. 다시 불러온 뒤 저장해 주세요.");
+  expect(componentFailure("api-studio.store", { issue: "store_unavailable synthetic-secret" }).message).toBe(
+    "작업을 완료하지 못했습니다.",
+  );
+});

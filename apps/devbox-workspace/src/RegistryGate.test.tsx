@@ -21,10 +21,19 @@ beforeEach(() => {
     return {};
   });
 });
-it("previews and cancels registration without granting trust or writing the registry", async () => {
+it("previews and cancels ambiguous registration without granting trust or writing the registry", async () => {
+  call.mockImplementation(async (_component, method) =>
+    method === "status"
+      ? { phase: "selected" }
+      : method === "snapshot"
+        ? emptyRegistry
+        : method === "preview_windows"
+          ? { ...preview, discovery: { kind: "aliasOrMove" } }
+          : {},
+  );
   const { container } = render(<RegistryGate />);
   fireEvent.change(await screen.findByLabelText("Windows 프로젝트 폴더"), { target: { value: preview.binding.root } });
-  fireEvent.click(screen.getByRole("button", { name: "폴더 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
   await screen.findByRole("heading", { name: "등록 확인" });
   expect(call.mock.calls.some(([, method]) => method === "apply_registration")).toBe(false);
   expect(screen.getByText("명령 실행에 대한 신뢰는 별도로 확인합니다.")).toBeTruthy();
@@ -34,10 +43,19 @@ it("previews and cancels registration without granting trust or writing the regi
   expect(call).toHaveBeenCalledWith("workspace.registry", "cancel_registration", { previewId: "fixture-preview" });
   expect(call.mock.calls.some(([, method]) => method === "apply_registration")).toBe(false);
 });
-it("sends only the reviewed preview token on explicit registration", async () => {
+it("sends only the reviewed preview token on linked worktree registration", async () => {
+  call.mockImplementation(async (_component, method) =>
+    method === "status"
+      ? { phase: "selected" }
+      : method === "snapshot"
+        ? emptyRegistry
+        : method === "preview_windows"
+          ? { ...preview, discovery: { kind: "linkedWorktree" } }
+          : {},
+  );
   render(<RegistryGate />);
   fireEvent.change(await screen.findByLabelText("Windows 프로젝트 폴더"), { target: { value: preview.binding.root } });
-  fireEvent.click(screen.getByRole("button", { name: "폴더 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
   fireEvent.change(await screen.findByLabelText("프로젝트 이름"), { target: { value: "합성 프로젝트" } });
   fireEvent.click(screen.getByRole("button", { name: /^등록$/ }));
   await waitFor(() =>
@@ -240,4 +258,73 @@ it("prepares only the store while Suite activation is pending", async () => {
   await waitFor(() => expect(call).toHaveBeenCalledWith("workspace.registry", "snapshot", {}));
   expect(screen.queryByLabelText("Windows 프로젝트 폴더")).toBeNull();
   expect(call.mock.calls.some(([, method]) => method === "preview_windows")).toBe(false);
+});
+
+it("registers a new project in one action and uses the returned registry revision for undo", async () => {
+  const context = { projectId: "project-a", worktreeId: "tree-a", revision: 2, target: { kind: "windows" } };
+  call.mockImplementation(async (_component, method) => {
+    if (method === "status") return { phase: "selected" };
+    if (method === "snapshot") return emptyRegistry;
+    if (method === "preview_windows") return preview;
+    if (method === "apply_registration") return { registry: { ...emptyRegistry, revision: 4 }, context };
+    return {};
+  });
+  const { container } = render(<RegistryGate />);
+  fireEvent.change(await screen.findByLabelText("Windows 프로젝트 폴더"), { target: { value: preview.binding.root } });
+  fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+  expect((await screen.findByRole("status")).textContent).toContain("프로젝트를 등록했습니다.");
+  expect(screen.queryByRole("heading", { name: "등록 확인" })).toBeNull();
+  expect(call).toHaveBeenCalledWith("workspace.registry", "apply_registration", {
+    previewId: preview.previewId,
+    name: "프로젝트",
+    action: "register",
+  });
+  await assertNoA11yViolations(container);
+  fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith("workspace.registry", "remove", { revision: 4, context }));
+  expect(call.mock.calls.some(([, method]) => /trust|execute|start_workspace/.test(method))).toBe(false);
+});
+
+it("reports a refused undo without retrying with a newer registry revision", async () => {
+  call.mockImplementation(async (_component, method) => {
+    if (method === "status") return { phase: "selected" };
+    if (method === "snapshot") return { ...emptyRegistry, revision: 99 };
+    if (method === "preview_windows") return preview;
+    if (method === "apply_registration")
+      return {
+        registry: { ...emptyRegistry, revision: 4 },
+        context: { projectId: "p", worktreeId: "w", revision: 2, target: { kind: "windows" } },
+      };
+    if (method === "remove") throw new Error("이미 수정되어 되돌릴 수 없습니다");
+    return {};
+  });
+  render(<RegistryGate />);
+  fireEvent.change(await screen.findByLabelText("Windows 프로젝트 폴더"), { target: { value: preview.binding.root } });
+  fireEvent.click(screen.getByRole("button", { name: "프로젝트 등록" }));
+  fireEvent.click(await screen.findByRole("button", { name: "되돌리기" }));
+  expect(await screen.findByText(/이미 수정되어 되돌릴 수 없습니다/)).toBeTruthy();
+  expect(call.mock.calls.filter(([, method]) => method === "remove")).toHaveLength(1);
+  expect(call.mock.calls.find(([, method]) => method === "remove")?.[2]).toMatchObject({ revision: 4 });
+});
+
+it("registers a plain WSL project once after its explicit distro selection", async () => {
+  const target = { kind: "wsl", distroId: "distro-a" };
+  const context = { projectId: "p", worktreeId: "w", revision: 2, target };
+  call.mockImplementation(async (_component, method) => {
+    if (method === "status") return { phase: "selected" };
+    if (method === "snapshot") return emptyRegistry;
+    if (method === "list_wsl_distros") return [{ id: "distro-a", name: "Fixture", version: 2, running: true }];
+    if (method === "preview_wsl") return { ...preview, binding: { root: "/home/test/project", target } };
+    if (method === "apply_registration") return { registry: { ...emptyRegistry, revision: 2 }, context };
+    return {};
+  });
+  render(<RegistryGate />);
+  fireEvent.click(await screen.findByRole("button", { name: "WSL 프로젝트 추가" }));
+  await screen.findByRole("option", { name: "Fixture · 실행 중" });
+  fireEvent.change(screen.getByLabelText("WSL 배포판"), { target: { value: "distro-a" } });
+  fireEvent.change(screen.getByLabelText("Linux 프로젝트 폴더"), { target: { value: "/home/test/project" } });
+  fireEvent.click(screen.getByRole("button", { name: "WSL 프로젝트 등록" }));
+  await screen.findByRole("button", { name: "되돌리기" });
+  expect(call.mock.calls.filter(([, method]) => method === "apply_registration")).toHaveLength(1);
+  expect(screen.queryByRole("heading", { name: "등록 확인" })).toBeNull();
 });

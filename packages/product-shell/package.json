@@ -16,7 +16,9 @@
     "./launcher": "./src/launcher/App.tsx",
     "./launcher-types": "./src/launcher/types.ts",
     "./launcher-adapter": "./src/launcher/adapter.ts",
-    "./incoming": "./src/incoming.tsx"
+    "./incoming": "./src/incoming.tsx",
+    "./undo": "./src/undo.tsx",
+    "./issues": "./src/issues.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",
@@ -27,7 +29,8 @@
     "react-dom": "^19.0.0",
     "@devbox/tokens": "workspace:*",
     "@devbox/a11y": "workspace:*",
-    "@tauri-apps/api": "^2"
+    "@tauri-apps/api": "^2",
+    "@devbox/hooks": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -1,3 +1,5 @@
+import { GrpcHistory } from "./components/GrpcHistory";
+import { storageFailureMessage } from "../storage/documentStorage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelGrpc,
@@ -25,7 +27,6 @@ import {
 } from "./grpcApi";
 import {
   appendGrpcHistory,
-  clearGrpcHistory,
   loadGrpcHistory,
   saveGrpcHistory,
   splitGrpcRequestMessages,
@@ -91,13 +92,14 @@ export function GrpcLab({ native }: GrpcLabProps) {
   const [result, setResult] = useState<GrpcInvokeResult | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(native ? null : "grpc_native_required");
   const [notice, setNotice] = useState<string | null>(null);
-  const [history, setHistory] = useState<GrpcHistoryStore>(() => {
-    try {
-      return loadGrpcHistory();
-    } catch {
-      return { schema: "devbox.api-playground.grpc-history/v1", entries: [] };
-    }
+  const [history, setHistory] = useState<GrpcHistoryStore>({
+    schema: "devbox.api-playground.grpc-history/v1",
+    entries: [],
   });
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const historyWrites = useRef<Promise<boolean>>(Promise.resolve(true));
+  const historyWriteFailed = useRef(false);
   const generationRef = useRef(0);
   const connectionRef = useRef<GrpcConnectResult | null>(null);
   const activeRef = useRef<{ connectionId: string; requestId: string } | null>(null);
@@ -106,6 +108,24 @@ export function GrpcLab({ native }: GrpcLabProps) {
   connectionRef.current = connection;
   activeRef.current = activeRequest;
   historyRef.current = history;
+
+  useEffect(() => {
+    let active = true;
+    void loadGrpcHistory()
+      .then((loaded) => {
+        if (active) {
+          historyRef.current = loaded;
+          setHistory(loaded);
+          setHistoryReady(true);
+        }
+      })
+      .catch(() => {
+        if (active) setErrorCode("grpc_history_failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const selectedCredential = useMemo(
     () => credentials.find((credential) => credential.credentialId === credentialId) ?? null,
@@ -374,15 +394,40 @@ export function GrpcLab({ native }: GrpcLabProps) {
     setPhase("idle");
   };
 
-  const rememberSummary = (summary: GrpcExchangeSummary) => {
-    try {
-      const saved = saveGrpcHistory(appendGrpcHistory(historyRef.current, summary));
-      historyRef.current = saved;
-      setHistory(saved);
-    } catch {
-      setErrorCode("grpc_history_failed");
-    }
+  const changeHistory = (change: (store: GrpcHistoryStore) => GrpcHistoryStore) => {
+    setHistoryBusy(true);
+    const action = historyWrites.current
+      .then(async () => {
+        if (!historyReady || historyWriteFailed.current) throw new Error("grpc_history_failed");
+        const saved = await saveGrpcHistory(change(historyRef.current));
+        historyRef.current = saved;
+        setHistory(saved);
+        return true;
+      })
+      .catch(async (cause) => {
+        historyWriteFailed.current = true;
+        setHistoryReady(false);
+        setErrorCode("grpc_history_failed");
+        setNotice(storageFailureMessage(cause, "gRPC 기록을 저장하지 못했습니다. 기존 기록은 유지됩니다."));
+        if (cause instanceof Error && cause.name === "store_revision_conflict") {
+          try {
+            const fresh = await loadGrpcHistory();
+            historyRef.current = fresh;
+            setHistory(fresh);
+          } catch {
+            /* Keep the last known display. */
+          }
+        }
+        return false;
+      });
+    historyWrites.current = action;
+    void action.finally(() => {
+      if (historyWrites.current === action) setHistoryBusy(false);
+    });
+    return action;
   };
+  const rememberSummary = (summary: GrpcExchangeSummary) =>
+    changeHistory((current) => appendGrpcHistory(current, summary));
 
   const onInvoke = async () => {
     const current = connectionRef.current;
@@ -408,13 +453,13 @@ export function GrpcLab({ native }: GrpcLabProps) {
       const response = await invokeGrpc(current.connectionId, requestId, selectedMethod.fullName, messages);
       if (generation !== generationRef.current || connectionRef.current?.connectionId !== current.connectionId) return;
       setResult(response);
-      rememberSummary(toSummary(current, selectedMethod, response));
+      await rememberSummary(toSummary(current, selectedMethod, response));
     } catch (cause) {
       if (generation !== generationRef.current) return;
       const code = localErrorCode(cause);
       setErrorCode(code);
       if (code === "grpc_request_timeout" || code === "grpc_request_cancelled") {
-        rememberSummary({
+        await rememberSummary({
           sourceKind: current.source.kind,
           service: selectedMethod.service,
           method: selectedMethod.method,
@@ -460,15 +505,10 @@ export function GrpcLab({ native }: GrpcLabProps) {
     }
   };
 
-  const onClearHistory = () => {
-    try {
-      const cleared = clearGrpcHistory();
-      historyRef.current = cleared;
-      setHistory(cleared);
+  const onClearHistory = async () => {
+    if (await changeHistory(() => ({ schema: "devbox.api-playground.grpc-history/v1", entries: [] }))) {
       setNotice("gRPC 요약 기록을 비웠습니다.");
       setErrorCode(null);
-    } catch {
-      setErrorCode("grpc_history_failed");
     }
   };
 
@@ -847,45 +887,14 @@ export function GrpcLab({ native }: GrpcLabProps) {
         </section>
       )}
 
-      <section className="grpc-panel" aria-labelledby="grpc-history-heading">
-        <div className="grpc-history-head">
-          <div>
-            <h3 id="grpc-history-heading">요약 기록</h3>
-            <p className="dim">최대 50개 · 본문/엔드포인트/경로/자격 증명 ID 미저장</p>
-          </div>
-          <button className="btn" type="button" disabled={history.entries.length === 0} onClick={onClearHistory}>
-            기록 지우기
-          </button>
-        </div>
-        <ol className="grpc-history-list">
-          {history.entries.map((entry, index) => (
-            <li key={`${entry.startedAtMs}-${entry.service}-${entry.method}-${index}`}>
-              <div>
-                <strong>
-                  {entry.service}/{entry.method}
-                </strong>
-                <code>
-                  {entry.rpcKind} · {entry.status}
-                </code>
-                <span>
-                  {entry.requestMessageCount} → {entry.responseMessageCount}개 메시지 · {entry.elapsedMs}ms
-                </span>
-                <span>
-                  {entry.sourceKind} · {entry.tlsMode}
-                  {entry.credentialUsed ? " · 자격 증명 사용" : ""}
-                </span>
-                <time dateTime={new Date(entry.startedAtMs).toISOString()}>
-                  {new Date(entry.startedAtMs).toLocaleString()}
-                </time>
-              </div>
-              <button className="btn" type="button" disabled={!native} onClick={() => void onExport(entry)}>
-                요약 내보내기
-              </button>
-            </li>
-          ))}
-          {history.entries.length === 0 && <li className="dim">아직 저장된 gRPC 요약이 없습니다.</li>}
-        </ol>
-      </section>
+      <GrpcHistory
+        historyReady={historyReady}
+        historyBusy={historyBusy}
+        history={history}
+        onClearHistory={onClearHistory}
+        native={native}
+        onExport={onExport}
+      />
 
       {errorCode && (
         <div className="mcp-error" role="alert">

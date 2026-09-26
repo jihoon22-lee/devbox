@@ -1,3 +1,4 @@
+import { terminalOutputExpression } from "./windows-terminal-output.mjs";
 // Invoked only by the owned WSL2 runner, after tools are explicitly provisioned.
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -10,7 +11,7 @@ export function multiplexerPromptVisible(output) {
   return /[#$](?:\s|$)/.test(stripVTControlCharacters(output));
 }
 export function multiplexerRequestExpression(method, args = {}) {
-  const readOnly = ["terminal_output", "list_sessions", "terminal_layout"].includes(method);
+  const readOnly = ["list_sessions", "terminal_layout"].includes(method);
   return `(async()=>{
     const invoke=window.__TAURI_INTERNALS__.invoke,deadline=Date.now()+29000;
     for(let attempt=0;;attempt++){
@@ -57,7 +58,7 @@ export async function exerciseMultiplexerReconnect({ call, success, connectTermi
     let cursor = 0;
     startupOutput = "";
     await until(async () => {
-      const batch = await peer("terminal_output", { sessionId: session, after: cursor });
+      const batch = await companion.evaluate(terminalOutputExpression(session, cursor));
       cursor = batch.cursor;
       startupOutput = (startupOutput + batch.frames.map((frame) => frame.data).join("")).slice(-512 * 1024);
       return multiplexerPromptVisible(startupOutput);
@@ -158,7 +159,7 @@ export async function exerciseMultiplexerReconnect({ call, success, connectTermi
     const failure = { multiplexer, stage, error: String(error), startupOutput };
     if (companion && sessionId)
       try {
-        failure.output = await peer("terminal_output", { sessionId, after: 0 });
+        failure.output = await companion.evaluate(terminalOutputExpression(sessionId));
       } catch {}
     writeFileSync(
       `product-foundation-evidence/multiplexer-${multiplexer}-failure.json`,

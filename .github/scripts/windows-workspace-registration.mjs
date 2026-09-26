@@ -4,7 +4,7 @@ import { exerciseWorkspaceRuntimeWsl } from "./windows-workspace-runtime-wsl.mjs
 import { exerciseWorkspaceRuntime } from "./windows-workspace-runtime.mjs";
 // Actual hidden Workspace native admission/registration with owned fixtures.
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync, readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync } from "node:fs";
 import path from "node:path";
 import { exerciseWorkspaceLspInstaller } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceFiles } from "./windows-workspace-files.mjs";
@@ -157,28 +157,27 @@ export async function exerciseWorkspaceRegistration({
   })()`);
   assert.deepEqual(authority, { replay: true, role: true, installation: true });
   await fill("workspace-project-path", root);
-  await click("폴더 확인");
-  await waitForRenderer(cdp, '!!document.getElementById("workspace-project-name")', "Workspace preview did not render");
-  assert.equal(success(await call("workspace.registry", "snapshot")).projects.length, 0);
-  await click("취소");
+  await click("프로젝트 등록");
   await waitForRenderer(
     cdp,
-    '!document.getElementById("workspace-project-name")',
-    "Workspace preview cancellation did not finish",
+    '!!Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === "되돌리기")',
+    "Workspace immediate registration did not offer undo",
+  );
+  assert.equal(success(await call("workspace.registry", "snapshot")).projects.length, 1);
+  await click("되돌리기");
+  await waitForRenderer(
+    cdp,
+    '!Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "프로젝트 선택")',
+    "Workspace registration undo did not refresh",
   );
   assert.equal(success(await call("workspace.registry", "snapshot")).projects.length, 0);
-  await click("폴더 확인");
+  assert.equal(existsSync(root), true);
+  await fill("workspace-project-path", root);
+  await click("프로젝트 등록");
   await waitForRenderer(
     cdp,
-    '!!document.getElementById("workspace-project-name")',
-    "Workspace second preview did not render",
-  );
-  await fill("workspace-project-name", "Native fixture project");
-  await click("등록");
-  await waitForRenderer(
-    cdp,
-    '!document.getElementById("workspace-project-name") && document.querySelector(".workspace-registry")?.textContent.includes("Native fixture project")',
-    "Workspace explicit registration did not finish",
+    '!!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택")',
+    "Workspace second immediate registration did not finish",
   );
   let registry = success(await call("workspace.registry", "snapshot"));
   assert.equal(registry.projects.length, 1);

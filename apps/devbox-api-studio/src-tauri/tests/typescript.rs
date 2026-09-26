@@ -14,6 +14,11 @@ fn export_typescript_bindings() {
     use devbox_api_studio_lib::ipc;
     for (file, name, results) in [
         (
+            "store-results.ts",
+            "StoreResults",
+            ipc::store::result_types(&mut export).unwrap(),
+        ),
+        (
             "api-results.ts",
             "ApiResults",
             ipc::api::result_types(&mut export).unwrap(),

@@ -282,3 +282,12 @@ export const transformMessages: Record<ToolboxIssue, string> = {
   transform_export_denied: "작업을 완료하지 못했습니다.",
   unavailable: "작업을 완료하지 못했습니다.",
 };
+
+import type { StoreIssue } from "../generated/StoreIssue";
+export const storeMessages: Record<StoreIssue | "unavailable", string> = {
+  store_unavailable: "저장소를 사용할 수 없습니다. 기존 데이터는 유지됩니다.",
+  store_revision_conflict: "다른 곳에서 바뀌었습니다. 다시 불러온 뒤 저장해 주세요.",
+  store_document_too_large: "저장할 데이터가 16MiB 한도를 초과했습니다. 기존 데이터는 유지됩니다.",
+  store_document_invalid: "저장할 데이터 형식이 올바르지 않습니다. 기존 데이터는 유지됩니다.",
+  unavailable: "작업을 완료하지 못했습니다.",
+};

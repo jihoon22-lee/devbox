@@ -25,10 +25,11 @@ const NativeRuntimeRoutes = lazy(() => import("./NativeRuntimeRoutes"));
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
 const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
 const Logs = lazy(() => import("@devbox/workspace-features/logs"));
-let connected = false;
 
 function NativeContent({ route, description, refreshContext, navigate }: ShellContentProps) {
-  if (!connected) {
+  const installationId = description.handshake.installationId;
+  const [transportOwner, setTransportOwner] = useState<string | null>(null);
+  useEffect(() => {
     configureProductTransport(async <T,>(component: string, method: string, args: Record<string, unknown>) => {
       const snapshot = await currentDescription("workspace");
       const ownerRoute =
@@ -48,9 +49,9 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
                       ? "runtime"
                       : "overview";
       return componentCall<T>(snapshot, component, method, args, ownerRoute);
-    }, description.handshake.installationId);
-    connected = true;
-  }
+    }, installationId);
+    setTransportOwner(installationId);
+  }, [installationId]);
   const [terminalLogOpen, setTerminalLogOpen] = useState<RuntimeLogOpenRequest | null>(null);
   const [terminalLogConsumed, setTerminalLogConsumed] = useState<string | null>(null);
   const terminalReceipt = useRef<string | null>(null);
@@ -170,6 +171,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
   useEffect(() => {
     if (route === "files") setFilesVisited(true);
   }, [route]);
+  if (transportOwner !== installationId) return <p role="status">Workspace를 준비하고 있습니다…</p>;
   if (!productDataAvailable(description))
     return description.deliveryState === "import" ? (
       <section aria-label="Workspace 준비">

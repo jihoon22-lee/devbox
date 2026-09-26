@@ -223,6 +223,7 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
   },
 };
 export const companionDeadlineBudgets: Readonly<Record<string, number>> = {
+  ack_terminal_output: 1000,
   attach_session: 30000,
   broadcast: 30000,
   close_session: 30000,
@@ -244,9 +245,9 @@ export const companionDeadlineBudgets: Readonly<Record<string, number>> = {
   set_terminal_preference: 30000,
   start_session: 30000,
   terminal_layout: 30000,
-  terminal_output: 1000,
   terminal_preferences: 30000,
   terminal_window_policy: 30000,
+  unsubscribe_terminal_output: 1000,
   update_shell_integration: 30000,
   windows_build_number: 30000,
   write_initial_command: 30000,

@@ -10,3 +10,5 @@ pub mod workspace;
 
 #[cfg(any(windows, test))]
 pub(crate) mod startup_cursor;
+
+pub mod output_stream;

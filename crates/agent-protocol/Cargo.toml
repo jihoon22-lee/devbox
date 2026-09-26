@@ -1,0 +1,9 @@
+[package]
+name = "agent-protocol"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -55,14 +55,15 @@ pub enum NotesCall {
     RevealEntry {
         rel: String,
     },
-    PreviewQuickCapture {
+    CaptureNote {
         input: crate::core::capture::QuickCaptureInput,
     },
-    SaveQuickCapture {
-        approval: crate::core::capture::QuickCaptureApproval,
+    UndoCreatedNote {
+        path: String,
+        revision: String,
     },
-    DiscardQuickCapturePreview {
-        approval: crate::core::capture::QuickCaptureApproval,
+    CreateNoteFromTemplate {
+        input: crate::core::templates::TemplateApplyInput,
     },
     SearchDocs {
         query: String,
@@ -143,9 +144,9 @@ pub const NOTES_METHODS: &[&str] = &[
     "delete_file",
     "entry_path",
     "reveal_entry",
-    "preview_quick_capture",
-    "save_quick_capture",
-    "discard_quick_capture_preview",
+    "capture_note",
+    "undo_created_note",
+    "create_note_from_template",
     "search_docs",
     "list_tags",
     "list_templates",
@@ -188,9 +189,9 @@ impl NotesCall {
             Self::DeleteFile { .. } => "delete_file",
             Self::EntryPath { .. } => "entry_path",
             Self::RevealEntry { .. } => "reveal_entry",
-            Self::PreviewQuickCapture { .. } => "preview_quick_capture",
-            Self::SaveQuickCapture { .. } => "save_quick_capture",
-            Self::DiscardQuickCapturePreview { .. } => "discard_quick_capture_preview",
+            Self::CaptureNote { .. } => "capture_note",
+            Self::UndoCreatedNote { .. } => "undo_created_note",
+            Self::CreateNoteFromTemplate { .. } => "create_note_from_template",
             Self::SearchDocs { .. } => "search_docs",
             Self::ListTags { .. } => "list_tags",
             Self::ListTemplates { .. } => "list_templates",
@@ -319,21 +320,18 @@ pub async fn dispatch(
             reveal_entry(component_app.clone(), component_app.state(), rel)?;
             Ok(serde_json::Value::Null)
         }
-        NotesCall::PreviewQuickCapture { input } => {
-            use crate::commands::docs::*;
-            let value = preview_quick_capture(component_app.state(), input)?;
-            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-        }
-        NotesCall::SaveQuickCapture { approval } => {
-            use crate::commands::docs::*;
-            let value = save_quick_capture(component_app.state(), approval)?;
-            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-        }
-        NotesCall::DiscardQuickCapturePreview { approval } => {
-            use crate::commands::docs::*;
-            discard_quick_capture_preview(component_app.state(), approval)?;
-            Ok(serde_json::Value::Null)
-        }
+        NotesCall::CaptureNote { input } => serde_json::to_value(
+            crate::commands::docs::capture_note(component_app.state(), input)?,
+        )
+        .map_err(|_| "component_response_invalid".into()),
+        NotesCall::UndoCreatedNote { path, revision } => serde_json::to_value(
+            crate::commands::docs::undo_created_note(component_app.state(), path, revision)?,
+        )
+        .map_err(|_| "component_response_invalid".into()),
+        NotesCall::CreateNoteFromTemplate { input } => serde_json::to_value(
+            crate::commands::templates::create_note_from_template(component_app.state(), input)?,
+        )
+        .map_err(|_| "component_response_invalid".into()),
         NotesCall::SearchDocs { query } => {
             use crate::commands::docs::*;
             let value = search_docs(component_app.state(), query)?;
@@ -465,16 +463,12 @@ pub async fn dispatch(
 )]
 #[ts(optional_fields = nullable)]
 pub enum DailyCall {
-    PreviewDaily { date: String },
-    SaveDaily { preview_id: String },
-    DiscardDaily { preview_id: String },
+    OpenDaily { date: String },
 }
 impl DailyCall {
     pub fn method(&self) -> &'static str {
         match self {
-            Self::PreviewDaily { .. } => "preview_daily",
-            Self::SaveDaily { .. } => "save_daily",
-            Self::DiscardDaily { .. } => "discard_daily",
+            Self::OpenDaily { .. } => "open_daily",
         }
     }
 }
@@ -605,14 +599,17 @@ pub fn result_types(
         ("entry_path", export.register::<String>()?),
         ("reveal_entry", export.register::<()>()?),
         (
-            "preview_quick_capture",
-            export.register::<crate::commands::docs::QuickCapturePreview>()?,
+            "capture_note",
+            export.register::<crate::commands::docs::CreatedNote>()?,
         ),
         (
-            "save_quick_capture",
-            export.register::<crate::commands::docs::QuickCaptureSaved>()?,
+            "undo_created_note",
+            export.register::<crate::commands::docs::UndoResult>()?,
         ),
-        ("discard_quick_capture_preview", export.register::<()>()?),
+        (
+            "create_note_from_template",
+            export.register::<crate::commands::docs::CreatedNote>()?,
+        ),
         ("search_docs", export.register::<Vec<(String, String)>>()?),
         ("list_tags", export.register::<Vec<String>>()?),
         (
@@ -675,14 +672,9 @@ pub fn result_types(
         ),
         ("discard_other_vault_journal", export.register::<()>()?),
         (
-            "preview_daily",
-            export.register::<crate::commands::daily::DailyPreview>()?,
+            "open_daily",
+            export.register::<crate::commands::daily::DailyOpened>()?,
         ),
-        (
-            "save_daily",
-            export.register::<crate::commands::daily::DailySaved>()?,
-        ),
-        ("discard_daily", export.register::<()>()?),
     ])
 }
 #[cfg(test)]
@@ -717,6 +709,32 @@ mod tests {
         }
         assert_eq!(classify("private/path/token"), "unavailable");
     }
+    #[test]
+    fn immediate_creation_retires_preview_commands_without_accepting_target_overrides() {
+        for method in [
+            "preview_quick_capture",
+            "save_quick_capture",
+            "discard_quick_capture_preview",
+        ] {
+            assert!(serde_json::from_value::<NotesCall>(
+                serde_json::json!({"method": method, "args": {}})
+            )
+            .is_err());
+        }
+        for method in ["preview_daily", "save_daily", "discard_daily"] {
+            assert!(serde_json::from_value::<DailyCall>(
+                serde_json::json!({"method": method, "args": {"date": "2024-02-29"}})
+            )
+            .is_err());
+        }
+        let call: DailyCall = serde_json::from_value(
+            serde_json::json!({"method": "open_daily", "args": {"date": "2024-02-29"}}),
+        )
+        .unwrap();
+        assert_eq!(call.method(), "open_daily");
+        assert!(serde_json::from_value::<NotesCall>(serde_json::json!({"method": "capture_note", "args": {"input": {"title": "", "body": "body", "tags": [], "path": "outside.md"}}})).is_err());
+    }
+
     #[test]
     fn journal_result_does_not_export_the_storage_vault_root() {
         let cfg = ts_rs::Config::new();

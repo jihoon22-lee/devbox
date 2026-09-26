@@ -13,17 +13,22 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("keeps the actual request draft through protocol and webhook navigation without starting native work", async () => {
-  render(<Studio />);
-  await screen.findByRole("navigation", { name: "제품 화면" });
-  // The async description must mount the feature before waiting for its imports.
-  // Await the real lazy module graph, rather than making transformer speed
-  // part of this draft-lifetime unit test. Runtime budgets are measured separately.
-  // The case timeout also allows the real multi-route graph under CI contention.
+async function requestsReady() {
+  // Migration is one lazy boundary; its completion mounts a second, Requests.
   await act(async () => {
     await vi.dynamicImportSettled();
   });
-  const url = await screen.findByPlaceholderText("https://api.example.com/users");
+  await waitFor(() => expect(document.querySelector(".api-feature-requests")).not.toBeNull());
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+  return screen.findByPlaceholderText("https://api.example.com/users");
+}
+
+it("keeps the actual request draft through protocol and webhook navigation without starting native work", async () => {
+  render(<Studio />);
+  await screen.findByRole("navigation", { name: "제품 화면" });
+  const url = await requestsReady();
   fireEvent.change(url, { target: { value: "http://127.0.0.1:9000/draft-only" } });
   const nav = screen.getByRole("navigation", { name: "제품 화면" });
   fireEvent.click(within(nav).getByRole("button", { name: "프로토콜" }));
@@ -77,10 +82,7 @@ it("previews collections and History independently of the live request draft", a
   );
   render(<Studio />);
   const nav = await screen.findByRole("navigation", { name: "제품 화면" });
-  await act(async () => {
-    await vi.dynamicImportSettled();
-  });
-  const url = (await screen.findByPlaceholderText("https://api.example.com/users")) as HTMLInputElement;
+  const url = (await requestsReady()) as HTMLInputElement;
   fireEvent.change(url, { target: { value: "https://fixture.test/unsaved-draft" } });
   const collection = await screen.findByLabelText("컬렉션 항목: fixture collection");
   fireEvent.click(within(collection).getByRole("button", { name: "컬렉션 요청 미리보기: fixture collection" }));

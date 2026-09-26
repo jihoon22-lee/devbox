@@ -8,6 +8,7 @@ pub mod workspace;
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("api-studio")
         .setup(|app, _| {
+            store::initialize(app);
             let store = crate::handoff::initialize(app).map_err(std::io::Error::other)?;
             crate::mock_draft::initialize(app, store.clone()).map_err(std::io::Error::other)?;
             http_client_engine::component::initialize(app, store.clone())
@@ -19,7 +20,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .invoke_handler(tauri::generate_handler![
             api::api,
             webhooks::webhooks,
-            transforms::transforms
+            transforms::transforms,
+            store::store
         ])
         .build()
 }
@@ -50,3 +52,5 @@ mod tests {
         .is_err());
     }
 }
+
+pub mod store;

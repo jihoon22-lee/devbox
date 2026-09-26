@@ -1,3 +1,4 @@
+import { useUndo } from "@devbox/product-shell/undo";
 import type { SetupCall } from "@devbox/workspace-features/generated/SetupCall";
 import type { SetupResults } from "@devbox/workspace-features/generated/setup-results";
 import { bindTypedCall } from "@devbox/workspace-features/typed";
@@ -66,6 +67,10 @@ export default function RegistryGate({
   onSnapshot?: (registry: Registry) => void;
   suggestedRoot?: { id: string; path: string; name: string; target?: ProjectContext["target"] } | null;
 }) {
+  const { offer, toast } = useUndo();
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const acting = useRef(false);
   const incoming = useIncomingReview();
   const review =
     incoming.review?.route === "overview" &&
@@ -110,11 +115,11 @@ export default function RegistryGate({
     }
     if (alive.current && loadId.current === requestId) setStatus(next);
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Refresh only when a different incoming review operation arrives; local form edits must not refetch.
   useEffect(() => {
     if (review) void refresh().catch(() => setError("요청한 프로젝트의 현재 목록을 확인하지 못했습니다."));
   }, [review?.operationId]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: External refreshSignal is the trigger; registry updates must not start a fetch loop.
   useEffect(() => {
     if (refreshSignal)
       void refresh().catch((cause) => setError(cause instanceof Error ? cause.message : "목록을 확인하지 못했습니다."));
@@ -155,7 +160,8 @@ export default function RegistryGate({
     };
   }, []);
   async function act(action: () => Promise<void>) {
-    if (busy) return;
+    if (busy || acting.current) return;
+    acting.current = true;
     setBusy(true);
     setError("");
     try {
@@ -163,10 +169,11 @@ export default function RegistryGate({
     } catch (cause) {
       if (alive.current) setError(cause instanceof Error ? cause.message : "작업을 완료하지 못했습니다.");
     } finally {
+      acting.current = false;
       if (alive.current) setBusy(false);
     }
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Consume each explicit Source suggestion once; local preview edits do not reissue it.
   useEffect(() => {
     if (!suggestedRoot || handledSuggestion.current === suggestedRoot.id || busy || status.phase !== "selected") return;
     handledSuggestion.current = suggestedRoot.id;
@@ -197,11 +204,45 @@ export default function RegistryGate({
     if (templateId && !registry?.importedTemplates?.some((entry) => entry.id === templateId && !entry.archived))
       setTemplateId("");
   }, [registry, templateId]);
+  async function acceptRegistration(next: Preview, suggestedName: string, allowImmediate = true) {
+    currentPreview.current = next.previewId;
+    if (allowImmediate && next.discovery.kind === "newProject" && !next.templateProfile && !next.importedProfileId) {
+      // Consume the native preview once. Its registry revision is checked again at apply.
+      currentPreview.current = null;
+      const applied = await registryCall("apply_registration", {
+        previewId: next.previewId,
+        name: suggestedName.trim() || "새 프로젝트",
+        action: "register",
+      });
+      offer("프로젝트를 등록했습니다.", async () => {
+        if (editingRef.current) throw new Error("편집 중인 내용을 정리한 뒤 다시 시도해 주세요.");
+        try {
+          await registryCall("remove", { revision: applied.registry.revision, context: applied.context });
+        } catch (cause) {
+          if (cause instanceof Error && cause.name === "stale_registry") {
+            throw new Error("이미 수정되어 되돌릴 수 없습니다");
+          }
+          throw cause;
+        }
+        await refresh();
+      });
+      if (alive.current) {
+        setRoot("");
+        setName("");
+        setTemplateId("");
+        setPreview(null);
+      }
+      await refresh();
+    } else {
+      setName(next.templateProfile?.profile.name ?? suggestedName);
+      setPreview(next);
+    }
+  }
   async function startRegistry() {
     await setupCall("start_empty");
     await refresh();
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Start the empty registry once after native startup reaches the initial state.
   useEffect(() => {
     if (status.phase !== "setup" || autoStarted.current || error) return;
     autoStarted.current = true;
@@ -215,6 +256,7 @@ export default function RegistryGate({
   }
   return (
     <section className="workspace-registry" aria-label="프로젝트 관리" aria-busy={busy}>
+      {toast}
       <h1>프로젝트</h1>
       {error && (
         <>
@@ -272,9 +314,11 @@ export default function RegistryGate({
                     await registryCall("cancel_registration", { previewId: next.previewId });
                     return;
                   }
-                  if (next.templateProfile) setName(next.templateProfile.profile.name);
-                  currentPreview.current = next.previewId;
-                  setPreview(next);
+                  await acceptRegistration(
+                    next,
+                    name || root.split(/[\\/]/).filter(Boolean).pop() || "새 프로젝트",
+                    !templateId,
+                  );
                 });
               }}
             >
@@ -316,7 +360,7 @@ export default function RegistryGate({
                 onChange={(event) => setRoot(event.target.value)}
                 required
               />
-              <button disabled={busy || !root.trim() || !!preview}>폴더 확인</button>
+              <button disabled={busy || !root.trim() || !!preview}>{templateId ? "폴더 확인" : "프로젝트 등록"}</button>
             </form>
           )}
           <button
@@ -337,12 +381,12 @@ export default function RegistryGate({
                 templates={registry?.importedTemplates ?? []}
                 disabled={operationBusy || templateBusy || !!preview || editing}
                 onBusyChange={setWslBusy}
-                onReviewed={(next, suggestedName) => {
-                  currentPreview.current = next.previewId;
-                  setPreview(next);
-                  setName(suggestedName);
-                  setTemplateId("");
-                  setWslOpen(false);
+                onReviewed={async (next, suggestedName) => {
+                  await acceptRegistration(next, suggestedName);
+                  if (alive.current) {
+                    setTemplateId("");
+                    setWslOpen(false);
+                  }
                 }}
               />
             </Suspense>

@@ -58,9 +58,9 @@ export function isOperation(value: unknown, expected: Provenance): value is Oper
     : Object.keys(outcome).join(",") === "state" &&
         ["running", "succeeded", "cancelled", "stale"].includes(outcome.state as string);
 }
-export function problemMessage(value: unknown, expected: Provenance): string {
+export function problemCode(value: unknown, expected: Provenance): ProblemCode {
   if (!record(value) || Object.keys(value).sort().join(",") !== "code,provenance" || !code(value.code))
-    return messages.unavailable;
+    return "unavailable";
   // A malformed request cannot be echoed; hosts use this fixed provenance.
   const earlyRejection = {
     product: expected.product,
@@ -69,8 +69,11 @@ export function problemMessage(value: unknown, expected: Provenance): string {
     revision: 1,
   };
   return matchesProvenance(value.provenance, expected) || matchesProvenance(value.provenance, earlyRejection)
-    ? messages[value.code]
-    : messages.unavailable;
+    ? value.code
+    : "unavailable";
+}
+export function problemMessage(value: unknown, expected: Provenance): string {
+  return messages[problemCode(value, expected)];
 }
 export function operationMessage(operation: Operation): string {
   switch (operation.outcome.state) {

@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { sourceRowValue } from "./sourceResult";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isProductHosted } from "../transport";
@@ -264,11 +265,7 @@ export default function App({
   }, []);
 
   // 인덱싱 중에는 진행률을 주기적으로 갱신
-  useEffect(() => {
-    if (!status.indexing) return;
-    const id = setInterval(() => void loadMeta(), 500);
-    return () => clearInterval(id);
-  }, [status.indexing, loadMeta]);
+  usePolling(loadMeta, { intervalMs: 500, active: status.indexing, immediate: false });
 
   useEffect(() => {
     void loadMeta();
@@ -381,7 +378,7 @@ export default function App({
     };
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: queryRevision retries the same query and projectRevision invalidates native sources; both must restart the search even when query text is unchanged.
   useEffect(() => {
     const current = ++seq.current;
     const q = query.trim();
@@ -636,7 +633,7 @@ export default function App({
   // Result replacement invalidates the exact menu target. Run this before
   // paint: a passive effect could otherwise close a keyboard menu that the
   // user opened on the freshly rendered row in the same frame.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeList replacement invalidates the exact context-menu target; removing this trigger can leave a menu bound to a stale result.
   useLayoutEffect(() => {
     contextMenu.close();
     setContextResult(null);

@@ -1,4 +1,5 @@
 pub mod api_workspace;
+pub mod documents;
 pub mod knowledge;
 pub mod lifecycle;
 pub mod mock_draft;

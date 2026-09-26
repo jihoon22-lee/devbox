@@ -30,6 +30,7 @@ it("opens a native-owned pending transform preview through the actual hosted tra
   const id = "a".repeat(32);
   let pending: unknown = null;
   let navigation: unknown = null;
+  const documents = new Map<string, { revision: number; body: string }>();
   native.invoke.mockImplementation(
     async (
       command: string,
@@ -39,7 +40,12 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     ) => {
       if (command === "plugin:product-shell|describe") return fixtureDescription("api-studio");
       if (
-        !["plugin:api-studio|api", "plugin:api-studio|transforms", "plugin:api-studio|webhooks"].includes(command) ||
+        ![
+          "plugin:api-studio|api",
+          "plugin:api-studio|transforms",
+          "plugin:api-studio|webhooks",
+          "plugin:api-studio|store",
+        ].includes(command) ||
         !args
       )
         throw new Error(`unexpected fixture command ${command}`);
@@ -48,7 +54,17 @@ it("opens a native-owned pending transform preview through the actual hosted tra
       const component = `api-studio.${command.split("|")[1]}`;
       if (component.endsWith(".migration")) throw new Error("retired startup must not be called");
       let value: unknown;
-      if (request.method === "api_workspace_state")
+      if (component === "api-studio.store") {
+        const kind = request.args.kind as string;
+        if (request.method === "load") value = documents.get(kind) ?? null;
+        else {
+          const previous = documents.get(kind);
+          expect(request.args.expectedRevision).toBe(previous?.revision ?? null);
+          const revision = (previous?.revision ?? 0) + 1;
+          documents.set(kind, { revision, body: request.args.body as string });
+          value = revision;
+        }
+      } else if (request.method === "api_workspace_state")
         value = {
           document: { schemaVersion: 1, revision: 0, selectedId: null, workspaces: [] },
           currentProjectId: null,

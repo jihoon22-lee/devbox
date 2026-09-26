@@ -1,3 +1,4 @@
+import { MemoryDocuments as EnvironmentStorage } from "../../storage/testDocuments";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   addEnvironment,
@@ -14,31 +15,6 @@ import type { RequestTemplate } from "../types";
 beforeEach(() => {
   localStorage.clear();
 });
-
-class EnvironmentStorage implements Storage {
-  private readonly values = new Map<string, string>();
-  failWrite = false;
-
-  get length(): number {
-    return this.values.size;
-  }
-  clear(): void {
-    this.values.clear();
-  }
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-  key(index: number): string | null {
-    return [...this.values.keys()][index] ?? null;
-  }
-  removeItem(key: string): void {
-    this.values.delete(key);
-  }
-  setItem(key: string, value: string): void {
-    if (this.failWrite) throw new Error("write failed");
-    this.values.set(key, value);
-  }
-}
 
 describe("variable substitution", () => {
   it("기본 치환", () => {
@@ -182,13 +158,15 @@ describe("variable substitution", () => {
 });
 
 describe("environment store", () => {
-  it("빈 스토어 기본", () => {
-    expect(loadStore()).toEqual(emptyStore());
+  it("빈 스토어 기본", async () => {
+    expect(await loadStore(new EnvironmentStorage())).toEqual(emptyStore());
   });
 
-  it("손상은 빈 스토어", () => {
-    localStorage.setItem("apip-environments", "{bad");
-    expect(loadStore()).toEqual(emptyStore());
+  it("손상은 원본을 보존하고 실패한다", async () => {
+    const storage = new EnvironmentStorage();
+    storage.seed("environments", "{bad");
+    await expect(loadStore(storage)).rejects.toThrow();
+    expect(storage.body("environments")).toBe("{bad");
   });
 
   it("추가·변수 설정·제거", () => {
@@ -205,30 +183,30 @@ describe("environment store", () => {
     expect(store.environments).toEqual([]);
   });
 
-  it("환경 저장은 read-back된 allowlist를 반환한다", () => {
+  it("환경 저장은 read-back된 allowlist를 반환한다", async () => {
     const storage = new EnvironmentStorage();
     const store = addEnvironment(emptyStore(), "dev", () => "e-1");
     store.environments[0].variables.push({ key: "BASE_URL", value: "https://dev", secret: false });
-    const saved = saveStore(store, storage);
+    const saved = await saveStore(store, storage);
 
     expect(saved).toEqual(store);
-    expect(loadStore()).toEqual(emptyStore());
-    expect(JSON.parse(storage.getItem("apip-environments") ?? "null")).toEqual(store);
+    expect(await loadStore(new EnvironmentStorage())).toEqual(emptyStore());
+    expect(JSON.parse(storage.body("environments") ?? "null")).toEqual(store);
   });
 
-  it("환경 write/read-back 실패 시 기존 저장 값을 유지한다", () => {
+  it("환경 write/read-back 실패 시 기존 저장 값을 유지한다", async () => {
     const storage = new EnvironmentStorage();
     const original = addEnvironment(emptyStore(), "original", () => "e-original");
-    saveStore(original, storage);
-    const originalRaw = storage.getItem("apip-environments");
+    await saveStore(original, storage);
+    const originalRaw = storage.body("environments");
     storage.failWrite = true;
 
-    expect(() =>
+    await expect(
       saveStore(
         addEnvironment(original, "new", () => "e-new"),
         storage,
       ),
-    ).toThrow("write failed");
-    expect(storage.getItem("apip-environments")).toBe(originalRaw);
+    ).rejects.toThrow("write failed");
+    expect(storage.body("environments")).toBe(originalRaw);
   });
 });

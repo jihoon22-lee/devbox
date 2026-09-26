@@ -518,6 +518,14 @@ pub(crate) fn write_new_note(
     path: &Path,
     contents: &[u8],
 ) -> Result<EntryIdentity, NewNoteError> {
+    write_new_note_with_revision(vault, path, contents).map(|(identity, _)| identity)
+}
+
+pub(crate) fn write_new_note_with_revision(
+    vault: &VaultIdentity,
+    path: &Path,
+    contents: &[u8],
+) -> Result<(EntryIdentity, String), NewNoteError> {
     let parent = vault
         .existing_path(path.parent().ok_or(NewNoteError::Storage)?)
         .map_err(|_| NewNoteError::Stale)?;
@@ -580,6 +588,13 @@ pub(crate) fn write_new_note(
             vault::cleanup_file_by_identity(&temporary, &identity);
             return Err(NewNoteError::Stale);
         }
+        let revision = match crate::core::document::created_revision(&temporary, path) {
+            Ok(revision) => revision,
+            Err(_) => {
+                vault::cleanup_file_by_identity(&temporary, &identity);
+                return Err(NewNoteError::Storage);
+            }
+        };
         let published = vault::publish_new_file(&temporary, path);
         return match published {
             Ok(()) => {
@@ -594,7 +609,7 @@ pub(crate) fn write_new_note(
                     vault::cleanup_file(vault, path, &identity);
                     return Err(NewNoteError::Stale);
                 }
-                Ok(current)
+                Ok((current, revision))
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 vault::cleanup_file_by_identity(&temporary, &identity);

@@ -56,13 +56,8 @@ vi.mock("./api", () => ({
   onQuickCaptureRequested: vi.fn(async () => () => undefined),
   onQuickCaptureShortcutStatusChanged: vi.fn(async () => () => undefined),
   quickCaptureShortcutStatus: vi.fn(async () => ({ shortcut: "Ctrl+Alt+K", state: "registered" })),
-  previewQuickCapture: vi.fn(async (input: { title: string; body: string; tags: string[] }) => ({
-    previewId: "qc-1",
-    target: "Inbox",
-    ...input,
-  })),
-  saveQuickCapture: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md" })),
-  discardQuickCapturePreview: vi.fn(async () => undefined),
+  captureNote: vi.fn(async () => ({ path: "Inbox/quick-capture-test.md", revision: "r1" })),
+  undoCreatedNote: vi.fn(async () => ({ removed: true })),
   listTemplates: vi.fn(async () => []),
   createTemplate: vi.fn(async () => {
     throw new Error("unused");

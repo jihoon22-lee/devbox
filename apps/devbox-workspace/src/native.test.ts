@@ -69,3 +69,38 @@ it("uses a native typed command without a renderer-selected owner field", async 
     ready: true,
   });
 });
+
+it("records safe request diagnostics while preserving the Workspace error class", async () => {
+  const { recentIssues, resetIssues, diagnosticText, ProductIssueError } = await import("@devbox/product-shell/issues");
+  const { WorkspaceOperationError } = await import("@devbox/workspace-features/transport");
+  resetIssues();
+  const description = await describeProduct("workspace");
+  vi.mocked(invoke).mockImplementation(async (_command, args) => {
+    const { request } = args as { request: { header: RouteRequest } };
+    return {
+      operation: {
+        provenance: {
+          product: "workspace",
+          component: "workspace.files",
+          requestId: request.header.requestId,
+          revision: catalog.catalogRevision,
+        },
+        outcome: { state: "failed", code: "unavailable" },
+      },
+      value: { issue: "file_changed" },
+    };
+  });
+  const error = await componentCall(
+    description,
+    "workspace.files",
+    "save_file",
+    { path: "C:\\private\\note.md" },
+    "files",
+  ).catch((cause) => cause);
+  expect(error).toBeInstanceOf(WorkspaceOperationError);
+  expect(error).toBeInstanceOf(ProductIssueError);
+  expect(recentIssues()).toHaveLength(1);
+  expect(recentIssues()[0].method).toBe("save_file");
+  expect(diagnosticText(recentIssues()[0], "0.8.1")).not.toContain("private");
+  resetIssues();
+});

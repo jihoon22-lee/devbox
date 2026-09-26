@@ -189,6 +189,8 @@ jobs:
 
       - uses: actions/checkout@v7
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
@@ -219,6 +221,12 @@ jobs:
       - name: Check format and hook rules
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
         run: pnpm exec biome ci .
+
+      - name: Check component size limits
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        run: |
+          node --test .github/scripts/check-component-size.test.mjs
+          node .github/scripts/check-component-size.mjs
 
       - name: Check generated Workspace fixture requests
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}

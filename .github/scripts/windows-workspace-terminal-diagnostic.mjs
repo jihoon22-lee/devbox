@@ -1,3 +1,4 @@
+import { terminalOutputExpression } from "./windows-terminal-output.mjs";
 // Exact prior CI artifact, disposable hosted VM, companion restore only.
 import { requireHostedNetworkFixture } from "./fixture-network-safety.mjs";
 import { freePort, connect, waitForRenderer } from "./workspace-cdp-fixture.mjs";
@@ -203,11 +204,11 @@ try {
   );
   evidence.observations.twoPanesRestored = true;
   const outputSession = evidence.observations.sessions.find((value) => value.paneKey === "two").id;
-  evidence.observations.outputBefore = await invoke("terminal_output", { sessionId: outputSession, after: 0 });
+  evidence.observations.outputBefore = await companion.evaluate(terminalOutputExpression(outputSession));
   await invoke("write_session", { sessionId: outputSession, data: "printf 'synthetic-b06-output\\n'\r" });
   const outputDeadline = performance.now() + 20000;
   do {
-    evidence.observations.outputAfter = await invoke("terminal_output", { sessionId: outputSession, after: 0 });
+    evidence.observations.outputAfter = await companion.evaluate(terminalOutputExpression(outputSession));
     if (
       evidence.observations.outputAfter.frames
         .map((frame) => frame.data)

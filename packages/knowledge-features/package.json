@@ -44,7 +44,9 @@
     "@codemirror/state": "^6.0.0",
     "@codemirror/view": "^6.0.0",
     "@devbox/editor": "workspace:*",
-    "@devbox/markdown-view": "workspace:*"
+    "@devbox/markdown-view": "workspace:*",
+    "@devbox/hooks": "workspace:*",
+    "@devbox/product-shell": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

@@ -58,3 +58,5 @@ mod selection_send;
 mod selection_logs;
 
 mod webhook_logs;
+
+mod terminal_subscriptions;

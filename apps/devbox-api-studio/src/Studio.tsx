@@ -1,5 +1,6 @@
+import type { initializeStudioDocuments } from "@devbox/api-studio-features/storage/initialize";
 import { apiCall } from "@devbox/api-studio-features/calls";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 import { listen } from "@tauri-apps/api/event";
 import { nativeMode, productDataAvailable } from "@devbox/product-shell/api";
@@ -88,6 +89,45 @@ function Content({ route, navigate }: ShellContentProps) {
     </>
   );
 }
+function StorageGate(props: ShellContentProps) {
+  const initial = useRef<ReturnType<typeof initializeStudioDocuments> | null>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    initial.current ??= import("@devbox/api-studio-features/storage/initialize").then((module) =>
+      module.initializeStudioDocuments(),
+    );
+    void initial.current
+      .then((result) => {
+        if (active) {
+          setFailed(result.failed.length > 0);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (!ready)
+    return (
+      <p role={failed ? "alert" : "status"}>
+        {failed
+          ? "저장소를 준비하지 못했습니다. 기존 데이터는 유지됩니다. 앱을 다시 열어 주세요."
+          : "저장된 데이터를 준비하고 있습니다…"}
+      </p>
+    );
+  return (
+    <>
+      {failed && <p role="status">일부 기존 데이터를 옮기지 못했습니다. 다음 실행에 다시 시도합니다.</p>}
+      <Content {...props} />
+    </>
+  );
+}
+
 export default function Studio() {
   return (
     <ProductShell
@@ -95,7 +135,7 @@ export default function Studio() {
       renderContent={(props) => {
         const available = productDataAvailable(props.description);
         const pending = <p role="status">제품 상태를 기록한 뒤 Control Center에서 Suite 활성화를 완료해 주세요.</p>;
-        return available ? <Content {...props} /> : pending;
+        return available ? <StorageGate {...props} /> : pending;
       }}
     />
   );

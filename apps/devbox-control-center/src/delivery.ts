@@ -1,6 +1,7 @@
+import { issueFailure } from "@devbox/product-shell/issues";
 import { invoke } from "@tauri-apps/api/core";
 import { makeRequest } from "@devbox/product-shell/api";
-import { isOperation, problemMessage, type Operation } from "@devbox/product-shell/operation";
+import { isOperation, problemCode, problemMessage, type Operation } from "@devbox/product-shell/operation";
 import type { DeliveryCall } from "@devbox/control-center-features/generated/DeliveryCall";
 import type { DeliveryResults } from "@devbox/control-center-features/generated/delivery-results";
 import { deliveryMessages } from "@devbox/control-center-features/issues";
@@ -21,19 +22,22 @@ export async function deliveryCall<M extends DeliveryCall["method"]>(
   try {
     response = await invoke("plugin:control-center|delivery", { request: { header, method, args } });
   } catch (problem) {
-    throw new Error(problemMessage(problem, provenance));
+    throw issueFailure(problemMessage(problem, provenance), {
+      ...provenance,
+      method,
+      code: problemCode(problem, provenance),
+    });
   }
   if (!response || !isOperation(response.operation, provenance))
-    throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
+    throw issueFailure("작업 응답의 출처를 확인할 수 없습니다.", { ...provenance, method, code: "invalid_response" });
   if (response.operation.outcome.state !== "succeeded") {
     const value = response.value as { issue?: unknown } | null;
     const issue = value?.issue;
     const known = typeof issue === "string" && Object.prototype.hasOwnProperty.call(deliveryMessages, issue);
-    const error = new Error(
+    throw issueFailure(
       known ? deliveryMessages[issue as keyof typeof deliveryMessages] : deliveryMessages.unavailable,
+      { ...provenance, method, code: known ? (issue as string) : "unavailable" },
     );
-    if (known) error.name = issue;
-    throw error;
   }
   return response;
 }

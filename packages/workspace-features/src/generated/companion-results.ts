@@ -3,7 +3,6 @@ import type { DashboardSnapshot } from "./DashboardSnapshot";
 import type { DeletedTerminalProfile } from "./DeletedTerminalProfile";
 import type { DistroInfo } from "./DistroInfo";
 import type { MultiplexerAvailability } from "./MultiplexerAvailability";
-import type { OutputBatch } from "./OutputBatch";
 import type { OwnedTerminalSession } from "./OwnedTerminalSession";
 import type { SavedTerminalProfile } from "./SavedTerminalProfile";
 import type { ShellIntegrationMutation } from "./ShellIntegrationMutation";
@@ -15,6 +14,7 @@ import type { TerminalWindowPolicy } from "./TerminalWindowPolicy";
 import type { WslControlStatus } from "./WslControlStatus";
 
 export type CompanionResults = {
+  ack_terminal_output: null;
   attach_session: null;
   broadcast: null;
   close_session: null;
@@ -36,9 +36,9 @@ export type CompanionResults = {
   set_terminal_preference: null;
   start_session: StartedSession;
   terminal_layout: TerminalLayout;
-  terminal_output: OutputBatch;
   terminal_preferences: { [key in string]: string };
   terminal_window_policy: TerminalWindowPolicy;
+  unsubscribe_terminal_output: null;
   update_shell_integration: ShellIntegrationMutation;
   windows_build_number: number | null;
   write_initial_command: null;

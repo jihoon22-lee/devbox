@@ -72,6 +72,7 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             | ("api-studio", "api-studio.api", "request-network")
             | ("api-studio", "api-studio.webhooks", "listener-network")
             | ("api-studio", "api-studio.transforms", "transform-local")
+            | ("api-studio", "api-studio.store", "local-store")
             | ("api-studio", "api-studio.migration", "legacy-import")
             | ("knowledge", "knowledge.notes", "note-writer")
             | ("knowledge", "knowledge.activity", "activity-collector")

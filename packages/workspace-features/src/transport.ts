@@ -1,3 +1,4 @@
+import { ProductIssueError } from "@devbox/product-shell/issues";
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 
 export type Component =
@@ -19,18 +20,22 @@ export type Transport = <T>(component: Component, method: string, args: Record<s
 let productTransport: Transport | undefined;
 let installationId: string | undefined;
 /** Only the native product bridge constructs this from fixed, validated messages. */
-export class WorkspaceOperationError extends Error {
+export class WorkspaceOperationError extends ProductIssueError {
   constructor(
     message: string,
-    readonly code?: string,
+    code = "unavailable",
+    fields = { component: "workspace.shell", method: "unknown", requestId: "unavailable" },
   ) {
-    super(message);
+    super(message, { ...fields, product: "workspace", code });
   }
 }
 
 /** Installed once by native product startup, before any feature is mounted. */
 export function configureProductTransport(transport: Transport, ownerInstallationId?: string): void {
-  if (productTransport) throw new Error("제품 연결이 이미 설정되어 있습니다.");
+  if (productTransport) {
+    if (ownerInstallationId !== undefined && installationId === ownerInstallationId) return;
+    throw new Error("제품 연결이 이미 설정되어 있습니다.");
+  }
   installationId = ownerInstallationId;
   productTransport = transport;
 }

@@ -11,7 +11,6 @@ export const MAX_QUICK_CAPTURE_TAG_CHARS = 48;
 export const MAX_QUICK_CAPTURE_TAG_ITEM_BYTES = MAX_QUICK_CAPTURE_TAG_CHARS * 4;
 export const MAX_QUICK_CAPTURE_TAG_BYTES = 1_024;
 export const MAX_QUICK_CAPTURE_PATH_CHARS = 160;
-export const MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES = 96;
 export const MAX_QUICK_CAPTURE_CLIPBOARD_BYTES = MAX_QUICK_CAPTURE_RAW_BODY_BYTES;
 
 export type QuickCaptureValidationCode =
@@ -456,10 +455,4 @@ function containsTelegramBotToken(value: string): boolean {
       id.length >= 8 && id.length <= 12 && /^\d+$/u.test(id) && secret.length >= 30 && /^[A-Za-z0-9_-]+$/u.test(secret)
     );
   });
-}
-
-export function isSafeQuickCapturePreviewId(value: unknown): value is string {
-  return (
-    typeof value === "string" && value.length <= MAX_QUICK_CAPTURE_PREVIEW_ID_BYTES && /^qc-[1-9]\d{0,19}$/u.test(value)
-  );
 }

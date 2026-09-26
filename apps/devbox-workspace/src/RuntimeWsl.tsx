@@ -1,3 +1,4 @@
+import { usePolling } from "@devbox/hooks";
 import { bindTypedCall } from "@devbox/workspace-features/typed";
 import type { WorkspaceTerminalCall } from "@devbox/workspace-features/generated/WorkspaceTerminalCall";
 import type { TerminalResults } from "@devbox/workspace-features/generated/terminal-results";
@@ -66,17 +67,15 @@ export default function RuntimeWsl({ description, active }: { description: Descr
       mounted.current = false;
     };
   }, []);
-  useEffect(() => {
-    if (!active) return;
-    void refresh();
-    const timer = setInterval(() => {
+  usePolling(
+    async () => {
       const value = lastGood.current;
       if (value && Date.now() > value.capturedAtMs + value.staleAfterMs)
         setFreshness((current) => (current === "error" ? current : "stale"));
-      if (!actionPending.current) void refresh();
-    }, 10_000);
-    return () => clearInterval(timer);
-  }, [active, refresh]);
+      if (!actionPending.current) await refresh();
+    },
+    { intervalMs: 10_000, active },
+  );
   const perform = async (key: string, operation: () => Promise<unknown>) => {
     if (actionPending.current) return;
     actionPending.current = true;

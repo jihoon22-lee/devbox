@@ -23,6 +23,20 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 - Secret은 raw handoff/argv/log에 넣지 않으며 재연결 상태를 유지한다. 비영속 도구는 사용자
   설정처럼 저장하거나 공유 payload에 포함하지 않는다.
 
+## 문서 저장소
+
+컬렉션·HTTP 기록·환경·gRPC 요약·변환 워크플로는 제품별
+`%LOCALAPPDATA%\com.devbox.v08.apistudio.i*\api-store.db`에 저장한다.
+SQLite WAL과 revision 비교로 저장하며 문서 종류마다 16MiB까지 허용한다.
+비밀값은 기존처럼 DPAPI로 봉인하고 요청 저장 전 정화 규칙을 적용한다.
+WebView2 데이터 폴더를 초기화해도 이 문서 저장소는 남는다.
+
+첫 실행은 기존 WebView 문서를 저장하고 다시 읽어 확인한 뒤 옛 키를 지운다.
+이전에 실패한 종류는 원본을 보존하고 다음 실행까지 쓰기를 차단한다.
+기존 `transforms/smart-workflows.json`은 새 문서가 없을 때 복사하며 원본 파일은 남긴다.
+Control Center 데이터 checkpoint는 제품 폴더 전체를 정지 상태에서 복사하므로
+`api-store.db`와 남아 있는 WAL도 함께 포함한다. Browser fixture는 별도 미리보기 저장소를 쓴다.
+
 ## 구현과 근거
 
 기능 코드는 이 제품 host와 `packages/` feature UI, 이름을 가진 `crates/` engine에 있다.
