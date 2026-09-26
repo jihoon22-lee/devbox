@@ -667,7 +667,8 @@ pub(crate) async fn execute_admitted(
         observation,
         &result,
     );
-    let response = admission.finish(result.map_err(str::to_owned), crate::ipc::classify);
+    let response =
+        admission.finish_with_failure_outcome(result.map_err(str::to_owned), crate::ipc::classify);
     Ok(Response {
         operation: response.operation,
         value: response.value,
