@@ -204,7 +204,18 @@ try {
   ui.cdp.socket.removeEventListener("message", answerPrompt);
   assert.equal(promptAnswered, true);
   assert.equal(promptError, false);
-  const storedEnvironments = await success("api-studio.store", "load", { kind: "environments" });
+  let storedEnvironments;
+  await until(async () => {
+    storedEnvironments = await success("api-studio.store", "load", { kind: "environments" });
+    return (
+      !!storedEnvironments &&
+      JSON.parse(storedEnvironments.body)
+        .environments.find((environment) => environment.id === "s03-env")
+        ?.variables.some(
+          (variable) => variable.key === "WEBHOOK_SECRET" && variable.secret && variable.value.length > 0,
+        )
+    );
+  }, "DPAPI credential did not reach the native store");
   assert.ok(storedEnvironments && storedEnvironments.revision > 0);
   assert.equal(storedEnvironments.body.includes(secret), false);
   const storedSecret = JSON.parse(storedEnvironments.body)
