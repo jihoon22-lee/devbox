@@ -112,6 +112,7 @@ pub struct WorkspaceTaskItem {
     pub id: String,
     pub source_index: u32,
     pub label: String,
+    #[ts(type = "\"ready\" | \"blocked\" | \"conflict\"")]
     pub status: String,
     pub task_kind: Option<WorkspaceTaskKind>,
     pub command: Option<String>,

@@ -1,4 +1,4 @@
-use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
+use product_ipc::workspace::Lane;
 use product_ipc::{ComponentCall, ExecutionClass};
 use serde::Deserialize;
 #[derive(Deserialize, ts_rs::TS)]
@@ -27,8 +27,8 @@ pub enum WorkspaceLogsCallHost {
         keys: Vec<LogSelectionKey>,
     },
 }
-#[derive(Deserialize, ts_rs::TS)]
-#[serde(untagged)]
+#[derive(ts_rs::TS)]
+#[ts(untagged)]
 pub enum WorkspaceLogsCall {
     Host(WorkspaceLogsCallHost),
     Engine(Box<logs_engine::api::LogsCall>),
@@ -180,6 +180,23 @@ pub fn result_types(
     results.sort_by_key(|(method, _)| *method);
     Ok(results)
 }
-pub const fn deadline_budget_for(_method: &str) -> u64 {
-    LONG_BUDGET_MS
+pub fn deadline_budget_for(method: &str) -> u64 {
+    super::deadlines::budget("workspace.logs", method)
+}
+
+impl<'de> serde::Deserialize<'de> for WorkspaceLogsCall {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        product_ipc::decode_host_first(
+            deserializer,
+            &[
+                "preview_legacy_runtime_settings",
+                "apply_legacy_runtime_settings",
+                "reconnect_runtime_sources",
+                "open_webhook_log",
+                "send_selection_to_toolbox",
+            ],
+            Self::Host,
+            Self::Engine,
+        )
+    }
 }

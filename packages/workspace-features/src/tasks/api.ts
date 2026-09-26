@@ -12,19 +12,12 @@ const invoke = bindTypedCall<WorkspaceRuntimeCall | ControlAction, RuntimeResult
     ? submitRuntimeControl(rawInvoke, method, args)
     : rawInvoke(method, args),
 );
-export interface RuntimeControlReceipt {
-  operationId: string;
-  method: string;
-  targetId: string;
-  state: "pending" | "interrupted";
-  createdAt: number;
-  reviewed: boolean;
-}
+export type RuntimeControlReceipt = import("../generated/RuntimeControlReceipt").RuntimeControlReceipt;
 export function listRuntimeControls(): Promise<RuntimeControlReceipt[]> {
   return isProductHosted() ? nativeInvoke("list_runtime_controls", {}) : Promise.resolve([]);
 }
-export function reviewRuntimeControl(operationId: string): Promise<void> {
-  return nativeInvoke("review_runtime_control", { operationId });
+export async function reviewRuntimeControl(operationId: string): Promise<void> {
+  await nativeInvoke("review_runtime_control", { operationId });
 }
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
@@ -58,7 +51,11 @@ export interface OpenRequest {
 
 export async function takePendingOpen(): Promise<OpenRequest | null> {
   if (!isTauri()) return null;
-  return invoke("take_pending_open", {});
+  const request = await invoke("take_pending_open", {});
+  if (request === null) return null;
+  if (request.target.kind === "task" || request.target.kind === "handoff")
+    return { ...request, target: request.target };
+  throw new Error("작업 열기 응답을 확인하지 못했습니다.");
 }
 
 export function onOpenRequest(handler: () => void): Promise<UnlistenFn> {
@@ -85,14 +82,14 @@ export function loadRuntimeStatus(): Promise<RuntimeStatus> {
   return invoke("runtime_status", {});
 }
 
-export function hideMainWindow(): Promise<void> {
+export async function hideMainWindow(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke("hide_main_window", {});
+  await invoke("hide_main_window", {});
 }
 
-export function quitApp(): Promise<void> {
+export async function quitApp(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke("quit_app", {});
+  await invoke("quit_app", {});
 }
 
 export function loadStartupShortcutStatus(): Promise<StartupShortcutStatus> {
@@ -346,22 +343,9 @@ export function exportDefinitions(): Promise<DefinitionExport | null> {
   return invoke("export_definitions", {});
 }
 
-export interface ImportItem {
-  id: string;
-  name: string;
-  kind: "job" | "service";
-  status: "new" | "conflict";
-  detail: string;
-  cwd: string | null;
-  environmentKeys: string[];
-  requiresConfirmation: boolean;
-}
+export type ImportItem = import("../generated/ImportItem").ImportItem;
 
-export interface ImportPlan {
-  schemaVersion: number;
-  revision: string;
-  items: ImportItem[];
-}
+export type ImportPlan = import("../generated/ImportPlan").ImportPlan;
 
 export function importDefinitions(json: string): Promise<ImportPlan> {
   if (!isTauri()) {
@@ -377,38 +361,13 @@ export function applyImport(json: string, selected: string[], revision?: string)
 
 export type ProjectImportSource = "package-script" | "cargo-target";
 
-export interface ProjectImportFile {
-  path: string;
-  bytes: number;
-}
+export type ProjectImportFile = import("../generated/ProjectImportFile").ProjectImportFile;
 
-export interface ProjectImportItem {
-  id: string;
-  name: string;
-  command: string;
-  kind: "job";
-  status: "new" | "conflict";
-  source: ProjectImportSource;
-  sourceName: string;
-  sourcePath: string;
-  cwd: string;
-  environmentKeys: string[];
-  requiresConfirmation: boolean;
-  detail: string;
-}
+export type ProjectImportItem = import("../generated/ProjectImportItem").ProjectImportItem;
 
-export interface ProjectImportPlan {
-  schemaVersion: number;
-  sourceRoot: string;
-  revision: string;
-  files: ProjectImportFile[];
-  items: ProjectImportItem[];
-}
+export type ProjectImportPlan = import("../generated/ProjectImportPlan").ProjectImportPlan;
 
-export interface ProjectImportApplyResult {
-  created: number;
-  skippedConflicts: number;
-}
+export type ProjectImportApplyResult = import("../generated/ProjectImportApplyResult").ProjectImportApplyResult;
 
 function createImportOperationId(prefix: "preview" | "apply"): string {
   const random = globalThis.crypto?.randomUUID?.();

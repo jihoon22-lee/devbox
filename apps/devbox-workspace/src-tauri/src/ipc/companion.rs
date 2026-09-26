@@ -2,8 +2,8 @@
 use product_ipc::workspace::Lane;
 use product_ipc::ComponentCall;
 use serde::{Deserialize, Serialize};
-#[derive(Deserialize, ts_rs::TS)]
-#[serde(untagged)]
+#[derive(ts_rs::TS)]
+#[ts(untagged)]
 pub enum CompanionCall {
     Host(CompanionHost),
     Engine(Box<terminal_engine::api::TerminalCall>),
@@ -116,27 +116,12 @@ impl CompanionCall {
         }
     }
 }
-pub const fn deadline_budget_for(method: &str) -> u64 {
-    if matches_output(method) {
-        1000
+pub fn deadline_budget_for(method: &str) -> u64 {
+    if method == "terminal_output" {
+        1_000
     } else {
         30_000
     }
-}
-const fn matches_output(method: &str) -> bool {
-    let bytes = method.as_bytes();
-    let expected = b"terminal_output";
-    if bytes.len() != expected.len() {
-        return false;
-    };
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != expected[i] {
-            return false;
-        };
-        i += 1;
-    }
-    true
 }
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -145,6 +130,7 @@ pub struct TerminalWindowPolicy {
     pub active_shortcut: (),
     pub tray_enabled: bool,
     pub close_behavior: CloseBehavior,
+    #[ts(type = "Array<never>")]
     pub issues: Vec<String>,
     pub visible: bool,
     pub focused: bool,
@@ -257,4 +243,43 @@ mod tests {
 #[derive(Serialize, ts_rs::TS)]
 pub struct SavedTerminalLayout {
     pub revision: String,
+}
+
+#[cfg(test)]
+mod override_tests {
+    #[test]
+    fn host_arguments_do_not_fall_back_to_the_standalone_engine_shape() {
+        assert!(serde_json::from_str::<super::CompanionCall>(
+            r#"{"method":"delete_workspace_profile","args":{"id":"profile"}}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<super::CompanionCall>(r#"{"method":"delete_workspace_profile","args":{"id":"profile","expectedRevision":"revision"}}"#).is_ok());
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CompanionCall {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        product_ipc::decode_host_first(
+            deserializer,
+            &[
+                "terminal_window_policy",
+                "terminal_preferences",
+                "set_terminal_preference",
+                "terminal_layout",
+                "save_terminal_layout",
+                "reset_failed_pane",
+                "terminal_output",
+                "write_initial_command",
+                "docker_action",
+                "wsl_control_status",
+                "open_wsl_file_in_log_lens",
+                "open_wsl_journal_in_log_lens",
+                "list_workspace_profiles",
+                "save_workspace_profile",
+                "delete_workspace_profile",
+            ],
+            Self::Host,
+            Self::Engine,
+        )
+    }
 }

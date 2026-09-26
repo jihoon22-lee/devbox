@@ -116,6 +116,7 @@ pub struct LogSearchRequest {
 #[derive(ts_rs::TS)]
 #[ts(rename = "RuntimeLogSourceRef")]
 pub struct LogSourceRef {
+    #[ts(type = "\"log-source/v1\"")]
     pub kind: String,
     pub source_id: String,
     pub run_id: String,

@@ -48,6 +48,7 @@ pub struct ProcessFavorite {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
 pub struct PortManagerPreferences {
+    #[ts(type = "1")]
     pub schema_version: u8,
     pub refresh_interval_ms: u32,
     pub pinned_only: bool,

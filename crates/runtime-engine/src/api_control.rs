@@ -133,3 +133,41 @@ impl ControlAction {
         }
     }
 }
+
+pub fn result_types(
+    export: &mut product_ipc::TypeExporter<'_>,
+) -> Result<Vec<(&'static str, String)>, String> {
+    export.register::<ControlAction>()?;
+    Ok(vec![
+        (
+            "run_job_now",
+            export.register::<crate::core::models::RunView>()?,
+        ),
+        (
+            "stop_active_run",
+            export.register::<Option<crate::core::models::RunView>>()?,
+        ),
+        (
+            "start_service",
+            export.register::<crate::core::models::ServiceInstanceView>()?,
+        ),
+        (
+            "stop_service",
+            export.register::<Option<crate::core::models::ServiceInstanceView>>()?,
+        ),
+        (
+            "restart_service",
+            export.register::<crate::core::models::ServiceInstanceView>()?,
+        ),
+        (
+            "run_workspace_task_operation",
+            export
+                .register::<crate::core::workspace_orchestration::WorkspaceTaskOperationView>()?,
+        ),
+        (
+            "stop_workspace_task_operation",
+            export
+                .register::<crate::core::workspace_orchestration::WorkspaceTaskOperationView>()?,
+        ),
+    ])
+}

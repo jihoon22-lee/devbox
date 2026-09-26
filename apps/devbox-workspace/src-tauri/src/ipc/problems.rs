@@ -1,4 +1,4 @@
-use product_ipc::workspace::{Lane, DEFAULT_BUDGET_MS};
+use product_ipc::workspace::Lane;
 use product_ipc::{ComponentCall, ExecutionClass};
 use serde::Deserialize;
 #[derive(Deserialize, ts_rs::TS)]
@@ -108,6 +108,6 @@ pub fn result_types(
     results.sort_by_key(|(method, _)| *method);
     Ok(results)
 }
-pub const fn deadline_budget_for(_method: &str) -> u64 {
-    DEFAULT_BUDGET_MS
+pub fn deadline_budget_for(method: &str) -> u64 {
+    super::deadlines::budget("workspace.problems", method)
 }

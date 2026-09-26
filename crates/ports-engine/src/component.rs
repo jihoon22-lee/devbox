@@ -72,9 +72,8 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path) -> Result<(), String> {
 pub async fn kill_external_listener(
     request: KillListenerRequest,
     deadline_ms: u64,
-) -> Result<serde_json::Value, String> {
-    let result = crate::commands::ports::kill_product_listener(request, deadline_ms).await?;
-    serde_json::to_value(result).map_err(|_| "component_response_invalid".into())
+) -> Result<ListenerActionResult, String> {
+    crate::commands::ports::kill_product_listener(request, deadline_ms).await
 }
 
 pub const COMMANDS: &[&str] = &[

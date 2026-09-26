@@ -1,4 +1,4 @@
-use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
+use product_ipc::workspace::Lane;
 use product_ipc::{ComponentCall, ExecutionClass};
 use serde::Deserialize;
 #[derive(Deserialize, ts_rs::TS)]
@@ -13,8 +13,8 @@ use serde::Deserialize;
 pub enum WorkspaceRuntimeCallHost {
     WorkspaceTaskSource {},
 }
-#[derive(Deserialize, ts_rs::TS)]
-#[serde(untagged)]
+#[derive(ts_rs::TS)]
+#[ts(untagged)]
 pub enum WorkspaceRuntimeCall {
     Host(WorkspaceRuntimeCallHost),
     Engine(Box<runtime_engine::api::RuntimeCall>),
@@ -212,6 +212,17 @@ pub fn result_types(
     results.sort_by_key(|(method, _)| *method);
     Ok(results)
 }
-pub const fn deadline_budget_for(_method: &str) -> u64 {
-    LONG_BUDGET_MS
+pub fn deadline_budget_for(method: &str) -> u64 {
+    super::deadlines::budget("workspace.runtime", method)
+}
+
+impl<'de> serde::Deserialize<'de> for WorkspaceRuntimeCall {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        product_ipc::decode_host_first(
+            deserializer,
+            &["workspace_task_source"],
+            Self::Host,
+            Self::Engine,
+        )
+    }
 }

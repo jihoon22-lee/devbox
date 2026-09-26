@@ -494,8 +494,10 @@ pub fn service_observability(
 pub struct ImportItem {
     pub id: String,
     pub name: String,
+    #[ts(type = "\"job\" | \"service\"")]
     pub kind: String,
     /// "new" | "conflict"
+    #[ts(type = "\"new\" | \"conflict\"")]
     pub status: String,
     pub detail: String,
     pub cwd: Option<String>,

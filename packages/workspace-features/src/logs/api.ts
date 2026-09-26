@@ -1,8 +1,12 @@
-import { isProductHosted } from "../transport";
+import { componentInvoke, isProductHosted } from "../transport";
 import { typedCall } from "../typed";
+import type { WorkspaceLogsCallHost } from "../generated/WorkspaceLogsCallHost";
 import type { WorkspaceLogsCall } from "../generated/WorkspaceLogsCall";
 import type { LogsResults } from "../generated/logs-results";
-const invoke = typedCall<WorkspaceLogsCall, LogsResults>("workspace.logs");
+const invoke = typedCall<
+  WorkspaceLogsCallHost | Exclude<WorkspaceLogsCall, { method: WorkspaceLogsCallHost["method"] }>,
+  LogsResults
+>("workspace.logs");
 import { listen } from "@tauri-apps/api/event";
 import { browserSnapshot } from "./browserFixture";
 import { filterRecords as applyFilter, utf8ByteLength } from "./filter";
@@ -623,13 +627,18 @@ export async function readSources(
   operationId: string,
 ): Promise<SourcesSnapshot> {
   if (!isTauri()) return browserSnapshot(sources, operationId, generation);
-  return invoke("read_sources", {
+  const snapshot = await invoke("read_sources", {
     sources,
     cursors,
     sequenceStarts,
     generation,
     operationId,
   });
+  return { ...snapshot, records: snapshot.records.map(normalizeRecord) };
+}
+
+function normalizeRecord(record: import("../generated/LogRecord").LogRecord): LogRecord {
+  return { ...record, fields: record.fields ?? {} };
 }
 
 export async function cancelRead(operationId: string): Promise<void> {
@@ -656,7 +665,8 @@ function parseToolboxDispatch(value: unknown): ToolboxDispatch | null {
 /** Publish only the current explicit log selection to Developer Toolbox. */
 export async function sendSelectionToToolbox(text: string): Promise<ToolboxDispatch> {
   if (!isTauri()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
-  const response = await invoke("send_selection_to_toolbox", { text });
+  if (isProductHosted()) throw new Error(TOOLBOX_TEXT_BROWSER_ERROR);
+  const response = await componentInvoke("workspace.logs")("send_selection_to_toolbox", { text });
   const dispatch = parseToolboxDispatch(response);
   if (!dispatch) throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
   return dispatch;
@@ -666,7 +676,7 @@ export async function filterRecords(records: LogRecord[], filter: FilterSpec): P
   if (!isTauri()) {
     return applyFilter(records, filter);
   }
-  return invoke("filter_log_records", { records, filter });
+  return (await invoke("filter_log_records", { records, filter })).map(normalizeRecord);
 }
 
 function escapeLogfmtValue(value: string): string {

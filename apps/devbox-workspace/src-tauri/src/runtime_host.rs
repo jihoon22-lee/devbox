@@ -3,6 +3,7 @@
 //! executable, database discovery or generic spawn/unseal command is exposed.
 mod observations;
 mod reconnect;
+use crate::ipc::results::{OwnedTaskAction, ProcessActionReply};
 use crate::{definitions::Definitions, host::Host};
 use logs_engine::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
 use ports_engine::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
@@ -614,10 +615,13 @@ pub(crate) async fn dispatch(
                         )
                         .map_err(issue)?;
                         navigate(app, "tasks", context)?;
-                        Ok(json!({"kind":"ownedTask","taskId":id}))
+                        Ok(json!(ProcessActionReply::Owned(
+                            OwnedTaskAction::OwnedTask { task_id: id }
+                        )))
                     } else {
                         ports_engine::component::kill_external_listener(input.request, deadline)
                             .await
+                            .map(|value| json!(ProcessActionReply::Native(value)))
                             .map_err(issue)
                     }
                 }

@@ -144,6 +144,7 @@ fn has_disallowed_control(value: &str) -> bool {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct FilterSpec {
     #[serde(default)]
     pub text: String,
@@ -174,6 +175,7 @@ pub enum ContainerEngine {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub enum SourceSpec {
     LocalFile {
         path: String,
@@ -198,6 +200,7 @@ pub enum SourceSpec {
     RuntimeRun {
         #[serde(rename = "runId")]
         run_id: String,
+        #[ts(type = "\"stdout\" | \"stderr\"")]
         stream: String,
         revision: String,
     },
@@ -254,6 +257,9 @@ impl LogSourceRef {
 #[derive(ts_rs::TS)]
 pub struct SourceSummary {
     pub source_id: String,
+    #[ts(
+        type = "\"localFile\" | \"directory\" | \"wslFile\" | \"wslJournal\" | \"run\" | \"runtimeRun\" | \"webhookCapture\" | \"container\""
+    )]
     pub kind: SourceKind,
     pub display_name: String,
     pub read_only: bool,

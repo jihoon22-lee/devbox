@@ -360,6 +360,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
         # Generated bindings must be regenerated even for a TS-only edit.
         for prefix, owner in {
             "packages/knowledge-features/src/generated/": "devbox-knowledge",
+            "packages/workspace-features/src/generated/": "devbox-workspace",
             "packages/api-studio-features/src/generated/": "devbox-api-studio",
             "packages/control-center-features/src/generated/": "devbox-control-center",
         }.items():

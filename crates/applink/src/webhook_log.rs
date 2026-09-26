@@ -27,6 +27,7 @@ const REDACTED: &str = "[REDACTED]";
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
 pub struct WebhookLogPayload {
+    #[ts(type = "1")]
     pub schema_version: u32,
     pub method: String,
     pub target: String,

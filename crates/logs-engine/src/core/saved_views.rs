@@ -32,6 +32,7 @@ pub const SAVED_VIEW_NOT_FOUND_ERROR: &str = "저장된 뷰를 찾을 수 없습
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
 pub struct SavedViewsDocument {
+    #[ts(type = "1")]
     pub schema_version: u32,
     pub revision: u64,
     pub views: Vec<SavedView>,

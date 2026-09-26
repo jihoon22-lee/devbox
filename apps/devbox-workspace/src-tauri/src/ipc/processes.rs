@@ -1,4 +1,4 @@
-use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
+use product_ipc::workspace::Lane;
 use product_ipc::{ComponentCall, ExecutionClass};
 use serde::Deserialize;
 #[derive(Deserialize, ts_rs::TS)]
@@ -22,8 +22,8 @@ pub enum ProcessesCallHost {
         stream: Option<String>,
     },
 }
-#[derive(Deserialize, ts_rs::TS)]
-#[serde(untagged)]
+#[derive(ts_rs::TS)]
+#[ts(untagged)]
 pub enum ProcessesCall {
     Host(ProcessesCallHost),
     Engine(Box<ports_engine::api::PortsCall>),
@@ -142,6 +142,22 @@ pub fn result_types(
     results.sort_by_key(|(method, _)| *method);
     Ok(results)
 }
-pub const fn deadline_budget_for(_method: &str) -> u64 {
-    LONG_BUDGET_MS
+pub fn deadline_budget_for(method: &str) -> u64 {
+    super::deadlines::budget("workspace.processes", method)
+}
+
+impl<'de> serde::Deserialize<'de> for ProcessesCall {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        product_ipc::decode_host_first(
+            deserializer,
+            &[
+                "preview_legacy_runtime_settings",
+                "apply_legacy_runtime_settings",
+                "open_port_owner",
+                "open_port_log",
+            ],
+            Self::Host,
+            Self::Engine,
+        )
+    }
 }
