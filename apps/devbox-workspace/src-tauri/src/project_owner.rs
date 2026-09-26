@@ -762,6 +762,41 @@ mod tests {
         }
     }
     #[test]
+    fn registration_undo_requires_the_original_registry_revision_and_preserves_files() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("keep.txt"), "user data").unwrap();
+        let owner = ProjectOwner::open(data.path()).unwrap();
+        let preview = preview_root(&owner, root.path()).unwrap();
+        let (registered, context) = owner
+            .apply(&preview.preview_id, "first", RegistrationAction::Register)
+            .unwrap();
+        let renamed = owner
+            .rename(registered.revision, &context.project_id, "edited")
+            .unwrap();
+        assert!(matches!(
+            owner.remove(registered.revision, &context),
+            Err("stale_registry")
+        ));
+        assert_eq!(owner.snapshot().unwrap(), renamed);
+        assert_eq!(
+            fs::read_to_string(root.path().join("keep.txt")).unwrap(),
+            "user data"
+        );
+        let other = tempfile::tempdir().unwrap();
+        let preview = preview_root(&owner, other.path()).unwrap();
+        let (created, created_context) = owner
+            .apply(&preview.preview_id, "second", RegistrationAction::Register)
+            .unwrap();
+        let removed = owner.remove(created.revision, &created_context).unwrap();
+        assert!(!removed
+            .worktrees
+            .iter()
+            .any(|tree| tree.id == created_context.worktree_id));
+        assert!(other.path().is_dir());
+    }
+
+    #[test]
     fn runtime_admission_rechecks_context_and_native_binding_after_registration() {
         let data = tempfile::tempdir().unwrap();
         let parent = tempfile::tempdir().unwrap();

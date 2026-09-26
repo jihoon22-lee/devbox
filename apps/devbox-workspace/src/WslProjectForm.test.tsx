@@ -24,10 +24,10 @@ it("lists without starting and requires an explicit stopped-distro choice before
   expect(call.mock.calls.map(([, method]) => method)).toEqual(["list_wsl_distros"]);
   fireEvent.change(screen.getByLabelText("WSL 배포판"), { target: { value: distro.id } });
   fireEvent.change(screen.getByLabelText("Linux 프로젝트 폴더"), { target: { value: preview.binding.root } });
-  expect((screen.getByRole("button", { name: "WSL 폴더 확인" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "WSL 프로젝트 등록" }) as HTMLButtonElement).disabled).toBe(true);
   await assertNoA11yViolations(container);
   fireEvent.click(screen.getByRole("checkbox"));
-  fireEvent.click(screen.getByRole("button", { name: "WSL 폴더 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "WSL 프로젝트 등록" }));
   await waitFor(() => expect(reviewed).toHaveBeenCalledWith(preview, "한글 project"));
   expect(call).toHaveBeenCalledWith("workspace.registry", "preview_wsl", {
     distroId: distro.id,
@@ -53,7 +53,7 @@ it("cancels a late native preview after the form closes", async () => {
   await screen.findByRole("option", { name: "합성 Ubuntu · 실행 중" });
   fireEvent.change(screen.getByLabelText("WSL 배포판"), { target: { value: distro.id } });
   fireEvent.change(screen.getByLabelText("Linux 프로젝트 폴더"), { target: { value: preview.binding.root } });
-  fireEvent.click(screen.getByRole("button", { name: "WSL 폴더 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "WSL 프로젝트 등록" }));
   expect(call).toHaveBeenCalledWith("workspace.registry", "preview_wsl", {
     distroId: distro.id,
     root: preview.binding.root,

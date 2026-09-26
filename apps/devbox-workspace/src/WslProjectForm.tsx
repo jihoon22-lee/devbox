@@ -24,7 +24,7 @@ export default function WslProjectForm({
 }: {
   disabled: boolean;
   onBusyChange: (busy: boolean) => void;
-  onReviewed: (preview: Preview, name: string) => void;
+  onReviewed: (preview: Preview, name: string) => void | Promise<void>;
   templates?: ImportedTemplate[];
 }) {
   const [distros, setDistros] = useState<Distro[]>([]);
@@ -60,7 +60,7 @@ export default function WslProjectForm({
       if (alive.current && request === generation.current) activity(false);
     }
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Load distro choices for this form mount; selection edits must not reset the selected distro or start consent.
   useEffect(() => {
     alive.current = true;
     void refresh();
@@ -101,7 +101,10 @@ export default function WslProjectForm({
                 await registryCall("cancel_registration", { previewId: preview.previewId });
                 return;
               }
-              onReviewed(preview, template?.template.name ?? root.split("/").filter(Boolean).pop() ?? selected.name);
+              await onReviewed(
+                preview,
+                template?.template.name ?? root.split("/").filter(Boolean).pop() ?? selected.name,
+              );
             } catch (cause) {
               if (alive.current) setError(cause instanceof Error ? cause.message : "WSL 폴더를 확인하지 못했습니다.");
             } finally {
@@ -178,7 +181,7 @@ export default function WslProjectForm({
             disabled || busy || !selected || !root.startsWith("/") || root === "/" || (!selected.running && !start)
           }
         >
-          WSL 폴더 확인
+          {template ? "WSL 폴더 확인" : "WSL 프로젝트 등록"}
         </button>
       </form>
     </section>
