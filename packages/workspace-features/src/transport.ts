@@ -30,7 +30,10 @@ export class WorkspaceOperationError extends Error {
 
 /** Installed once by native product startup, before any feature is mounted. */
 export function configureProductTransport(transport: Transport, ownerInstallationId?: string): void {
-  if (productTransport) throw new Error("제품 연결이 이미 설정되어 있습니다.");
+  if (productTransport) {
+    if (ownerInstallationId !== undefined && installationId === ownerInstallationId) return;
+    throw new Error("제품 연결이 이미 설정되어 있습니다.");
+  }
   installationId = ownerInstallationId;
   productTransport = transport;
 }
