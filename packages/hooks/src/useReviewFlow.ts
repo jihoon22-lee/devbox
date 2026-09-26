@@ -103,15 +103,28 @@ export function useReviewFlow<P, R>(steps: ReviewSteps<P, R>) {
     controller.current?.abort();
     controller.current = null;
     const entry = pending.current;
-    pending.current = null;
-    phase.current = "idle";
-    setCurrent({ state: "idle", preview: null, result: null, issue: null });
+    if (!entry) {
+      phase.current = "idle";
+      setCurrent({ state: "idle", preview: null, result: null, issue: null });
+      return;
+    }
+    // Cancellation owns the preview until native cleanup acknowledges it.
+    phase.current = "applying";
+    setCurrent((value) => ({ ...value, state: "applying", issue: null }));
     try {
-      if (entry) await entry.owner.discard?.(entry.value);
+      await entry.owner.discard?.(entry.value);
+      if (pending.current === entry) pending.current = null;
+      if (mounted.current && id === sequence.current) {
+        phase.current = "idle";
+        setCurrent({ state: "idle", preview: null, result: null, issue: null });
+      }
     } catch (error) {
       if (mounted.current && id === sequence.current) {
         phase.current = "failed";
-        setCurrent({ state: "failed", preview: null, result: null, issue: messageOf(error) });
+        setCurrent({ state: "failed", preview: entry.value, result: null, issue: messageOf(error) });
+      } else {
+        if (pending.current === entry) pending.current = null;
+        await discardQuietly(entry);
       }
     }
   }, []);

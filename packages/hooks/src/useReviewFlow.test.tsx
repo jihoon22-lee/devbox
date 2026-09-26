@@ -138,4 +138,18 @@ describe("useReviewFlow", () => {
     expect(original).toHaveBeenCalledWith("p");
     expect(replacement).not.toHaveBeenCalled();
   });
+  it("retains the preview when explicit discard fails so cancellation can be retried", async () => {
+    const discard = vi.fn().mockRejectedValueOnce(new Error("temporary")).mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useReviewFlow({ preview: async () => "p", apply: async (p: string) => p, discard }),
+    );
+    await act(async () => result.current.start());
+    await act(async () => result.current.reset());
+    expect(result.current.state).toBe("failed");
+    expect(result.current.preview).toBe("p");
+    expect(result.current.issue).toBe("temporary");
+    await act(async () => result.current.reset());
+    expect(result.current.state).toBe("idle");
+    expect(discard).toHaveBeenCalledTimes(2);
+  });
 });
