@@ -60,6 +60,17 @@ impl ProcessPeer {
         pipe: PipeWitness,
         server_side: bool,
     ) -> Result<Self> {
+        Self::from_pipe_role(scope, pipe, server_side, false)
+    }
+    pub(crate) fn from_agent_pipe(scope: Arc<CapturedScope>, pipe: PipeWitness) -> Result<Self> {
+        Self::from_pipe_role(scope, pipe, false, true)
+    }
+    fn from_pipe_role(
+        scope: Arc<CapturedScope>,
+        pipe: PipeWitness,
+        server_side: bool,
+        agent: bool,
+    ) -> Result<Self> {
         let mut pid = 0;
         unsafe {
             if server_side {
@@ -69,9 +80,9 @@ impl ProcessPeer {
             }
         }
         .map_err(|_| "peer_process_unavailable")?;
-        Self::capture(scope, pid)
+        Self::capture_role(scope, pid, agent)
     }
-    fn capture(scope: Arc<CapturedScope>, process_id: u32) -> Result<Self> {
+    fn capture_role(scope: Arc<CapturedScope>, process_id: u32, agent: bool) -> Result<Self> {
         if process_id == 0 {
             return Err("peer_process_unavailable");
         }
@@ -118,7 +129,12 @@ impl ProcessPeer {
             return Err("peer_image_unavailable");
         }
         let path = PathBuf::from(OsString::from_wide(&image[..length as usize]));
-        let product = scope.product_for_image(&path)?;
+        let product = if agent {
+            scope.verify_agent_image(&path)?;
+            "agent".to_owned()
+        } else {
+            scope.product_for_image(&path)?
+        };
         let peer = Self {
             handle,
             scope,

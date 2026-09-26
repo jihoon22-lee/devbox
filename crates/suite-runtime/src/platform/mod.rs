@@ -7,3 +7,6 @@ pub(crate) mod peer_identity;
 
 #[cfg(windows)]
 pub(crate) mod connection_preference;
+
+#[cfg(windows)]
+pub mod agent_peer;

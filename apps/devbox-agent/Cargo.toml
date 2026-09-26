@@ -12,3 +12,11 @@ tauri-build = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-single-instance = "2"
 product-shell-tauri = { path = "../../crates/product-shell-tauri" }
+agent-protocol = { path = "../../crates/agent-protocol" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+suite-runtime = { path = "../../crates/suite-runtime" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
