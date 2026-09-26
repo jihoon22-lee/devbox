@@ -126,13 +126,7 @@ export async function exerciseWorkspaceRegistration({
     assert.equal(result.operation.outcome.state, "succeeded", JSON.stringify(result));
     return result.value;
   };
-  const click = async (label) => {
-    const predicate = `Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled)`;
-    await waitForRenderer(cdp, predicate, "Workspace action did not become available");
-    await cdp.evaluate(
-      `Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled).click()`,
-    );
-  };
+  const click = (label, scope) => clickWorkspaceAction(cdp, waitForRenderer, label, scope);
   const fill = async (id, value) =>
     cdp.evaluate(
       `(() => {const input=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`,
@@ -164,7 +158,7 @@ export async function exerciseWorkspaceRegistration({
     "Workspace immediate registration did not offer undo",
   );
   assert.equal(success(await call("workspace.registry", "snapshot")).projects.length, 1);
-  await click("되돌리기");
+  await click("되돌리기", ".shell-undo");
   await waitForRenderer(
     cdp,
     '!Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "프로젝트 선택")',
@@ -366,4 +360,12 @@ export async function exerciseWorkspaceRegistration({
     boundary:
       "Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP acceptance are separate",
   };
+}
+
+export async function clickWorkspaceAction(cdp, waitForRenderer, label, scope = ".workspace-registry") {
+  const predicate = `Array.from(document.querySelectorAll(${JSON.stringify(scope + " button")})).some(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled)`;
+  await waitForRenderer(cdp, predicate, "Workspace action did not become available");
+  await cdp.evaluate(
+    `Array.from(document.querySelectorAll(${JSON.stringify(scope + " button")})).find(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled).click()`,
+  );
 }

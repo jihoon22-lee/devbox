@@ -519,3 +519,17 @@ test("Quick Summon preserves receipt replay and permits one show before hide aft
     /deep-equal/,
   );
 });
+
+test("registration undo clicks the enabled shell offer outside the registry", async () => {
+  const { clickWorkspaceAction } = await import("./windows-workspace-registration.mjs");
+  let clicked = 0;
+  const button = { textContent: "되돌리기", disabled: false, click: () => clicked++ };
+  const document = { querySelectorAll: (selector) => (selector === ".shell-undo button" ? [button] : []) };
+  const cdp = { evaluate: (expression) => runInNewContext(expression, { document }) };
+  const wait = async (_cdp, expression) => assert.equal(await cdp.evaluate(expression), true);
+  await clickWorkspaceAction(cdp, wait, "되돌리기", ".shell-undo");
+  assert.equal(clicked, 1);
+  button.disabled = true;
+  await assert.rejects(clickWorkspaceAction(cdp, wait, "되돌리기", ".shell-undo"));
+  assert.equal(clicked, 1);
+});

@@ -25,6 +25,7 @@ export function typedComponentInvoke(invoke, product, payload) {
     "knowledge.opener": "plugin:knowledge|opener",
     "knowledge.setup": "plugin:knowledge|setup",
     "knowledge.commands": "plugin:knowledge|commands",
+    "api-studio.store": "plugin:api-studio|store",
     "api-studio.api": "plugin:api-studio|api",
     "api-studio.webhooks": "plugin:api-studio|webhooks",
     "api-studio.transforms": "plugin:api-studio|transforms",

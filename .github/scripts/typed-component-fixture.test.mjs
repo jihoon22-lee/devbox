@@ -56,3 +56,22 @@ test("Workspace bridge maps all main components without sending an owner field",
     assert.equal("component" in seen.payload.request, false);
   }
 });
+
+test("API document loads use the native store command", async () => {
+  let seen;
+  await runInNewContext(`${typedComponentBridge} invokeComponent("api-studio", payload)`, {
+    invoke: async (command, payload) => {
+      seen = { command, payload };
+    },
+    payload: {
+      request: {
+        header: { requestId: "store" },
+        component: "api-studio.store",
+        method: "load",
+        args: { kind: "environments" },
+      },
+    },
+  });
+  assert.equal(seen.command, "plugin:api-studio|store");
+  assert.equal(seen.payload.request.args.kind, "environments");
+});
