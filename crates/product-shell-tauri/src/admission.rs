@@ -141,12 +141,14 @@ fn admit_with_guard<C: ComponentCall>(
 pub(crate) fn outcome(
     result: &Result<Value, String>,
     classify: fn(&str) -> &'static str,
+    failure_only: bool,
 ) -> (OperationState, Value) {
     match result {
         Ok(value) => (OperationState::Succeeded {}, value.clone()),
         Err(error) => {
             let issue = classify(error);
-            let state = if issue == "cancelled" || issue.ends_with("_cancelled") {
+            let state = if !failure_only && (issue == "cancelled" || issue.ends_with("_cancelled"))
+            {
                 OperationState::Cancelled {}
             } else {
                 OperationState::Failed {
@@ -173,7 +175,24 @@ impl Admission {
         result: Result<Value, String>,
         classify: fn(&str) -> &'static str,
     ) -> Reply {
-        let (state, value) = outcome(&result, classify);
+        self.finish_with_policy(result, classify, false)
+    }
+    /// Retain a product's existing wire contract in which every domain error,
+    /// including cancellation, is reported as Failed with its stable issue code.
+    pub fn finish_with_failure_outcome(
+        self,
+        result: Result<Value, String>,
+        classify: fn(&str) -> &'static str,
+    ) -> Reply {
+        self.finish_with_policy(result, classify, true)
+    }
+    fn finish_with_policy(
+        self,
+        result: Result<Value, String>,
+        classify: fn(&str) -> &'static str,
+        failure_only: bool,
+    ) -> Reply {
+        let (state, value) = outcome(&result, classify, failure_only);
         // P0-07's log boundary accepts only projected native codes. A raw
         // String may be a path, server message or secret even if token-shaped.
         let issue = result.as_ref().err().map(|error| classify(error));
@@ -222,19 +241,27 @@ mod tests {
     #[test]
     fn outcomes_map_to_operation_states_without_exposing_unknown_errors() {
         assert!(matches!(
-            outcome(&Ok(json!(1)), |_| "x"),
+            outcome(&Ok(json!(1)), |_| "x", false),
             (OperationState::Succeeded {}, _)
         ));
-        let (state, value) = outcome(&Err("digest_cancelled".into()), |code| {
-            if code == "digest_cancelled" {
-                "cancelled"
-            } else {
-                "unavailable"
-            }
-        });
+        let (state, value) = outcome(
+            &Err("digest_cancelled".into()),
+            |code| {
+                if code == "digest_cancelled" {
+                    "cancelled"
+                } else {
+                    "unavailable"
+                }
+            },
+            false,
+        );
         assert!(matches!(state, OperationState::Cancelled {}));
         assert_eq!(value, json!({"issue":"cancelled"}));
-        let (state, value) = outcome(&Err("private_token_from_remote".into()), |_| "unavailable");
+        let (state, value) = outcome(
+            &Err("private_token_from_remote".into()),
+            |_| "unavailable",
+            false,
+        );
         assert!(matches!(
             state,
             OperationState::Failed {
@@ -242,5 +269,41 @@ mod tests {
             }
         ));
         assert_eq!(value, json!({"issue":"unavailable"}));
+    }
+    #[test]
+    fn failure_policy_preserves_workspace_cancellation_wire_contract() {
+        fn classify(code: &str) -> &'static str {
+            match code {
+                "source_cancelled" => "source_cancelled",
+                "lsp_operation_cancelled" => "lsp_operation_cancelled",
+                "request_cancelled" => "request_cancelled",
+                _ => "unavailable",
+            }
+        }
+        for code in [
+            "source_cancelled",
+            "lsp_operation_cancelled",
+            "request_cancelled",
+        ] {
+            let (state, value) = outcome(&Err(code.into()), classify, true);
+            assert!(matches!(
+                state,
+                OperationState::Failed {
+                    code: ProblemCode::Unavailable
+                }
+            ));
+            assert_eq!(value, json!({"issue":code}));
+            assert!(matches!(
+                outcome(&Err(code.into()), classify, false).0,
+                OperationState::Cancelled {}
+            ));
+        }
+        assert!(
+            matches!(outcome(&Ok(json!({"value":1})), classify, true), (OperationState::Succeeded {}, value) if value == json!({"value":1}))
+        );
+        assert_eq!(
+            outcome(&Err("private value".into()), classify, true).1,
+            json!({"issue":"unavailable"})
+        );
     }
 }
