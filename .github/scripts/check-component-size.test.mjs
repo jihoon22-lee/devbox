@@ -10,12 +10,18 @@ test("component exceptions can shrink but cannot grow or cover new views", () =>
   const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
   const write = (file, value) => writeFileSync(join(root, file), value);
   const allow = (value) => write(".github/scripts/component-size-allowlist.json", JSON.stringify(value));
-  const check = () => spawnSync(process.execPath, [".github/scripts/check-component-size.mjs"], {
-    cwd: root, encoding: "utf8", env: { ...process.env, GITHUB_BASE_REF: "main" },
-  });
+  const check = () =>
+    spawnSync(process.execPath, [".github/scripts/check-component-size.mjs"], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_BASE_REF: "main" },
+    });
   try {
     mkdirSync(join(root, ".github/scripts"), { recursive: true });
-    copyFileSync(new URL("./check-component-size.mjs", import.meta.url), join(root, ".github/scripts/check-component-size.mjs"));
+    copyFileSync(
+      new URL("./check-component-size.mjs", import.meta.url),
+      join(root, ".github/scripts/check-component-size.mjs"),
+    );
     git("init", "-b", "main");
     git("config", "user.name", "Fixture");
     git("config", "user.email", "fixture@example.invalid");
