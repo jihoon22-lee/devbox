@@ -1,5 +1,18 @@
+import { useFileActions } from "./hooks/useFileActions";
+import { RenameReviewDialog } from "./components/RenameReviewDialog";
+import { EditorToolbar } from "./components/EditorToolbar";
+import { FileToolbar } from "./components/FileToolbar";
+import {
+  docFromOpenedFile,
+  activeDocForState,
+  isPreviewable,
+  relativeWorkspacePath,
+  safeCodePadError,
+  snapshotMatches,
+} from "./lib/documentPresentation";
+import { useOperation } from "@devbox/hooks";
 import "./App.css";
-import { isProductHosted, WorkspaceOperationError } from "../transport";
+import { isProductHosted } from "../transport";
 import { listen } from "@tauri-apps/api/event";
 import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -7,25 +20,19 @@ import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
 import {
   sendEditorSelection,
-  deleteFileAction,
   listWorkspaceFiles,
   loadSession,
   loadRecovery,
   openFile,
-  pickFiles,
-  renameFileAction,
-  revealFileAction,
   renderPreview,
   saveFile,
   saveSession,
   takePendingOpen,
-  validateEncoding,
   unwatchFile,
   watchFile,
   workspaceCapabilities as loadWorkspaceCapabilities,
 } from "./api";
 import DocHost from "./components/DocHost";
-import ChangeSetPreview, { type ChangeSetItem } from "./components/ChangeSetPreview";
 import PreviewPane from "./components/PreviewPane";
 import ProblemsPanel from "./components/ProblemsPanel";
 import QuickOpen from "./components/QuickOpen";
@@ -34,7 +41,6 @@ import StatusBar from "./components/StatusBar";
 import ViewPane from "./components/ViewPane";
 import LspControlPanel from "./components/LspControlPanel";
 import LspNavigationPanel from "./components/LspNavigationPanel";
-import type { TabContextAction } from "./components/TabBar";
 import { currentDocumentWordCompletion } from "./editor/extensions";
 import { APPLINK_OPEN_EVENT, routeOpenRequest } from "./lib/applink";
 import {
@@ -45,17 +51,10 @@ import {
   pathFromFileUri,
 } from "./lspFeatures";
 import type { BookmarkCommands } from "./editor/bookmarks";
-import { normalizeBookmarkLines } from "./editor/bookmarks";
 import { LspDocumentSync } from "./lspDocumentSync";
 import { NativeEditorMirror } from "./nativeEditorMirror";
 import { matchesLspEventContext } from "./lspEventContext";
-import {
-  createInitialEditorState,
-  docIdForPath,
-  editorReducer,
-  stateToSession,
-  type EditorAction,
-} from "./store/documentStore";
+import { createInitialEditorState, editorReducer, stateToSession, type EditorAction } from "./store/documentStore";
 import type {
   Doc,
   DocId,
@@ -63,7 +62,6 @@ import type {
   FileChangedEvent,
   Encoding,
   LineEnding,
-  OpenedFile,
   PreviewResponse,
   SavedFile,
   SessionState,
@@ -76,148 +74,6 @@ import type {
   LspStatusEvent,
   OpenRequest,
 } from "./types";
-
-function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][number]): Doc {
-  return {
-    ...(file.nativeRevision !== undefined ? { nativeRevision: file.nativeRevision } : {}),
-    id: metadata?.id ?? docIdForPath(file.path),
-    path: file.path,
-    text: file.text,
-    encoding: file.encoding,
-    lineEnding: file.lineEnding,
-    readOnly: file.readOnly,
-    size: file.size,
-    mtimeNanos: file.mtimeNanos,
-    contentHash: file.contentHash,
-    lossy: file.lossy,
-    durabilityWarning: file.durabilityWarning ?? null,
-    dirty: false,
-    revision: 0,
-    cursor: Math.min(metadata?.cursor ?? 0, file.text.length),
-    bookmarks: normalizeBookmarkLines(file.text, metadata?.bookmarks ?? []),
-  };
-}
-
-function activeDocForState(state: EditorState): Doc | null {
-  const activeId = state.activeDocByView[state.activeView];
-  return state.docs.find((doc) => doc.id === activeId) ?? null;
-}
-
-function isPreviewable(path: string): boolean {
-  const normalized = path.split("\\").join("/").toLowerCase();
-  return normalized.endsWith(".md") || normalized.endsWith(".markdown") || normalized.endsWith(".mmd");
-}
-
-function fileNameForPath(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
-
-function relativeWorkspacePath(path: string, workspaceRoot: string): string | null {
-  const normalize = (value: string) => {
-    const slashValue = value.replace(/\\/gu, "/");
-    const prefix = slashValue.startsWith("//") ? "//" : "";
-    const normalized = `${prefix}${slashValue.slice(prefix.length).replace(/\/{2,}/gu, "/")}`;
-    if (normalized === "/" || /^[A-Za-z]:\/$/u.test(normalized)) return normalized;
-    return normalized.replace(/\/$/u, "");
-  };
-  const normalizedPath = normalize(path);
-  const normalizedRoot = normalize(workspaceRoot);
-  const windowsPath =
-    /^[A-Za-z]:\//u.test(normalizedPath) ||
-    /^[A-Za-z]:\//u.test(normalizedRoot) ||
-    normalizedPath.startsWith("//") ||
-    normalizedRoot.startsWith("//");
-  const candidate = windowsPath ? normalizedPath.toLowerCase() : normalizedPath;
-  const root = windowsPath ? normalizedRoot.toLowerCase() : normalizedRoot;
-  if (candidate === root) return "";
-  const prefix = root === "/" || /^[a-z]:\/$/u.test(root) ? root : `${root}/`;
-  if (!candidate.startsWith(prefix)) return null;
-  return normalizedPath.slice(prefix.length);
-}
-
-function renameFileStatusLabel(status: LspRenameApplyResult["files"][number]["status"]): string {
-  switch (status) {
-    case "applied":
-      return "적용됨";
-    case "rolledBack":
-      return "되돌림";
-    case "failed":
-      return "실패";
-    case "notApplied":
-      return "미적용";
-    case "conflict":
-      return "충돌";
-    case "rollbackFailed":
-      return "되돌리기 실패";
-  }
-}
-
-const SAFE_CODE_PAD_ERRORS = new Set([
-  "파일 이름을 변경할 수 없습니다.",
-  "파일 이름 변경 작업이 중단되었습니다.",
-  "파일을 삭제할 수 없습니다.",
-  "파일 삭제 작업이 중단되었습니다.",
-  "파일 위치를 열 수 없습니다.",
-  "클립보드 처리 중 선택 영역이 변경되어 잘라내기를 취소했습니다.",
-  "클립보드 처리 중 편집 위치가 변경되어 붙여넣기를 취소했습니다.",
-]);
-
-function safeCodePadError(cause: unknown, fallback: string): string {
-  if (cause instanceof WorkspaceOperationError) return cause.message;
-  const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
-  const message = raw.replace(/^Error:\s*/u, "").trim();
-  if (SAFE_CODE_PAD_ERRORS.has(message)) return message;
-
-  const normalized = message.toLowerCase();
-  if (normalized.includes("read-only") || normalized.includes("read only")) {
-    return "읽기 전용 파일이라 저장할 수 없습니다.";
-  }
-  if (normalized.includes("file changed on disk") || normalized.includes("changed during read")) {
-    return "디스크의 파일이 변경되었습니다. 다시 불러온 뒤 시도하세요.";
-  }
-  if (normalized.includes("destination already exists")) {
-    return "같은 이름의 파일이 이미 있습니다.";
-  }
-  if (normalized.includes("not a regular file") || normalized.includes("invalid sibling file name")) {
-    return "일반 파일과 올바른 파일 이름만 사용할 수 있습니다.";
-  }
-  if (normalized.includes("larger than") || normalized.includes("size limit")) {
-    return "파일이 안전 처리 크기 제한을 초과했습니다.";
-  }
-  if (normalized.includes("lossy fallback")) {
-    return "손실 디코딩된 내용은 저장할 수 없습니다. 원본 인코딩으로 다시 여세요.";
-  }
-  if (normalized.includes("decode") || normalized.includes("invalid utf") || normalized.includes("invalid encoding")) {
-    return "선택한 인코딩으로 파일을 읽지 못했습니다.";
-  }
-  if (normalized.includes("encode") || normalized.includes("unrepresentable")) {
-    return "선택한 인코딩으로 저장할 수 없는 문자가 있습니다.";
-  }
-  return fallback;
-}
-
-function snapshotMatches(
-  doc: Doc | undefined,
-  snapshot: Pick<
-    Doc,
-    "revision" | "text" | "mtimeNanos" | "size" | "contentHash" | "dirty" | "encoding" | "lineEnding" | "nativeRevision"
-  >,
-): boolean {
-  return (
-    doc !== undefined &&
-    doc.dirty === snapshot.dirty &&
-    doc.nativeRevision === snapshot.nativeRevision &&
-    doc.revision === snapshot.revision &&
-    doc.text === snapshot.text &&
-    doc.mtimeNanos === snapshot.mtimeNanos &&
-    doc.size === snapshot.size &&
-    doc.contentHash === snapshot.contentHash &&
-    doc.lineEnding === snapshot.lineEnding &&
-    doc.encoding.encodingKind === snapshot.encoding.encodingKind &&
-    doc.encoding.bom === snapshot.encoding.bom
-  );
-}
 
 interface SaveOutcome {
   saved: SavedFile;
@@ -237,13 +93,6 @@ export interface FileOpenRequest {
   line: number | null;
   column?: number | null;
   receivedReference?: string;
-}
-function isWslContext(context: string): boolean {
-  try {
-    return JSON.parse(context)?.target?.kind === "wsl";
-  } catch {
-    return false;
-  }
 }
 export default function App({
   contextKey = "standalone",
@@ -265,7 +114,7 @@ export default function App({
   const [pathInput, setPathInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selectionNotice, setSelectionNotice] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runFile } = useOperation();
   const [watchPending, setWatchPending] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [hydrated, setHydrated] = useState(false);
@@ -305,7 +154,7 @@ export default function App({
     locations: import("./types").LspLocationTarget[];
     rejected: number;
   } | null>(null);
-  const [lspBusy, setLspBusy] = useState(false);
+  const { busy: lspBusy, run: runLsp } = useOperation();
   const [renamePreview, setRenamePreview] = useState<{
     preview: LspRenamePreview;
     revisions: Map<DocId, number>;
@@ -485,19 +334,19 @@ export default function App({
     if (busyRef.current) return undefined;
     const token = ++operationTokenRef.current;
     busyRef.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      return await operation();
-    } catch (cause) {
-      setError(safeCodePadError(cause, "파일 작업을 완료하지 못했습니다."));
-      return undefined;
-    } finally {
-      if (operationTokenRef.current === token) {
-        busyRef.current = false;
-        setBusy(false);
+    return runFile(async () => {
+      setError(null);
+      try {
+        return await operation();
+      } catch (cause) {
+        setError(safeCodePadError(cause, "파일 작업을 완료하지 못했습니다."));
+        return undefined;
+      } finally {
+        if (operationTokenRef.current === token) {
+          busyRef.current = false;
+        }
       }
-    }
+    });
   }
 
   const dispatchAction = (action: EditorAction): EditorState => {
@@ -755,17 +604,17 @@ export default function App({
   const runLspOperation = async <T,>(operation: () => Promise<T>): Promise<T | undefined> => {
     if (lspBusyRef.current) return undefined;
     lspBusyRef.current = true;
-    setLspBusy(true);
-    setError(null);
-    try {
-      return await operation();
-    } catch (cause) {
-      setError(safeCodePadError(cause, "언어 서버 작업을 완료하지 못했습니다."));
-      return undefined;
-    } finally {
-      lspBusyRef.current = false;
-      setLspBusy(false);
-    }
+    return runLsp(async () => {
+      setError(null);
+      try {
+        return await operation();
+      } catch (cause) {
+        setError(safeCodePadError(cause, "언어 서버 작업을 완료하지 못했습니다."));
+        return undefined;
+      } finally {
+        lspBusyRef.current = false;
+      }
+    });
   };
 
   const openLspLocation = async (target: import("./types").LspLocationTarget) => {
@@ -1120,204 +969,43 @@ export default function App({
     }
     dispatchAction({ type: "setLineEnding", docId, lineEnding });
   };
-
-  const handleEncodingConversion = (docId: DocId, encoding: Encoding) => {
-    if (renameApplyBusyRef.current) return;
-    const doc = stateRef.current.docs.find((item) => item.id === docId);
-    if (!doc) return;
-    if (doc.readOnly) {
-      setError("읽기 전용 문서는 저장 형식을 바꿀 수 없습니다.");
-      return;
-    }
-    if (doc.lossy) {
-      setError("손실 디코딩된 문서는 먼저 명시적 인코딩으로 다시 열어야 합니다.");
-      return;
-    }
-    if (doc.encoding.encodingKind === encoding.encodingKind && doc.encoding.bom === encoding.bom) {
-      return;
-    }
-    void runFileOperation(async () => {
-      await validateEncoding(doc.text, encoding);
-      const latest = stateRef.current.docs.find((item) => item.id === docId);
-      if (!latest || !snapshotMatches(latest, doc)) {
-        throw new Error("인코딩 변환 중 문서가 변경되었습니다. 다시 시도하세요.");
-      }
-      dispatchAction({ type: "setEncoding", docId, encoding });
-    });
-  };
-
-  const reopenWithEncoding = async (docId: DocId, encoding: Encoding): Promise<boolean> => {
-    if (renameApplyBusyRef.current) {
-      throw new Error("이름 변경 적용이 끝난 뒤 인코딩을 다시 열 수 있습니다.");
-    }
-    const before = stateRef.current.docs.find((doc) => doc.id === docId);
-    if (!before) return false;
-    const expectedChangeVersion = externalChangeVersionRef.current.get(before.path);
-    const opened = await openFile(before.path, encoding);
-    if (renameApplyBusyRef.current) {
-      throw new Error("이름 변경이 시작되어 인코딩 다시 열기 결과를 반영하지 않았습니다.");
-    }
-    const latest = stateRef.current.docs.find((doc) => doc.id === docId);
-    // Explicit reopen is intentionally transactional. A response arriving
-    // after another edit must not discard that edit or its metadata.
-    if (!latest || !snapshotMatches(latest, before)) {
-      throw new Error("인코딩을 다시 여는 동안 문서가 변경되었습니다. 다시 시도하세요.");
-    }
-    dispatchAction({
-      type: "replaceDoc",
-      doc: {
-        ...docFromOpenedFile(opened),
-        id: latest.id,
-        cursor: latest.cursor,
-        bookmarks: latest.bookmarks.slice(),
-      },
-    });
-    const reloaded = stateRef.current.docs.find((doc) => doc.id === docId);
-    if (reloaded) void lspSync.reload(reloaded);
-    removeExternalChange(before.path, expectedChangeVersion);
-    return true;
-  };
-
-  const requestEncodingReopen = (docId: DocId, encoding: Encoding) => {
-    if (renameApplyBusyRef.current) return;
-    const doc = stateRef.current.docs.find((item) => item.id === docId);
-    if (!doc) return;
-    if (doc.dirty) {
-      setPendingEncodingReopen({ docId, encoding });
-      return;
-    }
-    void runFileOperation(() => reopenWithEncoding(docId, encoding));
-  };
-
-  const confirmEncodingReopen = () => {
-    if (!pendingEncodingReopen) return;
-    const request = pendingEncodingReopen;
-    void runFileOperation(() => reopenWithEncoding(request.docId, request.encoding)).then((opened) => {
-      if (opened !== undefined) setPendingEncodingReopen(null);
-    });
-  };
-
-  const handleOpenFromQuickOpen = (path: string) => {
-    if (!hydrated || renameApplyGuard()) return;
-    setQuickOpen(false);
-    void runFileOperation(async () => {
-      await openPath(path);
-    });
-  };
-
-  const loadWorkspaceSnapshot = async (root: string) => {
-    setWorkspaceLoading(true);
-    try {
-      const listing = await listWorkspaceFiles(root);
-      if (stateRef.current.workspaceFolder !== root) return;
-      setWorkspaceFiles(listing.files);
-      setWorkspaceTruncated(listing.truncated);
-      setWorkspaceIncomplete(listing.incomplete);
-      setWorkspaceListingRoot(root);
-    } finally {
-      setWorkspaceLoading(false);
-    }
-  };
-
-  const refreshCurrentWorkspace = async () => {
-    const root = stateRef.current.workspaceFolder;
-    if (root) await loadWorkspaceSnapshot(root);
-  };
-
-  const renameDocumentFile = (doc: Doc) => {
-    const requested = window.prompt("새 파일 이름", fileNameForPath(doc.path));
-    const newName = requested?.trim();
-    if (!newName || newName === fileNameForPath(doc.path)) return;
-    void runFileOperation(async () => {
-      const renamed = await renameFileAction(
-        {
-          ...(doc.nativeRevision !== undefined ? { nativeRevision: doc.nativeRevision } : {}),
-          path: doc.path,
-          mtimeNanos: doc.mtimeNanos,
-          size: doc.size,
-          contentHash: doc.contentHash,
-        },
-        newName,
-      );
-      const closeOldLsp = lspSync.close(doc.id);
-      const stopOldWatch = unregisterWatch(doc.path);
-      removeExternalChange(doc.path);
-      lspFeatureRequestRef.current += 1;
-      setLspNavigation(null);
-      setLspDiagnostics((current) => {
-        const next = { ...current };
-        delete next[doc.id];
-        return next;
-      });
-      setNavBack((current) =>
-        current.map((entry) => (entry.docId === doc.id ? { ...entry, path: renamed.path } : entry)),
-      );
-      setNavForward((current) =>
-        current.map((entry) => (entry.docId === doc.id ? { ...entry, path: renamed.path } : entry)),
-      );
-      if (!stateRef.current.docs.some((candidate) => candidate.id === doc.id)) {
-        await Promise.all([closeOldLsp, stopOldWatch]);
-        await refreshCurrentWorkspace();
-        return;
-      }
-      dispatchAction({
-        type: "renameDoc",
-        ...(renamed.nativeRevision !== undefined ? { nativeRevision: renamed.nativeRevision } : {}),
-        docId: doc.id,
-        path: renamed.path,
-        mtimeNanos: renamed.mtimeNanos,
-        size: renamed.size,
-        contentHash: renamed.contentHash,
-      });
-      await registerWatch(renamed.path);
-      await Promise.all([closeOldLsp, stopOldWatch]);
-      const latest = stateRef.current.docs.find((candidate) => candidate.id === doc.id);
-      if (latest) await lspSync.open(latest);
-      await refreshCurrentWorkspace();
-    });
-  };
-
-  const deleteDocumentFile = (doc: Doc) => {
-    const confirmed = window.confirm(
-      `${doc.path}\n\n파일을 영구 삭제합니다. 미저장 변경 사항도 복구할 수 없습니다. 계속할까요?`,
-    );
-    if (!confirmed) return;
-    void runFileOperation(async () => {
-      await deleteFileAction({
-        ...(doc.nativeRevision !== undefined ? { nativeRevision: doc.nativeRevision } : {}),
-        path: doc.path,
-        mtimeNanos: doc.mtimeNanos,
-        size: doc.size,
-        contentHash: doc.contentHash,
-      });
-      removeDocument(doc.id);
-      await refreshCurrentWorkspace();
-    });
-  };
-
-  const handleTabContextAction = (view: import("./types").ViewId, docId: DocId, action: TabContextAction) => {
-    if (renameApplyBusyRef.current) return;
-    const current = stateRef.current;
-    const doc = current.docs.find((candidate) => candidate.id === docId);
-    if (!doc) return;
-    const viewDocIds = current.views[view];
-    const index = viewDocIds.indexOf(docId);
-    if (action === "close") {
-      requestCloseDocuments([docId]);
-    } else if (action === "close-others") {
-      requestCloseDocuments(viewDocIds.filter((candidate) => candidate !== docId));
-    } else if (action === "close-right") {
-      requestCloseDocuments(index < 0 ? [] : viewDocIds.slice(index + 1));
-    } else if (action === "copy-path") {
-      void runFileOperation(() => navigator.clipboard.writeText(doc.path));
-    } else if (action === "reveal") {
-      void runFileOperation(() => revealFileAction(doc.path));
-    } else if (action === "rename") {
-      renameDocumentFile(doc);
-    } else if (action === "delete") {
-      deleteDocumentFile(doc);
-    }
-  };
+  const {
+    loadWorkspaceSnapshot,
+    handleTabContextAction,
+    requestEncodingReopen,
+    handleEncodingConversion,
+    confirmEncodingReopen,
+    handleOpenFromQuickOpen,
+  } = useFileActions({
+    renameApplyBusyRef,
+    stateRef,
+    setError,
+    runFileOperation,
+    dispatchAction,
+    externalChangeVersionRef,
+    lspSync,
+    removeExternalChange,
+    setPendingEncodingReopen,
+    pendingEncodingReopen,
+    hydrated,
+    renameApplyGuard,
+    setQuickOpen,
+    openPath,
+    setWorkspaceLoading,
+    setWorkspaceFiles,
+    setWorkspaceTruncated,
+    setWorkspaceIncomplete,
+    setWorkspaceListingRoot,
+    unregisterWatch,
+    lspFeatureRequestRef,
+    setLspNavigation,
+    setLspDiagnostics,
+    setNavBack,
+    setNavForward,
+    registerWatch,
+    removeDocument,
+    requestCloseDocuments,
+  });
 
   // Shared by the toolbar "작업 폴더" button and applink `workspace` targets
   // (§1.4) — both open a folder as the workspace through the same path.
@@ -1860,89 +1548,29 @@ export default function App({
           }}
         />
       )}
-      <header className="app-header">
-        <div className="app-heading">
-          <p className="eyebrow">{isProductHosted() ? "WORKSPACE" : "WORKBENCH"}</p>
-          <h1>{isProductHosted() ? "파일" : "Code Pad"}</h1>
-        </div>
-        <div className="file-toolbar">
-          <input
-            id="path-input"
-            className="path-input"
-            value={pathInput}
-            placeholder="파일 또는 작업 폴더 경로"
-            aria-label="열 파일 경로"
-            disabled={!hydrated}
-            onChange={(event) => setPathInput(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (!isImeComposing(event) && event.key === "Enter") handleOpen();
-            }}
-          />
-          <button type="button" className="toolbar-button" onClick={handleOpen} disabled={busy || !hydrated}>
-            파일 열기
-          </button>
-          {isProductHosted() && (
-            <button
-              type="button"
-              className="toolbar-button"
-              disabled={busy || !hydrated}
-              onClick={() =>
-                void runFileOperation(async () => {
-                  for (const path of await pickFiles()) await openPath(path);
-                })
-              }
-            >
-              파일 선택
-            </button>
-          )}
-          {isProductHosted() && isWslContext(contextKey) && (
-            <button
-              type="button"
-              className="toolbar-button"
-              disabled={busy || !hydrated || renameApplyBusy || recoveryOpen}
-              onClick={() =>
-                void runFileOperation(async () => {
-                  const context = contextRef.current;
-                  reconnectingRef.current = true;
-                  connectionEpochRef.current += 1;
-                  try {
-                    const { reconnectWsl } = await import("./reconnectWsl");
-                    await reconnectWsl({
-                      current: () => stateRef.current.docs,
-                      active: () => contextRef.current === context,
-                      replace: (doc) => dispatchAction({ type: "replaceDoc", doc }),
-                      conflict: enqueueExternalChange,
-                    });
-                  } finally {
-                    reconnectingRef.current = false;
-                  }
-                })
-              }
-            >
-              WSL 다시 연결
-            </button>
-          )}
-          <button type="button" className="toolbar-button" onClick={handleSetWorkspace} disabled={busy || !hydrated}>
-            작업 폴더
-          </button>
-          <button
-            type="button"
-            className="toolbar-button"
-            onClick={handleQuickOpen}
-            disabled={!hydrated || !state.workspaceFolder}
-          >
-            빠른 열기
-          </button>
-          <button
-            type="button"
-            className="toolbar-button"
-            onClick={handleSave}
-            disabled={busy || !hydrated || !activeDoc}
-          >
-            저장
-          </button>
-        </div>
-      </header>
+      <FileToolbar
+        pathInput={pathInput}
+        hydrated={hydrated}
+        setPathInput={setPathInput}
+        handleOpen={handleOpen}
+        busy={busy}
+        runFileOperation={runFileOperation}
+        openPath={openPath}
+        contextKey={contextKey}
+        renameApplyBusy={renameApplyBusy}
+        recoveryOpen={recoveryOpen}
+        contextRef={contextRef}
+        reconnectingRef={reconnectingRef}
+        connectionEpochRef={connectionEpochRef}
+        stateRef={stateRef}
+        dispatchAction={dispatchAction}
+        enqueueExternalChange={enqueueExternalChange}
+        handleSetWorkspace={handleSetWorkspace}
+        handleQuickOpen={handleQuickOpen}
+        state={state}
+        handleSave={handleSave}
+        activeDoc={activeDoc}
+      />
 
       {!hydrated && (
         <p className="hydration-banner" role="status">
@@ -1960,148 +1588,32 @@ export default function App({
         </p>
       )}
 
-      <div className="editor-toolbar" role="toolbar" aria-label="편집기 도구">
-        <button
-          type="button"
-          className={`toolbar-button ${state.split ? "selected" : ""}`}
-          onClick={() => dispatchAction({ type: "toggleSplit" })}
-          aria-pressed={state.split}
-          disabled={!hydrated}
-        >
-          {state.split ? "분할 닫기" : "뷰 분할"}
-        </button>
-        <span className="toolbar-divider" />
-        <button
-          type="button"
-          className="toolbar-button"
-          aria-label="편집기 글꼴 크기 축소"
-          onClick={() => setZoom((value) => Math.max(75, value - 10))}
-          disabled={!hydrated}
-        >
-          A−
-        </button>
-        <output className="zoom-label" aria-label={`편집기 확대 ${zoom}%`} aria-live="polite">
-          {zoom}%
-        </output>
-        <button
-          type="button"
-          className="toolbar-button"
-          aria-label="편집기 글꼴 크기 확대"
-          onClick={() => setZoom((value) => Math.min(200, value + 10))}
-          disabled={!hydrated}
-        >
-          A+
-        </button>
-        <span className="toolbar-divider" />
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => invokeBookmarkCommand("toggle")}
-          disabled={!hydrated || !activeDoc}
-        >
-          북마크
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => invokeBookmarkCommand("previous")}
-          disabled={!hydrated || !activeDoc}
-          aria-label="이전 북마크"
-        >
-          ◀
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => invokeBookmarkCommand("next")}
-          disabled={!hydrated || !activeDoc}
-          aria-label="다음 북마크"
-        >
-          ▶
-        </button>
-        {canPreview && (
-          <button
-            type="button"
-            className={`toolbar-button ${previewOpen ? "selected" : ""}`}
-            onClick={() => setPreviewOpen((open) => !open)}
-            aria-pressed={previewOpen}
-          >
-            프리뷰
-          </button>
-        )}
-        <button
-          type="button"
-          className={`toolbar-button ${lspPanelOpen ? "selected" : ""}`}
-          onClick={() => setLspPanelOpen(true)}
-          disabled={!hydrated}
-        >
-          언어 서버
-        </button>
-        <button
-          type="button"
-          className={`toolbar-button ${problemsOpen ? "selected" : ""}`}
-          onClick={() => setProblemsOpen((prev) => !prev)}
-          disabled={!hydrated}
-        >
-          문제
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => goNav("back")}
-          disabled={navBack.length === 0}
-          title="뒤로"
-        >
-          ←
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => goNav("forward")}
-          disabled={navForward.length === 0}
-          title="앞으로"
-        >
-          →
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => handleLspNavigation("definition")}
-          disabled={!hydrated || !lspCapability("definition") || lspBusy}
-        >
-          정의
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => handleLspNavigation("references")}
-          disabled={!hydrated || !lspCapability("references") || lspBusy}
-        >
-          참조
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={handleLspRename}
-          disabled={!hydrated || !lspCapability("rename") || lspBusy}
-        >
-          이름 변경
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={handleLspFormatting}
-          disabled={!hydrated || !lspCapability("formatting") || lspBusy}
-        >
-          포맷
-        </button>
-        {canManuallyRestartLsp && (
-          <button type="button" className="toolbar-button" onClick={handleLspRestart} disabled={lspBusy}>
-            LSP 재시작
-          </button>
-        )}
-        <span className="toolbar-hint">Ctrl/⌘+P 빠른 열기 · Ctrl/⌘+H 바꾸기 · Ctrl/⌘+S 저장</span>
-      </div>
+      <EditorToolbar
+        state={state}
+        dispatchAction={dispatchAction}
+        hydrated={hydrated}
+        setZoom={setZoom}
+        zoom={zoom}
+        invokeBookmarkCommand={invokeBookmarkCommand}
+        activeDoc={activeDoc}
+        canPreview={canPreview}
+        previewOpen={previewOpen}
+        setPreviewOpen={setPreviewOpen}
+        lspPanelOpen={lspPanelOpen}
+        setLspPanelOpen={setLspPanelOpen}
+        problemsOpen={problemsOpen}
+        setProblemsOpen={setProblemsOpen}
+        goNav={goNav}
+        navBack={navBack}
+        navForward={navForward}
+        handleLspNavigation={handleLspNavigation}
+        lspCapability={lspCapability}
+        lspBusy={lspBusy}
+        handleLspRename={handleLspRename}
+        handleLspFormatting={handleLspFormatting}
+        canManuallyRestartLsp={canManuallyRestartLsp}
+        handleLspRestart={handleLspRestart}
+      />
 
       {error && (
         <div className="error-banner" role="alert">
@@ -2307,73 +1819,15 @@ export default function App({
 
       {(renamePreview || renameResult) && (
         <div className="modal-backdrop" role="presentation">
-          <div
-            ref={appDialogRef}
-            className="rename-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="여러 파일 이름 변경 미리보기"
-            onKeyDown={(event) => {
-              if (appDialogRef.current) {
-                trapDialogKeyDown(event, appDialogRef.current, () => {
-                  cancelPendingRename();
-                  if (!renameApplyBusy) setRenameResult(null);
-                });
-              }
-            }}
-          >
-            {renamePreview && (
-              <>
-                <h2>여러 파일 이름 변경 미리보기</h2>
-                <p className="rename-note">
-                  변경 범위와 위치를 확인한 뒤 적용하세요. 모든 파일은 적용 직전에 mtime·크기·SHA-256을 다시 확인하며,
-                  하나라도 실패하면 이미 바뀐 파일을 백업으로 되돌립니다.
-                </p>
-                <ChangeSetPreview
-                  items={renamePreview.preview.files.map(
-                    (file): ChangeSetItem => ({
-                      path: file.path,
-                      before: file.before,
-                      after: file.after,
-                      meta: file.ranges
-                        .map(
-                          ({ range }) =>
-                            `${range.start.line + 1}:${range.start.character + 1}–${range.end.line + 1}:${range.end.character + 1}`,
-                        )
-                        .join(", "),
-                    }),
-                  )}
-                  title="LSP 이름 변경"
-                  approveLabel="전체 적용"
-                  selectable={false}
-                  disabled={renameApplyBusy}
-                  cancelDisabled={false}
-                  onApprove={() => applyPendingRename()}
-                  onCancel={() => cancelPendingRename()}
-                />
-              </>
-            )}
-            {renameResult && (
-              <>
-                <h2>{renameResult.success ? "이름 변경 완료" : "이름 변경 결과"}</h2>
-                <p className="rename-note">{renameResult.error ?? "변경된 파일별 결과를 확인하세요."}</p>
-                <ul className="rename-results">
-                  {renameResult.files.map((file) => (
-                    <li key={file.path} className={`rename-result ${file.status}`}>
-                      <code>{file.path}</code>
-                      <span>{renameFileStatusLabel(file.status)}</span>
-                      {file.error && <small>{file.error}</small>}
-                    </li>
-                  ))}
-                </ul>
-                <div className="confirm-dialog-actions">
-                  <button type="button" className="toolbar-button selected" onClick={() => setRenameResult(null)}>
-                    닫기
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <RenameReviewDialog
+            appDialogRef={appDialogRef}
+            cancelPendingRename={cancelPendingRename}
+            renameApplyBusy={renameApplyBusy}
+            setRenameResult={setRenameResult}
+            renamePreview={renamePreview}
+            applyPendingRename={applyPendingRename}
+            renameResult={renameResult}
+          />
         </div>
       )}
 
