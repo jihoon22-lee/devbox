@@ -243,7 +243,7 @@ export default function App({
   );
 
   // 비정상 종료 후 미저장 버퍼 복구 확인 (§12.1)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contextKey changes the native recovery namespace; each new context must reload even though loadRecovery reads the namespace internally.
   useEffect(() => {
     let active = true;
     setRecoveryChecked(false);
@@ -1119,7 +1119,7 @@ export default function App({
   // Restore only metadata from session.json. Every buffer is read fresh from
   // disk; missing files are skipped individually. The UI remains gated until
   // all restore reads and watcher registrations have settled.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Session hydration owns contextKey lifetime. Render-created watch/dispatch wrappers read current refs; rerunning for their identities would restore disk buffers over active edits.
   useEffect(() => {
     if (stateRef.current.docs.some((doc) => doc.dirty)) {
       setError("프로젝트가 변경되어도 미저장 내용은 보존됩니다. 먼저 현재 편집을 마쳐 주세요.");
@@ -1227,7 +1227,7 @@ export default function App({
 
   // Product navigation waits for session restore and active file operations.
   // Repeated renders consume one request; a later explicit click gets a new ID.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: busy and renameApplyBusy transitions retry a deferred open request. Render-created file actions read current refs; their identities must not trigger duplicate opens.
   useEffect(() => {
     if (
       !openRequest ||
@@ -1249,7 +1249,7 @@ export default function App({
 
   // Native watcher events are authoritative only for disk metadata. A clean
   // document reloads automatically; a dirty document gets an explicit choice.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Watcher registration owns hydrated lifetime. Dispatch, queued-change and LSP wrappers use current refs; rebinding on each render could lose native change events.
   useEffect(() => {
     if (!hydrated) return;
     let disposed = false;
@@ -1348,7 +1348,7 @@ export default function App({
   // the two paths behave identically. Gated on hydrated — restoreSession
   // replaces the whole docs array, so acting earlier risks the applink open
   // being clobbered by session restore landing after it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Applink subscription owns hydrated lifetime. File operation wrappers read refs; rebinding on every render could consume the pending open more than once.
   useEffect(() => {
     if (!hydrated) return;
     let disposed = false;
@@ -1407,7 +1407,7 @@ export default function App({
 
   // Preview requests are tied to the document revision and discarded if a
   // newer edit arrives before the native render returns.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Preview is keyed by document id/revision/text and workspace. Cursor or watcher metadata changes also replace activeDoc but must not restart native rendering.
   useEffect(() => {
     if (!previewOpen || !activeDoc || !state.workspaceFolder || !isPreviewable(activeDoc.path)) {
       setPreview(null);

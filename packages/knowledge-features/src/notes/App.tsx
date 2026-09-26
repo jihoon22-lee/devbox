@@ -334,14 +334,14 @@ export default function App({
     writeAutosavePreference(autosaveEnabled);
   }, [autosaveEnabled]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: editorDocument identifies the metadata subscription lifetime; replacing it must restart observation even when request identity is stable.
   useEffect(() => {
     metadataRefresh.start();
     void loadMeta();
     return () => metadataRefresh.stop();
   }, [loadMeta, metadataRefresh, editorDocument]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: metadataRevision invalidates link targets on disk even when content and selected path are unchanged.
   useEffect(() => {
     let disposed = false;
     if (!isMarkdown(selected)) {
@@ -367,7 +367,7 @@ export default function App({
     };
   }, [content, metadataRevision, selected]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: metadataRevision invalidates backlinks after another note changes without changing the selected path.
   useEffect(() => {
     let disposed = false;
     if (!isMarkdown(selected)) {
@@ -523,7 +523,7 @@ export default function App({
     return () => window.clearTimeout(timer);
   }, [quickCaptureNotice]);
 
-  const confirmDiscard = () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?");
+  const confirmDiscard = useCallback(() => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"), []);
   const openFile = async (path: string, fragment?: string) => {
     if (recoveryBusyRef.current) return;
     setError(null);
@@ -608,7 +608,6 @@ export default function App({
     }
   }, [draftPreview]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   const commitDraftPreview = useCallback(async () => {
     const preview = draftPreview;
     if (!preview || draftBusyRef.current) return;
@@ -657,7 +656,7 @@ export default function App({
       draftBusyRef.current = false;
       if (draftMountedRef.current) setDraftBusy(false);
     }
-  }, [draftPreview, loadMeta, editorDocument]);
+  }, [draftPreview, loadMeta, editorDocument, confirmDiscard]);
 
   const openDraftPreview = useCallback(
     async (id: string, kind: KnowledgeDraftPreview["kind"]) => {

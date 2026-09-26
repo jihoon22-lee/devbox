@@ -425,7 +425,7 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: editing.id invalidates pending runtime suggestions when the editor changes; removing it allows results from the previous profile.
   useEffect(() => {
     runtimeRequest.current += 1;
     setRuntimeSuggestions(null);
@@ -437,7 +437,7 @@ export default function App() {
     };
   }, [editing?.id]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: editing.id invalidates pending environment suggestions when the editor changes; removing it allows results from the previous profile.
   useEffect(() => {
     environmentRequest.current += 1;
     setEnvironmentLoading(false);
@@ -584,7 +584,7 @@ export default function App() {
     };
   }, [profilesLoaded]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: profilesRevision invalidates native health after profile edits even when selectedId is unchanged.
   useEffect(() => {
     const request = ++healthRequest.current;
     const previousProfileId = healthProfileId.current;
@@ -606,7 +606,7 @@ export default function App() {
       });
   }, [profilesRevision, selectedId]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: profilesRevision invalidates dependency health after profile edits even when selectedId is unchanged.
   useEffect(() => {
     const request = ++dependencyRequest.current;
     if (!selectedId) {

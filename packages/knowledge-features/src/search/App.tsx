@@ -378,7 +378,7 @@ export default function App({
     };
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: queryRevision retries the same query and projectRevision invalidates native sources; both must restart the search even when query text is unchanged.
   useEffect(() => {
     const current = ++seq.current;
     const q = query.trim();
@@ -633,7 +633,7 @@ export default function App({
   // Result replacement invalidates the exact menu target. Run this before
   // paint: a passive effect could otherwise close a keyboard menu that the
   // user opened on the freshly rendered row in the same frame.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeList replacement invalidates the exact context-menu target; removing this trigger can leave a menu bound to a stale result.
   useLayoutEffect(() => {
     contextMenu.close();
     setContextResult(null);

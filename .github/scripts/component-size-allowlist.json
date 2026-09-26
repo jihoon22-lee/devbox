@@ -1,9 +1,9 @@
 {
-  "packages/api-studio-features/src/requests/App.tsx": 1832,
+  "packages/api-studio-features/src/requests/App.tsx": 1837,
   "packages/api-studio-features/src/requests/ProtocolLab.tsx": 1405,
   "packages/api-studio-features/src/webhooks/App.tsx": 1606,
   "packages/control-center-features/src/manager/App.tsx": 1485,
-  "packages/knowledge-features/src/notes/App.tsx": 1484,
+  "packages/knowledge-features/src/notes/App.tsx": 1483,
   "packages/knowledge-features/src/search/App.tsx": 1365,
   "packages/workspace-features/src/files/App.tsx": 1857,
   "packages/workspace-features/src/logs/App.tsx": 1868,
@@ -11,5 +11,5 @@
   "packages/workspace-features/src/runtime/App.tsx": 1292,
   "packages/workspace-features/src/tasks/App.tsx": 1662,
   "packages/workspace-features/src/tasks/components/RunHistory.tsx": 1093,
-  "packages/workspace-features/src/terminal/App.tsx": 1613
+  "packages/workspace-features/src/terminal/App.tsx": 1610
 }

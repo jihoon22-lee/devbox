@@ -587,7 +587,7 @@ export default function App({
     }
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: projectRevision is a native data invalidation signal; removing it would retain results from the previous project snapshot.
   const load = useCallback(async () => {
     const request = loadRequestRef.current + 1;
     loadRequestRef.current = request;

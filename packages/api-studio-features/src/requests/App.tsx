@@ -542,8 +542,15 @@ export default function App({
     }
   };
 
-  const environmentVariables = envStore.environments.flatMap((environment) => environment.variables);
-  const sanitizeForPersistence = (serialized: string) => sanitizePersistedJson(serialized, environmentVariables);
+  const initialEnvironments = useRef(envStore.environments);
+  const sanitizeForPersistence = useCallback(
+    (serialized: string) =>
+      sanitizePersistedJson(
+        serialized,
+        envStore.environments.flatMap((environment) => environment.variables),
+      ),
+    [envStore.environments],
+  );
 
   const persistCollections = async (
     store: ReturnType<typeof emptyCollectionStore>,
@@ -830,10 +837,9 @@ export default function App({
     }
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     const historyMigration = migrateHistoryStorage();
-    const initialVariables = envStore.environments.flatMap((environment) => environment.variables);
+    const initialVariables = initialEnvironments.current.flatMap((environment) => environment.variables);
     let historyTask: Promise<void>;
     if (historyMigration.failed) {
       setPersistenceWarning("이전 기록 삭제를 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
@@ -918,7 +924,6 @@ export default function App({
       if (isCurrent()) setHistory(safe.history);
       return safe;
     },
-    // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
     [history, sanitizeForPersistence],
   );
 

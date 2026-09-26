@@ -285,7 +285,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     }
   }, [contextRun?.id, runContextMenu.close, runs]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Filter values invalidate refresh identity to trigger an immediate read; queryRef supplies the latest values inside the single-flight loop.
   const refresh = useCallback(async () => {
     if (!mountedRef.current || logLensBusyRef.current) return;
     const existing = refreshInFlight.current;
@@ -603,7 +603,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     else if (id === "open-log-lens") void handleOpenInLogLens(run);
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedRunId and stream identify the native log cursor; both must reset bytes and cursor even though the reset body only writes state.
   useEffect(() => {
     logCursor.current = null;
     setLogBytes(new Uint8Array());
@@ -614,7 +614,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
   // A result is tied to the selected run and exact search controls. Clear it
   // as soon as any of those controls changes so an old async response cannot
   // be mistaken for the new query.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Search controls identify result ownership; changing any control must discard stale matches and invalidate in-flight generations.
   useEffect(() => {
     searchGeneration.current += 1;
     setSearchResponse(null);
@@ -680,7 +680,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
         activeSearchMatch.lineNumber > logLines.length),
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logLines replacement means the target DOM line may now exist; scrolling must retry even when the match identity is unchanged.
   useEffect(() => {
     if (!visible || !activeSearchMatch || activeSearchMatch.stream !== stream) return;
     const line = logLineRefs.current.get(activeSearchMatch.lineNumber);

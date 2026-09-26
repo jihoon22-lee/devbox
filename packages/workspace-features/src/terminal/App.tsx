@@ -466,12 +466,9 @@ export default function App() {
     };
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     void refreshDashboard().catch(() => undefined);
-    // The callback is intentionally stable: its single-flight state lives in refs and must not
-    // be retriggered every time a new successful snapshot is committed.
-  }, []);
+  }, [refreshDashboard]);
 
   useEffect(() => {
     const entry = dashboardSnapshot?.distros.find((distro) => distro.name === selected);
@@ -1330,7 +1327,7 @@ export default function App() {
     if (!broadcastReady) setBroadcastOn(false);
   }, [broadcastReady]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Only active tab/pane identities invalidate broadcast targets. broadcastTargetIds changes in this effect, so depending on its new Set would cause a render loop.
   useEffect(() => {
     const allowed = new Set(activePaneIds);
     const next = new Set([...broadcastTargetIds].filter((id) => allowed.has(id)));
