@@ -51,12 +51,15 @@ pub const LOG_LENS_TARGET_UNAVAILABLE_ERROR: &str =
     "Log Lens를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
 
 pub struct ServerState {
+    #[cfg(test)]
+    listener_waits: AtomicU64,
     /// Serializes listener lifecycle transitions. Without this guard two IPC
     /// calls could both observe a stopped server and race to bind, or a new
     /// listener could start while the old accept thread still owns its socket.
     pub lifecycle_lock: Mutex<()>,
     pub running: Mutex<Option<Arc<AtomicBool>>>,
     server_thread: Mutex<Option<JoinHandle<()>>>,
+    shutdown: Mutex<Option<Arc<tokio::sync::Notify>>>,
     /// Cloned socket handles let stop_server interrupt a worker blocked in a
     /// bounded header/body read or response write. The map contains only
     /// active connections and is capped before any worker is spawned.
@@ -88,9 +91,12 @@ pub struct ServerState {
 
 pub fn server_state() -> Arc<ServerState> {
     Arc::new(ServerState {
+        #[cfg(test)]
+        listener_waits: AtomicU64::new(0),
         lifecycle_lock: Mutex::new(()),
         running: Mutex::new(None),
         server_thread: Mutex::new(None),
+        shutdown: Mutex::new(None),
         active_connections: Mutex::new(HashMap::new()),
         next_connection_id: AtomicU64::new(1),
         history: Mutex::new(History::default()),
@@ -230,12 +236,15 @@ pub(crate) fn start_server_inner(
     listener
         .set_nonblocking(true)
         .map_err(|_| BIND_ERROR.to_string())?;
+    let (runtime, listener) = prepare_listener(listener)?;
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    *state.shutdown.lock().map_err(|_| BIND_ERROR.to_string())? = Some(shutdown.clone());
     let running = Arc::new(AtomicBool::new(true));
     let state_arc = Arc::clone(state);
     let listener_running = Arc::clone(&running);
     let thread = thread::Builder::new()
         .name("webhook-lab-listener".to_string())
-        .spawn(move || run_listener(listener, state_arc, listener_running))
+        .spawn(move || run_listener(listener, runtime, state_arc, listener_running, shutdown))
         .map_err(|_| BIND_ERROR.to_string())?;
     state.replay_cancel.store(false, Ordering::Release);
     *state.running.lock().map_err(|_| BIND_ERROR.to_string())? = Some(running);
@@ -273,6 +282,14 @@ pub(crate) fn stop_server_inner(state: &Arc<ServerState>) -> Result<ServerStatus
     {
         running.store(false, Ordering::Release);
     }
+    if let Some(shutdown) = state
+        .shutdown
+        .lock()
+        .map_err(|_| BIND_ERROR.to_string())?
+        .take()
+    {
+        shutdown.notify_one();
+    }
     // Closing cloned handles wakes workers blocked in header/body reads or a
     // slow response write. The listener thread joins its bounded worker set
     // before this command returns.
@@ -283,8 +300,8 @@ pub(crate) fn stop_server_inner(state: &Arc<ServerState>) -> Result<ServerStatus
         .map_err(|_| BIND_ERROR.to_string())?
         .take()
     {
-        // The accept loop checks the flag at most every 50ms. Joining here
-        // makes stop/start deterministic and guarantees the old socket is
+        // Notify wakes the idle accept immediately. Joining here makes
+        // stop/start deterministic and guarantees the old socket is
         // dropped before a later start attempts to reuse its port.
         let _ = thread.join();
     }
@@ -549,61 +566,93 @@ fn reap_workers(finished: &mpsc::Receiver<u64>, workers: &mut HashMap<u64, JoinH
     }
 }
 
-fn run_listener(listener: TcpListener, state: Arc<ServerState>, running: Arc<AtomicBool>) {
+fn prepare_listener(
+    listener: TcpListener,
+) -> Result<(tokio::runtime::Runtime, tokio::net::TcpListener), String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .map_err(|_| BIND_ERROR.to_string())?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|_| BIND_ERROR.to_string())?;
+    let registered = {
+        let _entered = runtime.enter();
+        tokio::net::TcpListener::from_std(listener).map_err(|_| BIND_ERROR.to_string())?
+    };
+    Ok((runtime, registered))
+}
+
+fn run_listener(
+    listener: tokio::net::TcpListener,
+    runtime: tokio::runtime::Runtime,
+    state: Arc<ServerState>,
+    running: Arc<AtomicBool>,
+    shutdown: Arc<tokio::sync::Notify>,
+) {
     let (finished_sender, finished_receiver) = mpsc::channel::<u64>();
     let mut workers = HashMap::new();
 
-    while running.load(Ordering::Acquire) {
-        reap_workers(&finished_receiver, &mut workers);
-        match listener.accept() {
-            Ok((stream, _peer)) => {
-                if !running.load(Ordering::Acquire) {
-                    let _ = stream.shutdown(Shutdown::Both);
+    runtime.block_on(async {
+        while running.load(Ordering::Acquire) {
+            #[cfg(test)]
+            state.listener_waits.fetch_add(1, Ordering::Relaxed);
+            reap_workers(&finished_receiver, &mut workers);
+            let accepted = tokio::select! {
+                biased;
+                _ = shutdown.notified() => break,
+                accepted = listener.accept() => accepted,
+            };
+            match accepted {
+                Ok((stream, _peer)) => {
+                    let Ok(stream) = stream.into_std() else {
+                        continue;
+                    };
+                    if !running.load(Ordering::Acquire) {
+                        let _ = stream.shutdown(Shutdown::Both);
+                        break;
+                    }
+                    if configure_connection(&stream).is_err() {
+                        let _ = stream.shutdown(Shutdown::Both);
+                        continue;
+                    }
+                    let Some(id) = register_connection(&state, &stream) else {
+                        let mut stream = stream;
+                        // The listener thread must not wait the normal 5-second
+                        // response budget for an over-cap client that refuses to
+                        // read its fixed 503. Active workers remain bounded and
+                        // ordinary accepts stay responsive under saturation.
+                        let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
+                        let _ = http::write_response(&mut stream, 503, &[], "서버가 바쁩니다");
+                        let _ = stream.shutdown(Shutdown::Both);
+                        continue;
+                    };
+                    let worker_state = Arc::clone(&state);
+                    let worker_running = Arc::clone(&running);
+                    let worker_finished = finished_sender.clone();
+                    let worker = thread::Builder::new()
+                        .name("webhook-lab-connection".to_string())
+                        .spawn(move || {
+                            serve_connection(&worker_state, &worker_running, id, stream);
+                            let _ = worker_finished.send(id);
+                        });
+                    match worker {
+                        Ok(worker) => {
+                            workers.insert(id, worker);
+                        }
+                        Err(_) => {
+                            unregister_connection(&state, id);
+                        }
+                    }
+                }
+                Err(_) => {
+                    running.store(false, Ordering::Release);
+                    shutdown_active_connections(&state);
                     break;
                 }
-                if configure_connection(&stream).is_err() {
-                    let _ = stream.shutdown(Shutdown::Both);
-                    continue;
-                }
-                let Some(id) = register_connection(&state, &stream) else {
-                    let mut stream = stream;
-                    // The listener thread must not wait the normal 5-second
-                    // response budget for an over-cap client that refuses to
-                    // read its fixed 503. Active workers remain bounded and
-                    // ordinary accepts stay responsive under saturation.
-                    let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
-                    let _ = http::write_response(&mut stream, 503, &[], "서버가 바쁩니다");
-                    let _ = stream.shutdown(Shutdown::Both);
-                    continue;
-                };
-                let worker_state = Arc::clone(&state);
-                let worker_running = Arc::clone(&running);
-                let worker_finished = finished_sender.clone();
-                let worker = thread::Builder::new()
-                    .name("webhook-lab-connection".to_string())
-                    .spawn(move || {
-                        serve_connection(&worker_state, &worker_running, id, stream);
-                        let _ = worker_finished.send(id);
-                    });
-                match worker {
-                    Ok(worker) => {
-                        workers.insert(id, worker);
-                    }
-                    Err(_) => {
-                        unregister_connection(&state, id);
-                    }
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(10));
-            }
-            Err(_) => {
-                running.store(false, Ordering::Release);
-                shutdown_active_connections(&state);
-                break;
             }
         }
-    }
+    });
 
     // If the accept loop exits unexpectedly, cancel replay before releasing
     // the listener socket. Holding replay_lock until this function returns
@@ -1282,12 +1331,22 @@ mod tests {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = listener.local_addr().unwrap();
+        let (runtime, listener) = prepare_listener(listener).unwrap();
         let state = server_state();
+        let shutdown = Arc::new(tokio::sync::Notify::new());
+        *state.shutdown.lock().unwrap() = Some(shutdown.clone());
         let running = Arc::new(AtomicBool::new(true));
         let listener_state = Arc::clone(&state);
         let listener_running = Arc::clone(&running);
-        let thread =
-            thread::spawn(move || run_listener(listener, listener_state, listener_running));
+        let thread = thread::spawn(move || {
+            run_listener(
+                listener,
+                runtime,
+                listener_state,
+                listener_running,
+                shutdown,
+            )
+        });
         (state, running, address, thread)
     }
 
@@ -1297,6 +1356,7 @@ mod tests {
         thread: JoinHandle<()>,
     ) {
         running.store(false, Ordering::Release);
+        state.shutdown.lock().unwrap().take().unwrap().notify_one();
         shutdown_active_connections(state);
         thread.join().unwrap();
     }
@@ -1439,6 +1499,24 @@ mod tests {
         assert!(!response.contains("must not be sent"));
 
         stop_test_listener(&state, &running, thread);
+    }
+
+    #[test]
+    fn idle_listener_waits_without_polling_and_stops_promptly() {
+        let (state, running, address, thread) = spawn_test_listener();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while state.listener_waits.load(Ordering::Relaxed) == 0 && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        let before = state.listener_waits.load(Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(50));
+        let after = state.listener_waits.load(Ordering::Relaxed);
+        let started = Instant::now();
+        stop_test_listener(&state, &running, thread);
+        assert!(started.elapsed() < Duration::from_millis(200));
+        assert!(TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err());
+        assert_ne!(before, 0);
+        assert_eq!(after, before, "idle listener must not poll accept");
     }
 
     #[test]

@@ -21,6 +21,7 @@ default = []
 
 
 [dependencies]
+tokio = { workspace = true }
 product-ipc = { workspace = true }
 ts-rs = { workspace = true }
 webhook-core = { path = "../webhook-core" }
