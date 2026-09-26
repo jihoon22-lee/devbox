@@ -10,7 +10,6 @@ import { parseStore as parseEnvironments, emptyStore as emptyEnvironments } from
 import { parseStore as parseCollections, sanitizeStore as sanitizeCollections } from "../requests/lib/collections";
 import { parseHistoryStore, sanitizeHistoryStore } from "../requests/lib/persistence";
 import { parseGrpcHistory } from "../requests/lib/grpc";
-import { parseWorkflowDocument } from "../transforms/workflows/workflowStore";
 import { sanitizePersistedJson } from "../requests/api";
 
 type Result = { migrated: DocumentKind[]; failed: DocumentKind[] };
@@ -42,7 +41,10 @@ export function initializeStudioDocuments(
       if (!parsed) throw storageError("store_document_invalid");
       return JSON.stringify(parsed);
     }
-    if (kind === "workflows") return JSON.stringify(parseWorkflowDocument(body));
+    if (kind === "workflows") {
+      const { parseWorkflowDocument } = await import("../transforms/workflows/workflowStore");
+      return JSON.stringify(parseWorkflowDocument(body));
+    }
     await environment();
     if (kind === "environments") {
       const parsed = parseEnvironments(body);

@@ -1,4 +1,4 @@
-import { initializeStudioDocuments } from "@devbox/api-studio-features/storage/initialize";
+import type { initializeStudioDocuments } from "@devbox/api-studio-features/storage/initialize";
 import { apiCall } from "@devbox/api-studio-features/calls";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
@@ -95,7 +95,9 @@ function StorageGate(props: ShellContentProps) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true;
-    initial.current ??= initializeStudioDocuments();
+    initial.current ??= import("@devbox/api-studio-features/storage/initialize").then((module) =>
+      module.initializeStudioDocuments(),
+    );
     void initial.current
       .then((result) => {
         if (active) {

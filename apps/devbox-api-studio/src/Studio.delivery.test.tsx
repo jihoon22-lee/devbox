@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
@@ -71,6 +71,7 @@ it("waits for migration before mounting writers and shows partial failure guidan
   render(<Studio />);
   expect(screen.getByText("저장된 데이터를 준비하고 있습니다…")).toBeTruthy();
   expect(localStorage.getItem("delivery-writer")).toBe("preserved");
+  await waitFor(() => expect(mode.initialize).toHaveBeenCalledTimes(1));
   await act(async () => {
     finish({ migrated: [], failed: ["collections"] });
   });
