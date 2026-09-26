@@ -1,5 +1,7 @@
 pub mod identity;
+pub mod remote;
 pub mod routes;
+pub mod runtime;
 pub mod server;
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,17 +38,33 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .capture_agent_image()?;
         std::sync::Arc::new(scope)
     };
-    let builder =
-        tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|_, _, _| {}));
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .plugin(tauri_plugin_notification::init());
     #[cfg(windows)]
     let builder = builder.setup(move |app| {
-        let routes = routes::Routes::new(scope.manifest.generation.clone());
+        let (_, workspace, _) = scope.member("workspace")?;
+        let resources = workspace
+            .parent()
+            .ok_or("component_path_invalid")?
+            .to_owned();
+        let data = dirs::data_local_dir()
+            .ok_or("runtime_owner_unavailable")?
+            .join(format!("com.devbox.v08.workspace.i{suffix}"));
+        let runtime = runtime::Runtime::new(app.handle().clone(), data, resources);
+        let routes =
+            routes::Routes::with_runtime(scope.manifest.generation.clone(), runtime.clone());
         server::start(
             app.handle().clone(),
             scope.clone(),
             identity::pipe_name(&suffix),
             routes,
         )?;
+        // Resume schedules on agent startup even when no Workspace UI is open.
+        // Missing stores/activation leave the owner cold until a later request.
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = runtime.initialize();
+        });
         Ok(())
     });
     let app = builder.build(context)?;

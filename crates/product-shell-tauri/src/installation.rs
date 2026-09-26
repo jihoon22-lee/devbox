@@ -250,6 +250,12 @@ pub fn component_namespace(component: &Path, owner: &str, version: &str) -> Resu
     namespace(&component_owner(component, owner)?, owner, version)
 }
 
+/// Background components may open writers only after the installation commits.
+pub fn component_ready(component: &Path, owner: &str, version: &str) -> Result<bool> {
+    Ok(activation(&component_owner(component, owner)?, version)?
+        .is_some_and(|marker| marker.phase == product_contract::activation::Phase::Committed))
+}
+
 /// Held by every product UI and its dedicated browser/service worker through
 /// shutdown. The updater's exclusive lease prevents a late writer from starting.
 #[must_use = "the writer lease must be retained through product shutdown"]
@@ -333,6 +339,29 @@ impl Drop for WriterGuard {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn background_components_wait_for_committed_activation() {
+        let root = Fixture::new();
+        let owner = root.generation("one");
+        let component = owner
+            .parent()
+            .unwrap()
+            .join("resources/suite/devbox-agent.exe");
+        fs::create_dir_all(component.parent().unwrap()).unwrap();
+        fs::write(&component, b"agent").unwrap();
+        for phase in ["import", "health", "recover", "committed"] {
+            let marker = serde_json::json!({"schemaVersion":1,"installationId":"fixture","generation":"one","operationId":"fixture-operation","revision":1,"phase":phase});
+            fs::write(
+                root.0.join("devbox-activation.json"),
+                serde_json::to_vec(&marker).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                component_ready(&component, "workspace", "0.8.0").unwrap(),
+                phase == "committed"
+            );
+        }
+    }
     #[test]
     fn a_suite_component_shares_its_owner_namespace_and_writer_gate() {
         let root = Fixture::new();

@@ -7,7 +7,7 @@ pub fn from_host(app: &tauri::AppHandle, host: &Host) -> Result<ProtectedStorage
     let catalog: serde_json::Value =
         serde_json::from_str(include_str!("../../../../apps/products.json"))
             .map_err(|_| "invalid_files_store")?;
-    let identifiers = catalog["products"]
+    let mut identifiers = catalog["products"]
         .as_array()
         .ok_or("invalid_files_store")?
         .iter()
@@ -18,6 +18,7 @@ pub fn from_host(app: &tauri::AppHandle, host: &Host) -> Result<ProtectedStorage
                 .ok_or("invalid_files_store")
         })
         .collect::<Result<Vec<_>>>()?;
+    identifiers.push("com.devbox.v08.agent".to_owned());
     let mut protected = ProtectedStorage::new(host.storage_root(), identifiers)?;
     let roaming = app
         .path()

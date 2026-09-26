@@ -1246,15 +1246,25 @@ version = "0.8.1"
 dependencies = [
  "agent-client",
  "agent-protocol",
+ "devbox-logs-engine",
+ "devbox-ports-engine",
+ "devbox-runtime-engine",
+ "dirs",
+ "filesystem",
+ "product-contract",
+ "product-ipc",
  "product-shell-tauri",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "suite-runtime",
  "tauri",
  "tauri-build",
+ "tauri-plugin-notification",
  "tauri-plugin-single-instance",
  "tokio",
  "windows 0.61.3",
+ "workspace-core",
 ]
 
 [[package]]
@@ -8361,12 +8371,14 @@ name = "workspace-core"
 version = "0.1.0"
 dependencies = [
  "devbox-editor-engine",
+ "devbox-logs-engine",
  "devbox-projects-engine",
  "devbox-runtime-engine",
  "devbox-terminal-engine",
  "filesystem",
  "git",
  "product-contract",
+ "product-ipc",
  "serde",
  "serde_json",
  "sha2 0.11.0",

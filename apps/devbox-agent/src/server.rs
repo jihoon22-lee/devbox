@@ -8,6 +8,7 @@ const MAX_REQUESTS: usize = 32;
 
 pub struct Peer {
     product: String,
+    installation_id: String,
     verify: Box<dyn Fn() -> Result<()> + Send + Sync>,
 }
 impl Peer {
@@ -18,6 +19,7 @@ impl Peer {
     fn for_tests(product: &str) -> Self {
         Self {
             product: product.into(),
+            installation_id: "fixture".into(),
             verify: Box::new(|| Ok(())),
         }
     }
@@ -61,6 +63,7 @@ pub async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'stati
         },
     )
     .await?;
+    let session_guard = routes.session(&peer.product, &peer.installation_id, &session)?;
     let mut shutdown = routes.shutdown_receiver();
     let mut pending = HashMap::new();
     let mut tasks = tokio::task::JoinSet::new();
@@ -99,10 +102,11 @@ pub async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'stati
                         let routes = routes.clone();
                         let product = peer.product.clone();
                         let session = session.clone();
+                        let session_guard = session_guard.clone();
                         tasks.spawn(async move {
                             let response = tokio::select! {
                                 _ = cancelled => failure("cancelled"),
-                                result = tokio::time::timeout(Duration::from_secs(29), routes.dispatch(&product, &session, &component, request)) => result.unwrap_or_else(|_| failure("deadline_exceeded")),
+                                result = tokio::time::timeout(Duration::from_secs(29), routes.dispatch(&product, &session, session_guard, &component, request)) => result.unwrap_or_else(|_| failure("deadline_exceeded")),
                             };
                             (id, response)
                         });
@@ -305,8 +309,9 @@ pub fn start(
                 )
                 .await;
                 let peer = match verified {
-                    Ok(Ok(Ok(peer))) => Some(Peer {
+                    Ok(Ok(Ok(peer))) => peer.installation_id().ok().map(|installation_id| Peer {
                         product: peer.product_id().into(),
+                        installation_id,
                         verify: Box::new(move || peer.revalidate()),
                     }),
                     _ => None,
@@ -317,9 +322,10 @@ pub fn start(
         routes.shutdown();
         clients.abort_all();
         while clients.join_next().await.is_some() {}
+        routes.shutdown_owners().await;
         drop(listener);
-        // Later owners drain their workers here, before the process writer lease
-        // may be released by run(). Exit has an explicit code, bypassing UI idle.
+        // All owners have drained before run() may release the writer lease.
+        // Explicit exit bypasses the headless idle-exit prevention.
         app.exit(0);
     });
     Ok(())

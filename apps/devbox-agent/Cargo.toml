@@ -9,6 +9,17 @@ description = "Devbox installed Suite background component"
 tauri-build = { workspace = true }
 
 [dependencies]
+tauri-plugin-notification = { workspace = true }
+workspace-core = { path = "../../crates/workspace-core" }
+product-contract = { path = "../../crates/product-contract" }
+product-ipc = { workspace = true }
+dirs = { workspace = true }
+sha2 = { workspace = true }
+devbox-filesystem = { package = "filesystem", path = "../../crates/filesystem" }
+runtime_engine = { package = "devbox-runtime-engine", path = "../../crates/runtime-engine", default-features = false, features = ["desktop"] }
+ports_engine = { package = "devbox-ports-engine", path = "../../crates/ports-engine", default-features = false, features = ["desktop"] }
+logs_engine = { package = "devbox-logs-engine", path = "../../crates/logs-engine", default-features = false, features = ["desktop"] }
+
 tauri = { workspace = true }
 tauri-plugin-single-instance = "2"
 product-shell-tauri = { path = "../../crates/product-shell-tauri" }

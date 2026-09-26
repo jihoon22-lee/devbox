@@ -5,7 +5,7 @@ mod observations;
 mod reconnect;
 use crate::ipc::results::{OwnedTaskAction, ProcessActionReply};
 use crate::{definitions::Definitions, host::Host};
-use logs_engine::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
+use logs_engine::core::SourceSpec;
 use ports_engine::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
 use product_contract::ProjectContext;
 use serde::Deserialize;
@@ -55,78 +55,12 @@ impl Owners {
             logs_engine::component::initialize(
                 app,
                 &data,
-                Arc::new(RuntimeLogs {
-                    app: app.clone(),
-                    host: host.clone(),
-                    protected: crate::platform::storage_paths::from_host(app, host)?,
-                }),
+                workspace_core::runtime_logs::provider(app, host.clone())?,
             )
             .map_err(|_| "logs_owner_unavailable")
         })
     }
 }
-struct RuntimeLogs {
-    app: tauri::AppHandle,
-    host: Arc<Host>,
-    protected: crate::platform::storage_paths::ProtectedStorage,
-}
-struct OwnedLog {
-    host: Arc<Host>,
-    lease: runtime_engine::component::OwnedRunLog,
-}
-impl RuntimeLogProvider for RuntimeLogs {
-    fn validate_source(&self, source: &SourceSpec) -> std::result::Result<(), CoreError> {
-        if matches!(source, SourceSpec::Run { .. }) {
-            return Err(CoreError::InvalidSource);
-        }
-        if let SourceSpec::LocalFile { path } | SourceSpec::Directory { path, .. } = source {
-            let path = std::path::Path::new(path);
-            self.protected
-                .ensure_user_path(path)
-                .map_err(|_| CoreError::InvalidSource)?;
-            devbox_filesystem::ensure_no_links(path).map_err(|_| CoreError::InvalidSource)?;
-            if let Ok(canonical) = std::fs::canonicalize(path) {
-                self.protected
-                    .ensure_user_path(&canonical)
-                    .map_err(|_| CoreError::InvalidSource)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn resolve(
-        &self,
-        run_id: &str,
-        revision: &str,
-    ) -> std::result::Result<Box<dyn RuntimeLogLease>, CoreError> {
-        self.host
-            .component("runtime")
-            .map_err(|_| CoreError::AdapterUnavailable)?;
-        let lease = runtime_engine::component::log_descriptor(&self.app, run_id)
-            .map_err(|_| CoreError::AdapterUnavailable)?;
-        if lease.revision() != revision {
-            return Err(CoreError::StaleOperation);
-        }
-        Ok(Box::new(OwnedLog {
-            host: self.host.clone(),
-            lease,
-        }))
-    }
-}
-impl RuntimeLogLease for OwnedLog {
-    fn data_root(&self) -> &std::path::Path {
-        self.lease.data_root()
-    }
-    fn revalidate(&self) -> std::result::Result<(), CoreError> {
-        self.host
-            .component("runtime")
-            .map_err(|_| CoreError::StaleOperation)?;
-        self.lease
-            .revalidate()
-            .map_err(|_| CoreError::StaleOperation)
-    }
-}
-
 fn args<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
     if !value.is_object() {
         return Err("invalid_request");
@@ -139,36 +73,8 @@ struct Empty {}
 fn empty(value: Value) -> Result<()> {
     args::<Empty>(value).map(|_| ())
 }
-fn issue(error: String) -> &'static str {
-    // Existing engines also return OS/SQLite diagnostics. Only fixed public
-    // codes can cross this product boundary; no path/SQL/environment is echoed.
-    match error.as_str() {
-        "runtime_control_in_progress" => "runtime_control_in_progress",
-        "runtime_control_recovery_required" => "runtime_control_recovery_required",
-        "runtime_control_failed" => "runtime_control_failed",
-        "runtime_control_unavailable" => "runtime_control_unavailable",
-        "runtime_control_owner_unsettled" => "runtime_control_owner_unsettled",
-        "runtime_settings_unavailable" => "runtime_settings_unavailable",
-        "runtime_settings_invalid" => "runtime_settings_invalid",
-        "runtime_settings_conflict" => "runtime_settings_conflict",
-        "runtime_import_busy" => "runtime_import_busy",
-        "runtime_import_destination_conflict" => "runtime_import_destination_conflict",
-        "runtime_import_stale" => "runtime_import_stale",
-        "component_args_invalid" => "invalid_request",
-        "component_storage_changed" => "runtime_store_changed",
-        "runtime_log_changed" => "runtime_log_changed",
-        "runtime_log_unavailable" | "runtime_log_identity_invalid" => "runtime_log_unavailable",
-        "process_action_stale" => "process_action_stale",
-        "process_owner_unsettled" => "process_owner_unsettled",
-        "process_action_invalid" => "invalid_request",
-        "process_observation_unavailable" => "process_observation_unavailable",
-        "workspace-task-source-changed" => "runtime_task_source_changed",
-        "workspace-task-source-untrusted" | "workspace-task-shell-untrusted" => {
-            "runtime_task_review_required"
-        }
-        _ => "runtime_operation_unavailable",
-    }
-}
+use workspace_core::runtime_policy::issue;
+
 fn project_bindings(
     host: &Host,
     definitions: &Mutex<Definitions>,

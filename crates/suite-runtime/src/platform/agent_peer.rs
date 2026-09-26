@@ -24,6 +24,15 @@ impl AgentPeer {
     pub fn product_id(&self) -> &str {
         &self.0.product
     }
+    pub fn installation_id(&self) -> Result<String, &'static str> {
+        use sha2::{Digest, Sha256};
+        let (_, image, _) = self.0.scope().member(self.product_id())?;
+        let image = image.canonicalize().map_err(|_| "peer_image_unavailable")?;
+        Ok(Sha256::digest(image.to_string_lossy().as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect())
+    }
     pub fn revalidate(&self) -> Result<(), &'static str> {
         self.0.revalidate()
     }
