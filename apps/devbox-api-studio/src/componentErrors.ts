@@ -1,9 +1,15 @@
-import { apiMessages, webhookMessages, transformMessages } from "@devbox/api-studio-features/issues/catalog";
+import {
+  apiMessages,
+  webhookMessages,
+  transformMessages,
+  storeMessages,
+} from "@devbox/api-studio-features/issues/catalog";
 import type { Component } from "@devbox/api-studio-features/transport";
 const catalogs: Record<Component, Readonly<Record<string, string>>> = {
   "api-studio.api": apiMessages,
   "api-studio.webhooks": webhookMessages,
   "api-studio.transforms": transformMessages,
+  "api-studio.store": storeMessages,
 };
 /** Only declared native codes can select a message after provenance validation. */
 export function componentFailure(component: Component, value: unknown): Error {

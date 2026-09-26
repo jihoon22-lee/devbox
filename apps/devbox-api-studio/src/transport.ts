@@ -9,12 +9,14 @@ const routeFor: Record<Component, string> = {
   "api-studio.api": "requests",
   "api-studio.webhooks": "webhooks",
   "api-studio.transforms": "transforms",
+  "api-studio.store": "requests",
 };
 
 const commandFor: Record<Component, string> = {
   "api-studio.api": "plugin:api-studio|api",
   "api-studio.webhooks": "plugin:api-studio|webhooks",
   "api-studio.transforms": "plugin:api-studio|transforms",
+  "api-studio.store": "plugin:api-studio|store",
 };
 configureProductTransport(
   async <T>(component: Component, method: string, args: Record<string, unknown>): Promise<T> => {

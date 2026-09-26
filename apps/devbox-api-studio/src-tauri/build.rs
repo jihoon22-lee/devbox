@@ -13,7 +13,7 @@ fn main() {
             )
             .plugin(
                 "api-studio",
-                tauri_build::InlinedPlugin::new().commands(&["api", "webhooks", "transforms"]),
+                tauri_build::InlinedPlugin::new().commands(&["api", "webhooks", "transforms", "store"]),
             ),
     )
     .expect("failed to generate API Studio capabilities");
