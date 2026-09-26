@@ -1,3 +1,4 @@
+import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 import type {
   AuthConfig,
   GraphqlRequest,
@@ -87,7 +88,7 @@ function safeHistoryStatus(value: number | undefined): number | undefined {
 }
 
 /**
- * Convert a localStorage History item into the bounded metadata and sanitized
+ * Convert a document storage History item into the bounded metadata and sanitized
  * request that the renderer is allowed to display or replay.
  */
 export function projectHistoryItem(item: HistoryItem, index = 0): HistoryItem {
@@ -121,38 +122,16 @@ export function emptyHistoryStore(): HistoryStore {
   return { version: HISTORY_VERSION, history: [] };
 }
 
-/**
- * v1 History는 평문 포함 여부를 증명할 수 없으므로 읽거나 변환하지 않는다.
- * 빈 v2 저장소가 read-back 된 뒤에만 raw key를 지우고 marker를 기록한다.
- */
-export function migrateHistoryStorage(storage: Storage = localStorage): StorageMigration<HistoryStore> {
-  const raw = storage.getItem(HISTORY_V1_LS_KEY);
-  const removedLegacyEntries = countLegacyHistoryEntries(raw);
+/** Load current history after the startup migration has finished. */
+export async function migrateHistoryStorage(
+  storage: DocumentStorage = documentStorage(),
+): Promise<StorageMigration<HistoryStore>> {
   try {
-    let store = parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY));
-    if (!store) {
-      store = emptyHistoryStore();
-      storage.setItem(HISTORY_V2_LS_KEY, JSON.stringify(store));
-      if (!parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY))) {
-        throw new Error("v2 history read-back failed");
-      }
-    }
-
-    if (raw !== null) {
-      storage.removeItem(HISTORY_V1_LS_KEY);
-      if (storage.getItem(HISTORY_V1_LS_KEY) !== null) {
-        throw new Error("legacy history deletion failed");
-      }
-    }
-    if (storage.getItem(HISTORY_V1_MARKER_KEY) !== "2") {
-      storage.setItem(HISTORY_V1_MARKER_KEY, "2");
-      if (storage.getItem(HISTORY_V1_MARKER_KEY) !== "2") {
-        throw new Error("history marker write failed");
-      }
-    }
-    return { store, migrated: raw !== null, failed: false, removedLegacyEntries };
+    const document = await documentSession("history", storage).load();
+    const store = document ? parseHistoryStore(document.body) : emptyHistoryStore();
+    if (!store) throw new Error("안전한 History 형식이 아닙니다");
+    return { store, migrated: false, failed: false, removedLegacyEntries: 0 };
   } catch {
-    // raw v1은 어떤 실패에서도 반환하지 않아 UI·검색·재전송과 격리한다.
     return { store: emptyHistoryStore(), migrated: false, failed: true, removedLegacyEntries: 0 };
   }
 }
@@ -160,8 +139,16 @@ export function migrateHistoryStorage(storage: Storage = localStorage): StorageM
 export async function saveHistoryStore(
   store: HistoryStore,
   sanitize: PersistenceSanitizer,
-  storage: Storage = localStorage,
+  storage: DocumentStorage = documentStorage(),
 ): Promise<HistoryStore> {
+  const session = documentSession("history", storage);
+  const expected = (await session.snapshot())?.revision ?? null;
+  const parsed = await sanitizeHistoryStore(store, sanitize);
+  await session.save(JSON.stringify(parsed), expected);
+  return parsed;
+}
+
+export async function sanitizeHistoryStore(store: HistoryStore, sanitize: PersistenceSanitizer): Promise<HistoryStore> {
   const original = JSON.stringify(store);
   const sanitized = await sanitize(original);
   const parsedCandidate = parseHistoryStore(sanitized);
@@ -176,10 +163,7 @@ export async function saveHistoryStore(
         }
       : parsedCandidate;
   if (!parsed) throw new Error("안전한 History 형식이 아닙니다");
-  storage.setItem(HISTORY_V2_LS_KEY, JSON.stringify(parsed));
-  const readBack = parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY));
-  if (!readBack) throw new Error("History 안전 저장을 확인할 수 없습니다");
-  return readBack;
+  return parsed;
 }
 
 export function parseHistoryStore(raw: string | null): HistoryStore | null {
@@ -260,7 +244,7 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
 
 export function normalizePersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {
   // Rebuild the allowlisted wire shape instead of spreading an object parsed from
-  // localStorage. This drops hand-edited/legacy fields before an export or a new save.
+  // document storage. This drops hand-edited/legacy fields before an export or a new save.
   return {
     method: request.method,
     url: request.url,
@@ -540,13 +524,4 @@ function isKeyValue(value: unknown): value is KeyValue {
   if (!value || typeof value !== "object") return false;
   const pair = value as Partial<KeyValue>;
   return typeof pair.key === "string" && typeof pair.value === "string";
-}
-
-function countLegacyHistoryEntries(raw: string | null): number {
-  try {
-    const parsed = JSON.parse(raw ?? "null") as unknown;
-    return Array.isArray(parsed) ? parsed.length : raw === null ? 0 : 1;
-  } catch {
-    return raw === null ? 0 : 1;
-  }
 }

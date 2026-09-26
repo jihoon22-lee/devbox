@@ -1,6 +1,7 @@
+import { previewDocumentKey, seedPreviewDocument } from "../../storage/testDocuments";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WORKFLOW_STORAGE_KEY } from "./workflowStore";
+const WORKFLOW_STORAGE_KEY = previewDocumentKey("workflows");
 import { SmartWorkflowPanel } from "./SmartWorkflowPanel";
 
 vi.mock("../api", () => ({
@@ -11,12 +12,14 @@ const openTool = vi.fn();
 
 beforeEach(() => {
   localStorage.removeItem(WORKFLOW_STORAGE_KEY);
+  localStorage.removeItem(`${WORKFLOW_STORAGE_KEY}.revision`);
   openTool.mockReset();
 });
 
 afterEach(() => {
   cleanup();
   localStorage.removeItem(WORKFLOW_STORAGE_KEY);
+  localStorage.removeItem(`${WORKFLOW_STORAGE_KEY}.revision`);
 });
 
 function input(): HTMLTextAreaElement {
@@ -84,7 +87,7 @@ describe("SmartWorkflowPanel", () => {
 
   it("preserves a corrupt metadata store and disables misleading save actions", async () => {
     const corrupt = '{"schemaVersion":1,"input":"credential-value"}';
-    localStorage.setItem(WORKFLOW_STORAGE_KEY, corrupt);
+    seedPreviewDocument("workflows", corrupt);
     render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
 
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("메타데이터"));

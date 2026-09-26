@@ -1,3 +1,4 @@
+import { storageFailureMessage } from "../../storage/documentStorage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TOOLS } from "../tools";
 import { ToolOutput, ToolTextArea } from "../tools/common";
@@ -120,7 +121,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   const [pipelineError, setPipelineError] = useState<PipelineError | null>(null);
 
   const incomingTextRevision = incomingText?.revision;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
+  // biome-ignore lint/correctness/useExhaustiveDependencies: incomingTextRevision owns the accepted handoff; rerunning for text object identity would replace the user draft on unrelated renders.
   useEffect(() => {
     if (incomingTextRevision === undefined || incomingText === null || incomingText === undefined) return;
     // Accepted handoff text is a new draft.  Keep the user's selected input
@@ -175,8 +176,11 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     metadataRef.current = next;
     setMetadata(next);
     const revision = ++saveRevision.current;
-    void persistence.save(next).catch(() => {
-      if (mounted.current && saveRevision.current === revision) setStorageError(WORKFLOW_STORAGE_ERROR);
+    void persistence.save(next).catch((cause) => {
+      if (mounted.current && saveRevision.current === revision) {
+        setStorageError(storageFailureMessage(cause, WORKFLOW_STORAGE_ERROR));
+        setStorageWritable(false);
+      }
     });
   }, [activeToolId, loaded, persistence, storageWritable]);
 
@@ -193,8 +197,11 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     setMetadata(safe);
     setStorageError(null);
     const revision = ++saveRevision.current;
-    void persistence.save(safe).catch(() => {
-      if (mounted.current && saveRevision.current === revision) setStorageError(WORKFLOW_STORAGE_ERROR);
+    void persistence.save(safe).catch((cause) => {
+      if (mounted.current && saveRevision.current === revision) {
+        setStorageError(storageFailureMessage(cause, WORKFLOW_STORAGE_ERROR));
+        setStorageWritable(false);
+      }
     });
   };
 

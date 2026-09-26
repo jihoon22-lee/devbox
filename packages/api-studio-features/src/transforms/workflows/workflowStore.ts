@@ -1,6 +1,5 @@
-import { transformCall } from "../../calls";
+import { createDocumentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 
-import { isTauri } from "../lib/isTauri";
 import {
   PIPELINE_LIMITS,
   isPipelineValueType,
@@ -281,58 +280,32 @@ export interface WorkflowPersistence {
 }
 
 export interface WorkflowPersistenceOptions extends WorkflowMetadataValidationOptions {
-  readonly storage?: Storage;
+  readonly storage?: DocumentStorage;
 }
 
 /** Native app-local persistence with a safe browser-preview fallback. */
-export function createWorkflowPersistence(options: WorkflowPersistenceOptions = {}): WorkflowPersistence {
-  const storage = options.storage;
-  let saveChain = Promise.resolve();
-  let writeBlocked = false;
+export function parseWorkflowDocument(body: string): WorkflowMetadata {
+  if (new TextEncoder().encode(body).byteLength > WORKFLOW_STORAGE_LIMITS.maxSerializedBytes) throw fixedStorageError();
+  const parsed: unknown = JSON.parse(body);
+  if (!hasStorageShape(parsed)) throw fixedStorageError();
+  return sanitizeWorkflowMetadata(parsed);
+}
 
+export function createWorkflowPersistence(options: WorkflowPersistenceOptions = {}): WorkflowPersistence {
+  const session = createDocumentSession("workflows", options.storage ?? documentStorage());
+  let saveChain = Promise.resolve();
+  let writeBlocked = true;
   const load = async (): Promise<WorkflowMetadata> => {
-    if (isTauri()) {
-      try {
-        const raw = await transformCall("load_workflow_metadata", {});
-        if (isRecord(raw) && "metadata" in raw && typeof raw.writable === "boolean") {
-          writeBlocked = !raw.writable;
-          if (!raw.writable || !hasStorageShape(raw.metadata)) throw fixedStorageError();
-          return sanitizeWorkflowMetadata(raw.metadata, options);
-        }
-        // Keep browser-preview mocks and older development builds readable.
-        writeBlocked = false;
-        return sanitizeWorkflowMetadata(raw, options);
-      } catch {
-        writeBlocked = true;
-        throw fixedStorageError();
-      }
-    }
     try {
-      const source = storage ?? (typeof window !== "undefined" ? window.localStorage : undefined);
-      if (!source) {
+      const document = await session.load();
+      if (!document) {
         writeBlocked = false;
         return emptyMetadata();
       }
-      const raw = source.getItem(WORKFLOW_STORAGE_KEY);
-      if (raw === null) {
-        writeBlocked = false;
-        return emptyMetadata();
-      }
-      if (new TextEncoder().encode(raw).byteLength > WORKFLOW_STORAGE_LIMITS.maxSerializedBytes) {
-        writeBlocked = true;
+      if (new TextEncoder().encode(document.body).byteLength > WORKFLOW_STORAGE_LIMITS.maxSerializedBytes)
         throw fixedStorageError();
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw) as unknown;
-      } catch {
-        writeBlocked = true;
-        throw fixedStorageError();
-      }
-      if (!hasStorageShape(parsed)) {
-        writeBlocked = true;
-        throw fixedStorageError();
-      }
+      const parsed: unknown = JSON.parse(document.body);
+      if (!hasStorageShape(parsed)) throw fixedStorageError();
       writeBlocked = false;
       return sanitizeWorkflowMetadata(parsed, options);
     } catch {
@@ -340,44 +313,18 @@ export function createWorkflowPersistence(options: WorkflowPersistenceOptions = 
       throw fixedStorageError();
     }
   };
-
   const save = (metadata: WorkflowMetadata): Promise<void> => {
     if (writeBlocked) return Promise.reject(fixedStorageError());
-    const serialized = (() => {
-      try {
-        return serializeWorkflowMetadata(metadata, options);
-      } catch {
-        throw fixedStorageError();
-      }
-    })();
-
+    const serialized = serializeWorkflowMetadata(metadata, options);
     const action = saveChain.then(async () => {
       if (writeBlocked) throw fixedStorageError();
-      if (isTauri()) {
-        try {
-          await transformCall("save_workflow_metadata", {
-            // Send the already-bounded JSON string so the native command can
-            // reject an oversized IPC payload before deserializing vectors.
-            serializedMetadata: serialized,
-          });
-          return;
-        } catch {
-          throw fixedStorageError();
-        }
-      }
-      try {
-        const target = storage ?? (typeof window !== "undefined" ? window.localStorage : undefined);
-        if (!target) return;
-        target.setItem(WORKFLOW_STORAGE_KEY, serialized);
-      } catch {
-        throw fixedStorageError();
-      }
+      await session.save(serialized);
     });
-    // A failed save must not poison later explicit user saves.
-    saveChain = action.catch(() => undefined);
+    saveChain = action.catch(() => {
+      writeBlocked = true;
+    });
     return action;
   };
-
   return { load, save };
 }
 

@@ -25,7 +25,7 @@ export function historyVisibleMetadata(item: HistoryItem): HistoryVisibleMetadat
   return projectVisibleMetadata(item);
 }
 
-/** Display-only label; localStorage edits must not turn a History row into a raw URL echo. */
+/** Display-only label; Stored document edits must not turn a History row into a raw URL echo. */
 export function historyDisplayLabel(item: HistoryItem): string {
   const metadata = historyVisibleMetadata(item);
   return metadata.name || metadata.url || "(no url)";

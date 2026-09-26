@@ -10,7 +10,8 @@
     "./transport": "./src/transport.ts",
     "./calls": "./src/calls.ts",
     "./issues/catalog": "./src/issues/catalog.ts",
-    "./generated/*": "./src/generated/*.ts"
+    "./generated/*": "./src/generated/*.ts",
+    "./storage/initialize": "./src/storage/initialize.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

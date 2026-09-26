@@ -62,7 +62,7 @@ interface Props {
     store: import("../lib/environments").EnvironmentStore,
     expectedRevision?: number,
     allowEnvironmentBusy?: boolean,
-  ) => import("../lib/environments").EnvironmentStore | null;
+  ) => Promise<import("../lib/environments").EnvironmentStore | null>;
   envStoreRef: React.RefObject<import("../lib/environments").EnvironmentStore>;
   currentEnv: import("../lib/environments").Environment | null;
   startSecretSeal: (
@@ -419,7 +419,7 @@ export function RequestSidebar({
                   </span>
                   <button
                     className="btn mini"
-                    disabled={environmentBusy || transferBusy}
+                    disabled={environmentBusy || transferBusy || !persistenceReady}
                     onClick={() => {
                       const plain = window.prompt(`${v.key} 새 값 입력`);
                       if (plain != null) {
@@ -431,7 +431,7 @@ export function RequestSidebar({
                   </button>
                   <button
                     className="btn mini"
-                    disabled={environmentBusy || transferBusy}
+                    disabled={environmentBusy || transferBusy || !persistenceReady}
                     title="secret 해제 (저장 값 삭제)"
                     onClick={() => {
                       tryPersistEnvs(setVariable(envStoreRef.current, currentEnv.id, v.key, "", false));
@@ -445,7 +445,7 @@ export function RequestSidebar({
                   <input
                     className="coll-input"
                     value={v.value}
-                    disabled={environmentBusy || transferBusy}
+                    disabled={environmentBusy || transferBusy || !persistenceReady}
                     onChange={(e) => {
                       tryPersistEnvs(
                         setVariable(envStoreRef.current, currentEnv.id, v.key, e.currentTarget.value, false),
@@ -454,7 +454,7 @@ export function RequestSidebar({
                   />
                   <button
                     className="btn mini"
-                    disabled={environmentBusy || transferBusy}
+                    disabled={environmentBusy || transferBusy || !persistenceReady}
                     title="이 변수를 봉인해 secret으로 저장"
                     onClick={() => {
                       if (v.value) {

@@ -1,7 +1,7 @@
+import { MemoryDocuments } from "../../storage/testDocuments";
 import { describe, expect, it } from "vitest";
 import type { GrpcExchangeSummary } from "../grpcApi";
 import {
-  GRPC_HISTORY_KEY,
   GRPC_HISTORY_SCHEMA,
   MAX_GRPC_HISTORY,
   appendGrpcHistory,
@@ -51,29 +51,11 @@ function historyJson(entries: unknown[], extra: Record<string, unknown> = {}): s
   });
 }
 
-function storage(): Storage {
-  const values = new Map<string, string>();
-  return {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => {
-      values.set(key, value);
-    },
-    removeItem: (key) => {
-      values.delete(key);
-    },
-    clear: () => {
-      values.clear();
-    },
-    key: (index) => [...values.keys()][index] ?? null,
-    get length() {
-      return values.size;
-    },
-  };
-}
+const storage = () => new MemoryDocuments();
 
 describe("gRPC summary-only history", () => {
-  it("round-trips the exact schema and stores no body, endpoint, credential, or PEM fields", () => {
-    const saved = saveGrpcHistory(
+  it("round-trips the exact schema and stores no body, endpoint, credential, or PEM fields", async () => {
+    const saved = await saveGrpcHistory(
       {
         schema: GRPC_HISTORY_SCHEMA,
         entries: [summary()],
@@ -193,9 +175,9 @@ describe("gRPC summary-only history", () => {
     );
   });
 
-  it("uses the documented storage key when the caller saves a history", () => {
+  it("uses the grpc_history document kind when the caller saves history", async () => {
     const backing = storage();
-    saveGrpcHistory(emptyGrpcHistory(), backing);
-    expect(backing.getItem(GRPC_HISTORY_KEY)).toBe(JSON.stringify(emptyGrpcHistory()));
+    await saveGrpcHistory(emptyGrpcHistory(), backing);
+    expect(backing.body("grpc_history")).toBe(JSON.stringify(emptyGrpcHistory()));
   });
 });

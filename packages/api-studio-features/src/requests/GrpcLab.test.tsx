@@ -1,6 +1,8 @@
+import { previewDocumentKey } from "../storage/testDocuments";
+const GRPC_HISTORY_KEY = previewDocumentKey("grpc_history");
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GRPC_HISTORY_KEY, GRPC_HISTORY_SCHEMA } from "./lib/grpc";
+import { GRPC_HISTORY_SCHEMA } from "./lib/grpc";
 import { GrpcLab } from "./GrpcLab";
 import type { GrpcConnectResult, GrpcCredentialProjection, GrpcInvokeResult, GrpcNativeSelection } from "./grpcApi";
 

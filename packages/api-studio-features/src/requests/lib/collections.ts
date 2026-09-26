@@ -1,3 +1,4 @@
+import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 // Collection v2 저장·조회 및 v1 fail-closed 안전 변환.
 
 import type { GraphqlRequest, PersistedHistoryRequest, RequestTemplate } from "../types";
@@ -30,82 +31,39 @@ export interface CollectionStore {
   collections: CollectionEntry[];
 }
 
-interface LegacyCollectionEntry {
-  id?: unknown;
-  name?: unknown;
-  folder?: unknown;
-  saved_at?: unknown;
-  request?: unknown;
-}
-
 export function emptyStore(): CollectionStore {
   return { version: COLLECTION_VERSION, collections: [] };
 }
 
-/** v2는 backend 검증 전까지 반환하지 않으며, v1 raw는 어떤 경우에도 UI에 노출하지 않는다. */
+/** Load only the existing v2 shape; legacy migration belongs to the startup boundary. */
 export async function migrateCollections(
   sanitize: PersistenceSanitizer,
-  storage: Storage = localStorage,
+  storage: DocumentStorage = documentStorage(),
 ): Promise<StorageMigration<CollectionStore>> {
-  const rawV1 = storage.getItem(COLLECTION_V1_LS_KEY);
   try {
-    const current = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
-    const legacy = current ? null : parseLegacyStore(rawV1);
-    const candidate = current ?? legacy?.store ?? emptyStore();
-    const safe = await sanitizeStore(candidate, sanitize);
-
-    storage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(safe));
-    const readBack = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
-    if (!readBack) throw new Error("collection v2 read-back failed");
-
-    if (rawV1 !== null) {
-      storage.removeItem(COLLECTION_V1_LS_KEY);
-      if (storage.getItem(COLLECTION_V1_LS_KEY) !== null) {
-        throw new Error("legacy collection deletion failed");
-      }
-    }
-    storage.setItem(COLLECTION_V1_MARKER_KEY, "2");
-    if (storage.getItem(COLLECTION_V1_MARKER_KEY) !== "2") {
-      throw new Error("collection marker write failed");
-    }
-    return {
-      store: readBack,
-      migrated: rawV1 !== null,
-      failed: false,
-      removedLegacyEntries: legacy?.removedUnsafeValues ?? 0,
-    };
+    const session = documentSession("collections", storage);
+    const document = await session.load();
+    const current = document ? parseStore(document.body) : emptyStore();
+    if (!current) throw new Error("안전한 Collection 형식이 아닙니다");
+    const safe = await sanitizeStore(current, sanitize);
+    if (document && JSON.stringify(safe) !== document.body) await session.save(JSON.stringify(safe), document.revision);
+    return { store: safe, migrated: false, failed: false, removedLegacyEntries: 0 };
   } catch {
     return { store: emptyStore(), migrated: false, failed: true, removedLegacyEntries: 0 };
   }
 }
-
 export async function saveStore(
   store: CollectionStore,
   sanitize: PersistenceSanitizer,
-  storage: Storage = localStorage,
+  storage: DocumentStorage = documentStorage(),
   canCommit: () => boolean = () => true,
 ): Promise<CollectionStore> {
+  const session = documentSession("collections", storage);
+  const expected = (await session.snapshot())?.revision ?? null;
   const safe = await sanitizeStore(store, sanitize);
-  // Sanitization may cross the native bridge and finish after a newer editor
-  // mutation. The guard is evaluated immediately before the first durable
-  // write so a stale result cannot replace the current v2 store.
   if (!canCommit()) throw new Error("Collection 변경이 오래되어 저장하지 않았습니다");
-  const previous = storage.getItem(COLLECTION_V2_LS_KEY);
-  try {
-    storage.setItem(COLLECTION_V2_LS_KEY, JSON.stringify(safe));
-    const readBack = parseStore(storage.getItem(COLLECTION_V2_LS_KEY));
-    if (!readBack) throw new Error("Collection 안전 저장을 확인할 수 없습니다");
-    return readBack;
-  } catch (cause) {
-    try {
-      if (previous === null) storage.removeItem(COLLECTION_V2_LS_KEY);
-      else storage.setItem(COLLECTION_V2_LS_KEY, previous);
-    } catch {
-      // Preserve the original persistence failure; callers must not treat a
-      // failed rollback as a successful collection mutation.
-    }
-    throw cause;
-  }
+  await session.save(JSON.stringify(safe), expected);
+  return safe;
 }
 
 export function addEntry(
@@ -175,7 +133,7 @@ export function parseStore(raw: string | null): CollectionStore | null {
   }
 }
 
-async function sanitizeStore(store: CollectionStore, sanitize: PersistenceSanitizer): Promise<CollectionStore> {
+export async function sanitizeStore(store: CollectionStore, sanitize: PersistenceSanitizer): Promise<CollectionStore> {
   const original = JSON.stringify(store);
   const serialized = await sanitize(original);
   const parsed = parseStore(serialized);
@@ -189,37 +147,6 @@ async function sanitizeStore(store: CollectionStore, sanitize: PersistenceSaniti
       request: { ...entry.request, requiresSecretReview: true },
     })),
   };
-}
-
-function parseLegacyStore(raw: string | null): { store: CollectionStore; removedUnsafeValues: number } | null {
-  if (raw === null) return null;
-  try {
-    const parsed = JSON.parse(raw) as { version?: unknown; collections?: unknown };
-    if (parsed?.version !== 1 || !Array.isArray(parsed.collections))
-      return { store: emptyStore(), removedUnsafeValues: 1 };
-    let removedUnsafeValues = 0;
-    const collections = parsed.collections.flatMap((candidate: LegacyCollectionEntry, index) => {
-      if (!isRequestTemplate(candidate?.request)) {
-        removedUnsafeValues += 1;
-        return [];
-      }
-      const request = sanitizeRequestForPersistence(candidate.request);
-      if (request.requiresSecretReview) removedUnsafeValues += 1;
-      return [
-        {
-          id: typeof candidate.id === "string" ? candidate.id : `migrated-${index}`,
-          name: typeof candidate.name === "string" ? candidate.name : candidate.request.url || "untitled",
-          folder: typeof candidate.folder === "string" ? candidate.folder : "",
-          saved_at: typeof candidate.saved_at === "number" ? candidate.saved_at : 0,
-          request,
-          requiresSecretReview: request.requiresSecretReview,
-        },
-      ];
-    });
-    return { store: { version: COLLECTION_VERSION, collections }, removedUnsafeValues };
-  } catch {
-    return { store: emptyStore(), removedUnsafeValues: 1 };
-  }
 }
 
 function isCollectionEntry(value: unknown): value is CollectionEntry {

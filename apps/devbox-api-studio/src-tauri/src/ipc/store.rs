@@ -65,7 +65,7 @@ pub fn classify(issue: &str) -> &'static str {
         .unwrap_or(StoreIssue::StoreUnavailable)
         .code()
 }
-struct State(Result<Arc<DocumentStore>, String>);
+struct State(Result<(Arc<DocumentStore>, std::path::PathBuf), String>);
 pub(crate) fn initialize(app: &tauri::AppHandle) {
     let opened = app
         .path()
@@ -73,7 +73,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) {
         .map_err(|_| "store_unavailable".to_owned())
         .and_then(|root| {
             std::fs::create_dir_all(&root).map_err(|_| "store_unavailable".to_owned())?;
-            DocumentStore::open(&root.join("api-store.db")).map(Arc::new)
+            DocumentStore::open(&root.join("api-store.db")).map(|store| (Arc::new(store), root))
         });
     // Keep the shell available on disk/open failure so migration preserves its source.
     app.manage(State(opened));
@@ -90,7 +90,18 @@ pub async fn store(
     let app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         crate::lifecycle::require_open(&app)?;
-        let store = store?;
+        let (store, root) = store?;
+        if matches!(
+            &request.call,
+            StoreCall::Load {
+                kind: DocumentKind::Workflows
+            } | StoreCall::Save {
+                kind: DocumentKind::Workflows,
+                ..
+            }
+        ) {
+            store.import_legacy_workflows(&root)?;
+        }
         match request.call {
             StoreCall::Load { kind } => serde_json::to_value(store.load(kind)?),
             StoreCall::Save {

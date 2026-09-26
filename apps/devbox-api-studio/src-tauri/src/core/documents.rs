@@ -60,6 +60,46 @@ impl DocumentStore {
         Ok(Self(Mutex::new(connection)))
     }
 
+    /// Production workflows already used a native metadata file before document storage.
+    /// Preserve that authority (including an explicitly empty file) and retain the source.
+    pub fn import_legacy_workflows(&self, root: &Path) -> Result<(), String> {
+        if self.load(DocumentKind::Workflows)?.is_some() {
+            return Ok(());
+        }
+        let directory = root.join("transforms");
+        let path = directory.join(transforms_core::core::workflows::WORKFLOW_FILE_NAME);
+        let identity = match devbox_filesystem::filesystem_identity(&path, false) {
+            Ok(identity) => identity,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err("store_document_invalid".into()),
+        };
+        let loaded = transforms_core::core::workflows::load_from_dir_with_status(&directory);
+        if !loaded.writable
+            || devbox_filesystem::filesystem_identity(&path, false)
+                .ok()
+                .as_ref()
+                != Some(&identity)
+        {
+            return Err("store_document_invalid".into());
+        }
+        let body = serde_json::to_string(&loaded.metadata).map_err(|_| "store_document_invalid")?;
+        match self.save(DocumentKind::Workflows, &body, None) {
+            Ok(revision) => {
+                if self.load(DocumentKind::Workflows)? != Some(Stored { revision, body }) {
+                    return Err("store_revision_conflict".into());
+                }
+                Ok(())
+            }
+            Err(issue)
+                if issue == "store_revision_conflict"
+                    && self.load(DocumentKind::Workflows)?.is_some() =>
+            {
+                Ok(())
+            }
+            Err(issue) => Err(issue),
+        }
+    }
+
     pub fn load(&self, kind: DocumentKind) -> Result<Option<Stored>, String> {
         let connection = self.0.lock().map_err(|_| "store_unavailable")?;
         let row: Option<(i64, Option<String>)> = connection
@@ -293,5 +333,47 @@ mod boundaries {
             store.load(DocumentKind::History).unwrap().unwrap().body,
             "{}"
         );
+    }
+}
+
+#[cfg(test)]
+mod legacy_workflows {
+    use super::*;
+    #[test]
+    fn existing_native_workflows_are_copied_once_without_removing_the_source() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("transforms");
+        std::fs::create_dir(&directory).unwrap();
+        let metadata = transforms_core::core::workflows::WorkflowMetadata::default();
+        transforms_core::core::workflows::save_to_dir(&directory, &metadata).unwrap();
+        let path = directory.join("smart-workflows.json");
+        let original = std::fs::read(&path).unwrap();
+        let store = DocumentStore::open(&root.path().join("api-store.db")).unwrap();
+        store.import_legacy_workflows(root.path()).unwrap();
+        assert_eq!(
+            store.load(DocumentKind::Workflows).unwrap().unwrap().body,
+            serde_json::to_string(&metadata).unwrap()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        store.save(DocumentKind::Workflows, "{}", Some(1)).unwrap();
+        store.import_legacy_workflows(root.path()).unwrap();
+        assert_eq!(
+            store.load(DocumentKind::Workflows).unwrap().unwrap().body,
+            "{}"
+        );
+    }
+    #[test]
+    fn absent_files_do_not_create_empty_documents_and_invalid_sources_are_retained() {
+        let root = tempfile::tempdir().unwrap();
+        let store = DocumentStore::open(&root.path().join("api-store.db")).unwrap();
+        store.import_legacy_workflows(root.path()).unwrap();
+        assert!(store.load(DocumentKind::Workflows).unwrap().is_none());
+        std::fs::create_dir(root.path().join("transforms")).unwrap();
+        let path = root.path().join("transforms/smart-workflows.json");
+        std::fs::write(&path, "invalid").unwrap();
+        assert!(store.import_legacy_workflows(root.path()).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid");
+        assert!(store.load(DocumentKind::Workflows).unwrap().is_none());
+        store.save(DocumentKind::History, "{}", None).unwrap();
     }
 }

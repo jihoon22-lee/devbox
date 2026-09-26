@@ -1,3 +1,5 @@
+import { useEnvironmentPersistence } from "./hooks/useEnvironmentPersistence";
+import { storageFailureMessage } from "../storage/documentStorage";
 import { RequestParameters } from "./components/RequestParameters";
 import { SseControls } from "./components/SseControls";
 export { tryPretty, buildCurl, shellQuote, curlFormQuote } from "./lib/requestPresentation";
@@ -37,7 +39,6 @@ import {
   saveJsonFile,
   saveResponseBinary,
   sanitizePersistedJson,
-  sealSecret,
   sendRequest,
   startSseStream,
   type SseStreamHandle,
@@ -68,11 +69,12 @@ import {
   removeHistoryItem,
   renameHistoryItem,
 } from "./lib/contextMenu";
-import { addEnvironment, loadStore as loadEnvStore, saveStore as saveEnvStore, setVariable } from "./lib/environments";
+import { emptyStore as emptyEnvStore, type EnvironmentStore, loadStore as loadEnvStore } from "./lib/environments";
 import {
   emptyHistoryStore,
   migrateHistoryStorage,
   sanitizeRequestForPersistence,
+  sanitizeHistoryStore,
   saveHistoryStore,
   toRequestTemplate,
   type HistoryStore,
@@ -169,7 +171,7 @@ export default function App({
   const [collFolder, setCollFolder] = useState("");
   const [collFilter, setCollFilter] = useState("");
   const [collSaving, setCollSaving] = useState(false);
-  const [envStore, setEnvStore] = useState(loadEnvStore);
+  const [envStore, setEnvStore] = useState(emptyEnvStore);
   const [currentEnvId, setCurrentEnvId] = useState("");
   const [envName, setEnvName] = useState("");
   const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
@@ -448,101 +450,24 @@ export default function App({
     graphqlIssue ??
     cookieConfigurationError ??
     (multipartIssue ? `${multipartIssue.index + 1}번 multipart part: ${multipartIssue.message}` : null);
+  const { persistEnvs, onCreateEnv, tryPersistEnvs, startSecretSeal } = useEnvironmentPersistence({
+    environmentRevisionRef,
+    environmentBusyRef,
+    envStoreRef,
+    setEnvStore,
+    environmentMutationBusyRef,
+    mountedRef,
+    setPersistenceReady,
+    setPersistenceWarning,
+    transferBusyRef,
+    setEnvironmentBusy,
+    setError,
+    persistenceReady,
+    envName,
+    setCurrentEnvId,
+    setEnvName,
+  });
 
-  const persistEnvs = (
-    store: ReturnType<typeof loadEnvStore>,
-    expectedRevision = environmentRevisionRef.current,
-    allowEnvironmentBusy = false,
-  ): ReturnType<typeof loadEnvStore> => {
-    if (
-      expectedRevision !== environmentRevisionRef.current ||
-      environmentMutationBusyRef.current ||
-      (environmentBusyRef.current && !allowEnvironmentBusy)
-    ) {
-      throw new Error("environment mutation is stale or busy");
-    }
-    environmentMutationBusyRef.current = true;
-    try {
-      const saved = saveEnvStore(store);
-      envStoreRef.current = saved;
-      environmentRevisionRef.current += 1;
-      setEnvStore(saved);
-      return saved;
-    } finally {
-      environmentMutationBusyRef.current = false;
-    }
-  };
-
-  const tryPersistEnvs = (
-    store: ReturnType<typeof loadEnvStore>,
-    expectedRevision = environmentRevisionRef.current,
-    allowEnvironmentBusy = false,
-  ): ReturnType<typeof loadEnvStore> | null => {
-    try {
-      return persistEnvs(store, expectedRevision, allowEnvironmentBusy);
-    } catch {
-      if (mountedRef.current)
-        setPersistenceWarning("Environment를 안전하게 저장하지 못했습니다. 기존 값은 유지됩니다.");
-      return null;
-    }
-  };
-
-  const startSecretSeal = (
-    environmentId: string,
-    key: string,
-    plain: string,
-    expectedValue: string,
-    expectedSecret: boolean,
-    secret: boolean,
-  ) => {
-    if (environmentMutationBusyRef.current || environmentBusyRef.current || transferBusyRef.current) return;
-    const revision = environmentRevisionRef.current;
-    environmentBusyRef.current = true;
-    setEnvironmentBusy(true);
-    setError(null);
-    void sealSecret(plain)
-      .then((blob) => {
-        if (!mountedRef.current) return;
-        const current = envStoreRef.current.environments
-          .find((environment) => environment.id === environmentId)
-          ?.variables.find((variable) => variable.key === key);
-        if (
-          revision !== environmentRevisionRef.current ||
-          !current ||
-          current.value !== expectedValue ||
-          current.secret !== expectedSecret
-        ) {
-          setPersistenceWarning("Environment가 변경되어 오래된 secret 저장 결과를 적용하지 않았습니다.");
-          return;
-        }
-        tryPersistEnvs(setVariable(envStoreRef.current, environmentId, key, blob, secret), revision, true);
-      })
-      .catch(() => {
-        if (mountedRef.current) setError("secret 봉인에 실패했습니다. 데스크톱 앱에서 다시 시도하세요.");
-      })
-      .finally(() => {
-        environmentBusyRef.current = false;
-        if (mountedRef.current) setEnvironmentBusy(false);
-      });
-  };
-
-  const onCreateEnv = () => {
-    if (environmentBusyRef.current || transferBusyRef.current || !persistenceReady) return;
-    try {
-      const next = addEnvironment(
-        envStoreRef.current,
-        envName,
-        () => `e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-      );
-      const saved = persistEnvs(next);
-      setCurrentEnvId(saved.environments[0]?.id ?? "");
-      setEnvName("");
-    } catch {
-      setPersistenceWarning("Environment를 안전하게 저장하지 못했습니다. 기존 값은 유지됩니다.");
-    }
-  };
-
-  const initialEnvironments = useRef(envStore.environments);
   const sanitizeForPersistence = useCallback(
     (serialized: string) =>
       sanitizePersistedJson(
@@ -564,7 +489,7 @@ export default function App({
       const safe = await saveStore(
         store,
         sanitizeForPersistence,
-        localStorage,
+        undefined,
         () => expectedRevision === collectionRevisionRef.current,
       );
       if (expectedRevision !== collectionRevisionRef.current) throw new Error("collection mutation is stale");
@@ -572,6 +497,16 @@ export default function App({
       collectionRevisionRef.current += 1;
       if (mountedRef.current) setCollections(safe);
       return safe;
+    } catch (cause) {
+      if (cause instanceof Error && cause.name === "store_revision_conflict") {
+        const reloaded = await migrateCollections(sanitizeForPersistence);
+        if (!reloaded.failed) {
+          collectionStoreRef.current = reloaded.store;
+          collectionRevisionRef.current += 1;
+          if (mountedRef.current) setCollections(reloaded.store);
+        }
+      }
+      throw cause;
     } finally {
       collectionMutationBusyRef.current = false;
     }
@@ -620,7 +555,7 @@ export default function App({
     const next = mergeImportedEnvironments(envStoreRef.current, imported, () => `e-import-${Date.now()}-${sequence++}`);
     if (!next) throw new Error("환경 가져오기를 한 번에 적용할 수 없습니다");
     const previousCount = envStoreRef.current.environments.length;
-    const saved = persistEnvs(next, expectedEnvironmentRevision);
+    const saved = await persistEnvs(next, expectedEnvironmentRevision);
     if (!mountedRef.current) return;
     const added = Math.max(0, saved.environments.length - previousCount);
     if (!currentEnvId) setCurrentEnvId(saved.environments[0]?.id ?? "");
@@ -650,9 +585,11 @@ export default function App({
           if (raw !== null) {
             await applyImportedTransfer(kind, raw, expectedCollectionRevision, expectedEnvironmentRevision);
           }
-        } catch {
+        } catch (storageCause) {
           if (mountedRef.current)
-            setPersistenceWarning("JSON 파일을 가져오지 않았습니다. 파일 선택과 schema를 확인하세요.");
+            setPersistenceWarning(
+              storageFailureMessage(storageCause, "JSON 파일을 가져오지 않았습니다. 파일 선택과 schema를 확인하세요."),
+            );
         } finally {
           transferBusyRef.current = false;
           if (mountedRef.current) setTransferBusy(false);
@@ -696,8 +633,9 @@ export default function App({
           }
         }
       })
-      .catch(() => {
-        if (mountedRef.current) setPersistenceWarning("JSON 파일을 읽지 못해 가져오지 않았습니다.");
+      .catch((storageCause) => {
+        if (mountedRef.current)
+          setPersistenceWarning(storageFailureMessage(storageCause, "JSON 파일을 읽지 못해 가져오지 않았습니다."));
       })
       .finally(() => {
         transferBusyRef.current = false;
@@ -734,9 +672,11 @@ export default function App({
               setMigrationNotice(`${kind === "collection" ? "컬렉션" : "환경"} JSON 내보내기를 완료했습니다.`);
             }
           })
-          .catch(() => {
+          .catch((storageCause) => {
             if (mountedRef.current)
-              setPersistenceWarning("JSON 파일을 저장하지 않았습니다. native 저장 위치를 확인하세요.");
+              setPersistenceWarning(
+                storageFailureMessage(storageCause, "JSON 파일을 저장하지 않았습니다. native 저장 위치를 확인하세요."),
+              );
           })
           .finally(() => {
             transferBusyRef.current = false;
@@ -748,8 +688,10 @@ export default function App({
         transferBusyRef.current = false;
         setTransferBusy(false);
       }
-    } catch {
-      setPersistenceWarning("JSON 내보내기를 생성하지 못했습니다. 항목 수와 크기를 확인하세요.");
+    } catch (storageCause) {
+      setPersistenceWarning(
+        storageFailureMessage(storageCause, "JSON 내보내기를 생성하지 못했습니다. 항목 수와 크기를 확인하세요."),
+      );
       transferBusyRef.current = false;
       setTransferBusy(false);
     }
@@ -769,8 +711,10 @@ export default function App({
       await persistCollections(next);
       setCollName("");
       setCollFolder("");
-    } catch {
-      setPersistenceWarning("민감정보 안전 검증에 실패해 컬렉션을 저장하지 않았습니다.");
+    } catch (storageCause) {
+      setPersistenceWarning(
+        storageFailureMessage(storageCause, "민감정보 안전 검증에 실패해 컬렉션을 저장하지 않았습니다."),
+      );
     } finally {
       setCollSaving(false);
     }
@@ -837,51 +781,47 @@ export default function App({
     }
   };
 
+  const startup = useRef<Promise<{
+    environments: EnvironmentStore;
+    collections: ReturnType<typeof emptyCollectionStore>;
+    history: HistoryItem[];
+  }> | null>(null);
   useEffect(() => {
-    const historyMigration = migrateHistoryStorage();
-    const initialVariables = initialEnvironments.current.flatMap((environment) => environment.variables);
-    let historyTask: Promise<void>;
-    if (historyMigration.failed) {
-      setPersistenceWarning("이전 기록 삭제를 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.");
-      historyTask = Promise.resolve();
-    } else {
-      historyTask = saveHistoryStore(historyMigration.store, (serialized) =>
-        sanitizePersistedJson(serialized, initialVariables),
-      )
-        .then((safe) => {
-          setHistory(safe.history);
-          if (historyMigration.migrated) {
-            setMigrationNotice(
-              `안전을 확인할 수 없는 이전 기록 ${historyMigration.removedLegacyEntries}건을 제거했습니다.`,
-            );
-          }
-        })
-        .catch(() => {
-          setHistory([]);
-          setPersistenceWarning("기록 v2 안전 검증을 완료하지 못해 내용을 격리했습니다. 다음 실행에서 재시도합니다.");
-        });
-    }
-
-    const collectionTask = migrateCollections((serialized) => sanitizePersistedJson(serialized, initialVariables)).then(
-      (migration) => {
-        collectionStoreRef.current = migration.store;
+    let active = true;
+    startup.current ??= (async () => {
+      const environments = await loadEnvStore();
+      const variables = environments.environments.flatMap((environment) => environment.variables);
+      const sanitize = (serialized: string) => sanitizePersistedJson(serialized, variables);
+      const [history, collections] = await Promise.all([migrateHistoryStorage(), migrateCollections(sanitize)]);
+      if (history.failed || collections.failed)
+        throw new Error("저장된 요청을 안전하게 불러오지 못했습니다. 원본은 유지됩니다.");
+      const safe = await saveHistoryStore(history.store, sanitize);
+      return { environments, collections: collections.store, history: safe.history };
+    })();
+    void startup.current
+      .then((loaded) => {
+        if (!active) return;
+        envStoreRef.current = loaded.environments;
+        collectionStoreRef.current = loaded.collections;
+        environmentRevisionRef.current += 1;
         collectionRevisionRef.current += 1;
-        setCollections(migration.store);
-        if (migration.failed) {
+        setEnvStore(loaded.environments);
+        setCollections(loaded.collections);
+        setHistory(loaded.history);
+        setPersistenceReady(true);
+      })
+      .catch((storageCause) => {
+        if (active)
           setPersistenceWarning(
-            "이전 컬렉션 안전 변환을 완료하지 못했습니다. 원본은 격리되며 다음 실행에서 재시도합니다.",
+            storageFailureMessage(
+              storageCause,
+              "저장된 요청을 안전하게 불러오지 못했습니다. 원본은 유지되며 다음 실행에서 다시 시도합니다.",
+            ),
           );
-        } else if (migration.migrated) {
-          setMigrationNotice((current) =>
-            [current, `이전 컬렉션을 v2로 안전 변환했습니다(검토 필요 ${migration.removedLegacyEntries}건).`]
-              .filter(Boolean)
-              .join(" "),
-          );
-        }
-      },
-    );
-    void Promise.allSettled([historyTask, collectionTask]).then(() => setPersistenceReady(true));
-    // 최초 실행 migration은 시작 시점의 봉인 환경 snapshot으로 한 번만 검증한다.
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -920,9 +860,20 @@ export default function App({
         ...emptyHistoryStore(),
         history: [item, ...history].slice(0, 50),
       };
-      const safe = await saveHistoryStore(candidate, sanitizeForPersistence);
-      if (isCurrent()) setHistory(safe.history);
-      return safe;
+      try {
+        const safe = await saveHistoryStore(candidate, sanitizeForPersistence);
+        if (isCurrent()) setHistory(safe.history);
+        return safe;
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === "store_revision_conflict") {
+          const reloaded = await migrateHistoryStorage();
+          if (!reloaded.failed && isCurrent()) {
+            const safe = await sanitizeHistoryStore(reloaded.store, sanitizeForPersistence);
+            setHistory(safe.history);
+          }
+        }
+        throw cause;
+      }
     },
     [history, sanitizeForPersistence],
   );
@@ -952,9 +903,14 @@ export default function App({
           result.status,
           () => mountedRef.current && requestSequenceRef.current === sequence,
         );
-      } catch {
+      } catch (storageCause) {
         if (mountedRef.current && requestSequenceRef.current === sequence) {
-          setPersistenceWarning("요청은 완료됐지만 민감정보 안전 검증에 실패해 기록을 저장하지 않았습니다.");
+          setPersistenceWarning(
+            storageFailureMessage(
+              storageCause,
+              "요청은 완료됐지만 민감정보 안전 검증에 실패해 기록을 저장하지 않았습니다.",
+            ),
+          );
         }
       }
     } catch (cause) {
@@ -967,9 +923,14 @@ export default function App({
           undefined,
           () => mountedRef.current && requestSequenceRef.current === sequence,
         );
-      } catch {
+      } catch (storageCause) {
         if (mountedRef.current && requestSequenceRef.current === sequence) {
-          setPersistenceWarning("실패한 요청은 민감정보 안전 검증을 통과하지 못해 기록에 저장하지 않았습니다.");
+          setPersistenceWarning(
+            storageFailureMessage(
+              storageCause,
+              "실패한 요청은 민감정보 안전 검증을 통과하지 못해 기록에 저장하지 않았습니다.",
+            ),
+          );
         }
       }
     } finally {
@@ -1370,8 +1331,12 @@ export default function App({
     setPersistenceWarning(null);
     try {
       await action();
-    } catch {
-      setPersistenceWarning(failureMessage);
+    } catch (storageCause) {
+      if (storageCause instanceof Error && storageCause.name === "store_revision_conflict") {
+        const reloaded = await migrateHistoryStorage();
+        if (!reloaded.failed && mountedRef.current) setHistory(reloaded.store.history);
+      }
+      setPersistenceWarning(storageFailureMessage(storageCause, failureMessage));
     } finally {
       setContextActionBusy(false);
     }

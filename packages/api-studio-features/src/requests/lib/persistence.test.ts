@@ -1,58 +1,14 @@
+import { MemoryDocuments as RecordingStorage } from "../../storage/testDocuments";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { RequestTemplate } from "../types";
 import {
   emptyHistoryStore,
-  HISTORY_V1_LS_KEY,
-  HISTORY_V1_MARKER_KEY,
-  HISTORY_V2_LS_KEY,
-  migrateHistoryStorage,
   parseHistoryStore,
   REDACTED,
   sanitizeRequestForPersistence,
   saveHistoryStore,
   type HistoryStore,
 } from "./persistence";
-
-class RecordingStorage implements Storage {
-  private readonly values = new Map<string, string>();
-  readonly events: string[] = [];
-  failLegacyRemoval = false;
-  failV2Write = false;
-  failMarkerWrite = false;
-
-  get length(): number {
-    return this.values.size;
-  }
-
-  clear(): void {
-    this.values.clear();
-  }
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  key(index: number): string | null {
-    return [...this.values.keys()][index] ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.events.push(`remove:${key}`);
-    if (key === HISTORY_V1_LS_KEY && this.failLegacyRemoval) return;
-    this.values.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
-    this.events.push(`set:${key}`);
-    if (key === HISTORY_V2_LS_KEY && this.failV2Write) throw new Error("v2 write failed");
-    if (key === HISTORY_V1_MARKER_KEY && this.failMarkerWrite) throw new Error("marker write failed");
-    this.values.set(key, value);
-  }
-
-  entries(): Array<[string, string]> {
-    return [...this.values.entries()];
-  }
-}
 
 function request(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
   return {
@@ -68,17 +24,6 @@ function request(overrides: Partial<RequestTemplate> = {}): RequestTemplate {
     timeout_ms: 30000,
     ...overrides,
   };
-}
-
-function legacyHistory(rawRequest: RequestTemplate): string {
-  return JSON.stringify([
-    {
-      id: "legacy-history-1",
-      saved_at: 1000,
-      request: rawRequest,
-      status: 200,
-    },
-  ]);
 }
 
 function validHistoryStore(): HistoryStore {
@@ -99,7 +44,7 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe("History v1 fail-closed migration", () => {
+describe("History current-document parsing", () => {
   it("선택적 표시 이름이 있는 v2와 기존 이름 없는 v2를 모두 읽는다", () => {
     const named = validHistoryStore();
     named.history[0].name = "내 요청";
@@ -153,108 +98,13 @@ describe("History v1 fail-closed migration", () => {
     delete (legacy.history[0].request as Partial<RequestTemplate>).multipart;
     expect(parseHistoryStore(JSON.stringify(legacy))?.history[0].request.multipart).toEqual([]);
   });
-
-  it("v2를 선기록한 뒤 v1을 삭제하고 marker를 기록하며 raw backup을 만들지 않는다", () => {
-    const storage = new RecordingStorage();
-    storage.setItem(HISTORY_V1_LS_KEY, legacyHistory(request()));
-    storage.events.length = 0;
-
-    const result = migrateHistoryStorage(storage);
-
-    expect(result.failed).toBe(false);
-    expect(result.migrated).toBe(true);
-    expect(result.removedLegacyEntries).toBe(1);
-    expect(result.store).toEqual(emptyHistoryStore());
-    expect(storage.events).toEqual([
-      `set:${HISTORY_V2_LS_KEY}`,
-      `remove:${HISTORY_V1_LS_KEY}`,
-      `set:${HISTORY_V1_MARKER_KEY}`,
-    ]);
-    expect(storage.getItem(HISTORY_V1_LS_KEY)).toBeNull();
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBe("2");
-    expect(parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY))).toEqual(emptyHistoryStore());
-    expect(storage.entries().some(([key]) => /backup|quarantine/i.test(key))).toBe(false);
-  });
-
-  it("v1 삭제 실패 시 marker를 만들지 않고 raw를 격리해 다음 실행에서 retry한다", () => {
-    const storage = new RecordingStorage();
-    const raw = legacyHistory(request({ url: "https://api.example.com/?token=legacy-secret" }));
-    storage.setItem(HISTORY_V1_LS_KEY, raw);
-    storage.failLegacyRemoval = true;
-
-    const failed = migrateHistoryStorage(storage);
-
-    expect(failed.failed).toBe(true);
-    expect(failed.store).toEqual(emptyHistoryStore());
-    expect(storage.getItem(HISTORY_V1_LS_KEY)).toBe(raw);
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBeNull();
-    expect(storage.getItem(HISTORY_V2_LS_KEY)).not.toBeNull();
-    expect(storage.entries().some(([key]) => /backup|quarantine/i.test(key))).toBe(false);
-
-    storage.failLegacyRemoval = false;
-    const retried = migrateHistoryStorage(storage);
-
-    expect(retried.failed).toBe(false);
-    expect(retried.migrated).toBe(true);
-    expect(storage.getItem(HISTORY_V1_LS_KEY)).toBeNull();
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBe("2");
-  });
-
-  it("v1이 없을 때도 v2와 marker를 초기화하고 raw backup을 만들지 않는다", () => {
-    const storage = new RecordingStorage();
-
-    const result = migrateHistoryStorage(storage);
-
-    expect(result.failed).toBe(false);
-    expect(result.migrated).toBe(false);
-    expect(result.store).toEqual(emptyHistoryStore());
-    expect(storage.getItem(HISTORY_V1_LS_KEY)).toBeNull();
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBe("2");
-    expect(storage.entries().some(([key]) => /backup|quarantine/i.test(key))).toBe(false);
-  });
-
-  it("v2 선기록 실패 시 raw를 삭제하거나 marker를 기록하지 않는다", () => {
-    const storage = new RecordingStorage();
-    const raw = legacyHistory(
-      request({
-        auth: { kind: "bearer", username: "", password: "", token: "raw-secret", api_key: "", api_value: "" },
-      }),
-    );
-    storage.setItem(HISTORY_V1_LS_KEY, raw);
-    storage.failV2Write = true;
-
-    const failed = migrateHistoryStorage(storage);
-
-    expect(failed.failed).toBe(true);
-    expect(storage.getItem(HISTORY_V1_LS_KEY)).toBe(raw);
-    expect(storage.getItem(HISTORY_V2_LS_KEY)).toBeNull();
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBeNull();
-  });
-
-  it("marker 기록 실패는 완료로 간주하지 않고 다음 실행에서 marker를 재시도한다", () => {
-    const storage = new RecordingStorage();
-    storage.setItem(HISTORY_V1_LS_KEY, legacyHistory(request()));
-    storage.failMarkerWrite = true;
-
-    const failed = migrateHistoryStorage(storage);
-
-    expect(failed.failed).toBe(true);
-    expect(storage.getItem(HISTORY_V1_LS_KEY)).toBeNull();
-    expect(storage.getItem(HISTORY_V2_LS_KEY)).not.toBeNull();
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBeNull();
-
-    storage.failMarkerWrite = false;
-    const retried = migrateHistoryStorage(storage);
-    expect(retried.failed).toBe(false);
-    expect(storage.getItem(HISTORY_V1_MARKER_KEY)).toBe("2");
-  });
 });
 
 describe("History persistence guard", () => {
   it("sanitizer가 거부하면 v2를 쓰지 않고 기존 값을 보존한다", async () => {
     const storage = new RecordingStorage();
     const existing = JSON.stringify(emptyHistoryStore());
-    storage.setItem(HISTORY_V2_LS_KEY, existing);
+    storage.seed("history", existing);
     storage.events.length = 0;
 
     await expect(
@@ -267,7 +117,7 @@ describe("History persistence guard", () => {
       ),
     ).rejects.toThrow("secret review failed");
 
-    expect(storage.getItem(HISTORY_V2_LS_KEY)).toBe(existing);
+    expect(storage.body("history")).toBe(existing);
     expect(storage.events).toEqual([]);
     expect(storage.entries().some(([key]) => /backup|quarantine/i.test(key))).toBe(false);
   });
@@ -279,7 +129,7 @@ describe("History persistence guard", () => {
       saveHistoryStore(validHistoryStore(), async () => JSON.stringify({ version: 1 }), storage),
     ).rejects.toThrow("안전한 History 형식이 아닙니다");
 
-    expect(storage.getItem(HISTORY_V2_LS_KEY)).toBeNull();
+    expect(storage.body("history")).toBeNull();
   });
 
   it("정상 sanitizer 결과만 v2에 기록한다", async () => {
@@ -296,7 +146,7 @@ describe("History persistence guard", () => {
     );
 
     expect(seen).toHaveLength(1);
-    expect(parseHistoryStore(storage.getItem(HISTORY_V2_LS_KEY))).not.toBeNull();
+    expect(parseHistoryStore(storage.body("history"))).not.toBeNull();
     expect(storage.entries().some(([key]) => /backup|quarantine/i.test(key))).toBe(false);
   });
 });

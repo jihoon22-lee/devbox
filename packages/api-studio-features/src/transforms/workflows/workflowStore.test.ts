@@ -1,3 +1,4 @@
+import { MemoryDocuments as MemoryStorage } from "../../storage/testDocuments";
 import { describe, expect, it } from "vitest";
 import {
   createWorkflowPersistence,
@@ -12,34 +13,6 @@ import {
   WORKFLOW_STORAGE_ERROR,
   WORKFLOW_STORAGE_LIMITS,
 } from "./workflowStore";
-
-class MemoryStorage implements Storage {
-  private readonly values = new Map<string, string>();
-
-  get length(): number {
-    return this.values.size;
-  }
-
-  clear(): void {
-    this.values.clear();
-  }
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  key(index: number): string | null {
-    return [...this.values.keys()][index] ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.values.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
-    this.values.set(key, value);
-  }
-}
 
 const toolIds = new Set(["json-format", "byte-codec", "jwt"]);
 const transformerIds = new Set(["json-format", "base64-decode", "json-to-typescript"]);
@@ -178,22 +151,23 @@ describe("workflow metadata persistence (#342)", () => {
     let metadata = emptyMetadata();
     metadata = upsertPipeline(metadata, "pipeline-1", "base64", [{ transformerId: "base64-decode" }], 42);
 
+    await persistence.load();
     await persistence.save(metadata);
     const restarted = await createWorkflowPersistence({ storage, toolIds, transformerIds }).load();
 
     expect(restarted).toEqual(metadata);
-    expect(storage.getItem("devbox.developer-toolbox.smart-workflows.v1")).toContain("inputType");
-    expect(storage.getItem("devbox.developer-toolbox.smart-workflows.v1")).not.toContain("output");
+    expect(storage.body("workflows")).toContain("inputType");
+    expect(storage.body("workflows")).not.toContain("output");
   });
 
   it("preserves malformed browser metadata and blocks an automatic replacement", async () => {
     const storage = new MemoryStorage();
     const malformed = '{"schemaVersion":1,"input":"credential-value"}';
-    storage.setItem("devbox.developer-toolbox.smart-workflows.v1", malformed);
+    storage.seed("workflows", malformed);
     const persistence = createWorkflowPersistence({ storage, toolIds, transformerIds });
 
     await expect(persistence.load()).rejects.toThrow(WORKFLOW_STORAGE_ERROR);
     await expect(persistence.save(emptyMetadata())).rejects.toThrow(WORKFLOW_STORAGE_ERROR);
-    expect(storage.getItem("devbox.developer-toolbox.smart-workflows.v1")).toBe(malformed);
+    expect(storage.body("workflows")).toBe(malformed);
   });
 });
