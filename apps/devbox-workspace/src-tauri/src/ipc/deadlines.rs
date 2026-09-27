@@ -1,6 +1,9 @@
 //! Renderer deadlines use this same native policy; authorization still caps 30s.
 use product_ipc::workspace::{DEFAULT_BUDGET_MS, LONG_BUDGET_MS};
 pub fn budget(component: &str, method: &str) -> u64 {
+    if component == "workspace.source" && matches!(method, "repo_branches" | "repo_stash_list") {
+        return DEFAULT_BUDGET_MS;
+    }
     if matches!(
         component,
         "workspace.runtime"

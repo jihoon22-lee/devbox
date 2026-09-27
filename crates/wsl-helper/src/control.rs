@@ -149,6 +149,16 @@ pub fn source_method(method: &str) -> bool {
         method,
         "create_worktree"
             | "repo_merge"
+            | "repo_branches"
+            | "repo_branch_create"
+            | "repo_switch"
+            | "repo_branch_rename"
+            | "repo_branch_delete"
+            | "repo_stash_list"
+            | "repo_stash_push"
+            | "repo_stash_apply"
+            | "repo_stash_drop"
+            | "repo_stash_store"
             | "inspect_agent_worktree"
             | "remove_agent_worktree"
             | "repo_status"
@@ -175,6 +185,16 @@ pub fn source_method(method: &str) -> bool {
 /// Fixed feature errors cross both native and helper Source adapters.
 pub fn source_operation_issue(issue: &str) -> Option<&'static str> {
     match issue {
+        "branch_name_invalid" => Some("branch_name_invalid"),
+        "branch_exists" => Some("branch_exists"),
+        "branch_missing" => Some("branch_missing"),
+        "branch_in_use" => Some("branch_in_use"),
+        "switch_blocked_by_changes" => Some("switch_blocked_by_changes"),
+        "branch_operation_failed" => Some("branch_operation_failed"),
+        "stash_empty" => Some("stash_empty"),
+        "stash_missing" => Some("stash_missing"),
+        "stash_operation_failed" => Some("stash_operation_failed"),
+
         "source_merge_dirty" => Some("source_merge_dirty"),
         "source_merge_failed" => Some("source_merge_failed"),
         "worktree_not_agent" => Some("worktree_not_agent"),
@@ -188,6 +208,37 @@ pub fn source_operation_issue(issue: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn branch_stash_source_methods_and_fixed_errors_are_supported() {
+        for method in [
+            "repo_branches",
+            "repo_branch_create",
+            "repo_switch",
+            "repo_branch_rename",
+            "repo_branch_delete",
+            "repo_stash_list",
+            "repo_stash_push",
+            "repo_stash_apply",
+            "repo_stash_drop",
+            "repo_stash_store",
+        ] {
+            assert!(source_method(method), "{method}");
+        }
+        for code in [
+            "branch_name_invalid",
+            "branch_exists",
+            "branch_missing",
+            "branch_in_use",
+            "switch_blocked_by_changes",
+            "branch_operation_failed",
+            "stash_empty",
+            "stash_missing",
+            "stash_operation_failed",
+        ] {
+            assert_eq!(source_operation_issue(code), Some(code));
+            assert_eq!(source_operation_issue(&format!("{code} /private")), None);
+        }
+    }
     #[test]
     fn agent_worktree_source_methods_are_supported() {
         assert!(source_method("inspect_agent_worktree"));

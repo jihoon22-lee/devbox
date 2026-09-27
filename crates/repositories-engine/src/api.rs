@@ -10,6 +10,37 @@ use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
 )]
 #[ts(optional_fields = nullable)]
 pub enum SourceCall {
+    RepoBranches {
+        request: crate::commands::PathRequest,
+    },
+    RepoBranchCreate {
+        request: crate::commands::BranchCreateRequest,
+    },
+    RepoSwitch {
+        request: crate::commands::SwitchRequest,
+    },
+    RepoBranchRename {
+        request: crate::commands::BranchRenameRequest,
+    },
+    RepoBranchDelete {
+        request: crate::commands::BranchDeleteRequest,
+    },
+    RepoStashList {
+        request: crate::commands::PathRequest,
+    },
+    RepoStashPush {
+        request: crate::commands::StashPushRequest,
+    },
+    RepoStashApply {
+        request: crate::commands::StashApplyRequest,
+    },
+    RepoStashDrop {
+        request: crate::commands::StashDropRequest,
+    },
+    RepoStashStore {
+        request: crate::commands::StashStoreRequest,
+    },
+
     InspectAgentWorktree {
         request: crate::commands::InspectAgentWorktreeRequest,
     },
@@ -86,6 +117,16 @@ pub enum SourceCall {
 }
 impl SourceCall {
     pub const METHODS: &'static [&'static str] = &[
+        "repo_branches",
+        "repo_branch_create",
+        "repo_switch",
+        "repo_branch_rename",
+        "repo_branch_delete",
+        "repo_stash_list",
+        "repo_stash_push",
+        "repo_stash_apply",
+        "repo_stash_drop",
+        "repo_stash_store",
         "inspect_agent_worktree",
         "repo_merge",
         "remove_agent_worktree",
@@ -114,6 +155,17 @@ impl SourceCall {
     ];
     pub fn method(&self) -> &'static str {
         match self {
+            Self::RepoBranches { .. } => "repo_branches",
+            Self::RepoBranchCreate { .. } => "repo_branch_create",
+            Self::RepoSwitch { .. } => "repo_switch",
+            Self::RepoBranchRename { .. } => "repo_branch_rename",
+            Self::RepoBranchDelete { .. } => "repo_branch_delete",
+            Self::RepoStashList { .. } => "repo_stash_list",
+            Self::RepoStashPush { .. } => "repo_stash_push",
+            Self::RepoStashApply { .. } => "repo_stash_apply",
+            Self::RepoStashDrop { .. } => "repo_stash_drop",
+            Self::RepoStashStore { .. } => "repo_stash_store",
+
             Self::InspectAgentWorktree { .. } => "inspect_agent_worktree",
             Self::RepoMerge { .. } => "repo_merge",
             Self::RemoveAgentWorktree { .. } => "remove_agent_worktree",
@@ -145,6 +197,9 @@ impl SourceCall {
         Lane::Source
     }
     pub fn deadline_budget_ms(&self) -> u64 {
+        if matches!(self, Self::RepoBranches { .. } | Self::RepoStashList { .. }) {
+            return product_ipc::workspace::DEFAULT_BUDGET_MS;
+        }
         LONG_BUDGET_MS
     }
 }
@@ -159,6 +214,17 @@ impl SourceCall {
     }
     pub(crate) fn path(&self) -> Option<&str> {
         match self {
+            Self::RepoBranches { request } => Some(&request.path),
+            Self::RepoBranchCreate { request } => Some(&request.path),
+            Self::RepoSwitch { request } => Some(&request.path),
+            Self::RepoBranchRename { request } => Some(&request.path),
+            Self::RepoBranchDelete { request } => Some(&request.path),
+            Self::RepoStashList { request } => Some(&request.path),
+            Self::RepoStashPush { request } => Some(&request.path),
+            Self::RepoStashApply { request } => Some(&request.path),
+            Self::RepoStashDrop { request } => Some(&request.path),
+            Self::RepoStashStore { request } => Some(&request.path),
+
             Self::InspectAgentWorktree { request } => Some(&request.path),
             Self::RepoMerge { request } => Some(&request.path),
             Self::RemoveAgentWorktree { request } => Some(&request.path),
@@ -197,6 +263,15 @@ impl SourceCall {
     }
     pub(crate) fn operation_id_mut(&mut self) -> Option<&mut String> {
         match self {
+            Self::RepoBranchCreate { request } => Some(&mut request.operation_id),
+            Self::RepoSwitch { request } => Some(&mut request.operation_id),
+            Self::RepoBranchRename { request } => Some(&mut request.operation_id),
+            Self::RepoBranchDelete { request } => Some(&mut request.operation_id),
+            Self::RepoStashPush { request } => Some(&mut request.operation_id),
+            Self::RepoStashApply { request } => Some(&mut request.operation_id),
+            Self::RepoStashDrop { request } => Some(&mut request.operation_id),
+            Self::RepoStashStore { request } => Some(&mut request.operation_id),
+
             Self::RepoMerge { request } => Some(&mut request.operation_id),
             Self::RemoveAgentWorktree { request } => Some(&mut request.operation_id),
             Self::RepoStage { request } => Some(&mut request.operation_id),
@@ -216,6 +291,47 @@ impl SourceCall {
 }
 pub(crate) async fn execute_source(call: SourceCall) -> Result<serde_json::Value, String> {
     match call {
+        SourceCall::RepoBranches { request } => {
+            serde_json::to_value(crate::commands::repo_branches(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBranchCreate { request } => {
+            serde_json::to_value(crate::commands::repo_branch_create(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoSwitch { request } => {
+            serde_json::to_value(crate::commands::repo_switch(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBranchRename { request } => {
+            serde_json::to_value(crate::commands::repo_branch_rename(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBranchDelete { request } => {
+            serde_json::to_value(crate::commands::repo_branch_delete(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashList { request } => {
+            serde_json::to_value(crate::commands::repo_stash_list(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashPush { request } => {
+            serde_json::to_value(crate::commands::repo_stash_push(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashApply { request } => {
+            serde_json::to_value(crate::commands::repo_stash_apply(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashDrop { request } => {
+            serde_json::to_value(crate::commands::repo_stash_drop(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashStore { request } => {
+            serde_json::to_value(crate::commands::repo_stash_store(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+
         SourceCall::InspectAgentWorktree { request } => {
             serde_json::to_value(crate::commands::inspect_agent_worktree(request).await?)
                 .map_err(|_| "component_response_invalid".into())
@@ -341,6 +457,31 @@ pub fn source_result_types(
 ) -> Result<Vec<(&'static str, String)>, String> {
     export.register::<SourceCall>()?;
     Ok(vec![
+        (
+            "repo_branches",
+            export.register::<crate::commands::BranchList>()?,
+        ),
+        ("repo_branch_create", export.register::<()>()?),
+        ("repo_switch", export.register::<()>()?),
+        ("repo_branch_rename", export.register::<()>()?),
+        (
+            "repo_branch_delete",
+            export.register::<crate::commands::DeletedBranch>()?,
+        ),
+        (
+            "repo_stash_list",
+            export.register::<Vec<crate::commands::StashEntry>>()?,
+        ),
+        ("repo_stash_push", export.register::<()>()?),
+        (
+            "repo_stash_apply",
+            export.register::<crate::commands::StashApplyResult>()?,
+        ),
+        (
+            "repo_stash_drop",
+            export.register::<crate::commands::DroppedStash>()?,
+        ),
+        ("repo_stash_store", export.register::<()>()?),
         (
             "repo_merge",
             export.register::<crate::commands::MergeResult>()?,
@@ -579,6 +720,80 @@ mod agent_worktree_tests {
             );
             assert_eq!(call.lane(), Lane::Source);
             assert_eq!(call.deadline_budget_ms(), LONG_BUDGET_MS);
+        }
+    }
+}
+
+#[cfg(test)]
+mod branch_stash_tests {
+    use super::*;
+    #[test]
+    fn branch_stash_calls_bind_paths_operations_and_budgets() {
+        for (method, request, mutation) in [
+            ("repo_branches", serde_json::json!({"path": "/repo"}), false),
+            (
+                "repo_branch_create",
+                serde_json::json!({"name": "x", "startPoint": null, "checkout": true, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_switch",
+                serde_json::json!({"branch": "x", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_branch_rename",
+                serde_json::json!({"from": "a", "to": "b", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_branch_delete",
+                serde_json::json!({"name": "x", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_list",
+                serde_json::json!({"path": "/repo"}),
+                false,
+            ),
+            (
+                "repo_stash_push",
+                serde_json::json!({"message": null, "includeUntracked": false, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_apply",
+                serde_json::json!({"index": 0, "pop": true, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_drop",
+                serde_json::json!({"index": 0, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_store",
+                serde_json::json!({"commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "message": "message", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+        ] {
+            let mut call: SourceCall = serde_json::from_value(
+                serde_json::json!({"method":method,"args":{"request":request}}),
+            )
+            .unwrap();
+            assert_eq!(call.method(), method);
+            assert!(SourceCall::METHODS.contains(&method));
+            assert_eq!(call.path(), Some("/repo"));
+            assert_eq!(call.lane(), Lane::Source);
+            assert_eq!(call.operation_id_mut().is_some(), mutation);
+            assert_eq!(
+                call.deadline_budget_ms(),
+                if mutation {
+                    LONG_BUDGET_MS
+                } else {
+                    product_ipc::workspace::DEFAULT_BUDGET_MS
+                }
+            );
         }
     }
 }

@@ -91,6 +91,16 @@ impl<'de> serde::Deserialize<'de> for WorkspaceSourceCall {
     }
 }
 pub const METHODS: &[&str] = &[
+    "repo_branches",
+    "repo_branch_create",
+    "repo_switch",
+    "repo_branch_rename",
+    "repo_branch_delete",
+    "repo_stash_list",
+    "repo_stash_push",
+    "repo_stash_apply",
+    "repo_stash_drop",
+    "repo_stash_store",
     "inspect_agent_worktree",
     "repo_merge",
     "remove_agent_worktree",
@@ -131,6 +141,17 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
+        "repo_branches" => &["source"],
+        "repo_branch_create" => &["source"],
+        "repo_switch" => &["source"],
+        "repo_branch_rename" => &["source"],
+        "repo_branch_delete" => &["source"],
+        "repo_stash_list" => &["source"],
+        "repo_stash_push" => &["source"],
+        "repo_stash_apply" => &["source"],
+        "repo_stash_drop" => &["source"],
+        "repo_stash_store" => &["source"],
+
         "inspect_agent_worktree" | "repo_merge" | "remove_agent_worktree" => &["agents", "source"],
         "approve_cleanup_scope" => &["agents", "source"],
         "approve_trust" => &["agents", "source"],
@@ -396,6 +417,14 @@ pub(crate) fn source_mutation(method: &str) -> bool {
     matches!(
         method,
         "repo_merge"
+            | "repo_branch_create"
+            | "repo_switch"
+            | "repo_branch_rename"
+            | "repo_branch_delete"
+            | "repo_stash_push"
+            | "repo_stash_apply"
+            | "repo_stash_drop"
+            | "repo_stash_store"
             | "remove_agent_worktree"
             | "repo_stage"
             | "repo_unstage"
@@ -518,4 +547,30 @@ pub fn result_types(
     result.push(("cancel_cleanup_scope", export.register::<()>()?));
     result.sort_by_key(|(method, _)| *method);
     Ok(result)
+}
+
+#[cfg(test)]
+mod branch_stash_tests {
+    #[test]
+    fn branch_stash_mutations_use_the_writer_gate_and_source_route() {
+        for (method, mutation) in [
+            ("repo_branches", false),
+            ("repo_branch_create", true),
+            ("repo_switch", true),
+            ("repo_branch_rename", true),
+            ("repo_branch_delete", true),
+            ("repo_stash_list", false),
+            ("repo_stash_push", true),
+            ("repo_stash_apply", true),
+            ("repo_stash_drop", true),
+            ("repo_stash_store", true),
+        ] {
+            assert_eq!(super::source_mutation(method), mutation, "{method}");
+            assert_eq!(super::routes_for(method), &["source"]);
+            assert_eq!(
+                super::deadline_budget_for(method),
+                if mutation { 29_000 } else { 5_000 }
+            );
+        }
+    }
 }

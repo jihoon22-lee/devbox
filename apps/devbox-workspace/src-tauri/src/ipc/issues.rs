@@ -1,5 +1,15 @@
 //! Fixed native issues only; method names and raw OS/remote text are never issues.
 product_ipc::issue_codes! { pub enum WorkspaceIssue {
+BranchNameInvalid="branch_name_invalid",
+BranchExists="branch_exists",
+BranchMissing="branch_missing",
+BranchInUse="branch_in_use",
+SwitchBlockedByChanges="switch_blocked_by_changes",
+BranchOperationFailed="branch_operation_failed",
+StashEmpty="stash_empty",
+StashMissing="stash_missing",
+StashOperationFailed="stash_operation_failed",
+
 SourceMergeDirty="source_merge_dirty",
 SourceMergeFailed="source_merge_failed",
 WorktreeNotAgent="worktree_not_agent",

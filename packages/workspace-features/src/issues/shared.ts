@@ -2,6 +2,17 @@ import type { WorkspaceIssue } from "../generated/WorkspaceIssue";
 const unavailable = "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요.";
 /** Native static codes are exhaustive; unknown text never becomes user-visible diagnostics. */
 export const workspaceMessages: Record<WorkspaceIssue, string> = {
+  branch_name_invalid: "branch 이름을 확인해 주세요.",
+  branch_exists: "같은 이름의 branch가 이미 있습니다.",
+  branch_missing: "branch를 찾지 못했습니다. 목록을 새로 고쳐 주세요.",
+  branch_in_use: "현재 branch이거나 다른 작업 폴더에서 사용 중인 branch입니다.",
+  switch_blocked_by_changes:
+    "커밋하지 않은 변경이 전환할 branch와 겹칩니다. 변경을 커밋하거나 stash에 저장한 뒤 전환해 주세요.",
+  branch_operation_failed: "branch 작업을 완료하지 못했습니다.",
+  stash_empty: "저장할 변경이 없습니다.",
+  stash_missing: "stash를 찾지 못했습니다. 목록을 새로 고쳐 주세요.",
+  stash_operation_failed: "stash 작업을 완료하지 못했습니다.",
+
   source_merge_dirty: "기본 작업 폴더에 커밋하지 않은 변경이 있습니다. 커밋하거나 정리한 뒤 병합해 주세요.",
   source_merge_failed: "병합을 완료하지 못했습니다. 기본 작업 폴더의 Git 상태를 확인해 주세요.",
   worktree_not_agent: "에이전트가 만든 작업 폴더와 branch만 정리할 수 있습니다.",

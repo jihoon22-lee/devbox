@@ -1712,6 +1712,26 @@
   [
     "workspace.source",
     "source",
+    "repo_branch_create"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branch_delete"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branch_rename"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branches"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_changes"
   ],
   [
@@ -1802,7 +1822,37 @@
   [
     "workspace.source",
     "source",
+    "repo_stash_apply"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_drop"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_list"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_push"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_store"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_status"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_switch"
   ],
   [
     "workspace.source",

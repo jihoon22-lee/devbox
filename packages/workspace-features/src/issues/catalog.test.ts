@@ -17,3 +17,18 @@ it("provides localized text for every declared native code", () => {
     expect(message, code).not.toBe(code);
   }
 });
+
+it("has fixed Korean branch and stash recovery messages", () => {
+  for (const code of [
+    "branch_name_invalid",
+    "branch_exists",
+    "branch_missing",
+    "branch_in_use",
+    "switch_blocked_by_changes",
+    "branch_operation_failed",
+    "stash_empty",
+    "stash_missing",
+    "stash_operation_failed",
+  ])
+    expect(workspaceIssueMessage(code), code).not.toBe(workspaceIssueMessage("unknown"));
+});

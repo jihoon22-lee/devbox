@@ -1,4 +1,5 @@
 import type { AgentWorktreePresence } from "./AgentWorktreePresence";
+import type { BranchList } from "./BranchList";
 import type { ChangeEntry } from "./ChangeEntry";
 import type { CleanupApproved } from "./CleanupApproved";
 import type { CleanupPreview } from "./CleanupPreview";
@@ -6,7 +7,9 @@ import type { CleanupResult } from "./CleanupResult";
 import type { CleanupScopePreview } from "./CleanupScopePreview";
 import type { CleanupScopeStatus } from "./CleanupScopeStatus";
 import type { CommitDetail } from "./CommitDetail";
+import type { DeletedBranch } from "./DeletedBranch";
 import type { DiffResult } from "./DiffResult";
+import type { DroppedStash } from "./DroppedStash";
 import type { GitSafetySnapshot } from "./GitSafetySnapshot";
 import type { HistoryResult } from "./HistoryResult";
 import type { MergeResult } from "./MergeResult";
@@ -17,6 +20,8 @@ import type { SourceApproved } from "./SourceApproved";
 import type { SourceTrustPreview } from "./SourceTrustPreview";
 import type { SourceTrustStatus } from "./SourceTrustStatus";
 import type { SourceWorktreePreview } from "./SourceWorktreePreview";
+import type { StashApplyResult } from "./StashApplyResult";
+import type { StashEntry } from "./StashEntry";
 import type { WorktreeCreate } from "./WorktreeCreate";
 
 export type SourceResults = {
@@ -32,6 +37,10 @@ export type SourceResults = {
   preview_trust: SourceTrustPreview;
   preview_worktree: SourceWorktreePreview;
   remove_agent_worktree: null;
+  repo_branch_create: null;
+  repo_branch_delete: DeletedBranch;
+  repo_branch_rename: null;
+  repo_branches: BranchList;
   repo_changes: Array<ChangeEntry>;
   repo_cleanup: CleanupResult;
   repo_cleanup_cancel: boolean;
@@ -50,7 +59,13 @@ export type SourceResults = {
   repo_remote_cancel: boolean;
   repo_remote_status: RemoteState;
   repo_stage: null;
+  repo_stash_apply: StashApplyResult;
+  repo_stash_drop: DroppedStash;
+  repo_stash_list: Array<StashEntry>;
+  repo_stash_push: null;
+  repo_stash_store: null;
   repo_status: RepoSnapshot;
+  repo_switch: null;
   repo_unstage: null;
   revoke_cleanup_scope: CleanupApproved;
   revoke_trust: SourceApproved;
