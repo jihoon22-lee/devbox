@@ -63,6 +63,8 @@ export function parseImport(format: ImportFormat, files: { relativePath: string;
               collections?.collections.map((entry) => ({
                 name: entry.name,
                 folder: entry.folder,
+                assertions: entry.assertions,
+                captures: entry.captures,
                 request: entry.request,
                 requiresSecretReview: entry.requiresSecretReview || entry.request.requiresSecretReview,
               })) ?? [],

@@ -1,3 +1,4 @@
+import { looksLikeSecret } from "./secretPatterns";
 import type { ApiResponse } from "../types";
 import { evaluateJsonPath } from "./jsonPath";
 export type AssertionSource = "status" | "header" | "jsonPath" | "body" | "duration";
@@ -126,4 +127,43 @@ export function evaluateAssertions(assertions: Assertion[], response: ApiRespons
         };
       }
     });
+}
+
+export function cleanAssertions(value: unknown): { assertions: Assertion[]; dropped: number } {
+  if (value === undefined) return { assertions: [], dropped: 0 };
+  if (!Array.isArray(value)) return { assertions: [], dropped: 1 };
+  const assertions: Assertion[] = [];
+  const ids = new Set<string>();
+  let dropped = 0;
+  for (const item of value) {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      assertions.length >= 50 ||
+      typeof item.id !== "string" ||
+      !item.id ||
+      item.id.length > 128 ||
+      ids.has(item.id) ||
+      typeof item.enabled !== "boolean" ||
+      typeof item.target !== "string" ||
+      item.target.length > 256 ||
+      typeof item.expected !== "string" ||
+      new TextEncoder().encode(item.expected).length > 64 * 1024 ||
+      !ASSERTION_SOURCES.includes(item.source) ||
+      !ASSERTION_OPERATORS.includes(item.operator)
+    ) {
+      dropped++;
+      continue;
+    }
+    ids.add(item.id);
+    assertions.push({
+      id: item.id,
+      enabled: item.enabled,
+      source: item.source,
+      target: item.target,
+      operator: item.operator,
+      expected: looksLikeSecret(item.expected) ? "[REDACTED]" : item.expected,
+    });
+  }
+  return { assertions, dropped };
 }

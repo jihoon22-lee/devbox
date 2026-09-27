@@ -1,3 +1,6 @@
+import { looksLikeSecret } from "./secretPatterns";
+export { looksLikeSecret } from "./secretPatterns";
+import { cleanCollectionChecks } from "./collections";
 import type {
   AuthConfig,
   GraphqlRequest,
@@ -421,7 +424,14 @@ function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHisto
 }
 
 function cleanCollectionEntry(value: unknown): CollectionEntry | null {
-  if (!isRecord(value) || !onlyKeys(value, ["id", "name", "folder", "saved_at", "request", "requiresSecretReview"]))
+  if (
+    !isRecord(value) ||
+    !onlyKeys(
+      value,
+      ["id", "name", "folder", "saved_at", "request", "requiresSecretReview"],
+      ["assertions", "captures"],
+    )
+  )
     return null;
   const request = value.request;
   if (
@@ -450,7 +460,11 @@ function cleanCollectionEntry(value: unknown): CollectionEntry | null {
     folder: value.folder.trim(),
     saved_at: Number(value.saved_at),
     request: safeRequest,
-    requiresSecretReview: Boolean(value.requiresSecretReview) || request.requiresSecretReview,
+    ...cleanCollectionChecks({
+      assertions: value.assertions,
+      captures: value.captures,
+      requiresSecretReview: Boolean(value.requiresSecretReview) || request.requiresSecretReview,
+    }),
   };
 }
 
@@ -475,7 +489,10 @@ export function serializeCollectionExport(store: CollectionStore): string {
         folder: safeExportMetadata(entry.folder, MAX_TRANSFER_NAME_CHARS, ""),
         saved_at: Number.isSafeInteger(entry.saved_at) && entry.saved_at >= 0 ? entry.saved_at : 0,
         request: cleanPersistedRequest(entry.request),
-        requiresSecretReview: Boolean(entry.requiresSecretReview || entry.request.requiresSecretReview),
+        ...cleanCollectionChecks({
+          ...entry,
+          requiresSecretReview: Boolean(entry.requiresSecretReview || entry.request.requiresSecretReview),
+        }),
       }) satisfies CollectionEntry,
   );
   const raw = JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: TRANSFER_VERSION, collections });
@@ -497,13 +514,6 @@ export function parseCollectionExport(raw: string): CollectionStore | null {
   const collections = value.collections.map(cleanCollectionEntry);
   if (collections.some((entry) => entry === null)) return null;
   return { version: COLLECTION_VERSION, collections: collections as CollectionEntry[] };
-}
-
-export function looksLikeSecret(value: string): boolean {
-  return (
-    /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}/u.test(value) ||
-    /^AKIA[A-Z0-9]{16}$/u.test(value)
-  );
 }
 
 function isEnvironmentKey(value: string): boolean {

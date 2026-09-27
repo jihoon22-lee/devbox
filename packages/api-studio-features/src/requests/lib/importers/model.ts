@@ -1,5 +1,9 @@
+import type { Assertion } from "../assertions";
+import type { Capture } from "../captures";
 import type { RequestTemplate } from "../../types";
 export interface ImportedRequest {
+  assertions?: Assertion[];
+  captures?: Capture[];
   name: string;
   folder: string;
   request: RequestTemplate;

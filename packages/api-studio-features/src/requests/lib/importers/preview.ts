@@ -1,4 +1,4 @@
-import { COLLECTION_VERSION, type CollectionStore } from "../collections";
+import { COLLECTION_VERSION, cleanCollectionChecks, type CollectionStore } from "../collections";
 import { sanitizeRequestForPersistence } from "../persistence";
 import {
   isSensitiveName,
@@ -41,7 +41,7 @@ export function toImportPreview(
         folder: name(item.folder, ""),
         saved_at: Date.now(),
         request,
-        requiresSecretReview: request.requiresSecretReview,
+        ...cleanCollectionChecks({ ...item, requiresSecretReview: request.requiresSecretReview }),
       };
     }),
   };

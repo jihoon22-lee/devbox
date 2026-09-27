@@ -41,3 +41,41 @@ export function applyCaptures(captures: Capture[], response: ApiResponse): Captu
   }
   return { values, missing: [...missing], errors };
 }
+
+export function cleanCaptures(value: unknown): { captures: Capture[]; dropped: number } {
+  if (value === undefined) return { captures: [], dropped: 0 };
+  if (!Array.isArray(value)) return { captures: [], dropped: 1 };
+  const captures: Capture[] = [];
+  const ids = new Set<string>();
+  let dropped = 0;
+  for (const item of value) {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      captures.length >= 20 ||
+      typeof item.id !== "string" ||
+      !item.id ||
+      item.id.length > 128 ||
+      ids.has(item.id) ||
+      typeof item.enabled !== "boolean" ||
+      typeof item.variable !== "string" ||
+      !VARIABLE_NAME.test(item.variable) ||
+      !["jsonPath", "header", "status"].includes(item.source) ||
+      typeof item.target !== "string" ||
+      item.target.length > 256 ||
+      (item.source === "header" && !item.target.trim())
+    ) {
+      dropped++;
+      continue;
+    }
+    ids.add(item.id);
+    captures.push({
+      id: item.id,
+      enabled: item.enabled,
+      variable: item.variable,
+      source: item.source,
+      target: item.target,
+    });
+  }
+  return { captures, dropped };
+}

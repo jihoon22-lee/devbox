@@ -53,6 +53,8 @@ export function serializeFileCollection(
       schema: requestSchema,
       schemaVersion: 1,
       name: item.name,
+      assertions: item.assertions,
+      captures: item.captures,
       request: {
         ...item.request,
         requiresSecretReview: item.requiresSecretReview || item.request.requiresSecretReview,
@@ -107,6 +109,8 @@ export function parseFileCollection(files: { relativePath: string; text: string 
               saved_at: 0,
               request: value.request,
               requiresSecretReview: value.request?.requiresSecretReview === true,
+              assertions: value.assertions,
+              captures: value.captures,
             },
           ],
         }),
@@ -116,6 +120,8 @@ export function parseFileCollection(files: { relativePath: string; text: string 
       bundle.requests.push({
         name: item.name,
         folder: item.folder,
+        assertions: item.assertions,
+        captures: item.captures,
         request: item.request,
         requiresSecretReview: item.requiresSecretReview || item.request.requiresSecretReview,
       });
