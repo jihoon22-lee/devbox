@@ -11,3 +11,5 @@ pub mod remote_sync;
 pub mod stage_commit;
 pub mod hunks;
 pub mod blame;
+
+pub mod conflicts;
