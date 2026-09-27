@@ -220,17 +220,31 @@ function isMultipart(value: unknown): value is MultipartPart {
   );
 }
 
+function isOAuth2(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return (
+    isRecord(value) &&
+    onlyKeys(value, ["grantType", "authorizationUrl", "tokenUrl", "clientId", "clientSecret", "scopes"]) &&
+    ["authorizationCode", "clientCredentials"].includes(String(value.grantType)) &&
+    safeMetadata(value.authorizationUrl, 8192) &&
+    safeMetadata(value.tokenUrl, 8192) &&
+    safeMetadata(value.clientId, 8192) &&
+    safeMetadata(value.scopes, 32768) &&
+    protectedValue(value.clientSecret)
+  );
+}
 function isAuth(value: unknown): value is AuthConfig | null {
   if (value === null) return true;
   return (
     isRecord(value) &&
-    onlyKeys(value, ["kind", "username", "password", "token", "api_key", "api_value"]) &&
+    onlyKeys(value, ["kind", "username", "password", "token", "api_key", "api_value"], ["oauth2"]) &&
     safeMetadata(value.kind, 64) &&
     protectedValue(value.username) &&
     protectedValue(value.password) &&
     protectedValue(value.token) &&
     safeMetadata(value.api_key, 256) &&
-    protectedValue(value.api_value)
+    protectedValue(value.api_value) &&
+    isOAuth2(value.oauth2)
   );
 }
 
@@ -348,7 +362,7 @@ function exportBodyKind(value: unknown): string {
 
 function exportAuthKind(value: unknown): string {
   const kind = safeTransferMetadata(value, 64, 64, "none");
-  return ["none", "basic", "bearer", "apikey"].includes(kind) ? kind : "none";
+  return ["none", "basic", "bearer", "apikey", "oauth2"].includes(kind) ? kind : "none";
 }
 
 function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {
@@ -397,6 +411,18 @@ function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHisto
         token: safeTransferValue(safe.auth.token, MAX_TRANSFER_FIELD_BYTES, ""),
         api_key: safeTransferMetadata(safe.auth.api_key, 256, 256, ""),
         api_value: safeTransferValue(safe.auth.api_value, MAX_TRANSFER_FIELD_BYTES, ""),
+        ...(safe.auth.oauth2
+          ? {
+              oauth2: {
+                grantType: safe.auth.oauth2.grantType,
+                authorizationUrl: safeTransferValue(safe.auth.oauth2.authorizationUrl, 8192),
+                tokenUrl: safeTransferValue(safe.auth.oauth2.tokenUrl, 8192),
+                clientId: safeTransferMetadata(safe.auth.oauth2.clientId, 8192, 8192, ""),
+                clientSecret: safeTransferValue(safe.auth.oauth2.clientSecret),
+                scopes: safeTransferMetadata(safe.auth.oauth2.scopes, 32768, 32768, ""),
+              },
+            }
+          : {}),
       }
     : null;
   const graphql =

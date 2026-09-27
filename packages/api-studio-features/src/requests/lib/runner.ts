@@ -184,6 +184,11 @@ export function missingVariables(request: RequestTemplate, available: Set<string
     values.push(
       ...request.multipart.filter((part) => part.enabled !== false && part.kind === "text").map((part) => part.value),
     );
+  if (request.auth?.kind === "oauth2" && request.auth.oauth2) {
+    const config = request.auth.oauth2;
+    if (config.grantType === "authorizationCode") values.push(config.authorizationUrl);
+    values.push(config.tokenUrl, config.clientId, config.clientSecret, config.scopes);
+  }
   if (request.auth)
     values.push(
       request.auth.username,

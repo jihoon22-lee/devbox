@@ -137,7 +137,7 @@ export { statusClass } from "./ResponseViewer";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
-const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
+const AUTH_KINDS = ["none", "basic", "bearer", "apikey", "oauth2"];
 const MAX_SSE_UI_ROWS = 1_000;
 const API_REQUEST_HANDOFF_KIND = "api-request/v1";
 
@@ -179,7 +179,11 @@ export default function App({
         restore: (references) => api.restoreCaptures(references),
       }),
   );
-  const [, setSessionVersion] = useState(0);
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const [oauthLoginRequest, setOAuthLoginRequest] = useState(0);
+  const oauthLoginSequence = useRef(0);
+  const [oauthStatusKey, setOAuthStatusKey] = useState(0);
+  const onOAuthLoginHandled = useCallback(() => setOAuthLoginRequest(0), []);
   const refreshSession = useCallback(() => setSessionVersion((version) => version + 1), []);
   const [showRunner, setShowRunner] = useState(false);
   const [runnerBusy, setRunnerBusy] = useState(false);
@@ -466,6 +470,10 @@ export default function App({
   });
 
   const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
+  const oauthEnvironment = useMemo(() => {
+    void sessionVersion;
+    return sessionVariables.merge(currentEnv?.variables ?? []);
+  }, [sessionVersion, sessionVariables, currentEnv]);
   const historyMethods = useMemo(() => [...new Set(history.map(historyMethodOf))].sort(), [history]);
   const visibleHistory = useMemo(
     () => filterHistory(history, { query: historyQuery, method: historyMethod, status: historyStatus }),
@@ -1088,6 +1096,7 @@ export default function App({
       const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal, captureSnapshot);
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setResp(result);
+      setOAuthStatusKey((key) => key + 1);
       setAssertionResults(evaluateAssertions(assertionSnapshot, result));
       setCaptured([]);
       try {
@@ -1956,6 +1965,10 @@ export default function App({
                 BODY_KINDS={BODY_KINDS}
                 setAuth={setAuth}
                 AUTH_KINDS={AUTH_KINDS}
+                oauthEnvironment={oauthEnvironment}
+                oauthStatusKey={oauthStatusKey}
+                oauthLoginRequest={oauthLoginRequest}
+                onOAuthLoginHandled={onOAuthLoginHandled}
               />
             )}
 
@@ -1982,6 +1995,18 @@ export default function App({
             {error && (
               <div className="error" role="alert">
                 {error}
+                {error === apiMessages.oauth2_authorization_required && req.auth?.kind === "oauth2" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("auth");
+                      setOAuthLoginRequest(++oauthLoginSequence.current);
+                      setError(null);
+                    }}
+                  >
+                    로그인
+                  </button>
+                )}
               </div>
             )}
 

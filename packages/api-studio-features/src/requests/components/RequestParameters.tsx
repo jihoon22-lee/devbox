@@ -1,3 +1,5 @@
+import { lazy, Suspense } from "react";
+const OAuth2Editor = lazy(() => import("../OAuth2Editor").then((module) => ({ default: module.OAuth2Editor })));
 import { KeyValueEditor } from "./KeyValueEditor";
 import { emptyGraphql } from "../lib/requestPresentation";
 import { pickMultipartFile } from "../api";
@@ -17,6 +19,10 @@ interface Props {
   BODY_KINDS: string[];
   setAuth: (patch: Partial<import("../../generated/AuthConfig").AuthConfig>) => void;
   AUTH_KINDS: string[];
+  oauthEnvironment: import("../lib/environments").EnvVariable[];
+  oauthStatusKey: number;
+  oauthLoginRequest: number;
+  onOAuthLoginHandled: () => void;
 }
 
 export function RequestParameters({
@@ -28,6 +34,10 @@ export function RequestParameters({
   BODY_KINDS,
   setAuth,
   AUTH_KINDS,
+  oauthEnvironment,
+  oauthStatusKey,
+  oauthLoginRequest,
+  onOAuthLoginHandled,
 }: Props) {
   return (
     <div className="tab-body">
@@ -109,15 +119,28 @@ export function RequestParameters({
         <div className="auth-body">
           <select
             className="select-sm"
+            aria-label="인증 종류"
             value={req.auth?.kind ?? "none"}
             onChange={(e) => setAuth({ kind: e.currentTarget.value })}
           >
             {AUTH_KINDS.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {k === "oauth2" ? "OAuth 2.0" : k}
               </option>
             ))}
           </select>
+          {req.auth?.kind === "oauth2" && (
+            <Suspense fallback={<p>인증 설정을 불러오는 중…</p>}>
+              <OAuth2Editor
+                auth={req.auth}
+                environment={oauthEnvironment}
+                onChange={(oauth2) => setAuth({ oauth2 })}
+                statusKey={oauthStatusKey}
+                loginRequest={oauthLoginRequest}
+                onLoginHandled={onOAuthLoginHandled}
+              />
+            </Suspense>
+          )}
           {req.auth?.kind === "basic" && (
             <div className="kv-row">
               <input

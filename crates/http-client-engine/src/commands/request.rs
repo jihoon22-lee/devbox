@@ -1423,7 +1423,13 @@ pub(crate) fn resolve_template(
                     .flatten()
                     .map(|config| super::oauth2::config::OAuth2Config {
                         grant_type: config.grant_type,
-                        authorization_url: replace(&config.authorization_url),
+                        authorization_url: if config.grant_type
+                            == super::oauth2::config::GrantType::AuthorizationCode
+                        {
+                            replace(&config.authorization_url)
+                        } else {
+                            String::new()
+                        },
                         token_url: replace(&config.token_url),
                         client_id: replace(&config.client_id),
                         client_secret: replace(&config.client_secret),
@@ -1679,8 +1685,10 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         collect(&auth.api_value);
         if auth.kind == "oauth2" {
             if let Some(config) = &auth.oauth2 {
+                if config.grant_type == super::oauth2::config::GrantType::AuthorizationCode {
+                    collect(&config.authorization_url);
+                }
                 for value in [
-                    &config.authorization_url,
                     &config.token_url,
                     &config.client_id,
                     &config.client_secret,
@@ -3688,6 +3696,7 @@ mod tests {
             oauth2: Some(OAuth2Config {
                 grant_type: GrantType::ClientCredentials,
                 token_url: "https://auth.test/token".into(),
+                authorization_url: "https://{{UNUSED_AUTH}}/authorize".into(),
                 client_id: "client".into(),
                 client_secret: "{{CLIENT_SECRET}}".into(),
                 ..Default::default()
@@ -3695,6 +3704,7 @@ mod tests {
             ..Default::default()
         });
         assert!(referenced_variable_names(&req).contains("CLIENT_SECRET"));
+        assert!(!referenced_variable_names(&req).contains("UNUSED_AUTH"));
         let (mut resolved, secrets) = resolve_template(
             &req,
             &[sealed_variable("CLIENT_SECRET", "private-client-secret")],

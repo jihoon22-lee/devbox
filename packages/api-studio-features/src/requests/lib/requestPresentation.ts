@@ -1,3 +1,4 @@
+import { apiMessages } from "../../issues/catalog";
 import { buildRevealedCurl } from "../api";
 import { sanitizeRequestForPersistence } from "./persistence";
 import { isExactVariableReference } from "./references";
@@ -239,6 +240,9 @@ export function buildCurl(template: RequestTemplate): string {
 }
 
 export function safeRequestError(cause: unknown): string {
+  const code = cause instanceof Error ? cause.name : typeof cause === "string" ? cause : "";
+  if (code.startsWith("oauth2_") && Object.prototype.hasOwnProperty.call(apiMessages, code))
+    return apiMessages[code as keyof typeof apiMessages];
   if (
     (typeof DOMException !== "undefined" && cause instanceof DOMException && cause.name === "AbortError") ||
     (cause instanceof Error && cause.name === "AbortError")
@@ -248,6 +252,7 @@ export function safeRequestError(cause: unknown): string {
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/, "");
   const safeMessages = [
+    "OAuth 2.0 인증은 데스크톱 앱에서 사용할 수 있습니다.",
     "multipart는 최대 50개 part까지 사용할 수 있습니다.",
     "part 이름이 필요합니다.",
     "part 이름은 120자 이하의 HTTP token이어야 합니다.",

@@ -2,7 +2,7 @@ import { browserDocumentStorage } from "../storage/documentStorage";
 import { previewDocumentKey, seedPreviewDocument } from "../storage/testDocuments";
 const COLLECTION_V2_LS_KEY = previewDocumentKey("collections");
 const HISTORY_V2_LS_KEY = previewDocumentKey("history");
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -13,6 +13,8 @@ import {
   sendRequest,
   revealCapture,
   sealSecret,
+  authorizeOAuth2,
+  oauth2Status,
 } from "./api";
 import { type CollectionStore } from "./lib/collections";
 import { sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
@@ -38,6 +40,11 @@ vi.mock("./api", () => ({
   saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
+  oauth2Status: vi.fn(async () => ({ state: "missing", expiresAtMs: null, scope: null })),
+  authorizeOAuth2: vi.fn(),
+  cancelOAuth2: vi.fn(async () => {}),
+  fetchOAuth2Token: vi.fn(),
+  clearOAuth2Token: vi.fn(async () => {}),
   revealCapture: vi.fn(),
   discardCaptures: vi.fn(async () => {}),
   restoreCaptures: vi.fn(async () => {}),
@@ -392,4 +399,31 @@ it("manual native sends pass capture definitions and keep tokens sealed until ex
   fireEvent.click(screen.getByRole("button", { name: "token 보기" }));
   expect(await screen.findByText("revealed-native-token")).toBeTruthy();
   expect(revealCapture).toHaveBeenCalledWith("native-ref");
+});
+
+it("opens OAuth login from a native authorization-required response", async () => {
+  await renderReady();
+  nativeMode.value = true;
+  vi.mocked(sendRequest).mockRejectedValue(
+    Object.assign(new Error("private-provider-detail"), { name: "oauth2_authorization_required" }),
+  );
+  vi.mocked(oauth2Status).mockResolvedValue({ state: "missing", expiresAtMs: null, scope: null });
+  vi.mocked(authorizeOAuth2).mockResolvedValue({ state: "valid", expiresAtMs: null, scope: "read" });
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://api.test/me" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "AUTH" }));
+  fireEvent.change(screen.getByLabelText("인증 종류"), { target: { value: "oauth2" } });
+  fireEvent.change(await screen.findByLabelText("Authorization URL"), {
+    target: { value: "https://auth.test/authorize" },
+  });
+  fireEvent.change(screen.getByLabelText("Token URL"), { target: { value: "https://auth.test/token" } });
+  fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client" } });
+  fireEvent.click(screen.getByRole("button", { name: "PARAMS" }));
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await screen.findByText("로그인이 필요합니다.");
+  expect(screen.queryByText("private-provider-detail")).toBeNull();
+  fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "로그인" }));
+  await waitFor(() => expect(authorizeOAuth2).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("유효 · 만료 시각 없음")).toBeTruthy();
 });

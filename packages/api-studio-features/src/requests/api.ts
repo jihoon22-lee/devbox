@@ -138,7 +138,10 @@ export async function sendRequest(
   signal?: AbortSignal,
   captures: import("./lib/captures").Capture[] = [],
 ): Promise<ApiResponse> {
-  if (!isTauri()) return browserFetch(req, environment, signal);
+  if (!isTauri()) {
+    if (req.auth?.kind === "oauth2") requireNativeOAuth();
+    return browserFetch(req, environment, signal);
+  }
   if (signal?.aborted) throw new Error("요청이 취소되었습니다");
   const requestId = nextNativeRequestId();
   const onAbort = () => {
@@ -150,6 +153,44 @@ export async function sendRequest(
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
+}
+
+export type OAuth2TokenStatus = import("../generated/TokenStatus").TokenStatus;
+function requireNativeOAuth(): void {
+  if (!isTauri()) throw new Error("OAuth 2.0 인증은 데스크톱 앱에서 사용할 수 있습니다.");
+}
+export async function oauth2Status(
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<OAuth2TokenStatus> {
+  requireNativeOAuth();
+  return apiCall("oauth2_status", { auth, environment });
+}
+export async function authorizeOAuth2(
+  requestId: string,
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<OAuth2TokenStatus> {
+  requireNativeOAuth();
+  return apiCall("authorize_oauth2", { requestId, auth, environment });
+}
+export async function cancelOAuth2(requestId: string): Promise<void> {
+  requireNativeOAuth();
+  await apiCall("cancel_oauth2", { requestId });
+}
+export async function fetchOAuth2Token(
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<OAuth2TokenStatus> {
+  requireNativeOAuth();
+  return apiCall("fetch_oauth2_token", { auth, environment });
+}
+export async function clearOAuth2Token(
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<void> {
+  requireNativeOAuth();
+  await apiCall("clear_oauth2_token", { auth, environment });
 }
 
 export async function revealCapture(reference: string): Promise<string> {
