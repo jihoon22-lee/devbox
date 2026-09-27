@@ -244,6 +244,89 @@ pub async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'stati
     }
 }
 
+#[cfg(windows)]
+pub fn start(
+    app: tauri::AppHandle,
+    scope: Arc<suite_runtime::platform::component_scope::CapturedScope>,
+    name: String,
+    routes: Arc<Routes>,
+) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use suite_runtime::platform::agent_peer::{AgentPeer, Witness};
+    use tokio::net::windows::named_pipe::ServerOptions;
+    use windows::Win32::Foundation::HANDLE;
+    let first = ServerOptions::new()
+        .first_pipe_instance(true)
+        .reject_remote_clients(true)
+        .create(&name)
+        .map_err(|_| "agent_pipe_unavailable")?;
+    tauri::async_runtime::spawn(async move {
+        let mut listener = first;
+        let mut clients = tokio::task::JoinSet::new();
+        let mut shutdown = routes.shutdown_receiver();
+        loop {
+            if *shutdown.borrow() {
+                break;
+            }
+            tokio::select! {
+                _ = shutdown.changed() => break,
+                Some(_) = clients.join_next(), if !clients.is_empty() => continue,
+                connected = listener.connect() => { if connected.is_err() { break; } }
+            }
+            // Preserve the registered pipe while creating its successor.
+            let Ok(next) = ServerOptions::new()
+                .reject_remote_clients(true)
+                .create(&name)
+            else {
+                break;
+            };
+            let stream = std::mem::replace(&mut listener, next);
+            if clients.len() >= 32 {
+                continue;
+            }
+            let Ok(witness) = Witness::capture(HANDLE(stream.as_raw_handle())) else {
+                continue;
+            };
+            let scope = scope.clone();
+            let routes = routes.clone();
+            clients.spawn(async move {
+                let verified = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    tokio::task::spawn_blocking(move || AgentPeer::product(scope, witness)),
+                )
+                .await;
+                let peer = match verified {
+                    Ok(Ok(Ok(peer))) => peer.installation_id().ok().map(|installation_id| Peer {
+                        product: peer.product_id().into(),
+                        installation_id,
+                        verify: Box::new(move || peer.revalidate()),
+                    }),
+                    _ => None,
+                };
+                let _ = handle_connection(stream, peer, routes).await;
+            });
+        }
+        routes.shutdown();
+        // Let authenticated peers latch intentional shutdown before dropping
+        // their pipes. Their background queries must not launch us again.
+        if tokio::time::timeout(Duration::from_secs(6), async {
+            while clients.join_next().await.is_some() {}
+        })
+        .await
+        .is_err()
+        {
+            clients.abort_all();
+            while clients.join_next().await.is_some() {}
+        }
+        routes.shutdown_owners().await;
+        drop(listener);
+        // All owners have drained before run() may release the writer lease.
+        // Explicit exit bypasses the headless idle-exit prevention.
+        app.exit(0);
+    });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -570,87 +653,4 @@ mod tests {
             "frame_too_large"
         );
     }
-}
-
-#[cfg(windows)]
-pub fn start(
-    app: tauri::AppHandle,
-    scope: Arc<suite_runtime::platform::component_scope::CapturedScope>,
-    name: String,
-    routes: Arc<Routes>,
-) -> Result<()> {
-    use std::os::windows::io::AsRawHandle;
-    use suite_runtime::platform::agent_peer::{AgentPeer, Witness};
-    use tokio::net::windows::named_pipe::ServerOptions;
-    use windows::Win32::Foundation::HANDLE;
-    let first = ServerOptions::new()
-        .first_pipe_instance(true)
-        .reject_remote_clients(true)
-        .create(&name)
-        .map_err(|_| "agent_pipe_unavailable")?;
-    tauri::async_runtime::spawn(async move {
-        let mut listener = first;
-        let mut clients = tokio::task::JoinSet::new();
-        let mut shutdown = routes.shutdown_receiver();
-        loop {
-            if *shutdown.borrow() {
-                break;
-            }
-            tokio::select! {
-                _ = shutdown.changed() => break,
-                Some(_) = clients.join_next(), if !clients.is_empty() => continue,
-                connected = listener.connect() => { if connected.is_err() { break; } }
-            }
-            // Preserve the registered pipe while creating its successor.
-            let Ok(next) = ServerOptions::new()
-                .reject_remote_clients(true)
-                .create(&name)
-            else {
-                break;
-            };
-            let stream = std::mem::replace(&mut listener, next);
-            if clients.len() >= 32 {
-                continue;
-            }
-            let Ok(witness) = Witness::capture(HANDLE(stream.as_raw_handle())) else {
-                continue;
-            };
-            let scope = scope.clone();
-            let routes = routes.clone();
-            clients.spawn(async move {
-                let verified = tokio::time::timeout(
-                    Duration::from_secs(2),
-                    tokio::task::spawn_blocking(move || AgentPeer::product(scope, witness)),
-                )
-                .await;
-                let peer = match verified {
-                    Ok(Ok(Ok(peer))) => peer.installation_id().ok().map(|installation_id| Peer {
-                        product: peer.product_id().into(),
-                        installation_id,
-                        verify: Box::new(move || peer.revalidate()),
-                    }),
-                    _ => None,
-                };
-                let _ = handle_connection(stream, peer, routes).await;
-            });
-        }
-        routes.shutdown();
-        // Let authenticated peers latch intentional shutdown before dropping
-        // their pipes. Their background queries must not launch us again.
-        if tokio::time::timeout(Duration::from_secs(6), async {
-            while clients.join_next().await.is_some() {}
-        })
-        .await
-        .is_err()
-        {
-            clients.abort_all();
-            while clients.join_next().await.is_some() {}
-        }
-        routes.shutdown_owners().await;
-        drop(listener);
-        // All owners have drained before run() may release the writer lease.
-        // Explicit exit bypasses the headless idle-exit prevention.
-        app.exit(0);
-    });
-    Ok(())
 }
