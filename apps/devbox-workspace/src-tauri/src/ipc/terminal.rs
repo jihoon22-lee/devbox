@@ -11,6 +11,10 @@ use serde::Deserialize;
 )]
 #[ts(optional_fields = nullable)]
 pub enum WorkspaceTerminalCall {
+    OpenAgentTerminal {
+        operation_id: String,
+        task_id: String,
+    },
     DashboardSnapshot {},
     DockerAction {
         operation_id: String,
@@ -101,6 +105,7 @@ pub enum WorkspaceTerminalCall {
     },
 }
 pub const METHODS: &[&str] = &[
+    "open_agent_terminal",
     "ack_terminal_log",
     "archive_development_session",
     "dashboard_snapshot",
@@ -130,6 +135,7 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
+        "open_agent_terminal" => &["agents"],
         "ack_terminal_log" => &["agents", "terminal"],
         "archive_development_session" => &["agents", "terminal"],
         "dashboard_snapshot" => &["agents", "runtime", "terminal"],
@@ -168,6 +174,7 @@ impl ComponentCall for WorkspaceTerminalCall {
     }
     fn method(&self) -> &'static str {
         match self {
+            Self::OpenAgentTerminal { .. } => "open_agent_terminal",
             Self::DashboardSnapshot { .. } => "dashboard_snapshot",
             Self::DockerAction { .. } => "docker_action",
             Self::WslControlStatus { .. } => "wsl_control_status",
@@ -237,7 +244,10 @@ pub fn result_types(
 ) -> Result<Vec<(&'static str, String)>, String> {
     use super::results::*;
     export.register::<WorkspaceTerminalCall>()?;
-    let mut results = Vec::new();
+    let mut results = vec![(
+        "open_agent_terminal",
+        export.register::<crate::terminal_host::Record>()?,
+    )];
     results.retain(|(method, _)| METHODS.contains(method));
     results.retain(|(method, _)| *method != "dashboard_snapshot");
     results.push((

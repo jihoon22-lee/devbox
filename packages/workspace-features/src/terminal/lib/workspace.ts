@@ -200,6 +200,7 @@ function normalizeTab(value: unknown): WorkspaceTabDefinition | null {
 export function normalizeWorkspace(value: unknown): WorkspaceDefinition | null {
   if (
     !isRecord(value) ||
+    (value.autoRun !== undefined && typeof value.autoRun !== "boolean") ||
     !Array.isArray(value.tabs) ||
     !Array.isArray(value.panes) ||
     value.tabs.length === 0 ||
@@ -230,6 +231,7 @@ export function normalizeWorkspace(value: unknown): WorkspaceDefinition | null {
   const activeTab = normalizedTabs.find((tab) => tab.id === value.activeTabId);
   if (!activeTab || (activePaneKey !== null && !activeTab.paneKeys.includes(activePaneKey))) return null;
   return {
+    ...(value.autoRun === true ? { autoRun: true } : {}),
     tabs: normalizedTabs,
     panes: normalizedPanes,
     activeTabId: value.activeTabId,
@@ -240,7 +242,9 @@ export function normalizeWorkspace(value: unknown): WorkspaceDefinition | null {
 export function normalizeProfile(value: unknown): WorkspaceProfile | null {
   if (!isRecord(value) || !validId(value.id) || !validName(value.name)) return null;
   const workspace = normalizeWorkspace(value);
-  return workspace ? { id: value.id, name: value.name.trim(), ...workspace } : null;
+  if (!workspace) return null;
+  delete workspace.autoRun;
+  return { id: value.id, name: value.name.trim(), ...workspace };
 }
 
 export function workspaceFromRuntime(

@@ -203,6 +203,7 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
     docker_action: 29000,
     focus_terminal: 29000,
     list_workspace_profiles: 29000,
+    open_agent_terminal: 29000,
     open_distro_terminal: 29000,
     open_terminal: 29000,
     open_terminal_profile: 29000,

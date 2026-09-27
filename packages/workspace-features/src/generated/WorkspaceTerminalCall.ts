@@ -3,6 +3,7 @@ import type { Mode } from "./Mode";
 import type { WorkspaceProfile } from "./WorkspaceProfile";
 
 export type WorkspaceTerminalCall =
+  | { method: "open_agent_terminal"; args: { operationId: string; taskId: string } }
   | { method: "dashboard_snapshot"; args: Record<symbol, never> }
   | { method: "docker_action"; args: { operationId: string; distro: string; containerId: string; action: string } }
   | { method: "wsl_control_status"; args: { operationId: string } }

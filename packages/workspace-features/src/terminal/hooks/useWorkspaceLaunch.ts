@@ -347,6 +347,7 @@ export function useWorkspaceLaunch({
     const runStartCommands =
       !isRestoreOnly() &&
       (commands.length === 0 ||
+        workspace.autoRun === true ||
         (
           await ask({
             kind: "confirm",

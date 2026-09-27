@@ -148,7 +148,8 @@ impl ProfileStore {
         Ok(())
     }
 
-    pub fn upsert(&mut self, profile: WorkspaceProfile) -> Result<(), String> {
+    pub fn upsert(&mut self, mut profile: WorkspaceProfile) -> Result<(), String> {
+        profile.auto_run = false;
         profile.validate()?;
         if let Some(existing) = self.profiles.iter_mut().find(|item| item.id == profile.id) {
             *existing = profile;

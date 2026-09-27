@@ -1862,6 +1862,11 @@
   [
     "workspace.terminal",
     "agents",
+    "open_agent_terminal"
+  ],
+  [
+    "workspace.terminal",
+    "agents",
     "open_distro_terminal"
   ],
   [

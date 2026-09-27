@@ -20,3 +20,17 @@ pub(crate) fn now_ms() -> u64 {
         .map(|t| t.as_millis() as u64)
         .unwrap_or(0)
 }
+
+pub(crate) fn distro_name(
+    context: &product_contract::ProjectContext,
+) -> Result<String, &'static str> {
+    let product_contract::ExecutionTarget::Wsl { distro_id } = &context.target else {
+        return Err(AgentIssue::WslRequired.code());
+    };
+    crate::platform::wsl_distro::list()
+        .map_err(|_| "terminal_distro_unavailable")?
+        .into_iter()
+        .find(|distro| distro.id == *distro_id)
+        .map(|distro| distro.name)
+        .ok_or("terminal_distro_unavailable")
+}

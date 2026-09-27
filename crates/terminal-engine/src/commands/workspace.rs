@@ -45,6 +45,7 @@ pub fn save_workspace_profile(
     app: AppHandle,
     mut profile: WorkspaceProfile,
 ) -> Result<WorkspaceProfile, String> {
+    profile.auto_run = false;
     if profile.id.is_empty() {
         profile.id = uuid::Uuid::new_v4().to_string();
     }

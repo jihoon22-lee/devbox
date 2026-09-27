@@ -91,6 +91,12 @@ impl TerminalLease {
     }
 }
 
+pub(crate) fn saved_profile(
+    mut profile: terminal_engine::component::WorkspaceProfile,
+) -> terminal_engine::component::WorkspaceProfile {
+    profile.auto_run = false;
+    profile
+}
 fn id(value: &str) -> bool {
     uuid::Uuid::parse_str(value).is_ok_and(|parsed| parsed.to_string() == value)
 }
@@ -394,6 +400,39 @@ impl Terminals {
             return self.open_prepared(window, host, header, &input.operation_id, Some(profile));
         }
         match method {
+            "open_agent_terminal" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    operation_id: String,
+                    task_id: String,
+                }
+                let input: Input = parse(args)?;
+                if !id(&input.operation_id) {
+                    return Err("terminal_operation_invalid");
+                }
+                let context = header
+                    .context
+                    .as_ref()
+                    .ok_or("project_selection_required")?;
+                let tasks = crate::agent_hub::tasks(host).map_err(|issue| issue.code())?;
+                let distro = crate::agent_hub::distro_name(context)?;
+                tasks.open_terminal_with(
+                    &input.task_id,
+                    context,
+                    &input.operation_id,
+                    crate::agent_hub::now_ms(),
+                    |task| {
+                        let binding = host.projects()?.binding(context)?;
+                        if binding.root != task.target_dir {
+                            return Err("agent_task_context_mismatch");
+                        }
+                        let layout = crate::agent_hub::plan::agent_layout(task, &distro);
+                        self.open_prepared(window, host, header, &input.operation_id, Some(layout))
+                    },
+                )
+            }
+
             "terminal_commands" => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -743,6 +782,7 @@ impl Terminals {
             &inner.as_ref().ok_or("terminal_owner_unavailable")?.root,
             id,
         )
+        .map(|(profile, revision)| (saved_profile(profile), revision))
     }
 
     pub(crate) fn open_prepared(
@@ -1278,6 +1318,15 @@ impl Terminals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saving_an_agent_layout_as_a_profile_turns_auto_run_off() {
+        let task = crate::agent_hub::store::tests::task("t1", "Fix login");
+        let layout = crate::agent_hub::plan::agent_layout(&task, "Ubuntu");
+        assert!(!saved_profile(layout.clone()).auto_run);
+        let mut store = terminal_engine::component::ProfileStore::default();
+        store.upsert(layout).unwrap();
+        assert!(!store.profiles[0].auto_run);
+    }
 
     fn make_peer(record: Record) -> (Arc<Peer>, RouteRequest) {
         let label = format!("terminal-{}", record.id);

@@ -24,6 +24,7 @@ export type TerminalResults = {
   docker_action: JsonValue;
   focus_terminal: null;
   list_workspace_profiles: TerminalProfiles;
+  open_agent_terminal: TerminalRecord;
   open_distro_terminal: TerminalRecord;
   open_terminal: TerminalRecord;
   open_terminal_profile: TerminalRecord;

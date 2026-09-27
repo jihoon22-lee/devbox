@@ -177,6 +177,7 @@ pub(crate) fn dispatch(root: &MetadataRoot, method: &str, args: Value) -> Result
             if input.expected_revision != revision {
                 return Err("terminal_profiles_changed");
             }
+            input.profile = crate::terminal_host::saved_profile(input.profile);
             if input.profile.id.is_empty() {
                 input.profile.id = uuid::Uuid::new_v4().to_string();
             }

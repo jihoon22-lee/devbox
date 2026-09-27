@@ -274,6 +274,67 @@ impl AgentTaskStore {
         self.save(&doc)?;
         Ok(task)
     }
+    /// Serialize the native open receipt with task transitions. The callback
+    /// uses Terminals' operation-id receipt and must not reenter this store.
+    pub fn open_terminal_with<T>(
+        &self,
+        task_id: &str,
+        context: &product_contract::ProjectContext,
+        operation_id: &str,
+        now_ms: u64,
+        open: impl FnOnce(&AgentTask) -> std::result::Result<T, &'static str>,
+    ) -> std::result::Result<T, &'static str> {
+        let _lock = LOCK
+            .lock()
+            .map_err(|_| AgentIssue::StoreUnavailable.code())?;
+        let mut doc = self.load().map_err(|e| e.code())?;
+        let index = doc
+            .tasks
+            .iter()
+            .position(|task| task.id == task_id)
+            .ok_or(AgentIssue::TaskMissing.code())?;
+        let task = &mut doc.tasks[index];
+        if !matches!(
+            context.target,
+            product_contract::ExecutionTarget::Wsl { .. }
+        ) {
+            return Err(AgentIssue::WslRequired.code());
+        }
+        if task.project_id != context.project_id
+            || task.worktree_id.as_deref() != Some(context.worktree_id.as_str())
+        {
+            return Err(AgentIssue::ContextMismatch.code());
+        }
+        if !matches!(task.state, AgentTaskState::Ready | AgentTaskState::Running) {
+            return Err(AgentIssue::StateInvalid.code());
+        }
+        if !terminal_id(operation_id) {
+            return Err("terminal_operation_invalid");
+        }
+        let repeated = task.state == AgentTaskState::Running
+            && task.terminal_id.as_deref() == Some(operation_id);
+        let revision = if repeated {
+            task.revision
+        } else {
+            task.revision
+                .checked_add(1)
+                .filter(|v| *v <= MAX_REVISION)
+                .ok_or(AgentIssue::TaskChanged.code())?
+        };
+        if now_ms > MAX_REVISION {
+            return Err(AgentIssue::StateInvalid.code());
+        }
+        let result = open(task)?;
+        if !repeated {
+            task.state = AgentTaskState::Running;
+            task.terminal_id = Some(operation_id.into());
+            task.revision = revision;
+            task.updated_at_ms = task.updated_at_ms.max(now_ms);
+            self.save(&doc).map_err(|e| e.code())?;
+        }
+        Ok(result)
+    }
+
     pub fn forget(&self, id: &str, expected_revision: u64) -> Result<()> {
         let _lock = LOCK.lock().map_err(|_| AgentIssue::StoreUnavailable)?;
         let mut doc = self.load()?;
@@ -299,6 +360,76 @@ impl AgentTaskStore {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_open_records_one_transition_and_refuses_finished_tasks_before_effects() {
+        use product_contract::{ExecutionTarget, ProjectContext};
+        let dir = tempfile::tempdir().unwrap();
+        let store = AgentTaskStore::open(dir.path());
+        let t = store.insert(task("t1", "fixture")).unwrap();
+        let t = store
+            .apply(
+                "t1",
+                t.revision,
+                Change::WorktreeCreated { path: t.target_dir },
+                2,
+            )
+            .unwrap();
+        let t = store
+            .apply(
+                "t1",
+                t.revision,
+                Change::WorktreeBound {
+                    worktree_id: "w2".into(),
+                },
+                3,
+            )
+            .unwrap();
+        let context = ProjectContext {
+            project_id: "p1".into(),
+            worktree_id: "w2".into(),
+            revision: 1,
+            target: ExecutionTarget::Wsl {
+                distro_id: "d1".into(),
+            },
+        };
+        let operation = "00000000-0000-4000-8000-000000000001";
+        assert_eq!(
+            store.open_terminal_with("t1", &context, operation, 4, |_| Err::<(), _>(
+                "terminal_fixture_error"
+            )),
+            Err("terminal_fixture_error")
+        );
+        assert_eq!(store.get("t1").unwrap().revision, t.revision);
+        store
+            .open_terminal_with("t1", &context, operation, 4, |_| Ok(()))
+            .unwrap();
+        let running = store.get("t1").unwrap();
+        assert_eq!(running.state, AgentTaskState::Running);
+        store
+            .open_terminal_with("t1", &context, operation, 5, |_| Ok(()))
+            .unwrap();
+        assert_eq!(store.get("t1").unwrap(), running);
+        store
+            .apply(
+                "t1",
+                running.revision,
+                Change::Finished {
+                    outcome: AgentOutcome::Merged,
+                },
+                6,
+            )
+            .unwrap();
+        let called = std::cell::Cell::new(false);
+        assert_eq!(
+            store.open_terminal_with("t1", &context, operation, 7, |_| {
+                called.set(true);
+                Ok(())
+            }),
+            Err("agent_task_state_invalid")
+        );
+        assert!(!called.get());
+    }
 
     #[test]
     fn task_limit_and_future_documents_preserve_existing_bytes() {
