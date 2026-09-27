@@ -14,6 +14,18 @@ use workspace_core::{
     Host,
 };
 
+#[derive(Default)]
+struct Shutdown(tokio::sync::OnceCell<()>);
+impl Shutdown {
+    async fn run<F, Fut>(&self, cleanup: F)
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        self.0.get_or_init(cleanup).await;
+    }
+}
+
 type Result<T> = std::result::Result<T, &'static str>;
 macro_rules! call {
     ($name:ident, $engine:ty, $component:literal, $routes:ident) => {
@@ -158,6 +170,7 @@ pub struct Runtime {
     stopping: std::sync::atomic::AtomicBool,
     active: std::sync::atomic::AtomicUsize,
     drained: tokio::sync::Notify,
+    shutdown: Shutdown,
 }
 impl Runtime {
     pub fn new(app: tauri::AppHandle, data: PathBuf, resources: PathBuf) -> Arc<Self> {
@@ -172,6 +185,7 @@ impl Runtime {
             stopping: std::sync::atomic::AtomicBool::new(false),
             active: std::sync::atomic::AtomicUsize::new(0),
             drained: tokio::sync::Notify::new(),
+            shutdown: Shutdown::default(),
         })
     }
     pub fn initialize(&self) -> Result<Arc<Host>> {
@@ -315,6 +329,9 @@ impl Runtime {
         .map_err(|_| "worker_unavailable")?
     }
     pub async fn shutdown(self: &Arc<Self>) {
+        self.shutdown.run(|| self.drain()).await;
+    }
+    async fn drain(self: &Arc<Self>) {
         self.stopping
             .store(true, std::sync::atomic::Ordering::Release);
         runtime_engine::component::request_shutdown(&self.app);
@@ -344,6 +361,53 @@ mod tests {
     use super::*;
     fn request(method: &str) -> Value {
         json!({"header":{"protocolVersion":1,"installationId":"native","sessionId":"session","requestId":"one","deadlineMs":2000,"route":"tasks"},"method":method,"args":{}})
+    }
+    #[tokio::test]
+    async fn concurrent_shutdowns_join_one_owner_cleanup_before_returning() {
+        let shutdown = Arc::new(Shutdown::default());
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let first = {
+            let (shutdown, calls, entered, release) = (
+                shutdown.clone(),
+                calls.clone(),
+                entered.clone(),
+                release.clone(),
+            );
+            tokio::spawn(async move {
+                shutdown
+                    .run(|| async {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        entered.notify_one();
+                        release.notified().await;
+                    })
+                    .await;
+            })
+        };
+        entered.notified().await;
+        let mut second = {
+            let (shutdown, calls) = (shutdown.clone(), calls.clone());
+            tokio::spawn(async move {
+                shutdown
+                    .run(|| async {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    })
+                    .await;
+            })
+        };
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut second)
+                .await
+                .is_err()
+        );
+        release.notify_one();
+        first.await.unwrap();
+        second.await.unwrap();
+        shutdown
+            .run(|| async { panic!("completed cleanup must not run again") })
+            .await;
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
     #[test]
     fn session_start_requires_the_exact_live_context_and_cleanup_uses_retained_scope() {

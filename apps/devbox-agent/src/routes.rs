@@ -2,6 +2,8 @@ use serde_json::{json, Value};
 use std::{sync::Arc, time::Instant};
 
 pub struct Routes {
+    #[cfg(test)]
+    fixture_reply: Option<Value>,
     started: Instant,
     pub generation: String,
     shutdown: tokio::sync::watch::Sender<bool>,
@@ -17,6 +19,8 @@ impl Routes {
     pub fn new(generation: String) -> Arc<Self> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Arc::new(Self {
+            #[cfg(test)]
+            fixture_reply: None,
             started: Instant::now(),
             generation,
             shutdown,
@@ -27,6 +31,8 @@ impl Routes {
     pub fn with_runtime(generation: String, runtime: Arc<crate::runtime::Runtime>) -> Arc<Self> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Arc::new(Self {
+            #[cfg(test)]
+            fixture_reply: None,
             started: Instant::now(),
             generation,
             shutdown,
@@ -135,11 +141,21 @@ impl Routes {
                 return failure("agent_request_rejected");
             }
         }
+        #[cfg(test)]
+        if let Some(reply) = &self.fixture_reply {
+            return reply.clone();
+        }
         json!({"operation":{"outcome":{"state":"succeeded"}},"value": {
             "version": env!("CARGO_PKG_VERSION"), "generation": self.generation,
             "uptimeMs": self.started.elapsed().as_millis() as u64,
             "components": if self.runtime.is_some() { vec!["agent.status","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs"] } else {vec!["agent.status"]}
         }})
+    }
+    #[cfg(test)]
+    pub fn with_reply_for_tests(reply: Value) -> Arc<Self> {
+        let mut routes = Self::for_tests();
+        Arc::get_mut(&mut routes).unwrap().fixture_reply = Some(reply);
+        routes
     }
     #[cfg(test)]
     pub fn for_tests() -> Arc<Self> {

@@ -63,6 +63,32 @@ fn agent_status(window: WebviewWindow) -> Result<&'static str, &'static str> {
 }
 
 #[tauri::command]
+async fn agent_reconnect(window: WebviewWindow) -> Result<&'static str, &'static str> {
+    if !local_main(&window) {
+        return Err("unauthorized");
+    }
+    if suite_import_only(window.app_handle())? {
+        return Err("suite_activation_pending");
+    }
+    let session = {
+        let state = window.try_state::<ShellState>().ok_or("unavailable")?;
+        let session = state.session.lock().map_err(|_| "unavailable")?;
+        session.handshake().session_id.clone()
+    };
+    let client = window
+        .app_handle()
+        .try_state::<agent_client::AgentClient>()
+        .ok_or("unavailable")?
+        .inner()
+        .clone();
+    if !client.supported() {
+        return Ok("unsupported");
+    }
+    client.connect(&session).await.map_err(|_| "unavailable")?;
+    Ok(client.status())
+}
+
+#[tauri::command]
 async fn describe(
     window: WebviewWindow,
     state: State<'_, ShellState>,
@@ -356,7 +382,8 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 .invoke_handler(tauri::generate_handler![
                     describe,
                     route_status,
-                    agent_status
+                    agent_status,
+                    agent_reconnect
                 ])
                 .build(),
         )

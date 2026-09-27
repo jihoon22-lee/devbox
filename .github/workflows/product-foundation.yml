@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/devbox-agent/**'
       - 'crates/agent-*/**'
+      - 'crates/workspace-core/**'
       - 'apps/devbox-workspace/**'
       - 'apps/devbox-api-studio/**'
       - 'apps/devbox-knowledge/**'
@@ -39,6 +40,7 @@ on:
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
       - '.github/scripts/windows-suite-delivery*'
+      - '.github/scripts/windows-agent-*'
       - '.github/scripts/build-suite-*'
       - '.github/scripts/windows-workspace-*'
       - '.github/scripts/copy-owned-terminal-profile.ps1'

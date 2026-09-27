@@ -7,6 +7,17 @@ pub mod session_runtime;
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?.canonicalize()?;
+    // A login shortcut can race installation health/import mode. Do not keep
+    // an idle writer alive while bootstrap still needs to commit activation.
+    if !product_shell_tauri::component_ready(
+        &executable,
+        "control-center",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .map_err(std::io::Error::other)?
+    {
+        return Ok(());
+    }
     let _writer = product_shell_tauri::WriterGuard::acquire_component(
         &executable,
         "control-center",

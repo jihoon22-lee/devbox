@@ -69,7 +69,12 @@ pub(crate) async fn call_until(
     let reply = client
         .call(component, request)
         .await
-        .map_err(|_| "runtime_agent_unavailable")?;
+        .map_err(|error| match error {
+            agent_client::AgentError::Rejected(reason) if reason == "request_too_large" => {
+                "runtime_request_too_large"
+            }
+            _ => "runtime_agent_unavailable",
+        })?;
     response(reply)
 }
 pub(crate) async fn session<T: serde::de::DeserializeOwned>(
@@ -99,6 +104,12 @@ fn response(value: Value) -> Result<Value> {
             .ok_or("runtime_agent_unavailable"),
         Some("failed") => Err(
             match value.pointer("/value/issue").and_then(Value::as_str) {
+                Some("response_too_large") => "runtime_response_too_large",
+                Some("cancelled" | "request_cancelled") => "request_cancelled",
+                Some("deadline_exceeded" | "request_expired") => "request_expired",
+                Some("busy" | "request_limit") => "busy",
+                Some("stale_context") => "stale_context",
+                Some("invalid_request") => "invalid_request",
                 Some("session_runtime_stale") => "session_runtime_stale",
                 Some("session_runtime_conflict") => "session_runtime_conflict",
                 Some("session_runtime_limit") => "session_runtime_limit",

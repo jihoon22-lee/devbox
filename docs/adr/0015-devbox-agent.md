@@ -36,6 +36,8 @@ named pipe는 `\\.\pipe\devbox-agent-<설치 접미사>`다. 접미사는 ADR 00
 
 `crates/agent-protocol`의 프레임은 4바이트 little-endian 길이와 JSON 본문이다. 본문 상한은 1 MiB, 출력 batch는 최대 64 KiB다. 큰 파일 저장은 agent로 옮기지 않는다. 길이 0·상한 초과·잘못된 JSON·알 수 없는 envelope 필드는 연결을 종료할 수 있는 고정 오류로 처리한다. 부분 수신과 여러 프레임 동시 수신을 지원하며 미완성 프레임 버퍼는 한 프레임 크기로 제한한다.
 
+큰 조회 응답은 기존 `Stream` envelope의 `replyChunk` payload(offset·totalBytes·data)로 나눈다. batch는 64 KiB 이내이며 클라이언트가 검증·보관한 정확한 byte cursor의 `Ack` 뒤에만 다음 batch를 보낸다. `StreamEnd(reply_complete)`와 전체 길이·JSON 검증이 끝나야 결과를 반환한다. 응답 하나는 직렬화 기준 64 MiB, 연결당 보관 응답은 128 MiB로 제한하며 ack 기한은 batch마다 고정 10초다. 취소·기한 초과 후 이미 전송 중이던 정확한 ack 하나는 제한된 종료 기록으로 소비하되 새 응답에 연결하지 않는다. 요청은 전송 전에 전체 envelope의 1 MiB 한도를 검사한다. 큰 로그 목록의 순수 필터·내보내기는 UI에서 처리한다.
+
 `Hello`/`Welcome` 뒤 `Call.id`로 여러 요청을 다중화한다. `Call.request`는 기존 `ComponentRequest<C>`의 `{header, method, args}` 그대로다. agent는 component별 typed 역직렬화와 기존 `admit`의 session·route·deadline·replay·lane 검사를 수행한다. OS에서 확인한 제품·설치·generation에 session을 결합한다. codec의 `check_hello`는 버전/형식 검사일 뿐 peer 인증을 대체하지 않는다.
 
 연결의 활성 요청 ID 중복은 `duplicate_request`로 거부하고 완료·취소 때 제거한다. 이는 기존 requestId replay 검사를 대체하지 않는다. 실제 연결 소유자가 기존 admission 한도 안에서 활성 요청 수와 수신 기한을 제한한다. 로그 tail·작업 출력 스트림은 stream ID로 다중화하고 P1-16의 한 batch 전송→실제 소비 완료→정확한 cursor ack 흐름과 고정 ack 기한을 따른다. UI 연결 종료 시 해당 구독을 해제한다. 단순 연결 단절로 이미 수락한 변경 요청을 자동 재전송하지 않는다.

@@ -13,7 +13,12 @@ fn main() {
             )
             .plugin(
                 "product-shell",
-                tauri_build::InlinedPlugin::new().commands(&["describe", "route_status", "agent_status"]),
+                tauri_build::InlinedPlugin::new().commands(&[
+                    "describe",
+                    "route_status",
+                    "agent_status",
+                    "agent_reconnect",
+                ]),
             )
             .plugin(
                 "commands",

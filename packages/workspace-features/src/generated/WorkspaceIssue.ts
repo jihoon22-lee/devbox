@@ -526,4 +526,6 @@ export type WorkspaceIssue =
   | "wsl_unavailable"
   | "runtime_agent_unavailable"
   | "session_ui_resources_lost"
-  | "session_recovery_required";
+  | "session_recovery_required"
+  | "runtime_request_too_large"
+  | "runtime_response_too_large";

@@ -33,6 +33,9 @@ impl AgentPeer {
             .map(|byte| format!("{byte:02x}"))
             .collect())
     }
+    pub fn exited(&self) -> Result<bool, &'static str> {
+        self.0.exited()
+    }
     pub fn revalidate(&self) -> Result<(), &'static str> {
         self.0.revalidate()
     }

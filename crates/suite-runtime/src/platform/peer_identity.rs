@@ -12,7 +12,9 @@ use std::{
 use windows::{
     core::PWSTR,
     Win32::{
-        Foundation::{DuplicateHandle, DUPLICATE_SAME_ACCESS, FILETIME, HANDLE, WAIT_TIMEOUT},
+        Foundation::{
+            DuplicateHandle, DUPLICATE_SAME_ACCESS, FILETIME, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+        },
         System::{
             Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId},
             Threading::{
@@ -145,6 +147,13 @@ impl ProcessPeer {
         };
         peer.revalidate()?;
         Ok(peer)
+    }
+    pub(crate) fn exited(&self) -> Result<bool> {
+        match unsafe { WaitForSingleObject(HANDLE(self.handle.as_raw_handle()), 0) } {
+            WAIT_OBJECT_0 => Ok(true),
+            WAIT_TIMEOUT => Ok(false),
+            _ => Err("peer_process_unavailable"),
+        }
     }
     pub(crate) fn revalidate(&self) -> Result<()> {
         if unsafe { WaitForSingleObject(HANDLE(self.handle.as_raw_handle()), 0) } != WAIT_TIMEOUT {

@@ -684,6 +684,46 @@ mod tests {
         );
     }
     #[test]
+    fn long_lived_read_only_owner_observes_definition_trust_revocation() {
+        let root = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let writer = Host::open(root.path()).unwrap();
+        writer.start_empty().unwrap();
+        let projects = writer.projects().unwrap();
+        let preview = projects.preview_fixture(project.path()).unwrap();
+        let (_, context) = projects
+            .apply(
+                &preview.preview_id,
+                "fixture",
+                crate::project_owner::RegistrationAction::Register,
+            )
+            .unwrap();
+        let mut definitions = Definitions::default();
+        let preview = definitions
+            .preview_trust(&writer, &context, u64::MAX)
+            .unwrap();
+        let approved = definitions
+            .approve_trust(&writer, &context, &preview.preview_id, u64::MAX)
+            .unwrap();
+        let reader = Host::open_read_only(root.path()).unwrap();
+        let mut agent_definitions = Definitions::default();
+        assert!(
+            agent_definitions
+                .session_preflight(&reader, &context, u64::MAX)
+                .unwrap()
+                .trusted
+        );
+        definitions
+            .revoke_trust(&writer, &context, approved.revision)
+            .unwrap();
+        assert!(
+            !agent_definitions
+                .session_preflight(&reader, &context, u64::MAX)
+                .unwrap()
+                .trusted
+        );
+    }
+    #[test]
     fn imported_port_defaults_yield_to_project_and_explicit_empty_local_values() {
         let root = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();

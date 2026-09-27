@@ -38,9 +38,12 @@ impl Transport for Native {
                 .await
                 .map_err(|_| Connect::Unavailable)?
                 .map_err(|reason| Connect::Rejected(reason.into()))?;
+            let peer = Arc::new(peer);
+            let retired = peer.clone();
             Ok(Connected {
                 stream: Box::new(pipe),
                 verify: Arc::new(move || peer.revalidate().map_err(|_| AgentError::Unavailable)),
+                exited: Arc::new(move || retired.exited().map_err(|_| AgentError::Unavailable)),
             })
         })
     }

@@ -40,3 +40,15 @@ pub async fn write<S: AsyncWrite + Unpin, T: Serialize>(stream: &mut S, message:
         .map_err(|_| "write_timeout")?
         .map_err(|_| "connection_closed")
 }
+
+pub async fn write_reply<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    id: u64,
+    response: &serde_json::Value,
+) -> Result<()> {
+    let bytes = agent_protocol::reply::encode_reply(id, response).map_err(|error| error.code())?;
+    tokio::time::timeout(IO_TIMEOUT, stream.write_all(&bytes))
+        .await
+        .map_err(|_| "write_timeout")?
+        .map_err(|_| "connection_closed")
+}

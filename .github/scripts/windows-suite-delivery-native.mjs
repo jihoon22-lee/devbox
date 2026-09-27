@@ -1,3 +1,4 @@
+import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
 import { requireHostedNetworkFixture } from "./fixture-network-safety.mjs";
@@ -15,6 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 requireHostedNetworkFixture();
 assert.equal(process.platform, "win32");
@@ -169,6 +171,25 @@ try {
       "ordinary Runtime remains blocked before commit",
     );
     evidence.checks.businessGate = true;
+    assert.equal(
+      allWindowsProcesses().some(
+        (row) =>
+          path.resolve(row.Path).toLowerCase() ===
+          path
+            .resolve(
+              path.join(
+                root,
+                "generations",
+                manifest.generation,
+                "products/control-center/resources/suite/devbox-agent.exe",
+              ),
+            )
+            .toLowerCase(),
+      ),
+      false,
+      "activation health/import must not retain an agent writer",
+    );
+    evidence.checks.noAgentBeforeCommit = true;
   } else {
     for (const member of manifest.members) {
       const result = value(
@@ -195,6 +216,53 @@ try {
     while (agents().length === 0 && Date.now() < deadline) await delay(100);
     assert.equal(agents().length, 1, "one installed agent serves the four products");
     evidence.agent = agents()[0];
+    const fixture = path.join(path.dirname(root), "agent-runtime-" + randomUUID());
+    mkdirSync(fixture);
+    const agentIdentity = () => {
+      const rows = agents();
+      assert.equal(rows.length, 1, "exactly one verified fixture agent required");
+      return rows[0];
+    };
+    const sameProcess = (identity) =>
+      allWindowsProcesses().some(
+        (row) =>
+          row.Pid === identity.Pid &&
+          row.Created === identity.Created &&
+          path.resolve(row.Path).toLowerCase() === path.resolve(identity.Path).toLowerCase(),
+      );
+    const result = await exerciseAgentRuntime({
+      workspace: apps.workspace,
+      directory: fixture,
+      agentIdentity,
+      closeWorkspace: async (item) => {
+        await call(item, "plugin:workspace|runtime", { method: "quit_app", args: {} }, "tasks").catch(() => {});
+        const deadline = Date.now() + 30000;
+        while (sameProcess(item.identity) && Date.now() < deadline) await delay(100);
+        assert.equal(sameProcess(item.identity), false, "Workspace must finish ordinary owner shutdown");
+        item.cdp.close();
+      },
+      restartWorkspace: async () => {
+        apps.workspace = await start(manifest.members.find((member) => member.product === "workspace"));
+        return apps.workspace;
+      },
+      crashAgent: async (identity) => {
+        // stopOwnedProcess rechecks path, exact creation time and PID in the OS.
+        // This fixture-owned windowless process requires force; no name search
+        // or production user process can authorize this simulated crash.
+        const observed = {
+          get exitCode() {
+            return sameProcess(identity) ? null : 0;
+          },
+          signalCode: null,
+        };
+        const result = await stopOwnedProcess(identity, agentImage, observed);
+        assert.equal(result.forced, true, "acceptance must prove abrupt agent loss");
+      },
+      report: (state) => {
+        evidence.checks.agentRuntime = { ...state };
+      },
+    });
+    evidence.checks.agentRuntime = result.evidence;
   }
   evidence.result = "passed";
 } catch (error) {

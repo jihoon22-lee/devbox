@@ -291,6 +291,8 @@ export const workspaceMessages: Record<WorkspaceIssue, string> = {
   runtime_log_unavailable: "이 실행의 로그가 삭제되었거나 읽을 수 없습니다.",
   runtime_navigation_unavailable: "선택한 작업이나 로그 화면으로 이동하지 못했습니다.",
   runtime_operation_unavailable: "실행 작업을 완료하지 못했습니다. 작업 상태와 설정을 확인해 주세요.",
+  runtime_request_too_large: "요청이 너무 큽니다. 한 번에 처리할 항목을 줄여 주세요.",
+  runtime_response_too_large: "조회 결과가 너무 큽니다. 조회 범위를 줄여 주세요.",
   runtime_agent_unavailable: "백그라운드 서비스에 연결하지 못했습니다. 작업 상태에서 다시 시작해 주세요.",
   session_ui_resources_lost: "이전 창의 터미널은 종료되었습니다. 백그라운드 작업은 계속 확인하고 정리할 수 있습니다.",
   session_recovery_required: "이전 세션의 실행 상태를 확인해 주세요. 남은 단계는 자동으로 다시 실행하지 않습니다.",
