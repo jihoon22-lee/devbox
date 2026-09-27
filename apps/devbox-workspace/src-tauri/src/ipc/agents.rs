@@ -19,6 +19,10 @@ use serde_json::{json, Value};
 #[ts(optional_fields = nullable)]
 pub enum AgentsCall {
     List {},
+    Resources {},
+    Usage {
+        task_id: String,
+    },
     Plan {
         title: String,
         tool: AgentTool,
@@ -52,6 +56,8 @@ pub const METHODS: &[&str] = &[
     "list",
     "plan",
     "record_worktree",
+    "resources",
+    "usage",
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     if METHODS.contains(&method) {
@@ -70,6 +76,8 @@ impl ComponentCall for AgentsCall {
     fn method(&self) -> &'static str {
         match self {
             Self::List {} => "list",
+            Self::Resources {} => "resources",
+            Self::Usage { .. } => "usage",
             Self::Plan { .. } => "plan",
             Self::RecordWorktree { .. } => "record_worktree",
             Self::BindWorktree { .. } => "bind_worktree",
@@ -83,7 +91,11 @@ impl ComponentCall for AgentsCall {
 }
 impl AgentsCall {
     pub fn lane(&self) -> Lane {
-        Lane::Metadata
+        if matches!(self, Self::Resources {} | Self::Usage { .. }) {
+            Lane::Probes
+        } else {
+            Lane::Metadata
+        }
     }
     pub fn deadline_budget_ms(&self) -> u64 {
         super::deadlines::budget(Self::COMPONENT, self.method())
@@ -130,13 +142,36 @@ fn checked_task(
 pub(crate) fn dispatch(
     host: &crate::host::Host,
     header: &RouteRequest,
+    tracker: &std::sync::Mutex<agent_hub::resources::CpuTracker>,
     call: AgentsCall,
 ) -> Result<Value, &'static str> {
     crate::files_host::current_deadline(header.deadline_ms)?;
     if let Some(context) = header.context.as_ref() {
         host.projects()?.binding(context)?;
     }
-    dispatch_inner(host, header.context.as_ref(), call).map_err(|issue| issue.code())
+    match call {
+        AgentsCall::Resources {} => {
+            let context =
+                check_plan_context(header.context.as_ref()).map_err(|issue| issue.code())?;
+            Ok(json!(agent_hub::resources::resources(
+                host,
+                context,
+                tracker,
+                header.deadline_ms
+            )?))
+        }
+        AgentsCall::Usage { task_id } => {
+            let context =
+                check_plan_context(header.context.as_ref()).map_err(|issue| issue.code())?;
+            Ok(json!(agent_hub::resources::usage(
+                host,
+                context,
+                &task_id,
+                header.deadline_ms
+            )?))
+        }
+        call => dispatch_inner(host, header.context.as_ref(), call).map_err(|issue| issue.code()),
+    }
 }
 fn dispatch_inner(
     host: &crate::host::Host,
@@ -149,6 +184,7 @@ fn dispatch_inner(
     let tasks = agent_hub::tasks(host)?;
     let now = agent_hub::now_ms();
     match call {
+        AgentsCall::Resources {} | AgentsCall::Usage { .. } => Err(AgentIssue::StateInvalid),
         AgentsCall::List {} => Ok(json!(
             tasks.list(&context.ok_or(AgentIssue::ContextMismatch)?.project_id)?
         )),
@@ -270,6 +306,14 @@ pub fn result_types(
         ("list", export.register::<Vec<AgentTask>>()?),
         ("plan", task.clone()),
         ("record_worktree", task),
+        (
+            "resources",
+            export.register::<Vec<agent_hub::resources::AgentResources>>()?,
+        ),
+        (
+            "usage",
+            export.register::<workspace_wsl::agent_usage::UsageReport>()?,
+        ),
     ])
 }
 
@@ -306,10 +350,31 @@ mod tests {
             assert_eq!(routes_for(method), &["agents"]);
             assert_eq!(
                 super::super::deadlines::budget(AgentsCall::COMPONENT, method),
-                product_ipc::workspace::DEFAULT_BUDGET_MS
+                if matches!(*method, "resources" | "usage") {
+                    product_ipc::workspace::LONG_BUDGET_MS
+                } else {
+                    product_ipc::workspace::DEFAULT_BUDGET_MS
+                }
             );
         }
         assert!(routes_for("discard_everything").is_empty());
+    }
+
+    #[test]
+    fn resource_reads_use_the_probe_lane_and_long_budget() {
+        for call in [
+            AgentsCall::Resources {},
+            AgentsCall::Usage {
+                task_id: "fixture".into(),
+            },
+        ] {
+            assert_eq!(call.lane(), Lane::Probes);
+            assert_eq!(
+                call.deadline_budget_ms(),
+                product_ipc::workspace::LONG_BUDGET_MS
+            );
+        }
+        assert_eq!(AgentsCall::List {}.lane(), Lane::Metadata);
     }
 
     #[test]

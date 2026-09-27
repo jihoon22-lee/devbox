@@ -30,6 +30,16 @@
     "record_worktree"
   ],
   [
+    "workspace.agents",
+    "agents",
+    "resources"
+  ],
+  [
+    "workspace.agents",
+    "agents",
+    "usage"
+  ],
+  [
     "workspace.definitions",
     "overview",
     "apply_edit"

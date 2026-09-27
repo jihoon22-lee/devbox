@@ -666,6 +666,7 @@
   "update_shell_integration",
   "uri",
   "url",
+  "usage",
   "validate_encoding",
   "version",
   "views",

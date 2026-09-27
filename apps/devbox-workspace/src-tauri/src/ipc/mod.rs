@@ -618,7 +618,9 @@ pub(crate) async fn execute_admitted(
         empty(&request.args).map(|()| runtime.status())
     } else {
         let preview = registry::project_probe(&request.method);
-        let lane = if preview {
+        let lane = if let Call::Agents(call) = &request.typed {
+            call.lane()
+        } else if preview {
             Lane::Probes
         } else {
             Lane::Metadata
@@ -626,13 +628,16 @@ pub(crate) async fn execute_admitted(
         match (runtime.host(), runtime.lanes.try_enter(lane)) {
             (Ok(host), Ok(permit)) => {
                 let worker_context = context_permit.clone();
+                let agent_cpu = runtime.agent_cpu.clone();
                 let worker = tauri::async_runtime::spawn_blocking(move || {
                     // A timed-out probe keeps its permit until the OS returns.
                     // A late preview cannot register or grant trust by itself.
                     let (_permit, _context) = (permit, worker_context);
                     match request.typed {
                         Call::Registry(call) => registry::dispatch(&host, call),
-                        Call::Agents(call) => agents::dispatch(&host, &request.header, call),
+                        Call::Agents(call) => {
+                            agents::dispatch(&host, &request.header, &agent_cpu, call)
+                        }
                         _ => Err("invalid_request"),
                     }
                 });

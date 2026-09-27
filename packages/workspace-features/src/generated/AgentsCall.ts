@@ -4,6 +4,8 @@ import type { AgentTool } from "./AgentTool";
 
 export type AgentsCall =
   | { method: "list"; args: Record<symbol, never> }
+  | { method: "resources"; args: Record<symbol, never> }
+  | { method: "usage"; args: { taskId: string } }
   | { method: "plan"; args: { title: string; tool: AgentTool; command?: string | null; targetDir?: string | null } }
   | { method: "record_worktree"; args: { taskId: string; revision: number; path: string } }
   | { method: "bind_worktree"; args: { taskId: string; revision: number; worktreeId: string } }

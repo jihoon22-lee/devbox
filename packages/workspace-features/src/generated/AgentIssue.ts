@@ -11,4 +11,6 @@ export type AgentIssue =
   | "agent_slug_exhausted"
   | "agent_wsl_required"
   | "agent_task_context_mismatch"
-  | "agent_store_unavailable";
+  | "agent_store_unavailable"
+  | "agent_resources_unavailable"
+  | "agent_usage_unavailable";

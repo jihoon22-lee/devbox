@@ -11,11 +11,12 @@ pub fn budget(component: &str, method: &str) -> u64 {
             | "workspace.dependencies"
             | "workspace.source"
             | "workspace.lsp"
-    ) || (component == "workspace.files"
-        && matches!(
-            method,
-            "reconnect_wsl_files" | "open_file" | "send_editor_selection"
-        ))
+    ) || (component == "workspace.agents" && matches!(method, "resources" | "usage"))
+        || (component == "workspace.files"
+            && matches!(
+                method,
+                "reconnect_wsl_files" | "open_file" | "send_editor_selection"
+            ))
         || (component == "workspace.registry"
             && matches!(
                 method,

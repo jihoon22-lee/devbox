@@ -15,6 +15,7 @@ use tauri::{Manager, State, WebviewWindow};
 #[derive(Clone, Default)]
 pub(crate) struct Runtime {
     pub(crate) lanes: Lanes,
+    pub(crate) agent_cpu: Arc<Mutex<crate::agent_hub::resources::CpuTracker>>,
     pub(crate) shutdown_started: Arc<AtomicBool>,
     pub(crate) ui_ready: Arc<AtomicBool>,
     pub(crate) engines: Arc<crate::runtime_host::Owners>,

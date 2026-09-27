@@ -1,5 +1,9 @@
 // Generated from native Workspace scheduling policy.
 export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  "workspace.agents": {
+    resources: 29000,
+    usage: 29000,
+  },
   "workspace.dependencies": {
     dependency_enrichment_cancel: 29000,
     dependency_enrichment_execute: 29000,
