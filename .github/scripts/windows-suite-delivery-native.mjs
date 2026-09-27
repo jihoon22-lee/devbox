@@ -11,7 +11,7 @@ import {
   windowsProcessIsElevated,
   inspectElevatedCdpPolicy,
   installElevatedCdpPolicy,
-  restoreElevatedCdpPolicy,
+  releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
@@ -53,9 +53,9 @@ async function start(member) {
   const executable = realpathSync.native(path.join(root, member.executable)),
     port = await freePort();
   const policy = windowsProcessIsElevated() ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
-  if (policy) installElevatedCdpPolicy(policy);
   const item = { product: member.product, executable, policy, child: null, cdp: null };
   live.push(item);
+  if (policy) installElevatedCdpPolicy(policy);
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
   for (const name of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(name)) delete env[name];
   item.child = spawn(executable, [], { cwd: path.dirname(executable), env, stdio: ["ignore", "ignore", "pipe"] });
@@ -276,7 +276,7 @@ try {
         const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
         assert.equal(stopped.forced, false, "Workspace close must drain and exit instead of hiding");
         assert.equal(sameProcess(item.identity), false, "Workspace must finish ordinary owner shutdown");
-        item.cdp.close();
+        releaseCdpSession(item);
       },
       restartWorkspace: async () => {
         apps.workspace = await start(manifest.members.find((member) => member.product === "workspace"));
@@ -296,7 +296,7 @@ try {
         const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
         assert.equal(stopped.forced, false, "API Studio close must honor its selected policy and exit");
         assert.equal(sameProcess(item.identity), false, "API Studio must finish its selected close policy");
-        item.cdp.close();
+        releaseCdpSession(item);
       },
       restartApi: async () => {
         apps["api-studio"] = await start(manifest.members.find((member) => member.product === "api-studio"));
@@ -325,7 +325,7 @@ try {
         const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
         assert.equal(stopped.forced, false, "Knowledge close must finish the unsaved-note review and exit");
         assert.equal(sameProcess(item.identity), false);
-        item.cdp.close();
+        releaseCdpSession(item);
       },
       restartKnowledge: async () => {
         apps.knowledge = await start(manifest.members.find((member) => member.product === "knowledge"));
@@ -435,6 +435,7 @@ try {
       await delay(400);
     } catch {}
     item.cdp?.close();
+    item.cdp = null;
     try {
       if (item.identity) await stopOwnedProcess(item.identity, item.executable, item.child);
       else if (item.child?.exitCode === null) {
@@ -446,7 +447,7 @@ try {
       evidence.result = "failed";
       process.exitCode = 1;
     } finally {
-      if (item.policy) restoreElevatedCdpPolicy(item.policy);
+      releaseCdpSession(item);
     }
     evidence.cleanup.push({
       product: item.product,

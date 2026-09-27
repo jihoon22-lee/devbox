@@ -220,6 +220,17 @@ export function restoreElevatedCdpPolicy(policy) {
   );
 }
 
+// The caller first observes ordinary product shutdown. Retain a failed restore
+// receipt for final cleanup, and detach a successful receipt before reopening.
+export function releaseCdpSession(item, restorePolicy = restoreElevatedCdpPolicy) {
+  item.cdp?.close();
+  item.cdp = null;
+  if (item.policy) {
+    restorePolicy(item.policy);
+    item.policy = null;
+  }
+}
+
 function isGitHubHostedWindowsAcceptanceHost(environment) {
   return (
     environment.GITHUB_ACTIONS === "true" &&
@@ -1009,6 +1020,29 @@ function assertArtifactVerification(verification, expectedTag, expectedCommit, c
 }
 
 function runVerificationContractSelfTest() {
+  // Closing a product must release its diagnostic policy before the same
+  // executable is opened again. Final cleanup must not release its successor.
+  let activePolicy = { port: 1234 };
+  let closes = 0;
+  const session = { cdp: { close: () => closes++ }, policy: activePolicy };
+  const restore = (policy) => {
+    if (activePolicy !== policy) fail("CDP cleanup claimed another generation");
+    activePolicy = null;
+  };
+  releaseCdpSession(session, restore);
+  if (activePolicy || session.cdp || session.policy || closes !== 1)
+    fail("closed CDP session did not release its policy");
+  activePolicy = { port: 2345 };
+  releaseCdpSession(session, restore);
+  if (!activePolicy || closes !== 1) fail("old session cleanup changed its successor");
+  const retry = { cdp: null, policy: activePolicy };
+  try {
+    releaseCdpSession(retry, () => {
+      throw new Error("synthetic restoration failure");
+    });
+  } catch {}
+  if (retry.policy !== activePolicy) fail("failed policy restoration lost its receipt");
+  releaseCdpSession(retry, restore);
   const configSha256 = "c".repeat(64);
   const common = {
     schemaVersion: 1,
