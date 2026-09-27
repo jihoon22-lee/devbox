@@ -113,3 +113,19 @@ journal을 남기며 재개/복구 UI에서 처리한다. 복구가 끝나기 �
 [개발자 가이드](development.md), [v0.8 수용 범위](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 참조한다.
 운영 중 Docker·iptables·공유 네트워크를 테스트 준비 목적으로 변경하지 않는다.
 과거 설치 방식은 [v0.7 가이드](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/windows-guide.md)에 보존한다.
+
+## API Studio 가져오기
+
+Requests의 컬렉션 영역에서 **가져오기**를 열어 curl 명령을 붙여 넣거나 Postman v2.0/v2.1,
+Insomnia v4, HAR, Bruno `.bru`, Devbox JSON 파일을 선택한다. 파일 형식은 자동으로 판별하거나
+직접 지정할 수 있다. Bruno는 여러 파일을 함께 선택할 수 있다. 파일은 하나당 16 MiB,
+전체 32 MiB·500개 이내여야 한다.
+
+미리 보기에서 폴더별 요청을 선택하고 **선택한 N개 가져오기**로 저장한다. 환경 변수는
+**환경도 가져오기**를 켠 경우에만 추가된다. 인증·비밀 값은 안전한 참조나 마스킹 값으로
+변환되며 **비밀 검토 필요** 항목은 보내기 전에 확인한다. 비밀 환경 변수는 값을 다시
+입력해야 한다. 외부 스크립트·테스트·플러그인은 실행하지 않고 경고로 표시하며, 요청이
+참조한 로컬 파일도 읽지 않는다.
+
+가져온 직후 8초 동안 **되돌리기**를 사용할 수 있다. 그 사이 저장 내용이 바뀌면 이후
+변경을 보호하기 위해 되돌리지 않는다. 파일 컬렉션의 양방향 자동 동기화는 지원하지 않는다.
