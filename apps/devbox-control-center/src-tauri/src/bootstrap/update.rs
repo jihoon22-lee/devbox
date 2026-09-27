@@ -1128,6 +1128,13 @@ pub(super) fn execute(
     }
     #[cfg(windows)]
     super::registration::update_version(&root, &key, &payload.suite_version)?;
+    #[cfg(windows)]
+    super::registration::sync_agent_autostart(
+        &root,
+        &key,
+        &plan.candidate.manifest.generation,
+        false,
+    )?;
     write_records(
         &root,
         &plan.candidate,

@@ -1312,17 +1312,7 @@
   [
     "workspace.runtime",
     "tasks",
-    "set_startup_shortcut_enabled"
-  ],
-  [
-    "workspace.runtime",
-    "tasks",
     "show_main_window"
-  ],
-  [
-    "workspace.runtime",
-    "tasks",
-    "startup_shortcut_status"
   ],
   [
     "workspace.runtime",

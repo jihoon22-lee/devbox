@@ -26,10 +26,12 @@ interface Props {
   addProject: () => Promise<void>;
   idleThreshold: number;
   setIdleThresholdState: React.Dispatch<React.SetStateAction<number>>;
-  autoStart: import("../../generated/AutostartStatus").AutostartStatus | null;
+  autoStart: import("../../generated/AgentAutostartStatus").AgentAutostartStatus | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setNotice: React.Dispatch<React.SetStateAction<string | null>>;
-  setAutoStart: React.Dispatch<React.SetStateAction<import("../../generated/AutostartStatus").AutostartStatus | null>>;
+  setAutoStart: React.Dispatch<
+    React.SetStateAction<import("../../generated/AgentAutostartStatus").AgentAutostartStatus | null>
+  >;
   privacy: import("../../generated/PrivacyRules").PrivacyRules;
   privacyHealthy: boolean;
   setPrivacy: React.Dispatch<React.SetStateAction<import("../../generated/PrivacyRules").PrivacyRules>>;
@@ -235,10 +237,10 @@ export function ActivitySettings({
                 })();
               }}
             />
-            Windows 로그인 시 자동 시작
+            로그인할 때 백그라운드 서비스 시작
           </label>
         ) : (
-          <div className="dim">이 플랫폼에서는 자동 시작을 지원하지 않습니다.</div>
+          <div className="dim">설치된 Windows Suite에서 자동 시작을 설정할 수 있습니다.</div>
         )}
       </section>
 

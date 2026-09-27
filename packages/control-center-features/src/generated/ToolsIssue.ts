@@ -7,4 +7,6 @@ export type ToolsIssue =
   | "manager_state_conflict"
   | "manager_url_denied"
   | "manager_url_unavailable"
+  | "autostart_unavailable"
+  | "autostart_owner_conflict"
   | "unavailable";

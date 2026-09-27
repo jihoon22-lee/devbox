@@ -1,6 +1,9 @@
 //! Typed Activity command, preserving native startup and producer boundaries.
 use activity_engine::api::{self, ActivityCall};
-use product_contract::{Problem, ProblemCode};
+use product_contract::{
+    agent_settings::{AgentAutostartStatus, AgentSettingsCall},
+    Problem, ProblemCode,
+};
 use product_ipc::{ComponentCall, ExecutionClass, IncomingRequest, TypeExporter};
 use product_shell_tauri::{admit_request, Reply};
 use serde::Deserialize;
@@ -10,17 +13,20 @@ use tauri::{Manager, WebviewWindow};
 #[serde(untagged)]
 #[ts(optional_fields = nullable)]
 pub enum KnowledgeActivityCall {
+    Settings(AgentSettingsCall),
     Engine(ActivityCall),
 }
 impl ComponentCall for KnowledgeActivityCall {
     const COMPONENT: &'static str = "knowledge.activity";
     fn method(&self) -> &'static str {
         match self {
+            Self::Settings(call) => call.method(),
             Self::Engine(call) => call.method(),
         }
     }
     fn class(&self) -> ExecutionClass {
         match self {
+            Self::Settings(_) => ExecutionClass::Normal,
             Self::Engine(call) => call.class(),
         }
     }
@@ -46,6 +52,15 @@ pub async fn activity(window: WebviewWindow, request: IncomingRequest) -> Result
         crate::project_provider::refresh(app, request.header.deadline_ms).await;
     }
     let result = match request.call {
+        KnowledgeActivityCall::Settings(call) => {
+            product_shell_tauri::agent_settings::call(
+                app,
+                "knowledge",
+                call,
+                request.header.deadline_ms,
+            )
+            .await
+        }
         KnowledgeActivityCall::Engine(ActivityCall::SendDigestToKnowledge {
             input,
             regenerated_from,
@@ -88,6 +103,9 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
     export.register::<KnowledgeActivityCall>()?;
     export.register::<api::ActivityIssue>()?;
     let mut results = api::result_types(export)?;
+    for method in ["autostart_status", "set_autostart"] {
+        results.push((method, export.register::<AgentAutostartStatus>()?));
+    }
     use crate::activity_projection::*;
     for (method, ty) in [
         ("get_day", export.register::<ActivityDaySummary>()?),

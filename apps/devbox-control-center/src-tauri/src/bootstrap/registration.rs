@@ -617,3 +617,46 @@ pub(super) fn prepare_reinstall(root: &Path, key: &str, revision: &str) -> Resul
     }
     Ok(())
 }
+
+/// The caller holds the installation writer gate and has verified the package.
+/// Commit is forward-only, so a partial Run migration resumes idempotently.
+pub(super) fn sync_agent_autostart(
+    root: &Path,
+    key: &str,
+    generation: &str,
+    remove: bool,
+) -> Result<()> {
+    use suite_runtime::{agent_autostart as policy, platform::agent_autostart::Key as RunKey};
+    let image = root
+        .join("generations")
+        .join(generation)
+        .join("products/control-center/resources/suite/devbox-agent.exe");
+    if !remove
+        && matches!(fs::symlink_metadata(&image), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        // 0.8 packages do not contain the agent; never point login at a missing image.
+        return Ok(());
+    }
+    if !remove {
+        ensure_no_links(&image).map_err(|_| "suite_registry_unavailable")?;
+    }
+    let owner = policy::Owner::new(
+        root.to_str().ok_or("bootstrap_root_unsafe")?,
+        key,
+        image.to_str().ok_or("bootstrap_root_unsafe")?,
+    )
+    .map_err(|_| "suite_registry_unavailable")?;
+    suite_runtime::platform::agent_autostart::retire_workspace(&owner, !remove)
+        .map_err(|_| "suite_registry_unavailable")?;
+    let mut registry = RunKey::open().map_err(|_| "suite_registry_unavailable")?;
+    let before = policy::snapshot(&registry, &owner).map_err(|_| "suite_registry_unavailable")?;
+    let change = if remove {
+        Some(policy::setting(&owner, before, false).map_err(|_| "suite_registry_unavailable")?)
+    } else {
+        policy::reconcile(&owner, before).map_err(|_| "suite_registry_unavailable")?
+    };
+    if let Some(change) = change {
+        policy::apply(&mut registry, &owner, &change).map_err(|_| "suite_registry_unavailable")?;
+    }
+    Ok(())
+}

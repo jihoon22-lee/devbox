@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod identity;
 pub mod remote;
 pub mod routes;
@@ -7,6 +8,7 @@ pub mod session_runtime;
 pub mod webhooks;
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let _login_launch = autostart::login_launch(&std::env::args_os().skip(1).collect::<Vec<_>>())?;
     let executable = std::env::current_exe()?.canonicalize()?;
     // A login shortcut can race installation health/import mode. Do not keep
     // an idle writer alive while bootstrap still needs to commit activation.
@@ -76,11 +78,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("knowledge_store_unavailable")?
             .join(format!("com.devbox.v08.knowledge.i{suffix}"));
         let collectors = collectors::Collectors::new(app.handle().clone(), knowledge_root);
+        let settings = autostart::Settings::new(scope.clone(), &suffix)?;
+        // A registry failure must not disable unrelated background functionality;
+        // the settings query will report the fixed failure to the product UI.
+        let _ = settings.reconcile();
         let routes = routes::Routes::with_runtime(
             scope.manifest.generation.clone(),
             runtime.clone(),
             webhooks.clone(),
             collectors.clone(),
+            settings,
         );
         tray::initialize(
             app.handle(),

@@ -5,12 +5,6 @@ export interface RuntimeStatus {
   databasePath: string;
 }
 
-export interface StartupShortcutStatus {
-  supported: boolean;
-  enabled: boolean;
-  shortcutPath: string;
-}
-
 export type TargetKind = "windows" | "wsl";
 export type WorkspaceTaskKind = "process" | "shell";
 export type WorkspaceTaskDependsOrder = "parallel" | "sequence";

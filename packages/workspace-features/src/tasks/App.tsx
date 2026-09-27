@@ -37,13 +37,11 @@ import {
   listWorkspaceTaskControlReceipts,
   listWorkspaceTaskDiagnostics,
   listWorkspaceTaskOperations,
-  loadStartupShortcutStatus,
   loadRuntimeStatus,
   restartService,
   runJobNow,
   runWorkspaceTaskOperation,
   setJobEnabled,
-  setStartupShortcutEnabled,
   startService,
   stopActiveRun,
   stopService,
@@ -73,7 +71,6 @@ import type {
   RuntimeStatus,
   ServiceInput,
   ServiceInstance,
-  StartupShortcutStatus,
   WorkspaceTaskApplyResult,
   WorkspaceTaskControlPreview,
   WorkspaceTaskControlReceipt,
@@ -124,7 +121,6 @@ export default function App({
   const viewGenerationRef = useRef(0);
   const loadedGenerationRef = useRef(-1);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
-  const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [workspaceTasks, setWorkspaceTasks] = useState<WorkspaceTaskState[]>([]);
   const [workspaceSnapshotFresh, setWorkspaceSnapshotFresh] = useState(false);
@@ -817,14 +813,8 @@ export default function App({
     void refreshWorkspaceOperations().catch((cause: unknown) => {
       if (active) setError(friendlyErrorMessage(cause));
     });
-    void Promise.all([
-      loadRuntimeStatus(),
-      listJobs(),
-      loadServiceSnapshot(),
-      loadStartupShortcutStatus(),
-      listWorkspaceTasks(),
-    ])
-      .then(([nextStatus, nextJobs, serviceSnapshot, nextStartupStatus, nextWorkspaceTasks]) => {
+    void Promise.all([loadRuntimeStatus(), listJobs(), loadServiceSnapshot(), listWorkspaceTasks()])
+      .then(([nextStatus, nextJobs, serviceSnapshot, nextWorkspaceTasks]) => {
         if (!active) return;
         setStatus(nextStatus);
         setJobs(nextJobs);
@@ -833,7 +823,6 @@ export default function App({
         setWorkspaceSnapshotFresh(true);
         setServices(serviceSnapshot.services);
         setServiceInstances(serviceSnapshot.instances);
-        setStartupStatus(nextStartupStatus);
         void refreshActiveRuns();
         setStatusError(null);
       })
@@ -1167,18 +1156,6 @@ export default function App({
     });
   };
 
-  const toggleStartup = async () => {
-    if (!startupStatus?.supported) return;
-    return runTaskAction(async () => {
-      try {
-        setStartupStatus(await setStartupShortcutEnabled(!startupStatus.enabled));
-        setError(null);
-      } catch (cause) {
-        setError(friendlyErrorMessage(cause));
-      }
-    });
-  };
-
   const handleServiceSave = async (input: ServiceInput) => {
     return runTaskAction(async () => {
       if (editingServiceId) {
@@ -1365,15 +1342,7 @@ export default function App({
 
   return (
     <main className="app-shell">
-      <TaskSidebar
-        screen={screen}
-        setScreen={setScreen}
-        jobs={jobs}
-        services={services}
-        busy={busy}
-        startupStatus={startupStatus}
-        toggleStartup={toggleStartup}
-      />
+      <TaskSidebar screen={screen} setScreen={setScreen} jobs={jobs} services={services} />
 
       <section className="content">
         <header>

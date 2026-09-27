@@ -156,8 +156,6 @@ impl Collectors {
                 if matches!(
                     call,
                     activity_engine::api::ActivityCall::SendDigestToKnowledge { .. }
-                        | activity_engine::api::ActivityCall::AutostartStatus {}
-                        | activity_engine::api::ActivityCall::SetAutostart { .. }
                 ) {
                     return Err("component_args_invalid");
                 }

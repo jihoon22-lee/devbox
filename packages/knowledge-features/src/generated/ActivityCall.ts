@@ -25,8 +25,6 @@ export type ActivityCall =
   | { method: "get_privacy_rules"; args: Record<symbol, never> }
   | { method: "set_privacy_rules"; args: { rules: PrivacyRules } }
   | { method: "redact_existing"; args: Record<symbol, never> }
-  | { method: "autostart_status"; args: Record<symbol, never> }
-  | { method: "set_autostart"; args: { enabled: boolean } }
   | { method: "integration_sources"; args: Record<symbol, never> }
   | { method: "project_attribution"; args: { dayStart: number; dayEnd: number } }
   | { method: "timeline"; args: { dayStart: number; dayEnd: number } }

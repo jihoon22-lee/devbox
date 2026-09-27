@@ -1223,3 +1223,5 @@ pub fn stop_agent_for_update(version: &str) -> Result<(), &'static str> {
         .block_on(client.shutdown_if_running(&uuid::Uuid::new_v4().to_string()))
         .map_err(|_| "update_agent_busy")
 }
+
+pub mod agent_autostart;

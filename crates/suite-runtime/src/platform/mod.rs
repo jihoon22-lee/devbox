@@ -13,3 +13,6 @@ pub mod agent_peer;
 
 #[cfg(windows)]
 pub(crate) mod agent_transport;
+
+#[cfg(windows)]
+pub mod agent_autostart;

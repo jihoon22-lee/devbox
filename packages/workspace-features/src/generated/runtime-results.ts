@@ -12,7 +12,6 @@ import type { RuntimeControlReceipt } from "./RuntimeControlReceipt";
 import type { RuntimeStatus } from "./RuntimeStatus";
 import type { ServiceInstanceView } from "./ServiceInstanceView";
 import type { ServiceObservability } from "./ServiceObservability";
-import type { StartupShortcutStatus } from "./StartupShortcutStatus";
 import type { TailResponse } from "./TailResponse";
 import type { WorkspaceTaskApplyResult } from "./WorkspaceTaskApplyResult";
 import type { WorkspaceTaskControlPreview } from "./WorkspaceTaskControlPreview";
@@ -70,9 +69,7 @@ export type RuntimeResults = {
   search_run_logs: LogSearchResponse;
   service_observability: ServiceObservability | null;
   set_job_enabled: Job;
-  set_startup_shortcut_enabled: StartupShortcutStatus;
   show_main_window: null;
-  startup_shortcut_status: StartupShortcutStatus;
   tail_log: TailResponse;
   take_pending_open: OpenRequest | null;
   trust_workspace_task_shell_source: boolean;

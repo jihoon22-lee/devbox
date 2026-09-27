@@ -282,6 +282,32 @@ try {
       },
     });
     evidence.checks.agentWebhooks = webhookResult.evidence;
+    const agentSetting = async (product, method, args = {}) =>
+      value(
+        await call(
+          apps[product],
+          product === "knowledge" ? "plugin:knowledge|activity" : "plugin:control-center|tools",
+          { method, args },
+          product === "knowledge" ? "activity" : "environment",
+        ),
+      );
+    assert.deepEqual(await agentSetting("control-center", "autostart_status"), { supported: true, enabled: false });
+    try {
+      assert.deepEqual(await agentSetting("control-center", "set_autostart", { enabled: true }), {
+        supported: true,
+        enabled: true,
+      });
+      assert.deepEqual(await agentSetting("knowledge", "autostart_status"), { supported: true, enabled: true });
+      assert.deepEqual(await agentSetting("knowledge", "set_autostart", { enabled: false }), {
+        supported: true,
+        enabled: false,
+      });
+      assert.deepEqual(await agentSetting("control-center", "autostart_status"), { supported: true, enabled: false });
+      evidence.checks.sharedAgentLoginSetting = true;
+    } finally {
+      // This disposable installation owns the preference just created above.
+      await agentSetting("control-center", "set_autostart", { enabled: false });
+    }
     // All existing native clients observe a deliberate stop. Background reads
     // must not undo the user's choice; an explicit reconnect may start it again.
     for (const item of Object.values(apps)) {

@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Instant};
 pub struct Routes {
     #[cfg(test)]
     fixture_reply: Option<Value>,
+    settings: Option<Arc<crate::autostart::Settings>>,
     started: Instant,
     pub generation: String,
     shutdown: tokio::sync::watch::Sender<bool>,
@@ -23,6 +24,7 @@ impl Routes {
         Arc::new(Self {
             #[cfg(test)]
             fixture_reply: None,
+            settings: None,
             started: Instant::now(),
             generation,
             shutdown,
@@ -37,11 +39,13 @@ impl Routes {
         runtime: Arc<crate::runtime::Runtime>,
         webhooks: Arc<crate::webhooks::Webhooks>,
         collectors: Arc<crate::collectors::Collectors>,
+        settings: Arc<crate::autostart::Settings>,
     ) -> Arc<Self> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Arc::new(Self {
             #[cfg(test)]
             fixture_reply: None,
+            settings: Some(settings),
             started: Instant::now(),
             generation,
             shutdown,
@@ -52,6 +56,9 @@ impl Routes {
         })
     }
     pub async fn shutdown_owners(&self) {
+        if let Some(settings) = &self.settings {
+            settings.shutdown().await;
+        }
         if let Some(runtime) = &self.runtime {
             runtime.shutdown().await;
         }
@@ -93,6 +100,7 @@ impl Routes {
     pub fn accepts(&self, product: &str, component: &str) -> bool {
         (component == "agent.status"
             && ["workspace", "api-studio", "knowledge", "control-center"].contains(&product))
+            || (component == "agent.settings" && ["knowledge", "control-center"].contains(&product))
             || (product == "api-studio" && component == "api-studio.webhooks")
             || (product == "knowledge"
                 && [
@@ -126,6 +134,15 @@ impl Routes {
     ) -> Value {
         if !self.accepts(product, component) {
             return failure("unauthorized");
+        }
+        if component == "agent.settings" {
+            if *self.shutdown.borrow() {
+                return failure("agent_unavailable");
+            }
+            return match &self.settings {
+                Some(settings) => settings.dispatch(product, session, request).await,
+                None => failure("agent_autostart_unavailable"),
+            };
         }
         if component.starts_with("knowledge.") {
             return match &self.collectors {
@@ -187,7 +204,7 @@ impl Routes {
         json!({"operation":{"outcome":{"state":"succeeded"}},"value": {
             "version": env!("CARGO_PKG_VERSION"), "generation": self.generation,
             "uptimeMs": self.started.elapsed().as_millis() as u64,
-            "components": if self.runtime.is_some() { vec!["agent.status","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs","api-studio.webhooks","knowledge.activity","knowledge.search","knowledge.search-settings"] } else {vec!["agent.status"]}
+            "components": if self.runtime.is_some() { vec!["agent.status","agent.settings","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs","api-studio.webhooks","knowledge.activity","knowledge.search","knowledge.search-settings"] } else {vec!["agent.status"]}
         }})
     }
     #[cfg(test)]

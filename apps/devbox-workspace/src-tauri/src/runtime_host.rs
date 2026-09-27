@@ -201,30 +201,6 @@ pub(crate) async fn dispatch(
                     .try_state::<runtime_engine::component::ui::PendingOpen>()
                     .and_then(|state| state.take())));
             }
-            "startup_shortcut_status" => {
-                empty(value)?;
-                return serde_json::to_value(
-                    runtime_engine::component::ui::startup_shortcut_status(app.clone())
-                        .map_err(issue)?,
-                )
-                .map_err(|_| "invalid_response");
-            }
-            "set_startup_shortcut_enabled" => {
-                #[derive(Deserialize)]
-                #[serde(deny_unknown_fields)]
-                struct Input {
-                    enabled: bool,
-                }
-                let input: Input = args(value)?;
-                return serde_json::to_value(
-                    runtime_engine::component::ui::set_startup_shortcut_enabled(
-                        app.clone(),
-                        input.enabled,
-                    )
-                    .map_err(issue)?,
-                )
-                .map_err(|_| "invalid_response");
-            }
             _ => {}
         }
     }

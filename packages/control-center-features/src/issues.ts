@@ -1,5 +1,8 @@
 import type { ToolsIssue } from "./generated/ToolsIssue";
 export const toolsMessages: Record<ToolsIssue, string> = {
+  autostart_unavailable: "자동 시작 설정을 확인하거나 저장할 수 없습니다. 백그라운드 서비스 연결을 확인해 주세요.",
+  autostart_owner_conflict:
+    "다른 Devbox 설치가 자동 시작을 사용하고 있습니다. 해당 설치에서 자동 시작을 끈 뒤 다시 시도해 주세요.",
   manager_args_invalid: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
   manager_method_denied: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
   manager_response_invalid: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",

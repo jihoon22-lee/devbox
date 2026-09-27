@@ -170,6 +170,8 @@ product_ipc::issue_codes! {
     ManagerStateConflict = "manager_state_conflict",
     ManagerUrlDenied = "manager_url_denied",
     ManagerUrlUnavailable = "manager_url_unavailable",
+    AutostartUnavailable = "autostart_unavailable",
+    AutostartOwnerConflict = "autostart_owner_conflict",
     Unavailable = "unavailable",
     }
 }
