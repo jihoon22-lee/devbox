@@ -26,16 +26,6 @@ pub(crate) fn code(error: &str) -> &'static str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn diagnostic_codes_are_fixed_and_unknown_errors_are_not_logged() {
-        assert_eq!(super::code("peer_owner_rejected"), "peer_owner_rejected");
-        assert_eq!(super::code("private-secret"), "handoff_unavailable");
-        assert_eq!(super::code("C:\\private\\data"), "handoff_unavailable");
-    }
-}
-
 #[cfg(windows)]
 pub(crate) fn record(app: &tauri::AppHandle, method: &'static str, error: &str) {
     use tauri::Manager;
@@ -46,5 +36,15 @@ pub(crate) fn record(app: &tauri::AppHandle, method: &'static str, error: &str) 
             },
             Some(code(error)),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn diagnostic_codes_are_fixed_and_unknown_errors_are_not_logged() {
+        assert_eq!(super::code("peer_owner_rejected"), "peer_owner_rejected");
+        assert_eq!(super::code("private-secret"), "handoff_unavailable");
+        assert_eq!(super::code("C:\\private\\data"), "handoff_unavailable");
     }
 }
