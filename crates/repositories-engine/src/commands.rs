@@ -1,4 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
+mod stash;
+pub use stash::*;
 mod branches;
 pub use branches::*;
 mod agent_worktrees;

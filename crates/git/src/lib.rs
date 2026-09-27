@@ -652,7 +652,7 @@ fn run_bounded_inner_classified(
                 || arg.chars().any(|character| {
                     character.is_control()
                         && !(allow_message_controls
-                            && is_commit_message_argument(args, index)
+                            && is_message_argument(args, index)
                             && matches!(character, '\n' | '\r' | '\t'))
                 })
         })
@@ -913,17 +913,17 @@ fn command_for_target(
     Ok(command)
 }
 
-/// Commit messages may contain ordinary line breaks, but no other Git argv
+/// Commit and stash push/store messages may contain ordinary line breaks, but no other Git argv
 /// position may carry controls.  Keeping this exception tied to the
 /// `--message`/`-m` slot prevents a future caller from treating the broad
 /// mutation argument cap as permission to pass a newline-bearing path,
 /// command, remote, or hook option.
-fn is_commit_message_argument(args: &[&str], index: usize) -> bool {
+fn is_message_argument(args: &[&str], index: usize) -> bool {
     // The mutating runner is shared by commands other than `commit` (for
     // example cleanup and remote operations).  A generic `--message=` check
     // would accidentally allow control bytes in an arbitrary argument for a
-    // future caller.  Only an argument following the actual `commit` command
-    // can opt into the line-break allowance.
+    // future caller. Only commit and stash push/store message positions opt
+    // into the line-break allowance.
     let mut command_index = 0usize;
     while let Some(argument) = args.get(command_index) {
         match *argument {
@@ -942,8 +942,12 @@ fn is_commit_message_argument(args: &[&str], index: usize) -> bool {
             _ => break,
         }
     }
-    if args.get(command_index) != Some(&"commit") {
-        return false;
+    match args.get(command_index) {
+        Some(&"commit") => {}
+        Some(&"stash") if matches!(args.get(command_index + 1), Some(&"push" | &"store")) => {
+            command_index += 1;
+        }
+        _ => return false,
     }
     if index <= command_index
         || args
@@ -1416,6 +1420,25 @@ mod tests {
             "git_invalid_arguments"
         );
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn stash_message_controls_are_limited_to_push_and_store_message_slots() {
+        assert!(is_message_argument(
+            &["stash", "push", "--message", "first\nsecond"],
+            3
+        ));
+        assert!(is_message_argument(
+            &["stash", "store", "-m", "first\nsecond", "commit"],
+            3
+        ));
+        for args in [
+            vec!["stash", "branch", "-m", "bad\nname"],
+            vec!["stash", "push", "--", "--message=bad\npath"],
+            vec!["stash", "push", "--message", "safe", "bad\npath"],
+        ] {
+            assert!(!is_message_argument(&args, args.len() - 1));
+        }
     }
 
     #[test]
