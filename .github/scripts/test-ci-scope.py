@@ -35,7 +35,7 @@ assert frontend_only.dependency_scope == "none"
 rust_only = resolve("crates/runtime-engine/src/lib.rs")
 assert rust_only.frontend_scope == "none"
 assert rust_only.rust_scope == "packages"
-assert rust_only.rust_packages == ["devbox-runtime-engine", "devbox-workspace"]
+assert rust_only.rust_packages == ["devbox-agent", "devbox-runtime-engine", "devbox-workspace", "workspace-core"]
 
 frontend_manifest_lock = resolve("apps/devbox-workspace/package.json", "pnpm-lock.yaml")
 assert frontend_manifest_lock.frontend_scope == "apps"
@@ -69,19 +69,19 @@ assert openapi.frontend_packages == ["apps/devbox-api-studio", "packages/api-stu
 assert resolve("packages/api-studio-features/src/requests/api.ts").frontend_apps == ["devbox-api-studio"]
 assert resolve("crates/api-protocols/src/core/grpc.rs").rust_packages == ["api-protocols", "devbox-api-studio", "devbox-http-client-engine"]
 for crate, engine in [("webhook-core", "devbox-webhook-host"), ("transforms-core", "devbox-toolbox-engine")]:
-    assert resolve(f"crates/{crate}/src/lib.rs").rust_packages == sorted([crate, engine, "devbox-api-studio"])
+    assert resolve(f"crates/{crate}/src/lib.rs").rust_packages == sorted([crate, engine, "devbox-api-studio"] + (["devbox-agent"] if crate == "webhook-core" else []))
 for engine in ["runtime-engine", "ports-engine", "logs-engine"]:
-    assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-workspace"])
+    assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-workspace", "devbox-agent", "workspace-core"])
 assert resolve("crates/http-client-engine/src/component.rs").rust_packages == ["devbox-api-studio", "devbox-http-client-engine"]
 a11y = resolve("packages/a11y/src/index.ts")
 assert len(a11y.frontend_apps) == 4
 assert "packages/a11y" in a11y.frontend_packages
-assert resolve("crates/process/src/lib.rs").rust_packages == ["devbox-ports-engine", "devbox-workspace", "process"]
-assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-content-index-engine", "devbox-knowledge", "devbox-knowledge-vault-engine", "search"]
+assert resolve("crates/process/src/lib.rs").rust_packages == ["devbox-agent", "devbox-ports-engine", "devbox-workspace", "process", "workspace-core"]
+assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-agent", "devbox-content-index-engine", "devbox-knowledge", "devbox-knowledge-vault-engine", "knowledge-stores", "search"]
 for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engine"]:
-    assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge"])
+    assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge", "devbox-agent", "knowledge-stores"])
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == sorted(["devbox-editor-engine", "devbox-repositories-engine", "devbox-logs-engine", "devbox-ports-engine", "devbox-terminal-engine", "devbox-activity-engine", "devbox-content-index-engine", "devbox-toolbox-engine", "devbox-webhook-host", "product-ipc", "devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
+assert secrets.rust_packages == sorted(["devbox-editor-engine", "devbox-repositories-engine", "devbox-logs-engine", "devbox-ports-engine", "devbox-terminal-engine", "devbox-activity-engine", "devbox-content-index-engine", "devbox-toolbox-engine", "devbox-webhook-host", "product-ipc", "devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime", "devbox-agent", "workspace-core", "knowledge-stores"])
 
 shared_tree = resolve("crates/process-tree/src/lib.rs")
 assert shared_tree.frontend_scope == "none"
@@ -100,14 +100,15 @@ assert markdown_view.rust_scope == "none"
 
 native_helper = resolve("crates/wsl-helper/src/engine.rs")
 assert native_helper.frontend_scope == "none"
-assert native_helper.rust_packages == ["devbox-knowledge", "devbox-knowledge-vault-engine", "devbox-workspace", "workspace-wsl"]
+assert native_helper.rust_packages == ["devbox-agent", "devbox-knowledge", "devbox-knowledge-vault-engine", "devbox-workspace", "knowledge-stores", "workspace-core", "workspace-wsl"]
 helper_manifest = resolve("crates/wsl-helper/Cargo.toml")
 assert helper_manifest.dependency_scope == "all"
 assert helper_manifest.rust_packages == native_helper.rust_packages
 rust_graph = module.load_rust_graph(ROOT)
 assert rust_graph.nodes["workspace-wsl"].kind == "crate"
 wsl = resolve("crates/wsl/src/lib.rs")
-assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 4
+assert {node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"} == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
+assert "devbox-agent" in wsl.rust_packages  # headless Cargo component has no frontend app
 
 catalog = resolve("apps/catalog.json")
 assert catalog.frontend_scope == catalog.rust_scope == "all"

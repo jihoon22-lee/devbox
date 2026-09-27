@@ -306,15 +306,15 @@ export async function redactExisting(): Promise<number> {
   return activityCall("redact_existing", {});
 }
 
-export type AutostartStatus = import("../generated/AutostartStatus").AutostartStatus;
+export type AutostartStatus = import("../generated/AgentAutostartStatus").AgentAutostartStatus;
 
 export async function autostartStatus(): Promise<AutostartStatus> {
-  if (!isTauri()) return { supported: true, enabled: false, command: null };
+  if (!isTauri()) return { supported: true, enabled: false };
   return activityCall("autostart_status", {});
 }
 
 export async function setAutostart(enabled: boolean): Promise<AutostartStatus> {
-  if (!isTauri()) return { supported: true, enabled, command: null };
+  if (!isTauri()) return { supported: true, enabled };
   return activityCall("set_autostart", { enabled });
 }
 

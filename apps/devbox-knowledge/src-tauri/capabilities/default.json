@@ -7,6 +7,8 @@
   "permissions": [
     "core:default",
     "product-shell:allow-describe",
+    "product-shell:allow-agent-status",
+    "product-shell:allow-agent-reconnect",
     "product-shell:allow-route-status",
     "suite:allow-connection",
     "knowledge:allow-activity",

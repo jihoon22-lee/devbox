@@ -223,6 +223,8 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
     {
         return Err("suite_remove_plan_invalid");
     }
+    #[cfg(windows)]
+    super::registration::sync_agent_autostart(&root, &key, &owner.generation, true)?;
     receipt.plan.remove(&root)?;
     #[cfg(windows)]
     super::registration::remove(&root, &key, true)?;

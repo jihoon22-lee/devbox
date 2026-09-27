@@ -38,10 +38,12 @@ try {
       if ($LASTEXITCODE -ne 0) { throw 'Private LSP fixture build failed.' }
     }
     if ($product -eq 'control-center') {
+      cargo build --locked --release -p devbox-agent
+      if ($LASTEXITCODE -ne 0) { throw 'Agent build failed.' }
       cargo build --locked --release -p devbox-control-center --bin devbox-suite-bootstrap
       if ($LASTEXITCODE -ne 0) { throw 'Suite helper build failed.' }
       New-Item -ItemType Directory -Path "$destination/resources/suite" -Force | Out-Null
-      Copy-Item -LiteralPath 'target/release/devbox-suite-bootstrap.exe' -Destination "$destination/resources/suite/"
+      Copy-Item -LiteralPath 'target/release/devbox-suite-bootstrap.exe','target/release/devbox-agent.exe' -Destination "$destination/resources/suite/"
     }
     $receipt.products += $product
     foreach ($file in Get-ChildItem -LiteralPath $destination -File -Recurse) {

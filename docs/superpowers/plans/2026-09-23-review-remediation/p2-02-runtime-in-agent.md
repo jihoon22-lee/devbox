@@ -30,6 +30,47 @@
 4. agent가 없는 portable 빌드 → 기존처럼 Workspace 안에서 런타임이 돈다. (Task 3)
 5. agent가 작업 중에 죽음 → Job Object 규칙으로 작업 프로세스도 끝나고, 다시 시작한 agent가 실행 기록을 "중단됨"으로 정리한다(기존 복구 규칙). (Task 4)
 
+## 2026-09-27 승인된 보완 — Sessions 소유권과 복구
+
+사용자는 ledger #580의 [보완 요청](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5850796958)에 대해 “네 계속해주세요”로 권장안을 승인했다. 아래 내용은 Task 2–4의 engine 전달·수명 범위를 보완한다. engine dispatch를 그대로 전달하라는 기존 문구는 host 조합·lease·복구 경계를 우회한다는 뜻이 아니다. 완료 상태는 ledger/PR에만 기록한다.
+
+### 실제 native 소비자와 적용 경계
+
+현재 계획 Task 2·3은 네 component의 engine dispatch를 agent로 옮기는 것으로 런타임 이전을 설명한다. 실제 구현에는 추가 native 소비자가 있다.
+
+- `development_host.rs`는 `PreparedJob`, `RuntimeLease`, `RuntimeStartWitness`로 실행 준비·기동·서비스 빌림·소유 resource 정리를 수행한다. `RuntimeLease`는 AppHandle과 SchedulerCoordinator를 직접 보유한다.
+- `RuntimeStartWitness`는 프로세스를 만든 뒤 응답이나 기록에 실패해도 생성자 lease를 유지한다. 단순 JSON 요청/응답으로 바꾸면 이 복구 경계가 사라진다.
+- Workspace 종료는 Sessions의 `request_shutdown`/`shutdown`을 호출해 런타임 lease도 정리한다. UI 닫기와 사용자 명시적 Session 종료를 나눠야 백그라운드 실행을 보장할 수 있다.
+- 포트 소유자 판정, 진단/로그 탐색, Problems·Sessions preflight도 같은 native 런타임 API를 사용한다. 기존 UI·선택 receipt를 유지한 owner 조회 경로가 필요하다.
+
+### 확정 범위
+
+B9와 P2-02 안에서 Task 2·3·4를 보완한다. 새 외부 의존성·버전/CHANGELOG 변경·새 제품은 추가하지 않는다. agent 프로토콜의 기존 Call/Reply를 사용한다.
+
+#### Task 2 추가: agent가 실행 준비와 실행 lease를 보유
+
+1. agent에 한정된 typed 내부 RPC를 추가한다: prepare, start/acquire, status/ready, cancel, stop/release, operation receipt 조회. renderer component의 허용 메서드를 넓히지 않는다.
+2. agent가 실제 PreparedJob·RuntimeLease·RuntimeStartWitness를 소유한다. Workspace에는 검증된 요약·불투명 참조만 반환한다. 비밀 환경·실행기 내부 경로를 투영하지 않는다.
+3. 참조는 동일 설치/generation·제품·durable development session/operation·project context에 묶고 기존 개수·기한 제한을 유지한다. 새 UI handshake로 재연결할 때는 Workspace의 저장된 Session 기록과 현재 registry를 다시 검증한다.
+4. start 전에 operation별 witness를 등록한다. 응답 유실은 같은 mutation을 재전송하지 않고 receipt 조회로 판정한다. cancel도 실제 시작/정리 종료까지 witness와 worker permit을 보유한다.
+5. 포트 소유자·런타임 로그·진단 조회는 agent가 수행하며, UI 탐색과 선택/전달 receipt는 Workspace에 남긴다. 파일/터미널/LSP/Git 소유권은 이전하지 않는다.
+
+#### Task 3 추가: Workspace native 소비자를 owner adapter로 연결
+
+1. 기존 네 command뿐 아니라 development sessions, Problems, preflight, 포트/로그/진단 경로를 빠짐없이 owner adapter에 연결한다.
+2. installed에서는 연결 실패 시 오류로 끝내고 local runtime DB를 열지 않는다. portable만 기존 local 구현을 사용한다.
+3. UI 닫기는 agent의 완료된 실행을 유지한다. 사용자가 Session을 명시적으로 멈추면 기존 생성/빌림 구분에 맞춰 정확한 리소스만 정리한다. PTY/LSP 등 UI 소유 리소스는 기존 종료 절차를 따른다.
+4. UI 재개 시 저장된 Session 기록과 agent receipt를 대조한다. agent가 재시작해 lease가 사라졌으면 기존 런타임 중단 기록을 근거로 복구 상태를 표시하고 임의로 작업을 재실행/종료하지 않는다.
+
+#### Task 4 추가: 회귀 및 hosted acceptance
+
+- 실제 시작 뒤 응답/기록 유실, 중복 operation, 시작 중 cancel, 오래된/다른 설치 참조, 빌린 서비스의 잘못된 종료를 테스트한다.
+- 작업/서비스를 띄우고 Workspace를 닫았다 다시 열어 실행·로그·Sessions/Problems 연계가 이어짐을 확인한다.
+- 명시적 Session 종료와 Workspace UI 종료를 구별하고, terminal/LSP는 UI 종료 시 정리되는지 확인한다.
+- agent 강제 종료 뒤 기존 중단 복구, 정의 신뢰 철회 뒤 예약 실행 차단, portable local 동작을 확인한다.
+- 업데이트/복원은 모든 engine·witness·writer가 정리된 뒤에만 기존 exclusive gate로 진행한다.
+
+
 ## Branch · PR
 
 - 묶음: **B9** — 브랜치 `feat/suite/devbox-agent`, PR 제목 `feat(suite): run runtime, webhooks and collectors in devbox-agent`(로드맵 §6). 이 계획은 묶음 PR 안의 커밋들이다.

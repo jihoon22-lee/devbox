@@ -17,10 +17,7 @@ pub enum ProcessActionsCall {
 }
 pub const METHODS: &[&str] = &["kill_listener"];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
-    match method {
-        "kill_listener" => &["runtime"],
-        _ => &[],
-    }
+    workspace_core::runtime_policy::process_actions_routes(method)
 }
 impl ComponentCall for ProcessActionsCall {
     const COMPONENT: &'static str = "workspace.process-actions";

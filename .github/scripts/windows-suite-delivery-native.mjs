@@ -1,3 +1,6 @@
+import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
+import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
+import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
 import { requireHostedNetworkFixture } from "./fixture-network-safety.mjs";
@@ -15,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 requireHostedNetworkFixture();
 assert.equal(process.platform, "win32");
@@ -80,7 +84,32 @@ async function start(member) {
 }
 try {
   const apps = {};
-  for (const member of manifest.members) apps[member.product] = await start(member);
+  const startupOrder =
+    mode === "committed"
+      ? [...manifest.members].sort(
+          (a, b) => Number(b.product === "control-center") - Number(a.product === "control-center"),
+        )
+      : manifest.members;
+  for (const member of startupOrder) {
+    apps[member.product] = await start(member);
+    if (mode === "committed" && member.product === "control-center") {
+      const agentImage = realpathSync.native(
+        path.join(root, "generations", manifest.generation, "products/control-center/resources/suite/devbox-agent.exe"),
+      );
+      const owners = () =>
+        allWindowsProcesses().filter(
+          (row) => path.resolve(row.Path).toLowerCase() === path.resolve(agentImage).toLowerCase(),
+        );
+      const deadline = Date.now() + 20000;
+      while (owners().length === 0 && Date.now() < deadline) await delay(100);
+      assert.equal(
+        owners().length,
+        1,
+        "opening Control Center must start the agent before any explicit business request",
+      );
+      evidence.checks.productReadyStartsAgent = true;
+    }
+  }
   for (const item of Object.values(apps)) {
     const route = { workspace: "overview", "api-studio": "requests", knowledge: "notes", "control-center": "recovery" }[
       item.product
@@ -169,6 +198,25 @@ try {
       "ordinary Runtime remains blocked before commit",
     );
     evidence.checks.businessGate = true;
+    assert.equal(
+      allWindowsProcesses().some(
+        (row) =>
+          path.resolve(row.Path).toLowerCase() ===
+          path
+            .resolve(
+              path.join(
+                root,
+                "generations",
+                manifest.generation,
+                "products/control-center/resources/suite/devbox-agent.exe",
+              ),
+            )
+            .toLowerCase(),
+      ),
+      false,
+      "activation health/import must not retain an agent writer",
+    );
+    evidence.checks.noAgentBeforeCommit = true;
   } else {
     for (const member of manifest.members) {
       const result = value(
@@ -182,6 +230,195 @@ try {
       assert.equal(result.nativeStoreReady, true);
     }
     evidence.checks.fourCommittedNativeOwners = true;
+    // A real Workspace owner request starts the installed background service.
+    value(await call(apps.workspace, "plugin:workspace|runtime", { method: "list_jobs", args: {} }, "tasks"));
+    const agentImage = realpathSync.native(
+      path.join(root, "generations", manifest.generation, "products/control-center/resources/suite/devbox-agent.exe"),
+    );
+    const agents = () =>
+      allWindowsProcesses().filter(
+        (row) => path.resolve(row.Path).toLowerCase() === path.resolve(agentImage).toLowerCase(),
+      );
+    const deadline = Date.now() + 15000;
+    while (agents().length === 0 && Date.now() < deadline) await delay(100);
+    assert.equal(agents().length, 1, "one installed agent serves the four products");
+    evidence.agent = agents()[0];
+    const fixture = path.join(path.dirname(root), "agent-runtime-" + randomUUID());
+    mkdirSync(fixture);
+    const agentIdentity = () => {
+      const rows = agents();
+      assert.equal(rows.length, 1, "exactly one verified fixture agent required");
+      return rows[0];
+    };
+    const sameProcess = (identity) =>
+      allWindowsProcesses().some(
+        (row) =>
+          row.Pid === identity.Pid &&
+          row.Created === identity.Created &&
+          path.resolve(row.Path).toLowerCase() === path.resolve(identity.Path).toLowerCase(),
+      );
+    const crashOwnedAgent = async () => {
+      const identity = agentIdentity();
+      const observed = {
+        get exitCode() {
+          return sameProcess(identity) ? null : 0;
+        },
+        signalCode: null,
+      };
+      const result = await stopOwnedProcess(identity, agentImage, observed);
+      assert.equal(result.forced, true, "acceptance must prove abrupt agent loss");
+    };
+    const result = await exerciseAgentRuntime({
+      workspace: apps.workspace,
+      directory: fixture,
+      agentIdentity,
+      closeWorkspace: async (item) => {
+        const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
+        assert.equal(stopped.forced, false, "Workspace close must drain and exit instead of hiding");
+        assert.equal(sameProcess(item.identity), false, "Workspace must finish ordinary owner shutdown");
+        item.cdp.close();
+      },
+      restartWorkspace: async () => {
+        apps.workspace = await start(manifest.members.find((member) => member.product === "workspace"));
+        return apps.workspace;
+      },
+      crashAgent: crashOwnedAgent,
+      report: (state) => {
+        evidence.checks.agentRuntime = { ...state };
+      },
+    });
+    evidence.checks.agentRuntime = result.evidence;
+    const webhookResult = await exerciseAgentWebhooks({
+      api: apps["api-studio"],
+      call: async (item, method, args) =>
+        value(await call(item, "plugin:api-studio|webhooks", { method, args }, "webhooks")),
+      closeApi: async (item) => {
+        const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
+        assert.equal(stopped.forced, false, "API Studio close must honor its selected policy and exit");
+        assert.equal(sameProcess(item.identity), false, "API Studio must finish its selected close policy");
+        item.cdp.close();
+      },
+      restartApi: async () => {
+        apps["api-studio"] = await start(manifest.members.find((member) => member.product === "api-studio"));
+        return apps["api-studio"];
+      },
+      crashAgent: crashOwnedAgent,
+      report: (state) => {
+        evidence.checks.agentWebhooks = { ...state };
+      },
+    });
+    evidence.checks.agentWebhooks = webhookResult.evidence;
+    const collectorResult = await exerciseAgentCollectors({
+      knowledge: apps.knowledge,
+      directory: fixture,
+      agentIdentity,
+      call: async (item, component, method, args) =>
+        value(
+          await call(
+            item,
+            `plugin:knowledge|${component}`,
+            { method, args },
+            component === "activity" ? "activity" : "search",
+          ),
+        ),
+      closeKnowledge: async (item) => {
+        const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
+        assert.equal(stopped.forced, false, "Knowledge close must finish the unsaved-note review and exit");
+        assert.equal(sameProcess(item.identity), false);
+        item.cdp.close();
+      },
+      restartKnowledge: async () => {
+        apps.knowledge = await start(manifest.members.find((member) => member.product === "knowledge"));
+        return apps.knowledge;
+      },
+      report: (state) => {
+        evidence.checks.agentCollectors = { ...state };
+      },
+    });
+    evidence.checks.agentCollectors = collectorResult.evidence;
+    const agentSetting = async (product, method, args = {}) =>
+      value(
+        await call(
+          apps[product],
+          product === "knowledge" ? "plugin:knowledge|activity" : "plugin:control-center|tools",
+          { method, args },
+          product === "knowledge" ? "activity" : "environment",
+        ),
+      );
+    assert.deepEqual(await agentSetting("control-center", "autostart_status"), { supported: true, enabled: false });
+    try {
+      assert.deepEqual(await agentSetting("control-center", "set_autostart", { enabled: true }), {
+        supported: true,
+        enabled: true,
+      });
+      assert.deepEqual(await agentSetting("knowledge", "autostart_status"), { supported: true, enabled: true });
+      assert.deepEqual(await agentSetting("knowledge", "set_autostart", { enabled: false }), {
+        supported: true,
+        enabled: false,
+      });
+      assert.deepEqual(await agentSetting("control-center", "autostart_status"), { supported: true, enabled: false });
+      evidence.checks.sharedAgentLoginSetting = true;
+    } finally {
+      // This disposable installation owns the preference just created above.
+      await agentSetting("control-center", "set_autostart", { enabled: false });
+    }
+    // All existing native clients observe a deliberate stop. Background reads
+    // must not undo the user's choice; an explicit reconnect may start it again.
+    for (const item of Object.values(apps)) {
+      assert.equal(
+        await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
+          timeoutMs: 35000,
+        }),
+        "connected",
+      );
+    }
+    const relayEnvironment = { ...process.env };
+    for (const key of Object.keys(relayEnvironment))
+      if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete relayEnvironment[key];
+    const relay = spawn(center.executable, ["--stop-agent-for-update"], {
+      env: relayEnvironment,
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    await once(relay, "spawn");
+    const relayExit = await Promise.race([once(relay, "exit"), delay(15000).then(() => null)]);
+    if (!relayExit) {
+      relay.kill();
+      await Promise.race([once(relay, "exit"), delay(5000)]);
+      assert.fail("owned shutdown relay timed out");
+    }
+    assert.equal(relayExit[0], 0);
+    assert.equal(agents().length, 0);
+    for (const item of Object.values(apps)) {
+      assert.equal(
+        await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')"),
+        "unavailable",
+      );
+    }
+    for (const [product, command, method, route, issue] of [
+      ["workspace", "plugin:workspace|runtime", "list_jobs", "tasks", "runtime_agent_unavailable"],
+      ["api-studio", "plugin:api-studio|webhooks", "server_status", "webhooks", "webhook_agent_unavailable"],
+      ["knowledge", "plugin:knowledge|activity", "is_tracking", "activity", "knowledge_agent_unavailable"],
+    ]) {
+      const refused = await call(apps[product], command, { method, args: {} }, route);
+      assert.equal(refused.operation.outcome.state, "failed");
+      assert.equal(refused.value.issue, issue);
+    }
+    await delay(2500);
+    assert.equal(agents().length, 0, "background queries relaunched an intentionally stopped owner");
+    assert.equal(
+      await apps.workspace.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
+        timeoutMs: 35000,
+      }),
+      "connected",
+    );
+    value(
+      await call(apps["api-studio"], "plugin:api-studio|webhooks", { method: "server_status", args: {} }, "webhooks"),
+    );
+    value(await call(apps.knowledge, "plugin:knowledge|activity", { method: "is_tracking", args: {} }, "activity"));
+    assert.equal(agents().length, 1);
+    evidence.checks.intentionalAgentStopRequiresExplicitRestart = true;
+    evidence.checks.otherProductsReconnectToTheRestartedOwner = true;
   }
   evidence.result = "passed";
 } catch (error) {

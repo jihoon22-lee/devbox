@@ -62,3 +62,5 @@ process scan to find remaining marked descendants. Stop delivery and observation
 phase budgets (six seconds total for the default two-second grace). Actual Windows/WSL startup
 latency and process behavior require the Windows acceptance fixture; local bash tests alone are
 not Windows evidence.
+
+설치본의 작업·서비스·예약·Development Sessions 실행은 agent가 소유한다. 창을 닫아도 실행은 유지되며 재열기 시 기존 receipt와 lease로 복구한다. agent가 종료되어 lease가 사라진 세션은 Degraded로 표시하고 자동 재실행하지 않는다. 터미널·편집기·LSP는 Workspace에 남는다. 로그인 자동 시작은 Control Center 환경에서 설정한다.

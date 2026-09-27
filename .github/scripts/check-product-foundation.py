@@ -36,7 +36,7 @@ def check(root=ROOT):
         capability = json.loads((root / entry["appDir"] / "src-tauri/capabilities/default.json").read_text())
         assert capability["windows"] == ["main"]
         assert "remote" not in capability
-        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status", "suite:allow-connection"}
+        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-agent-status", "product-shell:allow-agent-reconnect", "product-shell:allow-route-status", "suite:allow-connection"}
         if product["id"] == "workspace":
             expected_permissions.update({"workspace:allow-runtime","workspace:allow-processes","workspace:allow-process-actions","workspace:allow-logs","workspace:allow-terminal","workspace:allow-problems","workspace:allow-commands","workspace:allow-files","workspace:allow-lsp","workspace:allow-source","workspace:allow-registry","workspace:allow-setup","workspace:allow-definitions","workspace:allow-dependencies"})
         if product["id"] == "api-studio":
@@ -59,6 +59,12 @@ def check(root=ROOT):
                 "opener:allow-open-url",
             }
         assert {path.name for path in capability_dir.glob("*.json")} == expected_files
+    agent = root / "apps/devbox-agent"
+    agent_config = json.loads((agent / "tauri.conf.json").read_text())
+    agent_cargo = tomllib.loads((agent / "Cargo.toml").read_text())
+    assert agent_config["version"] == agent_cargo["package"]["version"] == config["version"]
+    assert agent_config["app"]["windows"] == [] and agent_config["bundle"]["active"] is False
+    assert all(entry["id"] != "devbox-agent" for entry in public["apps"])
     for source in (root / "crates/suite-runtime/src").rglob("*.rs"):
         assert "CARGO_PKG_VERSION" not in source.read_text(), "Suite library metadata is not product identity"
     workflow = (root / ".github/workflows/product-foundation.yml").read_text()

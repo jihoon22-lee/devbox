@@ -21,12 +21,17 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def file_names(product):
+def file_names(product, version=None, files=None):
     names = {f"devbox-{product}.exe", "THIRD_PARTY_NOTICES.md", "devbox-installation.json"}
     if product in {"workspace", "knowledge"}:
         names |= {"resources/wsl/manifest.json", "resources/wsl/devbox-workspace-wsl"}
     if product == "control-center":
         names.add("resources/suite/devbox-suite-bootstrap.exe")
+        # Read previously published 0.8.x manifests; newly assembled packages
+        # always include the agent and 0.9+ requires it even if omitted.
+        has_agent = files is not None and any(isinstance(f, dict) and f.get("name") == "resources/suite/devbox-agent.exe" for f in files)
+        if version is None or tuple(map(int, version.split('.'))) >= (0, 9, 0) or has_agent:
+            names.add("resources/suite/devbox-agent.exe")
     return names
 
 
@@ -59,8 +64,8 @@ def manifest_assets(manifest, tag=None, commit=None, allow_prerelease=False):
         name = f"devbox-{pid}_{version}_x64.zip"
         expected[name] = asset(product["portable"], name)
         files = product["files"]
-        require(isinstance(files, list) and len(files) == len(file_names(pid)), "product file count mismatch")
-        require({f.get("name") for f in files if isinstance(f, dict)} == file_names(pid), "product component/file closure mismatch")
+        require(isinstance(files, list) and len(files) == len(file_names(pid, version, files)), "product file count mismatch")
+        require({f.get("name") for f in files if isinstance(f, dict)} == file_names(pid, version, files), "product component/file closure mismatch")
         for member in files:
             asset(member, member["name"])
             if member["name"] == "THIRD_PARTY_NOTICES.md":
@@ -85,7 +90,7 @@ def verify_archive(directory, product, manifest):
     with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
         names = [entry.filename for entry in entries]
-        require(len(names) == len(set(name.casefold() for name in names)) and set(names) == file_names(product["id"]), "ZIP file closure or duplicate mismatch")
+        require(len(names) == len(set(name.casefold() for name in names)) and set(names) == file_names(product["id"], product["version"], product["files"]), "ZIP file closure or duplicate mismatch")
         declared = {member["name"]: member for member in product["files"]}
         for entry in entries:
             require(not entry.is_dir() and not entry.flag_bits & 1, "ZIP directories/encryption are not allowed")

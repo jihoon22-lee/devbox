@@ -45,7 +45,7 @@ pub struct ProcessInfo {
 /// A port row contains display metadata and an opaque identity precondition.
 /// The executable path/command line are display-only values; they are never
 /// accepted as process-control input.
-#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS, serde::Deserialize)]
 pub struct PortRow {
     #[serde(flatten)]
     pub port: devbox_process::PortInfo,

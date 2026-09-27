@@ -23,7 +23,6 @@ use crate::core::workspace_tasks::{
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
 use crate::platform::environment::{EnvironmentProtectorState, SecretEnvironment};
-use crate::platform::{StartupShortcut, StartupShortcutStatus};
 use crate::scheduler::SchedulerError;
 use crate::storage::{current_epoch_millis, DatabaseState, StorageError};
 use chrono::Local;
@@ -33,7 +32,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -169,35 +168,6 @@ pub fn quit_app(app: AppHandle, state: State<'_, Arc<RuntimeState>>) {
     } else {
         lifecycle::request_orderly_exit(&app, state.inner().clone());
     }
-}
-
-fn startup_shortcut(app: &AppHandle) -> Result<StartupShortcut, String> {
-    let startup_directory = app
-        .path()
-        .data_dir()
-        .map_err(|error| error.to_string())?
-        .join("Microsoft")
-        .join("Windows")
-        .join("Start Menu")
-        .join("Programs")
-        .join("Startup");
-    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    if crate::component::is_initialized(app) {
-        StartupShortcut::workspace(&startup_directory, &executable)
-    } else {
-        StartupShortcut::new(&startup_directory, &executable)
-    }
-}
-
-pub fn startup_shortcut_status(app: AppHandle) -> Result<StartupShortcutStatus, String> {
-    crate::platform::startup_shortcut_status(&startup_shortcut(&app)?)
-}
-
-pub fn set_startup_shortcut_enabled(
-    app: AppHandle,
-    enabled: bool,
-) -> Result<StartupShortcutStatus, String> {
-    crate::platform::set_startup_shortcut_enabled(&startup_shortcut(&app)?, enabled)
 }
 
 pub fn list_jobs(state: State<'_, Arc<DatabaseState>>) -> Result<Vec<Job>, String> {

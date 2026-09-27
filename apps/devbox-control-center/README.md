@@ -45,3 +45,5 @@ portable 제품처럼 설치 접미사가 다르면 다른 제품 로그는 `mis
 ## 타입 IPC 개발
 
 제품 플러그인의 명령은 `tools·delivery`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/control-center-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.
+
+환경 화면의 로그인 자동 시작은 Knowledge와 같은 agent 설정이다. Control Center 창 없이도 현재 설치의 백그라운드 작업을 시작하며 기본 꺼짐이다.

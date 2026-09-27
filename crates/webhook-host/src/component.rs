@@ -17,13 +17,25 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .app_local_data_dir()
         .map_err(|_| "component_storage_unavailable")?
         .join("webhooks");
-    if !app.manage(ComponentRoot(root)) {
+    initialize_at(app, root)
+}
+
+pub fn initialize_at(app: &tauri::AppHandle, root: PathBuf) -> Result<(), String> {
+    if !app.manage(ComponentRoot(root.clone())) {
         return Err("component_state_conflict".into());
     }
-    if !app.manage(crate::commands::server_state()) {
+    if !app.manage(crate::commands::server_state_at(Some(root))) {
         return Err("component_state_conflict".into());
     }
     Ok(())
+}
+
+/// Startup errors remain visible in server_status; intent is never cleared.
+pub fn resume_listener(app: &tauri::AppHandle) -> Result<(), String> {
+    crate::commands::resume_listener(
+        app.state::<std::sync::Arc<crate::commands::ServerState>>()
+            .inner(),
+    )
 }
 
 /// Called only by the product's authorized source-owner route.
@@ -40,7 +52,10 @@ pub fn listener_running(app: &tauri::AppHandle) -> bool {
         .is_some_and(|state| crate::commands::server_status(state).running)
 }
 pub fn stop_owned_listener(app: &tauri::AppHandle) -> Result<(), String> {
-    crate::commands::stop_server(app.state()).map(|_| ())
+    let Some(state) = app.try_state::<std::sync::Arc<crate::commands::ServerState>>() else {
+        return Ok(());
+    };
+    crate::commands::stop_server_inner(state.inner()).map(|_| ())
 }
 /// Native profile runner with no Tauri application, event loop or renderer.
 /// The owning process/Job controls its lifetime, independent of an interactive app.
@@ -77,6 +92,13 @@ pub fn prepare_log_handoff(
     crate::commands::prepare_log_handoff(app, selection)
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum HandoffSelection {
     History { history_id: u64 },
     Fixture { id: String },
@@ -110,5 +132,38 @@ mod profile_tests {
         drop(worker);
         let rebound = TcpListener::bind(("127.0.0.1", port)).unwrap();
         drop(rebound);
+    }
+}
+
+/// Native-only owner projections; these methods are not renderer commands.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "selection",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+pub enum Projection {
+    Api(HandoffSelection),
+    Log(HandoffSelection),
+}
+pub fn project(app: &tauri::AppHandle, call: Projection) -> Result<serde_json::Value, String> {
+    match call {
+        Projection::Api(selection) => prepare_api_handoff(app, selection),
+        Projection::Log(selection) => serde_json::to_value(prepare_log_handoff(app, selection)?)
+            .map_err(|_| "component_response_invalid".into()),
+    }
+}
+struct ProfileExecutable(PathBuf);
+pub fn profile_executable(app: &tauri::AppHandle, executable: PathBuf) -> Result<(), String> {
+    if !app.manage(ProfileExecutable(executable)) {
+        return Err("component_state_conflict".into());
+    }
+    Ok(())
+}
+pub(crate) fn service_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    match app.try_state::<ProfileExecutable>() {
+        Some(executable) => Ok(executable.0.clone()),
+        None => std::env::current_exe().map_err(|_| "component_unavailable".into()),
     }
 }

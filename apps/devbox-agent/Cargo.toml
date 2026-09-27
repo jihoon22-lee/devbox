@@ -1,0 +1,42 @@
+[package]
+name = "devbox-agent"
+version = "0.8.1"
+publish = false
+edition = "2021"
+description = "Devbox installed Suite background component"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+activity_engine = { package = "devbox-activity-engine", path = "../../crates/activity-engine", default-features = false }
+content_index_engine = { package = "devbox-content-index-engine", path = "../../crates/content-index-engine", default-features = false }
+knowledge-stores = { path = "../../crates/knowledge-stores" }
+webhook_host = { package = "devbox-webhook-host", path = "../../crates/webhook-host", default-features = false }
+tauri-plugin-notification = { workspace = true }
+workspace-core = { path = "../../crates/workspace-core" }
+product-contract = { path = "../../crates/product-contract" }
+product-ipc = { workspace = true }
+dirs = { workspace = true }
+sha2 = { workspace = true }
+devbox-filesystem = { package = "filesystem", path = "../../crates/filesystem" }
+runtime_engine = { package = "devbox-runtime-engine", path = "../../crates/runtime-engine", default-features = false, features = ["desktop"] }
+ports_engine = { package = "devbox-ports-engine", path = "../../crates/ports-engine", default-features = false, features = ["desktop"] }
+logs_engine = { package = "devbox-logs-engine", path = "../../crates/logs-engine", default-features = false, features = ["desktop"] }
+
+tauri = { workspace = true }
+tauri-plugin-single-instance = "2"
+product-shell-tauri = { path = "../../crates/product-shell-tauri" }
+agent-client = { path = "../../crates/agent-client" }
+agent-protocol = { path = "../../crates/agent-protocol" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+suite-runtime = { path = "../../crates/suite-runtime" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rusqlite = { workspace = true }

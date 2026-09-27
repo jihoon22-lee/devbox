@@ -86,6 +86,8 @@ pub struct WebhookLogResult {
 }
 #[tauri::command]
 pub async fn webhooks(window: WebviewWindow, request: IncomingRequest) -> Result<Reply, Problem> {
+    let method = request.method.clone();
+    let args = request.args.clone();
     let (admission, request) = admit_request::<StudioWebhookCall>(&window, request)?;
     let app = window.app_handle();
     if !matches!(
@@ -96,7 +98,9 @@ pub async fn webhooks(window: WebviewWindow, request: IncomingRequest) -> Result
             .map_err(|_| admission.problem(ProblemCode::Unavailable))?;
     }
     let result = match request.call {
-        StudioWebhookCall::Engine(call) => api::dispatch(app, call).await,
+        StudioWebhookCall::Engine(_) => {
+            crate::webhook_owner::call(app, &method, args, request.header.deadline_ms).await
+        }
         StudioWebhookCall::Host(call) => {
             host(
                 app,
@@ -117,24 +121,26 @@ async fn host(
 ) -> Result<serde_json::Value, String> {
     match call {
         HostWebhookCall::Mock(call) => crate::mock_draft::dispatch_typed(app, call),
-        HostWebhookCall::Lifecycle(call) => crate::lifecycle::dispatch_typed(app, call),
+        HostWebhookCall::Lifecycle(call) => crate::lifecycle::dispatch_typed(app, call).await,
         HostWebhookCall::Extra(call) => match call {
-            WebhookHostCall::SendHistoryToApi { history_id } => crate::handoff::send_typed(
-                app,
-                SelfOwner::COMPONENT,
-                crate::handoff::SendCall::Webhook(
+            WebhookHostCall::SendHistoryToApi { history_id } => {
+                send_api(
+                    app,
                     webhook_host::component::HandoffSelection::History { history_id },
-                ),
-                provenance,
-            ),
-            WebhookHostCall::SendFixtureToApi { id } => crate::handoff::send_typed(
-                app,
-                SelfOwner::COMPONENT,
-                crate::handoff::SendCall::Webhook(
+                    provenance,
+                    deadline,
+                )
+                .await
+            }
+            WebhookHostCall::SendFixtureToApi { id } => {
+                send_api(
+                    app,
                     webhook_host::component::HandoffSelection::Fixture { id },
-                ),
-                provenance,
-            ),
+                    provenance,
+                    deadline,
+                )
+                .await
+            }
             WebhookHostCall::SendHistoryToLogLens { history_id } => {
                 crate::webhook_logs::send(
                     app,
@@ -155,6 +161,36 @@ async fn host(
             }
         },
     }
+}
+async fn send_api(
+    app: &tauri::AppHandle,
+    selection: webhook_host::component::HandoffSelection,
+    provenance: product_contract::Provenance,
+    deadline: u64,
+) -> Result<serde_json::Value, String> {
+    project_then_publish(
+        crate::webhook_owner::project(
+            app,
+            webhook_host::component::Projection::Api(selection),
+            deadline,
+        ),
+        |payload| {
+            crate::handoff::send_typed(
+                app,
+                SelfOwner::COMPONENT,
+                crate::handoff::SendCall::Webhook(payload),
+                provenance,
+            )
+        },
+    )
+    .await
+}
+async fn project_then_publish<F, P>(projection: F, publish: P) -> Result<serde_json::Value, String>
+where
+    F: std::future::Future<Output = Result<serde_json::Value, String>>,
+    P: FnOnce(serde_json::Value) -> Result<serde_json::Value, String>,
+{
+    publish(projection.await?)
 }
 pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, String)>, String> {
     export.register::<StudioWebhookCall>()?;
@@ -181,4 +217,32 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
         ),
     ]);
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn handoff_publishes_only_the_owner_projection_and_never_publishes_on_owner_failure() {
+        let fixture = serde_json::json!({"method":"POST","url":"/hook","headers":[],"body":"{}"});
+        let projected = fixture.clone();
+        assert_eq!(
+            project_then_publish(async { Ok(projected) }, |received| {
+                assert_eq!(received, fixture);
+                Ok(received)
+            })
+            .await
+            .unwrap(),
+            fixture
+        );
+        assert_eq!(
+            project_then_publish(
+                async { Err("webhook_agent_unavailable".into()) },
+                |_| panic!("must not publish without owner projection")
+            )
+            .await
+            .unwrap_err(),
+            "webhook_agent_unavailable"
+        );
+    }
 }

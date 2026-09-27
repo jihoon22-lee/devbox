@@ -175,6 +175,10 @@ export const apiMessages: Record<ApiIssue, string> = {
 
 import type { WebhookIssue } from "../generated/WebhookIssue";
 export const webhookMessages: Record<WebhookIssue, string> = {
+  webhook_agent_unavailable: "백그라운드 서비스에 연결하지 못했습니다. 다시 연결한 뒤 확인하세요.",
+  webhook_listener_settings_unavailable: "리스너 설정을 읽거나 저장하지 못했습니다. 기존 설정은 유지됩니다.",
+  webhook_listener_resume_failed:
+    "백그라운드 리스너를 다시 시작하지 못했습니다. 포트와 설정을 확인한 뒤 다시 시작하세요.",
   component_args_invalid: "작업을 완료하지 못했습니다.",
   component_closing: "작업을 완료하지 못했습니다.",
   component_response_invalid: "작업을 완료하지 못했습니다.",

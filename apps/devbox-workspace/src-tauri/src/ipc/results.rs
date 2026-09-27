@@ -128,7 +128,7 @@ pub(crate) struct DevelopmentSessions {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DevelopmentPlan {
     pub session: crate::core::development_sessions::Session,
-    pub jobs: Vec<runtime_engine::core::models::Job>,
+    pub jobs: Vec<workspace_core::session_rpc::SessionJob>,
     pub profile: Option<terminal_engine::component::WorkspaceProfile>,
     pub preflight: crate::session_preflight::Report,
 }

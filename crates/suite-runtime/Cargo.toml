@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+agent-client = { path = "../agent-client" }
 product-contract = { path = "../product-contract" }
 product-shell-tauri = { path = "../product-shell-tauri" }
 devbox-catalog = { package = "catalog", path = "../catalog" }

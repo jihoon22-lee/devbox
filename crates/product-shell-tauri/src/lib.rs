@@ -5,7 +5,7 @@ mod installation;
 pub use admission::{admit, admit_request, ActiveRequests, Admission, Reply};
 mod operation_log;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
-pub use installation::WriterGuard;
+pub use installation::{component_namespace, component_ready, WriterGuard};
 pub use operation_log::{begin_operation, OperationGuard};
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
@@ -34,6 +34,7 @@ struct Description {
     features: Vec<Feature>,
     context: Option<ProjectContext>,
     delivery_state: &'static str,
+    agent: &'static str,
 }
 
 fn local_main(window: &WebviewWindow) -> bool {
@@ -47,6 +48,47 @@ fn local_main(window: &WebviewWindow) -> bool {
                 && matches!(url.port(), Some(1430..=1433));
             packaged || dev
         })
+}
+
+#[tauri::command]
+fn agent_status(window: WebviewWindow) -> Result<&'static str, &'static str> {
+    if !local_main(&window) {
+        return Err("unauthorized");
+    }
+    Ok(window
+        .app_handle()
+        .try_state::<agent_client::AgentClient>()
+        .map(|client| client.status())
+        .unwrap_or("unsupported"))
+}
+
+#[tauri::command]
+async fn agent_reconnect(window: WebviewWindow) -> Result<&'static str, &'static str> {
+    if !local_main(&window) {
+        return Err("unauthorized");
+    }
+    if suite_import_only(window.app_handle())? {
+        return Err("suite_activation_pending");
+    }
+    let session = {
+        let state = window.try_state::<ShellState>().ok_or("unavailable")?;
+        let session = state.session.lock().map_err(|_| "unavailable")?;
+        session.handshake().session_id.clone()
+    };
+    let client = window
+        .app_handle()
+        .try_state::<agent_client::AgentClient>()
+        .ok_or("unavailable")?
+        .inner()
+        .clone();
+    if !client.supported() {
+        return Ok("unsupported");
+    }
+    client
+        .reconnect(&session)
+        .await
+        .map_err(|_| "unavailable")?;
+    Ok(client.status())
 }
 
 #[tauri::command]
@@ -85,6 +127,11 @@ async fn describe(
         Err(_) => "unavailable",
     };
     Ok(Description {
+        agent: window
+            .app_handle()
+            .try_state::<agent_client::AgentClient>()
+            .map(|client| client.status())
+            .unwrap_or("unsupported"),
         delivery_state,
         handshake,
         context,
@@ -243,6 +290,19 @@ fn authorize_inner(
     Ok(provenance)
 }
 
+/// Native owners may continue an already admitted operation after the UI closes.
+/// This accessor is not a renderer command and grants no component authority.
+pub fn native_handshake(app: &tauri::AppHandle, product: &str) -> Result<Handshake, &'static str> {
+    let state = app
+        .try_state::<ShellState>()
+        .ok_or("native_shell_unavailable")?;
+    if state.product != product {
+        return Err("native_owner_mismatch");
+    }
+    let session = state.session.lock().map_err(|_| "native_shell_busy")?;
+    Ok(session.handshake().clone())
+}
+
 /// Observe a live local main shell without invoking a business command or
 /// changing navigation. The caller separately verifies package and data owners.
 pub fn health_session(app: &tauri::AppHandle, product: &str) -> Result<String, &'static str> {
@@ -310,10 +370,7 @@ pub fn replace_project_context(
 
 pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(move |app, args, _| {
-            if product == "workspace" && args.iter().any(|arg| arg == "--background") {
-                return;
-            }
+        .plugin(tauri_plugin_single_instance::init(move |app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -322,7 +379,37 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
         }))
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("product-shell")
-                .invoke_handler(tauri::generate_handler![describe, route_status])
+                .on_event(move |app, event| {
+                    if !matches!(event, tauri::RunEvent::Ready) {
+                        return;
+                    }
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let initial = tauri::async_runtime::spawn_blocking(move || {
+                            let client = app
+                                .try_state::<agent_client::AgentClient>()?
+                                .inner()
+                                .clone();
+                            if !client.supported() || suite_import_only(&app).unwrap_or(true) {
+                                return None;
+                            }
+                            let handshake = native_handshake(&app, product).ok()?;
+                            Some((client, handshake.session_id))
+                        })
+                        .await;
+                        if let Ok(Some((client, session))) = initial {
+                            // Ready occurs once per new product process. Ordinary
+                            // status queries never reset intentional-stop inhibition.
+                            let _ = client.connect(&session).await;
+                        }
+                    });
+                })
+                .invoke_handler(tauri::generate_handler![
+                    describe,
+                    route_status,
+                    agent_status,
+                    agent_reconnect
+                ])
                 .build(),
         )
         .setup(move |app| {
@@ -350,6 +437,17 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 version: app.package_info().version.to_string(),
             });
             app.manage(ActiveRequests::default());
+            if let Some(client) = app.try_state::<agent_client::AgentClient>() {
+                let mut changes = client.subscribe();
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    while changes.changed().await.is_ok() {
+                        let status = *changes.borrow_and_update();
+                        let _ = app.emit("product-shell://agent-status", status);
+                    }
+                });
+            }
             operation_log::initialize(app, product);
             window_state_tauri::restore_main_window(app.handle());
             Ok(())
@@ -530,3 +628,5 @@ mod admission_tests {
         }
     }
 }
+
+pub mod agent_settings;

@@ -39,5 +39,4 @@ regex = { workspace = true }
 tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
 windows = { workspace = true }

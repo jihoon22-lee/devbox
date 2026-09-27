@@ -43,21 +43,7 @@ pub const METHODS: &[&str] = &[
     "save_port_manager_preferences",
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
-    match method {
-        "apply_legacy_runtime_settings" => &["runtime"],
-        "get_process_info" => &["runtime"],
-        "handoff_container_stop" => &["runtime"],
-        "list_port_observations" => &["runtime"],
-        "list_ports" => &["runtime"],
-        "load_port_manager_preferences" => &["runtime"],
-        "open_browser" => &["runtime"],
-        "open_port_log" => &["runtime"],
-        "open_port_owner" => &["runtime"],
-        "preview_legacy_runtime_settings" => &["runtime"],
-        "reveal_process" => &["runtime"],
-        "save_port_manager_preferences" => &["runtime"],
-        _ => &[],
-    }
+    workspace_core::runtime_policy::processes_routes(method)
 }
 impl ProcessesCallHost {
     fn method(&self) -> &'static str {

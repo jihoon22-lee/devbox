@@ -80,7 +80,7 @@ def capability_shape(value):
     return None
 
 # 1. id 집합 == 디렉터리 집합
-if ids != dirs:
+if ids != dirs - {"devbox-agent"} or "devbox-agent" in ids:
     report(
         f"카탈로그 id와 apps/ 디렉터리 불일치. "
         f"only in catalog: {sorted(ids - dirs)}, only in apps/: {sorted(dirs - ids)}"

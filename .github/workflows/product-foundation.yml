@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'apps/devbox-agent/**'
+      - 'crates/agent-*/**'
+      - 'crates/workspace-core/**'
+      - 'crates/knowledge-stores/**'
       - 'apps/devbox-workspace/**'
       - 'apps/devbox-api-studio/**'
       - 'apps/devbox-knowledge/**'
@@ -37,6 +41,7 @@ on:
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
       - '.github/scripts/windows-suite-delivery*'
+      - '.github/scripts/windows-agent-*'
       - '.github/scripts/build-suite-*'
       - '.github/scripts/windows-workspace-*'
       - '.github/scripts/copy-owned-terminal-profile.ps1'
@@ -483,7 +488,9 @@ jobs:
             Copy-Item "apps/devbox-$product/src-tauri/resources/wsl/*" "$payload/$product/resources/wsl/"
           }
           New-Item -ItemType Directory -Path "$payload/control-center/resources/suite" -Force | Out-Null
-          Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$payload/control-center/resources/suite/"
+          cargo build --locked -p devbox-agent
+          if ($LASTEXITCODE -ne 0) { throw 'Agent build failed' }
+          Copy-Item 'target/debug/devbox-suite-bootstrap.exe','target/debug/devbox-agent.exe' "$payload/control-center/resources/suite/"
           Copy-Item THIRD_PARTY_NOTICES.md "$payload/"
           $version = (Get-Content -Raw apps/devbox-control-center/src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $source = (git rev-parse HEAD).Trim()

@@ -5,6 +5,7 @@ export type LifecycleStatus = {
   mainWindowVisible: boolean | null;
   policy: ClosePolicy;
   trayAvailable: boolean;
+  backgroundAvailable: boolean;
   running: boolean;
   closing: boolean;
   stopFailed: boolean;

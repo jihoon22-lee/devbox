@@ -70,11 +70,13 @@ pnpm --filter 'devbox-control-center^...' --if-present build
 if ($LASTEXITCODE -ne 0) { throw 'Control Center shared frontend build failed' }
 pnpm --filter devbox-control-center tauri build --debug --bundles nsis
 if ($LASTEXITCODE -ne 0) { throw 'Control Center rebuild failed' }
+cargo build -p devbox-agent
+if ($LASTEXITCODE -ne 0) { throw 'Agent build failed.' }
 cargo build -p devbox-control-center --bin devbox-suite-bootstrap
 if ($LASTEXITCODE -ne 0) { throw 'Control Center helper rebuild failed' }
 New-Item -ItemType Directory -Path "$raw/control-center/resources/suite" -Force | Out-Null
 Copy-Item target/debug/devbox-control-center.exe "$raw/control-center/"
-Copy-Item target/debug/devbox-suite-bootstrap.exe "$raw/control-center/resources/suite/"
+Copy-Item target/debug/devbox-suite-bootstrap.exe,target/debug/devbox-agent.exe "$raw/control-center/resources/suite/"
 python .github/scripts/build-suite-package.py portables $raw $Output $version $current
 if ($LASTEXITCODE -ne 0) { throw 'Private Suite reassembly failed' }
 $compiler = Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'

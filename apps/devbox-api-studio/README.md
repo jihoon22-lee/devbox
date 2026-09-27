@@ -16,12 +16,22 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 ## 유지하는 계약
 
 - Request의 header 순서/중복, editor draft, environment와 protocol별 transient 상태를 보존한다.
-- Webhook temporary listener와 명시적으로 실행한 service-profile worker의 수명을 분리한다.
+- 설치본 Webhook 리스너는 devbox-agent가 소유하고, 명시적으로 실행한 service-profile worker는 기존 실행 소유자가 관리한다.
 - Transform·response diff·mock·Knowledge note 이동은 owner가 검증한 artifact review를 따른다.
   route 전환만으로 자동 send/replay/network side effect를 실행하지 않는다.
 - 처음 실행하면 가져오기 화면 없이 바로 시작한다. 설치본은 Control Center에서 Suite 활성화를 확정한다.
 - Secret은 raw handoff/argv/log에 넣지 않으며 재연결 상태를 유지한다. 비영속 도구는 사용자
   설정처럼 저장하거나 공유 payload에 포함하지 않는다.
+
+## Webhook 백그라운드 수신
+
+설치본은 API Studio를 닫아도 기본적으로 계속 수신한다. 종료 설정에서 "닫을 때 리스너 멈추기"를
+선택하면 먼저 중지하고 창을 닫는다. 연결 실패 시에는 두 번째 로컬 리스너를 만들지 않는다.
+portable은 창을 닫으면 리스너도 중지한다. API Studio 전용 트레이는 만들지 않는다.
+
+리스너의 포트·bind·LAN 허용·켜짐 설정은 `webhooks/listener.json`에 저장한다. agent가 다시 시작되면
+켜져 있던 리스너를 복구하며, 실패 시 설정을 보존하고 화면에 오류를 표시한다. 수신 기록과 일반
+응답 규칙은 메모리 상태이므로 agent 재시작 시 사라진다. 저장 fixture와 내보낸 service profile은 유지된다.
 
 ## 문서 저장소
 

@@ -5,7 +5,7 @@ import json, tomllib, subprocess, hashlib, re
 
 ROOT = Path(__file__).resolve().parents[2]
 products = {'devbox-workspace', 'devbox-api-studio', 'devbox-knowledge', 'devbox-control-center'}
-assert {p.name for p in (ROOT / 'apps').iterdir() if p.is_dir()} == products
+assert {p.name for p in (ROOT / 'apps').iterdir() if p.is_dir()} == products | {"devbox-agent"}
 assert {p['id'] for p in json.loads((ROOT / 'apps/catalog.json').read_text())['apps']} == products
 assert not (ROOT / ('apps/' + 'legacy-' + 'v0.7-catalog.json')).exists(), 'legacy catalog must stay retired'
 assert not (ROOT / ('crates/' + 'launch')).exists(), 'the v0.7 launcher must stay retired'

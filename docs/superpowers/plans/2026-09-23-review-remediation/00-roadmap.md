@@ -80,6 +80,8 @@
 
 2026-09-25 D12 추가 합의(ledger #580): P0-03의 저널은 `(vaultRoot, path)`로 구분하고 현재 노트 폴더 항목만 복구한다. 전체 8개 한도에서 다른 폴더 복구본을 자동 삭제하지 않는다. 명시적 버리기에는 화면 안 확인을 두고, 검증된 native 루트 캐시·활성화 시점 조회·비동기 순서와 복구 대상 확인을 적용한다. 저장용 폴더 파일 ID·새 schema 버전·변환 코드는 추가하지 않는다. 상세 계약은 P0-03 Task 4·5·7, 후속 타입 IPC는 P1-12에 있다.
 
+2026-09-27 P2-02 보완 합의(ledger #580): Sessions의 PreparedJob·RuntimeLease·RuntimeStartWitness도 agent가 소유한다. Workspace native 소비자 전체에 owner adapter와 불투명 참조/operation receipt를 적용하고, UI 닫기와 명시적 Session 종료를 구분한다. Task 2–4 상세는 P2-02의 승인된 보완 절을 따른다. 새 외부 의존성·제품·중간 버전 변경은 없다.
+
 ### 2.3 보안 범위 조정(ADR 0016)
 
 사용자 결정: "개인적으로 쓸 것이라 보안은 과하게 하지 않아도 된다. 이슈가 없을 정도면 된다."

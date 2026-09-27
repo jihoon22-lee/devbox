@@ -143,6 +143,7 @@ pub struct CapturedScope {
     manifest_file: PinnedFile,
     pub manifest: Manifest,
     members: BTreeMap<String, PinnedFile>,
+    agent: Option<PinnedFile>,
     pub issues: BTreeMap<String, &'static str>,
     pub installation_key: String,
     pub id: String,
@@ -226,12 +227,51 @@ impl CapturedScope {
             manifest_file,
             manifest,
             members,
+            agent: None,
             issues,
             installation_key,
             id,
         };
         scope.revalidate()?;
         Ok(scope)
+    }
+    /// Opt in only for the agent transport. Normal Suite product membership
+    /// stays unchanged: an agent image can never claim a public product role.
+    pub fn capture_agent_image(mut self) -> Result<Self> {
+        let (_, owner, _) = self.member("control-center")?;
+        let path = owner
+            .parent()
+            .ok_or("component_path_unsafe")?
+            .join("resources/suite/devbox-agent.exe");
+        self.agent = Some(PinnedFile::open(&path, MAX_EXECUTABLE_BYTES)?);
+        self.revalidate()?;
+        Ok(self)
+    }
+    pub fn agent_image(&self) -> Result<&Path> {
+        self.revalidate()?;
+        Ok(&self.agent.as_ref().ok_or("agent_image_missing")?.path)
+    }
+    pub(crate) fn verify_agent_image(&self, image: &Path) -> Result<()> {
+        self.revalidate()?;
+        let agent = self.agent.as_ref().ok_or("agent_image_missing")?;
+        ensure_no_links(image).map_err(|_| "peer_image_unsafe")?;
+        if filesystem_identity(image, false).map_err(|_| "peer_image_unavailable")?
+            != agent.identity
+            || filesystem_identity(image.parent().ok_or("peer_image_unsafe")?, true)
+                .map_err(|_| "peer_image_unavailable")?
+                != filesystem_identity(agent.path.parent().ok_or("peer_image_unsafe")?, true)
+                    .map_err(|_| "peer_image_unavailable")?
+            || !image
+                .file_name()
+                .zip(agent.path.file_name())
+                .is_some_and(|(a, b)| {
+                    a.to_string_lossy()
+                        .eq_ignore_ascii_case(&b.to_string_lossy())
+                })
+        {
+            return Err("peer_image_denied");
+        }
+        Ok(())
     }
     pub fn retire(&self) {
         self.retired.store(true, Ordering::Release);
@@ -253,6 +293,9 @@ impl CapturedScope {
             return Err("component_root_changed");
         }
         self.manifest_file.revalidate()?;
+        if let Some(agent) = &self.agent {
+            agent.revalidate()?;
+        }
         for file in self.members.values() {
             file.revalidate()?;
         }
@@ -361,6 +404,21 @@ mod tests {
         let alias = PathBuf::from(std::ffi::OsString::from_wide(&short[..count]));
         assert_eq!(scope.product_for_image(&alias).unwrap(), "control-center");
         assert!(scope.product_for_image(&other).is_err());
+        let agent = image
+            .parent()
+            .unwrap()
+            .join("resources/suite/devbox-agent.exe");
+        std::fs::create_dir_all(agent.parent().unwrap()).unwrap();
+        std::fs::write(&agent, b"synthetic agent").unwrap();
+        let scope = scope.capture_agent_image().unwrap();
+        assert!(scope.verify_agent_image(&agent).is_ok());
+        assert!(
+            scope.product_for_image(&agent).is_err(),
+            "agent is never a public product peer"
+        );
+        assert!(scope.verify_agent_image(&image).is_err());
+        scope.retire();
+        assert!(scope.verify_agent_image(&agent).is_err());
         drop(scope);
         std::fs::remove_dir_all(base).unwrap();
     }

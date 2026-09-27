@@ -3,12 +3,12 @@
 use crate::{core::registry::Binding, host::Host};
 use product_contract::ProjectContext;
 type Result<T> = std::result::Result<T, &'static str>;
-pub(crate) enum EditDestination {
+pub enum EditDestination {
     Native(Box<super::definition_write::DefinitionTarget>),
     #[cfg(windows)]
     Wsl,
 }
-pub(crate) enum DefinitionFiles {
+pub enum DefinitionFiles {
     Native(Box<super::project_files::ProjectFiles>),
     #[cfg(windows)]
     Wsl {
@@ -22,8 +22,8 @@ impl From<super::project_files::ProjectFiles> for DefinitionFiles {
     }
 }
 impl DefinitionFiles {
-    pub(crate) fn open(host: &Host, context: &ProjectContext, deadline: u64) -> Result<Self> {
-        crate::files_host::current_deadline(deadline)?;
+    pub fn open(host: &Host, context: &ProjectContext, deadline: u64) -> Result<Self> {
+        crate::current_deadline(deadline)?;
         let projects = host.projects()?;
         #[cfg(windows)]
         if matches!(
@@ -46,7 +46,7 @@ impl DefinitionFiles {
         Ok(Self::Native(Box::new(files)))
     }
     #[cfg(windows)]
-    pub(crate) fn native_task_launch(
+    pub fn native_task_launch(
         &self,
         cwd: &str,
         source_digest: String,
@@ -64,24 +64,19 @@ impl DefinitionFiles {
         workspace_wsl::task_contract::validate(&launch)?;
         Ok(launch)
     }
-    pub(crate) fn binding(&self) -> &Binding {
+    pub fn binding(&self) -> &Binding {
         match self {
             Self::Native(files) => files.lease().binding(),
             #[cfg(windows)]
             Self::Wsl { lease, .. } => lease.binding(),
         }
     }
-    pub(crate) fn read(
-        &mut self,
-        path: &str,
-        optional: bool,
-        deadline: u64,
-    ) -> Result<Option<Vec<u8>>> {
-        crate::files_host::current_deadline(deadline)?;
+    pub fn read(&mut self, path: &str, optional: bool, deadline: u64) -> Result<Option<Vec<u8>>> {
+        crate::current_deadline(deadline)?;
         match self {
-            Self::Native(files) => files.read_guarded(path, optional, &|| {
-                crate::files_host::current_deadline(deadline)
-            }),
+            Self::Native(files) => {
+                files.read_guarded(path, optional, &|| crate::current_deadline(deadline))
+            }
             #[cfg(windows)]
             Self::Wsl { context, lease } => {
                 let value = lease.file_request_until(
@@ -102,12 +97,10 @@ impl DefinitionFiles {
             }
         }
     }
-    pub(crate) fn revalidate(&self, deadline: u64) -> Result<()> {
-        crate::files_host::current_deadline(deadline)?;
+    pub fn revalidate(&self, deadline: u64) -> Result<()> {
+        crate::current_deadline(deadline)?;
         match self {
-            Self::Native(files) => {
-                files.revalidate_guarded(&|| crate::files_host::current_deadline(deadline))
-            }
+            Self::Native(files) => files.revalidate_guarded(&|| crate::current_deadline(deadline)),
             #[cfg(windows)]
             Self::Wsl { context, lease } => lease
                 .file_request_until(
@@ -119,7 +112,7 @@ impl DefinitionFiles {
                 .map(|_| ()),
         }
     }
-    pub(crate) fn prepare_project_write(&self, expected: Option<&[u8]>) -> Result<EditDestination> {
+    pub fn prepare_project_write(&self, expected: Option<&[u8]>) -> Result<EditDestination> {
         match self {
             Self::Native(files) => Ok(EditDestination::Native(Box::new(
                 super::definition_write::DefinitionTarget::capture(
@@ -133,7 +126,7 @@ impl DefinitionFiles {
         }
     }
     #[cfg(windows)]
-    pub(crate) fn write_project(&self, bytes: &[u8], deadline: u64) -> Result<Option<String>> {
+    pub fn write_project(&self, bytes: &[u8], deadline: u64) -> Result<Option<String>> {
         let Self::Wsl { context, lease } = self else {
             return Err("invalid_target");
         };

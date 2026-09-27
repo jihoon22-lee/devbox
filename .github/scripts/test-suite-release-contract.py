@@ -41,6 +41,12 @@ def fixture(root):
     return assembly, private
 
 class SuiteContractTests(unittest.TestCase):
+    def test_agent_is_required_in_new_payloads_and_optional_only_for_old_releases(self):
+        self.assertIn('resources/suite/devbox-agent.exe', file_names('control-center'))
+        self.assertNotIn('resources/suite/devbox-agent.exe', file_names('control-center', '0.8.1', []))
+        self.assertIn('resources/suite/devbox-agent.exe', file_names('control-center', '0.9.0', []))
+        self.assertNotIn('resources/suite/devbox-agent.exe', file_names('workspace'))
+
     def test_public_roundtrip_recovers_exact_installer_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

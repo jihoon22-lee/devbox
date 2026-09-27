@@ -57,30 +57,7 @@ pub const METHODS: &[&str] = &[
     "take_pending_open",
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
-    match method {
-        "accept_log_source" => &["logs"],
-        "apply_legacy_runtime_settings" => &["logs"],
-        "cancel_read" => &["logs"],
-        "delete_saved_view" => &["logs"],
-        "discard_log_source" => &["logs"],
-        "export_log_records" => &["logs"],
-        "filter_log_records" => &["logs"],
-        "fixed_adapter" => &["logs"],
-        "list_saved_views" => &["logs"],
-        "open_webhook_log" => &["logs"],
-        "preview_legacy_runtime_settings" => &["logs"],
-        "preview_log_source" => &["logs"],
-        "read_source" => &["logs"],
-        "read_sources" => &["logs"],
-        "receive_log_source" => &["logs"],
-        "reconnect_runtime_sources" => &["logs"],
-        "renew_log_source" => &["logs"],
-        "save_saved_view" => &["logs"],
-        "send_selection_to_toolbox" => &["logs"],
-        "summarize_source" => &["logs"],
-        "take_pending_open" => &["logs"],
-        _ => &[],
-    }
+    workspace_core::runtime_policy::logs_routes(method)
 }
 impl WorkspaceLogsCallHost {
     fn method(&self) -> &'static str {

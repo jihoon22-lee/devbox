@@ -523,6 +523,11 @@ Code515="wsl_target_retirement_pending",
 Code516="wsl_target_unavailable",
 Code517="wsl_timeout",
 Code518="wsl_unavailable",
+Code519="runtime_agent_unavailable",
+Code520="session_ui_resources_lost",
+Code521="session_recovery_required",
+Code522="runtime_request_too_large",
+Code523="runtime_response_too_large",
 }}
 pub fn classify(error: &str) -> &'static str {
     WorkspaceIssue::from_code(error)

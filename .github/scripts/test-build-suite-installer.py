@@ -32,6 +32,7 @@ class SuiteInstallerInputs(unittest.TestCase):
         suite.mkdir(parents=True)
         self.bootstrap = suite / "devbox-suite-bootstrap.exe"
         self.bootstrap.write_bytes(b"synthetic bootstrap")
+        (suite / "devbox-agent.exe").write_bytes(b"synthetic agent")
         self.staging = self.root / "stage"
         installer.package.portables(self.payload, self.staging, "0.8.0", "a" * 40)
 

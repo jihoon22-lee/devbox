@@ -9,7 +9,7 @@ use super::ports::{collect_ports, collect_ports_with_status, PortRow};
 use crate::core::listeners::{ListenerIdentity, ListenerSource};
 use devbox_applink::LogSourceStream;
 use devbox_integration::{PortBindingEntry, PortBindingProcess, PortBindingTargetKind};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 const RUN_MANAGER: &str = "run-manager";
@@ -22,7 +22,7 @@ const MAX_TOTAL_CORRELATIONS: usize = 4_096;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[derive(ts_rs::TS)]
+#[derive(ts_rs::TS, Deserialize)]
 pub enum CorrelationConfidence {
     Verified,
     Declared,
@@ -31,7 +31,7 @@ pub enum CorrelationConfidence {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-#[derive(ts_rs::TS)]
+#[derive(ts_rs::TS, Deserialize)]
 pub struct PortCorrelation {
     pub source_app: String,
     pub target_kind: String,
@@ -44,7 +44,7 @@ pub struct PortCorrelation {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[derive(ts_rs::TS)]
+#[derive(ts_rs::TS, Deserialize)]
 pub enum SnapshotSourceState {
     Available,
     Missing,
@@ -54,7 +54,7 @@ pub enum SnapshotSourceState {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-#[derive(ts_rs::TS)]
+#[derive(ts_rs::TS, Deserialize)]
 pub struct SnapshotSourceStatus {
     pub producer: String,
     pub state: SnapshotSourceState,
@@ -63,7 +63,7 @@ pub struct SnapshotSourceStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(ts_rs::TS)]
+#[derive(ts_rs::TS, Deserialize)]
 pub struct ObservedPortRow {
     #[serde(flatten)]
     pub row: PortRow,
@@ -72,7 +72,7 @@ pub struct ObservedPortRow {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(ts_rs::TS)]
+#[derive(ts_rs::TS, Deserialize)]
 pub struct PortObservationSnapshot {
     pub rows: Vec<ObservedPortRow>,
     pub sources: Vec<SnapshotSourceStatus>,
@@ -214,10 +214,12 @@ pub struct ProductBindings {
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(Deserialize)]
 pub enum ProductPortOwner {
     Task { id: String },
     Project { id: String },
 }
+#[derive(Serialize, Deserialize)]
 pub struct ProductPortAction {
     pub owner: ProductPortOwner,
     pub run_id: Option<String>,

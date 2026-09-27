@@ -1,0 +1,384 @@
+//! Linux source bytes remain behind Registry/distro/helper admission.
+use crate::host::Host;
+use runtime_engine::{
+    core::{
+        models::TargetKind,
+        workspace_tasks::{WorkspaceTaskError as Error, WorkspaceTaskExecution, WorkspaceTaskPlan},
+    },
+    workspace_sources::NativeTaskSources,
+};
+use std::{path::Path, sync::Arc};
+pub struct Sources {
+    pub host: Arc<Host>,
+}
+impl NativeTaskSources for Sources {
+    fn authorize_execution(
+        &self,
+        root: &Path,
+        target: TargetKind,
+        distro: Option<&str>,
+    ) -> Result<(), Error> {
+        // WSL definition IO owns a private runtime, so leave any entered Tokio
+        // context before reading fresh native registry/definition evidence.
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| self.authorize_native(root, target, distro))
+                .join()
+        })
+        .map_err(|_| Error::SourceUnavailable)?
+    }
+
+    fn preview(
+        &self,
+        root: &Path,
+        target: TargetKind,
+        distro: Option<&str>,
+    ) -> Result<Option<WorkspaceTaskPlan>, Error> {
+        let root = root.to_str().ok_or(Error::InvalidRoot)?;
+        if target != TargetKind::Wsl || !root.starts_with('/') {
+            return Ok(None);
+        }
+        #[cfg(windows)]
+        {
+            self.capture(root, distro.ok_or(Error::InvalidTarget)?)
+                .map(|snapshot| Some(snapshot.plan))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (&self.host, distro);
+            Err(Error::SourceUnavailable)
+        }
+    }
+    fn wsl_target(
+        &self,
+        distro: &str,
+        execution: Option<&WorkspaceTaskExecution>,
+    ) -> Result<Option<runtime_engine::platform::wsl::Target>, Error> {
+        if execution.is_none_or(|task| !task.source_root.starts_with('/')) {
+            return Ok(None);
+        }
+        #[cfg(windows)]
+        {
+            let guard = if let Some(task) =
+                execution.filter(|task| task.source_root.starts_with('/'))
+            {
+                let snapshot = self.capture(&task.source_root, distro)?;
+                runtime_engine::core::workspace_tasks::verify_projected_executions(
+                    &snapshot.plan,
+                    std::slice::from_ref(task),
+                )?;
+                let mut launch = snapshot.launch;
+                launch.cwd = task.cwd.clone();
+                workspace_wsl::task_contract::validate(&launch).map_err(|_| Error::InvalidRoot)?;
+                Some(launch)
+            } else {
+                None
+            };
+            let deadline = now().saturating_add(30_000);
+            let lease = super::terminal_launch::capture_runtime(&self.host, distro, deadline)
+                .map_err(|_| Error::SourceChanged)?;
+            let artifact = if guard.is_some() {
+                Some(
+                    super::wsl_helper::Artifact::open(
+                        self.host
+                            .helper_directory()
+                            .map_err(|_| Error::SourceUnavailable)?,
+                    )
+                    .map_err(|_| Error::SourceUnavailable)?,
+                )
+            } else {
+                None
+            };
+            let binding = Bound {
+                lease,
+                guard,
+                directory: self
+                    .host
+                    .helper_directory()
+                    .map_err(|_| Error::SourceUnavailable)?
+                    .into(),
+                _artifact: artifact,
+            };
+            Ok(Some(runtime_engine::platform::wsl::Target::bound(
+                distro,
+                Arc::new(binding),
+            )))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (&self.host, distro, execution);
+            Err(Error::SourceUnavailable)
+        }
+    }
+}
+fn same_source_root(
+    target: &product_contract::ExecutionTarget,
+    registered: &str,
+    root: &str,
+) -> bool {
+    let Ok(registered) = crate::core::registry::root_key(target, registered) else {
+        return false;
+    };
+    crate::core::registry::root_key(target, root).is_ok_and(|root| root == registered)
+}
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|time| time.as_millis() as u64)
+        .unwrap_or(0)
+}
+impl Sources {
+    fn authorize_native(
+        &self,
+        root: &Path,
+        target: TargetKind,
+        distro: Option<&str>,
+    ) -> Result<(), Error> {
+        let root = root.to_str().ok_or(Error::InvalidRoot)?;
+        let target = match target {
+            TargetKind::Wsl if root.starts_with('/') => {
+                #[cfg(windows)]
+                {
+                    let distro = distro.ok_or(Error::InvalidTarget)?;
+                    let distros =
+                        super::wsl_distro::list().map_err(|_| Error::SourceUnavailable)?;
+                    let id = distros
+                        .iter()
+                        .find(|entry| entry.name == distro)
+                        .ok_or(Error::InvalidTarget)?
+                        .id
+                        .clone();
+                    product_contract::ExecutionTarget::Wsl { distro_id: id }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = distro;
+                    return Err(Error::SourceUnavailable);
+                }
+            }
+            // A Windows source folder keeps its Windows project authority even
+            // when the imported command is configured to run through WSL.
+            TargetKind::Windows | TargetKind::Wsl => product_contract::ExecutionTarget::Windows,
+        };
+        self.authorize_project(root, &target)
+    }
+    pub(crate) fn authorize_project(
+        &self,
+        root: &str,
+        target: &product_contract::ExecutionTarget,
+    ) -> Result<(), Error> {
+        // Resolve native DOS short names and canonical spelling exactly as
+        // registration does. A lexical mismatch must not turn a registered
+        // source into an independently approved Runtime source.
+        #[cfg(windows)]
+        let observed = if matches!(target, product_contract::ExecutionTarget::Windows) {
+            Some(super::project_probe::probe_windows(root).map_err(|_| Error::SourceChanged)?)
+        } else {
+            None
+        };
+        #[cfg(windows)]
+        let root = observed
+            .as_ref()
+            .map_or(root, |lease| lease.binding().root.as_str());
+        let projects = self.host.projects().map_err(|_| Error::SourceUnavailable)?;
+        let registry = projects.snapshot().map_err(|_| Error::SourceUnavailable)?;
+        let mut matching = registry.worktrees.iter().filter(|tree| {
+            &tree.binding.target == target && same_source_root(target, &tree.binding.root, root)
+        });
+        // Independently imported Runtime sources retain their explicit source
+        // approval; registered project sources must also retain definitions trust.
+        let Some(tree) = matching.next() else {
+            return Ok(());
+        };
+        if matching.next().is_some() {
+            return Err(Error::SourceChanged);
+        }
+        let context = tree.context();
+        let view = crate::definitions::Definitions::default()
+            .session_preflight(&self.host, &context, now().saturating_add(30_000))
+            .map_err(|_| Error::SourceChanged)?;
+        if !view.trusted || !view.unavailable_sources.is_empty() {
+            return Err(Error::SourceChanged);
+        }
+        Ok(())
+    }
+}
+#[cfg(windows)]
+struct Snapshot {
+    plan: WorkspaceTaskPlan,
+    launch: workspace_wsl::task_contract::TaskLaunch,
+}
+#[cfg(windows)]
+impl Sources {
+    fn capture(&self, root: &str, distro: &str) -> Result<Snapshot, Error> {
+        // Some synchronous callers are inside Handle::block_on. The private helper
+        // owns its own runtime, so create and retire it outside that entered context.
+        std::thread::scope(|scope| scope.spawn(|| self.capture_native(root, distro)).join())
+            .map_err(|_| Error::SourceUnavailable)?
+    }
+    fn capture_native(&self, root: &str, distro: &str) -> Result<Snapshot, Error> {
+        let projects = self.host.projects().map_err(|_| Error::SourceUnavailable)?;
+        let registry = projects.snapshot().map_err(|_| Error::SourceUnavailable)?;
+        let distros = super::wsl_distro::list().map_err(|_| Error::SourceUnavailable)?;
+        let distro_id = &distros
+            .iter()
+            .find(|entry| entry.name == distro)
+            .ok_or(Error::InvalidTarget)?
+            .id;
+        let mut matching=registry.worktrees.iter().filter(|tree|tree.binding.root==root
+            &&matches!(&tree.binding.target,product_contract::ExecutionTarget::Wsl{distro_id:id} if id==distro_id));
+        let tree = matching.next().ok_or(Error::InvalidRoot)?;
+        if matching.next().is_some() {
+            return Err(Error::InvalidRoot);
+        }
+        let context = tree.context();
+        let deadline = now().saturating_add(30_000);
+        let mut files =
+            super::definition_files::DefinitionFiles::open(&self.host, &context, deadline)
+                .map_err(|_| Error::SourceUnavailable)?;
+        let bytes = files
+            .read(".vscode/tasks.json", false, deadline)
+            .map_err(|_| Error::SourceUnavailable)?
+            .ok_or(Error::SourceUnavailable)?;
+        if bytes.len() > 512 * 1024 {
+            return Err(Error::SourceTooLarge);
+        }
+        let source_digest = crate::digest(&bytes);
+        let identity = crate::digest(
+            &serde_json::to_vec(&(context, files.binding())).map_err(|_| Error::InvalidRoot)?,
+        );
+        let revision = crate::digest(
+            &serde_json::to_vec(&(&identity, &source_digest)).map_err(|_| Error::InvalidRoot)?,
+        );
+        let plan = runtime_engine::core::workspace_tasks::project_workspace_tasks(
+            runtime_engine::core::workspace_tasks::TaskProjection {
+                source_root: root,
+                target_root: root,
+                project_identity: &identity,
+                revision: &revision,
+                target_kind: TargetKind::Wsl,
+                target_distro: Some(distro),
+                bytes: &bytes,
+            },
+        )?;
+        files
+            .revalidate(deadline)
+            .map_err(|_| Error::SourceChanged)?;
+        let launch = files
+            .native_task_launch(root, source_digest)
+            .map_err(|_| Error::SourceChanged)?;
+        Ok(Snapshot { plan, launch })
+    }
+}
+#[cfg(windows)]
+struct Bound {
+    lease: Arc<dyn runtime_engine::platform::wsl::CommandBinding>,
+    guard: Option<workspace_wsl::task_contract::TaskLaunch>,
+    directory: std::path::PathBuf,
+    _artifact: Option<super::wsl_helper::Artifact>,
+}
+#[cfg(windows)]
+impl runtime_engine::platform::wsl::CommandBinding for Bound {
+    fn bind(
+        &self,
+        argv: Vec<String>,
+    ) -> Result<Vec<String>, runtime_engine::platform::wsl::WslExecutionError> {
+        self.lease.bind(argv)
+    }
+    fn bind_launch(
+        &self,
+        argv: Vec<String>,
+    ) -> Result<Vec<String>, runtime_engine::platform::wsl::WslExecutionError> {
+        let Some(guard) = &self.guard else {
+            return self.lease.bind_launch(argv);
+        };
+        let boundary = argv
+            .iter()
+            .position(|arg| arg == "--exec")
+            .ok_or_else(|| std::io::Error::other("runtime-target-invalid"))?;
+        if boundary < 3 {
+            return Err(std::io::Error::other("runtime-target-invalid").into());
+        }
+        let mut next = argv[..3].to_vec();
+        next.extend([
+            "--cd".into(),
+            self.directory
+                .to_str()
+                .ok_or_else(|| std::io::Error::other("runtime-helper-unavailable"))?
+                .into(),
+            "--exec".into(),
+            "./devbox-workspace-wsl".into(),
+            "--task-exec".into(),
+            serde_json::to_string(guard)
+                .map_err(|_| std::io::Error::other("runtime-target-invalid"))?,
+            "--".into(),
+        ]);
+        next.extend(argv[boundary + 1..].iter().cloned());
+        self.lease.bind_launch(next)
+    }
+}
+
+pub fn context_identity(
+    host: &Host,
+    context: &product_contract::ProjectContext,
+) -> Result<String, &'static str> {
+    let binding = host.projects()?.binding(context)?;
+    Ok(crate::digest(
+        &serde_json::to_vec(&(context, binding)).map_err(|_| "invalid_context")?,
+    ))
+}
+pub fn matches_context(
+    host: &Host,
+    context: &product_contract::ProjectContext,
+    root: &str,
+    identity: &str,
+) -> bool {
+    host.projects()
+        .and_then(|projects| projects.binding(context))
+        .is_ok_and(|binding| {
+            binding.root == root
+                && (!matches!(
+                    context.target,
+                    product_contract::ExecutionTarget::Wsl { .. }
+                ) || context_identity(host, context).is_ok_and(|expected| expected == identity))
+        })
+}
+pub fn diagnostic_matches(
+    app: &tauri::AppHandle,
+    host: &Host,
+    context: &product_contract::ProjectContext,
+    run: &str,
+) -> bool {
+    runtime_engine::component::diagnostic_scope(app, run)
+        .is_ok_and(|(root, identity)| matches_context(host, context, &root, &identity))
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn project_source_matching_uses_target_path_identity() {
+        let windows = product_contract::ExecutionTarget::Windows;
+        let wsl = product_contract::ExecutionTarget::Wsl {
+            distro_id: "fixture".into(),
+        };
+        assert!(same_source_root(
+            &windows,
+            r"C:\Work\Équipe",
+            "c:/work/équipe/"
+        ));
+        assert!(same_source_root(
+            &windows,
+            r"\\server\share\Work",
+            "//SERVER/share/work"
+        ));
+        assert!(!same_source_root(
+            &windows,
+            r"C:\Work\App",
+            r"C:\Work\App-other"
+        ));
+        assert!(same_source_root(&wsl, "/work/App", "/work/App/"));
+        assert!(!same_source_root(&wsl, "/work/App", "/work/app"));
+        assert!(!same_source_root(&windows, "invalid", "invalid"));
+    }
+}

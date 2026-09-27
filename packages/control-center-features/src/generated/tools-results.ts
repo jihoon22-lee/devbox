@@ -1,3 +1,4 @@
+import type { AgentAutostartStatus } from "./AgentAutostartStatus";
 import type { DevSetupApplyView } from "./DevSetupApplyView";
 import type { DevSetupAuditView } from "./DevSetupAuditView";
 import type { DevSetupConfigurationExportView } from "./DevSetupConfigurationExportView";
@@ -24,4 +25,6 @@ export type ToolsResults = {
   install_related_tool: RelatedToolActionView;
   launch_related_tool: RelatedToolActionView;
   open_related_url: null;
+  autostart_status: AgentAutostartStatus;
+  set_autostart: AgentAutostartStatus;
 };

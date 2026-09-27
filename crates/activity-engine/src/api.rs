@@ -1,5 +1,5 @@
 //! Activity's typed native API; no unregistered Tauri command shims.
-use crate::commands::{autostart, digest, export, handoff, life, privacy, queries, tracking};
+use crate::commands::{digest, export, handoff, life, privacy, queries, tracking};
 pub use crate::core::digest::{DigestDocument, DigestOrigin};
 pub use crate::core::models::{AppTotal, DayPoint};
 use product_ipc::ExecutionClass;
@@ -64,10 +64,6 @@ pub enum ActivityCall {
         rules: crate::core::privacy::PrivacyRules,
     },
     RedactExisting {},
-    AutostartStatus {},
-    SetAutostart {
-        enabled: bool,
-    },
     IntegrationSources {},
     ProjectAttribution {
         day_start: i64,
@@ -104,8 +100,6 @@ pub const METHODS: &[&str] = &[
     "get_privacy_rules",
     "set_privacy_rules",
     "redact_existing",
-    "autostart_status",
-    "set_autostart",
     "integration_sources",
     "project_attribution",
     "timeline",
@@ -141,8 +135,6 @@ impl ActivityCall {
             Self::GetPrivacyRules { .. } => "get_privacy_rules",
             Self::SetPrivacyRules { .. } => "set_privacy_rules",
             Self::RedactExisting { .. } => "redact_existing",
-            Self::AutostartStatus { .. } => "autostart_status",
-            Self::SetAutostart { .. } => "set_autostart",
             Self::IntegrationSources { .. } => "integration_sources",
             Self::ProjectAttribution { .. } => "project_attribution",
             Self::Timeline { .. } => "timeline",
@@ -152,11 +144,18 @@ impl ActivityCall {
 }
 product_ipc::issue_codes! {
     pub enum ActivityIssue {
+    DraftDeliveryInvalid = "draft_delivery_invalid",
+    DraftDeliveryUnavailable = "draft_delivery_unavailable",
+    AgentUnavailable = "knowledge_agent_unavailable",
+    StoreMissing = "knowledge_store_missing",
+    StoreUnavailable = "knowledge_store_unavailable",
+    StoreChanged = "knowledge_store_changed",
     ActivityConsentSaveFailed = "activity_consent_save_failed",
     AutostartOwnerConflict = "autostart_owner_conflict",
     AutostartOwnerInvalid = "autostart_owner_invalid",
     AutostartSaveFailed = "autostart_save_failed",
     AutostartUnavailable = "autostart_unavailable",
+    AutostartPathTooLong = "autostart_path_too_long",
     ClosePolicySaveFailed = "close_policy_save_failed",
     ClosePolicyUnavailable = "close_policy_unavailable",
     ComponentArgsInvalid = "component_args_invalid",
@@ -238,10 +237,6 @@ pub async fn dispatch(app: &tauri::AppHandle, call: ActivityCall) -> Result<Valu
             to_value(privacy::set_privacy_rules(app.state(), rules)?)
         }
         ActivityCall::RedactExisting {} => to_value(privacy::redact_existing(app.state())?),
-        ActivityCall::AutostartStatus {} => to_value(autostart::product_status(app)?),
-        ActivityCall::SetAutostart { enabled } => {
-            to_value(autostart::set_product_autostart(app, enabled)?)
-        }
         ActivityCall::IntegrationSources {} => to_value(life::integration_sources(app.state())),
         ActivityCall::ProjectAttribution { day_start, day_end } => {
             to_value(life::project_attribution(app.state(), day_start, day_end)?)
@@ -316,14 +311,6 @@ pub fn result_types(
         ),
         ("redact_existing", export.register::<i64>()?),
         (
-            "autostart_status",
-            export.register::<crate::commands::autostart::AutostartStatus>()?,
-        ),
-        (
-            "set_autostart",
-            export.register::<crate::commands::autostart::AutostartStatus>()?,
-        ),
-        (
             "integration_sources",
             export.register::<Vec<crate::commands::life::SourceStatus>>()?,
         ),
@@ -345,6 +332,12 @@ pub fn result_types(
 mod tests {
     use super::*;
     #[test]
+    fn login_settings_are_not_activity_engine_commands() {
+        for method in ["autostart_status", "set_autostart"] {
+            assert!(serde_json::from_value::<ActivityCall>(serde_json::json!({"method":method,"args":if method == "set_autostart" {serde_json::json!({"enabled":true})} else {serde_json::json!({})}})).is_err());
+        }
+    }
+    #[test]
     fn listed_calls_parse_and_unknown_fields_are_refused() {
         for (value, method) in [
             (
@@ -360,10 +353,6 @@ mod tests {
                 "set_idle_threshold",
             ),
             (
-                serde_json::json!({"method":"set_autostart","args":{"enabled":true}}),
-                "set_autostart",
-            ),
-            (
                 serde_json::json!({"method":"app_stats","args":{"start":0,"end":1}}),
                 "app_stats",
             ),
@@ -371,7 +360,7 @@ mod tests {
             let call: ActivityCall = serde_json::from_value(value).unwrap();
             assert_eq!(call.method(), method);
         }
-        assert_eq!(METHODS.len(), 26);
+        assert_eq!(METHODS.len(), 24);
         assert!(serde_json::from_value::<ActivityCall>(
             serde_json::json!({"method":"stop_tracking","args":{"unexpected":1}})
         )

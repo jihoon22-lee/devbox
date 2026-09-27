@@ -1004,6 +1004,9 @@ fn writer_gate(root: &Path, create: bool) -> Result<Lock> {
     }
 }
 fn writer_gate_for_restore(root: &Path, create: bool) -> Result<Lock> {
+    if !create {
+        update::stop_agent(root)?;
+    }
     let path = root.join("suite-writers.lock");
     let open = |new: bool| {
         let mut options = OpenOptions::new();
@@ -1699,6 +1702,8 @@ fn activate_install(
         while matches!(journal.phase, Phase::Health | Phase::Commit) {
             advance(&mut journal)?;
         }
+        #[cfg(windows)]
+        registration::sync_agent_autostart(&root, &key, &manifest.generation, false)?;
         // Durable commit intent precedes the marker. A crash between these
         // writes stays blocked and resumes without undoing committed data.
         marker.phase = ActivePhase::Committed;

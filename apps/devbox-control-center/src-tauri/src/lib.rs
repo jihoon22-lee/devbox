@@ -4,6 +4,16 @@ use suite_runtime as suite;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(windows)]
+    if std::env::args().skip(1).eq(["--stop-agent-for-update"]) {
+        std::process::exit(
+            if suite::stop_agent_for_update(env!("CARGO_PKG_VERSION")).is_ok() {
+                0
+            } else {
+                2
+            },
+        );
+    }
+    #[cfg(windows)]
     match bootstrap::interactive::resume_before_shell() {
         Ok(true) => return,
         Ok(false) => {}

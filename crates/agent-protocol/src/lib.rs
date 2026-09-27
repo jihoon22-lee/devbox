@@ -1,5 +1,6 @@
 //! Frames and messages between product UIs and the per-user devbox-agent.
 //! A frame is a 4-byte little-endian length followed by a JSON body.
+pub mod reply;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashSet;
 

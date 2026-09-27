@@ -86,7 +86,7 @@ async function start(executable, title, profile) {
   await item.cdp.connect();
   return item;
 }
-function closeWindow(item) {
+function inspectWindow(item, requestClose = false) {
   assert.ok(Number.isInteger(item.child.pid) && item.child.pid > 0);
   const result = spawnSync(
     "powershell.exe",
@@ -94,7 +94,7 @@ function closeWindow(item) {
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      `$p=[Diagnostics.Process]::GetProcessById(${item.child.pid}); $window=$p.MainWindowHandle.ToInt64(); $requested=$p.CloseMainWindow(); @{window=$window;requested=$requested}|ConvertTo-Json -Compress`,
+      `$p=[Diagnostics.Process]::GetProcessById(${item.child.pid}); $window=$p.MainWindowHandle.ToInt64(); $requested=${requestClose ? "$p.CloseMainWindow()" : "$true"}; @{window=$window;requested=$requested}|ConvertTo-Json -Compress`,
     ],
     { encoding: "utf8", windowsHide: true },
   );
@@ -104,6 +104,7 @@ function closeWindow(item) {
   assert.ok(Number.isSafeInteger(closed.window) && closed.window > 0);
   return closed.window;
 }
+const closeWindow = (item) => inspectWindow(item, true);
 function visible(window) {
   assert.ok(Number.isSafeInteger(window) && window > 0);
   const code = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class KnowledgeWindowProbe { [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window); }'; [KnowledgeWindowProbe]::IsWindowVisible([IntPtr]${window})`;
@@ -363,7 +364,7 @@ try {
       cold: "new process with the configured synthetic vault profile; OS cache not flushed",
       input: "inert F24 event acknowledgement, using the baseline harness",
       idle: "ten seconds after configured Notes startup; collection OFF; five-second owned-process sample before the 500-file workload",
-      warm: "second invocation restores the same hidden product window; no second owner",
+      warm: "second invocation activates the same existing product window; no second owner",
       search:
         "500 generated UTF-8 text files, native file source with exact root filter; ten exact filename queries, including async polling and identity verification",
     },
@@ -442,15 +443,9 @@ try {
     assert.equal(found.rows[0].availability, "available");
     await command(item, "knowledge.search", "source_cancel", { generation: found.generation });
   }
-  progress("explicit-close-policy");
-  assert.equal(
-    (await command(item, "knowledge.activity", "set_close_policy", { closeToTray: true })).value.closeToTray,
-    true,
-  );
-  const hidden = closeWindow(item);
-  await delay(500);
-  assert.equal(running(item), true);
-  assert.equal(visible(hidden), false);
+  progress("warm-existing-window");
+  const existingWindow = inspectWindow(item);
+  assert.equal(visible(existingWindow), true);
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   const warmStarted = performance.now();
   const secondary = {
@@ -464,10 +459,10 @@ try {
   while (running(secondary) && performance.now() - warmStarted < performanceConfig.budgets.warmExistingWindowMs)
     await delay(50);
   assert.equal(secondary.child.exitCode, 0, "relaunch created another live owner");
-  let restored = visible(hidden);
+  let restored = visible(existingWindow);
   while (!restored && performance.now() - warmStarted < performanceConfig.budgets.warmExistingWindowMs) {
     await delay(100);
-    restored = visible(hidden);
+    restored = visible(existingWindow);
   }
   assert.ok(restored && running(item));
   evidence.performance.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
@@ -477,15 +472,10 @@ try {
     true,
     `Knowledge performance budget failed: ${evidence.performance.budget.violations.join(", ")}`,
   );
-  // Crash/restart checks persisted preference; this is explicitly not a tray
-  // Quit test. Default close below must terminate the process normally.
+  // A native process restart must preserve stores; closing no longer hides a product.
   await stop(item, true);
   item = await product(executable, profile);
-  assert.equal((await command(item, "knowledge.activity", "get_close_policy")).value.closeToTray, true);
-  assert.equal(
-    (await command(item, "knowledge.activity", "set_close_policy", { closeToTray: false })).value.closeToTray,
-    false,
-  );
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   item = await exerciseKnowledgeWsl({
     item,
     executable,
@@ -501,8 +491,8 @@ try {
     progress,
   });
   await stop(item);
-  evidence.closeToTrayKeepsProcess = true;
-  evidence.closePreferenceSurvivesCrash = true;
+  evidence.singleInstanceRelaunchKeepsExistingWindow = true;
+  evidence.restartDoesNotEnableCollection = true;
   evidence.defaultCloseExits = true;
   evidence.result = "pass";
   progress("complete");

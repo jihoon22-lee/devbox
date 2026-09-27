@@ -120,6 +120,7 @@ impl Drop for DigestOperationGuard {
 
 /// 앱 전역 상태: DB 커넥션 + 세션 병합기 + 추적 플래그
 pub struct AppState {
+    pub shutdown: tokio::sync::watch::Sender<bool>,
     /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
     pub integration_root: Option<std::path::PathBuf>,
     pub privacy: crate::commands::privacy::PrivacyState,
@@ -152,6 +153,9 @@ fn start_tracking_inner(state: &AppState) -> Result<bool, String> {
         .tracking_control
         .lock()
         .map_err(|_| "tracking_state_unavailable")?;
+    if *state.shutdown.borrow() {
+        return Err("activity_stopping".into());
+    }
     if state.persist_tracking_consent {
         let conn = state.db.lock().map_err(|_| "tracking_state_unavailable")?;
         set_product_consent(&conn, true)?;
@@ -218,13 +222,20 @@ pub fn is_tracking(state: tauri::State<'_, Arc<AppState>>) -> bool {
 /// 2초 간격으로 포그라운드 창을 감지해 세션을 병합·저장한다.
 /// idle/lock/suspend 경계에서는 열린 세션을 idle 시작 시점에서 마감하고,
 /// resume 후 새 observation으로 시작한다 (§9.3).
-pub fn spawn_poller(app: &tauri::AppHandle) {
+pub fn spawn_poller(app: &tauri::AppHandle) -> tauri::async_runtime::JoinHandle<()> {
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let mut shutdown = state.shutdown.subscribe();
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
         let mut idle_active = false;
         loop {
-            interval.tick().await;
+            if *shutdown.borrow() {
+                break;
+            }
+            tokio::select! {
+                _ = shutdown.changed() => break,
+                _ = interval.tick() => {},
+            }
             let Ok(_control) = state.tracking_control.lock() else {
                 continue;
             };
@@ -275,7 +286,7 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
                 let _ = insert_filtered(&conn, &c, &rules);
             }
         }
-    });
+    })
 }
 
 /// Apply privacy rules **before** insert, then store or skip the session.
@@ -349,6 +360,7 @@ fn last_input_ms() -> Option<i64> {
 #[cfg(test)]
 pub(crate) fn test_state(conn: rusqlite::Connection) -> AppState {
     AppState {
+        shutdown: tokio::sync::watch::channel(false).0,
         integration_root: None,
         tracking: AtomicBool::new(product_consent(&conn)),
         tracking_control: Mutex::new(()),
@@ -371,6 +383,14 @@ mod tests {
         super::test_state(conn)
     }
 
+    #[test]
+    fn retired_collector_cannot_grant_consent_or_resume_tracking() {
+        let root = tempfile::tempdir().unwrap();
+        let state = super::test_state(crate::core::db::init(&root.path().join("data.db")).unwrap());
+        state.shutdown.send_replace(true);
+        assert!(super::start_tracking_inner(&state).is_err());
+        assert!(!super::product_consent(&state.db.lock().unwrap()));
+    }
     #[test]
     fn product_collection_requires_explicit_consent_and_preserves_stop_on_reopen() {
         let dir = tempfile::tempdir().unwrap();

@@ -16,8 +16,6 @@ export type RuntimeCall =
   | { method: "show_main_window"; args: Record<symbol, never> }
   | { method: "hide_main_window"; args: Record<symbol, never> }
   | { method: "quit_app"; args: Record<symbol, never> }
-  | { method: "startup_shortcut_status"; args: Record<symbol, never> }
-  | { method: "set_startup_shortcut_enabled"; args: { enabled: boolean } }
   | { method: "list_jobs"; args: Record<symbol, never> }
   | { method: "get_job"; args: { id: string } }
   | { method: "create_job"; args: { input: JobInput } }

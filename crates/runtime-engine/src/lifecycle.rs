@@ -1,6 +1,5 @@
 use crate::scheduler::{SchedulerCoordinator, SchedulerError};
 use serde::Serialize;
-use std::ffi::{OsStr, OsString};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -136,10 +135,6 @@ impl RuntimeState {
     fn cleanup_confirmed_sync(&self) -> bool {
         self.coordinator.cleanup_confirmed_sync()
     }
-}
-
-pub fn is_background_launch(args: &[OsString]) -> bool {
-    args.iter().any(|arg| arg == OsStr::new("--background"))
 }
 
 /// Tauri invokes setup synchronously, so these startup tasks cannot rely on a
@@ -326,18 +321,6 @@ pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn background_flag_must_be_an_exact_argument() {
-        assert!(is_background_launch(&[
-            OsString::from("run-manager"),
-            OsString::from("--background"),
-        ]));
-        assert!(!is_background_launch(&[
-            OsString::from("run-manager"),
-            OsString::from("--background=true"),
-        ]));
-    }
 
     #[test]
     fn shutdown_request_is_idempotent() {

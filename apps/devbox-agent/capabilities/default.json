@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Headless component: no WebView command grants",
+  "windows": [],
+  "permissions": []
+}

@@ -2,6 +2,8 @@
 //! for creating its own managed states after migration and enforcing native
 //! caller/owner/session checks before dispatch. This module starts no legacy app.
 
+struct Restoration(std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>);
+
 /// Read-only projections for the product's bounded, independently cancellable
 /// connections. The domain keeps its existing filter and deepest-root rules.
 pub mod query {
@@ -58,6 +60,7 @@ pub fn initialize(
     let (conn, index_cleared) = crate::core::db::init(&dir.join("data.db"))?;
     let product_hosted = integration_root.is_some();
     let state = Arc::new(AppState {
+        stopping: AtomicBool::new(false),
         integration_root,
         db: Mutex::new(conn),
         lifecycle: Mutex::new(()),
@@ -124,7 +127,8 @@ pub fn initialize(
     }
     // 앱 재시작 시 등록된 루트의 watcher를 복원한다
     if product_hosted {
-        tauri::async_runtime::spawn_blocking(move || watcher.restore_all());
+        let task = tauri::async_runtime::spawn_blocking(move || watcher.restore_all());
+        app.manage(Restoration(std::sync::Mutex::new(Some(task))));
     } else {
         watcher.restore_all();
     }
@@ -201,4 +205,46 @@ pub fn product_index_operation(app: &tauri::AppHandle) -> Option<(bool, bool, bo
         state.indexed.load(Ordering::Acquire).max(0) as u64,
         state.last_indexed_at.load(Ordering::Acquire).max(0) as u64,
     ))
+}
+
+/// Stop watchers and indexing before an installed owner releases its writer.
+pub async fn shutdown_agent(app: &tauri::AppHandle) -> Result<(), String> {
+    use std::sync::{atomic::Ordering, Arc};
+    use tauri::Manager;
+    let Some(state) = app.try_state::<Arc<crate::commands::indexing::AppState>>() else {
+        return Ok(());
+    };
+    {
+        let _lifecycle = state.lifecycle.lock().map_err(|_| "index_owner_stopping")?;
+        state.stopping.store(true, Ordering::SeqCst);
+        state.restart_requested.store(false, Ordering::SeqCst);
+        state.cancel_requested.store(true, Ordering::SeqCst);
+    }
+    let restoration = if let Some(restoration) = app.try_state::<Restoration>() {
+        restoration
+            .0
+            .lock()
+            .map_err(|_| "index_owner_stopping")?
+            .take()
+    } else {
+        None
+    };
+    if let Some(task) = restoration {
+        task.await.map_err(|_| "index_owner_stopping")?;
+    }
+    if let Some(watcher) = app.try_state::<Arc<crate::commands::watcher::WatcherManager>>() {
+        let watcher = watcher.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || watcher.shutdown())
+            .await
+            .map_err(|_| "index_owner_stopping")?;
+    }
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        while state.indexing.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    })
+    .await
+    .map_err(|_| "index_owner_stopping")?;
+    Ok(())
 }

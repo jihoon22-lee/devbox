@@ -16,6 +16,8 @@ serde_json = { workspace = true }
 tauri-build = { workspace = true }
 
 [dependencies]
+agent-client = { path = "../../../crates/agent-client" }
+workspace-core = { path = "../../../crates/workspace-core" }
 ts-rs = { workspace = true }
 product-ipc = { path = "../../../crates/product-ipc" }
 suite-runtime = { path = "../../../crates/suite-runtime" }
@@ -55,4 +57,5 @@ webview2-com = { workspace = true }
 windows = { workspace = true }
 
 [dev-dependencies]
+workspace-core = { path = "../../../crates/workspace-core", features = ["test-fixtures"] }
 tempfile = { workspace = true }

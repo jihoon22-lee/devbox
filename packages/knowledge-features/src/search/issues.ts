@@ -1,5 +1,9 @@
 import type { SearchIssue } from "../generated/SearchIssue";
 export const searchMessages: Record<SearchIssue, string> = {
+  knowledge_agent_unavailable: "백그라운드 서비스에 연결하지 못했습니다. 다시 연결한 뒤 확인하세요.",
+  knowledge_store_missing: "Knowledge 저장소를 먼저 준비해 주세요.",
+  knowledge_store_unavailable: "Knowledge 저장소를 확인하지 못했습니다. 기존 데이터는 유지됩니다.",
+  knowledge_store_changed: "저장소 선택이 바뀌었습니다. 백그라운드 서비스를 다시 시작해 주세요.",
   component_args_invalid: "요청을 확인해 주세요.",
   component_state_conflict: "저장소 초기화를 완료하지 못했습니다. 앱을 다시 시작해 주세요.",
   file_reference_invalid: "검색 작업을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",

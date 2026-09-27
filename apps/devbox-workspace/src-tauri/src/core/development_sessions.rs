@@ -732,6 +732,64 @@ impl Store {
         Ok(())
     }
 
+    /// Only freshly queried native receipts may populate these verified sets.
+    /// UI-owned terminal incarnations cannot survive a Workspace process restart.
+    pub fn recover_attached(
+        &mut self,
+        resources: &BTreeSet<String>,
+        pending: &BTreeSet<String>,
+    ) -> Result<()> {
+        self.validate()?;
+        let mut lost_ui = BTreeSet::new();
+        for (key, resource) in &mut self.resources {
+            if resource.identity.kind != ResourceKind::Terminal || resource.stopped {
+                continue;
+            }
+            for holder in std::mem::take(&mut resource.holders) {
+                lost_ui.insert(holder.clone());
+                if let Some(session) = self.sessions.get_mut(&holder) {
+                    session.resources.remove(key);
+                }
+            }
+            resource.stopped = true;
+        }
+        for (id, operation) in &mut self.operations {
+            if operation.resource_key.is_none() && !pending.contains(id) {
+                operation.interrupted = true;
+                if operation.kind == ResourceKind::Terminal {
+                    lost_ui.insert(operation.session_id.clone());
+                    if let Some(session) = self.sessions.get_mut(&operation.session_id) {
+                        session.pending.remove(id);
+                    }
+                }
+            }
+        }
+        for session in self.sessions.values_mut() {
+            if session.phase == Phase::Stopped {
+                continue;
+            }
+            let verified = session.resources.iter().all(|key| resources.contains(key))
+                && session
+                    .pending
+                    .iter()
+                    .all(|operation| pending.contains(operation));
+            if !verified {
+                session.phase = Phase::Degraded;
+                session.issue = Some("session_native_owner_lost".into());
+            } else if lost_ui.contains(&session.id) {
+                session.phase = Phase::Degraded;
+                session.issue = Some("session_ui_resources_lost".into());
+            } else if session.phase != Phase::Active {
+                // A partially completed UI plan is never resumed automatically.
+                session.phase = Phase::Degraded;
+                session.issue = Some("session_recovery_required".into());
+            }
+            session.deadline_ms = None;
+            session.revision += 1;
+        }
+        self.validate()
+    }
+
     pub fn recover(&mut self) -> Result<()> {
         self.validate()?;
         for operation in self.operations.values_mut() {
@@ -940,6 +998,72 @@ mod tests {
         let stop = store.resources["late"].stop_operation.clone().unwrap();
         store.retired("late", &identity(), &stop).unwrap();
         store.finish_stop(&session).unwrap();
+        store.validate().unwrap();
+    }
+    #[test]
+    fn reattachment_retires_only_the_lost_ui_terminal_incarnation() {
+        let mut store = Store::default();
+        let session = ready(&mut store, "one");
+        let service = reserve(&mut store, &session);
+        store
+            .acquired(&service, "service-key".into(), identity(), true, true)
+            .unwrap();
+        let terminal = uuid::Uuid::new_v4().to_string();
+        store
+            .reserve(
+                &session,
+                terminal.clone(),
+                "terminal".into(),
+                ResourceKind::Terminal,
+                &"a".repeat(64),
+                106,
+            )
+            .unwrap();
+        store
+            .recover_attached(&BTreeSet::from(["service-key".into()]), &BTreeSet::new())
+            .unwrap();
+        assert!(store.sessions[&session].pending.is_empty());
+        assert_eq!(
+            store.sessions[&session].issue.as_deref(),
+            Some("session_ui_resources_lost")
+        );
+        assert!(!store.resources["service-key"].stopped);
+        assert!(store.operations[&terminal].interrupted);
+        store.begin_stop(&session).unwrap();
+        assert_eq!(
+            store.release(&session).unwrap(),
+            vec![("service-key".into(), identity())]
+        );
+    }
+    #[test]
+    fn reattachment_preserves_verified_runtime_ownership_and_marks_missing_owners() {
+        let mut store = Store::default();
+        let first = ready(&mut store, "one");
+        let op = reserve(&mut store, &first);
+        store
+            .acquired(&op, "resource".into(), identity(), true, true)
+            .unwrap();
+        store.sessions.get_mut(&first).unwrap().phase = Phase::Active;
+        let missing = ready(&mut store, "two");
+        let pending = reserve(&mut store, &missing);
+        store
+            .recover_attached(&BTreeSet::from(["resource".into()]), &BTreeSet::new())
+            .unwrap();
+        assert_eq!(store.sessions[&first].phase, Phase::Active);
+        assert_eq!(
+            store.resources["resource"].created_by.as_deref(),
+            Some(first.as_str())
+        );
+        assert_eq!(
+            store.sessions[&missing].issue.as_deref(),
+            Some("session_native_owner_lost")
+        );
+        assert!(store.operations[&pending].interrupted);
+        store.begin_stop(&first).unwrap();
+        assert_eq!(
+            store.release(&first).unwrap(),
+            vec![("resource".into(), identity())]
+        );
         store.validate().unwrap();
     }
     #[test]

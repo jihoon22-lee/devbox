@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "apps/devbox-agent",
     "apps/devbox-workspace/src-tauri",
     "crates/wsl-helper",
     "apps/devbox-api-studio/src-tauri",
@@ -11,6 +12,9 @@ members = [
     "crates/product-contract",
     "crates/product-ipc",
     "crates/agent-protocol",
+    "crates/agent-client",
+    "crates/workspace-core",
+    "crates/knowledge-stores",
     "crates/api-protocols",
     "crates/webhook-core",
     "crates/transforms-core",

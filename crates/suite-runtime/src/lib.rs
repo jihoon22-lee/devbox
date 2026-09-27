@@ -1062,6 +1062,10 @@ pub fn plugin(
     tauri::plugin::Builder::new("suite")
         .invoke_handler(tauri::generate_handler![connection])
         .setup(move |app, _| {
+            #[cfg(windows)]
+            app.manage(platform::agent_transport::create(product, version));
+            #[cfg(not(windows))]
+            app.manage(agent_client::AgentClient::unsupported());
             app.manage(Suite {
                 product,
                 version,
@@ -1205,3 +1209,19 @@ mod host_identity_tests {
         );
     }
 }
+
+/// A verified installed product can retire its installation's agent without
+/// creating windows or starting a missing agent. Used by Control Center's CLI.
+#[cfg(windows)]
+pub fn stop_agent_for_update(version: &str) -> Result<(), &'static str> {
+    let client = platform::agent_transport::create("control-center", version);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| "update_agent_busy")?;
+    runtime
+        .block_on(client.shutdown_if_running(&uuid::Uuid::new_v4().to_string()))
+        .map_err(|_| "update_agent_busy")
+}
+
+pub mod agent_autostart;

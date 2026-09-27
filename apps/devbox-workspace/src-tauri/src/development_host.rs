@@ -1,20 +1,21 @@
 //! Native Development Session owner. Durable intent precedes effects; retained
 //! Runtime leases, never deserialized history, authorize resource cleanup.
+use crate::session_runtime::{self as runtime, PreparedJob, RuntimeLease, RuntimeStartWitness};
 use crate::{
     core::development_sessions::{Mode, Phase, ResourceIdentity, ResourceKind, Store},
     host::Host,
     private_metadata::MetadataRoot,
 };
 use product_contract::{ProjectContext, RouteRequest};
-use runtime_engine::component::sessions::{
-    self as runtime, PreparedJob, RuntimeLease, RuntimeStartWitness,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 use tauri::{Manager, WebviewWindow};
 
@@ -78,6 +79,7 @@ struct StartScope {
 }
 
 struct Inner {
+    remote_app: Option<tauri::AppHandle>,
     root: MetadataRoot,
     document: Document,
     plans: HashMap<String, Plan>,
@@ -88,6 +90,7 @@ struct Inner {
 }
 #[derive(Default)]
 pub(crate) struct Sessions {
+    detaching: AtomicBool,
     inner: Mutex<Option<Inner>>,
     stop_gate: tokio::sync::Mutex<()>,
 }
@@ -406,7 +409,7 @@ impl Sessions {
         let mut inner = self.inner.lock().map_err(|_| "session_owner_busy")?;
         f(inner.as_mut().ok_or("session_owner_unavailable")?)
     }
-    fn initialize(&self, host: &Host) -> Result<()> {
+    fn initialize(&self, app: &tauri::AppHandle, host: &Host) -> Result<()> {
         let mut selected = self.inner.lock().map_err(|_| "session_owner_busy")?;
         let path = host.component("terminal")?;
         if let Some(inner) = selected.as_ref() {
@@ -442,16 +445,98 @@ impl Sessions {
         {
             return Err("session_store_invalid");
         }
-        document.store.recover()?;
+        let mut leases = HashMap::new();
+        if crate::runtime_owner::installed(app)? {
+            let operations = document
+                .store
+                .operations
+                .iter()
+                .filter_map(|(operation, reservation)| {
+                    let session = document.store.sessions.get(&reservation.session_id)?;
+                    if reservation.kind == ResourceKind::Terminal
+                        || host
+                            .projects()
+                            .and_then(|projects| projects.binding(&session.context))
+                            .is_err()
+                    {
+                        return None;
+                    }
+                    Some(workspace_core::session_rpc::RecoveryOperation {
+                        scope: workspace_core::session_registry::Scope {
+                            session: session.id.clone(),
+                            context: session.context.clone(),
+                        },
+                        operation: operation.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let receipts = runtime::restore(app, operations.clone())
+                .map_err(|_| "session_runtime_unavailable")?;
+            let mut pending = BTreeSet::new();
+            for (operation, receipt) in operations.into_iter().zip(receipts) {
+                let Some(receipt) = receipt else {
+                    continue;
+                };
+                if host.projects()?.binding(&operation.scope.context).is_err() {
+                    continue;
+                }
+                if !receipt.finished {
+                    pending.insert(operation.operation.clone());
+                }
+                if let Some(remote) = receipt.lease {
+                    let lease = RuntimeLease::Remote {
+                        app: app.clone(),
+                        scope: operation.scope,
+                        lease: remote,
+                    };
+                    let identity = identity(&lease)?;
+                    let reservation = document.store.operations[&operation.operation].clone();
+                    if identity.owner_id != reservation.owner_id
+                        || identity.kind != reservation.kind
+                    {
+                        return Err("session_store_invalid");
+                    }
+                    let key = resource_key(&identity);
+                    document.store.acquired(
+                        &operation.operation,
+                        key.clone(),
+                        identity.clone(),
+                        lease.descriptor().created,
+                        identity.kind == ResourceKind::Service,
+                    )?;
+                    let resource = &document.store.resources[&key];
+                    // A borrowed receipt cannot replace the creator capability.
+                    if !resource.stopped
+                        && (lease.descriptor().created || resource.created_by.is_none())
+                    {
+                        leases.insert(key, Lease::Runtime(lease));
+                    }
+                } else if receipt.finished
+                    && document.store.operations[&operation.operation]
+                        .resource_key
+                        .is_none()
+                {
+                    document
+                        .store
+                        .settle_without_resource(&operation.operation)?;
+                }
+            }
+            document
+                .store
+                .recover_attached(&leases.keys().cloned().collect(), &pending)?;
+        } else {
+            document.store.recover()?;
+        }
         root.write(
             FILE,
             &serde_json::to_vec(&document).map_err(|_| "session_store_invalid")?,
         )?;
         *selected = Some(Inner {
+            remote_app: crate::runtime_owner::installed(app)?.then(|| app.clone()),
             root,
             document,
             plans: HashMap::new(),
-            leases: HashMap::new(),
+            leases,
             witnesses: HashMap::new(),
             starting: HashSet::new(),
             stopping: HashSet::new(),
@@ -482,7 +567,7 @@ impl Sessions {
         method: &str,
         args: Value,
     ) -> Result<Value> {
-        self.initialize(host)?;
+        self.initialize(window.app_handle(), host)?;
         match method {
             "prepare_session_summary" => {
                 let input: crate::core::session_summary::Input = parse(args)?;
@@ -563,8 +648,16 @@ impl Sessions {
                     .jobs
                     .iter()
                     .map(|id| {
-                        runtime::prepare_job(window.app_handle(), id)
-                            .map_err(|_| "session_runtime_unavailable")
+                        runtime::prepare_job(
+                            window.app_handle(),
+                            host,
+                            workspace_core::session_registry::Scope {
+                                session: input.operation_id.clone(),
+                                context: context.clone(),
+                            },
+                            id,
+                        )
+                        .map_err(|_| "session_runtime_unavailable")
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let profile = input
@@ -735,6 +828,32 @@ impl Sessions {
                     id: String,
                 }
                 let input: Input = parse(args)?;
+                let retirement = self.access(|inner| {
+                    if inner.document.store.archived.contains(&input.id) {
+                        return Ok(None);
+                    }
+                    if inner.starting.contains(&input.id)
+                        || inner.stopping.contains(&input.id)
+                        || !inner.document.store.can_archive(&input.id)
+                    {
+                        return Err("session_archive_unavailable");
+                    }
+                    Ok(inner.remote_app.clone().map(|app| {
+                        (
+                            app,
+                            workspace_core::session_registry::Scope {
+                                session: input.id.clone(),
+                                context: inner.document.store.sessions[&input.id].context.clone(),
+                            },
+                        )
+                    }))
+                })?;
+                if let Some((app, scope)) = retirement {
+                    tauri::async_runtime::block_on(crate::runtime_owner::session::<()>(
+                        &app,
+                        workspace_core::session_rpc::Call::Retire { scope },
+                    ))?;
+                }
                 self.access(|inner| {
                     if inner.starting.contains(&input.id) || inner.stopping.contains(&input.id) {
                         return Err("session_cleanup_pending");
@@ -846,6 +965,9 @@ impl Sessions {
         })
     }
     fn cancelled(&self, id: &str) -> bool {
+        if self.detaching.load(Ordering::Acquire) {
+            return true;
+        }
         self.access(|inner| {
             Ok(inner
                 .document
@@ -963,7 +1085,9 @@ impl Sessions {
                 return Ok(());
             }
             host.projects()?.binding(context)?;
-            job.revalidate(app).map_err(|_| "session_plan_changed")?;
+            job.revalidate(app)
+                .await
+                .map_err(|_| "session_plan_changed")?;
             let operation = uuid::Uuid::new_v4().to_string();
             let kind = if job.task().is_some() {
                 ResourceKind::TaskOperation
@@ -989,7 +1113,7 @@ impl Sessions {
             })?;
             let weak = Arc::downgrade(self);
             let operation_for_publish = operation.clone();
-            let witness = Arc::new(RuntimeStartWitness::with_publisher(move |lease| {
+            let witness = Arc::new(job.witness(app, &operation, move |lease| {
                 weak.upgrade()
                     .ok_or("session_owner_unavailable")?
                     .publish(&operation_for_publish, lease)
@@ -1027,9 +1151,10 @@ impl Sessions {
                 result=&mut effect => result,
             };
             if let Err(_issue) = result {
-                if witness
-                    .lease()
-                    .is_none_or(|lease| !lease.descriptor().created)
+                if !witness.uncertain()
+                    && witness
+                        .lease()
+                        .is_none_or(|lease| !lease.descriptor().created)
                 {
                     self.access(|inner| {
                         if inner
@@ -1123,9 +1248,68 @@ impl Sessions {
             });
         });
     }
+    async fn reconcile_remote_pending(&self, id: &str) -> Result<()> {
+        let remote = self.access(|inner| {
+            let Some(app) = inner.remote_app.clone() else {
+                return Ok(None);
+            };
+            let session = inner
+                .document
+                .store
+                .sessions
+                .get(id)
+                .ok_or("session_missing")?;
+            Ok(Some((
+                app,
+                workspace_core::session_registry::Scope {
+                    session: session.id.clone(),
+                    context: session.context.clone(),
+                },
+                session
+                    .pending
+                    .iter()
+                    .filter(|operation| {
+                        inner.document.store.operations[*operation].kind != ResourceKind::Terminal
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )))
+        })?;
+        let Some((app, scope, operations)) = remote else {
+            return Ok(());
+        };
+        for operation in operations {
+            let receipt: workspace_core::session_rpc::Receipt = crate::runtime_owner::session(
+                &app,
+                workspace_core::session_rpc::Call::Cancel {
+                    scope: scope.clone(),
+                    operation: operation.clone(),
+                },
+            )
+            .await?;
+            if let Some(lease) = receipt.lease {
+                self.publish(
+                    &operation,
+                    RuntimeLease::Remote {
+                        app: app.clone(),
+                        scope: scope.clone(),
+                        lease,
+                    },
+                )?;
+            } else if receipt.finished {
+                self.access(|inner| {
+                    write(inner, |document| {
+                        document.store.settle_without_resource(&operation)
+                    })
+                })?;
+            }
+        }
+        Ok(())
+    }
     async fn stop(&self, id: &str) -> Result<()> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
+            self.reconcile_remote_pending(id).await?;
             // A failed publication retains its native witness. Reconcile that
             // exact lease before deciding which references can be released.
             let pending = self.access(|inner| {
@@ -1252,6 +1436,31 @@ impl Sessions {
         }
     }
     pub(crate) fn request_shutdown(self: &Arc<Self>) -> Result<Vec<String>> {
+        let detached = {
+            let inner = self.inner.lock().map_err(|_| "session_owner_busy")?;
+            if let Some(inner) = inner.as_ref().filter(|inner| inner.remote_app.is_some()) {
+                self.detaching.store(true, Ordering::Release);
+                for operation in inner
+                    .document
+                    .store
+                    .sessions
+                    .values()
+                    .flat_map(|session| &session.pending)
+                {
+                    if let Some(witness) = inner.witnesses.get(operation) {
+                        witness.cancel();
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        };
+        // Terminal/LSP owners are drained by component shutdown. Agent leases
+        // remain attached to durable Sessions; this is not an explicit Stop.
+        if detached {
+            return Ok(Vec::new());
+        }
         let ids = {
             let inner = self.inner.lock().map_err(|_| "session_owner_busy")?;
             let Some(inner) = inner.as_ref() else {
@@ -1277,7 +1486,7 @@ impl Sessions {
     }
     pub(crate) async fn shutdown(self: &Arc<Self>) -> Result<()> {
         let ids = self.request_shutdown()?;
-        if ids.is_empty() {
+        if ids.is_empty() && !self.detaching.load(Ordering::Acquire) {
             return Ok(());
         }
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);

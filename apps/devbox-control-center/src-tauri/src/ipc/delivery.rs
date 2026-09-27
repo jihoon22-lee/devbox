@@ -465,6 +465,7 @@ product_ipc::issue_codes! {
     UpdateAssetMissing = "update_asset_missing",
     UpdateAssetTopologyInvalid = "update_asset_topology_invalid",
     UpdateBusy = "update_busy",
+    UpdateAgentBusy = "update_agent_busy",
     UpdateCacheChanged = "update_cache_changed",
     UpdateCacheConflict = "update_cache_conflict",
     UpdateCacheUnavailable = "update_cache_unavailable",

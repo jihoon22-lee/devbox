@@ -1,3 +1,5 @@
+import { isLoopbackAddress } from "./lib/listenerAddress";
+import { webhookMessages } from "../issues/catalog";
 import { bodyPreview } from "./lib/body";
 import { isProductHosted } from "../transport";
 import { MockDraftReceiver } from "./MockDraftReceiver";
@@ -219,19 +221,6 @@ function openApiSkipReason(reason: OpenApiRuleOperation["reason"]): string {
     default:
       return "이 operation은 적용할 수 없습니다.";
   }
-}
-
-function isLoopbackAddress(address: string | null): boolean {
-  if (!address) return false;
-  const value = address.trim();
-  if (value === "localhost" || value.startsWith("localhost:")) return true;
-  if (value.startsWith("[")) {
-    const closingBracket = value.indexOf("]");
-    return closingBracket > 1 && value.slice(1, closingBracket) === "::1";
-  }
-  const separator = value.lastIndexOf(":");
-  const host = separator >= 0 ? value.slice(0, separator) : value;
-  return host === "127.0.0.1" || host === "::1";
 }
 
 async function readOpenApiFile(file: File): Promise<string> {
@@ -1018,6 +1007,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
           }}
         />
       )}
+      {status.issue && <p role="alert">{webhookMessages[status.issue]}</p>}
       <header className="toolbar">
         <h1 className="title">{isProductHosted() ? "Webhooks & Mocks" : "Webhook Lab"}</h1>
         <span className={`status ${status.running ? "ok" : "off"}`}>

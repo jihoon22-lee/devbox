@@ -68,6 +68,7 @@ struct PollSnapshot {
 
 /// 앱 수명 동안 루트 watcher와 워커를 관리한다.
 pub struct WatcherManager {
+    admission: Mutex<()>,
     _app: AppHandle,
     state: Arc<AppState>,
     roots: Mutex<HashMap<String, RootWatcher>>,
@@ -101,6 +102,7 @@ impl WatcherManager {
             })
             .expect("everything-plus watcher worker should start");
         Arc::new(Self {
+            admission: Mutex::new(()),
             _app: app,
             state,
             roots: Mutex::new(HashMap::new()),
@@ -121,6 +123,9 @@ impl WatcherManager {
             crate::core::db::list_roots(&conn).unwrap_or_default()
         };
         for root in roots {
+            if self.state.stopping.load(Ordering::SeqCst) {
+                break;
+            }
             // A persisted WSL root must remain in the polling set while its
             // distribution is offline. `add` does not touch the filesystem
             // for WSL roots, so the next successful poll can reconnect it
@@ -144,6 +149,10 @@ impl WatcherManager {
 
     /// 루트 하나에 watcher를 추가한다.
     pub fn add(&self, root_path: &str) -> Result<(), String> {
+        let _admission = self.admission.lock().map_err(|_| "index_owner_stopping")?;
+        if self.state.stopping.load(Ordering::SeqCst) {
+            return Err("index_owner_stopping".into());
+        }
         if self.state.db.is_poisoned()
             || self.roots.is_poisoned()
             || self.status.is_poisoned()
@@ -308,17 +317,31 @@ pub fn watcher_statuses(watcher: tauri::State<'_, Arc<WatcherManager>>) -> Vec<R
     watcher.statuses()
 }
 
+impl WatcherManager {
+    pub fn shutdown(&self) {
+        let _admission = self
+            .admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.state.stopping.store(true, Ordering::SeqCst);
+        self.roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let _ = self.sender.send(WatcherMessage::Shutdown);
+        if let Some(worker) = self
+            .worker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = worker.join();
+        }
+    }
+}
 impl Drop for WatcherManager {
     fn drop(&mut self) {
-        if let Ok(roots) = self.roots.get_mut() {
-            roots.clear();
-        }
-        let _ = self.sender.send(WatcherMessage::Shutdown);
-        if let Ok(mut worker) = self.worker.lock() {
-            if let Some(worker) = worker.take() {
-                let _ = worker.join();
-            }
-        }
+        self.shutdown();
     }
 }
 
@@ -333,6 +356,9 @@ fn watcher_worker(
     let mut poll_snapshots = HashMap::<String, HashMap<String, FileStamp>>::new();
     let mut next_poll = Instant::now() + WSL_POLL_INTERVAL;
     loop {
+        if state.stopping.load(Ordering::SeqCst) {
+            break;
+        }
         if state.db.is_poisoned()
             || status.is_poisoned()
             || polling_roots.is_poisoned()

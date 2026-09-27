@@ -37,5 +37,15 @@ Knowledge·Workspace의 살균된 Markdown HTML과 Mermaid 블록은 `packages/m
 
 `crates/agent-protocol`은 사용자별 agent의 길이 제한 framing·메시지·handshake 검사를
 제공하는 순수 계약 crate다. Cargo workspace 검증에 포함되며 제품 카탈로그 항목은 아니다.
-Phase 1에서는 실행 프로세스나 제품 transport를 바꾸지 않는다. 프로세스·배포·writer lease
-연결은 [ADR 0015](adr/0015-devbox-agent.md)의 Phase 2 설계를 따른다.
+프로세스·배포·writer lease 연결·종료·복구 경계는 [ADR 0015](adr/0015-devbox-agent.md)를 따른다.
+
+`apps/devbox-agent`는 Control Center가 배포하는 창 없는 내부 구성요소다.
+검증된 설치 owner의 namespace와 writer lease를 사용하며 공개 제품 카탈로그에는 넣지 않는다.
+portable에서는 실행하지 않는다. runtime·webhooks·동의한 activity·search index와 트레이·로그인 설정을 소유한다.
+
+`crates/workspace-core`는 Workspace와 agent가 공유하는 프로젝트 host·registry·저장소 선택·Git/WSL 실행 증거 계층이다.
+agent의 읽기 전용 host는 registry owner 잠금을 가져가거나 파일을 만들지 않으며,
+쓰기 owner의 원자적 변경을 매번 다시 읽는다. 제품 UI의 파일·터미널 수명은 Workspace에 남는다.
+
+`crates/knowledge-stores`는 Knowledge와 agent가 같은 generation manifest를 읽는 계층이다.
+생성·선택은 Knowledge가 수행하고 agent는 activity/search 경로와 읽기 전용 수집 동의만 확인한다.

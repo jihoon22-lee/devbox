@@ -133,6 +133,7 @@ pub struct OpenedSource {
 }
 #[tauri::command]
 pub async fn search(window: WebviewWindow, request: IncomingRequest) -> Result<Reply, Problem> {
+    let args = request.args.clone();
     let (admission, request) = admit_request::<KnowledgeSearchCall>(&window, request)?;
     let app = window.app_handle();
     crate::startup::require_active(app).map_err(|_| admission.problem(ProblemCode::Unavailable))?;
@@ -146,7 +147,16 @@ pub async fn search(window: WebviewWindow, request: IncomingRequest) -> Result<R
             crate::federation::saved_reference_typed(app, id, revision).await
         }
         KnowledgeSearchCall::Host(call) => crate::search::dispatch_typed(app, call),
-        KnowledgeSearchCall::Engine(call) => api::dispatch_search(app, call).await,
+        KnowledgeSearchCall::Engine(_) => {
+            crate::collector_owner::call(
+                app,
+                "knowledge.search",
+                method,
+                args,
+                request.header.deadline_ms,
+            )
+            .await
+        }
     };
     let result = result.and_then(|value| match method {
         "source_reference" => super::typed::<SourceReference>(value),
@@ -159,11 +169,19 @@ pub async fn search_settings(
     window: WebviewWindow,
     request: IncomingRequest,
 ) -> Result<Reply, Problem> {
+    let args = request.args.clone();
     let (admission, request) = admit_request::<KnowledgeSearchSettingsCall>(&window, request)?;
     let app = window.app_handle();
     crate::startup::require_active(app).map_err(|_| admission.problem(ProblemCode::Unavailable))?;
     Ok(admission.finish(
-        api::dispatch_settings(app, request.call.0).await,
+        crate::collector_owner::call(
+            app,
+            "knowledge.search-settings",
+            request.call.method(),
+            args,
+            request.header.deadline_ms,
+        )
+        .await,
         api::classify,
     ))
 }

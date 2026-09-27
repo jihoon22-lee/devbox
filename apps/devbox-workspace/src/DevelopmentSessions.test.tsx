@@ -1,3 +1,4 @@
+import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { fixtureDescription } from "@devbox/product-shell/api";
@@ -202,4 +203,21 @@ it("keeps same-project controls and summary visible for reordered native context
   fireEvent.click(screen.getByRole("button", { name: "요약 미리보기" }));
   await screen.findByRole("region", { name: "세션 요약 미리보기" });
   expect(screen.getByText("retained report")).toBeTruthy();
+});
+
+it("explains recovered background ownership without restarting tasks and keeps explicit cleanup accessible", async () => {
+  const original = call.getMockImplementation()!;
+  call.mockImplementation(async (...args) => {
+    if (args[2] === "development_sessions")
+      return {
+        sessions: [{ ...session, phase: "degraded", issue: "session_ui_resources_lost" }],
+        intents: {},
+      };
+    return original(...args);
+  });
+  const view = render(<DevelopmentSessions description={description} registry={null} />);
+  await screen.findByText("이전 창의 터미널은 종료되었습니다. 백그라운드 작업은 계속 확인하고 정리할 수 있습니다.");
+  expect(call.mock.calls.some(([, , method]) => method === "start_development_session")).toBe(false);
+  expect(screen.getByRole("button", { name: "내가 시작한 자원 정리" })).toBeTruthy();
+  await assertNoA11yViolations(view.container);
 });

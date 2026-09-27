@@ -1,5 +1,5 @@
 import type { Screen } from "../lib/taskViewTypes";
-import { hideMainWindow, quitApp } from "../api";
+import { quitApp } from "../api";
 import type * as React from "react";
 
 interface Props {
@@ -7,12 +7,9 @@ interface Props {
   setScreen: React.Dispatch<React.SetStateAction<Screen>>;
   jobs: import("../types").Job[];
   services: import("../types").Job[];
-  busy: boolean;
-  startupStatus: import("../types").StartupShortcutStatus | null;
-  toggleStartup: () => Promise<void>;
 }
 
-export function TaskSidebar({ screen, setScreen, jobs, services, busy, startupStatus, toggleStartup }: Props) {
+export function TaskSidebar({ screen, setScreen, jobs, services }: Props) {
   return (
     <aside className="sidebar">
       <div className="brand-mark" aria-hidden="true">
@@ -46,19 +43,7 @@ export function TaskSidebar({ screen, setScreen, jobs, services, busy, startupSt
         </button>
       </nav>
       <div className="sidebar-actions">
-        <button
-          type="button"
-          disabled={busy || !startupStatus?.supported}
-          title={startupStatus?.shortcutPath}
-          onClick={() => void toggleStartup()}
-        >
-          {startupStatus?.supported
-            ? `로그인 시 자동 시작: ${startupStatus.enabled ? "켜짐" : "꺼짐"}`
-            : "자동 시작: Windows 전용"}
-        </button>
-        <button type="button" onClick={() => void hideMainWindow()}>
-          트레이로 숨기기
-        </button>
+        <p>로그인 자동 시작은 Control Center의 환경 설정에서 변경합니다.</p>
         <button className="danger" type="button" onClick={() => void quitApp()}>
           안전하게 종료
         </button>

@@ -452,26 +452,17 @@ pub(crate) fn manage(
         }
         let mut value =
             serde_json::to_value(owner.snapshot(context)?).map_err(|_| "problem_invalid")?;
-        let root = host.projects()?.binding(context)?.root;
         let running = (|| -> Result<usize> {
-            let identity = if matches!(
-                context.target,
-                product_contract::ExecutionTarget::Wsl { .. }
-            ) {
-                Some(crate::platform::task_sources::context_identity(
-                    host, context,
-                )?)
-            } else {
-                None
-            };
-            let mut ids = runtime_engine::component::sessions::running_project_runs(
+            let runs: Vec<String> = tauri::async_runtime::block_on(crate::runtime_owner::query(
                 app,
-                &root,
-                identity.as_deref(),
-            )
-            .map_err(|_| "session_runtime_unavailable")?
-            .into_iter()
-            .collect::<std::collections::BTreeSet<_>>();
+                host,
+                &std::sync::Mutex::new(crate::definitions::Definitions::default()),
+                workspace_core::runtime_queries::Call::RunningProject {
+                    context: context.clone(),
+                },
+                u64::MAX,
+            ))?;
+            let mut ids = runs.into_iter().collect::<std::collections::BTreeSet<_>>();
             if let Some(sessions) = app.try_state::<Arc<crate::development_host::Sessions>>() {
                 ids.extend(sessions.running_runs(context)?);
             }
@@ -505,14 +496,15 @@ pub(crate) fn manage(
             let binding = host
                 .projects()?
                 .admit_selection(host.helper_directory()?, context)?;
-            if !crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id) {
+            if !crate::runtime_owner::diagnostic_matches(app, host, context, &run_id) {
                 return Err("problem_stale");
             }
-            let value = tauri::async_runtime::block_on(runtime_engine::api::dispatch(
+            let value = tauri::async_runtime::block_on(crate::runtime_owner::engine(
                 app,
-                runtime_engine::api::RuntimeCall::ListWorkspaceTaskDiagnostics {
-                    run_id: run_id.clone(),
-                },
+                "list_workspace_task_diagnostics",
+                json!({"runId":run_id}),
+                Some(context),
+                u64::MAX,
             ))
             .map_err(|_| "problem_log_expired")?;
             if crate::definitions::digest(
@@ -560,7 +552,7 @@ pub(crate) fn manage(
             offset,
         } => {
             let from_project =
-                crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id);
+                crate::runtime_owner::diagnostic_matches(app, host, context, &run_id);
             let from_session = app
                 .try_state::<Arc<crate::development_host::Sessions>>()
                 .is_some_and(|sessions| sessions.problem_run(context, &run_id));
@@ -568,11 +560,12 @@ pub(crate) fn manage(
                 return Err("problem_stale");
             }
             if offset.is_some() {
-                let diagnostics = tauri::async_runtime::block_on(runtime_engine::api::dispatch(
+                let diagnostics = tauri::async_runtime::block_on(crate::runtime_owner::engine(
                     app,
-                    runtime_engine::api::RuntimeCall::ListWorkspaceTaskDiagnostics {
-                        run_id: run_id.clone(),
-                    },
+                    "list_workspace_task_diagnostics",
+                    json!({"runId":run_id}),
+                    Some(context),
+                    u64::MAX,
                 ))
                 .map_err(|_| "problem_log_expired")?;
                 if crate::definitions::digest(
@@ -582,9 +575,10 @@ pub(crate) fn manage(
                     return Err("problem_stale");
                 }
             }
-            let lease = runtime_engine::component::log_descriptor(app, &run_id)
-                .map_err(|_| "problem_log_expired")?;
-            lease.revalidate().map_err(|_| "problem_log_expired")?;
+            let revision = tauri::async_runtime::block_on(crate::runtime_owner::log_revision(
+                app, host, &run_id,
+            ))
+            .map_err(|_| "problem_log_expired")?;
             return Ok(json!(ProblemResolution {
                 context: context.clone(),
                 target: ResolvedProblemTarget::Navigation(ProblemNavigation::Log {
@@ -593,7 +587,7 @@ pub(crate) fn manage(
                         source: crate::ipc::results::ProblemLogSource::RuntimeRun {
                             run_id,
                             stream,
-                            revision: lease.revision().into()
+                            revision
                         },
                         offset
                     }
@@ -628,7 +622,7 @@ pub(crate) struct Observation {
     route: &'static str,
     run_id: Option<String>,
 }
-pub(crate) fn begin_observation(
+pub(crate) async fn begin_observation(
     app: &tauri::AppHandle,
     host: Option<&crate::host::Host>,
     context: Option<&ProjectContext>,
@@ -651,12 +645,9 @@ pub(crate) fn begin_observation(
     };
     let owner = owner(app).ok()?;
     let ticket = if let Some(run) = &run_id {
-        let (source_root, job, generation) =
-            runtime_engine::component::diagnostic_identity(app, run).ok()?;
-        let _ = source_root;
-        if !crate::platform::task_sources::diagnostic_matches(app, host?, context, run) {
-            return None;
-        }
+        let (job, generation) = crate::runtime_owner::diagnostic_identity(app, host?, context, run)
+            .await
+            .ok()??;
         owner.begin_run(context, &job, generation).ok()?
     } else {
         owner.begin(context, source, "current").ok()?
@@ -669,7 +660,7 @@ pub(crate) fn begin_observation(
         run_id,
     })
 }
-pub(crate) fn finish_observation(
+pub(crate) async fn finish_observation(
     app: &tauri::AppHandle,
     host: Option<&crate::host::Host>,
     observation: Option<Observation>,
@@ -694,12 +685,10 @@ pub(crate) fn finish_observation(
         let Some(run_id) = observation.run_id else {
             return;
         };
-        if !crate::platform::task_sources::diagnostic_matches(
-            app,
-            host,
-            &observation.context,
-            &run_id,
-        ) {
+        if !crate::runtime_owner::diagnostic_identity(app, host, &observation.context, &run_id)
+            .await
+            .is_ok_and(|value| value.is_some())
+        {
             owner.unavailable(&observation.ticket);
             return;
         }

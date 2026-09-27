@@ -17,10 +17,6 @@ pub enum RuntimeCall {
     ShowMainWindow {},
     HideMainWindow {},
     QuitApp {},
-    StartupShortcutStatus {},
-    SetStartupShortcutEnabled {
-        enabled: bool,
-    },
     ListJobs {},
     GetJob {
         id: String,
@@ -191,8 +187,6 @@ pub const METHODS: &[&str] = &[
     "show_main_window",
     "hide_main_window",
     "quit_app",
-    "startup_shortcut_status",
-    "set_startup_shortcut_enabled",
     "list_jobs",
     "get_job",
     "create_job",
@@ -249,8 +243,6 @@ impl RuntimeCall {
             Self::ShowMainWindow { .. } => "show_main_window",
             Self::HideMainWindow { .. } => "hide_main_window",
             Self::QuitApp { .. } => "quit_app",
-            Self::StartupShortcutStatus { .. } => "startup_shortcut_status",
-            Self::SetStartupShortcutEnabled { .. } => "set_startup_shortcut_enabled",
             Self::ListJobs { .. } => "list_jobs",
             Self::GetJob { .. } => "get_job",
             Self::CreateJob { .. } => "create_job",
@@ -354,16 +346,6 @@ async fn execute(
                     .ok_or("component_state_unavailable")?,
             );
             serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
-        }
-        RuntimeCall::StartupShortcutStatus {} => {
-            use crate::commands::*;
-            let value = startup_shortcut_status(_component_app.clone())?;
-            serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-        }
-        RuntimeCall::SetStartupShortcutEnabled { enabled } => {
-            use crate::commands::*;
-            let value = set_startup_shortcut_enabled(_component_app.clone(), enabled)?;
-            serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
         }
         RuntimeCall::ListJobs {} => {
             use crate::commands::*;
@@ -929,8 +911,6 @@ pub fn result_types(
 ("show_main_window",export.register::<()>()?),
 ("hide_main_window",export.register::<()>()?),
 ("quit_app",export.register::<()>()?),
-("startup_shortcut_status",export.register::<crate::platform::StartupShortcutStatus>()?),
-("set_startup_shortcut_enabled",export.register::<crate::platform::StartupShortcutStatus>()?),
 ("list_jobs",export.register::<Vec<crate::core::models::Job>>()?),
 ("get_job",export.register::<Option<crate::core::models::Job>>()?),
 ("create_job",export.register::<crate::core::models::Job>()?),
@@ -1035,6 +1015,13 @@ pub async fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn product_startup_shortcuts_cannot_be_created_by_runtime_calls() {
+        assert!(serde_json::from_value::<RuntimeCall>(
+            serde_json::json!({"method":"set_startup_shortcut_enabled","args":{"enabled":true}})
+        )
+        .is_err());
+    }
     #[test]
     fn unknown_methods_and_extra_arguments_are_rejected() {
         assert!(serde_json::from_str::<RuntimeCall>(r#"{"method":"unknown","args":{}}"#).is_err());
