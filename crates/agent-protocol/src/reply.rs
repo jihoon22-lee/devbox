@@ -139,6 +139,39 @@ impl Receiver {
         serde_json::from_str(&self.json).map_err(|_| ProtocolError::Malformed)
     }
 }
+/// Encode borrowed envelopes without cloning potentially large response trees.
+pub fn encode_reply(id: u64, response: &Value) -> Result<Vec<u8>> {
+    #[derive(Serialize)]
+    struct Borrowed<'a> {
+        #[serde(rename = "type")]
+        kind: &'static str,
+        id: u64,
+        response: &'a Value,
+    }
+    crate::encode(&Borrowed {
+        kind: "reply",
+        id,
+        response,
+    })
+}
+pub fn check_call(component: &str, request: &Value) -> Result<()> {
+    #[derive(Serialize)]
+    struct Borrowed<'a> {
+        #[serde(rename = "type")]
+        kind: &'static str,
+        id: u64,
+        component: &'a str,
+        request: &'a Value,
+    }
+    crate::encode(&Borrowed {
+        kind: "call",
+        id: u64::MAX,
+        component,
+        request,
+    })
+    .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,37 +214,4 @@ mod tests {
         too_large.total_bytes = MAX_REPLY_BYTES as u64 + 1;
         assert!(Receiver::default().push(too_large).is_err());
     }
-}
-
-/// Encode borrowed envelopes without cloning potentially large response trees.
-pub fn encode_reply(id: u64, response: &Value) -> Result<Vec<u8>> {
-    #[derive(Serialize)]
-    struct Borrowed<'a> {
-        #[serde(rename = "type")]
-        kind: &'static str,
-        id: u64,
-        response: &'a Value,
-    }
-    crate::encode(&Borrowed {
-        kind: "reply",
-        id,
-        response,
-    })
-}
-pub fn check_call(component: &str, request: &Value) -> Result<()> {
-    #[derive(Serialize)]
-    struct Borrowed<'a> {
-        #[serde(rename = "type")]
-        kind: &'static str,
-        id: u64,
-        component: &'a str,
-        request: &'a Value,
-    }
-    crate::encode(&Borrowed {
-        kind: "call",
-        id: u64::MAX,
-        component,
-        request,
-    })
-    .map(|_| ())
 }

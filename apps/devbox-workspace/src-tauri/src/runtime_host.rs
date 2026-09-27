@@ -555,6 +555,47 @@ pub(crate) async fn dispatch(
     result
 }
 
+async fn dispatch_engine(
+    app: &tauri::AppHandle,
+    typed: crate::ipc::Call,
+    component: &str,
+    method: &str,
+    value: Value,
+    context: Option<&ProjectContext>,
+    deadline: u64,
+) -> Result<Value> {
+    crate::files_host::current_deadline(deadline)?;
+    if crate::runtime_owner::installed(app)? {
+        let route = match component {
+            "workspace.runtime" => "tasks",
+            "workspace.logs" => "logs",
+            _ => "runtime",
+        };
+        crate::runtime_owner::call_until(app, component, method, value, route, context, deadline)
+            .await
+    } else {
+        crate::ipc::dispatch_engine(app, typed).await.map_err(issue)
+    }
+}
+fn offer_product_open(
+    app: &tauri::AppHandle,
+    request: devbox_applink::OpenRequest,
+) -> std::result::Result<(), String> {
+    if !runtime_engine::component::ui::is_supported_request(&request) {
+        return Err("component_args_invalid".into());
+    }
+    if app
+        .try_state::<runtime_engine::component::ui::PendingOpen>()
+        .is_none()
+    {
+        app.manage(runtime_engine::component::ui::PendingOpen::new());
+    }
+    app.state::<runtime_engine::component::ui::PendingOpen>()
+        .set(request.clone());
+    app.emit_to("main", "workspace://tasks-open", request)
+        .map_err(|_| "component_delivery_unavailable".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,45 +652,4 @@ mod tests {
             assert!(empty(value).is_err());
         }
     }
-}
-
-async fn dispatch_engine(
-    app: &tauri::AppHandle,
-    typed: crate::ipc::Call,
-    component: &str,
-    method: &str,
-    value: Value,
-    context: Option<&ProjectContext>,
-    deadline: u64,
-) -> Result<Value> {
-    crate::files_host::current_deadline(deadline)?;
-    if crate::runtime_owner::installed(app)? {
-        let route = match component {
-            "workspace.runtime" => "tasks",
-            "workspace.logs" => "logs",
-            _ => "runtime",
-        };
-        crate::runtime_owner::call_until(app, component, method, value, route, context, deadline)
-            .await
-    } else {
-        crate::ipc::dispatch_engine(app, typed).await.map_err(issue)
-    }
-}
-fn offer_product_open(
-    app: &tauri::AppHandle,
-    request: devbox_applink::OpenRequest,
-) -> std::result::Result<(), String> {
-    if !runtime_engine::component::ui::is_supported_request(&request) {
-        return Err("component_args_invalid".into());
-    }
-    if app
-        .try_state::<runtime_engine::component::ui::PendingOpen>()
-        .is_none()
-    {
-        app.manage(runtime_engine::component::ui::PendingOpen::new());
-    }
-    app.state::<runtime_engine::component::ui::PendingOpen>()
-        .set(request.clone());
-    app.emit_to("main", "workspace://tasks-open", request)
-        .map_err(|_| "component_delivery_unavailable".into())
 }

@@ -126,8 +126,7 @@ impl Sources {
     ) -> Result<(), Error> {
         let root = root.to_str().ok_or(Error::InvalidRoot)?;
         let target = match target {
-            TargetKind::Windows => product_contract::ExecutionTarget::Windows,
-            TargetKind::Wsl => {
+            TargetKind::Wsl if root.starts_with('/') => {
                 #[cfg(windows)]
                 {
                     let distro = distro.ok_or(Error::InvalidTarget)?;
@@ -147,6 +146,9 @@ impl Sources {
                     return Err(Error::SourceUnavailable);
                 }
             }
+            // A Windows source folder keeps its Windows project authority even
+            // when the imported command is configured to run through WSL.
+            TargetKind::Windows | TargetKind::Wsl => product_contract::ExecutionTarget::Windows,
         };
         self.authorize_project(root, &target)
     }

@@ -104,6 +104,21 @@ pub fn probe_fixture(root: &Path) -> Result<ProjectLease> {
     probe(root, target, root.to_str().unwrap().into())
 }
 
+impl workspace_wsl::files::RootLease for crate::platform::project_probe::ProjectLease {
+    fn root(&self) -> &std::path::Path {
+        std::path::Path::new(&self.binding().root)
+    }
+    fn target(&self) -> &product_contract::ExecutionTarget {
+        &self.binding().target
+    }
+    fn native_root_identity(&self) -> devbox_filesystem::FilesystemIdentity {
+        self.native_root_identity()
+    }
+    fn revalidate(&self) -> std::result::Result<(), &'static str> {
+        self.revalidate()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::probe_fixture as observe;
@@ -206,20 +221,5 @@ mod tests {
         fs::create_dir(&linked).unwrap();
         fs::write(linked.join(".git"), "gitdir: ../alias/.git\n").unwrap();
         assert!(observe(&linked).is_err());
-    }
-}
-
-impl workspace_wsl::files::RootLease for crate::platform::project_probe::ProjectLease {
-    fn root(&self) -> &std::path::Path {
-        std::path::Path::new(&self.binding().root)
-    }
-    fn target(&self) -> &product_contract::ExecutionTarget {
-        &self.binding().target
-    }
-    fn native_root_identity(&self) -> devbox_filesystem::FilesystemIdentity {
-        self.native_root_identity()
-    }
-    fn revalidate(&self) -> std::result::Result<(), &'static str> {
-        self.revalidate()
     }
 }

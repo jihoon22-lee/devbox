@@ -129,3 +129,5 @@ JSON 응답의 보수적 상한 4 MiB, 전체 조회 시간 5초다. 디렉터�
 ## 타입 IPC 개발
 
 제품 플러그인의 명령은 `activity·notes·search·search_settings·opener·setup·commands`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/knowledge-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.
+
+활동 설정의 로그인 자동 시작은 Control Center 환경과 같은 agent 설정이다. 제품 자동 시작·트레이 숨김 설정은 없으며 활동 수집 동의는 별도로 유지한다.

@@ -74,8 +74,10 @@ impl PreparedJob {
         publisher: impl Fn(RuntimeLease) -> Result<()> + Send + Sync + 'static,
     ) -> RuntimeStartWitness {
         if self.native.is_some() {
-            return RuntimeStartWitness::Local(native::RuntimeStartWitness::with_publisher(
-                move |lease| publisher(RuntimeLease::Local(lease)),
+            return RuntimeStartWitness::Local(Box::new(
+                native::RuntimeStartWitness::with_publisher(move |lease| {
+                    publisher(RuntimeLease::Local(lease))
+                }),
             ));
         }
         RuntimeStartWitness::Remote(Arc::new(RemoteWitness {
@@ -217,7 +219,7 @@ pub(crate) struct RemoteWitness {
     publisher: Box<dyn Fn(RuntimeLease) -> Result<()> + Send + Sync>,
 }
 pub(crate) enum RuntimeStartWitness {
-    Local(native::RuntimeStartWitness),
+    Local(Box<native::RuntimeStartWitness>),
     Remote(Arc<RemoteWitness>),
 }
 impl RuntimeStartWitness {

@@ -1,6 +1,10 @@
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Instant};
 
+// Native product, installation and session jointly own replay history.
+type SessionKey = (String, String, String);
+type Sessions = std::collections::HashMap<SessionKey, (Arc<crate::remote::RemoteSession>, Instant)>;
+
 pub struct Routes {
     #[cfg(test)]
     fixture_reply: Option<Value>,
@@ -11,12 +15,7 @@ pub struct Routes {
     runtime: Option<Arc<crate::runtime::Runtime>>,
     webhooks: Option<Arc<crate::webhooks::Webhooks>>,
     collectors: Option<Arc<crate::collectors::Collectors>>,
-    sessions: std::sync::Mutex<
-        std::collections::HashMap<
-            (String, String, String),
-            (Arc<crate::remote::RemoteSession>, Instant),
-        >,
-    >,
+    sessions: std::sync::Mutex<Sessions>,
 }
 impl Routes {
     pub fn new(generation: String) -> Arc<Self> {

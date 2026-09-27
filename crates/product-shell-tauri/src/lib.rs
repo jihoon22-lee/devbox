@@ -370,10 +370,7 @@ pub fn replace_project_context(
 
 pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(move |app, args, _| {
-            if product == "workspace" && args.iter().any(|arg| arg == "--background") {
-                return;
-            }
+        .plugin(tauri_plugin_single_instance::init(move |app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -382,6 +379,31 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
         }))
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("product-shell")
+                .on_event(move |app, event| {
+                    if !matches!(event, tauri::RunEvent::Ready) {
+                        return;
+                    }
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let initial = tauri::async_runtime::spawn_blocking(move || {
+                            let client = app
+                                .try_state::<agent_client::AgentClient>()?
+                                .inner()
+                                .clone();
+                            if !client.supported() || suite_import_only(&app).unwrap_or(true) {
+                                return None;
+                            }
+                            let handshake = native_handshake(&app, product).ok()?;
+                            Some((client, handshake.session_id))
+                        })
+                        .await;
+                        if let Ok(Some((client, session))) = initial {
+                            // Ready occurs once per new product process. Ordinary
+                            // status queries never reset intentional-stop inhibition.
+                            let _ = client.connect(&session).await;
+                        }
+                    });
+                })
                 .invoke_handler(tauri::generate_handler![
                     describe,
                     route_status,

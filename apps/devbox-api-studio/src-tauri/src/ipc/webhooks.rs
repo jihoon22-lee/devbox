@@ -192,6 +192,33 @@ where
 {
     publish(projection.await?)
 }
+pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, String)>, String> {
+    export.register::<StudioWebhookCall>()?;
+    export.register::<api::WebhookIssue>()?;
+    let mut results = api::result_types(export)?;
+    results.extend(super::mock_draft::result_types(export)?);
+    results.extend(super::lifecycle::result_types(export)?);
+    results.extend([
+        (
+            "send_history_to_api",
+            export.register::<crate::handoff::HandoffResult>()?,
+        ),
+        (
+            "send_fixture_to_api",
+            export.register::<crate::handoff::HandoffResult>()?,
+        ),
+        (
+            "send_history_to_log_lens",
+            export.register::<WebhookLogResult>()?,
+        ),
+        (
+            "send_fixture_to_log_lens",
+            export.register::<WebhookLogResult>()?,
+        ),
+    ]);
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,30 +245,4 @@ mod tests {
             "webhook_agent_unavailable"
         );
     }
-}
-pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, String)>, String> {
-    export.register::<StudioWebhookCall>()?;
-    export.register::<api::WebhookIssue>()?;
-    let mut results = api::result_types(export)?;
-    results.extend(super::mock_draft::result_types(export)?);
-    results.extend(super::lifecycle::result_types(export)?);
-    results.extend([
-        (
-            "send_history_to_api",
-            export.register::<crate::handoff::HandoffResult>()?,
-        ),
-        (
-            "send_fixture_to_api",
-            export.register::<crate::handoff::HandoffResult>()?,
-        ),
-        (
-            "send_history_to_log_lens",
-            export.register::<WebhookLogResult>()?,
-        ),
-        (
-            "send_fixture_to_log_lens",
-            export.register::<WebhookLogResult>()?,
-        ),
-    ]);
-    Ok(results)
 }

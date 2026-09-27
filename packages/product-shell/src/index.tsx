@@ -1,4 +1,3 @@
-import AgentStatus from "./AgentStatus";
 import { UndoProvider } from "./undo";
 import { currentDescription, publishDescription, invalidateDescription } from "./api";
 import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
@@ -7,6 +6,7 @@ import { describe, nativeMode, type Description, type ProductId } from "./api";
 import { IncomingReviewContext, type IncomingReview } from "./incoming";
 import { navigate, traverse, type Navigation } from "./navigation";
 
+const AgentStatus = lazy(() => import("./AgentStatus"));
 const Operations = lazy(() => import("./Operations"));
 const IncomingCommands = lazy(() => import("./IncomingCommands"));
 const SuiteConnection = lazy(() => import("./SuiteConnection"));
@@ -135,7 +135,9 @@ function ReadyShell({
             <button aria-expanded={operationsOpen} onClick={() => setOperationsOpen((value) => !value)}>
               작업 상태
             </button>
-            <AgentStatus initial={description.agent} native={nativeMode} />
+            <Suspense fallback={null}>
+              <AgentStatus initial={description.agent} native={nativeMode} />
+            </Suspense>
           </div>
           {nativeMode && (
             <Suspense fallback={null}>

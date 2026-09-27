@@ -153,11 +153,7 @@ fn current_server_status(state: &Arc<ServerState>) -> ServerStatus {
         .and_then(|guard| guard.as_ref().map(|flag| flag.load(Ordering::Acquire)))
         .unwrap_or(false);
     ServerStatus {
-        issue: state
-            .resume_error
-            .lock()
-            .ok()
-            .and_then(|error| error.clone()),
+        issue: state.resume_error.lock().ok().and_then(|error| *error),
         running,
         address: if running {
             state

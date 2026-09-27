@@ -128,40 +128,6 @@ fn response(value: Value) -> Result<Value> {
         _ => Err("runtime_agent_unavailable"),
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    #[test]
-    fn ownership_follows_agent_availability_without_installed_local_fallback() {
-        assert_eq!(decide_owner("connected"), Ok(OwnerKind::Agent));
-        assert_eq!(decide_owner("unsupported"), Ok(OwnerKind::Local));
-        for status in ["unavailable", "starting", "unknown"] {
-            assert_eq!(decide_owner(status), Err("runtime_agent_unavailable"));
-        }
-    }
-    #[test]
-    fn reply_projection_requires_success_and_never_returns_private_errors() {
-        assert_eq!(
-            response(json!({"operation":{"outcome":{"state":"succeeded"}},"value":{"ready":true}})),
-            Ok(json!({"ready":true}))
-        );
-        assert_eq!(
-            response(
-                json!({"operation":{"outcome":{"state":"failed"}},"value":{"issue":"session_runtime_stale"}})
-            ),
-            Err("session_runtime_stale")
-        );
-        assert_eq!(
-            response(
-                json!({"operation":{"outcome":{"state":"failed"}},"value":{"issue":"private/path?secret=value"}})
-            ),
-            Err("runtime_operation_unavailable")
-        );
-        assert!(response(json!({"value":true})).is_err());
-    }
-}
-
 pub(crate) async fn query<T: serde::de::DeserializeOwned>(
     app: &tauri::AppHandle,
     host: &workspace_core::Host,
@@ -254,4 +220,38 @@ pub(crate) async fn engine(
     runtime_engine::api::dispatch(app, call)
         .await
         .map_err(workspace_core::runtime_policy::issue)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn ownership_follows_agent_availability_without_installed_local_fallback() {
+        assert_eq!(decide_owner("connected"), Ok(OwnerKind::Agent));
+        assert_eq!(decide_owner("unsupported"), Ok(OwnerKind::Local));
+        for status in ["unavailable", "starting", "unknown"] {
+            assert_eq!(decide_owner(status), Err("runtime_agent_unavailable"));
+        }
+    }
+    #[test]
+    fn reply_projection_requires_success_and_never_returns_private_errors() {
+        assert_eq!(
+            response(json!({"operation":{"outcome":{"state":"succeeded"}},"value":{"ready":true}})),
+            Ok(json!({"ready":true}))
+        );
+        assert_eq!(
+            response(
+                json!({"operation":{"outcome":{"state":"failed"}},"value":{"issue":"session_runtime_stale"}})
+            ),
+            Err("session_runtime_stale")
+        );
+        assert_eq!(
+            response(
+                json!({"operation":{"outcome":{"state":"failed"}},"value":{"issue":"private/path?secret=value"}})
+            ),
+            Err("runtime_operation_unavailable")
+        );
+        assert!(response(json!({"value":true})).is_err());
+    }
 }

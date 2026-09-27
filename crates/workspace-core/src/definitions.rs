@@ -678,12 +678,40 @@ mod tests {
         assert!(sources
             .authorize_project(project.path().to_str().unwrap(), &context.target)
             .is_ok());
+        #[cfg(windows)]
+        {
+            use runtime_engine::{core::models::TargetKind, workspace_sources::NativeTaskSources};
+            assert!(sources
+                .authorize_execution(project.path(), TargetKind::Windows, None)
+                .is_ok());
+            assert!(sources
+                .authorize_execution(
+                    project.path(),
+                    TargetKind::Wsl,
+                    Some("Fixture-not-launched")
+                )
+                .is_ok());
+        }
         definitions
             .revoke_trust(&writer, &context, approved.revision)
             .unwrap();
         assert!(sources
             .authorize_project(project.path().to_str().unwrap(), &context.target)
             .is_err());
+        #[cfg(windows)]
+        {
+            use runtime_engine::{core::models::TargetKind, workspace_sources::NativeTaskSources};
+            assert!(sources
+                .authorize_execution(project.path(), TargetKind::Windows, None)
+                .is_err());
+            assert!(sources
+                .authorize_execution(
+                    project.path(),
+                    TargetKind::Wsl,
+                    Some("Fixture-not-launched")
+                )
+                .is_err());
+        }
     }
     #[test]
     fn the_agent_reads_existing_definition_metadata_without_creating_it() {

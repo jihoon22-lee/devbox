@@ -1,3 +1,4 @@
+import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
@@ -83,7 +84,32 @@ async function start(member) {
 }
 try {
   const apps = {};
-  for (const member of manifest.members) apps[member.product] = await start(member);
+  const startupOrder =
+    mode === "committed"
+      ? [...manifest.members].sort(
+          (a, b) => Number(b.product === "control-center") - Number(a.product === "control-center"),
+        )
+      : manifest.members;
+  for (const member of startupOrder) {
+    apps[member.product] = await start(member);
+    if (mode === "committed" && member.product === "control-center") {
+      const agentImage = realpathSync.native(
+        path.join(root, "generations", manifest.generation, "products/control-center/resources/suite/devbox-agent.exe"),
+      );
+      const owners = () =>
+        allWindowsProcesses().filter(
+          (row) => path.resolve(row.Path).toLowerCase() === path.resolve(agentImage).toLowerCase(),
+        );
+      const deadline = Date.now() + 20000;
+      while (owners().length === 0 && Date.now() < deadline) await delay(100);
+      assert.equal(
+        owners().length,
+        1,
+        "opening Control Center must start the agent before any explicit business request",
+      );
+      evidence.checks.productReadyStartsAgent = true;
+    }
+  }
   for (const item of Object.values(apps)) {
     const route = { workspace: "overview", "api-studio": "requests", knowledge: "notes", "control-center": "recovery" }[
       item.product
@@ -282,6 +308,34 @@ try {
       },
     });
     evidence.checks.agentWebhooks = webhookResult.evidence;
+    const collectorResult = await exerciseAgentCollectors({
+      knowledge: apps.knowledge,
+      directory: fixture,
+      agentIdentity,
+      call: async (item, component, method, args) =>
+        value(
+          await call(
+            item,
+            `plugin:knowledge|${component}`,
+            { method, args },
+            component === "activity" ? "activity" : "search",
+          ),
+        ),
+      closeKnowledge: async (item) => {
+        const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
+        assert.equal(stopped.forced, false, "Knowledge close must finish the unsaved-note review and exit");
+        assert.equal(sameProcess(item.identity), false);
+        item.cdp.close();
+      },
+      restartKnowledge: async () => {
+        apps.knowledge = await start(manifest.members.find((member) => member.product === "knowledge"));
+        return apps.knowledge;
+      },
+      report: (state) => {
+        evidence.checks.agentCollectors = { ...state };
+      },
+    });
+    evidence.checks.agentCollectors = collectorResult.evidence;
     const agentSetting = async (product, method, args = {}) =>
       value(
         await call(
