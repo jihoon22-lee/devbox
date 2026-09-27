@@ -18,4 +18,5 @@ pub mod import_files;
 
 pub mod collection_folder;
 
+pub(crate) mod oauth2;
 pub(crate) mod oauth_common;

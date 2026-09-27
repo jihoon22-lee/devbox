@@ -546,6 +546,28 @@ pub fn generate_state_and_pkce(
     Ok((state, verifier, challenge))
 }
 
+/// Cache identity excludes credentials and separates every tuple component by length.
+pub fn token_profile_key(
+    grant: &str,
+    token_url: &str,
+    client_id: &str,
+    scopes: &[String],
+) -> String {
+    let mut digest = Sha256::new();
+    for value in [grant, token_url, client_id]
+        .into_iter()
+        .chain(scopes.iter().map(String::as_str))
+    {
+        digest.update((value.len() as u64).to_be_bytes());
+        digest.update(value.as_bytes());
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 pub struct AuthorizationUrlInput<'a> {
     pub endpoint: &'a str,
     pub client_id: &'a str,
