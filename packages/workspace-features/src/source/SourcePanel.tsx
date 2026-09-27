@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { repoStatus, worktrees, type RepoEntry, type RepoSnapshot } from "./api";
+import BlamePanel, { type BlameTarget } from "./components/BlamePanel";
 import BranchPanel from "./components/BranchPanel";
 import StashPanel from "./components/StashPanel";
 import GitSafetyPanel from "./components/GitSafetyPanel";
@@ -27,6 +28,11 @@ export default function SourcePanel({
   onOpenFile,
   onProposeWorktree,
 }: Props) {
+  const repository = JSON.stringify([repo.canonicalKey, repo.path]);
+  const [blame, setBlame] = useState<(BlameTarget & { repository: string }) | null>(null);
+  const [focusCommit, setFocusCommit] = useState<{ id: string; sequence: number; repository: string } | null>(null);
+  const showBlame = (file: string, commitId: string | null = null) =>
+    setBlame((previous) => ({ file, commitId, repository, sequence: (previous?.sequence ?? 0) + 1 }));
   const [busy, setBusy] = useState(false);
   const [panels, setPanels] = useState<Record<string, boolean>>({});
   const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null);
@@ -35,7 +41,7 @@ export default function SourcePanel({
   const callbacks = useMemo(
     () =>
       Object.fromEntries(
-        ["safety", "history", "stage", "remote", "cleanup", "branches", "stash"].map((name) => [
+        ["safety", "history", "stage", "remote", "cleanup", "branches", "stash", "blame"].map((name) => [
           name,
           (value: boolean) =>
             setPanels((previous) => (previous[name] === value ? previous : { ...previous, [name]: value })),
@@ -97,10 +103,26 @@ export default function SourcePanel({
       <GitSafetyPanel repo={repo} onBusyChange={callbacks.safety} />
       <BranchPanel repo={repo} onBusyChange={callbacks.branches} onChanged={() => void refresh()} />
       <StashPanel repo={repo} onBusyChange={callbacks.stash} onChanged={() => void refresh()} />
-      <HistoryDiffPanel repo={repo} onBusyChange={callbacks.history} onOpenFile={onOpenFile} />
+      <HistoryDiffPanel
+        repo={repo}
+        onBusyChange={callbacks.history}
+        onOpenFile={onOpenFile}
+        focusCommit={focusCommit?.repository === repository ? focusCommit : null}
+        onBlame={showBlame}
+      />
+      <BlamePanel
+        key={repository}
+        repo={repo}
+        target={blame?.repository === repository ? blame : null}
+        onBusyChange={callbacks.blame}
+        onShowCommit={(id) =>
+          setFocusCommit((previous) => ({ id, repository, sequence: (previous?.sequence ?? 0) + 1 }))
+        }
+      />
       <StageCommitPanel
         repo={repo}
         onBusyChange={callbacks.stage}
+        onBlame={showBlame}
         onDirtyChange={onDirtyChange}
         onOpenFile={onOpenFile}
       />

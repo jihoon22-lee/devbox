@@ -947,3 +947,47 @@ export async function repoStashStore(
   if (!isTauri()) return;
   await invoke("repo_stash_store", { request: { path, commit, message, operationId } });
 }
+
+export type { FileHunks } from "../generated/FileHunks";
+export type { HunkAction } from "../generated/HunkAction";
+export type { Blame } from "../generated/Blame";
+export type { LastCommit } from "../generated/LastCommit";
+export function repoFileHunks(path: string, file: string, staged: boolean) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/FileHunks").FileHunks>({
+      file,
+      staged,
+      supported: true,
+      reason: null,
+      revision: "browser-fixture",
+      hunks: [],
+    });
+  return invoke("repo_file_hunks", { request: { path, file, staged } });
+}
+export async function repoHunksApply(
+  path: string,
+  file: string,
+  staged: boolean,
+  action: import("../generated/HunkAction").HunkAction,
+  hunkIds: string[],
+  revision: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_hunks_apply", { request: { path, file, staged, action, hunkIds, revision, operationId } });
+}
+export function repoLastCommit(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/LastCommit").LastCommit>({
+      id: "0".repeat(40),
+      message: "브라우저 예제",
+      pushed: false,
+      merge: false,
+    });
+  return invoke("repo_last_commit", { request: { path } });
+}
+export function repoBlame(path: string, file: string, commitId: string | null = null) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/Blame").Blame>({ file, lines: [], commits: {}, truncated: false });
+  return invoke("repo_blame", { request: { path, file, commitId } });
+}

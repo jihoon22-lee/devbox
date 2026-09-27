@@ -1470,3 +1470,44 @@
 .source-stash-panel li > span:first-child {
   margin-inline-end: auto;
 }
+
+.source-file-actions,
+.source-hunks {
+  width: 100%;
+  min-width: 0;
+}
+.source-hunk {
+  padding: 0.75rem;
+  margin-block: 0.5rem;
+  border: 1px solid var(--db-color-border);
+}
+.source-hunk pre,
+.source-blame-lines {
+  overflow: auto;
+  max-height: 32rem;
+}
+.source-hunk-add {
+  color: var(--db-color-accent);
+}
+.source-hunk-remove {
+  color: var(--db-color-danger);
+}
+.source-blame-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.source-blame-lines table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.source-blame-lines td,
+.source-blame-lines th {
+  padding: 0.35rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--db-color-border);
+}
+.source-blame-lines code {
+  white-space: pre;
+}
