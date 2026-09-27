@@ -118,7 +118,7 @@ import "./App.css";
 
 export { statusClass } from "./ResponseViewer";
 
-const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
 const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
 const MAX_SSE_UI_ROWS = 1_000;

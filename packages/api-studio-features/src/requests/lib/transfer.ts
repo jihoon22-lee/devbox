@@ -499,7 +499,7 @@ export function parseCollectionExport(raw: string): CollectionStore | null {
   return { version: COLLECTION_VERSION, collections: collections as CollectionEntry[] };
 }
 
-function looksLikeSecret(value: string): boolean {
+export function looksLikeSecret(value: string): boolean {
   return (
     /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}/u.test(value) ||
     /^AKIA[A-Z0-9]{16}$/u.test(value)
@@ -691,3 +691,5 @@ export async function readTransferFile(file: Pick<File, "size" | "arrayBuffer">)
   const bytes = new Uint8Array(await file.arrayBuffer());
   return decodeTransferBytes(bytes);
 }
+
+export { isSensitiveName } from "./persistence";
