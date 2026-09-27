@@ -1,6 +1,12 @@
+import { parseFileCollection } from "./lib/fileCollection";
 import { useEffect, useRef, useState } from "react";
 import { useUndo } from "@devbox/product-shell/undo";
-import { readImportFiles, type ImportFileFormat as NativeImportFileFormat } from "./api";
+import {
+  pickCollectionFolder,
+  readCollectionFolder,
+  readImportFiles,
+  type ImportFileFormat as NativeImportFileFormat,
+} from "./api";
 import { detectFormat, parseImport, toImportPreview } from "./lib/importers";
 export type ImportPreview = ReturnType<typeof toImportPreview>;
 interface Props {
@@ -8,7 +14,7 @@ interface Props {
   onApply: (preview: ImportPreview) => Promise<() => Promise<void>>;
 }
 export function ImportDialog({ onClose, onApply }: Props) {
-  const [mode, setMode] = useState<"curl" | "file">("curl");
+  const [mode, setMode] = useState<"curl" | "file" | "folder">("curl");
   const [format, setFormat] = useState<NativeImportFileFormat>("auto");
   const [curl, setCurl] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -46,6 +52,15 @@ export function ImportDialog({ onClose, onApply }: Props) {
     setPreview(null);
     const current = ++generation.current;
     try {
+      if (mode === "folder") {
+        const grant = await pickCollectionFolder();
+        if (!grant || current !== generation.current) return;
+        const files = await readCollectionFolder(grant.grant_id);
+        if (current !== generation.current) return;
+        let sequence = 0;
+        showPreview(toImportPreview(parseFileCollection(files), () => `import-${current}-${sequence++}`));
+        return;
+      }
       const files =
         mode === "curl" ? [{ name: "curl", relativePath: "curl", text: curl }] : await readImportFiles(format);
       if (current !== generation.current || !files) return;
@@ -131,6 +146,17 @@ export function ImportDialog({ onClose, onApply }: Props) {
         >
           파일에서
         </button>
+        <button
+          type="button"
+          disabled={busy}
+          aria-pressed={mode === "folder"}
+          onClick={() => {
+            reset();
+            setMode("folder");
+          }}
+        >
+          폴더에서
+        </button>
       </div>
       {mode === "curl" ? (
         <>
@@ -148,6 +174,10 @@ export function ImportDialog({ onClose, onApply }: Props) {
             미리 보기
           </button>
         </>
+      ) : mode === "folder" ? (
+        <button type="button" disabled={busy} onClick={() => void read()}>
+          폴더 선택
+        </button>
       ) : (
         <>
           <select

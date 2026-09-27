@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { sanitizePersistedJson } from "./api";
+import { sanitizePersistedJson, pickCollectionFolder, writeCollectionFolder } from "./api";
 import { type CollectionStore } from "./lib/collections";
 import { sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
 import type { RequestTemplate } from "./types";
@@ -20,6 +20,8 @@ vi.mock("./api", () => ({
   discardCurrentResponse: vi.fn(async () => undefined),
   onOpenRequest: vi.fn(async () => () => undefined),
   readJsonFile: vi.fn(),
+  pickCollectionFolder: vi.fn(),
+  writeCollectionFolder: vi.fn(),
   renewApiRequest: vi.fn(),
   restoreApiRequest: vi.fn(),
   saveJsonFile: vi.fn(),
@@ -270,4 +272,26 @@ it("imports a preview into the persisted collection and conditionally undoes it"
   expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
   await waitFor(() => expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections).toHaveLength(1));
+});
+
+it("exports safe request files and reports retained stale paths", async () => {
+  vi.mocked(pickCollectionFolder).mockResolvedValue({ grant_id: "g", name: "Demo" });
+  vi.mocked(writeCollectionFolder).mockResolvedValue({ written: 2, stale: ["Old.request.json"] });
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "폴더로 내보내기" }));
+  await screen.findByText(/요청 1개를 폴더에 저장했습니다/);
+  expect(screen.getByText(/Old.request.json/)).toBeTruthy();
+  const [grant, files] = vi.mocked(writeCollectionFolder).mock.calls.slice(-1)[0];
+  expect(grant).toBe("g");
+  expect(files[0].relativePath).toBe("collection.devbox.json");
+  expect(JSON.stringify(files)).not.toContain(RAW_SECRET);
+});
+it("explains that an unrelated export folder cannot be overwritten", async () => {
+  vi.mocked(pickCollectionFolder).mockResolvedValue({ grant_id: "g", name: "Other" });
+  const error = new Error();
+  error.name = "folder_not_collection";
+  vi.mocked(writeCollectionFolder).mockRejectedValue(error);
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "폴더로 내보내기" }));
+  await screen.findByText("다른 파일이 있는 폴더입니다. 빈 폴더나 이전에 내보낸 폴더를 골라 주세요.");
 });

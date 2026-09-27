@@ -2,8 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { ImportDialog } from "./ImportDialog";
-import { readImportFiles } from "./api";
-vi.mock("./api", () => ({ readImportFiles: vi.fn() }));
+import { readImportFiles, pickCollectionFolder, readCollectionFolder } from "./api";
+vi.mock("./api", () => ({ readImportFiles: vi.fn(), pickCollectionFolder: vi.fn(), readCollectionFolder: vi.fn() }));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -60,4 +60,21 @@ it("groups file requests, excludes unchecked entries and imports environments on
   await waitFor(() => expect(apply).toHaveBeenCalledOnce());
   expect(apply.mock.calls[0][0].collections.collections.map((item: { name: string }) => item.name)).toEqual(["Health"]);
   expect(apply.mock.calls[0][0].environments.environments).toEqual([]);
+});
+
+it("opens a granted collection folder into the existing preview", async () => {
+  vi.mocked(pickCollectionFolder).mockResolvedValue({ grant_id: "folder-grant", name: "Demo" });
+  vi.mocked(readCollectionFolder).mockResolvedValue([
+    {
+      name: "health.bru",
+      relativePath: "Ops/health.bru",
+      text: "meta {\n  name: Health\n}\nget {\n  url: https://x.test\n}\n",
+    },
+  ]);
+  const { container } = render(<ImportDialog onClose={() => {}} onApply={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "폴더에서" }));
+  fireEvent.click(screen.getByRole("button", { name: "폴더 선택" }));
+  await screen.findByRole("checkbox", { name: /Health/ });
+  expect(readCollectionFolder).toHaveBeenCalledWith("folder-grant");
+  await assertNoA11yViolations(container);
 });

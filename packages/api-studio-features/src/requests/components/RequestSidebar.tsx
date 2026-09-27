@@ -38,6 +38,7 @@ interface Props {
   contextActionBusy: boolean;
   onExportTransfer: (kind: "collection" | "environment") => void;
   onImport: () => void;
+  onExportFolder: () => void;
   onImportTransfer: (kind: "collection" | "environment") => void;
   collName: string;
   setCollName: React.Dispatch<React.SetStateAction<string>>;
@@ -105,6 +106,7 @@ export function RequestSidebar({
   onExportTransfer,
   onImportTransfer,
   onImport,
+  onExportFolder,
   collName,
   setCollName,
   collFolder,
@@ -254,6 +256,22 @@ export function RequestSidebar({
           onClick={onImport}
         >
           가져오기
+        </button>
+        <button
+          type="button"
+          className="btn mini"
+          disabled={
+            !persistenceReady ||
+            transferBusy ||
+            Boolean(browserImportKind) ||
+            environmentBusy ||
+            sending ||
+            collSaving ||
+            contextActionBusy
+          }
+          onClick={onExportFolder}
+        >
+          폴더로 내보내기
         </button>
       </div>
       <div className="coll-save-row">

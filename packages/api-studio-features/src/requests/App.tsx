@@ -1,3 +1,5 @@
+import { apiMessages } from "../issues/catalog";
+import type { ApiIssue } from "../generated/ApiIssue";
 import { documentSession, documentStorage } from "../storage/documentStorage";
 import { applyImportDocuments } from "./lib/importTransaction";
 import { sanitizeStore as sanitizeCollectionStore } from "./lib/collections";
@@ -719,6 +721,43 @@ export default function App({
         transferBusyRef.current = false;
         if (mountedRef.current) setTransferBusy(false);
       });
+  };
+
+  const onExportCollectionFolder = async () => {
+    if (
+      !persistenceReady ||
+      transferBusyRef.current ||
+      collectionMutationBusyRef.current ||
+      environmentMutationBusyRef.current ||
+      environmentBusyRef.current
+    )
+      return;
+    transferBusyRef.current = true;
+    setTransferBusy(true);
+    setPersistenceWarning(null);
+    try {
+      const grant = await api.pickCollectionFolder();
+      if (!grant || !mountedRef.current) return;
+      const { serializeFileCollection } = await import("./lib/fileCollection");
+      const safe = await sanitizeCollectionStore(collectionStoreRef.current, sanitizeForPersistence);
+      if (!mountedRef.current) return;
+      const result = await api.writeCollectionFolder(grant.grant_id, serializeFileCollection(grant.name, safe));
+      if (!mountedRef.current) return;
+      const stale = result.stale.length
+        ? ` 이 폴더에 더 이상 없는 요청 파일 ${result.stale.length}개가 남아 있습니다: ${result.stale.slice(0, 20).join(", ")}${result.stale.length > 20 ? " …" : ""}`
+        : "";
+      setMigrationNotice(`요청 ${safe.collections.length}개를 폴더에 저장했습니다.${stale}`);
+    } catch (cause) {
+      if (mountedRef.current)
+        setPersistenceWarning(
+          cause instanceof Error && Object.prototype.hasOwnProperty.call(apiMessages, cause.name)
+            ? apiMessages[cause.name as ApiIssue]
+            : "파일 컬렉션을 저장하지 못했습니다. 폴더의 현재 내용을 확인하세요.",
+        );
+    } finally {
+      transferBusyRef.current = false;
+      if (mountedRef.current) setTransferBusy(false);
+    }
   };
 
   const onExportTransfer = (kind: "collection" | "environment") => {
@@ -1587,6 +1626,7 @@ export default function App({
         onExportTransfer={onExportTransfer}
         onImportTransfer={onImportTransfer}
         onImport={() => setShowImport(true)}
+        onExportFolder={() => void onExportCollectionFolder()}
         collName={collName}
         setCollName={setCollName}
         collFolder={collFolder}
