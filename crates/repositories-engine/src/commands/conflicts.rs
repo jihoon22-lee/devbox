@@ -75,7 +75,15 @@ fn state(context: &RepositoryContext, cancel: &AtomicBool) -> Result<ConflictSta
     revalidate_repository_context(context, FAILED)?;
     let output = read(
         &context.worktree,
-        &["status", "--porcelain=v2", "-z", "--untracked-files=no"],
+        &[
+            "--no-optional-locks",
+            "-c",
+            "core.fsmonitor=false",
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--untracked-files=no",
+        ],
         cancel,
         MAX_STATUS_OUTPUT_BYTES,
     )
@@ -417,6 +425,34 @@ mod tests {
             .unwrap();
         assert!(!merge.success());
         tmp
+    }
+
+    #[test]
+    fn automatic_conflict_state_does_not_execute_fsmonitor() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        let hook = tmp.path().join(".git/hooks/fsmonitor-test");
+        fs::write(
+            &hook,
+            "#!/bin/sh\nprintf called > monitor-marker.txt\nprintf 'fixture-token\\0/\\0'\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let spelling = hook.to_string_lossy().replace('\\', "/");
+        git(
+            tmp.path(),
+            &["config", "core.fsmonitor", &format!("\"{spelling}\"")],
+        );
+        let state = block(repo_conflicts(PathRequest {
+            path: path(tmp.path()),
+        }))
+        .unwrap();
+        assert!(state.files.is_empty());
+        assert!(!tmp.path().join("monitor-marker.txt").exists());
     }
 
     #[test]
