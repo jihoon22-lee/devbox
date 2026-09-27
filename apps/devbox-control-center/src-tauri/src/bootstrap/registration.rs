@@ -646,6 +646,13 @@ pub(super) fn sync_agent_autostart(
         image.to_str().ok_or("bootstrap_root_unsafe")?,
     )
     .map_err(|_| "suite_registry_unavailable")?;
+    // Optional login registration cannot strand a forward-only update. Keep
+    // predecessor settings when Windows cannot run the new command; the product
+    // settings report the length issue on an explicit enable. Disable/uninstall
+    // can still remove this installation's old entries.
+    if !remove && !owner.can_enable() {
+        return Ok(());
+    }
     suite_runtime::platform::agent_autostart::retire_workspace(&owner, !remove)
         .map_err(|_| "suite_registry_unavailable")?;
     let mut registry = RunKey::open().map_err(|_| "suite_registry_unavailable")?;

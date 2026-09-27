@@ -8,5 +8,6 @@ export type ToolsIssue =
   | "manager_url_denied"
   | "manager_url_unavailable"
   | "autostart_unavailable"
+  | "autostart_path_too_long"
   | "autostart_owner_conflict"
   | "unavailable";

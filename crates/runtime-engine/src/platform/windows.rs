@@ -526,7 +526,7 @@ pub fn spawn(
 }
 
 fn system_shell() -> Result<PathBuf, WindowsExecutionError> {
-    let mut buffer = vec![0u16; SHELL_STRING_CAPACITY];
+    let mut buffer = vec![0u16; 32_768];
     let length = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
     if length == 0 || length >= buffer.len() {
         return Err(last_error("GetSystemDirectoryW"));

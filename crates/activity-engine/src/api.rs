@@ -155,6 +155,7 @@ product_ipc::issue_codes! {
     AutostartOwnerInvalid = "autostart_owner_invalid",
     AutostartSaveFailed = "autostart_save_failed",
     AutostartUnavailable = "autostart_unavailable",
+    AutostartPathTooLong = "autostart_path_too_long",
     ClosePolicySaveFailed = "close_policy_save_failed",
     ClosePolicyUnavailable = "close_policy_unavailable",
     ComponentArgsInvalid = "component_args_invalid",

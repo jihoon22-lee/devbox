@@ -11,6 +11,7 @@ export const activityMessages: Record<ActivityIssue, string> = {
   autostart_owner_conflict: "다른 실행 파일의 시작프로그램 등록이 있어 변경하지 않았습니다.",
   autostart_owner_invalid: "현재 설치의 시작프로그램 등록 정보를 확인하지 못했습니다.",
   autostart_save_failed: "시작프로그램 설정을 저장하지 못했습니다.",
+  autostart_path_too_long: "설치 경로가 길어 로그인 자동 시작을 켤 수 없습니다. 더 짧은 설치 경로가 필요합니다.",
   autostart_unavailable: "시작프로그램 설정을 확인하지 못했습니다.",
   close_policy_save_failed: "종료 설정을 저장하지 못했습니다. 이전 설정을 유지했습니다.",
   close_policy_unavailable: "종료 설정을 확인하지 못했습니다.",

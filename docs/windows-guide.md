@@ -31,6 +31,8 @@ Control Center의 환경 또는 Knowledge의 활동 설정에서 “로그인할
 켠다. 같은 설정이며 기본은 꺼짐이다. 로그인 시 제품 창은 열리지 않고, 활동 수집은 별도의
 동의가 있어야 한다. 기존 설치의 제품 자동 시작은 agent 등록 하나로 이전한다. 다른 설치가
 자동 시작을 사용 중이면 해당 설치에서 먼저 꺼야 한다.
+자동 시작 명령이 [Windows Run의 260자 한도](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)를
+넘는 설치 경로에서는 켜기를 거부한다. 다른 기능과 업데이트는 계속 사용할 수 있고 기존 등록은 보존한다.
 
 portable 제품은 UI와 엔진 수명이 함께하며 agent 트레이·로그인 자동 시작을 지원하지 않는다.
 실제 공개 버전의 지원 범위는 해당 Release 설명을 확인한다.

@@ -12,6 +12,7 @@ export type ActivityIssue =
   | "autostart_owner_invalid"
   | "autostart_save_failed"
   | "autostart_unavailable"
+  | "autostart_path_too_long"
   | "close_policy_save_failed"
   | "close_policy_unavailable"
   | "component_args_invalid"

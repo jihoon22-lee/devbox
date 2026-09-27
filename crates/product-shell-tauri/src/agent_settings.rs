@@ -46,6 +46,7 @@ pub async fn call(
         Err(
             match reply.pointer("/value/issue").and_then(Value::as_str) {
                 Some("agent_autostart_conflict") => "autostart_owner_conflict",
+                Some("agent_autostart_path_too_long") => "autostart_path_too_long",
                 _ => "autostart_unavailable",
             }
             .into(),

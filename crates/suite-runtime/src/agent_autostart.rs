@@ -28,18 +28,26 @@ impl Owner {
         {
             return Err("agent_autostart_invalid");
         }
+        let executable = executable.replace('/', "\\");
+        let executable = executable
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&executable)
+            .to_owned();
         let owner = Self {
             root,
             namespace: namespace.into(),
-            executable: executable.into(),
+            executable,
         };
-        if !owner.owns_path(executable, AGENT_SUFFIX) {
+        if !owner.owns_path(&owner.executable, AGENT_SUFFIX) {
             return Err("agent_autostart_invalid");
         }
         Ok(owner)
     }
     pub fn legacy_name(&self) -> String {
         format!("DevboxKnowledge-{}", self.namespace)
+    }
+    pub fn can_enable(&self) -> bool {
+        self.command().encode_utf16().count() <= 260
     }
     pub fn command(&self) -> String {
         format!("\"{}\" --autostart", self.executable)
@@ -141,6 +149,9 @@ pub fn reconcile(owner: &Owner, before: Values) -> Result<Option<Change>> {
 pub fn setting(owner: &Owner, before: Values, enabled: bool) -> Result<Change> {
     let mut after = before.clone();
     if enabled {
+        if !owner.can_enable() {
+            return Err("agent_autostart_path_too_long");
+        }
         if before
             .agent
             .as_deref()
@@ -250,6 +261,60 @@ mod tests {
     }
     fn owner(generation: &str) -> Owner {
         Owner::new(r"C:\suite", &"a".repeat(64), &format!(r"C:\suite\generations\{generation}\products\control-center\resources\suite\devbox-agent.exe")).unwrap()
+    }
+    #[test]
+    fn login_command_uses_a_dos_path() {
+        let extended = Owner::new(
+            r"\\?\C:\suite",
+            &"a".repeat(64),
+            r"\\?\C:\suite\generations\g\products\control-center\resources\suite\devbox-agent.exe",
+        )
+        .unwrap();
+        assert!(extended.command().starts_with(r#""C:\suite\"#));
+    }
+    #[test]
+    fn login_command_limit_refuses_enable_but_allows_disable() {
+        let root = format!(r"C:\{}", "long".repeat(60));
+        let owner = Owner::new(
+            &root,
+            &"a".repeat(64),
+            &format!(
+                r"{root}\generations\g\products\control-center\resources\suite\devbox-agent.exe"
+            ),
+        )
+        .unwrap();
+        assert!(owner.command().encode_utf16().count() > 260);
+        assert_eq!(
+            setting(&owner, Values::default(), true),
+            Err("agent_autostart_path_too_long")
+        );
+        assert!(
+            setting(&owner, Values::default(), false).is_ok(),
+            "disabling never requires a runnable command"
+        );
+        let overhead = self::owner("g").command().encode_utf16().count() - r"C:\suite".len();
+        let root = format!(r"C:\{}", "x".repeat(260 - overhead - 3));
+        let at_limit = Owner::new(
+            &root,
+            &"a".repeat(64),
+            &format!(
+                r"{root}\generations\g\products\control-center\resources\suite\devbox-agent.exe"
+            ),
+        )
+        .unwrap();
+        assert_eq!(at_limit.command().encode_utf16().count(), 260);
+        assert!(setting(&at_limit, Values::default(), true).is_ok());
+        let root = format!(r"C:\{}😀", "x".repeat(260 - overhead - 4));
+        let unicode = Owner::new(
+            &root,
+            &"a".repeat(64),
+            &format!(
+                r"{root}\generations\g\products\control-center\resources\suite\devbox-agent.exe"
+            ),
+        )
+        .unwrap();
+        assert_eq!(unicode.command().encode_utf16().count(), 261);
+        assert!(!unicode.can_enable());
     }
     #[test]
     fn ownership_rejects_relative_roots_sibling_installations_and_extra_arguments() {
