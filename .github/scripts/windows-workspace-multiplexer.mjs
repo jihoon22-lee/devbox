@@ -1,14 +1,13 @@
-import { terminalOutputExpression } from "./windows-terminal-output.mjs";
+import { terminalOutputExpression, terminalPromptVisible } from "./windows-terminal-output.mjs";
 // Invoked only by the owned WSL2 runner, after tools are explicitly provisioned.
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
-import { stripVTControlCharacters } from "node:util";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 export function multiplexerPromptVisible(output) {
   // ConPTY can erase the prompt's trailing blank and position the cursor
   // separately. Actual command execution is still proved by the owned file.
-  return /[#$](?:\s|$)/.test(stripVTControlCharacters(output));
+  return terminalPromptVisible(output);
 }
 export function multiplexerRequestExpression(method, args = {}) {
   const readOnly = ["list_sessions", "terminal_layout"].includes(method);
