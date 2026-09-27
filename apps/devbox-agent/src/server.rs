@@ -269,7 +269,28 @@ pub fn start(
     use suite_runtime::platform::agent_peer::{AgentPeer, Witness};
     use tokio::net::windows::named_pipe::ServerOptions;
     use windows::Win32::Foundation::HANDLE;
-    let first = create_first_listener(&name)?;
+    let first = create_first_listener(&name).inspect_err(|_| {
+        use product_contract::operation_log::{Entry, OperationLog, Outcome};
+        use tauri::Manager;
+        if let Ok(root) = app.path().app_local_data_dir() {
+            if let Ok(log) = OperationLog::open(root.join("logs")) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|time| time.as_millis() as u64)
+                    .unwrap_or(0);
+                log.append(&Entry::new(
+                    now,
+                    env!("CARGO_PKG_VERSION"),
+                    "agent",
+                    "agent-connection",
+                    "start_listener",
+                    0,
+                    Outcome::Failed,
+                    Some("agent_pipe_unavailable"),
+                ));
+            }
+        }
+    })?;
     tauri::async_runtime::spawn(async move {
         let mut listener = first;
         let mut clients = tokio::task::JoinSet::new();
