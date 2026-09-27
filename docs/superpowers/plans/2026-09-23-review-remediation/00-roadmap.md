@@ -82,6 +82,8 @@
 
 2026-09-27 P2-02 보완 합의(ledger #580): Sessions의 PreparedJob·RuntimeLease·RuntimeStartWitness도 agent가 소유한다. Workspace native 소비자 전체에 owner adapter와 불투명 참조/operation receipt를 적용하고, UI 닫기와 명시적 Session 종료를 구분한다. Task 2–4 상세는 P2-02의 승인된 보완 절을 따른다. 새 외부 의존성·제품·중간 버전 변경은 없다.
 
+2026-09-28 P2-11 보완 합의(ledger #580): 응답 원문은 native에서 마스킹되므로 capture도 마스킹 전에 native에서 평가·봉인한다. 일반 응답에는 봉인 값·상태만 반환하고 명시적 보기에는 capture 전용 참조를 사용한다. Task 2·4·5의 DTO·취소/수명·세션·수동 전송/러너/UI·테스트를 함께 보완한다. 기존 응답 마스킹·새 의존성 없음·평문 디스크 저장 금지를 유지한다. 상세는 P2-11 승인된 보완 계약을 따른다.
+
 ### 2.3 보안 범위 조정(ADR 0016)
 
 사용자 결정: "개인적으로 쓸 것이라 보안은 과하게 하지 않아도 된다. 이슈가 없을 정도면 된다."
