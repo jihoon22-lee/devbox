@@ -260,7 +260,7 @@ it("keeps rapid environment edits in order while the native-style save is delaye
 
 it("imports a preview into the persisted collection and conditionally undoes it", async () => {
   await renderReady();
-  fireEvent.click(screen.getByRole("button", { name: "가져오기", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "가져오기" }));
   fireEvent.change(await screen.findByLabelText("curl 명령"), {
     target: { value: "curl https://import.example.test/health" },
   });
