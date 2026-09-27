@@ -397,7 +397,13 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
 
         if len(parts) >= 2 and parts[0] == "apps":
             app_directory = "/".join(parts[:2])
-            if len(parts) >= 3 and parts[2] == "src-tauri":
+            headless_rust = rust.by_directory.get(app_directory)
+            if headless_rust is not None:
+                rust_seeds.add(headless_rust)
+                if path == f"{app_directory}/Cargo.toml":
+                    rust_manifest_seeds.add(headless_rust)
+                    dependency_required = True
+            elif len(parts) >= 3 and parts[2] == "src-tauri":
                 rust_directory = f"{app_directory}/{parts[2]}"
                 node_name = rust.by_directory.get(rust_directory)
                 if node_name is None:
@@ -413,6 +419,9 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
                 if node_name is None:
                     frontend_all = True
                     reasons.append(f"unknown or deleted frontend app: {app_directory}")
+                    if path.endswith(".rs") or parts[-1] == "Cargo.toml":
+                        rust_all = True
+                        reasons.append(f"unknown or deleted native app: {app_directory}")
                 else:
                     frontend_seeds.add(node_name)
                     if path == f"{app_directory}/package.json":

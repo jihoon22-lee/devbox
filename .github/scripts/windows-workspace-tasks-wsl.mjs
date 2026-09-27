@@ -4,6 +4,12 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+export async function reviewWslTaskDefinitions(definitions) {
+  assert.equal((await definitions("load")).definitionsTrusted, false);
+  const preview = await definitions("preview_trust");
+  await definitions("approve_trust", { previewId: preview.previewId });
+  assert.equal((await definitions("load")).definitionsTrusted, true);
+}
 export async function exerciseNativeWslTasks({ cdp, call, success, distro, wsl, root }) {
   const before = (await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context;
   const runtime = (method, args = {}) => call("workspace.runtime", method, args, 29000);
@@ -101,6 +107,10 @@ export async function exerciseNativeWslTasks({ cdp, call, success, distro, wsl, 
     assert.equal(jobs.length, 2);
     assert.ok(jobs.every((job) => !job.trusted));
     success(await runtime("trust_workspace_task_source", { sourceId: applied.sourceId, revision: plan.revision }));
+    // Runtime source approval does not authorize a registered project's definitions.
+    await reviewWslTaskDefinitions(async (method, args = {}) =>
+      success(await call("workspace.definitions", method, args, 29000)),
+    );
     const first = success(
       await control("run_workspace_task_operation", {
         id: jobs.find((job) => job.label === "Native diagnostic fixture").jobId,
@@ -250,6 +260,7 @@ export async function exerciseNativeWslTasks({ cdp, call, success, distro, wsl, 
     return {
       linuxSource: true,
       explicitTrust: true,
+      projectDefinitionTrust: true,
       actualCwd: true,
       matcherAndLogOffset: true,
       problemToNativeFileUi: true,

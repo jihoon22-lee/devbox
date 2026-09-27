@@ -1,6 +1,8 @@
 //! A single installed owner of Workspace runtime stores. Metadata stays read-only.
+mod diagnostics;
 mod mcp;
 use crate::remote::RemoteSession;
+use diagnostics::{observe, Stage};
 use product_contract::RouteRequest;
 use product_ipc::{ComponentCall, IncomingRequest};
 use serde::Deserialize;
@@ -224,30 +226,47 @@ impl Runtime {
         )? {
             return Err("suite_activation_pending");
         }
-        let host = Arc::new(Host::open_read_only_with_resources(
+        let host = Arc::new(observe(
             &self.data,
-            self.resources.clone(),
+            Stage::Host,
+            Host::open_read_only_with_resources(&self.data, self.resources.clone()),
         )?);
-        let runtime = host.component("runtime")?;
-        let common = host.component("common")?;
-        let processes = host.component("processes")?;
-        let logs = host.component("logs")?;
+        let runtime = observe(&self.data, Stage::Components, host.component("runtime"))?;
+        let common = observe(&self.data, Stage::Components, host.component("common"))?;
+        let processes = observe(&self.data, Stage::Components, host.component("processes"))?;
+        let logs = observe(&self.data, Stage::Components, host.component("logs"))?;
         // Do not retry partially initialized engine state. Missing/unselected
         // metadata above remains retryable after Workspace prepares its stores.
         *state = State::Failed;
-        runtime_engine::component::initialize_agent_with_sources(
-            &self.app,
-            &runtime,
-            &common,
-            Arc::new(workspace_core::task_sources::Sources { host: host.clone() }),
+        observe(
+            &self.data,
+            Stage::Engine,
+            runtime_engine::component::initialize_agent_with_sources(
+                &self.app,
+                &runtime,
+                &common,
+                Arc::new(workspace_core::task_sources::Sources { host: host.clone() }),
+            ),
         )
         .map_err(|_| "runtime_owner_unavailable")?;
-        ports_engine::component::initialize(&self.app, &processes)
-            .map_err(|_| "runtime_owner_unavailable")?;
-        logs_engine::component::initialize(
-            &self.app,
-            &logs,
-            workspace_core::runtime_logs::provider(&self.app, host.clone())?,
+        observe(
+            &self.data,
+            Stage::Processes,
+            ports_engine::component::initialize(&self.app, &processes),
+        )
+        .map_err(|_| "runtime_owner_unavailable")?;
+        observe(
+            &self.data,
+            Stage::Logs,
+            logs_engine::component::initialize(
+                &self.app,
+                &logs,
+                observe(
+                    &self.data,
+                    Stage::LogProvider,
+                    workspace_core::runtime_logs::provider(&self.app, host.clone()),
+                )?,
+            ),
         )
         .map_err(|_| "runtime_owner_unavailable")?;
         *state = State::Ready(host.clone());
@@ -263,7 +282,7 @@ impl Runtime {
         let owner = self.clone();
         // The owned task retains its request/worker permits if a UI connection
         // disappears; dropping an RPC future cannot create extra native workers.
-        tauri::async_runtime::spawn(async move {
+        let result = tauri::async_runtime::spawn(async move {
             owner
                 .active
                 .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -320,14 +339,13 @@ impl Runtime {
                     let host = owner.initialize()?;
                     owner.sessions.dispatch(&owner.app, &host, call).await
                 }
-                other => other
-                    .execute(&owner.app)
-                    .await
+                other => observe(&owner.data, Stage::Query, other.execute(&owner.app).await)
                     .map_err(workspace_core::runtime_policy::issue),
             }
         })
         .await
-        .map_err(|_| "worker_unavailable")?
+        .map_err(|_| "worker_unavailable")?;
+        observe(&self.data, Stage::Dispatch, result)
     }
     pub async fn shutdown(self: &Arc<Self>) {
         self.shutdown.run(|| self.drain()).await;

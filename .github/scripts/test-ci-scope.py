@@ -37,6 +37,19 @@ assert rust_only.frontend_scope == "none"
 assert rust_only.rust_scope == "packages"
 assert rust_only.rust_packages == ["devbox-agent", "devbox-runtime-engine", "devbox-workspace", "workspace-core"]
 
+# A headless Cargo app has no src-tauri directory or frontend manifest.
+for path in ("apps/devbox-agent/src/runtime.rs", "apps/devbox-agent/build.rs", "apps/devbox-agent/tauri.conf.json"):
+    native_agent = resolve(path)
+    assert native_agent.rust_scope == "packages", path
+    assert native_agent.rust_packages == ["devbox-agent"], path
+    assert native_agent.frontend_scope == "none", path
+native_agent_manifest = resolve("apps/devbox-agent/Cargo.toml", "Cargo.lock")
+assert native_agent_manifest.rust_scope == "packages"
+assert native_agent_manifest.rust_packages == ["devbox-agent"]
+assert native_agent_manifest.dependency_scope == "all"
+deleted_native_app = resolve("apps/deleted-headless/src/main.rs")
+assert deleted_native_app.rust_scope == "all"
+
 frontend_manifest_lock = resolve("apps/devbox-workspace/package.json", "pnpm-lock.yaml")
 assert frontend_manifest_lock.frontend_scope == "apps"
 assert frontend_manifest_lock.frontend_packages == ["apps/devbox-workspace"]
