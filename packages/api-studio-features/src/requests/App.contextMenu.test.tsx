@@ -257,3 +257,17 @@ it("keeps rapid environment edits in order while the native-style save is delaye
     spy.mockRestore();
   }
 });
+
+it("imports a preview into the persisted collection and conditionally undoes it", async () => {
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "가져오기", exact: true }));
+  fireEvent.change(await screen.findByLabelText("curl 명령"), {
+    target: { value: "curl https://import.example.test/health" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "미리 보기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "선택한 1개 가져오기" }));
+  await screen.findByText("1개를 가져왔습니다.");
+  expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections).toHaveLength(1));
+});

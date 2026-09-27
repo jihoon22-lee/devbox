@@ -1,3 +1,7 @@
+import { documentSession, documentStorage } from "../storage/documentStorage";
+import { applyImportDocuments } from "./lib/importTransaction";
+import { sanitizeStore as sanitizeCollectionStore } from "./lib/collections";
+import type { ImportPreview } from "./ImportDialog";
 import { useEnvironmentPersistence } from "./hooks/useEnvironmentPersistence";
 import { storageFailureMessage } from "../storage/documentStorage";
 import { RequestParameters } from "./components/RequestParameters";
@@ -48,6 +52,7 @@ import {
 } from "./api";
 const HistoryConsole = lazy(() => import("./HistoryConsole").then((module) => ({ default: module.HistoryConsole })));
 import { SavedRequestPreview } from "./SavedRequestPreview";
+const ImportDialog = lazy(() => import("./ImportDialog").then((module) => ({ default: module.ImportDialog })));
 const OpenApiImport = lazy(() => import("./OpenApiImport").then((module) => ({ default: module.OpenApiImport })));
 const ProtocolLab = lazy(() => import("./ProtocolLab").then((module) => ({ default: module.ProtocolLab })));
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
@@ -150,6 +155,7 @@ export default function App({
   const sseHistoryRef = useRef<SseEvent[]>([]);
   const sseHistoryBytesRef = useRef(0);
   const [showCurl, setShowCurl] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showOpenApiImport, setShowOpenApiImport] = useState(false);
   const [localWorkspace, setWorkspace] = useState<"http" | "protocol">("http");
   const workspace = section ? (section === "protocols" ? "protocol" : "http") : localWorkspace;
@@ -516,6 +522,78 @@ export default function App({
     const safe = await saveHistoryStore(store, sanitizeForPersistence);
     setHistory(safe.history);
     return safe;
+  };
+
+  const applyImportPreview = async (preview: ImportPreview) => {
+    const available = () =>
+      persistenceReady &&
+      !transferBusyRef.current &&
+      !collectionMutationBusyRef.current &&
+      !environmentMutationBusyRef.current &&
+      !environmentBusyRef.current;
+    if (!available()) throw new Error("저장 작업이 진행 중입니다.");
+    const storage = documentStorage();
+    const reload = async () => {
+      const collections = await migrateCollections(sanitizeForPersistence);
+      const environments = await loadEnvStore();
+      if (collections.failed) throw new Error("저장 상태를 확인하지 못했습니다.");
+      collectionStoreRef.current = collections.store;
+      envStoreRef.current = environments;
+      collectionRevisionRef.current++;
+      environmentRevisionRef.current++;
+      if (mountedRef.current) {
+        setCollections(collections.store);
+        setEnvStore(environments);
+      }
+    };
+    const run = async <T,>(operation: () => Promise<T>): Promise<T> => {
+      if (!available()) throw new Error("저장 작업이 진행 중입니다.");
+      transferBusyRef.current = true;
+      setTransferBusy(true);
+      try {
+        return await operation();
+      } finally {
+        try {
+          await reload();
+        } catch {
+          if (mountedRef.current) {
+            setPersistenceReady(false);
+            setPersistenceWarning("저장 상태를 확인하지 못했습니다. 앱을 다시 열어 확인하세요.");
+          }
+        }
+        transferBusyRef.current = false;
+        if (mountedRef.current) setTransferBusy(false);
+      }
+    };
+    const undo = await run(async () => {
+      let sequence = 0;
+      const makeId = () => `import-${Date.now()}-${sequence++}`;
+      const collections = mergeImportedCollections(collectionStoreRef.current, preview.collections, makeId);
+      const environments = mergeImportedEnvironments(envStoreRef.current, preview.environments, makeId);
+      if (!collections || !environments) throw new Error("가져오기 한도를 초과했습니다.");
+      const changes = [];
+      if (preview.collections.collections.length) {
+        const before = await documentSession("collections", storage).snapshot();
+        const safe = await sanitizeCollectionStore(collections, sanitizeForPersistence);
+        changes.push({
+          kind: "collections" as const,
+          before,
+          emptyBody: JSON.stringify(emptyCollectionStore()),
+          body: JSON.stringify(safe),
+        });
+      }
+      if (preview.environments.environments.length) {
+        const before = await documentSession("environments", storage).snapshot();
+        changes.push({
+          kind: "environments" as const,
+          before,
+          emptyBody: JSON.stringify(emptyEnvStore()),
+          body: JSON.stringify(environments),
+        });
+      }
+      return applyImportDocuments(storage, changes);
+    });
+    return () => run(undo);
   };
 
   const applyImportedTransfer = async (
@@ -1508,6 +1586,7 @@ export default function App({
         contextActionBusy={contextActionBusy}
         onExportTransfer={onExportTransfer}
         onImportTransfer={onImportTransfer}
+        onImport={() => setShowImport(true)}
         collName={collName}
         setCollName={setCollName}
         collFolder={collFolder}
@@ -1785,6 +1864,11 @@ export default function App({
         onClose={collectionContextMenu.close}
         ariaLabel="컬렉션 메뉴"
       />
+      {showImport && (
+        <Suspense fallback={<p role="status">가져오기 준비 중…</p>}>
+          <ImportDialog onClose={() => setShowImport(false)} onApply={applyImportPreview} />
+        </Suspense>
+      )}
       {showOpenApiImport && (
         <Suspense fallback={<p role="status">OpenAPI 가져오기를 준비하고 있습니다…</p>}>
           <OpenApiImport

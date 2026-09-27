@@ -32,7 +32,8 @@
     "entities": "8.0.0",
     "qrcode-generator": "2.0.4",
     "yaml": "2.9.0",
-    "@devbox/hooks": "workspace:*"
+    "@devbox/hooks": "workspace:*",
+    "@devbox/product-shell": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
