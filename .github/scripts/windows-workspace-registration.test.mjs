@@ -1,3 +1,4 @@
+import "./windows-workspace-tasks-wsl.test.mjs";
 import "./agent-runtime-diagnostics.test.mjs";
 import "./windows-terminal-output.test.mjs";
 import "./fixture-network-safety.test.mjs";

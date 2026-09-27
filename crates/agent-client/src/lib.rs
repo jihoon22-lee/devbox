@@ -16,6 +16,7 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
 };
 pub const RETRY_DELAYS_MS: [u64; 5] = [200, 500, 1000, 2000, 4000];
+const LAUNCHED_AGENT_READY_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentError {
     Unsupported,
@@ -210,7 +211,11 @@ impl AgentClient {
         let _starting = Starting(&self.0.status);
         let mut launched = false;
         let mut restarted = false;
-        for attempt in 0..=RETRY_DELAYS_MS.len() {
+        let mut startup_deadline = None;
+        for attempt in 0usize.. {
+            if startup_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                break;
+            }
             transport.diagnostic(ConnectionDiagnostic::ConnectAttempt);
             match tokio::time::timeout(Duration::from_secs(2), transport.connect()).await {
                 Ok(Ok(mut connected)) => {
@@ -276,6 +281,8 @@ impl AgentClient {
                                 })?;
                             restarted = true;
                             launched = true;
+                            startup_deadline =
+                                Some(tokio::time::Instant::now() + LAUNCHED_AGENT_READY_TIMEOUT);
                             continue;
                         }
                         AgentMessage::Rejected { reason } if reason == "agent_shutdown" => {
@@ -325,6 +332,8 @@ impl AgentClient {
                                 transport.diagnostic(ConnectionDiagnostic::LaunchFailed)
                             })?;
                         launched = true;
+                        startup_deadline =
+                            Some(tokio::time::Instant::now() + LAUNCHED_AGENT_READY_TIMEOUT);
                     }
                 }
                 Ok(Err(Connect::Rejected(reason))) => {
@@ -339,9 +348,17 @@ impl AgentClient {
             if self.0.stopped.load(Ordering::Acquire) {
                 return Err(AgentError::Unavailable);
             }
-            if let Some(delay) = RETRY_DELAYS_MS.get(attempt) {
-                tokio::time::sleep(Duration::from_millis(*delay)).await;
-            }
+            let delay = match RETRY_DELAYS_MS.get(attempt) {
+                Some(delay) => Duration::from_millis(*delay),
+                // A successful spawn is not proof that the verified pipe is ready.
+                // Continue only this connection handshake, never a business call.
+                None if startup_deadline.is_some() => Duration::from_millis(4000),
+                None => break,
+            };
+            let delay = startup_deadline.map_or(delay, |deadline| {
+                delay.min(deadline.saturating_duration_since(tokio::time::Instant::now()))
+            });
+            tokio::time::sleep(delay).await;
         }
         Err(AgentError::Unavailable)
     }
@@ -858,6 +875,15 @@ mod tests {
             if mode != 0 {
                 assert!(!events.contains(&ConnectionDiagnostic::LaunchAttempt));
             }
+            if mode == 1 {
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| **event == ConnectionDiagnostic::ConnectAttempt)
+                        .count(),
+                    RETRY_DELAYS_MS.len() + 1
+                );
+            }
             assert_eq!(client.status(), "unavailable");
         }
     }
@@ -1036,7 +1062,21 @@ mod tests {
         assert_eq!(b.unwrap()["n"], 2);
     }
     #[tokio::test(start_paused = true)]
-    async fn gives_up_after_the_retry_table() {
+    async fn a_launched_agent_can_finish_starting_after_the_initial_retry_table() {
+        let transport = Arc::new(Fake {
+            attempts: AtomicUsize::new(0),
+            launches: AtomicUsize::new(0),
+            missing: RETRY_DELAYS_MS.len() + 1,
+            drop_first: AtomicBool::new(false),
+        });
+        let client = AgentClient::with_transport("workspace", transport.clone());
+        client.reconnect("session").await.unwrap();
+        assert_eq!(client.status(), "connected");
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn launched_agent_readiness_has_a_bounded_deadline() {
         let transport = Arc::new(Fake {
             attempts: AtomicUsize::new(0),
             launches: AtomicUsize::new(0),
@@ -1044,15 +1084,15 @@ mod tests {
             drop_first: AtomicBool::new(false),
         });
         let client = AgentClient::with_transport("workspace", transport.clone());
+        let started = tokio::time::Instant::now();
         assert!(matches!(
             client.ensure_connected("session").await,
             Err(AgentError::Unavailable)
         ));
-        assert_eq!(
-            transport.attempts.load(Ordering::SeqCst),
-            RETRY_DELAYS_MS.len() + 1
-        );
+        assert!(transport.attempts.load(Ordering::SeqCst) > RETRY_DELAYS_MS.len() + 1);
+        assert!(transport.attempts.load(Ordering::SeqCst) < 20);
         assert_eq!(transport.launches.load(Ordering::SeqCst), 1);
+        assert_eq!(started.elapsed(), LAUNCHED_AGENT_READY_TIMEOUT);
     }
     #[tokio::test]
     async fn disconnect_fails_the_submitted_call_once_and_only_the_next_call_reconnects() {
