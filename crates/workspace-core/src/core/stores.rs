@@ -24,8 +24,9 @@ pub const COMPONENTS: &[&str] = &[
     "processes",
     "logs",
     "terminal",
+    "agents",
 ];
-const ADDITIONAL_COMPONENTS: &[&str] = &["runtime", "processes", "logs", "terminal"];
+const ADDITIONAL_COMPONENTS: &[&str] = &["runtime", "processes", "logs", "terminal", "agents"];
 const MAX_GENERATIONS: usize = 32;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -354,6 +355,12 @@ impl StoreRoot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn agents_is_an_additional_component_created_on_demand() {
+        assert!(COMPONENTS.contains(&"agents"));
+        assert!(ADDITIONAL_COMPONENTS.contains(&"agents"));
+    }
+
     #[test]
     fn preparation_is_unselected_and_activation_preserves_private_component_ownership() {
         let root = tempfile::tempdir().unwrap();
