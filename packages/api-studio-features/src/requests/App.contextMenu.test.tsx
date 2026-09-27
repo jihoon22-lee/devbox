@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { sanitizePersistedJson, pickCollectionFolder, writeCollectionFolder } from "./api";
+import { sanitizePersistedJson, pickCollectionFolder, writeCollectionFolder, sendRequest } from "./api";
 import { type CollectionStore } from "./lib/collections";
 import { sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
 import type { RequestTemplate } from "./types";
@@ -294,4 +294,49 @@ it("explains that an unrelated export folder cannot be overwritten", async () =>
   await renderReady();
   fireEvent.click(screen.getByRole("button", { name: "폴더로 내보내기" }));
   await screen.findByText("다른 파일이 있는 폴더입니다. 빈 폴더나 이전에 내보낸 폴더를 골라 주세요.");
+});
+
+it("evaluates and captures manual responses and saves checks with a collection request", async () => {
+  vi.mocked(sendRequest).mockResolvedValue({
+    status: 200,
+    status_text: "OK",
+    headers: [],
+    duration_ms: 5,
+    size_bytes: 15,
+    body: '{"token":"captured-value"}',
+    is_json: true,
+    final_url: "https://x.test",
+    redirects: [],
+    cookies: [],
+    response_id: null,
+    raw_headers_available: false,
+    headers_truncated: false,
+  });
+  await renderReady();
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://x.test/login" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "검증" }));
+  fireEvent.click(await screen.findByRole("button", { name: "검증 추가" }));
+  fireEvent.click(screen.getByRole("button", { name: "캡처" }));
+  fireEvent.click(await screen.findByRole("button", { name: "캡처 추가" }));
+  fireEvent.change(screen.getByLabelText("변수 이름 1"), { target: { value: "token" } });
+  fireEvent.change(screen.getByLabelText("캡처 대상 1"), { target: { value: "$.token" } });
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await screen.findByRole("button", { name: "token 보기" });
+  expect(screen.queryByText("captured-value")).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "검증" }));
+  expect(screen.getByText("1개 중 1개 통과")).toBeTruthy();
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "보내기" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.change(screen.getByPlaceholderText("저장 이름"), { target: { value: "Login" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() =>
+    expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections[0]).toMatchObject({
+      name: "Login",
+      assertions: [{ source: "status", expected: "200" }],
+      captures: [{ variable: "token", target: "$.token" }],
+    }),
+  );
 });

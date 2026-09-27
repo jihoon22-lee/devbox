@@ -242,3 +242,11 @@ it("enforces request and delay bounds before sending", async () => {
   }
   expect(d.send).not.toHaveBeenCalled();
 });
+it("refuses to undo a discard over a newer captured value", async () => {
+  const session = new SessionVariables();
+  session.set("token", "first", "sealed-first");
+  const undo = session.discard(["token"]);
+  session.set("token", "second", "sealed-second");
+  await expect(undo()).rejects.toThrow("그 사이 바뀐 내용");
+  expect(session.entries()).toEqual([{ name: "token", plain: "second" }]);
+});

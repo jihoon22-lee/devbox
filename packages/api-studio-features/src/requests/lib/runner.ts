@@ -31,21 +31,38 @@ export interface RunSummary {
   cancelled: boolean;
 }
 export class SessionVariables {
+  private revision = 0;
   private values = new Map<string, { plain: string; sealed: string | null }>();
   private missing = new Set<string>();
   set(name: string, plain: string, sealed: string | null): void {
     if (!VARIABLE_NAME.test(name) || new TextEncoder().encode(plain).length > 64 * 1024)
       throw new Error("세션 변수가 올바르지 않습니다");
+    this.revision++;
     this.values.set(name, { plain, sealed });
     this.missing.delete(name);
   }
   delete(name: string): void {
+    this.revision++;
     this.values.delete(name);
     this.missing.add(name);
   }
   clear(): void {
+    this.revision++;
     this.values.clear();
     this.missing.clear();
+  }
+  discard(names?: string[]): () => Promise<void> {
+    const values = new Map(this.values),
+      missing = new Set(this.missing);
+    if (names) for (const name of names) this.delete(name);
+    else this.clear();
+    const revision = this.revision;
+    return async () => {
+      if (this.revision !== revision) throw new Error("그 사이 바뀐 내용이 있어 되돌리지 않았습니다.");
+      this.values = values;
+      this.missing = missing;
+      this.revision++;
+    };
   }
   forSend(): EnvVariable[] {
     return [...this.values].map(([key, value]) => ({

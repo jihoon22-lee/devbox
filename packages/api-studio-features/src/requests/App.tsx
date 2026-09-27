@@ -1,3 +1,7 @@
+import { evaluateAssertions, type Assertion, type AssertionResult } from "./lib/assertions";
+import { applyCaptures, VARIABLE_NAME, type Capture } from "./lib/captures";
+import { SessionVariables, missingVariables, type RunDeps } from "./lib/runner";
+import { cleanCollectionChecks } from "./lib/collections";
 import { apiMessages } from "../issues/catalog";
 import type { ApiIssue } from "../generated/ApiIssue";
 import { documentSession, documentStorage } from "../storage/documentStorage";
@@ -54,6 +58,12 @@ import {
 } from "./api";
 const HistoryConsole = lazy(() => import("./HistoryConsole").then((module) => ({ default: module.HistoryConsole })));
 import { SavedRequestPreview } from "./SavedRequestPreview";
+const AssertionEditor = lazy(() => import("./AssertionEditor").then((module) => ({ default: module.AssertionEditor })));
+const CaptureEditor = lazy(() => import("./CaptureEditor").then((module) => ({ default: module.CaptureEditor })));
+const SessionVariablesPanel = lazy(() =>
+  import("./SessionVariablesPanel").then((module) => ({ default: module.SessionVariablesPanel })),
+);
+const RunnerPanel = lazy(() => import("./RunnerPanel").then((module) => ({ default: module.RunnerPanel })));
 const ImportDialog = lazy(() => import("./ImportDialog").then((module) => ({ default: module.ImportDialog })));
 const OpenApiImport = lazy(() => import("./OpenApiImport").then((module) => ({ default: module.OpenApiImport })));
 const ProtocolLab = lazy(() => import("./ProtocolLab").then((module) => ({ default: module.ProtocolLab })));
@@ -157,6 +167,15 @@ export default function App({
   const sseHistoryRef = useRef<SseEvent[]>([]);
   const sseHistoryBytesRef = useRef(0);
   const [showCurl, setShowCurl] = useState(false);
+  const [assertions, setAssertions] = useState<Assertion[]>([]);
+  const [captures, setCaptures] = useState<Capture[]>([]);
+  const [assertionResults, setAssertionResults] = useState<AssertionResult[]>([]);
+  const [captured, setCaptured] = useState<{ variable: string; target: string }[]>([]);
+  const [sessionVariables] = useState(() => new SessionVariables());
+  const [, setSessionVersion] = useState(0);
+  const refreshSession = useCallback(() => setSessionVersion((version) => version + 1), []);
+  const [showRunner, setShowRunner] = useState(false);
+  const [runnerBusy, setRunnerBusy] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showOpenApiImport, setShowOpenApiImport] = useState(false);
   const [localWorkspace, setWorkspace] = useState<"http" | "protocol">("http");
@@ -165,7 +184,9 @@ export default function App({
   useEffect(() => {
     if (workspace === "protocol") setProtocolVisited(true);
   }, [workspace]);
-  const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
+  const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth" | "assertions" | "captures">(
+    "params",
+  );
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -239,9 +260,7 @@ export default function App({
         const request = await ackApiRequest(preview.handoffId);
         handoffPreviewRef.current = null;
         if (mountedRef.current) {
-          setReq(request);
-          setRequestEditorRevision((revision) => revision + 1);
-          setResp(null);
+          loadEditorRequest(request);
           setPersistenceWarning(null);
         }
         return request;
@@ -814,6 +833,36 @@ export default function App({
     }
   };
 
+  const loadEditorRequest = (request: RequestTemplate, entry?: CollectionEntry) => {
+    setReq(request);
+    setRequestEditorRevision((revision) => revision + 1);
+    setResp(null);
+    setAssertions(entry?.assertions?.map((item) => ({ ...item })) ?? []);
+    setCaptures(entry?.captures?.map((item) => ({ ...item })) ?? []);
+    setAssertionResults([]);
+    setCaptured([]);
+  };
+  const runnerDeps: RunDeps = {
+    send: sendRequest,
+    seal: async (value) => (isTauri() ? api.sealSecret(value) : null),
+    sleep: (ms, signal) =>
+      new Promise((resolve, reject) => {
+        if (signal.aborted) {
+          reject(new Error("cancelled"));
+          return;
+        }
+        const stop = () => {
+          clearTimeout(timer);
+          reject(new Error("cancelled"));
+        };
+        const timer = setTimeout(() => {
+          signal.removeEventListener("abort", stop);
+          resolve();
+        }, ms);
+        signal.addEventListener("abort", stop, { once: true });
+      }),
+  };
+
   const onSaveCollection = async () => {
     if (collectionMutationBusyRef.current || environmentBusyRef.current || transferBusyRef.current) return;
     setCollSaving(true);
@@ -825,6 +874,10 @@ export default function App({
         Date.now(),
         () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
       );
+      next.collections[0] = {
+        ...next.collections[0],
+        ...cleanCollectionChecks({ ...next.collections[0], assertions, captures }),
+      };
       await persistCollections(next);
       setCollName("");
       setCollFolder("");
@@ -838,8 +891,7 @@ export default function App({
   };
 
   const applyOpenApiRequest = (request: RequestTemplate) => {
-    setReq(request);
-    setRequestEditorRevision((revision) => revision + 1);
+    loadEditorRequest(request);
     setTab(request.body_kind !== "none" ? "body" : "params");
     setResp(null);
     setError(null);
@@ -996,14 +1048,28 @@ export default function App({
   );
 
   const onSend = async () => {
-    if (sending || abortControllerRef.current) return;
+    if (sending || runnerBusy || abortControllerRef.current) return;
     if (requestConfigurationError) {
       setError(requestConfigurationError);
       setTab(cookieConfigurationError ? "cookies" : "body");
       return;
     }
     const requestSnapshot = req;
-    const environmentSnapshot = currentEnv?.variables ?? [];
+    const environmentSnapshot = sessionVariables.merge(currentEnv?.variables ?? []);
+    const assertionSnapshot = assertions.map((item) => ({ ...item }));
+    const captureSnapshot = captures.map((item) => ({ ...item }));
+    const missing = missingVariables(
+      requestSnapshot,
+      new Set(
+        environmentSnapshot
+          .filter((variable) => !variable.secret || variable.value !== "")
+          .map((variable) => variable.key),
+      ),
+    );
+    if (missing.length) {
+      setError(`변수 없음: ${missing.join(", ")}`);
+      return;
+    }
     const controller = new AbortController();
     const sequence = requestSequenceRef.current + 1;
     requestSequenceRef.current = sequence;
@@ -1014,6 +1080,33 @@ export default function App({
       const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal);
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setResp(result);
+      setAssertionResults(evaluateAssertions(assertionSnapshot, result));
+      setCaptured([]);
+      const captureResult = applyCaptures(captureSnapshot, result);
+      for (const capture of captureSnapshot)
+        if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
+      const capturedNames = new Set<string>();
+      try {
+        for (const [name, plain] of captureResult.values) {
+          const sealed = await runnerDeps.seal(plain);
+          if (controller.signal.aborted || !mountedRef.current || requestSequenceRef.current !== sequence) return;
+          if (sealed === "") throw new Error("capture_failed");
+          sessionVariables.set(name, plain, sealed);
+          capturedNames.add(name);
+        }
+        setCaptured(
+          captureSnapshot
+            .filter((capture) => capturedNames.has(capture.variable))
+            .map((capture) => ({ variable: capture.variable, target: capture.target || capture.source })),
+        );
+        if (captureResult.errors.length) setError("일부 값을 캡처하지 못했습니다.");
+      } catch {
+        for (const capture of captureSnapshot)
+          if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
+        if (mountedRef.current && requestSequenceRef.current === sequence) setError("캡처 값을 봉인하지 못했습니다.");
+      } finally {
+        refreshSession();
+      }
       try {
         await persistHistoryRequest(
           requestSnapshot,
@@ -1032,6 +1125,9 @@ export default function App({
       }
     } catch (cause) {
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+      for (const capture of captureSnapshot)
+        if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
+      refreshSession();
       setError(safeRequestError(cause));
       setResp(null);
       try {
@@ -1557,9 +1653,12 @@ export default function App({
       : history.find((item) => item.id === savedPreview?.id);
   const applySavedPreview = () => {
     if (!previewRecord || !savedPreview || sending || !persistenceReady) return;
-    setReq(toRequestTemplate(previewRecord.request));
-    setRequestEditorRevision((revision) => revision + 1);
-    setResp(null);
+    loadEditorRequest(
+      toRequestTemplate(previewRecord.request),
+      savedPreview.kind === "collection"
+        ? collections.collections.find((item) => item.id === savedPreview.id)
+        : undefined,
+    );
     if (savedPreview.kind === "collection") setSelectedCollectionId(savedPreview.id);
     else setSelectedHistoryId(savedPreview.id);
     setPersistenceWarning("저장된 요청입니다. 마스킹된 값과 필요한 환경·인증을 확인하고 직접 전송하세요.");
@@ -1610,8 +1709,7 @@ export default function App({
         selectedHistoryId={selectedHistoryId}
         setSavedPreview={setSavedPreview}
         setSelectedHistoryId={setSelectedHistoryId}
-        setReq={setReq}
-        setRequestEditorRevision={setRequestEditorRevision}
+        loadRequest={loadEditorRequest}
         setPersistenceWarning={setPersistenceWarning}
         setResp={setResp}
         historyContextMenu={historyContextMenu}
@@ -1620,13 +1718,14 @@ export default function App({
         transferBusy={transferBusy}
         browserImportKind={browserImportKind}
         environmentBusy={environmentBusy}
-        sending={sending}
+        sending={sending || runnerBusy}
         collSaving={collSaving}
         contextActionBusy={contextActionBusy}
         onExportTransfer={onExportTransfer}
         onImportTransfer={onImportTransfer}
         onImport={() => setShowImport(true)}
         onExportFolder={() => void onExportCollectionFolder()}
+        onRun={() => setShowRunner(true)}
         collName={collName}
         setCollName={setCollName}
         collFolder={collFolder}
@@ -1707,9 +1806,7 @@ export default function App({
               canApply={persistenceReady && !sending && !contextActionBusy && !transferBusy}
               onApply={(item) => {
                 setSelectedHistoryId(item.id);
-                setReq(toRequestTemplate(item.request));
-                setRequestEditorRevision((revision) => revision + 1);
-                setResp(null);
+                loadEditorRequest(toRequestTemplate(item.request));
                 setPersistenceWarning("마스킹된 기록입니다. 필요한 환경·인증을 확인하고 직접 전송하세요.");
                 onNavigate?.("requests");
               }}
@@ -1753,6 +1850,7 @@ export default function App({
                 disabled={
                   !persistenceReady ||
                   transferBusy ||
+                  runnerBusy ||
                   contextActionBusy ||
                   (!sending && (sseActive || !req.url || Boolean(requestConfigurationError)))
                 }
@@ -1810,9 +1908,9 @@ export default function App({
             )}
 
             <div className="tabs">
-              {(["params", "headers", "cookies", "body", "auth"] as const).map((t) => (
+              {(["params", "headers", "cookies", "body", "auth", "assertions", "captures"] as const).map((t) => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
-                  {t.toUpperCase()}
+                  {t === "assertions" ? "검증" : t === "captures" ? "캡처" : t.toUpperCase()}
                 </button>
               ))}
             </div>
@@ -1828,16 +1926,31 @@ export default function App({
               </div>
             )}
 
-            <RequestParameters
-              tab={tab}
-              req={req}
-              setReq={setReq}
-              currentEnv={currentEnv}
-              requestEditorRevision={requestEditorRevision}
-              BODY_KINDS={BODY_KINDS}
-              setAuth={setAuth}
-              AUTH_KINDS={AUTH_KINDS}
-            />
+            {tab === "assertions" ? (
+              <Suspense fallback={<p role="status">검증 편집 준비 중…</p>}>
+                <AssertionEditor value={assertions} onChange={setAssertions} disabled={sending || runnerBusy} />
+              </Suspense>
+            ) : tab === "captures" ? (
+              <Suspense fallback={<p role="status">캡처 편집 준비 중…</p>}>
+                <CaptureEditor value={captures} onChange={setCaptures} disabled={sending || runnerBusy} />
+                <SessionVariablesPanel
+                  session={sessionVariables}
+                  onChange={refreshSession}
+                  disabled={sending || runnerBusy}
+                />
+              </Suspense>
+            ) : (
+              <RequestParameters
+                tab={tab}
+                req={req}
+                setReq={setReq}
+                currentEnv={currentEnv}
+                requestEditorRevision={requestEditorRevision}
+                BODY_KINDS={BODY_KINDS}
+                setAuth={setAuth}
+                AUTH_KINDS={AUTH_KINDS}
+              />
+            )}
 
             <WebSocketPanel
               state={webSocketState}
@@ -1866,6 +1979,8 @@ export default function App({
             )}
 
             <ResponseViewer
+              assertionResults={assertionResults}
+              captured={captured}
               response={resp}
               responseText={responseText}
               pretty={pretty}
@@ -1904,6 +2019,29 @@ export default function App({
         onClose={collectionContextMenu.close}
         ariaLabel="컬렉션 메뉴"
       />
+      {showRunner && (
+        <Suspense fallback={<p role="status">러너 준비 중…</p>}>
+          <RunnerPanel
+            entries={collections.collections.filter(
+              (entry) => !apiWorkspace || apiWorkspace.links.collectionIds.includes(entry.id),
+            )}
+            environment={currentEnv?.variables ?? []}
+            session={sessionVariables}
+            deps={runnerDeps}
+            onSelect={(id) => {
+              const entry = collections.collections.find((item) => item.id === id);
+              if (entry) {
+                loadEditorRequest(toRequestTemplate(entry.request), entry);
+                setShowRunner(false);
+                onNavigate?.("requests");
+              }
+            }}
+            onClose={() => setShowRunner(false)}
+            onSessionChange={refreshSession}
+            onBusyChange={setRunnerBusy}
+          />
+        </Suspense>
+      )}
       {showImport && (
         <Suspense fallback={<p role="status">가져오기 준비 중…</p>}>
           <ImportDialog onClose={() => setShowImport(false)} onApply={applyImportPreview} />

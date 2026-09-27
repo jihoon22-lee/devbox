@@ -333,3 +333,26 @@ describe("ResponseViewer", () => {
     expect((await screen.findByRole("status")).textContent).toContain(TOOLBOX_SELECTION_MESSAGES.nativeOnly);
   });
 });
+it("shows response assertion results and capture labels in the checks tab", () => {
+  render(
+    <ResponseViewer
+      response={response()}
+      responseText="{}"
+      pretty
+      onPrettyChange={() => {}}
+      onRawCopy={rawCopyMock}
+      onBinarySave={binarySaveMock}
+      onError={errorMock}
+      assertionResults={[
+        { id: "a", passed: true, actual: "200", message: "" },
+        { id: "b", passed: true, actual: "1", message: "" },
+        { id: "c", passed: false, actual: "201", message: "기대 200, 실제 201" },
+      ]}
+      captured={[{ variable: "token", target: "$.access_token" }]}
+    />,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "검증" }));
+  expect(screen.getByText("3개 중 2개 통과")).toBeTruthy();
+  expect(screen.getByText("기대 200, 실제 201")).toBeTruthy();
+  expect(screen.getByText("token ← $.access_token 캡처함")).toBeTruthy();
+});
