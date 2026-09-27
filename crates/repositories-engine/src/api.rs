@@ -10,6 +10,9 @@ use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
 )]
 #[ts(optional_fields = nullable)]
 pub enum SourceCall {
+    InspectAgentWorktree {
+        request: crate::commands::InspectAgentWorktreeRequest,
+    },
     RepoMerge {
         request: crate::commands::MergeRequest,
     },
@@ -83,6 +86,7 @@ pub enum SourceCall {
 }
 impl SourceCall {
     pub const METHODS: &'static [&'static str] = &[
+        "inspect_agent_worktree",
         "repo_merge",
         "remove_agent_worktree",
         "create_worktree",
@@ -110,6 +114,7 @@ impl SourceCall {
     ];
     pub fn method(&self) -> &'static str {
         match self {
+            Self::InspectAgentWorktree { .. } => "inspect_agent_worktree",
             Self::RepoMerge { .. } => "repo_merge",
             Self::RemoveAgentWorktree { .. } => "remove_agent_worktree",
             Self::CreateWorktree { .. } => "create_worktree",
@@ -154,6 +159,7 @@ impl SourceCall {
     }
     pub(crate) fn path(&self) -> Option<&str> {
         match self {
+            Self::InspectAgentWorktree { request } => Some(&request.path),
             Self::RepoMerge { request } => Some(&request.path),
             Self::RemoveAgentWorktree { request } => Some(&request.path),
             Self::CreateWorktree {} => None,
@@ -210,6 +216,10 @@ impl SourceCall {
 }
 pub(crate) async fn execute_source(call: SourceCall) -> Result<serde_json::Value, String> {
     match call {
+        SourceCall::InspectAgentWorktree { request } => {
+            serde_json::to_value(crate::commands::inspect_agent_worktree(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
         SourceCall::RepoMerge { request } => {
             serde_json::to_value(crate::commands::repo_merge(request).await?)
                 .map_err(|_| "component_response_invalid".into())
@@ -334,6 +344,10 @@ pub fn source_result_types(
         (
             "repo_merge",
             export.register::<crate::commands::MergeResult>()?,
+        ),
+        (
+            "inspect_agent_worktree",
+            export.register::<crate::commands::AgentWorktreePresence>()?,
         ),
         ("remove_agent_worktree", export.register::<()>()?),
         (

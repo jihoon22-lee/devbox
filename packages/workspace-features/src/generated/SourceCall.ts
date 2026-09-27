@@ -5,6 +5,7 @@ import type { CommitDetailRequest } from "./CommitDetailRequest";
 import type { CommitRequest } from "./CommitRequest";
 import type { DiffRequest } from "./DiffRequest";
 import type { HistoryRequest } from "./HistoryRequest";
+import type { InspectAgentWorktreeRequest } from "./InspectAgentWorktreeRequest";
 import type { MergeRequest } from "./MergeRequest";
 import type { RemoteCancelRequest } from "./RemoteCancelRequest";
 import type { RemoteOperationRequest } from "./RemoteOperationRequest";
@@ -16,6 +17,7 @@ import type { StagePathsRequest } from "./StagePathsRequest";
 import type { UnstagePathsRequest } from "./UnstagePathsRequest";
 
 export type SourceCall =
+  | { method: "inspect_agent_worktree"; args: { request: InspectAgentWorktreeRequest } }
   | { method: "repo_merge"; args: { request: MergeRequest } }
   | { method: "remove_agent_worktree"; args: { request: RemoveAgentWorktreeRequest } }
   | { method: "create_worktree"; args: Record<symbol, never> }

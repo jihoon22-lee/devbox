@@ -147,6 +147,7 @@ pub fn source_method(method: &str) -> bool {
         method,
         "create_worktree"
             | "repo_merge"
+            | "inspect_agent_worktree"
             | "remove_agent_worktree"
             | "repo_status"
             | "worktrees"

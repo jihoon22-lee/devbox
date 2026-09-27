@@ -1,0 +1,108 @@
+import type { ProjectContext } from "@devbox/product-shell/api";
+import type { AgentTask } from "@devbox/workspace-features/generated/AgentTask";
+
+export interface FlowPorts {
+  agents: {
+    recordWorktree(id: string, revision: number, path: string): Promise<AgentTask>;
+    bindWorktree(id: string, revision: number, worktreeId: string): Promise<AgentTask>;
+  };
+  source: {
+    inspectWorktree(branch: string, targetDir: string): Promise<"present" | "absent">;
+    previewWorktree(branch: string, targetDir: string): Promise<{ previewId: string }>;
+    createWorktree(previewId: string, operationId: string): Promise<{ path: string }>;
+  };
+  registry: {
+    previewWsl(distroId: string, root: string): Promise<{ previewId: string; discovery: { kind: string } }>;
+    cancel(previewId: string): Promise<unknown>;
+    apply(previewId: string, name: string): Promise<{ context: ProjectContext }>;
+    select(context: ProjectContext): Promise<unknown>;
+  };
+  terminal: { openAgentTerminal(operationId: string, taskId: string): Promise<unknown> };
+  refreshContext(): Promise<void>;
+  currentContext(): Promise<ProjectContext | null>;
+  operationId(key: string): string;
+  settle(key: string): void;
+}
+export interface FlowEnv {
+  distroId: string;
+  projectName: string;
+  worktreeContext(worktreeId: string): ProjectContext | null;
+}
+export class AgentFlowError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "AgentFlowError";
+  }
+}
+export function sameContext(a: ProjectContext | null, b: ProjectContext): boolean {
+  return (
+    a?.projectId === b.projectId &&
+    a.worktreeId === b.worktreeId &&
+    a.revision === b.revision &&
+    a.target.kind === "wsl" &&
+    b.target.kind === "wsl" &&
+    a.target.distroId === b.target.distroId
+  );
+}
+export async function selectContext(ports: FlowPorts, context: ProjectContext): Promise<void> {
+  await ports.registry.select(context);
+  await ports.refreshContext();
+  if (!sameContext(await ports.currentContext(), context)) throw new AgentFlowError("agent_context_changed");
+}
+export async function advance(task: AgentTask, ports: FlowPorts, env: FlowEnv): Promise<AgentTask> {
+  let current = task;
+  let registered: ProjectContext | null = null;
+  if (current.state === "planned" || current.state === "created") {
+    const base = env.worktreeContext(current.baseWorktreeId);
+    if (
+      !base ||
+      base.projectId !== task.projectId ||
+      base.target.kind !== "wsl" ||
+      base.target.distroId !== env.distroId
+    )
+      throw new AgentFlowError("agent_task_context_mismatch");
+    if (!sameContext(await ports.currentContext(), base)) await selectContext(ports, base);
+  }
+  if (current.state === "planned") {
+    let path = current.targetDir;
+    if ((await ports.source.inspectWorktree(current.branch, current.targetDir)) === "absent") {
+      const preview = await ports.source.previewWorktree(current.branch, current.targetDir);
+      path = (await ports.source.createWorktree(preview.previewId, current.id)).path;
+    }
+    current = await ports.agents.recordWorktree(current.id, current.revision, path);
+  }
+  if (current.state === "created") {
+    const preview = await ports.registry.previewWsl(env.distroId, current.targetDir);
+    if (preview.discovery.kind !== "linkedWorktree" && preview.discovery.kind !== "known") {
+      await ports.registry.cancel(preview.previewId);
+      throw new AgentFlowError("agent_worktree_unexpected");
+    }
+    const { context } = await ports.registry.apply(preview.previewId, env.projectName);
+    if (
+      context.projectId !== task.projectId ||
+      context.worktreeId === task.baseWorktreeId ||
+      context.target.kind !== "wsl" ||
+      context.target.distroId !== env.distroId
+    )
+      throw new AgentFlowError("agent_task_context_mismatch");
+    current = await ports.agents.bindWorktree(current.id, current.revision, context.worktreeId);
+    registered = context;
+  }
+  if (current.state === "ready" || current.state === "running") {
+    const target = registered ?? (current.worktreeId ? env.worktreeContext(current.worktreeId) : null);
+    if (
+      !target ||
+      target.projectId !== task.projectId ||
+      target.target.kind !== "wsl" ||
+      target.target.distroId !== env.distroId
+    )
+      throw new AgentFlowError("agent_task_context_mismatch");
+    await selectContext(ports, target);
+    if (current.state === "ready") {
+      const key = `workspace-agent-terminal:${current.id}`;
+      await ports.terminal.openAgentTerminal(ports.operationId(key), current.id);
+      ports.settle(key);
+    }
+  }
+  return current;
+}

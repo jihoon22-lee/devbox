@@ -163,6 +163,7 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
     cancel_worktree: 29000,
     cleanup_scope_status: 29000,
     create_worktree: 29000,
+    inspect_agent_worktree: 29000,
     preview_cleanup_scope: 29000,
     preview_trust: 29000,
     preview_worktree: 29000,

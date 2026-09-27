@@ -1492,6 +1492,11 @@
   [
     "workspace.source",
     "agents",
+    "inspect_agent_worktree"
+  ],
+  [
+    "workspace.source",
+    "agents",
     "preview_cleanup_scope"
   ],
   [
@@ -1668,6 +1673,11 @@
     "workspace.source",
     "source",
     "create_worktree"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "inspect_agent_worktree"
   ],
   [
     "workspace.source",

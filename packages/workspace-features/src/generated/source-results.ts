@@ -1,3 +1,4 @@
+import type { AgentWorktreePresence } from "./AgentWorktreePresence";
 import type { ChangeEntry } from "./ChangeEntry";
 import type { CleanupApproved } from "./CleanupApproved";
 import type { CleanupPreview } from "./CleanupPreview";
@@ -26,6 +27,7 @@ export type SourceResults = {
   cancel_worktree: null;
   cleanup_scope_status: CleanupScopeStatus;
   create_worktree: WorktreeCreate;
+  inspect_agent_worktree: AgentWorktreePresence;
   preview_cleanup_scope: CleanupScopePreview;
   preview_trust: SourceTrustPreview;
   preview_worktree: SourceWorktreePreview;

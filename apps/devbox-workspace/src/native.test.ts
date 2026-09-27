@@ -104,3 +104,26 @@ it("records safe request diagnostics while preserving the Workspace error class"
   expect(diagnosticText(recentIssues()[0], "0.8.1")).not.toContain("private");
   resetIssues();
 });
+
+it("preserves the Agent Hub fixed issue code and Korean message", async () => {
+  const description = await describeProduct("workspace");
+  vi.mocked(invoke).mockImplementation(async (_command, args) => {
+    const { request } = args as { request: { header: RouteRequest } };
+    return {
+      operation: {
+        provenance: {
+          product: "workspace",
+          component: "workspace.agents",
+          requestId: request.header.requestId,
+          revision: catalog.catalogRevision,
+        },
+        outcome: { state: "failed", code: "unavailable" },
+      },
+      value: { issue: "agent_task_changed" },
+    };
+  });
+  await expect(componentCall(description, "workspace.agents", "list", {}, "agents")).rejects.toMatchObject({
+    code: "agent_task_changed",
+    message: "작업 상태가 바뀌었습니다. 목록을 다시 읽고 시도해 주세요.",
+  });
+});

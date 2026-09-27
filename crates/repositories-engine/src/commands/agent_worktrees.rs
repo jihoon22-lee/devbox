@@ -151,6 +151,78 @@ fn path_key(path: &Path) -> Result<String, String> {
         .map(|path| path.identity().into())
         .ok_or_else(|| NOT_AGENT.into())
 }
+#[derive(serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InspectAgentWorktreeRequest {
+    pub path: String,
+    pub worktree: String,
+    pub branch: String,
+}
+#[derive(Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentWorktreePresence {
+    Present,
+    Absent,
+}
+/// Observe only the admitted base repository's Git metadata. Never adopt a
+/// folder based on existence alone or inspect an unapproved target repository.
+pub async fn inspect_agent_worktree(
+    request: InspectAgentWorktreeRequest,
+) -> Result<AgentWorktreePresence, String> {
+    if !request.branch.starts_with("agent/") || !valid_worktree_branch(&request.branch) {
+        return Err(NOT_AGENT.into());
+    }
+    spawn_git_task(NOT_AGENT, move || {
+        let context = validated_repository_context(&request.path, NOT_AGENT)?;
+        let cancellation = AtomicBool::new(false);
+        let output = read(
+            &context.worktree,
+            &["worktree", "list", "--porcelain", "-z"],
+            &cancellation,
+            NOT_AGENT,
+        )?;
+        let records = parse_worktree_records(&output).map_err(|_| NOT_AGENT)?;
+        let requested = path_key(Path::new(&request.worktree))?;
+        if requested == path_key(&context.worktree)? {
+            return Err(NOT_AGENT.into());
+        }
+        let mut present = false;
+        for (index, record) in records.iter().enumerate() {
+            let path = host_path_from_git(&context.worktree, &record.path, NOT_AGENT)?;
+            if path_key(&path)? == requested {
+                if index == 0
+                    || record.branch.as_deref() != Some(&request.branch)
+                    || record.bare
+                    || record.locked
+                    || record.prunable
+                {
+                    return Err(NOT_AGENT.into());
+                }
+                present = true;
+            } else if record.branch.as_deref() == Some(&request.branch) {
+                return Err(NOT_AGENT.into());
+            }
+        }
+        let result = if present {
+            AgentWorktreePresence::Present
+        } else {
+            let reference = format!("refs/heads/{}", request.branch);
+            let refs = read(
+                &context.worktree,
+                &["for-each-ref", "--format=%(refname)", &reference],
+                &cancellation,
+                NOT_AGENT,
+            )?;
+            if refs.lines().any(|line| line == reference) {
+                return Err(NOT_AGENT.into());
+            }
+            AgentWorktreePresence::Absent
+        };
+        revalidate_repository_context(&context, NOT_AGENT)?;
+        Ok(result)
+    })
+    .await
+}
 pub async fn remove_agent_worktree(request: RemoveAgentWorktreeRequest) -> Result<(), String> {
     if !request.branch.starts_with("agent/") || !valid_worktree_branch(&request.branch) {
         return Err(NOT_AGENT.into());
@@ -241,6 +313,32 @@ mod tests {
         path::{Path, PathBuf},
         process::Command,
     };
+    #[test]
+    fn inspection_recovers_created_and_removed_worktrees_without_adopting_another_branch() {
+        let (_tmp, main, agent) = repo_with_agent_branch("agent\n", None);
+        let inspect = |worktree: &Path, branch: &str| {
+            crate::runtime::block_on(inspect_agent_worktree(InspectAgentWorktreeRequest {
+                path: main.to_string_lossy().into(),
+                worktree: worktree.to_string_lossy().into(),
+                branch: branch.into(),
+            }))
+        };
+        assert_eq!(
+            inspect(&agent, "agent/fix").unwrap(),
+            AgentWorktreePresence::Present
+        );
+        assert!(inspect(&main, "agent/fix").is_err());
+        assert!(inspect(&agent, "agent/other").is_err());
+        git(&main, &["worktree", "remove", agent.to_str().unwrap()]);
+        // A partial cleanup retains a branch, so do not guess that removal completed.
+        assert!(inspect(&agent, "agent/fix").is_err());
+        git(&main, &["branch", "-D", "agent/fix"]);
+        assert_eq!(
+            inspect(&agent, "agent/fix").unwrap(),
+            AgentWorktreePresence::Absent
+        );
+    }
+
     #[test]
     fn worktree_keys_keep_windows_prefixes_and_posix_case_separate() {
         assert_eq!(

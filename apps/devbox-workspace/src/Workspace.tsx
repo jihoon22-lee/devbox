@@ -15,6 +15,7 @@ const TerminalLogBridge = lazy(() => import("./TerminalLogBridge"));
 const Problems = lazy(() => import("./Problems"));
 const ContextStatus = lazy(() => import("./ContextStatus"));
 const TerminalManager = lazy(() => import("./Terminal"));
+const AgentHub = lazy(() => import("./agents/AgentHub"));
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
@@ -280,6 +281,11 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
       {ready && (
         <Suspense fallback={null}>
           <TerminalLogBridge description={description} consumedId={terminalLogConsumed} onOpen={acceptTerminalLog} />
+        </Suspense>
+      )}
+      {ready && route === "agents" && (
+        <Suspense fallback={<p role="status">에이전트 작업을 불러오고 있습니다…</p>}>
+          <AgentHub description={description} registry={registry} navigate={navigate} refreshContext={refreshContext} />
         </Suspense>
       )}
       {ready && route === "terminal" && (

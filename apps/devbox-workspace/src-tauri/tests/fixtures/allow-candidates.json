@@ -195,6 +195,7 @@
   "import_definitions",
   "initialize",
   "initializing",
+  "inspect_agent_worktree",
   "inspect_shell_integration",
   "integration",
   "intents",

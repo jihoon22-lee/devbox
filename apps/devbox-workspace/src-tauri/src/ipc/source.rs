@@ -91,6 +91,7 @@ impl<'de> serde::Deserialize<'de> for WorkspaceSourceCall {
     }
 }
 pub const METHODS: &[&str] = &[
+    "inspect_agent_worktree",
     "repo_merge",
     "remove_agent_worktree",
     "approve_cleanup_scope",
@@ -130,7 +131,7 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
-        "repo_merge" | "remove_agent_worktree" => &["agents", "source"],
+        "inspect_agent_worktree" | "repo_merge" | "remove_agent_worktree" => &["agents", "source"],
         "approve_cleanup_scope" => &["agents", "source"],
         "approve_trust" => &["agents", "source"],
         "cancel_cleanup_scope" => &["agents", "source"],
