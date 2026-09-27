@@ -1,5 +1,10 @@
 import type { ApiIssue } from "../generated/ApiIssue";
 export const apiMessages: Record<ApiIssue, string> = {
+  tls_credential_missing: "TLS 자격 증명을 찾지 못했습니다.",
+  tls_credential_invalid: "TLS 자격 증명을 읽거나 사용할 수 없습니다.",
+  tls_redirect_blocked: "클라이언트 인증서는 다른 출처의 리다이렉트에 사용할 수 없습니다.",
+  tls_http_only: "사용자 TLS 설정은 일반 HTTP 요청에서만 사용할 수 있습니다.",
+  tls_native_required: "사용자 TLS 설정은 데스크톱 앱에서 사용할 수 있습니다.",
   oauth2_config_invalid: "OAuth 2.0 설정과 환경 변수를 확인하세요.",
   oauth2_authorization_required: "로그인이 필요합니다.",
   oauth2_token_failed: "OAuth 2.0 토큰을 받지 못했습니다.",

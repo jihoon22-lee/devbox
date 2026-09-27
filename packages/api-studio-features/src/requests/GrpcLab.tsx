@@ -654,7 +654,7 @@ export function GrpcLab({ native }: GrpcLabProps) {
               <label>
                 저장된 TLS 자격 증명
                 <select
-                  aria-label="gRPC TLS 자격 증명"
+                  aria-label="TLS 자격 증명"
                   value={credentialId}
                   onChange={(event) => setCredentialId(event.currentTarget.value)}
                 >

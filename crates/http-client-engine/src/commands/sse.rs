@@ -393,6 +393,7 @@ fn validate_resolved_request(req: &ResolvedRequest) -> Result<(), String> {
 }
 
 fn validate_template_request(req: &RequestTemplate) -> Result<(), String> {
+    request::reject_stream_tls(req.tls.as_ref())?;
     if req.headers.len() > MAX_REQUEST_HEADERS
         || req.cookies.len() > MAX_REQUEST_COOKIES
         || req.params.len() > MAX_REQUEST_PARAMS

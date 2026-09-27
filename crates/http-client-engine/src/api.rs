@@ -1080,6 +1080,11 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum ApiIssue {
+    TlsCredentialMissing = "tls_credential_missing",
+    TlsCredentialInvalid = "tls_credential_invalid",
+    TlsRedirectBlocked = "tls_redirect_blocked",
+    TlsHttpOnly = "tls_http_only",
+    TlsNativeRequired = "tls_native_required",
     Oauth2ConfigInvalid = "oauth2_config_invalid",
     Oauth2AuthorizationRequired = "oauth2_authorization_required",
     Oauth2TokenFailed = "oauth2_token_failed",

@@ -1,4 +1,5 @@
 use super::captures::{CaptureStore, NativeCaptureOutcome, ResponseCapture};
+use super::grpc_credentials::{GrpcCredentialState, PreparedTlsCredential};
 use crate::core::graphql::{
     build_request_body, parse_response as parse_graphql_response, validate_document,
     GraphqlRequest, GraphqlResponse, GRAPHQL_INVALID_REQUEST, MAX_GRAPHQL_OPERATION_NAME_BYTES,
@@ -569,6 +570,7 @@ pub async fn send_request(
     use tauri::Manager;
     let sealer = platform_sealer();
     let state = app.state::<std::sync::Arc<super::oauth2::OAuth2State>>();
+    let credentials = app.state::<std::sync::Arc<GrpcCredentialState>>();
     let oauth = if req.auth.as_ref().is_some_and(|auth| auth.kind == "oauth2") {
         Some((state.inner(), state.cache(&app).map_err(str::to_owned)?))
     } else {
@@ -584,6 +586,7 @@ pub async fn send_request(
         RequestServices {
             sealer: sealer.as_ref(),
             oauth,
+            tls: Some(TlsSource::Store(&app, credentials.inner())),
         },
     )
     .await
@@ -643,7 +646,13 @@ async fn send_request_with_vault_and_cancellation(
     )
     .await
 }
+enum TlsSource<'a> {
+    Store(&'a tauri::AppHandle, &'a GrpcCredentialState),
+    #[cfg(test)]
+    Prepared(PreparedTlsCredential),
+}
 struct RequestServices<'a> {
+    tls: Option<TlsSource<'a>>,
     sealer: &'a dyn devbox_secrets::Sealer,
     oauth: Option<(
         &'a std::sync::Arc<super::oauth2::OAuth2State>,
@@ -670,6 +679,7 @@ async fn send_request_with_captures(
         RequestServices {
             sealer,
             oauth: None,
+            tls: None,
         },
     )
     .await
@@ -697,6 +707,23 @@ async fn send_request_with_services(
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
     prepare_graphql_request(&mut resolved)?;
+    let prepared_tls = if let Some(id) = resolved
+        .tls
+        .as_ref()
+        .and_then(|tls| tls.credential_id.as_deref())
+    {
+        match services.tls.ok_or("tls_credential_missing")? {
+            TlsSource::Store(app, state) => Some(tokio::select! {
+                biased;
+                _ = wait_for_cancellation(cancellation, request_token) => return Err("요청이 취소되었습니다".into()),
+                value = state.resolve_for_http(app, id) => value?,
+            }),
+            #[cfg(test)]
+            TlsSource::Prepared(value) => Some(value),
+        }
+    } else {
+        None
+    };
     let mut oauth_use = None;
     if let Some(auth) = resolved.auth.as_mut().filter(|auth| auth.kind == "oauth2") {
         let config = validate_oauth2_auth(auth).map_err(str::to_owned)?;
@@ -720,6 +747,7 @@ async fn send_request_with_services(
         request_token,
         captures,
         sealer,
+        prepared_tls.as_ref(),
     )
     .await?;
     if executed.oauth2_rejected {
@@ -868,6 +896,55 @@ pub fn sanitize_persisted_json(
         .map_err(|_| "민감정보 안전 저장 검증에 실패했습니다".to_string())
 }
 
+pub(crate) fn reject_stream_tls(tls: Option<&RequestTls>) -> Result<(), String> {
+    if tls.is_some_and(|tls| tls.credential_id.is_some() || !tls.verify) {
+        Err("tls_http_only".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn build_http_client(
+    timeout_ms: u64,
+    tls: Option<&PreparedTlsCredential>,
+    verify: bool,
+) -> Result<reqwest::Client, String> {
+    let invalid = || "tls_credential_invalid".to_string();
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(timeout_ms))
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_danger_accept_invalid_certs(!verify);
+    if let Some(tls) = tls {
+        if let Some(ca) = tls.ca_pem.as_deref() {
+            let certs =
+                reqwest::Certificate::from_pem_bundle(ca.as_bytes()).map_err(|_| invalid())?;
+            if certs.is_empty() {
+                return Err(invalid());
+            }
+            builder = builder.tls_certs_merge(certs);
+        }
+        match (
+            tls.client_certificate_pem.as_deref(),
+            tls.client_key_pem.as_deref(),
+        ) {
+            (Some(cert), Some(key)) => {
+                let pem = Zeroizing::new(format!("{cert}\n{key}"));
+                builder = builder
+                    .identity(reqwest::Identity::from_pem(pem.as_bytes()).map_err(|_| invalid())?);
+            }
+            (None, None) => {}
+            _ => return Err(invalid()),
+        }
+    }
+    builder.build().map_err(|_| {
+        if tls.is_some() {
+            invalid()
+        } else {
+            "HTTP 클라이언트를 준비하지 못했습니다".into()
+        }
+    })
+}
+
 #[cfg(test)]
 async fn execute_request(
     req: ResolvedRequest,
@@ -882,6 +959,7 @@ async fn execute_request(
         request_token,
         &[],
         platform_sealer().as_ref(),
+        None,
     )
     .await
 }
@@ -892,6 +970,7 @@ async fn execute_request_with_captures(
     request_token: u64,
     captures: &[ResponseCapture],
     sealer: &dyn devbox_secrets::Sealer,
+    tls: Option<&PreparedTlsCredential>,
 ) -> Result<ExecutedResponse, String> {
     let timeout_ms = if req.body_kind == "graphql" {
         req.timeout_ms
@@ -903,7 +982,15 @@ async fn execute_request_with_captures(
         .ok_or_else(|| "요청 시간 제한이 올바르지 않습니다".to_string())?;
     tokio::time::timeout_at(
         deadline,
-        execute_request_chain(req, redactor, cancellation, request_token, captures, sealer),
+        execute_request_chain(
+            req,
+            redactor,
+            cancellation,
+            request_token,
+            captures,
+            sealer,
+            tls,
+        ),
     )
     .await
     .map_err(|_| "요청 시간이 초과되었습니다".to_string())?
@@ -916,6 +1003,7 @@ async fn execute_request_chain(
     request_token: u64,
     captures: &[ResponseCapture],
     sealer: &dyn devbox_secrets::Sealer,
+    tls: Option<&PreparedTlsCredential>,
 ) -> Result<ExecutedResponse, String> {
     validate_cookie_configuration(&req)?;
     validate_multipart_configuration(&req)?;
@@ -929,11 +1017,11 @@ async fn execute_request_chain(
     } else {
         req.timeout_ms.max(1000)
     };
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(timeout_ms))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "HTTP 클라이언트를 준비하지 못했습니다".to_string())?;
+    let client = build_http_client(
+        timeout_ms,
+        tls,
+        req.tls.as_ref().is_none_or(|tls| tls.verify),
+    )?;
     let mut method = reqwest::Method::from_bytes(req.method.as_bytes())
         .map_err(|_| "HTTP 메서드가 올바르지 않습니다".to_string())?;
     let initial_url = if req.body_kind == "graphql" && req.method == "GET" {
@@ -1026,6 +1114,9 @@ async fn execute_request_chain(
                     .join(location)
                     .map_err(|_| "리다이렉트 위치가 올바르지 않습니다".to_string())?;
                 let cross_origin = is_cross_origin(&current_url, &next_url);
+                if cross_origin && tls.is_some_and(|material| material.client_key_pem.is_some()) {
+                    return Err("tls_redirect_blocked".into());
+                }
                 if cross_origin {
                     allow_sensitive = false;
                     include_body = false;
@@ -3561,6 +3652,168 @@ mod tests {
     }
 
     #[test]
+    fn http_clients_accept_valid_pem_material_and_reject_broken_material() {
+        use super::super::grpc_credentials::PreparedTlsCredential;
+        let full = PreparedTlsCredential {
+            ca_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/ca.pem").into(),
+            )),
+            client_certificate_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.pem").into(),
+            )),
+            client_key_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.key").into(),
+            )),
+        };
+        assert!(build_http_client(1000, Some(&full), true).is_ok());
+        assert!(build_http_client(1000, None, false).is_ok());
+        let broken = PreparedTlsCredential {
+            ca_pem: Some(Zeroizing::new(
+                "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----\n".into(),
+            )),
+            client_certificate_pem: None,
+            client_key_pem: None,
+        };
+        assert_eq!(
+            build_http_client(1000, Some(&broken), true).unwrap_err(),
+            "tls_credential_invalid"
+        );
+    }
+    #[test]
+    fn tls_client_identity_does_not_cross_redirect_origins() {
+        let source = TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = TcpListener::bind("127.0.0.1:0").unwrap();
+        target.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/start", source.local_addr().unwrap());
+        let destination = format!("http://{}/other", target.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = source.accept().unwrap();
+            let _ = read_http_request(&mut stream);
+            write!(stream,"HTTP/1.1 302 Found\r\nLocation: {destination}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let mut req = template();
+        req.url = url;
+        req.headers.clear();
+        req.auth = None;
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: true,
+        });
+        let material = PreparedTlsCredential {
+            ca_pem: None,
+            client_certificate_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.pem").into(),
+            )),
+            client_key_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.key").into(),
+            )),
+        };
+        let result = tauri::async_runtime::block_on(send_request_with_services(
+            req,
+            vec![],
+            "tls-redirect",
+            &ResponseHeaderVault::default(),
+            &RequestCancellation::default(),
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: None,
+                tls: Some(TlsSource::Prepared(material)),
+            },
+        ));
+        assert_eq!(result.unwrap_err(), "tls_redirect_blocked");
+        assert_eq!(
+            target.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        server.join().unwrap();
+    }
+    #[test]
+    fn tls_missing_credential_precedes_oauth_token_resolution() {
+        use super::super::oauth2::config::{GrantType, OAuth2Config};
+        let mut req = template();
+        req.url = "https://not-sent.test/".into();
+        req.headers.clear();
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: false,
+        });
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url: "https://not-sent.test/token".into(),
+                client_id: "client".into(),
+                client_secret: "secret".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let result = tauri::async_runtime::block_on(send_request_with_vault(
+            req,
+            vec![],
+            &ResponseHeaderVault::default(),
+        ));
+        assert_eq!(result.unwrap_err(), "tls_credential_missing");
+    }
+
+    #[test]
+    fn tls_missing_credential_fails_before_connecting_even_when_verification_is_off() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut req = template();
+        req.url = format!("http://{}/", listener.local_addr().unwrap());
+        req.headers.clear();
+        req.auth = None;
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: false,
+        });
+        let result = tauri::async_runtime::block_on(send_request_with_vault(
+            req,
+            vec![],
+            &ResponseHeaderVault::default(),
+        ));
+        assert_eq!(result.unwrap_err(), "tls_credential_missing");
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn tls_stream_configuration_is_not_silently_ignored() {
+        assert!(reject_stream_tls(None).is_ok());
+        assert!(reject_stream_tls(Some(&RequestTls {
+            credential_id: None,
+            verify: true
+        }))
+        .is_ok());
+        assert_eq!(
+            reject_stream_tls(Some(&RequestTls {
+                credential_id: None,
+                verify: false
+            }))
+            .unwrap_err(),
+            "tls_http_only"
+        );
+        assert_eq!(
+            reject_stream_tls(Some(&RequestTls {
+                credential_id: Some("a".repeat(32)),
+                verify: true
+            }))
+            .unwrap_err(),
+            "tls_http_only"
+        );
+    }
+
+    #[test]
     fn tls_field_accepts_old_requests_and_defaults_to_verification() {
         let mut value = serde_json::to_value(template()).unwrap();
         value.as_object_mut().unwrap().remove("tls");
@@ -3646,6 +3899,7 @@ mod tests {
             RequestServices {
                 sealer: &MockSealer,
                 oauth: Some((&state, &cache)),
+                tls: None,
             },
         )
         .await
@@ -3668,6 +3922,7 @@ mod tests {
             RequestServices {
                 sealer: &MockSealer,
                 oauth: Some((&state, &cache)),
+                tls: None,
             },
         )
         .await
@@ -3718,6 +3973,7 @@ mod tests {
             RequestServices {
                 sealer: &MockSealer,
                 oauth: Some((&state, &cache)),
+                tls: None,
             },
         );
         let (result, ()) = tokio::join!(sending, async {
