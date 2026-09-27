@@ -91,6 +91,8 @@ impl<'de> serde::Deserialize<'de> for WorkspaceSourceCall {
     }
 }
 pub const METHODS: &[&str] = &[
+    "repo_merge",
+    "remove_agent_worktree",
     "approve_cleanup_scope",
     "approve_trust",
     "cancel_cleanup_scope",
@@ -128,40 +130,41 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
-        "approve_cleanup_scope" => &["source"],
-        "approve_trust" => &["source"],
-        "cancel_cleanup_scope" => &["source"],
-        "cancel_trust" => &["source"],
-        "cancel_worktree" => &["source"],
-        "cleanup_scope_status" => &["source"],
-        "create_worktree" => &["source"],
-        "preview_cleanup_scope" => &["source"],
-        "preview_trust" => &["source"],
-        "preview_worktree" => &["source"],
-        "repo_changes" => &["source"],
-        "repo_cleanup" => &["source"],
-        "repo_cleanup_cancel" => &["source"],
-        "repo_cleanup_preview" => &["source"],
-        "repo_commit" => &["source"],
-        "repo_commit_detail" => &["source"],
-        "repo_commit_preview" => &["source"],
-        "repo_diff" => &["source"],
-        "repo_fetch" => &["source"],
-        "repo_history" => &["source"],
-        "repo_local_cancel" => &["source"],
-        "repo_preflight" => &["source"],
-        "repo_pull" => &["source"],
-        "repo_push" => &["source"],
-        "repo_remote_cancel" => &["source"],
-        "repo_remote_status" => &["source"],
-        "repo_stage" => &["source"],
-        "repo_status" => &["source"],
-        "repo_unstage" => &["source"],
-        "revoke_cleanup_scope" => &["source"],
-        "revoke_trust" => &["source"],
-        "trust_status" => &["source"],
-        "worktree_clean" => &["source"],
-        "worktrees" => &["source"],
+        "repo_merge" | "remove_agent_worktree" => &["agents", "source"],
+        "approve_cleanup_scope" => &["agents", "source"],
+        "approve_trust" => &["agents", "source"],
+        "cancel_cleanup_scope" => &["agents", "source"],
+        "cancel_trust" => &["agents", "source"],
+        "cancel_worktree" => &["agents", "source"],
+        "cleanup_scope_status" => &["agents", "source"],
+        "create_worktree" => &["agents", "source"],
+        "preview_cleanup_scope" => &["agents", "source"],
+        "preview_trust" => &["agents", "source"],
+        "preview_worktree" => &["agents", "source"],
+        "repo_changes" => &["agents", "source"],
+        "repo_cleanup" => &["agents", "source"],
+        "repo_cleanup_cancel" => &["agents", "source"],
+        "repo_cleanup_preview" => &["agents", "source"],
+        "repo_commit" => &["agents", "source"],
+        "repo_commit_detail" => &["agents", "source"],
+        "repo_commit_preview" => &["agents", "source"],
+        "repo_diff" => &["agents", "source"],
+        "repo_fetch" => &["agents", "source"],
+        "repo_history" => &["agents", "source"],
+        "repo_local_cancel" => &["agents", "source"],
+        "repo_preflight" => &["agents", "source"],
+        "repo_pull" => &["agents", "source"],
+        "repo_push" => &["agents", "source"],
+        "repo_remote_cancel" => &["agents", "source"],
+        "repo_remote_status" => &["agents", "source"],
+        "repo_stage" => &["agents", "source"],
+        "repo_status" => &["agents", "source"],
+        "repo_unstage" => &["agents", "source"],
+        "revoke_cleanup_scope" => &["agents", "source"],
+        "revoke_trust" => &["agents", "source"],
+        "trust_status" => &["agents", "source"],
+        "worktree_clean" => &["agents", "source"],
+        "worktrees" => &["agents", "source"],
         _ => &[],
     }
 }
@@ -391,7 +394,9 @@ pub(crate) async fn execute_source(
 pub(crate) fn source_mutation(method: &str) -> bool {
     matches!(
         method,
-        "repo_stage"
+        "repo_merge"
+            | "remove_agent_worktree"
+            | "repo_stage"
             | "repo_unstage"
             | "repo_commit"
             | "repo_fetch"

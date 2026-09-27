@@ -146,6 +146,8 @@ pub fn source_method(method: &str) -> bool {
     matches!(
         method,
         "create_worktree"
+            | "repo_merge"
+            | "remove_agent_worktree"
             | "repo_status"
             | "worktrees"
             | "worktree_clean"
@@ -167,9 +169,34 @@ pub fn source_method(method: &str) -> bool {
     )
 }
 
+/// Fixed feature errors cross both native and helper Source adapters.
+pub fn source_operation_issue(issue: &str) -> Option<&'static str> {
+    match issue {
+        "source_merge_dirty" => Some("source_merge_dirty"),
+        "source_merge_failed" => Some("source_merge_failed"),
+        "worktree_not_agent" => Some("worktree_not_agent"),
+        "worktree_remove_dirty" => Some("worktree_remove_dirty"),
+        "worktree_branch_unmerged" => Some("worktree_branch_unmerged"),
+        "worktree_branch_invalid" => Some("worktree_branch_invalid"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn agent_worktree_source_methods_are_supported() {
+        assert_eq!(
+            source_operation_issue("source_merge_dirty"),
+            Some("source_merge_dirty")
+        );
+        assert_eq!(
+            source_operation_issue("source_merge_dirty /private/path"),
+            None
+        );
+        assert!(source_method("repo_merge") && source_method("remove_agent_worktree"));
+    }
     #[test]
     fn a_partial_reader_resumes_the_same_frame_before_retirement() {
         let first = br#"{"result":{"Ok":"aborted response"}}"#;

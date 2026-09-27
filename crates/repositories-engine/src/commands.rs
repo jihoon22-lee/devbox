@@ -1,4 +1,8 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
+mod agent_worktrees;
+pub use agent_worktrees::{
+    remove_agent_worktree, repo_merge, MergeRequest, MergeResult, RemoveAgentWorktreeRequest,
+};
 
 pub(crate) mod commit_review;
 pub(crate) mod dependency_enrichment;

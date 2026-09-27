@@ -1,5 +1,10 @@
 //! Fixed native issues only; method names and raw OS/remote text are never issues.
 product_ipc::issue_codes! { pub enum WorkspaceIssue {
+SourceMergeDirty="source_merge_dirty",
+SourceMergeFailed="source_merge_failed",
+WorktreeNotAgent="worktree_not_agent",
+WorktreeRemoveDirty="worktree_remove_dirty",
+WorktreeBranchUnmerged="worktree_branch_unmerged",
 TerminalStreamDenied="terminal_stream_denied",
 TerminalStreamLimit="terminal_stream_limit",
 TerminalStreamUnavailable="terminal_stream_unavailable",

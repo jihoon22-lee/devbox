@@ -22,6 +22,7 @@ pub const METHODS: &[&str] = &[
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
         "apply_registration" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -30,8 +31,9 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "source",
             "tasks",
         ],
-        "archive_template" => &["overview"],
+        "archive_template" => &["agents", "overview"],
         "cancel_registration" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -41,6 +43,7 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "tasks",
         ],
         "clear_project" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -49,8 +52,9 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "source",
             "tasks",
         ],
-        "list_wsl_distros" => &["overview"],
+        "list_wsl_distros" => &["agents", "overview"],
         "preview_template_profile_windows" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -59,8 +63,9 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "source",
             "tasks",
         ],
-        "preview_template_profile_wsl" => &["overview"],
+        "preview_template_profile_wsl" => &["agents", "overview"],
         "preview_windows" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -69,8 +74,9 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "source",
             "tasks",
         ],
-        "preview_wsl" => &["overview"],
+        "preview_wsl" => &["agents", "overview"],
         "remove" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -80,6 +86,7 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "tasks",
         ],
         "rename" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -88,8 +95,9 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "source",
             "tasks",
         ],
-        "save_template" => &["overview"],
+        "save_template" => &["agents", "overview"],
         "select_project" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -99,6 +107,7 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "tasks",
         ],
         "snapshot" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",
@@ -108,6 +117,7 @@ pub fn routes_for(method: &str) -> &'static [&'static str] {
             "tasks",
         ],
         "unbind_imported_profile" => &[
+            "agents",
             "dependencies",
             "files",
             "logs",

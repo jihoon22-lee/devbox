@@ -745,7 +745,8 @@ mod native {
                 "wsl_execution_conflict" => "wsl_execution_conflict",
                 "wsl_lsp_installed_target_required" => "wsl_lsp_installed_target_required",
                 "wsl_lsp_language_unsupported" => "wsl_lsp_language_unsupported",
-                _ => "wsl_operation_failed",
+                issue => workspace_wsl::control::source_operation_issue(issue)
+                    .unwrap_or("wsl_operation_failed"),
             })
         }
         fn retire(&mut self) {

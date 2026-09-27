@@ -8,6 +8,7 @@ import type { CommitDetail } from "./CommitDetail";
 import type { DiffResult } from "./DiffResult";
 import type { GitSafetySnapshot } from "./GitSafetySnapshot";
 import type { HistoryResult } from "./HistoryResult";
+import type { MergeResult } from "./MergeResult";
 import type { RemoteState } from "./RemoteState";
 import type { RepoSnapshot } from "./RepoSnapshot";
 import type { Review } from "./Review";
@@ -28,6 +29,7 @@ export type SourceResults = {
   preview_cleanup_scope: CleanupScopePreview;
   preview_trust: SourceTrustPreview;
   preview_worktree: SourceWorktreePreview;
+  remove_agent_worktree: null;
   repo_changes: Array<ChangeEntry>;
   repo_cleanup: CleanupResult;
   repo_cleanup_cancel: boolean;
@@ -39,6 +41,7 @@ export type SourceResults = {
   repo_fetch: null;
   repo_history: HistoryResult;
   repo_local_cancel: boolean;
+  repo_merge: MergeResult;
   repo_preflight: GitSafetySnapshot;
   repo_pull: null;
   repo_push: null;

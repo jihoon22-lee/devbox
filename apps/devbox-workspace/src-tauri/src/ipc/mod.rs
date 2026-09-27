@@ -155,7 +155,7 @@ mod tests {
             r#"{"method":"create_worktree","args":{"previewId":"preview","operationId":"op"}}"#,
         )
         .unwrap();
-        assert_eq!(create.routes(), &["source"]);
+        assert_eq!(create.routes(), &["agents", "source"]);
         assert_eq!(create.deadline_budget_ms(), 29_000);
     }
     #[test]
