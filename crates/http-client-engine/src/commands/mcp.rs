@@ -1017,6 +1017,7 @@ fn prepare_profile(
         auth: None,
         timeout_ms: profile.timeout_ms,
         graphql: None,
+        tls: None,
     };
     let sealer = platform_sealer();
     let (resolved, environment_secrets) =

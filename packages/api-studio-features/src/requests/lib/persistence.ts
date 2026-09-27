@@ -1,3 +1,4 @@
+import { normalizeRequestTls } from "./tls";
 import { normalizeOAuth2 } from "./oauth2";
 import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 import type {
@@ -227,6 +228,7 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     timeout_ms: request.timeout_ms,
     ...(graphql ? { graphql } : {}),
     requiresSecretReview,
+    ...(request.tls ? { tls: normalizeRequestTls(request.tls) } : {}),
   };
 }
 
@@ -234,6 +236,7 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
   const { requiresSecretReview: _, ...template } = request;
   return {
     ...template,
+    ...(template.tls ? { tls: normalizeRequestTls(template.tls) } : {}),
     auth: template.auth
       ? { ...template.auth, ...(template.auth.oauth2 ? { oauth2: normalizeOAuth2(template.auth.oauth2) } : {}) }
       : null,
@@ -271,6 +274,7 @@ export function normalizePersistedRequest(request: PersistedHistoryRequest): Per
       : null,
     timeout_ms: request.timeout_ms,
     requiresSecretReview: request.requiresSecretReview,
+    ...(request.tls ? { tls: normalizeRequestTls(request.tls) } : {}),
     ...(request.body_kind === "graphql" && request.graphql
       ? { graphql: normalizeGraphqlRequest(request.graphql) }
       : {}),

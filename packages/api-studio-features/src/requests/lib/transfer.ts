@@ -1,3 +1,4 @@
+import { normalizeRequestTls } from "./tls";
 import { looksLikeSecret } from "./secretPatterns";
 export { looksLikeSecret } from "./secretPatterns";
 import { cleanCollectionChecks } from "./collections";
@@ -248,6 +249,17 @@ function isAuth(value: unknown): value is AuthConfig | null {
   );
 }
 
+function isRequestTls(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (isRecord(value) &&
+      onlyKeys(value, ["credentialId", "verify"]) &&
+      typeof value.verify === "boolean" &&
+      (value.credentialId === null ||
+        (typeof value.credentialId === "string" && /^[a-f0-9]{32}$/.test(value.credentialId))))
+  );
+}
 function isGraphql(value: unknown): value is GraphqlRequest | null | undefined {
   if (value === undefined || value === null) return true;
   if (
@@ -301,7 +313,7 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
         "timeout_ms",
         "requiresSecretReview",
       ],
-      ["graphql"],
+      ["graphql", "tls"],
     )
   )
     return false;
@@ -328,6 +340,7 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     !hasUnsafeMetadataChars(value.body) &&
     !hasKnownSecret(value.body) &&
     isAuth(value.auth) &&
+    isRequestTls(value.tls) &&
     Number.isSafeInteger(value.timeout_ms) &&
     Number(value.timeout_ms) >= 0 &&
     typeof value.requiresSecretReview === "boolean" &&
@@ -446,6 +459,7 @@ function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHisto
     timeout_ms: Number.isSafeInteger(safe.timeout_ms) && safe.timeout_ms >= 0 ? safe.timeout_ms : 0,
     ...(graphql ? { graphql } : {}),
     requiresSecretReview: Boolean(request.requiresSecretReview || safe.requiresSecretReview),
+    ...(safe.tls ? { tls: normalizeRequestTls(safe.tls) } : {}),
   };
 }
 

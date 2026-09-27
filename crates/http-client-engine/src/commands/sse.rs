@@ -966,6 +966,7 @@ mod tests {
             auth: None,
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         assert!(validate_resolved_request(&req).is_err());
         let mut req = req;
@@ -1011,6 +1012,7 @@ mod tests {
             auth: None,
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         assert_eq!(
             validate_resolved_request(&request),
@@ -1086,6 +1088,7 @@ mod tests {
             auth: None,
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         let redactor = Redactor::for_request(&request, vec![]);
         let client = reqwest::Client::builder()
@@ -1144,6 +1147,7 @@ mod tests {
             }),
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         let redactor = Redactor::for_request(&request, vec![]);
         let safe_text = redactor.redact_text("echo=loopback-secret");

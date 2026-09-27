@@ -1335,6 +1335,7 @@ mod tests {
             auth: None,
             timeout_ms: 10_000,
             graphql: None,
+            tls: None,
         }
     }
 

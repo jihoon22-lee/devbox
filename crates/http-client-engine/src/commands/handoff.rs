@@ -419,6 +419,7 @@ fn request_from_payload(payload: &Value) -> Result<RequestTemplate, &'static str
         }),
         timeout_ms: 10_000,
         graphql: None,
+        tls: None,
     })
 }
 

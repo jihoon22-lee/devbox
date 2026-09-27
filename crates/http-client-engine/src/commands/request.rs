@@ -133,6 +133,18 @@ pub struct AuthConfig {
     pub oauth2: Option<super::oauth2::config::OAuth2Config>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequestTls {
+    #[serde(default)]
+    pub credential_id: Option<String>,
+    #[serde(default = "verify_tls_by_default")]
+    pub verify: bool,
+}
+fn verify_tls_by_default() -> bool {
+    true
+}
+
 /// Frontend가 편집·저장하는 원본. 변수 참조는 해석되지 않은 상태다.
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 #[ts(optional_fields = nullable)]
@@ -154,6 +166,8 @@ pub struct RequestTemplate {
     pub timeout_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graphql: Option<GraphqlRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<RequestTls>,
 }
 
 /// 전송 직전 backend 메모리에만 존재하며 직렬화하지 않는다.
@@ -170,6 +184,7 @@ pub(crate) struct ResolvedRequest {
     pub(crate) auth: Option<AuthConfig>,
     pub(crate) timeout_ms: u64,
     pub(crate) graphql: Option<GraphqlRequest>,
+    pub(crate) tls: Option<RequestTls>,
 }
 
 /// History v2의 wire 형식을 Rust 테스트에서도 고정한다.
@@ -1438,6 +1453,7 @@ pub(crate) fn resolve_template(
             }),
             timeout_ms: req.timeout_ms,
             graphql,
+            tls: req.tls.clone(),
         },
         environment_secrets,
     ))
@@ -1462,6 +1478,7 @@ pub(crate) fn resolve_oauth2_auth(
         auth: Some(auth.clone()),
         timeout_ms: 30000,
         graphql: None,
+        tls: None,
     };
     let (resolved, _) = resolve_template(&req, environment, platform_sealer().as_ref())
         .map_err(|_| "oauth2_config_invalid")?;
@@ -2014,6 +2031,7 @@ pub(crate) fn sanitize_openapi_template(
         auth: request.auth.clone(),
         timeout_ms: request.timeout_ms,
         graphql: request.graphql.clone(),
+        tls: request.tls.clone(),
     };
     for header in &mut snapshot.headers {
         header.enabled = true;
@@ -3112,6 +3130,7 @@ mod tests {
             }),
             timeout_ms: 5_000,
             graphql: None,
+            tls: None,
         }
     }
 
@@ -3539,6 +3558,32 @@ mod tests {
         assert!(is_binary_response("text/plain", &[0xff, 0xfe]));
         assert!(is_binary_response("text/plain", &[0, 1, 2]));
         assert!(is_binary_response("", &[0, 1, 2]));
+    }
+
+    #[test]
+    fn tls_field_accepts_old_requests_and_defaults_to_verification() {
+        let mut value = serde_json::to_value(template()).unwrap();
+        value.as_object_mut().unwrap().remove("tls");
+        assert!(serde_json::from_value::<RequestTemplate>(value.clone())
+            .unwrap()
+            .tls
+            .is_none());
+        value["tls"] = serde_json::json!({"credentialId":null});
+        assert!(
+            serde_json::from_value::<RequestTemplate>(value.clone())
+                .unwrap()
+                .tls
+                .unwrap()
+                .verify
+        );
+        value["tls"] = serde_json::json!({"credentialId":"a".repeat(32),"verify":false});
+        let request = serde_json::from_value::<RequestTemplate>(value).unwrap();
+        let tls = request.tls.as_ref().unwrap();
+        assert!(!tls.verify);
+        assert_eq!(
+            tls.credential_id.as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
     }
 
     #[tokio::test]

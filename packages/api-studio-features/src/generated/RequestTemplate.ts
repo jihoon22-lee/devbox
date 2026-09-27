@@ -5,6 +5,7 @@ import type { KeyValue } from "./KeyValue";
 import type { MultipartPart } from "./MultipartPart";
 import type { RequestCookie } from "./RequestCookie";
 import type { RequestHeader } from "./RequestHeader";
+import type { RequestTls } from "./RequestTls";
 
 /**
  * Frontend가 편집·저장하는 원본. 변수 참조는 해석되지 않은 상태다.
@@ -24,4 +25,5 @@ export type RequestTemplate = {
   auth?: AuthConfig | null;
   timeout_ms: number;
   graphql?: GraphqlRequest | null;
+  tls?: RequestTls | null;
 };
