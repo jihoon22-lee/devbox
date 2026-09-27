@@ -14,7 +14,7 @@ export const messages: Record<AgentIssue | "agent_worktree_unexpected" | "agent_
   agent_resources_unavailable: "작업 리소스를 읽지 못했습니다. 잠시 뒤 다시 확인해 주세요.",
   agent_usage_unavailable: "토큰 사용량 기록을 읽지 못했습니다. WSL과 도구 기록을 확인해 주세요.",
   agent_store_unavailable: "에이전트 작업 기록을 읽거나 저장하지 못했습니다.",
-  agent_worktree_unexpected: "생성한 폴더가 같은 프로젝트의 연결된 작업 폴더인지 확인해 주세요.",
+  agent_worktree_unexpected: "작업 폴더를 자동으로 연결할 수 없습니다. 소스 화면에서 경로와 branch를 확인해 주세요.",
   agent_context_changed: "선택한 프로젝트가 바뀌었습니다. 작업 폴더를 다시 선택해 주세요.",
 };
 export function agentMessage(code: string): string | undefined {

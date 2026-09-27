@@ -38,9 +38,9 @@ impl<H: ToolHost> Server<H> {
             Ok(value) => value,
             Err(_) => return Some(error(Value::Null, PARSE_ERROR, "Invalid JSON")),
         };
-        let valid_id = request
-            .get("id")
-            .is_none_or(|id| id.is_null() || id.is_string() || id.is_number());
+        let valid_id = request.get("id").is_none_or(|id| {
+            id.is_null() || id.is_number() || id.as_str().is_some_and(|id| id.len() <= 128)
+        });
         if !request.is_object()
             || request["jsonrpc"] != "2.0"
             || !request["method"].is_string()
@@ -196,6 +196,17 @@ mod tests {
                 .expect("a response"),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn oversized_request_ids_cannot_escape_the_response_line_limit() {
+        let mut s = server(true);
+        let response = reply(
+            &mut s,
+            json!({"jsonrpc":"2.0","id":"x".repeat(1024),"method":"ping"}),
+        );
+        assert_eq!(response["error"]["code"], INVALID_REQUEST);
+        assert!(response["id"].is_null());
     }
 
     #[test]

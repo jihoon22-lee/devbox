@@ -17,12 +17,16 @@ export function call<T>(
   return nativeCall(`workspace.${component}`, method, args, "agents");
 }
 export function nativePorts(refreshContext: () => Promise<void>, installationId: string): FlowPorts {
+  const creationKey = (id: string) => `${installationId}:workspace-agent-worktree:${id}`;
   return {
     agents: {
       recordWorktree: (taskId, revision, path) => agentsCall("record_worktree", { taskId, revision, path }),
       bindWorktree: (taskId, revision, worktreeId) => agentsCall("bind_worktree", { taskId, revision, worktreeId }),
     },
     source: {
+      canRecoverWorktree: (id) => localStorage.getItem(creationKey(id)) === "attempted",
+      markWorktreeAttempt: (id) => localStorage.setItem(creationKey(id), "attempted"),
+      clearWorktreeAttempt: (id) => localStorage.removeItem(creationKey(id)),
       inspectWorktree: async (branch, targetDir) => {
         const context = (await currentDescription("workspace")).context;
         const registry = await call<Registry>("registry", "snapshot");

@@ -33,6 +33,9 @@ function ports(overrides: Partial<Record<string, unknown>> = {}) {
       bindWorktree: vi.fn(async (_id, revision, worktreeId) => task("ready", { revision: revision + 1, worktreeId })),
     },
     source: {
+      canRecoverWorktree: vi.fn(() => false),
+      markWorktreeAttempt: vi.fn(),
+      clearWorktreeAttempt: vi.fn(),
       inspectWorktree: vi.fn(async () => "absent" as "absent" | "present"),
       previewWorktree: vi.fn(async () => ({ previewId: "pv1" })),
       createWorktree: vi.fn(async () => ({ path: "/home/me/projects/devbox-fix-login" })),
@@ -73,11 +76,20 @@ describe("agent flow", () => {
 
   it("recovers a created worktree after its creation reply was lost", async () => {
     const p = ports();
+    p.source.canRecoverWorktree.mockReturnValue(true);
     p.source.inspectWorktree.mockResolvedValue("present");
     await advance(task("planned"), p, env);
     expect(p.source.previewWorktree).not.toHaveBeenCalled();
     expect(p.source.createWorktree).not.toHaveBeenCalled();
     expect(p.agents.recordWorktree).toHaveBeenCalledWith("t1", 1, "/home/me/projects/devbox-fix-login");
+  });
+
+  it("does not adopt an existing matching worktree on the first creation attempt", async () => {
+    const p = ports();
+    p.source.inspectWorktree.mockResolvedValue("present");
+    await expect(advance(task("planned"), p, env)).rejects.toEqual(new AgentFlowError("agent_worktree_unexpected"));
+    expect(p.agents.recordWorktree).not.toHaveBeenCalled();
+    expect(p.terminal.openAgentTerminal).not.toHaveBeenCalled();
   });
 
   it("resumes a created task at registration without creating another worktree", async () => {

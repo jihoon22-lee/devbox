@@ -7,6 +7,9 @@ export interface FlowPorts {
     bindWorktree(id: string, revision: number, worktreeId: string): Promise<AgentTask>;
   };
   source: {
+    canRecoverWorktree(taskId: string): boolean;
+    markWorktreeAttempt(taskId: string): void;
+    clearWorktreeAttempt(taskId: string): void;
     inspectWorktree(branch: string, targetDir: string): Promise<"present" | "absent">;
     previewWorktree(branch: string, targetDir: string): Promise<{ previewId: string }>;
     createWorktree(previewId: string, operationId: string): Promise<{ path: string }>;
@@ -65,13 +68,18 @@ export async function advance(task: AgentTask, ports: FlowPorts, env: FlowEnv): 
   }
   if (current.state === "planned") {
     let path = current.targetDir;
-    if ((await ports.source.inspectWorktree(current.branch, current.targetDir)) === "absent") {
+    const presence = await ports.source.inspectWorktree(current.branch, current.targetDir);
+    if (presence === "present" && !ports.source.canRecoverWorktree(current.id))
+      throw new AgentFlowError("agent_worktree_unexpected");
+    if (presence === "absent") {
       const preview = await ports.source.previewWorktree(current.branch, current.targetDir);
+      ports.source.markWorktreeAttempt(current.id);
       path = (await ports.source.createWorktree(preview.previewId, current.id)).path;
     }
     current = await ports.agents.recordWorktree(current.id, current.revision, path);
   }
   if (current.state === "created") {
+    ports.source.clearWorktreeAttempt(current.id);
     const preview = await ports.registry.previewWsl(env.distroId, current.targetDir);
     if (preview.discovery.kind !== "linkedWorktree" && preview.discovery.kind !== "known") {
       await ports.registry.cancel(preview.previewId);

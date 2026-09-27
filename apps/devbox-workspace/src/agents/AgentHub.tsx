@@ -161,7 +161,10 @@ export default function AgentHub({
         ports.settle(key);
       }
     }
-    if (action === "forget") await agentsCall("forget", { taskId: task.id, revision: task.revision });
+    if (action === "forget") {
+      await agentsCall("forget", { taskId: task.id, revision: task.revision });
+      ports.source.clearWorktreeAttempt(task.id);
+    }
     if (action === "discard") setConfirmation({ taskId: task.id, kind: "discard" });
     if (action === "merge") {
       const base = await baseOf(task);

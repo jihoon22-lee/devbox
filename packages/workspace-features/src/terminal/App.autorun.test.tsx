@@ -71,34 +71,30 @@ vi.mock("@xterm/addon-webgl", () => ({
   },
 }));
 vi.mock("./api", () => ({
-  configureQuickSummon: vi
-    .fn()
-    .mockResolvedValue({
-      shortcutRegistered: false,
-      activeShortcut: null,
-      trayEnabled: false,
-      closeBehavior: "exit",
-      issues: [],
-    }),
-  getDashboardSnapshot: vi
-    .fn()
-    .mockImplementation(async () => ({
-      revision: 1,
-      capturedAtMs: Date.now(),
-      staleAfterMs: 30000,
-      distros: [
-        {
-          name: "Ubuntu",
-          version: 2,
-          default: true,
-          state: "Running",
-          terminalCount: 0,
-          dockerAvailability: "unavailable",
-          containers: [],
-          resource: null,
-        },
-      ],
-    })),
+  configureQuickSummon: vi.fn().mockResolvedValue({
+    shortcutRegistered: false,
+    activeShortcut: null,
+    trayEnabled: false,
+    closeBehavior: "exit",
+    issues: [],
+  }),
+  getDashboardSnapshot: vi.fn().mockImplementation(async () => ({
+    revision: 1,
+    capturedAtMs: Date.now(),
+    staleAfterMs: 30000,
+    distros: [
+      {
+        name: "Ubuntu",
+        version: 2,
+        default: true,
+        state: "Running",
+        terminalCount: 0,
+        dockerAvailability: "unavailable",
+        containers: [],
+        resource: null,
+      },
+    ],
+  })),
   listDistros: vi.fn().mockResolvedValue([{ name: "Ubuntu", version: 2, default: true, state: "Running" }]),
   startSession: vi.fn().mockResolvedValue({ sessionId: "fixture-session", resumed: false, multiplexer: "native" }),
   detectMultiplexers: vi.fn().mockResolvedValue([{ kind: "native", status: "available", version: null, source: null }]),
