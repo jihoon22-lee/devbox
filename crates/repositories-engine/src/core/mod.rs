@@ -1,3 +1,5 @@
+pub mod branches;
+pub mod stash;
 pub mod cleanup;
 pub mod dependency_enrichment;
 pub mod dependency_lens;

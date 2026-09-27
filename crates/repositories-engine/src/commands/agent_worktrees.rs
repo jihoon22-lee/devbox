@@ -308,10 +308,10 @@ pub async fn remove_agent_worktree(request: RemoveAgentWorktreeRequest) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::git;
     use std::{
         fs,
         path::{Path, PathBuf},
-        process::Command,
     };
     #[test]
     fn inspection_recovers_created_and_removed_worktrees_without_adopting_another_branch() {
@@ -397,20 +397,6 @@ mod tests {
         );
         assert!(agent.exists());
         assert!(!git(&main, &["branch", "--list", "ordinary"]).is_empty());
-    }
-
-    fn git(repo: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8(out.stdout).unwrap()
     }
 
     fn repo_with_agent_branch(
