@@ -1,5 +1,12 @@
 //! Fixed native issues only; method names and raw OS/remote text are never issues.
 product_ipc::issue_codes! { pub enum WorkspaceIssue {
+HunkStale="hunk_stale",
+HunkSelectionInvalid="hunk_selection_invalid",
+HunkUnsupported="hunk_unsupported",
+HunkApplyFailed="hunk_apply_failed",
+AmendNoCommit="amend_no_commit",
+BlameUnavailable="blame_unavailable",
+
 BranchNameInvalid="branch_name_invalid",
 BranchExists="branch_exists",
 BranchMissing="branch_missing",

@@ -1,4 +1,5 @@
 import type { AgentWorktreePresence } from "./AgentWorktreePresence";
+import type { Blame } from "./Blame";
 import type { BranchList } from "./BranchList";
 import type { ChangeEntry } from "./ChangeEntry";
 import type { CleanupApproved } from "./CleanupApproved";
@@ -10,8 +11,10 @@ import type { CommitDetail } from "./CommitDetail";
 import type { DeletedBranch } from "./DeletedBranch";
 import type { DiffResult } from "./DiffResult";
 import type { DroppedStash } from "./DroppedStash";
+import type { FileHunks } from "./FileHunks";
 import type { GitSafetySnapshot } from "./GitSafetySnapshot";
 import type { HistoryResult } from "./HistoryResult";
+import type { LastCommit } from "./LastCommit";
 import type { MergeResult } from "./MergeResult";
 import type { RemoteState } from "./RemoteState";
 import type { RepoSnapshot } from "./RepoSnapshot";
@@ -37,6 +40,7 @@ export type SourceResults = {
   preview_trust: SourceTrustPreview;
   preview_worktree: SourceWorktreePreview;
   remove_agent_worktree: null;
+  repo_blame: Blame;
   repo_branch_create: null;
   repo_branch_delete: DeletedBranch;
   repo_branch_rename: null;
@@ -50,7 +54,10 @@ export type SourceResults = {
   repo_commit_preview: Review;
   repo_diff: DiffResult;
   repo_fetch: null;
+  repo_file_hunks: FileHunks;
   repo_history: HistoryResult;
+  repo_hunks_apply: null;
+  repo_last_commit: LastCommit;
   repo_local_cancel: boolean;
   repo_merge: MergeResult;
   repo_preflight: GitSafetySnapshot;

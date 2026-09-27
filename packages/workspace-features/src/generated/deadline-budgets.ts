@@ -185,6 +185,7 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
     repo_diff: 29000,
     repo_fetch: 29000,
     repo_history: 29000,
+    repo_hunks_apply: 29000,
     repo_local_cancel: 29000,
     repo_merge: 29000,
     repo_preflight: 29000,

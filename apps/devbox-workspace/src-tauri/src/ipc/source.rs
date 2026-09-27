@@ -91,6 +91,10 @@ impl<'de> serde::Deserialize<'de> for WorkspaceSourceCall {
     }
 }
 pub const METHODS: &[&str] = &[
+    "repo_file_hunks",
+    "repo_hunks_apply",
+    "repo_last_commit",
+    "repo_blame",
     "repo_branches",
     "repo_branch_create",
     "repo_switch",
@@ -141,6 +145,11 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
+        "repo_file_hunks" => &["source"],
+        "repo_hunks_apply" => &["source"],
+        "repo_last_commit" => &["source"],
+        "repo_blame" => &["source"],
+
         "repo_branches" => &["source"],
         "repo_branch_create" => &["source"],
         "repo_switch" => &["source"],
@@ -417,6 +426,7 @@ pub(crate) fn source_mutation(method: &str) -> bool {
     matches!(
         method,
         "repo_merge"
+            | "repo_hunks_apply"
             | "repo_branch_create"
             | "repo_switch"
             | "repo_branch_rename"
@@ -566,6 +576,26 @@ mod branch_stash_tests {
             ("repo_stash_store", true),
         ] {
             assert_eq!(super::source_mutation(method), mutation, "{method}");
+            assert_eq!(super::routes_for(method), &["source"]);
+            assert_eq!(
+                super::deadline_budget_for(method),
+                if mutation { 29_000 } else { 5_000 }
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod hunk_blame_tests {
+    #[test]
+    fn hunk_blame_calls_have_exact_writer_route_and_deadline_contracts() {
+        for (method, mutation) in [
+            ("repo_file_hunks", false),
+            ("repo_hunks_apply", true),
+            ("repo_last_commit", false),
+            ("repo_blame", false),
+        ] {
+            assert_eq!(super::source_mutation(method), mutation);
             assert_eq!(super::routes_for(method), &["source"]);
             assert_eq!(
                 super::deadline_budget_for(method),

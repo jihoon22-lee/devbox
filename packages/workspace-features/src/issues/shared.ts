@@ -2,6 +2,13 @@ import type { WorkspaceIssue } from "../generated/WorkspaceIssue";
 const unavailable = "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요.";
 /** Native static codes are exhaustive; unknown text never becomes user-visible diagnostics. */
 export const workspaceMessages: Record<WorkspaceIssue, string> = {
+  hunk_stale: "파일이 바뀌었습니다. 변경 덩어리를 다시 불러와 주세요.",
+  hunk_selection_invalid: "선택한 변경 덩어리를 확인해 주세요.",
+  hunk_unsupported: "이 파일은 파일 단위로만 처리할 수 있습니다.",
+  hunk_apply_failed: "변경 덩어리를 적용하지 못했습니다.",
+  amend_no_commit: "수정할 커밋이 없습니다.",
+  blame_unavailable: "이 파일의 작성 이력을 읽지 못했습니다.",
+
   branch_name_invalid: "branch 이름을 확인해 주세요.",
   branch_exists: "같은 이름의 branch가 이미 있습니다.",
   branch_missing: "branch를 찾지 못했습니다. 목록을 새로 고쳐 주세요.",

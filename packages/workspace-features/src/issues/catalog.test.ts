@@ -32,3 +32,15 @@ it("has fixed Korean branch and stash recovery messages", () => {
   ])
     expect(workspaceIssueMessage(code), code).not.toBe(workspaceIssueMessage("unknown"));
 });
+
+it("has hunk, amend and blame recovery messages", () => {
+  for (const code of [
+    "hunk_stale",
+    "hunk_selection_invalid",
+    "hunk_unsupported",
+    "hunk_apply_failed",
+    "amend_no_commit",
+    "blame_unavailable",
+  ])
+    expect(workspaceIssueMessage(code), code).not.toBe(workspaceIssueMessage("unknown"));
+});

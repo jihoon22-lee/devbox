@@ -149,6 +149,10 @@ pub fn source_method(method: &str) -> bool {
         method,
         "create_worktree"
             | "repo_merge"
+            | "repo_file_hunks"
+            | "repo_hunks_apply"
+            | "repo_last_commit"
+            | "repo_blame"
             | "repo_branches"
             | "repo_branch_create"
             | "repo_switch"
@@ -185,6 +189,13 @@ pub fn source_method(method: &str) -> bool {
 /// Fixed feature errors cross both native and helper Source adapters.
 pub fn source_operation_issue(issue: &str) -> Option<&'static str> {
     match issue {
+        "hunk_stale" => Some("hunk_stale"),
+        "hunk_selection_invalid" => Some("hunk_selection_invalid"),
+        "hunk_unsupported" => Some("hunk_unsupported"),
+        "hunk_apply_failed" => Some("hunk_apply_failed"),
+        "amend_no_commit" => Some("amend_no_commit"),
+        "blame_unavailable" => Some("blame_unavailable"),
+
         "branch_name_invalid" => Some("branch_name_invalid"),
         "branch_exists" => Some("branch_exists"),
         "branch_missing" => Some("branch_missing"),
@@ -208,6 +219,27 @@ pub fn source_operation_issue(issue: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hunk_blame_source_methods_and_errors_are_supported() {
+        for method in [
+            "repo_file_hunks",
+            "repo_hunks_apply",
+            "repo_last_commit",
+            "repo_blame",
+        ] {
+            assert!(source_method(method), "{method}");
+        }
+        for code in [
+            "hunk_stale",
+            "hunk_selection_invalid",
+            "hunk_unsupported",
+            "hunk_apply_failed",
+            "amend_no_commit",
+            "blame_unavailable",
+        ] {
+            assert_eq!(source_operation_issue(code), Some(code));
+        }
+    }
     #[test]
     fn branch_stash_source_methods_and_fixed_errors_are_supported() {
         for method in [

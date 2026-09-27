@@ -1712,6 +1712,11 @@
   [
     "workspace.source",
     "source",
+    "repo_blame"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_branch_create"
   ],
   [
@@ -1777,7 +1782,22 @@
   [
     "workspace.source",
     "source",
+    "repo_file_hunks"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_history"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_hunks_apply"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_last_commit"
   ],
   [
     "workspace.source",

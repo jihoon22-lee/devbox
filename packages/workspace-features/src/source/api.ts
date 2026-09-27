@@ -812,9 +812,15 @@ export function repoCommitPreview(path: string): Promise<CommitReview> {
     });
   return invoke("repo_commit_preview", { request: { path } });
 }
-export function repoCommit(path: string, message: string, operationId: string, indexRevision: string): Promise<void> {
+export function repoCommit(
+  path: string,
+  message: string,
+  operationId: string,
+  indexRevision: string,
+  amend = false,
+): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return Promise.resolve(invoke("repo_commit", { request: { path, message, operationId, indexRevision } })).then(
+  return Promise.resolve(invoke("repo_commit", { request: { path, message, operationId, indexRevision, amend } })).then(
     () => undefined,
   );
 }
