@@ -9,6 +9,7 @@ pub struct Routes {
     #[cfg(test)]
     fixture_reply: Option<Value>,
     settings: Option<Arc<crate::autostart::Settings>>,
+    mcp: Option<Arc<crate::mcp::owner::Owner>>,
     started: Instant,
     pub generation: String,
     shutdown: tokio::sync::watch::Sender<bool>,
@@ -24,6 +25,7 @@ impl Routes {
             #[cfg(test)]
             fixture_reply: None,
             settings: None,
+            mcp: None,
             started: Instant::now(),
             generation,
             shutdown,
@@ -39,12 +41,14 @@ impl Routes {
         webhooks: Arc<crate::webhooks::Webhooks>,
         collectors: Arc<crate::collectors::Collectors>,
         settings: Arc<crate::autostart::Settings>,
+        mcp: Arc<crate::mcp::owner::Owner>,
     ) -> Arc<Self> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Arc::new(Self {
             #[cfg(test)]
             fixture_reply: None,
             settings: Some(settings),
+            mcp: Some(mcp),
             started: Instant::now(),
             generation,
             shutdown,
@@ -55,6 +59,9 @@ impl Routes {
         })
     }
     pub async fn shutdown_owners(&self) {
+        if let Some(mcp) = &self.mcp {
+            mcp.shutdown().await;
+        }
         if let Some(settings) = &self.settings {
             settings.shutdown().await;
         }
@@ -97,8 +104,9 @@ impl Routes {
         Ok(guard)
     }
     pub fn accepts(&self, product: &str, component: &str) -> bool {
-        (component == "agent.status"
-            && ["workspace", "api-studio", "knowledge", "control-center"].contains(&product))
+        (product == "mcp" && component == "agent.mcp")
+            || (component == "agent.status"
+                && ["workspace", "api-studio", "knowledge", "control-center"].contains(&product))
             || (component == "agent.settings" && ["knowledge", "control-center"].contains(&product))
             || (product == "api-studio" && component == "api-studio.webhooks")
             || (product == "knowledge"
@@ -133,6 +141,29 @@ impl Routes {
     ) -> Value {
         if !self.accepts(product, component) {
             return failure("unauthorized");
+        }
+        if component == "agent.mcp" {
+            if *self.shutdown.borrow() {
+                return failure("agent_unavailable");
+            }
+            return match &self.mcp {
+                Some(mcp) => mcp.dispatch(product, session, request).await,
+                None => failure("agent_unavailable"),
+            };
+        }
+        if component == "agent.settings"
+            && matches!(
+                request.get("method").and_then(Value::as_str),
+                Some("mcp_settings" | "set_mcp_settings")
+            )
+        {
+            if *self.shutdown.borrow() {
+                return failure("agent_unavailable");
+            }
+            return match &self.mcp {
+                Some(mcp) => mcp.settings(product, session, request).await,
+                None => failure("agent_unavailable"),
+            };
         }
         if component == "agent.settings" {
             if *self.shutdown.borrow() {
@@ -224,6 +255,23 @@ pub fn failure(code: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mcp_peer_has_only_its_dedicated_component() {
+        let routes = Routes::for_tests();
+        assert!(routes.accepts("mcp", "agent.mcp"));
+        for product in ["workspace", "knowledge", "api-studio", "control-center"] {
+            assert!(!routes.accepts(product, "agent.mcp"));
+        }
+        for component in [
+            "agent.settings",
+            "agent.status",
+            "workspace.runtime",
+            "knowledge.search",
+            "api-studio.webhooks",
+        ] {
+            assert!(!routes.accepts("mcp", component));
+        }
+    }
     #[test]
     fn collector_components_accept_only_knowledge_peers_and_never_notes() {
         let routes = Routes::for_tests();

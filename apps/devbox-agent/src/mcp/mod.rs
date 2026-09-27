@@ -1,5 +1,9 @@
 pub mod host;
 pub mod launcher;
+pub mod notes;
+pub mod owner;
+pub mod route;
+pub mod settings;
 pub mod stdio;
 pub fn run_stdio() -> i32 {
     let args: Vec<_> = std::env::args_os().skip(1).collect();

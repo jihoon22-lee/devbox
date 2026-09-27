@@ -78,17 +78,32 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let knowledge_root = dirs::data_local_dir()
             .ok_or("knowledge_store_unavailable")?
             .join(format!("com.devbox.v08.knowledge.i{suffix}"));
-        let collectors = collectors::Collectors::new(app.handle().clone(), knowledge_root);
+        let collectors = collectors::Collectors::new(app.handle().clone(), knowledge_root.clone());
         let settings = autostart::Settings::new(scope.clone(), &suffix)?;
         // A registry failure must not disable unrelated background functionality;
         // the settings query will report the fixed failure to the product UI.
         let _ = settings.reconcile();
+        let mcp_scope = scope.clone();
+        let mcp = mcp::owner::Owner::new(
+            mcp::owner::Paths {
+                installation: std::path::PathBuf::from(scope.review_root()),
+                data: dirs::data_local_dir()
+                    .ok_or("mcp_settings_unavailable")?
+                    .join(format!("com.devbox.v08.agent.i{suffix}")),
+                knowledge: knowledge_root,
+                generation: scope.manifest.generation.clone(),
+            },
+            runtime.clone(),
+            collectors.clone(),
+            std::sync::Arc::new(move || mcp_scope.revalidate()),
+        );
         let routes = routes::Routes::with_runtime(
             scope.manifest.generation.clone(),
             runtime.clone(),
             webhooks.clone(),
             collectors.clone(),
             settings,
+            mcp,
         );
         tray::initialize(
             app.handle(),

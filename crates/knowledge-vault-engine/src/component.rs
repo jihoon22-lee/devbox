@@ -45,6 +45,12 @@ impl ProductVault {
     pub fn revalidate(&self) -> Result<(), String> {
         self.0.revalidate().map_err(|_| "vault_change_stale".into())
     }
+    /// Native callers retain this vault and validate a relative child without following links.
+    pub fn entry(&self, relative: &str) -> Result<std::path::PathBuf, String> {
+        self.0
+            .new_entry(relative)
+            .map_err(|_| "vault_entry_invalid".into())
+    }
     pub fn prepare_layout(&self) -> Result<(), String> {
         self.revalidate()?;
         crate::core::store::ensure_layout(self.path()).map_err(|_| "vault_change_unavailable")?;

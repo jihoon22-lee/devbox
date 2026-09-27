@@ -1,4 +1,5 @@
 //! A single installed owner of Workspace runtime stores. Metadata stays read-only.
+mod mcp;
 use crate::remote::RemoteSession;
 use product_contract::RouteRequest;
 use product_ipc::{ComponentCall, IncomingRequest};
@@ -172,6 +173,15 @@ pub struct Runtime {
     drained: tokio::sync::Notify,
     shutdown: Shutdown,
 }
+struct Active(Arc<Runtime>);
+impl Drop for Active {
+    fn drop(&mut self) {
+        self.0
+            .active
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        self.0.drained.notify_one();
+    }
+}
 impl Runtime {
     pub fn new(app: tauri::AppHandle, data: PathBuf, resources: PathBuf) -> Arc<Self> {
         Arc::new(Self {
@@ -254,15 +264,6 @@ impl Runtime {
         // The owned task retains its request/worker permits if a UI connection
         // disappears; dropping an RPC future cannot create extra native workers.
         tauri::async_runtime::spawn(async move {
-            struct Active(Arc<Runtime>);
-            impl Drop for Active {
-                fn drop(&mut self) {
-                    self.0
-                        .active
-                        .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                    self.0.drained.notify_one();
-                }
-            }
             owner
                 .active
                 .fetch_add(1, std::sync::atomic::Ordering::AcqRel);

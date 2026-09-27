@@ -342,3 +342,67 @@ mod consent_tests {
         assert!(!missing.exists());
     }
 }
+
+/// Resolve the configured vault from the selected notes database without creating a store.
+pub fn vault_root(root: &Path) -> Result<Option<PathBuf>, String> {
+    use rusqlite::{OpenFlags, OptionalExtension};
+    let Some(manifest) = read(root)? else {
+        return Ok(None);
+    };
+    let path = directory(root, &manifest, "notes")?.join("data.db");
+    let (_witness, identity) =
+        devbox_filesystem::open_filesystem_object(&path, false).map_err(|_| "store_unavailable")?;
+    let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|_| "store_unavailable")?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(100))
+        .map_err(|_| "store_unavailable")?;
+    connection
+        .execute_batch("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;")
+        .map_err(|_| "store_unavailable")?;
+    validate_store(&connection, StoreKind::Notes)?;
+    let value: Option<Option<String>> = connection.query_row("SELECT CASE WHEN length(CAST(value AS BLOB)) <= 32768 THEN value ELSE NULL END FROM settings WHERE key='root'", [], |row| row.get(0)).optional().map_err(|_| "store_unavailable")?;
+    if devbox_filesystem::filesystem_identity(&path, false).map_err(|_| "store_unavailable")?
+        != identity
+        || read(root)? != Some(manifest)
+    {
+        return Err("store_changed".into());
+    }
+    Ok(value
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from))
+}
+
+#[cfg(test)]
+mod vault_root_tests {
+    use super::*;
+    #[test]
+    fn vault_root_reads_only_the_selected_notes_store_without_creating_data() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(vault_root(root.path()).unwrap().is_none());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+        let manifest = create_empty(root.path()).unwrap();
+        assert!(vault_root(root.path()).unwrap().is_some());
+        let notes = directory(root.path(), &manifest, "notes").unwrap();
+        let connection = Connection::open(notes.join("data.db")).unwrap();
+        connection
+            .execute("DELETE FROM settings WHERE key='root'", [])
+            .unwrap();
+        assert!(vault_root(root.path()).unwrap().is_none());
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO settings(key,value) VALUES('root',?1)",
+                ["C:/fixture/notes"],
+            )
+            .unwrap();
+        assert_eq!(
+            vault_root(root.path()).unwrap(),
+            Some(PathBuf::from("C:/fixture/notes"))
+        );
+        connection
+            .execute("UPDATE settings SET value='' WHERE key='root'", [])
+            .unwrap();
+        assert!(vault_root(root.path()).unwrap().is_none());
+    }
+}

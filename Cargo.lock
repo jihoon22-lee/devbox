@@ -1247,6 +1247,7 @@ dependencies = [
  "agent-protocol",
  "devbox-activity-engine",
  "devbox-content-index-engine",
+ "devbox-knowledge-vault-engine",
  "devbox-logs-engine",
  "devbox-ports-engine",
  "devbox-runtime-engine",

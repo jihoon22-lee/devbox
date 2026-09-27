@@ -12,11 +12,16 @@ pub struct AgentToolHost {
 pub fn host_error(code: &str) -> HostError {
     let message = match code {
         "note_missing" => "Note not found.",
+        "note_unavailable" => "Could not read or write the selected note.",
+        "note_capture_limit" => "Too many notes share this title and timestamp.",
         "note_path_invalid" => "Choose a Markdown path inside the current notes folder.",
         "vault_unavailable" => "Open Devbox Knowledge once to choose a notes folder.",
         "search_unavailable" => "Open Devbox Knowledge once to set up search.",
         "task_not_trusted" => "Review and trust this task in Devbox Workspace before running it.",
         "task_missing" => "Task not found. Refresh the task list.",
+        "task_execution_failed" => {
+            "The task could not be started. Check its state in Devbox Workspace."
+        }
         "tool_not_allowed" => "Enable this tool in Devbox Control Center > Settings > MCP.",
         "mcp_disabled" => "Turn on Devbox MCP in Devbox Control Center > Settings > MCP.",
         _ => "Devbox agent is not available. Open Control Center and check the installation.",
@@ -24,12 +29,15 @@ pub fn host_error(code: &str) -> HostError {
     HostError {
         code: if matches!(
             code,
-            "note_missing"
+            "note_unavailable"
+                | "note_capture_limit"
+                | "note_missing"
                 | "note_path_invalid"
                 | "vault_unavailable"
                 | "search_unavailable"
                 | "task_not_trusted"
                 | "task_missing"
+                | "task_execution_failed"
                 | "tool_not_allowed"
                 | "mcp_disabled"
         ) {
