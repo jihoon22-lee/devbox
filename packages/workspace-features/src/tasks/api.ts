@@ -598,7 +598,8 @@ const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
   "workspace-task-unavailable": "이 workspace task는 현재 사용할 수 없습니다. 원본을 다시 미리보고 가져오세요.",
   "workspace-task-source-unavailable":
     "workspace task 원본을 읽을 수 없습니다. 프로젝트 경로와 .vscode/tasks.json을 확인하세요.",
-  "workspace-task-source-changed": "원본 tasks.json이 변경되어 승인이 무효화되었습니다. 다시 미리보고 승인하세요.",
+  "workspace-task-source-changed":
+    "작업 원본이 바뀌었거나 프로젝트 정의 신뢰가 철회되었습니다. 프로젝트 개요의 신뢰와 작업 실행 승인을 다시 확인하세요.",
   "workspace-task-managed-fields-locked": "workspace task의 이름·명령·작업 디렉터리·대상은 원본이 관리합니다.",
   "workspace-task-environment-key-not-declared": "원본에 선언된 환경변수 키만 입력할 수 있습니다.",
   "workspace-task-configuration-invalid": "workspace task 설정이 올바르지 않아 실행할 수 없습니다.",

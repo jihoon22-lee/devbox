@@ -11,6 +11,16 @@ use crate::{
 use std::{path::Path, sync::Arc};
 
 pub trait NativeTaskSources: Send + Sync {
+    /// Re-read owner approval at execution time; inspection must remain possible.
+    fn authorize_execution(
+        &self,
+        _root: &Path,
+        _target: TargetKind,
+        _distro: Option<&str>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
     fn wsl_target(
         &self,
         _distro: &str,
@@ -82,6 +92,15 @@ pub fn verify(
         &first.revision,
     )?;
     tasks::verify_projected_executions(&plan, executions)?;
+    if require_trust {
+        if let Some(provider) = database.task_sources.get() {
+            provider.authorize_execution(
+                Path::new(&first.source_root),
+                first.target_kind,
+                first.target_distro.as_deref(),
+            )?;
+        }
+    }
     Ok(plan)
 }
 pub(crate) type Provider = Arc<dyn NativeTaskSources>;
@@ -106,8 +125,21 @@ pub fn wsl_target(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
-    struct Source(AtomicBool);
+    struct Source(AtomicBool, AtomicBool);
     impl NativeTaskSources for Source {
+        fn authorize_execution(
+            &self,
+            _: &Path,
+            _: TargetKind,
+            _: Option<&str>,
+        ) -> Result<(), Error> {
+            if self.1.load(Ordering::Acquire) {
+                Err(Error::SourceChanged)
+            } else {
+                Ok(())
+            }
+        }
+
         fn preview(
             &self,
             root: &Path,
@@ -138,7 +170,7 @@ mod tests {
     #[test]
     fn native_projection_is_untrusted_until_approved_and_never_falls_back_to_host_paths() {
         let database = DatabaseState::open_in_memory().unwrap();
-        let source = Arc::new(Source(AtomicBool::new(false)));
+        let source = Arc::new(Source(AtomicBool::new(false), AtomicBool::new(false)));
         assert!(database.task_sources.set(source.clone()).is_ok());
         let root = Path::new("/__devbox_native_fixture_not_on_host__");
         let plan = preview(&database, root, TargetKind::Wsl, Some("Fixture")).unwrap();
@@ -168,6 +200,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(verify(&database, std::slice::from_ref(&trusted), true).is_ok());
+        source.1.store(true, Ordering::Release);
+        assert!(verify(&database, std::slice::from_ref(&trusted), true).is_err());
+        assert!(verify(&database, std::slice::from_ref(&trusted), false).is_ok());
+        source.1.store(false, Ordering::Release);
         assert!(wsl_target(&database, "Fixture", Some(&trusted)).is_err());
         source.0.store(true, Ordering::Release);
         assert!(verify(&database, std::slice::from_ref(&trusted), true).is_err());

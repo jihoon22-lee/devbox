@@ -50,7 +50,7 @@ impl FailureCode {
             Self::TerminationTimeout => "프로세스 종료 제한 시간을 초과했습니다",
             Self::WslUnavailable => "WSL 실행 환경을 사용할 수 없습니다",
             Self::WorkspaceTaskSourceChanged => {
-                "Workspace task 원본이 변경되어 승인이 해제되었습니다"
+                "Workspace task 원본 또는 프로젝트 실행 승인을 다시 확인해 주세요"
             }
             Self::WorkspaceTaskConfiguration => {
                 "Workspace task 환경변수 구성이 원본 선언과 일치하지 않습니다"

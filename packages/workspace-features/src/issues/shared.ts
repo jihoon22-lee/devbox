@@ -304,7 +304,8 @@ export const workspaceMessages: Record<WorkspaceIssue, string> = {
   runtime_settings_unavailable: "보기 설정을 읽거나 저장하지 못했습니다. 기존 사본은 보존되어 있습니다.",
   runtime_store_changed: "실행 저장소가 변경되었습니다. 앱을 다시 시작해 주세요.",
   runtime_task_review_required: "작업 실행 내용을 검토하고 승인해 주세요.",
-  runtime_task_source_changed: "작업 정의가 변경되었습니다. 가져오기와 실행 승인을 다시 확인해 주세요.",
+  runtime_task_source_changed:
+    "작업 원본 또는 프로젝트 정의 신뢰가 바뀌었습니다. 프로젝트 개요의 신뢰와 작업 실행 승인을 다시 확인해 주세요.",
   runtime_windows_required: unavailable,
   selection_busy: unavailable,
   selection_expired: unavailable,

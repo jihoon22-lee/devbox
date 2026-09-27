@@ -12,6 +12,22 @@ pub struct Sources {
     pub host: Arc<Host>,
 }
 impl NativeTaskSources for Sources {
+    fn authorize_execution(
+        &self,
+        root: &Path,
+        target: TargetKind,
+        distro: Option<&str>,
+    ) -> Result<(), Error> {
+        // WSL definition IO owns a private runtime, so leave any entered Tokio
+        // context before reading fresh native registry/definition evidence.
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| self.authorize_native(root, target, distro))
+                .join()
+        })
+        .map_err(|_| Error::SourceUnavailable)?
+    }
+
     fn preview(
         &self,
         root: &Path,
@@ -95,12 +111,73 @@ impl NativeTaskSources for Sources {
         }
     }
 }
-#[cfg(windows)]
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|time| time.as_millis() as u64)
         .unwrap_or(0)
+}
+impl Sources {
+    fn authorize_native(
+        &self,
+        root: &Path,
+        target: TargetKind,
+        distro: Option<&str>,
+    ) -> Result<(), Error> {
+        let root = root.to_str().ok_or(Error::InvalidRoot)?;
+        let target = match target {
+            TargetKind::Windows => product_contract::ExecutionTarget::Windows,
+            TargetKind::Wsl => {
+                #[cfg(windows)]
+                {
+                    let distro = distro.ok_or(Error::InvalidTarget)?;
+                    let distros =
+                        super::wsl_distro::list().map_err(|_| Error::SourceUnavailable)?;
+                    let id = distros
+                        .iter()
+                        .find(|entry| entry.name == distro)
+                        .ok_or(Error::InvalidTarget)?
+                        .id
+                        .clone();
+                    product_contract::ExecutionTarget::Wsl { distro_id: id }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = distro;
+                    return Err(Error::SourceUnavailable);
+                }
+            }
+        };
+        self.authorize_project(root, &target)
+    }
+    pub(crate) fn authorize_project(
+        &self,
+        root: &str,
+        target: &product_contract::ExecutionTarget,
+    ) -> Result<(), Error> {
+        let projects = self.host.projects().map_err(|_| Error::SourceUnavailable)?;
+        let registry = projects.snapshot().map_err(|_| Error::SourceUnavailable)?;
+        let mut matching = registry
+            .worktrees
+            .iter()
+            .filter(|tree| tree.binding.root == root && &tree.binding.target == target);
+        // Independently imported Runtime sources retain their explicit source
+        // approval; registered project sources must also retain definitions trust.
+        let Some(tree) = matching.next() else {
+            return Ok(());
+        };
+        if matching.next().is_some() {
+            return Err(Error::SourceChanged);
+        }
+        let context = tree.context();
+        let view = crate::definitions::Definitions::default()
+            .session_preflight(&self.host, &context, now().saturating_add(30_000))
+            .map_err(|_| Error::SourceChanged)?;
+        if !view.trusted || !view.unavailable_sources.is_empty() {
+            return Err(Error::SourceChanged);
+        }
+        Ok(())
+    }
 }
 #[cfg(windows)]
 struct Snapshot {

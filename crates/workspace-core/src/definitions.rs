@@ -648,6 +648,44 @@ mod tests {
         (snapshot, registry)
     }
     #[test]
+    fn scheduled_source_execution_observes_project_definition_trust_revocation() {
+        use crate::task_sources::Sources;
+        use std::sync::Arc;
+        let root = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join(".vscode")).unwrap();
+        std::fs::write(project.path().join(".vscode/tasks.json"), br#"{"version":"2.0.0","tasks":[{"label":"fixture","type":"process","command":"fixture-tool"}]}"#).unwrap();
+        let writer = Host::open(root.path()).unwrap();
+        writer.start_empty().unwrap();
+        let projects = writer.projects().unwrap();
+        let preview = projects.preview_fixture(project.path()).unwrap();
+        let (_, context) = projects
+            .apply(
+                &preview.preview_id,
+                "fixture",
+                crate::project_owner::RegistrationAction::Register,
+            )
+            .unwrap();
+        let mut definitions = crate::definitions::Definitions::default();
+        let preview = definitions
+            .preview_trust(&writer, &context, u64::MAX)
+            .unwrap();
+        let approved = definitions
+            .approve_trust(&writer, &context, &preview.preview_id, u64::MAX)
+            .unwrap();
+        let host = Arc::new(Host::open_read_only(root.path()).unwrap());
+        let sources = Sources { host };
+        assert!(sources
+            .authorize_project(project.path().to_str().unwrap(), &context.target)
+            .is_ok());
+        definitions
+            .revoke_trust(&writer, &context, approved.revision)
+            .unwrap();
+        assert!(sources
+            .authorize_project(project.path().to_str().unwrap(), &context.target)
+            .is_err());
+    }
+    #[test]
     fn the_agent_reads_existing_definition_metadata_without_creating_it() {
         let root = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
