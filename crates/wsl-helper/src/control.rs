@@ -118,6 +118,7 @@ pub fn project_method(method: &str) -> bool {
             | "source_capture"
             | "source_validate"
             | "source_worktree_preview"
+            | "agent_resources"
             | "dependency_inventory"
             | "definitions_attach"
             | "definitions_read"
@@ -188,6 +189,8 @@ mod tests {
     use super::*;
     #[test]
     fn agent_worktree_source_methods_are_supported() {
+        assert!(source_method("inspect_agent_worktree"));
+        assert!(project_method("agent_resources"));
         assert_eq!(
             source_operation_issue("source_merge_dirty"),
             Some("source_merge_dirty")

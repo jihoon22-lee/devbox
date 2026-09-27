@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, Read, Write};
 
+pub mod agent_resources;
 pub mod document;
 
 pub const VERSION: u32 = 1;
