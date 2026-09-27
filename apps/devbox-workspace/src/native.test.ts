@@ -127,3 +127,26 @@ it("preserves the Agent Hub fixed issue code and Korean message", async () => {
     message: "작업 상태가 바뀌었습니다. 목록을 다시 읽고 시도해 주세요.",
   });
 });
+
+it("loads Source issue messages lazily without changing their fixed code", async () => {
+  const description = await describeProduct("workspace");
+  vi.mocked(invoke).mockImplementation(async (_command, args) => {
+    const { request } = args as { request: { header: RouteRequest } };
+    return {
+      operation: {
+        provenance: {
+          product: "workspace",
+          component: "workspace.source",
+          requestId: request.header.requestId,
+          revision: catalog.catalogRevision,
+        },
+        outcome: { state: "failed", code: "unavailable" },
+      },
+      value: { issue: "hunk_stale" },
+    };
+  });
+  await expect(componentCall(description, "workspace.source", "repo_hunks_apply", {}, "source")).rejects.toMatchObject({
+    code: "hunk_stale",
+    message: "파일이 바뀌었습니다. 변경 덩어리를 다시 불러와 주세요.",
+  });
+});

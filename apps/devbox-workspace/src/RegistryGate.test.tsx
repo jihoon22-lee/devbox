@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import RegistryGate from "./RegistryGate";
 import { nativeCall } from "./native";
-vi.mock("./native", () => ({ nativeCall: vi.fn(), issueMessage: () => "저장된 설정을 읽을 수 없습니다." }));
+vi.mock("./native", () => ({ nativeCall: vi.fn() }));
 const call = vi.mocked(nativeCall);
 const emptyRegistry = { revision: 1, projects: [], worktrees: [] };
 const preview = {

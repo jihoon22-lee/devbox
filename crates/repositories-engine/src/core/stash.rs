@@ -42,7 +42,7 @@ mod tests {
     use super::*;
     #[test]
     fn stash_list_parses_index_commit_time_and_message() {
-        let output = "stash@{0}\0dddd\01790000000\0On main: wip login\nstash@{1}\0eeee\01789990000\0WIP on main: 1234567 base\n";
+        let output = "stash@{0}\0dddd\x001790000000\0On main: wip login\nstash@{1}\0eeee\x001789990000\0WIP on main: 1234567 base\n";
         let entries = parse_list(output).unwrap();
         assert_eq!(
             entries[0],
@@ -55,10 +55,10 @@ mod tests {
         );
         assert_eq!(entries[1].index, 1);
         for invalid in [
-            "stash@{x}\0d\01\0m\n",
-            "stash@{1000}\0d\01\0m\n",
+            "stash@{x}\0d\x001\0m\n",
+            "stash@{1000}\0d\x001\0m\n",
             "stash@{0}\0d\0bad\0m\n",
-            "stash@{0}\0d\01\0m\0extra\n",
+            "stash@{0}\0d\x001\0m\0extra\n",
         ] {
             assert!(parse_list(invalid).is_err());
         }

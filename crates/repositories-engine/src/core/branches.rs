@@ -74,10 +74,10 @@ pub fn parse_refs(output: &str, _current: Option<&str>) -> Result<Vec<Branch>, S
 mod tests {
     use super::*;
     const REFS: &str = concat!(
-        "refs/heads/main\0aaaa\0origin/main\0ahead 2, behind 1\0/home/me/devbox\01790000000\0Merge agent/fix\n",
-        "refs/heads/agent/fix\0bbbb\0\0\0/home/me/devbox-fix\01790000100\0agent change\n",
-        "refs/remotes/origin/main\0cccc\0\0\0\01789999000\0upstream\n",
-        "refs/remotes/origin/HEAD\0cccc\0\0\0\01789999000\0upstream\n",
+        "refs/heads/main\0aaaa\0origin/main\0ahead 2, behind 1\0/home/me/devbox\x001790000000\0Merge agent/fix\n",
+        "refs/heads/agent/fix\0bbbb\0\0\0/home/me/devbox-fix\x001790000100\0agent change\n",
+        "refs/remotes/origin/main\0cccc\0\0\0\x001789999000\0upstream\n",
+        "refs/remotes/origin/HEAD\0cccc\0\0\0\x001789999000\0upstream\n",
     );
     #[test]
     fn refs_parse_into_local_and_remote_branches() {
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn malformed_records_are_rejected_and_detached_is_supported() {
         assert!(parse_refs("refs/heads/main\0only-two-fields\n", None).is_err());
-        assert!(parse_refs("refs/tags/v1\0a\0\0\0\01\0s\n", None).is_err());
+        assert!(parse_refs("refs/tags/v1\0a\0\0\0\x001\0s\n", None).is_err());
         assert!(parse_refs("refs/heads/x\0a\0\0\0\0bad-time\0s\n", None).is_err());
         assert_eq!(parse_refs(REFS, None).unwrap().len(), 3);
         assert!(parse_refs("", None).unwrap().is_empty());
