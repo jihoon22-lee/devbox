@@ -1,3 +1,4 @@
+import { projectInitializationDiagnostics } from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
@@ -14,7 +15,17 @@ import {
   releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  realpathSync,
+  readdirSync,
+  lstatSync,
+  openSync,
+  readSync,
+  closeSync,
+} from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -457,6 +468,40 @@ try {
         !item.identity ||
         !allWindowsProcesses().some((row) => row.Pid === item.identity.Pid && row.Created === item.identity.Created),
     });
+  }
+  // Only the hosted fixture's verified installation namespace is inspected.
+  // Keep fixed metadata, never complete logs or arbitrary fields.
+  try {
+    const registration = JSON.parse(readFileSync(path.join(root, "suite-registration.json"), "utf8"));
+    assert.match(registration.installationKey, /^[0-9a-f]{64}$/);
+    const logs = path.join(
+      process.env.LOCALAPPDATA,
+      `com.devbox.v08.workspace.i${registration.installationKey}`,
+      "logs",
+    );
+    assert.ok(lstatSync(logs).isDirectory() && !lstatSync(logs).isSymbolicLink());
+    evidence.runtimeDiagnostics = [];
+    for (const name of readdirSync(logs)
+      .filter((name) => /^operations-\d{4}-\d{2}-\d{2}\.jsonl$/.test(name))
+      .sort()
+      .slice(-2)) {
+      const file = path.join(logs, name);
+      const info = lstatSync(file);
+      if (!info.isFile() || info.isSymbolicLink()) continue;
+      const buffer = Buffer.alloc(Math.min(info.size, 65536));
+      const fd = openSync(file, "r");
+      try {
+        const bytes = readSync(fd, buffer, 0, buffer.length, Math.max(0, info.size - buffer.length));
+        evidence.runtimeDiagnostics.push(
+          ...projectInitializationDiagnostics(buffer.subarray(0, bytes).toString("utf8")),
+        );
+      } finally {
+        closeSync(fd);
+      }
+    }
+    evidence.runtimeDiagnostics = evidence.runtimeDiagnostics.slice(-32);
+  } catch {
+    evidence.runtimeDiagnosticsUnavailable = true;
   }
   mkdirSync("product-foundation-evidence", { recursive: true });
   writeFileSync(
