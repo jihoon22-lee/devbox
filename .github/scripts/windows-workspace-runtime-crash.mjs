@@ -46,7 +46,8 @@ export async function prepareRuntimeCrash(cdp, directory) {
   assert.equal(readFileSync(counter, "utf8"), "start\n");
   return { jobId: job.id, operationId, response, child, counter };
 }
-export async function verifyRuntimeCrash(cdp, fixture) {
+export async function verifyRuntimeCrash(cdp, fixture, report = () => {}) {
+  report("query-active-run");
   const deadline = performance.now() + 20000;
   let running = true;
   while (running && performance.now() < deadline) {
@@ -54,7 +55,9 @@ export async function verifyRuntimeCrash(cdp, fixture) {
     if (running) await delay(150);
   }
   assert.equal(running, false, "Restart adopted or failed to settle the prior process owner");
+  report("verify-child-closed");
   await assert.rejects(fetch(`http://127.0.0.1:${fixture.child.port}`, { signal: AbortSignal.timeout(1000) }));
+  report("replay-operation");
   const replay = success(
     await call(cdp, "runtime_control", {
       operationId: fixture.operationId,
@@ -64,6 +67,7 @@ export async function verifyRuntimeCrash(cdp, fixture) {
   );
   assert.deepEqual(replay, fixture.response);
   assert.equal(readFileSync(fixture.counter, "utf8"), "start\n");
+  report("delete-fixture-job");
   success(await call(cdp, "delete_job", { id: fixture.jobId }));
   return {
     nativeCrash: true,

@@ -53,12 +53,15 @@ struct Connection {
     outgoing: mpsc::Sender<Outgoing>,
     alive: Arc<AtomicBool>,
     driver: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    reader: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 impl Drop for Connection {
     fn drop(&mut self) {
-        if let Ok(driver) = self.driver.get_mut() {
-            if let Some(driver) = driver.take() {
-                driver.abort();
+        for task in [&mut self.driver, &mut self.reader] {
+            if let Ok(task) = task.get_mut() {
+                if let Some(task) = task.take() {
+                    task.abort();
+                }
             }
         }
     }
@@ -126,7 +129,9 @@ impl AgentClient {
             }
         }
         let epoch = self.0.epoch.fetch_add(1, Ordering::AcqRel) + 1;
-        *current = None;
+        if let Some(previous) = current.take() {
+            previous.retire().await;
+        }
         struct Starting<'a>(&'a tokio::sync::watch::Sender<&'static str>);
         impl Drop for Starting<'_> {
             fn drop(&mut self) {
@@ -286,18 +291,9 @@ impl AgentClient {
     /// Close this connection without shutting down the agent, and wait until
     /// the driver releases native peer/scope leases before returning.
     pub async fn disconnect(&self) {
-        let connection = self.0.current.lock().await.take();
-        if let Some(connection) = connection {
-            connection.alive.store(false, Ordering::Release);
-            let driver = connection
-                .driver
-                .lock()
-                .ok()
-                .and_then(|mut driver| driver.take());
-            if let Some(driver) = driver {
-                driver.abort();
-                let _ = driver.await;
-            }
+        let mut current = self.0.current.lock().await;
+        if let Some(connection) = current.take() {
+            connection.retire().await;
         }
     }
     pub async fn connect(&self, session: &str) -> Result<(), AgentError> {
@@ -308,7 +304,9 @@ impl AgentClient {
         {
             let mut current = self.0.current.lock().await;
             self.0.epoch.fetch_add(1, Ordering::AcqRel);
-            *current = None;
+            if let Some(previous) = current.take() {
+                previous.retire().await;
+            }
             self.0.stopped.store(false, Ordering::Release);
         }
         self.connect(session).await
@@ -410,7 +408,31 @@ async fn drain_shutdown_notice(
     }
 }
 
+// Close the read half before notifying the driver. Windows keeps a named pipe
+// instance until its last handle is closed, even after the server has exited.
+struct OwnedReader {
+    io: Option<tokio::io::ReadHalf<Box<dyn Io>>>,
+    closed: Option<oneshot::Sender<()>>,
+}
+impl Drop for OwnedReader {
+    fn drop(&mut self) {
+        drop(self.io.take());
+        if let Some(closed) = self.closed.take() {
+            let _ = closed.send(());
+        }
+    }
+}
 impl Connection {
+    async fn retire(&self) {
+        self.alive.store(false, Ordering::Release);
+        for task in [&self.driver, &self.reader] {
+            let task = task.lock().ok().and_then(|mut task| task.take());
+            if let Some(task) = task {
+                task.abort();
+                let _ = task.await;
+            }
+        }
+    }
     fn start(
         session: String,
         connected: Connected,
@@ -422,6 +444,24 @@ impl Connection {
         let (outgoing, mut queue) = mpsc::channel::<Outgoing>(64);
         let alive = Arc::new(AtomicBool::new(true));
         let live = alive.clone();
+        let (read, mut write) = tokio::io::split(connected.stream);
+        let (messages, mut incoming) = mpsc::channel(1);
+        let (closed, reader_closed) = oneshot::channel();
+        let mut read = OwnedReader {
+            io: Some(read),
+            closed: Some(closed),
+        };
+        let reader = tokio::spawn(async move {
+            loop {
+                let result =
+                    wire::read::<_, AgentMessage>(read.io.as_mut().expect("owned reader")).await;
+                let failed = result.is_err();
+                if messages.send(result).await.is_err() || failed {
+                    break;
+                }
+            }
+        });
+        let reader_abort = reader.abort_handle();
         let driver = tokio::spawn(async move {
             struct Status(
                 tokio::sync::watch::Sender<&'static str>,
@@ -443,24 +483,13 @@ impl Connection {
                 }
             }
             let _live = Live(live);
-            let (mut read, mut write) = tokio::io::split(connected.stream);
-            let (messages, mut incoming) = mpsc::channel(1);
-            let reader = tokio::spawn(async move {
-                loop {
-                    let result = wire::read::<_, AgentMessage>(&mut read).await;
-                    let failed = result.is_err();
-                    if messages.send(result).await.is_err() || failed {
-                        break;
-                    }
-                }
-            });
-            struct Reader(tokio::task::JoinHandle<()>);
+            struct Reader(tokio::task::AbortHandle);
             impl Drop for Reader {
                 fn drop(&mut self) {
                     self.0.abort();
                 }
             }
-            let _reader = Reader(reader);
+            let reader_lifetime = Reader(reader_abort);
             let mut pending = HashMap::<u64, oneshot::Sender<Result<Value, AgentError>>>::new();
             let mut replies = HashMap::<u64, agent_protocol::reply::Receiver>::new();
             loop {
@@ -516,6 +545,11 @@ impl Connection {
                     }
                 }
             }
+            // Do not advertise an unavailable owner while a detached reader
+            // still retains the old pipe and prevents a fresh first instance.
+            drop(write);
+            reader_lifetime.0.abort();
+            let _ = reader_closed.await;
             for (_, reply) in pending {
                 let _ = reply.send(Err(AgentError::Unavailable));
             }
@@ -525,6 +559,7 @@ impl Connection {
             outgoing,
             alive,
             driver: std::sync::Mutex::new(Some(driver)),
+            reader: std::sync::Mutex::new(Some(reader)),
         })
     }
 }
@@ -609,6 +644,49 @@ mod tests {
         assert!(client.0.current.lock().await.is_none());
         client.connect("fixture-session").await.unwrap();
         assert_eq!(transport.attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 0);
+        client.disconnect().await;
+    }
+
+    #[tokio::test]
+    async fn explicit_reconnect_retires_the_previous_driver_even_with_retained_callers() {
+        let transport = Arc::new(Fake {
+            attempts: AtomicUsize::new(0),
+            launches: AtomicUsize::new(0),
+            missing: 0,
+            drop_first: AtomicBool::new(false),
+        });
+        let client = AgentClient::with_transport("workspace", transport.clone());
+        client.connect("session").await.unwrap();
+        // A concurrent submitted call can retain this connection even after
+        // current is replaced. Reconnect must retire it, not wait for Arc Drop.
+        let retained = client.0.current.lock().await.clone().unwrap();
+        client.reconnect("session").await.unwrap();
+        assert!(
+            !retained.alive.load(Ordering::Acquire),
+            "old driver still owns its pipe after reconnect"
+        );
+        assert!(retained.driver.lock().unwrap().is_none());
+        assert!(retained.reader.lock().unwrap().is_none());
+        assert_eq!(client.status(), "connected");
+        client.disconnect().await;
+    }
+
+    #[tokio::test]
+    async fn changing_sessions_retires_the_prior_connection_without_replaying_calls() {
+        let transport = Arc::new(Fake {
+            attempts: AtomicUsize::new(0),
+            launches: AtomicUsize::new(0),
+            missing: 0,
+            drop_first: AtomicBool::new(false),
+        });
+        let client = AgentClient::with_transport("workspace", transport.clone());
+        client.connect("first-session").await.unwrap();
+        let retained = client.0.current.lock().await.clone().unwrap();
+        client.connect("next-session").await.unwrap();
+        assert!(!retained.alive.load(Ordering::Acquire));
+        assert!(retained.driver.lock().unwrap().is_none());
+        assert!(retained.reader.lock().unwrap().is_none());
         assert_eq!(transport.launches.load(Ordering::SeqCst), 0);
         client.disconnect().await;
     }
