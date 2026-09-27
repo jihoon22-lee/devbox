@@ -10,3 +10,4 @@ pub mod open_targets;
 pub mod remote_sync;
 pub mod stage_commit;
 pub mod hunks;
+pub mod blame;

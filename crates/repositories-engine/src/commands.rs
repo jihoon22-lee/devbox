@@ -1,4 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
+mod blame;
+pub use blame::*;
 mod last_commit;
 pub use last_commit::*;
 mod hunks;
