@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runCollection, SessionVariables } from "./runner";
+import { runCollection, SessionVariables, type RunDeps } from "./runner";
 import { emptyRequest } from "./importers";
 
 const entry = (id: string, url: string, extra: Record<string, unknown> = {}) => ({
@@ -249,4 +249,76 @@ it("refuses to undo a discard over a newer captured value", async () => {
   session.set("token", "second", "sealed-second");
   await expect(undo()).rejects.toThrow("그 사이 바뀐 내용");
   expect(session.entries()).toEqual([{ name: "token", plain: "second" }]);
+});
+
+it("chains native sealed captures without re-reading the masked body or retaining plaintext", async () => {
+  const captures = [
+    { id: "c", enabled: true, variable: "token", source: "jsonPath" as const, target: "$.access_token" },
+  ];
+  const d = {
+    ...deps(() => ok("{}")),
+    nativeCaptures: true,
+    send: vi.fn<RunDeps["send"]>(async () => ({
+      ...ok('{"access_token":"[REDACTED]"}'),
+      captures: { values: [{ name: "token", value: "native-sealed", reference: "ref-1" }], missing: [], errors: [] },
+    })),
+  };
+  const session = new SessionVariables();
+  const summary = await runCollection(
+    [entry("login", "https://x.test/login", { captures }), entry("next", "https://x.test/{{token}}")],
+    [],
+    session,
+    { stopOnFailure: true, delayMs: 0 },
+    d,
+    new AbortController().signal,
+    () => {},
+  );
+  expect(summary.passed).toBe(2);
+  expect(d.send.mock.calls[0][3]).toEqual(captures);
+  expect(d.send.mock.calls[1][1]).toEqual([{ key: "token", value: "native-sealed", secret: true }]);
+  expect(d.seal).not.toHaveBeenCalled();
+  expect(session.entries()).toEqual([{ name: "token", plain: null, reference: "ref-1" }]);
+});
+
+it("rejects a native response missing its configured capture result", async () => {
+  const captures = [{ id: "c", enabled: true, variable: "token", source: "jsonPath" as const, target: "$.token" }];
+  const d = { ...deps(() => ok('{"token":"unexpected-plaintext"}')), nativeCaptures: true };
+  const summary = await runCollection(
+    [entry("login", "https://x.test/login", { captures })],
+    [],
+    new SessionVariables(),
+    { stopOnFailure: false, delayMs: 0 },
+    d,
+    new AbortController().signal,
+    () => {},
+  );
+  expect(summary.errors).toBe(1);
+  expect(d.seal).not.toHaveBeenCalled();
+});
+
+it("revokes native references on discard, restores only unchanged state, and rejects late reveal", async () => {
+  let finish!: (value: string) => void;
+  const access = {
+    reveal: vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+    discard: vi.fn(async () => {}),
+    restore: vi.fn(async () => {}),
+  };
+  const session = new SessionVariables(access);
+  session.setNative({ name: "token", value: "sealed", reference: "ref" });
+  const pending = session.reveal("token");
+  const undo = session.discard(["token"]);
+  finish("plain");
+  await expect(pending).rejects.toThrow();
+  expect(access.discard).toHaveBeenCalledWith(["ref"]);
+  await undo();
+  expect(access.restore).toHaveBeenCalledWith(["ref"]);
+  expect(session.forSend()).toEqual([{ key: "token", value: "sealed", secret: true }]);
+  const staleUndo = session.discard();
+  session.set("new", "value", null);
+  await expect(staleUndo()).rejects.toThrow();
 });

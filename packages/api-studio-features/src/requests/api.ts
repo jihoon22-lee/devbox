@@ -152,6 +152,17 @@ export async function sendRequest(
   }
 }
 
+export async function revealCapture(reference: string): Promise<string> {
+  if (!isTauri()) throw new Error("캡처 참조는 데스크톱 앱에서만 사용할 수 있습니다.");
+  return apiCall("reveal_capture", { reference });
+}
+export async function discardCaptures(references: string[]): Promise<void> {
+  if (isTauri() && references.length) await apiCall("discard_captures", { references });
+}
+export async function restoreCaptures(references: string[]): Promise<void> {
+  if (isTauri() && references.length) await apiCall("restore_captures", { references });
+}
+
 async function cancelRequest(requestId: string): Promise<void> {
   if (!isTauri()) return;
   await apiCall("cancel_request", { requestId });

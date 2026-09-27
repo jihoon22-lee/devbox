@@ -10,10 +10,51 @@ it("masks captured values, reveals explicitly and clears them", async () => {
   const { container } = render(<SessionVariablesPanel session={session} onChange={vi.fn()} />);
   expect(screen.queryByText("private-token")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "token 보기" }));
-  expect(screen.getByText("private-token")).toBeTruthy();
+  expect(await screen.findByText("private-token")).toBeTruthy();
   await assertNoA11yViolations(container);
   fireEvent.click(screen.getByRole("button", { name: "token 지우기" }));
   expect(session.entries()).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
   expect(session.entries()).toEqual([{ name: "token", plain: "private-token" }]);
+});
+
+it("reveals native captures only on demand and ignores a reply after deleting the variable", async () => {
+  let finish!: (value: string) => void;
+  const access = {
+    reveal: vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+    discard: vi.fn(async () => {}),
+    restore: vi.fn(async () => {}),
+  };
+  const session = new SessionVariables(access);
+  session.setNative({ name: "token", value: "sealed", reference: "ref" });
+  const { container } = render(<SessionVariablesPanel session={session} onChange={vi.fn()} />);
+  expect(access.reveal).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "token 보기" }));
+  expect(access.reveal).toHaveBeenCalledWith("ref");
+  fireEvent.click(screen.getByRole("button", { name: "token 지우기" }));
+  finish("late-private-token");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByText("late-private-token")).toBeNull();
+  await assertNoA11yViolations(container);
+});
+
+it("clears a revealed value when a new capture replaces it", async () => {
+  const session = new SessionVariables({
+    reveal: vi.fn(async () => "native-private-token"),
+    discard: vi.fn(async () => {}),
+    restore: vi.fn(async () => {}),
+  });
+  session.setNative({ name: "token", value: "sealed", reference: "ref" });
+  const { rerender, container } = render(<SessionVariablesPanel session={session} onChange={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "token 보기" }));
+  expect(await screen.findByText("native-private-token")).toBeTruthy();
+  session.setNative({ name: "token", value: "next-sealed", reference: "next-ref" });
+  rerender(<SessionVariablesPanel session={session} onChange={vi.fn()} />);
+  expect(screen.queryByText("native-private-token")).toBeNull();
+  await assertNoA11yViolations(container);
 });

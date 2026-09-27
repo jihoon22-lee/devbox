@@ -1,6 +1,6 @@
 import { evaluateAssertions, type Assertion, type AssertionResult } from "./lib/assertions";
-import { applyCaptures, VARIABLE_NAME, type Capture } from "./lib/captures";
-import { SessionVariables, missingVariables, type RunDeps } from "./lib/runner";
+import { VARIABLE_NAME, type Capture } from "./lib/captures";
+import { SessionVariables, missingVariables, applyResponseCaptures, type RunDeps } from "./lib/runner";
 import { cleanCollectionChecks } from "./lib/collections";
 import { apiMessages } from "../issues/catalog";
 import type { ApiIssue } from "../generated/ApiIssue";
@@ -171,7 +171,14 @@ export default function App({
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [assertionResults, setAssertionResults] = useState<AssertionResult[]>([]);
   const [captured, setCaptured] = useState<{ variable: string; target: string }[]>([]);
-  const [sessionVariables] = useState(() => new SessionVariables());
+  const [sessionVariables] = useState(
+    () =>
+      new SessionVariables({
+        reveal: (reference) => api.revealCapture(reference),
+        discard: (references) => api.discardCaptures(references),
+        restore: (references) => api.restoreCaptures(references),
+      }),
+  );
   const [, setSessionVersion] = useState(0);
   const refreshSession = useCallback(() => setSessionVersion((version) => version + 1), []);
   const [showRunner, setShowRunner] = useState(false);
@@ -843,6 +850,7 @@ export default function App({
     setCaptured([]);
   };
   const runnerDeps: RunDeps = {
+    nativeCaptures: isTauri(),
     send: sendRequest,
     seal: async (value) => (isTauri() ? api.sealSecret(value) : null),
     sleep: (ms, signal) =>
@@ -1077,23 +1085,22 @@ export default function App({
     setSending(true);
     setError(null);
     try {
-      const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal);
+      const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal, captureSnapshot);
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setResp(result);
       setAssertionResults(evaluateAssertions(assertionSnapshot, result));
       setCaptured([]);
-      const captureResult = applyCaptures(captureSnapshot, result);
-      for (const capture of captureSnapshot)
-        if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
-      const capturedNames = new Set<string>();
       try {
-        for (const [name, plain] of captureResult.values) {
-          const sealed = await runnerDeps.seal(plain);
-          if (controller.signal.aborted || !mountedRef.current || requestSequenceRef.current !== sequence) return;
-          if (sealed === "") throw new Error("capture_failed");
-          sessionVariables.set(name, plain, sealed);
-          capturedNames.add(name);
-        }
+        const captureResult = await applyResponseCaptures(
+          captureSnapshot,
+          result,
+          sessionVariables,
+          runnerDeps,
+          controller.signal,
+          () => mountedRef.current && requestSequenceRef.current === sequence,
+        );
+        if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+        const capturedNames = new Set(captureResult.names);
         setCaptured(
           captureSnapshot
             .filter((capture) => capturedNames.has(capture.variable))

@@ -138,7 +138,9 @@ pub(crate) fn evaluate(
             }),
             Err(code) => {
                 output.missing.push(definition.variable.clone());
-                output.errors.push(code.into());
+                if code != "capture_value_missing" {
+                    output.errors.push(code.into());
+                }
             }
         }
     }
@@ -329,6 +331,7 @@ mod tests {
         let out = evaluate(&defs, 200, &[], Some("{}"), true, &Mock);
         assert!(out.values.is_empty());
         assert_eq!(out.missing, ["token"]);
+        assert!(out.errors.is_empty());
         let out = evaluate(
             &[definition("token", "jsonPath", "$.token")],
             200,

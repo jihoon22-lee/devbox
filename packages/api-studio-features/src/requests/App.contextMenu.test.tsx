@@ -6,10 +6,20 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { sanitizePersistedJson, pickCollectionFolder, writeCollectionFolder, sendRequest } from "./api";
+import {
+  sanitizePersistedJson,
+  pickCollectionFolder,
+  writeCollectionFolder,
+  sendRequest,
+  revealCapture,
+  sealSecret,
+} from "./api";
 import { type CollectionStore } from "./lib/collections";
 import { sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
 import type { RequestTemplate } from "./types";
+
+const nativeMode = vi.hoisted(() => ({ value: false }));
+vi.mock("./lib/isTauri", () => ({ isTauri: () => nativeMode.value }));
 
 vi.mock("./api", () => ({
   ackApiRequest: vi.fn(),
@@ -28,6 +38,9 @@ vi.mock("./api", () => ({
   saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
+  revealCapture: vi.fn(),
+  discardCaptures: vi.fn(async () => {}),
+  restoreCaptures: vi.fn(async () => {}),
   sendSelectionToToolbox: vi.fn(),
   sendRequest: vi.fn(),
   startSseStream: vi.fn(),
@@ -91,6 +104,7 @@ async function renderReady() {
 }
 
 beforeEach(() => {
+  nativeMode.value = false;
   localStorage.clear();
   seedStores();
   sanitizePersistedJsonMock.mockReset().mockImplementation(async (serialized) => serialized);
@@ -339,4 +353,43 @@ it("evaluates and captures manual responses and saves checks with a collection r
       captures: [{ variable: "token", target: "$.token" }],
     }),
   );
+});
+
+it("manual native sends pass capture definitions and keep tokens sealed until explicit reveal", async () => {
+  vi.mocked(sendRequest).mockResolvedValue({
+    status: 200,
+    status_text: "OK",
+    headers: [],
+    duration_ms: 5,
+    size_bytes: 20,
+    body: '{"token":"[REDACTED]"}',
+    is_json: true,
+    final_url: "https://x.test",
+    redirects: [],
+    cookies: [],
+    response_id: null,
+    raw_headers_available: false,
+    headers_truncated: false,
+    captures: { values: [{ name: "token", value: "native-sealed", reference: "native-ref" }], missing: [], errors: [] },
+  });
+  vi.mocked(revealCapture).mockResolvedValue("revealed-native-token");
+  await renderReady();
+  nativeMode.value = true;
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://x.test/login" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "캡처" }));
+  fireEvent.click(await screen.findByRole("button", { name: "캡처 추가" }));
+  fireEvent.change(screen.getByLabelText("변수 이름 1"), { target: { value: "token" } });
+  fireEvent.change(screen.getByLabelText("캡처 대상 1"), { target: { value: "$.token" } });
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await screen.findByRole("button", { name: "token 보기" });
+  expect(vi.mocked(sendRequest).mock.calls.slice(-1)[0]?.[3]).toEqual([
+    expect.objectContaining({ variable: "token", target: "$.token" }),
+  ]);
+  expect(sealSecret).not.toHaveBeenCalled();
+  expect(revealCapture).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "token 보기" }));
+  expect(await screen.findByText("revealed-native-token")).toBeTruthy();
+  expect(revealCapture).toHaveBeenCalledWith("native-ref");
 });
