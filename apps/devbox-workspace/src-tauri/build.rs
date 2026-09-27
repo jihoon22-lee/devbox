@@ -2,7 +2,7 @@ include!("../../../crates/product-shell-tauri/wsl_build_support.rs");
 include!("../../../crates/product-shell-tauri/build_support.rs");
 fn main() {
     let _bundle_staging = lock_bundle_staging();
-    helper_digest();
+    helper_digest("resources/wsl");
     let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
     // Tauri's resource compiler links its manifest to binaries only. The native

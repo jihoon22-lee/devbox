@@ -7,6 +7,10 @@ publish = false
 [features]
 test-fixtures = []
 
+[build-dependencies]
+sha2 = { workspace = true }
+serde_json = { workspace = true }
+
 [dependencies]
 ports_engine = { package = "devbox-ports-engine", path = "../ports-engine", default-features = false, features = ["desktop"] }
 devbox-integration = { package = "integration", path = "../integration" }
