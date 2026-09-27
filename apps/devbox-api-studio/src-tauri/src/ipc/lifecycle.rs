@@ -31,6 +31,7 @@ pub struct LifecycleStatus {
     pub main_window_visible: Option<bool>,
     pub policy: crate::core::lifecycle::ClosePolicy,
     pub tray_available: bool,
+    pub background_available: bool,
     pub running: bool,
     pub closing: bool,
     pub stop_failed: bool,

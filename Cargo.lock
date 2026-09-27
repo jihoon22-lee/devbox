@@ -1249,6 +1249,7 @@ dependencies = [
  "devbox-logs-engine",
  "devbox-ports-engine",
  "devbox-runtime-engine",
+ "devbox-webhook-host",
  "dirs",
  "filesystem",
  "product-contract",
@@ -1271,6 +1272,7 @@ dependencies = [
 name = "devbox-api-studio"
 version = "0.8.1"
 dependencies = [
+ "agent-client",
  "applink",
  "catalog",
  "devbox-http-client-engine",

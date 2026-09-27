@@ -1391,7 +1391,7 @@ pub fn export_run_service_definition(
     rules.sort_by(compare_rule_precedence);
     let data_root = crate::component::data_root(&app)
         .map_err(|_| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
-    let executable = std::env::current_exe()
+    let executable = crate::component::service_executable(&app)
         .map_err(|_| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
     let now = handoff_now_ms()
         .ok_or_else(|| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;

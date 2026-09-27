@@ -13,7 +13,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             crate::mock_draft::initialize(app, store.clone()).map_err(std::io::Error::other)?;
             http_client_engine::component::initialize(app, store.clone())
                 .map_err(std::io::Error::other)?;
-            webhook_host::component::initialize(app).map_err(std::io::Error::other)?;
+            if !crate::webhook_owner::installed(app).map_err(std::io::Error::other)? {
+                webhook_host::component::initialize(app).map_err(std::io::Error::other)?;
+            }
             toolbox_engine::component::initialize(app, store).map_err(std::io::Error::other)?;
             Ok(())
         })
@@ -40,6 +42,7 @@ mod tests {
         let workspace: api::StudioApiCall =
             serde_json::from_str(r#"{"method":"api_workspace_state","args":{}}"#).unwrap();
         assert!(workspace.routes().contains(&"protocols"));
+        assert!(serde_json::from_str::<webhooks::StudioWebhookCall>(r#"{"method":"native_projection","args":{"kind":"api","selection":{"kind":"history","historyId":1}}}"#).is_err());
         let stop: webhooks::StudioWebhookCall =
             serde_json::from_str(r#"{"method":"stop_server","args":{}}"#).unwrap();
         assert_eq!(stop.class(), ExecutionClass::Control);

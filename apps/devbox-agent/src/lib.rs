@@ -4,6 +4,7 @@ pub mod routes;
 pub mod runtime;
 pub mod server;
 pub mod session_runtime;
+pub mod webhooks;
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?.canonicalize()?;
@@ -64,8 +65,18 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or("runtime_owner_unavailable")?
             .join(format!("com.devbox.v08.workspace.i{suffix}"));
         let runtime = runtime::Runtime::new(app.handle().clone(), data, resources);
-        let routes =
-            routes::Routes::with_runtime(scope.manifest.generation.clone(), runtime.clone());
+        let (_, api_executable, _) = scope.member("api-studio")?;
+        let api_root = dirs::data_local_dir()
+            .ok_or("component_storage_unavailable")?
+            .join(format!("com.devbox.v08.apistudio.i{suffix}"))
+            .join("webhooks");
+        let webhooks =
+            webhooks::Webhooks::new(app.handle().clone(), api_root, api_executable.to_owned());
+        let routes = routes::Routes::with_runtime(
+            scope.manifest.generation.clone(),
+            runtime.clone(),
+            webhooks.clone(),
+        );
         server::start(
             app.handle().clone(),
             scope.clone(),
@@ -76,6 +87,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Missing stores/activation leave the owner cold until a later request.
         tauri::async_runtime::spawn_blocking(move || {
             let _ = runtime.initialize();
+            let _ = webhooks.initialize();
         });
         Ok(())
     });

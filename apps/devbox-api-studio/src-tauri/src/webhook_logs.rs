@@ -17,7 +17,13 @@ pub(crate) async fn send(
     operation: String,
     deadline: u64,
 ) -> Result<Value, String> {
-    let payload = webhook_host::component::prepare_log_handoff(app, selection)?;
+    let projection = crate::webhook_owner::project(
+        app,
+        webhook_host::component::Projection::Log(selection),
+        deadline,
+    )
+    .await?;
+    let payload = serde_json::from_value(projection).map_err(|_| "component_response_invalid")?;
     let artifact = store().lock().map_err(|_| "webhook_log_busy")?.publish(
         uuid::Uuid::new_v4().simple().to_string(),
         payload,

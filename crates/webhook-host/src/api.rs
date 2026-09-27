@@ -319,6 +319,7 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum WebhookIssue {
+    AgentUnavailable = "webhook_agent_unavailable",
     ListenerSettingsUnavailable = "webhook_listener_settings_unavailable",
     ListenerResumeFailed = "webhook_listener_resume_failed",
     ComponentArgsInvalid = "component_args_invalid",

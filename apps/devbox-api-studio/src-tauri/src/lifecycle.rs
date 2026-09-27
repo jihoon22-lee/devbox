@@ -28,7 +28,7 @@ struct State {
     path: PathBuf,
     storage: Mutex<Storage>,
     keep_listening: AtomicBool,
-    tray: AtomicBool,
+    running: AtomicBool,
     closing: AtomicBool,
     failed: AtomicBool,
 }
@@ -53,78 +53,40 @@ fn show(app: &tauri::AppHandle) {
         let _ = window.set_focus();
     }
 }
-fn stop(app: tauri::AppHandle, quit: bool) {
-    if quit && app.state::<State>().closing.swap(true, Ordering::AcqRel) {
+fn close(app: tauri::AppHandle) {
+    if app.state::<State>().closing.swap(true, Ordering::AcqRel) {
         return;
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        let result = webhook_host::component::stop_owned_listener(&app);
-        if quit {
-            // Listener sockets/threads belong to this process. Even a poisoned
-            // soft-stop state must not prevent explicit full exit; OS teardown
-            // releases them and the API owner's kill-on-close process Jobs.
+    tauri::async_runtime::spawn(async move {
+        let installed = crate::webhook_owner::installed(&app);
+        let result = match installed {
+            Ok(installed) => match close_action(policy(&app.state::<State>()), installed) {
+                CloseAction::KeepOwnerAndQuit => Ok(()),
+                CloseAction::StopOwnerAndQuit => {
+                    crate::webhook_owner::call(&app, "stop_server", json!({}), u64::MAX)
+                        .await
+                        .map(|_| ())
+                }
+            },
+            Err(error) => Err(error),
+        };
+        if result.is_ok() || matches!(crate::webhook_owner::installed(&app), Ok(false)) {
             app.exit(if result.is_ok() { 0 } else { 1 });
-            return;
-        }
-        let state = app.state::<State>();
-        state.failed.store(result.is_err(), Ordering::Release);
-        if quit {
+        } else {
+            let state = app.state::<State>();
             state.closing.store(false, Ordering::Release);
-        }
-        let _ = app.emit_to("main", "api-studio://lifecycle", ());
-        if result.is_err() {
+            state.failed.store(true, Ordering::Release);
+            let _ = app.emit_to("main", "api-studio://lifecycle", ());
             show(&app);
         }
     });
 }
-#[cfg(windows)]
-fn install_tray(app: &tauri::AppHandle) -> tauri::Result<bool> {
-    use tauri::{
-        menu::{Menu, MenuItem},
-        tray::TrayIconBuilder,
-    };
-    let open = MenuItem::with_id(
-        app,
-        "api-studio-open",
-        "API Studio 열기",
-        true,
-        None::<&str>,
-    )?;
-    let stop_item = MenuItem::with_id(
-        app,
-        "api-studio-stop",
-        "임시 Webhook 서버 중지",
-        true,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(
-        app,
-        "api-studio-quit",
-        "API Studio 완전히 종료",
-        true,
-        None::<&str>,
-    )?;
-    let menu = Menu::with_items(app, &[&open, &stop_item, &quit])?;
-    let Some(icon) = app.default_window_icon().cloned() else {
-        return Ok(false);
-    };
-    TrayIconBuilder::with_id("api-studio-listener")
-        .tooltip("API Studio · Webhook 서버")
-        .icon(icon)
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "api-studio-open" => show(app),
-            "api-studio-stop" => stop(app.clone(), false),
-            "api-studio-quit" => stop(app.clone(), true),
-            _ => {}
-        })
-        .build(app)?;
-    Ok(true)
-}
-#[cfg(not(windows))]
-fn install_tray(_: &tauri::AppHandle) -> tauri::Result<bool> {
-    Ok(false)
+pub(crate) fn observe(app: &tauri::AppHandle, value: &Value) {
+    if let Some(state) = app.try_state::<State>() {
+        if let Some(running) = value.get("running").and_then(Value::as_bool) {
+            state.running.store(running, Ordering::Release);
+        }
+    }
 }
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::<tauri::Wry, ()>::new("api-studio-lifecycle")
@@ -143,7 +105,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let writable = original
                 .as_ref()
                 .is_ok_and(|raw| raw.is_none() || parsed.is_some());
-            let keep = parsed.is_some_and(|value| value.close_policy == ClosePolicy::KeepListening);
+            let keep = parsed
+                .map(|value| value.close_policy == ClosePolicy::KeepListening)
+                .unwrap_or_else(|| original.as_ref().is_ok_and(|raw| raw.is_none()));
             app.manage(State {
                 path,
                 storage: Mutex::new(Storage {
@@ -151,14 +115,10 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     writable,
                 }),
                 keep_listening: AtomicBool::new(keep),
-                tray: AtomicBool::new(false),
+                running: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
                 failed: AtomicBool::new(false),
             });
-            let available = install_tray(app).unwrap_or(false);
-            app.state::<State>()
-                .tray
-                .store(available, Ordering::Release);
             Ok(())
         })
         .on_event(|app, event| {
@@ -176,32 +136,18 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 if state.closing.load(Ordering::Acquire) {
                     return;
                 }
-                match close_action(
-                    policy(&state),
-                    webhook_host::component::listener_running(app),
-                    state.tray.load(Ordering::Acquire),
-                ) {
-                    CloseAction::Quit => stop(app.clone(), true),
-                    CloseAction::Hide => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.hide();
-                        }
-                    }
-                }
+                close(app.clone());
             }
         })
         .build()
 }
-pub fn dispatch_typed(
+pub async fn dispatch_typed(
     app: &tauri::AppHandle,
     call: crate::ipc::lifecycle::LifecycleCall,
 ) -> Result<Value, String> {
     let state = app.state::<State>();
     use crate::ipc::lifecycle::LifecycleCall;
     if let LifecycleCall::SetClosePolicy { policy: selected } = call {
-        if selected == ClosePolicy::KeepListening && !state.tray.load(Ordering::Acquire) {
-            return Err("lifecycle_tray_unavailable".into());
-        }
         let mut storage = state
             .storage
             .lock()
@@ -223,26 +169,26 @@ pub fn dispatch_typed(
         return Ok(Value::Null);
     }
     match call {
-        LifecycleCall::LifecycleStatus {} => Ok(
-            json!({ "mainWindowVisible": app.get_webview_window("main").and_then(|window| window.is_visible().ok()), "policy": policy(&state), "trayAvailable": state.tray.load(Ordering::Acquire), "running": webhook_host::component::listener_running(app), "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
-        ),
-        LifecycleCall::HideMainWindow {} => {
-            if close_action(
-                policy(&state),
-                webhook_host::component::listener_running(app),
-                state.tray.load(Ordering::Acquire),
-            ) != CloseAction::Hide
-            {
-                return Err("lifecycle_hide_unavailable".into());
-            }
-            app.get_webview_window("main")
-                .ok_or("component_state_unavailable")?
-                .hide()
-                .map_err(|_| "component_state_unavailable")?;
-            Ok(Value::Null)
+        LifecycleCall::LifecycleStatus {} => {
+            let installed = crate::webhook_owner::installed(app)?;
+            let running =
+                match crate::webhook_owner::call(app, "server_status", json!({}), u64::MAX).await {
+                    Ok(value) => {
+                        observe(app, &value);
+                        value["running"].as_bool().unwrap_or(false)
+                    }
+                    Err(error) => {
+                        state.running.store(false, Ordering::Release);
+                        return Err(error);
+                    }
+                };
+            Ok(
+                json!({ "mainWindowVisible": app.get_webview_window("main").and_then(|window| window.is_visible().ok()), "policy": policy(&state), "trayAvailable": false, "backgroundAvailable": installed, "running": running, "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
+            )
         }
+        LifecycleCall::HideMainWindow {} => Err("lifecycle_hide_unavailable".into()),
         LifecycleCall::QuitProduct {} => {
-            stop(app.clone(), true);
+            close(app.clone());
             Ok(Value::Null)
         }
         LifecycleCall::SetClosePolicy { .. } => unreachable!("policy was handled above"),
@@ -256,7 +202,7 @@ pub(crate) fn operation_rows(
     let Some(state) = app.try_state::<State>() else {
         return Ok(vec![]);
     };
-    let running = webhook_host::component::listener_running(app);
+    let running = state.running.load(Ordering::Acquire);
     let closing = state.closing.load(Ordering::Acquire);
     let failed = state.failed.load(Ordering::Acquire);
     if !running && !closing && !failed {

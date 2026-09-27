@@ -4,51 +4,43 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 #[derive(ts_rs::TS)]
 pub enum ClosePolicy {
-    #[default]
     StopOnClose,
+    #[default]
     KeepListening,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloseAction {
-    Quit,
-    Hide,
+    KeepOwnerAndQuit,
+    StopOwnerAndQuit,
 }
-pub fn close_action(
-    policy: ClosePolicy,
-    listener_running: bool,
-    tray_available: bool,
-) -> CloseAction {
-    if policy == ClosePolicy::KeepListening && listener_running && tray_available {
-        CloseAction::Hide
+pub fn close_action(policy: ClosePolicy, installed: bool) -> CloseAction {
+    if installed && policy == ClosePolicy::KeepListening {
+        CloseAction::KeepOwnerAndQuit
     } else {
-        CloseAction::Quit
+        CloseAction::StopOwnerAndQuit
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn only_explicit_recoverable_background_listening_hides_the_window() {
-        for running in [false, true] {
-            for tray in [false, true] {
-                assert_eq!(
-                    close_action(ClosePolicy::StopOnClose, running, tray),
-                    CloseAction::Quit
-                );
-            }
-        }
+    fn closing_only_stops_local_or_explicitly_stopped_listeners() {
         assert_eq!(
-            close_action(ClosePolicy::KeepListening, true, true),
-            CloseAction::Hide
+            close_action(ClosePolicy::KeepListening, true),
+            CloseAction::KeepOwnerAndQuit
         );
         assert_eq!(
-            close_action(ClosePolicy::KeepListening, false, true),
-            CloseAction::Quit
+            close_action(ClosePolicy::StopOnClose, true),
+            CloseAction::StopOwnerAndQuit
         );
         assert_eq!(
-            close_action(ClosePolicy::KeepListening, true, false),
-            CloseAction::Quit
+            close_action(ClosePolicy::KeepListening, false),
+            CloseAction::StopOwnerAndQuit
         );
-        assert!(serde_json::from_str::<ClosePolicy>("\"start-on-login\"").is_err());
+        assert_eq!(ClosePolicy::default(), ClosePolicy::KeepListening);
+        assert_eq!(
+            serde_json::from_str::<ClosePolicy>("\"stop-on-close\"").unwrap(),
+            ClosePolicy::StopOnClose
+        );
     }
 }

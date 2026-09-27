@@ -81,7 +81,7 @@ pub enum SendCall {
     Selection {
         text: String,
     },
-    Webhook(webhook_host::component::HandoffSelection),
+    Webhook(Value),
 }
 #[derive(serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -176,19 +176,16 @@ pub fn send_typed(
                 redacted,
             )
         }
-        ("api-studio.webhooks", SendCall::Webhook(selection)) => {
-            let payload = webhook_host::component::prepare_api_handoff(app, selection)?;
-            (
-                CreateHandoff {
-                    kind: "api-request/v1".into(),
-                    source_app: "webhook-lab".into(),
-                    target_app: Some("api-playground".into()),
-                    payload,
-                },
-                "requests",
-                false,
-            )
-        }
+        ("api-studio.webhooks", SendCall::Webhook(payload)) => (
+            CreateHandoff {
+                kind: "api-request/v1".into(),
+                source_app: "webhook-lab".into(),
+                target_app: Some("api-playground".into()),
+                payload,
+            },
+            "requests",
+            false,
+        ),
         _ => return Err("handoff_route_invalid".into()),
     };
     let mut result = publish(&store.handoffs, create, provenance, now, |link| {

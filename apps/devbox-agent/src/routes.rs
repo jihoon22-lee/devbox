@@ -8,6 +8,7 @@ pub struct Routes {
     pub generation: String,
     shutdown: tokio::sync::watch::Sender<bool>,
     runtime: Option<Arc<crate::runtime::Runtime>>,
+    webhooks: Option<Arc<crate::webhooks::Webhooks>>,
     sessions: std::sync::Mutex<
         std::collections::HashMap<
             (String, String, String),
@@ -25,10 +26,15 @@ impl Routes {
             generation,
             shutdown,
             runtime: None,
+            webhooks: None,
             sessions: Default::default(),
         })
     }
-    pub fn with_runtime(generation: String, runtime: Arc<crate::runtime::Runtime>) -> Arc<Self> {
+    pub fn with_runtime(
+        generation: String,
+        runtime: Arc<crate::runtime::Runtime>,
+        webhooks: Arc<crate::webhooks::Webhooks>,
+    ) -> Arc<Self> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Arc::new(Self {
             #[cfg(test)]
@@ -37,12 +43,16 @@ impl Routes {
             generation,
             shutdown,
             runtime: Some(runtime),
+            webhooks: Some(webhooks),
             sessions: Default::default(),
         })
     }
     pub async fn shutdown_owners(&self) {
         if let Some(runtime) = &self.runtime {
             runtime.shutdown().await;
+        }
+        if let Some(webhooks) = &self.webhooks {
+            webhooks.shutdown().await;
         }
     }
     pub fn session(
@@ -76,6 +86,7 @@ impl Routes {
     pub fn accepts(&self, product: &str, component: &str) -> bool {
         (component == "agent.status"
             && ["workspace", "api-studio", "knowledge", "control-center"].contains(&product))
+            || (product == "api-studio" && component == "api-studio.webhooks")
             || (product == "workspace"
                 && [
                     "workspace.runtime",
@@ -101,6 +112,12 @@ impl Routes {
     ) -> Value {
         if !self.accepts(product, component) {
             return failure("unauthorized");
+        }
+        if component == "api-studio.webhooks" {
+            return match &self.webhooks {
+                Some(owner) => crate::runtime::response(owner.dispatch(session, request).await),
+                None => failure("component_unavailable"),
+            };
         }
         if component.starts_with("workspace.") {
             return match &self.runtime {
@@ -148,7 +165,7 @@ impl Routes {
         json!({"operation":{"outcome":{"state":"succeeded"}},"value": {
             "version": env!("CARGO_PKG_VERSION"), "generation": self.generation,
             "uptimeMs": self.started.elapsed().as_millis() as u64,
-            "components": if self.runtime.is_some() { vec!["agent.status","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs"] } else {vec!["agent.status"]}
+            "components": if self.runtime.is_some() { vec!["agent.status","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs","api-studio.webhooks"] } else {vec!["agent.status"]}
         }})
     }
     #[cfg(test)]
@@ -169,6 +186,14 @@ pub fn failure(code: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn webhook_components_accept_only_api_studio_peers() {
+        let routes = Routes::for_tests();
+        assert!(routes.accepts("api-studio", "api-studio.webhooks"));
+        for peer in ["workspace", "knowledge", "control-center"] {
+            assert!(!routes.accepts(peer, "api-studio.webhooks"));
+        }
+    }
     #[test]
     fn reconnecting_the_same_native_session_keeps_replay_history() {
         let routes = Routes::for_tests();

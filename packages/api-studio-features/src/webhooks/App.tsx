@@ -1,3 +1,4 @@
+import { webhookMessages } from "../issues/catalog";
 import { bodyPreview } from "./lib/body";
 import { isProductHosted } from "../transport";
 import { MockDraftReceiver } from "./MockDraftReceiver";
@@ -1018,6 +1019,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
           }}
         />
       )}
+      {status.issue && <p role="alert">{webhookMessages[status.issue]}</p>}
       <header className="toolbar">
         <h1 className="title">{isProductHosted() ? "Webhooks & Mocks" : "Webhook Lab"}</h1>
         <span className={`status ${status.running ? "ok" : "off"}`}>
