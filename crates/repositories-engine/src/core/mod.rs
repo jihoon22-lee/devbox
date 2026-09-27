@@ -13,3 +13,5 @@ pub mod hunks;
 pub mod blame;
 
 pub mod conflicts;
+
+pub mod pull_requests;

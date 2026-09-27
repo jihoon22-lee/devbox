@@ -21,6 +21,7 @@ desktop = ["dep:tauri", "dep:tauri-plugin-opener"]
 
 
 [dependencies]
+process-tree = { workspace = true, features = ["tokio"] }
 product-ipc = { workspace = true }
 ts-rs = { workspace = true }
 tauri = { workspace = true, optional = true }

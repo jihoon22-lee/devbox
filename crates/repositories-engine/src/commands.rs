@@ -5189,3 +5189,6 @@ mod scan_tests {
         String::from_utf8(output.stdout).unwrap()
     }
 }
+
+mod pull_requests;
+pub use pull_requests::*;
