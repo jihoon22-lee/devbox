@@ -273,6 +273,54 @@ impl CapturedScope {
         }
         Ok(())
     }
+    /// Native MCP factories resolve each call against the current installation,
+    /// without keeping an old generation pinned while stdin is idle.
+    pub fn capture_current_agent(root: &Path) -> Result<Self> {
+        ensure_no_links(root).map_err(|_| "component_root_unsafe")?;
+        let manifest_path = root.join(MANIFEST);
+        ensure_no_links(&manifest_path).map_err(|_| "installation_manifest_invalid")?;
+        let mut bytes = Vec::new();
+        File::open(&manifest_path)
+            .map_err(|_| "installation_manifest_invalid")?
+            .take(MAX_MANIFEST_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "installation_manifest_invalid")?;
+        if bytes.len() > MAX_MANIFEST_BYTES {
+            return Err("installation_manifest_limit");
+        }
+        let manifest: Manifest =
+            serde_json::from_slice(&bytes).map_err(|_| "installation_manifest_invalid")?;
+        manifest.validate(&manifest.suite_version)?;
+        let owner = manifest
+            .members
+            .iter()
+            .find(|member| member.product == "control-center")
+            .ok_or("component_self_missing")?;
+        if owner.executable
+            != format!(
+                "generations/{}/products/control-center/devbox-control-center.exe",
+                manifest.generation
+            )
+        {
+            return Err("component_installed_required");
+        }
+        let image = root.join(&owner.executable);
+        let scope = Self::capture(root, "control-center", &image, &manifest.suite_version)?
+            .capture_agent_image()?;
+        if !product_shell_tauri::component_ready(
+            scope.agent_image()?,
+            "control-center",
+            &scope.manifest.suite_version,
+        )? {
+            return Err("component_not_ready");
+        }
+        Ok(scope)
+    }
+    pub(crate) fn mcp_for_image(&self, image: &Path) -> Result<String> {
+        self.revalidate()?;
+        crate::mcp_launcher::verify_image(&self.root, image).map_err(|_| "peer_image_denied")?;
+        Ok("mcp".into())
+    }
     pub fn retire(&self) {
         self.retired.store(true, Ordering::Release);
     }
@@ -417,6 +465,14 @@ mod tests {
             "agent is never a public product peer"
         );
         assert!(scope.verify_agent_image(&image).is_err());
+        let launcher = crate::mcp_launcher::refresh(&root, &agent).unwrap();
+        assert_eq!(scope.mcp_for_image(&launcher).unwrap(), "mcp");
+        assert!(
+            scope.product_for_image(&launcher).is_err(),
+            "MCP never becomes a Suite product peer"
+        );
+        assert!(scope.mcp_for_image(&image).is_err());
+        assert!(scope.mcp_for_image(&other).is_err());
         scope.retire();
         assert!(scope.verify_agent_image(&agent).is_err());
         drop(scope);

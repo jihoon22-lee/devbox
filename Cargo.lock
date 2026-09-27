@@ -1254,6 +1254,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "knowledge-stores",
+ "mcp-server",
  "product-contract",
  "product-ipc",
  "product-shell-tauri",
@@ -1268,6 +1269,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "tokio",
+ "uuid",
  "windows 0.61.3",
  "workspace-core",
 ]
@@ -6090,6 +6092,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tauri",
+ "tempfile",
  "tokio",
  "uuid",
  "windows 0.61.3",

@@ -16,7 +16,7 @@ impl Witness {
 pub struct AgentPeer(ProcessPeer);
 impl AgentPeer {
     pub fn product(scope: Arc<CapturedScope>, witness: Witness) -> Result<Self, &'static str> {
-        ProcessPeer::from_pipe(scope, witness.0, true).map(Self)
+        ProcessPeer::from_agent_client_pipe(scope, witness.0).map(Self)
     }
     pub fn agent(scope: Arc<CapturedScope>, witness: Witness) -> Result<Self, &'static str> {
         ProcessPeer::from_agent_pipe(scope, witness.0).map(Self)
@@ -25,6 +25,10 @@ impl AgentPeer {
         &self.0.product
     }
     pub fn installation_id(&self) -> Result<String, &'static str> {
+        if self.product_id() == "mcp" {
+            self.revalidate()?;
+            return Ok(self.0.scope().installation_key.clone());
+        }
         use sha2::{Digest, Sha256};
         let (_, image, _) = self.0.scope().member(self.product_id())?;
         let image = image.canonicalize().map_err(|_| "peer_image_unavailable")?;

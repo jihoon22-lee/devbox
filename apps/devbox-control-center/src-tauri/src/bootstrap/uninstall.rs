@@ -185,6 +185,10 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
             {
                 return Err("bootstrap_payload_changed");
             }
+            files.extend(
+                crate::suite::mcp_launcher::owned_files(&root)
+                    .map_err(|_| "bootstrap_mcp_launcher_changed")?,
+            );
             // Native proof acquisition is complete. Block ordinary use before
             // persisting a deletion plan; a crash retains every original store.
             marker.phase = product_contract::activation::Phase::Recover;

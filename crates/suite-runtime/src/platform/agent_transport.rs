@@ -16,6 +16,7 @@ use windows::Win32::Foundation::HANDLE;
 struct Native {
     scope: Arc<CapturedScope>,
     pipe: String,
+    isolate_stdio: bool,
 }
 impl Transport for Native {
     fn generation(&self) -> &str {
@@ -50,12 +51,18 @@ impl Transport for Native {
     fn launch(&self) -> LaunchFuture<'_> {
         Box::pin(async move {
             let scope = self.scope.clone();
+            let isolate_stdio = self.isolate_stdio;
             tokio::task::spawn_blocking(move || {
                 let executable = scope.agent_image().map_err(|_| AgentError::Unavailable)?;
-                let mut child = std::process::Command::new(executable)
-                    .creation_flags(0x08000000)
-                    .spawn()
-                    .map_err(|_| AgentError::Unavailable)?;
+                let mut command = std::process::Command::new(executable);
+                command.creation_flags(0x08000000);
+                if isolate_stdio {
+                    command
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null());
+                }
+                let mut child = command.spawn().map_err(|_| AgentError::Unavailable)?;
                 std::thread::spawn(move || {
                     let _ = child.wait();
                 });
@@ -98,6 +105,26 @@ pub fn create(product: &str, version: &str) -> AgentClient {
         Arc::new(Native {
             scope: Arc::new(scope),
             pipe,
+            isolate_stdio: false,
         }),
     )
+}
+
+pub fn create_mcp(root: &std::path::Path) -> Result<(AgentClient, String, String), &'static str> {
+    let scope = Arc::new(CapturedScope::capture_current_agent(root)?);
+    let installation = scope.installation_key.clone();
+    let generation = scope.manifest.generation.clone();
+    let pipe = format!(r"\\.\pipe\devbox-agent-{}", installation);
+    Ok((
+        AgentClient::with_transport(
+            "mcp",
+            Arc::new(Native {
+                scope,
+                pipe,
+                isolate_stdio: true,
+            }),
+        ),
+        installation,
+        generation,
+    ))
 }

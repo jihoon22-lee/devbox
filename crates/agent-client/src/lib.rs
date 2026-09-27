@@ -52,11 +52,15 @@ struct Connection {
     session: String,
     outgoing: mpsc::Sender<Outgoing>,
     alive: Arc<AtomicBool>,
-    driver: tokio::task::AbortHandle,
+    driver: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.driver.abort();
+        if let Ok(driver) = self.driver.get_mut() {
+            if let Some(driver) = driver.take() {
+                driver.abort();
+            }
+        }
     }
 }
 struct Inner {
@@ -279,6 +283,23 @@ impl AgentClient {
         .map_err(|_| AgentError::Unavailable)?
     }
     /// Establish the native owner without executing or replaying a business call.
+    /// Close this connection without shutting down the agent, and wait until
+    /// the driver releases native peer/scope leases before returning.
+    pub async fn disconnect(&self) {
+        let connection = self.0.current.lock().await.take();
+        if let Some(connection) = connection {
+            connection.alive.store(false, Ordering::Release);
+            let driver = connection
+                .driver
+                .lock()
+                .ok()
+                .and_then(|mut driver| driver.take());
+            if let Some(driver) = driver {
+                driver.abort();
+                let _ = driver.await;
+            }
+        }
+    }
     pub async fn connect(&self, session: &str) -> Result<(), AgentError> {
         self.ensure_connected(session).await.map(|_| ())
     }
@@ -503,7 +524,7 @@ impl Connection {
             session,
             outgoing,
             alive,
-            driver: driver.abort_handle(),
+            driver: std::sync::Mutex::new(Some(driver)),
         })
     }
 }
@@ -572,6 +593,26 @@ mod tests {
             "fixture"
         }
     }
+    #[tokio::test]
+    async fn disconnect_joins_the_driver_before_releasing_a_short_lived_client() {
+        let transport = Arc::new(Fake {
+            attempts: AtomicUsize::new(0),
+            launches: AtomicUsize::new(0),
+            missing: 0,
+            drop_first: AtomicBool::new(false),
+        });
+        let client = AgentClient::with_transport("mcp", transport.clone());
+        client.connect("fixture-session").await.unwrap();
+        let connection = client.0.current.lock().await.clone().unwrap();
+        client.disconnect().await;
+        assert!(!connection.alive.load(Ordering::Acquire));
+        assert!(client.0.current.lock().await.is_none());
+        client.connect("fixture-session").await.unwrap();
+        assert_eq!(transport.attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 0);
+        client.disconnect().await;
+    }
+
     struct Graceful {
         attempts: AtomicUsize,
         ready: AtomicBool,
