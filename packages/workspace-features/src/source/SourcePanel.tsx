@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { repoStatus, worktrees, type RepoEntry, type RepoSnapshot } from "./api";
+import BranchPanel from "./components/BranchPanel";
+import StashPanel from "./components/StashPanel";
 import GitSafetyPanel from "./components/GitSafetyPanel";
 import HistoryDiffPanel from "./components/HistoryDiffPanel";
 import StageCommitPanel from "./components/StageCommitPanel";
@@ -33,7 +35,7 @@ export default function SourcePanel({
   const callbacks = useMemo(
     () =>
       Object.fromEntries(
-        ["safety", "history", "stage", "remote", "cleanup"].map((name) => [
+        ["safety", "history", "stage", "remote", "cleanup", "branches", "stash"].map((name) => [
           name,
           (value: boolean) =>
             setPanels((previous) => (previous[name] === value ? previous : { ...previous, [name]: value })),
@@ -93,6 +95,8 @@ export default function SourcePanel({
         )}
       </section>
       <GitSafetyPanel repo={repo} onBusyChange={callbacks.safety} />
+      <BranchPanel repo={repo} onBusyChange={callbacks.branches} onChanged={() => void refresh()} />
+      <StashPanel repo={repo} onBusyChange={callbacks.stash} onChanged={() => void refresh()} />
       <HistoryDiffPanel repo={repo} onBusyChange={callbacks.history} onOpenFile={onOpenFile} />
       <StageCommitPanel
         repo={repo}

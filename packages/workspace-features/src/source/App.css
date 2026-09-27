@@ -1436,3 +1436,37 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+.source-branch-panel form,
+.source-stash-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+}
+.source-branch-panel label,
+.source-stash-panel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.source-branch-panel ul,
+.source-stash-panel ul {
+  list-style: none;
+  padding-inline-start: 0;
+}
+.source-branch-panel li,
+.source-stash-panel li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--db-color-border);
+  overflow-wrap: anywhere;
+}
+.source-branch-panel li > span:first-child,
+.source-stash-panel li > span:first-child {
+  margin-inline-end: auto;
+}

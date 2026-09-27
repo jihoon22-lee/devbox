@@ -873,3 +873,71 @@ export function openRepositoryFolder(path: string): Promise<void> {
 export async function dependencyEnrichmentCancel(path: string, previewToken: string): Promise<void> {
   if (isProductHosted()) await invoke("dependency_enrichment_cancel", { request: { path, previewToken } });
 }
+
+export type { Branch } from "../generated/Branch";
+export type { BranchList } from "../generated/BranchList";
+export type { StashEntry } from "../generated/StashEntry";
+export function repoBranches(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/BranchList").BranchList>({
+      current: "main",
+      detached: false,
+      branches: [],
+      truncated: false,
+    });
+  return invoke("repo_branches", { request: { path } });
+}
+export async function repoBranchCreate(
+  path: string,
+  options: { name: string; startPoint: string | null; checkout: boolean },
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_branch_create", { request: { path, ...options, operationId } });
+}
+export async function repoSwitch(path: string, branch: string, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return;
+  await invoke("repo_switch", { request: { path, branch, operationId } });
+}
+export async function repoBranchRename(
+  path: string,
+  from: string,
+  to: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_branch_rename", { request: { path, from, to, operationId } });
+}
+export function repoBranchDelete(path: string, name: string, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return Promise.resolve({ name, commit: "0".repeat(40) });
+  return invoke("repo_branch_delete", { request: { path, name, operationId } });
+}
+export function repoStashList(path: string) {
+  if (!isTauri()) return Promise.resolve<import("../generated/StashEntry").StashEntry[]>([]);
+  return invoke("repo_stash_list", { request: { path } });
+}
+export async function repoStashPush(
+  path: string,
+  options: { message: string | null; includeUntracked: boolean },
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_stash_push", { request: { path, ...options, operationId } });
+}
+export function repoStashApply(path: string, index: number, pop: boolean, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return Promise.resolve({ applied: true, conflicts: [] as string[] });
+  return invoke("repo_stash_apply", { request: { path, index, pop, operationId } });
+}
+export function repoStashDrop(path: string, index: number, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return Promise.resolve({ commit: "0".repeat(40), message: "browser fixture" });
+  return invoke("repo_stash_drop", { request: { path, index, operationId } });
+}
+export async function repoStashStore(
+  path: string,
+  commit: string,
+  message: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_stash_store", { request: { path, commit, message, operationId } });
+}
