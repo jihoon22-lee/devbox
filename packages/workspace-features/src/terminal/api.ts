@@ -5,7 +5,7 @@ import { streamTerminalOutput } from "./lib/terminalStream";
 import { terminalCall as invoke } from "./api-transport";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../lib/openUrl";
 import { isTauri } from "./lib/isTauri";
 import type {
   ContainerInfo,
@@ -382,9 +382,5 @@ export async function readClipboardText(): Promise<string> {
 
 /** URL 검증은 호출자가 먼저 수행한다. 이 경계는 운영체제 기본 브라우저 실행만 소유한다. */
 export async function openTerminalLink(url: string): Promise<void> {
-  if (!isTauri()) {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
-  await openUrl(url);
+  await openUrl(url, true);
 }

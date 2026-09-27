@@ -991,3 +991,60 @@ export function repoBlame(path: string, file: string, commitId: string | null = 
     return Promise.resolve<import("../generated/Blame").Blame>({ file, lines: [], commits: {}, truncated: false });
   return invoke("repo_blame", { request: { path, file, commitId } });
 }
+
+export type { ConflictState } from "../generated/ConflictState";
+export type { ConflictVersions } from "../generated/ConflictVersions";
+export type { Resolution } from "../generated/Resolution";
+export type { PrStatus } from "../generated/PrStatus";
+export type { PrListItem } from "../generated/PrListItem";
+import type { Resolution } from "../generated/Resolution";
+export function repoConflicts(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/ConflictState").ConflictState>({ operation: null, files: [] });
+  return invoke("repo_conflicts", { request: { path } });
+}
+export function repoConflictVersions(path: string, file: string) {
+  if (!isTauri()) return Promise.resolve({ base: "", ours: "", theirs: "", current: "", binary: false });
+  return invoke("repo_conflict_versions", { request: { path, file } });
+}
+export async function repoConflictResolve(
+  path: string,
+  file: string,
+  resolution: Resolution,
+  operationId: string = crypto.randomUUID(),
+): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("repo_conflict_resolve", { request: { path, file, resolution, operationId } });
+}
+export async function repoOperationContinue(path: string, operationId: string = crypto.randomUUID()): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("repo_operation_continue", { request: { path, operationId } });
+}
+export async function repoOperationAbort(path: string, operationId: string = crypto.randomUUID()): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("repo_operation_abort", { request: { path, operationId } });
+}
+export function repoPrStatus(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/PrStatus").PrStatus>({
+      available: false,
+      reason: "gh_missing",
+      pr: null,
+    });
+  return invoke("repo_pr_status", { request: { path } });
+}
+export function repoPrList(path: string, limit = 10) {
+  if (!isTauri()) return Promise.resolve<import("../generated/PrListItem").PrListItem[]>([]);
+  return invoke("repo_pr_list", { request: { path, limit } });
+}
+export function repoPrCreate(
+  path: string,
+  title: string,
+  body: string,
+  base: string | null,
+  draft: boolean,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return Promise.reject(new Error("GitHub CLI는 설치된 제품에서 사용할 수 있습니다."));
+  return invoke("repo_pr_create", { request: { path, title, body, base, draft, operationId } });
+}

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { repoStatus, worktrees, type RepoEntry, type RepoSnapshot } from "./api";
+import { repoStatus, repoConflicts, worktrees, type RepoEntry, type RepoSnapshot, type ConflictState } from "./api";
 import BlamePanel, { type BlameTarget } from "./components/BlamePanel";
+import ConflictPanel from "./components/ConflictPanel";
+import PullRequestPanel from "./components/PullRequestPanel";
 import BranchPanel from "./components/BranchPanel";
 import StashPanel from "./components/StashPanel";
 import GitSafetyPanel from "./components/GitSafetyPanel";
@@ -34,6 +36,38 @@ export default function SourcePanel({
   const showBlame = (file: string, commitId: string | null = null) =>
     setBlame((previous) => ({ file, commitId, repository, sequence: (previous?.sequence ?? 0) + 1 }));
   const [busy, setBusy] = useState(false);
+  const [conflictSnapshot, setConflictSnapshot] = useState<{ repository: string; value: ConflictState } | null>(null);
+  const conflicts = conflictSnapshot?.repository === repository ? conflictSnapshot.value : null;
+  const [dirtyPanels, setDirtyPanels] = useState<Record<string, boolean>>({});
+  const dirtyCallbacks = useMemo(
+    () =>
+      Object.fromEntries(
+        ["stage", "conflicts", "pr"].map((name) => [
+          name,
+          (dirty: boolean) =>
+            setDirtyPanels((previous) => (previous[name] === dirty ? previous : { ...previous, [name]: dirty })),
+        ]),
+      ),
+    [],
+  );
+  const dirty = Object.values(dirtyPanels).some(Boolean);
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+  useEffect(() => {
+    let active = true;
+    void repoConflicts(repo.path)
+      .then((value) => {
+        if (active) setConflictSnapshot({ repository, value });
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof WorkspaceOperationError ? cause.message : "충돌 상태를 읽지 못했습니다.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [repo.path, repository]);
   const [panels, setPanels] = useState<Record<string, boolean>>({});
   const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null);
   const [trees, setTrees] = useState<string[]>([]);
@@ -41,11 +75,13 @@ export default function SourcePanel({
   const callbacks = useMemo(
     () =>
       Object.fromEntries(
-        ["safety", "history", "stage", "remote", "cleanup", "branches", "stash", "blame"].map((name) => [
-          name,
-          (value: boolean) =>
-            setPanels((previous) => (previous[name] === value ? previous : { ...previous, [name]: value })),
-        ]),
+        ["safety", "history", "stage", "remote", "cleanup", "branches", "stash", "blame", "conflicts", "pr"].map(
+          (name) => [
+            name,
+            (value: boolean) =>
+              setPanels((previous) => (previous[name] === value ? previous : { ...previous, [name]: value })),
+          ],
+        ),
       ),
     [],
   );
@@ -58,7 +94,12 @@ export default function SourcePanel({
     setBusy(true);
     setError("");
     try {
-      const [next, paths] = await Promise.all([repoStatus(repo.path), worktrees(repo.path)]);
+      const [next, paths, conflicts] = await Promise.all([
+        repoStatus(repo.path),
+        worktrees(repo.path),
+        repoConflicts(repo.path),
+      ]);
+      setConflictSnapshot({ repository, value: conflicts });
       setSnapshot(next);
       setTrees(paths);
     } catch (cause) {
@@ -66,9 +107,23 @@ export default function SourcePanel({
     } finally {
       setBusy(false);
     }
-  }, [busy, repo.path]);
+  }, [busy, repo.path, repository]);
+  async function refreshAfterResolution() {
+    const value = await repoConflicts(repo.path);
+    setConflictSnapshot({ repository, value });
+  }
   return (
     <div className="workspace-native-source-panels">
+      {conflicts && (conflicts.files.length > 0 || conflicts.operation) && (
+        <ConflictPanel
+          key={repository}
+          repo={repo}
+          state={conflicts}
+          onBusyChange={callbacks.conflicts}
+          onDirtyChange={dirtyCallbacks.conflicts}
+          onChanged={() => void refreshAfterResolution().catch(() => setError("충돌 상태를 다시 읽지 못했습니다."))}
+        />
+      )}
       <section aria-label="현재 저장소">
         <h2>현재 저장소</h2>
         <p>{repo.path}</p>
@@ -123,10 +178,11 @@ export default function SourcePanel({
         repo={repo}
         onBusyChange={callbacks.stage}
         onBlame={showBlame}
-        onDirtyChange={onDirtyChange}
+        onDirtyChange={dirtyCallbacks.stage}
         onOpenFile={onOpenFile}
       />
       <RemoteSyncPanel repo={repo} onBusyChange={callbacks.remote} />
+      <PullRequestPanel key={repository} repo={repo} onBusyChange={callbacks.pr} onDirtyChange={dirtyCallbacks.pr} />
       <CleanupPanel key={cleanupRevision} repo={repo} onBusyChange={callbacks.cleanup} />
     </div>
   );
