@@ -2,6 +2,10 @@
 //! Calling these does not start the standalone application or select its stores.
 
 pub use crate::commands::ports::ListenerActionResult;
+/// UI side effects have no runtime-store ownership and remain in Workspace.
+pub mod ui {
+    pub use crate::commands::ports::{open_browser, reveal_process};
+}
 pub use crate::core::listeners::{KillListenerRequest, ListenerIdentity, ListenerSource};
 pub use crate::core::{preferences::PortManagerPreferences, product_preferences};
 use std::{

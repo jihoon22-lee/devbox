@@ -216,7 +216,7 @@ fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
     let show = MenuItem::with_id(app, "workspace-show", "열기", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "workspace-quit", "종료", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "workspace-quit", "Workspace 닫기", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let icon = app
         .default_window_icon()
@@ -316,6 +316,13 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                                 // Persisted product jobs keep their scheduler while
                                 // Tasks/Runtime/Logs views have never been opened.
                                 owners.initialize_runtime(&worker_app, &host)?;
+                                if crate::runtime_owner::installed(&worker_app)?
+                                    && !product_shell_tauri::suite_import_only(&worker_app)?
+                                {
+                                    tauri::async_runtime::block_on(crate::runtime_owner::owner(
+                                        &worker_app,
+                                    ))?;
+                                }
                             }
                             Ok::<_, &'static str>(())
                         })

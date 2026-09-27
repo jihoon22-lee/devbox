@@ -16,6 +16,10 @@ pub struct SessionJob {
     pub id: String,
     pub name: String,
     pub kind: JobKind,
+    /// User-authored definition shown by the existing review UI, not a resolved
+    /// process launch plan, decrypted environment, or engine-owned filesystem path.
+    pub command: String,
+    pub cwd: Option<String>,
     pub target_kind: TargetKind,
     pub target_distro: Option<String>,
     pub env_configured: bool,
@@ -52,6 +56,8 @@ impl Prepared {
                 id: job.id.clone(),
                 name: job.name.clone(),
                 kind: job.kind,
+                command: job.command.clone(),
+                cwd: job.cwd.clone(),
                 target_kind: job.target_kind,
                 target_distro: job.target_distro.clone(),
                 env_configured: job.env_configured,
@@ -86,6 +92,12 @@ pub struct Receipt {
     pub lease: Option<Lease>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RecoveryOperation {
+    pub scope: Scope,
+    pub operation: String,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(
     tag = "kind",
     content = "args",
@@ -95,6 +107,12 @@ pub struct Receipt {
 )]
 pub enum Call {
     Candidates {},
+    Retire {
+        scope: Scope,
+    },
+    Restore {
+        operations: Vec<RecoveryOperation>,
+    },
     Prepare {
         scope: Scope,
         job_id: String,
@@ -139,6 +157,19 @@ impl Call {
     pub fn validate(&self) -> Result<(), &'static str> {
         let (scope, reference, operation, job) = match self {
             Self::Candidates {} => return Ok(()),
+            Self::Retire { scope } => return scope.validate(),
+            Self::Restore { operations } => {
+                if operations.len() > 32 {
+                    return Err("session_runtime_limit");
+                }
+                for operation in operations {
+                    operation.scope.validate()?;
+                    if !product_contract::commands::opaque_id(&operation.operation) {
+                        return Err("session_runtime_invalid");
+                    }
+                }
+                return Ok(());
+            }
             Self::Prepare { scope, job_id } => (scope, None, None, Some(job_id)),
             Self::Start {
                 scope,
@@ -171,7 +202,11 @@ impl Call {
     pub fn lane(&self) -> product_ipc::workspace::Lane {
         use product_ipc::workspace::Lane;
         match self {
-            Self::Cancel { .. } | Self::Stop { .. } | Self::Receipt { .. } => Lane::EngineStop,
+            Self::Retire { .. }
+            | Self::Restore { .. }
+            | Self::Cancel { .. }
+            | Self::Stop { .. }
+            | Self::Receipt { .. } => Lane::EngineStop,
             _ => Lane::Engine,
         }
     }

@@ -28,6 +28,12 @@ impl MetadataRoot {
             _handle: handle,
         })
     }
+    pub fn child_read_only(&self, name: &str) -> Result<Self> {
+        self.revalidate()?;
+        let child = Self::open(&self.path.join(name))?;
+        self.revalidate()?;
+        Ok(child)
+    }
     pub fn child(&self, name: &str) -> Result<Self> {
         self.revalidate()?;
         let path = self.path.join(name);

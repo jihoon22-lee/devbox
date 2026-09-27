@@ -1,3 +1,4 @@
+import { workspaceIssueMessage } from "@devbox/workspace-features/issues/shared";
 import { usePolling } from "@devbox/hooks";
 import { useMemo, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
@@ -509,7 +510,9 @@ export default function DevelopmentSessions({
                 <p>
                   {session.issue === "session_native_owner_lost"
                     ? "이전 실행의 소유권을 이어받지 않았습니다. 새 계획을 검토한 뒤 이어가세요."
-                    : "작업 시작 또는 정리에 확인이 필요합니다. Tasks & Services의 실행 상태와 로그를 확인해 주세요."}
+                    : ["session_ui_resources_lost", "session_recovery_required"].includes(session.issue)
+                      ? workspaceIssueMessage(session.issue)
+                      : "작업 시작 또는 정리에 확인이 필요합니다. Tasks & Services의 실행 상태와 로그를 확인해 주세요."}
                 </p>
               )}
             </li>

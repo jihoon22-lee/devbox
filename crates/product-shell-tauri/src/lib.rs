@@ -261,6 +261,19 @@ fn authorize_inner(
     Ok(provenance)
 }
 
+/// Native owners may continue an already admitted operation after the UI closes.
+/// This accessor is not a renderer command and grants no component authority.
+pub fn native_handshake(app: &tauri::AppHandle, product: &str) -> Result<Handshake, &'static str> {
+    let state = app
+        .try_state::<ShellState>()
+        .ok_or("native_shell_unavailable")?;
+    if state.product != product {
+        return Err("native_owner_mismatch");
+    }
+    let session = state.session.lock().map_err(|_| "native_shell_busy")?;
+    Ok(session.handshake().clone())
+}
+
 /// Observe a live local main shell without invoking a business command or
 /// changing navigation. The caller separately verifies package and data owners.
 pub fn health_session(app: &tauri::AppHandle, product: &str) -> Result<String, &'static str> {

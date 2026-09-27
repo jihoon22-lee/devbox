@@ -25,15 +25,38 @@ fn reconnect(value: Value, mut revision: impl FnMut(&str) -> Option<String>) -> 
         })?;
     Ok(json!({"sources":input.sources,"filter":input.filter,"unavailableSources":unavailable}))
 }
-pub(super) fn execute(app: &tauri::AppHandle, value: Value, deadline: u64) -> Result<Value> {
-    let result = reconnect(value, |run| {
-        let lease = runtime_engine::component::log_descriptor(app, run).ok()?;
-        lease.revalidate().ok()?;
-        Some(lease.revision().into())
-    })?;
+pub(super) async fn execute(
+    app: &tauri::AppHandle,
+    host: &Host,
+    value: Value,
+    deadline: u64,
+) -> Result<Value> {
+    let input: Input = args(value.clone())?;
+    logs_engine::core::validate_source_list(&input.sources)
+        .map_err(|_| "runtime_settings_invalid")?;
+    input
+        .filter
+        .validate()
+        .map_err(|_| "runtime_settings_invalid")?;
+    let mut revisions = std::collections::BTreeMap::new();
+    for source in &input.sources {
+        if let SourceSpec::RuntimeRun { run_id, .. } = source {
+            crate::files_host::current_deadline(deadline)?;
+            if !revisions.contains_key(run_id) {
+                revisions.insert(
+                    run_id.clone(),
+                    crate::runtime_owner::log_revision(app, host, run_id)
+                        .await
+                        .ok(),
+                );
+            }
+        }
+    }
+    let result = reconnect(value, |run| revisions.get(run).cloned().flatten())?;
     crate::files_host::current_deadline(deadline)?;
     Ok(result)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

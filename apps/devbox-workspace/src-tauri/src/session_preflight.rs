@@ -1,10 +1,11 @@
 //! Read-only preflight: native project/definition evidence and the existing port collector.
+use crate::session_runtime::PreparedJob;
 use crate::{
     definitions::{Definitions, SessionDefinitions},
     host::Host,
 };
 use product_contract::{ExecutionTarget, ProjectContext};
-use runtime_engine::{component::sessions::PreparedJob, core::models::JobKind};
+use runtime_engine::core::models::JobKind;
 use serde::Serialize;
 use std::{collections::BTreeSet, sync::Mutex};
 #[derive(Clone, Serialize)]
@@ -185,7 +186,7 @@ async fn capture_inner(
     let mut borrowable = BTreeSet::new();
     for prepared in jobs {
         let job = prepared.job();
-        let current = prepared.revalidate(app).is_ok();
+        let current = prepared.revalidate(app).await.is_ok();
         report.add(
             "task",
             job.id.clone(),
@@ -197,12 +198,7 @@ async fn capture_inner(
             !current,
         );
         if let Some(task) = prepared.task() {
-            let same = crate::platform::task_sources::matches_context(
-                host,
-                context,
-                &task.source_root,
-                &task.project_identity,
-            );
+            let same = prepared.matches_context(host, context);
             report.add(
                 "taskContext",
                 job.id.clone(),

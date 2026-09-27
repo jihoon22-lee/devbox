@@ -2,6 +2,7 @@
 //! Calling these does not start the standalone application or select its stores.
 
 pub mod search;
+pub mod ui;
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -315,7 +316,27 @@ pub fn initialize_with_sources(
     common: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
 ) -> Result<(), String> {
-    initialize_owner(app, data, common, sources, true)
+    initialize_owner(app, data, common, sources, true, false)
+}
+
+/// Windowless agent owner. The embedding app must call system_session_end from
+/// its RunEvent::Exit handler; tao delivers it before WM_ENDSESSION returns.
+pub fn initialize_agent_with_sources(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    sources: Arc<dyn crate::workspace_sources::NativeTaskSources>,
+) -> Result<(), String> {
+    initialize_owner(app, data, common, Some(sources), true, true)
+}
+/// Reuse the same bounded synchronous OS shutdown boundary without a WebView.
+pub fn system_session_end(app: &tauri::AppHandle) {
+    #[cfg(windows)]
+    if let Some(state) = app.try_state::<Arc<crate::lifecycle::RuntimeState>>() {
+        crate::lifecycle::complete_system_shutdown(state.inner());
+    }
+    #[cfg(not(windows))]
+    let _ = app;
 }
 
 /// Import-only Workspace initialization does not start cron, services or the
@@ -326,7 +347,7 @@ pub fn initialize_import_only_with_sources(
     common: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
 ) -> Result<(), String> {
-    initialize_owner(app, data, common, sources, false)
+    initialize_owner(app, data, common, sources, false, false)
 }
 fn initialize_owner(
     app: &tauri::AppHandle,
@@ -334,6 +355,7 @@ fn initialize_owner(
     common: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
     background_work: bool,
+    windowless: bool,
 ) -> Result<(), String> {
     use crate::{
         core::imports::ImportOperationRegistry, lifecycle::RuntimeState, storage::DatabaseState,
@@ -416,15 +438,16 @@ fn initialize_owner(
             .with_shutdown_timeout(std::time::Duration::from_secs(5)),
         listener,
     );
-    let background =
-        crate::lifecycle::is_background_launch(&std::env::args_os().collect::<Vec<_>>());
-    let runtime = Arc::new(RuntimeState::new(database_path, background, coordinator));
-    // The product owns normal exit; this hook only handles Windows session end.
-    let window = app
-        .get_webview_window("main")
-        .ok_or("component_window_unavailable")?;
-    crate::platform::install_session_end_hook(&window, app, runtime.clone())
-        .map_err(|_| "component_shutdown_hook_unavailable")?;
+    let runtime = Arc::new(RuntimeState::new(database_path, windowless, coordinator));
+    // A UI owner hooks its actual window. The agent uses tao's existing event
+    // target and RunEvent::Exit, without creating a window or WebView.
+    if !windowless {
+        let window = app
+            .get_webview_window("main")
+            .ok_or("component_window_unavailable")?;
+        crate::platform::install_session_end_hook(&window, app, runtime.clone())
+            .map_err(|_| "component_shutdown_hook_unavailable")?;
+    }
     app.manage(paths);
     app.manage(database.clone());
     app.manage(Arc::new(ImportOperationRegistry::default()));

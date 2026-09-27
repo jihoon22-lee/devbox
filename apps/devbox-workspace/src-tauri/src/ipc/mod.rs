@@ -490,7 +490,8 @@ pub(crate) async fn execute_admitted(
         &request.component,
         &request.method,
         &request.args,
-    );
+    )
+    .await;
     let notify_registry = request.component == "workspace.registry"
         && matches!(request.method.as_str(), "apply_registration" | "remove");
     let select = request.method == "select_project";
@@ -583,6 +584,11 @@ pub(crate) async fn execute_admitted(
                 empty(&request.args)?;
                 host.start_empty()?;
                 owners.initialize_runtime(&app, &host)?;
+                if crate::runtime_owner::installed(&app)?
+                    && !product_shell_tauri::suite_import_only(&app)?
+                {
+                    tauri::async_runtime::block_on(crate::runtime_owner::owner(&app))?;
+                }
                 host.status()
             })
             .await
@@ -666,7 +672,8 @@ pub(crate) async fn execute_admitted(
         runtime.host().ok().as_deref(),
         observation,
         &result,
-    );
+    )
+    .await;
     let response =
         admission.finish_with_failure_outcome(result.map_err(str::to_owned), crate::ipc::classify);
     Ok(Response {

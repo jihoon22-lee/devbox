@@ -8,6 +8,9 @@ publish = false
 test-fixtures = []
 
 [dependencies]
+ports_engine = { package = "devbox-ports-engine", path = "../ports-engine", default-features = false, features = ["desktop"] }
+devbox-integration = { package = "integration", path = "../integration" }
+devbox-applink = { package = "applink", path = "../applink" }
 logs_engine = { package = "devbox-logs-engine", path = "../logs-engine", default-features = false, features = ["desktop"] }
 product-ipc = { workspace = true }
 editor_engine = { package = "devbox-editor-engine", path = "../editor-engine", default-features = false, features = ["desktop"] }

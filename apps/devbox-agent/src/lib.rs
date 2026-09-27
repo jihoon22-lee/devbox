@@ -69,7 +69,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     });
     let app = builder.build(context)?;
-    app.run(|_, event| {
+    app.run(|app, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            runtime_engine::component::system_session_end(app);
+        }
         // No windows exist; only explicit lifecycle shutdown may exit the agent.
         if let tauri::RunEvent::ExitRequested {
             code: None, api, ..

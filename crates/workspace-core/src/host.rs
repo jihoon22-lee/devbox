@@ -56,6 +56,9 @@ pub struct Host {
     selected: RwLock<Option<Selected>>,
 }
 impl Host {
+    pub fn is_read_only(&self) -> bool {
+        self.stores.is_read_only()
+    }
     pub fn source_environment(&self) -> &crate::platform::git_trust::SourceEnvironment {
         &self.source_environment
     }

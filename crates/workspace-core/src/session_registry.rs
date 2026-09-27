@@ -1,7 +1,10 @@
 //! Bounded native-only preparation and operation receipts. No execution data is serialized.
 use product_contract::ProjectContext;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 type Result<T> = std::result::Result<T, &'static str>;
 pub const PREPARE_TTL_MS: u64 = 180_000;
 const MAX_PREPARED: usize = 64 * 16;
@@ -65,18 +68,57 @@ pub enum Begin<P, W> {
 pub struct Registry<P, W> {
     prepared: HashMap<String, Preparation<P>>,
     operations: HashMap<String, Operation<W>>,
+    retired: HashSet<String>,
 }
 impl<P, W> Default for Registry<P, W> {
     fn default() -> Self {
         Self {
             prepared: HashMap::new(),
             operations: HashMap::new(),
+            retired: HashSet::new(),
         }
     }
 }
 impl<P: Clone, W> Registry<P, W> {
+    pub fn retire(&mut self, scope: &Scope, safe: impl Fn(&W) -> bool) -> Result<()> {
+        scope.validate()?;
+        if self.retired.contains(&scope.session) {
+            return Ok(());
+        }
+        if self.retired.len() >= 4096 {
+            return Err("session_runtime_limit");
+        }
+        for operation in self
+            .operations
+            .values()
+            .filter(|operation| operation.scope.session == scope.session)
+        {
+            if operation.scope != *scope {
+                return Err("session_runtime_stale");
+            }
+            if !operation.receipt.finished
+                || operation
+                    .receipt
+                    .witness
+                    .as_ref()
+                    .is_some_and(|witness| !safe(witness))
+            {
+                return Err("session_runtime_pending");
+            }
+        }
+        self.retired.insert(scope.session.clone());
+        self.operations
+            .retain(|_, operation| operation.scope.session != scope.session);
+        self.prepared
+            .retain(|_, preparation| preparation.scope.session != scope.session);
+        Ok(())
+    }
+
     pub fn prepare(&mut self, scope: Scope, value: P, now: u64) -> Result<String> {
         scope.validate()?;
+        if self.retired.contains(&scope.session) {
+            return Err("session_runtime_stale");
+        }
         self.prepared.retain(|_, entry| entry.expires > now);
         if self.prepared.len() >= MAX_PREPARED {
             return Err("session_runtime_limit");
@@ -108,6 +150,9 @@ impl<P: Clone, W> Registry<P, W> {
         now: u64,
     ) -> Result<Begin<P, W>> {
         scope.validate()?;
+        if self.retired.contains(&scope.session) {
+            return Err("session_runtime_stale");
+        }
         validate_operation(operation)?;
         if let Some(entry) = self.operations.get(operation) {
             if entry.scope != *scope {
@@ -187,6 +232,9 @@ impl<P: Clone, W> Registry<P, W> {
     }
     pub fn cancel(&mut self, scope: &Scope, operation: &str) -> Result<Option<Arc<W>>> {
         scope.validate()?;
+        if self.retired.contains(&scope.session) {
+            return Err("session_runtime_stale");
+        }
         validate_operation(operation)?;
         if !self.operations.contains_key(operation) {
             if self.operations.len() >= MAX_OPERATIONS {
@@ -296,6 +344,26 @@ mod tests {
             ),
             Err("session_runtime_stale")
         ));
+    }
+    #[test]
+    fn archive_releases_only_settled_safe_receipts_and_blocks_late_start_forever() {
+        let mut registry = Registry::<u32, u32>::default();
+        let scope = scope("session");
+        let reference = registry.prepare(scope.clone(), 1, 0).unwrap();
+        registry
+            .begin(&scope, "op", &reference, Arc::new(1), 0)
+            .unwrap();
+        assert!(registry.retire(&scope, |_| true).is_err());
+        registry.finish(&scope, "op", None).unwrap();
+        assert!(registry.retire(&scope, |_| false).is_err());
+        assert!(registry.receipt(&scope, "op").is_ok());
+        registry.retire(&scope, |_| true).unwrap();
+        assert!(registry.receipt(&scope, "op").is_err());
+        assert!(registry
+            .begin(&scope, "op", &reference, Arc::new(2), 1)
+            .is_err());
+        assert!(registry.prepare(scope.clone(), 2, 1).is_err());
+        registry.retire(&scope, |_| false).unwrap();
     }
     #[test]
     fn an_operation_cannot_be_rebound_to_another_preparation_or_context() {

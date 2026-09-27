@@ -35,3 +35,9 @@ pub mod runtime_logs;
 pub mod session_registry;
 
 pub mod session_rpc;
+
+pub mod definitions;
+
+pub mod runtime_observations;
+
+pub mod runtime_queries;

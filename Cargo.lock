@@ -1713,6 +1713,7 @@ dependencies = [
 name = "devbox-workspace"
 version = "0.8.1"
 dependencies = [
+ "agent-client",
  "applink",
  "catalog",
  "chrono",
@@ -8370,13 +8371,16 @@ dependencies = [
 name = "workspace-core"
 version = "0.1.0"
 dependencies = [
+ "applink",
  "devbox-editor-engine",
  "devbox-logs-engine",
+ "devbox-ports-engine",
  "devbox-projects-engine",
  "devbox-runtime-engine",
  "devbox-terminal-engine",
  "filesystem",
  "git",
+ "integration",
  "product-contract",
  "product-ipc",
  "serde",

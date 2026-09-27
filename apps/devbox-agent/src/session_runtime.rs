@@ -71,6 +71,33 @@ impl Sessions {
         }
         match call {
             Call::Candidates {} => native::candidates(app).map_err(issue),
+            Call::Retire { scope } => {
+                self.registry
+                    .lock()
+                    .map_err(|_| "busy")?
+                    .retire(&scope, |witness| {
+                        let Some(lease) = witness.lease() else {
+                            return true;
+                        };
+                        if !lease.descriptor().created {
+                            return true;
+                        }
+                        match lease.status() {
+                            Ok(value) => matches!(
+                                value.get("state").and_then(Value::as_str),
+                                Some("stopped" | "succeeded" | "failed" | "cancelled" | "skipped")
+                            ),
+                            Err(issue) => issue == "session_runtime_changed",
+                        }
+                    })?;
+                Ok(Value::Null)
+            }
+            Call::Restore { operations } => encode(
+                operations
+                    .iter()
+                    .map(|operation| self.receipt(&operation.scope, &operation.operation).ok())
+                    .collect::<Vec<_>>(),
+            ),
             Call::Prepare { scope, job_id } => {
                 let prepared = native::prepare_job(app, &job_id).map_err(issue)?;
                 let reference = self.registry.lock().map_err(|_| "busy")?.prepare(

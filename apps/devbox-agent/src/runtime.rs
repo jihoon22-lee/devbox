@@ -58,6 +58,7 @@ call!(
 );
 
 enum Parsed {
+    Query(workspace_core::runtime_queries::Call),
     Session(workspace_core::session_rpc::Call),
     Runtime(runtime_engine::api::RuntimeCall),
     Ports(ports_engine::api::PortsCall),
@@ -66,6 +67,7 @@ enum Parsed {
 impl Parsed {
     fn lane(&self) -> Lane {
         match self {
+            Self::Query(_) => Lane::Engine,
             Self::Session(call) => call.lane(),
             Self::Runtime(call) => call.lane(),
             Self::Ports(call) => call.lane(),
@@ -74,7 +76,7 @@ impl Parsed {
     }
     async fn execute(self, app: &tauri::AppHandle) -> std::result::Result<Value, String> {
         match self {
-            Self::Session(_) => Err("session_runtime_invalid".into()),
+            Self::Query(_) | Self::Session(_) => Err("session_runtime_invalid".into()),
             Self::Runtime(call) => runtime_engine::api::dispatch(app, call).await,
             Self::Ports(call) => ports_engine::api::dispatch(app, call).await,
             Self::Logs(call) => logs_engine::api::dispatch(app, call).await,
@@ -104,6 +106,15 @@ fn decode(
     }
     let incoming: IncomingRequest =
         serde_json::from_value(request).map_err(|_| "invalid_request")?;
+    if component == "workspace.runtime" && incoming.method == "native_query" {
+        let call: workspace_core::runtime_queries::Call =
+            serde_json::from_value(incoming.args).map_err(|_| "invalid_request")?;
+        call.validate()?;
+        if call.context() != incoming.header.context.as_ref() {
+            return Err("stale_context");
+        }
+        return Ok((incoming.header, Parsed::Query(call), &["sessions"]));
+    }
     if component == "workspace.runtime" && incoming.method == "session_owner" {
         let call: workspace_core::session_rpc::Call =
             serde_json::from_value(incoming.args).map_err(|_| "invalid_request")?;
@@ -143,6 +154,7 @@ pub struct Runtime {
     state: Mutex<State>,
     lanes: Lanes,
     sessions: crate::session_runtime::Sessions,
+    definitions: Mutex<workspace_core::definitions::Definitions>,
     stopping: std::sync::atomic::AtomicBool,
     active: std::sync::atomic::AtomicUsize,
     drained: tokio::sync::Notify,
@@ -156,6 +168,7 @@ impl Runtime {
             state: Mutex::new(State::Cold),
             lanes: Lanes::default(),
             sessions: Default::default(),
+            definitions: Default::default(),
             stopping: std::sync::atomic::AtomicBool::new(false),
             active: std::sync::atomic::AtomicUsize::new(0),
             drained: tokio::sync::Notify::new(),
@@ -198,13 +211,11 @@ impl Runtime {
         // Do not retry partially initialized engine state. Missing/unselected
         // metadata above remains retryable after Workspace prepares its stores.
         *state = State::Failed;
-        runtime_engine::component::initialize_with_sources(
+        runtime_engine::component::initialize_agent_with_sources(
             &self.app,
             &runtime,
             &common,
-            Some(Arc::new(workspace_core::task_sources::Sources {
-                host: host.clone(),
-            })),
+            Arc::new(workspace_core::task_sources::Sources { host: host.clone() }),
         )
         .map_err(|_| "runtime_owner_unavailable")?;
         ports_engine::component::initialize(&self.app, &processes)
@@ -279,6 +290,17 @@ impl Runtime {
             .map_err(|_| "request_cancelled")?;
             workspace_core::current_deadline(header.deadline_ms)?;
             match call {
+                Parsed::Query(call) => {
+                    let host = owner.initialize()?;
+                    workspace_core::runtime_queries::execute(
+                        &owner.app,
+                        &host,
+                        &owner.definitions,
+                        call,
+                        header.deadline_ms,
+                    )
+                    .await
+                }
                 Parsed::Session(call) => {
                     let host = owner.initialize()?;
                     owner.sessions.dispatch(&owner.app, &host, call).await

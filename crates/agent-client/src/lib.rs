@@ -244,6 +244,10 @@ impl AgentClient {
         .await
         .map_err(|_| AgentError::Unavailable)?
     }
+    /// Establish the native owner without executing or replaying a business call.
+    pub async fn connect(&self, session: &str) -> Result<(), AgentError> {
+        self.ensure_connected(session).await.map(|_| ())
+    }
     pub async fn call(&self, component: &str, request: Value) -> Result<Value, AgentError> {
         if self.0.unsupported {
             return Err(AgentError::Unsupported);

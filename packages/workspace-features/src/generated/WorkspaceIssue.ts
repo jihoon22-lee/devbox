@@ -523,4 +523,7 @@ export type WorkspaceIssue =
   | "wsl_target_retirement_pending"
   | "wsl_target_unavailable"
   | "wsl_timeout"
-  | "wsl_unavailable";
+  | "wsl_unavailable"
+  | "runtime_agent_unavailable"
+  | "session_ui_resources_lost"
+  | "session_recovery_required";
