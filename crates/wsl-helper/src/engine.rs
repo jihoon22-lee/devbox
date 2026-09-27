@@ -1010,6 +1010,45 @@ impl Engine {
         if matches!(request.method.as_str(), "lsp_capture" | "lsp_validate") {
             return self.lsp_request(request, guard);
         }
+        if request.method == "agent_usage" {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Input {
+                context: ProjectContext,
+                since_ms: u64,
+            }
+            let args: Input = input(&request.args)?;
+            args.context.validate().map_err(|_| "wsl_context_invalid")?;
+            if !matches!(&args.context.target, ExecutionTarget::Wsl { distro_id } if crate::token(distro_id))
+            {
+                return Err("wsl_context_invalid");
+            }
+            let root = self
+                .roots
+                .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+                .ok_or("wsl_root_expired")?;
+            guard()?;
+            root.observation.revalidate()?;
+            let home = std::env::var_os("HOME")
+                .filter(|home| !home.is_empty())
+                .ok_or("agent_usage_unavailable")?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "agent_usage_unavailable")?
+                .as_millis()
+                .try_into()
+                .map_err(|_| "agent_usage_unavailable")?;
+            let report = crate::agent_usage::usage(
+                Path::new(&home),
+                root.observation.root(),
+                args.since_ms,
+                now,
+            );
+            guard()?;
+            root.observation.revalidate()?;
+            root.touched = Instant::now();
+            return serde_json::to_value(report).map_err(|_| "agent_usage_unavailable");
+        }
         if request.method == "agent_resources" {
             #[derive(Deserialize)]
             #[serde(deny_unknown_fields)]
