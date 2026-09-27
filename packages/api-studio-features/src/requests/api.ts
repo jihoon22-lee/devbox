@@ -231,6 +231,21 @@ export async function readImportFiles(format: ImportFileFormat): Promise<ImportF
   return files?.map((file) => ({ name: file.name, relativePath: file.relative_path, text: file.text })) ?? null;
 }
 
+export async function pickCollectionFolder() {
+  if (!isTauri()) throw new Error("폴더 선택은 데스크톱 앱에서만 사용할 수 있습니다.");
+  return apiCall("pick_collection_folder", {});
+}
+export async function readCollectionFolder(grantId: string): Promise<ImportFile[]> {
+  const files = await apiCall("read_collection_folder", { grantId });
+  return files.map((file) => ({ name: file.name, relativePath: file.relative_path, text: file.text }));
+}
+export async function writeCollectionFolder(grantId: string, files: { relativePath: string; text: string }[]) {
+  return apiCall("write_collection_folder", {
+    grantId,
+    files: files.map((file) => ({ relative_path: file.relativePath, text: file.text })),
+  });
+}
+
 /** Save an already-sanitized transfer document through a native dialog. */
 export async function saveJsonFile(content: string, defaultName: string): Promise<boolean> {
   if (!isTauri()) throw new Error("JSON 파일 저장은 데스크톱 앱에서 사용할 수 없습니다");

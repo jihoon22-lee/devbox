@@ -35,6 +35,14 @@ pub enum ApiCall {
     DisconnectMcpStdio {
         connection_id: String,
     },
+    PickCollectionFolder {},
+    ReadCollectionFolder {
+        grant_id: String,
+    },
+    WriteCollectionFolder {
+        grant_id: String,
+        files: Vec<crate::commands::collection_folder::FolderFile>,
+    },
     ReadJsonFile {},
     ReadImportFiles {
         format: crate::commands::import_files::ImportFileFormat,
@@ -192,6 +200,9 @@ pub const API_METHODS: &[&str] = &[
     "cancel_mcp_stdio",
     "disconnect_mcp_stdio",
     "read_json_file",
+    "pick_collection_folder",
+    "read_collection_folder",
+    "write_collection_folder",
     "read_import_files",
     "save_json_file",
     "seal_secret",
@@ -249,6 +260,9 @@ impl ApiCall {
             Self::CancelMcpStdio { .. } => "cancel_mcp_stdio",
             Self::DisconnectMcpStdio { .. } => "disconnect_mcp_stdio",
             Self::ReadJsonFile { .. } => "read_json_file",
+            Self::PickCollectionFolder {} => "pick_collection_folder",
+            Self::ReadCollectionFolder { .. } => "read_collection_folder",
+            Self::WriteCollectionFolder { .. } => "write_collection_folder",
             Self::ReadImportFiles { .. } => "read_import_files",
             Self::SaveJsonFile { .. } => "save_json_file",
             Self::SealSecret { .. } => "seal_secret",
@@ -379,6 +393,33 @@ pub async fn dispatch(
         ApiCall::ReadJsonFile {} => {
             use crate::commands::transfer::*;
             let value = read_json_file(component_app.clone()).await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::PickCollectionFolder {} => {
+            let value =
+                crate::commands::collection_folder::pick_collection_folder(component_app.clone())
+                    .await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::ReadCollectionFolder { grant_id } => {
+            let state = component_app
+                .state::<std::sync::Arc<crate::commands::collection_folder::CollectionFolderState>>(
+                )
+                .inner()
+                .clone();
+            let value =
+                crate::commands::collection_folder::read_collection_folder(state, grant_id).await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::WriteCollectionFolder { grant_id, files } => {
+            let state = component_app
+                .state::<std::sync::Arc<crate::commands::collection_folder::CollectionFolderState>>(
+                )
+                .inner()
+                .clone();
+            let value =
+                crate::commands::collection_folder::write_collection_folder(state, grant_id, files)
+                    .await?;
             serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
         }
         ApiCall::ReadImportFiles { format } => {
@@ -810,6 +851,18 @@ pub fn result_types(
         ),
         ("cancel_mcp_stdio", export.register::<bool>()?),
         ("disconnect_mcp_stdio", export.register::<()>()?),
+        (
+            "pick_collection_folder",
+            export.register::<Option<crate::commands::collection_folder::FolderGrant>>()?,
+        ),
+        (
+            "read_collection_folder",
+            export.register::<Vec<crate::commands::import_files::ImportFile>>()?,
+        ),
+        (
+            "write_collection_folder",
+            export.register::<crate::commands::collection_folder::WriteResult>()?,
+        ),
         ("read_json_file", export.register::<Option<String>>()?),
         (
             "read_import_files",
@@ -917,6 +970,10 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum ApiIssue {
+    FolderGrantExpired = "folder_grant_expired",
+    FolderNotCollection = "folder_not_collection",
+    FolderPathInvalid = "folder_path_invalid",
+    FolderTooLarge = "folder_too_large",
     ImportFileInvalid = "import_file_invalid",
     ImportFileTooLarge = "import_file_too_large",
     ApiWorkspaceInvalid = "api_workspace_invalid",
@@ -1182,8 +1239,29 @@ mod tests {
         let mut names = API_METHODS.to_vec();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 53);
+        assert_eq!(names.len(), 56);
         assert_eq!(classify("synthetic remote secret"), "unavailable");
+    }
+    #[test]
+    fn collection_folder_calls_accept_only_opaque_grants() {
+        for method in [
+            "pick_collection_folder",
+            "read_collection_folder",
+            "write_collection_folder",
+        ] {
+            let args = match method {
+                "pick_collection_folder" => serde_json::json!({}),
+                "read_collection_folder" => serde_json::json!({"grantId":"opaque"}),
+                _ => serde_json::json!({"grantId":"opaque","files":[]}),
+            };
+            let call: ApiCall =
+                serde_json::from_value(serde_json::json!({"method":method,"args":args})).unwrap();
+            assert_eq!(call.method(), method);
+            assert!(serde_json::from_value::<ApiCall>(
+                serde_json::json!({"method":method,"args":{"path":"C:/private"}})
+            )
+            .is_err());
+        }
     }
     #[test]
     fn import_file_picker_is_typed_and_keeps_the_normal_lane() {

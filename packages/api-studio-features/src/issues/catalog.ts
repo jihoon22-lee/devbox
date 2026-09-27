@@ -1,5 +1,9 @@
 import type { ApiIssue } from "../generated/ApiIssue";
 export const apiMessages: Record<ApiIssue, string> = {
+  folder_grant_expired: "폴더 선택이 만료되었습니다. 폴더를 다시 골라 주세요.",
+  folder_not_collection: "다른 파일이 있는 폴더입니다. 빈 폴더나 이전에 내보낸 폴더를 골라 주세요.",
+  folder_path_invalid: "폴더 또는 요청 파일 경로를 안전하게 사용할 수 없습니다.",
+  folder_too_large: "파일 컬렉션 한도를 넘었습니다. 파일 크기와 개수, 폴더 깊이를 확인하세요.",
   import_file_invalid: "가져올 파일을 읽지 못했습니다. 파일 형식과 접근 권한을 확인하세요.",
   import_file_too_large: "가져오기 한도를 넘었습니다. 파일 하나 16MiB, 합계 32MiB, 최대 500개까지 선택할 수 있습니다.",
   api_workspace_invalid: "작업을 완료하지 못했습니다.",

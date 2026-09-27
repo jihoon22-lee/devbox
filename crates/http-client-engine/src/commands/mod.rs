@@ -15,3 +15,5 @@ pub mod transfer;
 pub mod websocket;
 
 pub mod import_files;
+
+pub mod collection_folder;

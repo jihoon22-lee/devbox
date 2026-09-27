@@ -2,6 +2,7 @@ import type { ApiRequestHandoffPreview } from "./ApiRequestHandoffPreview";
 import type { ApiResponse } from "./ApiResponse";
 import type { ApiWorkspaceDocument } from "./ApiWorkspaceDocument";
 import type { ApiWorkspaceState } from "./ApiWorkspaceState";
+import type { FolderGrant } from "./FolderGrant";
 import type { GrpcConnectResult } from "./GrpcConnectResult";
 import type { GrpcCredentialProjection } from "./GrpcCredentialProjection";
 import type { GrpcInvokeResult } from "./GrpcInvokeResult";
@@ -24,6 +25,7 @@ import type { RemoteOpenApiSource } from "./RemoteOpenApiSource";
 import type { RenewApiRequestResult } from "./RenewApiRequestResult";
 import type { RequestTemplate } from "./RequestTemplate";
 import type { SavedKnowledgeDraft } from "./SavedKnowledgeDraft";
+import type { WriteResult } from "./WriteResult";
 
 export type ApiResults = {
   take_pending_open: OpenRequest | null;
@@ -34,6 +36,9 @@ export type ApiResults = {
   invoke_mcp_stdio: McpInvokeResult;
   cancel_mcp_stdio: boolean;
   disconnect_mcp_stdio: null;
+  pick_collection_folder: FolderGrant | null;
+  read_collection_folder: Array<ImportFile>;
+  write_collection_folder: WriteResult;
   read_json_file: string | null;
   read_import_files: Array<ImportFile> | null;
   save_json_file: boolean;
