@@ -285,6 +285,7 @@ try {
       crashAgent: crashOwnedAgent,
       report: (state) => {
         evidence.checks.agentRuntime = { ...state };
+        console.log(`Agent runtime acceptance: ${state.stage}`);
       },
     });
     evidence.checks.agentRuntime = result.evidence;
