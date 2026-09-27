@@ -1252,6 +1252,7 @@ dependencies = [
  "devbox-webhook-host",
  "dirs",
  "filesystem",
+ "knowledge-stores",
  "product-contract",
  "product-ipc",
  "product-shell-tauri",
@@ -1469,6 +1470,7 @@ dependencies = [
  "devbox-content-index-engine",
  "devbox-knowledge-vault-engine",
  "filesystem",
+ "knowledge-stores",
  "libc",
  "product-contract",
  "product-ipc",
@@ -3622,6 +3624,22 @@ dependencies = [
  "bitflags 2.13.1",
  "serde",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "knowledge-stores"
+version = "0.1.0"
+dependencies = [
+ "devbox-activity-engine",
+ "devbox-content-index-engine",
+ "devbox-knowledge-vault-engine",
+ "filesystem",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
+ "uuid",
 ]
 
 [[package]]

@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 tauri-build = { workspace = true }
 
 [dependencies]
+knowledge-stores = { path = "../../../crates/knowledge-stores" }
 product-ipc = { workspace = true }
 ts-rs = { workspace = true }
 suite-runtime = { path = "../../../crates/suite-runtime" }

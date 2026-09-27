@@ -9,6 +9,7 @@ description = "Devbox installed Suite background component"
 tauri-build = { workspace = true }
 
 [dependencies]
+knowledge-stores = { path = "../../crates/knowledge-stores" }
 webhook_host = { package = "devbox-webhook-host", path = "../../crates/webhook-host", default-features = false }
 tauri-plugin-notification = { workspace = true }
 workspace-core = { path = "../../crates/workspace-core" }

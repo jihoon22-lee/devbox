@@ -1,0 +1,19 @@
+[package]
+name = "knowledge-stores"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+uuid = { workspace = true }
+rusqlite = { workspace = true }
+devbox-filesystem = { package = "filesystem", path = "../filesystem" }
+knowledge_vault_engine = { package = "devbox-knowledge-vault-engine", path = "../knowledge-vault-engine", default-features = false }
+activity_engine = { package = "devbox-activity-engine", path = "../activity-engine", default-features = false }
+content_index_engine = { package = "devbox-content-index-engine", path = "../content-index-engine", default-features = false }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -47,3 +47,6 @@ portable에서는 실행하지 않는다. 백그라운드 기능은 리뷰 후�
 `crates/workspace-core`는 Workspace와 agent가 공유하는 프로젝트 host·registry·저장소 선택·Git/WSL 실행 증거 계층이다.
 agent의 읽기 전용 host는 registry owner 잠금을 가져가거나 파일을 만들지 않으며,
 쓰기 owner의 원자적 변경을 매번 다시 읽는다. 제품 UI의 파일·터미널 수명은 Workspace에 남는다.
+
+`crates/knowledge-stores`는 Knowledge와 agent가 같은 generation manifest를 읽는 계층이다.
+생성·선택은 Knowledge가 수행하고 agent는 activity/search 경로와 읽기 전용 수집 동의만 확인한다.
