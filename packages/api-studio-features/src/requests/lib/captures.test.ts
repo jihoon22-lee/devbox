@@ -50,3 +50,12 @@ it("bounds UTF-8 capture size and never retains a prior duplicate after a missin
   expect(duplicated.values.size).toBe(0);
   expect(duplicated.missing).toEqual(["token"]);
 });
+it("does not mistake a native redaction marker for a usable captured token", () => {
+  const outcome = applyCaptures(
+    [{ id: "token", enabled: true, variable: "token", source: "jsonPath", target: "$.access_token" }],
+    { ...res, body: '{"access_token":"[REDACTED]"}' },
+  );
+  expect(outcome.values.size).toBe(0);
+  expect(outcome.missing).toEqual(["token"]);
+  expect(outcome.errors).toEqual(["가려진 값은 캡처할 수 없습니다"]);
+});

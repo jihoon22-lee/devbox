@@ -30,6 +30,7 @@ export function applyCaptures(captures: Capture[], response: ApiResponse): Captu
         missing.add(capture.variable);
         continue;
       }
+      if (value.includes("[REDACTED]")) throw new Error("가려진 값은 캡처할 수 없습니다");
       if (new TextEncoder().encode(value).length > 64 * 1024) throw new Error("캡처 값이 64KiB 한도를 넘었습니다");
       values.set(capture.variable, value);
       missing.delete(capture.variable);
