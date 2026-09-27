@@ -59,6 +59,7 @@ fn allow_table_matches_the_committed_fixture() {
 
 pub(crate) fn permits(component: &str, route: &str, method: &str) -> bool {
     let routes = match component {
+        "workspace.agents" => super::agents::routes_for(method),
         "workspace.runtime" => super::runtime::routes_for(method),
         "workspace.processes" => super::processes::routes_for(method),
         "workspace.process-actions" => super::process_actions::routes_for(method),

@@ -31,6 +31,7 @@ fn main() {
             .plugin(
                 "workspace",
                 tauri_build::InlinedPlugin::new().commands(&[
+                    "agents",
                     "files",
                     "lsp",
                     "source",

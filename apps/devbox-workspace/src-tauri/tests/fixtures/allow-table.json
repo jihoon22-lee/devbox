@@ -1,5 +1,35 @@
 [
   [
+    "workspace.agents",
+    "agents",
+    "bind_worktree"
+  ],
+  [
+    "workspace.agents",
+    "agents",
+    "finish"
+  ],
+  [
+    "workspace.agents",
+    "agents",
+    "forget"
+  ],
+  [
+    "workspace.agents",
+    "agents",
+    "list"
+  ],
+  [
+    "workspace.agents",
+    "agents",
+    "plan"
+  ],
+  [
+    "workspace.agents",
+    "agents",
+    "record_worktree"
+  ],
+  [
     "workspace.definitions",
     "overview",
     "apply_edit"

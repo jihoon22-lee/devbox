@@ -253,6 +253,7 @@ export const companionDeadlineBudgets: Readonly<Record<string, number>> = {
   wsl_control_status: 30000,
 };
 export const componentCommands: Readonly<Record<string, string>> = {
+  "workspace.agents": "agents",
   "workspace.commands": "commands",
   "workspace.definitions": "definitions",
   "workspace.dependencies": "dependencies",

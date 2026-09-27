@@ -215,6 +215,7 @@ async fn terminal_execute(
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
         .invoke_handler(tauri::generate_handler![
+            crate::ipc::agents::agents,
             crate::ipc::files::files,
             crate::ipc::lsp::lsp,
             crate::ipc::source::source,

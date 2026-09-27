@@ -530,6 +530,9 @@ Code522="runtime_request_too_large",
 Code523="runtime_response_too_large",
 }}
 pub fn classify(error: &str) -> &'static str {
+    if let Some(issue) = crate::agent_hub::AgentIssue::from_code(error) {
+        return issue.code();
+    }
     WorkspaceIssue::from_code(error)
         .unwrap_or(WorkspaceIssue::Unavailable)
         .code()
