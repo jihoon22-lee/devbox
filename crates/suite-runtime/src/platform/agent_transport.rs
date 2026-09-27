@@ -25,7 +25,17 @@ struct Native {
     product: String,
 }
 fn diagnostic_log(scope: &CapturedScope) -> Option<Arc<OperationLog>> {
-    let root = dirs::data_local_dir()?
+    use windows::Win32::{
+        System::Com::CoTaskMemFree,
+        UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath, KF_FLAG_DEFAULT},
+    };
+    let folder =
+        unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, KF_FLAG_DEFAULT, None) }.ok()?;
+    let text = unsafe { folder.to_string() };
+    unsafe {
+        CoTaskMemFree(Some(folder.0.cast()));
+    }
+    let root = std::path::PathBuf::from(text.ok()?)
         .join(format!("com.devbox.v08.agent.i{}", scope.installation_key))
         .join("logs");
     OperationLog::open(root).ok().map(Arc::new)
