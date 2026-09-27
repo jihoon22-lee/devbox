@@ -163,7 +163,7 @@ pub struct WorkspaceTaskPlan {
     pub items: Vec<WorkspaceTaskItem>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
 pub struct WorkspaceTaskState {

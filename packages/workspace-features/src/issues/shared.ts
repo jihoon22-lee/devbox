@@ -2,6 +2,11 @@ import type { WorkspaceIssue } from "../generated/WorkspaceIssue";
 const unavailable = "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요.";
 /** Native static codes are exhaustive; unknown text never becomes user-visible diagnostics. */
 export const workspaceMessages: Record<WorkspaceIssue, string> = {
+  source_merge_dirty: "기본 작업 폴더에 커밋하지 않은 변경이 있습니다. 커밋하거나 정리한 뒤 병합해 주세요.",
+  source_merge_failed: "병합을 완료하지 못했습니다. 기본 작업 폴더의 Git 상태를 확인해 주세요.",
+  worktree_not_agent: "에이전트가 만든 작업 폴더와 branch만 정리할 수 있습니다.",
+  worktree_remove_dirty: "작업 폴더에 커밋하지 않은 변경이 있습니다. 변경을 확인하거나 '버리기'를 사용해 주세요.",
+  worktree_branch_unmerged: "branch가 아직 병합되지 않아 지우지 않았습니다.",
   terminal_stream_denied: "터미널 출력 연결이 변경되었습니다. 창을 다시 열어 주세요.",
   terminal_stream_limit: "터미널 출력 연결이 너무 많습니다. 닫힌 화면을 확인해 주세요.",
   terminal_stream_unavailable: "터미널 출력을 확인하지 못했습니다. 창을 다시 열어 주세요.",

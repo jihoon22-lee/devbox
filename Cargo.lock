@@ -1247,6 +1247,7 @@ dependencies = [
  "agent-protocol",
  "devbox-activity-engine",
  "devbox-content-index-engine",
+ "devbox-knowledge-vault-engine",
  "devbox-logs-engine",
  "devbox-ports-engine",
  "devbox-runtime-engine",
@@ -1254,6 +1255,7 @@ dependencies = [
  "dirs",
  "filesystem",
  "knowledge-stores",
+ "mcp-server",
  "product-contract",
  "product-ipc",
  "product-shell-tauri",
@@ -1268,6 +1270,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "tokio",
+ "uuid",
  "windows 0.61.3",
  "workspace-core",
 ]
@@ -3930,6 +3933,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp-server"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "md-5"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6082,6 +6093,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tauri",
+ "tempfile",
  "tokio",
  "uuid",
  "windows 0.61.3",

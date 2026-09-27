@@ -21,6 +21,11 @@ fn export_typescript_bindings() {
         .collect();
     for (file, name, results) in [
         (
+            "agents-results.ts",
+            "AgentsResults",
+            ipc::agents::result_types(&mut export).unwrap(),
+        ),
+        (
             "files-results.ts",
             "FilesResults",
             ipc::files::result_types(&mut export).unwrap(),
@@ -101,6 +106,7 @@ fn export_typescript_bindings() {
     }
     let mut budgets: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
     for (component, methods) in [
+        ("workspace.agents", ipc::agents::METHODS),
         ("workspace.runtime", ipc::runtime::METHODS),
         ("workspace.processes", ipc::processes::METHODS),
         ("workspace.process-actions", ipc::process_actions::METHODS),
@@ -127,6 +133,7 @@ fn export_typescript_bindings() {
         }
     }
     let commands: BTreeMap<_, _> = [
+        ("workspace.agents", "agents"),
         ("workspace.runtime", "runtime"),
         ("workspace.processes", "processes"),
         ("workspace.process-actions", "process_actions"),

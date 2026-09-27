@@ -1,5 +1,5 @@
 use product_contract::{
-    agent_settings::{AgentAutostartStatus, AgentSettingsCall},
+    agent_settings::{AgentAutostartStatus, AgentMcpStatus, AgentSettingsCall, McpSettingsCall},
     Problem,
 };
 use product_ipc::{ComponentCall, ExecutionClass, IncomingRequest, TypeExporter};
@@ -10,6 +10,7 @@ use tauri::{Manager, WebviewWindow};
 #[ts(optional_fields = nullable)]
 pub enum ControlToolsCall {
     Settings(AgentSettingsCall),
+    McpSettings(McpSettingsCall),
     Engine(installation_tools::api::ToolsCall),
 }
 impl ComponentCall for ControlToolsCall {
@@ -18,18 +19,19 @@ impl ComponentCall for ControlToolsCall {
     fn method(&self) -> &'static str {
         match self {
             Self::Settings(call) => call.method(),
+            Self::McpSettings(call) => call.method(),
             Self::Engine(call) => call.method(),
         }
     }
     fn routes(&self) -> &'static [&'static str] {
         match self {
-            Self::Settings(_) => &["environment"],
+            Self::Settings(_) | Self::McpSettings(_) => &["environment"],
             Self::Engine(call) => call.routes(),
         }
     }
     fn class(&self) -> ExecutionClass {
         match self {
-            Self::Settings(_) => ExecutionClass::Normal,
+            Self::Settings(_) | Self::McpSettings(_) => ExecutionClass::Normal,
             Self::Engine(call) => call.class(),
         }
     }
@@ -39,6 +41,15 @@ pub async fn tools(window: WebviewWindow, request: IncomingRequest) -> Result<Re
     let (admission, request) = admit_request::<ControlToolsCall>(&window, request)?;
     Ok(admission.finish(
         match request.call {
+            ControlToolsCall::McpSettings(call) => {
+                product_shell_tauri::agent_settings::mcp_call(
+                    window.app_handle(),
+                    "control-center",
+                    call,
+                    request.header.deadline_ms,
+                )
+                .await
+            }
             ControlToolsCall::Settings(call) => {
                 product_shell_tauri::agent_settings::call(
                     window.app_handle(),
@@ -61,6 +72,9 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
     let mut results = installation_tools::api::result_types(export)?;
     for method in ["autostart_status", "set_autostart"] {
         results.push((method, export.register::<AgentAutostartStatus>()?));
+    }
+    for method in ["mcp_settings", "set_mcp_settings"] {
+        results.push((method, export.register::<AgentMcpStatus>()?));
     }
     Ok(results)
 }

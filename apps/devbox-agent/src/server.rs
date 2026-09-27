@@ -245,6 +245,20 @@ pub async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'stati
 }
 
 #[cfg(windows)]
+fn create_first_listener(name: &str) -> Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    use tokio::net::windows::named_pipe::ServerOptions;
+    // Tauri setup runs synchronously on the main thread. Tokio must register
+    // this first pipe with the same reactor that will later poll the listener.
+    let runtime = tauri::async_runtime::handle();
+    let _entered = runtime.inner().enter();
+    ServerOptions::new()
+        .first_pipe_instance(true)
+        .reject_remote_clients(true)
+        .create(name)
+        .map_err(|_| "agent_pipe_unavailable")
+}
+
+#[cfg(windows)]
 pub fn start(
     app: tauri::AppHandle,
     scope: Arc<suite_runtime::platform::component_scope::CapturedScope>,
@@ -255,11 +269,7 @@ pub fn start(
     use suite_runtime::platform::agent_peer::{AgentPeer, Witness};
     use tokio::net::windows::named_pipe::ServerOptions;
     use windows::Win32::Foundation::HANDLE;
-    let first = ServerOptions::new()
-        .first_pipe_instance(true)
-        .reject_remote_clients(true)
-        .create(&name)
-        .map_err(|_| "agent_pipe_unavailable")?;
+    let first = create_first_listener(&name)?;
     tauri::async_runtime::spawn(async move {
         let mut listener = first;
         let mut clients = tokio::task::JoinSet::new();
@@ -332,6 +342,22 @@ mod tests {
     use super::*;
     use crate::routes::Routes;
     use agent_protocol::{AgentMessage, ClientMessage, PROTOCOL_VERSION};
+
+    #[cfg(windows)]
+    #[test]
+    fn first_listener_is_created_from_synchronous_startup() {
+        let name = format!(
+            r"\\.\pipe\devbox-agent-startup-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        let listener = create_first_listener(&name).unwrap();
+        drop(listener);
+    }
 
     async fn hello(client: &mut tokio::io::DuplexStream, product: &str, protocol: u32) {
         write_message(

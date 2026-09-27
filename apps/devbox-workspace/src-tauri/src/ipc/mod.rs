@@ -1,3 +1,4 @@
+pub mod agents;
 #[cfg(test)]
 pub(crate) mod allow_table;
 pub mod commands;
@@ -21,6 +22,7 @@ use product_ipc::{ComponentCall, IncomingRequest};
 use product_shell_tauri::{admit_request, Reply};
 use tauri::State;
 pub(crate) enum Call {
+    Agents(agents::AgentsCall),
     Files(files::WorkspaceFilesCall),
     Lsp(lsp::WorkspaceLspCall),
     Source(source::WorkspaceSourceCall),
@@ -153,7 +155,7 @@ mod tests {
             r#"{"method":"create_worktree","args":{"previewId":"preview","operationId":"op"}}"#,
         )
         .unwrap();
-        assert_eq!(create.routes(), &["source"]);
+        assert_eq!(create.routes(), &["agents", "source"]);
         assert_eq!(create.deadline_budget_ms(), 29_000);
     }
     #[test]
@@ -221,6 +223,10 @@ mod binding_tests {
         let mut export = product_ipc::TypeExporter::new(&cfg);
         super::companion::result_types(&mut export).unwrap();
         for (methods, results) in [
+            (
+                super::agents::METHODS,
+                super::agents::result_types(&mut export).unwrap(),
+            ),
             (
                 super::files::METHODS,
                 super::files::result_types(&mut export).unwrap(),
@@ -308,6 +314,7 @@ impl Call {
             Self::Terminal(call) => call.lane(),
             Self::Problems(call) => call.lane(),
             Self::Commands(call) => call.lane(),
+            Self::Agents(call) => call.lane(),
         }
     }
 }
@@ -379,6 +386,7 @@ pub(crate) async fn execute_admitted(
     if runtime.shutdown_started.load(Ordering::Acquire) {
         return Err(rejected(ProblemCode::Unavailable));
     }
+    let agents = matches!(&request.typed, Call::Agents(_));
     let problems = matches!(&request.typed, Call::Problems(_));
     let terminal = matches!(&request.typed, Call::Terminal(_));
     let engine = matches!(
@@ -398,7 +406,8 @@ pub(crate) async fn execute_admitted(
         code,
         provenance: provenance.clone(),
     };
-    let context_permit = if problems
+    let context_permit = if agents
+        || problems
         || terminal
         || engine
         || files
@@ -609,7 +618,9 @@ pub(crate) async fn execute_admitted(
         empty(&request.args).map(|()| runtime.status())
     } else {
         let preview = registry::project_probe(&request.method);
-        let lane = if preview {
+        let lane = if let Call::Agents(call) = &request.typed {
+            call.lane()
+        } else if preview {
             Lane::Probes
         } else {
             Lane::Metadata
@@ -617,12 +628,16 @@ pub(crate) async fn execute_admitted(
         match (runtime.host(), runtime.lanes.try_enter(lane)) {
             (Ok(host), Ok(permit)) => {
                 let worker_context = context_permit.clone();
+                let agent_cpu = runtime.agent_cpu.clone();
                 let worker = tauri::async_runtime::spawn_blocking(move || {
                     // A timed-out probe keeps its permit until the OS returns.
                     // A late preview cannot register or grant trust by itself.
                     let (_permit, _context) = (permit, worker_context);
                     match request.typed {
                         Call::Registry(call) => registry::dispatch(&host, call),
+                        Call::Agents(call) => {
+                            agents::dispatch(&host, &request.header, &agent_cpu, call)
+                        }
                         _ => Err("invalid_request"),
                     }
                 });

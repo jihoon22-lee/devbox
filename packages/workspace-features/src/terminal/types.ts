@@ -152,6 +152,7 @@ export interface WorkspaceTabDefinition {
 }
 
 export interface WorkspaceDefinition {
+  autoRun?: boolean;
   tabs: WorkspaceTabDefinition[];
   panes: WorkspacePaneDefinition[];
   activeTabId: string;

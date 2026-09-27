@@ -56,7 +56,13 @@ export async function componentCall<T>(
       : issue.startsWith("wsl_")
         ? await import("./wslIssues").then((module) => module.wslIssueMessage(issue)).catch(() => undefined)
         : undefined;
-    throw failure(message ?? issueMessage(issue), knownIssueMessage(issue) === undefined ? "unavailable" : issue);
+    const agent = issue.startsWith("agent_")
+      ? await import("./agents/messages").then((module) => module.agentMessage(issue)).catch(() => undefined)
+      : undefined;
+    throw failure(
+      message ?? agent ?? issueMessage(issue),
+      knownIssueMessage(issue) === undefined && agent === undefined ? "unavailable" : issue,
+    );
   }
   return response.value;
 }

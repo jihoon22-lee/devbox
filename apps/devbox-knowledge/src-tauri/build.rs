@@ -2,7 +2,7 @@ include!("../../../crates/product-shell-tauri/wsl_build_support.rs");
 include!("../../../crates/product-shell-tauri/build_support.rs");
 fn main() {
     let _bundle_staging = lock_bundle_staging();
-    helper_digest();
+    helper_digest("resources/wsl");
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .plugin(

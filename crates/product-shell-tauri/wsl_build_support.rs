@@ -1,11 +1,11 @@
 // Shared build-time pin for the identical static helper shipped by both hosts.
-fn helper_digest() {
+fn helper_digest(directory: impl AsRef<std::path::Path>) {
     use sha2::{Digest, Sha256};
-    use std::{fs, path::Path};
-    let directory = Path::new("resources/wsl");
+    use std::fs;
+    let directory = directory.as_ref();
     let binary = directory.join("devbox-workspace-wsl");
     let manifest = directory.join("manifest.json");
-    println!("cargo:rerun-if-changed=resources/wsl");
+    println!("cargo:rerun-if-changed={}", directory.display());
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
     if !binary.exists() && !manifest.exists() {
         return; // Source-only Rust checks have no launchable helper.

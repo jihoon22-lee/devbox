@@ -3,6 +3,7 @@ import type { WorkspacePane } from "./WorkspacePane";
 import type { WorkspaceTab } from "./WorkspaceTab";
 
 export type WorkspaceProfile = {
+  autoRun?: boolean;
   id: string;
   name: string;
   tabs: Array<WorkspaceTab>;

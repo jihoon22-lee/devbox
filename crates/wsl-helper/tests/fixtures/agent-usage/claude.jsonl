@@ -1,0 +1,5 @@
+{"type": "assistant", "requestId": "req_1", "message": {"id": "msg_1", "usage": {"input_tokens": 6, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 0, "output_tokens": 20}}}
+{"type": "assistant", "requestId": "req_1", "message": {"id": "msg_1", "usage": {"input_tokens": 6, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 0, "output_tokens": 20}}}
+{"type": "assistant", "message": {"id": "msg_2", "usage": {"input_tokens": 4, "cache_read_input_tokens": 200, "output_tokens": 10}}}
+{"type": "user", "message": {"content": "synthetic"}}
+{not json

@@ -264,6 +264,34 @@ impl Collectors {
         .map(|_| ())
         .map_err(|_| "knowledge_agent_unavailable")
     }
+    pub(crate) async fn mcp_search(
+        self: &Arc<Self>,
+        query: String,
+        limit: u32,
+        deadline: u64,
+    ) -> Result<Value, &'static str> {
+        let permit = self.lanes.try_enter(Lane::Engine)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis() as u64;
+        let worker = tokio::time::timeout(
+            std::time::Duration::from_millis(deadline.saturating_sub(now)),
+            self.lanes.workers(Lane::Engine).acquire_owned(),
+        )
+        .await
+        .map_err(|_| "request_expired")?
+        .map_err(|_| "search_unavailable")?;
+        let owner = self.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_permit, _worker) = (permit, worker);
+            workspace_core::current_deadline(deadline)?;
+            owner.initialize(false).map_err(|_| "search_unavailable")?;
+            let value = tauri::async_runtime::block_on(content_index_engine::api::dispatch_search(&owner.app, content_index_engine::api::SearchCall::SearchContent { query, limit: Some(i64::from(limit.min(20))), filter: None })).map_err(|_| "search_unavailable")?;
+            let results: Vec<_> = value.as_array().ok_or("search_unavailable")?.iter().take(limit.min(20) as usize).map(|hit| json!({"path":hit["path"],"name":hit["name"],"snippet":hit["snippet"],"truncated":hit["truncated"]})).collect();
+            Ok(json!({"results":results}))
+        }).await.map_err(|_| "worker_unavailable")?
+    }
     pub async fn shutdown(self: &Arc<Self>) {
         self.stopping.store(true, Ordering::Release);
         while self.lanes.active(Lane::Engine) != 0 {

@@ -199,7 +199,8 @@ impl Review {
             "git_output_too_large" => "git_source_limit",
             "worktree_preview_stale" => "worktree_preview_stale",
             "worktree_target_changed" => "worktree_target_changed",
-            _ => "source_operation_unavailable",
+            issue => crate::control::source_operation_issue(issue)
+                .unwrap_or("source_operation_unavailable"),
         })
     }
 

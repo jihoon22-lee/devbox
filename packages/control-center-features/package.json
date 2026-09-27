@@ -11,7 +11,8 @@
     "./transport": "./src/transport.ts",
     "./calls": "./src/calls.ts",
     "./issues": "./src/issues.ts",
-    "./generated/*": "./src/generated/*.ts"
+    "./generated/*": "./src/generated/*.ts",
+    "./mcp-settings": "./src/settings/McpSettings.tsx"
   },
   "scripts": {
     "build": "tsc --noEmit",
@@ -24,7 +25,8 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@devbox/tokens": "workspace:*",
-    "@devbox/context-menu": "workspace:*"
+    "@devbox/context-menu": "workspace:*",
+    "@devbox/hooks": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

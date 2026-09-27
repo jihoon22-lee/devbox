@@ -11,6 +11,10 @@ use serde::Deserialize;
 )]
 #[ts(optional_fields = nullable)]
 pub enum WorkspaceTerminalCall {
+    OpenAgentTerminal {
+        operation_id: String,
+        task_id: String,
+    },
     DashboardSnapshot {},
     DockerAction {
         operation_id: String,
@@ -101,6 +105,7 @@ pub enum WorkspaceTerminalCall {
     },
 }
 pub const METHODS: &[&str] = &[
+    "open_agent_terminal",
     "ack_terminal_log",
     "archive_development_session",
     "dashboard_snapshot",
@@ -130,32 +135,33 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
-        "ack_terminal_log" => &["terminal"],
-        "archive_development_session" => &["terminal"],
-        "dashboard_snapshot" => &["runtime", "terminal"],
-        "delete_workspace_profile" => &["terminal"],
-        "development_candidates" => &["terminal"],
-        "development_sessions" => &["terminal"],
-        "docker_action" => &["runtime", "terminal"],
-        "focus_terminal" => &["terminal"],
-        "list_workspace_profiles" => &["terminal"],
-        "open_distro_terminal" => &["runtime", "terminal"],
-        "open_terminal" => &["terminal"],
-        "open_terminal_profile" => &["terminal"],
-        "open_wsl_file_in_log_lens" => &["runtime", "terminal"],
-        "open_wsl_journal_in_log_lens" => &["runtime", "terminal"],
-        "prepare_development_session" => &["terminal"],
-        "prepare_session_summary" => &["terminal"],
-        "read_terminal_log" => &["terminal"],
-        "restore_terminal" => &["terminal"],
-        "save_workspace_profile" => &["terminal"],
-        "start_development_session" => &["terminal"],
-        "stop_development_session" => &["terminal"],
-        "stop_terminal" => &["terminal"],
-        "summon_terminal" => &["terminal"],
-        "terminal_commands" => &["terminal"],
-        "terminal_sessions" => &["terminal"],
-        "wsl_control_status" => &["runtime", "terminal"],
+        "open_agent_terminal" => &["agents"],
+        "ack_terminal_log" => &["agents", "terminal"],
+        "archive_development_session" => &["agents", "terminal"],
+        "dashboard_snapshot" => &["agents", "runtime", "terminal"],
+        "delete_workspace_profile" => &["agents", "terminal"],
+        "development_candidates" => &["agents", "terminal"],
+        "development_sessions" => &["agents", "terminal"],
+        "docker_action" => &["agents", "runtime", "terminal"],
+        "focus_terminal" => &["agents", "terminal"],
+        "list_workspace_profiles" => &["agents", "terminal"],
+        "open_distro_terminal" => &["agents", "runtime", "terminal"],
+        "open_terminal" => &["agents", "terminal"],
+        "open_terminal_profile" => &["agents", "terminal"],
+        "open_wsl_file_in_log_lens" => &["agents", "runtime", "terminal"],
+        "open_wsl_journal_in_log_lens" => &["agents", "runtime", "terminal"],
+        "prepare_development_session" => &["agents", "terminal"],
+        "prepare_session_summary" => &["agents", "terminal"],
+        "read_terminal_log" => &["agents", "terminal"],
+        "restore_terminal" => &["agents", "terminal"],
+        "save_workspace_profile" => &["agents", "terminal"],
+        "start_development_session" => &["agents", "terminal"],
+        "stop_development_session" => &["agents", "terminal"],
+        "stop_terminal" => &["agents", "terminal"],
+        "summon_terminal" => &["agents", "terminal"],
+        "terminal_commands" => &["agents", "terminal"],
+        "terminal_sessions" => &["agents", "terminal"],
+        "wsl_control_status" => &["agents", "runtime", "terminal"],
         _ => &[],
     }
 }
@@ -168,6 +174,7 @@ impl ComponentCall for WorkspaceTerminalCall {
     }
     fn method(&self) -> &'static str {
         match self {
+            Self::OpenAgentTerminal { .. } => "open_agent_terminal",
             Self::DashboardSnapshot { .. } => "dashboard_snapshot",
             Self::DockerAction { .. } => "docker_action",
             Self::WslControlStatus { .. } => "wsl_control_status",
@@ -237,7 +244,10 @@ pub fn result_types(
 ) -> Result<Vec<(&'static str, String)>, String> {
     use super::results::*;
     export.register::<WorkspaceTerminalCall>()?;
-    let mut results = Vec::new();
+    let mut results = vec![(
+        "open_agent_terminal",
+        export.register::<crate::terminal_host::Record>()?,
+    )];
     results.retain(|(method, _)| METHODS.contains(method));
     results.retain(|(method, _)| *method != "dashboard_snapshot");
     results.push((

@@ -1010,6 +1010,83 @@ impl Engine {
         if matches!(request.method.as_str(), "lsp_capture" | "lsp_validate") {
             return self.lsp_request(request, guard);
         }
+        if request.method == "agent_usage" {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Input {
+                context: ProjectContext,
+                since_ms: u64,
+            }
+            let args: Input = input(&request.args)?;
+            args.context.validate().map_err(|_| "wsl_context_invalid")?;
+            if !matches!(&args.context.target, ExecutionTarget::Wsl { distro_id } if crate::token(distro_id))
+            {
+                return Err("wsl_context_invalid");
+            }
+            let root = self
+                .roots
+                .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+                .ok_or("wsl_root_expired")?;
+            guard()?;
+            root.observation.revalidate()?;
+            let home = std::env::var_os("HOME")
+                .filter(|home| !home.is_empty())
+                .ok_or("agent_usage_unavailable")?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "agent_usage_unavailable")?
+                .as_millis()
+                .try_into()
+                .map_err(|_| "agent_usage_unavailable")?;
+            let report = crate::agent_usage::usage(
+                Path::new(&home),
+                root.observation.root(),
+                args.since_ms,
+                now,
+            );
+            guard()?;
+            root.observation.revalidate()?;
+            root.touched = Instant::now();
+            return serde_json::to_value(report).map_err(|_| "agent_usage_unavailable");
+        }
+        if request.method == "agent_resources" {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {
+                context: ProjectContext,
+            }
+            let args: Input = input(&request.args)?;
+            args.context.validate().map_err(|_| "wsl_context_invalid")?;
+            if !matches!(&args.context.target, ExecutionTarget::Wsl { distro_id } if crate::token(distro_id))
+            {
+                return Err("wsl_context_invalid");
+            }
+            let root = self
+                .roots
+                .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+                .ok_or("wsl_root_expired")?;
+            guard()?;
+            root.observation.revalidate()?;
+            // sysconf takes only these fixed scalar selectors and no pointers.
+            let page_size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) })
+                .ok()
+                .filter(|n| *n > 0)
+                .unwrap_or(4096);
+            let clock_ticks = u64::try_from(unsafe { libc::sysconf(libc::_SC_CLK_TCK) })
+                .ok()
+                .filter(|n| *n > 0)
+                .unwrap_or(100);
+            let report = crate::agent_resources::sample(
+                Path::new("/proc"),
+                root.observation.root(),
+                page_size,
+                clock_ticks,
+            );
+            guard()?;
+            root.observation.revalidate()?;
+            root.touched = Instant::now();
+            return serde_json::to_value(report).map_err(|_| "wsl_protocol_invalid");
+        }
         if request.method == "dependency_inventory" {
             return self.dependency_inventory(request, guard);
         }
@@ -1767,6 +1844,32 @@ mod definition_tests {
             .tempdir_in(env!("CARGO_MANIFEST_DIR"))
             .unwrap()
     }
+    #[test]
+    fn agent_resources_require_wsl_context_and_an_admitted_root() {
+        let mut engine = Engine::default();
+        let mut context = context();
+        context.target = ExecutionTarget::Windows;
+        assert_eq!(
+            engine.dispatch(&request(
+                "agent_resources",
+                None,
+                json!({"context":context})
+            )),
+            Err("wsl_context_invalid")
+        );
+        context.target = ExecutionTarget::Wsl {
+            distro_id: uuid::Uuid::new_v4().to_string(),
+        };
+        assert_eq!(
+            engine.dispatch(&request(
+                "agent_resources",
+                None,
+                json!({"context":context})
+            )),
+            Err("wsl_root_required")
+        );
+    }
+
     #[test]
     fn reviewed_source_changes_invalidate_without_execution_or_reattachment_reset() {
         let directory = fixture();

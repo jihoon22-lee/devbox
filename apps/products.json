@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 18,
+  "catalogRevision": 19,
   "channel": "stable",
   "products": [
     {
@@ -259,6 +259,13 @@
       "authority": "local-store",
       "lifecycle": "product",
       "protocolVersion": 1
+    },
+    {
+      "id": "workspace.agents",
+      "owner": "workspace",
+      "authority": "agent-task",
+      "lifecycle": "product",
+      "protocolVersion": 1
     }
   ],
   "features": [
@@ -329,6 +336,16 @@
       "label": "터미널",
       "component": "workspace.shell",
       "command": "workspace.open-terminal",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.agents",
+      "owner": "workspace",
+      "route": "agents",
+      "label": "에이전트",
+      "component": "workspace.shell",
+      "command": "workspace.open-agents",
       "authority": "shell-read",
       "status": "foundation"
     },

@@ -9,9 +9,12 @@ description = "Devbox installed Suite background component"
 tauri-build = { workspace = true }
 
 [dependencies]
+mcp-server = { workspace = true }
+uuid = { workspace = true }
 activity_engine = { package = "devbox-activity-engine", path = "../../crates/activity-engine", default-features = false }
 content_index_engine = { package = "devbox-content-index-engine", path = "../../crates/content-index-engine", default-features = false }
 knowledge-stores = { path = "../../crates/knowledge-stores" }
+knowledge_vault_engine = { package = "devbox-knowledge-vault-engine", path = "../../crates/knowledge-vault-engine", default-features = false }
 webhook_host = { package = "devbox-webhook-host", path = "../../crates/webhook-host", default-features = false }
 tauri-plugin-notification = { workspace = true }
 workspace-core = { path = "../../crates/workspace-core" }

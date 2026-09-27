@@ -1,5 +1,6 @@
 import type { ToolsIssue } from "./generated/ToolsIssue";
 export const toolsMessages: Record<ToolsIssue, string> = {
+  mcp_settings_unavailable: "MCP 설정을 확인하거나 저장할 수 없습니다. 백그라운드 서비스 연결을 확인해 주세요.",
   autostart_path_too_long: "설치 경로가 길어 로그인 자동 시작을 켤 수 없습니다. 더 짧은 설치 경로가 필요합니다.",
   autostart_unavailable: "자동 시작 설정을 확인하거나 저장할 수 없습니다. 백그라운드 서비스 연결을 확인해 주세요.",
   autostart_owner_conflict:

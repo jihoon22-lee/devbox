@@ -10,6 +10,15 @@ use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
 )]
 #[ts(optional_fields = nullable)]
 pub enum SourceCall {
+    InspectAgentWorktree {
+        request: crate::commands::InspectAgentWorktreeRequest,
+    },
+    RepoMerge {
+        request: crate::commands::MergeRequest,
+    },
+    RemoveAgentWorktree {
+        request: crate::commands::RemoveAgentWorktreeRequest,
+    },
     CreateWorktree {},
     RepoStatus {
         path: String,
@@ -77,6 +86,9 @@ pub enum SourceCall {
 }
 impl SourceCall {
     pub const METHODS: &'static [&'static str] = &[
+        "inspect_agent_worktree",
+        "repo_merge",
+        "remove_agent_worktree",
         "create_worktree",
         "repo_status",
         "worktrees",
@@ -102,6 +114,9 @@ impl SourceCall {
     ];
     pub fn method(&self) -> &'static str {
         match self {
+            Self::InspectAgentWorktree { .. } => "inspect_agent_worktree",
+            Self::RepoMerge { .. } => "repo_merge",
+            Self::RemoveAgentWorktree { .. } => "remove_agent_worktree",
             Self::CreateWorktree { .. } => "create_worktree",
             Self::RepoStatus { .. } => "repo_status",
             Self::Worktrees { .. } => "worktrees",
@@ -144,6 +159,9 @@ impl SourceCall {
     }
     pub(crate) fn path(&self) -> Option<&str> {
         match self {
+            Self::InspectAgentWorktree { request } => Some(&request.path),
+            Self::RepoMerge { request } => Some(&request.path),
+            Self::RemoveAgentWorktree { request } => Some(&request.path),
             Self::CreateWorktree {} => None,
             Self::RepoStatus { path } => Some(path),
             Self::Worktrees { path } => Some(path),
@@ -179,6 +197,8 @@ impl SourceCall {
     }
     pub(crate) fn operation_id_mut(&mut self) -> Option<&mut String> {
         match self {
+            Self::RepoMerge { request } => Some(&mut request.operation_id),
+            Self::RemoveAgentWorktree { request } => Some(&mut request.operation_id),
             Self::RepoStage { request } => Some(&mut request.operation_id),
             Self::RepoUnstage { request } => Some(&mut request.operation_id),
             Self::RepoCommit { request } => Some(&mut request.operation_id),
@@ -196,6 +216,18 @@ impl SourceCall {
 }
 pub(crate) async fn execute_source(call: SourceCall) -> Result<serde_json::Value, String> {
     match call {
+        SourceCall::InspectAgentWorktree { request } => {
+            serde_json::to_value(crate::commands::inspect_agent_worktree(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoMerge { request } => {
+            serde_json::to_value(crate::commands::repo_merge(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RemoveAgentWorktree { request } => {
+            crate::commands::remove_agent_worktree(request).await?;
+            Ok(serde_json::Value::Null)
+        }
         SourceCall::CreateWorktree {} => Err("worktree_review_required".into()),
         SourceCall::RepoStatus { path } => {
             use crate::commands::*;
@@ -309,6 +341,15 @@ pub fn source_result_types(
 ) -> Result<Vec<(&'static str, String)>, String> {
     export.register::<SourceCall>()?;
     Ok(vec![
+        (
+            "repo_merge",
+            export.register::<crate::commands::MergeResult>()?,
+        ),
+        (
+            "inspect_agent_worktree",
+            export.register::<crate::commands::AgentWorktreePresence>()?,
+        ),
+        ("remove_agent_worktree", export.register::<()>()?),
         (
             "create_worktree",
             export.register::<crate::commands::WorktreeCreate>()?,
@@ -505,5 +546,39 @@ mod tests {
         )
         .is_err());
         assert!(serde_json::from_str::<SourceCall>(r#"{"method":"create_worktree","args":{"repoPath":"fixture","branch":"unsafe","targetDir":"target"}}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod agent_worktree_tests {
+    use super::*;
+    #[test]
+    fn agent_worktree_mutations_keep_native_path_operation_and_budget() {
+        for (method, extra) in [
+            ("repo_merge", serde_json::json!({})),
+            (
+                "remove_agent_worktree",
+                serde_json::json!({"worktree":"/repo-task","force":false}),
+            ),
+        ] {
+            let mut request =
+                serde_json::json!({"path":"/repo","branch":"agent/task","operationId":"operation"});
+            request
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let mut call: SourceCall = serde_json::from_value(
+                serde_json::json!({"method":method,"args":{"request":request}}),
+            )
+            .unwrap();
+            assert_eq!(call.method(), method);
+            assert_eq!(call.path(), Some("/repo"));
+            assert_eq!(
+                call.operation_id_mut().map(|s| s.as_str()),
+                Some("operation")
+            );
+            assert_eq!(call.lane(), Lane::Source);
+            assert_eq!(call.deadline_budget_ms(), LONG_BUDGET_MS);
+        }
     }
 }

@@ -230,6 +230,20 @@ mod tests {
         .unwrap()
     }
     #[test]
+    fn recorded_mcp_copies_are_removed_but_foreign_bin_files_survive() {
+        let root = fixture();
+        let image = root.0.join("products/workspace/app.exe");
+        let stable = crate::suite::mcp_launcher::refresh(&root.0, &image).unwrap();
+        fs::write(root.0.join("bin/user-tool.exe"), b"keep").unwrap();
+        let files = crate::suite::mcp_launcher::owned_files(&root.0).unwrap();
+        let plan = Plan::capture(&root.0, &"a".repeat(64), &files).unwrap();
+        plan.remove(&root.0).unwrap();
+        assert!(!stable.exists());
+        assert!(!root.0.join("mcp-launcher-owned.json").exists());
+        assert_eq!(fs::read(root.0.join("bin/user-tool.exe")).unwrap(), b"keep");
+    }
+
+    #[test]
     fn interrupted_removal_resumes_and_retains_foreign_files_and_unlisted_data() {
         let root = fixture();
         let plan = plan(&root.0);

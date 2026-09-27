@@ -1,5 +1,6 @@
 pub mod autostart;
 pub mod identity;
+pub mod mcp;
 pub mod remote;
 pub mod routes;
 pub mod runtime;
@@ -77,17 +78,32 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let knowledge_root = dirs::data_local_dir()
             .ok_or("knowledge_store_unavailable")?
             .join(format!("com.devbox.v08.knowledge.i{suffix}"));
-        let collectors = collectors::Collectors::new(app.handle().clone(), knowledge_root);
+        let collectors = collectors::Collectors::new(app.handle().clone(), knowledge_root.clone());
         let settings = autostart::Settings::new(scope.clone(), &suffix)?;
         // A registry failure must not disable unrelated background functionality;
         // the settings query will report the fixed failure to the product UI.
         let _ = settings.reconcile();
+        let mcp_scope = scope.clone();
+        let mcp = mcp::owner::Owner::new(
+            mcp::owner::Paths {
+                installation: std::path::PathBuf::from(scope.review_root()),
+                data: dirs::data_local_dir()
+                    .ok_or("mcp_settings_unavailable")?
+                    .join(format!("com.devbox.v08.agent.i{suffix}")),
+                knowledge: knowledge_root,
+                generation: scope.manifest.generation.clone(),
+            },
+            runtime.clone(),
+            collectors.clone(),
+            std::sync::Arc::new(move || mcp_scope.revalidate()),
+        );
         let routes = routes::Routes::with_runtime(
             scope.manifest.generation.clone(),
             runtime.clone(),
             webhooks.clone(),
             collectors.clone(),
             settings,
+            mcp,
         );
         tray::initialize(
             app.handle(),
@@ -101,6 +117,50 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             identity::pipe_name(&suffix),
             routes,
         )?;
+        // This worker holds its own writer lease through copy/receipt writes,
+        // including a shutdown racing startup. It cannot outlive the writer gate.
+        let launcher_scope = scope.clone();
+        let launcher_image = executable.clone();
+        let launcher_suffix = suffix.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let result = (|| -> Result<(), &'static str> {
+                let _writer = product_shell_tauri::WriterGuard::acquire_component(
+                    &launcher_image,
+                    "control-center",
+                    env!("CARGO_PKG_VERSION"),
+                )?;
+                launcher_scope.revalidate()?;
+                mcp::launcher::refresh(
+                    std::path::Path::new(&launcher_scope.review_root()),
+                    &launcher_image,
+                )
+                .map_err(|_| "mcp_launcher_refresh_failed")?;
+                Ok(())
+            })();
+            if result.is_err() {
+                if let Some(root) = dirs::data_local_dir() {
+                    if let Ok(log) = product_contract::operation_log::OperationLog::open(
+                        root.join(format!("com.devbox.v08.agent.i{launcher_suffix}"))
+                            .join("logs"),
+                    ) {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|time| time.as_millis() as u64)
+                            .unwrap_or(0);
+                        log.append(&product_contract::operation_log::Entry::new(
+                            now,
+                            env!("CARGO_PKG_VERSION"),
+                            "agent",
+                            "mcp",
+                            "refresh_launcher",
+                            0,
+                            product_contract::operation_log::Outcome::Failed,
+                            Some("mcp_launcher_refresh_failed"),
+                        ));
+                    }
+                }
+            }
+        });
         // Resume schedules on agent startup even when no Workspace UI is open.
         // Missing stores/activation leave the owner cold until a later request.
         let app_handle = app.handle().clone();

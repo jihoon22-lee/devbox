@@ -15,3 +15,8 @@ Knowledge의 동의한 활동 수집·검색 색인도 소유한다. 저장소�
 Control Center 환경과 Knowledge 활동 설정은 같은 기본 꺼짐 로그인 설정을 사용한다.
 자동 시작·설치/업데이트 commit은 검증된 현재 generation 경로를 등록하며 제품 창은 만들지 않는다.
 Run 키 정책과 Windows adapter는 bootstrap도 사용하는 `suite-runtime::agent_autostart`에 있다.
+
+설치 루트의 소유된 `bin/devbox-mcp.exe` 사본은 `--mcp-stdio`로만 MCP stdio 모드를 시작하며
+Tauri 창·트레이·두 번째 agent 서버를 만들지 않는다. 매 호출의 native MCP 역할·현재 generation을
+확인하고, 읽기 도구 및 별도로 허용한 노트 캡처/신뢰한 작업 실행만 `agent.mcp`로 전달한다.
+MCP 설정은 Control Center 환경에서 변경하며 기본은 모두 꺼짐이다.

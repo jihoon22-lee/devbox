@@ -136,6 +136,7 @@ mod tests {
 
     fn profile(id: impl Into<String>, name: impl Into<String>) -> WorkspaceProfile {
         WorkspaceProfile {
+            auto_run: false,
             id: id.into(),
             name: name.into(),
             tabs: vec![WorkspaceTab {

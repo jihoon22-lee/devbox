@@ -745,7 +745,8 @@ mod native {
                 "wsl_execution_conflict" => "wsl_execution_conflict",
                 "wsl_lsp_installed_target_required" => "wsl_lsp_installed_target_required",
                 "wsl_lsp_language_unsupported" => "wsl_lsp_language_unsupported",
-                _ => "wsl_operation_failed",
+                issue => workspace_wsl::control::source_operation_issue(issue)
+                    .unwrap_or("wsl_operation_failed"),
             })
         }
         fn retire(&mut self) {
@@ -855,3 +856,33 @@ pub use native::Connection;
 
 #[cfg(windows)]
 pub use native::Artifact;
+
+#[cfg(test)]
+mod build_pin_tests {
+    #[test]
+    fn packaged_helper_build_pin_matches_the_workspace_resource() {
+        use sha2::{Digest, Sha256};
+        let binary = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl");
+        let digest = option_env!("DEVBOX_WSL_HELPER_SHA256");
+        let size = option_env!("DEVBOX_WSL_HELPER_BYTES");
+        if binary.exists() {
+            let bytes = std::fs::read(binary).unwrap();
+            let expected = Sha256::digest(&bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            assert_eq!(
+                digest,
+                Some(expected.as_str()),
+                "shared helper owner must receive the build pin"
+            );
+            assert_eq!(
+                size.and_then(|s| s.parse::<usize>().ok()),
+                Some(bytes.len())
+            );
+        } else {
+            assert!(digest.is_none() && size.is_none());
+        }
+    }
+}

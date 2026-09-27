@@ -1,5 +1,6 @@
 //! Explicit per-process connection to this product's exact native package review.
 //! The file declaration alone never activates a listener or launches a product.
+pub mod mcp_launcher;
 #[cfg(windows)]
 #[path = "platform/mod.rs"]
 pub mod platform;
@@ -1225,3 +1226,19 @@ pub fn stop_agent_for_update(version: &str) -> Result<(), &'static str> {
 }
 
 pub mod agent_autostart;
+
+/// MCP has a distinct native peer role; it is never a Suite product member.
+#[cfg(windows)]
+pub fn mcp_client(
+    root: &std::path::Path,
+) -> Result<(agent_client::AgentClient, String, String), &'static str> {
+    platform::agent_transport::create_mcp(root)
+}
+#[cfg(windows)]
+pub fn current_agent_path(root: &std::path::Path) -> Result<std::path::PathBuf, &'static str> {
+    Ok(
+        platform::component_scope::CapturedScope::capture_current_agent(root)?
+            .agent_image()?
+            .to_owned(),
+    )
+}

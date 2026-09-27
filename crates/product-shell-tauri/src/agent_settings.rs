@@ -53,3 +53,42 @@ pub async fn call(
         )
     }
 }
+
+/// Control Center alone exposes MCP settings; Knowledge's login adapter stays closed.
+pub async fn mcp_call(
+    app: &tauri::AppHandle,
+    product: &str,
+    call: product_contract::agent_settings::McpSettingsCall,
+    deadline: u64,
+) -> Result<Value, String> {
+    use product_contract::agent_settings::AgentMcpStatus;
+    const ISSUE: &str = "mcp_settings_unavailable";
+    if product != "control-center" {
+        return Err(ISSUE.into());
+    }
+    let client = app.try_state::<agent_client::AgentClient>().ok_or(ISSUE)?;
+    if !client.supported() {
+        return serde_json::to_value(AgentMcpStatus::default()).map_err(|_| ISSUE.into());
+    }
+    let handshake = crate::native_handshake(app, product)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| ISSUE)?
+        .as_millis() as u64;
+    let mut request = serde_json::to_value(call).map_err(|_| ISSUE)?;
+    request["header"] = json!({"protocolVersion":handshake.protocol_version,"installationId":handshake.installation_id,"sessionId":handshake.session_id,"requestId":uuid::Uuid::new_v4().to_string(),"deadlineMs":deadline.min(now.saturating_add(29000)),"route":"environment"});
+    let reply = client
+        .call("agent.settings", request)
+        .await
+        .map_err(|_| ISSUE)?;
+    if reply
+        .pointer("/operation/outcome/state")
+        .and_then(Value::as_str)
+        != Some("succeeded")
+    {
+        return Err(ISSUE.into());
+    }
+    let status: AgentMcpStatus =
+        serde_json::from_value(reply["value"].clone()).map_err(|_| ISSUE)?;
+    serde_json::to_value(status).map_err(|_| ISSUE.into())
+}

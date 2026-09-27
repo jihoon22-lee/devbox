@@ -1,5 +1,9 @@
 // Generated from native Workspace scheduling policy.
 export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  "workspace.agents": {
+    resources: 29000,
+    usage: 29000,
+  },
   "workspace.dependencies": {
     dependency_enrichment_cancel: 29000,
     dependency_enrichment_execute: 29000,
@@ -163,9 +167,11 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
     cancel_worktree: 29000,
     cleanup_scope_status: 29000,
     create_worktree: 29000,
+    inspect_agent_worktree: 29000,
     preview_cleanup_scope: 29000,
     preview_trust: 29000,
     preview_worktree: 29000,
+    remove_agent_worktree: 29000,
     repo_changes: 29000,
     repo_cleanup: 29000,
     repo_cleanup_cancel: 29000,
@@ -177,6 +183,7 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
     repo_fetch: 29000,
     repo_history: 29000,
     repo_local_cancel: 29000,
+    repo_merge: 29000,
     repo_preflight: 29000,
     repo_pull: 29000,
     repo_push: 29000,
@@ -201,6 +208,7 @@ export const deadlineBudgets: Readonly<Record<string, Readonly<Record<string, nu
     docker_action: 29000,
     focus_terminal: 29000,
     list_workspace_profiles: 29000,
+    open_agent_terminal: 29000,
     open_distro_terminal: 29000,
     open_terminal: 29000,
     open_terminal_profile: 29000,
@@ -253,6 +261,7 @@ export const companionDeadlineBudgets: Readonly<Record<string, number>> = {
   wsl_control_status: 30000,
 };
 export const componentCommands: Readonly<Record<string, string>> = {
+  "workspace.agents": "agents",
   "workspace.commands": "commands",
   "workspace.definitions": "definitions",
   "workspace.dependencies": "dependencies",

@@ -1,4 +1,5 @@
 import type { AgentAutostartStatus } from "./AgentAutostartStatus";
+import type { AgentMcpStatus } from "./AgentMcpStatus";
 import type { DevSetupApplyView } from "./DevSetupApplyView";
 import type { DevSetupAuditView } from "./DevSetupAuditView";
 import type { DevSetupConfigurationExportView } from "./DevSetupConfigurationExportView";
@@ -27,4 +28,6 @@ export type ToolsResults = {
   open_related_url: null;
   autostart_status: AgentAutostartStatus;
   set_autostart: AgentAutostartStatus;
+  mcp_settings: AgentMcpStatus;
+  set_mcp_settings: AgentMcpStatus;
 };
