@@ -128,8 +128,88 @@ test("output subscription retries only bounded pre-admission busy failures", asy
     if (problem === "transient") assert.equal((await result).cursor, 1);
     else await assert.rejects(result, (error) => error === problem);
     assert.equal(attempts, problem === "transient" ? 3 : problem === "busy" ? 20 : 1);
-    assert.equal(removed, 1);
+    assert.equal(removed, attempts);
     assert.equal(new Set(headers.map((header) => header.requestId)).size, attempts);
     assert.ok(headers.every((header) => header.deadlineMs === 30000));
   }
+});
+
+test("a rejected attempt's Channel end cannot retire the successful retry", async () => {
+  const callbacks = new Map(),
+    registered = [],
+    removed = [];
+  let attempt = 0,
+    previous;
+  const expected = { cursor: 7, frames: [{ sequence: 7, data: "ready" }] };
+  const result = await runInNewContext(terminalOutputExpression("owned", 6, 100), {
+    window: {
+      __TAURI_INTERNALS__: {
+        transformCallback: (fn) => {
+          const id = registered.length + 1;
+          registered.push(id);
+          callbacks.set(id, fn);
+          return id;
+        },
+        unregisterCallback: (id) => {
+          removed.push(id);
+          callbacks.delete(id);
+        },
+        invoke: async (command, input) => {
+          if (command.endsWith("terminal_describe"))
+            return { handshake: { installationId: "i", sessionId: "s" }, context: null };
+          if (command.endsWith("terminal_execute")) return true;
+          const callback = callbacks.get(Number(input.channel.split(":")[1]));
+          if (++attempt === 1) {
+            previous = callback;
+            callback({ end: true, index: 0 });
+            throw "busy";
+          }
+          previous({ end: true, index: 0 });
+          callback({ index: 0, message: expected });
+          return { subscriptionId: "second" };
+        },
+      },
+    },
+    crypto: { randomUUID: () => "request" },
+    Date,
+    setTimeout: (fn, ms) => setTimeout(fn, ms === 50 ? 0 : ms),
+    clearTimeout,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), expected);
+  assert.deepEqual(registered, [1, 2]);
+  assert.deepEqual(removed, [1, 2]);
+  assert.equal(callbacks.size, 0);
+});
+
+test("Channel end may overtake the first asynchronously fetched large batch", async () => {
+  let callback,
+    removed = 0;
+  const expected = { cursor: 1, frames: [{ sequence: 1, data: "synthetic redraw" }] };
+  const result = await runInNewContext(terminalOutputExpression("owned", 0, 100), {
+    window: {
+      __TAURI_INTERNALS__: {
+        transformCallback: (fn) => {
+          callback = fn;
+          return 1;
+        },
+        unregisterCallback: () => {
+          removed++;
+        },
+        invoke: async (command) => {
+          if (command.endsWith("terminal_describe"))
+            return { handshake: { installationId: "i", sessionId: "s" }, context: null };
+          if (command.endsWith("terminal_execute")) return true;
+          callback({ end: true, index: 1 });
+          queueMicrotask(() => callback({ index: 0, message: expected }));
+          return { subscriptionId: "sub" };
+        },
+      },
+    },
+    crypto: { randomUUID: () => "request" },
+    Date,
+    setTimeout,
+    clearTimeout,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), expected);
+  assert.equal(removed, 1);
 });
