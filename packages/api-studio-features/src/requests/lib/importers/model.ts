@@ -6,7 +6,7 @@ export interface ImportedRequest {
 }
 export interface ImportedEnvironment {
   name: string;
-  variables: { key: string; value: string }[];
+  variables: { key: string; value: string; secret?: boolean }[];
 }
 export interface ImportBundle {
   requests: ImportedRequest[];

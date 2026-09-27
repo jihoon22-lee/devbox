@@ -54,7 +54,7 @@ export function toImportPreview(
             name: name(environment.name, "untitled"),
             variables: environment.variables.slice(0, MAX_EXPORTED_VARIABLES).map((variable) => ({
               ...variable,
-              secret: isSensitiveName(variable.key) || looksLikeSecret(variable.value),
+              secret: variable.secret === true || isSensitiveName(variable.key) || looksLikeSecret(variable.value),
             })),
           };
         }),
