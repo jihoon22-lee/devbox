@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-import { terminalOutputExpression } from "./windows-terminal-output.mjs";
+import { terminalOutputExpression, terminalPromptVisible } from "./windows-terminal-output.mjs";
 
 test("output fixture subscribes with a channel and releases it after a batch or idle deadline", async () => {
   for (const idle of [false, true]) {
@@ -80,4 +80,56 @@ test("output fixture removes its callback if subscription admission rejects", as
     /denied/,
   );
   assert.equal(unregistered, true);
+});
+
+test("native ConPTY prompt accepts cursor movement replacing its trailing blank", () => {
+  assert.equal(terminalPromptVisible("root@fixture:/owned#\x1b[K\x1b[1C\x1b]0;root@fixture: /owned\x07"), true);
+  assert.equal(terminalPromptVisible("user@fixture:~$ "), true);
+  assert.equal(terminalPromptVisible("\x1b[?25hstarting shell"), false);
+});
+
+test("output subscription retries only bounded pre-admission busy failures", async () => {
+  for (const problem of ["transient", "busy", "denied"]) {
+    let attempts = 0,
+      callback,
+      removed = 0,
+      nextId = 0;
+    const headers = [];
+    const result = runInNewContext(terminalOutputExpression("owned", 0, 1), {
+      window: {
+        __TAURI_INTERNALS__: {
+          transformCallback: (fn) => {
+            callback = fn;
+            return 42;
+          },
+          unregisterCallback: () => {
+            removed++;
+          },
+          invoke: async (command, input) => {
+            if (command.endsWith("terminal_describe"))
+              return { handshake: { installationId: "i", sessionId: "s" }, context: null };
+            if (command.endsWith("terminal_execute")) return true;
+            headers.push(input.request.header);
+            attempts++;
+            if (problem !== "transient" || attempts < 3) throw problem === "transient" ? "busy" : problem;
+            callback({ index: 0, message: { cursor: 1, frames: [] } });
+            return { subscriptionId: "sub" };
+          },
+        },
+      },
+      crypto: { randomUUID: () => String(++nextId) },
+      Date: { now: () => 1000 },
+      setTimeout: (fn) => {
+        fn();
+        return 1;
+      },
+      clearTimeout: () => {},
+    });
+    if (problem === "transient") assert.equal((await result).cursor, 1);
+    else await assert.rejects(result, (error) => error === problem);
+    assert.equal(attempts, problem === "transient" ? 3 : problem === "busy" ? 20 : 1);
+    assert.equal(removed, 1);
+    assert.equal(new Set(headers.map((header) => header.requestId)).size, attempts);
+    assert.ok(headers.every((header) => header.deadlineMs === 30000));
+  }
 });

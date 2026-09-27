@@ -1,4 +1,4 @@
-import { terminalOutputExpression } from "./windows-terminal-output.mjs";
+import { terminalOutputExpression, terminalPromptVisible } from "./windows-terminal-output.mjs";
 import { exerciseNativeWslTasks } from "./windows-workspace-tasks-wsl.mjs";
 // Actual Workspace companions and native Session ownership, using owned fixture data only.
 import assert from "node:assert/strict";
@@ -441,7 +441,7 @@ export async function exerciseTerminalSessionFixture({
         const batch = await companion.evaluate(terminalOutputExpression(nativeId, startupCursor));
         startupCursor = batch.cursor;
         startupOutput = (startupOutput + batch.frames.map((frame) => frame.data).join("")).slice(-512 * 1024);
-        return /[#$] /.test(stripVTControlCharacters(startupOutput));
+        return terminalPromptVisible(startupOutput);
       }, "Owned fixture shell did not become interactive");
     } catch (error) {
       writeFileSync(
