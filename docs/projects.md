@@ -49,3 +49,7 @@ agent의 읽기 전용 host는 registry owner 잠금을 가져가거나 파일�
 
 `crates/knowledge-stores`는 Knowledge와 agent가 같은 generation manifest를 읽는 계층이다.
 생성·선택은 Knowledge가 수행하고 agent는 activity/search 경로와 읽기 전용 수집 동의만 확인한다.
+
+`crates/mcp-server`는 stdio MCP의 JSON-RPC·버전 협상·도구 계약을 검증하는 순수 crate다.
+파일·네트워크·Tauri를 사용하지 않고 실제 작업은 native ToolHost가 수행한다.
+Cargo workspace와 의존성 기반 affected 검증에 포함되며 공개 제품이 아니다.
