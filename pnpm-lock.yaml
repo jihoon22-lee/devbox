@@ -332,6 +332,9 @@ importers:
       '@devbox/context-menu':
         specifier: workspace:*
         version: link:../context-menu
+      '@devbox/hooks':
+        specifier: workspace:*
+        version: link:../hooks
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens

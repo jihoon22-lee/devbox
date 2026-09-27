@@ -7,6 +7,7 @@ export type ToolsIssue =
   | "manager_state_conflict"
   | "manager_url_denied"
   | "manager_url_unavailable"
+  | "mcp_settings_unavailable"
   | "autostart_unavailable"
   | "autostart_path_too_long"
   | "autostart_owner_conflict"

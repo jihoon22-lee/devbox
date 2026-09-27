@@ -28,9 +28,48 @@ pub fn save(dir: &Path, settings: &McpSettings) -> io::Result<()> {
     )
 }
 
+/// Enabling succeeds only after the owned launcher is ready. A damaged foreign
+/// copy leaves the previous settings unchanged instead of advertising a broken grant.
+pub fn save_ready(
+    dir: &Path,
+    installation: &Path,
+    image: &Path,
+    settings: &McpSettings,
+    deadline: u64,
+) -> io::Result<()> {
+    if settings.enabled && !load(dir).enabled {
+        super::launcher::refresh(installation, image)?;
+    }
+    workspace_core::current_deadline(deadline).map_err(io::Error::other)?;
+    save(dir, settings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn enabling_requires_a_ready_owned_launcher_before_saving_the_grant() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("data");
+        let image = root.path().join("agent.exe");
+        std::fs::write(&image, b"synthetic verified agent").unwrap();
+        let enabled = mcp_server::McpSettings {
+            enabled: true,
+            ..Default::default()
+        };
+        save_ready(&dir, root.path(), &image, &enabled, u64::MAX).unwrap();
+        assert!(super::super::launcher::stable_path(root.path()).exists());
+        assert_eq!(load(&dir), enabled);
+        save(&dir, &mcp_server::McpSettings::default()).unwrap();
+        std::fs::write(
+            super::super::launcher::stable_path(root.path()),
+            b"foreign replacement",
+        )
+        .unwrap();
+        assert!(save_ready(&dir, root.path(), &image, &enabled, u64::MAX).is_err());
+        assert!(!load(&dir).enabled);
+    }
+
     #[test]
     fn missing_or_corrupt_settings_disable_every_permission() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,3 +1,4 @@
+import McpSettings from "@devbox/control-center-features/mcp-settings";
 import AgentAutostart from "./AgentAutostart";
 import { issueFailure } from "@devbox/product-shell/issues";
 import { toolsMessages } from "@devbox/control-center-features/issues";
@@ -8,7 +9,7 @@ import { isOperation, problemCode, problemMessage } from "@devbox/product-shell/
 import { invoke } from "@tauri-apps/api/core";
 import catalog from "../../../apps/products.json";
 const routeFor = (method: string) =>
-  /dev_setup|autostart/.test(method) ? "environment" : /related_(tool|url)/.test(method) ? "tools" : "diagnostics";
+  /dev_setup|autostart|mcp/.test(method) ? "environment" : /related_(tool|url)/.test(method) ? "tools" : "diagnostics";
 configureProductTransport(
   async <T,>(component: Component, method: string, args: Record<string, unknown>): Promise<T> => {
     if (component !== "control-center.tools") throw new Error("도구 소유자를 확인해 주세요.");
@@ -49,7 +50,12 @@ export default function Tools({ route }: { route: string }) {
   const mode: ToolsMode = route === "environment" ? "dev-setup" : route === "tools" ? "related-tools" : "doctor";
   return (
     <>
-      {route === "environment" && <AgentAutostart />}
+      {route === "environment" && (
+        <>
+          <AgentAutostart />
+          <McpSettings />
+        </>
+      )}
       <ManagerTools key={route} mode={mode} />
     </>
   );

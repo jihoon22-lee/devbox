@@ -192,8 +192,12 @@ impl Owner {
             workspace_core::current_deadline(incoming.header.deadline_ms)?;
             (owner.verify)()?;
             let data = owner.paths.data.clone();
+            let installation = owner.paths.installation.clone();
             let selected = tauri::async_runtime::spawn_blocking(move || {
-                if let Some(update) = update { settings::save(&data, &update).map_err(|_| "mcp_settings_unavailable")?; }
+                if let Some(update) = update {
+                    let image = std::env::current_exe().map_err(|_| "mcp_settings_unavailable")?;
+                    settings::save_ready(&data, &installation, &image, &update, incoming.header.deadline_ms).map_err(|_| "mcp_settings_unavailable")?;
+                }
                 Ok::<_, &'static str>(settings::load(&data))
             }).await.map_err(|_| "worker_unavailable")??;
             (owner.verify)()?;
