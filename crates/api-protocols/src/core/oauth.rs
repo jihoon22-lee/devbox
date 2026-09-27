@@ -552,7 +552,7 @@ pub struct AuthorizationUrlInput<'a> {
     pub redirect_uri: &'a str,
     pub state: &'a str,
     pub challenge: &'a str,
-    pub resource: &'a str,
+    pub resource: Option<&'a str>,
     pub scopes: &'a [String],
 }
 
@@ -583,8 +583,10 @@ pub fn build_authorization_url(input: AuthorizationUrlInput<'_>) -> Result<Url, 
         .append_pair("redirect_uri", input.redirect_uri)
         .append_pair("state", input.state)
         .append_pair("code_challenge", input.challenge)
-        .append_pair("code_challenge_method", "S256")
-        .append_pair("resource", input.resource);
+        .append_pair("code_challenge_method", "S256");
+    if let Some(resource) = input.resource {
+        query.append_pair("resource", resource);
+    }
     if !scopes.is_empty() {
         query.append_pair("scope", &scopes.join(" "));
     }
@@ -1138,6 +1140,24 @@ mod tests {
     }
 
     #[test]
+    fn authorization_url_without_resource_omits_the_parameter() {
+        let url = build_authorization_url(AuthorizationUrlInput {
+            endpoint: "https://auth.example.com/authorize",
+            client_id: "devbox",
+            redirect_uri: "http://127.0.0.1:5000/oauth/callback",
+            state: "s",
+            challenge: "c",
+            resource: None,
+            scopes: &["read".into(), "write".into()],
+        })
+        .unwrap();
+        let pairs = url.query_pairs().into_owned().collect::<Vec<_>>();
+        assert!(!pairs.iter().any(|(key, _)| key == "resource"));
+        assert!(pairs.contains(&("scope".into(), "read write".into())));
+        assert!(pairs.contains(&("code_challenge_method".into(), "S256".into())));
+    }
+
+    #[test]
     fn pkce_is_s256_and_authorization_url_binds_resource() {
         let (state, verifier, challenge) = generate_state_and_pkce().unwrap();
         assert_eq!(state.len(), 43);
@@ -1152,7 +1172,7 @@ mod tests {
             redirect_uri: "http://127.0.0.1:49152/oauth/callback",
             state: &state,
             challenge: &challenge,
-            resource: "https://mcp.example/mcp",
+            resource: Some("https://mcp.example/mcp"),
             scopes: &["read".into()],
         })
         .unwrap();
