@@ -30,6 +30,11 @@ pub fn initialize(
     if !app.manage(ComponentRoot(root)) {
         return Err("component_state_conflict".into());
     }
+    if !app.manage(std::sync::Arc::new(
+        crate::commands::oauth2::OAuth2State::default(),
+    )) {
+        return Err("component_state_conflict".into());
+    }
     if !app.manage(crate::commands::request::ResponseHeaderVault::default()) {
         return Err("component_state_conflict".into());
     }

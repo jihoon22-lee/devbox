@@ -128,6 +128,9 @@ pub struct AuthConfig {
     pub token: String,
     pub api_key: String,
     pub api_value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub oauth2: Option<super::oauth2::config::OAuth2Config>,
 }
 
 /// Frontend가 편집·저장하는 원본. 변수 참조는 해석되지 않은 상태다.
@@ -532,6 +535,7 @@ impl ResponseHeaderVault {
 }
 
 struct ExecutedResponse {
+    oauth2_rejected: bool,
     response: ApiResponse,
     raw_headers: Vec<RawResponseHeader>,
     raw_binary: Option<Zeroizing<Vec<u8>>>,
@@ -539,6 +543,7 @@ struct ExecutedResponse {
 
 /// HTTP 요청을 backend-only resolve 뒤 수행한다. resolved 값은 응답에 포함하지 않는다.
 pub async fn send_request(
+    app: tauri::AppHandle,
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
     request_id: String,
@@ -546,15 +551,25 @@ pub async fn send_request(
     response_headers: tauri::State<'_, ResponseHeaderVault>,
     cancellation: tauri::State<'_, RequestCancellation>,
 ) -> Result<ApiResponse, String> {
+    use tauri::Manager;
     let sealer = platform_sealer();
-    send_request_with_captures(
+    let state = app.state::<std::sync::Arc<super::oauth2::OAuth2State>>();
+    let oauth = if req.auth.as_ref().is_some_and(|auth| auth.kind == "oauth2") {
+        Some((state.inner(), state.cache(&app).map_err(str::to_owned)?))
+    } else {
+        None
+    };
+    send_request_with_services(
         req,
         environment,
         &request_id,
         response_headers.inner(),
         cancellation.inner(),
         &captures,
-        sealer.as_ref(),
+        RequestServices {
+            sealer: sealer.as_ref(),
+            oauth,
+        },
     )
     .await
 }
@@ -613,6 +628,14 @@ async fn send_request_with_vault_and_cancellation(
     )
     .await
 }
+struct RequestServices<'a> {
+    sealer: &'a dyn devbox_secrets::Sealer,
+    oauth: Option<(
+        &'a std::sync::Arc<super::oauth2::OAuth2State>,
+        &'a super::oauth2::cache::TokenCache,
+    )>,
+}
+#[cfg(test)]
 async fn send_request_with_captures(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
@@ -622,6 +645,30 @@ async fn send_request_with_captures(
     captures: &[ResponseCapture],
     sealer: &dyn devbox_secrets::Sealer,
 ) -> Result<ApiResponse, String> {
+    send_request_with_services(
+        req,
+        environment,
+        request_id,
+        response_headers,
+        cancellation,
+        captures,
+        RequestServices {
+            sealer,
+            oauth: None,
+        },
+    )
+    .await
+}
+async fn send_request_with_services(
+    req: RequestTemplate,
+    environment: Vec<EnvironmentVariable>,
+    request_id: &str,
+    response_headers: &ResponseHeaderVault,
+    cancellation: &RequestCancellation,
+    captures: &[ResponseCapture],
+    services: RequestServices<'_>,
+) -> Result<ApiResponse, String> {
+    let sealer = services.sealer;
     super::captures::validate(captures).map_err(str::to_owned)?;
     let (request_token, response_id) = cancellation.begin_registered(request_id, |_| {
         response_headers.begin_capture_request(captures)
@@ -635,6 +682,21 @@ async fn send_request_with_captures(
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
     prepare_graphql_request(&mut resolved)?;
+    let mut oauth_use = None;
+    if let Some(auth) = resolved.auth.as_mut().filter(|auth| auth.kind == "oauth2") {
+        let config = validate_oauth2_auth(auth).map_err(str::to_owned)?;
+        let (state, cache) = services.oauth.ok_or("oauth2_authorization_required")?;
+        let token = tokio::select! {
+            biased;
+            _ = wait_for_cancellation(cancellation, request_token) => return Err("요청이 취소되었습니다".into()),
+            token = state.resolve_token(cache, request_id, &config) => token.map_err(str::to_owned)?,
+        };
+        if cancellation.is_cancelled(request_token) {
+            return Err("요청이 취소되었습니다".into());
+        }
+        auth.token = token.to_string();
+        oauth_use = Some((cache, super::oauth2::config::profile_key(&config), token));
+    }
     let redactor = Redactor::for_request(&resolved, environment_secrets);
     let mut executed = execute_request_with_captures(
         resolved,
@@ -645,6 +707,11 @@ async fn send_request_with_captures(
         sealer,
     )
     .await?;
+    if executed.oauth2_rejected {
+        if let Some((cache, key, token)) = oauth_use {
+            cache.mark_rejected(&key, &token).map_err(str::to_owned)?;
+        }
+    }
     let raw_headers = if executed.response.headers_truncated {
         // A truncated header capture is never retained for an out-of-band IPC
         // caller. Binary retention is independent and remains bounded/current-ID only.
@@ -908,7 +975,7 @@ async fn execute_request_chain(
             if let Some(auth) = &req.auth {
                 match auth.kind.as_str() {
                     "basic" => builder = builder.basic_auth(&auth.username, Some(&auth.password)),
-                    "bearer" => builder = builder.bearer_auth(&auth.token),
+                    "bearer" | "oauth2" => builder = builder.bearer_auth(&auth.token),
                     "apikey" if !auth.api_key.is_empty() => {
                         let value = reqwest::header::HeaderValue::from_str(&auth.api_value)
                             .map_err(|_| "API key 헤더 값이 올바르지 않습니다".to_string())?;
@@ -1032,6 +1099,9 @@ async fn execute_request_chain(
         let graphql =
             (req.body_kind == "graphql" && !binary).then(|| parse_graphql_response(&body));
         return Ok(ExecutedResponse {
+            oauth2_rejected: status.as_u16() == 401
+                && allow_sensitive
+                && req.auth.as_ref().is_some_and(|auth| auth.kind == "oauth2"),
             response: ApiResponse {
                 captures: capture_outcome,
                 status: status.as_u16(),
@@ -1348,12 +1418,67 @@ pub(crate) fn resolve_template(
                 token: replace(&auth.token),
                 api_key: replace(&auth.api_key),
                 api_value: replace(&auth.api_value),
+                oauth2: (auth.kind == "oauth2")
+                    .then_some(auth.oauth2.as_ref())
+                    .flatten()
+                    .map(|config| super::oauth2::config::OAuth2Config {
+                        grant_type: config.grant_type,
+                        authorization_url: replace(&config.authorization_url),
+                        token_url: replace(&config.token_url),
+                        client_id: replace(&config.client_id),
+                        client_secret: replace(&config.client_secret),
+                        scopes: replace(&config.scopes),
+                    }),
             }),
             timeout_ms: req.timeout_ms,
             graphql,
         },
         environment_secrets,
     ))
+}
+
+pub(crate) fn resolve_oauth2_auth(
+    auth: &AuthConfig,
+    environment: &[EnvironmentVariable],
+) -> Result<super::oauth2::config::ValidatedConfig, &'static str> {
+    if auth.kind != "oauth2" {
+        return Err("oauth2_config_invalid");
+    }
+    let req = RequestTemplate {
+        method: "GET".into(),
+        url: String::new(),
+        headers: vec![],
+        cookies: vec![],
+        multipart: vec![],
+        params: vec![],
+        body_kind: "none".into(),
+        body: String::new(),
+        auth: Some(auth.clone()),
+        timeout_ms: 30000,
+        graphql: None,
+    };
+    let (resolved, _) = resolve_template(&req, environment, platform_sealer().as_ref())
+        .map_err(|_| "oauth2_config_invalid")?;
+    validate_oauth2_auth(resolved.auth.as_ref().ok_or("oauth2_config_invalid")?)
+}
+fn validate_oauth2_auth(
+    auth: &AuthConfig,
+) -> Result<super::oauth2::config::ValidatedConfig, &'static str> {
+    let config = auth.oauth2.as_ref().ok_or("oauth2_config_invalid")?;
+    let mut unresolved = false;
+    for value in [
+        &config.authorization_url,
+        &config.token_url,
+        &config.client_id,
+        &config.client_secret,
+        &config.scopes,
+    ] {
+        visit_references(value, |_| unresolved = true);
+    }
+    if unresolved {
+        return Err("oauth2_config_invalid");
+    }
+    super::oauth2::config::validate(config)
 }
 
 fn prepare_graphql_request(req: &mut ResolvedRequest) -> Result<(), String> {
@@ -1552,6 +1677,19 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         collect(&auth.token);
         collect(&auth.api_key);
         collect(&auth.api_value);
+        if auth.kind == "oauth2" {
+            if let Some(config) = &auth.oauth2 {
+                for value in [
+                    &config.authorization_url,
+                    &config.token_url,
+                    &config.client_id,
+                    &config.client_secret,
+                    &config.scopes,
+                ] {
+                    collect(value);
+                }
+            }
+        }
     }
     names
 }
@@ -1712,6 +1850,9 @@ fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<St
         push(&auth.password);
         push(&auth.token);
         push(&auth.api_value);
+        if let Some(config) = &auth.oauth2 {
+            push(&config.client_secret);
+        }
     }
     for header in req.headers.iter().filter(|header| header.enabled) {
         if is_sensitive_name(&header.key) {
@@ -3390,6 +3531,202 @@ mod tests {
         assert!(is_binary_response("text/plain", &[0xff, 0xfe]));
         assert!(is_binary_response("text/plain", &[0, 1, 2]));
         assert!(is_binary_response("", &[0, 1, 2]));
+    }
+
+    #[tokio::test]
+    async fn oauth2_actual_send_fetches_once_and_masks_the_token_response() {
+        use super::super::oauth2::{
+            cache::TokenCache,
+            config::{GrantType, OAuth2Config},
+            flows, OAuth2State,
+        };
+        let (token_url, token_request) = flows::tests::serve_once(
+            200,
+            r#"{"access_token":"actual-oauth-token","token_type":"bearer","expires_in":3600}"#,
+        )
+        .await;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/me", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for status in [200, 401] {
+                let (mut stream, _) = listener.accept().unwrap();
+                assert!(read_http_request(&mut stream).contains("Bearer actual-oauth-token"));
+                let body = "actual-oauth-token";
+                write!(
+                stream,
+                "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            }
+        });
+        let mut req = template();
+        req.url = url;
+        req.method = "GET".into();
+        req.headers.clear();
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url,
+                client_id: "devbox".into(),
+                client_secret: "client-secret".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TokenCache::open(
+            dir.path().join("tokens.json"),
+            std::sync::Arc::new(MockSealer),
+        );
+        let state = std::sync::Arc::new(OAuth2State::default());
+        let response = send_request_with_services(
+            req.clone(),
+            vec![],
+            "oauth-send",
+            &ResponseHeaderVault::default(),
+            &RequestCancellation::default(),
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: Some((&state, &cache)),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.body, "[REDACTED]");
+        assert!(token_request
+            .await
+            .unwrap()
+            .contains("grant_type=client_credentials"));
+        let key = super::super::oauth2::config::profile_key(
+            &validate_oauth2_auth(req.auth.as_ref().unwrap()).unwrap(),
+        );
+        let rejected = send_request_with_services(
+            req,
+            vec![],
+            "oauth-rejected",
+            &ResponseHeaderVault::default(),
+            &RequestCancellation::default(),
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: Some((&state, &cache)),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(rejected.status, 401);
+        assert_eq!(cache.status(&key, 1).state, "expired");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn oauth2_token_wait_is_cancelled_by_the_request_owner() {
+        use super::super::oauth2::{
+            cache::TokenCache,
+            config::{GrantType, OAuth2Config},
+            OAuth2State,
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut req = template();
+        req.url = "https://not-sent.test/me".into();
+        req.headers.clear();
+        req.body.clear();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url: format!("http://{}/token", listener.local_addr().unwrap()),
+                client_id: "client".into(),
+                client_secret: "secret".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TokenCache::open(
+            dir.path().join("tokens.json"),
+            std::sync::Arc::new(MockSealer),
+        );
+        let state = std::sync::Arc::new(OAuth2State::default());
+        let cancellation = RequestCancellation::default();
+        let vault = ResponseHeaderVault::default();
+        let sending = send_request_with_services(
+            req,
+            vec![],
+            "cancel-oauth",
+            &vault,
+            &cancellation,
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: Some((&state, &cache)),
+            },
+        );
+        let (result, ()) = tokio::join!(sending, async {
+            let (stream, _) = listener.accept().await.unwrap();
+            cancellation.cancel("cancel-oauth");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            drop(stream);
+        });
+        assert_eq!(result.unwrap_err(), "요청이 취소되었습니다");
+    }
+
+    #[test]
+    fn oauth2_resolves_active_configuration_and_masks_client_and_access_tokens() {
+        use super::super::oauth2::config::{GrantType, OAuth2Config};
+        let mut req = template();
+        req.url = "https://api.test/me".into();
+        req.headers.clear();
+        req.body.clear();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url: "https://auth.test/token".into(),
+                client_id: "client".into(),
+                client_secret: "{{CLIENT_SECRET}}".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert!(referenced_variable_names(&req).contains("CLIENT_SECRET"));
+        let (mut resolved, secrets) = resolve_template(
+            &req,
+            &[sealed_variable("CLIENT_SECRET", "private-client-secret")],
+            &MockSealer,
+        )
+        .unwrap();
+        assert_eq!(
+            resolved
+                .auth
+                .as_ref()
+                .unwrap()
+                .oauth2
+                .as_ref()
+                .unwrap()
+                .client_secret,
+            "private-client-secret"
+        );
+        resolved.auth.as_mut().unwrap().token = "opaque-access-token".into();
+        let redactor = Redactor::for_request(&resolved, secrets);
+        assert_eq!(
+            redactor.redact_body("private-client-secret opaque-access-token"),
+            "[REDACTED] [REDACTED]"
+        );
+        req.auth.as_mut().unwrap().kind = "bearer".into();
+        assert!(!referenced_variable_names(&req).contains("CLIENT_SECRET"));
+        assert!(resolve_template(&req, &[], &MockSealer)
+            .unwrap()
+            .0
+            .auth
+            .unwrap()
+            .oauth2
+            .is_none());
     }
 
     #[test]

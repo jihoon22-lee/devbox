@@ -102,6 +102,26 @@ pub enum ApiCall {
         grant_id: String,
         remove_local_on_remote_failure: bool,
     },
+    Oauth2Status {
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
+    AuthorizeOauth2 {
+        request_id: String,
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
+    CancelOauth2 {
+        request_id: String,
+    },
+    FetchOauth2Token {
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
+    ClearOauth2Token {
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
     PickGrpcProto {},
     PickGrpcImportRoot {},
     ConnectGrpc {
@@ -233,6 +253,11 @@ pub const API_METHODS: &[&str] = &[
     "cancel_mcp_oauth",
     "list_mcp_oauth_grants",
     "revoke_mcp_oauth_grant",
+    "oauth2_status",
+    "authorize_oauth2",
+    "cancel_oauth2",
+    "fetch_oauth2_token",
+    "clear_oauth2_token",
     "pick_grpc_proto",
     "pick_grpc_import_root",
     "connect_grpc",
@@ -296,6 +321,11 @@ impl ApiCall {
             Self::CancelMcpOauth { .. } => "cancel_mcp_oauth",
             Self::ListMcpOauthGrants { .. } => "list_mcp_oauth_grants",
             Self::RevokeMcpOauthGrant { .. } => "revoke_mcp_oauth_grant",
+            Self::Oauth2Status { .. } => "oauth2_status",
+            Self::AuthorizeOauth2 { .. } => "authorize_oauth2",
+            Self::CancelOauth2 { .. } => "cancel_oauth2",
+            Self::FetchOauth2Token { .. } => "fetch_oauth2_token",
+            Self::ClearOauth2Token { .. } => "clear_oauth2_token",
             Self::PickGrpcProto { .. } => "pick_grpc_proto",
             Self::PickGrpcImportRoot { .. } => "pick_grpc_import_root",
             Self::ConnectGrpc { .. } => "connect_grpc",
@@ -331,6 +361,7 @@ impl ApiCall {
             Self::CancelMcpStdio { .. }
             | Self::DisconnectMcpStdio { .. }
             | Self::StopSseStream { .. }
+            | Self::CancelOauth2 { .. }
             | Self::CancelMcpOauth { .. }
             | Self::CancelGrpc { .. }
             | Self::DisconnectGrpc { .. }
@@ -630,6 +661,28 @@ pub async fn dispatch(
             .await?;
             serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
         }
+        ApiCall::Oauth2Status { auth, environment } => Ok(serde_json::json!(
+            crate::commands::oauth2::status(component_app, &auth, &environment)?
+        )),
+        ApiCall::AuthorizeOauth2 {
+            request_id,
+            auth,
+            environment,
+        } => Ok(serde_json::json!(
+            crate::commands::oauth2::authorize(component_app, &request_id, &auth, &environment)
+                .await?
+        )),
+        ApiCall::FetchOauth2Token { auth, environment } => Ok(serde_json::json!(
+            crate::commands::oauth2::fetch(component_app, &auth, &environment).await?
+        )),
+        ApiCall::CancelOauth2 { request_id } => {
+            crate::commands::oauth2::cancel(component_app, &request_id)?;
+            Ok(serde_json::Value::Null)
+        }
+        ApiCall::ClearOauth2Token { auth, environment } => {
+            crate::commands::oauth2::clear(component_app, &auth, &environment)?;
+            Ok(serde_json::Value::Null)
+        }
         ApiCall::PickGrpcProto {} => {
             use crate::commands::grpc::*;
             let value = pick_grpc_proto(component_app.clone(), component_app.state()).await?;
@@ -695,6 +748,7 @@ pub async fn dispatch(
         } => {
             use crate::commands::request::*;
             let value = send_request(
+                component_app.clone(),
                 req,
                 environment,
                 request_id,
@@ -983,6 +1037,20 @@ pub fn result_types(
             export.register::<crate::commands::request::ApiResponse>()?,
         ),
         ("cancel_request", export.register::<()>()?),
+        (
+            "oauth2_status",
+            export.register::<crate::commands::oauth2::cache::TokenStatus>()?,
+        ),
+        (
+            "authorize_oauth2",
+            export.register::<crate::commands::oauth2::cache::TokenStatus>()?,
+        ),
+        (
+            "fetch_oauth2_token",
+            export.register::<crate::commands::oauth2::cache::TokenStatus>()?,
+        ),
+        ("clear_oauth2_token", export.register::<()>()?),
+        ("cancel_oauth2", export.register::<()>()?),
         ("reveal_capture", export.register::<String>()?),
         ("discard_captures", export.register::<()>()?),
         ("restore_captures", export.register::<()>()?),
@@ -1012,6 +1080,12 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum ApiIssue {
+    Oauth2ConfigInvalid = "oauth2_config_invalid",
+    Oauth2AuthorizationRequired = "oauth2_authorization_required",
+    Oauth2TokenFailed = "oauth2_token_failed",
+    Oauth2StorageFailed = "oauth2_storage_failed",
+    Oauth2Cancelled = "oauth2_cancelled",
+    Oauth2Busy = "oauth2_busy",
     CaptureInputInvalid = "capture_input_invalid",
     CaptureReferenceUnavailable = "capture_reference_unavailable",
     CaptureLimit = "capture_limit",
@@ -1284,7 +1358,7 @@ mod tests {
         let mut names = API_METHODS.to_vec();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 59);
+        assert_eq!(names.len(), 64);
         assert_eq!(classify("synthetic remote secret"), "unavailable");
     }
     #[test]
@@ -1329,6 +1403,8 @@ mod tests {
     #[test]
     fn cancel_and_disconnect_keep_the_control_pool() {
         for value in [
+            r#"{"method":"cancel_oauth2","args":{"requestId":"r"}}"#,
+            r#"{"method":"discard_captures","args":{"references":[]}}"#,
             r#"{"method":"cancel_request","args":{"requestId":"r"}}"#,
             r#"{"method":"disconnect_mcp_stdio","args":{"connectionId":"s"}}"#,
         ] {

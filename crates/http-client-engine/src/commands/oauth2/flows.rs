@@ -144,11 +144,11 @@ pub async fn authorization_code(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::super::config::{validate, GrantType, OAuth2Config};
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    async fn serve_once(
+    pub(crate) async fn serve_once(
         status: u16,
         body: &'static str,
     ) -> (String, tokio::task::JoinHandle<String>) {
@@ -184,7 +184,7 @@ mod tests {
         });
         (url, task)
     }
-    fn config(grant_type: GrantType, token_url: &str) -> ValidatedConfig {
+    pub(crate) fn config(grant_type: GrantType, token_url: &str) -> ValidatedConfig {
         validate(&OAuth2Config {
             grant_type,
             authorization_url: "https://auth.x.test/authorize".into(),

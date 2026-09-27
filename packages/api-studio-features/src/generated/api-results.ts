@@ -25,6 +25,7 @@ import type { RemoteOpenApiSource } from "./RemoteOpenApiSource";
 import type { RenewApiRequestResult } from "./RenewApiRequestResult";
 import type { RequestTemplate } from "./RequestTemplate";
 import type { SavedKnowledgeDraft } from "./SavedKnowledgeDraft";
+import type { TokenStatus } from "./TokenStatus";
 import type { WriteResult } from "./WriteResult";
 
 export type ApiResults = {
@@ -68,6 +69,11 @@ export type ApiResults = {
   export_grpc_summary: boolean;
   send_request: ApiResponse;
   cancel_request: null;
+  oauth2_status: TokenStatus;
+  authorize_oauth2: TokenStatus;
+  fetch_oauth2_token: TokenStatus;
+  clear_oauth2_token: null;
+  cancel_oauth2: null;
   reveal_capture: string;
   discard_captures: null;
   restore_captures: null;

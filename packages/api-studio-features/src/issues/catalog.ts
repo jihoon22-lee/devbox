@@ -1,5 +1,11 @@
 import type { ApiIssue } from "../generated/ApiIssue";
 export const apiMessages: Record<ApiIssue, string> = {
+  oauth2_config_invalid: "OAuth 2.0 설정과 환경 변수를 확인하세요.",
+  oauth2_authorization_required: "로그인이 필요합니다.",
+  oauth2_token_failed: "OAuth 2.0 토큰을 받지 못했습니다.",
+  oauth2_storage_failed: "OAuth 2.0 토큰 저장소를 사용할 수 없습니다.",
+  oauth2_cancelled: "OAuth 2.0 로그인을 취소했거나 대기 시간이 끝났습니다.",
+  oauth2_busy: "다른 OAuth 2.0 작업이 진행 중입니다.",
   capture_input_invalid: "캡처 설정이 올바르지 않거나 한도를 넘었습니다.",
   capture_reference_unavailable: "캡처 값이 만료되었거나 지워졌습니다. 요청을 다시 보내세요.",
   capture_limit: "세션 캡처 한도를 넘었습니다.",

@@ -170,6 +170,18 @@ impl TokenCache {
             })
         }
     }
+    /// A 401 affects only the access token actually used, never a newer grant.
+    pub fn mark_rejected(&self, key: &str, access: &str) -> Result<(), &'static str> {
+        let _guard = self.lock.lock().map_err(|_| FAILED)?;
+        let mut document = self.read()?;
+        if let Some(token) = document.tokens.iter_mut().find(|token| token.key == key) {
+            if self.unseal(&token.access)?.as_str() == access {
+                token.expires_at_ms = Some(0);
+                self.write(&document)?;
+            }
+        }
+        Ok(())
+    }
     pub fn put(&self, key: &str, token: &TokenResponse, now_ms: u64) -> Result<(), &'static str> {
         if key.is_empty() || key.len() > 128 {
             return Err(FAILED);
@@ -260,6 +272,25 @@ mod tests {
         }
         crate::core::oauth::parse_token_response(&serde_json::to_vec(&value).unwrap()).unwrap()
     }
+    #[test]
+    fn rejection_expires_only_the_used_token_and_preserves_refresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TokenCache::open(dir.path().join("tokens.json"), Arc::new(FakeSealer));
+        cache
+            .put("key", &token("old", Some("refresh"), None), 1)
+            .unwrap();
+        cache
+            .put("key", &token("new", Some("refresh"), None), 2)
+            .unwrap();
+        cache.mark_rejected("key", "old").unwrap();
+        assert_eq!(cache.status("key", 3).state, "valid");
+        cache.mark_rejected("key", "new").unwrap();
+        match cache.get("key", 3).unwrap() {
+            CachedToken::Expired { refresh } => assert_eq!(refresh.unwrap().as_str(), "refresh"),
+            _ => panic!("expected expired token"),
+        }
+    }
+
     #[test]
     fn tokens_are_sealed_on_disk_and_expire_with_a_safety_margin() {
         let dir = tempfile::tempdir().unwrap();
