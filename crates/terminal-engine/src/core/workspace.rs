@@ -77,6 +77,8 @@ pub struct WorkspaceTab {
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
 pub struct WorkspaceProfile {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_run: bool,
     #[serde(default)]
     pub id: String,
     pub name: String,
@@ -418,8 +420,18 @@ fn contains_prefixed_secret(value: &str, prefix: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn auto_run_defaults_off_and_is_omitted_when_off() {
+        let old = serde_json::to_value(profile()).unwrap();
+        assert!(old.get("autoRun").is_none());
+        let restored: WorkspaceProfile = serde_json::from_value(old).unwrap();
+        assert!(!restored.auto_run);
+        restored.validate().unwrap();
+    }
+
     fn profile() -> WorkspaceProfile {
         WorkspaceProfile {
+            auto_run: false,
             id: "profile-1".into(),
             name: "개발 환경".into(),
             tabs: vec![WorkspaceTab {

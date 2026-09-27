@@ -1,3 +1,4 @@
+pub mod agent_hub;
 mod component;
 pub mod core;
 pub mod definitions;
