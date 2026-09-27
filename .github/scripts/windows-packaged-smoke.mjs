@@ -223,6 +223,9 @@ export function restoreElevatedCdpPolicy(policy) {
 // The caller first observes ordinary product shutdown. Retain a failed restore
 // receipt for final cleanup, and detach a successful receipt before reopening.
 export function releaseCdpSession(item, restorePolicy = restoreElevatedCdpPolicy) {
+  // A background owner may inherit stderr after the observed UI process exits.
+  // Release our diagnostic reader so Node can return to the owned teardown.
+  item.child?.stderr?.destroy();
   item.cdp?.close();
   item.cdp = null;
   if (item.policy) {
@@ -1024,13 +1027,25 @@ function runVerificationContractSelfTest() {
   // executable is opened again. Final cleanup must not release its successor.
   let activePolicy = { port: 1234 };
   let closes = 0;
-  const session = { cdp: { close: () => closes++ }, policy: activePolicy };
+  let stderrClosed = false;
+  const session = {
+    cdp: { close: () => closes++ },
+    policy: activePolicy,
+    child: {
+      stderr: {
+        destroy: () => {
+          stderrClosed = true;
+        },
+      },
+    },
+  };
+
   const restore = (policy) => {
     if (activePolicy !== policy) fail("CDP cleanup claimed another generation");
     activePolicy = null;
   };
   releaseCdpSession(session, restore);
-  if (activePolicy || session.cdp || session.policy || closes !== 1)
+  if (activePolicy || session.cdp || session.policy || closes !== 1 || !stderrClosed)
     fail("closed CDP session did not release its policy");
   activePolicy = { port: 2345 };
   releaseCdpSession(session, restore);

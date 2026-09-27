@@ -203,19 +203,24 @@ export async function exerciseAgentRuntime({
 
     stage("agent-crash");
     await crashAgent(agentIdentity());
+    stage("wait-agent-disconnect");
     await until(async () => {
       const status = await current.cdp.evaluate(
         "window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')",
       );
       return status === "unavailable";
     }, "disconnected native owner was not observed");
+    stage("agent-reconnect");
     assert.equal(
       await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
         timeoutMs: 35000,
       }),
       "connected",
     );
-    Object.assign(evidence, await verifyRuntimeCrash(current.cdp, crashFixture));
+    Object.assign(
+      evidence,
+      await verifyRuntimeCrash(current.cdp, crashFixture, (step) => stage(`runtime-recovery-${step}`)),
+    );
     crashFixture = undefined;
     const replacement = agentIdentity();
     assert.ok(
