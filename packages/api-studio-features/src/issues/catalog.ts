@@ -1,5 +1,8 @@
 import type { ApiIssue } from "../generated/ApiIssue";
 export const apiMessages: Record<ApiIssue, string> = {
+  capture_input_invalid: "캡처 설정이 올바르지 않거나 한도를 넘었습니다.",
+  capture_reference_unavailable: "캡처 값이 만료되었거나 지워졌습니다. 요청을 다시 보내세요.",
+  capture_limit: "세션 캡처 한도를 넘었습니다.",
   folder_grant_expired: "폴더 선택이 만료되었습니다. 폴더를 다시 골라 주세요.",
   folder_not_collection: "다른 파일이 있는 폴더입니다. 빈 폴더나 이전에 내보낸 폴더를 골라 주세요.",
   folder_path_invalid: "폴더 또는 요청 파일 경로를 안전하게 사용할 수 없습니다.",

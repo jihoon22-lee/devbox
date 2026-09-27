@@ -136,6 +136,7 @@ export async function sendRequest(
   req: RequestTemplate,
   environment: EnvVariable[],
   signal?: AbortSignal,
+  captures: import("./lib/captures").Capture[] = [],
 ): Promise<ApiResponse> {
   if (!isTauri()) return browserFetch(req, environment, signal);
   if (signal?.aborted) throw new Error("요청이 취소되었습니다");
@@ -145,7 +146,7 @@ export async function sendRequest(
   };
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    return await apiCall("send_request", { req, environment, requestId });
+    return await apiCall("send_request", { req, environment, requestId, captures });
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }

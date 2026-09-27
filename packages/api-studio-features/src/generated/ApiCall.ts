@@ -7,6 +7,7 @@ import type { ImportFileFormat } from "./ImportFileFormat";
 import type { McpHttpProfile } from "./McpHttpProfile";
 import type { McpStdioProfile } from "./McpStdioProfile";
 import type { RequestTemplate } from "./RequestTemplate";
+import type { ResponseCapture } from "./ResponseCapture";
 import type { SseOptions } from "./SseOptions";
 import type { WebSocketCloseInput } from "./WebSocketCloseInput";
 import type { WebSocketMessageInput } from "./WebSocketMessageInput";
@@ -70,9 +71,17 @@ export type ApiCall =
   | { method: "export_grpc_summary"; args: { summary: GrpcExchangeSummary } }
   | {
       method: "send_request";
-      args: { req: RequestTemplate; environment: Array<EnvironmentVariable>; requestId: string };
+      args: {
+        req: RequestTemplate;
+        environment: Array<EnvironmentVariable>;
+        requestId: string;
+        captures: Array<ResponseCapture>;
+      };
     }
   | { method: "cancel_request"; args: { requestId: string } }
+  | { method: "reveal_capture"; args: { reference: string } }
+  | { method: "discard_captures"; args: { references: Array<string> } }
+  | { method: "restore_captures"; args: { references: Array<string> } }
   | { method: "discard_current_response"; args: Record<symbol, never> }
   | { method: "build_revealed_curl"; args: { req: RequestTemplate; environment: Array<EnvironmentVariable> } }
   | { method: "copy_raw_response_headers"; args: { responseId: string } }

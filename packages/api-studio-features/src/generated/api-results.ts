@@ -68,6 +68,9 @@ export type ApiResults = {
   export_grpc_summary: boolean;
   send_request: ApiResponse;
   cancel_request: null;
+  reveal_capture: string;
+  discard_captures: null;
+  restore_captures: null;
   discard_current_response: null;
   build_revealed_curl: string;
   copy_raw_response_headers: string;

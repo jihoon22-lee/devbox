@@ -1,3 +1,4 @@
+use super::captures::{CaptureStore, NativeCaptureOutcome, ResponseCapture};
 use crate::core::graphql::{
     build_request_body, parse_response as parse_graphql_response, validate_document,
     GraphqlRequest, GraphqlResponse, GRAPHQL_INVALID_REQUEST, MAX_GRAPHQL_OPERATION_NAME_BYTES,
@@ -201,6 +202,9 @@ pub struct ResponseCookie {
 
 #[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ApiResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub captures: Option<NativeCaptureOutcome>,
     pub status: u16,
     pub status_text: String,
     pub headers: Vec<KeyValue>,
@@ -344,6 +348,7 @@ struct ResponseHeaderEntry {
 }
 
 struct ResponseHeaderVaultInner {
+    captures: CaptureStore,
     next_id: u64,
     current_request_id: Option<String>,
     entry: Option<ResponseHeaderEntry>,
@@ -358,6 +363,7 @@ impl Default for ResponseHeaderVault {
     fn default() -> Self {
         Self {
             inner: Mutex::new(ResponseHeaderVaultInner {
+                captures: CaptureStore::default(),
                 next_id: 1,
                 current_request_id: None,
                 entry: None,
@@ -367,8 +373,18 @@ impl Default for ResponseHeaderVault {
 }
 
 impl ResponseHeaderVault {
+    #[cfg(test)]
     fn begin_request(&self) -> Result<String, String> {
+        self.begin_capture_request(&[])
+    }
+    fn begin_capture_request(&self, definitions: &[ResponseCapture]) -> Result<String, String> {
         let mut inner = self.inner.lock().map_err(|_| response_copy_error())?;
+        inner.captures.invalidate(
+            definitions
+                .iter()
+                .filter(|d| d.enabled)
+                .map(|d| d.variable.clone()),
+        );
         // 새 요청이 시작된 시점부터 이전 응답 원문은 어떤 오류 경로에서도 다시 읽히지 않는다.
         inner.current_request_id = None;
         inner.entry = None;
@@ -430,6 +446,68 @@ impl ResponseHeaderVault {
             .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
         inner.current_request_id = None;
         inner.entry = None;
+        inner.captures.clear();
+        Ok(())
+    }
+
+    fn commit_captures(
+        &self,
+        cancellation: &RequestCancellation,
+        token: u64,
+        response_id: &str,
+        request_id: &str,
+        outcome: &mut NativeCaptureOutcome,
+    ) -> Result<(), String> {
+        let _routing = cancellation
+            .routing
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?;
+        if cancellation.is_cancelled(token)
+            || inner.current_request_id.as_deref() != Some(response_id)
+        {
+            return Err("요청이 취소되었습니다".into());
+        }
+        inner
+            .captures
+            .accept(request_id, outcome, super::captures::now())
+            .map_err(str::to_owned)
+    }
+    pub(crate) fn reveal_capture(
+        &self,
+        reference: &str,
+        sealer: &dyn devbox_secrets::Sealer,
+    ) -> Result<String, String> {
+        self.inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?
+            .captures
+            .reveal(reference, super::captures::now(), sealer)
+            .map_err(str::to_owned)
+    }
+    pub(crate) fn discard_captures(&self, references: &[String]) -> Result<(), String> {
+        if references.len() > 128 {
+            return Err("capture_input_invalid".into());
+        }
+        self.inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?
+            .captures
+            .discard(references, super::captures::now());
+        Ok(())
+    }
+    pub(crate) fn restore_captures(&self, references: &[String]) -> Result<(), String> {
+        if references.len() > 128 {
+            return Err("capture_input_invalid".into());
+        }
+        self.inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?
+            .captures
+            .restore(references, super::captures::now());
         Ok(())
     }
 
@@ -464,15 +542,19 @@ pub async fn send_request(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
     request_id: String,
+    captures: Vec<ResponseCapture>,
     response_headers: tauri::State<'_, ResponseHeaderVault>,
     cancellation: tauri::State<'_, RequestCancellation>,
 ) -> Result<ApiResponse, String> {
-    send_request_with_vault_and_cancellation(
+    let sealer = platform_sealer();
+    send_request_with_captures(
         req,
         environment,
         &request_id,
         response_headers.inner(),
         cancellation.inner(),
+        &captures,
+        sealer.as_ref(),
     )
     .await
 }
@@ -494,8 +576,15 @@ async fn send_request_with_vault(
     .await
 }
 
-pub fn cancel_request(cancellation: tauri::State<'_, RequestCancellation>, request_id: String) {
+pub fn cancel_request(
+    cancellation: tauri::State<'_, RequestCancellation>,
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
+    request_id: String,
+) {
     cancellation.cancel(&request_id);
+    if let Ok(mut inner) = response_headers.inner.lock() {
+        inner.captures.revoke_request(&request_id);
+    }
 }
 
 /// Renderer teardown에서 현재 응답과 in-flight 결과의 보관 권한을 함께 폐기한다.
@@ -505,6 +594,7 @@ pub fn discard_current_response(
     response_headers.clear_current()
 }
 
+#[cfg(test)]
 async fn send_request_with_vault_and_cancellation(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
@@ -512,20 +602,49 @@ async fn send_request_with_vault_and_cancellation(
     response_headers: &ResponseHeaderVault,
     cancellation: &RequestCancellation,
 ) -> Result<ApiResponse, String> {
-    let (request_token, response_id) =
-        cancellation.begin_registered(request_id, |_| response_headers.begin_request())?;
+    send_request_with_captures(
+        req,
+        environment,
+        request_id,
+        response_headers,
+        cancellation,
+        &[],
+        platform_sealer().as_ref(),
+    )
+    .await
+}
+async fn send_request_with_captures(
+    req: RequestTemplate,
+    environment: Vec<EnvironmentVariable>,
+    request_id: &str,
+    response_headers: &ResponseHeaderVault,
+    cancellation: &RequestCancellation,
+    captures: &[ResponseCapture],
+    sealer: &dyn devbox_secrets::Sealer,
+) -> Result<ApiResponse, String> {
+    super::captures::validate(captures).map_err(str::to_owned)?;
+    let (request_token, response_id) = cancellation.begin_registered(request_id, |_| {
+        response_headers.begin_capture_request(captures)
+    })?;
     validate_cookie_rows(&req.headers, &req.cookies)?;
     validate_multipart_rows(&req)?;
     validate_graphql_header_rows(&req)?;
-    let sealer = platform_sealer();
     let (mut resolved, environment_secrets) =
-        resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
+        resolve_template(&req, &environment, sealer).map_err(|_| safe_secret_error())?;
     validate_cookie_configuration(&resolved)?;
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
     prepare_graphql_request(&mut resolved)?;
     let redactor = Redactor::for_request(&resolved, environment_secrets);
-    let mut executed = execute_request(resolved, &redactor, cancellation, request_token).await?;
+    let mut executed = execute_request_with_captures(
+        resolved,
+        &redactor,
+        cancellation,
+        request_token,
+        captures,
+        sealer,
+    )
+    .await?;
     let raw_headers = if executed.response.headers_truncated {
         // A truncated header capture is never retained for an out-of-band IPC
         // caller. Binary retention is independent and remains bounded/current-ID only.
@@ -536,6 +655,15 @@ async fn send_request_with_vault_and_cancellation(
     let raw_binary = std::mem::take(&mut executed.raw_binary);
     let stored =
         response_headers.store_if_current_with_body(&response_id, raw_headers, raw_binary)?;
+    if let Some(outcome) = &mut executed.response.captures {
+        response_headers.commit_captures(
+            cancellation,
+            request_token,
+            &response_id,
+            request_id,
+            outcome,
+        )?;
+    }
     if stored {
         executed.response.response_id = Some(response_id);
         executed.response.raw_headers_available = !executed.response.headers_truncated;
@@ -658,11 +786,30 @@ pub fn sanitize_persisted_json(
         .map_err(|_| "민감정보 안전 저장 검증에 실패했습니다".to_string())
 }
 
+#[cfg(test)]
 async fn execute_request(
     req: ResolvedRequest,
     redactor: &Redactor,
     cancellation: &RequestCancellation,
     request_token: u64,
+) -> Result<ExecutedResponse, String> {
+    execute_request_with_captures(
+        req,
+        redactor,
+        cancellation,
+        request_token,
+        &[],
+        platform_sealer().as_ref(),
+    )
+    .await
+}
+async fn execute_request_with_captures(
+    req: ResolvedRequest,
+    redactor: &Redactor,
+    cancellation: &RequestCancellation,
+    request_token: u64,
+    captures: &[ResponseCapture],
+    sealer: &dyn devbox_secrets::Sealer,
 ) -> Result<ExecutedResponse, String> {
     let timeout_ms = if req.body_kind == "graphql" {
         req.timeout_ms
@@ -674,7 +821,7 @@ async fn execute_request(
         .ok_or_else(|| "요청 시간 제한이 올바르지 않습니다".to_string())?;
     tokio::time::timeout_at(
         deadline,
-        execute_request_chain(req, redactor, cancellation, request_token),
+        execute_request_chain(req, redactor, cancellation, request_token, captures, sealer),
     )
     .await
     .map_err(|_| "요청 시간이 초과되었습니다".to_string())?
@@ -685,6 +832,8 @@ async fn execute_request_chain(
     redactor: &Redactor,
     cancellation: &RequestCancellation,
     request_token: u64,
+    captures: &[ResponseCapture],
+    sealer: &dyn devbox_secrets::Sealer,
 ) -> Result<ExecutedResponse, String> {
     validate_cookie_configuration(&req)?;
     validate_multipart_configuration(&req)?;
@@ -848,6 +997,24 @@ async fn execute_request_chain(
         let body_size = body_bytes.len();
         let is_json = media_type.contains("json");
         let binary = is_binary_response(&media_type, &body_bytes);
+        let capture_text = (!binary)
+            .then(|| std::str::from_utf8(&body_bytes).ok())
+            .flatten();
+        let capture_headers = if captured_headers.truncated {
+            &[][..]
+        } else {
+            captured_headers.raw.as_slice()
+        };
+        let capture_outcome = (!captures.is_empty()).then(|| {
+            super::captures::evaluate(
+                captures,
+                status.as_u16(),
+                capture_headers,
+                capture_text,
+                is_json,
+                sealer,
+            )
+        });
         let (body, binary_projection, raw_binary) = if binary {
             (
                 String::new(),
@@ -866,6 +1033,7 @@ async fn execute_request_chain(
             (req.body_kind == "graphql" && !binary).then(|| parse_graphql_response(&body));
         return Ok(ExecutedResponse {
             response: ApiResponse {
+                captures: capture_outcome,
                 status: status.as_u16(),
                 status_text: status.canonical_reason().unwrap_or("").to_string(),
                 headers: captured_headers.masked,
@@ -3222,6 +3390,120 @@ mod tests {
         assert!(is_binary_response("text/plain", &[0xff, 0xfe]));
         assert!(is_binary_response("text/plain", &[0, 1, 2]));
         assert!(is_binary_response("", &[0, 1, 2]));
+    }
+
+    #[test]
+    fn native_capture_chains_a_sealed_token_while_response_stays_masked() {
+        use crate::commands::captures::ResponseCapture;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/login", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_http_request(&mut stream);
+                if index == 1 {
+                    assert!(request.contains("Bearer private-login-token"));
+                }
+                let body = r#"{"access_token":"private-login-token"}"#;
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let mut req = template();
+        req.url = url;
+        req.method = "GET".into();
+        req.headers.clear();
+        req.auth = None;
+        req.body_kind = "none".into();
+        req.body.clear();
+        let definitions = [ResponseCapture {
+            id: "c".into(),
+            enabled: true,
+            variable: "token".into(),
+            source: "jsonPath".into(),
+            target: "$.access_token".into(),
+        }];
+        let vault = ResponseHeaderVault::default();
+        let cancellation = RequestCancellation::default();
+        let response = tauri::async_runtime::block_on(send_request_with_captures(
+            req.clone(),
+            vec![],
+            "login",
+            &vault,
+            &cancellation,
+            &definitions,
+            &MockSealer,
+        ))
+        .unwrap();
+        assert!(response.body.contains(REDACTED));
+        assert!(!serde_json::to_string(&response)
+            .unwrap()
+            .contains("private-login-token"));
+        let capture = &response.captures.as_ref().unwrap().values[0];
+        assert_eq!(
+            vault
+                .reveal_capture(&capture.reference, &MockSealer)
+                .unwrap(),
+            "private-login-token"
+        );
+        req.headers.push(RequestHeader {
+            key: "Authorization".into(),
+            value: "Bearer {{token}}".into(),
+            enabled: true,
+        });
+        let response = tauri::async_runtime::block_on(send_request_with_captures(
+            req,
+            vec![EnvironmentVariable {
+                key: "token".into(),
+                value: capture.value.clone(),
+                secret: true,
+            }],
+            "next",
+            &vault,
+            &cancellation,
+            &[],
+            &MockSealer,
+        ))
+        .unwrap();
+        assert!(!response.body.contains("private-login-token"));
+        vault.clear_current().unwrap();
+        assert!(vault
+            .reveal_capture(&capture.reference, &MockSealer)
+            .is_err());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn native_capture_commit_rejects_cancelled_superseded_and_discarded_owners() {
+        use crate::commands::captures::{evaluate, ResponseCapture};
+        let defs = [ResponseCapture {
+            id: "c".into(),
+            enabled: true,
+            variable: "status".into(),
+            source: "status".into(),
+            target: String::new(),
+        }];
+        for mode in ["cancel", "supersede", "discard"] {
+            let vault = ResponseHeaderVault::default();
+            let cancellation = RequestCancellation::default();
+            let (token, response_id) = cancellation
+                .begin_registered("first", |_| vault.begin_request())
+                .unwrap();
+            let mut out = evaluate(&defs, 200, &[], None, false, &MockSealer);
+            match mode {
+                "cancel" => cancellation.cancel("first"),
+                "supersede" => {
+                    cancellation
+                        .begin_registered("new", |_| vault.begin_request())
+                        .unwrap();
+                }
+                _ => {
+                    vault.clear_current().unwrap();
+                }
+            }
+            assert!(vault
+                .commit_captures(&cancellation, token, &response_id, "first", &mut out)
+                .is_err());
+        }
     }
 
     #[test]

@@ -127,9 +127,20 @@ pub enum ApiCall {
         req: crate::commands::request::RequestTemplate,
         environment: Vec<crate::commands::request::EnvironmentVariable>,
         request_id: String,
+        #[serde(default)]
+        captures: Vec<crate::commands::captures::ResponseCapture>,
     },
     CancelRequest {
         request_id: String,
+    },
+    RevealCapture {
+        reference: String,
+    },
+    DiscardCaptures {
+        references: Vec<String>,
+    },
+    RestoreCaptures {
+        references: Vec<String>,
     },
     DiscardCurrentResponse {},
     BuildRevealedCurl {
@@ -231,6 +242,9 @@ pub const API_METHODS: &[&str] = &[
     "export_grpc_summary",
     "send_request",
     "cancel_request",
+    "reveal_capture",
+    "discard_captures",
+    "restore_captures",
     "discard_current_response",
     "build_revealed_curl",
     "copy_raw_response_headers",
@@ -291,6 +305,9 @@ impl ApiCall {
             Self::ExportGrpcSummary { .. } => "export_grpc_summary",
             Self::SendRequest { .. } => "send_request",
             Self::CancelRequest { .. } => "cancel_request",
+            Self::RevealCapture { .. } => "reveal_capture",
+            Self::DiscardCaptures { .. } => "discard_captures",
+            Self::RestoreCaptures { .. } => "restore_captures",
             Self::DiscardCurrentResponse { .. } => "discard_current_response",
             Self::BuildRevealedCurl { .. } => "build_revealed_curl",
             Self::CopyRawResponseHeaders { .. } => "copy_raw_response_headers",
@@ -317,6 +334,7 @@ impl ApiCall {
             | Self::CancelMcpOauth { .. }
             | Self::CancelGrpc { .. }
             | Self::DisconnectGrpc { .. }
+            | Self::DiscardCaptures { .. }
             | Self::CancelRequest { .. }
             | Self::CloseWebsocket { .. }
             | Self::DisconnectWebsocket { .. }
@@ -673,12 +691,14 @@ pub async fn dispatch(
             req,
             environment,
             request_id,
+            captures,
         } => {
             use crate::commands::request::*;
             let value = send_request(
                 req,
                 environment,
                 request_id,
+                captures,
                 component_app.state(),
                 component_app.state(),
             )
@@ -687,13 +707,32 @@ pub async fn dispatch(
         }
         ApiCall::CancelRequest { request_id } => {
             use crate::commands::request::*;
-            cancel_request(component_app.state(), request_id);
+            cancel_request(component_app.state(), component_app.state(), request_id);
             serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
         }
         ApiCall::DiscardCurrentResponse {} => {
             use crate::commands::request::*;
             discard_current_response(component_app.state())?;
             serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::RevealCapture { reference } => {
+            let vault = component_app.state::<crate::commands::request::ResponseHeaderVault>();
+            Ok(serde_json::json!(vault.reveal_capture(
+                &reference,
+                crate::platform::platform_sealer().as_ref()
+            )?))
+        }
+        ApiCall::DiscardCaptures { references } => {
+            component_app
+                .state::<crate::commands::request::ResponseHeaderVault>()
+                .discard_captures(&references)?;
+            Ok(serde_json::Value::Null)
+        }
+        ApiCall::RestoreCaptures { references } => {
+            component_app
+                .state::<crate::commands::request::ResponseHeaderVault>()
+                .restore_captures(&references)?;
+            Ok(serde_json::Value::Null)
         }
         ApiCall::BuildRevealedCurl { req, environment } => {
             use crate::commands::request::*;
@@ -944,6 +983,9 @@ pub fn result_types(
             export.register::<crate::commands::request::ApiResponse>()?,
         ),
         ("cancel_request", export.register::<()>()?),
+        ("reveal_capture", export.register::<String>()?),
+        ("discard_captures", export.register::<()>()?),
+        ("restore_captures", export.register::<()>()?),
         ("discard_current_response", export.register::<()>()?),
         ("build_revealed_curl", export.register::<String>()?),
         ("copy_raw_response_headers", export.register::<String>()?),
@@ -970,6 +1012,9 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum ApiIssue {
+    CaptureInputInvalid = "capture_input_invalid",
+    CaptureReferenceUnavailable = "capture_reference_unavailable",
+    CaptureLimit = "capture_limit",
     FolderGrantExpired = "folder_grant_expired",
     FolderNotCollection = "folder_not_collection",
     FolderPathInvalid = "folder_path_invalid",
@@ -1239,7 +1284,7 @@ mod tests {
         let mut names = API_METHODS.to_vec();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 56);
+        assert_eq!(names.len(), 59);
         assert_eq!(classify("synthetic remote secret"), "unavailable");
     }
     #[test]
