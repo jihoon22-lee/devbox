@@ -439,98 +439,44 @@ pub fn run_bounded_target_with_cancel(
     )
 }
 
-fn run_bounded_inner(
-    args: &[&str],
-    target: &GitTarget,
-    timeout: Duration,
+enum CapturedPipe {
+    Stdout(std::process::ChildStdout),
+    Stderr(std::process::ChildStderr),
+}
+impl Read for CapturedPipe {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Stdout(pipe) => pipe.read(bytes),
+            Self::Stderr(pipe) => pipe.read(bytes),
+        }
+    }
+}
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for CapturedPipe {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        match self {
+            Self::Stdout(pipe) => pipe.as_raw_fd(),
+            Self::Stderr(pipe) => pipe.as_raw_fd(),
+        }
+    }
+}
+#[cfg(windows)]
+impl std::os::windows::io::AsRawHandle for CapturedPipe {
+    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
+        match self {
+            Self::Stdout(pipe) => pipe.as_raw_handle(),
+            Self::Stderr(pipe) => pipe.as_raw_handle(),
+        }
+    }
+}
+fn spawn_pipe_reader(
+    stdout: CapturedPipe,
     max_stdout_bytes: usize,
-    allow_message_controls: bool,
-    cancellation: Option<&AtomicBool>,
-) -> Result<String, String> {
-    let cwd = target.cwd();
-    let max_arg_bytes = if allow_message_controls {
-        16 * 1024
-    } else {
-        4_096
-    };
-    // Selected-file mutations may legitimately carry hundreds of literal
-    // pathspecs. Read-only callers retain the tighter surface, while the
-    // mutating surface is still bounded by count, per-argument bytes, and an
-    // aggregate argv budget before spawning Git.
-    let max_arg_count = if allow_message_controls { 1_024 } else { 32 };
-    let total_arg_bytes = args
-        .iter()
-        .try_fold(0usize, |total, arg| total.checked_add(arg.len()));
-    if cwd.is_empty()
-        || cwd.len() > 4_096
-        || cwd.chars().any(char::is_control)
-        || args.len() > max_arg_count
-        || total_arg_bytes.is_none_or(|total| total > 256 * 1024)
-        || args.iter().enumerate().any(|(index, arg)| {
-            arg.len() > max_arg_bytes
-                || arg.chars().any(|character| {
-                    character.is_control()
-                        && !(allow_message_controls
-                            && is_commit_message_argument(args, index)
-                            && matches!(character, '\n' | '\r' | '\t'))
-                })
-        })
-    {
-        return Err("git_invalid_arguments".into());
-    }
-    if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
-        return Err("git_cancelled".into());
-    }
-
-    let policy = execution::current();
-    let timeout = match &policy {
-        Some(policy) => policy.remaining(timeout)?,
-        None => timeout,
-    };
-    let deadline = Instant::now().checked_add(timeout);
-    let mut command = command_for_target(target, args, timeout)?;
-    command
-        // A reporting command must never inherit the desktop application's
-        // console/input handle and wait for an interactive prompt.
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        // Git diagnostics can contain a path, remote URL, or credential. They
-        // are deliberately not read or returned to the caller.
-        .stderr(Stdio::null());
-    clear_repository_overrides(&mut command);
-    process_tree::ProcessTree::prepare_std(&mut command);
-
-    if let Some(policy) = &policy {
-        policy.boundary()?;
-    }
-
-    let mut child = command.spawn().map_err(|_| {
-        if target.is_wsl() {
-            "git_wsl_unavailable".to_string()
-        } else {
-            "git_spawn_failed".to_string()
-        }
-    })?;
-    let mut process_tree = match ProcessTree::assign_to(&child) {
-        Ok(process_tree) => process_tree,
-        Err(()) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("git_process_tree_unavailable".into());
-        }
-    };
-    let Some(stdout) = child.stdout.take() else {
-        process_tree.terminate(&mut child);
-        return Err("git_stdout_unavailable".into());
-    };
-
-    let overflow = Arc::new(AtomicBool::new(false));
-    let read_failed = Arc::new(AtomicBool::new(false));
-    let reader_stop = Arc::new(AtomicBool::new(false));
-    let overflow_for_reader = Arc::clone(&overflow);
-    let read_failed_for_reader = Arc::clone(&read_failed);
-    let stop_for_reader = Arc::clone(&reader_stop);
-    let reader = std::thread::spawn(move || {
+    overflow_for_reader: Arc<AtomicBool>,
+    read_failed_for_reader: Arc<AtomicBool>,
+    stop_for_reader: Arc<AtomicBool>,
+) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
         let mut stdout = stdout;
         #[cfg(windows)]
         use std::os::windows::io::AsRawHandle;
@@ -629,6 +575,160 @@ fn run_bounded_inner(
             }
         }
         bytes
+    })
+}
+
+fn run_bounded_inner(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    allow_message_controls: bool,
+    cancellation: Option<&AtomicBool>,
+) -> Result<String, String> {
+    run_bounded_inner_classified(
+        args,
+        target,
+        timeout,
+        max_stdout_bytes,
+        allow_message_controls,
+        cancellation,
+        None,
+    )
+}
+
+/// Classify bounded diagnostics inside a native owner; no raw stderr is returned.
+/// All admission, deadline, output and process-tree guards are shared with the
+/// ordinary mutation runner. A diagnostic exceeding 4 KiB fails closed.
+pub fn run_mutating_target_classified(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    cancellation: &AtomicBool,
+    classify: fn(&str) -> &'static str,
+) -> Result<String, String> {
+    run_bounded_inner_classified(
+        args,
+        target,
+        timeout,
+        max_stdout_bytes,
+        true,
+        Some(cancellation),
+        Some(classify),
+    )
+}
+
+fn run_bounded_inner_classified(
+    args: &[&str],
+    target: &GitTarget,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+    allow_message_controls: bool,
+    cancellation: Option<&AtomicBool>,
+    classify: Option<fn(&str) -> &'static str>,
+) -> Result<String, String> {
+    let cwd = target.cwd();
+    let max_arg_bytes = if allow_message_controls {
+        16 * 1024
+    } else {
+        4_096
+    };
+    // Selected-file mutations may legitimately carry hundreds of literal
+    // pathspecs. Read-only callers retain the tighter surface, while the
+    // mutating surface is still bounded by count, per-argument bytes, and an
+    // aggregate argv budget before spawning Git.
+    let max_arg_count = if allow_message_controls { 1_024 } else { 32 };
+    let total_arg_bytes = args
+        .iter()
+        .try_fold(0usize, |total, arg| total.checked_add(arg.len()));
+    if cwd.is_empty()
+        || cwd.len() > 4_096
+        || cwd.chars().any(char::is_control)
+        || args.len() > max_arg_count
+        || total_arg_bytes.is_none_or(|total| total > 256 * 1024)
+        || args.iter().enumerate().any(|(index, arg)| {
+            arg.len() > max_arg_bytes
+                || arg.chars().any(|character| {
+                    character.is_control()
+                        && !(allow_message_controls
+                            && is_commit_message_argument(args, index)
+                            && matches!(character, '\n' | '\r' | '\t'))
+                })
+        })
+    {
+        return Err("git_invalid_arguments".into());
+    }
+    if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
+        return Err("git_cancelled".into());
+    }
+
+    let policy = execution::current();
+    let timeout = match &policy {
+        Some(policy) => policy.remaining(timeout)?,
+        None => timeout,
+    };
+    let deadline = Instant::now().checked_add(timeout);
+    let mut command = command_for_target(target, args, timeout)?;
+    if classify.is_some() {
+        command.env("LC_ALL", "C").env("LANGUAGE", "C");
+    }
+    command
+        // A reporting command must never inherit the desktop application's
+        // console/input handle and wait for an interactive prompt.
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        // Only native classification opts into the bounded diagnostic pipe.
+        .stderr(if classify.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
+    clear_repository_overrides(&mut command);
+    process_tree::ProcessTree::prepare_std(&mut command);
+
+    if let Some(policy) = &policy {
+        policy.boundary()?;
+    }
+
+    let mut child = command.spawn().map_err(|_| {
+        if target.is_wsl() {
+            "git_wsl_unavailable".to_string()
+        } else {
+            "git_spawn_failed".to_string()
+        }
+    })?;
+    let mut process_tree = match ProcessTree::assign_to(&child) {
+        Ok(process_tree) => process_tree,
+        Err(()) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("git_process_tree_unavailable".into());
+        }
+    };
+    let Some(stdout) = child.stdout.take() else {
+        process_tree.terminate(&mut child);
+        return Err("git_stdout_unavailable".into());
+    };
+
+    let overflow = Arc::new(AtomicBool::new(false));
+    let read_failed = Arc::new(AtomicBool::new(false));
+    let reader_stop = Arc::new(AtomicBool::new(false));
+    let reader = spawn_pipe_reader(
+        CapturedPipe::Stdout(stdout),
+        max_stdout_bytes,
+        overflow.clone(),
+        read_failed.clone(),
+        reader_stop.clone(),
+    );
+    let stderr_reader = child.stderr.take().map(|stderr| {
+        spawn_pipe_reader(
+            CapturedPipe::Stderr(stderr),
+            4096,
+            overflow.clone(),
+            read_failed.clone(),
+            reader_stop.clone(),
+        )
     });
 
     let status = loop {
@@ -637,6 +737,9 @@ fn run_bounded_inner(
             reader_stop.store(true, Ordering::Release);
             process_tree.close();
             let _ = reader.join();
+            if let Some(reader) = stderr_reader {
+                let _ = reader.join();
+            }
             return Err("git_output_too_large".into());
         }
         if read_failed.load(Ordering::Acquire) {
@@ -644,6 +747,9 @@ fn run_bounded_inner(
             reader_stop.store(true, Ordering::Release);
             process_tree.close();
             let _ = reader.join();
+            if let Some(reader) = stderr_reader {
+                let _ = reader.join();
+            }
             return Err("git_output_read_failed".into());
         }
         match poll_child(&mut child, &mut process_tree) {
@@ -654,6 +760,9 @@ fn run_bounded_inner(
                     reader_stop.store(true, Ordering::Release);
                     process_tree.close();
                     let _ = reader.join();
+                    if let Some(reader) = stderr_reader {
+                        let _ = reader.join();
+                    }
                     return Err(error);
                 }
                 if cancellation.is_some_and(|signal| signal.load(Ordering::Acquire)) {
@@ -661,6 +770,9 @@ fn run_bounded_inner(
                     reader_stop.store(true, Ordering::Release);
                     process_tree.close();
                     let _ = reader.join();
+                    if let Some(reader) = stderr_reader {
+                        let _ = reader.join();
+                    }
                     return Err("git_cancelled".into());
                 }
             }
@@ -669,6 +781,9 @@ fn run_bounded_inner(
                 reader_stop.store(true, Ordering::Release);
                 process_tree.close();
                 let _ = reader.join();
+                if let Some(reader) = stderr_reader {
+                    let _ = reader.join();
+                }
                 return Err("git_wait_failed".into());
             }
         }
@@ -677,6 +792,9 @@ fn run_bounded_inner(
             reader_stop.store(true, Ordering::Release);
             process_tree.close();
             let _ = reader.join();
+            if let Some(reader) = stderr_reader {
+                let _ = reader.join();
+            }
             return Err("git_timeout".into());
         }
         std::thread::sleep(Duration::from_millis(5));
@@ -691,7 +809,12 @@ fn run_bounded_inner(
     process_tree.terminate_descendants();
     reader_stop.store(true, Ordering::Release);
     process_tree.close();
-    let bytes = reader.join().map_err(|_| "git_reader_failed".to_string())?;
+    let stdout_result = reader.join();
+    let stderr_result = stderr_reader.map(|reader| reader.join()).transpose();
+    let bytes = stdout_result.map_err(|_| "git_reader_failed".to_string())?;
+    let diagnostics = stderr_result
+        .map_err(|_| "git_reader_failed".to_string())?
+        .unwrap_or_default();
     if overflow.load(Ordering::Acquire) {
         return Err("git_output_too_large".into());
     }
@@ -701,6 +824,9 @@ fn run_bounded_inner(
     if !status.success() {
         if target.is_wsl() && matches!(status.code(), Some(124 | 137)) {
             return Err("git_timeout".into());
+        }
+        if let Some(classify) = classify {
+            return Err(classify(&String::from_utf8_lossy(&diagnostics)).into());
         }
         return Err(if target.is_wsl() {
             "git_wsl_failed".into()
@@ -1113,6 +1239,63 @@ mod tests {
                 .unwrap()
                 .success());
         }
+    }
+
+    #[test]
+    fn classified_mutations_bound_diagnostics_and_never_return_them() {
+        let root = std::env::temp_dir().join(format!(
+            "devbox-git-classified-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        init_repo(&root);
+        let target = GitTarget::native(root.to_str().unwrap());
+        let cancel = AtomicBool::new(false);
+        let result = run_mutating_target_classified(
+            &["branch", "-D", "private-fixture-name"],
+            &target,
+            Duration::from_secs(5),
+            4096,
+            &cancel,
+            |diagnostic| {
+                assert!(diagnostic.contains("private-fixture-name"));
+                "branch_missing"
+            },
+        );
+        assert_eq!(result.unwrap_err(), "branch_missing");
+        let noisy_alias = format!(
+            "alias.fixture-noisy=!printf '%s' '{}' >&2; exit 1",
+            "x".repeat(6000)
+        );
+        assert_eq!(
+            run_mutating_target_classified(
+                &["-c", &noisy_alias, "fixture-noisy"],
+                &target,
+                Duration::from_secs(5),
+                4096,
+                &cancel,
+                |_| "classified"
+            )
+            .unwrap_err(),
+            "git_output_too_large"
+        );
+        cancel.store(true, Ordering::Release);
+        assert_eq!(
+            run_mutating_target_classified(
+                &["branch", "-D", "never"],
+                &target,
+                Duration::from_secs(5),
+                4096,
+                &cancel,
+                |_| panic!("cancelled before spawn")
+            )
+            .unwrap_err(),
+            "git_cancelled"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

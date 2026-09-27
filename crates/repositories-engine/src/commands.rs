@@ -1,4 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
+mod branches;
+pub use branches::*;
 mod agent_worktrees;
 pub use agent_worktrees::{
     inspect_agent_worktree, remove_agent_worktree, repo_merge, AgentWorktreePresence,
