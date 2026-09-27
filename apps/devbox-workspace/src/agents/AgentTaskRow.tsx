@@ -1,5 +1,8 @@
 import type { AgentTask } from "@devbox/workspace-features/generated/AgentTask";
-export type RowAction = "resume" | "focus" | "reopen" | "review" | "merge" | "cleanup" | "discard" | "forget";
+import type { AgentResources } from "@devbox/workspace-features/generated/AgentResources";
+import type { UsageReport } from "@devbox/workspace-features/generated/UsageReport";
+import { formatBytes, formatCpu, formatTokens } from "./format";
+export type RowAction = "usage" | "resume" | "focus" | "reopen" | "review" | "merge" | "cleanup" | "discard" | "forget";
 export type Confirmation =
   | { taskId: string; kind: "merge"; branch: string }
   | { taskId: string; kind: "discard" | "cleanup" }
@@ -15,6 +18,8 @@ const labels: Record<AgentTask["state"], string> = {
 export default function AgentTaskRow({
   task,
   stopped,
+  resources,
+  usage,
   busy,
   confirmation,
   act,
@@ -23,6 +28,8 @@ export default function AgentTaskRow({
 }: {
   task: AgentTask;
   stopped: boolean;
+  resources?: AgentResources;
+  usage?: UsageReport;
   busy: boolean;
   confirmation: Confirmation | null;
   act(action: RowAction): void;
@@ -36,6 +43,34 @@ export default function AgentTaskRow({
         <h3>{task.title}</h3>
         <p>{task.state === "running" && stopped ? "터미널 종료됨" : labels[task.state]}</p>
         <p>{task.branch}</p>
+        {task.state === "running" && resources && (
+          <>
+            <p>{`CPU ${formatCpu(resources.cpuPercent)} · 메모리 ${formatBytes(resources.rssBytes)} · 프로세스 ${resources.processes}개`}</p>
+            {resources.truncated && <p>일부 리소스를 읽지 못했습니다.</p>}
+          </>
+        )}
+        {task.worktreeId && !done && (
+          <button disabled={busy} onClick={() => act("usage")}>
+            토큰 사용량 보기
+          </button>
+        )}
+        {usage && (
+          <div>
+            {(
+              [
+                ["Claude Code", usage.claude],
+                ["Codex", usage.codex],
+              ] as const
+            ).map(([name, totals]) => (
+              <p key={name}>
+                {totals
+                  ? `${name} 입력 ${formatTokens(totals.input)} · 출력 ${formatTokens(totals.output)} · 캐시 ${formatTokens(totals.cacheRead + totals.cacheWrite)}`
+                  : `${name} 기록 없음`}
+              </p>
+            ))}
+            {usage.truncated && <p>일부 기록만 읽었습니다.</p>}
+          </div>
+        )}
         {!done && (
           <div>
             {["planned", "created", "ready"].includes(task.state) && (

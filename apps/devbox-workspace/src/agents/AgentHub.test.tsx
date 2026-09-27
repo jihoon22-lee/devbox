@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { findA11yViolations } from "@devbox/a11y/testing";
 import { fixtureDescription } from "@devbox/product-shell/api";
 import { nativeCall } from "../native";
@@ -52,6 +52,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   call.mockImplementation(async (_component, method, args) => {
     if (method === "list") return tasks;
+    if (method === "resources")
+      return [{ taskId: "t1", processes: 2, rssBytes: 384 * 4096, cpuPercent: 150, truncated: false }];
+    if (method === "usage")
+      return {
+        claude: { input: 10, output: 30, cacheRead: 200, cacheWrite: 100, sessions: 1 },
+        codex: { input: 300, output: 30, cacheRead: 120, cacheWrite: 0, sessions: 1 },
+        truncated: true,
+      };
     if (method === "terminal_sessions") return [{ id: "terminal-1", state: "active", context: agent }];
     if (method === "snapshot") return registry;
     if (method === "inspect_agent_worktree")
@@ -179,4 +187,52 @@ it("reviews a ready task without starting its tool", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "변경 검토" }));
   await waitFor(() => expect(navigate).toHaveBeenCalledWith("source"));
   expect(call.mock.calls.some(([, method]) => method === "open_agent_terminal")).toBe(false);
+});
+
+it("shows resource samples and reads token totals only on request", async () => {
+  const { container } = view();
+  await screen.findByText("CPU 150% · 메모리 1.5 MB · 프로세스 2개");
+  expect(call.mock.calls.some(([, method]) => method === "usage")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "토큰 사용량 보기" }));
+  await screen.findByText("Claude Code 입력 10 · 출력 30 · 캐시 300");
+  expect(screen.getByText("Codex 입력 300 · 출력 30 · 캐시 120")).toBeTruthy();
+  expect(screen.getByText("일부 기록만 읽었습니다.")).toBeTruthy();
+  expect(call.mock.calls.filter(([, method]) => method === "usage")).toHaveLength(1);
+  expect(await findA11yViolations(container)).toEqual([]);
+});
+it("polls resources every ten seconds and stops while inactive or hidden", async () => {
+  vi.useFakeTimers();
+  try {
+    const props = {
+      description: { ...fixtureDescription("workspace"), context: base },
+      registry,
+      navigate,
+      refreshContext,
+    };
+    const { rerender } = render(<AgentHub {...props} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const count = () => call.mock.calls.filter(([, method]) => method === "resources").length;
+    expect(count()).toBe(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(count()).toBe(2);
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(count()).toBe(2);
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    rerender(<AgentHub {...props} active={false} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(count()).toBe(2);
+  } finally {
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    vi.useRealTimers();
+  }
 });

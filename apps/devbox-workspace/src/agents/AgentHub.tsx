@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { useOperation, usePolling } from "@devbox/hooks";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
+import type { AgentResources } from "@devbox/workspace-features/generated/AgentResources";
+import type { UsageReport } from "@devbox/workspace-features/generated/UsageReport";
 import type { AgentTask } from "@devbox/workspace-features/generated/AgentTask";
 import type { TerminalRecord } from "@devbox/workspace-features/generated/TerminalRecord";
 import type { RepoSnapshot } from "@devbox/workspace-features/generated/RepoSnapshot";
@@ -16,15 +18,19 @@ function contextOf(tree: Worktree): ProjectContext {
 }
 export default function AgentHub({
   description,
+  active = true,
   registry,
   navigate,
   refreshContext,
 }: {
   description: Description;
+  active?: boolean;
   registry: Registry | null;
   navigate(route: string): void;
   refreshContext(): Promise<void>;
 }) {
+  const [resources, setResources] = useState<AgentResources[]>([]);
+  const [usage, setUsage] = useState<Record<string, UsageReport>>({});
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [terminals, setTerminals] = useState<TerminalRecord[]>([]);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -57,7 +63,21 @@ export default function AgentHub({
         setIssue(errorMessage(error));
       }
     },
-    { intervalMs: 3000, active: wsl },
+    { intervalMs: 3000, active: active && wsl },
+  );
+  const hasRunning = tasks.some((task) => task.projectId === projectId && task.state === "running");
+  usePolling(
+    async () => {
+      if (acting.current) return;
+      const project = projectId;
+      try {
+        const samples = await agentsCall("resources", {});
+        if (selectedProject.current === project) setResources(samples);
+      } catch (error) {
+        setIssue((prior) => prior ?? errorMessage(error));
+      }
+    },
+    { intervalMs: 10_000, active: active && wsl && hasRunning },
   );
   const worktreeContext = (id: string) => {
     const tree = registry?.worktrees.find((tree) => tree.id === id && tree.projectId === projectId);
@@ -124,6 +144,10 @@ export default function AgentHub({
     await refreshContext();
   }
   async function act(task: AgentTask, action: RowAction) {
+    if (action === "usage") {
+      const report = await agentsCall("usage", { taskId: task.id });
+      if (selectedProject.current === task.projectId) setUsage((prior) => ({ ...prior, [task.id]: report }));
+    }
     if (action === "resume") await resume(task);
     if (action === "focus") await call("terminal", "focus_terminal", { id: task.terminalId });
     if (action === "reopen" || action === "review") {
@@ -191,6 +215,8 @@ export default function AgentHub({
             <AgentTaskRow
               key={task.id}
               task={task}
+              resources={resources.find((sample) => sample.taskId === task.id)}
+              usage={usage[task.id]}
               stopped={!terminals.some((terminal) => terminal.id === task.terminalId && terminal.state === "active")}
               busy={operation.busy}
               confirmation={confirmation}
