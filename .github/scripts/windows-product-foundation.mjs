@@ -734,23 +734,16 @@ async function start(product, suffix) {
           editedNoteRetained: true,
           legacyDailyRejected: true,
         });
-        componentProbe.closePolicy = await cdp.evaluate(`(async () => {
+        componentProbe.collectionConsent = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const call = (method, args = {}) => invokeComponent("knowledge", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "activity" }, component: "knowledge.activity", method, args } });
-        const initial = await call("get_close_policy");
-        const enabled = await call("set_close_policy", { closeToTray: true });
         const tracking = await call("is_tracking");
-        const reset = await call("set_close_policy", { closeToTray: false });
-        return { defaultQuits: initial.value.closeToTray === false, trayAvailable: initial.value.trayAvailable === true,
-          preferenceRoundtrip: enabled.value.closeToTray === true && reset.value.closeToTray === false,
-          doesNotEnableCollection: tracking.value === false };
+        return { doesNotEnableCollection: tracking.value === false };
+
       })()`);
-        assert.deepEqual(componentProbe.closePolicy, {
-          defaultQuits: true,
-          trayAvailable: true,
-          preferenceRoundtrip: true,
+        assert.deepEqual(componentProbe.collectionConsent, {
           doesNotEnableCollection: true,
         });
       }

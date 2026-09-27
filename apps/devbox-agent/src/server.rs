@@ -138,10 +138,16 @@ pub async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'stati
             .min()
             .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(86400));
         if *shutdown.borrow() {
-            return Ok(());
+            return write_message(
+                &mut write,
+                &AgentMessage::Rejected {
+                    reason: "agent_shutdown".into(),
+                },
+            )
+            .await;
         }
         tokio::select! {
-            _ = shutdown.changed() => return Ok(()),
+            _ = shutdown.changed() => return write_message(&mut write, &AgentMessage::Rejected {reason:"agent_shutdown".into()}).await,
             _ = tokio::time::sleep_until(ack_deadline), if !replies.is_empty() => {
                 let now = tokio::time::Instant::now();
                 let expired = replies.iter().filter(|(_, reply)| reply.deadline <= now).map(|(id, _)| *id).collect::<Vec<_>>();
@@ -255,6 +261,36 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+    #[tokio::test]
+    async fn owner_shutdown_notifies_authenticated_idle_clients_before_closing() {
+        let (mut client, server) = tokio::io::duplex(4096);
+        let routes = Routes::for_tests();
+        let server_routes = routes.clone();
+        let task = tokio::spawn(handle_connection(
+            server,
+            Some(Peer::for_tests("workspace")),
+            server_routes,
+        ));
+        write_message(
+            &mut client,
+            &ClientMessage::Hello {
+                protocol: 1,
+                product: "workspace".into(),
+                session: "fixture".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let _: AgentMessage = read_message(&mut client).await.unwrap();
+        routes.shutdown();
+        assert_eq!(
+            read_message::<_, AgentMessage>(&mut client).await.unwrap(),
+            AgentMessage::Rejected {
+                reason: "agent_shutdown".into()
+            }
+        );
+        task.await.unwrap().unwrap();
     }
     #[tokio::test]
     async fn handshake_status_and_shutdown_round_trip() {
@@ -599,8 +635,17 @@ pub fn start(
             });
         }
         routes.shutdown();
-        clients.abort_all();
-        while clients.join_next().await.is_some() {}
+        // Let authenticated peers latch intentional shutdown before dropping
+        // their pipes. Their background queries must not launch us again.
+        if tokio::time::timeout(Duration::from_secs(6), async {
+            while clients.join_next().await.is_some() {}
+        })
+        .await
+        .is_err()
+        {
+            clients.abort_all();
+            while clients.join_next().await.is_some() {}
+        }
         routes.shutdown_owners().await;
         drop(listener);
         // All owners have drained before run() may release the writer lease.

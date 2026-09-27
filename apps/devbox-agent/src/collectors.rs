@@ -220,7 +220,9 @@ impl Collectors {
                 tauri::async_runtime::block_on(async {
                     match call {
                         Call::Activity(call) => {
-                            activity_engine::api::dispatch(&owner.app, call).await
+                            let result = activity_engine::api::dispatch(&owner.app, call).await;
+                            crate::tray::refresh(&owner.app);
+                            result
                         }
                         Call::Search(call) => {
                             content_index_engine::api::dispatch_search(&owner.app, call).await
@@ -249,6 +251,20 @@ impl Collectors {
         })
         .await
         .map_err(|_| "knowledge_agent_unavailable")?
+    }
+    pub fn set_tracking(&self, enabled: bool) -> Result<(), &'static str> {
+        let _permit = self.lanes.try_enter(Lane::EngineStop)?;
+        self.initialize(true)?;
+        tauri::async_runtime::block_on(activity_engine::api::dispatch(
+            &self.app,
+            if enabled {
+                activity_engine::api::ActivityCall::StartTracking {}
+            } else {
+                activity_engine::api::ActivityCall::StopTracking {}
+            },
+        ))
+        .map(|_| ())
+        .map_err(|_| "knowledge_agent_unavailable")
     }
     pub async fn shutdown(self: &Arc<Self>) {
         self.stopping.store(true, Ordering::Release);

@@ -84,7 +84,10 @@ async fn agent_reconnect(window: WebviewWindow) -> Result<&'static str, &'static
     if !client.supported() {
         return Ok("unsupported");
     }
-    client.connect(&session).await.map_err(|_| "unavailable")?;
+    client
+        .reconnect(&session)
+        .await
+        .map_err(|_| "unavailable")?;
     Ok(client.status())
 }
 

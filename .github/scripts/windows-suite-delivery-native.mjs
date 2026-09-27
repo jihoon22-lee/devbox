@@ -247,9 +247,8 @@ try {
       directory: fixture,
       agentIdentity,
       closeWorkspace: async (item) => {
-        await call(item, "plugin:workspace|runtime", { method: "quit_app", args: {} }, "tasks").catch(() => {});
-        const deadline = Date.now() + 30000;
-        while (sameProcess(item.identity) && Date.now() < deadline) await delay(100);
+        const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
+        assert.equal(stopped.forced, false, "Workspace close must drain and exit instead of hiding");
         assert.equal(sameProcess(item.identity), false, "Workspace must finish ordinary owner shutdown");
         item.cdp.close();
       },
@@ -268,11 +267,8 @@ try {
       call: async (item, method, args) =>
         value(await call(item, "plugin:api-studio|webhooks", { method, args }, "webhooks")),
       closeApi: async (item) => {
-        await call(item, "plugin:api-studio|webhooks", { method: "quit_product", args: {} }, "webhooks").catch(
-          () => {},
-        );
-        const deadline = Date.now() + 30000;
-        while (sameProcess(item.identity) && Date.now() < deadline) await delay(100);
+        const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
+        assert.equal(stopped.forced, false, "API Studio close must honor its selected policy and exit");
         assert.equal(sameProcess(item.identity), false, "API Studio must finish its selected close policy");
         item.cdp.close();
       },
@@ -286,6 +282,63 @@ try {
       },
     });
     evidence.checks.agentWebhooks = webhookResult.evidence;
+    // All existing native clients observe a deliberate stop. Background reads
+    // must not undo the user's choice; an explicit reconnect may start it again.
+    for (const item of Object.values(apps)) {
+      assert.equal(
+        await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
+          timeoutMs: 35000,
+        }),
+        "connected",
+      );
+    }
+    const relayEnvironment = { ...process.env };
+    for (const key of Object.keys(relayEnvironment))
+      if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete relayEnvironment[key];
+    const relay = spawn(center.executable, ["--stop-agent-for-update"], {
+      env: relayEnvironment,
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    await once(relay, "spawn");
+    const relayExit = await Promise.race([once(relay, "exit"), delay(15000).then(() => null)]);
+    if (!relayExit) {
+      relay.kill();
+      await Promise.race([once(relay, "exit"), delay(5000)]);
+      assert.fail("owned shutdown relay timed out");
+    }
+    assert.equal(relayExit[0], 0);
+    assert.equal(agents().length, 0);
+    for (const item of Object.values(apps)) {
+      assert.equal(
+        await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')"),
+        "unavailable",
+      );
+    }
+    for (const [product, command, method, route, issue] of [
+      ["workspace", "plugin:workspace|runtime", "list_jobs", "tasks", "runtime_agent_unavailable"],
+      ["api-studio", "plugin:api-studio|webhooks", "server_status", "webhooks", "webhook_agent_unavailable"],
+      ["knowledge", "plugin:knowledge|activity", "is_tracking", "activity", "knowledge_agent_unavailable"],
+    ]) {
+      const refused = await call(apps[product], command, { method, args: {} }, route);
+      assert.equal(refused.operation.outcome.state, "failed");
+      assert.equal(refused.value.issue, issue);
+    }
+    await delay(2500);
+    assert.equal(agents().length, 0, "background queries relaunched an intentionally stopped owner");
+    assert.equal(
+      await apps.workspace.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
+        timeoutMs: 35000,
+      }),
+      "connected",
+    );
+    value(
+      await call(apps["api-studio"], "plugin:api-studio|webhooks", { method: "server_status", args: {} }, "webhooks"),
+    );
+    value(await call(apps.knowledge, "plugin:knowledge|activity", { method: "is_tracking", args: {} }, "activity"));
+    assert.equal(agents().length, 1);
+    evidence.checks.intentionalAgentStopRequiresExplicitRestart = true;
+    evidence.checks.otherProductsReconnectToTheRestartedOwner = true;
   }
   evidence.result = "passed";
 } catch (error) {

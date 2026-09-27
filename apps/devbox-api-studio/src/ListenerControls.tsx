@@ -31,7 +31,10 @@ export function ListenerControls() {
       pending = true;
       try {
         const value = await webhookCall("lifecycle_status", {});
-        if (alive) setStatus(value);
+        if (alive) {
+          setStatus(value);
+          setError(null);
+        }
       } catch {
         if (alive) setError("서버 종료 설정을 확인하지 못했습니다.");
       } finally {

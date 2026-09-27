@@ -212,36 +212,6 @@ async fn terminal_execute(
     .map_err(str::to_owned)
 }
 
-fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem};
-    use tauri::tray::TrayIconBuilder;
-    let show = MenuItem::with_id(app, "workspace-show", "열기", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "workspace-quit", "Workspace 닫기", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| tauri::Error::Io(std::io::Error::other("missing product icon")))?;
-    TrayIconBuilder::with_id("workspace-runtime-tray")
-        .icon(icon)
-        .tooltip("Devbox Workspace")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "workspace-show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
-            }
-            "workspace-quit" => app.exit(0),
-            _ => {}
-        })
-        .build(app)?;
-    Ok(())
-}
-
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
         .invoke_handler(tauri::generate_handler![
@@ -276,7 +246,6 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             app.manage(Arc::new(crate::problems_host::Problems::default()));
             app.manage(runtime.sessions.clone());
             app.manage(runtime.terminals.clone());
-            setup_runtime_tray(app)?;
             #[cfg(windows)]
             runtime.start_wsl_poll(app.clone());
             let app = app.clone();
@@ -376,16 +345,10 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let owner = window.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if (runtime_engine::component::is_initialized(owner.app_handle())
-                        || terminal_engine::component::is_product(owner.app_handle()))
-                        && !owner
-                            .state::<Runtime>()
-                            .exit_authorized
-                            .load(Ordering::Acquire)
-                    {
-                        let _ = owner.hide();
-                        api.prevent_close();
-                    }
+                    // The main window owns the UI lifetime even while hidden
+                    // terminal windows exist. Reuse the full native exit drain.
+                    api.prevent_close();
+                    owner.app_handle().exit(0);
                 }
             });
         })

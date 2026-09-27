@@ -223,7 +223,6 @@ pub fn activate_with_owner(
             )
             .map_err(|_| "component_initialization_failed")?;
         }
-        crate::lifecycle::load(app)?;
         crate::search::initialize(app, &state.root, manifest)?;
         Ok::<_, String>(())
     })();

@@ -67,6 +67,7 @@ struct Inner {
     epoch: Arc<AtomicU64>,
     current: Mutex<Option<Arc<Connection>>>,
     next: AtomicU64,
+    stopped: Arc<AtomicBool>,
 }
 #[derive(Clone)]
 pub struct AgentClient(Arc<Inner>);
@@ -88,6 +89,7 @@ impl AgentClient {
             epoch: Arc::new(AtomicU64::new(0)),
             current: Mutex::new(None),
             next: AtomicU64::new(1),
+            stopped: Arc::new(AtomicBool::new(false)),
         }))
     }
     pub fn unsupported() -> Self {
@@ -134,7 +136,9 @@ impl AgentClient {
                 });
             }
         }
-        self.0.status.send_replace("starting");
+        if !self.0.stopped.load(Ordering::Acquire) {
+            self.0.status.send_replace("starting");
+        }
         let _starting = Starting(&self.0.status);
         let mut launched = false;
         let mut restarted = false;
@@ -167,7 +171,9 @@ impl AgentClient {
                         } if protocol == agent_protocol::PROTOCOL_VERSION
                             && generation == transport.generation() => {}
                         AgentMessage::Rejected { reason }
-                            if reason == "protocol_mismatch" && !restarted =>
+                            if reason == "protocol_mismatch"
+                                && !restarted
+                                && !self.0.stopped.load(Ordering::Acquire) =>
                         {
                             (connected.verify)()?;
                             self.0.status.send_replace("restarting");
@@ -184,12 +190,17 @@ impl AgentClient {
                             launched = true;
                             continue;
                         }
+                        AgentMessage::Rejected { reason } if reason == "agent_shutdown" => {
+                            self.0.stopped.store(true, Ordering::Release);
+                            return Err(AgentError::Unavailable);
+                        }
                         AgentMessage::Rejected { reason } => {
                             return Err(AgentError::Rejected(reason))
                         }
                         _ => return Err(AgentError::Rejected("handshake_mismatch".into())),
                     }
                     (connected.verify)()?;
+                    self.0.stopped.store(false, Ordering::Release);
                     self.0.status.send_replace("connected");
                     let connection = Connection::start(
                         session.into(),
@@ -197,11 +208,15 @@ impl AgentClient {
                         self.0.status.clone(),
                         self.0.epoch.clone(),
                         epoch,
+                        self.0.stopped.clone(),
                     );
                     *current = Some(connection.clone());
                     return Ok(connection);
                 }
                 Ok(Err(Connect::Missing)) => {
+                    if self.0.stopped.load(Ordering::Acquire) {
+                        return Err(AgentError::Unavailable);
+                    }
                     if !launched {
                         tokio::time::timeout(Duration::from_secs(2), transport.launch())
                             .await
@@ -211,6 +226,9 @@ impl AgentClient {
                 }
                 Ok(Err(Connect::Rejected(reason))) => return Err(AgentError::Rejected(reason)),
                 _ => {}
+            }
+            if self.0.stopped.load(Ordering::Acquire) {
+                return Err(AgentError::Unavailable);
             }
             if let Some(delay) = RETRY_DELAYS_MS.get(attempt) {
                 tokio::time::sleep(Duration::from_millis(*delay)).await;
@@ -263,6 +281,16 @@ impl AgentClient {
     /// Establish the native owner without executing or replaying a business call.
     pub async fn connect(&self, session: &str) -> Result<(), AgentError> {
         self.ensure_connected(session).await.map(|_| ())
+    }
+    /// Explicit user intent, unlike automatic queries/initialization.
+    pub async fn reconnect(&self, session: &str) -> Result<(), AgentError> {
+        {
+            let mut current = self.0.current.lock().await;
+            self.0.epoch.fetch_add(1, Ordering::AcqRel);
+            *current = None;
+            self.0.stopped.store(false, Ordering::Release);
+        }
+        self.connect(session).await
     }
     pub async fn call(&self, component: &str, request: Value) -> Result<Value, AgentError> {
         if self.0.unsupported {
@@ -334,6 +362,33 @@ async fn wait_for_retirement(
     .await
     .map_err(|_| AgentError::Unavailable)?
 }
+/// After a peer retires, drain only a bounded set of already ordered frames
+/// for its restrictive shutdown notice. No stale response is accepted as data.
+async fn drain_shutdown_notice(
+    incoming: &mut mpsc::Receiver<Result<AgentMessage, &'static str>>,
+    stopped: &AtomicBool,
+    epoch: &AtomicU64,
+    own_epoch: u64,
+) {
+    let noticed = tokio::time::timeout(Duration::from_millis(200), async {
+        for _ in 0..64 {
+            match incoming.recv().await {
+                Some(Ok(AgentMessage::Rejected { reason })) if reason == "agent_shutdown" => {
+                    return true
+                }
+                Some(Ok(_)) => {}
+                _ => return false,
+            }
+        }
+        false
+    })
+    .await
+    .unwrap_or(false);
+    if noticed && epoch.load(Ordering::Acquire) == own_epoch {
+        stopped.store(true, Ordering::Release);
+    }
+}
+
 impl Connection {
     fn start(
         session: String,
@@ -341,6 +396,7 @@ impl Connection {
         status: tokio::sync::watch::Sender<&'static str>,
         epoch: Arc<AtomicU64>,
         own_epoch: u64,
+        stopped: Arc<AtomicBool>,
     ) -> Arc<Self> {
         let (outgoing, mut queue) = mpsc::channel::<Outgoing>(64);
         let alive = Arc::new(AtomicBool::new(true));
@@ -390,15 +446,22 @@ impl Connection {
                 tokio::select! {
                     out = queue.recv() => {
                         let Some(out) = out else {break;};
-                        if (connected.verify)().is_err() {break;}
+                        if (connected.verify)().is_err() { drain_shutdown_notice(&mut incoming, &stopped, &_status.1, own_epoch).await; break; }
                         if let ClientMessage::Call {id,..} = &out.message {
                             if pending.len() >= 32 {if let Some(reply)=out.reply {let _=reply.send(Err(AgentError::Unavailable));} continue;}
                             if let Some(reply) = out.reply {pending.insert(*id,reply);}
                         }
-                        if wire::write(&mut write, &out.message).await.is_err() {break;}
+                        if wire::write(&mut write, &out.message).await.is_err() { drain_shutdown_notice(&mut incoming, &stopped, &_status.1, own_epoch).await; break; }
                     }
                     message = incoming.recv() => {
-                        if (connected.verify)().is_err() {break;}
+                        // A restrictive shutdown notice remains useful after
+                        // the authenticated pipe's original process has exited.
+                        // It never authorizes data/mutations from a stale peer.
+                        if matches!(&message, Some(Ok(AgentMessage::Rejected {reason})) if reason == "agent_shutdown") {
+                            if _status.1.load(Ordering::Acquire) == own_epoch { stopped.store(true, Ordering::Release); }
+                            break;
+                        }
+                        if (connected.verify)().is_err() { drain_shutdown_notice(&mut incoming, &stopped, &_status.1, own_epoch).await; break; }
                         match message {
                             Some(Ok(AgentMessage::Reply {id, response})) => {
                                 if replies.contains_key(&id) { break; }
@@ -414,7 +477,7 @@ impl Connection {
                                 }
                                 let Ok(cursor) = replies.entry(stream).or_default().push(chunk) else { break; };
                                 // Ack only after the complete batch is retained and validated.
-                                if wire::write(&mut write, &ClientMessage::Ack { stream, cursor }).await.is_err() { break; }
+                                if wire::write(&mut write, &ClientMessage::Ack { stream, cursor }).await.is_err() { drain_shutdown_notice(&mut incoming, &stopped, &_status.1, own_epoch).await; break; }
                             }
                             Some(Ok(AgentMessage::StreamEnd {stream, reason})) => {
                                 let Some(reply) = pending.remove(&stream) else { break; };
@@ -508,6 +571,155 @@ mod tests {
         fn generation(&self) -> &str {
             "fixture"
         }
+    }
+    struct Graceful {
+        attempts: AtomicUsize,
+        ready: AtomicBool,
+        launches: AtomicUsize,
+        retired: Arc<AtomicBool>,
+        streams: std::sync::Mutex<std::collections::VecDeque<tokio::io::DuplexStream>>,
+    }
+    impl Transport for Graceful {
+        fn connect(&self) -> ConnectFuture<'_> {
+            Box::pin(async move {
+                let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+                if attempt > 0 && !self.ready.load(Ordering::Acquire) {
+                    return Err(Connect::Missing);
+                }
+                let retired = self.retired.clone();
+                let stream = self
+                    .streams
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .ok_or(Connect::Missing)?;
+                Ok(Connected {
+                    stream: Box::new(stream),
+                    verify: Arc::new(move || {
+                        if attempt == 0 && retired.load(Ordering::Acquire) {
+                            Err(AgentError::Unavailable)
+                        } else {
+                            Ok(())
+                        }
+                    }),
+                    exited: Arc::new(|| Ok(false)),
+                })
+            })
+        }
+        fn launch(&self) -> LaunchFuture<'_> {
+            Box::pin(async {
+                self.launches.fetch_add(1, Ordering::SeqCst);
+                self.ready.store(true, Ordering::Release);
+                Ok(())
+            })
+        }
+        fn generation(&self) -> &str {
+            "fixture"
+        }
+    }
+    #[tokio::test]
+    async fn graceful_shutdown_blocks_background_launch_until_explicit_user_reconnect() {
+        graceful_shutdown_scenario(false, false).await;
+    }
+    #[tokio::test]
+    async fn queued_reads_cannot_lose_shutdown_notice_when_the_original_process_retires() {
+        graceful_shutdown_scenario(true, false).await;
+    }
+    #[tokio::test]
+    async fn intentional_stop_allows_reconnect_to_an_owner_started_elsewhere() {
+        graceful_shutdown_scenario(false, true).await;
+    }
+    async fn graceful_shutdown_scenario(retire_before_notice: bool, restored_elsewhere: bool) {
+        let (first, mut first_server) = tokio::io::duplex(4096);
+        let (second, mut second_server) = tokio::io::duplex(4096);
+        let (stop, stopping) = tokio::sync::oneshot::channel();
+        let (finish, finished) = tokio::sync::oneshot::channel();
+        let retired = Arc::new(AtomicBool::new(false));
+        let peer_retired = retired.clone();
+        let (retired_signal, retirement) = tokio::sync::oneshot::channel();
+        let old = tokio::spawn(async move {
+            let _: ClientMessage = wire::read(&mut first_server).await.unwrap();
+            wire::write(
+                &mut first_server,
+                &AgentMessage::Welcome {
+                    protocol: 1,
+                    agent_version: "fixture".into(),
+                    generation: "fixture".into(),
+                },
+            )
+            .await
+            .unwrap();
+            stopping.await.unwrap();
+            if retire_before_notice {
+                peer_retired.store(true, Ordering::Release);
+            }
+            retired_signal.send(()).unwrap();
+            if retire_before_notice {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            wire::write(
+                &mut first_server,
+                &AgentMessage::Rejected {
+                    reason: "agent_shutdown".into(),
+                },
+            )
+            .await
+            .unwrap();
+        });
+        let new = tokio::spawn(async move {
+            let _: ClientMessage = wire::read(&mut second_server).await.unwrap();
+            wire::write(
+                &mut second_server,
+                &AgentMessage::Welcome {
+                    protocol: 1,
+                    agent_version: "fixture".into(),
+                    generation: "fixture".into(),
+                },
+            )
+            .await
+            .unwrap();
+            let _ = finished.await;
+        });
+        let transport = Arc::new(Graceful {
+            attempts: AtomicUsize::new(0),
+            ready: AtomicBool::new(false),
+            launches: AtomicUsize::new(0),
+            retired,
+            streams: std::sync::Mutex::new([first, second].into()),
+        });
+        let client = AgentClient::with_transport("knowledge", transport.clone());
+        client.connect("session").await.unwrap();
+        let mut status = client.subscribe();
+        stop.send(()).unwrap();
+        retirement.await.unwrap();
+        if retire_before_notice {
+            assert_eq!(client.call("agent.status", serde_json::json!({"header":{"sessionId":"session"},"method":"status","args":{}})).await, Err(AgentError::Unavailable));
+        }
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while *status.borrow_and_update() != "unavailable" {
+                status.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        for _ in 0..3 {
+            assert_eq!(
+                client.connect("session").await,
+                Err(AgentError::Unavailable)
+            );
+        }
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 0);
+        if restored_elsewhere {
+            transport.ready.store(true, Ordering::Release);
+            client.connect("session").await.unwrap();
+            assert_eq!(transport.launches.load(Ordering::SeqCst), 0);
+        } else {
+            client.reconnect("session").await.unwrap();
+            assert_eq!(transport.launches.load(Ordering::SeqCst), 1);
+        }
+        finish.send(()).unwrap();
+        old.await.unwrap();
+        new.await.unwrap();
     }
     #[tokio::test(start_paused = true)]
     async fn launches_once_then_connects_with_backoff() {

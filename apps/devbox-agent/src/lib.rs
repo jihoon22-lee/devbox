@@ -82,6 +82,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             webhooks.clone(),
             collectors.clone(),
         );
+        tray::initialize(
+            app.handle(),
+            scope.clone(),
+            routes.clone(),
+            collectors.clone(),
+        )?;
         server::start(
             app.handle().clone(),
             scope.clone(),
@@ -90,10 +96,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         // Resume schedules on agent startup even when no Workspace UI is open.
         // Missing stores/activation leave the owner cold until a later request.
+        let app_handle = app.handle().clone();
         tauri::async_runtime::spawn_blocking(move || {
             let _ = runtime.initialize();
             let _ = webhooks.initialize();
             let _ = collectors.initialize(false);
+            tray::refresh(&app_handle);
         });
         Ok(())
     });
@@ -114,3 +122,5 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub mod collectors;
+
+pub mod tray;

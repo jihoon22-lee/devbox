@@ -1,9 +1,5 @@
-//! Closing quits by default. Continued background collection requires both
-//! explicit collection consent and a separate close-to-tray preference.
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Mutex,
-};
+//! Every UI close retains the native unsaved-note review. Agent-owned work survives.
+use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 #[derive(Default)]
 struct QuitReview {
@@ -27,8 +23,6 @@ impl QuitReview {
 }
 #[derive(Default)]
 struct Lifecycle {
-    tray_available: AtomicBool,
-    close_to_tray: AtomicBool,
     quit: Mutex<QuitReview>,
 }
 fn request_quit(app: &tauri::AppHandle) {
@@ -65,57 +59,6 @@ pub fn quit_dispatch_typed(
 }
 pub fn initialize(app: &tauri::AppHandle) {
     app.manage(Lifecycle::default());
-    if install_tray(app).is_ok() {
-        app.state::<Lifecycle>()
-            .tray_available
-            .store(true, Ordering::Release);
-    }
-}
-fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem};
-    use tauri::tray::TrayIconBuilder;
-    let show = MenuItem::with_id(app, "knowledge-show", "Knowledge 열기", true, None::<&str>)?;
-    let quit = MenuItem::with_id(
-        app,
-        "knowledge-quit",
-        "Knowledge 종료 · 수집 중지",
-        true,
-        None::<&str>,
-    )?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
-    let mut tray = TrayIconBuilder::with_id("knowledge-tray")
-        .tooltip("Devbox Knowledge")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "knowledge-show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
-            }
-            "knowledge-quit" => request_quit(app),
-            _ => {}
-        });
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
-    }
-    tray.build(app)?;
-    Ok(())
-}
-pub fn load(app: &tauri::AppHandle) -> Result<(), String> {
-    if crate::collector_owner::installed(app)? {
-        return Ok(());
-    }
-    let close_to_tray = activity_engine::component::close_to_tray(app)?;
-    app.state::<Lifecycle>()
-        .close_to_tray
-        .store(close_to_tray, Ordering::Release);
-    Ok(())
-}
-fn should_hide(selected: bool, available: bool) -> bool {
-    selected && available
 }
 pub fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
     match event {
@@ -125,17 +68,6 @@ pub fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
             ..
         } if label == "main" => {
             api.prevent_close();
-            let lifecycle = app.state::<Lifecycle>();
-            if should_hide(
-                lifecycle.close_to_tray.load(Ordering::Acquire),
-                lifecycle.tray_available.load(Ordering::Acquire),
-            ) {
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.hide().is_ok() {
-                        return;
-                    }
-                }
-            }
             request_quit(app);
         }
         tauri::RunEvent::ExitRequested { api, .. } => {
@@ -149,56 +81,16 @@ pub fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
                 request_quit(app);
                 return;
             }
-            let _ = activity_engine::component::shutdown(app);
+            if matches!(crate::collector_owner::installed(app), Ok(false)) {
+                let _ = activity_engine::component::shutdown(app);
+            }
         }
         _ => {}
     }
 }
-#[derive(serde::Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ClosePolicy {
-    pub close_to_tray: bool,
-    pub tray_available: bool,
-}
-
-pub fn dispatch_typed(
-    app: &tauri::AppHandle,
-    call: crate::ipc::activity::HostActivityCall,
-) -> Result<serde_json::Value, String> {
-    use crate::ipc::activity::HostActivityCall;
-    let lifecycle = app.state::<Lifecycle>();
-    match call {
-        HostActivityCall::GetClosePolicy {} => {}
-        HostActivityCall::SetClosePolicy { close_to_tray } => {
-            if crate::collector_owner::installed(app)? {
-                return Err("close_policy_unavailable".into());
-            }
-            if close_to_tray && !lifecycle.tray_available.load(Ordering::Acquire) {
-                return Err("tray_unavailable".into());
-            }
-            activity_engine::component::set_close_to_tray(app, close_to_tray)?;
-            lifecycle
-                .close_to_tray
-                .store(close_to_tray, Ordering::Release);
-        }
-    }
-    serde_json::to_value(ClosePolicy {
-        close_to_tray: lifecycle.close_to_tray.load(Ordering::Acquire),
-        tray_available: lifecycle.tray_available.load(Ordering::Acquire),
-    })
-    .map_err(|_| "component_response_invalid".into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn closing_can_hide_only_with_explicit_preference_and_working_tray() {
-        assert!(!should_hide(false, true));
-        assert!(!should_hide(true, false));
-        assert!(!should_hide(false, false));
-        assert!(should_hide(true, true));
-    }
     #[test]
     fn quit_requires_current_review_and_cancel_keeps_collection_running() {
         let mut review = QuitReview::default();

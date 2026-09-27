@@ -7,45 +7,21 @@ use serde::Deserialize;
 use tauri::{Manager, WebviewWindow};
 
 #[derive(Deserialize, ts_rs::TS)]
-#[serde(
-    tag = "method",
-    content = "args",
-    rename_all = "snake_case",
-    rename_all_fields = "camelCase",
-    deny_unknown_fields
-)]
-#[ts(optional_fields = nullable)]
-pub enum HostActivityCall {
-    GetClosePolicy {},
-    SetClosePolicy { close_to_tray: bool },
-}
-impl HostActivityCall {
-    pub fn method(&self) -> &'static str {
-        match self {
-            Self::GetClosePolicy {} => "get_close_policy",
-            Self::SetClosePolicy { .. } => "set_close_policy",
-        }
-    }
-}
-#[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
 #[ts(optional_fields = nullable)]
 pub enum KnowledgeActivityCall {
-    Host(HostActivityCall),
     Engine(ActivityCall),
 }
 impl ComponentCall for KnowledgeActivityCall {
     const COMPONENT: &'static str = "knowledge.activity";
     fn method(&self) -> &'static str {
         match self {
-            Self::Host(call) => call.method(),
             Self::Engine(call) => call.method(),
         }
     }
     fn class(&self) -> ExecutionClass {
         match self {
             Self::Engine(call) => call.class(),
-            Self::Host(_) => ExecutionClass::Normal,
         }
     }
     fn routes(&self) -> &'static [&'static str] {
@@ -70,7 +46,6 @@ pub async fn activity(window: WebviewWindow, request: IncomingRequest) -> Result
         crate::project_provider::refresh(app, request.header.deadline_ms).await;
     }
     let result = match request.call {
-        KnowledgeActivityCall::Host(call) => crate::lifecycle::dispatch_typed(app, call),
         KnowledgeActivityCall::Engine(ActivityCall::SendDigestToKnowledge {
             input,
             regenerated_from,
@@ -129,11 +104,6 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
             .unwrap()
             .1 = ty;
     }
-    let policy = export.register::<crate::lifecycle::ClosePolicy>()?;
-    results.extend([
-        ("get_close_policy", policy.clone()),
-        ("set_close_policy", policy),
-    ]);
     Ok(results)
 }
 #[cfg(test)]
@@ -141,9 +111,10 @@ mod tests {
     use super::*;
     #[test]
     fn host_and_engine_calls_preserve_the_activity_route() {
-        let host: KnowledgeActivityCall =
-            serde_json::from_str(r#"{"method":"get_close_policy","args":{}}"#).unwrap();
-        assert!(matches!(host, KnowledgeActivityCall::Host(_)));
+        assert!(serde_json::from_str::<KnowledgeActivityCall>(
+            r#"{"method":"get_close_policy","args":{}}"#
+        )
+        .is_err());
         let engine: KnowledgeActivityCall =
             serde_json::from_str(r#"{"method":"stop_tracking","args":{}}"#).unwrap();
         assert!(matches!(engine, KnowledgeActivityCall::Engine(_)));

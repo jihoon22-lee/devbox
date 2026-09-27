@@ -4,7 +4,6 @@ import type { ActivityDigestResponse } from "./ActivityDigestResponse";
 import type { ActivityRangeSummary } from "./ActivityRangeSummary";
 import type { AppTotal } from "./AppTotal";
 import type { AutostartStatus } from "./AutostartStatus";
-import type { ClosePolicy } from "./ClosePolicy";
 import type { DraftHistoryEntry } from "./DraftHistoryEntry";
 import type { PrivacyRulesView } from "./PrivacyRulesView";
 import type { PrivacySaveResult } from "./PrivacySaveResult";
@@ -43,6 +42,4 @@ export type ActivityResults = {
   project_attribution: ActivityAttributionResult;
   timeline: Array<Session>;
   app_stats: Array<AppTotal>;
-  get_close_policy: ClosePolicy;
-  set_close_policy: ClosePolicy;
 };
