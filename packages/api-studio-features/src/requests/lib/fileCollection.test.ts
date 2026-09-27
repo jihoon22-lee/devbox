@@ -59,3 +59,11 @@ it("redacts secrets before serialization and keeps review requirements after rou
   expect(files[1].text).not.toContain("token=secret");
   expect(parseFileCollection(files).requests[0].requiresSecretReview).toBe(true);
 });
+it("keeps duplicate Unicode names within native filename limits and redacts marker secrets", () => {
+  const files = serializeFileCollection("ghp_abcdefghijklmnopqrstuvwxyz0123", {
+    version: 2,
+    collections: [entry("a", "가".repeat(80), ""), entry("b", "가".repeat(80), "")],
+  });
+  expect(files[0].text).not.toContain("ghp_");
+  for (const file of files) expect(new TextEncoder().encode(file.relativePath).length).toBeLessThanOrEqual(255);
+});

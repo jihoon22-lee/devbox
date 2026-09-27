@@ -1,5 +1,10 @@
 import type { CollectionStore } from "./collections";
-import { parseCollectionExport, serializeCollectionExport, COLLECTION_EXPORT_SCHEMA } from "./transfer";
+import {
+  parseCollectionExport,
+  serializeCollectionExport,
+  COLLECTION_EXPORT_SCHEMA,
+  looksLikeSecret,
+} from "./transfer";
 import { ImportError, type ImportBundle } from "./importers/model";
 import { parseBruno } from "./importers/bruno";
 export const FILE_COLLECTION_MARKER = "collection.devbox.json";
@@ -24,7 +29,10 @@ export function serializeFileCollection(
   if (!clean) throw invalid();
   const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
   const files = [
-    { relativePath: FILE_COLLECTION_MARKER, text: json({ schema, schemaVersion: 1, name: safeFileName(name) }) },
+    {
+      relativePath: FILE_COLLECTION_MARKER,
+      text: json({ schema, schemaVersion: 1, name: looksLikeSecret(name) ? "Collection" : safeFileName(name) }),
+    },
   ];
   const used = new Set([FILE_COLLECTION_MARKER.toLowerCase()]);
   for (const item of clean.collections) {
@@ -34,7 +42,10 @@ export function serializeFileCollection(
     let sequence = 1;
     let relativePath: string;
     do {
-      relativePath = [...folders, `${base}${sequence > 1 ? ` (${sequence})` : ""}.request.json`].join("/");
+      const suffix = `${sequence > 1 ? ` (${sequence})` : ""}.request.json`;
+      const characters = Array.from(base);
+      while (new TextEncoder().encode(characters.join("") + suffix).length > 255) characters.pop();
+      relativePath = [...folders, characters.join("") + suffix].join("/");
       sequence++;
     } while (used.has(relativePath.toLowerCase()));
     used.add(relativePath.toLowerCase());
