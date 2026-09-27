@@ -31,3 +31,7 @@ pub mod lanes;
 pub mod runtime_policy;
 
 pub mod runtime_logs;
+
+pub mod session_registry;
+
+pub mod session_rpc;

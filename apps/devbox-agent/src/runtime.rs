@@ -58,6 +58,7 @@ call!(
 );
 
 enum Parsed {
+    Session(workspace_core::session_rpc::Call),
     Runtime(runtime_engine::api::RuntimeCall),
     Ports(ports_engine::api::PortsCall),
     Logs(logs_engine::api::LogsCall),
@@ -65,6 +66,7 @@ enum Parsed {
 impl Parsed {
     fn lane(&self) -> Lane {
         match self {
+            Self::Session(call) => call.lane(),
             Self::Runtime(call) => call.lane(),
             Self::Ports(call) => call.lane(),
             Self::Logs(call) => call.lane(),
@@ -72,6 +74,7 @@ impl Parsed {
     }
     async fn execute(self, app: &tauri::AppHandle) -> std::result::Result<Value, String> {
         match self {
+            Self::Session(_) => Err("session_runtime_invalid".into()),
             Self::Runtime(call) => runtime_engine::api::dispatch(app, call).await,
             Self::Ports(call) => ports_engine::api::dispatch(app, call).await,
             Self::Logs(call) => logs_engine::api::dispatch(app, call).await,
@@ -101,6 +104,18 @@ fn decode(
     }
     let incoming: IncomingRequest =
         serde_json::from_value(request).map_err(|_| "invalid_request")?;
+    if component == "workspace.runtime" && incoming.method == "session_owner" {
+        let call: workspace_core::session_rpc::Call =
+            serde_json::from_value(incoming.args).map_err(|_| "invalid_request")?;
+        call.validate()?;
+        if call
+            .live_context()
+            .is_some_and(|context| incoming.header.context.as_ref() != Some(context))
+        {
+            return Err("stale_context");
+        }
+        return Ok((incoming.header, Parsed::Session(call), &["sessions"]));
+    }
     macro_rules! decode {
         ($kind:ty, $variant:ident) => {{
             let request = incoming.decode::<$kind>().map_err(|_| "invalid_request")?;
@@ -127,6 +142,7 @@ pub struct Runtime {
     resources: PathBuf,
     state: Mutex<State>,
     lanes: Lanes,
+    sessions: crate::session_runtime::Sessions,
     stopping: std::sync::atomic::AtomicBool,
     active: std::sync::atomic::AtomicUsize,
     drained: tokio::sync::Notify,
@@ -139,6 +155,7 @@ impl Runtime {
             resources,
             state: Mutex::new(State::Cold),
             lanes: Lanes::default(),
+            sessions: Default::default(),
             stopping: std::sync::atomic::AtomicBool::new(false),
             active: std::sync::atomic::AtomicUsize::new(0),
             drained: tokio::sync::Notify::new(),
@@ -261,9 +278,16 @@ impl Runtime {
             .map_err(|_| "request_expired")?
             .map_err(|_| "request_cancelled")?;
             workspace_core::current_deadline(header.deadline_ms)?;
-            call.execute(&owner.app)
-                .await
-                .map_err(workspace_core::runtime_policy::issue)
+            match call {
+                Parsed::Session(call) => {
+                    let host = owner.initialize()?;
+                    owner.sessions.dispatch(&owner.app, &host, call).await
+                }
+                other => other
+                    .execute(&owner.app)
+                    .await
+                    .map_err(workspace_core::runtime_policy::issue),
+            }
         })
         .await
         .map_err(|_| "worker_unavailable")?
@@ -298,6 +322,31 @@ mod tests {
     use super::*;
     fn request(method: &str) -> Value {
         json!({"header":{"protocolVersion":1,"installationId":"native","sessionId":"session","requestId":"one","deadlineMs":2000,"route":"tasks"},"method":method,"args":{}})
+    }
+    #[test]
+    fn session_start_requires_the_exact_live_context_and_cleanup_uses_retained_scope() {
+        let scope = json!({"session":"development-session","context":{
+            "projectId":"project","worktreeId":"tree","target":{"kind":"windows"},"revision":1
+        }});
+        let mut start = request("session_owner");
+        start["header"]["route"] = json!("sessions");
+        start["args"] = json!({"kind":"start","args":{
+            "scope":scope,"reference":"11111111-1111-4111-8111-111111111111","operation":"operation","service":false
+        }});
+        assert!(matches!(
+            decode("workspace.runtime", start.clone()),
+            Err("stale_context")
+        ));
+        start["header"]["context"] = scope["context"].clone();
+        assert!(decode("workspace.runtime", start.clone()).is_ok());
+        let mut cleanup = request("session_owner");
+        cleanup["args"] = json!({"kind":"cancel","args":{"scope":scope,"operation":"operation"}});
+        assert!(decode("workspace.runtime", cleanup).is_ok());
+        start["args"]["args"]["scope"]["session"] = json!("x".repeat(129));
+        assert!(matches!(
+            decode("workspace.runtime", start),
+            Err("session_runtime_invalid")
+        ));
     }
     #[test]
     fn runtime_wire_uses_typed_methods_and_keeps_ui_lifecycle_out_of_agent() {
