@@ -6,7 +6,6 @@ import { currentDescription, makeRequest, type Description } from "@devbox/produ
 import { isOperation, problemCode, problemMessage } from "@devbox/product-shell/operation";
 import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
-import { agentMessage } from "./agents/messages";
 
 export { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
 import { knownIssueMessage, workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
@@ -57,7 +56,9 @@ export async function componentCall<T>(
       : issue.startsWith("wsl_")
         ? await import("./wslIssues").then((module) => module.wslIssueMessage(issue)).catch(() => undefined)
         : undefined;
-    const agent = agentMessage(issue);
+    const agent = issue.startsWith("agent_")
+      ? await import("./agents/messages").then((module) => module.agentMessage(issue)).catch(() => undefined)
+      : undefined;
     throw failure(
       message ?? agent ?? issueMessage(issue),
       knownIssueMessage(issue) === undefined && agent === undefined ? "unavailable" : issue,
