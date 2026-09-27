@@ -16,14 +16,21 @@ const PRODUCER_ID: &str = "life-log";
 const PROJECTS_KIND: &str = "projects";
 const SNAPSHOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-pub fn spawn_snapshot_writer(state: Arc<AppState>) {
+pub fn spawn_snapshot_writer(state: Arc<AppState>) -> tauri::async_runtime::JoinHandle<()> {
+    let mut shutdown = state.shutdown.subscribe();
     tauri::async_runtime::spawn(async move {
         write_snapshot_background(state.clone(), "초기 발행").await;
         loop {
-            tokio::time::sleep(SNAPSHOT_INTERVAL).await;
+            if *shutdown.borrow() {
+                break;
+            }
+            tokio::select! {
+                _ = shutdown.changed() => break,
+                _ = tokio::time::sleep(SNAPSHOT_INTERVAL) => {},
+            }
             write_snapshot_background(state.clone(), "주기 발행").await;
         }
-    });
+    })
 }
 
 pub fn request_snapshot_write(state: Arc<AppState>) {
@@ -43,6 +50,9 @@ fn write_snapshot(state: &AppState) -> Result<(), String> {
         .snapshot_writer
         .lock()
         .map_err(|_| "Life Log snapshot writer를 잠글 수 없습니다".to_string())?;
+    if *state.shutdown.borrow() {
+        return Ok(());
+    }
     let envelope = {
         let connection = state
             .db
@@ -110,6 +120,18 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn a_late_snapshot_request_cannot_write_after_owner_shutdown() {
+        let root = tempfile::tempdir().unwrap();
+        let mut state = crate::commands::tracking::test_state(
+            crate::core::db::init(&root.path().join("data.db")).unwrap(),
+        );
+        let destination = root.path().join("no-late-snapshot");
+        state.integration_root = Some(destination.clone());
+        state.shutdown.send_replace(true);
+        super::write_snapshot(&state).unwrap();
+        assert!(!destination.exists());
+    }
     #[test]
     fn writes_and_atomically_replaces_secret_free_projects_view() {
         let root = test_root("replace");

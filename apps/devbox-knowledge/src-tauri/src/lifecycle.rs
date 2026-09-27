@@ -105,6 +105,9 @@ fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 pub fn load(app: &tauri::AppHandle) -> Result<(), String> {
+    if crate::collector_owner::installed(app)? {
+        return Ok(());
+    }
     let close_to_tray = activity_engine::component::close_to_tray(app)?;
     app.state::<Lifecycle>()
         .close_to_tray
@@ -167,6 +170,9 @@ pub fn dispatch_typed(
     match call {
         HostActivityCall::GetClosePolicy {} => {}
         HostActivityCall::SetClosePolicy { close_to_tray } => {
+            if crate::collector_owner::installed(app)? {
+                return Err("close_policy_unavailable".into());
+            }
             if close_to_tray && !lifecycle.tray_available.load(Ordering::Acquire) {
                 return Err("tray_unavailable".into());
             }

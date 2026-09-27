@@ -296,6 +296,10 @@ pub fn opener_result_types(
 }
 product_ipc::issue_codes! {
     pub enum SearchIssue {
+    AgentUnavailable = "knowledge_agent_unavailable",
+    StoreMissing = "knowledge_store_missing",
+    StoreUnavailable = "knowledge_store_unavailable",
+    StoreChanged = "knowledge_store_changed",
     ComponentArgsInvalid = "component_args_invalid",
     ComponentStateConflict = "component_state_conflict",
     FileReferenceInvalid = "file_reference_invalid",

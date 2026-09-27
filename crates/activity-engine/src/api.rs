@@ -152,6 +152,12 @@ impl ActivityCall {
 }
 product_ipc::issue_codes! {
     pub enum ActivityIssue {
+    DraftDeliveryInvalid = "draft_delivery_invalid",
+    DraftDeliveryUnavailable = "draft_delivery_unavailable",
+    AgentUnavailable = "knowledge_agent_unavailable",
+    StoreMissing = "knowledge_store_missing",
+    StoreUnavailable = "knowledge_store_unavailable",
+    StoreChanged = "knowledge_store_changed",
     ActivityConsentSaveFailed = "activity_consent_save_failed",
     AutostartOwnerConflict = "autostart_owner_conflict",
     AutostartOwnerInvalid = "autostart_owner_invalid",

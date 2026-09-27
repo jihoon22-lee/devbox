@@ -259,7 +259,10 @@ fn run(
                 row.index_stale = stale;
             }
         } else {
-            let health = content_index_engine::component::product_root_health(&app);
+            let health = tauri::async_runtime::block_on(crate::collector_owner::root_health(
+                &app,
+                work.deadline,
+            ))?;
             for row in &mut rows {
                 let key = row.root.to_string_lossy().replace('\\', "/");
                 let status = health

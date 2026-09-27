@@ -54,6 +54,7 @@ impl ComponentCall for KnowledgeActivityCall {
 }
 #[tauri::command]
 pub async fn activity(window: WebviewWindow, request: IncomingRequest) -> Result<Reply, Problem> {
+    let args = request.args.clone();
     let (admission, request) = admit_request::<KnowledgeActivityCall>(&window, request)?;
     let app = window.app_handle();
     crate::startup::require_active(app).map_err(|_| admission.problem(ProblemCode::Unavailable))?;
@@ -74,17 +75,31 @@ pub async fn activity(window: WebviewWindow, request: IncomingRequest) -> Result
             input,
             regenerated_from,
         }) => {
-            activity_engine::component::send_product_draft_typed(
-                app,
-                input,
-                regenerated_from,
-                |draft| knowledge_vault_engine::component::offer_product_draft(app, draft),
-            )
-            .await
+            if crate::collector_owner::installed(app)
+                .map_err(|_| admission.problem(ProblemCode::Unavailable))?
+            {
+                crate::collector_owner::send_draft(app, args, request.header.deadline_ms).await
+            } else {
+                activity_engine::component::send_product_draft_typed(
+                    app,
+                    input,
+                    regenerated_from,
+                    |draft| knowledge_vault_engine::component::offer_product_draft(app, draft),
+                )
+                .await
+            }
         }
         KnowledgeActivityCall::Engine(call) => {
             let method = call.method();
-            api::dispatch(app, call).await.and_then(|value| {
+            crate::collector_owner::call(
+                app,
+                "knowledge.activity",
+                method,
+                args,
+                request.header.deadline_ms,
+            )
+            .await
+            .and_then(|value| {
                 crate::activity_projection::validate(
                     method,
                     crate::search::associate_activity(app, method, value),

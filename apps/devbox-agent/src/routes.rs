@@ -9,6 +9,7 @@ pub struct Routes {
     shutdown: tokio::sync::watch::Sender<bool>,
     runtime: Option<Arc<crate::runtime::Runtime>>,
     webhooks: Option<Arc<crate::webhooks::Webhooks>>,
+    collectors: Option<Arc<crate::collectors::Collectors>>,
     sessions: std::sync::Mutex<
         std::collections::HashMap<
             (String, String, String),
@@ -27,6 +28,7 @@ impl Routes {
             shutdown,
             runtime: None,
             webhooks: None,
+            collectors: None,
             sessions: Default::default(),
         })
     }
@@ -34,6 +36,7 @@ impl Routes {
         generation: String,
         runtime: Arc<crate::runtime::Runtime>,
         webhooks: Arc<crate::webhooks::Webhooks>,
+        collectors: Arc<crate::collectors::Collectors>,
     ) -> Arc<Self> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Arc::new(Self {
@@ -44,6 +47,7 @@ impl Routes {
             shutdown,
             runtime: Some(runtime),
             webhooks: Some(webhooks),
+            collectors: Some(collectors),
             sessions: Default::default(),
         })
     }
@@ -53,6 +57,9 @@ impl Routes {
         }
         if let Some(webhooks) = &self.webhooks {
             webhooks.shutdown().await;
+        }
+        if let Some(collectors) = &self.collectors {
+            collectors.shutdown().await;
         }
     }
     pub fn session(
@@ -87,6 +94,13 @@ impl Routes {
         (component == "agent.status"
             && ["workspace", "api-studio", "knowledge", "control-center"].contains(&product))
             || (product == "api-studio" && component == "api-studio.webhooks")
+            || (product == "knowledge"
+                && [
+                    "knowledge.activity",
+                    "knowledge.search",
+                    "knowledge.search-settings",
+                ]
+                .contains(&component))
             || (product == "workspace"
                 && [
                     "workspace.runtime",
@@ -112,6 +126,14 @@ impl Routes {
     ) -> Value {
         if !self.accepts(product, component) {
             return failure("unauthorized");
+        }
+        if component.starts_with("knowledge.") {
+            return match &self.collectors {
+                Some(owner) => {
+                    crate::runtime::response(owner.dispatch(session, component, request).await)
+                }
+                None => failure("knowledge_agent_unavailable"),
+            };
         }
         if component == "api-studio.webhooks" {
             return match &self.webhooks {
@@ -165,7 +187,7 @@ impl Routes {
         json!({"operation":{"outcome":{"state":"succeeded"}},"value": {
             "version": env!("CARGO_PKG_VERSION"), "generation": self.generation,
             "uptimeMs": self.started.elapsed().as_millis() as u64,
-            "components": if self.runtime.is_some() { vec!["agent.status","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs","api-studio.webhooks"] } else {vec!["agent.status"]}
+            "components": if self.runtime.is_some() { vec!["agent.status","workspace.runtime","workspace.processes","workspace.process-actions","workspace.logs","api-studio.webhooks","knowledge.activity","knowledge.search","knowledge.search-settings"] } else {vec!["agent.status"]}
         }})
     }
     #[cfg(test)]
@@ -186,6 +208,21 @@ pub fn failure(code: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn collector_components_accept_only_knowledge_peers_and_never_notes() {
+        let routes = Routes::for_tests();
+        for component in [
+            "knowledge.activity",
+            "knowledge.search",
+            "knowledge.search-settings",
+        ] {
+            assert!(routes.accepts("knowledge", component));
+            assert!(!routes.accepts("workspace", component));
+            assert!(!routes.accepts("api-studio", component));
+        }
+        assert!(!routes.accepts("knowledge", "knowledge.notes"));
+        assert!(!routes.accepts("knowledge", "knowledge.opener"));
+    }
     #[test]
     fn webhook_components_accept_only_api_studio_peers() {
         let routes = Routes::for_tests();

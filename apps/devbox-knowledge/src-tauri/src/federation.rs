@@ -132,8 +132,14 @@ async fn saved_index(
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let generation = search::current_generation(&app).map_err(|_| "knowledge_source_stale")?;
-        let rows = content_index_engine::component::saved_query_definitions(&app)
-            .map_err(|_| "knowledge_source_unavailable")?;
+        let rows = tauri::async_runtime::block_on(crate::collector_owner::call(
+            &app,
+            "knowledge.search",
+            "list_saved_queries",
+            serde_json::json!({}),
+            u64::MAX,
+        ))
+        .map_err(|_| "knowledge_source_unavailable")?;
         let rows = rows
             .as_array()
             .filter(|rows| rows.len() <= 2048)

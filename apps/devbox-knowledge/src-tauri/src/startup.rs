@@ -210,17 +210,19 @@ pub fn activate_with_owner(
             Some(integration.clone()),
         )
         .map_err(|_| "component_initialization_failed")?;
-        activity_engine::component::initialize(
-            app,
-            &stores::directory(&state.root, manifest, "activity")?,
-            integration.clone(),
-        )?;
-        content_index_engine::component::initialize(
-            app,
-            &stores::directory(&state.root, manifest, "search")?,
-            Some(integration),
-        )
-        .map_err(|_| "component_initialization_failed")?;
+        if !crate::collector_owner::installed(app)? {
+            activity_engine::component::initialize(
+                app,
+                &stores::directory(&state.root, manifest, "activity")?,
+                integration.clone(),
+            )?;
+            content_index_engine::component::initialize(
+                app,
+                &stores::directory(&state.root, manifest, "search")?,
+                Some(integration),
+            )
+            .map_err(|_| "component_initialization_failed")?;
+        }
         crate::lifecycle::load(app)?;
         crate::search::initialize(app, &state.root, manifest)?;
         Ok::<_, String>(())

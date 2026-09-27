@@ -47,6 +47,14 @@ mod tests {
     use super::*;
     use product_ipc::ComponentCall;
     #[test]
+    fn agent_delivery_and_health_helpers_are_not_renderer_methods() {
+        assert!(serde_json::from_str::<activity::KnowledgeActivityCall>(r#"{"method":"native_draft_delivery","args":{"kind":"finish","id":"fixture","delivered":true}}"#).is_err());
+        assert!(serde_json::from_str::<search::KnowledgeSearchCall>(
+            r#"{"method":"native_root_health","args":{}}"#
+        )
+        .is_err());
+    }
+    #[test]
     fn components_keep_routes_and_installation_review_boundaries() {
         let notes: notes::KnowledgeNotesCall =
             serde_json::from_str(r#"{"method":"list_tags","args":{}}"#).unwrap();

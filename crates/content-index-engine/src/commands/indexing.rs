@@ -28,6 +28,7 @@ const INDEX_ERROR: &str = "인덱스를 처리할 수 없습니다.";
 
 /// 앱 전역 상태.
 pub struct AppState {
+    pub stopping: AtomicBool,
     /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
     pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
@@ -257,6 +258,9 @@ fn spawn_index_with_filter(state: Arc<AppState>, only_roots: Vec<String>, filter
             .lifecycle
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
+        if state.stopping.load(Ordering::SeqCst) {
+            return;
+        }
         if state.indexing.load(Ordering::SeqCst) {
             // A concurrent root change must not be lost.  A subsequent worker
             // snapshots all roots after the current worker reaches a safe stop.
@@ -289,7 +293,9 @@ fn spawn_index_with_filter(state: Arc<AppState>, only_roots: Vec<String>, filter
                         .lifecycle
                         .lock()
                         .unwrap_or_else(|poison| poison.into_inner());
-                    if worker_state.restart_requested.swap(false, Ordering::SeqCst) {
+                    if worker_state.restart_requested.swap(false, Ordering::SeqCst)
+                        && !worker_state.stopping.load(Ordering::SeqCst)
+                    {
                         reset_progress(&worker_state);
                         true
                     } else {
@@ -876,8 +882,18 @@ mod tests {
 
     static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
+    #[test]
+    fn retired_index_owner_cannot_queue_a_restart_behind_active_work() {
+        let state = state(Connection::open_in_memory().unwrap());
+        state.stopping.store(true, Ordering::SeqCst);
+        state.indexing.store(true, Ordering::SeqCst);
+        spawn_index(state.clone(), Vec::new());
+        assert!(!state.restart_requested.load(Ordering::SeqCst));
+    }
+
     fn state(conn: Connection) -> Arc<AppState> {
         Arc::new(AppState {
+            stopping: AtomicBool::new(false),
             integration_root: None,
             db: Mutex::new(conn),
             lifecycle: Mutex::new(()),

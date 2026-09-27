@@ -12,7 +12,6 @@ use crate::core::digest::DigestInput;
 use crate::core::draft_history;
 #[cfg(target_os = "windows")]
 use crate::core::handoff::{self, KNOWLEDGE_DRAFT_KIND};
-#[cfg(target_os = "windows")]
 use devbox_applink::{HandoffStatus, RecordHandoffStatus};
 use serde::Serialize;
 use std::sync::Arc;
@@ -167,6 +166,7 @@ pub(crate) async fn send_with_delivery<F>(
     input: DigestInput,
     regenerated_from: Option<String>,
     require_installation: bool,
+    deferred_delivery: bool,
     deliver: F,
 ) -> Result<SendKnowledgeDraftResult, String>
 where
@@ -179,6 +179,7 @@ where
             input,
             regenerated_from,
             require_installation,
+            deferred_delivery,
             deliver,
         );
         Err("Knowledge handoff는 Windows 데스크톱에서 사용할 수 없습니다".into())
@@ -269,47 +270,49 @@ where
         // before the producer records its post-launch state. A failed launch
         // is explicitly put back into pending so it remains retryable.
         let sent_at_ms = current_epoch_ms().unwrap_or(now_ms);
-        if store
-            .record_status(RecordHandoffStatus {
-                id: descriptor.id.clone(),
-                kind: descriptor.kind.clone(),
-                source_app: "life-log".into(),
-                target_app: Some("knowledge-base".into()),
-                status: HandoffStatus::Sent,
-                updated_at_ms: sent_at_ms,
-                expires_at_ms,
-            })
-            .is_err()
-        {
-            discard_producer_state(&state, &store, &descriptor);
-            return Err("Knowledge draft 상태를 기록하지 못했습니다".into());
-        }
-        let connection = state.db.lock().map_err(|_| {
-            discard_producer_state(&state, &store, &descriptor);
-            "Knowledge draft 이력을 갱신하지 못했습니다".to_string()
-        })?;
-        if let Err(error) = draft_history::set_status(
-            &connection,
-            &descriptor.id,
-            draft_history::DraftStatus::Sent,
-            sent_at_ms,
-        ) {
-            let _ = store.record_status(RecordHandoffStatus {
-                id: descriptor.id.clone(),
-                kind: descriptor.kind.clone(),
-                source_app: "life-log".into(),
-                target_app: Some("knowledge-base".into()),
-                status: HandoffStatus::Pending,
-                updated_at_ms: current_epoch_ms().unwrap_or(sent_at_ms),
-                expires_at_ms,
-            });
-            let _ = draft_history::remove(&connection, &descriptor.id);
+        if !deferred_delivery {
+            if store
+                .record_status(RecordHandoffStatus {
+                    id: descriptor.id.clone(),
+                    kind: descriptor.kind.clone(),
+                    source_app: "life-log".into(),
+                    target_app: Some("knowledge-base".into()),
+                    status: HandoffStatus::Sent,
+                    updated_at_ms: sent_at_ms,
+                    expires_at_ms,
+                })
+                .is_err()
+            {
+                discard_producer_state(&state, &store, &descriptor);
+                return Err("Knowledge draft 상태를 기록하지 못했습니다".into());
+            }
+            let connection = state.db.lock().map_err(|_| {
+                discard_producer_state(&state, &store, &descriptor);
+                "Knowledge draft 이력을 갱신하지 못했습니다".to_string()
+            })?;
+            if let Err(error) = draft_history::set_status(
+                &connection,
+                &descriptor.id,
+                draft_history::DraftStatus::Sent,
+                sent_at_ms,
+            ) {
+                let _ = store.record_status(RecordHandoffStatus {
+                    id: descriptor.id.clone(),
+                    kind: descriptor.kind.clone(),
+                    source_app: "life-log".into(),
+                    target_app: Some("knowledge-base".into()),
+                    status: HandoffStatus::Pending,
+                    updated_at_ms: current_epoch_ms().unwrap_or(sent_at_ms),
+                    expires_at_ms,
+                });
+                let _ = draft_history::remove(&connection, &descriptor.id);
+                drop(connection);
+                let _ = store.discard_created(&descriptor);
+                let _ = error;
+                return Err("Knowledge draft 이력을 갱신하지 못했습니다".into());
+            }
             drop(connection);
-            let _ = store.discard_created(&descriptor);
-            let _ = error;
-            return Err("Knowledge draft 이력을 갱신하지 못했습니다".into());
         }
-        drop(connection);
         if operation.is_cancelled() {
             discard_producer_state(&state, &store, &descriptor);
             return Err("digest_cancelled".into());
@@ -398,4 +401,176 @@ fn discard_producer_state(
         let _ = draft_history::remove(&connection, &descriptor.id);
     }
     let _ = store.discard_created(descriptor);
+}
+
+/// Split native producer preparation from the UI-owned offer. Pending is honest
+/// if the response is lost; acknowledgement cannot regress a consumed draft.
+pub(crate) async fn prepare_product_draft(
+    state: tauri::State<'_, Arc<AppState>>,
+    input: DigestInput,
+    regenerated_from: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let offered = std::sync::Mutex::new(None);
+    let result = send_with_delivery(state, input, regenerated_from, false, true, |request| {
+        *offered.lock().map_err(|_| "draft_delivery_unavailable")? = Some(request.clone());
+        Ok(())
+    })
+    .await?;
+    let request = offered
+        .into_inner()
+        .map_err(|_| "draft_delivery_unavailable")?
+        .ok_or("draft_delivery_unavailable")?;
+    Ok(serde_json::json!({"request":request,"result":result}))
+}
+fn finish_status(
+    store: &devbox_applink::HandoffStore,
+    id: &str,
+    expires: u64,
+    delivered: bool,
+    now: u64,
+) -> Result<devbox_applink::HandoffStatusRecord, String> {
+    let record = store
+        .read_status(id)
+        .map_err(|_| "draft_delivery_unavailable")?
+        .ok_or("draft_delivery_unavailable")?;
+    if record.kind != "knowledge-draft/v1"
+        || record.source_app != "life-log"
+        || record.target_app.as_deref() != Some("knowledge-base")
+        || record.expires_at_ms != expires
+    {
+        return Err("draft_delivery_invalid".into());
+    }
+    if matches!(
+        record.status,
+        HandoffStatus::Consumed | HandoffStatus::Expired
+    ) {
+        return Ok(record);
+    }
+    let update = RecordHandoffStatus {
+        id: id.into(),
+        kind: record.kind.clone(),
+        source_app: record.source_app.clone(),
+        target_app: record.target_app.clone(),
+        expires_at_ms: expires,
+        updated_at_ms: now.max(record.updated_at_ms),
+        status: if now >= expires {
+            HandoffStatus::Expired
+        } else if delivered {
+            HandoffStatus::Sent
+        } else {
+            HandoffStatus::Pending
+        },
+    };
+    match store.record_status(update) {
+        Ok(record) => Ok(record),
+        Err(_) => {
+            let latest = store
+                .read_status(id)
+                .map_err(|_| "draft_delivery_unavailable")?
+                .ok_or("draft_delivery_unavailable")?;
+            if latest.kind == record.kind
+                && latest.source_app == record.source_app
+                && latest.target_app == record.target_app
+                && latest.expires_at_ms == expires
+                && matches!(
+                    latest.status,
+                    HandoffStatus::Consumed | HandoffStatus::Expired
+                )
+            {
+                Ok(latest)
+            } else {
+                Err("draft_delivery_unavailable".into())
+            }
+        }
+    }
+}
+pub(crate) fn finish_product_draft(
+    state: &AppState,
+    id: &str,
+    delivered: bool,
+) -> Result<(), String> {
+    let entry = {
+        let connection = state.db.lock().map_err(|_| "draft_delivery_unavailable")?;
+        draft_history::list(&connection)?
+            .into_iter()
+            .find(|entry| entry.handoff_id == id)
+            .ok_or("draft_delivery_invalid")?
+    };
+    let now = current_epoch_ms().ok_or("draft_delivery_unavailable")?;
+    let record = finish_status(
+        &handoff_store(state),
+        id,
+        entry.expires_at_ms,
+        delivered,
+        now,
+    )?;
+    let status = match record.status {
+        HandoffStatus::Pending => draft_history::DraftStatus::Pending,
+        HandoffStatus::Sent => draft_history::DraftStatus::Sent,
+        HandoffStatus::Consumed => draft_history::DraftStatus::Consumed,
+        HandoffStatus::Expired => draft_history::DraftStatus::Expired,
+    };
+    let connection = state.db.lock().map_err(|_| "draft_delivery_unavailable")?;
+    draft_history::set_status(
+        &connection,
+        id,
+        status,
+        record.updated_at_ms.max(entry.updated_at_ms),
+    )
+}
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    #[test]
+    fn native_delivery_ack_preserves_terminal_receipts_and_rejects_other_envelopes() {
+        let root = tempfile::tempdir().unwrap();
+        let store = devbox_applink::HandoffStore::new(root.path());
+        let created = store
+            .create(
+                devbox_applink::CreateHandoff {
+                    kind: "knowledge-draft/v1".into(),
+                    source_app: "life-log".into(),
+                    target_app: Some("knowledge-base".into()),
+                    payload: serde_json::json!({}),
+                },
+                100,
+            )
+            .unwrap();
+        let expires = 100 + devbox_applink::DEFAULT_HANDOFF_TTL_MS;
+        store
+            .record_status(RecordHandoffStatus {
+                id: created.id.clone(),
+                kind: created.kind.clone(),
+                source_app: "life-log".into(),
+                target_app: Some("knowledge-base".into()),
+                status: HandoffStatus::Pending,
+                updated_at_ms: 100,
+                expires_at_ms: expires,
+            })
+            .unwrap();
+        assert!(finish_status(&store, &created.id, expires + 1, true, 101).is_err());
+        assert_eq!(
+            finish_status(&store, &created.id, expires, true, 101)
+                .unwrap()
+                .status,
+            HandoffStatus::Sent
+        );
+        store
+            .record_status(RecordHandoffStatus {
+                id: created.id.clone(),
+                kind: created.kind,
+                source_app: "life-log".into(),
+                target_app: Some("knowledge-base".into()),
+                status: HandoffStatus::Consumed,
+                updated_at_ms: 102,
+                expires_at_ms: expires,
+            })
+            .unwrap();
+        assert_eq!(
+            finish_status(&store, &created.id, expires, false, 103)
+                .unwrap()
+                .status,
+            HandoffStatus::Consumed
+        );
+    }
 }

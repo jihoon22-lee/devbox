@@ -1,6 +1,12 @@
 import type { ActivityIssue } from "../generated/ActivityIssue";
 
 export const activityMessages: Record<ActivityIssue, string> = {
+  draft_delivery_invalid: "초안 전달 정보를 확인하지 못했습니다. 다시 준비해 주세요.",
+  draft_delivery_unavailable: "초안 전달을 완료하지 못했습니다. 전달 이력을 확인해 주세요.",
+  knowledge_agent_unavailable: "백그라운드 서비스에 연결하지 못했습니다. 다시 연결한 뒤 확인하세요.",
+  knowledge_store_missing: "Knowledge 저장소를 먼저 준비해 주세요.",
+  knowledge_store_unavailable: "Knowledge 저장소를 확인하지 못했습니다. 기존 데이터는 유지됩니다.",
+  knowledge_store_changed: "저장소 선택이 바뀌었습니다. 백그라운드 서비스를 다시 시작해 주세요.",
   activity_consent_save_failed: "수집 설정을 저장하지 못했습니다. 현재 수집 상태를 확인하고 다시 시도해 주세요.",
   autostart_owner_conflict: "다른 실행 파일의 시작프로그램 등록이 있어 변경하지 않았습니다.",
   autostart_owner_invalid: "현재 설치의 시작프로그램 등록 정보를 확인하지 못했습니다.",

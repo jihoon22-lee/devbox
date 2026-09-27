@@ -72,10 +72,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .join("webhooks");
         let webhooks =
             webhooks::Webhooks::new(app.handle().clone(), api_root, api_executable.to_owned());
+        let knowledge_root = dirs::data_local_dir()
+            .ok_or("knowledge_store_unavailable")?
+            .join(format!("com.devbox.v08.knowledge.i{suffix}"));
+        let collectors = collectors::Collectors::new(app.handle().clone(), knowledge_root);
         let routes = routes::Routes::with_runtime(
             scope.manifest.generation.clone(),
             runtime.clone(),
             webhooks.clone(),
+            collectors.clone(),
         );
         server::start(
             app.handle().clone(),
@@ -88,6 +93,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         tauri::async_runtime::spawn_blocking(move || {
             let _ = runtime.initialize();
             let _ = webhooks.initialize();
+            let _ = collectors.initialize(false);
         });
         Ok(())
     });
@@ -106,3 +112,5 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
     Ok(())
 }
+
+pub mod collectors;

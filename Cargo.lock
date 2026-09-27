@@ -1246,6 +1246,8 @@ version = "0.8.1"
 dependencies = [
  "agent-client",
  "agent-protocol",
+ "devbox-activity-engine",
+ "devbox-content-index-engine",
  "devbox-logs-engine",
  "devbox-ports-engine",
  "devbox-runtime-engine",
@@ -1256,6 +1258,7 @@ dependencies = [
  "product-contract",
  "product-ipc",
  "product-shell-tauri",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1264,6 +1267,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-notification",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "windows 0.61.3",
  "workspace-core",
@@ -1464,6 +1468,7 @@ dependencies = [
 name = "devbox-knowledge"
 version = "0.8.1"
 dependencies = [
+ "agent-client",
  "applink",
  "catalog",
  "devbox-activity-engine",

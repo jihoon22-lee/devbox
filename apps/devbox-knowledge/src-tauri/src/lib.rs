@@ -39,3 +39,5 @@ mod vault_binding;
 mod file_send;
 
 mod result_receive;
+
+mod collector_owner;
