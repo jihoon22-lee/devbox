@@ -7,12 +7,17 @@ import type { CleanupPreviewRequest } from "./CleanupPreviewRequest";
 import type { CleanupRequest } from "./CleanupRequest";
 import type { CommitDetailRequest } from "./CommitDetailRequest";
 import type { CommitRequest } from "./CommitRequest";
+import type { ConflictFileRequest } from "./ConflictFileRequest";
+import type { ConflictResolveRequest } from "./ConflictResolveRequest";
 import type { DiffRequest } from "./DiffRequest";
 import type { FileHunksRequest } from "./FileHunksRequest";
 import type { HistoryRequest } from "./HistoryRequest";
 import type { HunksApplyRequest } from "./HunksApplyRequest";
 import type { InspectAgentWorktreeRequest } from "./InspectAgentWorktreeRequest";
 import type { MergeRequest } from "./MergeRequest";
+import type { OperationRequest } from "./OperationRequest";
+import type { PrCreateRequest } from "./PrCreateRequest";
+import type { PrListRequest } from "./PrListRequest";
 import type { RemoteCancelRequest } from "./RemoteCancelRequest";
 import type { RemoteOperationRequest } from "./RemoteOperationRequest";
 import type { RemoteSyncRequest } from "./RemoteSyncRequest";
@@ -28,6 +33,14 @@ import type { SwitchRequest } from "./SwitchRequest";
 import type { UnstagePathsRequest } from "./UnstagePathsRequest";
 
 export type SourceCall =
+  | { method: "repo_conflicts"; args: { request: RepoChangesRequest } }
+  | { method: "repo_conflict_versions"; args: { request: ConflictFileRequest } }
+  | { method: "repo_conflict_resolve"; args: { request: ConflictResolveRequest } }
+  | { method: "repo_operation_continue"; args: { request: OperationRequest } }
+  | { method: "repo_operation_abort"; args: { request: OperationRequest } }
+  | { method: "repo_pr_status"; args: { request: RepoChangesRequest } }
+  | { method: "repo_pr_list"; args: { request: PrListRequest } }
+  | { method: "repo_pr_create"; args: { request: PrCreateRequest } }
   | { method: "repo_file_hunks"; args: { request: FileHunksRequest } }
   | { method: "repo_hunks_apply"; args: { request: HunksApplyRequest } }
   | { method: "repo_last_commit"; args: { request: RepoChangesRequest } }

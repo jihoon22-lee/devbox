@@ -10,6 +10,31 @@ use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
 )]
 #[ts(optional_fields = nullable)]
 pub enum SourceCall {
+    RepoConflicts {
+        request: crate::commands::PathRequest,
+    },
+    RepoConflictVersions {
+        request: crate::commands::ConflictFileRequest,
+    },
+    RepoConflictResolve {
+        request: crate::commands::ConflictResolveRequest,
+    },
+    RepoOperationContinue {
+        request: crate::commands::OperationRequest,
+    },
+    RepoOperationAbort {
+        request: crate::commands::OperationRequest,
+    },
+    RepoPrStatus {
+        request: crate::commands::PathRequest,
+    },
+    RepoPrList {
+        request: crate::commands::PrListRequest,
+    },
+    RepoPrCreate {
+        request: crate::commands::PrCreateRequest,
+    },
+
     RepoFileHunks {
         request: crate::commands::FileHunksRequest,
     },
@@ -130,6 +155,14 @@ pub enum SourceCall {
 }
 impl SourceCall {
     pub const METHODS: &'static [&'static str] = &[
+        "repo_conflicts",
+        "repo_conflict_versions",
+        "repo_conflict_resolve",
+        "repo_operation_continue",
+        "repo_operation_abort",
+        "repo_pr_status",
+        "repo_pr_list",
+        "repo_pr_create",
         "repo_file_hunks",
         "repo_hunks_apply",
         "repo_last_commit",
@@ -172,6 +205,15 @@ impl SourceCall {
     ];
     pub fn method(&self) -> &'static str {
         match self {
+            Self::RepoConflicts { .. } => "repo_conflicts",
+            Self::RepoConflictVersions { .. } => "repo_conflict_versions",
+            Self::RepoConflictResolve { .. } => "repo_conflict_resolve",
+            Self::RepoOperationContinue { .. } => "repo_operation_continue",
+            Self::RepoOperationAbort { .. } => "repo_operation_abort",
+            Self::RepoPrStatus { .. } => "repo_pr_status",
+            Self::RepoPrList { .. } => "repo_pr_list",
+            Self::RepoPrCreate { .. } => "repo_pr_create",
+
             Self::RepoFileHunks { .. } => "repo_file_hunks",
             Self::RepoHunksApply { .. } => "repo_hunks_apply",
             Self::RepoLastCommit { .. } => "repo_last_commit",
@@ -226,6 +268,9 @@ impl SourceCall {
                 | Self::RepoFileHunks { .. }
                 | Self::RepoLastCommit { .. }
                 | Self::RepoBlame { .. }
+                | Self::RepoConflicts { .. }
+                | Self::RepoConflictVersions { .. }
+                | Self::RepoConflictResolve { .. }
         ) {
             return product_ipc::workspace::DEFAULT_BUDGET_MS;
         }
@@ -243,6 +288,15 @@ impl SourceCall {
     }
     pub(crate) fn path(&self) -> Option<&str> {
         match self {
+            Self::RepoConflicts { request } => Some(&request.path),
+            Self::RepoConflictVersions { request } => Some(&request.path),
+            Self::RepoConflictResolve { request } => Some(&request.path),
+            Self::RepoOperationContinue { request } => Some(&request.path),
+            Self::RepoOperationAbort { request } => Some(&request.path),
+            Self::RepoPrStatus { request } => Some(&request.path),
+            Self::RepoPrList { request } => Some(&request.path),
+            Self::RepoPrCreate { request } => Some(&request.path),
+
             Self::RepoFileHunks { request } => Some(&request.path),
             Self::RepoHunksApply { request } => Some(&request.path),
             Self::RepoLastCommit { request } => Some(&request.path),
@@ -297,6 +351,11 @@ impl SourceCall {
     }
     pub(crate) fn operation_id_mut(&mut self) -> Option<&mut String> {
         match self {
+            Self::RepoConflictResolve { request } => Some(&mut request.operation_id),
+            Self::RepoOperationContinue { request } => Some(&mut request.operation_id),
+            Self::RepoOperationAbort { request } => Some(&mut request.operation_id),
+            Self::RepoPrCreate { request } => Some(&mut request.operation_id),
+
             Self::RepoHunksApply { request } => Some(&mut request.operation_id),
 
             Self::RepoBranchCreate { request } => Some(&mut request.operation_id),
@@ -327,6 +386,39 @@ impl SourceCall {
 }
 pub(crate) async fn execute_source(call: SourceCall) -> Result<serde_json::Value, String> {
     match call {
+        SourceCall::RepoConflicts { request } => {
+            serde_json::to_value(crate::commands::repo_conflicts(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoConflictVersions { request } => {
+            serde_json::to_value(crate::commands::repo_conflict_versions(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoConflictResolve { request } => {
+            serde_json::to_value(crate::commands::repo_conflict_resolve(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoOperationContinue { request } => {
+            serde_json::to_value(crate::commands::repo_operation_continue(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoOperationAbort { request } => {
+            serde_json::to_value(crate::commands::repo_operation_abort(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoPrStatus { request } => {
+            serde_json::to_value(crate::commands::repo_pr_status(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoPrList { request } => {
+            serde_json::to_value(crate::commands::repo_pr_list(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoPrCreate { request } => {
+            serde_json::to_value(crate::commands::repo_pr_create(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+
         SourceCall::RepoFileHunks { request } => {
             serde_json::to_value(crate::commands::repo_file_hunks(request).await?)
                 .map_err(|_| "component_response_invalid".into())
@@ -510,6 +602,29 @@ pub fn source_result_types(
 ) -> Result<Vec<(&'static str, String)>, String> {
     export.register::<SourceCall>()?;
     Ok(vec![
+        (
+            "repo_conflicts",
+            export.register::<crate::commands::ConflictState>()?,
+        ),
+        (
+            "repo_conflict_versions",
+            export.register::<crate::commands::ConflictVersions>()?,
+        ),
+        ("repo_conflict_resolve", export.register::<()>()?),
+        ("repo_operation_continue", export.register::<()>()?),
+        ("repo_operation_abort", export.register::<()>()?),
+        (
+            "repo_pr_status",
+            export.register::<crate::commands::PrStatus>()?,
+        ),
+        (
+            "repo_pr_list",
+            export.register::<Vec<crate::commands::PrListItem>>()?,
+        ),
+        (
+            "repo_pr_create",
+            export.register::<crate::commands::PrCreated>()?,
+        ),
         (
             "repo_file_hunks",
             export.register::<crate::commands::FileHunks>()?,
@@ -910,6 +1025,74 @@ mod hunk_blame_tests {
                 serde_json::json!({"method":method,"args":{"request":request}})
             )
             .is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod conflict_pr_tests {
+    use super::*;
+    #[test]
+    fn conflict_pr_calls_keep_exact_scope_mutation_and_budget() {
+        for (method, request, mutation, budget) in [
+            (
+                "repo_conflicts",
+                serde_json::json!({"path": "/repo"}),
+                false,
+                5000,
+            ),
+            (
+                "repo_conflict_versions",
+                serde_json::json!({"file": "a.txt", "path": "/repo"}),
+                false,
+                5000,
+            ),
+            (
+                "repo_conflict_resolve",
+                serde_json::json!({"file": "a.txt", "resolution": {"kind": "content", "text": "resolved"}, "operationId": "op", "path": "/repo"}),
+                true,
+                5000,
+            ),
+            (
+                "repo_operation_continue",
+                serde_json::json!({"operationId": "op", "path": "/repo"}),
+                true,
+                29000,
+            ),
+            (
+                "repo_operation_abort",
+                serde_json::json!({"operationId": "op", "path": "/repo"}),
+                true,
+                29000,
+            ),
+            (
+                "repo_pr_status",
+                serde_json::json!({"path": "/repo"}),
+                false,
+                29000,
+            ),
+            (
+                "repo_pr_list",
+                serde_json::json!({"limit": 10, "path": "/repo"}),
+                false,
+                29000,
+            ),
+            (
+                "repo_pr_create",
+                serde_json::json!({"title": "title", "body": "body", "base": null, "draft": false, "operationId": "op", "path": "/repo"}),
+                true,
+                29000,
+            ),
+        ] {
+            let mut call: SourceCall = serde_json::from_value(
+                serde_json::json!({"method": method, "args": {"request": request}}),
+            )
+            .unwrap();
+            assert_eq!(call.method(), method);
+            assert!(SourceCall::METHODS.contains(&method));
+            assert_eq!(call.path(), Some("/repo"));
+            assert_eq!(call.operation_id_mut().is_some(), mutation);
+            assert_eq!(call.deadline_budget_ms(), budget);
         }
     }
 }

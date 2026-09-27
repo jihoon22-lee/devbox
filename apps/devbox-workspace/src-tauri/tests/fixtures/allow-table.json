@@ -1772,6 +1772,21 @@
   [
     "workspace.source",
     "source",
+    "repo_conflict_resolve"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_conflict_versions"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_conflicts"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_diff"
   ],
   [
@@ -1808,6 +1823,31 @@
     "workspace.source",
     "source",
     "repo_merge"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_operation_abort"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_operation_continue"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_pr_create"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_pr_list"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_pr_status"
   ],
   [
     "workspace.source",

@@ -91,6 +91,14 @@ impl<'de> serde::Deserialize<'de> for WorkspaceSourceCall {
     }
 }
 pub const METHODS: &[&str] = &[
+    "repo_conflicts",
+    "repo_conflict_versions",
+    "repo_conflict_resolve",
+    "repo_operation_continue",
+    "repo_operation_abort",
+    "repo_pr_status",
+    "repo_pr_list",
+    "repo_pr_create",
     "repo_file_hunks",
     "repo_hunks_apply",
     "repo_last_commit",
@@ -145,6 +153,15 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
+        "repo_conflicts" => &["source"],
+        "repo_conflict_versions" => &["source"],
+        "repo_conflict_resolve" => &["source"],
+        "repo_operation_continue" => &["source"],
+        "repo_operation_abort" => &["source"],
+        "repo_pr_status" => &["source"],
+        "repo_pr_list" => &["source"],
+        "repo_pr_create" => &["source"],
+
         "repo_file_hunks" => &["source"],
         "repo_hunks_apply" => &["source"],
         "repo_last_commit" => &["source"],
@@ -426,6 +443,10 @@ pub(crate) fn source_mutation(method: &str) -> bool {
     matches!(
         method,
         "repo_merge"
+            | "repo_conflict_resolve"
+            | "repo_operation_continue"
+            | "repo_operation_abort"
+            | "repo_pr_create"
             | "repo_hunks_apply"
             | "repo_branch_create"
             | "repo_switch"
@@ -601,6 +622,27 @@ mod hunk_blame_tests {
                 super::deadline_budget_for(method),
                 if mutation { 29_000 } else { 5_000 }
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod conflict_pr_tests {
+    #[test]
+    fn conflict_pr_calls_have_exact_writer_route_and_deadline_contracts() {
+        for (method, mutation, budget) in [
+            ("repo_conflicts", false, 5000),
+            ("repo_conflict_versions", false, 5000),
+            ("repo_conflict_resolve", true, 5000),
+            ("repo_operation_continue", true, 29000),
+            ("repo_operation_abort", true, 29000),
+            ("repo_pr_status", false, 29000),
+            ("repo_pr_list", false, 29000),
+            ("repo_pr_create", true, 29000),
+        ] {
+            assert_eq!(super::source_mutation(method), mutation);
+            assert_eq!(super::routes_for(method), &["source"]);
+            assert_eq!(super::deadline_budget_for(method), budget);
         }
     }
 }

@@ -149,6 +149,14 @@ pub fn source_method(method: &str) -> bool {
         method,
         "create_worktree"
             | "repo_merge"
+            | "repo_conflicts"
+            | "repo_conflict_versions"
+            | "repo_conflict_resolve"
+            | "repo_operation_continue"
+            | "repo_operation_abort"
+            | "repo_pr_status"
+            | "repo_pr_list"
+            | "repo_pr_create"
             | "repo_file_hunks"
             | "repo_hunks_apply"
             | "repo_last_commit"
@@ -189,6 +197,17 @@ pub fn source_method(method: &str) -> bool {
 /// Fixed feature errors cross both native and helper Source adapters.
 pub fn source_operation_issue(issue: &str) -> Option<&'static str> {
     match issue {
+        "conflict_path_invalid" => Some("conflict_path_invalid"),
+        "conflict_choice_invalid" => Some("conflict_choice_invalid"),
+        "conflict_markers_left" => Some("conflict_markers_left"),
+        "conflict_unresolved" => Some("conflict_unresolved"),
+        "conflict_no_operation" => Some("conflict_no_operation"),
+        "conflict_operation_failed" => Some("conflict_operation_failed"),
+        "pr_branch_not_pushed" => Some("pr_branch_not_pushed"),
+        "pr_exists" => Some("pr_exists"),
+        "pr_input_invalid" => Some("pr_input_invalid"),
+        "pr_failed" => Some("pr_failed"),
+
         "hunk_stale" => Some("hunk_stale"),
         "hunk_selection_invalid" => Some("hunk_selection_invalid"),
         "hunk_unsupported" => Some("hunk_unsupported"),
@@ -308,6 +327,39 @@ mod tests {
             let mut cursor = FrameCursor::default();
             cursor.buffer().copy_from_slice(&length.to_le_bytes());
             assert!(cursor.advance(4).is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod conflict_pr_tests {
+    #[test]
+    fn source_method_forwards_conflict_and_pr_contracts() {
+        for method in [
+            "repo_conflicts",
+            "repo_conflict_versions",
+            "repo_conflict_resolve",
+            "repo_operation_continue",
+            "repo_operation_abort",
+            "repo_pr_status",
+            "repo_pr_list",
+            "repo_pr_create",
+        ] {
+            assert!(super::source_method(method));
+        }
+        for code in [
+            "conflict_path_invalid",
+            "conflict_choice_invalid",
+            "conflict_markers_left",
+            "conflict_unresolved",
+            "conflict_no_operation",
+            "conflict_operation_failed",
+            "pr_branch_not_pushed",
+            "pr_exists",
+            "pr_input_invalid",
+            "pr_failed",
+        ] {
+            assert_eq!(super::source_operation_issue(code), Some(code));
         }
     }
 }

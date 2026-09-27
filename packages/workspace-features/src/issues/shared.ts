@@ -2,6 +2,17 @@ import type { WorkspaceIssue } from "../generated/WorkspaceIssue";
 const unavailable = "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요.";
 /** Native static codes are exhaustive; unknown text never becomes user-visible diagnostics. */
 export const workspaceMessages: Record<WorkspaceIssue, string> = {
+  conflict_path_invalid: "충돌 파일 경로를 확인해 주세요.",
+  conflict_choice_invalid: "이 충돌에는 사용할 수 없는 해결 방법입니다.",
+  conflict_markers_left: "충돌 표시(<<<<<<<, =======, >>>>>>>)가 남아 있습니다. 모두 정리한 뒤 해결해 주세요.",
+  conflict_unresolved: "아직 해결하지 않은 충돌 파일이 있습니다.",
+  conflict_no_operation: "계속할 병합·rebase 작업이 없습니다.",
+  conflict_operation_failed: "Git 작업을 계속하지 못했습니다. 상태를 새로 고쳐 확인해 주세요.",
+  pr_branch_not_pushed: "PR을 만들기 전에 현재 branch를 push해 주세요.",
+  pr_exists: "이 branch의 PR이 이미 있습니다.",
+  pr_input_invalid: "PR 제목과 내용을 확인해 주세요.",
+  pr_failed: "GitHub CLI 작업을 완료하지 못했습니다.",
+
   hunk_stale: "파일이 바뀌었습니다. 변경 덩어리를 다시 불러와 주세요.",
   hunk_selection_invalid: "선택한 변경 덩어리를 확인해 주세요.",
   hunk_unsupported: "이 파일은 파일 단위로만 처리할 수 있습니다.",

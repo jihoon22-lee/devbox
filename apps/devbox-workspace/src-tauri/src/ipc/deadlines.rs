@@ -9,6 +9,9 @@ pub fn budget(component: &str, method: &str) -> u64 {
                 | "repo_file_hunks"
                 | "repo_last_commit"
                 | "repo_blame"
+                | "repo_conflicts"
+                | "repo_conflict_versions"
+                | "repo_conflict_resolve"
         )
     {
         return DEFAULT_BUDGET_MS;

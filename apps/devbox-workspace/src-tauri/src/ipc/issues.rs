@@ -1,5 +1,16 @@
 //! Fixed native issues only; method names and raw OS/remote text are never issues.
 product_ipc::issue_codes! { pub enum WorkspaceIssue {
+ConflictPathInvalid="conflict_path_invalid",
+ConflictChoiceInvalid="conflict_choice_invalid",
+ConflictMarkersLeft="conflict_markers_left",
+ConflictUnresolved="conflict_unresolved",
+ConflictNoOperation="conflict_no_operation",
+ConflictOperationFailed="conflict_operation_failed",
+PrBranchNotPushed="pr_branch_not_pushed",
+PrExists="pr_exists",
+PrInputInvalid="pr_input_invalid",
+PrFailed="pr_failed",
+
 HunkStale="hunk_stale",
 HunkSelectionInvalid="hunk_selection_invalid",
 HunkUnsupported="hunk_unsupported",
