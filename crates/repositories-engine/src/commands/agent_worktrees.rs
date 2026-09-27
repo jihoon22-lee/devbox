@@ -426,7 +426,11 @@ mod tests {
         let main = root.join("devbox");
         fs::create_dir(&main).unwrap();
         git(&main, &["init", "--quiet", "-b", "main"]);
-        for (key, value) in [("user.email", "hub@example.test"), ("user.name", "Hub")] {
+        for (key, value) in [
+            ("user.email", "hub@example.test"),
+            ("user.name", "Hub"),
+            ("core.autocrlf", "false"),
+        ] {
             git(&main, &["config", key, value]);
         }
         fs::write(main.join("shared.txt"), "base\n").unwrap();
