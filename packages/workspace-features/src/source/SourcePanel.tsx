@@ -116,7 +116,7 @@ export default function SourcePanel({
     <div className="workspace-native-source-panels">
       {conflicts && (conflicts.files.length > 0 || conflicts.operation) && (
         <ConflictPanel
-          key={repository}
+          key={`conflicts:${repository}`}
           repo={repo}
           state={conflicts}
           onBusyChange={callbacks.conflicts}
@@ -166,7 +166,7 @@ export default function SourcePanel({
         onBlame={showBlame}
       />
       <BlamePanel
-        key={repository}
+        key={`blame:${repository}`}
         repo={repo}
         target={blame?.repository === repository ? blame : null}
         onBusyChange={callbacks.blame}
@@ -182,7 +182,12 @@ export default function SourcePanel({
         onOpenFile={onOpenFile}
       />
       <RemoteSyncPanel repo={repo} onBusyChange={callbacks.remote} />
-      <PullRequestPanel key={repository} repo={repo} onBusyChange={callbacks.pr} onDirtyChange={dirtyCallbacks.pr} />
+      <PullRequestPanel
+        key={`pr:${repository}`}
+        repo={repo}
+        onBusyChange={callbacks.pr}
+        onDirtyChange={dirtyCallbacks.pr}
+      />
       <CleanupPanel key={cleanupRevision} repo={repo} onBusyChange={callbacks.cleanup} />
     </div>
   );

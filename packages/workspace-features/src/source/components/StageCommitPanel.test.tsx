@@ -407,7 +407,9 @@ it("connects modified file rows to hunks and blame and excludes new files", asyn
   await waitFor(() => expect(repoFileHunks).toHaveBeenCalledWith(repo.path, unstaged.path, false));
   await screen.findByText("표시할 변경 덩어리가 없습니다.");
   expect(screen.getByText("이 파일은 파일 단위로만 처리할 수 있습니다.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: `${unstaged.path} 작성 이력` }));
+  const blame = screen.getByRole("button", { name: `${unstaged.path} 작성 이력` });
+  await waitFor(() => expect(blame).not.toBeDisabled());
+  fireEvent.click(blame);
   expect(onBlame).toHaveBeenCalledWith(unstaged.path);
 });
 

@@ -65,3 +65,20 @@ it("loads conflicts on entry and refreshes after resolving without dropping anot
   await waitFor(() => expect(screen.getByRole("button", { name: "계속" })).not.toBeDisabled());
   expect(dirty).toHaveBeenLastCalledWith(true);
 });
+
+it("gives independently mounted panels distinct repository identities", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    render(
+      <SourcePanel
+        repo={{ path: "/repo", canonicalKey: "posix:/repo", hasWorktrees: false }}
+        onBusyChange={vi.fn()}
+        onDirtyChange={vi.fn()}
+      />,
+    );
+    await screen.findByRole("button", { name: "a.txt" });
+    expect(errors.mock.calls.filter((args) => String(args[0]).includes("same key"))).toEqual([]);
+  } finally {
+    errors.mockRestore();
+  }
+});
