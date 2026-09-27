@@ -58,3 +58,51 @@ export function projectInitializationDiagnostics(text) {
   }
   return rows.slice(-32);
 }
+
+const connectionCodes = new Set([
+  "connect_attempt",
+  "connect_timeout",
+  "connect_missing",
+  "connect_unavailable",
+  "connect_rejected",
+  "launch_attempt",
+  "launch_failed",
+  "hello_failed",
+  "welcome_timeout",
+  "welcome_read_failed",
+  "welcome_rejected",
+  "welcome_mismatch",
+  "peer_invalid",
+  "connected",
+  "scope_invalid",
+  "pipe_busy",
+  "pipe_denied",
+  "pipe_disconnected",
+  "pipe_other",
+  "peer_capture_failed",
+  "peer_verification_failed",
+  "agent_spawn_failed",
+  "agent_exited",
+  "agent_exit_failed",
+  "agent_pipe_unavailable",
+]);
+export function projectConnectionDiagnostics(text) {
+  const rows = [];
+  for (const line of text.slice(-65536).split("\n")) {
+    try {
+      const row = JSON.parse(line);
+      if (
+        !["workspace", "api-studio", "knowledge", "control-center", "mcp", "agent"].includes(row.product) ||
+        row.component !== "agent-connection" ||
+        !["connect", "start_listener"].includes(row.method) ||
+        !connectionCodes.has(row.code) ||
+        !["succeeded", "failed"].includes(row.outcome) ||
+        !Number.isSafeInteger(row.tsMs) ||
+        row.tsMs < 0
+      )
+        continue;
+      rows.push({ tsMs: row.tsMs, product: row.product, code: row.code, outcome: row.outcome });
+    } catch {}
+  }
+  return rows.slice(-96);
+}

@@ -1,4 +1,4 @@
-import { projectInitializationDiagnostics } from "./agent-runtime-diagnostics.mjs";
+import { projectInitializationDiagnostics, projectConnectionDiagnostics } from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
@@ -54,6 +54,49 @@ const value = (result) => {
   assert.equal(result.operation.outcome.state, "succeeded", JSON.stringify(result));
   return result.value;
 };
+function captureDiagnostics() {
+  // Only the hosted fixture's verified installation namespace is inspected.
+  // Keep fixed metadata, never complete logs or arbitrary fields.
+  try {
+    const registration = JSON.parse(readFileSync(path.join(root, "suite-registration.json"), "utf8"));
+    assert.match(registration.installationKey, /^[0-9a-f]{64}$/);
+    for (const [namespace, field, project] of [
+      ["workspace", "runtimeDiagnostics", projectInitializationDiagnostics],
+      ["agent", "agentConnectionDiagnostics", projectConnectionDiagnostics],
+    ]) {
+      try {
+        const logs = path.join(
+          process.env.LOCALAPPDATA,
+          `com.devbox.v08.${namespace}.i${registration.installationKey}`,
+          "logs",
+        );
+        assert.ok(lstatSync(logs).isDirectory() && !lstatSync(logs).isSymbolicLink());
+        evidence[field] = [];
+        for (const name of readdirSync(logs)
+          .filter((name) => /^operations-\d{4}-\d{2}-\d{2}\.jsonl$/.test(name))
+          .sort()
+          .slice(-2)) {
+          const file = path.join(logs, name),
+            info = lstatSync(file);
+          if (!info.isFile() || info.isSymbolicLink()) continue;
+          const buffer = Buffer.alloc(Math.min(info.size, 65536)),
+            fd = openSync(file, "r");
+          try {
+            const bytes = readSync(fd, buffer, 0, buffer.length, Math.max(0, info.size - buffer.length));
+            evidence[field].push(...project(buffer.subarray(0, bytes).toString("utf8")));
+          } finally {
+            closeSync(fd);
+          }
+        }
+        evidence[field] = evidence[field].slice(namespace === "agent" ? -96 : -32);
+      } catch {
+        evidence[`${field}Unavailable`] = true;
+      }
+    }
+  } catch {
+    evidence.runtimeDiagnosticsUnavailable = true;
+  }
+}
 async function call(item, command, body, route) {
   return item.cdp.evaluate(
     `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){throw new Error(JSON.stringify(problem).slice(0,2000));}})()`,
@@ -435,6 +478,7 @@ try {
   evidence.result = "passed";
 } catch (error) {
   evidence.failure = String(error).slice(0, 3000);
+  captureDiagnostics();
   process.exitCode = 1;
 } finally {
   for (const item of live.reverse()) {
@@ -469,40 +513,7 @@ try {
         !allWindowsProcesses().some((row) => row.Pid === item.identity.Pid && row.Created === item.identity.Created),
     });
   }
-  // Only the hosted fixture's verified installation namespace is inspected.
-  // Keep fixed metadata, never complete logs or arbitrary fields.
-  try {
-    const registration = JSON.parse(readFileSync(path.join(root, "suite-registration.json"), "utf8"));
-    assert.match(registration.installationKey, /^[0-9a-f]{64}$/);
-    const logs = path.join(
-      process.env.LOCALAPPDATA,
-      `com.devbox.v08.workspace.i${registration.installationKey}`,
-      "logs",
-    );
-    assert.ok(lstatSync(logs).isDirectory() && !lstatSync(logs).isSymbolicLink());
-    evidence.runtimeDiagnostics = [];
-    for (const name of readdirSync(logs)
-      .filter((name) => /^operations-\d{4}-\d{2}-\d{2}\.jsonl$/.test(name))
-      .sort()
-      .slice(-2)) {
-      const file = path.join(logs, name);
-      const info = lstatSync(file);
-      if (!info.isFile() || info.isSymbolicLink()) continue;
-      const buffer = Buffer.alloc(Math.min(info.size, 65536));
-      const fd = openSync(file, "r");
-      try {
-        const bytes = readSync(fd, buffer, 0, buffer.length, Math.max(0, info.size - buffer.length));
-        evidence.runtimeDiagnostics.push(
-          ...projectInitializationDiagnostics(buffer.subarray(0, bytes).toString("utf8")),
-        );
-      } finally {
-        closeSync(fd);
-      }
-    }
-    evidence.runtimeDiagnostics = evidence.runtimeDiagnostics.slice(-32);
-  } catch {
-    evidence.runtimeDiagnosticsUnavailable = true;
-  }
+  if (!evidence.agentConnectionDiagnostics) captureDiagnostics();
   mkdirSync("product-foundation-evidence", { recursive: true });
   writeFileSync(
     `product-foundation-evidence/suite-delivery-${mode}-${Date.now()}.json`,
