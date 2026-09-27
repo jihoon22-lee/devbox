@@ -1,4 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
+mod conflicts;
+pub use conflicts::*;
 mod blame;
 pub use blame::*;
 mod last_commit;
@@ -217,7 +219,7 @@ fn walk(
     }
 }
 
-fn host_path_spelling(path: &Path, error: &'static str) -> Result<String, String> {
+pub(crate) fn host_path_spelling(path: &Path, error: &'static str) -> Result<String, String> {
     let value = path.to_str().ok_or_else(|| error.to_string())?;
     let folded = value.to_ascii_lowercase();
     if folded.starts_with(r"\\?\unc\") {

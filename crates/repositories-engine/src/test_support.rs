@@ -36,3 +36,51 @@ fn initializes_a_clean_fixture_with_a_commit() {
         "main"
     );
 }
+
+pub(crate) fn repo_with_agent_branch(
+    file_on_agent: &str,
+    file_on_main: Option<&str>,
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    // Use the same canonical DOS spelling as native Registry admission;
+    // Windows temporary directories may otherwise use an 8.3 alias.
+    let root = std::path::PathBuf::from(
+        crate::commands::host_path_spelling(
+            &tmp.path().canonicalize().unwrap(),
+            "worktree_not_agent",
+        )
+        .unwrap(),
+    );
+    let main = root.join("devbox");
+    fs::create_dir(&main).unwrap();
+    git(&main, &["init", "--quiet", "-b", "main"]);
+    for (key, value) in [
+        ("user.email", "hub@example.test"),
+        ("user.name", "Hub"),
+        ("core.autocrlf", "false"),
+    ] {
+        git(&main, &["config", key, value]);
+    }
+    fs::write(main.join("shared.txt"), "base\n").unwrap();
+    git(&main, &["add", "shared.txt"]);
+    git(&main, &["commit", "--quiet", "-m", "base"]);
+    let agent = root.join("devbox-fix");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "agent/fix",
+            agent.to_str().unwrap(),
+        ],
+    );
+    fs::write(agent.join("shared.txt"), file_on_agent).unwrap();
+    git(&agent, &["commit", "--quiet", "-am", "agent change"]);
+    if let Some(content) = file_on_main {
+        fs::write(main.join("shared.txt"), content).unwrap();
+        git(&main, &["commit", "--quiet", "-am", "main change"]);
+    }
+    (tmp, main, agent)
+}
