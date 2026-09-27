@@ -119,7 +119,7 @@ fn stamp(value: &ObjectStamp) -> bool {
                     .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
         })
 }
-fn root_key(target: &ExecutionTarget, root: &str) -> Result<String> {
+pub(crate) fn root_key(target: &ExecutionTarget, root: &str) -> Result<String> {
     let parsed = devbox_filesystem::parse_safe_project_path(root).ok_or("invalid_root")?;
     match target {
         ExecutionTarget::Windows

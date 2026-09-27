@@ -111,6 +111,16 @@ impl NativeTaskSources for Sources {
         }
     }
 }
+fn same_source_root(
+    target: &product_contract::ExecutionTarget,
+    registered: &str,
+    root: &str,
+) -> bool {
+    let Ok(registered) = crate::core::registry::root_key(target, registered) else {
+        return false;
+    };
+    crate::core::registry::root_key(target, root).is_ok_and(|root| root == registered)
+}
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -157,12 +167,24 @@ impl Sources {
         root: &str,
         target: &product_contract::ExecutionTarget,
     ) -> Result<(), Error> {
+        // Resolve native DOS short names and canonical spelling exactly as
+        // registration does. A lexical mismatch must not turn a registered
+        // source into an independently approved Runtime source.
+        #[cfg(windows)]
+        let observed = if matches!(target, product_contract::ExecutionTarget::Windows) {
+            Some(super::project_probe::probe_windows(root).map_err(|_| Error::SourceChanged)?)
+        } else {
+            None
+        };
+        #[cfg(windows)]
+        let root = observed
+            .as_ref()
+            .map_or(root, |lease| lease.binding().root.as_str());
         let projects = self.host.projects().map_err(|_| Error::SourceUnavailable)?;
         let registry = projects.snapshot().map_err(|_| Error::SourceUnavailable)?;
-        let mut matching = registry
-            .worktrees
-            .iter()
-            .filter(|tree| tree.binding.root == root && &tree.binding.target == target);
+        let mut matching = registry.worktrees.iter().filter(|tree| {
+            &tree.binding.target == target && same_source_root(target, &tree.binding.root, root)
+        });
         // Independently imported Runtime sources retain their explicit source
         // approval; registered project sources must also retain definitions trust.
         let Some(tree) = matching.next() else {
@@ -329,4 +351,34 @@ pub fn diagnostic_matches(
 ) -> bool {
     runtime_engine::component::diagnostic_scope(app, run)
         .is_ok_and(|(root, identity)| matches_context(host, context, &root, &identity))
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn project_source_matching_uses_target_path_identity() {
+        let windows = product_contract::ExecutionTarget::Windows;
+        let wsl = product_contract::ExecutionTarget::Wsl {
+            distro_id: "fixture".into(),
+        };
+        assert!(same_source_root(
+            &windows,
+            r"C:\Work\Équipe",
+            "c:/work/équipe/"
+        ));
+        assert!(same_source_root(
+            &windows,
+            r"\\server\share\Work",
+            "//SERVER/share/work"
+        ));
+        assert!(!same_source_root(
+            &windows,
+            r"C:\Work\App",
+            r"C:\Work\App-other"
+        ));
+        assert!(same_source_root(&wsl, "/work/App", "/work/App/"));
+        assert!(!same_source_root(&wsl, "/work/App", "/work/app"));
+        assert!(!same_source_root(&windows, "invalid", "invalid"));
+    }
 }
