@@ -1,4 +1,8 @@
-import { projectInitializationDiagnostics, projectConnectionDiagnostics } from "./agent-runtime-diagnostics.mjs";
+import {
+  projectInitializationDiagnostics,
+  projectConnectionDiagnostics,
+  projectHandoffDiagnostics,
+} from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
@@ -63,6 +67,8 @@ function captureDiagnostics() {
     for (const [namespace, field, project] of [
       ["workspace", "runtimeDiagnostics", projectInitializationDiagnostics],
       ["agent", "agentConnectionDiagnostics", projectConnectionDiagnostics],
+      ["workspace", "workspaceHandoffDiagnostics", projectHandoffDiagnostics],
+      ["apistudio", "apiHandoffDiagnostics", projectHandoffDiagnostics],
     ]) {
       try {
         const logs = path.join(

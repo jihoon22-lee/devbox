@@ -106,3 +106,47 @@ export function projectConnectionDiagnostics(text) {
   }
   return rows.slice(-96);
 }
+
+const handoffCodes = new Set([
+  "suite_review_required",
+  "suite_busy",
+  "suite_product_invalid",
+  "suite_activation_timeout",
+  "suite_activation_pending",
+  "suite_activation_unavailable",
+  "suite_window_unavailable",
+  "suite_route_owner_mismatch",
+  "peer_provider_unavailable",
+  "peer_owner_rejected",
+  "peer_deadline_expired",
+  "peer_read_failed",
+  "peer_handshake_denied",
+  "peer_product_mismatch",
+  "command_metadata_invalid",
+  "command_target_invalid",
+  "command_request_stale",
+  "navigation_pending_limit",
+  "navigation_receipt_limit",
+  "navigation_operation_conflict",
+  "handoff_unavailable",
+]);
+export function projectHandoffDiagnostics(text) {
+  const rows = [];
+  for (const line of text.slice(-65536).split("\n")) {
+    try {
+      const row = JSON.parse(line);
+      if (
+        !["workspace", "api-studio"].includes(row.product) ||
+        row.component !== "suite-handoff" ||
+        !["send_webhook_log", "receive_webhook_log"].includes(row.method) ||
+        row.outcome !== "failed" ||
+        !handoffCodes.has(row.code) ||
+        !Number.isSafeInteger(row.tsMs) ||
+        row.tsMs < 0
+      )
+        continue;
+      rows.push({ tsMs: row.tsMs, product: row.product, method: row.method, code: row.code });
+    } catch {}
+  }
+  return rows.slice(-32);
+}
