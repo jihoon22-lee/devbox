@@ -1,3 +1,4 @@
+import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
@@ -230,6 +231,17 @@ try {
           row.Created === identity.Created &&
           path.resolve(row.Path).toLowerCase() === path.resolve(identity.Path).toLowerCase(),
       );
+    const crashOwnedAgent = async () => {
+      const identity = agentIdentity();
+      const observed = {
+        get exitCode() {
+          return sameProcess(identity) ? null : 0;
+        },
+        signalCode: null,
+      };
+      const result = await stopOwnedProcess(identity, agentImage, observed);
+      assert.equal(result.forced, true, "acceptance must prove abrupt agent loss");
+    };
     const result = await exerciseAgentRuntime({
       workspace: apps.workspace,
       directory: fixture,
@@ -245,24 +257,35 @@ try {
         apps.workspace = await start(manifest.members.find((member) => member.product === "workspace"));
         return apps.workspace;
       },
-      crashAgent: async (identity) => {
-        // stopOwnedProcess rechecks path, exact creation time and PID in the OS.
-        // This fixture-owned windowless process requires force; no name search
-        // or production user process can authorize this simulated crash.
-        const observed = {
-          get exitCode() {
-            return sameProcess(identity) ? null : 0;
-          },
-          signalCode: null,
-        };
-        const result = await stopOwnedProcess(identity, agentImage, observed);
-        assert.equal(result.forced, true, "acceptance must prove abrupt agent loss");
-      },
+      crashAgent: crashOwnedAgent,
       report: (state) => {
         evidence.checks.agentRuntime = { ...state };
       },
     });
     evidence.checks.agentRuntime = result.evidence;
+    const webhookResult = await exerciseAgentWebhooks({
+      api: apps["api-studio"],
+      call: async (item, method, args) =>
+        value(await call(item, "plugin:api-studio|webhooks", { method, args }, "webhooks")),
+      closeApi: async (item) => {
+        await call(item, "plugin:api-studio|webhooks", { method: "quit_product", args: {} }, "webhooks").catch(
+          () => {},
+        );
+        const deadline = Date.now() + 30000;
+        while (sameProcess(item.identity) && Date.now() < deadline) await delay(100);
+        assert.equal(sameProcess(item.identity), false, "API Studio must finish its selected close policy");
+        item.cdp.close();
+      },
+      restartApi: async () => {
+        apps["api-studio"] = await start(manifest.members.find((member) => member.product === "api-studio"));
+        return apps["api-studio"];
+      },
+      crashAgent: crashOwnedAgent,
+      report: (state) => {
+        evidence.checks.agentWebhooks = { ...state };
+      },
+    });
+    evidence.checks.agentWebhooks = webhookResult.evidence;
   }
   evidence.result = "passed";
 } catch (error) {

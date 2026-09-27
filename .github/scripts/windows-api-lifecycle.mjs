@@ -183,7 +183,8 @@ try {
     );
     return [identity, ...ownedDescendantsFromSnapshot(identity, current)];
   }, performanceConfig.idleSampleMs);
-  assert.equal((await success(ui, "lifecycle_status")).policy, "stop-on-close");
+  assert.equal((await success(ui, "lifecycle_status")).policy, "keep-listening");
+  assert.equal((await success(ui, "lifecycle_status")).backgroundAvailable, false);
   const servicePort = await unusedPort();
   await success(ui, "start_server", { bind: "127.0.0.1", port: servicePort, allowLan: false });
   await until(() => responding(servicePort), "temporary listener did not respond");
@@ -218,15 +219,10 @@ try {
   assert.equal(await responding(servicePort), true);
   const temporaryPort = await unusedPort();
   await success(ui, "start_server", { bind: "127.0.0.1", port: temporaryPort, allowLan: false });
-  assert.equal((await success(ui, "lifecycle_status")).trayAvailable, true);
+  assert.equal((await success(ui, "lifecycle_status")).trayAvailable, false);
   await success(ui, "set_close_policy", { policy: "keep-listening" });
-  progress("keep-hidden");
-  closeWindow(ui.process);
-  await until(
-    async () => (await success(ui, "lifecycle_status")).mainWindowVisible === false,
-    "keep-listening did not hide the product window",
-  );
-  assert.equal(ui.process.exitCode, null);
+  assert.equal((await command(ui, "hide_main_window")).operation.outcome.state, "failed");
+  progress("warm-existing-window");
   assert.equal(await responding(temporaryPort), true);
   assert.equal(await responding(servicePort), true);
   const warmStarted = performance.now();
@@ -235,7 +231,7 @@ try {
   assert.equal(second.exitCode, 0);
   await until(
     async () => (await success(ui, "lifecycle_status")).mainWindowVisible === true,
-    "single-instance relaunch did not restore hidden product window",
+    "single-instance relaunch did not show existing product window",
   );
   evidence.performance.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
   assert.equal(ui.process.exitCode, null);
@@ -248,7 +244,7 @@ try {
   );
   assert.equal((await success(ui, "server_status")).running, true);
   progress("full-quit");
-  // Full quit overrides keep-listening. The process may exit before CDP returns
+  // Portable UI owns its listener for either policy. The process may exit before CDP returns
   // its final response, so require normal native exit and released sockets too.
   const quitting = command(ui, "quit_product").catch(() => null);
   await exited(ui.process);
@@ -264,9 +260,9 @@ try {
   await until(async () => !(await responding(servicePort)), "service process exit retained its socket");
   Object.assign(evidence, {
     defaultCloseStops: true,
-    explicitHiddenListening: true,
+    portableCloseOwnsListener: true,
     explicitFullQuit: true,
-    trayAvailable: true,
+    trayAvailable: false,
     relaunchRestoresWindow: true,
     inactiveExport: true,
     serviceHasNoInteractiveWindow: true,
