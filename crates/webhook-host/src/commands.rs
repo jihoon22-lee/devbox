@@ -51,6 +51,9 @@ pub const LOG_LENS_TARGET_UNAVAILABLE_ERROR: &str =
     "Log Lens를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다";
 
 pub struct ServerState {
+    pub(crate) data_root: Option<PathBuf>,
+    settings_lock: Mutex<()>,
+    resume_error: Mutex<Option<crate::api::WebhookIssue>>,
     #[cfg(test)]
     listener_waits: AtomicU64,
     /// Serializes listener lifecycle transitions. Without this guard two IPC
@@ -90,7 +93,13 @@ pub struct ServerState {
 }
 
 pub fn server_state() -> Arc<ServerState> {
+    server_state_at(None)
+}
+pub(crate) fn server_state_at(data_root: Option<PathBuf>) -> Arc<ServerState> {
     Arc::new(ServerState {
+        data_root,
+        settings_lock: Mutex::new(()),
+        resume_error: Mutex::new(None),
         #[cfg(test)]
         listener_waits: AtomicU64::new(0),
         lifecycle_lock: Mutex::new(()),
@@ -117,6 +126,9 @@ pub fn server_state() -> Arc<ServerState> {
 pub struct ServerStatus {
     pub running: bool,
     pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub issue: Option<crate::api::WebhookIssue>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -141,6 +153,11 @@ fn current_server_status(state: &Arc<ServerState>) -> ServerStatus {
         .and_then(|guard| guard.as_ref().map(|flag| flag.load(Ordering::Acquire)))
         .unwrap_or(false);
     ServerStatus {
+        issue: state
+            .resume_error
+            .lock()
+            .ok()
+            .and_then(|error| error.clone()),
         running,
         address: if running {
             state
@@ -161,7 +178,101 @@ pub fn start_server(
     port: u16,
     allow_lan: Option<bool>,
 ) -> Result<ServerStatus, String> {
-    start_server_inner(state.inner(), bind, port, allow_lan)
+    start_configured(state.inner(), bind, port, allow_lan)
+}
+
+fn start_configured(
+    state: &Arc<ServerState>,
+    bind: Option<String>,
+    port: u16,
+    allow_lan: Option<bool>,
+) -> Result<ServerStatus, String> {
+    let _settings = state
+        .settings_lock
+        .lock()
+        .map_err(|_| crate::listener_settings::SETTINGS_ERROR)?;
+    if current_server_status(state).running {
+        return Ok(current_server_status(state));
+    }
+    let bind = bind
+        .filter(|value| !value.eq_ignore_ascii_case("localhost"))
+        .unwrap_or_else(|| DEFAULT_BIND.into());
+    start_server_inner(state, Some(bind.clone()), port, allow_lan)?;
+    if let Some(root) = &state.data_root {
+        let settings = crate::listener_settings::ListenerSettings {
+            enabled: true,
+            port,
+            allow_lan: allow_lan.unwrap_or(false),
+            bind,
+        };
+        if let Err(error) = crate::listener_settings::save(root, &settings) {
+            let _ = stop_server_inner(state);
+            *state
+                .resume_error
+                .lock()
+                .map_err(|_| SERVER_INTERNAL_ERROR)? =
+                Some(crate::api::WebhookIssue::ListenerSettingsUnavailable);
+            return Err(error);
+        }
+    }
+    *state
+        .resume_error
+        .lock()
+        .map_err(|_| SERVER_INTERNAL_ERROR)? = None;
+    Ok(current_server_status(state))
+}
+fn stop_configured(state: &Arc<ServerState>) -> Result<ServerStatus, String> {
+    state.replay_cancel.store(true, Ordering::Release);
+    let _settings = state
+        .settings_lock
+        .lock()
+        .map_err(|_| crate::listener_settings::SETTINGS_ERROR)?;
+    if let Some(root) = &state.data_root {
+        if let Some(mut settings) = crate::listener_settings::load(root)? {
+            settings.enabled = false;
+            crate::listener_settings::save(root, &settings)?;
+        }
+    }
+    let status = stop_server_inner(state)?;
+    *state
+        .resume_error
+        .lock()
+        .map_err(|_| SERVER_INTERNAL_ERROR)? = None;
+    Ok(ServerStatus {
+        issue: None,
+        ..status
+    })
+}
+pub(crate) fn resume_listener(state: &Arc<ServerState>) -> Result<(), String> {
+    let _settings = state
+        .settings_lock
+        .lock()
+        .map_err(|_| crate::listener_settings::SETTINGS_ERROR)?;
+    let result = (|| {
+        let Some(root) = &state.data_root else {
+            return Ok(());
+        };
+        let Some(settings) = crate::listener_settings::load(root)? else {
+            return Ok(());
+        };
+        if settings.enabled {
+            start_server_inner(
+                state,
+                Some(settings.bind),
+                settings.port,
+                Some(settings.allow_lan),
+            )?;
+        }
+        Ok(())
+    })();
+    *state
+        .resume_error
+        .lock()
+        .map_err(|_| SERVER_INTERNAL_ERROR)? = result
+        .as_ref()
+        .err()
+        .map(|_| crate::api::WebhookIssue::ListenerResumeFailed);
+    result
 }
 
 pub(crate) fn start_server_inner(
@@ -179,6 +290,7 @@ pub(crate) fn start_server_inner(
         let mut running = state.running.lock().map_err(|_| BIND_ERROR.to_string())?;
         match running.as_ref() {
             Some(flag) if flag.load(Ordering::Acquire) => {
+                drop(running);
                 return Ok(current_server_status(state));
             }
             Some(_) => running.take(),
@@ -258,7 +370,7 @@ pub(crate) fn start_server_inner(
 }
 
 pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerStatus, String> {
-    stop_server_inner(state.inner())
+    stop_configured(state.inner())
 }
 
 pub(crate) fn stop_server_inner(state: &Arc<ServerState>) -> Result<ServerStatus, String> {
@@ -1321,6 +1433,58 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[test]
+    fn listener_intent_survives_owner_shutdown_but_explicit_stop_disables_resume() {
+        let root = tempfile::tempdir().unwrap();
+        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+        let first = server_state_at(Some(root.path().into()));
+        start_configured(&first, None, port, None).unwrap();
+        assert!(
+            crate::listener_settings::load(root.path())
+                .unwrap()
+                .unwrap()
+                .enabled
+        );
+        stop_server_inner(&first).unwrap();
+        let second = server_state_at(Some(root.path().into()));
+        resume_listener(&second).unwrap();
+        resume_listener(&second).unwrap();
+        assert!(current_server_status(&second).running);
+        stop_configured(&second).unwrap();
+        let third = server_state_at(Some(root.path().into()));
+        resume_listener(&third).unwrap();
+        assert!(!current_server_status(&third).running);
+    }
+    #[test]
+    fn failed_resume_preserves_intent_and_exposes_only_a_fixed_issue() {
+        let root = tempfile::tempdir().unwrap();
+        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+        let settings = crate::listener_settings::ListenerSettings {
+            enabled: true,
+            port: reservation.local_addr().unwrap().port(),
+            allow_lan: false,
+            bind: DEFAULT_BIND.into(),
+        };
+        crate::listener_settings::save(root.path(), &settings).unwrap();
+        let state = server_state_at(Some(root.path().into()));
+        assert!(resume_listener(&state).is_err());
+        assert_eq!(
+            current_server_status(&state).issue,
+            Some(crate::api::WebhookIssue::ListenerResumeFailed)
+        );
+        assert_eq!(
+            crate::listener_settings::load(root.path()).unwrap(),
+            Some(settings)
+        );
+        drop(reservation);
+        resume_listener(&state).unwrap();
+        assert!(current_server_status(&state).running);
+        assert!(current_server_status(&state).issue.is_none());
+        stop_configured(&state).unwrap();
+    }
 
     fn spawn_test_listener() -> (
         Arc<ServerState>,

@@ -17,13 +17,25 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .app_local_data_dir()
         .map_err(|_| "component_storage_unavailable")?
         .join("webhooks");
-    if !app.manage(ComponentRoot(root)) {
+    initialize_at(app, root)
+}
+
+pub fn initialize_at(app: &tauri::AppHandle, root: PathBuf) -> Result<(), String> {
+    if !app.manage(ComponentRoot(root.clone())) {
         return Err("component_state_conflict".into());
     }
-    if !app.manage(crate::commands::server_state()) {
+    if !app.manage(crate::commands::server_state_at(Some(root))) {
         return Err("component_state_conflict".into());
     }
     Ok(())
+}
+
+/// Startup errors remain visible in server_status; intent is never cleared.
+pub fn resume_listener(app: &tauri::AppHandle) -> Result<(), String> {
+    crate::commands::resume_listener(
+        app.state::<std::sync::Arc<crate::commands::ServerState>>()
+            .inner(),
+    )
 }
 
 /// Called only by the product's authorized source-owner route.
@@ -40,7 +52,11 @@ pub fn listener_running(app: &tauri::AppHandle) -> bool {
         .is_some_and(|state| crate::commands::server_status(state).running)
 }
 pub fn stop_owned_listener(app: &tauri::AppHandle) -> Result<(), String> {
-    crate::commands::stop_server(app.state()).map(|_| ())
+    crate::commands::stop_server_inner(
+        app.state::<std::sync::Arc<crate::commands::ServerState>>()
+            .inner(),
+    )
+    .map(|_| ())
 }
 /// Native profile runner with no Tauri application, event loop or renderer.
 /// The owning process/Job controls its lifetime, independent of an interactive app.

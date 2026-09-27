@@ -319,6 +319,8 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum WebhookIssue {
+    ListenerSettingsUnavailable = "webhook_listener_settings_unavailable",
+    ListenerResumeFailed = "webhook_listener_resume_failed",
     ComponentArgsInvalid = "component_args_invalid",
     ComponentClosing = "component_closing",
     ComponentResponseInvalid = "component_response_invalid",
