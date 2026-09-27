@@ -3,6 +3,7 @@ export interface ImportedRequest {
   name: string;
   folder: string;
   request: RequestTemplate;
+  requiresSecretReview?: boolean;
 }
 export interface ImportedEnvironment {
   name: string;

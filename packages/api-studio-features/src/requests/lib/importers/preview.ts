@@ -32,6 +32,9 @@ export function toImportPreview(
     version: COLLECTION_VERSION,
     collections: bundle.requests.slice(0, MAX_EXPORTED_COLLECTIONS).map((item) => {
       const request = sanitizeRequestForPersistence(item.request);
+      request.requiresSecretReview ||=
+        item.requiresSecretReview === true ||
+        ("requiresSecretReview" in item.request && item.request.requiresSecretReview === true);
       return {
         id: makeId(),
         name: name(item.name, "untitled"),

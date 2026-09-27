@@ -36,6 +36,9 @@ pub enum ApiCall {
         connection_id: String,
     },
     ReadJsonFile {},
+    ReadImportFiles {
+        format: crate::commands::import_files::ImportFileFormat,
+    },
     SaveJsonFile {
         content: String,
         default_name: String,
@@ -189,6 +192,7 @@ pub const API_METHODS: &[&str] = &[
     "cancel_mcp_stdio",
     "disconnect_mcp_stdio",
     "read_json_file",
+    "read_import_files",
     "save_json_file",
     "seal_secret",
     "pick_grpc_ca",
@@ -245,6 +249,7 @@ impl ApiCall {
             Self::CancelMcpStdio { .. } => "cancel_mcp_stdio",
             Self::DisconnectMcpStdio { .. } => "disconnect_mcp_stdio",
             Self::ReadJsonFile { .. } => "read_json_file",
+            Self::ReadImportFiles { .. } => "read_import_files",
             Self::SaveJsonFile { .. } => "save_json_file",
             Self::SealSecret { .. } => "seal_secret",
             Self::PickGrpcCa { .. } => "pick_grpc_ca",
@@ -374,6 +379,12 @@ pub async fn dispatch(
         ApiCall::ReadJsonFile {} => {
             use crate::commands::transfer::*;
             let value = read_json_file(component_app.clone()).await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::ReadImportFiles { format } => {
+            let value =
+                crate::commands::import_files::read_import_files(component_app.clone(), format)
+                    .await?;
             serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
         }
         ApiCall::SaveJsonFile {
@@ -800,6 +811,10 @@ pub fn result_types(
         ("cancel_mcp_stdio", export.register::<bool>()?),
         ("disconnect_mcp_stdio", export.register::<()>()?),
         ("read_json_file", export.register::<Option<String>>()?),
+        (
+            "read_import_files",
+            export.register::<Option<Vec<crate::commands::import_files::ImportFile>>>()?,
+        ),
         ("save_json_file", export.register::<bool>()?),
         ("seal_secret", export.register::<String>()?),
         (
@@ -902,6 +917,8 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum ApiIssue {
+    ImportFileInvalid = "import_file_invalid",
+    ImportFileTooLarge = "import_file_too_large",
     ApiWorkspaceInvalid = "api_workspace_invalid",
     ApiWorkspaceProjectUnavailable = "api_workspace_project_unavailable",
     ApiWorkspaceStale = "api_workspace_stale",
@@ -1165,8 +1182,26 @@ mod tests {
         let mut names = API_METHODS.to_vec();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 52);
+        assert_eq!(names.len(), 53);
         assert_eq!(classify("synthetic remote secret"), "unavailable");
+    }
+    #[test]
+    fn import_file_picker_is_typed_and_keeps_the_normal_lane() {
+        let call: ApiCall = serde_json::from_value(
+            serde_json::json!({"method":"read_import_files","args":{"format":"auto"}}),
+        )
+        .unwrap();
+        assert_eq!(call.method(), "read_import_files");
+        assert_eq!(call.class(), ExecutionClass::Normal);
+        for args in [
+            serde_json::json!({"format":"curl"}),
+            serde_json::json!({"format":"auto","path":"untrusted"}),
+        ] {
+            assert!(serde_json::from_value::<ApiCall>(
+                serde_json::json!({"method":"read_import_files","args":args})
+            )
+            .is_err());
+        }
     }
     #[test]
     fn cancel_and_disconnect_keep_the_control_pool() {

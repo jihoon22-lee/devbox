@@ -7,6 +7,7 @@ import type { GrpcCredentialProjection } from "./GrpcCredentialProjection";
 import type { GrpcInvokeResult } from "./GrpcInvokeResult";
 import type { GrpcNativeSelection } from "./GrpcNativeSelection";
 import type { HandoffResult } from "./HandoffResult";
+import type { ImportFile } from "./ImportFile";
 import type { KnowledgeResultDraft } from "./KnowledgeResultDraft";
 import type { KnowledgeResultSummary } from "./KnowledgeResultSummary";
 import type { McpConnectResult } from "./McpConnectResult";
@@ -34,6 +35,7 @@ export type ApiResults = {
   cancel_mcp_stdio: boolean;
   disconnect_mcp_stdio: null;
   read_json_file: string | null;
+  read_import_files: Array<ImportFile> | null;
   save_json_file: boolean;
   seal_secret: string;
   pick_grpc_ca: GrpcNativeSelection | null;

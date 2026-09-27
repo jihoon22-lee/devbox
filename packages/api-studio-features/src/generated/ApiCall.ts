@@ -2,6 +2,7 @@
 import type { EnvironmentVariable } from "./EnvironmentVariable";
 import type { GrpcConnectProfile } from "./GrpcConnectProfile";
 import type { GrpcExchangeSummary } from "./GrpcExchangeSummary";
+import type { ImportFileFormat } from "./ImportFileFormat";
 import type { McpHttpProfile } from "./McpHttpProfile";
 import type { McpStdioProfile } from "./McpStdioProfile";
 import type { RequestTemplate } from "./RequestTemplate";
@@ -20,6 +21,7 @@ export type ApiCall =
   | { method: "cancel_mcp_stdio"; args: { connectionId: string; requestId: string } }
   | { method: "disconnect_mcp_stdio"; args: { connectionId: string } }
   | { method: "read_json_file"; args: Record<symbol, never> }
+  | { method: "read_import_files"; args: { format: ImportFileFormat } }
   | { method: "save_json_file"; args: { content: string; defaultName: string } }
   | { method: "seal_secret"; args: { value: string } }
   | { method: "pick_grpc_ca"; args: Record<symbol, never> }

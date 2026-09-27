@@ -218,6 +218,19 @@ export async function readJsonFile(): Promise<string | null> {
   return apiCall("read_json_file", {});
 }
 
+export type ImportFileFormat = import("../generated/ImportFileFormat").ImportFileFormat;
+export interface ImportFile {
+  name: string;
+  relativePath: string;
+  text: string;
+}
+/** Native-owned selection; absolute paths never cross this interface. */
+export async function readImportFiles(format: ImportFileFormat): Promise<ImportFile[] | null> {
+  if (!isTauri()) throw new Error("파일 가져오기는 데스크톱 앱에서만 사용할 수 있습니다.");
+  const files = await apiCall("read_import_files", { format });
+  return files?.map((file) => ({ name: file.name, relativePath: file.relative_path, text: file.text })) ?? null;
+}
+
 /** Save an already-sanitized transfer document through a native dialog. */
 export async function saveJsonFile(content: string, defaultName: string): Promise<boolean> {
   if (!isTauri()) throw new Error("JSON 파일 저장은 데스크톱 앱에서 사용할 수 없습니다");
