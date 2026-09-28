@@ -232,3 +232,13 @@ it("opens current-file diff line positions without counting removed lines", asyn
   expect(screen.getByRole("button", { name: "현재 파일 한글 파일.ts 11행 열기" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "현재 파일 한글 파일.ts 12행 열기" })).toBeNull();
 });
+
+it("opens a blame-selected commit without first loading the history", async () => {
+  const onBlame = vi.fn();
+  render(<HistoryDiffPanel repo={repo} focusCommit={{ id: entry.id, sequence: 1 }} onBlame={onBlame} />);
+  await screen.findByRole("article", { name: "커밋 상세" });
+  expect(repoCommitDetailMock).toHaveBeenCalledWith(repo.path, entry.id);
+  expect(repoDiffMock).toHaveBeenCalledWith(repo.path, entry.id);
+  fireEvent.click(screen.getByRole("button", { name: "assets/icon.bin 작성 이력" }));
+  expect(onBlame).toHaveBeenCalledWith("assets/icon.bin", entry.id);
+});

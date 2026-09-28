@@ -7,8 +7,6 @@ import { isOperation, problemCode, problemMessage } from "@devbox/product-shell/
 import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
-export { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
-import { knownIssueMessage, workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
 export async function nativeCall<T>(
   component: string,
   method: string,
@@ -51,6 +49,12 @@ export async function componentCall<T>(
     throw failure("응답을 확인하지 못했습니다.", "invalid_response");
   if (response.operation.outcome.state !== "succeeded") {
     const issue = response.value?.issue ?? "operation_failed";
+    const { knownIssueMessage, workspaceIssueMessage: issueMessage } = await import(
+      "@devbox/workspace-features/issues/shared"
+    ).catch(() => ({
+      knownIssueMessage: (_code: string): string | undefined => undefined,
+      workspaceIssueMessage: (_code: string) => "작업을 완료하지 못했습니다. 다시 시도해 주세요.",
+    }));
     const message = /^(runtime_|process_|logs_owner_)/.test(issue)
       ? await import("./runtimeIssues").then((module) => module.runtimeIssueMessage(issue)).catch(() => undefined)
       : issue.startsWith("wsl_")

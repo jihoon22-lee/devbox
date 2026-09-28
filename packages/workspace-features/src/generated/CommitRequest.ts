@@ -4,4 +4,10 @@
  * Explicit commit request. The command commits the current index only; it
  * never adds all files implicitly and never stores credential material.
  */
-export type CommitRequest = { path: string; message: string; operationId: string; indexRevision: string };
+export type CommitRequest = {
+  amend: boolean;
+  path: string;
+  message: string;
+  operationId: string;
+  indexRevision: string;
+};

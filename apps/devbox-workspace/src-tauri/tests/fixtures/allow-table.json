@@ -1712,6 +1712,31 @@
   [
     "workspace.source",
     "source",
+    "repo_blame"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branch_create"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branch_delete"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branch_rename"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_branches"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_changes"
   ],
   [
@@ -1747,6 +1772,21 @@
   [
     "workspace.source",
     "source",
+    "repo_conflict_resolve"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_conflict_versions"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_conflicts"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_diff"
   ],
   [
@@ -1757,7 +1797,22 @@
   [
     "workspace.source",
     "source",
+    "repo_file_hunks"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_history"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_hunks_apply"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_last_commit"
   ],
   [
     "workspace.source",
@@ -1768,6 +1823,31 @@
     "workspace.source",
     "source",
     "repo_merge"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_operation_abort"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_operation_continue"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_pr_create"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_pr_list"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_pr_status"
   ],
   [
     "workspace.source",
@@ -1802,7 +1882,37 @@
   [
     "workspace.source",
     "source",
+    "repo_stash_apply"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_drop"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_list"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_push"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_stash_store"
+  ],
+  [
+    "workspace.source",
+    "source",
     "repo_status"
+  ],
+  [
+    "workspace.source",
+    "source",
+    "repo_switch"
   ],
   [
     "workspace.source",

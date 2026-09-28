@@ -7,7 +7,8 @@ import type { RegistryResults } from "@devbox/workspace-features/generated/regis
 import { useIncomingReview } from "@devbox/product-shell/incoming";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
-import { nativeCall, issueMessage } from "./native";
+import { nativeCall } from "./native";
+import { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
 const WorkspaceTemplateManager = lazy(() => import("./WorkspaceTemplateManager"));
 const WslProjectForm = lazy(() => import("./WslProjectForm"));
 import { TemplateMetadata, type ImportedTemplate } from "./ProfileMetadata";

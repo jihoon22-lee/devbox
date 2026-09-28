@@ -1436,3 +1436,103 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+.source-branch-panel form,
+.source-stash-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+}
+.source-branch-panel label,
+.source-stash-panel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.source-branch-panel ul,
+.source-stash-panel ul {
+  list-style: none;
+  padding-inline-start: 0;
+}
+.source-branch-panel li,
+.source-stash-panel li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--db-color-border);
+  overflow-wrap: anywhere;
+}
+.source-branch-panel li > span:first-child,
+.source-stash-panel li > span:first-child {
+  margin-inline-end: auto;
+}
+
+.source-file-actions,
+.source-hunks {
+  width: 100%;
+  min-width: 0;
+}
+.source-hunk {
+  padding: 0.75rem;
+  margin-block: 0.5rem;
+  border: 1px solid var(--db-color-border);
+}
+.source-hunk pre,
+.source-blame-lines {
+  overflow: auto;
+  max-height: 32rem;
+}
+.source-hunk-add {
+  color: var(--db-color-accent);
+}
+.source-hunk-remove {
+  color: var(--db-color-danger);
+}
+.source-blame-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.source-blame-lines table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.source-blame-lines td,
+.source-blame-lines th {
+  padding: 0.35rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--db-color-border);
+}
+.source-blame-lines code {
+  white-space: pre;
+}
+
+.source-conflict-versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.source-conflict-panel label,
+.source-pr-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-block: 0.5rem;
+}
+.source-conflict-panel textarea {
+  min-height: 8rem;
+  width: 100%;
+  font-family: var(--db-font-mono);
+}
+.source-conflict-versions label {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.source-pr-panel form {
+  max-width: 48rem;
+}

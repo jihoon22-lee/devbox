@@ -2,7 +2,18 @@ import type { AgentTask } from "@devbox/workspace-features/generated/AgentTask";
 import type { AgentResources } from "@devbox/workspace-features/generated/AgentResources";
 import type { UsageReport } from "@devbox/workspace-features/generated/UsageReport";
 import { formatBytes, formatCpu, formatTokens } from "./format";
-export type RowAction = "usage" | "resume" | "focus" | "reopen" | "review" | "merge" | "cleanup" | "discard" | "forget";
+export type RowAction =
+  | "resolve"
+  | "pr"
+  | "usage"
+  | "resume"
+  | "focus"
+  | "reopen"
+  | "review"
+  | "merge"
+  | "cleanup"
+  | "discard"
+  | "forget";
 export type Confirmation =
   | { taskId: string; kind: "merge"; branch: string }
   | { taskId: string; kind: "discard" | "cleanup" }
@@ -90,6 +101,11 @@ export default function AgentTaskRow({
               ))}
             {task.worktreeId && (
               <>
+                {task.state === "running" && (
+                  <button disabled={busy} onClick={() => act("pr")}>
+                    PR 만들기
+                  </button>
+                )}
                 <button disabled={busy} onClick={() => act("review")}>
                   변경 검토
                 </button>
@@ -125,7 +141,10 @@ export default function AgentTaskRow({
                     <li key={path}>{path}</li>
                   ))}
                 </ul>
-                <p>병합을 되돌렸습니다. 변경 검토에서 충돌을 해결한 뒤 다시 병합해 주세요.</p>
+                <p>병합을 되돌렸습니다. 다시 병합해 충돌을 남기고 Source에서 해결할 수 있습니다.</p>
+                <button disabled={busy} onClick={() => act("resolve")}>
+                  충돌 해결하기
+                </button>
               </>
             ) : (
               <button disabled={busy} onClick={confirm}>

@@ -2,6 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   GIT_MUTATION_ERROR,
+  repoLastCommit,
+  repoFileHunks,
+  repoHunksApply,
   repoChanges,
   repoCommit,
   repoCommitPreview,
@@ -16,6 +19,9 @@ import { createLocalOperationId } from "./StageCommitPanel";
 
 vi.mock("../api", () => ({
   GIT_MUTATION_ERROR: "Git 변경 사항을 적용하지 못했습니다.",
+  repoLastCommit: vi.fn(),
+  repoFileHunks: vi.fn(),
+  repoHunksApply: vi.fn(),
   repoChanges: vi.fn(),
   repoCommit: vi.fn(),
   repoCommitPreview: vi.fn(),
@@ -61,6 +67,9 @@ const repoCommitMock = vi.mocked(repoCommit);
 const repoLocalCancelMock = vi.mocked(repoLocalCancel);
 
 beforeEach(() => {
+  vi.mocked(repoLastCommit)
+    .mockReset()
+    .mockResolvedValue({ id: "a".repeat(40), message: "previous message", pushed: true, merge: false });
   repoChangesMock.mockReset().mockResolvedValue([unstaged]);
   repoStageMock.mockReset().mockResolvedValue(undefined);
   repoUnstageMock.mockReset().mockResolvedValue(undefined);
@@ -352,4 +361,85 @@ describe("StageCommitPanel", () => {
     await Promise.resolve();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+});
+
+it("amends the reviewed HEAD with no staged paths and warns about pushed commits", async () => {
+  repoChangesMock.mockResolvedValue([]);
+  vi.mocked(repoCommitPreview).mockResolvedValue({ revision: "amend-witness", stagedPaths: [] });
+  render(<StageCommitPanel repo={repo} />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "마지막 커밋 수정(amend)" }));
+  await screen.findByText("이미 push한 커밋입니다. 수정하면 다음 push가 거부될 수 있습니다.");
+  expect((screen.getByRole("textbox", { name: "커밋 메시지" }) as HTMLTextAreaElement).value).toBe("previous message");
+  fireEvent.click(screen.getByRole("button", { name: "마지막 커밋 수정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "마지막 커밋 수정 실행" }));
+  await waitFor(() =>
+    expect(repoCommitMock).toHaveBeenCalledWith(
+      repo.path,
+      "previous message",
+      expect.any(String),
+      "amend-witness",
+      true,
+    ),
+  );
+});
+it("keeps a drafted message when amend is selected", async () => {
+  render(<StageCommitPanel repo={repo} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "커밋 메시지" }), { target: { value: "drafted" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "마지막 커밋 수정(amend)" }));
+  await screen.findByText("이미 push한 커밋입니다. 수정하면 다음 push가 거부될 수 있습니다.");
+  expect((screen.getByRole("textbox", { name: "커밋 메시지" }) as HTMLTextAreaElement).value).toBe("drafted");
+});
+
+it("connects modified file rows to hunks and blame and excludes new files", async () => {
+  repoChangesMock.mockResolvedValue([unstaged, { ...unstaged, path: "new.txt", kind: "untracked" }]);
+  vi.mocked(repoFileHunks).mockResolvedValue({
+    file: unstaged.path,
+    staged: false,
+    supported: true,
+    reason: null,
+    revision: "r1",
+    hunks: [],
+  });
+  const onBlame = vi.fn();
+  render(<StageCommitPanel repo={repo} onBlame={onBlame} />);
+  fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "변경 덩어리 보기" }));
+  await waitFor(() => expect(repoFileHunks).toHaveBeenCalledWith(repo.path, unstaged.path, false));
+  await screen.findByText("표시할 변경 덩어리가 없습니다.");
+  expect(screen.getByText("이 파일은 파일 단위로만 처리할 수 있습니다.")).toBeTruthy();
+  const blame = screen.getByRole("button", { name: `${unstaged.path} 작성 이력` });
+  await waitFor(() => expect(blame).not.toBeDisabled());
+  fireEvent.click(blame);
+  expect(onBlame).toHaveBeenCalledWith(unstaged.path);
+});
+
+it("refreshes file staging after a hunk action completes", async () => {
+  repoChangesMock.mockResolvedValueOnce([unstaged]).mockResolvedValue([staged]);
+  vi.mocked(repoHunksApply).mockResolvedValue(undefined);
+  vi.mocked(repoFileHunks).mockResolvedValue({
+    file: unstaged.path,
+    staged: false,
+    supported: true,
+    reason: null,
+    revision: "r1",
+    hunks: [
+      {
+        id: "h1",
+        header: "@@ -1 +1 @@",
+        oldStart: 1,
+        oldCount: 1,
+        newStart: 1,
+        newCount: 1,
+        lines: [{ kind: "add", text: "new" }],
+      },
+    ],
+  });
+  render(<StageCommitPanel repo={repo} />);
+  fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "변경 덩어리 보기" }));
+  const stageHunk = await screen.findByRole("button", { name: "이 덩어리 stage" });
+  await waitFor(() => expect(stageHunk).not.toBeDisabled());
+  fireEvent.click(stageHunk);
+  await waitFor(() => expect(repoChangesMock).toHaveBeenCalledTimes(2));
+  await screen.findByRole("checkbox", { name: `unstage ${staged.path}` });
 });

@@ -150,16 +150,29 @@ export default function AgentHub({
     }
     if (action === "resume") await resume(task);
     if (action === "focus") await call("terminal", "focus_terminal", { id: task.terminalId });
-    if (action === "reopen" || action === "review") {
+    if (action === "reopen" || action === "review" || action === "pr") {
       const context = task.worktreeId ? worktreeContext(task.worktreeId) : null;
       if (!context) throw new AgentFlowError("agent_task_context_mismatch");
       await selectContext(ports, context);
-      if (action === "review") navigate("source");
+      if (action === "review" || action === "pr") navigate("source");
       else {
         const key = `workspace-agent-terminal:${task.id}`;
         await ports.terminal.openAgentTerminal(ports.operationId(key), task.id);
         ports.settle(key);
       }
+    }
+    if (action === "resolve") {
+      const base = await baseOf(task);
+      const result = await call<MergeResult>("source", "repo_merge", {
+        request: {
+          path: base.binding.root,
+          branch: task.branch,
+          operationId: crypto.randomUUID(),
+          keepConflicts: true,
+        },
+      });
+      setConfirmation(result.merged ? { taskId: task.id, kind: "cleanup" } : null);
+      navigate("source");
     }
     if (action === "forget") {
       await agentsCall("forget", { taskId: task.id, revision: task.revision });
@@ -183,7 +196,12 @@ export default function AgentHub({
       if (status.branch.detached || status.branch.current !== confirmation.branch)
         throw new AgentFlowError("agent_context_changed");
       const result = await call<MergeResult>("source", "repo_merge", {
-        request: { path: base.binding.root, branch: task.branch, operationId: crypto.randomUUID() },
+        request: {
+          path: base.binding.root,
+          branch: task.branch,
+          operationId: crypto.randomUUID(),
+          keepConflicts: false,
+        },
       });
       setConfirmation(
         result.merged

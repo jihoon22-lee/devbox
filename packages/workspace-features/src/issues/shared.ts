@@ -2,6 +2,35 @@ import type { WorkspaceIssue } from "../generated/WorkspaceIssue";
 const unavailable = "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요.";
 /** Native static codes are exhaustive; unknown text never becomes user-visible diagnostics. */
 export const workspaceMessages: Record<WorkspaceIssue, string> = {
+  conflict_path_invalid: "충돌 파일 경로를 확인해 주세요.",
+  conflict_choice_invalid: "이 충돌에는 사용할 수 없는 해결 방법입니다.",
+  conflict_markers_left: "충돌 표시(<<<<<<<, =======, >>>>>>>)가 남아 있습니다. 모두 정리한 뒤 해결해 주세요.",
+  conflict_unresolved: "아직 해결하지 않은 충돌 파일이 있습니다.",
+  conflict_no_operation: "계속할 병합·rebase 작업이 없습니다.",
+  conflict_operation_failed: "Git 작업을 계속하지 못했습니다. 상태를 새로 고쳐 확인해 주세요.",
+  pr_branch_not_pushed: "PR을 만들기 전에 현재 branch를 push해 주세요.",
+  pr_exists: "이 branch의 PR이 이미 있습니다.",
+  pr_input_invalid: "PR 제목과 내용을 확인해 주세요.",
+  pr_failed: "GitHub CLI 작업을 완료하지 못했습니다.",
+
+  hunk_stale: "파일이 바뀌었습니다. 변경 덩어리를 다시 불러와 주세요.",
+  hunk_selection_invalid: "선택한 변경 덩어리를 확인해 주세요.",
+  hunk_unsupported: "이 파일은 파일 단위로만 처리할 수 있습니다.",
+  hunk_apply_failed: "변경 덩어리를 적용하지 못했습니다.",
+  amend_no_commit: "수정할 커밋이 없습니다.",
+  blame_unavailable: "이 파일의 작성 이력을 읽지 못했습니다.",
+
+  branch_name_invalid: "branch 이름을 확인해 주세요.",
+  branch_exists: "같은 이름의 branch가 이미 있습니다.",
+  branch_missing: "branch를 찾지 못했습니다. 목록을 새로 고쳐 주세요.",
+  branch_in_use: "현재 branch이거나 다른 작업 폴더에서 사용 중인 branch입니다.",
+  switch_blocked_by_changes:
+    "커밋하지 않은 변경이 전환할 branch와 겹칩니다. 변경을 커밋하거나 stash에 저장한 뒤 전환해 주세요.",
+  branch_operation_failed: "branch 작업을 완료하지 못했습니다.",
+  stash_empty: "저장할 변경이 없습니다.",
+  stash_missing: "stash를 찾지 못했습니다. 목록을 새로 고쳐 주세요.",
+  stash_operation_failed: "stash 작업을 완료하지 못했습니다.",
+
   source_merge_dirty: "기본 작업 폴더에 커밋하지 않은 변경이 있습니다. 커밋하거나 정리한 뒤 병합해 주세요.",
   source_merge_failed: "병합을 완료하지 못했습니다. 기본 작업 폴더의 Git 상태를 확인해 주세요.",
   worktree_not_agent: "에이전트가 만든 작업 폴더와 branch만 정리할 수 있습니다.",

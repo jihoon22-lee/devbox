@@ -812,9 +812,15 @@ export function repoCommitPreview(path: string): Promise<CommitReview> {
     });
   return invoke("repo_commit_preview", { request: { path } });
 }
-export function repoCommit(path: string, message: string, operationId: string, indexRevision: string): Promise<void> {
+export function repoCommit(
+  path: string,
+  message: string,
+  operationId: string,
+  indexRevision: string,
+  amend = false,
+): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return Promise.resolve(invoke("repo_commit", { request: { path, message, operationId, indexRevision } })).then(
+  return Promise.resolve(invoke("repo_commit", { request: { path, message, operationId, indexRevision, amend } })).then(
     () => undefined,
   );
 }
@@ -872,4 +878,173 @@ export function openRepositoryFolder(path: string): Promise<void> {
 /** Product preview ownership is explicitly discarded on cancel or stale UI. */
 export async function dependencyEnrichmentCancel(path: string, previewToken: string): Promise<void> {
   if (isProductHosted()) await invoke("dependency_enrichment_cancel", { request: { path, previewToken } });
+}
+
+export type { Branch } from "../generated/Branch";
+export type { BranchList } from "../generated/BranchList";
+export type { StashEntry } from "../generated/StashEntry";
+export function repoBranches(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/BranchList").BranchList>({
+      current: "main",
+      detached: false,
+      branches: [],
+      truncated: false,
+    });
+  return invoke("repo_branches", { request: { path } });
+}
+export async function repoBranchCreate(
+  path: string,
+  options: { name: string; startPoint: string | null; checkout: boolean },
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_branch_create", { request: { path, ...options, operationId } });
+}
+export async function repoSwitch(path: string, branch: string, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return;
+  await invoke("repo_switch", { request: { path, branch, operationId } });
+}
+export async function repoBranchRename(
+  path: string,
+  from: string,
+  to: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_branch_rename", { request: { path, from, to, operationId } });
+}
+export function repoBranchDelete(path: string, name: string, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return Promise.resolve({ name, commit: "0".repeat(40) });
+  return invoke("repo_branch_delete", { request: { path, name, operationId } });
+}
+export function repoStashList(path: string) {
+  if (!isTauri()) return Promise.resolve<import("../generated/StashEntry").StashEntry[]>([]);
+  return invoke("repo_stash_list", { request: { path } });
+}
+export async function repoStashPush(
+  path: string,
+  options: { message: string | null; includeUntracked: boolean },
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_stash_push", { request: { path, ...options, operationId } });
+}
+export function repoStashApply(path: string, index: number, pop: boolean, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return Promise.resolve({ applied: true, conflicts: [] as string[] });
+  return invoke("repo_stash_apply", { request: { path, index, pop, operationId } });
+}
+export function repoStashDrop(path: string, index: number, operationId: string = crypto.randomUUID()) {
+  if (!isTauri()) return Promise.resolve({ commit: "0".repeat(40), message: "browser fixture" });
+  return invoke("repo_stash_drop", { request: { path, index, operationId } });
+}
+export async function repoStashStore(
+  path: string,
+  commit: string,
+  message: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_stash_store", { request: { path, commit, message, operationId } });
+}
+
+export type { FileHunks } from "../generated/FileHunks";
+export type { HunkAction } from "../generated/HunkAction";
+export type { Blame } from "../generated/Blame";
+export type { LastCommit } from "../generated/LastCommit";
+export function repoFileHunks(path: string, file: string, staged: boolean) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/FileHunks").FileHunks>({
+      file,
+      staged,
+      supported: true,
+      reason: null,
+      revision: "browser-fixture",
+      hunks: [],
+    });
+  return invoke("repo_file_hunks", { request: { path, file, staged } });
+}
+export async function repoHunksApply(
+  path: string,
+  file: string,
+  staged: boolean,
+  action: import("../generated/HunkAction").HunkAction,
+  hunkIds: string[],
+  revision: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return;
+  await invoke("repo_hunks_apply", { request: { path, file, staged, action, hunkIds, revision, operationId } });
+}
+export function repoLastCommit(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/LastCommit").LastCommit>({
+      id: "0".repeat(40),
+      message: "브라우저 예제",
+      pushed: false,
+      merge: false,
+    });
+  return invoke("repo_last_commit", { request: { path } });
+}
+export function repoBlame(path: string, file: string, commitId: string | null = null) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/Blame").Blame>({ file, lines: [], commits: {}, truncated: false });
+  return invoke("repo_blame", { request: { path, file, commitId } });
+}
+
+export type { ConflictState } from "../generated/ConflictState";
+export type { ConflictVersions } from "../generated/ConflictVersions";
+export type { Resolution } from "../generated/Resolution";
+export type { PrStatus } from "../generated/PrStatus";
+export type { PrListItem } from "../generated/PrListItem";
+import type { Resolution } from "../generated/Resolution";
+export function repoConflicts(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/ConflictState").ConflictState>({ operation: null, files: [] });
+  return invoke("repo_conflicts", { request: { path } });
+}
+export function repoConflictVersions(path: string, file: string) {
+  if (!isTauri()) return Promise.resolve({ base: "", ours: "", theirs: "", current: "", binary: false });
+  return invoke("repo_conflict_versions", { request: { path, file } });
+}
+export async function repoConflictResolve(
+  path: string,
+  file: string,
+  resolution: Resolution,
+  operationId: string = crypto.randomUUID(),
+): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("repo_conflict_resolve", { request: { path, file, resolution, operationId } });
+}
+export async function repoOperationContinue(path: string, operationId: string = crypto.randomUUID()): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("repo_operation_continue", { request: { path, operationId } });
+}
+export async function repoOperationAbort(path: string, operationId: string = crypto.randomUUID()): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("repo_operation_abort", { request: { path, operationId } });
+}
+export function repoPrStatus(path: string) {
+  if (!isTauri())
+    return Promise.resolve<import("../generated/PrStatus").PrStatus>({
+      available: false,
+      reason: "gh_missing",
+      pr: null,
+    });
+  return invoke("repo_pr_status", { request: { path } });
+}
+export function repoPrList(path: string, limit = 10) {
+  if (!isTauri()) return Promise.resolve<import("../generated/PrListItem").PrListItem[]>([]);
+  return invoke("repo_pr_list", { request: { path, limit } });
+}
+export function repoPrCreate(
+  path: string,
+  title: string,
+  body: string,
+  base: string | null,
+  draft: boolean,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (!isTauri()) return Promise.reject(new Error("GitHub CLI는 설치된 제품에서 사용할 수 있습니다."));
+  return invoke("repo_pr_create", { request: { path, title, body, base, draft, operationId } });
 }
