@@ -41,6 +41,10 @@ function project(value) {
       "symbols_unavailable",
       "walk_failed",
     ].includes(value?.state) ||
+    !(
+      value.messageCandidate === null ||
+      (Number.isSafeInteger(value.messageCandidate) && value.messageCandidate >= 0 && value.messageCandidate <= 65535)
+    ) ||
     !Array.isArray(value.frames) ||
     value.frames.length > 32
   )
@@ -63,7 +67,7 @@ function project(value) {
       throw new Error("invalid frame");
     return { module, symbol, offset, symbolKind, displacement };
   });
-  return { state: value.state, frames };
+  return { state: value.state, messageCandidate: value.messageCandidate, frames };
 }
 // Opt-in hosted diagnostic: code locations only, no dump or target mutation.
 export async function observeWindowsCdpStacks(

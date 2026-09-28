@@ -54,7 +54,7 @@ bool safe_symbol(const std::string& name) {
   return true;
 }
 struct Frame { std::string module; std::string symbol; uint64_t offset; uint64_t displacement = 0; bool pdb = false; };
-struct Result { const char* state; std::vector<Frame> frames; };
+struct Result { const char* state; std::vector<Frame> frames; int message_candidate = -1; };
 Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   Handle process{OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_CREATE_PROCESS | PROCESS_DUP_HANDLE | SYNCHRONIZE, FALSE, pid)};
   if (!process.value) return {"denied", {}};
@@ -89,6 +89,9 @@ Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   if (length >= MAX_PATH) return {"symbols_unavailable", {}};
   symbols.ready = SymInitialize(clone.VaCloneHandle, search, TRUE) != FALSE;
   if (!symbols.ready) return {"symbols_unavailable", {}};
+  // RDX is the message argument only when the captured leaf is NtUserMessageCall.
+  // Keep it explicitly a candidate; do not expose pointer or WPARAM/LPARAM values.
+  const auto message_candidate = context.Rdx;
   STACKFRAME64 frame{};
   frame.AddrPC.Offset = context.Rip;
   frame.AddrStack.Offset = context.Rsp;
@@ -123,10 +126,13 @@ Result capture(DWORD pid, uint64_t expected, DWORD requested) {
     }
   }
   if (created(process.value) != expected || WaitForSingleObject(process.value, 0) == WAIT_OBJECT_0) return {"identity_changed", {}};
-  return {frames.empty() ? "walk_failed" : "observed", frames};
+  const auto message = !frames.empty() && frames.front().module == "win32u" && frames.front().symbol == "NtUserMessageCall" && message_candidate <= 0xffff ? static_cast<int>(message_candidate) : -1;
+  return {frames.empty() ? "walk_failed" : "observed", frames, message};
 }
 void print(const Result& result) {
-  std::cout << "{\"state\":\"" << result.state << "\",\"frames\":[";
+  std::cout << "{\"state\":\"" << result.state << "\",\"messageCandidate\":";
+  if (result.message_candidate < 0) std::cout << "null"; else std::cout << result.message_candidate;
+  std::cout << ",\"frames\":[";
   bool comma = false;
   for (const auto& frame : result.frames) {
     if (comma) std::cout << ',';
@@ -156,7 +162,7 @@ struct Deadline {
   ~Deadline() { if (done.value) SetEvent(done.value); if (thread.value) WaitForSingleObject(thread.value, INFINITE); }
 };
 int symbol_index(const std::string& name) {
-  if (name != "ntdll" && name != "user32" && name != "win32u" && name != "imm32" && name != "msctf") return 2;
+  if (name != "ntdll" && name != "user32" && name != "win32u" && name != "imm32" && name != "msctf" && name != "uxtheme") return 2;
   char system[MAX_PATH]{};
   if (!GetSystemDirectoryA(system, MAX_PATH)) return 3;
   const auto file = std::string(system) + "\\" + name + ".dll";

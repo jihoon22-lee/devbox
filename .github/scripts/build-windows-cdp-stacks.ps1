@@ -23,7 +23,7 @@ try {
 # Fetch only public Windows symbol data. No executable or debugger is downloaded.
 $symbols = Join-Path $build 'symbols'
 New-Item -ItemType Directory -Path $symbols | Out-Null
-foreach ($module in @('ntdll', 'user32', 'win32u', 'imm32', 'msctf')) {
+foreach ($module in @('ntdll', 'user32', 'win32u', 'imm32', 'msctf', 'uxtheme')) {
   $index = & $exe --symbol-index $module | ConvertFrom-Json
   if ($LASTEXITCODE -ne 0 -or $index.name -notmatch '^[A-Za-z0-9_.-]{1,160}\.pdb$' -or $index.key -notmatch '^[A-F0-9]{33,40}$') {
     throw 'Invalid public system symbol identity'
