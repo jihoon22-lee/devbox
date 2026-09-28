@@ -54,7 +54,7 @@ bool safe_symbol(const std::string& name) {
   return true;
 }
 struct Frame { std::string module; std::string symbol; uint64_t offset; uint64_t displacement = 0; bool pdb = false; };
-struct Result { const char* state; std::vector<Frame> frames; int message_candidate = -1; };
+struct Result { const char* state; std::vector<Frame> frames; int message_candidate = -1; const char* message_detail = nullptr; };
 Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   Handle process{OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_CREATE_PROCESS | PROCESS_DUP_HANDLE | SYNCHRONIZE, FALSE, pid)};
   if (!process.value) return {"denied", {}};
@@ -92,6 +92,8 @@ Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   // RDX is the message argument only when the captured leaf is NtUserMessageCall.
   // Keep it explicitly a candidate; do not expose pointer or WPARAM/LPARAM values.
   const auto message_candidate = context.Rdx;
+  const auto command_candidate = context.R8;
+  const auto detail_candidate = context.R9;
   STACKFRAME64 frame{};
   frame.AddrPC.Offset = context.Rip;
   frame.AddrStack.Offset = context.Rsp;
@@ -127,11 +129,16 @@ Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   }
   if (created(process.value) != expected || WaitForSingleObject(process.value, 0) == WAIT_OBJECT_0) return {"identity_changed", {}};
   const auto message = !frames.empty() && frames.front().module == "win32u" && frames.front().symbol == "NtUserMessageCall" && message_candidate <= 0xffff ? static_cast<int>(message_candidate) : -1;
-  return {frames.empty() ? "walk_failed" : "observed", frames, message};
+  const char* detail = nullptr;
+  if (message == 0x112) detail = (command_candidate & 0xfff0) == 0xf100 ? (detail_candidate == 0 ? "key_menu_bare" : detail_candidate == 32 ? "key_menu_space" : "key_menu_other") : "other_command";
+  if (message == 0x105) detail = command_candidate == 0x12 ? "alt_release" : command_candidate == 0x79 ? "f10_release" : "other_system_key";
+  return {frames.empty() ? "walk_failed" : "observed", frames, message, detail};
 }
 void print(const Result& result) {
   std::cout << "{\"state\":\"" << result.state << "\",\"messageCandidate\":";
   if (result.message_candidate < 0) std::cout << "null"; else std::cout << result.message_candidate;
+  std::cout << ",\"messageDetail\":";
+  if (result.message_detail) std::cout << '"' << result.message_detail << '"'; else std::cout << "null";
   std::cout << ",\"frames\":[";
   bool comma = false;
   for (const auto& frame : result.frames) {

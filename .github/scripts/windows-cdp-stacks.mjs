@@ -45,6 +45,16 @@ function project(value) {
       value.messageCandidate === null ||
       (Number.isSafeInteger(value.messageCandidate) && value.messageCandidate >= 0 && value.messageCandidate <= 65535)
     ) ||
+    ![
+      null,
+      "key_menu_bare",
+      "key_menu_space",
+      "key_menu_other",
+      "other_command",
+      "alt_release",
+      "f10_release",
+      "other_system_key",
+    ].includes(value.messageDetail) ||
     !Array.isArray(value.frames) ||
     value.frames.length > 32
   )
@@ -67,7 +77,7 @@ function project(value) {
       throw new Error("invalid frame");
     return { module, symbol, offset, symbolKind, displacement };
   });
-  return { state: value.state, messageCandidate: value.messageCandidate, frames };
+  return { state: value.state, messageCandidate: value.messageCandidate, messageDetail: value.messageDetail, frames };
 }
 // Opt-in hosted diagnostic: code locations only, no dump or target mutation.
 export async function observeWindowsCdpStacks(

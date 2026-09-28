@@ -4,7 +4,8 @@ import { observeWindowsCdpStacks } from "./windows-cdp-stacks.mjs";
 const identity = { Pid: 1234, Created: "2026-09-28T01:02:03.1234567Z" };
 const stack = {
   state: "observed",
-  messageCandidate: 0x86,
+  messageCandidate: 0x112,
+  messageDetail: "key_menu_bare",
   frames: [{ module: "user32", symbol: "SendMessageW", offset: 42, symbolKind: "export", displacement: 7 }],
 };
 test("stack evidence includes code locations but excludes addresses, paths and memory", async () => {
@@ -65,6 +66,7 @@ test("symbol metadata distinguishes exact PDB data from nearest exported names",
     const value = {
       state: "observed",
       messageCandidate: null,
+      messageDetail: null,
       frames: [{ module: "imm32", symbol: "ImmNotifyIME", offset: 80, symbolKind, displacement: 5 }],
     };
     const result = await observeWindowsCdpStacks(identity, 9222, {
