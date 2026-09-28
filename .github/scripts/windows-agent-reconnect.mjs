@@ -19,21 +19,11 @@ export async function reconnectAgent(item, phase, report) {
     if (result !== "connected") throw new Error("agent reconnect did not connect");
     report({ ...base, stage: "passed" });
   } catch (error) {
-    const rendererResponsive = await item.cdp.evaluate("1", { timeoutMs: 1000 }).then(
-      (value) => value === 1,
-      () => false,
-    );
-    const nativeStatus = await item.cdp
-      .evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')", { timeoutMs: 1000 })
-      .then(
-        (value) =>
-          ["connected", "starting", "restarting", "unavailable", "unsupported"].includes(value) ? value : "unexpected",
-        () => "probe_failed",
-      );
+    const { rendererResponsive, nativeStatus } = await readConnection(item);
     const connection = item.cdp.connectionState?.();
     const freshObserver = await item.cdp.probeNewSession?.().catch(() => ({ state: "observer_failed" }));
     const nativeObserver = await item.inspectCdpHost?.().catch(() => ({ state: "probe_failed" }));
-    report({
+    const failed = {
       ...base,
       stage: "failed",
       rendererResponsive,
@@ -43,7 +33,32 @@ export async function reconnectAgent(item, phase, report) {
       ...(nativeObserver ? { nativeObserver } : {}),
       ...(item.cdpBaseline ? { freshObserverBaseline: item.cdpBaseline } : {}),
       ...(item.child ? { productExited: item.child.exitCode !== null || item.child.signalCode !== null } : {}),
-    });
+    };
+    report(failed);
+    if (item.focusCdpHost) {
+      const activation = await item.focusCdpHost().catch(() => ({ state: "probe_failed" }));
+      const foregroundControl = { activation };
+      if (activation.state === "focused") {
+        foregroundControl.original = await readConnection(item);
+        foregroundControl.fresh = await item.cdp.probeNewSession?.().catch(() => ({ state: "observer_failed" }));
+      }
+      report({ ...failed, foregroundControl });
+    }
     throw error;
   }
+}
+
+async function readConnection(item) {
+  const rendererResponsive = await item.cdp.evaluate("1", { timeoutMs: 1000 }).then(
+    (value) => value === 1,
+    () => false,
+  );
+  const nativeStatus = await item.cdp
+    .evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')", { timeoutMs: 1000 })
+    .then(
+      (value) =>
+        ["connected", "starting", "restarting", "unavailable", "unsupported"].includes(value) ? value : "unexpected",
+      () => "probe_failed",
+    );
+  return { rendererResponsive, nativeStatus };
 }

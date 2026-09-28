@@ -89,6 +89,10 @@ on:
         description: Observe the healthy CDP session at startup; disable only for an observer-effect control
         type: boolean
         default: true
+      delivery_foreground_probe:
+        description: Compare read-only CDP responses after foregrounding the failed owned API Studio window
+        type: boolean
+        default: false
       delivery_rebuild_control_center:
         description: Rebuild only Control Center and its helper after proving the other retained product inputs unchanged
         type: boolean
@@ -207,6 +211,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DEVBOX_SUITE_OBSERVE_CDP_BASELINE: ${{ inputs.delivery_observe_cdp_baseline }}
+          DEVBOX_SUITE_FOREGROUND_PROBE: ${{ inputs.delivery_foreground_probe }}
         shell: pwsh
         run: .github/scripts/windows-suite-delivery.ps1 -Staging $env:DEVBOX_SUITE_TEST_STAGING -Bootstrap "$env:DEVBOX_SUITE_TEST_STAGING/devbox-suite-bootstrap.exe" -RemainingOnly:([bool]::Parse("${{ inputs.delivery_remaining_only }}"))
       - name: Preserve focused delivery evidence

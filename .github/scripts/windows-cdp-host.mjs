@@ -2,6 +2,72 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execute = promisify(execFile);
 const bounded = (value, max) => Number.isSafeInteger(value) && value >= 0 && value <= max;
+// Opt-in hosted comparison only; never replays a product command.
+export async function focusWindowsCdpHost(identity, { platform = process.platform, run = execute } = {}) {
+  if (platform !== "win32") return { state: "unsupported" };
+  if (
+    !bounded(identity?.Pid, 2147483647) ||
+    identity.Pid === 0 ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{1,7}Z$/.test(identity.Created ?? "")
+  )
+    return { state: "invalid_owner" };
+  const script = `
+$ErrorActionPreference = 'Stop'
+$ownedPid = ${identity.Pid}
+$expected = '${identity.Created}'
+$owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownedPid"
+if (-not $owner) { @{state='product_exited'} | ConvertTo-Json -Compress; exit 0 }
+if ($owner.CreationDate.ToUniversalTime().ToString('o') -ne $expected) { @{state='identity_changed'} | ConvertTo-Json -Compress; exit 0 }
+$ownedProcess = [System.Diagnostics.Process]::GetProcessById($ownedPid)
+$lease = $ownedProcess.Handle
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DevboxCdpForeground {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
+}
+'@
+$window = $ownedProcess.MainWindowHandle
+if ($window -eq [IntPtr]::Zero) { @{state='no_window'} | ConvertTo-Json -Compress; exit 0 }
+[uint32]$windowPid = 0
+[void][DevboxCdpForeground]::GetWindowThreadProcessId($window, [ref]$windowPid)
+$again = Get-CimInstance Win32_Process -Filter "ProcessId=$ownedPid"
+if (-not $again -or $windowPid -ne $ownedPid -or $again.CreationDate.ToUniversalTime().ToString('o') -ne $expected) { @{state='identity_changed'} | ConvertTo-Json -Compress; exit 0 }
+$wasForeground = [DevboxCdpForeground]::GetForegroundWindow() -eq $window
+$wasMinimized = [DevboxCdpForeground]::IsIconic($window)
+if ($wasMinimized) { [void][DevboxCdpForeground]::ShowWindowAsync($window, 9) }
+[void][DevboxCdpForeground]::SetForegroundWindow($window)
+Start-Sleep -Milliseconds 250
+[void][DevboxCdpForeground]::GetWindowThreadProcessId($window, [ref]$windowPid)
+if ($ownedProcess.HasExited -or $windowPid -ne $ownedPid) { @{state='identity_changed'} | ConvertTo-Json -Compress; exit 0 }
+$state = if ([DevboxCdpForeground]::GetForegroundWindow() -eq $window) { 'focused' } else { 'not_focused' }
+@{state=$state;wasForeground=[bool]$wasForeground;wasMinimized=[bool]$wasMinimized} | ConvertTo-Json -Compress
+`;
+  try {
+    const { stdout } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      timeout: 10000,
+      maxBuffer: 16384,
+      windowsHide: true,
+      encoding: "utf8",
+    });
+    if (typeof stdout !== "string" || Buffer.byteLength(stdout) > 16384) return { state: "invalid_response" };
+    const value = JSON.parse(stdout.replace(/^\uFEFF/, "").trim());
+    if (["product_exited", "identity_changed", "no_window"].includes(value?.state)) return { state: value.state };
+    if (
+      !["focused", "not_focused"].includes(value?.state) ||
+      typeof value.wasForeground !== "boolean" ||
+      typeof value.wasMinimized !== "boolean"
+    )
+      return { state: "invalid_response" };
+    return { state: value.state, wasForeground: value.wasForeground, wasMinimized: value.wasMinimized };
+  } catch {
+    return { state: "probe_failed" };
+  }
+}
 
 // Read only the retained product identity and its WebView descendants after failure.
 export async function observeWindowsCdpHost(identity, port, { platform = process.platform, run = execute } = {}) {

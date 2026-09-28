@@ -4,7 +4,31 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
 import { once } from "node:events";
-import { observeWindowsCdpHost } from "./windows-cdp-host.mjs";
+import { observeWindowsCdpHost, focusWindowsCdpHost } from "./windows-cdp-host.mjs";
+
+test("foreground control verifies the retained identity and projects only its outcome", async () => {
+  const identity = { Pid: 1234, Created: "2026-09-28T01:02:03.1234567Z" };
+  const result = { state: "focused", wasForeground: false, wasMinimized: true };
+  let calls = 0;
+  const run = async (_file, args, options) => {
+    calls++;
+    assert.ok(args.at(-1).includes(identity.Created));
+    assert.equal(options.timeout, 10000);
+    return { stdout: JSON.stringify({ ...result, title: "private" }) };
+  };
+  assert.deepEqual(await focusWindowsCdpHost(identity, { platform: "win32", run }), result);
+  assert.deepEqual(await focusWindowsCdpHost({ ...identity, Created: "invalid" }, { platform: "win32", run }), {
+    state: "invalid_owner",
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(
+    await focusWindowsCdpHost(identity, {
+      platform: "win32",
+      run: async () => ({ stdout: '{"state":"identity_changed"}' }),
+    }),
+    { state: "identity_changed" },
+  );
+});
 
 const owner = { Pid: 1234, Created: "2026-09-28T01:02:03.1234567Z", Path: "private/path" };
 test("Windows observes the owned test process and its own ephemeral listener", {
@@ -29,6 +53,7 @@ test("Windows observes the owned test process and its own ephemeral listener", {
     assert.equal(result.listener, "owned");
     assert.equal(result.webviewProcesses, 0);
     assert.ok(result.totalMemoryMiB > 0);
+    assert.deepEqual(await focusWindowsCdpHost({ Pid: process.pid, Created: stdout.trim() }), { state: "no_window" });
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
