@@ -108,6 +108,9 @@ export function projectConnectionDiagnostics(text) {
 }
 
 const handoffCodes = new Set([
+  "suite_connection_off",
+  "suite_connection_failed",
+  "suite_connection_timeout",
   "suite_review_required",
   "suite_busy",
   "suite_product_invalid",
