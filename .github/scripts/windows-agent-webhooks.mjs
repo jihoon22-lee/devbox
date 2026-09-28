@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { freePort } from "./workspace-cdp-fixture.mjs";
-export async function exerciseAgentWebhooks({ api, call, closeApi, restartApi, crashAgent, report }) {
+export async function exerciseAgentWebhooks({ api, call, closeApi, restartApi, connectionStatus, crashAgent, report }) {
   let current = api;
   const invoke = (method, args = {}) => call(current, method, args);
   const evidence = {};
@@ -61,6 +61,11 @@ export async function exerciseAgentWebhooks({ api, call, closeApi, restartApi, c
     assert.ok(fixtureId);
     assert.ok((await invoke("send_history_to_api", { historyId: capture.id })).handoffId);
     assert.ok((await invoke("send_history_to_log_lens", { historyId: capture.id })).handoffId);
+    const connection = await connectionStatus(current);
+    assert.equal(connection.connected, true);
+    assert.equal(connection.connectionState, "connected");
+    assert.equal(connection.mode, "auto");
+    evidence.restartedApiAutomaticallyConnectsBeforeHandoff = true;
     evidence.closedUiKeepsListenerHistoryAndRules = true;
     evidence.nativeOwnerProjectionsKeepApiAndLogsHandoffs = true;
 

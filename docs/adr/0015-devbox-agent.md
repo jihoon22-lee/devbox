@@ -56,7 +56,7 @@ agent도 제품과 같은 `suite-writers.lock`의 shared writer lease를 **전�
 
 ### 장애 복구
 
-연결 시도는 200ms·500ms·1초·2초·4초 간격의 제한된 backoff를 사용하며 실패하면 연결 상태와 수동 재연결 버튼을 보여 준다. agent 비정상 종료 후 다음 UI 요청에서 검증된 현재 generation agent를 다시 시작하며 상시 감시 서비스는 두지 않는다. 요청의 완료 여부가 불명확하면 기존 operation/receipt로 상태를 확인한다. UI의 임의 재시도로 같은 변경을 두 번 수행하지 않는다.
+연결 시도는 200ms·500ms·1초·2초·4초 간격의 제한된 backoff를 사용한다. 검증된 현재 generation의 agent를 새로 실행한 경우에는 프로세스 생성과 pipe 준비 시점이 다르므로 최대 30초의 준비 기한 안에서 마지막 4초 간격으로 연결만 이어서 시도한다. 기한이 끝나거나 peer·generation 검증에 실패하면 연결 상태와 수동 재연결 버튼을 보여 준다. agent 비정상 종료 후 다음 UI 요청에서 검증된 현재 generation agent를 다시 시작하며 상시 감시 서비스는 두지 않는다. 요청의 완료 여부가 불명확하면 기존 operation/receipt로 상태를 확인한다. UI의 임의 재시도로 같은 변경을 두 번 수행하지 않는다.
 
 ## 결과
 
