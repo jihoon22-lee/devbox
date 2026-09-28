@@ -8,3 +8,7 @@ export function normalizeRequestTls(value: unknown): RequestTls | undefined {
     verify: tls.verify !== false,
   };
 }
+
+export function hasCustomTls(tls: RequestTls | null | undefined): boolean {
+  return Boolean(tls?.credentialId) || tls?.verify === false;
+}

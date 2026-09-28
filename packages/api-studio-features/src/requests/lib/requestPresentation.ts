@@ -241,7 +241,10 @@ export function buildCurl(template: RequestTemplate): string {
 
 export function safeRequestError(cause: unknown): string {
   const code = cause instanceof Error ? cause.name : typeof cause === "string" ? cause : "";
-  if (code.startsWith("oauth2_") && Object.prototype.hasOwnProperty.call(apiMessages, code))
+  if (
+    (code.startsWith("oauth2_") || code.startsWith("tls_")) &&
+    Object.prototype.hasOwnProperty.call(apiMessages, code)
+  )
     return apiMessages[code as keyof typeof apiMessages];
   if (
     (typeof DOMException !== "undefined" && cause instanceof DOMException && cause.name === "AbortError") ||
@@ -357,6 +360,9 @@ export const SAFE_WEBSOCKET_UI_MESSAGES = new Set([
 ]);
 
 export function safeWebSocketUiError(cause: unknown): string {
+  const code = cause instanceof Error ? cause.name : typeof cause === "string" ? cause : "";
+  if (code.startsWith("tls_") && Object.prototype.hasOwnProperty.call(apiMessages, code))
+    return apiMessages[code as keyof typeof apiMessages];
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/u, "");
   return SAFE_WEBSOCKET_UI_MESSAGES.has(message) ? message : "WebSocket 요청에 실패했습니다.";

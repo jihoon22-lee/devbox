@@ -427,3 +427,11 @@ it("opens OAuth login from a native authorization-required response", async () =
   await waitFor(() => expect(authorizeOAuth2).toHaveBeenCalledTimes(1));
   expect(await screen.findByText("유효 · 만료 시각 없음")).toBeTruthy();
 });
+
+it("TLS verification warning remains above the editor after changing tabs", async () => {
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "TLS" }));
+  fireEvent.click(await screen.findByLabelText("인증서 검증"));
+  fireEvent.click(screen.getByRole("button", { name: "PARAMS" }));
+  expect(screen.getByText("인증서 검증 꺼짐")).toBeTruthy();
+});

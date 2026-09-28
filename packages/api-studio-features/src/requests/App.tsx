@@ -1,3 +1,4 @@
+const TlsSettings = lazy(() => import("./TlsSettings").then((module) => ({ default: module.TlsSettings })));
 import { evaluateAssertions, type Assertion, type AssertionResult } from "./lib/assertions";
 import { VARIABLE_NAME, type Capture } from "./lib/captures";
 import { SessionVariables, missingVariables, applyResponseCaptures, type RunDeps } from "./lib/runner";
@@ -195,9 +196,9 @@ export default function App({
   useEffect(() => {
     if (workspace === "protocol") setProtocolVisited(true);
   }, [workspace]);
-  const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth" | "assertions" | "captures">(
-    "params",
-  );
+  const [tab, setTab] = useState<
+    "params" | "headers" | "cookies" | "body" | "auth" | "assertions" | "captures" | "tls"
+  >("params");
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -1840,6 +1841,11 @@ export default function App({
           <>
             {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
             {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
+            {req.tls?.verify === false && (
+              <p className="persistence-warning" role="status">
+                인증서 검증 꺼짐
+              </p>
+            )}
             <div className="request-bar">
               <select
                 aria-label="HTTP method"
@@ -1924,7 +1930,7 @@ export default function App({
             )}
 
             <div className="tabs">
-              {(["params", "headers", "cookies", "body", "auth", "assertions", "captures"] as const).map((t) => (
+              {(["params", "headers", "cookies", "body", "auth", "tls", "assertions", "captures"] as const).map((t) => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
                   {t === "assertions" ? "검증" : t === "captures" ? "캡처" : t.toUpperCase()}
                 </button>
@@ -1942,7 +1948,11 @@ export default function App({
               </div>
             )}
 
-            {tab === "assertions" ? (
+            {tab === "tls" ? (
+              <Suspense fallback={<p role="status">TLS 설정 준비 중…</p>}>
+                <TlsSettings value={req.tls} onChange={(tls) => setReq((current) => ({ ...current, tls }))} />
+              </Suspense>
+            ) : tab === "assertions" ? (
               <Suspense fallback={<p role="status">검증 편집 준비 중…</p>}>
                 <AssertionEditor value={assertions} onChange={setAssertions} disabled={sending || runnerBusy} />
               </Suspense>

@@ -1,3 +1,4 @@
+import { hasCustomTls } from "./lib/tls";
 import { apiCall } from "../calls";
 import { isProductHosted } from "../transport";
 
@@ -139,6 +140,7 @@ export async function sendRequest(
   captures: import("./lib/captures").Capture[] = [],
 ): Promise<ApiResponse> {
   if (!isTauri()) {
+    if (hasCustomTls(req.tls)) throw Object.assign(new Error("tls_native_required"), { name: "tls_native_required" });
     if (req.auth?.kind === "oauth2") requireNativeOAuth();
     return browserFetch(req, environment, signal);
   }
@@ -670,6 +672,7 @@ export async function startSseStream(
   options: SseOptions,
   onUpdate: (update: SseUpdate) => void,
 ): Promise<SseStreamHandle> {
+  if (hasCustomTls(req.tls)) throw Object.assign(new Error("tls_http_only"), { name: "tls_http_only" });
   validateSseOptions(options);
   validateSseEnvironment(environment);
   if (isTauri()) return startNativeSseStream(req, environment, options, onUpdate);
@@ -1413,6 +1416,7 @@ export async function startWebSocket(
   environment: Parameters<typeof sendRequest>[1],
   onUpdate: (update: WebSocketUpdate) => void,
 ): Promise<WebSocketHandle> {
+  if (hasCustomTls(req.tls)) throw Object.assign(new Error("tls_http_only"), { name: "tls_http_only" });
   if (isTauri()) return startNativeWebSocket(req, environment, onUpdate);
   return startBrowserWebSocket(req, environment, onUpdate);
 }

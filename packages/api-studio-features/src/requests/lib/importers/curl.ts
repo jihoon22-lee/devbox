@@ -173,7 +173,7 @@ export function parseCurl(command: string): ImportBundle {
         break;
       case "-k":
       case "--insecure":
-        warnings.push("인증서 검증 끄기(-k)는 가져오지 않았습니다.");
+        request.tls = { credentialId: null, verify: false };
         break;
       case "--url":
         request.url = value;

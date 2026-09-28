@@ -64,6 +64,8 @@ describe("curl import", () => {
       "curl -k --data-binary @payload.json -F 'doc=@/home/me/a.pdf' --retry 3 https://x.test",
     );
     expect(requests[0].request.body).toBe("");
+    expect(requests[0].request.tls).toEqual({ credentialId: null, verify: false });
+    expect(warnings.some((warning) => warning.includes("-k"))).toBe(false);
     expect(requests[0].request.multipart[0]).toMatchObject({
       kind: "file",
       name: "doc",
@@ -74,7 +76,6 @@ describe("curl import", () => {
       expect.arrayContaining([
         "파일 본문(@payload.json)은 가져오지 않았습니다.",
         "파일 파트 doc는 파일을 다시 선택해야 합니다.",
-        "인증서 검증 끄기(-k)는 가져오지 않았습니다.",
         "지원하지 않는 옵션 --retry를 건너뛰었습니다.",
       ]),
     );
