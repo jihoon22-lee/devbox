@@ -61,6 +61,20 @@ using System.Runtime.InteropServices;
 public class DevboxWaitView { public int type; public int status; public string processRole; public string threadRole; }
 public class DevboxWaitChain { public string state; public bool cycle; public DevboxWaitView[] nodes = new DevboxWaitView[0]; }
 public static class DevboxWaits {
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true, SetLastError=true)] static extern IntPtr LoadLibraryExW(string file, IntPtr reserved, uint flags);
+  [DllImport("kernel32.dll", CharSet=CharSet.Ansi, ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module, string name);
+  [DllImport("advapi32.dll")] static extern void RegisterWaitChainCOMCallback(IntPtr callState, IntPtr activationState);
+  // Keep the system DLL loaded throughout every WCT session in this probe process.
+  static readonly IntPtr ComModule = LoadLibraryExW("ole32.dll", IntPtr.Zero, 0x800);
+  public static readonly string ComAccess = RegisterCom();
+  static string RegisterCom() {
+    if (ComModule == IntPtr.Zero) return "library_unavailable";
+    IntPtr call = GetProcAddress(ComModule, "CoGetCallState");
+    IntPtr activation = GetProcAddress(ComModule, "CoGetActivationState");
+    if (call == IntPtr.Zero || activation == IntPtr.Zero) return "callbacks_unavailable";
+    RegisterWaitChainCOMCallback(call, activation);
+    return "registered";
+  }
   [DllImport("advapi32.dll", SetLastError=true)] static extern IntPtr OpenThreadWaitChainSession(uint flags, IntPtr callback);
   [DllImport("advapi32.dll")] static extern void CloseThreadWaitChainSession(IntPtr session);
   [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetThreadWaitChain(IntPtr session, UIntPtr context, uint flags, uint thread, ref uint count, [Out] DevboxWaitNode[] nodes, out bool cycle);
@@ -79,7 +93,7 @@ public static class DevboxWaits {
       try {
         uint count = 16; bool cycle;
         var nodes = new DevboxWaitNode[16];
-        bool ok = GetThreadWaitChain(session, UIntPtr.Zero, 5, thread, ref count, nodes, out cycle);
+        bool ok = GetThreadWaitChain(session, UIntPtr.Zero, ComAccess == "registered" ? 7u : 5u, thread, ref count, nodes, out cycle);
         int error = Marshal.GetLastWin32Error();
         if (!ok && error != 234) { result.state = error == 5 ? "denied" : "failed"; return result; }
         result.state = ok ? "observed" : "partial";
@@ -100,6 +114,7 @@ public static class DevboxWaits {
   }
 }
 '@
+$comAccess = [DevboxWaits]::ComAccess
 $debugAccess = $false
 try { [System.Diagnostics.Process]::EnterDebugMode(); $debugAccess = $true } catch {}
 [uint32]$windowPid = 0
@@ -137,7 +152,7 @@ $appUi = if ($uiThread -ne 0) { [DevboxWaits]::Read($uiThread,[uint32]$ownedPid,
 $again = Get-CimInstance Win32_Process -Filter "ProcessId=$ownedPid"
 $againBrowser = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid"
 if (-not $again -or -not $againBrowser -or $again.CreationDate.ToUniversalTime().ToString('o') -ne $expected -or $againBrowser.CreationDate -ne $listenerRow.CreationDate) { @{state='identity_changed'} | ConvertTo-Json -Compress; exit 0 }
-@{state='observed';sampleMs=$sampleMs;appCpuMs=$appCpu;listenerCpuMs=$browserCpu;listenerWorkingSetMiB=[Math]::Floor($browserProcess.WorkingSet64/1048576);listenerThreadCount=$browserProcess.Threads.Count;debugAccess=$debugAccess;appUi=$appUi;threads=$output;truncated=($browserProcess.Threads.Count -gt 64)} | ConvertTo-Json -Depth 8 -Compress
+@{state='observed';sampleMs=$sampleMs;appCpuMs=$appCpu;listenerCpuMs=$browserCpu;listenerWorkingSetMiB=[Math]::Floor($browserProcess.WorkingSet64/1048576);listenerThreadCount=$browserProcess.Threads.Count;debugAccess=$debugAccess;comAccess=$comAccess;appUi=$appUi;threads=$output;truncated=($browserProcess.Threads.Count -gt 64)} | ConvertTo-Json -Depth 8 -Compress
 `;
   try {
     const { stdout } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
@@ -158,6 +173,7 @@ if (-not $again -or -not $againBrowser -or $again.CreationDate.ToUniversalTime()
       !integer(value.listenerWorkingSetMiB, 0, 16777216) ||
       !integer(value.listenerThreadCount, 0, 10000) ||
       typeof value.debugAccess !== "boolean" ||
+      !["registered", "library_unavailable", "callbacks_unavailable"].includes(value.comAccess) ||
       typeof value.truncated !== "boolean" ||
       !Array.isArray(value.threads) ||
       value.threads.length > 64
@@ -175,8 +191,16 @@ if (-not $again -or -not $againBrowser -or $again.CreationDate.ToUniversalTime()
       return { index, state, waitReason, cpuMs, chain: projectChain(thread.chain) };
     });
     const appUi = value.appUi === null ? null : projectChain(value.appUi);
-    const { sampleMs, appCpuMs, listenerCpuMs, listenerWorkingSetMiB, listenerThreadCount, debugAccess, truncated } =
-      value;
+    const {
+      sampleMs,
+      appCpuMs,
+      listenerCpuMs,
+      listenerWorkingSetMiB,
+      listenerThreadCount,
+      debugAccess,
+      comAccess,
+      truncated,
+    } = value;
     return {
       state: "observed",
       sampleMs,
@@ -185,6 +209,7 @@ if (-not $again -or -not $againBrowser -or $again.CreationDate.ToUniversalTime()
       listenerWorkingSetMiB,
       listenerThreadCount,
       debugAccess,
+      comAccess,
       appUi,
       threads,
       truncated,

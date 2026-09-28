@@ -45,7 +45,7 @@
       "detector": "dependabot",
       "scope": "Linux-only Tauri GTK runtime",
       "expires": "2026-11-30",
-      "reason": "Re-evaluated 2026-09-01: latest Tauri 2.11.5 and upstream dev still require GTK3 0.18, and Cargo rejects forcing patched glib 0.20 outside that graph. Windows releases do not link this package; keep the alert open and re-evaluate on every Tauri update."
+      "reason": "Re-evaluated 2026-09-28: Tauri 2.12.0 still requires GTK3 0.18 and glib 0.18.5. Patched glib 0.20 is outside that compatible graph. Windows releases do not link this package; keep the alert open and re-evaluate on every Tauri update."
     },
     {
       "id": "RUSTSEC-2024-0370",
@@ -145,51 +145,6 @@
       "scope": "Tauri Linux GTK runtime",
       "expires": "2026-11-30",
       "reason": "Archived GTK3 binding required by Tauri 2 Linux WebKit; no safe compatible upgrade is available."
-    },
-    {
-      "id": "RUSTSEC-2025-0075",
-      "package": "unic-char-range",
-      "version": "0.9.0",
-      "detector": "cargo-deny",
-      "scope": "Tauri URLPattern dependency",
-      "expires": "2026-11-30",
-      "reason": "Transitive through tauri-utils urlpattern 0.3; the current Tauri release does not permit urlpattern 0.6."
-    },
-    {
-      "id": "RUSTSEC-2025-0080",
-      "package": "unic-common",
-      "version": "0.9.0",
-      "detector": "cargo-deny",
-      "scope": "Tauri URLPattern dependency",
-      "expires": "2026-11-30",
-      "reason": "Transitive through tauri-utils urlpattern 0.3; the current Tauri release does not permit urlpattern 0.6."
-    },
-    {
-      "id": "RUSTSEC-2025-0081",
-      "package": "unic-char-property",
-      "version": "0.9.0",
-      "detector": "cargo-deny",
-      "scope": "Tauri URLPattern dependency",
-      "expires": "2026-11-30",
-      "reason": "Transitive through tauri-utils urlpattern 0.3; the current Tauri release does not permit urlpattern 0.6."
-    },
-    {
-      "id": "RUSTSEC-2025-0098",
-      "package": "unic-ucd-version",
-      "version": "0.9.0",
-      "detector": "cargo-deny",
-      "scope": "Tauri URLPattern dependency",
-      "expires": "2026-11-30",
-      "reason": "Transitive through tauri-utils urlpattern 0.3; the current Tauri release does not permit urlpattern 0.6."
-    },
-    {
-      "id": "RUSTSEC-2025-0100",
-      "package": "unic-ucd-ident",
-      "version": "0.9.0",
-      "detector": "cargo-deny",
-      "scope": "Tauri URLPattern dependency",
-      "expires": "2026-11-30",
-      "reason": "Transitive through tauri-utils urlpattern 0.3; the current Tauri release does not permit urlpattern 0.6."
     }
   ]
 }
