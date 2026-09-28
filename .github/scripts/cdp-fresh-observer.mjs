@@ -1,9 +1,5 @@
-// A second, read-only observer of the same CDP target. Never replays a business call.
-export async function observeFreshCdp(target, child, { timeoutMs = 1000 } = {}) {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1000)
-    throw new Error("invalid observer deadline");
-  const exited = () => child.exitCode !== null || child.signalCode != null;
-  if (exited()) return { state: "product_exited" };
+// Read-only probes retain fixed metadata only; no reconnect is replayed.
+function targetUrl(target) {
   try {
     const url = new URL(target);
     if (
@@ -16,10 +12,64 @@ export async function observeFreshCdp(target, child, { timeoutMs = 1000 } = {}) 
       url.hash ||
       !/^\/devtools\/page\/[a-zA-Z0-9_-]+$/.test(url.pathname)
     )
-      return { state: "invalid_target" };
+      return null;
+    return url;
   } catch {
-    return { state: "invalid_target" };
+    return null;
   }
+}
+function deadline(timeoutMs) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1000)
+    throw new Error("invalid observer deadline");
+}
+export async function inspectCdpTarget(target, { timeoutMs = 1000 } = {}) {
+  deadline(timeoutMs);
+  const url = targetUrl(target);
+  if (!url) return { state: "invalid_target" };
+  let reader;
+  try {
+    const response = await fetch(`http://${url.host}/json/list`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "error",
+    });
+    if (!response.ok) {
+      void response.body?.cancel().catch(() => {});
+      return { state: "http_error" };
+    }
+    reader = response.body?.getReader();
+    if (!reader) return { state: "invalid_response" };
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 65536) return { state: "invalid_response" };
+      chunks.push(value);
+    }
+    let pages;
+    try {
+      pages = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      return { state: "invalid_response" };
+    }
+    if (!Array.isArray(pages) || pages.length > 100) return { state: "invalid_response" };
+    return {
+      state: "responded",
+      targetPresent: pages.some((page) => page?.type === "page" && page.webSocketDebuggerUrl === url.href),
+      pageCount: pages.filter((page) => page?.type === "page").length,
+    };
+  } catch {
+    return { state: "unreachable" };
+  } finally {
+    void reader?.cancel().catch(() => {});
+  }
+}
+export async function observeFreshCdp(target, child, { timeoutMs = 1000 } = {}) {
+  deadline(timeoutMs);
+  const exited = () => child.exitCode !== null || child.signalCode != null;
+  if (exited()) return { state: "product_exited" };
+  if (!targetUrl(target)) return { state: "invalid_target" };
   let socket;
   let id = 0;
   const pending = new Map();
@@ -46,7 +96,7 @@ export async function observeFreshCdp(target, child, { timeoutMs = 1000 } = {}) 
       socket.addEventListener("close", disconnected);
       socket.addEventListener("error", disconnected);
     });
-    if (!opened) return { state: "open_failed" };
+    if (!opened) return { state: "open_failed", endpoint: await inspectCdpTarget(target, { timeoutMs }) };
     socket.addEventListener("message", ({ data }) => {
       try {
         const reply = JSON.parse(data);

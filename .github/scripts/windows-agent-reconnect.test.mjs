@@ -91,6 +91,7 @@ test("a responsive fresh observer never converts the original reconnect failure 
   const fresh = { state: "observed", browserResponsive: true, rendererResponsive: true, nativeStatus: "connected" };
   const item = {
     product: "api-studio",
+    cdpBaseline: { ...fresh, nativeStatus: "starting" },
     cdp: {
       evaluate: async (expression) => {
         if (expression.includes("agent_reconnect")) reconnectCalls++;
@@ -110,4 +111,5 @@ test("a responsive fresh observer never converts the original reconnect failure 
   assert.equal(observations, 1);
   assert.equal(reports.at(-1).stage, "failed");
   assert.deepEqual(reports.at(-1).freshObserver, fresh);
+  assert.deepEqual(reports.at(-1).freshObserverBaseline, item.cdpBaseline);
 });

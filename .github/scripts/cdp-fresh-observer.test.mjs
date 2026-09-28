@@ -1,9 +1,80 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { observeFreshCdp } from "./cdp-fresh-observer.mjs";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { observeFreshCdp, inspectCdpTarget } from "./cdp-fresh-observer.mjs";
 
 const target = "ws://127.0.0.1:9222/devtools/page/owned-page";
 const alive = { exitCode: null, signalCode: null };
+test("discovery aborts a real loopback response that stops mid-body", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.write("[");
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const started = performance.now();
+    assert.deepEqual(
+      await inspectCdpTarget(`ws://127.0.0.1:${server.address().port}/devtools/page/id`, { timeoutMs: 50 }),
+      { state: "unreachable" },
+    );
+    assert.ok(performance.now() - started < 2000);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+async function withFetch(response, run) {
+  const previous = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (...args) => {
+    requests.push(args);
+    if (response instanceof Error) throw response;
+    return response();
+  };
+  try {
+    await run(requests);
+  } finally {
+    globalThis.fetch = previous;
+  }
+}
+
+test("target discovery distinguishes the original page from a replaced page without exposing metadata", async () => {
+  for (const present of [true, false]) {
+    await withFetch(
+      () =>
+        Response.json([
+          { type: "page", webSocketDebuggerUrl: present ? target : `${target}-replacement`, title: "private" },
+        ]),
+      async (requests) => {
+        assert.deepEqual(await inspectCdpTarget(target), { state: "responded", targetPresent: present, pageCount: 1 });
+        assert.equal(requests[0][0], "http://127.0.0.1:9222/json/list");
+        assert.equal(requests[0][1].redirect, "error");
+      },
+    );
+  }
+});
+
+test("discovery bounds malformed, oversized, failed and external endpoint responses", async () => {
+  for (const [response, state] of [
+    [() => new Response("x".repeat(65537)), "invalid_response"],
+    [() => Response.json({ token: "private" }), "invalid_response"],
+    [() => new Response("private", { status: 503 }), "http_error"],
+    [new Error("private connection details"), "unreachable"],
+  ]) {
+    await withFetch(response, async () => assert.deepEqual(await inspectCdpTarget(target), { state }));
+  }
+  await withFetch(
+    () => Response.json([]),
+    async (requests) => {
+      assert.deepEqual(await inspectCdpTarget("ws://external.invalid:9222/devtools/page/id"), {
+        state: "invalid_target",
+      });
+      assert.equal(requests.length, 0);
+    },
+  );
+});
 async function withSocket(reply, run, { open = true } = {}) {
   const previous = globalThis.WebSocket;
   const calls = [];
@@ -98,14 +169,21 @@ test("unexpected native details are projected to a fixed code", async () => {
   );
 });
 
-test("a socket that never opens is closed at the observer deadline", async () => {
-  await withSocket(
-    () => undefined,
-    async (calls, closed) => {
-      assert.deepEqual(await observeFreshCdp(target, alive, { timeoutMs: 10 }), { state: "open_failed" });
-      assert.equal(calls.length, 0);
-      assert.equal(closed(), true);
-    },
-    { open: false },
+test("a socket that never opens is closed and its target discovery is recorded", async () => {
+  await withFetch(
+    () => Response.json([]),
+    async () =>
+      withSocket(
+        () => undefined,
+        async (calls, closed) => {
+          assert.deepEqual(await observeFreshCdp(target, alive, { timeoutMs: 10 }), {
+            state: "open_failed",
+            endpoint: { state: "responded", targetPresent: false, pageCount: 0 },
+          });
+          assert.equal(calls.length, 0);
+          assert.equal(closed(), true);
+        },
+        { open: false },
+      ),
   );
 });

@@ -35,6 +35,7 @@ export async function reconnectAgent(item, phase, report) {
       nativeStatus,
       ...(connection ? { connection } : {}),
       ...(freshObserver ? { freshObserver } : {}),
+      ...(item.cdpBaseline ? { freshObserverBaseline: item.cdpBaseline } : {}),
       ...(item.child ? { productExited: item.child.exitCode !== null || item.child.signalCode !== null } : {}),
     });
     throw error;

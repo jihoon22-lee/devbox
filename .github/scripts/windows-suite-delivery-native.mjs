@@ -141,6 +141,9 @@ async function start(member) {
     (await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')")).deliveryState,
     mode,
   );
+  // A failed second attach is meaningful only relative to this exact live page.
+  item.cdpBaseline = await item.cdp.probeNewSession();
+  (evidence.cdpBaselines ??= []).push({ product: item.product, ...item.cdpBaseline });
   return item;
 }
 try {
