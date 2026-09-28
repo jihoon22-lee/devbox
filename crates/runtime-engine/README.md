@@ -25,3 +25,9 @@ launch still validates project and filesystem authority.
 Owned WSL stop validates the exact NUL-delimited marker and current PID/group/session
 and signals in one bound invocation. The TERM grace starts after signal delivery;
 KILL revalidates independently. Only an explicit absence witness settles a raced exit.
+
+같은 native owner에서 실행 중인 로그를 다시 열면 쓰기 측의 상태와 잠금을 공유한다.
+읽기 측은 추가 쓰기와 rotation을 같은 상태에서 관찰하며, 쓰는 중인 파일을 복구하거나
+이름을 바꾸지 않는다. 약한 참조는 종료된 stream을 붙잡지 않으며, 같은 경로의 폴더가
+교체돼도 옛 상태를 재사용하지 않는다. 마지막 live handle이 해제된 뒤에는 기존처럼
+디스크의 segment를 읽어 복구한다.

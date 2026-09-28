@@ -49,6 +49,7 @@ export async function exerciseAgentRuntime({
     "console.log('agent-session-ready');setInterval(()=>console.log('agent-session-tick'),100);\n",
     { flag: "wx" },
   );
+  stage("prepare-project");
   const preview = await registry("preview_windows", { root: directory });
   const context = (
     await registry("apply_registration", {
@@ -58,6 +59,7 @@ export async function exerciseAgentRuntime({
     })
   ).context;
   await registry("select_project", { context });
+  stage("prepare-service");
   const service = await runtime("create_service", {
     input: {
       name: "Owned agent service",
@@ -101,6 +103,7 @@ export async function exerciseAgentRuntime({
   let crashFixture;
   let scheduledJob;
   try {
+    stage("prepare-sessions");
     const creator = await startSession();
     const beforeService = await runtime("get_service_instance", { id: service.id });
     const borrower = await startSession();
@@ -115,6 +118,7 @@ export async function exerciseAgentRuntime({
       const batch = await tail(null);
       return Buffer.from(batch.data).toString("utf8").includes("agent-session-ready") && batch;
     }, "service log did not start");
+    stage("prepare-crash-recovery");
     const crashDirectory = path.join(directory, "crash");
     mkdirSync(crashDirectory);
     crashFixture = await prepareRuntimeCrash(current.cdp, crashDirectory);

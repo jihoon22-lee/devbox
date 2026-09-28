@@ -41,6 +41,25 @@ export async function connect(port, child, deadline = performance.now() + 30_000
         let id = 0;
         const pending = new Map();
         const diagnostics = [];
+        let disconnected = false;
+        let closeCode = null;
+        const disconnect = () => {
+          disconnected = true;
+          for (const entry of pending.values()) {
+            clearTimeout(entry.timer);
+            entry.reject(new Error("CDP disconnected"));
+          }
+          pending.clear();
+        };
+        socket.addEventListener("close", (event) => {
+          closeCode = Number.isInteger(event.code) ? event.code : null;
+          disconnect();
+        });
+        socket.addEventListener("error", disconnect);
+        const connectionState = () => ({
+          state: disconnected || socket.readyState !== 1 ? "closed" : "open",
+          closeCode,
+        });
         socket.addEventListener("message", ({ data }) => {
           const response = JSON.parse(data);
           const entry = pending.get(response.id);
@@ -66,6 +85,7 @@ export async function connect(port, child, deadline = performance.now() + 30_000
           }
         });
         const command = (method, params = {}) => {
+          if (connectionState().state !== "open") return Promise.reject(new Error("CDP disconnected"));
           const next = ++id;
           return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
@@ -87,9 +107,11 @@ export async function connect(port, child, deadline = performance.now() + 30_000
         return {
           close: () => socket.close(),
           command,
+          connectionState,
           async evaluate(expression, { timeoutMs = 10_000 } = {}) {
             if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 660_000)
               throw new Error("Invalid fixture CDP deadline");
+            if (connectionState().state !== "open") throw new Error("CDP disconnected");
             new Function(expression); // Check fixture JavaScript before sending it.
             const next = ++id;
             const result = await new Promise((resolve, reject) => {
@@ -97,7 +119,11 @@ export async function connect(port, child, deadline = performance.now() + 30_000
                 pending.delete(next);
                 writeFileSync(
                   "product-foundation-evidence/renderer-timeout.json",
-                  JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2),
+                  JSON.stringify(
+                    { currentProbe, diagnostics, connection: connectionState(), expression: expression.slice(0, 240) },
+                    null,
+                    2,
+                  ),
                 );
                 reject(new Error(`CDP request timeout at ${currentProbe?.stage}`));
               }, timeoutMs);

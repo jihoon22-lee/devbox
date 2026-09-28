@@ -5,6 +5,7 @@ import {
 } from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
+import { reconnectAgent } from "./windows-agent-reconnect.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
@@ -427,13 +428,12 @@ try {
     }
     // All existing native clients observe a deliberate stop. Background reads
     // must not undo the user's choice; an explicit reconnect may start it again.
+    const reportReconnect = (state) => {
+      evidence.checks.agentReconnect = state;
+      console.log(`Agent reconnect acceptance: ${state.product} ${state.phase} ${state.stage}`);
+    };
     for (const item of Object.values(apps)) {
-      assert.equal(
-        await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
-          timeoutMs: 35000,
-        }),
-        "connected",
-      );
+      await reconnectAgent(item, "before-stop", reportReconnect);
     }
     const relayEnvironment = { ...process.env };
     for (const key of Object.keys(relayEnvironment))
@@ -469,12 +469,7 @@ try {
     }
     await delay(2500);
     assert.equal(agents().length, 0, "background queries relaunched an intentionally stopped owner");
-    assert.equal(
-      await apps.workspace.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
-        timeoutMs: 35000,
-      }),
-      "connected",
-    );
+    await reconnectAgent(apps.workspace, "after-stop", reportReconnect);
     value(
       await call(apps["api-studio"], "plugin:api-studio|webhooks", { method: "server_status", args: {} }, "webhooks"),
     );
