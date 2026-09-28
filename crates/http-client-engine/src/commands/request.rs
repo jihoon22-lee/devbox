@@ -3168,6 +3168,17 @@ fn build_curl(req: &ResolvedRequest) -> String {
         req.method,
         shell_quote(&url)
     )];
+    if let Some(tls) = &req.tls {
+        if !tls.verify {
+            lines.push("  --insecure".into());
+        }
+        if tls.credential_id.is_some() {
+            if tls.verify {
+                lines.push("  --cacert '{{ca_pem}}'".into());
+            }
+            lines.push("  --cert '{{client_cert_pem}}' --key '{{client_key_pem}}'".into());
+        }
+    }
     for header in req.headers.iter().filter(|header| {
         header.enabled
             && !header.key.is_empty()
@@ -3187,6 +3198,7 @@ fn build_curl(req: &ResolvedRequest) -> String {
     }
     if let Some(auth) = &req.auth {
         match auth.kind.as_str() {
+            "oauth2" => lines.push("  --header 'Authorization: Bearer {{access_token}}'".into()),
             "basic" if !auth.username.is_empty() => lines.push(format!(
                 "  --header {}",
                 shell_quote(&format!(
@@ -4560,6 +4572,25 @@ mod tests {
         assert!(redirect_switches_to_get(303, &reqwest::Method::PUT));
         assert!(!redirect_switches_to_get(307, &reqwest::Method::POST));
         assert!(!redirect_switches_to_get(302, &reqwest::Method::PUT));
+    }
+
+    #[test]
+    fn revealed_curl_keeps_oauth_and_tls_as_explicit_external_placeholders() {
+        let mut req = template();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            ..Default::default()
+        });
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: false,
+        });
+        let (resolved, _) = resolve_template(&req, &[], &MockSealer).unwrap();
+        let curl = build_curl(&resolved);
+        assert!(curl.contains("Authorization: Bearer {{access_token}}"));
+        assert!(curl.contains("--insecure"));
+        assert!(curl.contains("{{client_cert_pem}}"));
+        assert!(!curl.contains(&"a".repeat(32)));
     }
 
     #[test]

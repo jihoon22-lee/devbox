@@ -191,6 +191,11 @@ export function buildCurl(template: RequestTemplate): string {
   if (!url) return "";
 
   const lines = [`curl --request ${req.method} ${shellQuote(url)}`];
+  if (req.tls?.verify === false) lines.push("  --insecure");
+  if (req.tls?.credentialId) {
+    if (req.tls.verify) lines.push("  --cacert '{{ca_pem}}'");
+    lines.push("  --cert '{{client_cert_pem}}' --key '{{client_key_pem}}'");
+  }
 
   const headers: [string, string][] = [];
   for (const h of req.headers) {
@@ -205,7 +210,9 @@ export function buildCurl(template: RequestTemplate): string {
   }
   const cookieHeader = buildCookieHeader(req.cookies);
   if (cookieHeader) headers.push(["Cookie", cookieHeader]);
-  if (req.auth?.kind === "basic" && req.auth.username) {
+  if (req.auth?.kind === "oauth2") {
+    headers.push(["Authorization", "Bearer {{access_token}}"]);
+  } else if (req.auth?.kind === "basic" && req.auth.username) {
     headers.push(["Authorization", "Basic [REDACTED]"]);
   } else if (req.auth?.kind === "bearer" && req.auth.token) {
     headers.push([
