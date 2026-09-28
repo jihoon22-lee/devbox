@@ -111,3 +111,45 @@ for product in ("knowledge", "api-studio", "control-center"):
             continue
     raise AssertionError(f"retired broad {product} execute capability was accepted")
 print("Typed products cannot regain the retired execute capability: PASS")
+
+# A coordinated stable release may advance any semver component, while every
+# product and the agent must still agree on the exact version.
+def check_versions(versions, agent_version):
+    def read_version(path, *args, **kwargs):
+        value = original_read(path, *args, **kwargs)
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            return value
+        for product, version in {**versions, "agent": agent_version}.items():
+            app = f"apps/devbox-{product}"
+            native = app if product == "agent" else f"{app}/src-tauri"
+            if relative == f"{native}/Cargo.toml":
+                return re.sub(r'^version = "[^"]+"', f'version = "{version}"', value, count=1, flags=re.MULTILINE)
+            if relative in (f"{native}/tauri.conf.json", f"{app}/package.json"):
+                document = json.loads(value)
+                document["version"] = version
+                return json.dumps(document)
+        return value
+    with patch.object(Path, "read_text", read_version), redirect_stdout(io.StringIO()):
+        check(root)
+
+products = ("workspace", "api-studio", "knowledge", "control-center")
+for version in ("0.8.1", "0.9.0", "1.0.0", "12.34.56"):
+    check_versions(dict.fromkeys(products, version), version)
+for version in ("01.2.3", "1.02.3", "1.2.03", "0.9", "v0.9.0", "0.9.0-beta.1", "0.9.0+build"):
+    try:
+        check_versions(dict.fromkeys(products, version), version)
+    except AssertionError:
+        continue
+    raise AssertionError(f"non-stable or noncanonical version was accepted: {version}")
+for versions, agent_version in (
+    ({**dict.fromkeys(products, "0.8.1"), "workspace": "0.8.2"}, "0.8.1"),
+    (dict.fromkeys(products, "0.8.1"), "0.8.2"),
+):
+    try:
+        check_versions(versions, agent_version)
+    except AssertionError:
+        continue
+    raise AssertionError("mixed product/agent versions were accepted")
+print("Stable semver and coordinated product/agent release versions: PASS")

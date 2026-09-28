@@ -1,12 +1,12 @@
 # Windows 설치·복구
 
 [GitHub Releases](https://github.com/jihoon22-lee/devbox/releases)에 실제 공개된 버전을 선택한다.
-v0.8 소스/후보/공개 상태는 [#541](https://github.com/jihoon22-lee/devbox/issues/541)에 구분해 기록한다.
+현재 소스 v0.9.0의 후보/공개 상태는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에 구분해 기록한다.
 Windows 11과 WebView2가 필요하다. 일반 사용자는 Rust·Node·MSVC를 설치할 필요가 없다.
 
 ## 설치와 portable
 
-Suite 설치 파일 `Devbox_0.8.0_x64-setup.exe`는 Workspace·API Studio·Knowledge·Control Center를
+Suite 설치 파일 `Devbox_0.9.0_x64-setup.exe`는 Workspace·API Studio·Knowledge·Control Center를
 함께 설치한다. 독립 실행이 필요하면 해당 제품 ZIP 전체를 별도 폴더에 푼다. 실행 파일만
 옮기면 필수 component와 installation identity가 빠진다. 서로 다른 portable과 설치본은
 각자의 namespace/identity로 취급하며 임의 경로를 Suite 구성원으로 자동 등록하지 않는다.

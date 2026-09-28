@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
-현재 소스는 네 제품(Workspace·API Studio·Knowledge·Control Center)이다. 공개 상태는 GitHub Release를 확인한다.
+현재 소스는 v0.9.0 네 제품(Workspace·API Studio·Knowledge·Control Center)이다. 공개 상태는 GitHub Release를 확인한다.
 원격은 `https://github.com/jihoon22-lee/devbox`다.
 
 ## 먼저 읽을 규약과 작업 범위
