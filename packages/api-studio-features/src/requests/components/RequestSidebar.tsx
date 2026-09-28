@@ -23,8 +23,10 @@ interface Props {
   selectedHistoryId: string | null;
   setSavedPreview: React.Dispatch<React.SetStateAction<{ kind: "history" | "collection"; id: string } | null>>;
   setSelectedHistoryId: React.Dispatch<React.SetStateAction<string | null>>;
-  setReq: React.Dispatch<React.SetStateAction<import("../types").RequestTemplate>>;
-  setRequestEditorRevision: React.Dispatch<React.SetStateAction<number>>;
+  loadRequest: (
+    request: import("../types").RequestTemplate,
+    entry?: import("../lib/collections").CollectionEntry,
+  ) => void;
   setPersistenceWarning: React.Dispatch<React.SetStateAction<string | null>>;
   setResp: React.Dispatch<React.SetStateAction<import("../../generated/ApiResponse").ApiResponse | null>>;
   historyContextMenu: import("@devbox/context-menu").ContextMenuController;
@@ -37,6 +39,9 @@ interface Props {
   collSaving: boolean;
   contextActionBusy: boolean;
   onExportTransfer: (kind: "collection" | "environment") => void;
+  onImport: () => void;
+  onExportFolder: () => void;
+  onRun: () => void;
   onImportTransfer: (kind: "collection" | "environment") => void;
   collName: string;
   setCollName: React.Dispatch<React.SetStateAction<string>>;
@@ -88,8 +93,7 @@ export function RequestSidebar({
   selectedHistoryId,
   setSavedPreview,
   setSelectedHistoryId,
-  setReq,
-  setRequestEditorRevision,
+  loadRequest,
   setPersistenceWarning,
   setResp,
   historyContextMenu,
@@ -103,6 +107,9 @@ export function RequestSidebar({
   contextActionBusy,
   onExportTransfer,
   onImportTransfer,
+  onImport,
+  onExportFolder,
+  onRun,
   collName,
   setCollName,
   collFolder,
@@ -181,8 +188,7 @@ export function RequestSidebar({
               return;
             }
             setSelectedHistoryId(h.id);
-            setReq(toRequestTemplate(h.request));
-            setRequestEditorRevision((revision) => revision + 1);
+            loadRequest(toRequestTemplate(h.request));
             if (h.request.requiresSecretReview) {
               setPersistenceWarning("마스킹된 기록입니다. 민감한 값을 환경 변수 참조로 다시 설정하세요.");
             }
@@ -236,6 +242,46 @@ export function RequestSidebar({
           onClick={() => onImportTransfer("collection")}
         >
           JSON 가져오기
+        </button>
+        <button
+          type="button"
+          className="btn mini"
+          disabled={
+            !persistenceReady ||
+            transferBusy ||
+            Boolean(browserImportKind) ||
+            environmentBusy ||
+            sending ||
+            collSaving ||
+            contextActionBusy
+          }
+          onClick={onImport}
+        >
+          가져오기
+        </button>
+        <button
+          type="button"
+          className="btn mini"
+          disabled={
+            !persistenceReady ||
+            transferBusy ||
+            Boolean(browserImportKind) ||
+            environmentBusy ||
+            sending ||
+            collSaving ||
+            contextActionBusy
+          }
+          onClick={onExportFolder}
+        >
+          폴더로 내보내기
+        </button>
+        <button
+          type="button"
+          className="btn mini"
+          disabled={!persistenceReady || transferBusy || sending || collSaving || contextActionBusy}
+          onClick={onRun}
+        >
+          실행
         </button>
       </div>
       <div className="coll-save-row">
@@ -307,8 +353,7 @@ export function RequestSidebar({
                   return;
                 }
                 setSelectedCollectionId(c.id);
-                setReq(toRequestTemplate(c.request));
-                setRequestEditorRevision((revision) => revision + 1);
+                loadRequest(toRequestTemplate(c.request), c);
                 if (c.requiresSecretReview) {
                   setPersistenceWarning("안전 변환된 컬렉션입니다. 마스킹된 값을 환경 변수 참조로 다시 설정하세요.");
                 }

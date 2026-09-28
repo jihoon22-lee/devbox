@@ -35,7 +35,18 @@ pub enum ApiCall {
     DisconnectMcpStdio {
         connection_id: String,
     },
+    PickCollectionFolder {},
+    ReadCollectionFolder {
+        grant_id: String,
+    },
+    WriteCollectionFolder {
+        grant_id: String,
+        files: Vec<crate::commands::collection_folder::FolderFile>,
+    },
     ReadJsonFile {},
+    ReadImportFiles {
+        format: crate::commands::import_files::ImportFileFormat,
+    },
     SaveJsonFile {
         content: String,
         default_name: String,
@@ -91,6 +102,26 @@ pub enum ApiCall {
         grant_id: String,
         remove_local_on_remote_failure: bool,
     },
+    Oauth2Status {
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
+    AuthorizeOauth2 {
+        request_id: String,
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
+    CancelOauth2 {
+        request_id: String,
+    },
+    FetchOauth2Token {
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
+    ClearOauth2Token {
+        auth: crate::commands::request::AuthConfig,
+        environment: Vec<crate::commands::request::EnvironmentVariable>,
+    },
     PickGrpcProto {},
     PickGrpcImportRoot {},
     ConnectGrpc {
@@ -116,9 +147,20 @@ pub enum ApiCall {
         req: crate::commands::request::RequestTemplate,
         environment: Vec<crate::commands::request::EnvironmentVariable>,
         request_id: String,
+        #[serde(default)]
+        captures: Vec<crate::commands::captures::ResponseCapture>,
     },
     CancelRequest {
         request_id: String,
+    },
+    RevealCapture {
+        reference: String,
+    },
+    DiscardCaptures {
+        references: Vec<String>,
+    },
+    RestoreCaptures {
+        references: Vec<String>,
     },
     DiscardCurrentResponse {},
     BuildRevealedCurl {
@@ -189,6 +231,10 @@ pub const API_METHODS: &[&str] = &[
     "cancel_mcp_stdio",
     "disconnect_mcp_stdio",
     "read_json_file",
+    "pick_collection_folder",
+    "read_collection_folder",
+    "write_collection_folder",
+    "read_import_files",
     "save_json_file",
     "seal_secret",
     "pick_grpc_ca",
@@ -207,6 +253,11 @@ pub const API_METHODS: &[&str] = &[
     "cancel_mcp_oauth",
     "list_mcp_oauth_grants",
     "revoke_mcp_oauth_grant",
+    "oauth2_status",
+    "authorize_oauth2",
+    "cancel_oauth2",
+    "fetch_oauth2_token",
+    "clear_oauth2_token",
     "pick_grpc_proto",
     "pick_grpc_import_root",
     "connect_grpc",
@@ -216,6 +267,9 @@ pub const API_METHODS: &[&str] = &[
     "export_grpc_summary",
     "send_request",
     "cancel_request",
+    "reveal_capture",
+    "discard_captures",
+    "restore_captures",
     "discard_current_response",
     "build_revealed_curl",
     "copy_raw_response_headers",
@@ -245,6 +299,10 @@ impl ApiCall {
             Self::CancelMcpStdio { .. } => "cancel_mcp_stdio",
             Self::DisconnectMcpStdio { .. } => "disconnect_mcp_stdio",
             Self::ReadJsonFile { .. } => "read_json_file",
+            Self::PickCollectionFolder {} => "pick_collection_folder",
+            Self::ReadCollectionFolder { .. } => "read_collection_folder",
+            Self::WriteCollectionFolder { .. } => "write_collection_folder",
+            Self::ReadImportFiles { .. } => "read_import_files",
             Self::SaveJsonFile { .. } => "save_json_file",
             Self::SealSecret { .. } => "seal_secret",
             Self::PickGrpcCa { .. } => "pick_grpc_ca",
@@ -263,6 +321,11 @@ impl ApiCall {
             Self::CancelMcpOauth { .. } => "cancel_mcp_oauth",
             Self::ListMcpOauthGrants { .. } => "list_mcp_oauth_grants",
             Self::RevokeMcpOauthGrant { .. } => "revoke_mcp_oauth_grant",
+            Self::Oauth2Status { .. } => "oauth2_status",
+            Self::AuthorizeOauth2 { .. } => "authorize_oauth2",
+            Self::CancelOauth2 { .. } => "cancel_oauth2",
+            Self::FetchOauth2Token { .. } => "fetch_oauth2_token",
+            Self::ClearOauth2Token { .. } => "clear_oauth2_token",
             Self::PickGrpcProto { .. } => "pick_grpc_proto",
             Self::PickGrpcImportRoot { .. } => "pick_grpc_import_root",
             Self::ConnectGrpc { .. } => "connect_grpc",
@@ -272,6 +335,9 @@ impl ApiCall {
             Self::ExportGrpcSummary { .. } => "export_grpc_summary",
             Self::SendRequest { .. } => "send_request",
             Self::CancelRequest { .. } => "cancel_request",
+            Self::RevealCapture { .. } => "reveal_capture",
+            Self::DiscardCaptures { .. } => "discard_captures",
+            Self::RestoreCaptures { .. } => "restore_captures",
             Self::DiscardCurrentResponse { .. } => "discard_current_response",
             Self::BuildRevealedCurl { .. } => "build_revealed_curl",
             Self::CopyRawResponseHeaders { .. } => "copy_raw_response_headers",
@@ -295,9 +361,11 @@ impl ApiCall {
             Self::CancelMcpStdio { .. }
             | Self::DisconnectMcpStdio { .. }
             | Self::StopSseStream { .. }
+            | Self::CancelOauth2 { .. }
             | Self::CancelMcpOauth { .. }
             | Self::CancelGrpc { .. }
             | Self::DisconnectGrpc { .. }
+            | Self::DiscardCaptures { .. }
             | Self::CancelRequest { .. }
             | Self::CloseWebsocket { .. }
             | Self::DisconnectWebsocket { .. }
@@ -374,6 +442,39 @@ pub async fn dispatch(
         ApiCall::ReadJsonFile {} => {
             use crate::commands::transfer::*;
             let value = read_json_file(component_app.clone()).await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::PickCollectionFolder {} => {
+            let value =
+                crate::commands::collection_folder::pick_collection_folder(component_app.clone())
+                    .await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::ReadCollectionFolder { grant_id } => {
+            let state = component_app
+                .state::<std::sync::Arc<crate::commands::collection_folder::CollectionFolderState>>(
+                )
+                .inner()
+                .clone();
+            let value =
+                crate::commands::collection_folder::read_collection_folder(state, grant_id).await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::WriteCollectionFolder { grant_id, files } => {
+            let state = component_app
+                .state::<std::sync::Arc<crate::commands::collection_folder::CollectionFolderState>>(
+                )
+                .inner()
+                .clone();
+            let value =
+                crate::commands::collection_folder::write_collection_folder(state, grant_id, files)
+                    .await?;
+            serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::ReadImportFiles { format } => {
+            let value =
+                crate::commands::import_files::read_import_files(component_app.clone(), format)
+                    .await?;
             serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
         }
         ApiCall::SaveJsonFile {
@@ -560,6 +661,28 @@ pub async fn dispatch(
             .await?;
             serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
         }
+        ApiCall::Oauth2Status { auth, environment } => Ok(serde_json::json!(
+            crate::commands::oauth2::status(component_app, &auth, &environment)?
+        )),
+        ApiCall::AuthorizeOauth2 {
+            request_id,
+            auth,
+            environment,
+        } => Ok(serde_json::json!(
+            crate::commands::oauth2::authorize(component_app, &request_id, &auth, &environment)
+                .await?
+        )),
+        ApiCall::FetchOauth2Token { auth, environment } => Ok(serde_json::json!(
+            crate::commands::oauth2::fetch(component_app, &auth, &environment).await?
+        )),
+        ApiCall::CancelOauth2 { request_id } => {
+            crate::commands::oauth2::cancel(component_app, &request_id)?;
+            Ok(serde_json::Value::Null)
+        }
+        ApiCall::ClearOauth2Token { auth, environment } => {
+            crate::commands::oauth2::clear(component_app, &auth, &environment)?;
+            Ok(serde_json::Value::Null)
+        }
         ApiCall::PickGrpcProto {} => {
             use crate::commands::grpc::*;
             let value = pick_grpc_proto(component_app.clone(), component_app.state()).await?;
@@ -621,12 +744,15 @@ pub async fn dispatch(
             req,
             environment,
             request_id,
+            captures,
         } => {
             use crate::commands::request::*;
             let value = send_request(
+                component_app.clone(),
                 req,
                 environment,
                 request_id,
+                captures,
                 component_app.state(),
                 component_app.state(),
             )
@@ -635,13 +761,32 @@ pub async fn dispatch(
         }
         ApiCall::CancelRequest { request_id } => {
             use crate::commands::request::*;
-            cancel_request(component_app.state(), request_id);
+            cancel_request(component_app.state(), component_app.state(), request_id);
             serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
         }
         ApiCall::DiscardCurrentResponse {} => {
             use crate::commands::request::*;
             discard_current_response(component_app.state())?;
             serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+        }
+        ApiCall::RevealCapture { reference } => {
+            let vault = component_app.state::<crate::commands::request::ResponseHeaderVault>();
+            Ok(serde_json::json!(vault.reveal_capture(
+                &reference,
+                crate::platform::platform_sealer().as_ref()
+            )?))
+        }
+        ApiCall::DiscardCaptures { references } => {
+            component_app
+                .state::<crate::commands::request::ResponseHeaderVault>()
+                .discard_captures(&references)?;
+            Ok(serde_json::Value::Null)
+        }
+        ApiCall::RestoreCaptures { references } => {
+            component_app
+                .state::<crate::commands::request::ResponseHeaderVault>()
+                .restore_captures(&references)?;
+            Ok(serde_json::Value::Null)
         }
         ApiCall::BuildRevealedCurl { req, environment } => {
             use crate::commands::request::*;
@@ -799,7 +944,23 @@ pub fn result_types(
         ),
         ("cancel_mcp_stdio", export.register::<bool>()?),
         ("disconnect_mcp_stdio", export.register::<()>()?),
+        (
+            "pick_collection_folder",
+            export.register::<Option<crate::commands::collection_folder::FolderGrant>>()?,
+        ),
+        (
+            "read_collection_folder",
+            export.register::<Vec<crate::commands::import_files::ImportFile>>()?,
+        ),
+        (
+            "write_collection_folder",
+            export.register::<crate::commands::collection_folder::WriteResult>()?,
+        ),
         ("read_json_file", export.register::<Option<String>>()?),
+        (
+            "read_import_files",
+            export.register::<Option<Vec<crate::commands::import_files::ImportFile>>>()?,
+        ),
         ("save_json_file", export.register::<bool>()?),
         ("seal_secret", export.register::<String>()?),
         (
@@ -876,6 +1037,23 @@ pub fn result_types(
             export.register::<crate::commands::request::ApiResponse>()?,
         ),
         ("cancel_request", export.register::<()>()?),
+        (
+            "oauth2_status",
+            export.register::<crate::commands::oauth2::cache::TokenStatus>()?,
+        ),
+        (
+            "authorize_oauth2",
+            export.register::<crate::commands::oauth2::cache::TokenStatus>()?,
+        ),
+        (
+            "fetch_oauth2_token",
+            export.register::<crate::commands::oauth2::cache::TokenStatus>()?,
+        ),
+        ("clear_oauth2_token", export.register::<()>()?),
+        ("cancel_oauth2", export.register::<()>()?),
+        ("reveal_capture", export.register::<String>()?),
+        ("discard_captures", export.register::<()>()?),
+        ("restore_captures", export.register::<()>()?),
         ("discard_current_response", export.register::<()>()?),
         ("build_revealed_curl", export.register::<String>()?),
         ("copy_raw_response_headers", export.register::<String>()?),
@@ -902,6 +1080,26 @@ pub fn result_types(
 }
 product_ipc::issue_codes! {
     pub enum ApiIssue {
+    TlsCredentialMissing = "tls_credential_missing",
+    TlsCredentialInvalid = "tls_credential_invalid",
+    TlsRedirectBlocked = "tls_redirect_blocked",
+    TlsHttpOnly = "tls_http_only",
+    TlsNativeRequired = "tls_native_required",
+    Oauth2ConfigInvalid = "oauth2_config_invalid",
+    Oauth2AuthorizationRequired = "oauth2_authorization_required",
+    Oauth2TokenFailed = "oauth2_token_failed",
+    Oauth2StorageFailed = "oauth2_storage_failed",
+    Oauth2Cancelled = "oauth2_cancelled",
+    Oauth2Busy = "oauth2_busy",
+    CaptureInputInvalid = "capture_input_invalid",
+    CaptureReferenceUnavailable = "capture_reference_unavailable",
+    CaptureLimit = "capture_limit",
+    FolderGrantExpired = "folder_grant_expired",
+    FolderNotCollection = "folder_not_collection",
+    FolderPathInvalid = "folder_path_invalid",
+    FolderTooLarge = "folder_too_large",
+    ImportFileInvalid = "import_file_invalid",
+    ImportFileTooLarge = "import_file_too_large",
     ApiWorkspaceInvalid = "api_workspace_invalid",
     ApiWorkspaceProjectUnavailable = "api_workspace_project_unavailable",
     ApiWorkspaceStale = "api_workspace_stale",
@@ -1165,12 +1363,53 @@ mod tests {
         let mut names = API_METHODS.to_vec();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 52);
+        assert_eq!(names.len(), 64);
         assert_eq!(classify("synthetic remote secret"), "unavailable");
+    }
+    #[test]
+    fn collection_folder_calls_accept_only_opaque_grants() {
+        for method in [
+            "pick_collection_folder",
+            "read_collection_folder",
+            "write_collection_folder",
+        ] {
+            let args = match method {
+                "pick_collection_folder" => serde_json::json!({}),
+                "read_collection_folder" => serde_json::json!({"grantId":"opaque"}),
+                _ => serde_json::json!({"grantId":"opaque","files":[]}),
+            };
+            let call: ApiCall =
+                serde_json::from_value(serde_json::json!({"method":method,"args":args})).unwrap();
+            assert_eq!(call.method(), method);
+            assert!(serde_json::from_value::<ApiCall>(
+                serde_json::json!({"method":method,"args":{"path":"C:/private"}})
+            )
+            .is_err());
+        }
+    }
+    #[test]
+    fn import_file_picker_is_typed_and_keeps_the_normal_lane() {
+        let call: ApiCall = serde_json::from_value(
+            serde_json::json!({"method":"read_import_files","args":{"format":"auto"}}),
+        )
+        .unwrap();
+        assert_eq!(call.method(), "read_import_files");
+        assert_eq!(call.class(), ExecutionClass::Normal);
+        for args in [
+            serde_json::json!({"format":"curl"}),
+            serde_json::json!({"format":"auto","path":"untrusted"}),
+        ] {
+            assert!(serde_json::from_value::<ApiCall>(
+                serde_json::json!({"method":"read_import_files","args":args})
+            )
+            .is_err());
+        }
     }
     #[test]
     fn cancel_and_disconnect_keep_the_control_pool() {
         for value in [
+            r#"{"method":"cancel_oauth2","args":{"requestId":"r"}}"#,
+            r#"{"method":"discard_captures","args":{"references":[]}}"#,
             r#"{"method":"cancel_request","args":{"requestId":"r"}}"#,
             r#"{"method":"disconnect_mcp_stdio","args":{"connectionId":"s"}}"#,
         ] {

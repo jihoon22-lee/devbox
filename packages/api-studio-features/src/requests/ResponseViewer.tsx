@@ -1,3 +1,4 @@
+import type { AssertionResult } from "./lib/assertions";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { isTauri } from "./lib/isTauri";
 import { isProductHosted } from "../transport";
@@ -6,9 +7,9 @@ import { MockDraftAction } from "../webhooks/MockDraftAction";
 import type { ApiResponse, BinaryResponse, GraphqlResponse, ResponseCookie, ToolboxDispatch } from "./types";
 
 export type RawResponseCopyKind = "headers" | "cookies";
-type ResponseTab = "body" | "headers" | "cookies";
+type ResponseTab = "body" | "headers" | "cookies" | "checks";
 
-const RESPONSE_TABS: readonly ResponseTab[] = ["body", "headers", "cookies"];
+const RESPONSE_TABS: readonly ResponseTab[] = ["body", "headers", "cookies", "checks"];
 
 export const TOOLBOX_SELECTION_MESSAGES = {
   empty: "선택 영역이 비어 있습니다. 현재 응답 본문에서 텍스트를 선택하세요.",
@@ -51,6 +52,8 @@ export function inspectResponseSelection(
 }
 
 interface ResponseViewerProps {
+  assertionResults?: AssertionResult[];
+  captured?: { variable: string; target: string }[];
   response: ApiResponse | null;
   responseText: string;
   pretty: boolean;
@@ -185,6 +188,8 @@ function BinaryResponseSummary({
 }
 
 export function ResponseViewer({
+  assertionResults = [],
+  captured = [],
   response,
   responseText,
   pretty,
@@ -402,7 +407,9 @@ export function ResponseViewer({
               ? "본문"
               : candidate === "headers"
                 ? `헤더 (${response.headers.length})`
-                : `쿠키 (${response.cookies.length})`;
+                : candidate === "cookies"
+                  ? `쿠키 (${response.cookies.length})`
+                  : "검증";
           return (
             <button
               key={candidate}
@@ -422,6 +429,21 @@ export function ResponseViewer({
         })}
       </div>
 
+      {tab === "checks" && (
+        <section role="tabpanel" id="response-panel-checks" aria-labelledby="response-tab-checks" tabIndex={0}>
+          <p>
+            {assertionResults.length}개 중 {assertionResults.filter((result) => result.passed).length}개 통과
+          </p>
+          {assertionResults.map((result) => (
+            <p key={result.id}>{result.passed ? "통과" : result.message}</p>
+          ))}
+          {captured.map((item) => (
+            <p key={item.variable}>
+              {item.variable} ← {item.target} 캡처함
+            </p>
+          ))}
+        </section>
+      )}
       {tab === "body" && (
         <section
           id="response-panel-body"

@@ -1,3 +1,4 @@
+import { hasCustomTls } from "./lib/tls";
 import { apiCall } from "../calls";
 import { isProductHosted } from "../transport";
 
@@ -136,8 +137,13 @@ export async function sendRequest(
   req: RequestTemplate,
   environment: EnvVariable[],
   signal?: AbortSignal,
+  captures: import("./lib/captures").Capture[] = [],
 ): Promise<ApiResponse> {
-  if (!isTauri()) return browserFetch(req, environment, signal);
+  if (!isTauri()) {
+    if (hasCustomTls(req.tls)) throw Object.assign(new Error("tls_native_required"), { name: "tls_native_required" });
+    if (req.auth?.kind === "oauth2") requireNativeOAuth();
+    return browserFetch(req, environment, signal);
+  }
   if (signal?.aborted) throw new Error("요청이 취소되었습니다");
   const requestId = nextNativeRequestId();
   const onAbort = () => {
@@ -145,10 +151,59 @@ export async function sendRequest(
   };
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    return await apiCall("send_request", { req, environment, requestId });
+    return await apiCall("send_request", { req, environment, requestId, captures });
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
+}
+
+export type OAuth2TokenStatus = import("../generated/TokenStatus").TokenStatus;
+function requireNativeOAuth(): void {
+  if (!isTauri()) throw new Error("OAuth 2.0 인증은 데스크톱 앱에서 사용할 수 있습니다.");
+}
+export async function oauth2Status(
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<OAuth2TokenStatus> {
+  requireNativeOAuth();
+  return apiCall("oauth2_status", { auth, environment });
+}
+export async function authorizeOAuth2(
+  requestId: string,
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<OAuth2TokenStatus> {
+  requireNativeOAuth();
+  return apiCall("authorize_oauth2", { requestId, auth, environment });
+}
+export async function cancelOAuth2(requestId: string): Promise<void> {
+  requireNativeOAuth();
+  await apiCall("cancel_oauth2", { requestId });
+}
+export async function fetchOAuth2Token(
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<OAuth2TokenStatus> {
+  requireNativeOAuth();
+  return apiCall("fetch_oauth2_token", { auth, environment });
+}
+export async function clearOAuth2Token(
+  auth: NonNullable<RequestTemplate["auth"]>,
+  environment: EnvVariable[],
+): Promise<void> {
+  requireNativeOAuth();
+  await apiCall("clear_oauth2_token", { auth, environment });
+}
+
+export async function revealCapture(reference: string): Promise<string> {
+  if (!isTauri()) throw new Error("캡처 참조는 데스크톱 앱에서만 사용할 수 있습니다.");
+  return apiCall("reveal_capture", { reference });
+}
+export async function discardCaptures(references: string[]): Promise<void> {
+  if (isTauri() && references.length) await apiCall("discard_captures", { references });
+}
+export async function restoreCaptures(references: string[]): Promise<void> {
+  if (isTauri() && references.length) await apiCall("restore_captures", { references });
 }
 
 async function cancelRequest(requestId: string): Promise<void> {
@@ -216,6 +271,34 @@ export async function saveResponseBinary(responseId: string): Promise<boolean> {
 export async function readJsonFile(): Promise<string | null> {
   if (!isTauri()) throw new Error("JSON 파일 가져오기는 데스크톱 앱에서 사용할 수 없습니다");
   return apiCall("read_json_file", {});
+}
+
+export type ImportFileFormat = import("../generated/ImportFileFormat").ImportFileFormat;
+export interface ImportFile {
+  name: string;
+  relativePath: string;
+  text: string;
+}
+/** Native-owned selection; absolute paths never cross this interface. */
+export async function readImportFiles(format: ImportFileFormat): Promise<ImportFile[] | null> {
+  if (!isTauri()) throw new Error("파일 가져오기는 데스크톱 앱에서만 사용할 수 있습니다.");
+  const files = await apiCall("read_import_files", { format });
+  return files?.map((file) => ({ name: file.name, relativePath: file.relative_path, text: file.text })) ?? null;
+}
+
+export async function pickCollectionFolder() {
+  if (!isTauri()) throw new Error("폴더 선택은 데스크톱 앱에서만 사용할 수 있습니다.");
+  return apiCall("pick_collection_folder", {});
+}
+export async function readCollectionFolder(grantId: string): Promise<ImportFile[]> {
+  const files = await apiCall("read_collection_folder", { grantId });
+  return files.map((file) => ({ name: file.name, relativePath: file.relative_path, text: file.text }));
+}
+export async function writeCollectionFolder(grantId: string, files: { relativePath: string; text: string }[]) {
+  return apiCall("write_collection_folder", {
+    grantId,
+    files: files.map((file) => ({ relative_path: file.relativePath, text: file.text })),
+  });
 }
 
 /** Save an already-sanitized transfer document through a native dialog. */
@@ -589,6 +672,7 @@ export async function startSseStream(
   options: SseOptions,
   onUpdate: (update: SseUpdate) => void,
 ): Promise<SseStreamHandle> {
+  if (hasCustomTls(req.tls)) throw Object.assign(new Error("tls_http_only"), { name: "tls_http_only" });
   validateSseOptions(options);
   validateSseEnvironment(environment);
   if (isTauri()) return startNativeSseStream(req, environment, options, onUpdate);
@@ -1332,6 +1416,7 @@ export async function startWebSocket(
   environment: Parameters<typeof sendRequest>[1],
   onUpdate: (update: WebSocketUpdate) => void,
 ): Promise<WebSocketHandle> {
+  if (hasCustomTls(req.tls)) throw Object.assign(new Error("tls_http_only"), { name: "tls_http_only" });
   if (isTauri()) return startNativeWebSocket(req, environment, onUpdate);
   return startBrowserWebSocket(req, environment, onUpdate);
 }

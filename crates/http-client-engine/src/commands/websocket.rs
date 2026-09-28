@@ -390,6 +390,7 @@ fn validate_template_request(
     req: &RequestTemplate,
     environment: &[EnvironmentVariable],
 ) -> Result<(), String> {
+    request::reject_stream_tls(req.tls.as_ref())?;
     if environment.len() > MAX_ENVIRONMENT_VARIABLES
         || environment.iter().any(|variable| {
             variable.key.is_empty()
@@ -1335,6 +1336,7 @@ mod tests {
             auth: None,
             timeout_ms: 10_000,
             graphql: None,
+            tls: None,
         }
     }
 

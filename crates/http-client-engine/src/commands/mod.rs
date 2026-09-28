@@ -1,3 +1,4 @@
+pub mod captures;
 pub mod grpc;
 pub mod grpc_credentials;
 pub mod grpc_selection;
@@ -13,3 +14,10 @@ pub mod sse;
 pub mod toolbox;
 pub mod transfer;
 pub mod websocket;
+
+pub mod import_files;
+
+pub mod collection_folder;
+
+pub(crate) mod oauth2;
+pub(crate) mod oauth_common;

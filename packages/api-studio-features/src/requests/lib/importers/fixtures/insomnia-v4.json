@@ -1,0 +1,88 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "resources": [
+    {
+      "_id": "wrk",
+      "_type": "workspace",
+      "name": "Demo"
+    },
+    {
+      "_id": "group",
+      "_type": "request_group",
+      "parentId": "wrk",
+      "name": "Auth"
+    },
+    {
+      "_id": "req_1",
+      "_type": "request",
+      "parentId": "group",
+      "name": "Me",
+      "method": "GET",
+      "url": "{{ _.baseUrl }}/me",
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.token }}"
+      }
+    },
+    {
+      "_id": "req_2",
+      "_type": "request",
+      "parentId": "group",
+      "name": "Login",
+      "method": "POST",
+      "url": "{{ _.baseUrl }}/login",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "params": [
+          {
+            "name": "user",
+            "value": "kim"
+          },
+          {
+            "name": "off",
+            "value": "ignored",
+            "disabled": true
+          }
+        ]
+      }
+    },
+    {
+      "_id": "req_3",
+      "_type": "request",
+      "parentId": "wrk",
+      "name": "Search",
+      "method": "POST",
+      "url": "{{ _.baseUrl }}/search/{% response 'body', 'req_1', '$.id' %}",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"q\":\"{{ _.term }}\"}"
+      },
+      "parameters": [
+        {
+          "name": "q",
+          "value": "devbox"
+        }
+      ]
+    },
+    {
+      "_id": "env",
+      "_type": "environment",
+      "parentId": "wrk",
+      "name": "Base Environment",
+      "data": {
+        "baseUrl": "https://x.test",
+        "token": "t"
+      }
+    },
+    {
+      "_id": "staging",
+      "_type": "environment",
+      "parentId": "env",
+      "name": "staging",
+      "data": {
+        "baseUrl": "https://staging.x.test"
+      }
+    }
+  ]
+}

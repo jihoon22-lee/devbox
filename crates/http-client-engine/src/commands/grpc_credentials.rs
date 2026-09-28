@@ -121,6 +121,30 @@ impl GrpcCredentialState {
         app: &tauri::AppHandle,
         credential_id: &str,
     ) -> Result<PreparedTlsCredential, String> {
+        self.resolve_with_missing(app, credential_id, grpc::CREDENTIAL_INVALID)
+            .await
+    }
+    pub(crate) async fn resolve_for_http(
+        &self,
+        app: &tauri::AppHandle,
+        credential_id: &str,
+    ) -> Result<PreparedTlsCredential, String> {
+        self.resolve_with_missing(app, credential_id, "tls_credential_missing")
+            .await
+            .map_err(|error| {
+                if error == "tls_credential_missing" {
+                    error
+                } else {
+                    "tls_credential_invalid".into()
+                }
+            })
+    }
+    async fn resolve_with_missing(
+        &self,
+        app: &tauri::AppHandle,
+        credential_id: &str,
+        missing: &'static str,
+    ) -> Result<PreparedTlsCredential, String> {
         validate_credential_id(credential_id)?;
         let _mutation = self.mutation.lock().await;
         let store = self.store_snapshot(app).await?;
@@ -128,7 +152,7 @@ impl GrpcCredentialState {
             .credentials
             .iter()
             .find(|value| value.credential_id == credential_id)
-            .ok_or_else(|| grpc::CREDENTIAL_INVALID.to_string())?;
+            .ok_or_else(|| missing.to_string())?;
         let ca_pem = credential
             .ca_pem
             .as_deref()

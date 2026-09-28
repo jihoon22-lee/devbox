@@ -28,6 +28,20 @@ pub fn platform_grpc_sealer() -> Box<dyn devbox_secrets::Sealer> {
     }
 }
 
+/// HTTP OAuth tokens cannot be replayed as environment or TLS blobs.
+pub fn platform_oauth2_sealer() -> Box<dyn devbox_secrets::Sealer> {
+    #[cfg(windows)]
+    {
+        Box::new(devbox_secrets::dpapi::DpapiSealer::new(
+            b"devbox.api-studio.oauth2-token",
+        ))
+    }
+    #[cfg(not(windows))]
+    {
+        Box::new(UnsupportedSealer)
+    }
+}
+
 // Persisted purpose domains: changing these would strand existing secrets.
 #[cfg(windows)]
 const ENVIRONMENT_ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
@@ -53,6 +67,16 @@ mod tests {
         );
         assert!(grpc.unseal(&environment_blob).is_err());
         assert!(environment.unseal(&grpc_blob).is_err());
+        let oauth2 = platform_oauth2_sealer();
+        let oauth2_blob = oauth2.seal("oauth2-token").unwrap();
+        assert_eq!(
+            oauth2.unseal(&oauth2_blob).unwrap().as_str(),
+            "oauth2-token"
+        );
+        assert!(environment.unseal(&oauth2_blob).is_err());
+        assert!(grpc.unseal(&oauth2_blob).is_err());
+        assert!(oauth2.unseal(&environment_blob).is_err());
+        assert!(oauth2.unseal(&grpc_blob).is_err());
     }
 }
 

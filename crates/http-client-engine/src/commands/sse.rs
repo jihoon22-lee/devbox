@@ -393,6 +393,7 @@ fn validate_resolved_request(req: &ResolvedRequest) -> Result<(), String> {
 }
 
 fn validate_template_request(req: &RequestTemplate) -> Result<(), String> {
+    request::reject_stream_tls(req.tls.as_ref())?;
     if req.headers.len() > MAX_REQUEST_HEADERS
         || req.cookies.len() > MAX_REQUEST_COOKIES
         || req.params.len() > MAX_REQUEST_PARAMS
@@ -966,6 +967,7 @@ mod tests {
             auth: None,
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         assert!(validate_resolved_request(&req).is_err());
         let mut req = req;
@@ -1011,6 +1013,7 @@ mod tests {
             auth: None,
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         assert_eq!(
             validate_resolved_request(&request),
@@ -1086,6 +1089,7 @@ mod tests {
             auth: None,
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         let redactor = Redactor::for_request(&request, vec![]);
         let client = reqwest::Client::builder()
@@ -1144,6 +1148,7 @@ mod tests {
             }),
             timeout_ms: 1_000,
             graphql: None,
+            tls: None,
         };
         let redactor = Redactor::for_request(&request, vec![]);
         let safe_text = redactor.redact_text("echo=loopback-secret");

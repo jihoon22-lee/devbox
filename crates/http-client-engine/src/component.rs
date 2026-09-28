@@ -22,7 +22,17 @@ pub fn initialize(
         .app_local_data_dir()
         .map_err(|_| "component_storage_unavailable")?
         .join("api");
+    if !app.manage(std::sync::Arc::new(
+        crate::commands::collection_folder::CollectionFolderState::default(),
+    )) {
+        return Err("component_state_conflict".into());
+    }
     if !app.manage(ComponentRoot(root)) {
+        return Err("component_state_conflict".into());
+    }
+    if !app.manage(std::sync::Arc::new(
+        crate::commands::oauth2::OAuth2State::default(),
+    )) {
         return Err("component_state_conflict".into());
     }
     if !app.manage(crate::commands::request::ResponseHeaderVault::default()) {

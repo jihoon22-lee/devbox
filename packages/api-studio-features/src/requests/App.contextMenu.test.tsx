@@ -2,14 +2,26 @@ import { browserDocumentStorage } from "../storage/documentStorage";
 import { previewDocumentKey, seedPreviewDocument } from "../storage/testDocuments";
 const COLLECTION_V2_LS_KEY = previewDocumentKey("collections");
 const HISTORY_V2_LS_KEY = previewDocumentKey("history");
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { sanitizePersistedJson } from "./api";
+import {
+  sanitizePersistedJson,
+  pickCollectionFolder,
+  writeCollectionFolder,
+  sendRequest,
+  revealCapture,
+  sealSecret,
+  authorizeOAuth2,
+  oauth2Status,
+} from "./api";
 import { type CollectionStore } from "./lib/collections";
 import { sanitizeRequestForPersistence, type HistoryStore } from "./lib/persistence";
 import type { RequestTemplate } from "./types";
+
+const nativeMode = vi.hoisted(() => ({ value: false }));
+vi.mock("./lib/isTauri", () => ({ isTauri: () => nativeMode.value }));
 
 vi.mock("./api", () => ({
   ackApiRequest: vi.fn(),
@@ -20,12 +32,22 @@ vi.mock("./api", () => ({
   discardCurrentResponse: vi.fn(async () => undefined),
   onOpenRequest: vi.fn(async () => () => undefined),
   readJsonFile: vi.fn(),
+  pickCollectionFolder: vi.fn(),
+  writeCollectionFolder: vi.fn(),
   renewApiRequest: vi.fn(),
   restoreApiRequest: vi.fn(),
   saveJsonFile: vi.fn(),
   saveResponseBinary: vi.fn(),
   sanitizePersistedJson: vi.fn(),
   sealSecret: vi.fn(),
+  oauth2Status: vi.fn(async () => ({ state: "missing", expiresAtMs: null, scope: null })),
+  authorizeOAuth2: vi.fn(),
+  cancelOAuth2: vi.fn(async () => {}),
+  fetchOAuth2Token: vi.fn(),
+  clearOAuth2Token: vi.fn(async () => {}),
+  revealCapture: vi.fn(),
+  discardCaptures: vi.fn(async () => {}),
+  restoreCaptures: vi.fn(async () => {}),
   sendSelectionToToolbox: vi.fn(),
   sendRequest: vi.fn(),
   startSseStream: vi.fn(),
@@ -89,6 +111,7 @@ async function renderReady() {
 }
 
 beforeEach(() => {
+  nativeMode.value = false;
   localStorage.clear();
   seedStores();
   sanitizePersistedJsonMock.mockReset().mockImplementation(async (serialized) => serialized);
@@ -256,4 +279,170 @@ it("keeps rapid environment edits in order while the native-style save is delaye
     release();
     spy.mockRestore();
   }
+});
+
+it("imports a preview into the persisted collection and conditionally undoes it", async () => {
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "가져오기" }));
+  fireEvent.change(await screen.findByLabelText("curl 명령"), {
+    target: { value: "curl https://import.example.test/health" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "미리 보기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "선택한 1개 가져오기" }));
+  await screen.findByText("1개를 가져왔습니다.");
+  expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections).toHaveLength(1));
+});
+
+it("exports safe request files and reports retained stale paths", async () => {
+  vi.mocked(pickCollectionFolder).mockResolvedValue({ grant_id: "g", name: "Demo" });
+  vi.mocked(writeCollectionFolder).mockResolvedValue({ written: 2, stale: ["Old.request.json"] });
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "폴더로 내보내기" }));
+  await screen.findByText(/요청 1개를 폴더에 저장했습니다/);
+  expect(screen.getByText(/Old.request.json/)).toBeTruthy();
+  const [grant, files] = vi.mocked(writeCollectionFolder).mock.calls.slice(-1)[0];
+  expect(grant).toBe("g");
+  expect(files[0].relativePath).toBe("collection.devbox.json");
+  expect(JSON.stringify(files)).not.toContain(RAW_SECRET);
+});
+it("explains that an unrelated export folder cannot be overwritten", async () => {
+  vi.mocked(pickCollectionFolder).mockResolvedValue({ grant_id: "g", name: "Other" });
+  const error = new Error();
+  error.name = "folder_not_collection";
+  vi.mocked(writeCollectionFolder).mockRejectedValue(error);
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "폴더로 내보내기" }));
+  await screen.findByText("다른 파일이 있는 폴더입니다. 빈 폴더나 이전에 내보낸 폴더를 골라 주세요.");
+});
+
+it("evaluates and captures manual responses and saves checks with a collection request", async () => {
+  vi.mocked(sendRequest).mockResolvedValue({
+    status: 200,
+    status_text: "OK",
+    headers: [],
+    duration_ms: 5,
+    size_bytes: 15,
+    body: '{"token":"captured-value"}',
+    is_json: true,
+    final_url: "https://x.test",
+    redirects: [],
+    cookies: [],
+    response_id: null,
+    raw_headers_available: false,
+    headers_truncated: false,
+  });
+  await renderReady();
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://x.test/login" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "검증" }));
+  fireEvent.click(await screen.findByRole("button", { name: "검증 추가" }));
+  fireEvent.click(screen.getByRole("button", { name: "캡처" }));
+  fireEvent.click(await screen.findByRole("button", { name: "캡처 추가" }));
+  fireEvent.change(screen.getByLabelText("변수 이름 1"), { target: { value: "token" } });
+  fireEvent.change(screen.getByLabelText("캡처 대상 1"), { target: { value: "$.token" } });
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await screen.findByRole("button", { name: "token 보기" });
+  expect(screen.queryByText("captured-value")).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "검증" }));
+  expect(screen.getByText("1개 중 1개 통과")).toBeTruthy();
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "보내기" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.change(screen.getByPlaceholderText("저장 이름"), { target: { value: "Login" } });
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() =>
+    expect(JSON.parse(localStorage.getItem(COLLECTION_V2_LS_KEY)!).collections[0]).toMatchObject({
+      name: "Login",
+      assertions: [{ source: "status", expected: "200" }],
+      captures: [{ variable: "token", target: "$.token" }],
+    }),
+  );
+});
+
+it("manual native sends pass capture definitions and keep tokens sealed until explicit reveal", async () => {
+  vi.mocked(sendRequest).mockResolvedValue({
+    status: 200,
+    status_text: "OK",
+    headers: [],
+    duration_ms: 5,
+    size_bytes: 20,
+    body: '{"token":"[REDACTED]"}',
+    is_json: true,
+    final_url: "https://x.test",
+    redirects: [],
+    cookies: [],
+    response_id: null,
+    raw_headers_available: false,
+    headers_truncated: false,
+    captures: { values: [{ name: "token", value: "native-sealed", reference: "native-ref" }], missing: [], errors: [] },
+  });
+  vi.mocked(revealCapture).mockResolvedValue("revealed-native-token");
+  await renderReady();
+  nativeMode.value = true;
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://x.test/login" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "캡처" }));
+  fireEvent.click(await screen.findByRole("button", { name: "캡처 추가" }));
+  fireEvent.change(screen.getByLabelText("변수 이름 1"), { target: { value: "token" } });
+  fireEvent.change(screen.getByLabelText("캡처 대상 1"), { target: { value: "$.token" } });
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await screen.findByRole("button", { name: "token 보기" });
+  expect(vi.mocked(sendRequest).mock.calls.slice(-1)[0]?.[3]).toEqual([
+    expect.objectContaining({ variable: "token", target: "$.token" }),
+  ]);
+  expect(sealSecret).not.toHaveBeenCalled();
+  expect(revealCapture).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "token 보기" }));
+  expect(await screen.findByText("revealed-native-token")).toBeTruthy();
+  expect(revealCapture).toHaveBeenCalledWith("native-ref");
+});
+
+it("opens OAuth login from a native authorization-required response", async () => {
+  await renderReady();
+  nativeMode.value = true;
+  vi.mocked(sendRequest).mockRejectedValue(
+    Object.assign(new Error("private-provider-detail"), { name: "oauth2_authorization_required" }),
+  );
+  vi.mocked(oauth2Status).mockResolvedValue({ state: "missing", expiresAtMs: null, scope: null });
+  vi.mocked(authorizeOAuth2).mockResolvedValue({ state: "valid", expiresAtMs: null, scope: "read" });
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://api.test/me" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "AUTH" }));
+  fireEvent.change(screen.getByLabelText("인증 종류"), { target: { value: "oauth2" } });
+  fireEvent.change(await screen.findByLabelText("Authorization URL"), {
+    target: { value: "https://auth.test/authorize" },
+  });
+  fireEvent.change(screen.getByLabelText("Token URL"), { target: { value: "https://auth.test/token" } });
+  fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client" } });
+  fireEvent.click(screen.getByRole("button", { name: "PARAMS" }));
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await screen.findByText("로그인이 필요합니다.");
+  expect(screen.queryByText("private-provider-detail")).toBeNull();
+  fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "로그인" }));
+  await waitFor(() => expect(authorizeOAuth2).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("유효 · 만료 시각 없음")).toBeTruthy();
+});
+
+it("TLS verification warning remains above the editor after changing tabs", async () => {
+  await renderReady();
+  fireEvent.click(screen.getByRole("button", { name: "TLS" }));
+  fireEvent.click(await screen.findByLabelText("인증서 검증"));
+  fireEvent.click(screen.getByRole("button", { name: "PARAMS" }));
+  expect(screen.getByText("인증서 검증 꺼짐")).toBeTruthy();
+});
+
+it("opens generated code while keeping the existing one-time curl copy", async () => {
+  await renderReady();
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://example.test/" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "코드" }));
+  expect(await screen.findByRole("tab", { name: "JavaScript fetch" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "cURL" }));
+  expect(screen.getByRole("button", { name: "원문 1회 복사" })).toBeTruthy();
 });

@@ -1,3 +1,5 @@
+import { normalizeRequestTls } from "./tls";
+import { normalizeOAuth2 } from "./oauth2";
 import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 import type {
   AuthConfig,
@@ -226,6 +228,7 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     timeout_ms: request.timeout_ms,
     ...(graphql ? { graphql } : {}),
     requiresSecretReview,
+    ...(request.tls ? { tls: normalizeRequestTls(request.tls) } : {}),
   };
 }
 
@@ -233,6 +236,10 @@ export function toRequestTemplate(request: PersistedHistoryRequest): RequestTemp
   const { requiresSecretReview: _, ...template } = request;
   return {
     ...template,
+    ...(template.tls ? { tls: normalizeRequestTls(template.tls) } : {}),
+    auth: template.auth
+      ? { ...template.auth, ...(template.auth.oauth2 ? { oauth2: normalizeOAuth2(template.auth.oauth2) } : {}) }
+      : null,
     headers: normalizeHeaders(template.headers),
     cookies: normalizeCookies(template.cookies),
     multipart: normalizeMultipartParts(template.multipart),
@@ -262,10 +269,12 @@ export function normalizePersistedRequest(request: PersistedHistoryRequest): Per
           token: request.auth.token,
           api_key: request.auth.api_key,
           api_value: request.auth.api_value,
+          ...(request.auth.oauth2 ? { oauth2: normalizeOAuth2(request.auth.oauth2) } : {}),
         }
       : null,
     timeout_ms: request.timeout_ms,
     requiresSecretReview: request.requiresSecretReview,
+    ...(request.tls ? { tls: normalizeRequestTls(request.tls) } : {}),
     ...(request.body_kind === "graphql" && request.graphql
       ? { graphql: normalizeGraphqlRequest(request.graphql) }
       : {}),
@@ -302,6 +311,7 @@ function sanitizePair(pair: KeyValue, mark: (original: string, sanitized: string
 function sanitizeAuth(auth: AuthConfig, mark: (original: string, sanitized: string) => string): AuthConfig {
   const secretField = (value: string) =>
     mark(value, value && !isExactVariableReference(value) ? REDACTED : redactKnownTokenPatterns(value));
+  const config = normalizeOAuth2(auth.oauth2);
   return {
     kind: auth.kind,
     username: secretField(auth.username),
@@ -309,6 +319,18 @@ function sanitizeAuth(auth: AuthConfig, mark: (original: string, sanitized: stri
     token: secretField(auth.token),
     api_key: mark(auth.api_key, redactKnownTokenPatterns(auth.api_key)),
     api_value: secretField(auth.api_value),
+    ...(config
+      ? {
+          oauth2: {
+            grantType: config.grantType,
+            authorizationUrl: mark(config.authorizationUrl, sanitizeUrl(config.authorizationUrl)),
+            tokenUrl: mark(config.tokenUrl, sanitizeUrl(config.tokenUrl)),
+            clientId: mark(config.clientId, redactKnownTokenPatterns(config.clientId)),
+            clientSecret: secretField(config.clientSecret),
+            scopes: mark(config.scopes, redactKnownTokenPatterns(config.scopes)),
+          },
+        }
+      : {}),
   };
 }
 

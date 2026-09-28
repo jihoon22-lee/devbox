@@ -1,3 +1,10 @@
+import { createRequestTransferActions } from "./controllers/requestTransfer";
+import { RequestCodePanels } from "./components/RequestCodePanels";
+import { evaluateAssertions, type Assertion, type AssertionResult } from "./lib/assertions";
+import { VARIABLE_NAME, type Capture } from "./lib/captures";
+import { SessionVariables, missingVariables, applyResponseCaptures, type RunDeps } from "./lib/runner";
+import { cleanCollectionChecks } from "./lib/collections";
+import { apiMessages } from "../issues/catalog";
 import { useEnvironmentPersistence } from "./hooks/useEnvironmentPersistence";
 import { storageFailureMessage } from "../storage/documentStorage";
 import { RequestParameters } from "./components/RequestParameters";
@@ -7,7 +14,6 @@ import { RequestSidebar } from "./components/RequestSidebar";
 import { RequestHandoffDialog } from "./components/RequestHandoffDialog";
 import {
   sseStateLabel,
-  downloadJson,
   defaultSseOptions,
   emptyReq,
   graphqlConfigError,
@@ -17,14 +23,13 @@ import {
   safeWebSocketUiError,
   safeHandoffError,
   isTerminalHandoffError,
-  copyRevealedCurl,
 } from "./lib/requestPresentation";
 import { usePolling, useOperation, useReviewFlow } from "@devbox/hooks";
 import { OpenApiDefinitions, type DefinitionSummary } from "./OpenApiDefinitions";
 import { ApiWorkspacePanel, type ApiWorkspace } from "./ApiWorkspace";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isImeComposing } from "@devbox/a11y";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
 import {
   ackApiRequest,
@@ -32,11 +37,9 @@ import {
   copyRawResponseCookies,
   copyRawResponseHeaders,
   discardCurrentResponse,
-  readJsonFile,
   onOpenRequest,
   renewApiRequest,
   restoreApiRequest,
-  saveJsonFile,
   saveResponseBinary,
   sanitizePersistedJson,
   sendRequest,
@@ -48,6 +51,8 @@ import {
 } from "./api";
 const HistoryConsole = lazy(() => import("./HistoryConsole").then((module) => ({ default: module.HistoryConsole })));
 import { SavedRequestPreview } from "./SavedRequestPreview";
+const RunnerPanel = lazy(() => import("./RunnerPanel").then((module) => ({ default: module.RunnerPanel })));
+const ImportDialog = lazy(() => import("./ImportDialog").then((module) => ({ default: module.ImportDialog })));
 const OpenApiImport = lazy(() => import("./OpenApiImport").then((module) => ({ default: module.OpenApiImport })));
 const ProtocolLab = lazy(() => import("./ProtocolLab").then((module) => ({ default: module.ProtocolLab })));
 import { ResponseViewer, type RawResponseCopyKind } from "./ResponseViewer";
@@ -60,7 +65,6 @@ import {
   migrateCollections,
   removeEntry,
   renameEntry,
-  saveStore,
   type CollectionEntry,
 } from "./lib/collections";
 import {
@@ -85,16 +89,6 @@ import {
   historyMethod as historyMethodOf,
   type HistoryStatusFilter,
 } from "./lib/history";
-import {
-  mergeImportedCollections,
-  mergeImportedEnvironments,
-  MAX_TRANSFER_BYTES,
-  parseCollectionExport,
-  parseEnvironmentExport,
-  readTransferFile,
-  serializeCollectionExport,
-  serializeEnvironmentExport,
-} from "./lib/transfer";
 import { hasCookieSourceConflict, validateCookies } from "./lib/cookies";
 import { validateMultipartParts } from "./lib/multipart";
 import { OPENAPI_LIMITS } from "./lib/openapiLimits";
@@ -118,9 +112,9 @@ import "./App.css";
 
 export { statusClass } from "./ResponseViewer";
 
-const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const BODY_KINDS = ["none", "json", "form", "multipart", "raw", "graphql"];
-const AUTH_KINDS = ["none", "basic", "bearer", "apikey"];
+const AUTH_KINDS = ["none", "basic", "bearer", "apikey", "oauth2"];
 const MAX_SSE_UI_ROWS = 1_000;
 const API_REQUEST_HANDOFF_KIND = "api-request/v1";
 
@@ -150,6 +144,28 @@ export default function App({
   const sseHistoryRef = useRef<SseEvent[]>([]);
   const sseHistoryBytesRef = useRef(0);
   const [showCurl, setShowCurl] = useState(false);
+  const [showCode, setShowCode] = useState(false);
+  const [assertions, setAssertions] = useState<Assertion[]>([]);
+  const [captures, setCaptures] = useState<Capture[]>([]);
+  const [assertionResults, setAssertionResults] = useState<AssertionResult[]>([]);
+  const [captured, setCaptured] = useState<{ variable: string; target: string }[]>([]);
+  const [sessionVariables] = useState(
+    () =>
+      new SessionVariables({
+        reveal: (reference) => api.revealCapture(reference),
+        discard: (references) => api.discardCaptures(references),
+        restore: (references) => api.restoreCaptures(references),
+      }),
+  );
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const [oauthLoginRequest, setOAuthLoginRequest] = useState(0);
+  const oauthLoginSequence = useRef(0);
+  const [oauthStatusKey, setOAuthStatusKey] = useState(0);
+  const onOAuthLoginHandled = useCallback(() => setOAuthLoginRequest(0), []);
+  const refreshSession = useCallback(() => setSessionVersion((version) => version + 1), []);
+  const [showRunner, setShowRunner] = useState(false);
+  const [runnerBusy, setRunnerBusy] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showOpenApiImport, setShowOpenApiImport] = useState(false);
   const [localWorkspace, setWorkspace] = useState<"http" | "protocol">("http");
   const workspace = section ? (section === "protocols" ? "protocol" : "http") : localWorkspace;
@@ -157,7 +173,9 @@ export default function App({
   useEffect(() => {
     if (workspace === "protocol") setProtocolVisited(true);
   }, [workspace]);
-  const [tab, setTab] = useState<"params" | "headers" | "cookies" | "body" | "auth">("params");
+  const [tab, setTab] = useState<
+    "params" | "headers" | "cookies" | "body" | "auth" | "assertions" | "captures" | "tls"
+  >("params");
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -231,9 +249,7 @@ export default function App({
         const request = await ackApiRequest(preview.handoffId);
         handoffPreviewRef.current = null;
         if (mountedRef.current) {
-          setReq(request);
-          setRequestEditorRevision((revision) => revision + 1);
-          setResp(null);
+          loadEditorRequest(request);
           setPersistenceWarning(null);
         }
         return request;
@@ -432,6 +448,10 @@ export default function App({
   });
 
   const currentEnv = envStore.environments.find((e) => e.id === currentEnvId) ?? null;
+  const oauthEnvironment = useMemo(() => {
+    void sessionVersion;
+    return sessionVariables.merge(currentEnv?.variables ?? []);
+  }, [sessionVersion, sessionVariables, currentEnv]);
   const historyMethods = useMemo(() => [...new Set(history.map(historyMethodOf))].sort(), [history]);
   const visibleHistory = useMemo(
     () => filterHistory(history, { query: historyQuery, method: historyMethod, status: historyStatus }),
@@ -477,40 +497,43 @@ export default function App({
     [envStore.environments],
   );
 
-  const persistCollections = async (
-    store: ReturnType<typeof emptyCollectionStore>,
-    expectedRevision = collectionRevisionRef.current,
-  ) => {
-    if (expectedRevision !== collectionRevisionRef.current || collectionMutationBusyRef.current) {
-      throw new Error("collection mutation is stale or busy");
-    }
-    collectionMutationBusyRef.current = true;
-    try {
-      const safe = await saveStore(
-        store,
-        sanitizeForPersistence,
-        undefined,
-        () => expectedRevision === collectionRevisionRef.current,
-      );
-      if (expectedRevision !== collectionRevisionRef.current) throw new Error("collection mutation is stale");
-      collectionStoreRef.current = safe;
-      collectionRevisionRef.current += 1;
-      if (mountedRef.current) setCollections(safe);
-      return safe;
-    } catch (cause) {
-      if (cause instanceof Error && cause.name === "store_revision_conflict") {
-        const reloaded = await migrateCollections(sanitizeForPersistence);
-        if (!reloaded.failed) {
-          collectionStoreRef.current = reloaded.store;
-          collectionRevisionRef.current += 1;
-          if (mountedRef.current) setCollections(reloaded.store);
-        }
-      }
-      throw cause;
-    } finally {
-      collectionMutationBusyRef.current = false;
-    }
-  };
+  const {
+    persistCollections,
+    applyImportPreview,
+    onImportTransfer,
+    onBrowserImportFile,
+    onExportCollectionFolder,
+    onExportTransfer,
+  } = createRequestTransferActions({
+    collectionStoreRef,
+    collectionRevisionRef,
+    collectionMutationBusyRef,
+    envStoreRef,
+    environmentRevisionRef,
+    environmentMutationBusyRef,
+    environmentBusyRef,
+    transferBusyRef,
+    mountedRef,
+    browserImportInputRef,
+    browserImportKindRef,
+    setCollections,
+    setEnvStore,
+    setPersistenceReady,
+    setPersistenceWarning,
+    setTransferBusy,
+    setSelectedCollectionId,
+    setMigrationNotice,
+    setCurrentEnvId,
+    setBrowserImportKind,
+    persistenceReady,
+    browserImportKind,
+    sending,
+    collSaving,
+    contextActionBusy,
+    currentEnvId,
+    sanitizeForPersistence,
+    persistEnvs,
+  });
 
   const persistHistory = async (store: HistoryStore) => {
     const safe = await saveHistoryStore(store, sanitizeForPersistence);
@@ -518,183 +541,35 @@ export default function App({
     return safe;
   };
 
-  const applyImportedTransfer = async (
-    kind: "collection" | "environment",
-    raw: string,
-    expectedCollectionRevision: number,
-    expectedEnvironmentRevision: number,
-  ) => {
-    if (kind === "collection") {
-      const imported = parseCollectionExport(raw);
-      if (!imported) throw new Error("컬렉션 JSON 형식이 올바르지 않습니다");
-      if (expectedCollectionRevision !== collectionRevisionRef.current) {
-        throw new Error("오래된 컬렉션 가져오기로 현재 상태를 덮어쓰지 않았습니다");
-      }
-      let sequence = 0;
-      const merged = mergeImportedCollections(
-        collectionStoreRef.current,
-        imported,
-        () => `c-import-${Date.now()}-${sequence++}`,
-      );
-      if (!merged) throw new Error("컬렉션 가져오기를 한 번에 적용할 수 없습니다");
-      const previousCount = collectionStoreRef.current.collections.length;
-      const safe = await persistCollections(merged, expectedCollectionRevision);
-      if (!mountedRef.current) return;
-      const added = Math.max(0, safe.collections.length - previousCount);
-      setSelectedCollectionId(safe.collections[0]?.id ?? null);
-      setMigrationNotice(`컬렉션 ${added}건을 추가했습니다. 기존 항목은 덮어쓰지 않았습니다.`);
-      return;
-    }
-
-    const imported = parseEnvironmentExport(raw);
-    if (!imported) throw new Error("환경 JSON 형식이 올바르지 않습니다");
-    if (expectedEnvironmentRevision !== environmentRevisionRef.current) {
-      throw new Error("오래된 환경 가져오기로 현재 상태를 덮어쓰지 않았습니다");
-    }
-    let sequence = 0;
-    const next = mergeImportedEnvironments(envStoreRef.current, imported, () => `e-import-${Date.now()}-${sequence++}`);
-    if (!next) throw new Error("환경 가져오기를 한 번에 적용할 수 없습니다");
-    const previousCount = envStoreRef.current.environments.length;
-    const saved = await persistEnvs(next, expectedEnvironmentRevision);
-    if (!mountedRef.current) return;
-    const added = Math.max(0, saved.environments.length - previousCount);
-    if (!currentEnvId) setCurrentEnvId(saved.environments[0]?.id ?? "");
-    setMigrationNotice(`환경 ${added}건을 추가했습니다. secret 값은 보안상 다시 입력해야 합니다.`);
+  const loadEditorRequest = (request: RequestTemplate, entry?: CollectionEntry) => {
+    setReq(request);
+    setRequestEditorRevision((revision) => revision + 1);
+    setResp(null);
+    setAssertions(entry?.assertions?.map((item) => ({ ...item })) ?? []);
+    setCaptures(entry?.captures?.map((item) => ({ ...item })) ?? []);
+    setAssertionResults([]);
+    setCaptured([]);
   };
-
-  const onImportTransfer = (kind: "collection" | "environment") => {
-    if (
-      !persistenceReady ||
-      transferBusyRef.current ||
-      browserImportKind ||
-      environmentBusyRef.current ||
-      sending ||
-      collSaving ||
-      contextActionBusy
-    )
-      return;
-    const expectedCollectionRevision = collectionRevisionRef.current;
-    const expectedEnvironmentRevision = environmentRevisionRef.current;
-    if (isTauri()) {
-      transferBusyRef.current = true;
-      setTransferBusy(true);
-      setPersistenceWarning(null);
-      void (async () => {
-        try {
-          const raw = await readJsonFile();
-          if (raw !== null) {
-            await applyImportedTransfer(kind, raw, expectedCollectionRevision, expectedEnvironmentRevision);
-          }
-        } catch (storageCause) {
-          if (mountedRef.current)
-            setPersistenceWarning(
-              storageFailureMessage(storageCause, "JSON 파일을 가져오지 않았습니다. 파일 선택과 schema를 확인하세요."),
-            );
-        } finally {
-          transferBusyRef.current = false;
-          if (mountedRef.current) setTransferBusy(false);
+  const runnerDeps: RunDeps = {
+    nativeCaptures: isTauri(),
+    send: sendRequest,
+    seal: async (value) => (isTauri() ? api.sealSecret(value) : null),
+    sleep: (ms, signal) =>
+      new Promise((resolve, reject) => {
+        if (signal.aborted) {
+          reject(new Error("cancelled"));
+          return;
         }
-      })();
-      return;
-    }
-    const input = browserImportInputRef.current;
-    if (!input) return;
-    browserImportKindRef.current = kind;
-    input.value = "";
-    setBrowserImportKind(kind);
-    input.click();
-  };
-
-  const onBrowserImportFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    const kind = browserImportKindRef.current;
-    event.currentTarget.value = "";
-    browserImportKindRef.current = null;
-    setBrowserImportKind(null);
-    if (!file || !kind) return;
-    if (file.size > MAX_TRANSFER_BYTES) {
-      setPersistenceWarning("JSON 파일이 허용된 크기(1 MiB)를 초과해 가져오지 않았습니다.");
-      return;
-    }
-    transferBusyRef.current = true;
-    setTransferBusy(true);
-    setPersistenceWarning(null);
-    const expectedCollectionRevision = collectionRevisionRef.current;
-    const expectedEnvironmentRevision = environmentRevisionRef.current;
-    void readTransferFile(file)
-      .then(async (raw) => {
-        try {
-          await applyImportedTransfer(kind, raw, expectedCollectionRevision, expectedEnvironmentRevision);
-        } catch {
-          if (mountedRef.current) {
-            setPersistenceWarning(
-              `${kind === "collection" ? "컬렉션" : "환경"} JSON을 가져오지 않았습니다. schema, 크기와 secret 정책을 확인하세요.`,
-            );
-          }
-        }
-      })
-      .catch((storageCause) => {
-        if (mountedRef.current)
-          setPersistenceWarning(storageFailureMessage(storageCause, "JSON 파일을 읽지 못해 가져오지 않았습니다."));
-      })
-      .finally(() => {
-        transferBusyRef.current = false;
-        if (mountedRef.current) setTransferBusy(false);
-      });
-  };
-
-  const onExportTransfer = (kind: "collection" | "environment") => {
-    if (
-      !persistenceReady ||
-      transferBusyRef.current ||
-      environmentBusyRef.current ||
-      sending ||
-      collSaving ||
-      contextActionBusy
-    )
-      return;
-    transferBusyRef.current = true;
-    setTransferBusy(true);
-    setPersistenceWarning(null);
-    try {
-      const content =
-        kind === "collection"
-          ? serializeCollectionExport(collectionStoreRef.current)
-          : serializeEnvironmentExport(envStoreRef.current);
-      if (new TextEncoder().encode(content).byteLength > MAX_TRANSFER_BYTES) {
-        throw new Error("transfer too large");
-      }
-      const fileName = kind === "collection" ? "api-playground-collections.json" : "api-playground-environments.json";
-      if (isTauri()) {
-        void saveJsonFile(content, fileName)
-          .then((saved) => {
-            if (saved && mountedRef.current) {
-              setMigrationNotice(`${kind === "collection" ? "컬렉션" : "환경"} JSON 내보내기를 완료했습니다.`);
-            }
-          })
-          .catch((storageCause) => {
-            if (mountedRef.current)
-              setPersistenceWarning(
-                storageFailureMessage(storageCause, "JSON 파일을 저장하지 않았습니다. native 저장 위치를 확인하세요."),
-              );
-          })
-          .finally(() => {
-            transferBusyRef.current = false;
-            if (mountedRef.current) setTransferBusy(false);
-          });
-      } else {
-        downloadJson(content, fileName);
-        setMigrationNotice(`${kind === "collection" ? "컬렉션" : "환경"} JSON 다운로드를 시작했습니다.`);
-        transferBusyRef.current = false;
-        setTransferBusy(false);
-      }
-    } catch (storageCause) {
-      setPersistenceWarning(
-        storageFailureMessage(storageCause, "JSON 내보내기를 생성하지 못했습니다. 항목 수와 크기를 확인하세요."),
-      );
-      transferBusyRef.current = false;
-      setTransferBusy(false);
-    }
+        const stop = () => {
+          clearTimeout(timer);
+          reject(new Error("cancelled"));
+        };
+        const timer = setTimeout(() => {
+          signal.removeEventListener("abort", stop);
+          resolve();
+        }, ms);
+        signal.addEventListener("abort", stop, { once: true });
+      }),
   };
 
   const onSaveCollection = async () => {
@@ -708,6 +583,10 @@ export default function App({
         Date.now(),
         () => `c-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
       );
+      next.collections[0] = {
+        ...next.collections[0],
+        ...cleanCollectionChecks({ ...next.collections[0], assertions, captures }),
+      };
       await persistCollections(next);
       setCollName("");
       setCollFolder("");
@@ -721,8 +600,7 @@ export default function App({
   };
 
   const applyOpenApiRequest = (request: RequestTemplate) => {
-    setReq(request);
-    setRequestEditorRevision((revision) => revision + 1);
+    loadEditorRequest(request);
     setTab(request.body_kind !== "none" ? "body" : "params");
     setResp(null);
     setError(null);
@@ -879,14 +757,28 @@ export default function App({
   );
 
   const onSend = async () => {
-    if (sending || abortControllerRef.current) return;
+    if (sending || runnerBusy || abortControllerRef.current) return;
     if (requestConfigurationError) {
       setError(requestConfigurationError);
       setTab(cookieConfigurationError ? "cookies" : "body");
       return;
     }
     const requestSnapshot = req;
-    const environmentSnapshot = currentEnv?.variables ?? [];
+    const environmentSnapshot = sessionVariables.merge(currentEnv?.variables ?? []);
+    const assertionSnapshot = assertions.map((item) => ({ ...item }));
+    const captureSnapshot = captures.map((item) => ({ ...item }));
+    const missing = missingVariables(
+      requestSnapshot,
+      new Set(
+        environmentSnapshot
+          .filter((variable) => !variable.secret || variable.value !== "")
+          .map((variable) => variable.key),
+      ),
+    );
+    if (missing.length) {
+      setError(`변수 없음: ${missing.join(", ")}`);
+      return;
+    }
     const controller = new AbortController();
     const sequence = requestSequenceRef.current + 1;
     requestSequenceRef.current = sequence;
@@ -894,9 +786,36 @@ export default function App({
     setSending(true);
     setError(null);
     try {
-      const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal);
+      const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal, captureSnapshot);
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setResp(result);
+      setOAuthStatusKey((key) => key + 1);
+      setAssertionResults(evaluateAssertions(assertionSnapshot, result));
+      setCaptured([]);
+      try {
+        const captureResult = await applyResponseCaptures(
+          captureSnapshot,
+          result,
+          sessionVariables,
+          runnerDeps,
+          controller.signal,
+          () => mountedRef.current && requestSequenceRef.current === sequence,
+        );
+        if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+        const capturedNames = new Set(captureResult.names);
+        setCaptured(
+          captureSnapshot
+            .filter((capture) => capturedNames.has(capture.variable))
+            .map((capture) => ({ variable: capture.variable, target: capture.target || capture.source })),
+        );
+        if (captureResult.errors.length) setError("일부 값을 캡처하지 못했습니다.");
+      } catch {
+        for (const capture of captureSnapshot)
+          if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
+        if (mountedRef.current && requestSequenceRef.current === sequence) setError("캡처 값을 봉인하지 못했습니다.");
+      } finally {
+        refreshSession();
+      }
       try {
         await persistHistoryRequest(
           requestSnapshot,
@@ -915,6 +834,9 @@ export default function App({
       }
     } catch (cause) {
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+      for (const capture of captureSnapshot)
+        if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
+      refreshSession();
       setError(safeRequestError(cause));
       setResp(null);
       try {
@@ -1440,9 +1362,12 @@ export default function App({
       : history.find((item) => item.id === savedPreview?.id);
   const applySavedPreview = () => {
     if (!previewRecord || !savedPreview || sending || !persistenceReady) return;
-    setReq(toRequestTemplate(previewRecord.request));
-    setRequestEditorRevision((revision) => revision + 1);
-    setResp(null);
+    loadEditorRequest(
+      toRequestTemplate(previewRecord.request),
+      savedPreview.kind === "collection"
+        ? collections.collections.find((item) => item.id === savedPreview.id)
+        : undefined,
+    );
     if (savedPreview.kind === "collection") setSelectedCollectionId(savedPreview.id);
     else setSelectedHistoryId(savedPreview.id);
     setPersistenceWarning("저장된 요청입니다. 마스킹된 값과 필요한 환경·인증을 확인하고 직접 전송하세요.");
@@ -1493,8 +1418,7 @@ export default function App({
         selectedHistoryId={selectedHistoryId}
         setSavedPreview={setSavedPreview}
         setSelectedHistoryId={setSelectedHistoryId}
-        setReq={setReq}
-        setRequestEditorRevision={setRequestEditorRevision}
+        loadRequest={loadEditorRequest}
         setPersistenceWarning={setPersistenceWarning}
         setResp={setResp}
         historyContextMenu={historyContextMenu}
@@ -1503,11 +1427,14 @@ export default function App({
         transferBusy={transferBusy}
         browserImportKind={browserImportKind}
         environmentBusy={environmentBusy}
-        sending={sending}
+        sending={sending || runnerBusy}
         collSaving={collSaving}
         contextActionBusy={contextActionBusy}
         onExportTransfer={onExportTransfer}
         onImportTransfer={onImportTransfer}
+        onImport={() => setShowImport(true)}
+        onExportFolder={() => void onExportCollectionFolder()}
+        onRun={() => setShowRunner(true)}
         collName={collName}
         setCollName={setCollName}
         collFolder={collFolder}
@@ -1588,9 +1515,7 @@ export default function App({
               canApply={persistenceReady && !sending && !contextActionBusy && !transferBusy}
               onApply={(item) => {
                 setSelectedHistoryId(item.id);
-                setReq(toRequestTemplate(item.request));
-                setRequestEditorRevision((revision) => revision + 1);
-                setResp(null);
+                loadEditorRequest(toRequestTemplate(item.request));
                 setPersistenceWarning("마스킹된 기록입니다. 필요한 환경·인증을 확인하고 직접 전송하세요.");
                 onNavigate?.("requests");
               }}
@@ -1608,6 +1533,11 @@ export default function App({
           <>
             {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
             {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
+            {req.tls?.verify === false && (
+              <p className="persistence-warning" role="status">
+                인증서 검증 꺼짐
+              </p>
+            )}
             <div className="request-bar">
               <select
                 aria-label="HTTP method"
@@ -1634,6 +1564,7 @@ export default function App({
                 disabled={
                   !persistenceReady ||
                   transferBusy ||
+                  runnerBusy ||
                   contextActionBusy ||
                   (!sending && (sseActive || !req.url || Boolean(requestConfigurationError)))
                 }
@@ -1646,6 +1577,14 @@ export default function App({
                 disabled={!req.url || Boolean(requestConfigurationError)}
               >
                 cURL
+              </button>
+              <button
+                className={`btn ${showCode ? "active" : ""}`}
+                type="button"
+                aria-expanded={showCode}
+                onClick={() => setShowCode((shown) => !shown)}
+              >
+                코드
               </button>
               <button
                 className="btn"
@@ -1672,28 +1611,20 @@ export default function App({
               setSseOptions={setSseOptions}
             />
 
-            {showCurl && !requestConfigurationError && (
-              <div className="curl-panel">
-                <div className="io-label">
-                  cURL
-                  <button className="copy-btn" onClick={() => void navigator.clipboard.writeText(buildCurl(req))}>
-                    마스킹 복사
-                  </button>
-                  <button
-                    className="copy-btn"
-                    onClick={() => void copyRevealedCurl(req, currentEnv?.variables ?? [], setError)}
-                  >
-                    원문 1회 복사
-                  </button>
-                </div>
-                <pre className="curl-text">{buildCurl(req) || " "}</pre>
-              </div>
-            )}
+            <RequestCodePanels
+              request={req}
+              environment={currentEnv?.variables ?? []}
+              codeEnvironment={oauthEnvironment}
+              showCode={showCode}
+              showCurl={showCurl}
+              configurationError={requestConfigurationError}
+              onError={setError}
+            />
 
             <div className="tabs">
-              {(["params", "headers", "cookies", "body", "auth"] as const).map((t) => (
+              {(["params", "headers", "cookies", "body", "auth", "tls", "assertions", "captures"] as const).map((t) => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
-                  {t.toUpperCase()}
+                  {t === "assertions" ? "검증" : t === "captures" ? "캡처" : t.toUpperCase()}
                 </button>
               ))}
             </div>
@@ -1711,6 +1642,15 @@ export default function App({
 
             <RequestParameters
               tab={tab}
+              checks={{
+                assertions,
+                onAssertionsChange: setAssertions,
+                captures,
+                onCapturesChange: setCaptures,
+                session: sessionVariables,
+                onSessionChange: refreshSession,
+                disabled: sending || runnerBusy,
+              }}
               req={req}
               setReq={setReq}
               currentEnv={currentEnv}
@@ -1718,6 +1658,10 @@ export default function App({
               BODY_KINDS={BODY_KINDS}
               setAuth={setAuth}
               AUTH_KINDS={AUTH_KINDS}
+              oauthEnvironment={oauthEnvironment}
+              oauthStatusKey={oauthStatusKey}
+              oauthLoginRequest={oauthLoginRequest}
+              onOAuthLoginHandled={onOAuthLoginHandled}
             />
 
             <WebSocketPanel
@@ -1743,10 +1687,24 @@ export default function App({
             {error && (
               <div className="error" role="alert">
                 {error}
+                {error === apiMessages.oauth2_authorization_required && req.auth?.kind === "oauth2" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("auth");
+                      setOAuthLoginRequest(++oauthLoginSequence.current);
+                      setError(null);
+                    }}
+                  >
+                    로그인
+                  </button>
+                )}
               </div>
             )}
 
             <ResponseViewer
+              assertionResults={assertionResults}
+              captured={captured}
               response={resp}
               responseText={responseText}
               pretty={pretty}
@@ -1785,6 +1743,34 @@ export default function App({
         onClose={collectionContextMenu.close}
         ariaLabel="컬렉션 메뉴"
       />
+      {showRunner && (
+        <Suspense fallback={<p role="status">러너 준비 중…</p>}>
+          <RunnerPanel
+            entries={collections.collections.filter(
+              (entry) => !apiWorkspace || apiWorkspace.links.collectionIds.includes(entry.id),
+            )}
+            environment={currentEnv?.variables ?? []}
+            session={sessionVariables}
+            deps={runnerDeps}
+            onSelect={(id) => {
+              const entry = collections.collections.find((item) => item.id === id);
+              if (entry) {
+                loadEditorRequest(toRequestTemplate(entry.request), entry);
+                setShowRunner(false);
+                onNavigate?.("requests");
+              }
+            }}
+            onClose={() => setShowRunner(false)}
+            onSessionChange={refreshSession}
+            onBusyChange={setRunnerBusy}
+          />
+        </Suspense>
+      )}
+      {showImport && (
+        <Suspense fallback={<p role="status">가져오기 준비 중…</p>}>
+          <ImportDialog onClose={() => setShowImport(false)} onApply={applyImportPreview} />
+        </Suspense>
+      )}
       {showOpenApiImport && (
         <Suspense fallback={<p role="status">OpenAPI 가져오기를 준비하고 있습니다…</p>}>
           <OpenApiImport

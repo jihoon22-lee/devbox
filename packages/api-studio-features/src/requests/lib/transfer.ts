@@ -1,3 +1,7 @@
+import { normalizeRequestTls } from "./tls";
+import { looksLikeSecret } from "./secretPatterns";
+export { looksLikeSecret } from "./secretPatterns";
+import { cleanCollectionChecks } from "./collections";
 import type {
   AuthConfig,
   GraphqlRequest,
@@ -217,20 +221,45 @@ function isMultipart(value: unknown): value is MultipartPart {
   );
 }
 
+function isOAuth2(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return (
+    isRecord(value) &&
+    onlyKeys(value, ["grantType", "authorizationUrl", "tokenUrl", "clientId", "clientSecret", "scopes"]) &&
+    ["authorizationCode", "clientCredentials"].includes(String(value.grantType)) &&
+    safeMetadata(value.authorizationUrl, 8192) &&
+    safeMetadata(value.tokenUrl, 8192) &&
+    safeMetadata(value.clientId, 8192) &&
+    safeMetadata(value.scopes, 32768) &&
+    protectedValue(value.clientSecret)
+  );
+}
 function isAuth(value: unknown): value is AuthConfig | null {
   if (value === null) return true;
   return (
     isRecord(value) &&
-    onlyKeys(value, ["kind", "username", "password", "token", "api_key", "api_value"]) &&
+    onlyKeys(value, ["kind", "username", "password", "token", "api_key", "api_value"], ["oauth2"]) &&
     safeMetadata(value.kind, 64) &&
     protectedValue(value.username) &&
     protectedValue(value.password) &&
     protectedValue(value.token) &&
     safeMetadata(value.api_key, 256) &&
-    protectedValue(value.api_value)
+    protectedValue(value.api_value) &&
+    isOAuth2(value.oauth2)
   );
 }
 
+function isRequestTls(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (isRecord(value) &&
+      onlyKeys(value, ["credentialId", "verify"]) &&
+      typeof value.verify === "boolean" &&
+      (value.credentialId === null ||
+        (typeof value.credentialId === "string" && /^[a-f0-9]{32}$/.test(value.credentialId))))
+  );
+}
 function isGraphql(value: unknown): value is GraphqlRequest | null | undefined {
   if (value === undefined || value === null) return true;
   if (
@@ -284,7 +313,7 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
         "timeout_ms",
         "requiresSecretReview",
       ],
-      ["graphql"],
+      ["graphql", "tls"],
     )
   )
     return false;
@@ -311,6 +340,7 @@ function isPersistedRequest(value: unknown): value is PersistedHistoryRequest {
     !hasUnsafeMetadataChars(value.body) &&
     !hasKnownSecret(value.body) &&
     isAuth(value.auth) &&
+    isRequestTls(value.tls) &&
     Number.isSafeInteger(value.timeout_ms) &&
     Number(value.timeout_ms) >= 0 &&
     typeof value.requiresSecretReview === "boolean" &&
@@ -345,7 +375,7 @@ function exportBodyKind(value: unknown): string {
 
 function exportAuthKind(value: unknown): string {
   const kind = safeTransferMetadata(value, 64, 64, "none");
-  return ["none", "basic", "bearer", "apikey"].includes(kind) ? kind : "none";
+  return ["none", "basic", "bearer", "apikey", "oauth2"].includes(kind) ? kind : "none";
 }
 
 function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHistoryRequest {
@@ -394,6 +424,18 @@ function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHisto
         token: safeTransferValue(safe.auth.token, MAX_TRANSFER_FIELD_BYTES, ""),
         api_key: safeTransferMetadata(safe.auth.api_key, 256, 256, ""),
         api_value: safeTransferValue(safe.auth.api_value, MAX_TRANSFER_FIELD_BYTES, ""),
+        ...(safe.auth.oauth2
+          ? {
+              oauth2: {
+                grantType: safe.auth.oauth2.grantType,
+                authorizationUrl: safeTransferValue(safe.auth.oauth2.authorizationUrl, 8192),
+                tokenUrl: safeTransferValue(safe.auth.oauth2.tokenUrl, 8192),
+                clientId: safeTransferMetadata(safe.auth.oauth2.clientId, 8192, 8192, ""),
+                clientSecret: safeTransferValue(safe.auth.oauth2.clientSecret),
+                scopes: safeTransferMetadata(safe.auth.oauth2.scopes, 32768, 32768, ""),
+              },
+            }
+          : {}),
       }
     : null;
   const graphql =
@@ -417,11 +459,19 @@ function cleanPersistedRequest(request: PersistedHistoryRequest): PersistedHisto
     timeout_ms: Number.isSafeInteger(safe.timeout_ms) && safe.timeout_ms >= 0 ? safe.timeout_ms : 0,
     ...(graphql ? { graphql } : {}),
     requiresSecretReview: Boolean(request.requiresSecretReview || safe.requiresSecretReview),
+    ...(safe.tls ? { tls: normalizeRequestTls(safe.tls) } : {}),
   };
 }
 
 function cleanCollectionEntry(value: unknown): CollectionEntry | null {
-  if (!isRecord(value) || !onlyKeys(value, ["id", "name", "folder", "saved_at", "request", "requiresSecretReview"]))
+  if (
+    !isRecord(value) ||
+    !onlyKeys(
+      value,
+      ["id", "name", "folder", "saved_at", "request", "requiresSecretReview"],
+      ["assertions", "captures"],
+    )
+  )
     return null;
   const request = value.request;
   if (
@@ -450,7 +500,11 @@ function cleanCollectionEntry(value: unknown): CollectionEntry | null {
     folder: value.folder.trim(),
     saved_at: Number(value.saved_at),
     request: safeRequest,
-    requiresSecretReview: Boolean(value.requiresSecretReview) || request.requiresSecretReview,
+    ...cleanCollectionChecks({
+      assertions: value.assertions,
+      captures: value.captures,
+      requiresSecretReview: Boolean(value.requiresSecretReview) || request.requiresSecretReview,
+    }),
   };
 }
 
@@ -475,7 +529,10 @@ export function serializeCollectionExport(store: CollectionStore): string {
         folder: safeExportMetadata(entry.folder, MAX_TRANSFER_NAME_CHARS, ""),
         saved_at: Number.isSafeInteger(entry.saved_at) && entry.saved_at >= 0 ? entry.saved_at : 0,
         request: cleanPersistedRequest(entry.request),
-        requiresSecretReview: Boolean(entry.requiresSecretReview || entry.request.requiresSecretReview),
+        ...cleanCollectionChecks({
+          ...entry,
+          requiresSecretReview: Boolean(entry.requiresSecretReview || entry.request.requiresSecretReview),
+        }),
       }) satisfies CollectionEntry,
   );
   const raw = JSON.stringify({ schema: COLLECTION_EXPORT_SCHEMA, schema_version: TRANSFER_VERSION, collections });
@@ -497,13 +554,6 @@ export function parseCollectionExport(raw: string): CollectionStore | null {
   const collections = value.collections.map(cleanCollectionEntry);
   if (collections.some((entry) => entry === null)) return null;
   return { version: COLLECTION_VERSION, collections: collections as CollectionEntry[] };
-}
-
-function looksLikeSecret(value: string): boolean {
-  return (
-    /(?:sk[_-]|ghp_|github_pat_|glpat-|xox[bprsa]-)[A-Za-z0-9_.-]{12,}/u.test(value) ||
-    /^AKIA[A-Z0-9]{16}$/u.test(value)
-  );
 }
 
 function isEnvironmentKey(value: string): boolean {
@@ -691,3 +741,5 @@ export async function readTransferFile(file: Pick<File, "size" | "arrayBuffer">)
   const bytes = new Uint8Array(await file.arrayBuffer());
   return decodeTransferBytes(bytes);
 }
+
+export { isSensitiveName } from "./persistence";

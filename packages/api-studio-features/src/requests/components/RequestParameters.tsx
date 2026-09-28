@@ -1,3 +1,13 @@
+import { lazy, Suspense } from "react";
+const TlsSettings = lazy(() => import("../TlsSettings").then((module) => ({ default: module.TlsSettings })));
+const AssertionEditor = lazy(() =>
+  import("../AssertionEditor").then((module) => ({ default: module.AssertionEditor })),
+);
+const CaptureEditor = lazy(() => import("../CaptureEditor").then((module) => ({ default: module.CaptureEditor })));
+const SessionVariablesPanel = lazy(() =>
+  import("../SessionVariablesPanel").then((module) => ({ default: module.SessionVariablesPanel })),
+);
+const OAuth2Editor = lazy(() => import("../OAuth2Editor").then((module) => ({ default: module.OAuth2Editor })));
 import { KeyValueEditor } from "./KeyValueEditor";
 import { emptyGraphql } from "../lib/requestPresentation";
 import { pickMultipartFile } from "../api";
@@ -9,7 +19,16 @@ import { hasActiveCookieHeader } from "../lib/cookies";
 import type * as React from "react";
 
 interface Props {
-  tab: "params" | "headers" | "cookies" | "body" | "auth";
+  tab: "params" | "headers" | "cookies" | "body" | "auth" | "tls" | "assertions" | "captures";
+  checks: {
+    assertions: import("../lib/assertions").Assertion[];
+    onAssertionsChange: (values: import("../lib/assertions").Assertion[]) => void;
+    captures: import("../lib/captures").Capture[];
+    onCapturesChange: (values: import("../lib/captures").Capture[]) => void;
+    session: import("../lib/runner").SessionVariables;
+    onSessionChange: () => void;
+    disabled: boolean;
+  };
   req: import("../types").RequestTemplate;
   setReq: React.Dispatch<React.SetStateAction<import("../types").RequestTemplate>>;
   currentEnv: import("../lib/environments").Environment | null;
@@ -17,10 +36,15 @@ interface Props {
   BODY_KINDS: string[];
   setAuth: (patch: Partial<import("../../generated/AuthConfig").AuthConfig>) => void;
   AUTH_KINDS: string[];
+  oauthEnvironment: import("../lib/environments").EnvVariable[];
+  oauthStatusKey: number;
+  oauthLoginRequest: number;
+  onOAuthLoginHandled: () => void;
 }
 
 export function RequestParameters({
   tab,
+  checks,
   req,
   setReq,
   currentEnv,
@@ -28,9 +52,34 @@ export function RequestParameters({
   BODY_KINDS,
   setAuth,
   AUTH_KINDS,
+  oauthEnvironment,
+  oauthStatusKey,
+  oauthLoginRequest,
+  onOAuthLoginHandled,
 }: Props) {
   return (
     <div className="tab-body">
+      {tab === "tls" && (
+        <Suspense fallback={<p role="status">TLS 설정 준비 중…</p>}>
+          <TlsSettings value={req.tls} onChange={(tls) => setReq((current) => ({ ...current, tls }))} />
+        </Suspense>
+      )}
+      {tab === "assertions" && (
+        <Suspense fallback={<p role="status">검증 편집 준비 중…</p>}>
+          <AssertionEditor value={checks.assertions} onChange={checks.onAssertionsChange} disabled={checks.disabled} />
+        </Suspense>
+      )}
+      {tab === "captures" && (
+        <Suspense fallback={<p role="status">캡처 편집 준비 중…</p>}>
+          <CaptureEditor value={checks.captures} onChange={checks.onCapturesChange} disabled={checks.disabled} />
+          <SessionVariablesPanel
+            session={checks.session}
+            onChange={checks.onSessionChange}
+            disabled={checks.disabled}
+          />
+        </Suspense>
+      )}
+
       {tab === "params" && (
         <KeyValueEditor rows={req.params} onChange={(params) => setReq({ ...req, params })} namePlaceholder="키" />
       )}
@@ -109,15 +158,28 @@ export function RequestParameters({
         <div className="auth-body">
           <select
             className="select-sm"
+            aria-label="인증 종류"
             value={req.auth?.kind ?? "none"}
             onChange={(e) => setAuth({ kind: e.currentTarget.value })}
           >
             {AUTH_KINDS.map((k) => (
               <option key={k} value={k}>
-                {k}
+                {k === "oauth2" ? "OAuth 2.0" : k}
               </option>
             ))}
           </select>
+          {req.auth?.kind === "oauth2" && (
+            <Suspense fallback={<p>인증 설정을 불러오는 중…</p>}>
+              <OAuth2Editor
+                auth={req.auth}
+                environment={oauthEnvironment}
+                onChange={(oauth2) => setAuth({ oauth2 })}
+                statusKey={oauthStatusKey}
+                loginRequest={oauthLoginRequest}
+                onLoginHandled={onOAuthLoginHandled}
+              />
+            </Suspense>
+          )}
           {req.auth?.kind === "basic" && (
             <div className="kv-row">
               <input

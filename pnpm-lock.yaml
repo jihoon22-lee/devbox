@@ -255,6 +255,9 @@ importers:
       '@devbox/openapi':
         specifier: workspace:*
         version: link:../openapi
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens

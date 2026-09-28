@@ -1,0 +1,29 @@
+.oauth2-editor {
+  display: grid;
+  gap: 8px;
+}
+.oauth2-editor fieldset {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--db-color-border);
+  padding: 12px;
+  min-width: 0;
+}
+.oauth2-editor label {
+  display: grid;
+  gap: 4px;
+}
+.oauth2-editor input,
+.oauth2-editor select {
+  width: 100%;
+  min-width: 0;
+  background: var(--db-color-surface);
+  color: var(--db-color-text);
+  border: 1px solid var(--db-color-border);
+  padding: 6px;
+}
+.oauth2-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

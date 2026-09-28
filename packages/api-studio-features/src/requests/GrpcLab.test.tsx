@@ -244,7 +244,7 @@ describe("gRPC Protocol Lab", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "gRPC TLS 루트 방식" }), {
       target: { value: "custom" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "gRPC TLS 자격 증명" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "TLS 자격 증명" }), {
       target: { value: credential.credentialId },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "gRPC 서버 이름 재정의" }), {

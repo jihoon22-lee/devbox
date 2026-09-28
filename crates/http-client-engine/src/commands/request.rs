@@ -1,3 +1,5 @@
+use super::captures::{CaptureStore, NativeCaptureOutcome, ResponseCapture};
+use super::grpc_credentials::{GrpcCredentialState, PreparedTlsCredential};
 use crate::core::graphql::{
     build_request_body, parse_response as parse_graphql_response, validate_document,
     GraphqlRequest, GraphqlResponse, GRAPHQL_INVALID_REQUEST, MAX_GRAPHQL_OPERATION_NAME_BYTES,
@@ -127,6 +129,21 @@ pub struct AuthConfig {
     pub token: String,
     pub api_key: String,
     pub api_value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub oauth2: Option<super::oauth2::config::OAuth2Config>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequestTls {
+    #[serde(default)]
+    pub credential_id: Option<String>,
+    #[serde(default = "verify_tls_by_default")]
+    pub verify: bool,
+}
+fn verify_tls_by_default() -> bool {
+    true
 }
 
 /// Frontend가 편집·저장하는 원본. 변수 참조는 해석되지 않은 상태다.
@@ -150,6 +167,8 @@ pub struct RequestTemplate {
     pub timeout_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graphql: Option<GraphqlRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<RequestTls>,
 }
 
 /// 전송 직전 backend 메모리에만 존재하며 직렬화하지 않는다.
@@ -166,6 +185,7 @@ pub(crate) struct ResolvedRequest {
     pub(crate) auth: Option<AuthConfig>,
     pub(crate) timeout_ms: u64,
     pub(crate) graphql: Option<GraphqlRequest>,
+    pub(crate) tls: Option<RequestTls>,
 }
 
 /// History v2의 wire 형식을 Rust 테스트에서도 고정한다.
@@ -201,6 +221,9 @@ pub struct ResponseCookie {
 
 #[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ApiResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub captures: Option<NativeCaptureOutcome>,
     pub status: u16,
     pub status_text: String,
     pub headers: Vec<KeyValue>,
@@ -344,6 +367,7 @@ struct ResponseHeaderEntry {
 }
 
 struct ResponseHeaderVaultInner {
+    captures: CaptureStore,
     next_id: u64,
     current_request_id: Option<String>,
     entry: Option<ResponseHeaderEntry>,
@@ -358,6 +382,7 @@ impl Default for ResponseHeaderVault {
     fn default() -> Self {
         Self {
             inner: Mutex::new(ResponseHeaderVaultInner {
+                captures: CaptureStore::default(),
                 next_id: 1,
                 current_request_id: None,
                 entry: None,
@@ -367,8 +392,18 @@ impl Default for ResponseHeaderVault {
 }
 
 impl ResponseHeaderVault {
+    #[cfg(test)]
     fn begin_request(&self) -> Result<String, String> {
+        self.begin_capture_request(&[])
+    }
+    fn begin_capture_request(&self, definitions: &[ResponseCapture]) -> Result<String, String> {
         let mut inner = self.inner.lock().map_err(|_| response_copy_error())?;
+        inner.captures.invalidate(
+            definitions
+                .iter()
+                .filter(|d| d.enabled)
+                .map(|d| d.variable.clone()),
+        );
         // 새 요청이 시작된 시점부터 이전 응답 원문은 어떤 오류 경로에서도 다시 읽히지 않는다.
         inner.current_request_id = None;
         inner.entry = None;
@@ -430,7 +465,69 @@ impl ResponseHeaderVault {
             .map_err(|_| BINARY_SAVE_ERROR.to_string())?;
         inner.current_request_id = None;
         inner.entry = None;
+        inner.captures.clear();
         Ok(())
+    }
+
+    fn commit_captures(
+        &self,
+        cancellation: &RequestCancellation,
+        token: u64,
+        response_id: &str,
+        request_id: &str,
+        outcome: &mut NativeCaptureOutcome,
+    ) -> Result<(), String> {
+        let _routing = cancellation
+            .routing
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?;
+        if cancellation.is_cancelled(token)
+            || inner.current_request_id.as_deref() != Some(response_id)
+        {
+            return Err("요청이 취소되었습니다".into());
+        }
+        inner
+            .captures
+            .accept(request_id, outcome, super::captures::now())
+            .map_err(str::to_owned)
+    }
+    pub(crate) fn reveal_capture(
+        &self,
+        reference: &str,
+        sealer: &dyn devbox_secrets::Sealer,
+    ) -> Result<String, String> {
+        self.inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?
+            .captures
+            .reveal(reference, super::captures::now(), sealer)
+            .map_err(str::to_owned)
+    }
+    pub(crate) fn discard_captures(&self, references: &[String]) -> Result<(), String> {
+        if references.len() > 128 {
+            return Err("capture_input_invalid".into());
+        }
+        self.inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?
+            .captures
+            .discard(references, super::captures::now());
+        Ok(())
+    }
+    pub(crate) fn restore_captures(&self, references: &[String]) -> Result<(), String> {
+        if references.len() > 128 {
+            return Err("capture_input_invalid".into());
+        }
+        self.inner
+            .lock()
+            .map_err(|_| "capture_reference_unavailable")?
+            .captures
+            .restore(references, super::captures::now())
+            .map_err(str::to_owned)
     }
 
     fn copy(&self, id: &str, cookies_only: bool) -> Result<String, String> {
@@ -454,6 +551,7 @@ impl ResponseHeaderVault {
 }
 
 struct ExecutedResponse {
+    oauth2_rejected: bool,
     response: ApiResponse,
     raw_headers: Vec<RawResponseHeader>,
     raw_binary: Option<Zeroizing<Vec<u8>>>,
@@ -461,18 +559,35 @@ struct ExecutedResponse {
 
 /// HTTP 요청을 backend-only resolve 뒤 수행한다. resolved 값은 응답에 포함하지 않는다.
 pub async fn send_request(
+    app: tauri::AppHandle,
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
     request_id: String,
+    captures: Vec<ResponseCapture>,
     response_headers: tauri::State<'_, ResponseHeaderVault>,
     cancellation: tauri::State<'_, RequestCancellation>,
 ) -> Result<ApiResponse, String> {
-    send_request_with_vault_and_cancellation(
+    use tauri::Manager;
+    let sealer = platform_sealer();
+    let state = app.state::<std::sync::Arc<super::oauth2::OAuth2State>>();
+    let credentials = app.state::<std::sync::Arc<GrpcCredentialState>>();
+    let oauth = if req.auth.as_ref().is_some_and(|auth| auth.kind == "oauth2") {
+        Some((state.inner(), state.cache(&app).map_err(str::to_owned)?))
+    } else {
+        None
+    };
+    send_request_with_services(
         req,
         environment,
         &request_id,
         response_headers.inner(),
         cancellation.inner(),
+        &captures,
+        RequestServices {
+            sealer: sealer.as_ref(),
+            oauth,
+            tls: Some(TlsSource::Store(&app, credentials.inner())),
+        },
     )
     .await
 }
@@ -494,8 +609,15 @@ async fn send_request_with_vault(
     .await
 }
 
-pub fn cancel_request(cancellation: tauri::State<'_, RequestCancellation>, request_id: String) {
+pub fn cancel_request(
+    cancellation: tauri::State<'_, RequestCancellation>,
+    response_headers: tauri::State<'_, ResponseHeaderVault>,
+    request_id: String,
+) {
     cancellation.cancel(&request_id);
+    if let Ok(mut inner) = response_headers.inner.lock() {
+        inner.captures.revoke_request(&request_id);
+    }
 }
 
 /// Renderer teardown에서 현재 응답과 in-flight 결과의 보관 권한을 함께 폐기한다.
@@ -505,6 +627,7 @@ pub fn discard_current_response(
     response_headers.clear_current()
 }
 
+#[cfg(test)]
 async fn send_request_with_vault_and_cancellation(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
@@ -512,20 +635,126 @@ async fn send_request_with_vault_and_cancellation(
     response_headers: &ResponseHeaderVault,
     cancellation: &RequestCancellation,
 ) -> Result<ApiResponse, String> {
-    let (request_token, response_id) =
-        cancellation.begin_registered(request_id, |_| response_headers.begin_request())?;
+    send_request_with_captures(
+        req,
+        environment,
+        request_id,
+        response_headers,
+        cancellation,
+        &[],
+        platform_sealer().as_ref(),
+    )
+    .await
+}
+enum TlsSource<'a> {
+    Store(&'a tauri::AppHandle, &'a GrpcCredentialState),
+    #[cfg(test)]
+    Prepared(PreparedTlsCredential),
+}
+struct RequestServices<'a> {
+    tls: Option<TlsSource<'a>>,
+    sealer: &'a dyn devbox_secrets::Sealer,
+    oauth: Option<(
+        &'a std::sync::Arc<super::oauth2::OAuth2State>,
+        &'a super::oauth2::cache::TokenCache,
+    )>,
+}
+#[cfg(test)]
+async fn send_request_with_captures(
+    req: RequestTemplate,
+    environment: Vec<EnvironmentVariable>,
+    request_id: &str,
+    response_headers: &ResponseHeaderVault,
+    cancellation: &RequestCancellation,
+    captures: &[ResponseCapture],
+    sealer: &dyn devbox_secrets::Sealer,
+) -> Result<ApiResponse, String> {
+    send_request_with_services(
+        req,
+        environment,
+        request_id,
+        response_headers,
+        cancellation,
+        captures,
+        RequestServices {
+            sealer,
+            oauth: None,
+            tls: None,
+        },
+    )
+    .await
+}
+async fn send_request_with_services(
+    req: RequestTemplate,
+    environment: Vec<EnvironmentVariable>,
+    request_id: &str,
+    response_headers: &ResponseHeaderVault,
+    cancellation: &RequestCancellation,
+    captures: &[ResponseCapture],
+    services: RequestServices<'_>,
+) -> Result<ApiResponse, String> {
+    let sealer = services.sealer;
+    super::captures::validate(captures).map_err(str::to_owned)?;
+    let (request_token, response_id) = cancellation.begin_registered(request_id, |_| {
+        response_headers.begin_capture_request(captures)
+    })?;
     validate_cookie_rows(&req.headers, &req.cookies)?;
     validate_multipart_rows(&req)?;
     validate_graphql_header_rows(&req)?;
-    let sealer = platform_sealer();
     let (mut resolved, environment_secrets) =
-        resolve_template(&req, &environment, sealer.as_ref()).map_err(|_| safe_secret_error())?;
+        resolve_template(&req, &environment, sealer).map_err(|_| safe_secret_error())?;
     validate_cookie_configuration(&resolved)?;
     validate_multipart_configuration(&resolved)?;
     prepare_multipart_files(&mut resolved)?;
     prepare_graphql_request(&mut resolved)?;
+    let prepared_tls = if let Some(id) = resolved
+        .tls
+        .as_ref()
+        .and_then(|tls| tls.credential_id.as_deref())
+    {
+        match services.tls.ok_or("tls_credential_missing")? {
+            TlsSource::Store(app, state) => Some(tokio::select! {
+                biased;
+                _ = wait_for_cancellation(cancellation, request_token) => return Err("요청이 취소되었습니다".into()),
+                value = state.resolve_for_http(app, id) => value?,
+            }),
+            #[cfg(test)]
+            TlsSource::Prepared(value) => Some(value),
+        }
+    } else {
+        None
+    };
+    let mut oauth_use = None;
+    if let Some(auth) = resolved.auth.as_mut().filter(|auth| auth.kind == "oauth2") {
+        let config = validate_oauth2_auth(auth).map_err(str::to_owned)?;
+        let (state, cache) = services.oauth.ok_or("oauth2_authorization_required")?;
+        let token = tokio::select! {
+            biased;
+            _ = wait_for_cancellation(cancellation, request_token) => return Err("요청이 취소되었습니다".into()),
+            token = state.resolve_token(cache, request_id, &config) => token.map_err(str::to_owned)?,
+        };
+        if cancellation.is_cancelled(request_token) {
+            return Err("요청이 취소되었습니다".into());
+        }
+        auth.token = token.to_string();
+        oauth_use = Some((cache, super::oauth2::config::profile_key(&config), token));
+    }
     let redactor = Redactor::for_request(&resolved, environment_secrets);
-    let mut executed = execute_request(resolved, &redactor, cancellation, request_token).await?;
+    let mut executed = execute_request_with_captures(
+        resolved,
+        &redactor,
+        cancellation,
+        request_token,
+        captures,
+        sealer,
+        prepared_tls.as_ref(),
+    )
+    .await?;
+    if executed.oauth2_rejected {
+        if let Some((cache, key, token)) = oauth_use {
+            cache.mark_rejected(&key, &token).map_err(str::to_owned)?;
+        }
+    }
     let raw_headers = if executed.response.headers_truncated {
         // A truncated header capture is never retained for an out-of-band IPC
         // caller. Binary retention is independent and remains bounded/current-ID only.
@@ -536,6 +765,15 @@ async fn send_request_with_vault_and_cancellation(
     let raw_binary = std::mem::take(&mut executed.raw_binary);
     let stored =
         response_headers.store_if_current_with_body(&response_id, raw_headers, raw_binary)?;
+    if let Some(outcome) = &mut executed.response.captures {
+        response_headers.commit_captures(
+            cancellation,
+            request_token,
+            &response_id,
+            request_id,
+            outcome,
+        )?;
+    }
     if stored {
         executed.response.response_id = Some(response_id);
         executed.response.raw_headers_available = !executed.response.headers_truncated;
@@ -658,11 +896,81 @@ pub fn sanitize_persisted_json(
         .map_err(|_| "민감정보 안전 저장 검증에 실패했습니다".to_string())
 }
 
+pub(crate) fn reject_stream_tls(tls: Option<&RequestTls>) -> Result<(), String> {
+    if tls.is_some_and(|tls| tls.credential_id.is_some() || !tls.verify) {
+        Err("tls_http_only".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn build_http_client(
+    timeout_ms: u64,
+    tls: Option<&PreparedTlsCredential>,
+    verify: bool,
+) -> Result<reqwest::Client, String> {
+    let invalid = || "tls_credential_invalid".to_string();
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(timeout_ms))
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_danger_accept_invalid_certs(!verify);
+    if let Some(tls) = tls {
+        if let Some(ca) = tls.ca_pem.as_deref() {
+            let certs =
+                reqwest::Certificate::from_pem_bundle(ca.as_bytes()).map_err(|_| invalid())?;
+            if certs.is_empty() {
+                return Err(invalid());
+            }
+            builder = builder.tls_certs_merge(certs);
+        }
+        match (
+            tls.client_certificate_pem.as_deref(),
+            tls.client_key_pem.as_deref(),
+        ) {
+            (Some(cert), Some(key)) => {
+                let pem = Zeroizing::new(format!("{cert}\n{key}"));
+                builder = builder
+                    .identity(reqwest::Identity::from_pem(pem.as_bytes()).map_err(|_| invalid())?);
+            }
+            (None, None) => {}
+            _ => return Err(invalid()),
+        }
+    }
+    builder.build().map_err(|_| {
+        if tls.is_some() {
+            invalid()
+        } else {
+            "HTTP 클라이언트를 준비하지 못했습니다".into()
+        }
+    })
+}
+
+#[cfg(test)]
 async fn execute_request(
     req: ResolvedRequest,
     redactor: &Redactor,
     cancellation: &RequestCancellation,
     request_token: u64,
+) -> Result<ExecutedResponse, String> {
+    execute_request_with_captures(
+        req,
+        redactor,
+        cancellation,
+        request_token,
+        &[],
+        platform_sealer().as_ref(),
+        None,
+    )
+    .await
+}
+async fn execute_request_with_captures(
+    req: ResolvedRequest,
+    redactor: &Redactor,
+    cancellation: &RequestCancellation,
+    request_token: u64,
+    captures: &[ResponseCapture],
+    sealer: &dyn devbox_secrets::Sealer,
+    tls: Option<&PreparedTlsCredential>,
 ) -> Result<ExecutedResponse, String> {
     let timeout_ms = if req.body_kind == "graphql" {
         req.timeout_ms
@@ -674,7 +982,15 @@ async fn execute_request(
         .ok_or_else(|| "요청 시간 제한이 올바르지 않습니다".to_string())?;
     tokio::time::timeout_at(
         deadline,
-        execute_request_chain(req, redactor, cancellation, request_token),
+        execute_request_chain(
+            req,
+            redactor,
+            cancellation,
+            request_token,
+            captures,
+            sealer,
+            tls,
+        ),
     )
     .await
     .map_err(|_| "요청 시간이 초과되었습니다".to_string())?
@@ -685,6 +1001,9 @@ async fn execute_request_chain(
     redactor: &Redactor,
     cancellation: &RequestCancellation,
     request_token: u64,
+    captures: &[ResponseCapture],
+    sealer: &dyn devbox_secrets::Sealer,
+    tls: Option<&PreparedTlsCredential>,
 ) -> Result<ExecutedResponse, String> {
     validate_cookie_configuration(&req)?;
     validate_multipart_configuration(&req)?;
@@ -698,11 +1017,11 @@ async fn execute_request_chain(
     } else {
         req.timeout_ms.max(1000)
     };
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(timeout_ms))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "HTTP 클라이언트를 준비하지 못했습니다".to_string())?;
+    let client = build_http_client(
+        timeout_ms,
+        tls,
+        req.tls.as_ref().is_none_or(|tls| tls.verify),
+    )?;
     let mut method = reqwest::Method::from_bytes(req.method.as_bytes())
         .map_err(|_| "HTTP 메서드가 올바르지 않습니다".to_string())?;
     let initial_url = if req.body_kind == "graphql" && req.method == "GET" {
@@ -759,7 +1078,7 @@ async fn execute_request_chain(
             if let Some(auth) = &req.auth {
                 match auth.kind.as_str() {
                     "basic" => builder = builder.basic_auth(&auth.username, Some(&auth.password)),
-                    "bearer" => builder = builder.bearer_auth(&auth.token),
+                    "bearer" | "oauth2" => builder = builder.bearer_auth(&auth.token),
                     "apikey" if !auth.api_key.is_empty() => {
                         let value = reqwest::header::HeaderValue::from_str(&auth.api_value)
                             .map_err(|_| "API key 헤더 값이 올바르지 않습니다".to_string())?;
@@ -795,6 +1114,9 @@ async fn execute_request_chain(
                     .join(location)
                     .map_err(|_| "리다이렉트 위치가 올바르지 않습니다".to_string())?;
                 let cross_origin = is_cross_origin(&current_url, &next_url);
+                if cross_origin && tls.is_some_and(|material| material.client_key_pem.is_some()) {
+                    return Err("tls_redirect_blocked".into());
+                }
                 if cross_origin {
                     allow_sensitive = false;
                     include_body = false;
@@ -848,6 +1170,24 @@ async fn execute_request_chain(
         let body_size = body_bytes.len();
         let is_json = media_type.contains("json");
         let binary = is_binary_response(&media_type, &body_bytes);
+        let capture_text = (!binary)
+            .then(|| std::str::from_utf8(&body_bytes).ok())
+            .flatten();
+        let capture_headers = if captured_headers.truncated {
+            &[][..]
+        } else {
+            captured_headers.raw.as_slice()
+        };
+        let capture_outcome = (!captures.is_empty()).then(|| {
+            super::captures::evaluate(
+                captures,
+                status.as_u16(),
+                capture_headers,
+                capture_text,
+                is_json,
+                sealer,
+            )
+        });
         let (body, binary_projection, raw_binary) = if binary {
             (
                 String::new(),
@@ -865,7 +1205,11 @@ async fn execute_request_chain(
         let graphql =
             (req.body_kind == "graphql" && !binary).then(|| parse_graphql_response(&body));
         return Ok(ExecutedResponse {
+            oauth2_rejected: status.as_u16() == 401
+                && allow_sensitive
+                && req.auth.as_ref().is_some_and(|auth| auth.kind == "oauth2"),
             response: ApiResponse {
+                captures: capture_outcome,
                 status: status.as_u16(),
                 status_text: status.canonical_reason().unwrap_or("").to_string(),
                 headers: captured_headers.masked,
@@ -1180,12 +1524,75 @@ pub(crate) fn resolve_template(
                 token: replace(&auth.token),
                 api_key: replace(&auth.api_key),
                 api_value: replace(&auth.api_value),
+                oauth2: (auth.kind == "oauth2")
+                    .then_some(auth.oauth2.as_ref())
+                    .flatten()
+                    .map(|config| super::oauth2::config::OAuth2Config {
+                        grant_type: config.grant_type,
+                        authorization_url: if config.grant_type
+                            == super::oauth2::config::GrantType::AuthorizationCode
+                        {
+                            replace(&config.authorization_url)
+                        } else {
+                            String::new()
+                        },
+                        token_url: replace(&config.token_url),
+                        client_id: replace(&config.client_id),
+                        client_secret: replace(&config.client_secret),
+                        scopes: replace(&config.scopes),
+                    }),
             }),
             timeout_ms: req.timeout_ms,
             graphql,
+            tls: req.tls.clone(),
         },
         environment_secrets,
     ))
+}
+
+pub(crate) fn resolve_oauth2_auth(
+    auth: &AuthConfig,
+    environment: &[EnvironmentVariable],
+) -> Result<super::oauth2::config::ValidatedConfig, &'static str> {
+    if auth.kind != "oauth2" {
+        return Err("oauth2_config_invalid");
+    }
+    let req = RequestTemplate {
+        method: "GET".into(),
+        url: String::new(),
+        headers: vec![],
+        cookies: vec![],
+        multipart: vec![],
+        params: vec![],
+        body_kind: "none".into(),
+        body: String::new(),
+        auth: Some(auth.clone()),
+        timeout_ms: 30000,
+        graphql: None,
+        tls: None,
+    };
+    let (resolved, _) = resolve_template(&req, environment, platform_sealer().as_ref())
+        .map_err(|_| "oauth2_config_invalid")?;
+    validate_oauth2_auth(resolved.auth.as_ref().ok_or("oauth2_config_invalid")?)
+}
+fn validate_oauth2_auth(
+    auth: &AuthConfig,
+) -> Result<super::oauth2::config::ValidatedConfig, &'static str> {
+    let config = auth.oauth2.as_ref().ok_or("oauth2_config_invalid")?;
+    let mut unresolved = false;
+    for value in [
+        &config.authorization_url,
+        &config.token_url,
+        &config.client_id,
+        &config.client_secret,
+        &config.scopes,
+    ] {
+        visit_references(value, |_| unresolved = true);
+    }
+    if unresolved {
+        return Err("oauth2_config_invalid");
+    }
+    super::oauth2::config::validate(config)
 }
 
 fn prepare_graphql_request(req: &mut ResolvedRequest) -> Result<(), String> {
@@ -1384,6 +1791,21 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         collect(&auth.token);
         collect(&auth.api_key);
         collect(&auth.api_value);
+        if auth.kind == "oauth2" {
+            if let Some(config) = &auth.oauth2 {
+                if config.grant_type == super::oauth2::config::GrantType::AuthorizationCode {
+                    collect(&config.authorization_url);
+                }
+                for value in [
+                    &config.token_url,
+                    &config.client_id,
+                    &config.client_secret,
+                    &config.scopes,
+                ] {
+                    collect(value);
+                }
+            }
+        }
     }
     names
 }
@@ -1544,6 +1966,9 @@ fn collect_request_secrets(req: &ResolvedRequest, secrets: &mut Vec<Zeroizing<St
         push(&auth.password);
         push(&auth.token);
         push(&auth.api_value);
+        if let Some(config) = &auth.oauth2 {
+            push(&config.client_secret);
+        }
     }
     for header in req.headers.iter().filter(|header| header.enabled) {
         if is_sensitive_name(&header.key) {
@@ -1697,6 +2122,7 @@ pub(crate) fn sanitize_openapi_template(
         auth: request.auth.clone(),
         timeout_ms: request.timeout_ms,
         graphql: request.graphql.clone(),
+        tls: request.tls.clone(),
     };
     for header in &mut snapshot.headers {
         header.enabled = true;
@@ -1746,7 +2172,7 @@ fn sanitize_persisted_json_with_sealer(
     }
     secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
     let mut value = serde_json::from_str::<serde_json::Value>(serialized).map_err(|_| ())?;
-    sanitize_json_value(&mut value, "", &secrets);
+    sanitize_json_value_in(&mut value, "", &secrets, true);
     let sanitized = serde_json::to_string(&value).map_err(|_| ())?;
     if secrets
         .iter()
@@ -1759,6 +2185,54 @@ fn sanitize_persisted_json_with_sealer(
 }
 
 fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zeroizing<String>]) {
+    sanitize_json_value_in(value, key, secrets, false);
+}
+
+// Only persisted request templates receive the OAuth metadata exception. Response
+// bodies and nested JSON strings still use the ordinary sensitive-key policy.
+fn persisted_oauth_metadata(
+    value: &serde_json::Value,
+    secrets: &[Zeroizing<String>],
+) -> Option<(serde_json::Value, bool)> {
+    if value.get("auth")?.get("kind")?.as_str()? != "oauth2"
+        || !value.get("auth")?.get("oauth2")?.is_object()
+    {
+        return None;
+    }
+    let template = serde_json::from_value::<RequestTemplate>(value.clone()).ok()?;
+    let mut config = template.auth?.oauth2?;
+    let original = serde_json::to_value(&config).ok()?;
+    config.authorization_url = redact_url(&config.authorization_url, secrets, false);
+    config.token_url = redact_url(&config.token_url, secrets, false);
+    config.client_id = redact_text(&config.client_id, secrets);
+    config.scopes = redact_text(&config.scopes, secrets);
+    if !config.client_secret.is_empty() && !is_exact_reference(&config.client_secret) {
+        config.client_secret = REDACTED.into();
+    }
+    for (field, limit) in [
+        (&mut config.authorization_url, 8192),
+        (&mut config.token_url, 8192),
+        (&mut config.client_id, 8192),
+        (&mut config.client_secret, 65536),
+        (&mut config.scopes, 32768),
+    ] {
+        let mut end = field.len().min(limit);
+        while !field.is_char_boundary(end) {
+            end -= 1;
+        }
+        field.truncate(end);
+    }
+    let safe = serde_json::to_value(config).ok()?;
+    let changed = safe != original;
+    Some((safe, changed))
+}
+
+fn sanitize_json_value_in(
+    value: &mut serde_json::Value,
+    key: &str,
+    secrets: &[Zeroizing<String>],
+    persistence: bool,
+) {
     // `requiresSecretReview` is persistence schema metadata, not a credential.
     // Preserve only its exact boolean wire shape; redact every other value under
     // the same name immediately so schema parsing fails closed without leakage.
@@ -1769,6 +2243,9 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
         *value = serde_json::Value::String(REDACTED.to_string());
         return;
     }
+    let oauth = persistence
+        .then(|| persisted_oauth_metadata(value, secrets))
+        .flatten();
     let is_graphql_request = value
         .as_object()
         .and_then(|object| object.get("body_kind"))
@@ -1831,16 +2308,32 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
     }
     match value {
         serde_json::Value::Object(object) => {
-            for (child_key, child) in object {
+            for (child_key, child) in object.iter_mut() {
                 if is_graphql_request && child_key == "graphql" {
                     continue;
                 }
-                sanitize_json_value(child, child_key, secrets);
+                sanitize_json_value_in(
+                    child,
+                    child_key,
+                    secrets,
+                    persistence && child_key != "body",
+                );
+            }
+            if let Some((config, changed)) = oauth {
+                if let Some(auth) = object
+                    .get_mut("auth")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    auth.insert("oauth2".into(), config);
+                }
+                if changed {
+                    object.insert("requiresSecretReview".into(), true.into());
+                }
             }
         }
         serde_json::Value::Array(array) => {
             for child in array {
-                sanitize_json_value(child, "", secrets);
+                sanitize_json_value_in(child, "", secrets, persistence);
             }
         }
         serde_json::Value::String(text) => {
@@ -2675,6 +3168,17 @@ fn build_curl(req: &ResolvedRequest) -> String {
         req.method,
         shell_quote(&url)
     )];
+    if let Some(tls) = &req.tls {
+        if !tls.verify {
+            lines.push("  --insecure".into());
+        }
+        if tls.credential_id.is_some() {
+            if tls.verify {
+                lines.push("  --cacert '{{ca_pem}}'".into());
+            }
+            lines.push("  --cert '{{client_cert_pem}}' --key '{{client_key_pem}}'".into());
+        }
+    }
     for header in req.headers.iter().filter(|header| {
         header.enabled
             && !header.key.is_empty()
@@ -2694,6 +3198,7 @@ fn build_curl(req: &ResolvedRequest) -> String {
     }
     if let Some(auth) = &req.auth {
         match auth.kind.as_str() {
+            "oauth2" => lines.push("  --header 'Authorization: Bearer {{access_token}}'".into()),
             "basic" if !auth.username.is_empty() => lines.push(format!(
                 "  --header {}",
                 shell_quote(&format!(
@@ -2795,6 +3300,7 @@ mod tests {
             }),
             timeout_ms: 5_000,
             graphql: None,
+            tls: None,
         }
     }
 
@@ -3225,6 +3731,509 @@ mod tests {
     }
 
     #[test]
+    fn http_clients_accept_valid_pem_material_and_reject_broken_material() {
+        use super::super::grpc_credentials::PreparedTlsCredential;
+        let full = PreparedTlsCredential {
+            ca_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/ca.pem").into(),
+            )),
+            client_certificate_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.pem").into(),
+            )),
+            client_key_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.key").into(),
+            )),
+        };
+        assert!(build_http_client(1000, Some(&full), true).is_ok());
+        assert!(build_http_client(1000, None, false).is_ok());
+        let broken = PreparedTlsCredential {
+            ca_pem: Some(Zeroizing::new(
+                "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----\n".into(),
+            )),
+            client_certificate_pem: None,
+            client_key_pem: None,
+        };
+        assert_eq!(
+            build_http_client(1000, Some(&broken), true).unwrap_err(),
+            "tls_credential_invalid"
+        );
+    }
+    #[test]
+    fn tls_client_identity_does_not_cross_redirect_origins() {
+        let source = TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = TcpListener::bind("127.0.0.1:0").unwrap();
+        target.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/start", source.local_addr().unwrap());
+        let destination = format!("http://{}/other", target.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = source.accept().unwrap();
+            let _ = read_http_request(&mut stream);
+            write!(stream,"HTTP/1.1 302 Found\r\nLocation: {destination}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let mut req = template();
+        req.url = url;
+        req.headers.clear();
+        req.auth = None;
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: true,
+        });
+        let material = PreparedTlsCredential {
+            ca_pem: None,
+            client_certificate_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.pem").into(),
+            )),
+            client_key_pem: Some(Zeroizing::new(
+                include_str!("../../tests/fixtures/tls/client.key").into(),
+            )),
+        };
+        let result = tauri::async_runtime::block_on(send_request_with_services(
+            req,
+            vec![],
+            "tls-redirect",
+            &ResponseHeaderVault::default(),
+            &RequestCancellation::default(),
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: None,
+                tls: Some(TlsSource::Prepared(material)),
+            },
+        ));
+        assert_eq!(result.unwrap_err(), "tls_redirect_blocked");
+        assert_eq!(
+            target.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        server.join().unwrap();
+    }
+    #[test]
+    fn tls_missing_credential_precedes_oauth_token_resolution() {
+        use super::super::oauth2::config::{GrantType, OAuth2Config};
+        let mut req = template();
+        req.url = "https://not-sent.test/".into();
+        req.headers.clear();
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: false,
+        });
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url: "https://not-sent.test/token".into(),
+                client_id: "client".into(),
+                client_secret: "secret".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let result = tauri::async_runtime::block_on(send_request_with_vault(
+            req,
+            vec![],
+            &ResponseHeaderVault::default(),
+        ));
+        assert_eq!(result.unwrap_err(), "tls_credential_missing");
+    }
+
+    #[test]
+    fn tls_missing_credential_fails_before_connecting_even_when_verification_is_off() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut req = template();
+        req.url = format!("http://{}/", listener.local_addr().unwrap());
+        req.headers.clear();
+        req.auth = None;
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: false,
+        });
+        let result = tauri::async_runtime::block_on(send_request_with_vault(
+            req,
+            vec![],
+            &ResponseHeaderVault::default(),
+        ));
+        assert_eq!(result.unwrap_err(), "tls_credential_missing");
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn tls_stream_configuration_is_not_silently_ignored() {
+        assert!(reject_stream_tls(None).is_ok());
+        assert!(reject_stream_tls(Some(&RequestTls {
+            credential_id: None,
+            verify: true
+        }))
+        .is_ok());
+        assert_eq!(
+            reject_stream_tls(Some(&RequestTls {
+                credential_id: None,
+                verify: false
+            }))
+            .unwrap_err(),
+            "tls_http_only"
+        );
+        assert_eq!(
+            reject_stream_tls(Some(&RequestTls {
+                credential_id: Some("a".repeat(32)),
+                verify: true
+            }))
+            .unwrap_err(),
+            "tls_http_only"
+        );
+    }
+
+    #[test]
+    fn tls_field_accepts_old_requests_and_defaults_to_verification() {
+        let mut value = serde_json::to_value(template()).unwrap();
+        value.as_object_mut().unwrap().remove("tls");
+        assert!(serde_json::from_value::<RequestTemplate>(value.clone())
+            .unwrap()
+            .tls
+            .is_none());
+        value["tls"] = serde_json::json!({"credentialId":null});
+        assert!(
+            serde_json::from_value::<RequestTemplate>(value.clone())
+                .unwrap()
+                .tls
+                .unwrap()
+                .verify
+        );
+        value["tls"] = serde_json::json!({"credentialId":"a".repeat(32),"verify":false});
+        let request = serde_json::from_value::<RequestTemplate>(value).unwrap();
+        let tls = request.tls.as_ref().unwrap();
+        assert!(!tls.verify);
+        assert_eq!(
+            tls.credential_id.as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+    }
+
+    #[tokio::test]
+    async fn oauth2_actual_send_fetches_once_and_masks_the_token_response() {
+        use super::super::oauth2::{
+            cache::TokenCache,
+            config::{GrantType, OAuth2Config},
+            flows, OAuth2State,
+        };
+        let (token_url, token_request) = flows::tests::serve_once(
+            200,
+            r#"{"access_token":"actual-oauth-token","token_type":"bearer","expires_in":3600}"#,
+        )
+        .await;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/me", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for status in [200, 401] {
+                let (mut stream, _) = listener.accept().unwrap();
+                assert!(read_http_request(&mut stream).contains("Bearer actual-oauth-token"));
+                let body = "actual-oauth-token";
+                write!(
+                stream,
+                "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            }
+        });
+        let mut req = template();
+        req.url = url;
+        req.method = "GET".into();
+        req.headers.clear();
+        req.body_kind = "none".into();
+        req.body.clear();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url,
+                client_id: "devbox".into(),
+                client_secret: "client-secret".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TokenCache::open(
+            dir.path().join("tokens.json"),
+            std::sync::Arc::new(MockSealer),
+        );
+        let state = std::sync::Arc::new(OAuth2State::default());
+        let response = send_request_with_services(
+            req.clone(),
+            vec![],
+            "oauth-send",
+            &ResponseHeaderVault::default(),
+            &RequestCancellation::default(),
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: Some((&state, &cache)),
+                tls: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.body, "[REDACTED]");
+        assert!(token_request
+            .await
+            .unwrap()
+            .contains("grant_type=client_credentials"));
+        let key = super::super::oauth2::config::profile_key(
+            &validate_oauth2_auth(req.auth.as_ref().unwrap()).unwrap(),
+        );
+        let rejected = send_request_with_services(
+            req,
+            vec![],
+            "oauth-rejected",
+            &ResponseHeaderVault::default(),
+            &RequestCancellation::default(),
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: Some((&state, &cache)),
+                tls: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(rejected.status, 401);
+        assert_eq!(cache.status(&key, 1).state, "expired");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn oauth2_token_wait_is_cancelled_by_the_request_owner() {
+        use super::super::oauth2::{
+            cache::TokenCache,
+            config::{GrantType, OAuth2Config},
+            OAuth2State,
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut req = template();
+        req.url = "https://not-sent.test/me".into();
+        req.headers.clear();
+        req.body.clear();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url: format!("http://{}/token", listener.local_addr().unwrap()),
+                client_id: "client".into(),
+                client_secret: "secret".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache = TokenCache::open(
+            dir.path().join("tokens.json"),
+            std::sync::Arc::new(MockSealer),
+        );
+        let state = std::sync::Arc::new(OAuth2State::default());
+        let cancellation = RequestCancellation::default();
+        let vault = ResponseHeaderVault::default();
+        let sending = send_request_with_services(
+            req,
+            vec![],
+            "cancel-oauth",
+            &vault,
+            &cancellation,
+            &[],
+            RequestServices {
+                sealer: &MockSealer,
+                oauth: Some((&state, &cache)),
+                tls: None,
+            },
+        );
+        let (result, ()) = tokio::join!(sending, async {
+            let (stream, _) = listener.accept().await.unwrap();
+            cancellation.cancel("cancel-oauth");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            drop(stream);
+        });
+        assert_eq!(result.unwrap_err(), "요청이 취소되었습니다");
+    }
+
+    #[test]
+    fn oauth2_resolves_active_configuration_and_masks_client_and_access_tokens() {
+        use super::super::oauth2::config::{GrantType, OAuth2Config};
+        let mut req = template();
+        req.url = "https://api.test/me".into();
+        req.headers.clear();
+        req.body.clear();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            oauth2: Some(OAuth2Config {
+                grant_type: GrantType::ClientCredentials,
+                token_url: "https://auth.test/token".into(),
+                authorization_url: "https://{{UNUSED_AUTH}}/authorize".into(),
+                client_id: "client".into(),
+                client_secret: "{{CLIENT_SECRET}}".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert!(referenced_variable_names(&req).contains("CLIENT_SECRET"));
+        assert!(!referenced_variable_names(&req).contains("UNUSED_AUTH"));
+        let (mut resolved, secrets) = resolve_template(
+            &req,
+            &[sealed_variable("CLIENT_SECRET", "private-client-secret")],
+            &MockSealer,
+        )
+        .unwrap();
+        assert_eq!(
+            resolved
+                .auth
+                .as_ref()
+                .unwrap()
+                .oauth2
+                .as_ref()
+                .unwrap()
+                .client_secret,
+            "private-client-secret"
+        );
+        resolved.auth.as_mut().unwrap().token = "opaque-access-token".into();
+        let redactor = Redactor::for_request(&resolved, secrets);
+        assert_eq!(
+            redactor.redact_body("private-client-secret opaque-access-token"),
+            "[REDACTED] [REDACTED]"
+        );
+        req.auth.as_mut().unwrap().kind = "bearer".into();
+        assert!(!referenced_variable_names(&req).contains("CLIENT_SECRET"));
+        assert!(resolve_template(&req, &[], &MockSealer)
+            .unwrap()
+            .0
+            .auth
+            .unwrap()
+            .oauth2
+            .is_none());
+    }
+
+    #[test]
+    fn native_capture_chains_a_sealed_token_while_response_stays_masked() {
+        use crate::commands::captures::ResponseCapture;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/login", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_http_request(&mut stream);
+                if index == 1 {
+                    assert!(request.contains("Bearer private-login-token"));
+                }
+                let body = r#"{"access_token":"private-login-token"}"#;
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let mut req = template();
+        req.url = url;
+        req.method = "GET".into();
+        req.headers.clear();
+        req.auth = None;
+        req.body_kind = "none".into();
+        req.body.clear();
+        let definitions = [ResponseCapture {
+            id: "c".into(),
+            enabled: true,
+            variable: "token".into(),
+            source: "jsonPath".into(),
+            target: "$.access_token".into(),
+        }];
+        let vault = ResponseHeaderVault::default();
+        let cancellation = RequestCancellation::default();
+        let response = tauri::async_runtime::block_on(send_request_with_captures(
+            req.clone(),
+            vec![],
+            "login",
+            &vault,
+            &cancellation,
+            &definitions,
+            &MockSealer,
+        ))
+        .unwrap();
+        assert!(response.body.contains(REDACTED));
+        assert!(!serde_json::to_string(&response)
+            .unwrap()
+            .contains("private-login-token"));
+        let capture = &response.captures.as_ref().unwrap().values[0];
+        assert_eq!(
+            vault
+                .reveal_capture(&capture.reference, &MockSealer)
+                .unwrap(),
+            "private-login-token"
+        );
+        req.headers.push(RequestHeader {
+            key: "Authorization".into(),
+            value: "Bearer {{token}}".into(),
+            enabled: true,
+        });
+        let response = tauri::async_runtime::block_on(send_request_with_captures(
+            req,
+            vec![EnvironmentVariable {
+                key: "token".into(),
+                value: capture.value.clone(),
+                secret: true,
+            }],
+            "next",
+            &vault,
+            &cancellation,
+            &[],
+            &MockSealer,
+        ))
+        .unwrap();
+        assert!(!response.body.contains("private-login-token"));
+        vault.clear_current().unwrap();
+        assert!(vault
+            .reveal_capture(&capture.reference, &MockSealer)
+            .is_err());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn native_capture_commit_rejects_cancelled_superseded_and_discarded_owners() {
+        use crate::commands::captures::{evaluate, ResponseCapture};
+        let defs = [ResponseCapture {
+            id: "c".into(),
+            enabled: true,
+            variable: "status".into(),
+            source: "status".into(),
+            target: String::new(),
+        }];
+        for mode in ["cancel", "supersede", "discard"] {
+            let vault = ResponseHeaderVault::default();
+            let cancellation = RequestCancellation::default();
+            let (token, response_id) = cancellation
+                .begin_registered("first", |_| vault.begin_request())
+                .unwrap();
+            let mut out = evaluate(&defs, 200, &[], None, false, &MockSealer);
+            match mode {
+                "cancel" => cancellation.cancel("first"),
+                "supersede" => {
+                    cancellation
+                        .begin_registered("new", |_| vault.begin_request())
+                        .unwrap();
+                }
+                _ => {
+                    vault.clear_current().unwrap();
+                }
+            }
+            assert!(vault
+                .commit_captures(&cancellation, token, &response_id, "first", &mut out)
+                .is_err());
+        }
+    }
+
+    #[test]
     fn native_binary_loopback_projects_masked_metadata_and_retains_only_current_raw_bytes() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -3296,6 +4305,17 @@ mod tests {
     }
 
     #[test]
+    fn capture_restore_rejects_unissued_or_revoked_references() {
+        let vault = ResponseHeaderVault::default();
+        assert_eq!(
+            vault
+                .restore_captures(&["unissued-reference".into()])
+                .unwrap_err(),
+            "capture_reference_unavailable"
+        );
+    }
+
+    #[test]
     fn response_vault_retains_binary_only_for_current_response_id() {
         let vault = ResponseHeaderVault::default();
         let stale = vault.begin_request().unwrap();
@@ -3313,6 +4333,54 @@ mod tests {
         );
         vault.clear_current().unwrap();
         assert!(vault.binary_payload(&current).is_err());
+    }
+
+    #[test]
+    fn persisted_oauth_metadata_survives_native_sanitization_without_exempting_response_keys() {
+        let mut request = serde_json::to_value(template()).unwrap();
+        request["auth"] = serde_json::json!({
+            "kind":"oauth2", "username":"", "password":"", "token":"", "api_key":"", "api_value":"",
+            "oauth2": {"grantType":"authorizationCode", "authorizationUrl":"https://auth.example.test/authorize",
+                "tokenUrl":"https://auth.example.test/token", "clientId":"devbox", "clientSecret":"{{CLIENT_SECRET}}", "scopes":"read write"}
+        });
+        request["tls"] = serde_json::json!({"credentialId":"fixture-id", "verify":false});
+        let input = serde_json::json!({"requests":[{"request":request.clone()}], "other":{"tokenUrl":"private-token", "authorizationUrl":"private-auth"}});
+        let output =
+            sanitize_persisted_json_with_sealer(&input.to_string(), &[], &MockSealer).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(
+            saved["requests"][0]["request"]["auth"]["oauth2"],
+            request["auth"]["oauth2"]
+        );
+        assert_eq!(saved["requests"][0]["request"]["tls"], request["tls"]);
+        assert_eq!(saved["other"]["tokenUrl"], REDACTED);
+        assert_eq!(saved["other"]["authorizationUrl"], REDACTED);
+        let response = Redactor::from_secrets(vec![]).redact_body(&request.to_string());
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["auth"]["oauth2"]["tokenUrl"], REDACTED);
+    }
+
+    #[test]
+    fn persisted_oauth_metadata_masks_url_credentials_and_literal_client_secret() {
+        let mut request = serde_json::to_value(template()).unwrap();
+        request["auth"] = serde_json::json!({
+            "kind":"oauth2", "username":"", "password":"", "token":"", "api_key":"", "api_value":"",
+            "oauth2": {"grantType":"clientCredentials", "authorizationUrl":"",
+                "tokenUrl":"https://user:pass@auth.example.test/token?access_token=query-secret",
+                "clientId":"devbox", "clientSecret":"plain-client-secret", "scopes":"read"}
+        });
+        let output =
+            sanitize_persisted_json_with_sealer(&request.to_string(), &[], &MockSealer).unwrap();
+        for secret in ["user:", "pass@", "query-secret", "plain-client-secret"] {
+            assert!(!output.contains(secret), "leaked {secret}");
+        }
+        let saved: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(saved["auth"]["oauth2"]["clientSecret"], REDACTED);
+        assert_eq!(saved["requiresSecretReview"], true);
+        assert!(saved["auth"]["oauth2"]["tokenUrl"]
+            .as_str()
+            .unwrap()
+            .contains("auth.example.test/token"));
     }
 
     #[test]
@@ -3515,6 +4583,25 @@ mod tests {
         assert!(redirect_switches_to_get(303, &reqwest::Method::PUT));
         assert!(!redirect_switches_to_get(307, &reqwest::Method::POST));
         assert!(!redirect_switches_to_get(302, &reqwest::Method::PUT));
+    }
+
+    #[test]
+    fn revealed_curl_keeps_oauth_and_tls_as_explicit_external_placeholders() {
+        let mut req = template();
+        req.auth = Some(AuthConfig {
+            kind: "oauth2".into(),
+            ..Default::default()
+        });
+        req.tls = Some(RequestTls {
+            credential_id: Some("a".repeat(32)),
+            verify: false,
+        });
+        let (resolved, _) = resolve_template(&req, &[], &MockSealer).unwrap();
+        let curl = build_curl(&resolved);
+        assert!(curl.contains("Authorization: Bearer {{access_token}}"));
+        assert!(curl.contains("--insecure"));
+        assert!(curl.contains("{{client_cert_pem}}"));
+        assert!(!curl.contains(&"a".repeat(32)));
     }
 
     #[test]

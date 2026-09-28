@@ -5,7 +5,6 @@
 //! cannot leave a partial export in the selected location.
 
 use std::collections::HashSet;
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use tauri::AppHandle;
@@ -38,9 +37,11 @@ pub async fn read_json_file(app: AppHandle) -> Result<Option<String>, String> {
         .into_path()
         .map_err(|_| TRANSFER_ERROR.to_string())?;
     validate_file_path(&path, true)?;
-    let bytes = tauri::async_runtime::spawn_blocking(move || read_bounded(&path))
-        .await
-        .map_err(|_| TRANSFER_ERROR.to_string())??;
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        read_bounded(&path, MAX_TRANSFER_BYTES).map_err(|_| TRANSFER_ERROR.to_string())
+    })
+    .await
+    .map_err(|_| TRANSFER_ERROR.to_string())??;
     let content = Zeroizing::new(String::from_utf8(bytes).map_err(|_| TRANSFER_ERROR.to_string())?);
     validate_export_document(&content)?;
     Ok(Some(content.to_string()))
@@ -79,27 +80,39 @@ pub async fn save_json_file(
     Ok(true)
 }
 
-fn read_bounded(path: &Path) -> Result<Vec<u8>, String> {
-    let identity = devbox_filesystem::filesystem_identity(path, false)
-        .map_err(|_| TRANSFER_ERROR.to_string())?;
-    let metadata = std::fs::symlink_metadata(path).map_err(|_| TRANSFER_ERROR.to_string())?;
-    if !metadata.file_type().is_file() || metadata.len() > MAX_TRANSFER_BYTES as u64 {
-        return Err(TRANSFER_ERROR.to_string());
+#[derive(Debug)]
+pub(super) enum ReadError {
+    Invalid,
+    TooLarge,
+}
+/// Retain the opened file, bound its bytes, and recheck the selected pathname.
+pub(super) fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, ReadError> {
+    validate_file_path(path, true).map_err(|_| ReadError::Invalid)?;
+    let before = std::fs::symlink_metadata(path).map_err(|_| ReadError::Invalid)?;
+    if !before.is_file() {
+        return Err(ReadError::Invalid);
     }
-    let mut file = File::open(path).map_err(|_| TRANSFER_ERROR.to_string())?;
-    if devbox_filesystem::filesystem_identity(path, false)
-        .map_err(|_| TRANSFER_ERROR.to_string())?
-        != identity
-    {
-        return Err(TRANSFER_ERROR.to_string());
+    if before.len() > limit as u64 {
+        return Err(ReadError::TooLarge);
+    }
+    let (mut file, identity) =
+        devbox_filesystem::open_filesystem_object(path, false).map_err(|_| ReadError::Invalid)?;
+    if file.metadata().map_err(|_| ReadError::Invalid)?.len() > limit as u64 {
+        return Err(ReadError::TooLarge);
     }
     let mut bytes = Vec::new();
-    let mut limited = file.by_ref().take((MAX_TRANSFER_BYTES + 1) as u64);
-    limited
+    file.by_ref()
+        .take(limit.saturating_add(1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|_| TRANSFER_ERROR.to_string())?;
-    if bytes.len() > MAX_TRANSFER_BYTES {
-        return Err(TRANSFER_ERROR.to_string());
+        .map_err(|_| ReadError::Invalid)?;
+    if bytes.len() > limit {
+        return Err(ReadError::TooLarge);
+    }
+    validate_file_path(path, true).map_err(|_| ReadError::Invalid)?;
+    if devbox_filesystem::filesystem_identity(path, false).map_err(|_| ReadError::Invalid)?
+        != identity
+    {
+        return Err(ReadError::Invalid);
     }
     Ok(bytes)
 }
@@ -698,7 +711,7 @@ fn safe_default_name(value: &str) -> String {
     }
 }
 
-fn validate_file_path(path: &Path, must_exist: bool) -> Result<(), String> {
+pub(super) fn validate_file_path(path: &Path, must_exist: bool) -> Result<(), String> {
     let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
         return Err(TRANSFER_ERROR.to_string());
     };

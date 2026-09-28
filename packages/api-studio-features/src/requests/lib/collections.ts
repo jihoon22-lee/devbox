@@ -1,3 +1,5 @@
+import { cleanAssertions, type Assertion } from "./assertions";
+import { cleanCaptures, type Capture } from "./captures";
 import { documentSession, documentStorage, type DocumentStorage } from "../../storage/documentStorage";
 // Collection v2 저장·조회 및 v1 fail-closed 안전 변환.
 
@@ -18,6 +20,8 @@ export const COLLECTION_V1_MARKER_KEY = "apip-collections-v1-migrated";
 export const COLLECTION_VERSION = 2;
 
 export interface CollectionEntry {
+  assertions?: Assertion[];
+  captures?: Capture[];
   id: string;
   name: string;
   folder: string;
@@ -29,6 +33,21 @@ export interface CollectionEntry {
 export interface CollectionStore {
   version: 2;
   collections: CollectionEntry[];
+}
+
+export function cleanCollectionChecks(value: {
+  assertions?: unknown;
+  captures?: unknown;
+  requiresSecretReview?: boolean;
+}) {
+  const assertions = cleanAssertions(value.assertions),
+    captures = cleanCaptures(value.captures);
+  return {
+    assertions: assertions.assertions,
+    captures: captures.captures,
+    requiresSecretReview:
+      value.requiresSecretReview === true || assertions.assertions.some((item) => item.expected.includes("[REDACTED]")),
+  };
 }
 
 export function emptyStore(): CollectionStore {
@@ -98,6 +117,7 @@ export function duplicateEntry(store: CollectionStore, id: string, now: number, 
     name: copyName(source.name),
     saved_at: now,
     request: clonePersistedRequest(source.request),
+    ...cleanCollectionChecks(source),
   };
   return { ...store, collections: [duplicate, ...store.collections] };
 }
@@ -126,6 +146,7 @@ export function parseStore(raw: string | null): CollectionStore | null {
       collections: parsed.collections.map((entry) => ({
         ...entry,
         request: normalizePersistedRequest(entry.request),
+        ...cleanCollectionChecks(entry),
       })),
     };
   } catch {

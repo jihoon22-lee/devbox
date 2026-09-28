@@ -5,16 +5,16 @@
 **Goal:** 저장한 요청에 응답 검증(assertion)과 값 캡처(capture)를 붙이고, 캡처한 값을 다음 요청의 `{{변수}}`로 이어 쓰며, 컬렉션이나 폴더를 순서대로 실행해 결과를 한 표로 보는 러너를 만든다(D25 4순위, `review.md` §8 표 5번).
 
 **Architecture:**
-- 전부 프런트의 순수 로직 + 기존 전송 경로다. 새 native 명령은 없다.
+- assertion은 프런트의 순수 로직으로 평가한다. 데스크톱 capture는 기존 native 전송 경로에서 응답 마스킹 전에 평가한다(아래 승인된 보완 계약).
   - `lib/jsonPath.ts`: 작은 JSONPath 부분집합(`$`, `.key`, `['key']`, `[n]`(음수는 뒤에서), `[*]`, `.*`, `..key`).
   - `lib/assertions.ts`: 출처(status·header·jsonPath·body·duration) × 연산(equals·notEquals·contains·notContains·matches·exists·notExists·lessThan·greaterThan) 평가.
   - `lib/captures.ts`: 응답에서 값을 뽑아 변수 이름에 넣는다.
   - `lib/runner.ts`: 요청 목록을 순서대로 보내는 오케스트레이터(전송·대기 함수를 주입받아 테스트 가능).
 - 저장: `CollectionEntry`에 선택 필드 `assertions?: Assertion[]`, `captures?: Capture[]`(없으면 빈 목록). 컬렉션 문서 검증(`cleanCollectionEntry`), JSON 내보내기, 파일 컬렉션(P2-10 PR B) 요청 파일에 함께 들어간다.
-- 캡처 값은 세션 메모리에만 둔다(저장하지 않음). 전송할 때 native로 넘기는 변수 목록 끝에 붙인다 — native `resolve_template`은 뒤의 값이 앞의 같은 이름을 덮는다. 데스크톱에서는 `sealSecret`으로 봉인해 `secret: true`로 넘겨 native redaction 대상이 되게 한다. 화면에는 가려서 보이고 "보기"를 눌러야 드러난다.
+- 캡처 값은 세션 메모리에만 둔다(저장하지 않음). 데스크톱은 native가 봉인한 값을 `secret: true` 변수로 이어 보내며 일반 응답에는 평문을 넣지 않는다. 화면의 명시적 "보기"만 해당 capture 참조로 평문을 요청한다. 브라우저 preview는 순수 평가 경로를 사용한다.
 - 러너는 `requiresSecretReview` 요청과 파일 파트를 다시 골라야 하는 multipart 요청을 건너뛴다(가린 값이나 빈 파일을 보내지 않게).
 
-**Tech Stack:** TypeScript·React 19, Vitest
+**Tech Stack:** TypeScript·React 19, Vitest, 기존 Rust HTTP engine·DPAPI 봉인기
 
 **Spec:** `review.md` §8 신규 기능 표 5번 · `00-roadmap.md` D25
 
@@ -33,6 +33,17 @@
 3. "실패하면 멈춤"이 꺼져 있으면 실패 뒤에도 끝까지 실행하고, 중지 버튼은 진행 중 요청을 취소한 뒤 나머지를 "건너뜀"으로 표시한다. (Task 4 테스트)
 4. 비밀 검토가 필요한 요청은 러너에서 보내지 않는다. (Task 4 테스트)
 5. assertion·capture가 없는 옛 컬렉션 문서도 그대로 열리고, 새 필드가 있는 문서를 내보냈다 다시 가져와도 값이 같다. (Task 3 테스트)
+
+## 승인된 보완 계약 (2026-09-28, ledger #580)
+
+실제 `ApiResponse.body`와 민감한 header는 native에서 이미 마스킹된다. 프런트가 원문을 받는다는 기존 Task 2·4·5의 가정 대신 아래 계약을 적용한다. 기존 응답 마스킹을 유지하면서 로그인 토큰을 다음 요청에 사용할 수 있게 하는 사용자 승인 변경이다.
+
+- Task 2: `send_request`에 선택적 capture 정의 목록을 더한다. native가 원문을 버리기 전에 status·header·JSONPath를 평가하고 기존 환경 변수 봉인기로 봉인한다. 결과 DTO는 변수 이름·봉인 값·불투명 보기 참조·성공/누락/고정 오류만 반환한다. 일반 응답·오류·로그·기록에는 원문 capture를 넣지 않는다. 기존 한도와 JSONPath 부분집합을 동일하게 적용하고 `[REDACTED]`는 값으로 채택하지 않는다.
+- Task 2: capture 전용 보기 명령은 native 세션에서 발급한 참조만 허용한다. 임의 ciphertext를 복호화하는 명령을 만들지 않는다. 참조 저장소는 개수·수명이 제한되며 세션 해제·취소·새 요청에 의한 대체에서 소유권을 확인한다. 전체 raw 응답은 캡처용으로 보관하지 않는다. 새 외부 의존성과 평문 디스크 저장은 없다.
+- Task 4: 데스크톱 `RunDeps.send`는 capture 정의를 native로 전달한다. `SessionVariables`는 평문 없이 봉인 값과 보기 참조를 보유할 수 있어야 한다. 캡처 실패·취소·대체 응답은 이전 값을 되살리지 않는다. 환경 변수와 중복되면 세션 값/누락 상태가 우선한다. 브라우저 테스트의 순수 capture 경로와 분리해 검증한다.
+- Task 5: 수동 전송과 러너 모두 같은 native capture 결과를 사용한다. "보기"를 누른 시점에 참조로 조회하고, 숨김·삭제·새 capture·컴포넌트 해제 시 표시 평문을 비운다. 늦게 끝난 보기 응답은 교체/삭제된 변수에 적용하지 않는다. 복사한 러너 요약에는 capture 값과 참조를 넣지 않는다.
+- 추가 TDD: 원문 access_token을 native에서 캡처한 뒤 일반 응답은 마스킹된 채 유지되는지, 봉인 변수를 다음 요청에서 사용할 수 있는지, 잘못된/만료된 참조·취소·대체·삭제에서 평문을 돌려주지 않는지, JSONPath/크기/개수 경계, 수동 전송·러너·보기 UI(axe 0)를 검증한다. 기존 Task 2·4·5의 프런트 단독 코드 예제는 browser preview 회귀용이며 데스크톱 수용 근거가 아니다.
+- PR 본문 "계획과 다르게 한 점"에 원래 마스킹 경계와 이 native 보완을 기록한다. 계획 체크박스는 수정하지 않는다.
 
 ## Branch · PR
 

@@ -1,3 +1,4 @@
+import { apiMessages } from "../../issues/catalog";
 import { buildRevealedCurl } from "../api";
 import { sanitizeRequestForPersistence } from "./persistence";
 import { isExactVariableReference } from "./references";
@@ -190,6 +191,11 @@ export function buildCurl(template: RequestTemplate): string {
   if (!url) return "";
 
   const lines = [`curl --request ${req.method} ${shellQuote(url)}`];
+  if (req.tls?.verify === false) lines.push("  --insecure");
+  if (req.tls?.credentialId) {
+    if (req.tls.verify) lines.push("  --cacert '{{ca_pem}}'");
+    lines.push("  --cert '{{client_cert_pem}}' --key '{{client_key_pem}}'");
+  }
 
   const headers: [string, string][] = [];
   for (const h of req.headers) {
@@ -204,7 +210,9 @@ export function buildCurl(template: RequestTemplate): string {
   }
   const cookieHeader = buildCookieHeader(req.cookies);
   if (cookieHeader) headers.push(["Cookie", cookieHeader]);
-  if (req.auth?.kind === "basic" && req.auth.username) {
+  if (req.auth?.kind === "oauth2") {
+    headers.push(["Authorization", "Bearer {{access_token}}"]);
+  } else if (req.auth?.kind === "basic" && req.auth.username) {
     headers.push(["Authorization", "Basic [REDACTED]"]);
   } else if (req.auth?.kind === "bearer" && req.auth.token) {
     headers.push([
@@ -239,6 +247,12 @@ export function buildCurl(template: RequestTemplate): string {
 }
 
 export function safeRequestError(cause: unknown): string {
+  const code = cause instanceof Error ? cause.name : typeof cause === "string" ? cause : "";
+  if (
+    (code.startsWith("oauth2_") || code.startsWith("tls_")) &&
+    Object.prototype.hasOwnProperty.call(apiMessages, code)
+  )
+    return apiMessages[code as keyof typeof apiMessages];
   if (
     (typeof DOMException !== "undefined" && cause instanceof DOMException && cause.name === "AbortError") ||
     (cause instanceof Error && cause.name === "AbortError")
@@ -248,6 +262,7 @@ export function safeRequestError(cause: unknown): string {
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/, "");
   const safeMessages = [
+    "OAuth 2.0 인증은 데스크톱 앱에서 사용할 수 있습니다.",
     "multipart는 최대 50개 part까지 사용할 수 있습니다.",
     "part 이름이 필요합니다.",
     "part 이름은 120자 이하의 HTTP token이어야 합니다.",
@@ -352,6 +367,9 @@ export const SAFE_WEBSOCKET_UI_MESSAGES = new Set([
 ]);
 
 export function safeWebSocketUiError(cause: unknown): string {
+  const code = cause instanceof Error ? cause.name : typeof cause === "string" ? cause : "";
+  if (code.startsWith("tls_") && Object.prototype.hasOwnProperty.call(apiMessages, code))
+    return apiMessages[code as keyof typeof apiMessages];
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/u, "");
   return SAFE_WEBSOCKET_UI_MESSAGES.has(message) ? message : "WebSocket 요청에 실패했습니다.";

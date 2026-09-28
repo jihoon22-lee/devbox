@@ -318,3 +318,14 @@ describe("buildCurl", () => {
     expect(curl).not.toContain("--data");
   });
 });
+
+it("masked curl retains OAuth and TLS intent without native credential data", () => {
+  const req = baseReq({
+    url: "https://x.test",
+    auth: { kind: "oauth2", username: "", password: "", token: "", api_key: "", api_value: "" },
+    tls: { credentialId: "a".repeat(32), verify: false },
+  });
+  expect(buildCurl(req)).toContain("Authorization: Bearer {{access_token}}");
+  expect(buildCurl(req)).toContain("--insecure");
+  expect(buildCurl(req)).toContain("{{client_cert_pem}}");
+});

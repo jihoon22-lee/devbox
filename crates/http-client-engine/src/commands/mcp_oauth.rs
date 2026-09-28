@@ -5,11 +5,14 @@
 //! parameters, discovery bodies, DPAPI envelopes, and storage paths never cross
 //! IPC.
 
+use super::oauth_common::{
+    oauth_client, read_callback, read_json_response, send_form, send_form_allow_empty,
+    send_request, write_callback_page,
+};
 use crate::core::oauth::{self, AuthorizationServerMetadata, ProtectedResourceMetadata};
 use crate::platform::platform_sealer;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use futures_util::StreamExt;
-use reqwest::header::{CONTENT_TYPE, WWW_AUTHENTICATE};
+use reqwest::header::WWW_AUTHENTICATE;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::net::Ipv4Addr;
@@ -17,8 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_opener::OpenerExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{watch, Mutex as AsyncMutex};
 use zeroize::Zeroizing;
 
@@ -31,7 +33,6 @@ const MAX_GRANTS: usize = 32;
 const MAX_STORE_BYTES: usize = 1024 * 1024;
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const FLOW_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-const NETWORK_TIMEOUT: Duration = Duration::from_secs(15);
 const EXPIRY_SAFETY_MS: u64 = 60_000;
 const STORE_SCHEMA: &str = "devbox.api-playground.mcp-oauth-grants";
 const STORE_VERSION: u32 = 1;
@@ -350,7 +351,7 @@ pub async fn authorize_mcp_http(
         redirect_uri: &redirect_uri,
         state: &state_value,
         challenge: &challenge,
-        resource: &discovered.resource,
+        resource: Some(&discovered.resource),
         scopes: &discovered.scopes,
     })
     .map_err(ToOwned::to_owned)?;
@@ -752,183 +753,6 @@ fn project_grant(grant: &PersistedGrant, now: u64) -> McpOAuthGrantProjection {
             "active"
         },
     }
-}
-
-fn oauth_client(error: &'static str) -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(NETWORK_TIMEOUT)
-        .timeout(NETWORK_TIMEOUT)
-        .build()
-        .map_err(|_| error.to_string())
-}
-
-async fn send_request(
-    request: reqwest::RequestBuilder,
-    cancellation: &mut watch::Receiver<bool>,
-    error: &'static str,
-) -> Result<reqwest::Response, String> {
-    if *cancellation.borrow() {
-        return Err(OAUTH_CANCELLED.into());
-    }
-    tokio::select! {
-        biased;
-        changed = cancellation.changed() => {
-            let _ = changed;
-            Err(OAUTH_CANCELLED.into())
-        }
-        response = request.send() => response.map_err(|_| error.to_string()),
-    }
-}
-
-async fn read_json_response(
-    response: reqwest::Response,
-    limit: usize,
-    cancellation: &mut watch::Receiver<bool>,
-    error: &'static str,
-) -> Result<Zeroizing<Vec<u8>>, String> {
-    let content_type = response
-        .headers()
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(';').next())
-        .map(str::trim)
-        .is_some_and(|value| {
-            value.eq_ignore_ascii_case("application/json")
-                || value.to_ascii_lowercase().ends_with("+json")
-        });
-    if !content_type {
-        return Err(error.into());
-    }
-    let mut bytes = Zeroizing::new(Vec::new());
-    let mut stream = response.bytes_stream();
-    loop {
-        let chunk = tokio::select! {
-            biased;
-            changed = cancellation.changed() => {
-                let _ = changed;
-                return Err(OAUTH_CANCELLED.into());
-            }
-            chunk = stream.next() => chunk,
-        };
-        let Some(chunk) = chunk else { break };
-        let chunk = chunk.map_err(|_| error.to_string())?;
-        if bytes.len().saturating_add(chunk.len()) > limit {
-            return Err(error.into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    if bytes.is_empty() {
-        return Err(error.into());
-    }
-    Ok(bytes)
-}
-
-async fn send_form(
-    client: &reqwest::Client,
-    endpoint: &str,
-    form: &[(&str, &str)],
-    cancellation: &mut watch::Receiver<bool>,
-    error: &'static str,
-) -> Result<Zeroizing<Vec<u8>>, String> {
-    let url = oauth::validate_secure_url(endpoint, true).map_err(|_| error.to_string())?;
-    let response = send_request(client.post(url).form(form), cancellation, error).await?;
-    if response.status().is_redirection() || !response.status().is_success() {
-        return Err(error.into());
-    }
-    read_json_response(
-        response,
-        oauth::MAX_TOKEN_RESPONSE_BYTES,
-        cancellation,
-        error,
-    )
-    .await
-}
-
-async fn send_form_allow_empty(
-    client: &reqwest::Client,
-    endpoint: &str,
-    form: &[(&str, &str)],
-    cancellation: &mut watch::Receiver<bool>,
-    error: &'static str,
-) -> Result<(), String> {
-    let url = oauth::validate_secure_url(endpoint, true).map_err(|_| error.to_string())?;
-    let response = send_request(client.post(url).form(form), cancellation, error).await?;
-    if response.status().is_redirection() || !response.status().is_success() {
-        return Err(error.into());
-    }
-    let mut stream = response.bytes_stream();
-    let mut bytes = 0usize;
-    while let Some(chunk) = tokio::select! {
-        biased;
-        changed = cancellation.changed() => {
-            let _ = changed;
-            return Err(OAUTH_CANCELLED.into());
-        }
-        chunk = stream.next() => chunk,
-    } {
-        let chunk = chunk.map_err(|_| error.to_string())?;
-        bytes = bytes.saturating_add(chunk.len());
-        if bytes > oauth::MAX_TOKEN_RESPONSE_BYTES {
-            return Err(error.into());
-        }
-    }
-    Ok(())
-}
-
-async fn read_callback(
-    stream: &mut TcpStream,
-    cancellation: &mut watch::Receiver<bool>,
-) -> Result<Zeroizing<Vec<u8>>, String> {
-    let mut request = Zeroizing::new(Vec::new());
-    let mut buffer = Zeroizing::new([0_u8; 2048]);
-    loop {
-        let count = tokio::select! {
-            biased;
-            changed = cancellation.changed() => {
-                let _ = changed;
-                return Err(OAUTH_CANCELLED.into());
-            }
-            read = tokio::time::timeout(NETWORK_TIMEOUT, stream.read(&mut buffer[..])) => {
-                read.map_err(|_| oauth::CALLBACK_FAILED.to_string())?
-                    .map_err(|_| oauth::CALLBACK_FAILED.to_string())?
-            }
-        };
-        if count == 0 {
-            return Err(oauth::CALLBACK_FAILED.into());
-        }
-        request.extend_from_slice(&buffer[..count]);
-        if request.len() > 16 * 1024 {
-            return Err(oauth::CALLBACK_FAILED.into());
-        }
-        if request.ends_with(b"\r\n\r\n") {
-            return Ok(request);
-        }
-        if request.windows(4).any(|window| window == b"\r\n\r\n") {
-            return Err(oauth::CALLBACK_FAILED.into());
-        }
-    }
-}
-
-async fn write_callback_page(stream: &mut TcpStream, success: bool) -> Result<(), String> {
-    let body = if success {
-        "Authorization completed. You may close this window."
-    } else {
-        "Authorization failed. You may close this window."
-    };
-    let status = if success { "200 OK" } else { "400 Bad Request" };
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream
-        .write_all(response.as_bytes())
-        .await
-        .map_err(|_| oauth::CALLBACK_FAILED.to_string())?;
-    stream
-        .shutdown()
-        .await
-        .map_err(|_| oauth::CALLBACK_FAILED.to_string())
 }
 
 fn seal_token(token: &str) -> Result<String, String> {

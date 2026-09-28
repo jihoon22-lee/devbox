@@ -2,10 +2,12 @@
 import type { BinaryResponse } from "./BinaryResponse";
 import type { GraphqlResponse } from "./GraphqlResponse";
 import type { KeyValue } from "./KeyValue";
+import type { NativeCaptureOutcome } from "./NativeCaptureOutcome";
 import type { RedirectHop } from "./RedirectHop";
 import type { ResponseCookie } from "./ResponseCookie";
 
 export type ApiResponse = {
+  captures?: NativeCaptureOutcome;
   status: number;
   status_text: string;
   headers: Array<KeyValue>;
