@@ -85,6 +85,14 @@ on:
         description: Finish updated uninstall; retain restore/reinstall evidence
         type: boolean
         default: false
+      delivery_observe_cdp_baseline:
+        description: Opt in to a second startup CDP observer for comparison; ordinary acceptance omits it
+        type: boolean
+        default: false
+      delivery_foreground_probe:
+        description: Compare read-only CDP responses after foregrounding the failed owned API Studio window
+        type: boolean
+        default: false
       delivery_rebuild_control_center:
         description: Rebuild only Control Center and its helper after proving the other retained product inputs unchanged
         type: boolean
@@ -197,9 +205,13 @@ jobs:
           path: ${{ runner.temp }}/suite-rebuilt
           if-no-files-found: error
           retention-days: 1
+      - name: Verify the bounded native CDP host observer
+        run: node --test .github/scripts/windows-cdp-host.test.mjs .github/scripts/windows-cdp-waits.test.mjs
       - name: Exercise retained installed Suite delivery
         env:
           GH_TOKEN: ${{ github.token }}
+          DEVBOX_SUITE_OBSERVE_CDP_BASELINE: ${{ inputs.delivery_observe_cdp_baseline }}
+          DEVBOX_SUITE_FOREGROUND_PROBE: ${{ inputs.delivery_foreground_probe }}
         shell: pwsh
         run: .github/scripts/windows-suite-delivery.ps1 -Staging $env:DEVBOX_SUITE_TEST_STAGING -Bootstrap "$env:DEVBOX_SUITE_TEST_STAGING/devbox-suite-bootstrap.exe" -RemainingOnly:([bool]::Parse("${{ inputs.delivery_remaining_only }}"))
       - name: Preserve focused delivery evidence

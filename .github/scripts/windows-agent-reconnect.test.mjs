@@ -1,6 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reconnectAgent } from "./windows-agent-reconnect.mjs";
+import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
+
+test("the control skips only the startup observer and records that absence explicitly", async () => {
+  let probes = 0;
+  const observation = {
+    state: "observed",
+    browserResponsive: true,
+    rendererResponsive: true,
+    nativeStatus: "connected",
+  };
+  const item = {
+    cdp: {
+      probeNewSession: async () => {
+        probes++;
+        return observation;
+      },
+    },
+  };
+  assert.deepEqual(await observeReconnectBaseline(item, false), { state: "disabled" });
+  assert.equal(probes, 0);
+  assert.deepEqual(await observeReconnectBaseline(item), { state: "disabled" });
+  assert.equal(probes, 0);
+  assert.deepEqual(await observeReconnectBaseline(item, true), observation);
+  assert.equal(probes, 1);
+});
 
 test("records the exact product and phase without replaying a failed reconnect", async () => {
   const calls = [],
@@ -91,6 +115,7 @@ test("a responsive fresh observer never converts the original reconnect failure 
   const fresh = { state: "observed", browserResponsive: true, rendererResponsive: true, nativeStatus: "connected" };
   const item = {
     product: "api-studio",
+    inspectCdpHost: async () => ({ state: "observed", listener: "owned" }),
     cdpBaseline: { ...fresh, nativeStatus: "starting" },
     cdp: {
       evaluate: async (expression) => {
@@ -112,4 +137,109 @@ test("a responsive fresh observer never converts the original reconnect failure 
   assert.equal(reports.at(-1).stage, "failed");
   assert.deepEqual(reports.at(-1).freshObserver, fresh);
   assert.deepEqual(reports.at(-1).freshObserverBaseline, item.cdpBaseline);
+  assert.deepEqual(reports.at(-1).nativeObserver, { state: "observed", listener: "owned" });
+});
+
+test("foreground recovery is observed only after failure is recorded and never replays reconnect", async () => {
+  const failure = new Error("original timeout"),
+    reports = [];
+  let focused = false,
+    reconnects = 0;
+  const item = {
+    product: "api-studio",
+    focusCdpHost: async () => {
+      assert.equal(reports.at(-1).stage, "failed");
+      assert.equal(reports.at(-1).rendererResponsive, false);
+      focused = true;
+      return { state: "focused", wasForeground: false, wasMinimized: false };
+    },
+    cdp: {
+      evaluate: async (expression) => {
+        if (expression.includes("agent_reconnect")) {
+          reconnects++;
+          throw failure;
+        }
+        if (!focused) throw failure;
+        return expression === "1" ? 1 : "connected";
+      },
+      probeNewSession: async () => ({ state: focused ? "observed" : "open_failed" }),
+    },
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (state) => reports.push(state)),
+    (error) => error === failure,
+  );
+  assert.equal(reconnects, 1);
+  assert.deepEqual(reports.at(-1).foregroundControl.original, { rendererResponsive: true, nativeStatus: "connected" });
+  assert.equal(reports.at(-1).foregroundControl.fresh.state, "observed");
+  assert.equal(reports.at(-1).stage, "failed");
+});
+
+test("an unconfirmed foreground change cannot trigger recovery reads or hide the original failure", async () => {
+  for (const rejected of [false, true]) {
+    const failure = new Error("original timeout"),
+      reports = [];
+    let reads = 0;
+    const item = {
+      product: "api-studio",
+      focusCdpHost: async () => {
+        if (rejected) throw new Error("private");
+        return { state: "not_focused", wasForeground: false, wasMinimized: false };
+      },
+      cdp: {
+        evaluate: async () => {
+          reads++;
+          throw failure;
+        },
+      },
+    };
+    await assert.rejects(
+      reconnectAgent(item, "before-stop", (value) => reports.push(value)),
+      (error) => error === failure,
+    );
+    assert.equal(reads, 3);
+    assert.equal(reports.at(-1).foregroundControl.original, undefined);
+    assert.equal(reports.at(-1).foregroundControl.activation.state, rejected ? "probe_failed" : "not_focused");
+  }
+});
+
+test("wait inspection follows persisted failure and cannot turn recovery into success", async () => {
+  const reports = [];
+  const failure = new Error("original timeout");
+  let waits = 0;
+  const item = {
+    product: "api-studio",
+    cdp: {
+      evaluate: async () => {
+        throw failure;
+      },
+    },
+    inspectCdpWaits: async () => {
+      assert.equal(reports.at(-1).stage, "failed");
+      waits++;
+      return { state: "observed", threads: [] };
+    },
+    focusCdpHost: async () => ({ state: "not_focused" }),
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (value) => reports.push(structuredClone(value))),
+    (error) => error === failure,
+  );
+  assert.equal(waits, 1);
+  assert.equal(reports.at(-1).waitObserver.state, "observed");
+  assert.equal(reports.at(-1).stage, "failed");
+  assert.equal(reports[1].waitObserver, undefined);
+  item.inspectCdpWaits = async () => {
+    throw new Error("private detail");
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (value) => reports.push(value)),
+    (error) => error === failure,
+  );
+  assert.deepEqual(reports.at(-1).waitObserver, { state: "probe_failed" });
+  item.cdp.evaluate = async () => "connected";
+  item.inspectCdpWaits = async () => {
+    assert.fail("success must not inspect waits");
+  };
+  await reconnectAgent(item, "before-stop", () => {});
 });

@@ -17,7 +17,7 @@ test("discovery aborts a real loopback response that stops mid-body", async () =
     const started = performance.now();
     assert.deepEqual(
       await inspectCdpTarget(`ws://127.0.0.1:${server.address().port}/devtools/page/id`, { timeoutMs: 50 }),
-      { state: "unreachable" },
+      { state: "unreachable", reason: "timeout" },
     );
     assert.ok(performance.now() - started < 2000);
   } finally {
@@ -63,7 +63,12 @@ test("discovery bounds malformed, oversized, failed and external endpoint respon
     [() => new Response("private", { status: 503 }), "http_error"],
     [new Error("private connection details"), "unreachable"],
   ]) {
-    await withFetch(response, async () => assert.deepEqual(await inspectCdpTarget(target), { state }));
+    await withFetch(response, async () =>
+      assert.deepEqual(
+        await inspectCdpTarget(target),
+        state === "unreachable" ? { state, reason: "other" } : { state },
+      ),
+    );
   }
   await withFetch(
     () => Response.json([]),
@@ -186,4 +191,17 @@ test("a socket that never opens is closed and its target discovery is recorded",
         { open: false },
       ),
   );
+});
+
+test("discovery distinguishes refusal from timeout without retaining native error text", async () => {
+  for (const [code, reason] of [
+    ["ECONNREFUSED", "refused"],
+    ["ECONNRESET", "reset"],
+    ["UND_ERR_CONNECT_TIMEOUT", "timeout"],
+  ]) {
+    const cause = Object.assign(new Error("private/address"), { code });
+    await withFetch(new TypeError("private endpoint", { cause }), async () => {
+      assert.deepEqual(await inspectCdpTarget(target), { state: "unreachable", reason });
+    });
+  }
 });

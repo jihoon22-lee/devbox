@@ -5,7 +5,9 @@ import {
 } from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
-import { reconnectAgent } from "./windows-agent-reconnect.mjs";
+import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
+import { observeWindowsCdpWaits } from "./windows-cdp-waits.mjs";
+import { observeWindowsCdpHost, focusWindowsCdpHost } from "./windows-cdp-host.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
@@ -130,6 +132,11 @@ async function start(member) {
       row.Pid === item.child.pid && path.resolve(row.Path).toLowerCase() === path.resolve(executable).toLowerCase(),
   );
   assert.ok(item.identity);
+  item.inspectCdpWaits = () => observeWindowsCdpWaits(item.identity, port);
+  item.inspectCdpHost = () => observeWindowsCdpHost(item.identity, port);
+  if (item.product === "api-studio" && process.env.DEVBOX_SUITE_FOREGROUND_PROBE === "true") {
+    item.focusCdpHost = () => focusWindowsCdpHost(item.identity);
+  }
   item.cdp = await connect(port, item.child);
   await waitForRenderer(item.cdp, "!!window.__TAURI_INTERNALS__", "installed product bridge missing");
   await waitForRenderer(
@@ -142,7 +149,7 @@ async function start(member) {
     mode,
   );
   // A failed second attach is meaningful only relative to this exact live page.
-  item.cdpBaseline = await item.cdp.probeNewSession();
+  item.cdpBaseline = await observeReconnectBaseline(item, process.env.DEVBOX_SUITE_OBSERVE_CDP_BASELINE === "true");
   (evidence.cdpBaselines ??= []).push({ product: item.product, ...item.cdpBaseline });
   return item;
 }
