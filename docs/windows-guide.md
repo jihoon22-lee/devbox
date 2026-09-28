@@ -211,7 +211,7 @@ JavaScript fetch에는 브라우저 CORS·금지 헤더·쿠키 제약이 적용
 파일 part는 코드의 `files` Map에 직접 선택한 `File` 객체를 넣는다. Python 코드는 `requests`가
 필요하며, 이 라이브러리가 보존하지 못하는 중복 헤더는 curl 또는 Go로 생성한다.
 Go는 표준 라이브러리를 사용하고, C#은 top-level statements와 PEM 인증서 API를 지원하는
-현대 .NET 프로젝트에서 실행한다.
+.NET 9 이상 프로젝트에서 실행한다.
 
 기존 **cURL → 원문 1회 복사**는 명시적으로 인증 비밀을 포함할 때 사용한다.
 이 경우에도 OAuth 캐시 토큰·TLS PEM은 복사하지 않으며 자리표시자를 채워야 한다.

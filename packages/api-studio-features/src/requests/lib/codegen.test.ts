@@ -192,3 +192,11 @@ it("keeps query and form placeholders directly editable", () => {
   expect(code).toContain("q={{missing}}");
   expect(code).toContain("key={{value}}");
 });
+it("loads a C# trust certificate without requiring its private key", () => {
+  const request = { ...post, tls: { credentialId: "a".repeat(32), verify: true } };
+  const code = generateCode("csharp", request, env).code;
+  expect(code).toContain('X509Certificate2.CreateFromPem(File.ReadAllText("{{ca_pem}}"))');
+  expect(code).not.toContain('X509Certificate2.CreateFromPemFile("{{ca_pem}}")');
+  expect(code).toContain("X509CertificateLoader.LoadPkcs12");
+  expect(code).toContain("CryptographicOperations.ZeroMemory");
+});

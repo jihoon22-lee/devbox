@@ -295,7 +295,13 @@ function csharp(plan: Plan): string {
     "using System.IO;",
     "using System.Net.Http;",
     "using System.Text;",
-    ...(plan.credential ? ["using System.Net.Security;", "using System.Security.Cryptography.X509Certificates;"] : []),
+    ...(plan.credential
+      ? [
+          "using System.Net.Security;",
+          "using System.Security.Cryptography;",
+          "using System.Security.Cryptography.X509Certificates;",
+        ]
+      : []),
     "",
     "using var handler = new HttpClientHandler();",
   ];
@@ -305,13 +311,20 @@ function csharp(plan: Plan): string {
     );
   if (plan.credential) {
     lines.push(
-      'using var identity = X509Certificate2.CreateFromPemFile("{{client_cert_pem}}", "{{client_key_pem}}");',
+      "// .NET 9 이상: PEM 키를 TLS provider가 사용할 수 있는 identity로 읽습니다.",
+      "X509Certificate2 LoadIdentity() {",
+      '    using var pem = X509Certificate2.CreateFromPemFile("{{client_cert_pem}}", "{{client_key_pem}}");',
+      "    var bytes = pem.Export(X509ContentType.Pkcs12);",
+      "    try { return X509CertificateLoader.LoadPkcs12(bytes, (string?)null); }",
+      "    finally { CryptographicOperations.ZeroMemory(bytes); }",
+      "}",
+      "using var identity = LoadIdentity();",
       "handler.ClientCertificates.Add(identity);",
       "handler.AllowAutoRedirect = false;",
     );
     if (plan.verify)
       lines.push(
-        'using var root = X509Certificate2.CreateFromPemFile("{{ca_pem}}");',
+        'using var root = X509Certificate2.CreateFromPem(File.ReadAllText("{{ca_pem}}"));',
         "handler.ServerCertificateCustomValidationCallback = (_, certificate, peerChain, errors) => {",
         "    if (errors == SslPolicyErrors.None) return true;",
         "    if (certificate is null || (errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0) return false;",
