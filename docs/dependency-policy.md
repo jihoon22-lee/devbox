@@ -164,17 +164,17 @@ renderer fallback.
 ### Manual review record
 
 - `glib` [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g)는 Linux-only
-  Tauri GTK transitive dependency다. 2026-09-01 post-release review에서 GitHub advisory의
-  affected range가 `>=0.15.0,<0.20.0`, patched version이 `0.20.0`임을 확인했다. 공식
-  [최신 Tauri release `2.11.5`](https://github.com/tauri-apps/tauri/releases/tag/tauri-v2.11.5)와
-  [upstream `dev` manifest](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri/Cargo.toml) 모두
-  `gtk = "0.18"`을 유지하고, 로컬 `cargo tree -i glib@0.18.5 --workspace -e normal`은
-  `tauri 2.11.5 → gtk/webkit2gtk → glib 0.18.5` 경로를 확인했다.
-  `cargo update -p glib@0.18.5 --precise 0.20.0 --dry-run`은 `gtk 0.18.2`의 `glib ^0.18`
-  제약으로 해석에 실패하므로 compatible patched graph는 아직 없다. Windows installer에
-  link되지 않는다는 engineering boundary만 기록하고 Dependabot alert는 open 상태로 유지한다.
-  exception expiry `2026-11-30`은 연장하지 않았으며, 그 전 또는 Tauri update 때 graph를 다시
-  검토한다. 이는 vulnerability-free 또는 법적 면책 선언이 아니다.
+  Tauri GTK transitive dependency다. 2026-09-01 review에서 affected range
+  `>=0.15.0,<0.20.0`, patched version `0.20.0`을 확인했다. 2026-09-28에
+  [Tauri `2.12.0`](https://github.com/tauri-apps/tauri/releases/tag/tauri-v2.12.0)으로
+  갱신한 뒤 `cargo tree --locked --target x86_64-unknown-linux-gnu -i glib`로
+  `tauri 2.12.0 → gtk/webkit2gtk → glib 0.18.5` 경로가 남는 것을 재확인했다.
+  GTK3의 `glib ^0.18` 제약에 patched `0.20.0`은 포함되지 않는다. Windows installer에
+  link되지 않는다는 engineering boundary를 기록하며 exception expiry `2026-11-30`은
+  연장하지 않았다. 그 전 또는 다음 Tauri update 때 graph를 다시 검토한다.
+- Tauri 2.12.0의 `tauri-utils 2.10.0 → urlpattern 0.6.0` 갱신으로 rust-unic 5개가
+  lockfile에서 제거됐다. RUSTSEC-2025-0075, 0080, 0081, 0098, 0100 예외도
+  `deny.toml`과 dependency policy에서 제거했다.
 - MPL transitive crates는 upstream source를 수정하지 않은 engineering 상태와 exact version/source/
   digest를 notices에 남긴다. source를 수정하면 MPL source-distribution 검토를 다시 한다.
 - `dompurify`의 `(MPL-2.0 OR Apache-2.0)` 중 Apache branch를 선택한 것은 배포 engineering
@@ -197,7 +197,6 @@ Windows/Linux 영향과 제거 계획을 다시 검토해야 하며 날짜만 �
 |---|---|---|
 | Tauri 2 → GTK3 0.18 | RUSTSEC-2024-0411~0420 | Linux WebKit runtime에만 존재하는 archived binding. Tauri가 GTK4 또는 유지되는 compatible line을 제공하면 제거 |
 | GTK3 0.18 → `proc-macro-error 1.0.4` | RUSTSEC-2024-0370 | Linux GTK build dependency. glib-macros upgrade와 함께 제거 |
-| tauri-utils → urlpattern 0.3 → rust-unic | RUSTSEC-2025-0075, 0080, 0081, 0098, 0100 | 현재 Tauri가 허용하는 urlpattern line의 unmaintained transitive crates. Tauri/urlpattern upgrade 시 제거 |
 | Tauri 2 → `glib 0.18.5` | GHSA-wrw7-89jp-8q8g | Dependabot이 탐지하는 Linux-only iterator unsoundness. Windows installer에는 link되지 않으며 Tauri GTK line 갱신 시 제거 |
 
 `cargo-deny`가 다루지 않는 Dependabot GHSA도 policy에 exact locked package로 고정한다. GitHub
