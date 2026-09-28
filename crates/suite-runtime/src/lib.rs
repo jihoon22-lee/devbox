@@ -1,10 +1,14 @@
 //! Explicit per-process connection to this product's exact native package review.
 //! The file declaration alone never activates a listener or launches a product.
+#[cfg(any(windows, test))]
+mod handoff_diagnostics;
 pub mod mcp_launcher;
 #[cfg(windows)]
 #[path = "platform/mod.rs"]
 pub mod platform;
 pub mod preference;
+#[cfg(any(windows, test))]
+mod readiness;
 use product_contract::{Operation, OperationState, Problem, ProblemCode, RouteRequest};
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
@@ -45,6 +49,7 @@ struct Link {
     review_slots: Arc<tokio::sync::Semaphore>,
     queries: Arc<product_contract::query::Queries>,
     epoch: u64,
+    readiness: tokio::sync::watch::Sender<readiness::State>,
     mode: crate::preference::Mode,
     issue: Option<&'static str>,
     launches: std::collections::BTreeMap<String, Arc<tokio::sync::Mutex<()>>>,
@@ -60,6 +65,7 @@ impl Default for Link {
             review_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             queries: Arc::default(),
             epoch: 0,
+            readiness: tokio::sync::watch::channel(readiness::State::Preparing).0,
             mode: crate::preference::Mode::Auto,
             issue: None,
             launches: product_contract::installation::PRODUCTS
@@ -269,6 +275,12 @@ pub fn capture_own(
 fn status_value(state: &Link) -> serde_json::Value {
     serde_json::json!({
         "connected": state.approved.is_some(),
+        "connectionState": match *state.readiness.borrow() {
+            readiness::State::Preparing => "preparing",
+            readiness::State::Connected => "connected",
+            readiness::State::Off => "off",
+            readiness::State::Failed(_) => "failed",
+        },
         "generation": state.approved.as_ref().map(|scope| &scope.id),
         "mode": state.mode,
         "issue": state.issue,
@@ -283,14 +295,23 @@ async fn resume(
     sources: &'static [product_contract::transport::Source],
     state: Arc<Mutex<Link>>,
 ) {
-    let Ok(permit) = state.lock().map_err(|_| ()).and_then(|state| {
-        state
-            .review_slots
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ())
-    }) else {
-        return;
+    let permit = {
+        let Ok(mut state) = state.lock() else {
+            return;
+        };
+        if state.epoch != 0 || state.approved.is_some() {
+            return;
+        }
+        match state.review_slots.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                state.issue = Some("suite_review_busy");
+                state
+                    .readiness
+                    .send_replace(readiness::State::Failed("suite_connection_failed"));
+                return;
+            }
+        }
     };
     let storage_app = app.clone();
     let version = host_version(&app);
@@ -336,13 +357,18 @@ async fn resume(
             state.bus = Some(bus);
             state.mode = crate::preference::Mode::Auto;
             state.issue = None;
+            state.readiness.send_replace(readiness::State::Connected);
         }
         Ok(None) => {
             state.mode = crate::preference::Mode::Off;
             state.issue = None;
+            state.readiness.send_replace(readiness::State::Off);
         }
         Err(issue) => {
             state.issue = Some(issue);
+            state
+                .readiness
+                .send_replace(readiness::State::Failed("suite_connection_failed"));
         }
     }
     let connected = state.approved.is_some();
@@ -544,6 +570,11 @@ async fn execute(
             let mut state = state.lock().map_err(|_| "suite_busy")?;
             state.epoch = state.epoch.wrapping_add(1);
             state.pending = Some((token, Instant::now(), Arc::new(scope)));
+            if state.approved.is_none() {
+                state
+                    .readiness
+                    .send_replace(readiness::State::Failed("suite_review_required"));
+            }
             Ok(value)
         }
         Method::Approve { token, remember } => tokio::task::spawn_blocking(move || {
@@ -582,6 +613,7 @@ async fn execute(
             state.issue = None;
             state.bus = Some(bus);
             state.approved = Some(scope);
+            state.readiness.send_replace(readiness::State::Connected);
             let value = status_value(&state);
             drop(state);
             use tauri::Emitter;
@@ -609,6 +641,7 @@ async fn execute(
                 state.epoch = state.epoch.wrapping_add(1);
                 state.mode = crate::preference::Mode::Off;
                 state.issue = None;
+                state.readiness.send_replace(readiness::State::Off);
                 if let Some(scope) = state.approved.take() {
                     scope.retire();
                 }
@@ -681,6 +714,9 @@ fn handler(
         let navigation = navigation.clone();
         let queries = queries.clone();
         Box::pin(async move {
+            let diagnostic_app = app.clone();
+            let diagnostic = matches!(&call, Call::DeliverWebhookLog { .. });
+            let result = async move {
             if !matches!(
                 &call,
                 Call::Describe {}
@@ -821,6 +857,13 @@ fn handler(
                     None => Err("suite_method_unavailable"),
                 },
             }
+            }.await;
+            if diagnostic {
+                if let Err(error) = &result {
+                    handoff_diagnostics::record(&diagnostic_app, "receive_webhook_log", error);
+                }
+            }
+            result
         })
     }))
 }
@@ -932,46 +975,75 @@ pub async fn remote(
 ) -> Result<serde_json::Value, &'static str> {
     #[cfg(windows)]
     {
-        let suite = app.state::<Suite>();
-        let scope = suite
-            .state
-            .lock()
-            .map_err(|_| "suite_busy")?
-            .approved
-            .clone()
-            .ok_or("suite_review_required")?;
-        if matches!(
-            call,
-            product_contract::transport::Call::PreviewCommand { .. }
-                | product_contract::transport::Call::OpenCommand { .. }
-                | product_contract::transport::Call::ResolveShortcut { .. }
-                | product_contract::transport::Call::ShortcutStatus { .. }
-                | product_contract::transport::Call::ConfigureShortcuts { .. }
-                | product_contract::transport::Call::DeliverSessionSummary { .. }
-                | product_contract::transport::Call::DeliverFileReference { .. }
-                | product_contract::transport::Call::DeliverKnowledgeDraft { .. }
-                | product_contract::transport::Call::DeliverWebhookLog { .. }
-                | product_contract::transport::Call::DeliverTransformSelection { .. }
-        ) {
-            let launch = suite
+        let diagnostic = matches!(
+            &call,
+            product_contract::transport::Call::DeliverWebhookLog { .. }
+        );
+        let result = async {
+            let suite = app.state::<Suite>();
+            let mut readiness = suite
                 .state
                 .lock()
                 .map_err(|_| "suite_busy")?
-                .launches
-                .get(product)
-                .cloned()
-                .ok_or("suite_product_invalid")?;
-            let _guard = tokio::time::timeout(
-                Duration::from_millis(deadline.saturating_sub(now())),
-                launch.lock(),
+                .readiness
+                .subscribe();
+            readiness::wait(
+                &mut readiness,
+                tokio::time::Instant::now() + Duration::from_millis(deadline.saturating_sub(now())),
             )
-            .await
-            .map_err(|_| "suite_activation_timeout")?;
-            activate(scope.clone(), product, deadline).await?;
+            .await?;
+            // Re-read under the authority lock: a manual decision can supersede
+            // the ready notification before this task resumes.
+            let scope = {
+                let state = suite.state.lock().map_err(|_| "suite_busy")?;
+                match *state.readiness.borrow() {
+                    readiness::State::Connected => {}
+                    readiness::State::Off => return Err("suite_connection_off"),
+                    readiness::State::Failed(issue) => return Err(issue),
+                    readiness::State::Preparing => return Err("suite_connection_timeout"),
+                }
+                state.approved.clone().ok_or("suite_review_required")?
+            };
+            if matches!(
+                call,
+                product_contract::transport::Call::PreviewCommand { .. }
+                    | product_contract::transport::Call::OpenCommand { .. }
+                    | product_contract::transport::Call::ResolveShortcut { .. }
+                    | product_contract::transport::Call::ShortcutStatus { .. }
+                    | product_contract::transport::Call::ConfigureShortcuts { .. }
+                    | product_contract::transport::Call::DeliverSessionSummary { .. }
+                    | product_contract::transport::Call::DeliverFileReference { .. }
+                    | product_contract::transport::Call::DeliverKnowledgeDraft { .. }
+                    | product_contract::transport::Call::DeliverWebhookLog { .. }
+                    | product_contract::transport::Call::DeliverTransformSelection { .. }
+            ) {
+                let launch = suite
+                    .state
+                    .lock()
+                    .map_err(|_| "suite_busy")?
+                    .launches
+                    .get(product)
+                    .cloned()
+                    .ok_or("suite_product_invalid")?;
+                let _guard = tokio::time::timeout(
+                    Duration::from_millis(deadline.saturating_sub(now())),
+                    launch.lock(),
+                )
+                .await
+                .map_err(|_| "suite_activation_timeout")?;
+                activate(scope.clone(), product, deadline).await?;
+            }
+            // The actual command is sent once. A lost reply remains an unknown
+            // operation receipt; only read-only readiness probes are retried.
+            platform::component_bus::call(scope, product, call, deadline).await
         }
-        // The actual command is sent once. A lost reply remains an unknown
-        // operation receipt; only read-only readiness probes are retried.
-        platform::component_bus::call(scope, product, call, deadline).await
+        .await;
+        if diagnostic {
+            if let Err(error) = &result {
+                handoff_diagnostics::record(app, "send_webhook_log", error);
+            }
+        }
+        result
     }
     #[cfg(not(windows))]
     {

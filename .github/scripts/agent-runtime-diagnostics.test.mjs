@@ -43,3 +43,40 @@ test("connection diagnostics expose only closed stage codes and product names", 
   );
   assert.equal(projectConnectionDiagnostics(Array(150).fill(JSON.stringify(row)).join("\n")).length, 96);
 });
+
+test("handoff diagnostics retain only fixed stage and issue codes", async () => {
+  const { projectHandoffDiagnostics } = await import("./agent-runtime-diagnostics.mjs");
+  const row = {
+    tsMs: 3,
+    product: "workspace",
+    component: "suite-handoff",
+    method: "receive_webhook_log",
+    outcome: "failed",
+    code: "suite_activation_pending",
+    body: "private",
+  };
+  assert.deepEqual(
+    projectHandoffDiagnostics(
+      [row, { ...row, code: "private" }, { ...row, method: "private" }].map(JSON.stringify).join("\n"),
+    ),
+    [{ tsMs: 3, product: "workspace", method: "receive_webhook_log", code: "suite_activation_pending" }],
+  );
+  assert.equal(projectHandoffDiagnostics(Array(50).fill(JSON.stringify(row)).join("\n")).length, 32);
+});
+
+test("handoff diagnostics distinguish connection readiness outcomes", async () => {
+  const { projectHandoffDiagnostics } = await import("./agent-runtime-diagnostics.mjs");
+  for (const code of ["suite_connection_off", "suite_connection_failed", "suite_connection_timeout"]) {
+    const row = {
+      tsMs: 4,
+      product: "api-studio",
+      component: "suite-handoff",
+      method: "send_webhook_log",
+      outcome: "failed",
+      code,
+    };
+    assert.deepEqual(projectHandoffDiagnostics(JSON.stringify(row)), [
+      { tsMs: 4, product: "api-studio", method: "send_webhook_log", code },
+    ]);
+  }
+});

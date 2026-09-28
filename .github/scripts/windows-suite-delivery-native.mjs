@@ -1,4 +1,8 @@
-import { projectInitializationDiagnostics, projectConnectionDiagnostics } from "./agent-runtime-diagnostics.mjs";
+import {
+  projectInitializationDiagnostics,
+  projectConnectionDiagnostics,
+  projectHandoffDiagnostics,
+} from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
@@ -63,6 +67,8 @@ function captureDiagnostics() {
     for (const [namespace, field, project] of [
       ["workspace", "runtimeDiagnostics", projectInitializationDiagnostics],
       ["agent", "agentConnectionDiagnostics", projectConnectionDiagnostics],
+      ["workspace", "workspaceHandoffDiagnostics", projectHandoffDiagnostics],
+      ["apistudio", "apiHandoffDiagnostics", projectHandoffDiagnostics],
     ]) {
       try {
         const logs = path.join(
@@ -345,6 +351,8 @@ try {
     evidence.checks.agentRuntime = result.evidence;
     const webhookResult = await exerciseAgentWebhooks({
       api: apps["api-studio"],
+      connectionStatus: async (item) =>
+        value(await call(item, "plugin:suite|connection", { method: { kind: "status" } }, "requests")),
       call: async (item, method, args) =>
         value(await call(item, "plugin:api-studio|webhooks", { method, args }, "webhooks")),
       closeApi: async (item) => {
