@@ -4924,6 +4924,7 @@ dependencies = [
  "tempfile",
  "uuid",
  "window-state-tauri",
+ "windows 0.62.2",
 ]
 
 [[package]]
