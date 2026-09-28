@@ -20,7 +20,9 @@ test("the control skips only the startup observer and records that absence expli
   };
   assert.deepEqual(await observeReconnectBaseline(item, false), { state: "disabled" });
   assert.equal(probes, 0);
-  assert.deepEqual(await observeReconnectBaseline(item), observation);
+  assert.deepEqual(await observeReconnectBaseline(item), { state: "disabled" });
+  assert.equal(probes, 0);
+  assert.deepEqual(await observeReconnectBaseline(item, true), observation);
   assert.equal(probes, 1);
 });
 

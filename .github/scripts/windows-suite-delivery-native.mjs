@@ -149,7 +149,7 @@ async function start(member) {
     mode,
   );
   // A failed second attach is meaningful only relative to this exact live page.
-  item.cdpBaseline = await observeReconnectBaseline(item, process.env.DEVBOX_SUITE_OBSERVE_CDP_BASELINE !== "false");
+  item.cdpBaseline = await observeReconnectBaseline(item, process.env.DEVBOX_SUITE_OBSERVE_CDP_BASELINE === "true");
   (evidence.cdpBaselines ??= []).push({ product: item.product, ...item.cdpBaseline });
   return item;
 }

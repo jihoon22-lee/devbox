@@ -86,9 +86,9 @@ on:
         type: boolean
         default: false
       delivery_observe_cdp_baseline:
-        description: Observe the healthy CDP session at startup; disable only for an observer-effect control
+        description: Opt in to a second startup CDP observer for comparison; ordinary acceptance omits it
         type: boolean
-        default: true
+        default: false
       delivery_foreground_probe:
         description: Compare read-only CDP responses after foregrounding the failed owned API Studio window
         type: boolean
