@@ -200,3 +200,44 @@ test("an unconfirmed foreground change cannot trigger recovery reads or hide the
     assert.equal(reports.at(-1).foregroundControl.activation.state, rejected ? "probe_failed" : "not_focused");
   }
 });
+
+test("wait inspection follows persisted failure and cannot turn recovery into success", async () => {
+  const reports = [];
+  const failure = new Error("original timeout");
+  let waits = 0;
+  const item = {
+    product: "api-studio",
+    cdp: {
+      evaluate: async () => {
+        throw failure;
+      },
+    },
+    inspectCdpWaits: async () => {
+      assert.equal(reports.at(-1).stage, "failed");
+      waits++;
+      return { state: "observed", threads: [] };
+    },
+    focusCdpHost: async () => ({ state: "not_focused" }),
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (value) => reports.push(structuredClone(value))),
+    (error) => error === failure,
+  );
+  assert.equal(waits, 1);
+  assert.equal(reports.at(-1).waitObserver.state, "observed");
+  assert.equal(reports.at(-1).stage, "failed");
+  assert.equal(reports[1].waitObserver, undefined);
+  item.inspectCdpWaits = async () => {
+    throw new Error("private detail");
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (value) => reports.push(value)),
+    (error) => error === failure,
+  );
+  assert.deepEqual(reports.at(-1).waitObserver, { state: "probe_failed" });
+  item.cdp.evaluate = async () => "connected";
+  item.inspectCdpWaits = async () => {
+    assert.fail("success must not inspect waits");
+  };
+  await reconnectAgent(item, "before-stop", () => {});
+});

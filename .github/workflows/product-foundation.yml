@@ -206,7 +206,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Verify the bounded native CDP host observer
-        run: node --test .github/scripts/windows-cdp-host.test.mjs
+        run: node --test .github/scripts/windows-cdp-host.test.mjs .github/scripts/windows-cdp-waits.test.mjs
       - name: Exercise retained installed Suite delivery
         env:
           GH_TOKEN: ${{ github.token }}

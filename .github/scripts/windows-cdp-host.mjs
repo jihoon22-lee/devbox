@@ -82,32 +82,7 @@ export async function observeWindowsCdpHost(identity, port, { platform = process
     return { state: "invalid_owner" };
   // Every interpolated value is an integer or a closed UTC timestamp, never a path.
   const script = `
-$ErrorActionPreference = 'Stop'
-$ownedPid = ${identity.Pid}
-$expected = '${identity.Created}'
-$owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownedPid"
-if (-not $owner) { @{state='product_exited'} | ConvertTo-Json -Compress; exit 0 }
-if ($owner.CreationDate.ToUniversalTime().ToString('o') -ne $expected) { @{state='identity_changed'} | ConvertTo-Json -Compress; exit 0 }
-$ids = New-Object 'System.Collections.Generic.HashSet[int]'
-[void]$ids.Add($ownedPid)
-$rows = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'")
-for ($scan = 0; $scan -lt 128; $scan++) {
-  $grew = $false
-  foreach ($row in $rows) {
-    if ($row.CreationDate -ge $owner.CreationDate -and $ids.Contains([int]$row.ParentProcessId)) {
-      if ($ids.Add([int]$row.ProcessId)) { $grew = $true }
-    }
-  }
-  if ($ids.Count -gt 129) { throw 'probe_limit' }
-  if (-not $grew) { break }
-}
-$listener = 'query_failed'
-try {
-  $ports = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object { $_.LocalPort -eq ${port} })
-  if ($ports.Count -eq 0) { $listener = 'absent' }
-  elseif (@($ports | Where-Object { -not $ids.Contains([int]$_.OwningProcess) }).Count -eq 0) { $listener = 'owned' }
-  else { $listener = 'other' }
-} catch { $listener = 'query_failed' }
+${ownedCdpSelection(identity, port)}
 $ownedProcess = [System.Diagnostics.Process]::GetProcessById($ownedPid)
 $windowPresent = $ownedProcess.MainWindowHandle -ne [IntPtr]::Zero
 $responding = if ($windowPresent) { [bool]$ownedProcess.Responding } else { $null }
@@ -157,4 +132,43 @@ if ($again.CreationDate.ToUniversalTime().ToString('o') -ne $expected) { @{state
   } catch {
     return { state: "probe_failed" };
   }
+}
+
+// Shared native selection; only integers and a closed UTC timestamp enter PowerShell.
+export function ownedCdpSelection(identity, port) {
+  if (
+    !bounded(identity?.Pid, 2147483647) ||
+    identity.Pid === 0 ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{1,7}Z$/.test(identity.Created ?? "") ||
+    !bounded(port, 65535) ||
+    port === 0
+  )
+    throw new Error("invalid_owner");
+  return `$ErrorActionPreference = 'Stop'
+$ownedPid = ${identity.Pid}
+$expected = '${identity.Created}'
+$owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownedPid"
+if (-not $owner) { @{state='product_exited'} | ConvertTo-Json -Compress; exit 0 }
+if ($owner.CreationDate.ToUniversalTime().ToString('o') -ne $expected) { @{state='identity_changed'} | ConvertTo-Json -Compress; exit 0 }
+$ids = New-Object 'System.Collections.Generic.HashSet[int]'
+[void]$ids.Add($ownedPid)
+$rows = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'")
+for ($scan = 0; $scan -lt 128; $scan++) {
+  $grew = $false
+  foreach ($row in $rows) {
+    if ($row.CreationDate -ge $owner.CreationDate -and $ids.Contains([int]$row.ParentProcessId)) {
+      if ($ids.Add([int]$row.ProcessId)) { $grew = $true }
+    }
+  }
+  if ($ids.Count -gt 129) { throw 'probe_limit' }
+  if (-not $grew) { break }
+}
+$listener = 'query_failed'
+try {
+  $ports = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object { $_.LocalPort -eq ${port} })
+  if ($ports.Count -eq 0) { $listener = 'absent' }
+  elseif (@($ports | Where-Object { -not $ids.Contains([int]$_.OwningProcess) }).Count -eq 0) { $listener = 'owned' }
+  else { $listener = 'other' }
+} catch { $listener = 'query_failed' }
+`;
 }

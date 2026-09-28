@@ -35,6 +35,10 @@ export async function reconnectAgent(item, phase, report) {
       ...(item.child ? { productExited: item.child.exitCode !== null || item.child.signalCode !== null } : {}),
     };
     report(failed);
+    if (item.inspectCdpWaits) {
+      failed.waitObserver = await item.inspectCdpWaits().catch(() => ({ state: "probe_failed" }));
+      report({ ...failed });
+    }
     if (item.focusCdpHost) {
       const activation = await item.focusCdpHost().catch(() => ({ state: "probe_failed" }));
       const foregroundControl = { activation };

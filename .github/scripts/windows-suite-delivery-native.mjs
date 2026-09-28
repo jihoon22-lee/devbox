@@ -6,6 +6,7 @@ import {
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
+import { observeWindowsCdpWaits } from "./windows-cdp-waits.mjs";
 import { observeWindowsCdpHost, focusWindowsCdpHost } from "./windows-cdp-host.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
@@ -131,6 +132,7 @@ async function start(member) {
       row.Pid === item.child.pid && path.resolve(row.Path).toLowerCase() === path.resolve(executable).toLowerCase(),
   );
   assert.ok(item.identity);
+  item.inspectCdpWaits = () => observeWindowsCdpWaits(item.identity, port);
   item.inspectCdpHost = () => observeWindowsCdpHost(item.identity, port);
   if (item.product === "api-studio" && process.env.DEVBOX_SUITE_FOREGROUND_PROBE === "true") {
     item.focusCdpHost = () => focusWindowsCdpHost(item.identity);
