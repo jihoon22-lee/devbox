@@ -290,8 +290,10 @@ impl LogStreams {
         let directory = resolve_run_directory(&root, &relative, &run_id)?;
         let directory = Arc::new(directory);
 
-        let identity = devbox_filesystem::filesystem_identity(directory.as_path(), true)
-            .map_err(|_| LogError::RunDirectoryMissing)?;
+        let (lease, identity) =
+            devbox_filesystem::open_filesystem_object(directory.as_path(), true)
+                .map_err(|_| LogError::RunDirectoryMissing)?;
+        let lease = Arc::new(lease);
         let key = (directory.as_ref().clone(), identity);
         // Serialize lookup and recovery. Only the first opener recovers files;
         // later readers never repair/rename a live writer's segment snapshot.
@@ -307,7 +309,7 @@ impl LogStreams {
         let open = |stream, retained: Option<Arc<Mutex<StreamState>>>| {
             retained.map_or_else(
                 || {
-                    StreamState::load(stream, directory.clone(), &run_id, limits)
+                    StreamState::load(stream, directory.clone(), lease.clone(), &run_id, limits)
                         .map(LogStreamHandle::new)
                 },
                 |state| Ok(LogStreamHandle { stream, state }),
@@ -507,6 +509,8 @@ struct Manifest {
 struct StreamState {
     stream: LogStream,
     directory: Arc<PathBuf>,
+    // Keep the physical identity alive for as long as any stream handle lives.
+    _directory_lease: Arc<File>,
     run_id: String,
     limits: LogLimits,
     segments: Vec<Segment>,
@@ -518,6 +522,7 @@ impl StreamState {
     fn load(
         stream: LogStream,
         directory: Arc<PathBuf>,
+        directory_lease: Arc<File>,
         run_id: &str,
         limits: LogLimits,
     ) -> Result<Self, LogError> {
@@ -636,6 +641,7 @@ impl StreamState {
         let mut state = Self {
             stream,
             directory,
+            _directory_lease: directory_lease,
             run_id: run_id.to_string(),
             limits,
             next_offset: segments.last().map_or(0, |segment| segment.end),
