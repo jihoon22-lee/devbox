@@ -243,3 +243,38 @@ test("wait inspection follows persisted failure and cannot turn recovery into su
   };
   await reconnectAgent(item, "before-stop", () => {});
 });
+
+test("snapshot stacks follow failure, never run on success, and preserve the original error", async () => {
+  const reports = [],
+    failure = new Error("original timeout");
+  const item = {
+    product: "api-studio",
+    cdp: {
+      evaluate: async () => {
+        throw failure;
+      },
+    },
+    inspectCdpStacks: async () => {
+      assert.equal(reports.at(-1).stage, "failed");
+      return { state: "observed", app: { state: "observed", frames: [] } };
+    },
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (value) => reports.push(structuredClone(value))),
+    (error) => error === failure,
+  );
+  assert.equal(reports.at(-1).stackObserver.state, "observed");
+  item.inspectCdpStacks = async () => {
+    throw new Error("private detail");
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (value) => reports.push(value)),
+    (error) => error === failure,
+  );
+  assert.deepEqual(reports.at(-1).stackObserver, { state: "probe_failed" });
+  item.cdp.evaluate = async () => "connected";
+  item.inspectCdpStacks = async () => {
+    assert.fail("successful reconnect must not capture a snapshot");
+  };
+  await reconnectAgent(item, "before-stop", () => {});
+});

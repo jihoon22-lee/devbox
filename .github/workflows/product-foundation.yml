@@ -205,8 +205,11 @@ jobs:
           path: ${{ runner.temp }}/suite-rebuilt
           if-no-files-found: error
           retention-days: 1
+      - name: Build the bounded snapshot stack observer with the installed SDK
+        shell: pwsh
+        run: .github/scripts/build-windows-cdp-stacks.ps1
       - name: Verify the bounded native CDP host observer
-        run: node --test .github/scripts/windows-cdp-host.test.mjs .github/scripts/windows-cdp-waits.test.mjs
+        run: node --test .github/scripts/windows-cdp-host.test.mjs .github/scripts/windows-cdp-waits.test.mjs .github/scripts/windows-cdp-stacks.test.mjs
       - name: Exercise retained installed Suite delivery
         env:
           GH_TOKEN: ${{ github.token }}

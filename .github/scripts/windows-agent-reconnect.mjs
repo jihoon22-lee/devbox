@@ -39,6 +39,10 @@ export async function reconnectAgent(item, phase, report) {
       failed.waitObserver = await item.inspectCdpWaits().catch(() => ({ state: "probe_failed" }));
       report({ ...failed });
     }
+    if (item.inspectCdpStacks) {
+      failed.stackObserver = await item.inspectCdpStacks().catch(() => ({ state: "probe_failed" }));
+      report({ ...failed });
+    }
     if (item.focusCdpHost) {
       const activation = await item.focusCdpHost().catch(() => ({ state: "probe_failed" }));
       const foregroundControl = { activation };
