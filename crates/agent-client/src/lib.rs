@@ -212,13 +212,19 @@ impl AgentClient {
         let mut launched = false;
         let mut restarted = false;
         let mut startup_deadline = None;
-        for attempt in 0usize.. {
+        'connecting: for attempt in 0usize.. {
             if startup_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 break;
             }
             transport.diagnostic(ConnectionDiagnostic::ConnectAttempt);
-            match tokio::time::timeout(Duration::from_secs(2), transport.connect()).await {
-                Ok(Ok(mut connected)) => {
+            let phase_timeout = || {
+                startup_deadline.map_or(Duration::from_secs(2), |deadline| {
+                    Duration::from_secs(2)
+                        .min(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                })
+            };
+            match tokio::time::timeout(phase_timeout(), transport.connect()).await {
+                Ok(Ok(mut connected)) => 'handshake: {
                     (connected.verify)()
                         .inspect_err(|_| transport.diagnostic(ConnectionDiagnostic::PeerInvalid))?;
                     wire::write(
@@ -234,19 +240,29 @@ impl AgentClient {
                         transport.diagnostic(ConnectionDiagnostic::HelloFailed);
                         AgentError::Unavailable
                     })?;
-                    let welcome = tokio::time::timeout(
-                        Duration::from_secs(2),
+                    let welcome = match tokio::time::timeout(
+                        phase_timeout(),
                         wire::read::<_, AgentMessage>(&mut connected.stream),
                     )
                     .await
-                    .map_err(|_| {
-                        transport.diagnostic(ConnectionDiagnostic::WelcomeTimeout);
-                        AgentError::Unavailable
-                    })?
-                    .map_err(|_| {
-                        transport.diagnostic(ConnectionDiagnostic::WelcomeReadFailed);
-                        AgentError::Unavailable
-                    })?;
+                    {
+                        Ok(Ok(welcome)) => welcome,
+                        Ok(Err(_)) => {
+                            transport.diagnostic(ConnectionDiagnostic::WelcomeReadFailed);
+                            return Err(AgentError::Unavailable);
+                        }
+                        Err(_) => {
+                            transport.diagnostic(ConnectionDiagnostic::WelcomeTimeout);
+                            // A newly launched process may publish its pipe before
+                            // it can finish the authenticated Hello/Welcome exchange.
+                            // Drop this transport and use the existing startup budget:
+                            // no business request has been submitted or is replayed.
+                            if startup_deadline.is_some() {
+                                break 'handshake;
+                            }
+                            return Err(AgentError::Unavailable);
+                        }
+                    };
                     match welcome {
                         AgentMessage::Welcome {
                             protocol,
@@ -283,7 +299,7 @@ impl AgentClient {
                             launched = true;
                             startup_deadline =
                                 Some(tokio::time::Instant::now() + LAUNCHED_AGENT_READY_TIMEOUT);
-                            continue;
+                            continue 'connecting;
                         }
                         AgentMessage::Rejected { reason } if reason == "agent_shutdown" => {
                             transport.diagnostic(ConnectionDiagnostic::WelcomeRejected);
@@ -1036,6 +1052,133 @@ mod tests {
         finish.send(()).unwrap();
         old.await.unwrap();
         new.await.unwrap();
+    }
+    struct StartingHandshake {
+        attempts: AtomicUsize,
+        launches: AtomicUsize,
+        calls: Arc<AtomicUsize>,
+        missing: bool,
+        stalls: usize,
+        rejects: bool,
+    }
+    impl Transport for StartingHandshake {
+        fn generation(&self) -> &str {
+            "fixture"
+        }
+        fn launch(&self) -> LaunchFuture<'_> {
+            Box::pin(async {
+                self.launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+        fn connect(&self) -> ConnectFuture<'_> {
+            Box::pin(async move {
+                let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+                if self.missing && attempt == 0 {
+                    return Err(Connect::Missing);
+                }
+                let stalled = attempt - usize::from(self.missing) < self.stalls;
+                let rejected = self.rejects;
+                let calls = self.calls.clone();
+                let (client, mut server) = tokio::io::duplex(4096);
+                tokio::spawn(async move {
+                    let hello: ClientMessage = wire::read(&mut server).await.unwrap();
+                    assert!(matches!(hello, ClientMessage::Hello { .. }));
+                    if stalled {
+                        tokio::time::sleep(Duration::from_secs(3)).await;
+                    }
+                    let response = if rejected {
+                        AgentMessage::Rejected {
+                            reason: "peer_denied".into(),
+                        }
+                    } else {
+                        AgentMessage::Welcome {
+                            protocol: 1,
+                            agent_version: "0.8.1".into(),
+                            generation: "fixture".into(),
+                        }
+                    };
+                    if wire::write(&mut server, &response).await.is_err() {
+                        return;
+                    }
+                    while let Ok(ClientMessage::Call { id, request, .. }) =
+                        wire::read(&mut server).await
+                    {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        if wire::write(
+                            &mut server,
+                            &AgentMessage::Reply {
+                                id,
+                                response: request,
+                            },
+                        )
+                        .await
+                        .is_err()
+                        {
+                            break;
+                        }
+                    }
+                });
+                Ok(Connected {
+                    stream: Box::new(client),
+                    verify: Arc::new(|| Ok(())),
+                    exited: Arc::new(|| Ok(false)),
+                })
+            })
+        }
+    }
+    fn starting_handshake(missing: bool, stalls: usize, rejects: bool) -> Arc<StartingHandshake> {
+        Arc::new(StartingHandshake {
+            attempts: AtomicUsize::new(0),
+            launches: AtomicUsize::new(0),
+            calls: Arc::new(AtomicUsize::new(0)),
+            missing,
+            stalls,
+            rejects,
+        })
+    }
+    #[tokio::test(start_paused = true)]
+    async fn launched_handshake_timeout_retries_only_hello_before_one_business_call() {
+        let transport = starting_handshake(true, 1, false);
+        let client = AgentClient::with_transport("workspace", transport.clone());
+        let request = serde_json::json!({"header":{"sessionId":"session"},"mutation":"once"});
+        assert_eq!(
+            client.call("fixture", request.clone()).await.unwrap(),
+            request
+        );
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 1);
+        assert_eq!(transport.attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(transport.calls.load(Ordering::SeqCst), 1);
+    }
+    #[tokio::test(start_paused = true)]
+    async fn launched_handshake_stalls_exhaust_the_existing_readiness_deadline() {
+        let transport = starting_handshake(true, usize::MAX, false);
+        let client = AgentClient::with_transport("workspace", transport.clone());
+        let started = tokio::time::Instant::now();
+        assert_eq!(
+            client.reconnect("session").await,
+            Err(AgentError::Unavailable)
+        );
+        assert_eq!(started.elapsed(), LAUNCHED_AGENT_READY_TIMEOUT);
+        assert_eq!(transport.launches.load(Ordering::SeqCst), 1);
+        assert_eq!(transport.calls.load(Ordering::SeqCst), 0);
+    }
+    #[tokio::test(start_paused = true)]
+    async fn launched_handshake_rejection_and_existing_peer_timeout_are_not_retried() {
+        for (missing, stalls, rejects) in [(true, 0, true), (false, 1, false)] {
+            let transport = starting_handshake(missing, stalls, rejects);
+            let client = AgentClient::with_transport("workspace", transport.clone());
+            assert!(client.reconnect("session").await.is_err());
+            assert_eq!(
+                transport.attempts.load(Ordering::SeqCst),
+                1 + usize::from(missing)
+            );
+            assert_eq!(
+                transport.launches.load(Ordering::SeqCst),
+                usize::from(missing)
+            );
+            assert_eq!(transport.calls.load(Ordering::SeqCst), 0);
+        }
     }
     #[tokio::test(start_paused = true)]
     async fn launches_once_then_connects_with_backoff() {
