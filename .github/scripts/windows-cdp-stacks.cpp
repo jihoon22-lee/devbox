@@ -9,6 +9,8 @@
 #include <charconv>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -42,7 +44,7 @@ std::string module_name(const char* path) {
   std::string name(path);
   name = name.substr(name.find_last_of("/\\") + 1);
   std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(tolower(c)); });
-  const char* known[] = {"ntdll.dll", "kernel32.dll", "kernelbase.dll", "user32.dll", "win32u.dll", "combase.dll", "ole32.dll", "oleaut32.dll", "rpcrt4.dll", "uiautomationcore.dll", "dwmapi.dll", "msedge.dll", "msedgewebview2.exe", "embeddedbrowserwebview.dll", "webview2loader.dll", "devbox-api-studio.exe", "windows-cdp-stacks.exe"};
+  const char* known[] = {"ntdll.dll", "kernel32.dll", "kernelbase.dll", "user32.dll", "win32u.dll", "combase.dll", "ole32.dll", "oleaut32.dll", "rpcrt4.dll", "uiautomationcore.dll", "dwmapi.dll", "imm32.dll", "msctf.dll", "comctl32.dll", "textinputframework.dll", "uxtheme.dll", "coremessaging.dll", "wintypes.dll", "inputhost.dll", "msedge.dll", "msedgewebview2.exe", "embeddedbrowserwebview.dll", "webview2loader.dll", "devbox-api-studio.exe", "windows-cdp-stacks.exe"};
   for (const auto* candidate : known) if (name == candidate) return name.substr(0, name.find_last_of('.'));
   return "other";
 }
@@ -51,7 +53,7 @@ bool safe_symbol(const std::string& name) {
   for (unsigned char c : name) if (!isalnum(c) && std::strchr("_?$@:<>, ()&*~!+-.", c) == nullptr) return false;
   return true;
 }
-struct Frame { std::string module; std::string symbol; uint64_t offset; };
+struct Frame { std::string module; std::string symbol; uint64_t offset; uint64_t displacement = 0; bool pdb = false; };
 struct Result { const char* state; std::vector<Frame> frames; };
 Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   Handle process{OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_CREATE_PROCESS | PROCESS_DUP_HANDLE | SYNCHRONIZE, FALSE, pid)};
@@ -82,7 +84,10 @@ Result capture(DWORD pid, uint64_t expected, DWORD requested) {
   // No manual thread suspension: walk the immutable clone after OS capture.
   SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME | SYMOPT_FAIL_CRITICAL_ERRORS | SYMOPT_NO_PROMPTS | SYMOPT_IGNORE_NT_SYMPATH);
   Symbols symbols{clone.VaCloneHandle};
-  symbols.ready = SymInitialize(clone.VaCloneHandle, "", TRUE) != FALSE;
+  char search[MAX_PATH]{};
+  const auto length = GetEnvironmentVariableA("DEVBOX_CDP_STACK_SYMBOLS", search, MAX_PATH);
+  if (length >= MAX_PATH) return {"symbols_unavailable", {}};
+  symbols.ready = SymInitialize(clone.VaCloneHandle, search, TRUE) != FALSE;
   if (!symbols.ready) return {"symbols_unavailable", {}};
   STACKFRAME64 frame{};
   frame.AddrPC.Offset = context.Rip;
@@ -107,7 +112,12 @@ Result capture(DWORD pid, uint64_t expected, DWORD requested) {
       DWORD64 displacement = 0;
       if (output.module != "other" && SymFromAddr(clone.VaCloneHandle, address, &displacement, info) && info->NameLen <= 160) {
         std::string name(info->Name, info->NameLen);
-        if (safe_symbol(name)) output.symbol = name;
+        if (safe_symbol(name)) {
+          output.symbol = name;
+          output.displacement = displacement;
+          SymGetModuleInfo64(clone.VaCloneHandle, address, &module);
+          output.pdb = module.SymType == SymPdb;
+        }
       }
       frames.push_back(output);
     }
@@ -123,7 +133,9 @@ void print(const Result& result) {
     comma = true;
     std::cout << "{\"module\":\"" << frame.module << "\",\"symbol\":";
     if (frame.symbol.empty()) std::cout << "null"; else std::cout << '"' << frame.symbol << '"';
-    std::cout << ",\"offset\":" << frame.offset << '}';
+    std::cout << ",\"offset\":" << frame.offset << ",\"symbolKind\":\"" << (frame.symbol.empty() ? "none" : frame.pdb ? "pdb" : "export") << "\",\"displacement\":";
+    if (frame.symbol.empty()) std::cout << "null"; else std::cout << frame.displacement;
+    std::cout << '}';
   }
   std::cout << "]}\n";
 }
@@ -143,9 +155,28 @@ struct Deadline {
   Handle thread{done.value ? CreateThread(nullptr, 0, Watchdog, done.value, 0, nullptr) : nullptr};
   ~Deadline() { if (done.value) SetEvent(done.value); if (thread.value) WaitForSingleObject(thread.value, INFINITE); }
 };
+int symbol_index(const std::string& name) {
+  if (name != "ntdll" && name != "user32" && name != "win32u" && name != "imm32" && name != "msctf") return 2;
+  char system[MAX_PATH]{};
+  if (!GetSystemDirectoryA(system, MAX_PATH)) return 3;
+  const auto file = std::string(system) + "\\" + name + ".dll";
+  SYMSRV_INDEX_INFO info{};
+  info.sizeofstruct = sizeof(info);
+  if (!SymSrvGetFileIndexInfo(file.c_str(), &info, 0)) return 3;
+  std::string pdb(info.pdbfile);
+  pdb = pdb.substr(pdb.find_last_of("/\\") + 1);
+  if (pdb.empty() || pdb.size() > 160) return 3;
+  for (unsigned char c : pdb) if (!isalnum(c) && c != '_' && c != '-' && c != '.') return 3;
+  char key[48]{};
+  const auto& g = info.guid;
+  std::snprintf(key, sizeof(key), "%08lX%04X%04X%02X%02X%02X%02X%02X%02X%02X%02X%lX", static_cast<unsigned long>(g.Data1), static_cast<unsigned>(g.Data2), static_cast<unsigned>(g.Data3), static_cast<unsigned>(g.Data4[0]), static_cast<unsigned>(g.Data4[1]), static_cast<unsigned>(g.Data4[2]), static_cast<unsigned>(g.Data4[3]), static_cast<unsigned>(g.Data4[4]), static_cast<unsigned>(g.Data4[5]), static_cast<unsigned>(g.Data4[6]), static_cast<unsigned>(g.Data4[7]), static_cast<unsigned long>(info.age));
+  std::cout << "{\"name\":\"" << pdb << "\",\"key\":\"" << key << "\"}\n";
+  return 0;
+}
 int main(int argc, char** argv) {
   Deadline deadline;
   if (!deadline.thread.value) return 3;
+  if (argc == 3 && std::string(argv[1]) == "--symbol-index") return symbol_index(argv[2]);
   if (argc == 2 && std::string(argv[1]) == "--self-test") {
     Handle event{CreateEventW(nullptr, TRUE, FALSE, nullptr)};
     Handle ready{CreateEventW(nullptr, TRUE, FALSE, nullptr)};

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { observeWindowsCdpStacks } from "./windows-cdp-stacks.mjs";
 const identity = { Pid: 1234, Created: "2026-09-28T01:02:03.1234567Z" };
-const stack = { state: "observed", frames: [{ module: "user32", symbol: "SendMessageW", offset: 42 }] };
+const stack = {
+  state: "observed",
+  frames: [{ module: "user32", symbol: "SendMessageW", offset: 42, symbolKind: "export", displacement: 7 }],
+};
 test("stack evidence includes code locations but excludes addresses, paths and memory", async () => {
   const native = { state: "observed", app: { ...stack, path: "private/path", memory: "secret" }, browser: stack };
   const result = await observeWindowsCdpStacks(identity, 9222, {
@@ -54,4 +57,20 @@ test("unsupported, missing helper, invalid ownership and failed capture remain e
     }),
     { state: "probe_failed" },
   );
+});
+
+test("symbol metadata distinguishes exact PDB data from nearest exported names", async () => {
+  for (const symbolKind of ["export", "pdb"]) {
+    const value = {
+      state: "observed",
+      frames: [{ module: "imm32", symbol: "ImmNotifyIME", offset: 80, symbolKind, displacement: 5 }],
+    };
+    const result = await observeWindowsCdpStacks(identity, 9222, {
+      platform: "win32",
+      helper: "probe.exe",
+      run: async () => ({ stdout: JSON.stringify({ state: "observed", app: value, browser: value }) }),
+    });
+    assert.equal(result.app.frames[0].symbolKind, symbolKind);
+    assert.equal(result.app.frames[0].displacement, 5);
+  }
 });

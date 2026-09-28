@@ -14,6 +14,14 @@ const modules = new Set([
   "rpcrt4",
   "uiautomationcore",
   "dwmapi",
+  "imm32",
+  "msctf",
+  "comctl32",
+  "textinputframework",
+  "uxtheme",
+  "coremessaging",
+  "wintypes",
+  "inputhost",
   "msedge",
   "msedgewebview2",
   "embeddedbrowserwebview",
@@ -37,16 +45,23 @@ function project(value) {
     value.frames.length > 32
   )
     throw new Error("invalid stack");
-  const frames = value.frames.map(({ module, symbol, offset }) => {
+  const frames = value.frames.map(({ module, symbol, offset, symbolKind, displacement }) => {
     if (
       !modules.has(module) ||
+      !["none", "export", "pdb"].includes(symbolKind) ||
+      (symbol === null
+        ? symbolKind !== "none" || displacement !== null
+        : symbolKind === "none" ||
+          !Number.isSafeInteger(displacement) ||
+          displacement < 0 ||
+          displacement > 0xffffffff) ||
       !(symbol === null || (typeof symbol === "string" && /^[A-Za-z0-9_?$@:<>, ()&*~!+.\-]{1,160}$/.test(symbol))) ||
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
       offset > 0xffffffff
     )
       throw new Error("invalid frame");
-    return { module, symbol, offset };
+    return { module, symbol, offset, symbolKind, displacement };
   });
   return { state: value.state, frames };
 }

@@ -20,3 +20,42 @@ try {
   Pop-Location
 }
 "DEVBOX_CDP_STACK_HELPER=$exe" >> $env:GITHUB_ENV
+# Fetch only public Windows symbol data. No executable or debugger is downloaded.
+$symbols = Join-Path $build 'symbols'
+New-Item -ItemType Directory -Path $symbols | Out-Null
+foreach ($module in @('ntdll', 'user32', 'win32u', 'imm32', 'msctf')) {
+  $index = & $exe --symbol-index $module | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or $index.name -notmatch '^[A-Za-z0-9_.-]{1,160}\.pdb$' -or $index.key -notmatch '^[A-F0-9]{33,40}$') {
+    throw 'Invalid public system symbol identity'
+  }
+  $client = [System.Net.Http.HttpClient]::new()
+  $cancel = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(20))
+  $response = $null; $inputStream = $null; $outputStream = $null
+  $partial = Join-Path $symbols ($index.name + '.partial')
+  try {
+    $url = "https://msdl.microsoft.com/download/symbols/$($index.name)/$($index.key)/$($index.name)"
+    $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $cancel.Token).GetAwaiter().GetResult()
+    if (-not $response.IsSuccessStatusCode -or $response.Content.Headers.ContentLength -gt 33554432) { throw 'Public symbols unavailable' }
+    $inputStream = $response.Content.ReadAsStreamAsync($cancel.Token).GetAwaiter().GetResult()
+    $outputStream = [System.IO.File]::Open($partial, [System.IO.FileMode]::CreateNew)
+    $buffer = [byte[]]::new(65536)
+    $total = 0
+    while (($count = $inputStream.ReadAsync($buffer, 0, $buffer.Length, $cancel.Token).GetAwaiter().GetResult()) -gt 0) {
+      $total += $count
+      if ($total -gt 33554432) { throw 'Public symbol size limit' }
+      $outputStream.Write($buffer, 0, $count)
+    }
+    $outputStream.Dispose(); $outputStream = $null
+    Move-Item -LiteralPath $partial -Destination (Join-Path $symbols $index.name)
+    Write-Host "Public Windows symbols prepared: $module"
+  } catch {
+    Write-Host "Public Windows symbols unavailable: $module; retain explicit export-only evidence"
+  } finally {
+    if ($outputStream) { $outputStream.Dispose() }
+    if ($inputStream) { $inputStream.Dispose() }
+    if ($response) { $response.Dispose() }
+    $cancel.Dispose(); $client.Dispose()
+    if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial }
+  }
+}
+"DEVBOX_CDP_STACK_SYMBOLS=$symbols" >> $env:GITHUB_ENV
