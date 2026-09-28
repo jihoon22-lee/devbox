@@ -9,11 +9,12 @@
 
 use crate::platform;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::Mutex;
 
 /// The production segment size required by the Run Manager specification.
@@ -254,6 +255,18 @@ pub struct LogStreams {
 /// Alias for callers that prefer the storage-oriented name.
 pub type LogStreamStore = LogStreams;
 
+// Readers in the native owner must share the writer's live range and lock.
+// Weak handles retain neither completed runs nor their log buffers. A physical
+// directory identity prevents a replacement at the same path reusing old state.
+struct LiveStreams {
+    limits: LogLimits,
+    stdout: Weak<Mutex<StreamState>>,
+    stderr: Weak<Mutex<StreamState>>,
+}
+type LiveStreamKey = (PathBuf, devbox_filesystem::FilesystemIdentity);
+static LIVE_STREAMS: OnceLock<std::sync::Mutex<HashMap<LiveStreamKey, LiveStreams>>> =
+    OnceLock::new();
+
 impl LogStreams {
     /// Open or create `app_data_root/logs/runs/<run_id>` and reconstruct any
     /// valid retained segments already present there.
@@ -277,18 +290,45 @@ impl LogStreams {
         let directory = resolve_run_directory(&root, &relative, &run_id)?;
         let directory = Arc::new(directory);
 
-        let stdout = LogStreamHandle::new(StreamState::load(
+        let identity = devbox_filesystem::filesystem_identity(directory.as_path(), true)
+            .map_err(|_| LogError::RunDirectoryMissing)?;
+        let key = (directory.as_ref().clone(), identity);
+        // Serialize lookup and recovery. Only the first opener recovers files;
+        // later readers never repair/rename a live writer's segment snapshot.
+        let mut live = LIVE_STREAMS
+            .get_or_init(Default::default)
+            .lock()
+            .map_err(|_| LogError::io("locking live log streams", io::Error::other("poisoned")))?;
+        live.retain(|_, entry| entry.stdout.strong_count() > 0 || entry.stderr.strong_count() > 0);
+        let existing = live.get(&key);
+        if existing.is_some_and(|entry| entry.limits != limits) {
+            return Err(LogError::InvalidLimits);
+        }
+        let open = |stream, retained: Option<Arc<Mutex<StreamState>>>| {
+            retained.map_or_else(
+                || {
+                    StreamState::load(stream, directory.clone(), &run_id, limits)
+                        .map(LogStreamHandle::new)
+                },
+                |state| Ok(LogStreamHandle { stream, state }),
+            )
+        };
+        let stdout = open(
             LogStream::Stdout,
-            Arc::clone(&directory),
-            &run_id,
-            limits,
-        )?);
-        let stderr = LogStreamHandle::new(StreamState::load(
+            existing.and_then(|entry| entry.stdout.upgrade()),
+        )?;
+        let stderr = open(
             LogStream::Stderr,
-            Arc::clone(&directory),
-            &run_id,
-            limits,
-        )?);
+            existing.and_then(|entry| entry.stderr.upgrade()),
+        )?;
+        live.insert(
+            key,
+            LiveStreams {
+                limits,
+                stdout: Arc::downgrade(&stdout.state),
+                stderr: Arc::downgrade(&stderr.state),
+            },
+        );
 
         Ok(Self {
             run_id,
@@ -1321,6 +1361,90 @@ mod tests {
         assert!(!error
             .to_string()
             .contains(current.to_string_lossy().as_ref()));
+    }
+
+    #[tokio::test]
+    async fn separately_opened_reader_observes_live_append_and_rotation() {
+        let root = tempfile::tempdir().unwrap();
+        let limits = LogLimits {
+            segment_bytes: 4,
+            max_segments: 2,
+        };
+        let writer = LogStreams::open(root.path(), "live-run", limits).unwrap();
+        writer.append(LogStream::Stdout, b"ab").await.unwrap();
+        let reader = LogStreams::open(root.path(), "live-run", limits).unwrap();
+        writer.append(LogStream::Stdout, b"cdef").await.unwrap();
+        let observed = reader
+            .tail(request(LogStream::Stdout, None, 100))
+            .await
+            .unwrap();
+        assert_eq!(observed.data, b"abcdef");
+        writer.append(LogStream::Stdout, b"ghijk").await.unwrap();
+        let observed = reader
+            .tail(request(LogStream::Stdout, Some("6"), 100))
+            .await
+            .unwrap();
+        assert_eq!(observed.data, b"ghijk");
+        assert_eq!(observed.next_cursor, "11");
+    }
+
+    #[tokio::test]
+    async fn retained_writer_handle_keeps_the_shared_state_after_store_drop() {
+        let root = tempfile::tempdir().unwrap();
+        let streams = LogStreams::open_default(root.path(), "handle-run").unwrap();
+        let writer = streams.handle(LogStream::Stdout);
+        writer.append(b"first").await.unwrap();
+        drop(streams);
+        let reader = LogStreams::open_default(root.path(), "handle-run").unwrap();
+        writer.append(b"second").await.unwrap();
+        assert_eq!(
+            tail_all(&reader, LogStream::Stdout, None).await.data,
+            b"firstsecond"
+        );
+    }
+
+    #[tokio::test]
+    async fn live_limits_cannot_change_but_released_streams_can_recover_with_new_limits() {
+        let root = tempfile::tempdir().unwrap();
+        let limits = LogLimits {
+            segment_bytes: 4,
+            max_segments: 2,
+        };
+        let streams = LogStreams::open(root.path(), "limits-run", limits).unwrap();
+        streams.append(LogStream::Stdout, b"abc").await.unwrap();
+        let other = LogLimits {
+            max_segments: 1,
+            ..limits
+        };
+        assert!(matches!(
+            LogStreams::open(root.path(), "limits-run", other),
+            Err(LogError::InvalidLimits)
+        ));
+        drop(streams);
+        let reopened = LogStreams::open(root.path(), "limits-run", other).unwrap();
+        assert_eq!(
+            tail_all(&reopened, LogStream::Stdout, None).await.data,
+            b"abc"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_replaced_run_directory_does_not_reuse_live_state_for_its_old_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let old = LogStreams::open_default(root.path(), "replaced-run").unwrap();
+        old.append(LogStream::Stdout, b"old").await.unwrap();
+        fs::rename(old.run_directory(), root.path().join("retired")).unwrap();
+        let new = LogStreams::open_default(root.path(), "replaced-run").unwrap();
+        assert!(tail_all(&new, LogStream::Stdout, None)
+            .await
+            .data
+            .is_empty());
+        new.append(LogStream::Stdout, b"new").await.unwrap();
+        assert_eq!(tail_all(&new, LogStream::Stdout, None).await.data, b"new");
+        assert_eq!(
+            fs::read(root.path().join("retired/stdout.g0.o0-3.log")).unwrap(),
+            b"old"
+        );
     }
 
     #[tokio::test]
