@@ -1,4 +1,12 @@
 import { lazy, Suspense } from "react";
+const TlsSettings = lazy(() => import("../TlsSettings").then((module) => ({ default: module.TlsSettings })));
+const AssertionEditor = lazy(() =>
+  import("../AssertionEditor").then((module) => ({ default: module.AssertionEditor })),
+);
+const CaptureEditor = lazy(() => import("../CaptureEditor").then((module) => ({ default: module.CaptureEditor })));
+const SessionVariablesPanel = lazy(() =>
+  import("../SessionVariablesPanel").then((module) => ({ default: module.SessionVariablesPanel })),
+);
 const OAuth2Editor = lazy(() => import("../OAuth2Editor").then((module) => ({ default: module.OAuth2Editor })));
 import { KeyValueEditor } from "./KeyValueEditor";
 import { emptyGraphql } from "../lib/requestPresentation";
@@ -11,7 +19,16 @@ import { hasActiveCookieHeader } from "../lib/cookies";
 import type * as React from "react";
 
 interface Props {
-  tab: "params" | "headers" | "cookies" | "body" | "auth";
+  tab: "params" | "headers" | "cookies" | "body" | "auth" | "tls" | "assertions" | "captures";
+  checks: {
+    assertions: import("../lib/assertions").Assertion[];
+    onAssertionsChange: (values: import("../lib/assertions").Assertion[]) => void;
+    captures: import("../lib/captures").Capture[];
+    onCapturesChange: (values: import("../lib/captures").Capture[]) => void;
+    session: import("../lib/runner").SessionVariables;
+    onSessionChange: () => void;
+    disabled: boolean;
+  };
   req: import("../types").RequestTemplate;
   setReq: React.Dispatch<React.SetStateAction<import("../types").RequestTemplate>>;
   currentEnv: import("../lib/environments").Environment | null;
@@ -27,6 +44,7 @@ interface Props {
 
 export function RequestParameters({
   tab,
+  checks,
   req,
   setReq,
   currentEnv,
@@ -41,6 +59,27 @@ export function RequestParameters({
 }: Props) {
   return (
     <div className="tab-body">
+      {tab === "tls" && (
+        <Suspense fallback={<p role="status">TLS 설정 준비 중…</p>}>
+          <TlsSettings value={req.tls} onChange={(tls) => setReq((current) => ({ ...current, tls }))} />
+        </Suspense>
+      )}
+      {tab === "assertions" && (
+        <Suspense fallback={<p role="status">검증 편집 준비 중…</p>}>
+          <AssertionEditor value={checks.assertions} onChange={checks.onAssertionsChange} disabled={checks.disabled} />
+        </Suspense>
+      )}
+      {tab === "captures" && (
+        <Suspense fallback={<p role="status">캡처 편집 준비 중…</p>}>
+          <CaptureEditor value={checks.captures} onChange={checks.onCapturesChange} disabled={checks.disabled} />
+          <SessionVariablesPanel
+            session={checks.session}
+            onChange={checks.onSessionChange}
+            disabled={checks.disabled}
+          />
+        </Suspense>
+      )}
+
       {tab === "params" && (
         <KeyValueEditor rows={req.params} onChange={(params) => setReq({ ...req, params })} namePlaceholder="키" />
       )}
