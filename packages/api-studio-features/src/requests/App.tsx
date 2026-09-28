@@ -1,3 +1,4 @@
+const CodePanel = lazy(() => import("./CodePanel").then((module) => ({ default: module.CodePanel })));
 const TlsSettings = lazy(() => import("./TlsSettings").then((module) => ({ default: module.TlsSettings })));
 import { evaluateAssertions, type Assertion, type AssertionResult } from "./lib/assertions";
 import { VARIABLE_NAME, type Capture } from "./lib/captures";
@@ -168,6 +169,7 @@ export default function App({
   const sseHistoryRef = useRef<SseEvent[]>([]);
   const sseHistoryBytesRef = useRef(0);
   const [showCurl, setShowCurl] = useState(false);
+  const [showCode, setShowCode] = useState(false);
   const [assertions, setAssertions] = useState<Assertion[]>([]);
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [assertionResults, setAssertionResults] = useState<AssertionResult[]>([]);
@@ -1887,6 +1889,14 @@ export default function App({
                 cURL
               </button>
               <button
+                className={`btn ${showCode ? "active" : ""}`}
+                type="button"
+                aria-expanded={showCode}
+                onClick={() => setShowCode((shown) => !shown)}
+              >
+                코드
+              </button>
+              <button
                 className="btn"
                 type="button"
                 onClick={() => setShowOpenApiImport(true)}
@@ -1911,6 +1921,11 @@ export default function App({
               setSseOptions={setSseOptions}
             />
 
+            {showCode && (
+              <Suspense fallback={<p role="status">코드 생성 준비 중…</p>}>
+                <CodePanel request={req} environment={oauthEnvironment} />
+              </Suspense>
+            )}
             {showCurl && !requestConfigurationError && (
               <div className="curl-panel">
                 <div className="io-label">

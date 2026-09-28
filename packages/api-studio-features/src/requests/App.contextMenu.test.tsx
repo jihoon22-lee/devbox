@@ -435,3 +435,14 @@ it("TLS verification warning remains above the editor after changing tabs", asyn
   fireEvent.click(screen.getByRole("button", { name: "PARAMS" }));
   expect(screen.getByText("인증서 검증 꺼짐")).toBeTruthy();
 });
+
+it("opens generated code while keeping the existing one-time curl copy", async () => {
+  await renderReady();
+  fireEvent.change(screen.getByPlaceholderText("https://api.example.com/users"), {
+    target: { value: "https://example.test/" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "코드" }));
+  expect(await screen.findByRole("tab", { name: "JavaScript fetch" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "cURL" }));
+  expect(screen.getByRole("button", { name: "원문 1회 복사" })).toBeTruthy();
+});
