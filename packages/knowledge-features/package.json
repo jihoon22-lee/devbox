@@ -30,7 +30,7 @@
     "@devbox/context-menu": "workspace:*",
     "@devbox/diff-view": "workspace:*",
     "@devbox/mermaid-renderer": "workspace:*",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "react": "^19.1.0",

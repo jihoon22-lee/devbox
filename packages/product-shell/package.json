@@ -29,7 +29,7 @@
     "react-dom": "^19.0.0",
     "@devbox/tokens": "workspace:*",
     "@devbox/a11y": "workspace:*",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.12.0",
     "@devbox/hooks": "workspace:*"
   },
   "devDependencies": {
