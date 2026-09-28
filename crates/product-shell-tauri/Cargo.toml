@@ -21,3 +21,6 @@ devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }

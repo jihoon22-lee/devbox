@@ -1,7 +1,11 @@
 //! Product session and navigation boundary. Domain plugins separately declare
 //! their command allowlists and reuse this native session authorization.
 mod admission;
+#[cfg(any(windows, test))]
+mod core;
 mod installation;
+#[cfg(windows)]
+mod platform;
 pub use admission::{admit, admit_request, ActiveRequests, Admission, Reply};
 mod operation_log;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
@@ -415,6 +419,13 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 .build(),
         )
         .setup(move |app| {
+            #[cfg(windows)]
+            {
+                let main = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| std::io::Error::other("window_menu_guard_unavailable"))?;
+                platform::windows::install_menu_guard(&main).map_err(std::io::Error::other)?;
+            }
             let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
             if !catalog.products.iter().any(|p| p.id == product) {
                 return Err("unknown product".into());
