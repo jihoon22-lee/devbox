@@ -351,6 +351,8 @@ try {
     evidence.checks.agentRuntime = result.evidence;
     const webhookResult = await exerciseAgentWebhooks({
       api: apps["api-studio"],
+      connectionStatus: async (item) =>
+        value(await call(item, "plugin:suite|connection", { method: { kind: "status" } }, "requests")),
       call: async (item, method, args) =>
         value(await call(item, "plugin:api-studio|webhooks", { method, args }, "webhooks")),
       closeApi: async (item) => {

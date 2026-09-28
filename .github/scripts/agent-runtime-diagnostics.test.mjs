@@ -63,3 +63,20 @@ test("handoff diagnostics retain only fixed stage and issue codes", async () => 
   );
   assert.equal(projectHandoffDiagnostics(Array(50).fill(JSON.stringify(row)).join("\n")).length, 32);
 });
+
+test("handoff diagnostics distinguish connection readiness outcomes", async () => {
+  const { projectHandoffDiagnostics } = await import("./agent-runtime-diagnostics.mjs");
+  for (const code of ["suite_connection_off", "suite_connection_failed", "suite_connection_timeout"]) {
+    const row = {
+      tsMs: 4,
+      product: "api-studio",
+      component: "suite-handoff",
+      method: "send_webhook_log",
+      outcome: "failed",
+      code,
+    };
+    assert.deepEqual(projectHandoffDiagnostics(JSON.stringify(row)), [
+      { tsMs: 4, product: "api-studio", method: "send_webhook_log", code },
+    ]);
+  }
+});

@@ -2,6 +2,9 @@
 
 pub(crate) fn code(error: &str) -> &'static str {
     match error {
+        "suite_connection_off" => "suite_connection_off",
+        "suite_connection_failed" => "suite_connection_failed",
+        "suite_connection_timeout" => "suite_connection_timeout",
         "suite_review_required" => "suite_review_required",
         "suite_busy" => "suite_busy",
         "suite_product_invalid" => "suite_product_invalid",
