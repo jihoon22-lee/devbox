@@ -85,6 +85,10 @@ on:
         description: Finish updated uninstall; retain restore/reinstall evidence
         type: boolean
         default: false
+      delivery_observe_cdp_baseline:
+        description: Observe the healthy CDP session at startup; disable only for an observer-effect control
+        type: boolean
+        default: true
       delivery_rebuild_control_center:
         description: Rebuild only Control Center and its helper after proving the other retained product inputs unchanged
         type: boolean
@@ -200,6 +204,7 @@ jobs:
       - name: Exercise retained installed Suite delivery
         env:
           GH_TOKEN: ${{ github.token }}
+          DEVBOX_SUITE_OBSERVE_CDP_BASELINE: ${{ inputs.delivery_observe_cdp_baseline }}
         shell: pwsh
         run: .github/scripts/windows-suite-delivery.ps1 -Staging $env:DEVBOX_SUITE_TEST_STAGING -Bootstrap "$env:DEVBOX_SUITE_TEST_STAGING/devbox-suite-bootstrap.exe" -RemainingOnly:([bool]::Parse("${{ inputs.delivery_remaining_only }}"))
       - name: Preserve focused delivery evidence

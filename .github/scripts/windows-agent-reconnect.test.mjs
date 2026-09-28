@@ -1,6 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reconnectAgent } from "./windows-agent-reconnect.mjs";
+import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
+
+test("the control skips only the startup observer and records that absence explicitly", async () => {
+  let probes = 0;
+  const observation = {
+    state: "observed",
+    browserResponsive: true,
+    rendererResponsive: true,
+    nativeStatus: "connected",
+  };
+  const item = {
+    cdp: {
+      probeNewSession: async () => {
+        probes++;
+        return observation;
+      },
+    },
+  };
+  assert.deepEqual(await observeReconnectBaseline(item, false), { state: "disabled" });
+  assert.equal(probes, 0);
+  assert.deepEqual(await observeReconnectBaseline(item), observation);
+  assert.equal(probes, 1);
+});
 
 test("records the exact product and phase without replaying a failed reconnect", async () => {
   const calls = [],

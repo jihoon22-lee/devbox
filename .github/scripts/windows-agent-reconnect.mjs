@@ -1,4 +1,8 @@
 // One native reconnect, with read-only bounded diagnostics after failure.
+export async function observeReconnectBaseline(item, enabled = true) {
+  if (typeof enabled !== "boolean") throw new Error("invalid baseline selection");
+  return enabled ? item.cdp.probeNewSession() : { state: "disabled" };
+}
 export async function reconnectAgent(item, phase, report) {
   if (
     !["workspace", "api-studio", "knowledge", "control-center"].includes(item.product) ||

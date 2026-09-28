@@ -5,7 +5,7 @@ import {
 } from "./agent-runtime-diagnostics.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
-import { reconnectAgent } from "./windows-agent-reconnect.mjs";
+import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
 import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
@@ -142,7 +142,7 @@ async function start(member) {
     mode,
   );
   // A failed second attach is meaningful only relative to this exact live page.
-  item.cdpBaseline = await item.cdp.probeNewSession();
+  item.cdpBaseline = await observeReconnectBaseline(item, process.env.DEVBOX_SUITE_OBSERVE_CDP_BASELINE !== "false");
   (evidence.cdpBaselines ??= []).push({ product: item.product, ...item.cdpBaseline });
   return item;
 }
