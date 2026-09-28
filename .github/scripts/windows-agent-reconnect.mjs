@@ -26,7 +26,15 @@ export async function reconnectAgent(item, phase, report) {
           ["connected", "starting", "restarting", "unavailable", "unsupported"].includes(value) ? value : "unexpected",
         () => "probe_failed",
       );
-    report({ ...base, stage: "failed", rendererResponsive, nativeStatus });
+    const connection = item.cdp.connectionState?.();
+    report({
+      ...base,
+      stage: "failed",
+      rendererResponsive,
+      nativeStatus,
+      ...(connection ? { connection } : {}),
+      ...(item.child ? { productExited: item.child.exitCode !== null || item.child.signalCode !== null } : {}),
+    });
     throw error;
   }
 }
