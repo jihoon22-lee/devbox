@@ -50,8 +50,10 @@ fn local_main(window: &WebviewWindow) -> bool {
         })
 }
 
+// URL validation dispatches into WebView2. Defer it beyond the IPC callback
+// just like describe/reconnect, so the UI message pump can service browser calls.
 #[tauri::command]
-fn agent_status(window: WebviewWindow) -> Result<&'static str, &'static str> {
+async fn agent_status(window: WebviewWindow) -> Result<&'static str, &'static str> {
     if !local_main(&window) {
         return Err("unauthorized");
     }

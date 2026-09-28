@@ -22,6 +22,15 @@ function deadline(timeoutMs) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1000)
     throw new Error("invalid observer deadline");
 }
+function transportFailure(error) {
+  if (["AbortError", "TimeoutError"].includes(error?.name)) return "timeout";
+  const code = error?.cause?.code ?? error?.code;
+  if (code === "ECONNREFUSED") return "refused";
+  if (code === "ECONNRESET") return "reset";
+  if (["ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT"].includes(code)) return "timeout";
+  if (["ENOTFOUND", "EAI_AGAIN"].includes(code)) return "dns_failed";
+  return "other";
+}
 export async function inspectCdpTarget(target, { timeoutMs = 1000 } = {}) {
   deadline(timeoutMs);
   const url = targetUrl(target);
@@ -59,8 +68,8 @@ export async function inspectCdpTarget(target, { timeoutMs = 1000 } = {}) {
       targetPresent: pages.some((page) => page?.type === "page" && page.webSocketDebuggerUrl === url.href),
       pageCount: pages.filter((page) => page?.type === "page").length,
     };
-  } catch {
-    return { state: "unreachable" };
+  } catch (error) {
+    return { state: "unreachable", reason: transportFailure(error) };
   } finally {
     void reader?.cancel().catch(() => {});
   }
