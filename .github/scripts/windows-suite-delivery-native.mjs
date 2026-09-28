@@ -139,7 +139,25 @@ async function start(member) {
   if (item.product === "api-studio" && process.env.DEVBOX_SUITE_FOREGROUND_PROBE === "true") {
     item.focusCdpHost = () => focusWindowsCdpHost(item.identity);
   }
-  item.cdp = await connect(port, item.child);
+  try {
+    item.cdp = await connect(port, item.child);
+  } catch (error) {
+    // Observe this exact failed process before cleanup; never launch it again
+    // or replay a product request to make startup pass.
+    const startupFailure = {
+      product: item.product,
+      ...(error.cdpStartup ? { connection: error.cdpStartup } : {}),
+    };
+    evidence.startupFailure = startupFailure;
+    for (const [field, inspect] of [
+      ["nativeObserver", item.inspectCdpHost],
+      ["waitObserver", item.inspectCdpWaits],
+      ["stackObserver", item.inspectCdpStacks],
+    ]) {
+      if (inspect) startupFailure[field] = await inspect().catch(() => ({ state: "probe_failed" }));
+    }
+    throw error;
+  }
   await waitForRenderer(item.cdp, "!!window.__TAURI_INTERNALS__", "installed product bridge missing");
   await waitForRenderer(
     item.cdp,

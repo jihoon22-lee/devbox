@@ -16,11 +16,16 @@ export async function freePort() {
 }
 
 export async function connect(port, child, deadline = performance.now() + 30_000, terminalId = null) {
+  let stage = "discovery",
+    attempts = 0;
   while (performance.now() < deadline) {
     if (child.exitCode !== null) throw new Error("product exited before renderer opened");
     try {
+      attempts += 1;
+      stage = "discovery";
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) });
       const pages = await response.json();
+      stage = "target";
       const page = pages.find((p) => {
         if (p.type !== "page" || !p.webSocketDebuggerUrl) return false;
         try {
@@ -37,6 +42,7 @@ export async function connect(port, child, deadline = performance.now() + 30_000
         }
       });
       if (page) {
+        stage = "websocket";
         const socket = new WebSocket(page.webSocketDebuggerUrl);
         await once(socket, "open");
         let id = 0;
@@ -98,8 +104,11 @@ export async function connect(port, child, deadline = performance.now() + 30_000
           });
         };
         try {
+          stage = "runtime";
           await command("Runtime.enable");
+          stage = "log";
           await command("Log.enable");
+          stage = "page";
           await command("Page.enable");
         } catch (error) {
           socket.close();
@@ -151,7 +160,9 @@ export async function connect(port, child, deadline = performance.now() + 30_000
     }
     await delay(250);
   }
-  throw new Error("renderer startup deadline exceeded");
+  const error = new Error("renderer startup deadline exceeded");
+  error.cdpStartup = { stage, attempts };
+  throw error;
 }
 
 export async function waitForRenderer(cdp, expression, label) {
