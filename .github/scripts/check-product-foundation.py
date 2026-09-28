@@ -16,6 +16,7 @@ def check(root=ROOT):
     assert {p["id"] for p in catalog["products"]} == PRODUCTS
     assert len(catalog["products"]) == 4
     assert {p["id"] for p in public["apps"]} == {"devbox-" + p for p in PRODUCTS}
+    product_versions = set()
     for product in catalog["products"]:
         app_id = "devbox-" + product["id"]
         entry = next(p for p in public["apps"] if p["id"] == app_id)
@@ -25,8 +26,9 @@ def check(root=ROOT):
         assert config["identifier"] == product["identifier"]
         cargo = tomllib.loads((root / entry["appDir"] / "src-tauri/Cargo.toml").read_text())
         package = json.loads((root / entry["appDir"] / "package.json").read_text())
-        assert re.fullmatch(r"0\.8\.(?:0|[1-9][0-9]*)", cargo["package"]["version"])
+        assert re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", cargo["package"]["version"])
         assert config["version"] == package["version"] == cargo["package"]["version"]
+        product_versions.add(config["version"])
         host = (root / entry["appDir"] / "src-tauri/src/lib.rs").read_text()
         assert re.search(r'suite::plugin\(\s*"[a-z-]+"\s*,\s*env!\("CARGO_PKG_VERSION"\)', host), "Suite identity must use the product host version"
 
@@ -59,6 +61,7 @@ def check(root=ROOT):
                 "opener:allow-open-url",
             }
         assert {path.name for path in capability_dir.glob("*.json")} == expected_files
+    assert len(product_versions) == 1, f"product versions differ: {sorted(product_versions)}"
     agent = root / "apps/devbox-agent"
     agent_config = json.loads((agent / "tauri.conf.json").read_text())
     agent_cargo = tomllib.loads((agent / "Cargo.toml").read_text())

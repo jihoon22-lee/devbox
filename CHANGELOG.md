@@ -1,5 +1,29 @@
 # Changelog
 
+## [v0.9.0] - 2026-09-29
+
+v0.8.1 이후 전체 리뷰 후속 작업을 한 번에 담은 릴리스다. v0.8.x 설치본은 Control Center 업데이트로 바로 올라간다.
+
+- **v0.7 데이터 가져오기 제거.** v0.7 앱 데이터는 v0.8.1에서 먼저 옮긴 뒤 업데이트해야 한다. 새 설치는 Control Center "데이터 및 복구"에서 활성화를 확정한다.
+- **API Studio 저장소 이전.** 컬렉션·기록·환경·gRPC 기록·변환 워크플로를 WebView 저장소에서 제품 데이터 폴더로 첫 실행 때 자동 이전.
+- **백그라운드 서비스(devbox-agent).** 창을 닫아도 작업·서비스·예약 실행, 웹훅 리스너, 활동 기록과 검색 색인이 계속 동작. 알림 영역 아이콘 하나, "로그인할 때 백그라운드 서비스 시작" 설정(기본 꺼짐), 업데이트 전 자동 종료. 웹훅의 일시 요청 이력·응답 규칙은 agent 재시작 때 비워지고 저장 fixture는 유지.
+- **Workspace 에이전트 화면.** 작업마다 Git worktree를 만들고 Claude Code·Codex 터미널을 바로 시작, 변경 검토 뒤 병합·버리기, 작업별 CPU·메모리와 실제 Claude/Codex 기록에 기반한 토큰 사용량(읽지 못한 기록은 부분 결과로 표시).
+- **Devbox MCP 서버.** Control Center에서 켜면 WSL의 Claude Code·Codex가 프로젝트·작업 실행 기록·로그·검색·노트를 도구로 사용(기본 꺼짐, 노트 기록·작업 실행은 별도 허용).
+- **Workspace Source.** branch 만들기·전환·이름 바꾸기·삭제(8초 되돌리기), stash, hunk 단위 stage·unstage·버리기, amend, blame, 병합·rebase 충돌 해결, `gh`로 PR 상태 보기·만들기.
+- **API Studio.** curl·Postman·Insomnia·Bruno·HAR 가져오기, 요청마다 파일 하나인 파일 컬렉션, 응답 검증·값 캡처·컬렉션 실행기, OAuth 2.0(Authorization Code + PKCE, Client Credentials, 토큰은 DPAPI 봉인), 요청별 TLS 설정(사용자 CA·클라이언트 인증서·검증 끄기 상시 표시), 코드 생성(curl·fetch·Python·Go·C#).
+- Knowledge 노트 자동 저장과 비정상 종료 복구. 복구본은 노트 폴더별로 분리하고 다른 폴더 복구본의 개수 안내·버리기를 제공. 오류를 문장 대신 코드로 분류.
+- 빠른 기록·템플릿 노트·일일 기록·새 프로젝트 등록은 바로 실행하고 "되돌리기" 제공, "작업 상태 › 최근 오류"에서 진단 복사.
+- Activity 개인정보 규칙을 줄 단위로 입력·저장, 잘못된 정규식 저장 거부, 규칙을 읽지 못하면 창 제목 수집 중단.
+- 업데이트 다운로드 캐시 자동 정리, 같은 설치의 제품은 업데이트 뒤에도 자동 연결, Control Center 단축키 화면 연결, 조기 거부 오류 문구 구분.
+- OneDrive 온라인 전용·압축(WOF) 파일 허용(junction·symlink 차단 유지), Dev Drive(ReFS) 128비트 파일 ID.
+- Webhook Lab이 chunked 본문, `Expect: 100-continue`, 바이너리 본문을 받아 기록·fixture 저장·재전송.
+- 제품별 운영 로그(코드·소요 시간만, 14일 보관)와 panic 위치 기록, 지원 번들에 최근 기록 포함.
+- 명령마다 하던 제품 정보 재조회·설치 파일 재검증 제거, 터미널 출력 push 방식으로 유휴 CPU·IPC 제거.
+- Windows: Tauri 2.12.0·Tao 0.37.1로 갱신하고, 네이티브 메뉴가 없는 창에서 Alt/F10 메뉴 활성화로 생기는 메시지 대기를 차단. Alt+Space와 창 닫기·최소화·복원은 유지.
+- 내부 정리: component별 타입 명령과 코드별 오류 문구, 옛 앱 실행기·마이그레이션 코드 제거, 의존성 버전 통일, 자식 프로세스·DPAPI 처리 공용화, 개발 기록 보관소 이동, 지원 OS Windows 11 명시, 개발 도구 Rust 1.98.1·Node 24 고정.
+
+게시·Windows 실기·후보 검증 결과는 해당 Release와 릴리스 원장을 따른다.
+
 ## [v0.8.1] - 2026-09-21
 
 - GraphQL 교차 출처 리다이렉트에서 원본 query·variables·params 재전송 차단.

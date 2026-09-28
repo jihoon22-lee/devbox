@@ -52,3 +52,20 @@ test("a closed CDP socket rejects pending and future calls without a misleading 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("startup failure retains a closed stage and attempt count without remote error text", async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("private host/token response");
+  };
+  try {
+    await assert.rejects(connect(1, { exitCode: null }, performance.now() + 20), (error) => {
+      assert.equal(error.message, "renderer startup deadline exceeded");
+      assert.deepEqual(error.cdpStartup, { stage: "discovery", attempts: 1 });
+      assert.ok(!JSON.stringify(error).includes("private"));
+      return true;
+    });
+  } finally {
+    globalThis.fetch = previous;
+  }
+});

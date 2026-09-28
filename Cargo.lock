@@ -1268,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-agent"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "agent-client",
  "agent-protocol",
@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-api-studio"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "agent-client",
  "applink",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-control-center"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "catalog",
  "devbox-installation-tools",
@@ -1495,7 +1495,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-knowledge"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "agent-client",
  "applink",
@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-workspace"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "agent-client",
  "applink",
