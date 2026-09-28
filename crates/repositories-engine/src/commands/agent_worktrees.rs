@@ -6,6 +6,8 @@ pub struct MergeRequest {
     pub path: String,
     pub branch: String,
     pub operation_id: String,
+    #[serde(default)]
+    pub keep_conflicts: bool,
 }
 #[derive(Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -111,6 +113,21 @@ pub async fn repo_merge(request: MergeRequest) -> Result<MergeResult, String> {
             .take(200)
             .map(str::to_owned)
             .collect::<Vec<_>>();
+        if request.keep_conflicts
+            && !conflicts.is_empty()
+            && remote_marker_exists(&context.worktree, "MERGE_HEAD", Some(cancellation))
+                .map_err(|_| MERGE_FAILED)?
+        {
+            let after = head(&context.worktree, cancellation)?;
+            if after != before {
+                return Err(MERGE_FAILED.into());
+            }
+            return Ok(MergeResult {
+                merged: false,
+                head: after,
+                conflicts,
+            });
+        }
         if remote_marker_exists(&context.worktree, "MERGE_HEAD", Some(cancellation))
             .map_err(|_| MERGE_FAILED)?
         {
@@ -308,11 +325,8 @@ pub async fn remove_agent_worktree(request: RemoveAgentWorktreeRequest) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        process::Command,
-    };
+    use crate::test_support::{git, repo_with_agent_branch};
+    use std::{fs, path::Path};
     #[test]
     fn inspection_recovers_created_and_removed_worktrees_without_adopting_another_branch() {
         let (_tmp, main, agent) = repo_with_agent_branch("agent\n", None);
@@ -358,6 +372,7 @@ mod tests {
         git(&main, &["merge", "--no-commit", "--no-ff", "agent/fix"]);
         let marker = fs::read(main.join(".git/MERGE_HEAD")).unwrap();
         let result = crate::runtime::block_on(repo_merge(MergeRequest {
+            keep_conflicts: false,
             path: main.to_string_lossy().into(),
             branch: "agent/fix".into(),
             operation_id: "preexisting-merge".into(),
@@ -399,68 +414,11 @@ mod tests {
         assert!(!git(&main, &["branch", "--list", "ordinary"]).is_empty());
     }
 
-    fn git(repo: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8(out.stdout).unwrap()
-    }
-
-    fn repo_with_agent_branch(
-        file_on_agent: &str,
-        file_on_main: Option<&str>,
-    ) -> (tempfile::TempDir, PathBuf, PathBuf) {
-        let tmp = tempfile::tempdir().unwrap();
-        // Use the same canonical DOS spelling as native Registry admission;
-        // Windows temporary directories may otherwise use an 8.3 alias.
-        let root = PathBuf::from(
-            host_path_spelling(&tmp.path().canonicalize().unwrap(), NOT_AGENT).unwrap(),
-        );
-        let main = root.join("devbox");
-        fs::create_dir(&main).unwrap();
-        git(&main, &["init", "--quiet", "-b", "main"]);
-        for (key, value) in [
-            ("user.email", "hub@example.test"),
-            ("user.name", "Hub"),
-            ("core.autocrlf", "false"),
-        ] {
-            git(&main, &["config", key, value]);
-        }
-        fs::write(main.join("shared.txt"), "base\n").unwrap();
-        git(&main, &["add", "shared.txt"]);
-        git(&main, &["commit", "--quiet", "-m", "base"]);
-        let agent = root.join("devbox-fix");
-        git(
-            &main,
-            &[
-                "worktree",
-                "add",
-                "--quiet",
-                "-b",
-                "agent/fix",
-                agent.to_str().unwrap(),
-            ],
-        );
-        fs::write(agent.join("shared.txt"), file_on_agent).unwrap();
-        git(&agent, &["commit", "--quiet", "-am", "agent change"]);
-        if let Some(content) = file_on_main {
-            fs::write(main.join("shared.txt"), content).unwrap();
-            git(&main, &["commit", "--quiet", "-am", "main change"]);
-        }
-        (tmp, main, agent)
-    }
-
     #[test]
     fn merge_creates_a_merge_commit_on_the_base_worktree() {
         let (_tmp, main, _agent) = repo_with_agent_branch("agent\n", None);
         let result = crate::runtime::block_on(repo_merge(MergeRequest {
+            keep_conflicts: false,
             path: main.to_string_lossy().into(),
             branch: "agent/fix".into(),
             operation_id: "merge-1".into(),
@@ -482,6 +440,7 @@ mod tests {
         let (_tmp, main, _agent) = repo_with_agent_branch("agent\n", Some("main\n"));
         let before = git(&main, &["rev-parse", "HEAD"]);
         let result = crate::runtime::block_on(repo_merge(MergeRequest {
+            keep_conflicts: false,
             path: main.to_string_lossy().into(),
             branch: "agent/fix".into(),
             operation_id: "merge-2".into(),
@@ -499,6 +458,7 @@ mod tests {
         let (_tmp, main, _agent) = repo_with_agent_branch("agent\n", None);
         fs::write(main.join("wip.txt"), "wip\n").unwrap();
         let error = crate::runtime::block_on(repo_merge(MergeRequest {
+            keep_conflicts: false,
             path: main.to_string_lossy().into(),
             branch: "agent/fix".into(),
             operation_id: "merge-3".into(),

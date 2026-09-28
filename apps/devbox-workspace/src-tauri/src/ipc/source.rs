@@ -91,6 +91,28 @@ impl<'de> serde::Deserialize<'de> for WorkspaceSourceCall {
     }
 }
 pub const METHODS: &[&str] = &[
+    "repo_conflicts",
+    "repo_conflict_versions",
+    "repo_conflict_resolve",
+    "repo_operation_continue",
+    "repo_operation_abort",
+    "repo_pr_status",
+    "repo_pr_list",
+    "repo_pr_create",
+    "repo_file_hunks",
+    "repo_hunks_apply",
+    "repo_last_commit",
+    "repo_blame",
+    "repo_branches",
+    "repo_branch_create",
+    "repo_switch",
+    "repo_branch_rename",
+    "repo_branch_delete",
+    "repo_stash_list",
+    "repo_stash_push",
+    "repo_stash_apply",
+    "repo_stash_drop",
+    "repo_stash_store",
     "inspect_agent_worktree",
     "repo_merge",
     "remove_agent_worktree",
@@ -131,6 +153,31 @@ pub const METHODS: &[&str] = &[
 ];
 pub fn routes_for(method: &str) -> &'static [&'static str] {
     match method {
+        "repo_conflicts" => &["source"],
+        "repo_conflict_versions" => &["source"],
+        "repo_conflict_resolve" => &["source"],
+        "repo_operation_continue" => &["source"],
+        "repo_operation_abort" => &["source"],
+        "repo_pr_status" => &["source"],
+        "repo_pr_list" => &["source"],
+        "repo_pr_create" => &["source"],
+
+        "repo_file_hunks" => &["source"],
+        "repo_hunks_apply" => &["source"],
+        "repo_last_commit" => &["source"],
+        "repo_blame" => &["source"],
+
+        "repo_branches" => &["source"],
+        "repo_branch_create" => &["source"],
+        "repo_switch" => &["source"],
+        "repo_branch_rename" => &["source"],
+        "repo_branch_delete" => &["source"],
+        "repo_stash_list" => &["source"],
+        "repo_stash_push" => &["source"],
+        "repo_stash_apply" => &["source"],
+        "repo_stash_drop" => &["source"],
+        "repo_stash_store" => &["source"],
+
         "inspect_agent_worktree" | "repo_merge" | "remove_agent_worktree" => &["agents", "source"],
         "approve_cleanup_scope" => &["agents", "source"],
         "approve_trust" => &["agents", "source"],
@@ -396,6 +443,19 @@ pub(crate) fn source_mutation(method: &str) -> bool {
     matches!(
         method,
         "repo_merge"
+            | "repo_conflict_resolve"
+            | "repo_operation_continue"
+            | "repo_operation_abort"
+            | "repo_pr_create"
+            | "repo_hunks_apply"
+            | "repo_branch_create"
+            | "repo_switch"
+            | "repo_branch_rename"
+            | "repo_branch_delete"
+            | "repo_stash_push"
+            | "repo_stash_apply"
+            | "repo_stash_drop"
+            | "repo_stash_store"
             | "remove_agent_worktree"
             | "repo_stage"
             | "repo_unstage"
@@ -518,4 +578,71 @@ pub fn result_types(
     result.push(("cancel_cleanup_scope", export.register::<()>()?));
     result.sort_by_key(|(method, _)| *method);
     Ok(result)
+}
+
+#[cfg(test)]
+mod branch_stash_tests {
+    #[test]
+    fn branch_stash_mutations_use_the_writer_gate_and_source_route() {
+        for (method, mutation) in [
+            ("repo_branches", false),
+            ("repo_branch_create", true),
+            ("repo_switch", true),
+            ("repo_branch_rename", true),
+            ("repo_branch_delete", true),
+            ("repo_stash_list", false),
+            ("repo_stash_push", true),
+            ("repo_stash_apply", true),
+            ("repo_stash_drop", true),
+            ("repo_stash_store", true),
+        ] {
+            assert_eq!(super::source_mutation(method), mutation, "{method}");
+            assert_eq!(super::routes_for(method), &["source"]);
+            assert_eq!(
+                super::deadline_budget_for(method),
+                if mutation { 29_000 } else { 5_000 }
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod hunk_blame_tests {
+    #[test]
+    fn hunk_blame_calls_have_exact_writer_route_and_deadline_contracts() {
+        for (method, mutation) in [
+            ("repo_file_hunks", false),
+            ("repo_hunks_apply", true),
+            ("repo_last_commit", false),
+            ("repo_blame", false),
+        ] {
+            assert_eq!(super::source_mutation(method), mutation);
+            assert_eq!(super::routes_for(method), &["source"]);
+            assert_eq!(
+                super::deadline_budget_for(method),
+                if mutation { 29_000 } else { 5_000 }
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod conflict_pr_tests {
+    #[test]
+    fn conflict_pr_calls_have_exact_writer_route_and_deadline_contracts() {
+        for (method, mutation, budget) in [
+            ("repo_conflicts", false, 5000),
+            ("repo_conflict_versions", false, 5000),
+            ("repo_conflict_resolve", true, 5000),
+            ("repo_operation_continue", true, 29000),
+            ("repo_operation_abort", true, 29000),
+            ("repo_pr_status", false, 29000),
+            ("repo_pr_list", false, 29000),
+            ("repo_pr_create", true, 29000),
+        ] {
+            assert_eq!(super::source_mutation(method), mutation);
+            assert_eq!(super::routes_for(method), &["source"]);
+            assert_eq!(super::deadline_budget_for(method), budget);
+        }
+    }
 }

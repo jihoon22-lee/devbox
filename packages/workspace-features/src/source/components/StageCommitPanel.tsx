@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { isImeComposing } from "@devbox/a11y";
 import {
   GIT_MUTATION_ERROR,
@@ -6,12 +6,15 @@ import {
   repoCommit,
   repoCommitPreview,
   repoLocalCancel,
+  repoLastCommit,
+  type LastCommit,
   repoStage,
   repoUnstage,
   type ChangeEntry,
   type RepoEntry,
 } from "../api";
 import ConfirmDialog from "./ConfirmDialog";
+import HunkList from "./HunkList";
 
 const MAX_COMMIT_MESSAGE_BYTES = 16 * 1024;
 
@@ -20,6 +23,7 @@ interface Props {
   onBusyChange?: (busy: boolean) => void;
   onOpenFile?: (path: string, line: number | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onBlame?: (file: string) => void;
 }
 
 type Selection = "stage" | "unstage";
@@ -37,6 +41,7 @@ interface CommitConfirmation {
   message: string;
   stagedPaths: string[];
   indexRevision: string;
+  amend: boolean;
 }
 
 function isCommitMessageValid(value: string): boolean {
@@ -62,12 +67,24 @@ export function createLocalOperationId(): string {
 }
 
 /** Explicit local working-tree stage/unstage and index-only commit surface. */
-export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, onOpenFile }: Props) {
+export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, onOpenFile, onBlame }: Props) {
   const [changes, setChanges] = useState<ChangeEntry[] | null>(null);
   const [stageSelection, setStageSelection] = useState<Set<string>>(new Set());
   const [unstageSelection, setUnstageSelection] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
+  const [amend, setAmend] = useState(false);
+  const [lastCommit, setLastCommit] = useState<LastCommit | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hunkBusy, setHunkBusy] = useState<Record<string, boolean>>({});
+  const hunkBusyRef = useRef(false);
+  const reportHunkBusy = useCallback((key: string, value: boolean) => {
+    setHunkBusy((previous) => {
+      const next = { ...previous, [key]: value };
+      hunkBusyRef.current = Object.values(next).some(Boolean);
+      return next;
+    });
+  }, []);
+  const controlsBusy = busy || Object.values(hunkBusy).some(Boolean);
   const [error, setError] = useState<string | null>(null);
   const [localAction, setLocalAction] = useState<LocalAction | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
@@ -80,8 +97,8 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
   const cancelledOperationRef = useRef<string | null>(null);
 
   useEffect(() => {
-    onBusyChange?.(busy || commitConfirmation !== null);
-  }, [busy, commitConfirmation, onBusyChange]);
+    onBusyChange?.(controlsBusy || commitConfirmation !== null);
+  }, [controlsBusy, commitConfirmation, onBusyChange]);
   useEffect(
     () => () => {
       onBusyChange?.(false);
@@ -103,10 +120,14 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     mountedRef.current = true;
     sequenceRef.current += 1;
     busyRef.current = false;
+    setHunkBusy({});
+    hunkBusyRef.current = false;
     setChanges(null);
     setStageSelection(new Set());
     setUnstageSelection(new Set());
     setMessage("");
+    setAmend(false);
+    setLastCommit(null);
     setBusy(false);
     setError(null);
     setLocalAction(null);
@@ -189,7 +210,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
   };
 
   const runPathMutation = async (selection: Selection) => {
-    if (busyRef.current) return;
+    if (busyRef.current || hunkBusyRef.current) return;
     const selected = [...(selection === "stage" ? stageSelection : unstageSelection)];
     if (selected.length === 0) {
       setError(GIT_MUTATION_ERROR);
@@ -236,9 +257,9 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     }
   };
 
-  const runCommit = async (confirmedMessage: string, indexRevision: string) => {
-    if (busyRef.current) return;
-    if (!isCommitMessageValid(confirmedMessage) || !pathsFor(changes, "unstage").length) {
+  const runCommit = async (confirmedMessage: string, indexRevision: string, confirmedAmend: boolean) => {
+    if (busyRef.current || hunkBusyRef.current) return;
+    if (!isCommitMessageValid(confirmedMessage) || (!confirmedAmend && !pathsFor(changes, "unstage").length)) {
       setError(GIT_MUTATION_ERROR);
       return;
     }
@@ -253,13 +274,16 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     setOperationStatus(null);
     setError(null);
     try {
-      await repoCommit(repo.path, confirmedMessage, operationId, indexRevision);
+      if (confirmedAmend) await repoCommit(repo.path, confirmedMessage, operationId, indexRevision, true);
+      else await repoCommit(repo.path, confirmedMessage, operationId, indexRevision);
       if (!isCurrent(sequence)) return;
       operationIdRef.current = null;
       setLocalAction(null);
       setCancelPending(false);
       setOperationStatus(null);
       setMessage("");
+      setAmend(false);
+      setLastCommit(null);
 
       const next = await repoChanges(repo.path);
       if (!isCurrent(sequence)) return;
@@ -281,8 +305,33 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     }
   };
 
+  const selectAmend = async (checked: boolean) => {
+    if (busyRef.current || hunkBusyRef.current) return;
+    setCommitConfirmation(null);
+    if (!checked) {
+      setAmend(false);
+      setLastCommit(null);
+      return;
+    }
+    const sequence = ++sequenceRef.current;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const previous = await repoLastCommit(repo.path);
+      if (!isCurrent(sequence)) return;
+      setLastCommit(previous);
+      setAmend(true);
+      setMessage((current) => (current.trim() ? current : previous.message));
+    } catch {
+      if (isCurrent(sequence)) setError("수정할 커밋을 읽지 못했습니다.");
+    } finally {
+      finishBusy(sequence);
+    }
+  };
+
   const requestCommit = async () => {
-    if (busyRef.current || !isCommitMessageValid(message)) return;
+    if (busyRef.current || hunkBusyRef.current || !isCommitMessageValid(message)) return;
     const sequence = ++sequenceRef.current;
     const reviewedMessage = message;
     busyRef.current = true;
@@ -291,13 +340,14 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     try {
       const review = await repoCommitPreview(repo.path);
       if (!isCurrent(sequence)) return;
-      if (!review.stagedPaths.length) throw new Error(GIT_MUTATION_ERROR);
+      if (!amend && !review.stagedPaths.length) throw new Error(GIT_MUTATION_ERROR);
       setCommitConfirmation({
         repositoryKey: repo.canonicalKey,
         repositoryPath: repo.path,
         message: reviewedMessage,
         stagedPaths: review.stagedPaths,
         indexRevision: review.revision,
+        amend,
       });
     } catch {
       if (isCurrent(sequence)) setError("Git index를 확인하지 못했습니다. 변경 목록을 다시 불러와 주세요.");
@@ -315,13 +365,14 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     const stillCurrent =
       pending.repositoryKey === repo.canonicalKey &&
       pending.repositoryPath === repo.path &&
-      pending.message === message;
+      pending.message === message &&
+      pending.amend === amend;
     setCommitConfirmation(null);
     if (!stillCurrent) {
       setError(GIT_MUTATION_ERROR);
       return;
     }
-    void runCommit(pending.message, pending.indexRevision);
+    void runCommit(pending.message, pending.indexRevision, pending.amend);
   };
 
   const cancel = () => {
@@ -352,7 +403,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
   };
 
   const toggleSelection = (selection: Selection, path: string) => {
-    if (busyRef.current) return;
+    if (busyRef.current || hunkBusyRef.current) return;
     const setter = selection === "stage" ? setStageSelection : setUnstageSelection;
     setter((current) => {
       const next = new Set(current);
@@ -374,7 +425,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
           <h2>Stage · commit</h2>
           <div className="history-repository mono">{repo.path}</div>
         </div>
-        <button type="button" className="btn" disabled={busy} onClick={() => void loadChanges()}>
+        <button type="button" className="btn" disabled={controlsBusy} onClick={() => void loadChanges()}>
           {busy ? "처리 중…" : "변경 파일 불러오기"}
         </button>
         {busy && localAction ? (
@@ -409,7 +460,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
                     type="checkbox"
                     aria-label={`stage ${change.path}`}
                     checked={stageSelection.has(change.path)}
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onChange={() => toggleSelection("stage", change.path)}
                   />
                   <span className="change-kind">{change.kind}</span>
@@ -422,20 +473,29 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
                 {onOpenFile && (
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onClick={() => onOpenFile(change.path, null)}
                     aria-label={`Files에서 ${change.path} 열기`}
                   >
                     파일 열기
                   </button>
                 )}
+                <ChangeFileActions
+                  repo={repo}
+                  change={change}
+                  staged={false}
+                  disabled={controlsBusy}
+                  onChanged={() => void loadChanges()}
+                  onBusy={reportHunkBusy}
+                  onBlame={onBlame}
+                />
               </div>
             ))}
             {unstaged.length === 0 ? <div className="change-empty dim">unstaged 변경이 없습니다.</div> : null}
             <button
               type="button"
               className="btn"
-              disabled={busy || stageSelection.size === 0}
+              disabled={controlsBusy || stageSelection.size === 0}
               onClick={() => void runPathMutation("stage")}
             >
               선택 항목 stage ({stageSelection.size})
@@ -451,7 +511,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
                     type="checkbox"
                     aria-label={`unstage ${change.path}`}
                     checked={unstageSelection.has(change.path)}
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onChange={() => toggleSelection("unstage", change.path)}
                   />
                   <span className="change-kind">{change.kind}</span>
@@ -464,20 +524,29 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
                 {onOpenFile && (
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onClick={() => onOpenFile(change.path, null)}
                     aria-label={`Files에서 ${change.path} 열기`}
                   >
                     파일 열기
                   </button>
                 )}
+                <ChangeFileActions
+                  repo={repo}
+                  change={change}
+                  staged={true}
+                  disabled={controlsBusy}
+                  onChanged={() => void loadChanges()}
+                  onBusy={reportHunkBusy}
+                  onBlame={onBlame}
+                />
               </div>
             ))}
             {staged.length === 0 ? <div className="change-empty dim">staged 변경이 없습니다.</div> : null}
             <button
               type="button"
               className="btn"
-              disabled={busy || unstageSelection.size === 0}
+              disabled={controlsBusy || unstageSelection.size === 0}
               onClick={() => void runPathMutation("unstage")}
             >
               선택 항목 unstage ({unstageSelection.size})
@@ -501,13 +570,25 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
       )}
 
       <div className="commit-form">
+        <label>
+          <input
+            type="checkbox"
+            checked={amend}
+            disabled={controlsBusy}
+            onChange={(event) => void selectAmend(event.currentTarget.checked)}
+          />
+          마지막 커밋 수정(amend)
+        </label>
+        {amend && lastCommit?.pushed ? (
+          <p role="status">이미 push한 커밋입니다. 수정하면 다음 push가 거부될 수 있습니다.</p>
+        ) : null}
         <label htmlFor="repo-commit-message">커밋 메시지</label>
         <textarea
           id="repo-commit-message"
           aria-label="커밋 메시지"
           value={message}
           maxLength={MAX_COMMIT_MESSAGE_BYTES}
-          disabled={busy}
+          disabled={controlsBusy}
           placeholder="변경 내용을 설명하세요"
           onChange={(event) => {
             setMessage(event.currentTarget.value);
@@ -521,26 +602,73 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
           <button
             type="button"
             className="btn primary"
-            disabled={busy || staged.length === 0 || !isCommitMessageValid(message)}
+            disabled={controlsBusy || (!amend && staged.length === 0) || !isCommitMessageValid(message)}
             onClick={() => void requestCommit()}
           >
-            Commit ({staged.length})
+            {amend ? "마지막 커밋 수정" : `Commit (${staged.length})`}
           </button>
         </div>
       </div>
       {commitConfirmation ? (
         <ConfirmDialog
-          title="Commit을 실행할까요?"
+          title={commitConfirmation.amend ? "마지막 커밋을 수정할까요?" : "Commit을 실행할까요?"}
           summary={[
             `방금 확인한 Git index의 변경 ${commitConfirmation.stagedPaths.length}개를 commit합니다.`,
             "스테이징되지 않은 변경은 자동으로 포함하지 않습니다.",
             "입력한 커밋 메시지와 경로는 이 확인창에 표시하지 않습니다.",
           ]}
-          confirmLabel="Commit 실행"
+          confirmLabel={commitConfirmation.amend ? "마지막 커밋 수정 실행" : "Commit 실행"}
           onCancel={() => setCommitConfirmation(null)}
           onConfirm={confirmCommit}
         />
       ) : null}
     </section>
+  );
+}
+
+function ChangeFileActions({
+  repo,
+  change,
+  staged,
+  disabled,
+  onChanged,
+  onBusy,
+  onBlame,
+}: {
+  repo: RepoEntry;
+  change: ChangeEntry;
+  staged: boolean;
+  disabled: boolean;
+  onChanged: () => void;
+  onBusy: (key: string, busy: boolean) => void;
+  onBlame?: (file: string) => void;
+}) {
+  const key = `${staged}:${change.path}`;
+  const reportBusy = useCallback((busy: boolean) => onBusy(key, busy), [key, onBusy]);
+  return (
+    <div className="source-file-actions">
+      {change.kind === "modified" ? (
+        <HunkList
+          repo={repo}
+          file={change.path}
+          staged={staged}
+          disabled={disabled}
+          onChanged={onChanged}
+          onBusyChange={reportBusy}
+        />
+      ) : (
+        <p>이 파일은 파일 단위로만 처리할 수 있습니다.</p>
+      )}
+      {onBlame && (
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={`${change.path} 작성 이력`}
+          onClick={() => onBlame(change.path)}
+        >
+          작성 이력
+        </button>
+      )}
+    </div>
   );
 }

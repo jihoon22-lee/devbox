@@ -1,4 +1,16 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
+mod conflicts;
+pub use conflicts::*;
+mod blame;
+pub use blame::*;
+mod last_commit;
+pub use last_commit::*;
+mod hunks;
+pub use hunks::*;
+mod stash;
+pub use stash::*;
+mod branches;
+pub use branches::*;
 mod agent_worktrees;
 pub use agent_worktrees::{
     inspect_agent_worktree, remove_agent_worktree, repo_merge, AgentWorktreePresence,
@@ -207,7 +219,7 @@ fn walk(
     }
 }
 
-fn host_path_spelling(path: &Path, error: &'static str) -> Result<String, String> {
+pub(crate) fn host_path_spelling(path: &Path, error: &'static str) -> Result<String, String> {
     let value = path.to_str().ok_or_else(|| error.to_string())?;
     let folded = value.to_ascii_lowercase();
     if folded.starts_with(r"\\?\unc\") {
@@ -1854,15 +1866,17 @@ fn repository_has_head(cwd: &Path, cancellation: &AtomicBool) -> Result<bool, St
     }
 }
 
-fn git_commit_args(message: &str) -> Vec<String> {
-    vec![
-        "--no-pager".to_string(),
-        "--no-optional-locks".to_string(),
-        "commit".to_string(),
-        "--message".to_string(),
-        message.to_string(),
-        "--".to_string(),
-    ]
+fn git_commit_args(message: &str, amend: bool) -> Vec<String> {
+    let mut args = vec![
+        "--no-pager".into(),
+        "--no-optional-locks".into(),
+        "commit".into(),
+    ];
+    if amend {
+        args.push("--amend".into());
+    }
+    args.extend(["--message".into(), message.into(), "--".into()]);
+    args
 }
 
 fn validated_selected_paths(paths: &[String]) -> Result<Vec<String>, String> {
@@ -2915,6 +2929,8 @@ pub struct UnstagePathsRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
 pub struct CommitRequest {
+    #[serde(default)]
+    pub amend: bool,
     pub path: String,
     pub message: String,
     pub operation_id: String,
@@ -3019,13 +3035,19 @@ pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
             GIT_MUTATION_ERROR,
         )?;
         revalidate_repository_context(&context, GIT_MUTATION_ERROR)?;
+        if request.amend
+            && !repository_has_head(&context.worktree, operation.cancellation.as_ref())?
+        {
+            return Err("amend_no_commit".into());
+        }
         commit_review::require(
             &context,
             &request.index_revision,
             operation.cancellation.as_ref(),
+            request.amend,
         )?;
         run_git_mutation_with_cancel(
-            &git_commit_args(&message),
+            &git_commit_args(&message, request.amend),
             &context.worktree,
             operation.cancellation.as_ref(),
         )
@@ -3550,6 +3572,7 @@ mod scan_tests {
         }))
         .unwrap();
         crate::runtime::block_on(repo_commit(CommitRequest {
+            amend: false,
             path: path.clone(),
             index_revision: crate::runtime::block_on(repo_commit_preview(RepoChangesRequest {
                 path: path.clone(),
@@ -3990,6 +4013,7 @@ mod scan_tests {
                 .unwrap()
                 .revision;
             crate::runtime::block_on(repo_commit(CommitRequest {
+                amend: false,
                 path,
                 index_revision,
                 message: "cancelled commit".to_string(),
@@ -4104,6 +4128,7 @@ mod scan_tests {
         assert!(!error.contains("not-in-status.txt"));
 
         let error = crate::runtime::block_on(repo_commit(CommitRequest {
+            amend: false,
             path,
             index_revision: "0".repeat(64),
             message: format!("invalid\0{secret}"),
@@ -5129,6 +5154,7 @@ mod scan_tests {
             }
             let before = git_fixture(repo, &["rev-parse", "HEAD"]);
             let result = crate::runtime::block_on(repo_commit(CommitRequest {
+                amend: false,
                 path,
                 message: "reviewed commit".into(),
                 operation_id: format!("review-{change}"),
@@ -5163,3 +5189,6 @@ mod scan_tests {
         String::from_utf8(output.stdout).unwrap()
     }
 }
+
+mod pull_requests;
+pub use pull_requests::*;

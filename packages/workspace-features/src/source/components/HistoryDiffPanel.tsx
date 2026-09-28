@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { WorkspaceOperationError } from "../../transport";
 import {
   GIT_VIEW_ERROR,
@@ -16,6 +16,8 @@ const MAX_HISTORY_LIMIT = 100;
 
 interface Props {
   repo: RepoEntry | null;
+  focusCommit?: { id: string; sequence: number } | null;
+  onBlame?: (file: string, commitId: string | null) => void;
   onBusyChange?: (busy: boolean) => void;
   onOpenFile?: (path: string, line: number | null) => void;
 }
@@ -29,7 +31,7 @@ function parseLimit(value: string): number | null {
 }
 
 /** Read-only Git history/detail/diff surface for the selected repository. */
-export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Props) {
+export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile, focusCommit, onBlame }: Props) {
   const [historyLimit, setHistoryLimit] = useState(DEFAULT_HISTORY_LIMIT);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [selectedCommitId, setSelectedCommitId] = useState<string | null>(null);
@@ -72,6 +74,45 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
     };
   }, [repo?.canonicalKey, repo?.path]);
 
+  const sourcePath = repo?.path ?? null;
+  const selectCommit = useCallback(
+    async (commitId: string) => {
+      if (!sourcePath) return;
+      const sequence = ++sequenceRef.current;
+      busyRef.current = true;
+      setBusy(true);
+      setError(null);
+      setSelectedCommitId(commitId);
+      setDetail(null);
+      setDiff(null);
+      setDiffSelection("commit");
+      try {
+        const [nextDetail, nextDiff] = await Promise.all([
+          repoCommitDetail(sourcePath, commitId),
+          repoDiff(sourcePath, commitId),
+        ]);
+        if (sequence !== sequenceRef.current) return;
+        setDetail(nextDetail);
+        setDiff(nextDiff);
+      } catch (cause) {
+        if (sequence === sequenceRef.current) {
+          setError(cause instanceof WorkspaceOperationError ? cause.message : GIT_VIEW_ERROR);
+          setDetail(null);
+          setDiff(null);
+        }
+      } finally {
+        if (sequence === sequenceRef.current) {
+          busyRef.current = false;
+          setBusy(false);
+        }
+      }
+    },
+    [sourcePath],
+  );
+  useEffect(() => {
+    if (focusCommit) void selectCommit(focusCommit.id);
+  }, [focusCommit, selectCommit]);
+
   if (!repo) return null;
 
   const runHistory = async () => {
@@ -98,38 +139,6 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
       if (sequence === sequenceRef.current) {
         setError(cause instanceof WorkspaceOperationError ? cause.message : GIT_VIEW_ERROR);
         setHistory(null);
-        setDetail(null);
-        setDiff(null);
-      }
-    } finally {
-      if (sequence === sequenceRef.current) {
-        busyRef.current = false;
-        setBusy(false);
-      }
-    }
-  };
-
-  const selectCommit = async (commitId: string) => {
-    if (busyRef.current) return;
-    const sequence = ++sequenceRef.current;
-    busyRef.current = true;
-    setBusy(true);
-    setError(null);
-    setSelectedCommitId(commitId);
-    setDetail(null);
-    setDiff(null);
-    setDiffSelection("commit");
-    try {
-      const [nextDetail, nextDiff] = await Promise.all([
-        repoCommitDetail(repo.path, commitId),
-        repoDiff(repo.path, commitId),
-      ]);
-      if (sequence !== sequenceRef.current) return;
-      setDetail(nextDetail);
-      setDiff(nextDiff);
-    } catch (cause) {
-      if (sequence === sequenceRef.current) {
-        setError(cause instanceof WorkspaceOperationError ? cause.message : GIT_VIEW_ERROR);
         setDetail(null);
         setDiff(null);
       }
@@ -222,10 +231,10 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
             : "히스토리를 불러오면 커밋과 diff를 확인할 수 있습니다."}
       </div>
 
-      {history ? (
+      {history || detail || diff ? (
         <div className="history-layout">
           <div className="history-list" aria-label="커밋 히스토리" role="list">
-            {history.entries.map((entry) => (
+            {history?.entries.map((entry) => (
               <div className="history-entry-row" key={entry.id} role="listitem">
                 <span className="history-graph" aria-hidden="true">
                   <span className="history-graph-node" />
@@ -253,7 +262,7 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
                 </button>
               </div>
             ))}
-            {history.entries.length === 0 ? <div className="dim">commit history가 없습니다.</div> : null}
+            {history?.entries.length === 0 ? <div className="dim">commit history가 없습니다.</div> : null}
           </div>
 
           <div className="history-detail-column">
@@ -289,7 +298,12 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
             </div>
 
             {diff ? (
-              <DiffView result={diff} onOpenFile={onOpenFile} />
+              <DiffView
+                result={diff}
+                onOpenFile={onOpenFile}
+                onBlame={onBlame}
+                commitId={diffSelection === "commit" ? selectedCommitId : null}
+              />
             ) : (
               <div className="history-empty dim">diff를 선택하세요.</div>
             )}
@@ -303,8 +317,12 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
 function DiffView({
   result,
   onOpenFile,
+  onBlame,
+  commitId,
 }: {
   result: DiffResult;
+  commitId: string | null;
+  onBlame?: (file: string, commitId: string | null) => void;
   onOpenFile?: (path: string, line: number | null) => void;
 }) {
   let remainingLines = 2000;
@@ -323,6 +341,15 @@ function DiffView({
             <div className="diff-file-head">
               <strong>{file.status}</strong>
               <span className="mono">{file.path}</span>
+              {onBlame && (
+                <button
+                  type="button"
+                  aria-label={`${file.path} 작성 이력`}
+                  onClick={() => onBlame(file.path, commitId)}
+                >
+                  작성 이력
+                </button>
+              )}
               {file.oldPath ? <span className="mono">← {file.oldPath}</span> : null}
               {onOpenFile && (
                 <button type="button" onClick={() => onOpenFile(file.path, null)}>

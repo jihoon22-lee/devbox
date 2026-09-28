@@ -85,12 +85,13 @@ pub(super) fn require(
     context: &RepositoryContext,
     revision: &str,
     cancel: &AtomicBool,
+    amend: bool,
 ) -> Result<(), String> {
     if revision.len() != 64 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(STALE.into());
     }
     let current = capture(context, cancel)?;
-    if current.revision != revision || current.staged_paths.is_empty() {
+    if current.revision != revision || (!amend && current.staged_paths.is_empty()) {
         return Err(STALE.into());
     }
     Ok(())

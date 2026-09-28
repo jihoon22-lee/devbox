@@ -10,6 +10,75 @@ use product_ipc::workspace::{Lane, LONG_BUDGET_MS};
 )]
 #[ts(optional_fields = nullable)]
 pub enum SourceCall {
+    RepoConflicts {
+        request: crate::commands::PathRequest,
+    },
+    RepoConflictVersions {
+        request: crate::commands::ConflictFileRequest,
+    },
+    RepoConflictResolve {
+        request: crate::commands::ConflictResolveRequest,
+    },
+    RepoOperationContinue {
+        request: crate::commands::OperationRequest,
+    },
+    RepoOperationAbort {
+        request: crate::commands::OperationRequest,
+    },
+    RepoPrStatus {
+        request: crate::commands::PathRequest,
+    },
+    RepoPrList {
+        request: crate::commands::PrListRequest,
+    },
+    RepoPrCreate {
+        request: crate::commands::PrCreateRequest,
+    },
+
+    RepoFileHunks {
+        request: crate::commands::FileHunksRequest,
+    },
+    RepoHunksApply {
+        request: crate::commands::HunksApplyRequest,
+    },
+    RepoLastCommit {
+        request: crate::commands::PathRequest,
+    },
+    RepoBlame {
+        request: crate::commands::BlameRequest,
+    },
+
+    RepoBranches {
+        request: crate::commands::PathRequest,
+    },
+    RepoBranchCreate {
+        request: crate::commands::BranchCreateRequest,
+    },
+    RepoSwitch {
+        request: crate::commands::SwitchRequest,
+    },
+    RepoBranchRename {
+        request: crate::commands::BranchRenameRequest,
+    },
+    RepoBranchDelete {
+        request: crate::commands::BranchDeleteRequest,
+    },
+    RepoStashList {
+        request: crate::commands::PathRequest,
+    },
+    RepoStashPush {
+        request: crate::commands::StashPushRequest,
+    },
+    RepoStashApply {
+        request: crate::commands::StashApplyRequest,
+    },
+    RepoStashDrop {
+        request: crate::commands::StashDropRequest,
+    },
+    RepoStashStore {
+        request: crate::commands::StashStoreRequest,
+    },
+
     InspectAgentWorktree {
         request: crate::commands::InspectAgentWorktreeRequest,
     },
@@ -86,6 +155,28 @@ pub enum SourceCall {
 }
 impl SourceCall {
     pub const METHODS: &'static [&'static str] = &[
+        "repo_conflicts",
+        "repo_conflict_versions",
+        "repo_conflict_resolve",
+        "repo_operation_continue",
+        "repo_operation_abort",
+        "repo_pr_status",
+        "repo_pr_list",
+        "repo_pr_create",
+        "repo_file_hunks",
+        "repo_hunks_apply",
+        "repo_last_commit",
+        "repo_blame",
+        "repo_branches",
+        "repo_branch_create",
+        "repo_switch",
+        "repo_branch_rename",
+        "repo_branch_delete",
+        "repo_stash_list",
+        "repo_stash_push",
+        "repo_stash_apply",
+        "repo_stash_drop",
+        "repo_stash_store",
         "inspect_agent_worktree",
         "repo_merge",
         "remove_agent_worktree",
@@ -114,6 +205,31 @@ impl SourceCall {
     ];
     pub fn method(&self) -> &'static str {
         match self {
+            Self::RepoConflicts { .. } => "repo_conflicts",
+            Self::RepoConflictVersions { .. } => "repo_conflict_versions",
+            Self::RepoConflictResolve { .. } => "repo_conflict_resolve",
+            Self::RepoOperationContinue { .. } => "repo_operation_continue",
+            Self::RepoOperationAbort { .. } => "repo_operation_abort",
+            Self::RepoPrStatus { .. } => "repo_pr_status",
+            Self::RepoPrList { .. } => "repo_pr_list",
+            Self::RepoPrCreate { .. } => "repo_pr_create",
+
+            Self::RepoFileHunks { .. } => "repo_file_hunks",
+            Self::RepoHunksApply { .. } => "repo_hunks_apply",
+            Self::RepoLastCommit { .. } => "repo_last_commit",
+            Self::RepoBlame { .. } => "repo_blame",
+
+            Self::RepoBranches { .. } => "repo_branches",
+            Self::RepoBranchCreate { .. } => "repo_branch_create",
+            Self::RepoSwitch { .. } => "repo_switch",
+            Self::RepoBranchRename { .. } => "repo_branch_rename",
+            Self::RepoBranchDelete { .. } => "repo_branch_delete",
+            Self::RepoStashList { .. } => "repo_stash_list",
+            Self::RepoStashPush { .. } => "repo_stash_push",
+            Self::RepoStashApply { .. } => "repo_stash_apply",
+            Self::RepoStashDrop { .. } => "repo_stash_drop",
+            Self::RepoStashStore { .. } => "repo_stash_store",
+
             Self::InspectAgentWorktree { .. } => "inspect_agent_worktree",
             Self::RepoMerge { .. } => "repo_merge",
             Self::RemoveAgentWorktree { .. } => "remove_agent_worktree",
@@ -145,6 +261,19 @@ impl SourceCall {
         Lane::Source
     }
     pub fn deadline_budget_ms(&self) -> u64 {
+        if matches!(
+            self,
+            Self::RepoBranches { .. }
+                | Self::RepoStashList { .. }
+                | Self::RepoFileHunks { .. }
+                | Self::RepoLastCommit { .. }
+                | Self::RepoBlame { .. }
+                | Self::RepoConflicts { .. }
+                | Self::RepoConflictVersions { .. }
+                | Self::RepoConflictResolve { .. }
+        ) {
+            return product_ipc::workspace::DEFAULT_BUDGET_MS;
+        }
         LONG_BUDGET_MS
     }
 }
@@ -159,6 +288,31 @@ impl SourceCall {
     }
     pub(crate) fn path(&self) -> Option<&str> {
         match self {
+            Self::RepoConflicts { request } => Some(&request.path),
+            Self::RepoConflictVersions { request } => Some(&request.path),
+            Self::RepoConflictResolve { request } => Some(&request.path),
+            Self::RepoOperationContinue { request } => Some(&request.path),
+            Self::RepoOperationAbort { request } => Some(&request.path),
+            Self::RepoPrStatus { request } => Some(&request.path),
+            Self::RepoPrList { request } => Some(&request.path),
+            Self::RepoPrCreate { request } => Some(&request.path),
+
+            Self::RepoFileHunks { request } => Some(&request.path),
+            Self::RepoHunksApply { request } => Some(&request.path),
+            Self::RepoLastCommit { request } => Some(&request.path),
+            Self::RepoBlame { request } => Some(&request.path),
+
+            Self::RepoBranches { request } => Some(&request.path),
+            Self::RepoBranchCreate { request } => Some(&request.path),
+            Self::RepoSwitch { request } => Some(&request.path),
+            Self::RepoBranchRename { request } => Some(&request.path),
+            Self::RepoBranchDelete { request } => Some(&request.path),
+            Self::RepoStashList { request } => Some(&request.path),
+            Self::RepoStashPush { request } => Some(&request.path),
+            Self::RepoStashApply { request } => Some(&request.path),
+            Self::RepoStashDrop { request } => Some(&request.path),
+            Self::RepoStashStore { request } => Some(&request.path),
+
             Self::InspectAgentWorktree { request } => Some(&request.path),
             Self::RepoMerge { request } => Some(&request.path),
             Self::RemoveAgentWorktree { request } => Some(&request.path),
@@ -197,6 +351,22 @@ impl SourceCall {
     }
     pub(crate) fn operation_id_mut(&mut self) -> Option<&mut String> {
         match self {
+            Self::RepoConflictResolve { request } => Some(&mut request.operation_id),
+            Self::RepoOperationContinue { request } => Some(&mut request.operation_id),
+            Self::RepoOperationAbort { request } => Some(&mut request.operation_id),
+            Self::RepoPrCreate { request } => Some(&mut request.operation_id),
+
+            Self::RepoHunksApply { request } => Some(&mut request.operation_id),
+
+            Self::RepoBranchCreate { request } => Some(&mut request.operation_id),
+            Self::RepoSwitch { request } => Some(&mut request.operation_id),
+            Self::RepoBranchRename { request } => Some(&mut request.operation_id),
+            Self::RepoBranchDelete { request } => Some(&mut request.operation_id),
+            Self::RepoStashPush { request } => Some(&mut request.operation_id),
+            Self::RepoStashApply { request } => Some(&mut request.operation_id),
+            Self::RepoStashDrop { request } => Some(&mut request.operation_id),
+            Self::RepoStashStore { request } => Some(&mut request.operation_id),
+
             Self::RepoMerge { request } => Some(&mut request.operation_id),
             Self::RemoveAgentWorktree { request } => Some(&mut request.operation_id),
             Self::RepoStage { request } => Some(&mut request.operation_id),
@@ -216,6 +386,97 @@ impl SourceCall {
 }
 pub(crate) async fn execute_source(call: SourceCall) -> Result<serde_json::Value, String> {
     match call {
+        SourceCall::RepoConflicts { request } => {
+            serde_json::to_value(crate::commands::repo_conflicts(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoConflictVersions { request } => {
+            serde_json::to_value(crate::commands::repo_conflict_versions(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoConflictResolve { request } => {
+            serde_json::to_value(crate::commands::repo_conflict_resolve(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoOperationContinue { request } => {
+            serde_json::to_value(crate::commands::repo_operation_continue(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoOperationAbort { request } => {
+            serde_json::to_value(crate::commands::repo_operation_abort(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoPrStatus { request } => {
+            serde_json::to_value(crate::commands::repo_pr_status(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoPrList { request } => {
+            serde_json::to_value(crate::commands::repo_pr_list(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoPrCreate { request } => {
+            serde_json::to_value(crate::commands::repo_pr_create(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+
+        SourceCall::RepoFileHunks { request } => {
+            serde_json::to_value(crate::commands::repo_file_hunks(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoHunksApply { request } => {
+            serde_json::to_value(crate::commands::repo_hunks_apply(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoLastCommit { request } => {
+            serde_json::to_value(crate::commands::repo_last_commit(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBlame { request } => {
+            serde_json::to_value(crate::commands::repo_blame(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+
+        SourceCall::RepoBranches { request } => {
+            serde_json::to_value(crate::commands::repo_branches(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBranchCreate { request } => {
+            serde_json::to_value(crate::commands::repo_branch_create(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoSwitch { request } => {
+            serde_json::to_value(crate::commands::repo_switch(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBranchRename { request } => {
+            serde_json::to_value(crate::commands::repo_branch_rename(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoBranchDelete { request } => {
+            serde_json::to_value(crate::commands::repo_branch_delete(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashList { request } => {
+            serde_json::to_value(crate::commands::repo_stash_list(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashPush { request } => {
+            serde_json::to_value(crate::commands::repo_stash_push(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashApply { request } => {
+            serde_json::to_value(crate::commands::repo_stash_apply(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashDrop { request } => {
+            serde_json::to_value(crate::commands::repo_stash_drop(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        SourceCall::RepoStashStore { request } => {
+            serde_json::to_value(crate::commands::repo_stash_store(request).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+
         SourceCall::InspectAgentWorktree { request } => {
             serde_json::to_value(crate::commands::inspect_agent_worktree(request).await?)
                 .map_err(|_| "component_response_invalid".into())
@@ -341,6 +602,64 @@ pub fn source_result_types(
 ) -> Result<Vec<(&'static str, String)>, String> {
     export.register::<SourceCall>()?;
     Ok(vec![
+        (
+            "repo_conflicts",
+            export.register::<crate::commands::ConflictState>()?,
+        ),
+        (
+            "repo_conflict_versions",
+            export.register::<crate::commands::ConflictVersions>()?,
+        ),
+        ("repo_conflict_resolve", export.register::<()>()?),
+        ("repo_operation_continue", export.register::<()>()?),
+        ("repo_operation_abort", export.register::<()>()?),
+        (
+            "repo_pr_status",
+            export.register::<crate::commands::PrStatus>()?,
+        ),
+        (
+            "repo_pr_list",
+            export.register::<Vec<crate::commands::PrListItem>>()?,
+        ),
+        (
+            "repo_pr_create",
+            export.register::<crate::commands::PrCreated>()?,
+        ),
+        (
+            "repo_file_hunks",
+            export.register::<crate::commands::FileHunks>()?,
+        ),
+        ("repo_hunks_apply", export.register::<()>()?),
+        (
+            "repo_last_commit",
+            export.register::<crate::commands::LastCommit>()?,
+        ),
+        ("repo_blame", export.register::<crate::commands::Blame>()?),
+        (
+            "repo_branches",
+            export.register::<crate::commands::BranchList>()?,
+        ),
+        ("repo_branch_create", export.register::<()>()?),
+        ("repo_switch", export.register::<()>()?),
+        ("repo_branch_rename", export.register::<()>()?),
+        (
+            "repo_branch_delete",
+            export.register::<crate::commands::DeletedBranch>()?,
+        ),
+        (
+            "repo_stash_list",
+            export.register::<Vec<crate::commands::StashEntry>>()?,
+        ),
+        ("repo_stash_push", export.register::<()>()?),
+        (
+            "repo_stash_apply",
+            export.register::<crate::commands::StashApplyResult>()?,
+        ),
+        (
+            "repo_stash_drop",
+            export.register::<crate::commands::DroppedStash>()?,
+        ),
+        ("repo_stash_store", export.register::<()>()?),
         (
             "repo_merge",
             export.register::<crate::commands::MergeResult>()?,
@@ -579,6 +898,201 @@ mod agent_worktree_tests {
             );
             assert_eq!(call.lane(), Lane::Source);
             assert_eq!(call.deadline_budget_ms(), LONG_BUDGET_MS);
+        }
+    }
+}
+
+#[cfg(test)]
+mod branch_stash_tests {
+    use super::*;
+    #[test]
+    fn branch_stash_calls_bind_paths_operations_and_budgets() {
+        for (method, request, mutation) in [
+            ("repo_branches", serde_json::json!({"path": "/repo"}), false),
+            (
+                "repo_branch_create",
+                serde_json::json!({"name": "x", "startPoint": null, "checkout": true, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_switch",
+                serde_json::json!({"branch": "x", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_branch_rename",
+                serde_json::json!({"from": "a", "to": "b", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_branch_delete",
+                serde_json::json!({"name": "x", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_list",
+                serde_json::json!({"path": "/repo"}),
+                false,
+            ),
+            (
+                "repo_stash_push",
+                serde_json::json!({"message": null, "includeUntracked": false, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_apply",
+                serde_json::json!({"index": 0, "pop": true, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_drop",
+                serde_json::json!({"index": 0, "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_stash_store",
+                serde_json::json!({"commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "message": "message", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+        ] {
+            let mut call: SourceCall = serde_json::from_value(
+                serde_json::json!({"method":method,"args":{"request":request}}),
+            )
+            .unwrap();
+            assert_eq!(call.method(), method);
+            assert!(SourceCall::METHODS.contains(&method));
+            assert_eq!(call.path(), Some("/repo"));
+            assert_eq!(call.lane(), Lane::Source);
+            assert_eq!(call.operation_id_mut().is_some(), mutation);
+            assert_eq!(
+                call.deadline_budget_ms(),
+                if mutation {
+                    LONG_BUDGET_MS
+                } else {
+                    product_ipc::workspace::DEFAULT_BUDGET_MS
+                }
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod hunk_blame_tests {
+    use super::*;
+    #[test]
+    fn hunk_blame_calls_keep_native_scope_and_do_not_accept_patch_text() {
+        for (method, mut request, mutation) in [
+            (
+                "repo_file_hunks",
+                serde_json::json!({"file": "a.txt", "staged": false, "path": "/repo"}),
+                false,
+            ),
+            (
+                "repo_hunks_apply",
+                serde_json::json!({"file": "a.txt", "staged": false, "action": "stage", "hunkIds": ["native-hunk"], "revision": "native-revision", "operationId": "op", "path": "/repo"}),
+                true,
+            ),
+            (
+                "repo_last_commit",
+                serde_json::json!({"path": "/repo"}),
+                false,
+            ),
+            (
+                "repo_blame",
+                serde_json::json!({"file": "a.txt", "commitId": null, "path": "/repo"}),
+                false,
+            ),
+        ] {
+            let mut call: SourceCall = serde_json::from_value(
+                serde_json::json!({"method":method,"args":{"request":request}}),
+            )
+            .unwrap();
+            assert_eq!(call.method(), method);
+            assert!(SourceCall::METHODS.contains(&method));
+            assert_eq!(call.path(), Some("/repo"));
+            assert_eq!(call.lane(), Lane::Source);
+            assert_eq!(call.operation_id_mut().is_some(), mutation);
+            assert_eq!(
+                call.deadline_budget_ms(),
+                if mutation {
+                    LONG_BUDGET_MS
+                } else {
+                    product_ipc::workspace::DEFAULT_BUDGET_MS
+                }
+            );
+            request["patch"] = serde_json::json!("renderer patch");
+            assert!(serde_json::from_value::<SourceCall>(
+                serde_json::json!({"method":method,"args":{"request":request}})
+            )
+            .is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod conflict_pr_tests {
+    use super::*;
+    #[test]
+    fn conflict_pr_calls_keep_exact_scope_mutation_and_budget() {
+        for (method, request, mutation, budget) in [
+            (
+                "repo_conflicts",
+                serde_json::json!({"path": "/repo"}),
+                false,
+                5000,
+            ),
+            (
+                "repo_conflict_versions",
+                serde_json::json!({"file": "a.txt", "path": "/repo"}),
+                false,
+                5000,
+            ),
+            (
+                "repo_conflict_resolve",
+                serde_json::json!({"file": "a.txt", "resolution": {"kind": "content", "text": "resolved"}, "operationId": "op", "path": "/repo"}),
+                true,
+                5000,
+            ),
+            (
+                "repo_operation_continue",
+                serde_json::json!({"operationId": "op", "path": "/repo"}),
+                true,
+                29000,
+            ),
+            (
+                "repo_operation_abort",
+                serde_json::json!({"operationId": "op", "path": "/repo"}),
+                true,
+                29000,
+            ),
+            (
+                "repo_pr_status",
+                serde_json::json!({"path": "/repo"}),
+                false,
+                29000,
+            ),
+            (
+                "repo_pr_list",
+                serde_json::json!({"limit": 10, "path": "/repo"}),
+                false,
+                29000,
+            ),
+            (
+                "repo_pr_create",
+                serde_json::json!({"title": "title", "body": "body", "base": null, "draft": false, "operationId": "op", "path": "/repo"}),
+                true,
+                29000,
+            ),
+        ] {
+            let mut call: SourceCall = serde_json::from_value(
+                serde_json::json!({"method": method, "args": {"request": request}}),
+            )
+            .unwrap();
+            assert_eq!(call.method(), method);
+            assert!(SourceCall::METHODS.contains(&method));
+            assert_eq!(call.path(), Some("/repo"));
+            assert_eq!(call.operation_id_mut().is_some(), mutation);
+            assert_eq!(call.deadline_budget_ms(), budget);
         }
     }
 }

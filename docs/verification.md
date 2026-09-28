@@ -151,6 +151,15 @@ member는 `workspace = true`로 가져오며, 원래 기본 feature가 필요한
 TOML 0.8과 1.1 파서는 기존 해석 동작을 유지하도록 별도 이름으로 선언한다.
 개발·테스트 빌드는 `line-tables-only`로 파일·행 backtrace를 유지하면서 변수 debug 정보를 줄인다.
 
-`target`이 커지면 `cargo install cargo-sweep` 후 한 달에 한 번 `cargo sweep --time 30`으로
-30일 넘게 쓰지 않은 산출물을 지울 수 있다. 전체 삭제(`cargo clean`)는 다음 빌드가 오래
-걸리므로 마지막 수단이다. 검증 중인 다른 worktree가 있을 때는 산출물을 정리하지 않는다.
+디스크 사용량은 작업 시작, 각 과제의 검증 완료, 묶음 완료 시 확인한다. 과제 사이에
+재생성 가능한 오래된 incremental 세대와 중복 테스트 실행 파일을 정리하고, 묶음을
+머지한 뒤에는 CONVENTIONS §8의 순서로 완료한 전용 worktree와 브랜치를 정리한다.
+PR·ledger에는 정리 전후 사용량과 보존한 활성 작업을 기록한다.
+
+공유 Cargo 산출물 정리는 검증과 같은 실행 잠금 안에서 수행한다. 별도로 실행 중인
+cargo·rustc·clippy 프로세스도 확인하고, 다른 worktree가 검증 중이면 정리를 미룬다.
+현재 작업의 최근 산출물, 라이브러리와 빌드 캐시는 보존한다. 사용자 데이터·다른 프로젝트의
+캐시·dirty 또는 미머지 worktree는 디스크 확보 대상으로 삼지 않는다. 전체 삭제
+(`cargo clean`)는 다음 빌드가 오래 걸리므로 마지막 수단이다. `cargo-sweep`을 이미
+사용하는 환경에서는 `cargo sweep --time 30`으로 오래된 산출물을 정리할 수도 있지만,
+월간 정리만으로 단계별 점검을 대체하지 않는다.

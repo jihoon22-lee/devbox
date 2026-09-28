@@ -236,3 +236,27 @@ it("polls resources every ten seconds and stops while inactive or hidden", async
     vi.useRealTimers();
   }
 });
+
+it("keeps a retried merge conflict and opens the base Source context", async () => {
+  const original = call.getMockImplementation()!;
+  call.mockImplementation(async (...args) =>
+    args[1] === "repo_merge" ? { merged: false, head: "a".repeat(40), conflicts: ["fixture.txt"] } : original(...args),
+  );
+  view(agent);
+  fireEvent.click(await screen.findByRole("button", { name: "병합" }));
+  fireEvent.click(await screen.findByRole("button", { name: "병합 확인" }));
+  const resolve = await screen.findByRole("button", { name: "충돌 해결하기" });
+  await waitFor(() => expect((resolve as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(resolve);
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith("source"));
+  expect(selected.worktreeId).toBe("w1");
+  expect(call.mock.calls.filter(([, method]) => method === "repo_merge").slice(-1)[0]?.[2]).toMatchObject({
+    request: { path: "/repo", keepConflicts: true },
+  });
+});
+it("opens a running task's worktree for PR creation", async () => {
+  view();
+  fireEvent.click(await screen.findByRole("button", { name: "PR 만들기" }));
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith("source"));
+  expect(selected.worktreeId).toBe("w2");
+});
