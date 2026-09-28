@@ -1,4 +1,5 @@
 // Shared bounded WebView diagnostic transport. No product/process is launched here.
+import { observeFreshCdp } from "./cdp-fresh-observer.mjs";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { writeFileSync } from "node:fs";
@@ -108,6 +109,7 @@ export async function connect(port, child, deadline = performance.now() + 30_000
           close: () => socket.close(),
           command,
           connectionState,
+          probeNewSession: () => observeFreshCdp(page.webSocketDebuggerUrl, child),
           async evaluate(expression, { timeoutMs = 10_000 } = {}) {
             if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 660_000)
               throw new Error("Invalid fixture CDP deadline");
