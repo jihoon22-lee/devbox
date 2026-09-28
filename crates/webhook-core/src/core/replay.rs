@@ -522,19 +522,36 @@ mod tests {
         );
     }
 
+    fn read_fixture_request(stream: &mut TcpStream) -> String {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut head = Vec::new();
+        let mut byte = [0u8; 1];
+        while !head.ends_with(b"\r\n\r\n") && head.len() < 64 * 1024 {
+            stream.read_exact(&mut byte).unwrap();
+            head.push(byte[0]);
+        }
+        assert!(head.ends_with(b"\r\n\r\n"));
+        let head = String::from_utf8(head).unwrap();
+        let expected = fixture().body;
+        assert!(head.contains(&format!("Content-Length: {}\r\n", expected.len())));
+        // Consume the complete request before responding and closing. Leaving
+        // its body unread can reset the connection on Windows and race the
+        // client's response read, obscuring the status-parser assertions.
+        let mut body = vec![0; expected.len()];
+        stream.read_exact(&mut body).unwrap();
+        assert_eq!(body, expected.as_bytes());
+        head
+    }
+
     #[test]
     fn native_send_uses_loopback_and_returns_status_without_response_body() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = listener.local_addr().unwrap().to_string();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = Vec::new();
-            let mut byte = [0u8; 1];
-            while !request.ends_with(b"\r\n\r\n") && request.len() < 64 * 1024 {
-                stream.read_exact(&mut byte).unwrap();
-                request.push(byte[0]);
-            }
-            let request = String::from_utf8(request).unwrap();
+            let request = read_fixture_request(&mut stream);
             assert!(request.starts_with("POST /hooks/push?event=created HTTP/1.1\r\n"));
             assert!(request.contains("Authorization: [REDACTED]\r\n"));
             assert!(!request.contains("attacker.invalid"));
@@ -558,12 +575,7 @@ mod tests {
         let address = listener.local_addr().unwrap().to_string();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = Vec::new();
-            let mut byte = [0u8; 1];
-            while !request.ends_with(b"\r\n\r\n") && request.len() < 64 * 1024 {
-                stream.read_exact(&mut byte).unwrap();
-                request.push(byte[0]);
-            }
+            read_fixture_request(&mut stream);
             stream
                 .write_all(
                     b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n",
