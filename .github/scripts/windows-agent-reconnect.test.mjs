@@ -82,3 +82,34 @@ test("success is connected and arbitrary native details never enter evidence", a
   assert.equal(reports.at(-1).nativeStatus, "unexpected");
   assert.ok(!JSON.stringify(reports).includes("private-data"));
 });
+
+test("a responsive fresh observer never converts the original reconnect failure into success", async () => {
+  const failure = new Error("original failure");
+  let reconnectCalls = 0;
+  let observations = 0;
+  const reports = [];
+  const fresh = { state: "observed", browserResponsive: true, rendererResponsive: true, nativeStatus: "connected" };
+  const item = {
+    product: "api-studio",
+    cdpBaseline: { ...fresh, nativeStatus: "starting" },
+    cdp: {
+      evaluate: async (expression) => {
+        if (expression.includes("agent_reconnect")) reconnectCalls++;
+        throw failure;
+      },
+      probeNewSession: async () => {
+        observations++;
+        return fresh;
+      },
+    },
+  };
+  await assert.rejects(
+    reconnectAgent(item, "before-stop", (state) => reports.push(state)),
+    (error) => error === failure,
+  );
+  assert.equal(reconnectCalls, 1);
+  assert.equal(observations, 1);
+  assert.equal(reports.at(-1).stage, "failed");
+  assert.deepEqual(reports.at(-1).freshObserver, fresh);
+  assert.deepEqual(reports.at(-1).freshObserverBaseline, item.cdpBaseline);
+});

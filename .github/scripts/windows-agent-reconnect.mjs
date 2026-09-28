@@ -27,12 +27,15 @@ export async function reconnectAgent(item, phase, report) {
         () => "probe_failed",
       );
     const connection = item.cdp.connectionState?.();
+    const freshObserver = await item.cdp.probeNewSession?.().catch(() => ({ state: "observer_failed" }));
     report({
       ...base,
       stage: "failed",
       rendererResponsive,
       nativeStatus,
       ...(connection ? { connection } : {}),
+      ...(freshObserver ? { freshObserver } : {}),
+      ...(item.cdpBaseline ? { freshObserverBaseline: item.cdpBaseline } : {}),
       ...(item.child ? { productExited: item.child.exitCode !== null || item.child.signalCode !== null } : {}),
     });
     throw error;
