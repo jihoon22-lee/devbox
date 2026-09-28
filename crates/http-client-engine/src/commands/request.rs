@@ -2172,7 +2172,7 @@ fn sanitize_persisted_json_with_sealer(
     }
     secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
     let mut value = serde_json::from_str::<serde_json::Value>(serialized).map_err(|_| ())?;
-    sanitize_json_value(&mut value, "", &secrets);
+    sanitize_json_value_in(&mut value, "", &secrets, true);
     let sanitized = serde_json::to_string(&value).map_err(|_| ())?;
     if secrets
         .iter()
@@ -2185,6 +2185,54 @@ fn sanitize_persisted_json_with_sealer(
 }
 
 fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zeroizing<String>]) {
+    sanitize_json_value_in(value, key, secrets, false);
+}
+
+// Only persisted request templates receive the OAuth metadata exception. Response
+// bodies and nested JSON strings still use the ordinary sensitive-key policy.
+fn persisted_oauth_metadata(
+    value: &serde_json::Value,
+    secrets: &[Zeroizing<String>],
+) -> Option<(serde_json::Value, bool)> {
+    if value.get("auth")?.get("kind")?.as_str()? != "oauth2"
+        || !value.get("auth")?.get("oauth2")?.is_object()
+    {
+        return None;
+    }
+    let template = serde_json::from_value::<RequestTemplate>(value.clone()).ok()?;
+    let mut config = template.auth?.oauth2?;
+    let original = serde_json::to_value(&config).ok()?;
+    config.authorization_url = redact_url(&config.authorization_url, secrets, false);
+    config.token_url = redact_url(&config.token_url, secrets, false);
+    config.client_id = redact_text(&config.client_id, secrets);
+    config.scopes = redact_text(&config.scopes, secrets);
+    if !config.client_secret.is_empty() && !is_exact_reference(&config.client_secret) {
+        config.client_secret = REDACTED.into();
+    }
+    for (field, limit) in [
+        (&mut config.authorization_url, 8192),
+        (&mut config.token_url, 8192),
+        (&mut config.client_id, 8192),
+        (&mut config.client_secret, 65536),
+        (&mut config.scopes, 32768),
+    ] {
+        let mut end = field.len().min(limit);
+        while !field.is_char_boundary(end) {
+            end -= 1;
+        }
+        field.truncate(end);
+    }
+    let safe = serde_json::to_value(config).ok()?;
+    let changed = safe != original;
+    Some((safe, changed))
+}
+
+fn sanitize_json_value_in(
+    value: &mut serde_json::Value,
+    key: &str,
+    secrets: &[Zeroizing<String>],
+    persistence: bool,
+) {
     // `requiresSecretReview` is persistence schema metadata, not a credential.
     // Preserve only its exact boolean wire shape; redact every other value under
     // the same name immediately so schema parsing fails closed without leakage.
@@ -2195,6 +2243,9 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
         *value = serde_json::Value::String(REDACTED.to_string());
         return;
     }
+    let oauth = persistence
+        .then(|| persisted_oauth_metadata(value, secrets))
+        .flatten();
     let is_graphql_request = value
         .as_object()
         .and_then(|object| object.get("body_kind"))
@@ -2257,16 +2308,32 @@ fn sanitize_json_value(value: &mut serde_json::Value, key: &str, secrets: &[Zero
     }
     match value {
         serde_json::Value::Object(object) => {
-            for (child_key, child) in object {
+            for (child_key, child) in object.iter_mut() {
                 if is_graphql_request && child_key == "graphql" {
                     continue;
                 }
-                sanitize_json_value(child, child_key, secrets);
+                sanitize_json_value_in(
+                    child,
+                    child_key,
+                    secrets,
+                    persistence && child_key != "body",
+                );
+            }
+            if let Some((config, changed)) = oauth {
+                if let Some(auth) = object
+                    .get_mut("auth")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    auth.insert("oauth2".into(), config);
+                }
+                if changed {
+                    object.insert("requiresSecretReview".into(), true.into());
+                }
             }
         }
         serde_json::Value::Array(array) => {
             for child in array {
-                sanitize_json_value(child, "", secrets);
+                sanitize_json_value_in(child, "", secrets, persistence);
             }
         }
         serde_json::Value::String(text) => {
@@ -4243,6 +4310,54 @@ mod tests {
         );
         vault.clear_current().unwrap();
         assert!(vault.binary_payload(&current).is_err());
+    }
+
+    #[test]
+    fn persisted_oauth_metadata_survives_native_sanitization_without_exempting_response_keys() {
+        let mut request = serde_json::to_value(template()).unwrap();
+        request["auth"] = serde_json::json!({
+            "kind":"oauth2", "username":"", "password":"", "token":"", "api_key":"", "api_value":"",
+            "oauth2": {"grantType":"authorizationCode", "authorizationUrl":"https://auth.example.test/authorize",
+                "tokenUrl":"https://auth.example.test/token", "clientId":"devbox", "clientSecret":"{{CLIENT_SECRET}}", "scopes":"read write"}
+        });
+        request["tls"] = serde_json::json!({"credentialId":"fixture-id", "verify":false});
+        let input = serde_json::json!({"requests":[{"request":request.clone()}], "other":{"tokenUrl":"private-token", "authorizationUrl":"private-auth"}});
+        let output =
+            sanitize_persisted_json_with_sealer(&input.to_string(), &[], &MockSealer).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(
+            saved["requests"][0]["request"]["auth"]["oauth2"],
+            request["auth"]["oauth2"]
+        );
+        assert_eq!(saved["requests"][0]["request"]["tls"], request["tls"]);
+        assert_eq!(saved["other"]["tokenUrl"], REDACTED);
+        assert_eq!(saved["other"]["authorizationUrl"], REDACTED);
+        let response = Redactor::from_secrets(vec![]).redact_body(&request.to_string());
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["auth"]["oauth2"]["tokenUrl"], REDACTED);
+    }
+
+    #[test]
+    fn persisted_oauth_metadata_masks_url_credentials_and_literal_client_secret() {
+        let mut request = serde_json::to_value(template()).unwrap();
+        request["auth"] = serde_json::json!({
+            "kind":"oauth2", "username":"", "password":"", "token":"", "api_key":"", "api_value":"",
+            "oauth2": {"grantType":"clientCredentials", "authorizationUrl":"",
+                "tokenUrl":"https://user:pass@auth.example.test/token?access_token=query-secret",
+                "clientId":"devbox", "clientSecret":"plain-client-secret", "scopes":"read"}
+        });
+        let output =
+            sanitize_persisted_json_with_sealer(&request.to_string(), &[], &MockSealer).unwrap();
+        for secret in ["user:", "pass@", "query-secret", "plain-client-secret"] {
+            assert!(!output.contains(secret), "leaked {secret}");
+        }
+        let saved: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(saved["auth"]["oauth2"]["clientSecret"], REDACTED);
+        assert_eq!(saved["requiresSecretReview"], true);
+        assert!(saved["auth"]["oauth2"]["tokenUrl"]
+            .as_str()
+            .unwrap()
+            .contains("auth.example.test/token"));
     }
 
     #[test]
