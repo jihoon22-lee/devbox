@@ -526,8 +526,8 @@ impl ResponseHeaderVault {
             .lock()
             .map_err(|_| "capture_reference_unavailable")?
             .captures
-            .restore(references, super::captures::now());
-        Ok(())
+            .restore(references, super::captures::now())
+            .map_err(str::to_owned)
     }
 
     fn copy(&self, id: &str, cookies_only: bool) -> Result<String, String> {
@@ -4302,6 +4302,17 @@ mod tests {
                 .unwrap_err();
         assert_eq!(error, "응답 본문이 허용된 크기를 초과했습니다");
         server.join().unwrap();
+    }
+
+    #[test]
+    fn capture_restore_rejects_unissued_or_revoked_references() {
+        let vault = ResponseHeaderVault::default();
+        assert_eq!(
+            vault
+                .restore_captures(&["unissued-reference".into()])
+                .unwrap_err(),
+            "capture_reference_unavailable"
+        );
     }
 
     #[test]

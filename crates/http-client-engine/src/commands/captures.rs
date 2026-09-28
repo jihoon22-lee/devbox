@@ -242,13 +242,24 @@ impl CaptureStore {
             }
         }
     }
-    pub(crate) fn restore(&mut self, references: &[String], now: u64) {
+    pub(crate) fn restore(&mut self, references: &[String], now: u64) -> Result<(), &'static str> {
         self.prune(now);
-        for reference in references.iter().take(MAX_ENTRIES) {
+        if references.len() > MAX_ENTRIES
+            || references.iter().any(|reference| {
+                !self
+                    .entries
+                    .get(reference)
+                    .is_some_and(|entry| entry.discarded.is_some())
+            })
+        {
+            return Err(UNAVAILABLE);
+        }
+        for reference in references {
             if let Some(entry) = self.entries.get_mut(reference) {
                 entry.discarded = None;
             }
         }
+        Ok(())
     }
     pub(crate) fn revoke_request(&mut self, request_id: &str) {
         self.entries
@@ -397,10 +408,18 @@ mod tests {
         assert!(store.reveal("forged", 100, &Mock).is_err());
         store.discard(std::slice::from_ref(&reference), 101);
         assert!(store.reveal(&reference, 102, &Mock).is_err());
-        store.restore(std::slice::from_ref(&reference), 103);
+        assert!(store
+            .restore(&[reference.clone(), "missing".into()], 102)
+            .is_err());
+        assert!(store.reveal(&reference, 102, &Mock).is_err());
+        store
+            .restore(std::slice::from_ref(&reference), 103)
+            .unwrap();
         assert_eq!(store.reveal(&reference, 103, &Mock).unwrap(), "200");
         store.discard(std::slice::from_ref(&reference), 104);
-        store.restore(std::slice::from_ref(&reference), 8105);
+        assert!(store
+            .restore(std::slice::from_ref(&reference), 8105)
+            .is_err());
         assert!(store.reveal(&reference, 8105, &Mock).is_err());
         store.accept("request-b", &mut out, 9000).unwrap();
         let reference = out.values[0].reference.clone();

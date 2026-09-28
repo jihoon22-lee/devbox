@@ -322,3 +322,29 @@ it("revokes native references on discard, restores only unchanged state, and rej
   session.set("new", "value", null);
   await expect(staleUndo()).rejects.toThrow();
 });
+it("discarding all captures keeps tombstones instead of reviving older environment values", async () => {
+  const session = new SessionVariables();
+  session.set("token", "new", "sealed-new");
+  session.delete("missing");
+  const environment = [
+    { key: "token", value: "old", secret: false },
+    { key: "missing", value: "old-missing", secret: false },
+  ];
+  const undo = session.discard();
+  expect(session.merge(environment)).toEqual([]);
+  await undo();
+  expect(session.merge(environment)).toEqual([{ key: "token", value: "sealed-new", secret: true }]);
+});
+it("does not revive sealed values when native rejects an expired undo reference", async () => {
+  const session = new SessionVariables({
+    reveal: vi.fn(),
+    discard: vi.fn(async () => {}),
+    restore: vi.fn(async () => {
+      throw new Error("expired");
+    }),
+  });
+  session.setNative({ name: "token", value: "sealed", reference: "expired-reference" });
+  const undo = session.discard();
+  await expect(undo()).rejects.toThrow();
+  expect(session.forSend()).toEqual([]);
+});

@@ -96,8 +96,7 @@ export class SessionVariables {
             () => false,
           )
         : null;
-    if (names) for (const name of names) this.delete(name);
-    else this.clear();
+    for (const name of names ?? [...this.values.keys()]) this.delete(name);
     const revision = this.revision;
     return async () => {
       if (this.revision !== revision) throw new Error("그 사이 바뀐 내용이 있어 되돌리지 않았습니다.");
