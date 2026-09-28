@@ -32,6 +32,7 @@ export async function reconnectAgent(item, phase, report) {
       );
     const connection = item.cdp.connectionState?.();
     const freshObserver = await item.cdp.probeNewSession?.().catch(() => ({ state: "observer_failed" }));
+    const nativeObserver = await item.inspectCdpHost?.().catch(() => ({ state: "probe_failed" }));
     report({
       ...base,
       stage: "failed",
@@ -39,6 +40,7 @@ export async function reconnectAgent(item, phase, report) {
       nativeStatus,
       ...(connection ? { connection } : {}),
       ...(freshObserver ? { freshObserver } : {}),
+      ...(nativeObserver ? { nativeObserver } : {}),
       ...(item.cdpBaseline ? { freshObserverBaseline: item.cdpBaseline } : {}),
       ...(item.child ? { productExited: item.child.exitCode !== null || item.child.signalCode !== null } : {}),
     });
