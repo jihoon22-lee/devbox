@@ -67,3 +67,23 @@ mod tests {
         assert_eq!(parse_threshold_ms(""), DEFAULT_IDLE_THRESHOLD_MS);
     }
 }
+
+/// LASTINPUTINFO exposes the low 32 bits even when the uptime clock is 64-bit.
+/// Subtract in the same wrapping tick domain so an uptime wrap is not an idle day.
+pub fn duration_from_input_ticks(now: u64, last_input: u32) -> i64 {
+    i64::from((now as u32).wrapping_sub(last_input))
+}
+#[cfg(test)]
+mod tick_wrap_tests {
+    #[test]
+    fn input_ticks_share_the_low_32_bit_domain_across_uptime_wrap() {
+        assert_eq!(
+            super::duration_from_input_ticks(u64::from(u32::MAX) + 101, u32::MAX - 99),
+            200
+        );
+        assert_eq!(
+            super::duration_from_input_ticks((1u64 << 32) + 2000, 1000),
+            1000
+        );
+    }
+}

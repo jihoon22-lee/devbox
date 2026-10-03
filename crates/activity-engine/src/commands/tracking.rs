@@ -373,9 +373,10 @@ fn last_input_ms() -> Option<i64> {
             dwTime: 0,
         };
         if GetLastInputInfo(&mut info).as_bool() {
-            let last = u64::from(info.dwTime);
-            let now_tick = GetTickCount64();
-            Some((now_tick.saturating_sub(last)) as i64)
+            Some(crate::core::idle::duration_from_input_ticks(
+                GetTickCount64(),
+                info.dwTime,
+            ))
         } else {
             None
         }
