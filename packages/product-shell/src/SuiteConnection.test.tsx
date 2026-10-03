@@ -114,10 +114,13 @@ it("clears recovered read errors without hiding a separate failed mutation", asy
   await act(async () => {});
   expect(screen.getByText(/제품 연결을 완료하지 못했습니다/)).toBeTruthy();
 });
-it("does not query or connect a pending installation", async () => {
+it("allows owner readiness connection during setup without enabling business settings", async () => {
+  tauri.invoke.mockImplementation(async (_cmd: string, args: ConnectionArgs) =>
+    reply({ connected: true, generation: "g1", mode: "auto", issue: null }, args),
+  );
   render(<SuiteConnection description={{ ...description, deliveryState: "import" }} route="overview" />);
-  await act(async () => {});
-  expect(tauri.invoke).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "이 설치 확인" })).toBeNull();
-  expect(screen.getByRole("status").textContent).toContain("준비");
+  await screen.findByText("이 설치의 제품이 연결되어 있습니다.");
+  expect(tauri.invoke.mock.calls.every(([, args]) => args.request.method.kind === "status")).toBe(true);
+  expect(screen.queryByText("Shortcut settings")).toBeNull();
+  expect(screen.getByText(/활성화 전에는 일반 작업과 Agent 실행이 차단/)).toBeTruthy();
 });

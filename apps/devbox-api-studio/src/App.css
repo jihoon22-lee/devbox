@@ -80,3 +80,31 @@
   min-height: 280px;
   height: auto;
 }
+
+.product-shell {
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: minmax(64px, auto) auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.product-shell > main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.shell-toolbar {
+  flex: 0 0 auto;
+}
+.product-shell > main > .api-feature-requests,
+.product-shell > main > .api-feature-webhooks,
+.product-shell > main > .api-feature-transforms {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  .product-shell {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+}

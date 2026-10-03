@@ -29,7 +29,10 @@ const issues: Record<string, string> = {
   suite_image_unavailable: "실행 파일 위치를 확인하지 못해 제품을 연결하지 않았습니다.",
 };
 export default function SuiteConnection({ description, route }: { description: Description; route: string }) {
-  const available = deriveAvailability(description).data;
+  const dataAvailable = deriveAvailability(description).data;
+  // The verified product bus carries owner readiness before activation. It is
+  // distinct from the Agent/business connection, which remains gated.
+  const available = ["direct", "committed", "import", "health", "recover"].includes(description.deliveryState ?? "");
   const [readIssue, setReadIssue] = useState("");
   const [review, setReview] = useState<Review | null>(null),
     [status, setStatus] = useState<ConnectionStatus | null>(null);
@@ -108,11 +111,16 @@ export default function SuiteConnection({ description, route }: { description: D
       removers.forEach((remove) => remove());
     };
   }, [call, available]);
-  if (!available) return <p role="status">설치 준비가 끝나면 제품 연결을 사용할 수 있습니다.</p>;
+  if (!available) return <p role="status">현재 설치 상태를 확인할 수 없어 제품 연결을 변경하지 않습니다.</p>;
   return (
     <section aria-label="제품 연결">
       <h2>제품 연결</h2>
       <p>같은 설치 폴더의 제품은 자동으로 서로 연결되어 명령과 선택한 작업을 주고받습니다.</p>
+      {!dataAvailable && (
+        <p role="status">
+          설치 준비 상태를 확인하기 위한 제품 연결입니다. 활성화 전에는 일반 작업과 Agent 실행이 차단됩니다.
+        </p>
+      )}
       {status?.connected ? (
         <>
           <p role="status">이 설치의 제품이 연결되어 있습니다.</p>
@@ -175,7 +183,7 @@ export default function SuiteConnection({ description, route }: { description: D
           </button>
         </div>
       )}
-      {status?.connected && (
+      {status?.connected && dataAvailable && (
         <Suspense fallback={<p role="status">단축키 설정을 불러오고 있습니다…</p>}>
           <ShortcutSettings description={description} route={route} />
         </Suspense>
