@@ -1,11 +1,34 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useLayoutEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { messageOf, useOperation } from "./useOperation";
 
 afterEach(cleanup);
 
 describe("useOperation", () => {
+  it("accepts work started by a committed layout callback before passive effects", async () => {
+    let finish!: (value: string) => void;
+    let pending!: Promise<string | undefined>;
+    const task = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result } = renderHook(() => {
+      const operation = useOperation();
+      useLayoutEffect(() => {
+        pending = operation.run(task);
+      }, [operation.run]);
+      return operation;
+    });
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(result.current.busy).toBe(true);
+    await act(async () => finish("committed"));
+    await expect(pending).resolves.toBe("committed");
+    expect(result.current.busy).toBe(false);
+  });
+
   it("aborts an older operation and keeps only the latest result", async () => {
     const { result } = renderHook(() => useOperation());
     let finish!: (value: string) => void;
