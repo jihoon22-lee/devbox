@@ -1,7 +1,14 @@
 import { isKeyboardActivation } from "@devbox/a11y";
 import { foldersOf } from "../lib/collections";
 import { useLayoutEffect, useRef, useState } from "react";
-import { addVariable, renameVariable, removeVariable, variableNameError, removeEnvironment, setVariable } from "../lib/environments";
+import {
+  addVariable,
+  renameVariable,
+  removeVariable,
+  variableNameError,
+  removeEnvironment,
+  setVariable,
+} from "../lib/environments";
 import { toRequestTemplate } from "../lib/persistence";
 import {
   historyDisplayLabel,
@@ -144,9 +151,11 @@ export function RequestSidebar({
   useLayoutEffect(() => {
     if (pendingFocus.current === null) return;
     const fields = variablesContainer.current?.querySelectorAll<HTMLInputElement>(".env-var-key");
-    const index = pendingFocus.current;
+    const variableCount = currentEnv?.variables.length ?? 0;
+    const index = Math.min(pendingFocus.current, Math.max(0, variableCount - 1));
+    if ((fields?.length ?? 0) !== variableCount) return;
     pendingFocus.current = null;
-    if (fields?.length) fields[Math.min(index, fields.length - 1)].focus();
+    if (fields?.length) fields[index].focus();
     else variablesContainer.current?.querySelector<HTMLInputElement>(".env-new-variable")?.focus();
   }, [currentEnv]);
   return (
@@ -475,17 +484,27 @@ export function RequestSidebar({
                 aria-describedby={nameErrors[`${currentEnv.id}:${v.key}`] ? `env-name-error-${index}` : undefined}
                 value={nameDrafts[`${currentEnv.id}:${v.key}`] ?? v.key}
                 disabled={environmentBusy || transferBusy || !persistenceReady}
-                onChange={event => { const value = event.currentTarget.value; setNameDrafts(current => ({...current, [`${currentEnv.id}:${v.key}`]: value})); }}
-                onBlur={event => {
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setNameDrafts((current) => ({ ...current, [`${currentEnv.id}:${v.key}`]: value }));
+                }}
+                onBlur={(event) => {
                   const key = event.currentTarget.value;
                   const identity = `${currentEnv.id}:${v.key}`;
                   const error = variableNameError(key, currentEnv, v.key);
-                  setNameErrors(current => ({...current, [identity]: error ?? ""}));
-                  if (!error && key !== v.key) void tryPersistEnvs(renameVariable(envStoreRef.current, currentEnv.id, v.key, key));
+                  setNameErrors((current) => ({ ...current, [identity]: error ?? "" }));
+                  if (!error && key !== v.key)
+                    void tryPersistEnvs(renameVariable(envStoreRef.current, currentEnv.id, v.key, key));
                 }}
-                onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur(); }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur();
+                }}
               />
-              {nameErrors[`${currentEnv.id}:${v.key}`] && <span id={`env-name-error-${index}`} role="alert">{nameErrors[`${currentEnv.id}:${v.key}`]}</span>}
+              {nameErrors[`${currentEnv.id}:${v.key}`] && (
+                <span id={`env-name-error-${index}`} role="alert">
+                  {nameErrors[`${currentEnv.id}:${v.key}`]}
+                </span>
+              )}
               {v.secret ? (
                 <>
                   <span
@@ -544,16 +563,32 @@ export function RequestSidebar({
                   </button>
                 </>
               )}
-              <button className="btn mini" aria-label={`환경 변수 ${v.key} 삭제`} disabled={environmentBusy || transferBusy || !persistenceReady} onClick={() => {
-                if (!window.confirm(`${v.key} 변수를 삭제할까요? 요청의 변수 참조는 자동 변경하지 않습니다.`)) return;
-                pendingFocus.current = index;
-                void tryPersistEnvs(removeVariable(envStoreRef.current, currentEnv.id, v.key));
-              }}>삭제</button>
+              <button
+                className="btn mini"
+                aria-label={`환경 변수 ${v.key} 삭제`}
+                disabled={environmentBusy || transferBusy || !persistenceReady}
+                onClick={() => {
+                  if (!window.confirm(`${v.key} 변수를 삭제할까요? 요청의 변수 참조는 자동 변경하지 않습니다.`)) return;
+                  pendingFocus.current = index;
+                  void tryPersistEnvs(removeVariable(envStoreRef.current, currentEnv.id, v.key));
+                }}
+              >
+                삭제
+              </button>
             </div>
           ))}
-          {currentEnv.variables.length === 0 && <div className="dim">변수 없음 — baseUrl 같은 이름을 추가하고 {"{{baseUrl}}"}를 요청에 쓰세요.</div>}
+          {currentEnv.variables.length === 0 && (
+            <div className="dim">변수 없음 — baseUrl 같은 이름을 추가하고 {"{{baseUrl}}"}를 요청에 쓰세요.</div>
+          )}
           <div className="env-add-var">
-            <input className="coll-input env-new-variable" aria-label="새 변수 이름" placeholder="baseUrl (비우면 자동 이름)" value={newVariableName} disabled={environmentBusy || transferBusy || !persistenceReady} onChange={event => setNewVariableName(event.currentTarget.value)} />
+            <input
+              className="coll-input env-new-variable"
+              aria-label="새 변수 이름"
+              placeholder="baseUrl (비우면 자동 이름)"
+              value={newVariableName}
+              disabled={environmentBusy || transferBusy || !persistenceReady}
+              onChange={(event) => setNewVariableName(event.currentTarget.value)}
+            />
             {nameErrors.new && <span role="alert">{nameErrors.new}</span>}
             <button
               className="btn"
@@ -562,10 +597,15 @@ export function RequestSidebar({
                 try {
                   const next = addVariable(envStoreRef.current, currentEnv.id, newVariableName);
                   pendingFocus.current = currentEnv.variables.length;
-                  setNameErrors(current => ({...current, new: ""}));
+                  setNameErrors((current) => ({ ...current, new: "" }));
                   void tryPersistEnvs(next);
                   setNewVariableName("");
-                } catch (cause) { setNameErrors(current => ({...current, new: cause instanceof Error ? cause.message : "변수 이름을 확인하세요."})); }
+                } catch (cause) {
+                  setNameErrors((current) => ({
+                    ...current,
+                    new: cause instanceof Error ? cause.message : "변수 이름을 확인하세요.",
+                  }));
+                }
               }}
             >
               + 변수

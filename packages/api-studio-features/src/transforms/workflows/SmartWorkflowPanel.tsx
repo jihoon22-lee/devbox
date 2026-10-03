@@ -32,7 +32,8 @@ import {
   sanitizeWorkflowMetadata,
   toggleFavoriteTool,
   upsertPipeline,
-  removePipeline, WORKFLOW_STORAGE_LIMITS,
+  removePipeline,
+  WORKFLOW_STORAGE_LIMITS,
   WORKFLOW_STORAGE_ERROR,
   type WorkflowMetadata,
   type WorkflowPersistence,
@@ -126,10 +127,14 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   const pendingStepFocus = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (pendingStepFocus.current === null) return;
-    const buttons = stepList.current?.querySelectorAll<HTMLButtonElement>("button");
-    const index = pendingStepFocus.current;
+    const index = Math.min(pendingStepFocus.current, Math.max(0, steps.length - 1));
+    const step = steps[index];
+    const button = step
+      ? stepList.current?.querySelector<HTMLButtonElement>(`button[aria-describedby="smart-workflow-step-${index}"]`)
+      : null;
+    if (step && !button) return;
     pendingStepFocus.current = null;
-    if (buttons?.length) buttons[Math.min(index, buttons.length - 1)].focus();
+    if (button) button.focus();
     else addStepButton.current?.focus();
   }, [steps]);
   const [output, setOutput] = useState("");
@@ -229,7 +234,11 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     }
   };
 
-  const markEdited = () => { draftRevision.current++; setDirty(true); setSaveState(current => current === "saving" ? "saving" : "idle"); };
+  const markEdited = () => {
+    draftRevision.current++;
+    setDirty(true);
+    setSaveState((current) => (current === "saving" ? "saving" : "idle"));
+  };
   const newPipeline = () => {
     draftRevision.current++;
     setSelectedPipelineId(null);
@@ -237,7 +246,8 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     setSelectedStepId(firstCompatibleTransformerId(inputType));
     setDirty(false);
     setSaveState("idle");
-    setOutput(""); setPipelineError(null);
+    setOutput("");
+    setPipelineError(null);
   };
   const deletePipeline = async (id: string) => {
     if (!window.confirm(`${id} 파이프라인을 삭제할까요?`)) return;
@@ -457,10 +467,29 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         <div id="smart-workflow-pipeline-title" className="smart-workflow-section-title">
           타입 지정 파이프라인
         </div>
-        <p role="status">편집 대상: {selectedPipelineId ?? "새 파이프라인"} · {dirty ? "변경사항 있음" : "변경사항 없음"}</p>
-        <p role="status">{saveState === "saving" ? "저장 중…" : saveState === "saved" ? (dirty ? "이전 변경 저장 완료 — 현재 변경사항은 미저장" : "저장 완료") : saveState === "error" ? "저장 실패 — 앱을 다시 열어 저장 상태를 확인하세요." : ""}</p>
-        <p>{metadata.pipelines.length}/{WORKFLOW_STORAGE_LIMITS.maxPipelines}개 저장됨{metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines ? " — 기존 항목을 수정하거나 삭제한 뒤 새로 저장하세요." : ""}</p>
-        <button type="button" className="btn" onClick={newPipeline} disabled={saveState === "saving"}>새 파이프라인</button>
+        <p role="status">
+          편집 대상: {selectedPipelineId ?? "새 파이프라인"} · {dirty ? "변경사항 있음" : "변경사항 없음"}
+        </p>
+        <p role="status">
+          {saveState === "saving"
+            ? "저장 중…"
+            : saveState === "saved"
+              ? dirty
+                ? "이전 변경 저장 완료 — 현재 변경사항은 미저장"
+                : "저장 완료"
+              : saveState === "error"
+                ? "저장 실패 — 앱을 다시 열어 저장 상태를 확인하세요."
+                : ""}
+        </p>
+        <p>
+          {metadata.pipelines.length}/{WORKFLOW_STORAGE_LIMITS.maxPipelines}개 저장됨
+          {metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines
+            ? " — 기존 항목을 수정하거나 삭제한 뒤 새로 저장하세요."
+            : ""}
+        </p>
+        <button type="button" className="btn" onClick={newPipeline} disabled={saveState === "saving"}>
+          새 파이프라인
+        </button>
         <div className="smart-workflow-pipeline-toolbar">
           <label>
             입력 형식
@@ -547,7 +576,13 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
             type="button"
             className="btn"
             onClick={() => void savePipeline()}
-            disabled={steps.length === 0 || !loaded || !storageWritable || saveState === "saving" || (selectedPipelineId === null && metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines)}
+            disabled={
+              steps.length === 0 ||
+              !loaded ||
+              !storageWritable ||
+              saveState === "saving" ||
+              (selectedPipelineId === null && metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines)
+            }
           >
             파이프라인 저장
           </button>
@@ -626,19 +661,27 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
             ) : null}
             {metadata.pipelines.map((pipeline) => (
               <div key={pipeline.id}>
-              <button
-                type="button"
-                className={`smart-workflow-chip ${pipeline.id === selectedPipelineId ? "selected" : ""}`}
-                key={pipeline.id}
-                disabled={saveState === "saving"}
-                onClick={() => loadPipeline(pipeline.id)}
-              >
-                {pipeline.id}:{" "}
-                {pipeline.steps
-                  .map((step) => TRANSFORMER_BY_ID.get(step.transformerId)?.label ?? "지원하지 않는 단계")
-                  .join(" → ")}
-              </button>
-              <button type="button" className="btn mini" aria-label={`${pipeline.id} 파이프라인 삭제`} disabled={!storageWritable || saveState === "saving"} onClick={() => void deletePipeline(pipeline.id)}>삭제</button>
+                <button
+                  type="button"
+                  className={`smart-workflow-chip ${pipeline.id === selectedPipelineId ? "selected" : ""}`}
+                  key={pipeline.id}
+                  disabled={saveState === "saving"}
+                  onClick={() => loadPipeline(pipeline.id)}
+                >
+                  {pipeline.id}:{" "}
+                  {pipeline.steps
+                    .map((step) => TRANSFORMER_BY_ID.get(step.transformerId)?.label ?? "지원하지 않는 단계")
+                    .join(" → ")}
+                </button>
+                <button
+                  type="button"
+                  className="btn mini"
+                  aria-label={`${pipeline.id} 파이프라인 삭제`}
+                  disabled={!storageWritable || saveState === "saving"}
+                  onClick={() => void deletePipeline(pipeline.id)}
+                >
+                  삭제
+                </button>
               </div>
             ))}
           </div>

@@ -50,13 +50,26 @@ afterEach(() => vi.unstubAllGlobals());
 it("preserves encoded query and form values and excludes a hidden None body", async () => {
   const fetchMock = vi.fn(async () => new Response("ok"));
   vi.stubGlobal("fetch", fetchMock);
-  const pairs = [["q", "a&admin=true"], ["q", "a#b"], ["plus", "a+b"], ["한글", " 한 글 "], ["empty", ""]];
-  const request = { ...emptyRequest(), method: "POST", url: "https://example.test/?existing=ok#fragment", params: pairs.map(([key, value]) => ({key, value})), body_kind: "form", body: pairs.map(([key, value]) => `${key}=${value}`).join("\n") };
+  const pairs = [
+    ["q", "a&admin=true"],
+    ["q", "a#b"],
+    ["plus", "a+b"],
+    ["한글", " 한 글 "],
+    ["empty", ""],
+  ];
+  const request = {
+    ...emptyRequest(),
+    method: "POST",
+    url: "https://example.test/?existing=ok#fragment",
+    params: pairs.map(([key, value]) => ({ key, value })),
+    body_kind: "form",
+    body: pairs.map(([key, value]) => `${key}=${value}`).join("\n"),
+  };
   await sendRequest(request, []);
   const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
   expect([...new URL(url).searchParams]).toEqual([["existing", "ok"], ...pairs]);
   expect(new URL(url).hash).toBe("#fragment");
   expect([...new URLSearchParams(init.body as string)]).toEqual(pairs);
-  await sendRequest({...request, body_kind: "none", body: "{{hidden}}"}, []);
+  await sendRequest({ ...request, body_kind: "none", body: "{{hidden}}" }, []);
   expect((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body).toBeUndefined();
 });

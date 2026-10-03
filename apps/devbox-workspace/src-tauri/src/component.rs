@@ -387,10 +387,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .close_review
                 .lock()
                 .is_ok_and(|review| review.approved())
+                && request_close_review(app)
             {
-                if request_close_review(app) {
-                    return;
-                }
+                return;
             }
             if runtime
                 .shutdown_started

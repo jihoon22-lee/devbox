@@ -6,7 +6,7 @@ import { bindTypedCall } from "@devbox/workspace-features/typed";
 import type { RegistryCall } from "@devbox/workspace-features/generated/RegistryCall";
 import type { RegistryResults } from "@devbox/workspace-features/generated/registry-results";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall } from "./native";
 import { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
@@ -94,8 +94,9 @@ export default function RegistryGate({
       : null;
   const [status, setStatus] = useState<Status>({ phase: "loading" });
   const [registry, updateRegistry] = useState<Registry | null>(null);
-  const setRegistry = (next: Registry) =>
+  const setRegistry = useCallback((next: Registry) => {
     updateRegistry((previous) => (previous && previous.revision > next.revision ? previous : next));
+  }, []);
   useEffect(() => {
     if (canonicalRegistry)
       updateRegistry((previous) =>
@@ -180,7 +181,7 @@ export default function RegistryGate({
       if (currentPreview.current)
         void registryCall("cancel_registration", { previewId: currentPreview.current }).catch(() => {});
     };
-  }, []);
+  }, [setRegistry, setupOnly]);
   async function act(action: () => Promise<void>) {
     if (busy || acting.current) return;
     acting.current = true;

@@ -81,7 +81,11 @@ export function RequestParameters({
       )}
 
       {tab === "params" && (
-        <KeyValueEditor rows={req.params} onChange={(params) => setReq({ ...req, params })} namePlaceholder="쿼리 이름" />
+        <KeyValueEditor
+          rows={req.params}
+          onChange={(params) => setReq({ ...req, params })}
+          namePlaceholder="쿼리 이름"
+        />
       )}
       {tab === "headers" && (
         <HeaderTable

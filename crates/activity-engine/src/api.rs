@@ -380,11 +380,19 @@ mod tests {
                 serde_json::json!({"method":"app_stats","args":{"start":0,"end":1}}),
                 "app_stats",
             ),
+            (
+                serde_json::json!({"method":"collection_status","args":{}}),
+                "collection_status",
+            ),
+            (
+                serde_json::json!({"method":"regenerate_knowledge_draft","args":{"handoffId":"history-entry"}}),
+                "regenerate_knowledge_draft",
+            ),
         ] {
             let call: ActivityCall = serde_json::from_value(value).unwrap();
             assert_eq!(call.method(), method);
         }
-        assert_eq!(METHODS.len(), 24);
+        assert_eq!(METHODS.len(), 26);
         assert!(serde_json::from_value::<ActivityCall>(
             serde_json::json!({"method":"stop_tracking","args":{"unexpected":1}})
         )

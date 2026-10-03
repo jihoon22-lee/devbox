@@ -881,7 +881,11 @@ export function GrpcLab({ native }: GrpcLabProps) {
                   메시지 {result.responseMessageCount}개 · {result.elapsedMs}ms
                 </span>
               </div>
-              {!result.ok && result.responseMessageCount > 0 && <p role="status">{result.responseMessageCount}개 수신 후 {result.status} 종료 — 받은 메시지를 보존했습니다.</p>}
+              {!result.ok && result.responseMessageCount > 0 && (
+                <p role="status">
+                  {result.responseMessageCount}개 수신 후 {result.status} 종료 — 받은 메시지를 보존했습니다.
+                </p>
+              )}
               <pre>{boundedJson(result.responses, 1024 * 1024)}</pre>
             </section>
           )}

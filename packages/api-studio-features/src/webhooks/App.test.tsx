@@ -1461,7 +1461,9 @@ describe("Webhook Lab history and rule context menus", () => {
     listFixturesMock.mockRejectedValue(new Error("/tmp/private/fixture-secret.json: Bearer raw-secret"));
     render(<App />);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("목록을 갱신하지 못했습니다. 요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.");
+    expect(alert.textContent).toBe(
+      "목록을 갱신하지 못했습니다. 요청을 처리하지 못했습니다. 입력과 서버 상태를 확인하세요.",
+    );
     expect(document.body.textContent).not.toContain("private/fixture-secret");
     expect(document.body.textContent).not.toContain("raw-secret");
   });
@@ -1498,29 +1500,39 @@ it("polls external arrivals only while active and preserves the rule draft", asy
   vi.useFakeTimers();
   try {
     const view = render(<App active />);
-    await act(async () => { await Promise.resolve(); });
-    fireEvent.change(screen.getByLabelText("path"), {target:{value:"/unsaved-draft"}});
-    history.push({...initialHistory[0],id:3,url:"/new-hook"});
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.change(screen.getByLabelText("path"), { target: { value: "/unsaved-draft" } });
+    history.push({ ...initialHistory[0], id: 3, url: "/new-hook" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
     expect(screen.getByText("/new-hook")).toBeTruthy();
     expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/unsaved-draft");
     view.rerender(<App active={false} />);
     const hiddenReads = listHistoryMock.mock.calls.length;
-    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
     expect(listHistoryMock).toHaveBeenCalledTimes(hiddenReads);
-    history.push({...initialHistory[0],id:4,url:"/return-hook"});
-    await act(async () => { view.rerender(<App active />); });
+    history.push({ ...initialHistory[0], id: 4, url: "/return-hook" });
+    await act(async () => {
+      view.rerender(<App active />);
+    });
     expect(screen.getByText("/return-hook")).toBeTruthy();
     expect(stopServerMock).not.toHaveBeenCalled();
-  } finally { vi.useRealTimers(); }
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("retains the last successful records after a read failure and clears only the read error on refresh", async () => {
   render(<App />);
   await screen.findByText("요청 기록 (2)");
   listHistoryMock.mockRejectedValueOnce(new Error("synthetic-read-failure"));
-  fireEvent.click(screen.getByRole("button", {name:"새로 고침"}));
+  fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
   await screen.findByText(/목록을 갱신하지 못했습니다/);
   expect(screen.getByText("요청 기록 (2)")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", {name:"새로 고침"}));
+  fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
   await waitFor(() => expect(screen.queryByText(/목록을 갱신하지 못했습니다/)).toBeNull());
 });

@@ -351,10 +351,25 @@ it("does not revive sealed values when native rejects an expired undo reference"
 
 describe("active request fields", () => {
   it("ignores hidden body and authentication drafts until selected", () => {
-    const request = { ...emptyRequest(), body: "{{body}}", auth: { kind: "none" as const, username: "{{user}}", password: "{{password}}", token: "{{token}}", api_key: "{{key}}", api_value: "{{value}}" } };
+    const request = {
+      ...emptyRequest(),
+      body: "{{body}}",
+      auth: {
+        kind: "none" as const,
+        username: "{{user}}",
+        password: "{{password}}",
+        token: "{{token}}",
+        api_key: "{{key}}",
+        api_value: "{{value}}",
+      },
+    };
     expect(missingVariables(request, new Set())).toEqual([]);
     expect(missingVariables({ ...request, body_kind: "json" }, new Set())).toEqual(["body"]);
-    for (const [kind, expected] of [["basic", ["user", "password"]], ["bearer", ["token"]], ["apikey", ["key", "value"]]] as const) {
+    for (const [kind, expected] of [
+      ["basic", ["user", "password"]],
+      ["bearer", ["token"]],
+      ["apikey", ["key", "value"]],
+    ] as const) {
       expect(missingVariables({ ...request, auth: { ...request.auth, kind } }, new Set())).toEqual(expected);
     }
   });

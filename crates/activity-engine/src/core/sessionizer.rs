@@ -93,7 +93,7 @@ impl Sessionizer {
         if let Some(closed) = self.finish(ts) {
             self.pending.push(closed);
         }
-        self.pending.drain(..).collect()
+        std::mem::take(&mut self.pending)
     }
 
     /// 현재 열린 세션을 마감한다 (앱 종료/추적 중지 시).

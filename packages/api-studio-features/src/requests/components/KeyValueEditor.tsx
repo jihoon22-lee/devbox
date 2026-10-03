@@ -16,9 +16,10 @@ export function KeyValueEditor({
   useLayoutEffect(() => {
     if (pendingFocus.current === null) return;
     const fields = container.current?.querySelectorAll<HTMLInputElement>(".kv-row input:first-child");
-    const index = pendingFocus.current;
+    const index = Math.min(pendingFocus.current, Math.max(0, rows.length - 1));
+    if ((fields?.length ?? 0) !== rows.length) return;
     pendingFocus.current = null;
-    if (fields?.length) fields[Math.min(index, fields.length - 1)].focus();
+    if (fields?.length) fields[index].focus();
     else container.current?.querySelector<HTMLButtonElement>(".kv-add")?.focus();
   }, [rows]);
   const update = (i: number, patch: Partial<KeyValue>) => {
@@ -42,15 +43,25 @@ export function KeyValueEditor({
             onChange={(e) => update(i, { value: e.currentTarget.value })}
             spellCheck={false}
           />
-          <button className="kv-del" aria-label={`${label} ${r.key || i + 1} 삭제`} onClick={() => {
-            pendingFocus.current = i;
-            onChange(rows.filter((_, idx) => idx !== i));
-          }}>
+          <button
+            className="kv-del"
+            aria-label={`${label} ${r.key || i + 1} 삭제`}
+            onClick={() => {
+              pendingFocus.current = i;
+              onChange(rows.filter((_, idx) => idx !== i));
+            }}
+          >
             ✕
           </button>
         </div>
       ))}
-      <button className="btn kv-add" onClick={() => { pendingFocus.current = rows.length; onChange([...rows, { key: "", value: "" }]); }}>
+      <button
+        className="btn kv-add"
+        onClick={() => {
+          pendingFocus.current = rows.length;
+          onChange([...rows, { key: "", value: "" }]);
+        }}
+      >
         + 추가
       </button>
     </div>

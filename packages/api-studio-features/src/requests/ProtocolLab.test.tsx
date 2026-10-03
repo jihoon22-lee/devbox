@@ -681,15 +681,15 @@ it("locks the applied OAuth grant and blocks calls after that grant disappears",
   const grantB = { ...oauthGrant, grantId: "b".repeat(32), clientId: "client B" };
   mocks.listGrants.mockResolvedValueOnce([oauthGrant, grantB]).mockResolvedValueOnce([grantB]);
   render(<ProtocolLab native environment={[]} />);
-  fireEvent.click(screen.getByRole("button", {name: "OAuth grant 새로 고침"}));
+  fireEvent.click(screen.getByRole("button", { name: "OAuth grant 새로 고침" }));
   await screen.findByText("선택한 OAuth grant");
   await connect();
   expect((screen.getByLabelText("OAuth grant") as HTMLSelectElement).disabled).toBe(true);
   expect(screen.getByText(/연결에 적용된 인증: public-client/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", {name: "OAuth grant 새로 고침"}));
+  fireEvent.click(screen.getByRole("button", { name: "OAuth grant 새로 고침" }));
   await screen.findByText(/권한 확인 필요.*다시 연결/);
   mocks.invoke.mockClear();
-  const list = screen.getByRole("button", {name: "목록 조회"});
+  const list = screen.getByRole("button", { name: "목록 조회" });
   fireEvent.click(list);
   expect(mocks.invoke).not.toHaveBeenCalled();
   expect(screen.getByText(/연결에 적용된 인증: public-client/)).toBeTruthy();
@@ -699,15 +699,17 @@ it("keeps revoked grant authentication until explicit reconnect with another gra
   const grantB = { ...oauthGrant, grantId: "b".repeat(32), clientId: "client B" };
   mocks.listGrants.mockResolvedValue([oauthGrant, grantB]);
   render(<ProtocolLab native environment={[]} />);
-  fireEvent.click(screen.getByRole("button", {name: "OAuth grant 새로 고침"}));
+  fireEvent.click(screen.getByRole("button", { name: "OAuth grant 새로 고침" }));
   await screen.findByText("선택한 OAuth grant");
   await connect();
-  fireEvent.click(screen.getByRole("button", {name: "OAuth grant 취소"}));
+  fireEvent.click(screen.getByRole("button", { name: "OAuth grant 취소" }));
   await screen.findByText(/권한 확인 필요.*다시 연결/);
-  fireEvent.click(screen.getByRole("button", {name: "연결 해제"}));
+  fireEvent.click(screen.getByRole("button", { name: "연결 해제" }));
   await waitFor(() => expect((screen.getByLabelText("OAuth grant") as HTMLSelectElement).disabled).toBe(false));
-  fireEvent.change(screen.getByLabelText("OAuth grant"), {target: {value: grantB.grantId}});
-  fireEvent.click(screen.getByRole("button", {name: "연결"}));
+  fireEvent.change(screen.getByLabelText("OAuth grant"), { target: { value: grantB.grantId } });
+  fireEvent.click(screen.getByRole("button", { name: "연결" }));
   await screen.findByText(/연결에 적용된 인증: client B/);
-  expect(mocks.connect.mock.calls.at(-1)?.[0]).toMatchObject({oauthGrantId: grantB.grantId});
+  expect(mocks.connect.mock.calls[mocks.connect.mock.calls.length - 1]?.[0]).toMatchObject({
+    oauthGrantId: grantB.grantId,
+  });
 });

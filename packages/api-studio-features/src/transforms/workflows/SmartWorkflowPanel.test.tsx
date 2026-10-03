@@ -8,15 +8,24 @@ vi.mock("../api", () => ({
   readClipboardText: vi.fn(),
 }));
 
-const hosted = vi.hoisted(() => ({value:false}));
-vi.mock("../../transport", async importOriginal => ({...await importOriginal<typeof import("../../transport")>(), isProductHosted: () => hosted.value}));
-const saveControl = vi.hoisted(() => ({pending: null as Promise<void> | null}));
-vi.mock("./workflowStore", async importOriginal => {
+const hosted = vi.hoisted(() => ({ value: false }));
+vi.mock("../../transport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../transport")>()),
+  isProductHosted: () => hosted.value,
+}));
+const saveControl = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
+vi.mock("./workflowStore", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./workflowStore")>();
-  return {...actual, createWorkflowPersistence: (...args: Parameters<typeof actual.createWorkflowPersistence>) => {
-    const persistence = actual.createWorkflowPersistence(...args);
-    return {...persistence, save: (metadata: Parameters<typeof persistence.save>[0]) => saveControl.pending ?? persistence.save(metadata)};
-  }};
+  return {
+    ...actual,
+    createWorkflowPersistence: (...args: Parameters<typeof actual.createWorkflowPersistence>) => {
+      const persistence = actual.createWorkflowPersistence(...args);
+      return {
+        ...persistence,
+        save: (metadata: Parameters<typeof persistence.save>[0]) => saveControl.pending ?? persistence.save(metadata),
+      };
+    },
+  };
 });
 const openTool = vi.fn();
 
@@ -125,59 +134,72 @@ describe("SmartWorkflowPanel", () => {
 });
 
 it("edits a loaded pipeline at capacity and recovers room by confirmed deletion", async () => {
-  const pipelines = Array.from({length:20}, (_, index) => ({id:`pipeline-${index+1}`,inputType:"json",steps:[{transformerId:"json-format"}],updatedAt:index+1}));
-  seedPreviewDocument("workflows", JSON.stringify({schemaVersion:1,recentTools:[],favoriteTools:[],pipelines}));
+  const pipelines = Array.from({ length: 20 }, (_, index) => ({
+    id: `pipeline-${index + 1}`,
+    inputType: "json",
+    steps: [{ transformerId: "json-format" }],
+    updatedAt: index + 1,
+  }));
+  seedPreviewDocument("workflows", JSON.stringify({ schemaVersion: 1, recentTools: [], favoriteTools: [], pipelines }));
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const view = render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
-  fireEvent.click(await screen.findByRole("button", {name:/^pipeline-7:/}));
-  fireEvent.click(screen.getByRole("button", {name:"단계 추가"}));
-  fireEvent.click(screen.getByRole("button", {name:"파이프라인 저장"}));
+  fireEvent.click(await screen.findByRole("button", { name: /^pipeline-7:/ }));
+  fireEvent.click(screen.getByRole("button", { name: "단계 추가" }));
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
   await waitFor(() => {
     const saved = JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY)!);
     expect(saved.pipelines).toHaveLength(20);
-    expect(saved.pipelines.find((item: {id:string}) => item.id === "pipeline-7").steps).toHaveLength(2);
-    expect(saved.pipelines.filter((item: {id:string}) => item.id !== "pipeline-7").sort((left: {updatedAt:number}, right: {updatedAt:number}) => left.updatedAt - right.updatedAt)).toEqual(pipelines.filter(item => item.id !== "pipeline-7"));
+    expect(saved.pipelines.find((item: { id: string }) => item.id === "pipeline-7").steps).toHaveLength(2);
+    expect(
+      saved.pipelines
+        .filter((item: { id: string }) => item.id !== "pipeline-7")
+        .sort((left: { updatedAt: number }, right: { updatedAt: number }) => left.updatedAt - right.updatedAt),
+    ).toEqual(pipelines.filter((item) => item.id !== "pipeline-7"));
   });
   view.unmount();
   render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
-  fireEvent.click(await screen.findByRole("button", {name:/^pipeline-7:/}));
-  expect(screen.getAllByRole("button", {name:/단계 .* 제거/})).toHaveLength(2);
-  const remove = screen.getByRole("button", {name:"pipeline-7 파이프라인 삭제"});
+  fireEvent.click(await screen.findByRole("button", { name: /^pipeline-7:/ }));
+  expect(screen.getAllByRole("button", { name: /단계 .* 제거/ })).toHaveLength(2);
+  const remove = screen.getByRole("button", { name: "pipeline-7 파이프라인 삭제" });
   fireEvent.click(remove);
-  expect(screen.getByRole("button", {name:/^pipeline-7:/})).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^pipeline-7:/ })).toBeTruthy();
   confirm.mockReturnValue(true);
   fireEvent.click(remove);
   await waitFor(() => expect(JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY)!).pipelines).toHaveLength(19));
-  fireEvent.click(screen.getByRole("button", {name:"새 파이프라인"}));
-  fireEvent.change(screen.getByLabelText("파이프라인 입력 형식"), {target:{value:"json"}});
-  fireEvent.click(screen.getByRole("button", {name:"단계 추가"}));
-  fireEvent.click(screen.getByRole("button", {name:"파이프라인 저장"}));
+  fireEvent.click(screen.getByRole("button", { name: "새 파이프라인" }));
+  fireEvent.change(screen.getByLabelText("파이프라인 입력 형식"), { target: { value: "json" } });
+  fireEvent.click(screen.getByRole("button", { name: "단계 추가" }));
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
   await waitFor(() => expect(JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY)!).pipelines).toHaveLength(20));
   confirm.mockRestore();
 });
 it("reports pending and failed saves while retaining the workflow draft", async () => {
   render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
-  await waitFor(() => expect((screen.getByRole("button", {name:"현재 도구 즐겨찾기"}) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.change(input(), {target:{value:'{"synthetic":"private-input"}'}});
-  fireEvent.click(screen.getByRole("button", {name:"추천 단계로 사용"}));
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.change(input(), { target: { value: '{"synthetic":"private-input"}' } });
+  fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));
   let fail!: (reason: Error) => void;
-  saveControl.pending = new Promise((_resolve, reject) => {fail = reject;});
-  fireEvent.click(screen.getByRole("button", {name:"파이프라인 저장"}));
+  saveControl.pending = new Promise((_resolve, reject) => {
+    fail = reject;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
   expect(await screen.findByText("저장 중…")).toBeTruthy();
   fail(new Error("synthetic failure"));
   await screen.findByRole("alert");
   expect(screen.queryByText("저장 완료")).toBeNull();
   expect(input().value).toContain("private-input");
-  expect((screen.getByRole("button", {name:"파이프라인 저장"}) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "파이프라인 저장" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it("does not offer a handoff after a failed pipeline execution", () => {
   hosted.value = true;
   render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
-  fireEvent.change(screen.getByLabelText("파이프라인 입력 형식"), {target:{value:"json"}});
-  fireEvent.click(screen.getByRole("button", {name:"단계 추가"}));
-  fireEvent.change(input(), {target:{value:"invalid JSON"}});
-  fireEvent.click(screen.getByRole("button", {name:"파이프라인 실행"}));
+  fireEvent.change(screen.getByLabelText("파이프라인 입력 형식"), { target: { value: "json" } });
+  fireEvent.click(screen.getByRole("button", { name: "단계 추가" }));
+  fireEvent.change(input(), { target: { value: "invalid JSON" } });
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 실행" }));
   expect(screen.getByRole("alert")).toBeTruthy();
-  expect(screen.queryByRole("button", {name:"API Playground로 보내기"})).toBeNull();
+  expect(screen.queryByRole("button", { name: "API Playground로 보내기" })).toBeNull();
 });

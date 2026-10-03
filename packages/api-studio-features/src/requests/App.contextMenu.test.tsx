@@ -423,7 +423,11 @@ it("opens OAuth login from a native authorization-required response", async () =
   fireEvent.click(screen.getByRole("button", { name: "보내기" }));
   await screen.findByText("로그인이 필요합니다.");
   expect(screen.queryByText("private-provider-detail")).toBeNull();
-  fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "로그인" }));
+  const authorizationAlert = screen
+    .getAllByRole("alert")
+    .find((alert) => alert.contains(screen.getByText("로그인이 필요합니다.")));
+  if (!authorizationAlert) throw new Error("Authorization-required alert was not rendered");
+  fireEvent.click(within(authorizationAlert).getByRole("button", { name: "로그인" }));
   await waitFor(() => expect(authorizeOAuth2).toHaveBeenCalledTimes(1));
   expect(await screen.findByText("유효 · 만료 시각 없음")).toBeTruthy();
 });

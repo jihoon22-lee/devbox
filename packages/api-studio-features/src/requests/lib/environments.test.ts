@@ -2,7 +2,10 @@ import { MemoryDocuments as EnvironmentStorage } from "../../storage/testDocumen
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   addEnvironment,
-  addVariable, renameVariable, removeVariable, variableNameError,
+  addVariable,
+  renameVariable,
+  removeVariable,
+  variableNameError,
   applyToRequest,
   applyVariables,
   loadStore,
@@ -213,14 +216,22 @@ describe("environment store", () => {
 });
 
 it("adds collision-free variables and preserves sealed values when renaming", () => {
-  const original = { version: 1, environments: [{id: "e", name: "dev", variables: [{key: "var2", value: "sealed", secret: true}]}] };
+  const original = {
+    version: 1,
+    environments: [{ id: "e", name: "dev", variables: [{ key: "var2", value: "sealed", secret: true }] }],
+  };
   const added = addVariable(original, "e");
-  expect(added.environments[0].variables).toEqual([{key: "var2", value: "sealed", secret: true}, {key: "var1", value: "", secret: false}]);
+  expect(added.environments[0].variables).toEqual([
+    { key: "var2", value: "sealed", secret: true },
+    { key: "var1", value: "", secret: false },
+  ]);
   const renamed = renameVariable(added, "e", "var2", "baseUrl");
-  expect(renamed.environments[0].variables[0]).toEqual({key: "baseUrl", value: "sealed", secret: true});
+  expect(renamed.environments[0].variables[0]).toEqual({ key: "baseUrl", value: "sealed", secret: true });
   expect(variableNameError("", renamed.environments[0], "var1")).toBeTruthy();
   expect(variableNameError("bad name", renamed.environments[0], "var1")).toBeTruthy();
   expect(variableNameError("baseUrl", renamed.environments[0], "var1")).toBeTruthy();
-  expect(removeVariable(renamed, "e", "var1").environments[0].variables).toEqual([{key: "baseUrl", value: "sealed", secret: true}]);
-  expect(original.environments[0].variables).toEqual([{key: "var2", value: "sealed", secret: true}]);
+  expect(removeVariable(renamed, "e", "var1").environments[0].variables).toEqual([
+    { key: "baseUrl", value: "sealed", secret: true },
+  ]);
+  expect(original.environments[0].variables).toEqual([{ key: "var2", value: "sealed", secret: true }]);
 });

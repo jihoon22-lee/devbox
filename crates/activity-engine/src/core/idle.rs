@@ -70,6 +70,7 @@ mod tests {
 
 /// LASTINPUTINFO exposes the low 32 bits even when the uptime clock is 64-bit.
 /// Subtract in the same wrapping tick domain so an uptime wrap is not an idle day.
+#[cfg(any(windows, test))]
 pub fn duration_from_input_ticks(now: u64, last_input: u32) -> i64 {
     i64::from((now as u32).wrapping_sub(last_input))
 }

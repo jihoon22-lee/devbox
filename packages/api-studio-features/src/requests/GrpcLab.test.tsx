@@ -335,16 +335,25 @@ describe("gRPC Protocol Lab", () => {
 });
 
 it("explains partial messages and preserves the non-OK summary", async () => {
-  mocks.connect.mockResolvedValue({...connection, methods: connection.methods.map(method => ({...method, rpcKind:"server-streaming"}))});
-  mocks.invoke.mockResolvedValue({...invokeResult, ok:false, status:"INTERNAL", responses:[{message:"partial-one"},{message:"partial-two"}], responseMessageCount:2});
+  mocks.connect.mockResolvedValue({
+    ...connection,
+    methods: connection.methods.map((method) => ({ ...method, rpcKind: "server-streaming" })),
+  });
+  mocks.invoke.mockResolvedValue({
+    ...invokeResult,
+    ok: false,
+    status: "INTERNAL",
+    responses: [{ message: "partial-one" }, { message: "partial-two" }],
+    responseMessageCount: 2,
+  });
   render(<GrpcLab native />);
   await connectLocalProto();
-  fireEvent.click(screen.getByRole("button", {name:"RPC 호출"}));
+  fireEvent.click(screen.getByRole("button", { name: "RPC 호출" }));
   await screen.findByText(/2개 수신 후 INTERNAL 종료/);
   expect(screen.getByText(/partial-one/)).toBeTruthy();
   expect(screen.getByText(/partial-two/)).toBeTruthy();
   await waitFor(() => {
     const persisted = JSON.parse(localStorage.getItem(GRPC_HISTORY_KEY)!);
-    expect(persisted.entries[0]).toMatchObject({status:"INTERNAL",responseMessageCount:2});
+    expect(persisted.entries[0]).toMatchObject({ status: "INTERNAL", responseMessageCount: 2 });
   });
 });

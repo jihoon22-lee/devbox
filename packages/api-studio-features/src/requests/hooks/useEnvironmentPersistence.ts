@@ -93,7 +93,10 @@ export function useEnvironmentPersistence({
     } catch (storageCause) {
       if (mountedRef.current)
         setPersistenceWarning(
-          storageFailureMessage(storageCause, "환경 편집 내용을 저장하지 못했습니다. 앱을 다시 열어 저장 상태를 확인하세요."),
+          storageFailureMessage(
+            storageCause,
+            "환경 편집 내용을 저장하지 못했습니다. 앱을 다시 열어 저장 상태를 확인하세요.",
+          ),
         );
       return null;
     }
@@ -148,11 +151,15 @@ export function useEnvironmentPersistence({
       );
       const createdId = next.environments[next.environments.length - 1]?.id;
       const saved = await persistEnvs(next);
-      if (createdId && saved.environments.some(environment => environment.id === createdId)) setCurrentEnvId(createdId);
+      if (createdId && saved.environments.some((environment) => environment.id === createdId))
+        setCurrentEnvId(createdId);
       setEnvName("");
     } catch (storageCause) {
       setPersistenceWarning(
-        storageFailureMessage(storageCause, "환경 편집 내용을 저장하지 못했습니다. 앱을 다시 열어 저장 상태를 확인하세요."),
+        storageFailureMessage(
+          storageCause,
+          "환경 편집 내용을 저장하지 못했습니다. 앱을 다시 열어 저장 상태를 확인하세요.",
+        ),
       );
     }
   };
