@@ -191,7 +191,7 @@ export default function Restore({
               {inventory.checkpoints.length ? (
                 <ul>
                   {inventory.checkpoints.map((checkpoint) => (
-                    <li key={checkpoint.id}>
+                    <li key={checkpoint.id} aria-label={checkpoint.id}>
                       <code>{checkpoint.id}</code> · {checkpoint.files.toLocaleString()}개 파일 ·{" "}
                       {(checkpoint.bytes / 1024 / 1024).toFixed(1)} MiB{" "}
                       <button
@@ -210,7 +210,7 @@ export default function Restore({
               {inventory.operations.length ? (
                 <ul>
                   {inventory.operations.map((operation) => (
-                    <li key={operation.id}>
+                    <li key={operation.id} aria-label={operation.id}>
                       <code>{operation.id}</code> · {labels[operation.phase] ?? "상태 확인 필요"}{" "}
                       {operation.preparedMs && (
                         <time dateTime={new Date(operation.preparedMs).toISOString()}>
