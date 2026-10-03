@@ -4,6 +4,7 @@ import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
 import SetupFlow from "./SetupFlow";
+import SetupHealth from "./SetupHealth";
 import type { RecoveryStatus } from "@devbox/control-center-features/generated/RecoveryStatus";
 import catalog from "../../../apps/products.json";
 
@@ -164,6 +165,12 @@ export default function Restore({
                   busy={busy || !!error}
                 />
               )}
+              {route === "recovery" &&
+                inventory.installation &&
+                ["import", "health"].includes(description.deliveryState ?? "") &&
+                (inventory.installation.reinstall || inventory.update || inventory.activeOperation) && (
+                  <SetupHealth description={description} route={route} onRecorded={reload} busy={busy || !!error} />
+                )}
               {inventory.installation?.reinstall && !inventory.installation.committed && (
                 <button
                   disabled={
