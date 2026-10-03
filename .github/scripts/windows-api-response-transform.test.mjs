@@ -6,6 +6,7 @@ import {
   diagnosticStylesConfig,
   applyDiagnosticStyles,
   prepareDiagnosticCss,
+  safeMatchedLayout,
   prepareResponseSelection,
   responseTransformObservation,
   responseGeometryObservation,
@@ -241,13 +242,16 @@ test("diagnostic style injection appends to the unique authored sheet and verifi
       style: { cssProperties: [{ name: "flex", value: "1" }] },
     },
   };
+  let authoredText = ".api-feature-requests .response { flex: 1; }";
   const cdp = {
     send: async (method, params) => {
       calls.push({ method, params });
       if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
       if (method === "DOM.querySelector") return { nodeId: 2 };
       if (method === "CSS.getMatchedStylesForNode") return { matchedCSSRules: [regular] };
-      if (method === "CSS.getStyleSheetText") return { text: ".api-feature-requests .response { flex: 1; }" };
+      if (method === "CSS.getStyleSheetText") return { text: authoredText };
+      if (method === "CSS.setStyleSheetText") authoredText = params.text;
+      if (method === "CSS.getComputedStyleForNode") return { computedStyle: [{ name: "flex-shrink", value: "0" }] };
       return {};
     },
     evaluate: async () => computed,
@@ -265,6 +269,9 @@ test("diagnostic style injection appends to the unique authored sheet and verifi
       "CSS.getMatchedStylesForNode",
       "CSS.getStyleSheetText",
       "CSS.setStyleSheetText",
+      "CSS.getStyleSheetText",
+      "CSS.getMatchedStylesForNode",
+      "CSS.getComputedStyleForNode",
     ],
   );
   assert.equal(calls[6].params.styleSheetId, "authored-sheet");
@@ -313,4 +320,29 @@ test("diagnostic stylesheet strips exactly the two packaged imports and preserve
   assert.equal(prepareDiagnosticCss(imports + css), css);
   assert.equal(prepareDiagnosticCss(imports.replaceAll("\n", "\r\n") + css), css);
   assert.throws(() => prepareDiagnosticCss('@import "other.css";\n' + css), /unexpected-imports/);
+});
+
+test("harvested layout records cascade origin, invalid declarations and inline ownership without unrelated CSS", () => {
+  const result = safeMatchedLayout({
+    matchedCSSRules: [
+      {
+        matchingSelectors: [0],
+        rule: {
+          origin: "regular",
+          styleSheetId: "sheet",
+          selectorList: { text: ".response" },
+          style: {
+            cssProperties: [
+              { name: "flex", value: "1 0 auto", parsedOk: false },
+              { name: "background-image", value: "url(synthetic-private)" },
+            ],
+          },
+        },
+      },
+    ],
+    inlineStyle: { cssProperties: [{ name: "flex-shrink", value: "1", important: true }] },
+  });
+  assert.equal(result.rules[0].declarations[0].parsedOk, false);
+  assert.equal(result.inline[0].important, true);
+  assert.equal(JSON.stringify(result).includes("synthetic-private"), false);
 });

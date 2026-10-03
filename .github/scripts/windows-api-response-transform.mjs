@@ -120,6 +120,44 @@ export function prepareDiagnosticCss(css) {
   return css.slice(imports[0].length);
 }
 
+const layoutProperties = new Set([
+  "flex",
+  "flex-grow",
+  "flex-shrink",
+  "flex-basis",
+  "min-height",
+  "height",
+  "overflow",
+  "overflow-x",
+  "overflow-y",
+  "display",
+]);
+function safeStyleDeclarations(style) {
+  return (style?.cssProperties ?? [])
+    .filter((property) => layoutProperties.has(property.name))
+    .map(({ name, value, important, parsedOk, disabled, implicit }) => ({
+      name,
+      value,
+      important: !!important,
+      parsedOk,
+      disabled: !!disabled,
+      implicit: !!implicit,
+    }));
+}
+export function safeMatchedLayout(matched) {
+  return {
+    rules: (matched.matchedCSSRules ?? []).map(({ rule, matchingSelectors }) => ({
+      selector: rule.selectorList.text,
+      origin: rule.origin,
+      styleSheetId: rule.styleSheetId ?? null,
+      matchingSelectors,
+      declarations: safeStyleDeclarations(rule.style),
+    })),
+    inline: safeStyleDeclarations(matched.inlineStyle),
+    attributes: safeStyleDeclarations(matched.attributesStyle),
+  };
+}
+
 export async function applyDiagnosticStyles(cdp, css, observe = () => {}) {
   if (typeof css !== "string" || !css.length || css.length > 1024 * 1024)
     throw new Error("api-diagnostic-styles-invalid-css");
@@ -172,8 +210,26 @@ export async function applyDiagnosticStyles(cdp, css, observe = () => {}) {
           .map(({ name, value, important }) => ({ name, value, important: !!important })),
       })),
     };
+    stylesheet.beforeMatched = safeMatchedLayout(matched);
     observe({ stylesheet });
     await cdp.send("CSS.setStyleSheetText", { styleSheetId, text: appended });
+    const retained = await cdp.send("CSS.getStyleSheetText", { styleSheetId });
+    stylesheet.retainedStyleSha256 = createHash("sha256").update(retained.text).digest("hex");
+    stylesheet.writeTextConfirmed = retained.text === appended;
+    if (!stylesheet.writeTextConfirmed) {
+      observe({ stylesheet });
+      throw new Error("authored-write-text-not-confirmed");
+    }
+    // One bounded rendering boundary after the single write; never retry the
+    // stylesheet or suppress a mismatched computed value.
+    await cdp.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    const afterMatched = await cdp.send("CSS.getMatchedStylesForNode", { nodeId });
+    stylesheet.afterMatched = safeMatchedLayout(afterMatched);
+    const protocolComputed = await cdp.send("CSS.getComputedStyleForNode", { nodeId });
+    stylesheet.protocolComputed = protocolComputed.computedStyle.filter((property) =>
+      layoutProperties.has(property.name),
+    );
+    observe({ stylesheet });
     computed = await cdp.evaluate(`(() => {
       const response = document.querySelector('.api-feature-requests .response');
       const body = document.querySelector('.api-feature-requests .resp-body');
@@ -181,7 +237,12 @@ export async function applyDiagnosticStyles(cdp, css, observe = () => {}) {
       return { responsePresent: !!response, responseFlexShrink: style?.flexShrink || null, responseMinHeight: style?.minHeight || null, bodyPresent: !!body, bodyMinHeight: body ? getComputedStyle(body).minHeight : null };
     })()`);
   } catch (error) {
-    const known = ["missing-response-node", "authored-response-stylesheet-not-unique", "invalid-authored-stylesheet"];
+    const known = [
+      "missing-response-node",
+      "authored-response-stylesheet-not-unique",
+      "invalid-authored-stylesheet",
+      "authored-write-text-not-confirmed",
+    ];
     throw new Error(
       known.includes(error.message)
         ? "api-diagnostic-styles-" + error.message
