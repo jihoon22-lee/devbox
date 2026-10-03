@@ -1,7 +1,7 @@
 // Real packaged UI acceptance. Provisioning and final namespace cleanup belong to the Suite fixture.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, mkdir, rename, lstat, realpath } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, rename, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { once } from "node:events";
@@ -59,8 +59,7 @@ export async function createInstalledKnowledgeContext() {
   const release = await readJson(path.join(process.env.DEVBOX_USER_FLOW_ASSETS, "release-manifest.json"));
   const image = release.products.find((p) => p.id === "knowledge").files.find((f) => f.name === "devbox-knowledge.exe");
   assert.equal(member.sha256, image.sha256);
-  const fixtureRoot = path.join(scratch, "knowledge-user-flow-data");
-  await mkdir(fixtureRoot, { recursive: true });
+  const fixtureRoot = await mkdtemp(path.join(scratch, "knowledge-user-flow-data-"));
   let current = null,
     offline = null;
   const profile = path.join(fixtureRoot, "webview-profile");
