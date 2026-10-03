@@ -140,7 +140,12 @@ function Content({ route, navigate }: ShellContentProps) {
           <RecoveryBoundary name="기능">
             <Suspense fallback={<p role="status">검색을 불러오고 있습니다…</p>}>
               <IncomingSearchReview onNoteOpen={activateNotes} onSaved={setSavedSearch} />
-              <Search savedSearch={savedSearch} projectRevision={projectRevision} onNoteOpen={activateNotes} />
+              <Search
+                active={group === "search"}
+                savedSearch={savedSearch}
+                projectRevision={projectRevision}
+                onNoteOpen={activateNotes}
+              />
             </Suspense>
           </RecoveryBoundary>
         </div>

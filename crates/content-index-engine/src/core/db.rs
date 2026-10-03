@@ -930,6 +930,37 @@ pub fn search_with_filter_in_scope(
     rows.collect()
 }
 
+/// Metadata enumeration for bounded regex candidates, never content extraction.
+pub fn name_candidates_in_scope(
+    conn: &Connection,
+    limit: i64,
+    filter: &SearchFilter,
+    indexed_prefix: Option<&str>,
+) -> rusqlite::Result<Vec<FileEntry>> {
+    let filter = filter
+        .normalized()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let (mut where_sql, mut values) = filter_sql(&filter, "f", Some("fc"));
+    append_native_scope(&mut where_sql, &mut values, indexed_prefix)?;
+    let sql=format!("SELECT f.id,f.path,f.name,COALESCE(f.ext,''),f.size,f.modified_ts,f.root_id,fc.content_status,COALESCE(fc.truncated,0) FROM files f LEFT JOIN file_content fc ON fc.file_id=f.id WHERE length(CAST(f.path AS BLOB))<=32768 AND length(CAST(f.name AS BLOB))<=8192 {where_sql} ORDER BY f.name COLLATE NOCASE,f.path LIMIT ?");
+    values.push(Value::Integer(limit.clamp(0, 2001)));
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(params_from_iter(values.iter()), |r| {
+        Ok(FileEntry {
+            id: r.get(0)?,
+            path: r.get(1)?,
+            name: r.get(2)?,
+            ext: r.get(3)?,
+            size: r.get(4)?,
+            modified_ts: r.get(5)?,
+            root_id: r.get(6)?,
+            content_status: r.get(7)?,
+            content_truncated: r.get::<_, i64>(8)? != 0,
+        })
+    })?;
+    rows.collect()
+}
+
 /// FTS5 내용 검색. 스니펫을 함께 반환한다.
 pub fn search_content(
     conn: &Connection,
@@ -1454,6 +1485,57 @@ mod tests {
         ] {
             upsert_file(conn, path, size, 0, 1).unwrap();
         }
+    }
+
+    #[test]
+    fn name_candidates_preserve_union_regex_inputs_and_owned_scope_before_limit() {
+        let conn = mem();
+        add_root(&conn, "C:/owned", false).unwrap();
+        add_root(&conn, "C:/other", true).unwrap();
+        for name in ["foo.txt", "bar.md", "a---b.log", "한글.md"] {
+            upsert_file(&conn, &format!("C:/owned/{name}"), 1, 0, 1).unwrap();
+        }
+        upsert_file(&conn, "C:/other/outside.md", 1, 0, 1).unwrap();
+        let names: Vec<_> =
+            name_candidates_in_scope(&conn, 2001, &SearchFilter::default(), Some("C:/owned"))
+                .unwrap()
+                .into_iter()
+                .map(|row| row.name)
+                .collect();
+        assert_eq!(names.len(), 4);
+        for name in ["foo.txt", "bar.md", "a---b.log", "한글.md"] {
+            assert!(names.iter().any(|found| found == name));
+        }
+        let filter = SearchFilter {
+            extensions: vec!["md".into()],
+            ..SearchFilter::default()
+        };
+        assert_eq!(
+            name_candidates_in_scope(&conn, 2001, &filter, Some("C:/owned"))
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+    #[test]
+    fn name_candidates_fetch_one_over_the_cap_without_extracting_content() {
+        let conn = mem();
+        add_root(&conn, "C:/owned", false).unwrap();
+        for index in 0..2002 {
+            upsert_file(&conn, &format!("C:/owned/{index:04}.txt"), 1, 0, 1).unwrap();
+        }
+        assert_eq!(
+            name_candidates_in_scope(&conn, 9000, &SearchFilter::default(), None)
+                .unwrap()
+                .len(),
+            2001
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM file_content", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

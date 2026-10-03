@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   addRoot,
+  removeRoot,
   cancelIndex,
   copyPath,
   deleteSavedQuery,
@@ -184,7 +185,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
   const { container } = render(<App />);
@@ -759,4 +763,117 @@ describe("product source search", () => {
     fireEvent.click(within(row).getByRole("button", { name: "복사" }));
     expect(copyPathMock).toHaveBeenCalledWith("C:/vault/shared.md");
   });
+});
+
+it("sends unmodified regex through native name candidate intent", async () => {
+  mocks.product = true;
+  render(<App />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "regex" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "foo|bar" } });
+  await waitFor(() =>
+    expect(searchSource).toHaveBeenCalledWith(
+      "files",
+      "foo|bar",
+      "nameCandidates",
+      2000,
+      {},
+      expect.any(AbortSignal),
+      expect.any(Function),
+    ),
+  );
+});
+it("rejects incompatible saved recipe creation and loads a canonical literal files recipe", async () => {
+  mocks.product = true;
+  vi.mocked(listSavedQueries).mockResolvedValueOnce([
+    { id: 9, name: "known", query: "foo", filter: {}, createdAt: 1, updatedAt: 1 },
+  ]);
+  render(<App />);
+  await screen.findByRole("button", { name: "known" });
+  fireEvent.change(screen.getByRole("combobox", { name: "검색 범위" }), { target: { value: "notes" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "regex" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "저장된 검색어 이름" }), { target: { value: "regex" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "foo|bar" } });
+  expect(screen.getByRole("button", { name: "검색어 저장" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "known" }));
+  await waitFor(() =>
+    expect(searchSource).toHaveBeenLastCalledWith(
+      "files",
+      "foo",
+      "name",
+      200,
+      {},
+      expect.any(AbortSignal),
+      expect.any(Function),
+    ),
+  );
+  expect(screen.getByRole("checkbox", { name: "regex" })).not.toBeChecked();
+});
+it("retains a root chip and exposes remove failure", async () => {
+  vi.mocked(listRoots).mockResolvedValueOnce([{ id: 1, path: "C:/owned", content: false }]);
+  vi.mocked(removeRoot).mockRejectedValueOnce(new Error("failure"));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "루트 제거" }));
+  await screen.findByRole("alert");
+  expect(screen.getByText("C:/owned")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "루트 제거" })).not.toBeDisabled();
+});
+it("does not run native query or metadata polling for a hidden Search", async () => {
+  mocks.product = true;
+  render(<App active={false} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "hidden" } });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(searchSource).not.toHaveBeenCalled();
+  expect(indexStatus).not.toHaveBeenCalled();
+});
+
+it("recomputes regex matches when a native generation replaces its candidate rows", async () => {
+  mocks.product = true;
+  class TestWorker {
+    onmessage: ((event: { data: { indices: number[] } }) => void) | null = null;
+    onerror: (() => void) | null = null;
+    postMessage(input: { expression: string; names: string[] }) {
+      queueMicrotask(() =>
+        this.onmessage?.({
+          data: {
+            indices: input.names.flatMap((name, index) =>
+              new RegExp(input.expression, "i").test(name) ? [index] : [],
+            ),
+          },
+        }),
+      );
+    }
+    terminate() {}
+  }
+  vi.stubGlobal("Worker", TestWorker);
+  let accept!: (snapshot: SourceSnapshot) => void;
+  vi.mocked(searchSource).mockImplementation(async (_s, _q, _m, _l, _f, _signal, update) => {
+    accept = update;
+    return [];
+  });
+  render(<App />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "regex" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "foo|bar" } });
+  await waitFor(() => expect(accept).toBeDefined());
+  const snapshot = (names: string[]): SourceSnapshot => ({
+    generation: "same-native",
+    storeGeneration: "store",
+    source: "files",
+    state: "complete",
+    partial: true,
+    bounds: { partialCause: "candidateLimit" },
+    rows: names.map((name, index) => ({
+      source: "files",
+      rootIdentity: "files:1",
+      reference: null,
+      availability: "unverified",
+      indexStale: false,
+      value: { id: index, path: `C:/owned/${name}`, name, ext: "md", size: 1, modified_ts: 1 },
+    })),
+  });
+  act(() => accept(snapshot(["foo.md", "no.md"])));
+  await screen.findByText("foo.md");
+  act(() => accept(snapshot(["no.md", "bar.md"])));
+  await screen.findByText("bar.md");
+  expect(screen.queryByText("foo.md")).toBeNull();
+  expect(screen.getByText(/일부 후보에서 검색했습니다/)).toBeTruthy();
 });

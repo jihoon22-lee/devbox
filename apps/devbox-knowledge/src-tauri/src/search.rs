@@ -166,12 +166,16 @@ fn candidates(
         return Ok(Vec::new());
     }
     if request.source == "notes" {
-        let rows = knowledge_vault_engine::component::search_projection(
-            conn,
-            &request.query,
-            limit.min(100),
-            request.mode == "name",
-        )
+        let rows = if request.mode == "nameCandidates" {
+            knowledge_vault_engine::component::name_candidates_projection(conn, limit)
+        } else {
+            knowledge_vault_engine::component::search_projection(
+                conn,
+                &request.query,
+                limit.min(100),
+                request.mode == "name",
+            )
+        }
         .map_err(|_| "search_unavailable")?;
         rows.into_iter().map(|(path, title, snippet)| {
             let (root, revision) = revision(conn, "notes", &path)?;
@@ -182,7 +186,12 @@ fn candidates(
             Ok(Candidate { path:absolute, root, root_key, revision, value, index_stale: false, offline: false })
         }).collect()
     } else {
-        let values = if request.mode == "content" {
+        let values = if request.mode == "nameCandidates" {
+            serde_json::to_value(
+                query::name_candidates_in_scope(conn, limit, &request.filter, scope)
+                    .map_err(|_| "search_unavailable")?,
+            )
+        } else if request.mode == "content" {
             serde_json::to_value(
                 query::search_content_with_filter_in_scope(
                     conn,
@@ -249,9 +258,19 @@ fn run(
         let mut rows = candidates(
             &conn,
             &request,
-            limit,
+            if request.mode == "nameCandidates" {
+                limit + 1
+            } else {
+                limit
+            },
             project.as_ref().map(|p| p.project.root.as_str()),
         )?;
+        let capped = if request.mode == "nameCandidates" {
+            rows.len() > limit as usize
+        } else {
+            rows.len() >= limit as usize
+        };
+        rows.truncate(limit as usize);
         if request.source == "notes" {
             let (offline, stale) = knowledge_vault_engine::component::product_index_health(&app);
             for row in &mut rows {
@@ -283,7 +302,7 @@ fn run(
         }
         // Release the SQL snapshot before any potentially offline filesystem IO.
         drop(conn);
-        work.publish_candidates(&rows, rows.len() >= limit as usize)?;
+        work.publish_candidates(&rows, capped)?;
         // Cached rows are already visible before an unknown/offline project
         // root can block a probe. The same retained source worker owns this IO.
         let verified_project = project
@@ -376,7 +395,7 @@ pub(crate) fn dispatch_for(
             if !matches!(
                 request.source.as_str(),
                 "notes" | "files" | "current_project"
-            ) || !matches!(request.mode.as_str(), "name" | "content")
+            ) || !matches!(request.mode.as_str(), "name" | "content" | "nameCandidates")
                 || request.query.len() > 4096
                 || request.query.chars().any(char::is_control)
             {
@@ -401,7 +420,9 @@ pub(crate) fn dispatch_for(
             }
             let limit = request.limit.unwrap_or(200).clamp(
                 1,
-                if request.source == "notes" {
+                if request.mode == "nameCandidates" {
+                    2000
+                } else if request.source == "notes" {
                     100
                 } else if request.mode == "content" {
                     200

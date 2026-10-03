@@ -193,7 +193,9 @@ export default function App({
   onNoteOpen,
   projectRevision = 0,
   savedSearch,
+  active = true,
 }: {
+  active?: boolean;
   onNoteOpen?: () => void;
   projectRevision?: number;
   savedSearch?: SavedSearchInput;
@@ -236,6 +238,10 @@ export default function App({
   const [activeIdx, setActiveIdx] = useState(-1);
   const [contextResult, setContextResult] = useState<ResultContext | null>(null);
   const [availableTargets, setAvailableTargets] = useState<EverythingOpenTarget[] | null>(null);
+  const [removingRoots, setRemovingRoots] = useState<Set<string>>(new Set());
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const metaSignature = useRef<string | null>(null);
   const [indexActionBusy, setIndexActionBusy] = useState(false);
   const mounted = useRef(true);
   const seq = useRef(0);
@@ -254,22 +260,26 @@ export default function App({
     const requestSeq = ++metaSeq.current;
     try {
       const [st, rs, ws] = await Promise.all([indexStatus(), listRoots(), watcherStatuses()]);
-      if (!mounted.current || requestSeq !== metaSeq.current) return;
+      if (!mounted.current || !activeRef.current || requestSeq !== metaSeq.current) return;
+      const signature = JSON.stringify([st, rs, ws]);
+      if (metaSignature.current !== null && metaSignature.current !== signature) setQueryRevision((value) => value + 1);
+      metaSignature.current = signature;
       setStatus(st);
       setRoots(rs);
       setWatchStatus(ws);
     } catch {
-      if (!mounted.current || requestSeq !== metaSeq.current) return;
+      if (!mounted.current || !activeRef.current || requestSeq !== metaSeq.current) return;
       setError(INDEX_ERROR);
     }
   }, []);
 
   // 인덱싱 중에는 진행률을 주기적으로 갱신
-  usePolling(loadMeta, { intervalMs: 500, active: status.indexing, immediate: false });
+  usePolling(loadMeta, { intervalMs: status.indexing ? 500 : 2000, active, immediate: false });
 
   useEffect(() => {
-    void loadMeta();
-  }, [loadMeta]);
+    ++metaSeq.current;
+    if (active) void loadMeta();
+  }, [active, loadMeta]);
 
   useEffect(() => {
     let disposed = false;
@@ -382,6 +392,7 @@ export default function App({
   useEffect(() => {
     const current = ++seq.current;
     const q = query.trim();
+    if (!active) return;
     setActiveIdx(-1);
     setSourceSnapshot(undefined);
     if (!isSearchQueryAllowed(query)) {
@@ -400,6 +411,8 @@ export default function App({
     if (mode !== "name" || !regexMode) setRegexError(null);
     let cancelled = false;
     const controller = new AbortController();
+    let regexController: AbortController | undefined;
+    controller.signal.addEventListener("abort", () => regexController?.abort(), { once: true });
     if (product) {
       setResults([]);
       setContentResults([]);
@@ -417,7 +430,7 @@ export default function App({
               return;
             }
           }
-          let matches: Promise<Set<number>> | undefined;
+          let matches: { signature: string; promise: Promise<Set<number>> } | undefined;
           let snapshotSequence = 0;
           const accept = (snapshot: SourceSnapshot) => {
             if (cancelled || seq.current !== current) return;
@@ -434,12 +447,14 @@ export default function App({
             if (mode === "content") setContentResults(rows);
             else if (!expression || rows.length === 0) setResults(rows);
             else {
-              matches ??= matchNames(
-                q,
-                rows.map((row) => row.name),
-                controller.signal,
-              );
-              void matches
+              const names = rows.map((row) => row.name);
+              const signature = JSON.stringify(names);
+              if (matches?.signature !== signature) {
+                regexController?.abort();
+                regexController = new AbortController();
+                matches = { signature, promise: matchNames(q, names, regexController.signal) };
+              }
+              void matches.promise
                 .then((indices) => {
                   if (!cancelled && seq.current === current && revision === snapshotSequence)
                     setResults(rows.filter((_row, index) => indices.has(index)));
@@ -452,8 +467,8 @@ export default function App({
           };
           await searchSource(
             source,
-            expression ? q.replace(/[^a-zA-Z0-9\s]/g, "") : q,
-            mode,
+            q,
+            expression ? "nameCandidates" : mode,
             expression ? 2000 : 200,
             filter,
             controller.signal,
@@ -463,9 +478,8 @@ export default function App({
           const next = isFilterEmpty(filter) ? await searchContent(q) : await searchContent(q, undefined, filter);
           if (!cancelled && seq.current === current) setContentResults(next);
         } else if (regexMode) {
-          let re: RegExp;
           try {
-            re = new RegExp(q, "i");
+            new RegExp(q, "i");
           } catch {
             if (!cancelled && seq.current === current) {
               setRegexError("정규식을 해석할 수 없습니다.");
@@ -473,10 +487,13 @@ export default function App({
             return;
           }
           if (!cancelled && seq.current === current) setRegexError(null);
-          const all = isFilterEmpty(filter)
-            ? await searchFiles(q.replace(/[^a-zA-Z0-9\s]/g, ""), 2000)
-            : await searchFiles(q.replace(/[^a-zA-Z0-9\s]/g, ""), 2000, filter);
-          if (!cancelled && seq.current === current) setResults(all.filter((f) => re.test(f.name)));
+          const all = await searchSource("files", q, "nameCandidates", 2000, filter, controller.signal, () => {});
+          const indices = await matchNames(
+            q,
+            all.map((row) => row.name),
+            controller.signal,
+          );
+          if (!cancelled && seq.current === current) setResults(all.filter((_row, index) => indices.has(index)));
         } else {
           if (!cancelled && seq.current === current) setRegexError(null);
           const next = isFilterEmpty(filter) ? await searchFiles(q) : await searchFiles(q, undefined, filter);
@@ -493,7 +510,7 @@ export default function App({
       controller.abort();
       clearTimeout(t);
     };
-  }, [query, mode, regexMode, filter, source, product, queryRevision, projectRevision]);
+  }, [query, mode, regexMode, filter, source, product, queryRevision, projectRevision, active]);
 
   useEffect(() => {
     if (status.last_error === "indexing_failed") {
@@ -529,8 +546,27 @@ export default function App({
     }
   };
 
+  const deleteRoot = async (path: string) => {
+    if (removingRoots.has(path)) return;
+    setRemovingRoots((previous) => new Set(previous).add(path));
+    setError(null);
+    try {
+      await removeRoot(path);
+      await loadMeta();
+    } catch {
+      if (mounted.current) setError("루트를 제거하지 못했습니다. 기존 루트와 색인은 유지됩니다.");
+    } finally {
+      if (mounted.current)
+        setRemovingRoots((previous) => {
+          const next = new Set(previous);
+          next.delete(path);
+          return next;
+        });
+    }
+  };
+
   const onSaveQuery = async () => {
-    if (savedQueryBusy) return;
+    if (savedQueryBusy || source !== "files" || mode !== "name" || regexMode) return;
     if (!isSavedDefinitionAllowed(savedName, query)) {
       setError(SAVED_QUERY_ERROR);
       return;
@@ -572,6 +608,9 @@ export default function App({
       setError(SAVED_QUERY_ERROR);
       return;
     }
+    setSource("files");
+    setMode("name");
+    setRegexMode(false);
     setQuery(saved.query);
     setFilter(normalizedFilter ?? EMPTY_FILTER);
     setExtensionInput(normalizedFilter?.extensions?.join(", ") ?? "");
@@ -860,7 +899,9 @@ export default function App({
                   : sourceSnapshot?.state === "timed_out"
                     ? "제한 시간 내 확인한 결과입니다. 연결을 확인하지 못한 파일은 열 수 없습니다."
                     : sourceSnapshot?.partial
-                      ? "일부 결과입니다. 결과 상한이나 연결 상태를 확인해 주세요."
+                      ? regexMode
+                        ? "일부 후보에서 검색했습니다. 후보 상한이나 연결 상태를 확인해 주세요."
+                        : "일부 결과입니다. 결과 상한이나 연결 상태를 확인해 주세요."
                       : source === "current_project"
                         ? "현재 프로젝트 폴더의 파일 인덱스에서 검색합니다."
                         : source === "notes"
@@ -877,7 +918,11 @@ export default function App({
         </div>
       )}
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div role="alert" className="error">
+          {error}
+        </div>
+      )}
       {regexError && <div className="error">{regexError}</div>}
 
       <div className="query-tools" aria-label="저장된 검색과 필터">
@@ -905,11 +950,22 @@ export default function App({
           className="btn"
           type="button"
           onClick={() => void onSaveQuery()}
-          disabled={savedQueryBusy || !query.trim() || !savedName.trim() || !isSavedDefinitionAllowed(savedName, query)}
+          disabled={
+            savedQueryBusy ||
+            source !== "files" ||
+            mode !== "name" ||
+            regexMode ||
+            !query.trim() ||
+            !savedName.trim() ||
+            !isSavedDefinitionAllowed(savedName, query)
+          }
           aria-busy={savedQueryBusy}
         >
           검색어 저장
         </button>
+        {(source !== "files" || mode !== "name" || regexMode) && (
+          <p>저장된 검색은 파일 이름의 일반 검색만 지원합니다. 불러오면 파일 이름·일반 검색으로 전환합니다.</p>
+        )}
         <select
           className="saved-select"
           aria-label="저장된 검색어 불러오기"
@@ -1132,7 +1188,13 @@ export default function App({
                   {watcherLabel(ws)}
                 </span>
               )}
-              <button className="root-del" title="루트 제거" onClick={() => void removeRoot(r.path).then(loadMeta)}>
+              <button
+                className="root-del"
+                title="루트 제거"
+                aria-label="루트 제거"
+                disabled={removingRoots.has(r.path)}
+                onClick={() => void deleteRoot(r.path)}
+              >
                 ✕
               </button>
             </span>

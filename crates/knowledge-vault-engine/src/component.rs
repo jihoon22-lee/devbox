@@ -15,7 +15,9 @@ pub fn configure_document_helper(directory: std::path::PathBuf, digest: &'static
     crate::platform::document_wsl::configure(directory, digest, bytes);
 }
 
-pub use crate::core::db::product_search as search_projection;
+pub use crate::core::db::{
+    product_name_candidates as name_candidates_projection, product_search as search_projection,
+};
 pub use crate::core::journal::JournalView as RecoveryView;
 
 /// Native selected-store recovery only; no source access or watcher startup.
