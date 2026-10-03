@@ -16,6 +16,31 @@ const files: WorkspaceFile[] = [
 afterEach(() => cleanup());
 
 describe("QuickOpen", () => {
+  it("keeps composition Enter and Escape inside the search without opening or closing a file", () => {
+    const onOpen = vi.fn(),
+      onClose = vi.fn();
+    const view = render(
+      <QuickOpen
+        files={files}
+        truncated={false}
+        loading={false}
+        workspaceFolder="/workspace"
+        onOpen={onOpen}
+        onClose={onClose}
+      />,
+    );
+    const input = view.getByRole("combobox", { name: "파일 검색" });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true, keyCode: 229 });
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true, keyCode: 229 });
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onOpen).toHaveBeenCalledOnce();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("explains the missing workspace instead of exposing stale file rows", () => {
     const rendered = render(
       <QuickOpen
