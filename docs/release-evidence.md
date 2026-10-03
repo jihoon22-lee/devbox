@@ -1,9 +1,9 @@
 # Release evidence index
 
-## v0.9.0 — 철회본과 재출시 준비
+## v0.9.0 — 수정본 확인과 철회 이력
 
 2026-10-03 설치/UI 문제로 Release와 공개 자산을 삭제했다. #580은 NOT_PLANNED로 닫혔다.
-현재 재출시 검증은 진행 중이며 아래는 **철회본의 역사적 자동 검사 결과**다. 수정본의 PASS로 재사용하지 않는다.
+수정본의 최종 source SHA·후보 run·수용 결과는 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)와 연결된 통합 PR·Actions artifact가 원장이다. 이 문서에 적힌 아래 결과는 **철회본의 역사적 자동 검사 결과**이며 수정본의 PASS로 재사용하지 않는다.
 [현재 실행 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)을 따른다.
 
 ### 철회 전 공개 이력

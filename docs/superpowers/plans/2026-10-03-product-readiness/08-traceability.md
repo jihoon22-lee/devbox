@@ -1,6 +1,6 @@
 # 감사·추가 개선·검증 추적표
 
-2026-10-03 실행 중. R01–R14의 주요 수정과 좁은 로컬 회귀를 아래 작업별 근거에 연결했다. Windows packaged 사용자 여정은 R15에서 연결 중이며 아직 **NOT_RUN**이다. 구현·로컬 PASS를 출시 수용 PASS로 해석하지 않는다. 최종 PR·candidate·release 결과는 같은 통합 PR 본문과 Actions artifact에 추가한다.
+2026-10-03 실행 중. R01–R14의 주요 수정과 좁은 로컬 회귀를 아래 작업별 근거에 연결했다. Windows packaged 사용자 여정 runner와 전체 gate는 R15에서 연결했으며, 후보 실행 전 상태는 **NOT_RUN**이다. 구현·로컬 PASS를 출시 수용 PASS로 해석하지 않는다. 최종 PR·candidate·release 결과는 같은 통합 PR 본문과 Actions artifact에 추가한다.
 
 코드 경로는 현재 `/home/jihoon/projects/devbox` 기준이다. 다른 checkout에서는 저장소 상대 위치를 그대로 사용한다. 상세 변경 파일과 assertion은 소유 작업 문서에 있다.
 
@@ -103,10 +103,12 @@ R00 matrix 검사로 기존23·추가4·개선12의 소유 작업 누락과 scen
 | R13 | `4345e80a`, `fd49b549` | idle sessionizer·실패 ack·DST 과거 기록, 날짜·privacy·owner UI, native tracking·exporter·tsc | ACTIVITY-01–03 |
 | R14 | `5b314ca7`, `a6a41fe5` | Runtime recovery/Terminal/Dependencies/Files 영향 및 tsc; 응답 유실 뒤 실제 상태 조회로 실행 여부 조정, 부작용 중복 실행 차단 | RUNTIME-01/02, LSP-01, DEPS-01 |
 | R15 | `efa4c861`, `8dc2b443`, `3ce46aac`, `8a51160d`, `33f031a3`, `f3be5eb1`, `df2fd78d` | 실제 입력·앱별 여정·handoff·설치 단계 관찰 runner 연결, exact-source/digest/전체 ID/스크린샷 gate; 로컬 runner 계약 검사 | 전체 packaged UI 여정은 후보 실행 전 NOT_RUN |
-| R16 | 문서 준비 중 | 현재 안내·닫힌 원장·철회 이력 정합성 정리 | 최종 로컬 검사→PR CI→main CI→candidate→tag/release |
+| R16 | `b2443b99`, `ee687389`, `eac4b572` | 현재 문서·닫힌 원장·철회 이력 정합성, 실제 철회본 7개 파일 digest, 업데이트·설치 실패 runner 준비 | PR CI→main CI→candidate→tag/release |
 
 추가 구현 검토에서 설치 준비 중의 제품 연결과 Agent 재연결을 구분했다. 제품 버스는 준비 상태 확인에 필요하므로 복구 단계에도 명시적으로 연결할 수 있고, 일반 작업·Agent 재연결·수신 작업은 계속 차단한다. API의 좁은 창에서 숨겨지던 코드/OpenAPI/캡처 조작도 브라우저 측정으로 확인해 줄바꿈을 적용했다.
 
 R15 여정 연결에서 추가 발견한 결함도 수정했다. Workspace 빠른 열기의 한글 조합 Enter 보호(`f58a7199`), API 버튼의 실제 접근성 이름(`733d5b0b`), 대상 ES 버전에서 지원하지 않는 Array.at 사용(`3070818a`), Windows 입력 tick 순환(`fd49b549`)을 직접 영향 범위로 확인했다. 설치 수용은 동일 설치 key와 후보 digest를 추적하며, v0.8.1에서 전환하는 별도 소유 fixture만 부모 설치 key를 명시하는 예외를 둔다. 예전 공개본의 성공을 새 후보에 승계하지 않는다.
 
 기존 후보 artifact `11265063384`(run `37095144741`)의 철회본은 새 후보가 아니라 동일 버전 교체 검사의 고정 입력이다. manifest SHA-256 `27a3dd7b2dab585fa6a930d3a1e64bd4f1f3166a141c926080f005bc16114b4b` 및 7개 파일의 폐쇄 목록·크기·digest를 확인한다. 입력이 없거나 바뀌면 새 빌드로 대신하지 않는다. 별도 v0.8.1 전환과 실제 철회본→수정본 경로의 데이터 보존은 각각 구분해 기록한다.
+
+최종 로컬 통합에서 기존 크기 상한을 넘은 컴포넌트는 앱 내부 helper로 분리했다(`726cfdf8`, `9762e3d0`, `cdd34186`). Knowledge의 초기 route 처리는 복구 가능한 지연 로딩으로 옮겨 초기 JS 278,731 bytes(상한 280,000)를 확인했다. 타입·테스트 계약 누락과 훅 의존성, Clippy 지적을 보완했고, 최초 전체 검사의 실패/미실행 범위만 이어서 확인했다. 상세 결과와 최종 source는 단일 PR 본문에 기록한다.

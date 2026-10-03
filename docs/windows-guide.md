@@ -13,7 +13,7 @@ Suite 설치 파일 `Devbox_0.9.0_x64-setup.exe`는 Workspace·API Studio·Knowl
 
 ## v0.9.0 설치와 알려진 제한
 
-2026-10-03 첫 v0.9.0 공개본은 설치·UI 문제로 철회했다. 수정본은 [현재 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)에 따라 준비한다.
+2026-10-03 첫 v0.9.0 공개본은 설치·UI 문제로 철회했다. 수정 범위와 필수 수용 조건은 [재정비 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)에 기록했다.
 Release에 게시된 수정본과 해당 후보의 검증 결과를 확인한 뒤 설치한다. 새 설치·기존 데이터 보존·실제 UI 수용을 재출시 조건으로 확인하며, 미실행 항목을 PASS로 기록하지 않는다.
 
 공개 v0.8.1 Control Center의 manifest 검사에는 Knowledge WSL helper와 devbox-agent가
