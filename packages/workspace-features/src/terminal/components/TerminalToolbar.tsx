@@ -93,6 +93,7 @@ export function TerminalToolbar({
         ))}
       </select>
       <input
+        aria-label="시작 경로"
         className="cwd"
         list="cwd-recent"
         placeholder="경로 열기 (선택, 예: /mnt/c/projects)"
@@ -103,6 +104,7 @@ export function TerminalToolbar({
         }}
       />
       <input
+        aria-label="시작 명령"
         className="start-command"
         placeholder={
           isRestoreOnly() ? "상태 복원 창에서는 시작 명령을 보내지 않습니다" : "시작 명령 (선택, 프로필에 저장)"

@@ -279,8 +279,8 @@ export default function Terminal({ description, registry }: { description: Descr
         </button>
       )}
       <ul>
-        {sessions.map((session) => (
-          <li key={session.id}>
+        {sessions.map((session, index) => (
+          <li key={session.id} aria-label={`${index + 1}번째 터미널`}>
             <span>
               {session.context
                 ? `${registry?.projects.find((project) => project.id === session.context?.projectId)?.name ?? "연결되지 않은 프로젝트"} · ${registry?.worktrees.find((tree) => tree.id === session.context?.worktreeId)?.binding.root ?? "작업 폴더 확인 필요"}`

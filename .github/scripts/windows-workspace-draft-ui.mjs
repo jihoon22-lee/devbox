@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
-export const scenarioIds = ["WORK-01", "WORK-02"];
+export const scenarioIds = ["WORK-01"];
 export async function run(context) {
-  const { ui, fixtureRoot, sourceSha, fixtureSha, artifactDigests, workspaceFixture } = context;
-  const record = (id, status, assertions, screenshotPaths, failureCode = null) => ({
+  const { ui, fixtureRoot, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
+  const results = [],
+    screenshots = [];
+  const record = (id, status, assertions, failureCode = null) => ({
     id,
     status,
     sourceSha,
@@ -12,79 +14,112 @@ export async function run(context) {
     artifactDigests,
     evidenceKind: "packaged-ui",
     assertions,
-    screenshotPaths,
+    screenshotPaths: [...screenshots],
     failureCode,
   });
-  if (!workspaceFixture?.prepare || !workspaceFixture?.crashAndReopen || !workspaceFixture?.context) {
+  if (
+    !["prepare", "crashAndReopen", "context", "recovery", "failRecoveryWriter", "reopenAfterClose"].every(
+      (key) => typeof fixture?.[key] === "function",
+    )
+  )
     return scenarioIds.map((id) =>
       record(
         id,
         "NOT_RUN",
-        ["Owned Workspace namespace, crash/reopen and context observation adapters required"],
-        [],
+        ["Owned native lifecycle, recovery failure and Agent review adapters required"],
         "workspace-owned-fixture-required",
       ),
     );
-  }
   const root = await mkdtemp(path.join(fixtureRoot, "workspace-draft-"));
-  const screenshots = [];
   try {
-    const file = path.join(root, "한글.txt");
-    await writeFile(file, "원본\r\n", "utf8");
-    await workspaceFixture.prepare(root);
-    await ui.click({ role: "button", name: "Files" });
-    await ui.fill({ role: "textbox", name: "열 파일 경로" }, file);
-    await ui.click({ role: "button", name: "파일 열기" });
+    const file = path.join(root, "한글.txt"),
+      original = Buffer.from("원본\r\n");
+    await writeFile(file, original);
+    await fixture.prepare(root);
+    const open = async () => {
+      await ui.click({ role: "button", name: "파일" });
+      await ui.fill({ role: "textbox", name: "열 파일 경로" }, file);
+      await ui.click({ role: "button", name: "파일 열기" });
+      await fixture.waitForText({ role: "textbox", name: "" });
+    };
+    const journal = async (text) =>
+      fixture.wait(
+        async () => (await fixture.recovery()).entries.some((entry) => entry.path === file && entry.content === text),
+        "dirty journal persisted",
+      );
+    await open();
     await ui.fill({ role: "textbox", name: "" }, "");
-    await workspaceFixture.waitForText({ role: "status", name: "복구 내용을 기록했습니다." });
+    await journal("");
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "종료 취소" });
     assert.equal(await ui.text({ role: "textbox", name: "" }), "");
-    assert.equal(await readFile(file, "utf8"), "원본\r\n");
+    assert.deepEqual(await readFile(file), original);
     screenshots.push(await ui.screenshot("workspace-close-cancel"));
-    await workspaceFixture.crashAndReopen();
+    await fixture.crashAndReopen();
+    await fixture.waitForText({ role: "button", name: "복구 (1)" });
     await ui.click({ role: "button", name: "복구 (1)" });
     assert.equal(await ui.text({ role: "textbox", name: "" }), "");
-    screenshots.push(await ui.screenshot("workspace-empty-recovery"));
-    const first = record(
-      "WORK-01",
-      "PASS",
-      [
-        "Normal native close cancel preserved empty dirty text and original file",
-        "Owned crash and reopen restored the confirmed empty recovery snapshot",
-      ],
-      [...screenshots],
+    assert.deepEqual(await readFile(file), original);
+    await journal("");
+    // Metadata-only dirty recovery must preserve BOM and line ending across a crash.
+    await ui.fill({ role: "textbox", name: "" }, "원본\n");
+    await fixture.selectOption({ role: "combobox", name: "저장 인코딩" }, 1);
+    await fixture.selectOption({ role: "combobox", name: "줄바꿈 변환" }, 0);
+    await fixture.wait(
+      async () =>
+        (await fixture.recovery()).entries.some(
+          (entry) => entry.path === file && entry.encoding?.bom === true && entry.line_ending === "lf",
+        ),
+      "encoding-only journal metadata",
     );
-    // Prepared fixture supplies a second owned registered worktree, never user state.
-    await ui.click({ role: "button", name: "Source" });
-    await ui.fill({ role: "textbox", name: "커밋 메시지" }, "owned Source draft");
-    const before = await workspaceFixture.context();
-    await ui.click({ role: "button", name: "Agents" });
-    await ui.click({ role: "button", name: "검토" });
-    assert.deepEqual(await workspaceFixture.context(), before);
-    await ui.click({ role: "button", name: "Source" });
-    assert.equal(await ui.text({ role: "textbox", name: "커밋 메시지" }), "owned Source draft");
-    return [
-      first,
-      record(
-        "WORK-02",
-        "PASS",
-        ["Agent review kept the native context and actual Source commit draft"],
-        [await ui.screenshot("workspace-source-context-guard")],
-      ),
-    ];
+    await fixture.crashAndReopen();
+    await ui.click({ role: "button", name: "복구 (1)" });
+    await ui.closeOwnedWindow();
+    await ui.click({ role: "button", name: "파일 저장 후 종료" });
+    await fixture.reopenAfterClose();
+    assert.deepEqual(await readFile(file), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("원본\n")]));
+    assert.equal((await fixture.recovery()).entries.length, 0);
+    await open();
+    await ui.fill({ role: "textbox", name: "" }, "폐기할 초안");
+    await journal("폐기할 초안");
+    const saved = await readFile(file);
+    await ui.closeOwnedWindow();
+    await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
+    await fixture.reopenAfterClose();
+    assert.deepEqual(await readFile(file), saved);
+    assert.equal((await fixture.recovery()).entries.length, 0);
+    // Real owned filesystem failure: writer/normal-close must retain the live draft.
+    await open();
+    await ui.fill({ role: "textbox", name: "" }, "실패 전 초안");
+    await journal("실패 전 초안");
+    await fixture.failRecoveryWriter();
+    await ui.fill({ role: "textbox", name: "" }, "실패 후 보존할 초안");
+    await ui.closeOwnedWindow();
+    await ui.click({ role: "button", name: "파일 저장 후 종료" });
+    await fixture.waitForText({ role: "alert", name: "" });
+    assert.deepEqual(await readFile(file), saved);
+    screenshots.push(await ui.screenshot("workspace-writer-failure-retained"));
+    await ui.click({ role: "button", name: "종료 취소" });
+    assert.equal(await ui.text({ role: "textbox", name: "" }), "실패 후 보존할 초안");
+    await fixture.restoreRecoveryWriter();
+    await ui.closeOwnedWindow();
+    await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
+    await fixture.reopenAfterClose();
+    results.push(
+      record("WORK-01", "PASS", [
+        "Normal native close cancel/save/discard preserve drafts or exact original bytes as reviewed",
+        "Crash restores empty and encoding/BOM/line-ending metadata into dirty buffers; journal removed only after save/discard",
+        "Owned writer failure blocks close and retains unsaved text without rewriting original",
+      ]),
+    );
   } catch {
-    return scenarioIds.map((id) =>
-      record(
-        id,
-        "FAIL",
-        ["Owned Workspace draft UI scenario did not complete"],
-        screenshots,
-        "workspace-draft-ui-failed",
-      ),
-    );
+    for (const id of scenarioIds)
+      if (!results.some((result) => result.id === id))
+        results.push(
+          record(id, "FAIL", ["Owned Workspace draft UI scenario did not complete"], "workspace-draft-ui-failed"),
+        );
   } finally {
-    await workspaceFixture.cleanup?.();
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
+  return results;
 }

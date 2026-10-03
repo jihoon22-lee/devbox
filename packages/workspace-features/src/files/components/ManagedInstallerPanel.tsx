@@ -157,7 +157,11 @@ function ManagedInstallCard({
   const metadata = metadataFor(manifest, status, "uninstall");
 
   return (
-    <article className="lsp-installer-card" data-testid={`managed-install-${actionKey}`}>
+    <article
+      aria-label={`${status.manifest_id} ${status.version}`}
+      className="lsp-installer-card"
+      data-testid={`managed-install-${actionKey}`}
+    >
       <div className="lsp-installer-card-head">
         <div>
           <strong>{status.manifest_id}</strong>

@@ -397,6 +397,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
       {ready && (runtimeVisited || isRuntimeRoute) && (
         <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
           <NativeRuntimeRoutes
+            transitioning={transitionPending}
             focusRequest={runtimeFocus}
             onFocusConsumed={consumeRuntimeFocus}
             route={route}

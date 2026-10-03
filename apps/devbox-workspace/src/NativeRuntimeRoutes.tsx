@@ -32,11 +32,13 @@ export default function NativeRuntimeRoutes({
   onExternalLogConsumed,
   focusRequest,
   onFocusConsumed,
+  transitioning = false,
 }: {
   route: string;
   description: Description;
   navigate: (route: string) => void;
   tasksDirty: boolean;
+  transitioning?: boolean;
   onDirtyChange: (dirty: boolean) => void;
   onDiagnostic: (request: Diagnostic) => void;
   focusRequest?: RuntimeFocusRequest | null;
@@ -180,7 +182,7 @@ export default function NativeRuntimeRoutes({
     <>
       {runtimeNotice && <p role="status">{runtimeNotice}</p>}
       {(engineVisited.has("tasks") || route === "tasks") && (
-        <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
+        <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks" || transitioning}>
           <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}>
             <IncomingRuntimeReview description={description} />
             <Tasks
@@ -196,7 +198,11 @@ export default function NativeRuntimeRoutes({
         </div>
       )}
       {(engineVisited.has("runtime") || route === "runtime") && (
-        <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
+        <div
+          className="workspace-feature-runtime"
+          hidden={route !== "runtime"}
+          inert={route !== "runtime" || transitioning}
+        >
           <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}>
             <Runtime
               openPort={focus?.target.kind === "port" ? { id: focus.id, port: focus.target.port } : null}
@@ -208,7 +214,7 @@ export default function NativeRuntimeRoutes({
         </div>
       )}
       {(engineVisited.has("logs") || route === "logs") && (
-        <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
+        <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs" || transitioning}>
           <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}>
             <IncomingWebhookLog description={description} onOpen={acceptWebhook} />
             <Logs active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog} />

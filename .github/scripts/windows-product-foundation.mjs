@@ -32,6 +32,12 @@ import {
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+if (process.argv.includes("--workspace-user-flows")) {
+  assert.deepEqual(process.argv.slice(2), ["--workspace-user-flows"]);
+  const { runWorkspaceUserFlows } = await import("./windows-workspace-user-flows.mjs");
+  await runWorkspaceUserFlows();
+  process.exit(0);
+}
 const smokeOnly = process.argv.includes("--smoke-only");
 assert.ok(process.argv.slice(2).every((value) => value === "--smoke-only"));
 const elevated = windowsProcessIsElevated();

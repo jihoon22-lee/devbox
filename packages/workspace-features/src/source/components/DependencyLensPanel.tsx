@@ -445,7 +445,7 @@ export default function DependencyLensPanel({
             )}
 
             {preview && (
-              <div className="dependency-enrichment-preview" aria-label="원격 전송 검토">
+              <div className="dependency-enrichment-preview" role="region" aria-label="원격 전송 검토">
                 <div className="dependency-enrichment-disclosure">
                   <strong>실제 전송 예정</strong>
                   <span>

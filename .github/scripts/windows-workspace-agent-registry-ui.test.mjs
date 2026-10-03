@@ -7,6 +7,9 @@ test("a missing isolated Agent fixture remains NOT_RUN", async () => {
     fixtureSha: "b".repeat(40),
     artifactDigests: { workspace: "c".repeat(64) },
   });
-  assert.equal(records[0].id, "WORK-03");
-  assert.equal(records[0].status, "NOT_RUN");
+  assert.deepEqual(
+    records.map((result) => result.id),
+    ["WORK-02", "WORK-03"],
+  );
+  assert.ok(records.every((result) => result.status === "NOT_RUN"));
 });

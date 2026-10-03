@@ -3,12 +3,30 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
   if (typeof closeOwnedWindow !== "function") throw new Error("Owned native close adapter required");
-  async function locate({ role, name }) {
+  async function locate({ role, name, scope }) {
     if (!role || typeof name !== "string") throw new Error("Exact accessible target required");
     const { nodes } = await cdp.command("Accessibility.getFullAXTree");
-    const found = nodes.filter((n) => !n.ignored && n.role?.value === role && n.name?.value === name);
+    let candidates = nodes;
+    if (scope) {
+      if (!scope.role || typeof scope.name !== "string") throw new Error("Exact accessible scope required");
+      const ancestors = nodes.filter(
+        (node) => !node.ignored && node.role?.value === scope.role && node.name?.value === scope.name,
+      );
+      if (ancestors.length !== 1) throw new Error("Accessible scope must be unique");
+      const descendants = new Set();
+      const queue = [...(ancestors[0].childIds ?? [])];
+      const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+      while (queue.length) {
+        const id = queue.pop();
+        if (descendants.has(id)) continue;
+        descendants.add(id);
+        queue.push(...(byId.get(id)?.childIds ?? []));
+      }
+      candidates = nodes.filter((node) => descendants.has(node.nodeId));
+    }
+    const found = candidates.filter((n) => !n.ignored && n.role?.value === role && n.name?.value === name);
     if (found.length !== 1) throw new Error(`Expected one accessible ${role}: ${name}; found ${found.length}`);
-    return found[0];
+    return { ...found[0], axNodes: nodes };
   }
   async function click(target) {
     const node = await locate(target);
@@ -71,6 +89,19 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     },
     async text(target) {
       const node = await locate(target);
+      if (["alert", "status", "region", "dialog"].includes(node.role?.value)) {
+        const byId = new Map(node.axNodes.map((item) => [item.nodeId, item]));
+        const text = [],
+          visited = new Set();
+        function collect(item) {
+          if (!item || visited.has(item.nodeId)) return;
+          visited.add(item.nodeId);
+          if (item.role?.value === "StaticText") text.push(String(item.name?.value ?? ""));
+          else for (const id of item.childIds ?? []) collect(byId.get(id));
+        }
+        collect(node);
+        return text.join(" ");
+      }
       return String(node.value?.value ?? node.name?.value ?? "");
     },
     async screenshot(name) {
@@ -80,6 +111,14 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       const file = path.resolve(evidenceRoot, `${name}.png`);
       await writeFile(file, Buffer.from(data, "base64"));
       return file;
+    },
+    async typeText(text) {
+      if (typeof text !== "string") throw new Error("Text input required");
+      await cdp.command("Input.insertText", { text });
+    },
+    async confirmDialog(accept) {
+      if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");
+      await cdp.command("Page.handleJavaScriptDialog", { accept });
     },
     closeOwnedWindow,
   };
