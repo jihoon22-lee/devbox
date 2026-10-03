@@ -219,7 +219,7 @@ test("diagnostic styles are disabled by default and require explicit hosted sour
   for (const key of ["GITHUB_SHA", "DEVBOX_SUITE_ARTIFACT_SOURCE", "DEVBOX_SUITE_ARTIFACT_RUN"])
     assert.throws(() => diagnosticStylesConfig({ ...env, [key]: "" }), /valid-source-run-pair-required/);
 });
-test("diagnostic style injection uses inspector CSS and verifies computed layout", async () => {
+test("diagnostic style injection appends to the unique authored sheet and verifies computed layout", async () => {
   const css = ".response { min-height: 320px; }";
   const calls = [];
   const computed = {
@@ -229,22 +229,47 @@ test("diagnostic style injection uses inspector CSS and verifies computed layout
     bodyPresent: true,
     bodyMinHeight: "160px",
   };
+  const regular = {
+    matchingSelectors: [0],
+    rule: {
+      origin: "regular",
+      styleSheetId: "authored-sheet",
+      selectorList: {
+        text: ".api-feature-requests .response",
+        selectors: [{ text: ".api-feature-requests .response" }],
+      },
+      style: { cssProperties: [{ name: "flex", value: "1" }] },
+    },
+  };
   const cdp = {
     send: async (method, params) => {
       calls.push({ method, params });
-      if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "root-frame" } } };
-      if (method === "CSS.createStyleSheet") return { styleSheetId: "inspector-sheet" };
+      if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
+      if (method === "DOM.querySelector") return { nodeId: 2 };
+      if (method === "CSS.getMatchedStylesForNode") return { matchedCSSRules: [regular] };
+      if (method === "CSS.getStyleSheetText") return { text: ".api-feature-requests .response { flex: 1; }" };
       return {};
     },
     evaluate: async () => computed,
   };
-  assert.equal(await applyDiagnosticStyles(cdp, css), computed);
+  const result = await applyDiagnosticStyles(cdp, css);
+  assert.equal(result.responseFlexShrink, "0");
+  assert.match(result.stylesheet.authoredStyleSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(
     calls.map((call) => call.method),
-    ["DOM.enable", "CSS.enable", "Page.getFrameTree", "CSS.createStyleSheet", "CSS.setStyleSheetText"],
+    [
+      "DOM.enable",
+      "CSS.enable",
+      "DOM.getDocument",
+      "DOM.querySelector",
+      "CSS.getMatchedStylesForNode",
+      "CSS.getStyleSheetText",
+      "CSS.setStyleSheetText",
+    ],
   );
-  assert.deepEqual(calls[3].params, { frameId: "root-frame" });
-  assert.deepEqual(calls[4].params, { styleSheetId: "inspector-sheet", text: css });
+  assert.equal(calls[6].params.styleSheetId, "authored-sheet");
+  assert.ok(calls[6].params.text.startsWith(".api-feature-requests .response { flex: 1; }"));
+  assert.ok(calls[6].params.text.endsWith(css));
   let observed;
   await assert.rejects(
     applyDiagnosticStyles(
@@ -271,8 +296,16 @@ test("diagnostic style injection uses inspector CSS and verifies computed layout
       },
       css,
     ),
-    /inspector-injection-failed/,
+    /authored-injection-failed/,
   );
+  const ambiguous = {
+    ...cdp,
+    send: async (method, params) =>
+      method === "CSS.getMatchedStylesForNode"
+        ? { matchedCSSRules: [regular, { ...regular, rule: { ...regular.rule, styleSheetId: "other-sheet" } }] }
+        : cdp.send(method, params),
+  };
+  await assert.rejects(applyDiagnosticStyles(ambiguous, css), /authored-response-stylesheet-not-unique/);
 });
 test("diagnostic stylesheet strips exactly the two packaged imports and preserves remaining CSS", () => {
   const imports = '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n';

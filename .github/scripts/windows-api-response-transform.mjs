@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Observe only fixed UI state. Never export selected response text or credentials.
 export const responseTransformObservation = `(() => {
   const body = document.querySelector('.api-feature-requests .resp-body');
@@ -123,23 +124,71 @@ export async function applyDiagnosticStyles(cdp, css, observe = () => {}) {
   if (typeof css !== "string" || !css.length || css.length > 1024 * 1024)
     throw new Error("api-diagnostic-styles-invalid-css");
   let computed;
+  let stylesheet;
   try {
     await cdp.send("DOM.enable");
     await cdp.send("CSS.enable");
-    const { frameTree } = await cdp.send("Page.getFrameTree");
-    if (!frameTree?.frame?.id) throw new Error("missing-root-frame");
-    const { styleSheetId } = await cdp.send("CSS.createStyleSheet", { frameId: frameTree.frame.id });
-    if (!styleSheetId) throw new Error("missing-inspector-stylesheet");
-    await cdp.send("CSS.setStyleSheetText", { styleSheetId, text: css });
+    const { root } = await cdp.send("DOM.getDocument");
+    const { nodeId } = await cdp.send("DOM.querySelector", {
+      nodeId: root.nodeId,
+      selector: ".api-feature-requests .response",
+    });
+    if (!nodeId) throw new Error("missing-response-node");
+    const matched = await cdp.send("CSS.getMatchedStylesForNode", { nodeId });
+    const rules = (matched.matchedCSSRules ?? []).filter(
+      ({ rule, matchingSelectors }) =>
+        rule.origin === "regular" &&
+        rule.styleSheetId &&
+        matchingSelectors.some(
+          (index) => rule.selectorList.selectors[index]?.text === ".api-feature-requests .response",
+        ),
+    );
+    const ids = [...new Set(rules.map(({ rule }) => rule.styleSheetId))];
+    if (ids.length !== 1) throw new Error("authored-response-stylesheet-not-unique");
+    const styleSheetId = ids[0];
+    const { text } = await cdp.send("CSS.getStyleSheetText", { styleSheetId });
+    if (typeof text !== "string" || text.length > 4 * 1024 * 1024) throw new Error("invalid-authored-stylesheet");
+    const appended = text + "\n/* Explicit retained API diagnostic overlay. */\n" + css;
+    stylesheet = {
+      injection: "authored-stylesheet-append",
+      authoredStyleSha256: createHash("sha256").update(text).digest("hex"),
+      combinedStyleSha256: createHash("sha256").update(appended).digest("hex"),
+      matchedRules: rules.map(({ rule }) => ({
+        selector: rule.selectorList.text,
+        origin: rule.origin,
+        declarations: rule.style.cssProperties
+          .filter((property) =>
+            [
+              "flex",
+              "flex-grow",
+              "flex-shrink",
+              "flex-basis",
+              "min-height",
+              "overflow",
+              "overflow-x",
+              "overflow-y",
+            ].includes(property.name),
+          )
+          .map(({ name, value, important }) => ({ name, value, important: !!important })),
+      })),
+    };
+    observe({ stylesheet });
+    await cdp.send("CSS.setStyleSheetText", { styleSheetId, text: appended });
     computed = await cdp.evaluate(`(() => {
       const response = document.querySelector('.api-feature-requests .response');
       const body = document.querySelector('.api-feature-requests .resp-body');
       const style = response ? getComputedStyle(response) : null;
       return { responsePresent: !!response, responseFlexShrink: style?.flexShrink || null, responseMinHeight: style?.minHeight || null, bodyPresent: !!body, bodyMinHeight: body ? getComputedStyle(body).minHeight : null };
     })()`);
-  } catch {
-    throw new Error("api-diagnostic-styles-inspector-injection-failed");
+  } catch (error) {
+    const known = ["missing-response-node", "authored-response-stylesheet-not-unique", "invalid-authored-stylesheet"];
+    throw new Error(
+      known.includes(error.message)
+        ? "api-diagnostic-styles-" + error.message
+        : "api-diagnostic-styles-authored-injection-failed",
+    );
   }
+  computed = { ...computed, stylesheet };
   observe(computed);
   if (
     !computed.responsePresent ||

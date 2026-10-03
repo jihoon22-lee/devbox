@@ -43,7 +43,7 @@ const appliedDiagnosticCss = diagnosticStyles ? prepareDiagnosticCss(diagnosticC
 if (diagnosticStyles) {
   diagnosticStyles.appliedStyleSha256 = createHash("sha256").update(appliedDiagnosticCss).digest("hex");
   diagnosticStyles.removedImports = ["@devbox/tokens/tokens.css", "@devbox/a11y/styles.css"];
-  diagnosticStyles.injection = "devtools-inspector-stylesheet";
+  diagnosticStyles.injection = "authored-stylesheet-append";
 }
 const root = mkdtempSync(path.join(tmpdir(), "devbox-api-migration-fixture-s03-"));
 const executable = path.join(root, `api-s03-${randomUUID()}.exe`);
