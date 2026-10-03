@@ -114,9 +114,9 @@ export function diagnosticStylesConfig(env) {
 }
 
 export function prepareDiagnosticCss(css) {
-  const imports = '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n';
-  if (typeof css !== "string" || !css.startsWith(imports)) throw new Error("api-diagnostic-styles-unexpected-imports");
-  return css.slice(imports.length);
+  const imports = /^@import "@devbox\/tokens\/tokens\.css";\r?\n@import "@devbox\/a11y\/styles\.css";\r?\n/.exec(css);
+  if (typeof css !== "string" || !imports) throw new Error("api-diagnostic-styles-unexpected-imports");
+  return css.slice(imports[0].length);
 }
 
 export async function applyDiagnosticStyles(cdp, css, observe = () => {}) {

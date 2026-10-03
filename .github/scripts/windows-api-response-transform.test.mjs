@@ -278,5 +278,6 @@ test("diagnostic stylesheet strips exactly the two packaged imports and preserve
   const imports = '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n';
   const css = "\n.response { min-height: 320px; }\n";
   assert.equal(prepareDiagnosticCss(imports + css), css);
+  assert.equal(prepareDiagnosticCss(imports.replaceAll("\n", "\r\n") + css), css);
   assert.throws(() => prepareDiagnosticCss('@import "other.css";\n' + css), /unexpected-imports/);
 });
