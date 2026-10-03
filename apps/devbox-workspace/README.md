@@ -64,3 +64,23 @@ latency and process behavior require the Windows acceptance fixture; local bash 
 not Windows evidence.
 
 설치본의 작업·서비스·예약·Development Sessions 실행은 agent가 소유한다. 창을 닫아도 실행은 유지되며 재열기 시 기존 receipt와 lease로 복구한다. agent가 종료되어 lease가 사라진 세션은 Degraded로 표시하고 자동 재실행하지 않는다. 터미널·편집기·LSP는 Workspace에 남는다. 로그인 자동 시작은 Control Center 환경에서 설정한다.
+
+### 초안·실행 복구 수용
+
+Files는 dirty 본문(빈 본문 포함)과 encoding/BOM/line ending을 native 복구 저장소에 기록한다.
+‘복구 내용을 기록했습니다’ 이후의 마지막 확인된 snapshot이 crash 복구 경계다. 복구는
+검토한 내용을 dirty 편집 버퍼로 열며 일반 저장 또는 명시 폐기까지 복구 기록을 유지한다.
+옛 기록은 원본 파일의 저장 형식을 다시 읽고, 원본을 읽을 수 없으면 기록을 보존한 채
+파일 접근과 인코딩을 먼저 확인한다. main X는 종료 검토를 열고 저장·폐기·취소를 구분한다.
+Source 초안은 context 전환과 정상 종료를 보호한다. Source crash 복원은 제공하지 않는다.
+
+Windows 수용은 임시 소유 namespace에서 `WORK-01/02/03` UI 모듈로 정상 종료 취소,
+확인된 복구 snapshot의 crash/reopen, Source 초안의 Agent 전환 차단, 새 Agent worktree의
+등록·선택·정리를 확인한다. 격리 WSL fixture와 native 창/process 관찰 adapter가 없으면
+`NOT_RUN`으로 남기며 WSL frontend/unit PASS를 실제 Windows PASS로 대체하지 않는다.
+
+Runtime 요청 복구에서 대상 실행 상태를 먼저 열고 요청 기록을 정리한다. 기록 정리는
+프로세스 중단이 아니다. Terminal은 native 열림 성공 뒤 목록 실패를 구분하고 상태 조회와
+동일 요청 확인을 분리한다. 세션 시작 결과가 불확실하면 ‘세션 상태 확인’으로 기존 세션을
+조회한다. Dependencies의 lock 변경은 다시 분석→전송 내용 검토→명시 승인 순으로 처리한다.
+기본 분석은 로컬 lockfile을 읽으며 패키지를 설치하거나 제거하지 않는다.

@@ -317,7 +317,8 @@ export default function DependencyLensPanel({
         <div>
           <h2>Dependency Lens</h2>
           <p className="dim">
-            기본 분석은 로컬 lockfile만 읽습니다. 원격 보강은 전송 내용을 검토하고 승인한 경우에만 실행됩니다.
+            패키지를 설치하거나 제거하지 않습니다. 기본 분석은 로컬 lockfile만 읽습니다. 원격 보강은 전송 내용을
+            검토하고 승인한 경우에만 실행됩니다.
           </p>
         </div>
         <button type="button" className="btn primary" disabled={busy} onClick={() => void analyze()}>
@@ -382,7 +383,11 @@ export default function DependencyLensPanel({
                 disabled={busy || (!selection.osv && !selection.depsDev)}
                 onClick={() => void reviewTransmission()}
               >
-                {remoteActivity === "preview" ? "검토 준비 중…" : "전송 내용 검토"}
+                {remoteActivity === "preview"
+                  ? "검토 준비 중…"
+                  : enrichment || remoteError
+                    ? "전송 내용 다시 검토"
+                    : "전송 내용 검토"}
               </button>
             </div>
             <fieldset className="dependency-enrichment-controls" disabled={busy}>
@@ -431,6 +436,11 @@ export default function DependencyLensPanel({
             {remoteError && (
               <div className="error dependency-lens-error" role="alert">
                 {remoteError}
+                {remoteError === DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED && (
+                  <button type="button" disabled={busy} onClick={() => void analyze()}>
+                    lockfile 다시 분석
+                  </button>
+                )}
               </div>
             )}
 

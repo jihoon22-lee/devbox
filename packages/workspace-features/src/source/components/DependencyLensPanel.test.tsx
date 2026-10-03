@@ -526,3 +526,18 @@ it("discards a native review arriving after its project has changed", async () =
   await waitFor(() => expect(dependencyEnrichmentCancel).toHaveBeenCalledWith(repo.path, preview.token));
   expect(screen.queryByLabelText("원격 전송 검토")).toBeNull();
 });
+
+it("reanalyzes locally after stale lockfile review without automatically sending coordinates", async () => {
+  dependencyEnrichmentExecuteMock.mockRejectedValueOnce(new Error("전송 내용을 다시 검토해 주세요."));
+  render(<DependencyLensPanel repo={repo} />);
+  fireEvent.click(screen.getByRole("button", { name: "의존성 분석" }));
+  await screen.findByText("Cargo.lock");
+  fireEvent.click(screen.getByRole("button", { name: "전송 내용 검토" }));
+  await screen.findByLabelText("원격 전송 검토");
+  fireEvent.click(screen.getByRole("button", { name: "검토한 정보 보내기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "lockfile 다시 분석" }));
+  await waitFor(() => expect(dependencyInventoryMock).toHaveBeenCalledTimes(2));
+  expect(dependencyEnrichmentPreviewMock).toHaveBeenCalledTimes(1);
+  expect(dependencyEnrichmentExecuteMock).toHaveBeenCalledTimes(1);
+  expect(screen.queryByLabelText("원격 전송 검토")).toBeNull();
+});

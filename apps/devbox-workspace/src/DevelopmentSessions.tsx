@@ -37,6 +37,7 @@ interface Session {
   phase: string;
   issue: string | null;
   canArchive?: boolean;
+  resources?: string[];
 }
 interface Profile {
   id: string;
@@ -45,6 +46,7 @@ interface Profile {
 }
 interface Snapshot {
   sessions: Session[];
+  resources?: Record<string, { createdBy: string | null; stopped: boolean }>;
   intents: Record<string, { jobs: string[]; terminalProfile?: string | null }>;
 }
 interface Preflight {
@@ -181,6 +183,21 @@ export default function DevelopmentSessions({
     };
   }, [call, contextKey, pollSessions]);
 
+  const checkSessions = async () => {
+    const key = contextKey;
+    setBusy(true);
+    try {
+      const next = await call("development_sessions", {});
+      if (current.current === key) {
+        setSnapshot(next);
+        setIssue("");
+      }
+    } catch {
+      if (current.current === key) setIssue("세션 상태를 확인하지 못했습니다. 같은 세션의 상태를 다시 확인해 주세요.");
+    } finally {
+      if (current.current === key) setBusy(false);
+    }
+  };
   const prepare = async (ids = selected, profile = selectedProfile) => {
     const context = contextKey;
     if (!description.context) return;
@@ -225,7 +242,8 @@ export default function DevelopmentSessions({
       });
       if (current.current === context) {
         setPlan(null);
-        setSnapshot(await call("development_sessions", {}));
+        const next = await call("development_sessions", {});
+        if (current.current === context) setSnapshot(next);
       }
     } catch {
       if (current.current === context)
@@ -465,7 +483,14 @@ export default function DevelopmentSessions({
           </button>
         </section>
       )}
-      {issue && <p role="alert">{issue}</p>}
+      {issue && (
+        <p role="alert">
+          {issue}
+          <button type="button" disabled={busy} onClick={() => void checkSessions()}>
+            세션 상태 확인
+          </button>
+        </p>
+      )}
       <ul>
         {snapshot.sessions.map((session) => {
           const project =
@@ -505,6 +530,18 @@ export default function DevelopmentSessions({
                 <button disabled={busy} onClick={() => void archive(session.id)}>
                   완료 기록 정리
                 </button>
+              )}
+              {session.resources && (
+                <p>
+                  {session.resources.filter((key) => snapshot.resources?.[key]?.createdBy === session.id).length}개
+                  자원은 이 세션이 시작했습니다.{" "}
+                  {
+                    session.resources.filter(
+                      (key) => snapshot.resources?.[key] && snapshot.resources[key].createdBy !== session.id,
+                    ).length
+                  }
+                  개 자원은 기존 실행을 참조하며 정리 시 중단하지 않습니다.
+                </p>
               )}
               {session.issue && (
                 <p>
