@@ -5,7 +5,7 @@ license for devbox itself; workspace packages are private and excluded from this
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
 - Cargo.lock SHA-256: `e38bfb48f4af2fae92e03206bcaa696837c0fc5be1eb2d22bd0a0ccea4aa23c9`
-- pnpm-lock.yaml SHA-256: `879fba3fac64d35a2a7ec078f8a2f994563fa4e1d7b32f9bf021f05db80444f6`
+- pnpm-lock.yaml SHA-256: `7063c4d6772bf98b8ef295af46fa11068c3cb733fa015c6b85922680130807bc`
 
 ## Rust dependencies
 
@@ -880,7 +880,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | dagre-d3-es | 7.0.14 | MIT | https://github.com/tbo47/dagre-es#readme | `sha512-P4rFMVq9ESWqmOgK+dlXvOtLwYg0i7u0HBGJER0LZDJT2VHIPAMZ/riPxqJceWMStH5+E61QxFra9kIS3AqdMg==` |
 | dayjs | 1.11.21 | MIT | https://day.js.org | `sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==` |
 | delaunator | 5.1.0 | ISC | https://github.com/mapbox/delaunator#readme | `sha512-AGrQ4QSgssa1NGmWmLPqN5NY2KajF5MqxetNEO+o0n3ZwZZeTmt7bBnvzHWrmkZFxGgr4HdyFgelzgi06otLuQ==` |
-| dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify | `sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==` |
+| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify | `sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==` |
 | entities | 8.0.0 | BSD-2-Clause | https://github.com/fb55/entities#readme | `sha512-zwfzJecQ/Uej6tusMqwAqU/6KL2XaB2VZ2Jg54Je6ahNBGNH6Ek6g3jjNCF0fG9EWQKGZNddNjU5F1ZQn/sBnA==` |
 | es-toolkit | 1.50.0 | MIT | https://es-toolkit.dev | `sha512-OyZKhUVvEep9ITEiwHn8GKnMRQIVqoSIX7WnRbkWgJkllCujilqP2rD0u979tkl8wqyc8ICwlc1UBVv/Sl1G6w==` |
 | hachure-fill | 0.5.2 | MIT | https://github.com/pshihn/hachure-fill#readme | `sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg==` |
