@@ -13,16 +13,17 @@ Suite 설치 파일 `Devbox_0.9.0_x64-setup.exe`는 Workspace·API Studio·Knowl
 
 ## v0.9.0 준비 상태와 기존 설치
 
-현재 소스 버전이 v0.9.0인 것과 Release 공개 완료는 다르다. 후보·실기 결과와 공개 여부는
-[#580](https://github.com/jihoon22-lee/devbox/issues/580)을 확인한다. 현재 사용자 PC의 점검은
-기존 v0.8.1이 없는 **신규 설치** 기준이다. 신규 설치 성공을 기존 데이터 이전이나 업데이트
-검증으로 기록하지 않는다.
+공개 여부와 후보·자동 검증 결과는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)과
+Release에서 확인한다. 사용자의 신규 설치·기존 데이터 보존 점검은 출시 후 제보로 추적한다.
+자동 후보 검증과 사용자 실사용 확인을 구분하며, 미실행 항목을 PASS로 기록하지 않는다.
 
 공개 v0.8.1 Control Center의 manifest 검사에는 Knowledge WSL helper와 devbox-agent가
 등록돼 있지 않다. 따라서 v0.9.0의 manifest를 `suite_package_file_invalid`로 거부한다.
-내장 업데이터로 바로 전환할 수 있다고 안내하지 않는다. 기존 설치의 수동 setup 전환 또는
-호환 릴리스 방안은 #580에서 지원 범위와 검증을 확정한다. 이 문제를 피하려고 기존 데이터나
-설치 폴더를 삭제하지 않는다.
+이번 버전은 Release에서 `Devbox_0.9.0_x64-setup.exe`를 직접 받아 실행한다. 기존 설치가
+있으면 같은 설치 위치를 사용하고, 이 문제를 피하려고 기존 데이터나 설치 폴더를 삭제하지 않는다.
+중간 호환 릴리스는 만들지 않는다. 후보 installer 자동 검증은 같은 후보의 generation 전환을
+검사하며, 실제 v0.8.1 사용자 데이터 보존은 별도 미실행이다. 전환 중 문제가 생기면 표시된
+오류 코드와 버전을 #580에 제보한다.
 
 ## 새 설치 활성화
 
