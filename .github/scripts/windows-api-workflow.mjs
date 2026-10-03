@@ -1,5 +1,7 @@
 import {
   prepareResponseSelection,
+  diagnosticStylesConfig,
+  applyDiagnosticStyles,
   responseTransformObservation,
   responseGeometryObservation,
   waitForResponseTransform,
@@ -9,13 +11,13 @@ import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // Only disposable GitHub-hosted Windows processes and synthetic data are used.
 import assert from "node:assert/strict";
 import { exerciseControlAdmission } from "./windows-api-control.mjs";
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import {
   Cdp,
   unusedPort,
@@ -28,6 +30,14 @@ import {
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+const diagnosticStyles = diagnosticStylesConfig(process.env);
+const diagnosticCss = diagnosticStyles
+  ? readFileSync(new URL("../../packages/api-studio-features/src/requests/App.css", import.meta.url), "utf8")
+  : null;
+if (diagnosticStyles) {
+  diagnosticStyles.stylePath = "packages/api-studio-features/src/requests/App.css";
+  diagnosticStyles.styleSha256 = createHash("sha256").update(diagnosticCss).digest("hex");
+}
 const root = mkdtempSync(path.join(tmpdir(), "devbox-api-migration-fixture-s03-"));
 const executable = path.join(root, `api-s03-${randomUUID()}.exe`);
 copyFileSync(path.resolve("target/debug/devbox-api-studio.exe"), executable);
@@ -39,7 +49,8 @@ const evidence = {
   runnerSourceSha: process.env.GITHUB_SHA,
   artifactSource,
   artifactRun: process.env.DEVBOX_SUITE_ARTIFACT_RUN ?? process.env.GITHUB_RUN_ID,
-  diagnosticOnly: process.env.GITHUB_SHA !== artifactSource,
+  diagnosticOnly: !!diagnosticStyles || process.env.GITHUB_SHA !== artifactSource,
+  ...(diagnosticStyles ? { diagnosticStyles } : {}),
   environment: "github-hosted-windows",
   step: "start",
   result: "failed",
@@ -129,6 +140,7 @@ async function start() {
   await cdp.send("Page.enable");
   ui = { child, cdp, policy };
   await wait('!!document.querySelector(".url-input")', "API startup did not finish");
+  if (diagnosticStyles) await applyDiagnosticStyles(cdp, diagnosticCss);
 }
 async function stop() {
   const item = ui;

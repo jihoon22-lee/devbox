@@ -1,4 +1,4 @@
-# L4 provisioning only. This is not evidence for interactive first installation.
+﻿# L4 provisioning only. This is not evidence for interactive first installation.
 param([switch]$Cleanup)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -7,6 +7,15 @@ function Run-Owned([string]$File, [string[]]$Arguments) {
   & $File @Arguments
   if ($LASTEXITCODE -ne 0) { throw 'Owned user-flow provisioning operation failed.' }
 }
+$payloadSource=$env:GITHUB_SHA
+$payloadRun=$env:GITHUB_RUN_ID
+if ($env:DEVBOX_USER_FLOW_DIAGNOSTIC -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) {
+  if ($env:DEVBOX_USER_FLOW_DIAGNOSTIC -cne 'true' -or $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch' -or $env:GITHUB_WORKFLOW -cne 'Product foundation acceptance' -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -notmatch '^[a-f0-9]{40}$' -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -notmatch '^\d+$' -or -not $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) { throw 'Invalid retained UI diagnostic identity.' }
+  $diagnostic=Get-Content -LiteralPath $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT -Raw | ConvertFrom-Json
+  if ($diagnostic.purpose -cne 'retained-installer-ui-diagnostic-only' -or $diagnostic.runnerSourceSha -cne $env:GITHUB_SHA -or $diagnostic.runnerRunId -cne $env:GITHUB_RUN_ID -or $diagnostic.payloadSourceSha -cne $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -or $diagnostic.payloadRunId -cne $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -or $diagnostic.repository -cne $env:GITHUB_REPOSITORY -or $diagnostic.sourceWorkflow -cne '.github/workflows/windows-package-candidate.yml' -or $diagnostic.assemblySucceeded -ne $true -or $diagnostic.diagnosticOnly -ne $true -or $diagnostic.promotionEvidence -ne $false) { throw 'Retained UI diagnostic receipt mismatch.' }
+  $payloadSource=$diagnostic.payloadSourceSha
+  $payloadRun=$diagnostic.payloadRunId
+}
 if (-not $Cleanup) {
   $scratch = Join-Path $env:RUNNER_TEMP ('devbox-suite-delivery-' + [guid]::NewGuid().ToString('N'))
   $root = Join-Path $scratch 'Suite UI Fixture'
@@ -14,16 +23,16 @@ if (-not $Cleanup) {
   New-Item -ItemType Directory -Path $scratch | Out-Null
   "DEVBOX_USER_FLOW_INSTALL_ROOT=$root" >> $env:GITHUB_ENV
   $env:DEVBOX_USER_FLOW_INSTALL_ROOT=$root
-  Run-Owned 'python' @('.github/scripts/prepare-suite-fixture.py',$env:DEVBOX_USER_FLOW_ASSETS,$staging,'--source',$env:GITHUB_SHA,'--run-id',$env:GITHUB_RUN_ID)
+  Run-Owned 'python' @('.github/scripts/prepare-suite-fixture.py',$env:DEVBOX_USER_FLOW_ASSETS,$staging,'--source',$payloadSource,'--run-id',$payloadRun)
   $payloadPath = Join-Path $staging 'suite-payload.json'
   $payload = Get-Content -LiteralPath $payloadPath -Raw | ConvertFrom-Json
-  if ($payload.sourceSha -cne $env:GITHUB_SHA) { throw 'User-flow payload source mismatch.' }
+  if ($payload.sourceSha -cne $payloadSource) { throw 'User-flow payload source mismatch.' }
   $setup = Join-Path $staging "Devbox_$($payload.suiteVersion)_x64-setup.exe"
   $process = Start-Process -FilePath $setup -ArgumentList "/S /D=$root" -PassThru
   if (-not $process.WaitForExit(180000) -or $process.ExitCode -ne 0) { throw 'Owned user-flow setup failed.' }
   $registration = Get-Content -LiteralPath (Join-Path $root 'suite-registration.json') -Raw | ConvertFrom-Json
   if ($registration.installationKey -notmatch '^[0-9a-f]{64}$') { throw 'Owned installation key missing.' }
-  @{schemaVersion=1;sourceSha=$env:GITHUB_SHA;installationKey=$registration.installationKey;root=$root;staging=$staging} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $scratch 'user-flow-owner.json') -Encoding utf8
+  @{schemaVersion=1;sourceSha=$payloadSource;installationKey=$registration.installationKey;root=$root;staging=$staging} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $scratch 'user-flow-owner.json') -Encoding utf8
   $helper = Join-Path $staging 'devbox-suite-bootstrap.exe'
   Run-Owned 'node' @('.github/scripts/windows-suite-delivery-native.mjs',$root,'import')
   Run-Owned $helper @('--activate-clean-install',$root,$payloadPath)
@@ -41,7 +50,7 @@ if (-not $scratch.StartsWith($runnerRoot,[StringComparison]::OrdinalIgnoreCase) 
 $receiptPath = Join-Path $scratch 'user-flow-owner.json'
 if (-not (Test-Path -LiteralPath $receiptPath)) { throw 'Incomplete provisioning has no owner receipt; preserved for inspection.' }
 $receipt=Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
-if ($receipt.root -cne $root -or $receipt.sourceSha -cne $env:GITHUB_SHA -or $receipt.installationKey -notmatch '^[a-f0-9]{64}$') { throw 'User-flow cleanup receipt mismatch.' }
+if ($receipt.root -cne $root -or $receipt.sourceSha -cne $payloadSource -or $receipt.installationKey -notmatch '^[a-f0-9]{64}$') { throw 'User-flow cleanup receipt mismatch.' }
 $key=$receipt.installationKey
 $registration=Get-Content -LiteralPath (Join-Path $root 'suite-registration.json') -Raw | ConvertFrom-Json
 if ($registration.installationKey -cne $key) { throw 'User-flow installation changed.' }

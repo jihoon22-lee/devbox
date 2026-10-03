@@ -60,7 +60,6 @@ export async function createApiUserFlowContext({ measureStartup = true } = {}) {
   const installed = await verifyApiInstallation(
     process.env.DEVBOX_USER_FLOW_INSTALL_ROOT,
     process.env.DEVBOX_USER_FLOW_ASSETS,
-    process.env.GITHUB_SHA,
   );
   const port = await freePort();
   const policy = windowsProcessIsElevated()

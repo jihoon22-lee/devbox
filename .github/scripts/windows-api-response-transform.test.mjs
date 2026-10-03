@@ -3,6 +3,8 @@ import test from "node:test";
 import vm from "node:vm";
 import {
   establishResponseSelection,
+  diagnosticStylesConfig,
+  applyDiagnosticStyles,
   prepareResponseSelection,
   responseTransformObservation,
   responseGeometryObservation,
@@ -191,4 +193,55 @@ test("geometry diagnostics contain layout only and distinguish clipped body from
   assert.equal(geometry.body.rect.y, 1133);
   assert.equal(geometry.viewportHeight, 700);
   assert.equal(JSON.stringify(geometry).includes(secret), false);
+});
+
+test("diagnostic styles are disabled by default and require explicit hosted source/run guards", () => {
+  assert.equal(diagnosticStylesConfig({}), null);
+  const env = {
+    DEVBOX_API_DIAGNOSTIC_STYLES: "1",
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_WORKFLOW: "Product foundation acceptance",
+    GITHUB_SHA: "a".repeat(40),
+    DEVBOX_SUITE_ARTIFACT_SOURCE: "b".repeat(40),
+    DEVBOX_SUITE_ARTIFACT_RUN: "37126573659",
+  };
+  assert.equal(diagnosticStylesConfig(env).styleSourceSha, env.GITHUB_SHA);
+  for (const flag of ["", "0", "true"])
+    assert.throws(() => diagnosticStylesConfig({ ...env, DEVBOX_API_DIAGNOSTIC_STYLES: flag }), /invalid-flag/);
+  assert.throws(() => diagnosticStylesConfig({ ...env, RUNNER_ENVIRONMENT: "self-hosted" }), /hosted-runner-required/);
+  assert.throws(
+    () => diagnosticStylesConfig({ ...env, GITHUB_WORKFLOW: "Windows package candidate" }),
+    /diagnostic-workflow-required/,
+  );
+  for (const key of ["GITHUB_SHA", "DEVBOX_SUITE_ARTIFACT_SOURCE", "DEVBOX_SUITE_ARTIFACT_RUN"])
+    assert.throws(() => diagnosticStylesConfig({ ...env, [key]: "" }), /valid-source-run-pair-required/);
+});
+test("diagnostic style injection confirms fixed element contents and preserves a specific failure", async () => {
+  const css = ".response { min-height: 320px; }";
+  const head = {
+    appendChild: (style) => {
+      style.isConnected = true;
+    },
+  };
+  await applyDiagnosticStyles(
+    {
+      evaluate: async (expression) =>
+        vm.runInNewContext(expression, { document: { getElementById: () => null, createElement: () => ({}), head } }),
+    },
+    css,
+  );
+  await assert.rejects(applyDiagnosticStyles({ evaluate: async () => false }, css), /injection-not-confirmed/);
+  await assert.rejects(
+    applyDiagnosticStyles(
+      {
+        evaluate: async () => {
+          throw new Error("packaged renderer evaluation failed");
+        },
+      },
+      css,
+    ),
+    /api-diagnostic-styles-injection-failed/,
+  );
 });

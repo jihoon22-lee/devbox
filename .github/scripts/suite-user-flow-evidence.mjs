@@ -8,14 +8,16 @@ const digestMap = (value) =>
   !Array.isArray(value) &&
   Object.keys(value).length > 0 &&
   Object.values(value).every((v) => typeof v === "string" && /^[a-f0-9]{64}$/.test(v));
-export function summarizeEvidence(
-  matrix,
-  results,
-  { expectedSource, expectedFixture, expectedDigests, ownerWorkItem } = {},
-) {
+const diagnosticEvidence = (value) =>
+  ["diagnosticOnly", "runnerSourceSha", "runnerRunId", "payloadSourceSha", "payloadRunId"].some((key) =>
+    Object.hasOwn(value, key),
+  ) || value.promotionEvidence === false;
+export function summarizeEvidence(matrix, results, options = {}) {
+  const { expectedSource, expectedFixture, expectedDigests, ownerWorkItem } = options;
   const selected = ownerWorkItem ? matrix.filter((row) => row.ownerWorkItem === ownerWorkItem) : matrix;
   const missing = [],
     failures = [];
+  if (diagnosticEvidence(options)) failures.push("diagnostic-evidence-unpromotable");
   if (!selected.length || new Set(matrix.map((row) => row.id)).size !== matrix.length) failures.push("invalid-matrix");
   if (!sha(expectedSource) || !sha(expectedFixture) || !digestMap(expectedDigests))
     failures.push("invalid-expected-identity");
@@ -32,6 +34,7 @@ export function summarizeEvidence(
       Object.keys(result.artifactDigests).length === Object.keys(expectedDigests).length &&
       Object.entries(expectedDigests).every(([key, value]) => result.artifactDigests[key] === value);
     if (
+      diagnosticEvidence(result) ||
       found.length !== 1 ||
       result.status !== "PASS" ||
       result.sourceSha !== expectedSource ||

@@ -90,3 +90,45 @@ export async function prepareResponseSelection(cdp, observeGeometry = () => {}) 
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   await cdp.evaluate(establishResponseSelection);
 }
+
+export function diagnosticStylesConfig(env) {
+  const flag = env.DEVBOX_API_DIAGNOSTIC_STYLES;
+  if (flag === undefined) return null;
+  if (flag !== "1") throw new Error("api-diagnostic-styles-invalid-flag");
+  if (env.GITHUB_ACTIONS !== "true" || env.RUNNER_ENVIRONMENT !== "github-hosted")
+    throw new Error("api-diagnostic-styles-hosted-runner-required");
+  if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" || env.GITHUB_WORKFLOW !== "Product foundation acceptance")
+    throw new Error("api-diagnostic-styles-diagnostic-workflow-required");
+  if (
+    !/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? "") ||
+    !/^[a-f0-9]{40}$/.test(env.DEVBOX_SUITE_ARTIFACT_SOURCE ?? "") ||
+    !/^[1-9][0-9]{0,19}$/.test(env.DEVBOX_SUITE_ARTIFACT_RUN ?? "")
+  )
+    throw new Error("api-diagnostic-styles-valid-source-run-pair-required");
+  return {
+    runnerSourceSha: env.GITHUB_SHA,
+    artifactSource: env.DEVBOX_SUITE_ARTIFACT_SOURCE,
+    artifactRun: env.DEVBOX_SUITE_ARTIFACT_RUN,
+    styleSourceSha: env.GITHUB_SHA,
+  };
+}
+
+export async function applyDiagnosticStyles(cdp, css) {
+  if (typeof css !== "string" || !css.length || css.length > 1024 * 1024)
+    throw new Error("api-diagnostic-styles-invalid-css");
+  let applied;
+  try {
+    applied = await cdp.evaluate(`(() => {
+      const id = 'devbox-api-diagnostic-styles';
+      if (document.getElementById(id)) return false;
+      const style = document.createElement('style');
+      style.id = id;
+      style.textContent = ${JSON.stringify(css)};
+      document.head.appendChild(style);
+      return style.isConnected && style.textContent === ${JSON.stringify(css)};
+    })()`);
+  } catch {
+    throw new Error("api-diagnostic-styles-injection-failed");
+  }
+  if (applied !== true) throw new Error("api-diagnostic-styles-injection-not-confirmed");
+}
