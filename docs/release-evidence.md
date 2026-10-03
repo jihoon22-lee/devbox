@@ -12,20 +12,28 @@
 후보는 assembly·네 제품 native scope·설치/복구/제거·독립 WSL2/Docker를 모두 통과했고,
 다운로드한 7개 자산과 내부 구성요소의 이름·크기·SHA-256도 확인했다.
 [당시 후보 근거](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5963355875)를 보존한다.
-이번 의존성 변경은 그 후보에 포함되지 않으므로, 변경이 머지된 exact-main의 CI와 새 후보가 필요하다.
+이후 [PR #613](https://github.com/jihoon22-lee/devbox/pull/613)은 의존성 갱신과 API Studio
+캡처 보기 경쟁 상태를 수정해 `07840ca82502e33f196f7098951b6dfccbf10f77`에 머지됐다.
+[최종 PR CI](https://github.com/jihoon22-lee/devbox/actions/runs/37087774292/attempts/2)와
+[Windows PF](https://github.com/jihoon22-lee/devbox/actions/runs/37087774349)가 성공했다.
+이 변경은 이전 후보에 없으므로, 공개 문서 정리까지 머지한 최종 exact-main의 CI와 새 후보가 필요하다.
 
 2026-10-03 코드 검토에서 확인한 공개 전 조건:
 
 - 공개 v0.8.1의 `core/suite_package.rs`는 Knowledge WSL helper와 agent를 허용하지 않아
   v0.9.0 manifest를 `suite_package_file_invalid`로 거부한다. 실제 이전 reader와 후보 manifest로
   재현했다. 자산 7개·schema 2 유지와 이전 업데이터의 읽기 호환은 다른 조건이다.
-  기존 설치의 수동 setup 전환 또는 호환 릴리스 방안을 확정하기 전에는 자동 업데이트를 보장하지 않는다.
-- npm 감사의 undici 11건·DOMPurify 1건에 대응하여 기존 의존성을 각각 8.11.2·3.4.16으로 갱신한다.
+  내장 업데이터 전환은 지원하지 않으며 Release의 setup 직접 실행을 안내한다. 중간 호환 릴리스는 만들지 않는다.
+- npm 감사의 undici 11건·DOMPurify 1건에 대응하여 기존 의존성을 각각 8.11.2·3.4.16으로 갱신했다.
   undici는 jsdom 테스트 경로, DOMPurify는 Mermaid runtime 경로다. DOMPurify 경고의
   `IN_PLACE`+노드 제거 hook 조건은 현재 렌더러에서 확인되지 않았으며, 실제 앱 XSS를 재현했다고 주장하지 않는다.
-  새 source의 최종 감사·CI 결과는 #580에 기록한다.
-- 사용자 PC에는 v0.8.1 설치가 없다. 태그 전 필수 8개는 **신규 설치** 기준으로 확인하고,
-  기존 설치 데이터 보존/이전은 별도 미실행 항목으로 남긴다. 사용자 점검 결과 또는 명시적 생략 응답 전에는 태그하지 않는다.
+  PR #613에서 npm 감사 0건, 로컬 전체 검사와 PR CI/PF 통과를 확인했다. 최종 source 근거는 #580에 기록한다.
+- 2026-10-03 사용자는 실사용 중 문제를 직접 제보하며, 자체 검토·수정 후 태그와 공개까지
+  진행하도록 지시했다. 신규 설치 8개와 기존 설치 데이터 보존은 **출시 후 추적/미실행**으로 남긴다.
+  사용자 실기 대기는 해제하지만 CI·후보·설치/실행·공개본 자동 검증은 유지한다.
+- API Studio의 새 캡처 표시 직후 조회를 지연된 상태 초기화가 취소하는 경계를 RED 테스트로
+  재현하고, 화면 표시 전 초기화로 수정했다. 최종 PR CI의 Vitest 2,216개가 통과했다.
+  별개 Chromium 시작 지연은 동일 commit의 실패 잡 재실행에서 통과했으며 최초 OS 원인은 미확정이다.
 - 이전 PF의 Workspace startup/Source 일회 실패는 후속 동일 바이너리 진단·full PF·후보에서
   재현되지 않았다. 최초 OS 원인은 미확정이며, 재발 시 조사할 근거를 #580에 보존한다.
 

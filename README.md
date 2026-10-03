@@ -19,7 +19,9 @@ Suite 배포는 `Devbox_0.9.0_x64-setup.exe` 하나와 제품별 portable ZIP �
 `release-manifest.json`, `THIRD_PARTY_NOTICES.md`로 구성됩니다. ZIP은 폴더 전체를
 풀어 실행하세요. Workspace WSL helper와 Control Center 설치 helper를 떼어내지 마세요.
 v0.9.0에는 v0.7 데이터 가져오기가 없습니다. v0.7 데이터는 [v0.8.1](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1)에서
-먼저 이전해야 합니다. v0.8.1의 내장 업데이터는 v0.9.0의 새 구성요소를 거부하므로, 기존 설치의 전환 안내는 [통합 점검 이슈](https://github.com/jihoon22-lee/devbox/issues/580)를 확인하세요.
+먼저 이전해야 합니다. v0.8.1의 내장 업데이터로는 v0.9.0을 설치할 수 없습니다.
+Release에서 setup을 직접 받아 실행하고, 기존 설치 폴더와 데이터를 삭제하지 마세요.
+검증 범위와 알려진 제한은 [Windows 안내](docs/windows-guide.md#v090-준비-상태와-기존-설치)를 확인하세요.
 
 ## 문서
 

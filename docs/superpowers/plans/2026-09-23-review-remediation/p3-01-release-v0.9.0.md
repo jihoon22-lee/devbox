@@ -2,12 +2,12 @@
 
 > **For agentic workers:** Claude Code는 REQUIRED SUB-SKILL `superpowers:executing-plans`로 이 계획을 과제 순서대로 실행한다. 릴리스 단계에서는 저장소 스킬 `.agents/skills/devbox-release/SKILL.md`와 `docs/release-policy.md`도 함께 읽는다. Codex는 같은 순서를 직접 따른다. 시작 전에 `00-roadmap.md` §3·§4를 읽는다.
 
-**Goal:** Phase 0–2의 모든 PR이 머지된 뒤 버전을 `0.8.1` → `0.9.0`으로 **한 번만** 올려 공개한다(D29). 중간 릴리스는 없다. 태그 전에 사용자가 후보 설치본으로 필수 항목을 확인한다. 현재 점검 PC는 v0.8.1이 없는 신규 설치이며, 기존 설치 전환은 별도로 확인한다.
+**Goal:** Phase 0–2의 모든 PR이 머지된 뒤 버전을 `0.8.1` → `0.9.0`으로 **한 번만** 올려 공개한다(D29). 중간 릴리스는 없다. 2026-10-03 지시에 따라 자체 검토·수정과 자동 후보 검증 후 태그·공개한다. 사용자 실사용 항목은 출시 후 제보로 추적하며 대기하지 않는다.
 
 **Architecture:**
-- 버전 PR(버전·문서·CHANGELOG·버전 검사 일반화) → main CI → exact-main 후보(`windows-package-candidate.yml`) → **사용자 필수 점검(후보 setup)** → annotated tag → Release workflow(후보를 재빌드 없이 승격·검증·공개·공개본 실행 확인) → 근거 기록 PR → ledger 정리.
-- 후보 workflow의 설치 acceptance는 같은 후보 안에서 generation 업데이트·되돌리기·복구·제거를 검사한다. 공개 v0.8.1 업데이터와의 호환성을 증명하는 검사는 아니다. 2026-10-03 이전 reader 재현에서 새 Knowledge helper·agent 파일 거부를 확인했다. 기존 설치의 수동 setup 전환 또는 호환 릴리스 방안을 #580에서 확정하고 별도로 검증한다. 현재 사용자 PC에서는 후보를 신규 설치한다.
-- 중간 릴리스가 없었으므로 PR마다 "사용자 확인 대기"로 남은 실기 항목을 ledger에서 모아 점검표 하나로 만든다(필수 8개는 태그 전, 나머지는 공개 뒤).
+- 버전 PR(버전·문서·CHANGELOG·버전 검사 일반화) → main CI → exact-main 후보(`windows-package-candidate.yml`) → 자동 수용 근거 확인 → annotated tag → Release workflow(후보를 재빌드 없이 승격·검증·공개·공개본 실행 확인) → 근거 기록 PR → ledger 정리.
+- 후보 workflow의 설치 acceptance는 같은 후보 안에서 generation 업데이트·되돌리기·복구·제거를 검사한다. 공개 v0.8.1 업데이터와의 호환성을 증명하는 검사는 아니다. 2026-10-03 이전 reader 재현에서 새 Knowledge helper·agent 파일 거부를 확인했다. 중간 호환 릴리스 없이 Release setup 직접 실행을 안내한다. 실제 기존 데이터 보존과 사용자 신규 설치는 출시 후 추적하며 미실행을 PASS로 바꾸지 않는다.
+- 중간 릴리스가 없었으므로 PR마다 "사용자 확인 대기"로 남은 실기 항목을 ledger에서 모아 점검표 하나로 만든다. 기존 필수 8개를 포함해 사용자 점검은 공개 뒤 제보/추적으로 전환한다.
 
 **Tech Stack:** GitHub Actions(`windows-package-candidate.yml`, `release.yml`), `gh` CLI, Python 검증 스크립트
 
@@ -15,17 +15,17 @@
 
 ## Global Constraints
 
-- `00-roadmap.md` §3 전부 적용. D6: 이 세션이 머지·후보 실행·태그·공개까지 한다. 단, Task 3의 사용자 필수 점검 응답을 받기 전에는 태그하지 않는다(§4.10 6번).
+- `00-roadmap.md` §3 전부 적용. D6: 이 세션이 머지·후보 실행·태그·공개까지 한다. 2026-10-03 사용자가 자체 검토부터 태그·공개까지 진행하도록 다시 지시했으며, Task 3은 응답 대기 없이 미실행 항목을 기록한다.
 - 선행: §6의 묶음 B1–B12 머지, main CI 초록, 모든 묶음 PR의 `Product foundation acceptance`(PF) 마지막 실행이 성공으로 ledger에 기록됨(실패였다면 그 수정이 머지되고 다음 PF가 성공). 이 PR은 PF까지 기다린 뒤 머지한다.
 - 버전은 이 PR에서만 바꾼다: 네 제품의 `Cargo.toml`·`tauri.conf.json`·`package.json`, `apps/devbox-agent`의 `Cargo.toml`·`tauri.conf.json`, acceptance config 2개, 문서의 "현재 버전" 표기.
-- 공개 계약(자산 7개, release manifest schema 2)을 바꾸지 않는다. v0.8.1 업데이터가 그대로 받아들이는 것이 원래 목표였으나, 2026-10-03 코드 검토에서 새 구성요소의 거부를 확인했다. 지원 경로를 확정하기 전에는 이 조건을 완료로 기록하지 않는다. agent는 Control Center ZIP 안(`resources/suite/devbox-agent.exe`)에 들어 있어 자산 수가 늘지 않는다.
+- 공개 계약(자산 7개, release manifest schema 2)을 바꾸지 않는다. v0.8.1 업데이터가 그대로 받아들이는 것이 원래 목표였으나, 2026-10-03 코드 검토에서 새 구성요소의 거부를 확인했다. v0.8.1 내장 업데이트는 알려진 제한으로 기록하고 setup 직접 실행을 안내한다. 자동 업데이트 호환성을 완료로 기록하지 않는다. agent는 Control Center ZIP 안(`resources/suite/devbox-agent.exe`)에 들어 있어 자산 수가 늘지 않는다.
 - 태그는 main의 해당 commit CI가 끝난 뒤 민다. 후보 실행부터 태그까지 main에 다른 머지를 넣지 않는다. 후보 artifact 보존은 7일(shard)·14일(조립본)이고 후보 성공 후 7일 안에 태그한다. 7일이 지나면 같은 commit으로 후보를 다시 만든다(실패가 아니라 만료다).
 - 실패한 후보·release run을 새 빌드로 덮지 않는다. 원인을 고친 PR을 머지한 뒤 새 main commit으로 후보부터 다시 한다. 공개 RC/prerelease를 만들지 않는다.
 
 ## Review Focus
 
-1. 신규 설치 → Control Center 초기 준비/활성화 → 네 제품·agent, 새 프로젝트·설정·API 자료·노트의 재시작 유지와 강제 종료 복구를 확인한다. 기존 데이터 보존/자동 이전은 이 결과로 대신하지 않는다. (Task 3 필수 점검)
-2. 공개 v0.8.1 reader가 새 manifest를 거부하는 사실과 기존 설치의 지원 경로 결정을 구분한다. 내장 업데이터를 계속 지원하려면 이미 공개된 reader의 제약을 해결할 별도 경로가 필요하다. 신규 설치 PASS로 이 문제를 완료 처리하지 않는다. (Task 5)
+1. 신규 설치 → Control Center 초기 준비/활성화 → 네 제품·agent, 새 프로젝트·설정·API 자료·노트의 재시작 유지와 강제 종료 복구를 확인한다. 기존 데이터 보존/자동 이전은 이 결과로 대신하지 않는다. (Task 3 출시 후 점검표)
+2. 공개 v0.8.1 reader의 새 manifest 거부를 릴리스 안내에 명시한다. 이번 전환은 setup 직접 실행이며 내장 업데이트를 보장하지 않는다. 신규 설치 PASS로 기존 데이터 보존을 완료 처리하지 않는다. (Task 5)
 3. `check-product-foundation.py`의 버전 정규식이 `0.8.x`에 묶여 있으면 이 PR의 CI가 깨진다 → 먼저 일반화하고, 네 제품과 agent의 버전이 같은지 검사한다(agent 검사는 P2-01에서 추가됨). (Task 1)
 4. CHANGELOG 절 제목이 `extract-release-notes.py`의 형식(`## [v0.9.0] - YYYY-MM-DD`)이어야 Release draft가 만들어진다. (Task 1)
 5. 후보와 태그 사이 main이 움직이지 않고, 태그는 main CI가 끝난 뒤에만 민다. (Task 2·4)
@@ -167,7 +167,11 @@ SHA=$(git ls-remote origin refs/heads/main | cut -f1)
 
 - [ ] **Step 1: main CI 완료 대기**
 
+  현재 CI는 main push에 자동 실행되지 않는다. 최종 준비 변경을 모두 머지하고 source를 고정한 뒤
+  아래 수동 실행을 한 번 시작한다. 같은 source의 성공 실행이 이미 있으면 그것을 확인한다.
+
 ```bash
+gh workflow run ci.yml --ref main
 gh run list --branch main --workflow CI --limit 1 --json databaseId,headSha,status,conclusion
 gh run watch <databaseId> --exit-status
 ```
@@ -188,9 +192,9 @@ gh run watch $RUN --exit-status
 
 ---
 
-### Task 3: 태그 전 사용자 필수 점검(멈추고 기다림)
+### Task 3: 후보 근거와 출시 후 실사용 점검표
 
-- [ ] **Step 1: 후보 setup을 Windows로 내려받기**
+- [ ] **Step 1: 후보 자산 검증** — assembly artifact를 전용 임시 폴더로 내려받아 이름·크기·SHA-256·내부 구성요소를 확인한다. 아래 Windows 배치는 실제 사용자 점검을 요청받았을 때만 사용한다. 이번 공개는 자동 검증 후 진행하며 오래된 Windows 후보 사본은 정리한다.
 
 ```bash
 WINHOME=$(wslpath -u "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")
@@ -199,9 +203,9 @@ gh run download $RUN -n <조립 artifact 이름> -D "$DEST"
 ls "$DEST"    # Devbox_0.9.0_x64-setup.exe 와 네 제품 ZIP
 ```
 
-- [ ] **Step 2: 대기 항목 모음** — ledger 댓글에서 "사용자 확인 대기"로 남은 실기 항목을 PR별로 모아(`gh issue view <ledger 번호> --comments`) 한 댓글로 정리한다. 아래 필수 8개는 태그 전, 나머지는 Task 5(공개 뒤)에서 확인한다.
+- [ ] **Step 2: 대기 항목 모음** — ledger 댓글에서 "사용자 확인 대기"로 남은 실기 항목을 PR별로 모아(`gh issue view <ledger 번호> --comments`) 한 댓글로 정리한다. 아래 기존 필수 8개와 나머지는 모두 Task 5(공개 뒤)의 제보/추적 항목이다.
 
-- [ ] **Step 3: 사용자에게 필수 점검 요청** — 아래 표를 ledger 댓글과 사용자 보고에 그대로 남기고, **응답을 받을 때까지 멈춘다**(§4.10 6번). 사용자가 "점검 생략"이라고 답하면 기록하고 Task 4로 간다.
+- [ ] **Step 3: 실사용 항목 기록** — 2026-10-03 사용자는 사용 중 문제를 직접 제보하고, 자체 검토·수정 뒤 태그·릴리스까지 진행하도록 지시했다. 아래 표는 ledger에 출시 후 추적으로 남기고 응답을 기다리지 않는다. 실행하지 않은 항목은 PASS가 아니다.
 
   현재 사용자 PC(기존 v0.8.1 없음)에서 `Downloads\devbox-v0.9.0-candidate\Devbox_0.9.0_x64-setup.exe` 신규 설치:
   1. 설치와 Control Center의 초기 저장소 준비·활성화가 끝나고 v0.9.0이 보이며 네 제품이 열린다.
@@ -213,11 +217,11 @@ ls "$DEST"    # Devbox_0.9.0_x64-setup.exe 와 네 제품 ZIP
   7. Workspace “에이전트”에서 전용 테스트 Git 프로젝트의 Claude Code 작업을 만들면 새 폴더·branch와 터미널의 `claude` 실행이 확인된다. 도구 미설치/인증 미완료는 확인 불가로 기록하고, 자신이 만든 작업만 버리기로 정리한다.
   8. 현재 설치의 네 제품마다 `%LOCALAPPDATA%\com.devbox.v08.*.i*\logs\`와 실행 기록이 생긴다.
 
-  기존 설치 위 setup 실행, 기존 Workspace 설정·API 문서 자동 이전·Knowledge 데이터 보존은 별도 **미실행**이다. 실제로 확인하지 못한 항목은 “확인 불가”로 기록한다. 모든 항목 PASS 또는 사용자의 명시적 “점검 생략” 응답 전에는 태그하지 않는다.
+  기존 설치 위 setup 실행, 기존 Workspace 설정·API 문서 자동 이전·Knowledge 데이터 보존은 별도 **미실행**이다. 실제로 확인하지 못한 항목은 “확인 불가”로 기록한다. 이 사용자 점검의 미실행은 자동 검증을 마친 후보의 태그·공개를 막지 않는다.
 
-- [ ] **Step 4: 응답 처리**
-  - 모두 PASS(또는 "점검 생략") → ledger에 기록하고 Task 4.
-  - FAIL이 있으면: 원인을 조사해 수정 PR을 §4 절차로 머지한다(버전은 0.9.0 그대로). 새 `$SHA`로 Task 2 → Task 3을 다시 한다(태그가 아직 없으므로 같은 `candidate_tag=v0.9.0`으로 다시 만든다).
+- [ ] **Step 4: 후보 결과와 제보 처리**
+  - 자동 후보 검증이 모두 PASS이면 사용자 실사용 미실행/출시 후 추적을 ledger에 기록하고 Task 4.
+  - 자동 검증 실패나 공개 전에 제보된 재현 가능한 결함은 원인을 조사해 수정 PR을 §4 절차로 머지한다(버전은 0.9.0 그대로). 새 `$SHA`로 Task 2 → Task 3을 다시 한다. 공개 뒤 제보는 별도 수정 릴리스에서 처리한다.
   - 후보 성공 뒤 7일이 지나면 같은 `$SHA`로 Task 2 Step 2부터 후보를 다시 만든다.
 
 ---
@@ -248,8 +252,8 @@ gh release view v0.9.0 --json tagName,isDraft,isPrerelease,assets -q '{tag:.tagN
 
 ### Task 5: 공개 뒤 확인과 계획 마무리
 
-- [ ] **Step 1: 기존 설치 전환과 추가 실기** — 공개 v0.8.1 내장 업데이터의 manifest 거부는 코드로 확인된 제한이다. 지원 경로는 공개 전에 #580에서 확정한다. 공개 뒤 기존 설치가 있는 PC에서는 확정한 경로의 데이터 보존·재실행·제품 연결을 확인한다. 현재 사용자 PC의 신규 설치 결과로 대신하지 않는다. Task 3 Step 2의 나머지 항목은 사용자 확인 대기로 유지한다. FAIL이면 수정 릴리스 필요성을 사용자와 정한다(§4.10).
+- [ ] **Step 1: 기존 설치 전환과 추가 실기** — 공개 v0.8.1 내장 업데이터의 manifest 거부는 코드로 확인된 제한이다. Release setup 직접 실행을 안내한다. 공개 뒤 기존 설치가 있는 PC의 데이터 보존·재실행·제품 연결은 사용자 제보로 확인한다. 현재 사용자 PC의 신규 설치 결과로 대신하지 않는다. Task 3 Step 2의 항목은 출시 후 추적으로 유지하며 작업 대기 조건으로 삼지 않는다. FAIL이면 수정 릴리스 필요성을 사용자와 정한다(§4.10).
 - [ ] **Step 2: 근거 기록 PR** — 브랜치 `docs/release/v0.9.0-evidence`, PR 제목 `docs(release): record v0.9.0 evidence`로 §4 절차를 따른다:
   - `docs/release-evidence.md` 맨 위 현재 stable 절을 v0.9.0으로 바꾸고 v0.8.1 절은 "이전 stable"로 내린다. 값은 Task 4 Step 3의 ledger 댓글(머지 PR, source SHA, 후보 run, release run, 자산 7개 SHA-256, published-runtime 결과)과 Task 3의 사용자 점검 결과.
   - `docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md` §2.4 백로그 표에 각 항목의 현재 상태를 적는다.
-- [ ] **Step 3: ledger 마무리** — 최종 댓글: 머지한 PR 목록(번호·제목), 릴리스 링크, 아직 대기인 실기 항목. 대기 항목이 없으면 `gh issue close <ledger 번호> --reason completed`, 있으면 열어 둔 채 제목 끝에 "(실기 확인 대기)"를 붙인다.
+- [ ] **Step 3: ledger 마무리** — 최종 댓글: 머지한 PR 목록(번호·제목), 릴리스 링크, 아직 대기인 실기 항목. 대기 항목이 없으면 `gh issue close <ledger 번호> --reason completed`, 있으면 최신 이슈 하나를 열린 상태로 유지하고 제목을 "v0.9.0 출시 후 이슈·실사용 추적"으로 정리한다.
