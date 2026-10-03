@@ -1,3 +1,4 @@
+import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
 // Owned packaged Workspace fixture. Renderer mutations always use UiDriver input.
 import assert from "node:assert/strict";
 import { readFile, readdir, rename, mkdir, rm, writeFile, lstat } from "node:fs/promises";
@@ -51,6 +52,7 @@ export function createWorkspaceUiFixture({
   }
   return {
     context,
+    observeInput: (fileName) => observeWorkspaceInput({ ui, cdp, fileName }),
     registry: () => read("workspace.registry", "snapshot"),
     recovery: () => read("workspace.files", "load_recovery"),
     wait,
@@ -61,7 +63,39 @@ export function createWorkspaceUiFixture({
         return true;
       }, target.name);
     },
+    async performanceTask() {
+      const name = "owned performance task",
+        started = performance.now();
+      await ui.click({ role: "button", name: "작업 및 서비스" });
+      await ui.click({ role: "button", name: "+ 새 작업" });
+      await ui.fill({ role: "textbox", name: "작업 이름" }, name);
+      await ui.fill({ role: "textbox", name: "실행 명령" }, `"${process.execPath}" -e "process.exit(0)"`);
+      await ui.fill({ role: "textbox", name: "작업 디렉터리" }, fixtureRoot);
+      await ui.click({ role: "button", name: "작업 저장" });
+      let job;
+      await wait(async () => {
+        job = (await read("workspace.runtime", "list_jobs")).find((item) => item.name === name);
+        return !!job;
+      }, "disabled representative task saved");
+      assert.equal(job.enabled, false);
+      await ui.click({ role: "button", name: "지금 실행", scope: { role: "article", name } });
+      await wait(async () => {
+        const runs = await read("workspace.runtime", "list_runs", {
+          jobId: job.id,
+          limit: 10,
+          startAt: null,
+          endAt: null,
+          status: null,
+          kind: null,
+          minDurationMs: null,
+          maxDurationMs: null,
+        });
+        return runs.some((run) => run.jobId === job.id && run.status === "succeeded" && run.exitCode === 0);
+      }, "actual representative task exits zero");
+      return { taskCompleted: true, completeMs: performance.now() - started, result: "passed" };
+    },
     async prepare(root) {
+      await ui.click({ role: "button", name: "개요" });
       this.windowsRoot = root;
       const git = (...args) => {
         const result = spawnSync("git.exe", ["-C", root, ...args], { encoding: "utf8" });

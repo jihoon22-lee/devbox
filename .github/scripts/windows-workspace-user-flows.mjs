@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, realpath, mkdtemp, rm } from "node:fs/promises";
+import { readFile, realpath, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -11,7 +11,13 @@ import {
   fileDigest,
   installedFixtureIdentity,
 } from "./suite-user-flow-results.mjs";
-import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
+import { observeProductPerformance } from "./windows-suite-layout.mjs";
+import {
+  captureWindowOwner,
+  nativeWindowAction,
+  measureWarmOwnedWindow,
+  ownedProductCohort,
+} from "./windows-user-flow-window.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 import { createWorkspaceUiFixture } from "./windows-workspace-ui-fixture.mjs";
 import { run as draftFlows } from "./windows-workspace-draft-ui.mjs";
@@ -62,7 +68,7 @@ export async function runWorkspaceUserFlows() {
   const fixtureRoot = await mkdtemp(path.join(root, "workspace-ui-"));
   const port = await freePort();
   const network = await createWorkspaceLspProxy();
-  let child, attached, owner, policy;
+  let child, attached, owner, policy, coldRendererReadyMs;
   const cdp = {
     command: (...args) => attached.command(...args),
     evaluate: (...args) => attached.evaluate(...args),
@@ -85,6 +91,7 @@ export async function runWorkspaceUserFlows() {
       no_proxy: "127.0.0.1,localhost",
     });
     for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+    const started = performance.now();
     child = spawn(executable, [], { cwd: path.dirname(executable), env, stdio: ["ignore", "ignore", "pipe"] });
     await once(child, "spawn");
     owner = allWindowsProcesses().find(
@@ -92,6 +99,12 @@ export async function runWorkspaceUserFlows() {
     );
     assert.ok(owner, "Owned Workspace process identity absent");
     attached = await connect(port, child);
+    const deadline = performance.now() + 30000;
+    while (!(await attached.evaluate('Boolean(document.querySelector(".product-shell > main"))'))) {
+      assert.ok(performance.now() < deadline, "Workspace renderer ready timeout");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    coldRendererReadyMs = performance.now() - started;
   }
   async function closeOwnedWindow() {
     assert.ok(
@@ -153,6 +166,14 @@ export async function runWorkspaceUserFlows() {
   const scenarioIds = ["WORK-01", "WORK-02", "WORK-03", "RUNTIME-01", "RUNTIME-02", "LSP-01", "DEPS-01"];
   try {
     await launch();
+    await observeProductPerformance({
+      product: "workspace",
+      cdp,
+      getIdentities: () => ownedProductCohort(owner),
+      coldRendererReadyMs,
+      warmExistingWindowMs: await measureWarmOwnedWindow(captureWindowOwner(owner, root), cdp),
+      workload: () => fixture.performanceTask(),
+    });
     results.push(...(await draftFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
     await launch();
     results.push(...(await agentFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
@@ -173,7 +194,20 @@ export async function runWorkspaceUserFlows() {
   } finally {
     try {
       await fixture.dispose();
-      await rm(fixtureRoot, { recursive: true, force: true });
+      if (fixture.windowsRoot) {
+        await writeFile(
+          path.join(path.dirname(root), "workspace-handoff-fixture.json"),
+          JSON.stringify({
+            ...identity,
+            installationKey: registration.installationKey,
+            root: fixture.windowsRoot,
+            file: path.join(fixture.windowsRoot, "한글.txt"),
+          }),
+          { flag: "wx" },
+        );
+      }
+      // Keep this owned synthetic Windows root for the subsequent installed
+      // handoff journey. The common installation owner performs final cleanup.
       if (policy) releaseCdpSession({ policy, child, cdp: attached });
     } catch {
       for (const result of results)

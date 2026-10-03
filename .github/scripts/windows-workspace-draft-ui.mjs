@@ -18,9 +18,15 @@ export async function run(context) {
     failureCode,
   });
   if (
-    !["prepare", "crashAndReopen", "context", "recovery", "failRecoveryWriter", "reopenAfterClose"].every(
-      (key) => typeof fixture?.[key] === "function",
-    )
+    ![
+      "prepare",
+      "crashAndReopen",
+      "context",
+      "recovery",
+      "failRecoveryWriter",
+      "reopenAfterClose",
+      "observeInput",
+    ].every((key) => typeof fixture?.[key] === "function")
   )
     return scenarioIds.map((id) =>
       record(
@@ -48,6 +54,7 @@ export async function run(context) {
         "dirty journal persisted",
       );
     await open();
+    await fixture.observeInput(path.basename(file));
     await ui.fill({ role: "textbox", name: "" }, "");
     await journal("");
     await ui.closeOwnedWindow();
