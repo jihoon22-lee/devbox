@@ -146,6 +146,17 @@ fn installation() -> Result<(
     scope.revalidate()?;
     Ok((scope, root, payload_path, helper))
 }
+/// Reuse the pinned bootstrap's product selection; no renderer supplied path.
+pub(crate) fn open_setup_product(product: &str) -> Result<Value> {
+    if !product_contract::installation::PRODUCTS.contains(&product) {
+        return Err("bootstrap_arguments_invalid");
+    }
+    let (scope, root, payload, helper) = installation()?;
+    scope.revalidate()?;
+    open_install(&root, &payload, &helper, product)?;
+    Ok(json!({"opened": true}))
+}
+
 pub(crate) fn inventory() -> Result<Value> {
     let (scope, root, _, _) = installation()?;
     let parent = dirs::data_local_dir().ok_or("bootstrap_data_unavailable")?;

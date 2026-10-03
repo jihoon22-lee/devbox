@@ -73,7 +73,7 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "Devbox 설치 준비 완료"
-!define MUI_FINISHPAGE_TEXT "Control Center에서 데이터 이전과 활성화를 완료하세요. 기존 앱과 원본 데이터는 유지됩니다."
+!define MUI_FINISHPAGE_TEXT "Control Center의 설치 안내에서 저장소 준비와 활성화를 완료하세요. 기존 앱과 원본 데이터는 유지됩니다."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Control Center에서 계속"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenControlCenter

@@ -4,6 +4,7 @@ import type { RestoreAction } from "./RestoreAction";
 export type DeliveryAction =
   | { method: "suite_inventory"; args: Record<symbol, never> }
   | { method: "open_installation_folder"; args: Record<symbol, never> }
+  | { method: "open_setup_product"; args: { product: string } }
   | { method: "suite_recovery"; args: Record<symbol, never> }
   | { method: "restore_inventory"; args: Record<symbol, never> }
   | { method: "restore_action"; args: { action: RestoreAction; id: string } }

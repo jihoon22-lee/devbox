@@ -1,8 +1,10 @@
 import { deliveryCall } from "./delivery";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
+import SetupFlow from "./SetupFlow";
+import type { RecoveryStatus } from "@devbox/control-center-features/generated/RecoveryStatus";
 import catalog from "../../../apps/products.json";
 
 type Inventory = import("@devbox/control-center-features/generated/RestoreInventory").RestoreInventory;
@@ -31,44 +33,51 @@ const actionLabels: Record<Action, string> = {
   rollback: "복원 전 원본으로 복귀",
 };
 
-export default function Restore({ description, route }: Pick<ShellContentProps, "description" | "route">) {
+export default function Restore({
+  description,
+  route,
+  recovery = { state: "none" },
+}: Pick<ShellContentProps, "description" | "route"> & { recovery?: RecoveryStatus }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
-  const [revision, setRevision] = useState(0),
-    [error, setError] = useState("");
+  const [error, setError] = useState("");
+  const loadGeneration = useRef(0);
   const [busy, setBusy] = useState(false),
     [accepted, setAccepted] = useState(false);
   const [review, setReview] = useState<{ action: Action; id: string } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
-  useEffect(() => {
-    let active = true;
-    setInventory(null);
+  const reload = useCallback(async () => {
+    if (!nativeMode) return;
+    const generation = ++loadGeneration.current;
     setError("");
+    const header = makeRequest(description.handshake, route, Date.now(), description.context);
+    try {
+      const response = await deliveryCall(header, "restore_inventory", {});
+      if (
+        !isOperation(response.operation, {
+          product: "control-center",
+          component: "control-center.delivery",
+          requestId: header.requestId,
+          revision: catalog.catalogRevision,
+        }) ||
+        response.operation.outcome.state !== "succeeded"
+      )
+        throw new Error("unavailable");
+      if (generation === loadGeneration.current) setInventory(response.value);
+    } catch (cause) {
+      if (generation === loadGeneration.current)
+        setError("이 설치의 복원 목록을 읽지 못했습니다. 설치와 보존본은 변경되지 않았습니다.");
+      throw cause;
+    }
+  }, [description, route]);
+  useEffect(() => {
+    setInventory(null);
     setReview(null);
     setConfirmed(false);
-    if (!nativeMode) return;
-    const header = makeRequest(description.handshake, route, Date.now(), description.context);
-    void deliveryCall(header, "restore_inventory", {})
-      .then((response) => {
-        if (
-          !isOperation(response.operation, {
-            product: "control-center",
-            component: "control-center.delivery",
-            requestId: header.requestId,
-            revision: catalog.catalogRevision,
-          }) ||
-          response.operation.outcome.state !== "succeeded"
-        )
-          throw new Error("unavailable");
-        if (active) setInventory(response.value);
-      })
-      .catch(() => {
-        if (active) setError("이 설치의 복원 목록을 읽지 못했습니다. 설치와 보존본은 변경되지 않았습니다.");
-      });
+    void reload().catch(() => {});
     return () => {
-      active = false;
+      loadGeneration.current++;
     };
-  }, [description, route, revision]);
+  }, [reload]);
   const select = (action: Action, id = "") => {
     setReview({ action, id });
     setConfirmed(false);
@@ -114,7 +123,7 @@ export default function Restore({ description, route }: Pick<ShellContentProps, 
           {accepted && (
             <p role="status">복구 도우미를 시작했습니다. Control Center가 닫힙니다. 나머지 제품도 닫아 주세요.</p>
           )}
-          <button disabled={busy} onClick={() => setRevision((value) => value + 1)}>
+          <button disabled={busy} onClick={() => void reload().catch(() => {})}>
             목록 새로고침
           </button>
           {inventory && (
@@ -144,58 +153,26 @@ export default function Restore({ description, route }: Pick<ShellContentProps, 
                   )}
                 </div>
               )}
-              {!inventory.installation?.committed && inventory.installation && (
-                <div>
-                  <h3>설치 활성화</h3>
-                  <p>제품별 저장소 준비 기록: {inventory.installation.recordedOwners}/4</p>
-                  {inventory.installation.reinstall ? (
-                    <>
-                      <p>기존 데이터를 보존한 재설치입니다. 네 제품의 상태를 기록한 뒤 확정하세요.</p>
-                      <button
-                        disabled={
-                          busy ||
-                          !inventory.installation.freshHealth ||
-                          !!inventory.activeOperation ||
-                          !!inventory.update
-                        }
-                        onClick={() => select("commitReinstall")}
-                      >
-                        보존된 데이터로 재설치 확정
-                      </button>
-                    </>
-                  ) : inventory.installation.clean ? (
-                    <>
-                      {["snapshot", "import", "validate", "quiesce", "activate"].includes(
-                        inventory.installation.phase,
-                      ) && (
-                        <button
-                          disabled={busy || !!inventory.activeOperation || !!inventory.update}
-                          onClick={() => select("activateClean")}
-                        >
-                          신규 설치 활성화 준비
-                        </button>
-                      )}
-                      {["health", "commit"].includes(inventory.installation.phase) && (
-                        <>
-                          <p>아래에서 네 제품의 활성화용 상태를 기록하고 목록을 새로고침한 뒤 확정할 수 있습니다.</p>
-                          <button
-                            disabled={
-                              busy ||
-                              !!inventory.activeOperation ||
-                              !!inventory.update ||
-                              !inventory.installation.freshHealth
-                            }
-                            onClick={() => select("commitClean")}
-                          >
-                            신규 설치 확정
-                          </button>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <p>네 제품의 저장소 준비 상태를 기록한 뒤 목록을 새로고침해 주세요.</p>
-                  )}
-                </div>
+              {inventory.installation && route === "recovery" && (
+                <SetupFlow
+                  description={description}
+                  route={route}
+                  inventory={inventory}
+                  recovery={recovery}
+                  onRecorded={reload}
+                  onAction={select}
+                  busy={busy || !!error}
+                />
+              )}
+              {inventory.installation?.reinstall && !inventory.installation.committed && (
+                <button
+                  disabled={
+                    busy || !inventory.installation.freshHealth || !!inventory.activeOperation || !!inventory.update
+                  }
+                  onClick={() => select("commitReinstall")}
+                >
+                  보존된 데이터로 재설치 확정
+                </button>
               )}
               <button
                 disabled={busy || !!inventory.activeOperation || !!inventory.update}
