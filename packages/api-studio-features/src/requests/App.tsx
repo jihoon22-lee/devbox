@@ -1537,10 +1537,10 @@ export default function App({
             </Suspense>
           </div>
         )}
+        {migrationNotice && <div className="migration-notice" role="status">{migrationNotice}</div>}
+        {persistenceWarning && <div className="persistence-warning" role="alert">{persistenceWarning}</div>}
         {workspace !== "protocol" && section !== "history" && (
           <>
-            {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
-            {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}
             {req.tls?.verify === false && (
               <p className="persistence-warning" role="status">
                 인증서 검증 꺼짐

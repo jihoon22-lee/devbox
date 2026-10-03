@@ -102,6 +102,39 @@ export function setVariable(
   };
 }
 
+export function variableNameError(name: string, environment: Environment, previous?: string): string | null {
+  if (!name.trim()) return "변수 이름을 입력하세요.";
+  if (!/^[A-Za-z0-9_.-]+$/.test(name)) return "변수 이름은 영문, 숫자, 밑줄, 점, 하이픈만 사용할 수 있습니다.";
+  if (environment.variables.some(variable => variable.key === name && variable.key !== previous)) return "같은 이름의 변수가 있습니다.";
+  return null;
+}
+
+export function addVariable(store: EnvironmentStore, envId: string, requested?: string): EnvironmentStore {
+  const environment = store.environments.find(item => item.id === envId);
+  if (!environment) return store;
+  let key = requested?.trim() ?? "";
+  if (!key) {
+    let index = 1;
+    while (environment.variables.some(variable => variable.key === `var${index}`)) index++;
+    key = `var${index}`;
+  }
+  const error = variableNameError(key, environment);
+  if (error) throw new Error(error);
+  return { ...store, environments: store.environments.map(item => item.id === envId ? {...item, variables: [...item.variables, {key, value: "", secret: false}]} : item) };
+}
+
+export function renameVariable(store: EnvironmentStore, envId: string, previous: string, key: string): EnvironmentStore {
+  const environment = store.environments.find(item => item.id === envId);
+  if (!environment) return store;
+  const error = variableNameError(key, environment, previous);
+  if (error) throw new Error(error);
+  return { ...store, environments: store.environments.map(item => item.id === envId ? {...item, variables: item.variables.map(variable => variable.key === previous ? {...variable, key} : variable)} : item) };
+}
+
+export function removeVariable(store: EnvironmentStore, envId: string, key: string): EnvironmentStore {
+  return { ...store, environments: store.environments.map(item => item.id === envId ? {...item, variables: item.variables.filter(variable => variable.key !== key)} : item) };
+}
+
 function isEnvironment(value: unknown): value is Environment {
   if (!value || typeof value !== "object") return false;
   const environment = value as Partial<Environment>;
