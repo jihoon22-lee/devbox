@@ -1,8 +1,9 @@
+import { createRequestSessionVariables } from "./lib/requestSessionVariables";
 import { createRequestTransferActions } from "./controllers/requestTransfer";
 import { RequestCodePanels } from "./components/RequestCodePanels";
 import { evaluateAssertions, type Assertion, type AssertionResult } from "./lib/assertions";
 import { VARIABLE_NAME, type Capture } from "./lib/captures";
-import { SessionVariables, missingVariables, applyResponseCaptures, type RunDeps } from "./lib/runner";
+import { missingVariables, applyResponseCaptures, type RunDeps } from "./lib/runner";
 import { cleanCollectionChecks } from "./lib/collections";
 import { apiMessages } from "../issues/catalog";
 import { useEnvironmentPersistence } from "./hooks/useEnvironmentPersistence";
@@ -151,14 +152,7 @@ export default function App({
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [assertionResults, setAssertionResults] = useState<AssertionResult[]>([]);
   const [captured, setCaptured] = useState<{ variable: string; target: string }[]>([]);
-  const [sessionVariables] = useState(
-    () =>
-      new SessionVariables({
-        reveal: (reference) => api.revealCapture(reference),
-        discard: (references) => api.discardCaptures(references),
-        restore: (references) => api.restoreCaptures(references),
-      }),
-  );
+  const [sessionVariables] = useState(createRequestSessionVariables);
   const [sessionVersion, setSessionVersion] = useState(0);
   const [oauthLoginRequest, setOAuthLoginRequest] = useState(0);
   const oauthLoginSequence = useRef(0);
@@ -1537,8 +1531,16 @@ export default function App({
             </Suspense>
           </div>
         )}
-        {migrationNotice && <div className="migration-notice" role="status">{migrationNotice}</div>}
-        {persistenceWarning && <div className="persistence-warning" role="alert">{persistenceWarning}</div>}
+        {migrationNotice && (
+          <div className="migration-notice" role="status">
+            {migrationNotice}
+          </div>
+        )}
+        {persistenceWarning && (
+          <div className="persistence-warning" role="alert">
+            {persistenceWarning}
+          </div>
+        )}
         {workspace !== "protocol" && section !== "history" && (
           <>
             {req.tls?.verify === false && (

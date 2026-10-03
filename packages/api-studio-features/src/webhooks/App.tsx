@@ -1,3 +1,4 @@
+import { buildRuleConflictSummary } from "./lib/ruleConflictSummary";
 import { usePolling } from "@devbox/hooks";
 import { isLoopbackAddress } from "./lib/listenerAddress";
 import { webhookMessages } from "../issues/catalog";
@@ -170,38 +171,6 @@ function formatFixtureTime(receivedAtMs: number): string {
   return Number.isFinite(date.getTime()) ? date.toISOString() : "시간 미상";
 }
 
-function compactRulePart(value: string, maxChars = 120): string {
-  return value.length <= maxChars ? value : `${value.slice(0, maxChars - 1)}…`;
-}
-
-function formatRuleLabel(rule: ResponseRule | undefined, fallbackId: string): string {
-  const method = compactRulePart(rule?.method ?? "*");
-  const path = compactRulePart(rule?.path ?? "(경로 미상)");
-  const id = compactRulePart(rule?.id || fallbackId);
-  return `${method} ${path} [${id}]`;
-}
-
-function buildRuleConflictSummary(
-  candidate: ResponseRule,
-  conflicts: readonly {
-    existingRuleId: string;
-    winnerRuleId: string;
-  }[],
-  knownRules: readonly ResponseRule[],
-): string {
-  const candidateLabel = formatRuleLabel(candidate, candidate.id);
-  const lines = conflicts.slice(0, 5).map((conflict) => {
-    const existing = knownRules.find((knownRule) => knownRule.id === conflict.existingRuleId);
-    const winner =
-      conflict.winnerRuleId === candidate.id
-        ? candidate
-        : knownRules.find((knownRule) => knownRule.id === conflict.winnerRuleId);
-    return `${candidateLabel} ↔ ${formatRuleLabel(existing, conflict.existingRuleId)} · 적용: ${formatRuleLabel(winner, conflict.winnerRuleId)}`;
-  });
-  if (conflicts.length > lines.length) lines.push(`외 ${conflicts.length - lines.length}개 충돌`);
-  return [`겹치는 응답 규칙 ${conflicts.length}개가 있습니다.`, ...lines, "우선순위를 확인하고 저장할까요?"].join("\n");
-}
-
 function openApiFormatForFileName(fileName: string): OpenApiDocumentFormat | null {
   const lowerName = fileName.toLowerCase();
   if (lowerName.endsWith(".json")) return "json";
@@ -329,7 +298,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       setRules(rulesResult.value.map(normalizeRule));
     }
     if (fixtureResult.status === "fulfilled") setFixtures(fixtureResult.value);
-    
+
     const failure = [statusResult, historyResult, rulesResult, fixtureResult].find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -347,7 +316,9 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     };
   }, []);
 
-  useEffect(() => { refreshRequest.current += 1; }, [active]);
+  useEffect(() => {
+    if (!active) refreshRequest.current += 1;
+  }, [active]);
   const polling = usePolling(readSnapshot, { intervalMs: 2000, active });
   const refresh = useCallback(() => {
     refreshRequest.current += 1;
@@ -355,13 +326,13 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   }, [polling.refresh]);
 
   useEffect(() => {
-    if (selectedHistoryId !== null && !history.some(item => item.id === selectedHistoryId)) {
+    if (selectedHistoryId !== null && !history.some((item) => item.id === selectedHistoryId)) {
       setSelectedHistoryId(null);
       setSelectionNotice(STALE_HISTORY_MESSAGE);
     }
   }, [history, selectedHistoryId]);
   useEffect(() => {
-    if (selectedRuleId !== null && !rules.some(item => item.id === selectedRuleId)) {
+    if (selectedRuleId !== null && !rules.some((item) => item.id === selectedRuleId)) {
       setSelectedRuleId(null);
       setSelectionNotice(STALE_RULE_MESSAGE);
     }
@@ -1036,7 +1007,9 @@ export default function App({ active = true }: { active?: boolean } = {}) {
           ● {status.running ? `듣는 중 ${status.address}` : "중지"}
         </span>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={refresh}>새로 고침</button>
+        <button type="button" className="btn" onClick={refresh}>
+          새로 고침
+        </button>
         {!status.running ? (
           <>
             <label className="field-inline">
@@ -1080,7 +1053,11 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       </header>
 
       {lanBind && <div className="warn">LAN 공개는 명시적 설정입니다. 외부에서 접근 가능합니다.</div>}
-      {readError && <div className="error" role="alert">{readError}</div>}
+      {readError && (
+        <div className="error" role="alert">
+          {readError}
+        </div>
+      )}
       {selectionNotice && <p role="status">{selectionNotice}</p>}
       {error && (
         <div className="error" role="alert" aria-live="assertive">
