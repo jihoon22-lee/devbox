@@ -107,6 +107,7 @@ export function RequestParameters({
         <div>
           <select
             className="select-sm"
+            aria-label="요청 본문 형식"
             value={req.body_kind}
             onChange={(e) => {
               const bodyKind = e.currentTarget.value;
@@ -144,6 +145,7 @@ export function RequestParameters({
             req.body_kind !== "none" && (
               <textarea
                 className="body-input"
+                aria-label="요청 본문"
                 rows={8}
                 placeholder={req.body_kind === "json" ? '{ "key": "value" }' : "key=value"}
                 value={req.body}
@@ -183,11 +185,13 @@ export function RequestParameters({
           {req.auth?.kind === "basic" && (
             <div className="kv-row">
               <input
+                aria-label="사용자 이름"
                 placeholder="사용자 이름"
                 value={req.auth.username}
                 onChange={(e) => setAuth({ username: e.currentTarget.value })}
               />
               <input
+                aria-label="비밀번호"
                 placeholder="비밀번호"
                 type="password"
                 value={req.auth.password}
@@ -198,6 +202,7 @@ export function RequestParameters({
           {req.auth?.kind === "bearer" && (
             <div className="kv-row">
               <input
+                aria-label="토큰"
                 placeholder="토큰"
                 value={req.auth.token}
                 onChange={(e) => setAuth({ token: e.currentTarget.value })}
@@ -207,11 +212,13 @@ export function RequestParameters({
           {req.auth?.kind === "apikey" && (
             <div className="kv-row">
               <input
+                aria-label="API 키 헤더 이름"
                 placeholder="헤더 이름 (예: X-API-Key)"
                 value={req.auth.api_key}
                 onChange={(e) => setAuth({ api_key: e.currentTarget.value })}
               />
               <input
+                aria-label="API 키 값"
                 placeholder="값"
                 value={req.auth.api_value}
                 onChange={(e) => setAuth({ api_value: e.currentTarget.value })}

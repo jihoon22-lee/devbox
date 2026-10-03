@@ -78,3 +78,18 @@ it("shows a failed environment save in Protocols while keeping writes locked", a
   expect(JSON.parse(localStorage.getItem(previewDocumentKey("environments"))!).environments[0].variables[0].value).toBe("original");
   write.mockRestore();
 });
+
+it("names active body and authentication controls for real keyboard input", async () => {
+  render(<App />);
+  fireEvent.change(await screen.findByRole("textbox", {name:"요청 URL"}), {target:{value:"https://example.test"}});
+  await waitFor(() => expect((screen.getByRole("button", {name:"보내기"}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", {name:"BODY"}));
+  fireEvent.change(screen.getByRole("combobox", {name:"요청 본문 형식"}), {target:{value:"raw"}});
+  expect(screen.getByRole("textbox", {name:"요청 본문"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", {name:"AUTH"}));
+  fireEvent.change(screen.getByRole("combobox", {name:"인증 종류"}), {target:{value:"basic"}});
+  expect(screen.getByRole("textbox", {name:"사용자 이름"})).toBeTruthy();
+  expect(screen.getByLabelText("비밀번호")).toBeTruthy();
+  fireEvent.change(screen.getByRole("combobox", {name:"인증 종류"}), {target:{value:"bearer"}});
+  expect(screen.getByRole("textbox", {name:"토큰"})).toBeTruthy();
+});
