@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { SessionVariablesPanel } from "./SessionVariablesPanel";
 import { SessionVariables } from "./lib/runner";
+import { useLayoutEffect } from "react";
 afterEach(cleanup);
 it("masks captured values, reveals explicitly and clears them", async () => {
   const session = new SessionVariables();
@@ -57,4 +58,22 @@ it("clears a revealed value when a new capture replaces it", async () => {
   rerender(<SessionVariablesPanel session={session} onChange={vi.fn()} />);
   expect(screen.queryByText("native-private-token")).toBeNull();
   await assertNoA11yViolations(container);
+});
+
+it("keeps a reveal started as soon as a new capture is committed", async () => {
+  const session = new SessionVariables({
+    reveal: vi.fn(async () => "just-captured-token"),
+    discard: vi.fn(async () => {}),
+    restore: vi.fn(async () => {}),
+  });
+  function Host({ revealOnCommit }: { revealOnCommit: boolean }) {
+    useLayoutEffect(() => {
+      if (revealOnCommit) screen.getByRole("button", { name: "token 보기" }).click();
+    }, [revealOnCommit]);
+    return <SessionVariablesPanel session={session} onChange={vi.fn()} />;
+  }
+  const { rerender } = render(<Host revealOnCommit={false} />);
+  session.setNative({ name: "token", value: "sealed", reference: "ref" });
+  rerender(<Host revealOnCommit />);
+  expect(await screen.findByText("just-captured-token")).toBeTruthy();
 });

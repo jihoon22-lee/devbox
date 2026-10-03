@@ -1,5 +1,5 @@
 import { useUndo } from "@devbox/product-shell/undo";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { SessionVariables } from "./lib/runner";
 interface Props {
   session: SessionVariables;
@@ -16,7 +16,8 @@ export function SessionVariablesPanel({ session, onChange, disabled = false }: P
   const [busy, setBusy] = useState<string | null>(null);
   const epoch = useRef(0);
   const version = session.version;
-  useEffect(() => {
+  // Retire the previous capture before the new revision can receive a reveal click.
+  useLayoutEffect(() => {
     epoch.current++;
     setRevealed({ version, values: new Map() });
     setBusy(null);
