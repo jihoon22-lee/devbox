@@ -129,6 +129,8 @@ export default function App({
   const [resp, setResp] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [executionStatus, setExecutionStatus] = useState("");
+  const [previousResponse, setPreviousResponse] = useState(false);
   const [sseOptions, setSseOptions] = useState<SseOptions>(defaultSseOptions);
   const [sseState, setSseState] = useState<"idle" | "connecting" | "connected" | "stopped" | "closed" | "error">(
     "idle",
@@ -784,11 +786,15 @@ export default function App({
     requestSequenceRef.current = sequence;
     abortControllerRef.current = controller;
     setSending(true);
+    setExecutionStatus("요청을 보내는 중입니다.");
+    setPreviousResponse(true);
     setError(null);
     try {
       const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal, captureSnapshot);
       if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
       setResp(result);
+      setPreviousResponse(false);
+      setExecutionStatus("요청이 완료되었습니다.");
       setOAuthStatusKey((key) => key + 1);
       setAssertionResults(evaluateAssertions(assertionSnapshot, result));
       setCaptured([]);
@@ -837,6 +843,7 @@ export default function App({
       for (const capture of captureSnapshot)
         if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
       refreshSession();
+      setExecutionStatus("요청을 완료하지 못했습니다.");
       setError(safeRequestError(cause));
       setResp(null);
       try {
@@ -869,6 +876,7 @@ export default function App({
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setSending(false);
+    setExecutionStatus("요청이 취소되었습니다. 서버 작업의 취소 여부는 확인이 필요합니다.");
     setError("요청이 취소되었습니다");
   };
 
@@ -1553,6 +1561,7 @@ export default function App({
               </select>
               <input
                 className="url-input"
+                aria-label="요청 URL"
                 placeholder="https://api.example.com/users"
                 value={req.url}
                 onChange={(e) => setReq({ ...req, url: e.currentTarget.value })}
@@ -1702,7 +1711,9 @@ export default function App({
               </div>
             )}
 
+            {executionStatus && <p role="status">{executionStatus}</p>}
             <ResponseViewer
+              previous={previousResponse}
               assertionResults={assertionResults}
               captured={captured}
               response={resp}
