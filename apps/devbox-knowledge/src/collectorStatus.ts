@@ -11,19 +11,19 @@ export function collectorMessage(status: CollectorStatus | null): string {
     : "활동 수집이 일시중지되어 있습니다. 창을 닫아도 자동으로 시작하지 않습니다.";
 }
 export function useCollectorStatus(refresh: unknown): CollectorStatus | null {
-  const [status, setStatus] = useState<CollectorStatus | null>(null);
+  const [status, setStatus] = useState<{ refresh: unknown; value: CollectorStatus } | null>(null);
   useEffect(() => {
     if (!nativeMode) return;
     let active = true;
     setStatus(null);
     void quitCall("lifecycle_status", {})
       .then((value) => {
-        if (active) setStatus(value);
+        if (active) setStatus({ refresh, value });
       })
       .catch(() => {});
     return () => {
       active = false;
     };
   }, [refresh]);
-  return status;
+  return status && status.refresh === refresh ? status.value : null;
 }
