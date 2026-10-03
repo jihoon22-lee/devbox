@@ -1006,7 +1006,20 @@ async fn collect_response_stream(
         let message = match stream.message().await {
             Ok(Some(message)) => message,
             Ok(None) => break,
-            Err(status) => return Ok(status_outcome(status)),
+            Err(status) => {
+                let blocked = matches!(
+                    status.code(),
+                    Code::Cancelled
+                        | Code::PermissionDenied
+                        | Code::Unauthenticated
+                        | Code::ResourceExhausted
+                );
+                let mut outcome = status_outcome(status);
+                if !blocked {
+                    outcome.messages = messages;
+                }
+                return Ok(outcome);
+            }
         };
         if messages.len() >= grpc::MAX_STREAM_MESSAGES {
             return Err(grpc::RESPONSE_TOO_LARGE.into());
@@ -1300,7 +1313,12 @@ mod tests {
                     name: format!("{}-next", first.name),
                     count: first.count.saturating_add(1),
                 };
-                let stream: FixtureStream = Box::pin(tokio_stream::iter([Ok(first), Ok(second)]));
+                let fail = first.name == "partial";
+                let mut responses = vec![Ok(first), Ok(second)];
+                if fail {
+                    responses.push(Err(Status::internal("synthetic-private-error")));
+                }
+                let stream: FixtureStream = Box::pin(tokio_stream::iter(responses));
                 Ok(Response::new(stream))
             })
         }
@@ -1342,6 +1360,13 @@ mod tests {
                 let mut responses = Vec::new();
                 while let Some(message) = request_stream.message().await? {
                     responses.push(Ok(message));
+                }
+                if responses.iter().any(|response| {
+                    response
+                        .as_ref()
+                        .is_ok_and(|message| message.name == "partial")
+                }) {
+                    responses.push(Err(Status::internal("synthetic-private-error")));
                 }
                 let stream: FixtureStream = Box::pin(tokio_stream::iter(responses));
                 Ok(Response::new(stream))
@@ -1513,6 +1538,63 @@ service Echo {
             methods: Arc::new(HashMap::new()),
             rpc_timeout: Duration::from_secs(1),
         }
+    }
+
+    #[tokio::test]
+    async fn partial_stream_preserves_messages_before_internal_status() {
+        let (_temp, pool) = fixture_pool();
+        let descriptors = pool.encode_to_vec();
+        let reflection = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(&descriptors)
+            .build_v1()
+            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown, receiver) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            Server::builder()
+                .serve_with_incoming_shutdown(
+                    FixtureRouter {
+                        echo: EchoFixtureServer,
+                        reflection,
+                    },
+                    TcpListenerStream::new(listener),
+                    async {
+                        let _ = receiver.await;
+                    },
+                )
+                .await
+                .unwrap();
+        });
+        let methods = grpc::method_map(&pool).unwrap();
+        let snapshot = ConnectionSnapshot {
+            channel: plaintext_channel(address).await,
+            _pool: Arc::new(pool),
+            methods: Arc::new(methods),
+            rpc_timeout: Duration::from_secs(2),
+        };
+        for (method_name, raw) in [
+            (
+                "demo.Echo.Server",
+                vec![r#"{"name":"partial","count":"1"}"#.to_string()],
+            ),
+            (
+                "demo.Echo.Bidi",
+                vec![
+                    r#"{"name":"partial","count":"1"}"#.to_string(),
+                    r#"{"name":"second","count":"2"}"#.to_string(),
+                ],
+            ),
+        ] {
+            let method = snapshot.methods.get(method_name).unwrap();
+            let messages = grpc::parse_request_messages(method, &raw).unwrap();
+            let outcome = invoke_rpc(&snapshot, method, messages).await.unwrap();
+            assert_eq!(outcome.status, "INTERNAL");
+            assert_eq!(outcome.messages.len(), 2);
+            assert_eq!(serialize_responses(outcome.messages).unwrap().len(), 2);
+        }
+        let _ = shutdown.send(());
+        server.await.unwrap();
     }
 
     #[tokio::test]
