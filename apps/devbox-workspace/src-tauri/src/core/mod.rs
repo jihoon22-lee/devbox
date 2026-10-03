@@ -21,3 +21,5 @@ pub mod problems;
 pub mod session_summary;
 
 pub mod terminal_commands;
+
+pub mod close_review;

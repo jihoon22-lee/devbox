@@ -1,5 +1,6 @@
 # 리뷰 후속 작업 로드맵 (2026-09-23)
 
+> **v0.9.0 철회 전 실행 이력.** 아래 상태·명령은 당시 기록이다. 현재 작업은 [2026-10-03 통합 계획](../2026-10-03-product-readiness/00-roadmap.md)을 따르며 #580은 닫혔다.
 **공개 완료(2026-10-03):** B1–B12·R와 검토 수정을 반영한 [v0.9.0 stable](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)을 공개했다. [릴리스 근거](../../../release-evidence.md)와 [출시 후 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)에서 결과와 제보를 추적한다. 계획 체크박스는 변경하지 않는다.
 
 > 이 폴더의 정본이다. 실행 세션(Claude Code 또는 Codex, Native 방식)은 이 파일을 끝까지 읽은 뒤 §6 순서대로 **묶음(bundle) PR**을 하나씩 끝까지 실행한다. 계획 파일은 작업 단위이고 PR은 묶음 단위다(계획 43개 → PR 12개 + 릴리스 1개, D30). **버전은 모든 작업이 끝난 뒤 P3-01에서 한 번만 올린다(0.8.1 → 0.9.0, D29).** 시작 프롬프트는 §7에 있다.
@@ -119,7 +120,7 @@
 - **테스트 정책(D4):** 과제마다 실패하는 테스트를 먼저 쓰고 그 테스트와 직접 영향받는 테스트만 실행한다(`cargo test -p <crate> --lib <filter>`, `pnpm --filter <package> exec vitest run <file>`). 전체 검증(`pnpm verify:affected` — build·typecheck·test·clippy·fmt 포함)은 묶음 끝에 한 번(§4.4). `pnpm verify:all`은 릴리스 PR과 검증기 변경에만. `#[cfg(windows)]` 코드는 WSL에서 테스트되지 않으므로 CI `Rust (Windows)` 결과로 확인한다. 로컬 검증은 저장소의 자원 제한·worktree 간 잠금(CONVENTIONS §5)을 따른다.
 - **의존성:** D23에서 승인한 것(`ts-rs` 12.0.1, `@biomejs/biome` 2) 말고는 새 의존성을 더하지 않는다. 계획이 "새 의존성 없음"이라고 한 곳에서 필요해 보이면 기존 crate·직접 구현으로 풀고, 그래도 안 되면 §4.10에 따라 멈춘다.
 - **데이터 호환:** 저장 형식은 더하기만 한다(새 필드는 serde 기본값·TS 선택 필드). 기준은 공개된 v0.8.1이 쓴 데이터다(중간 릴리스가 없으므로 v0.8.x 데이터를 그대로 읽어야 한다). 사용자 데이터를 지우는 변경은 계획에 적힌 경우만(예: v0.7 가져오기 제거). 옛 형식 문서를 읽는 테스트를 같이 둔다.
-- **버전·릴리스(D29):** 버전은 P3-01에서 한 번만 올린다. 다른 PR은 버전 번호·`CHANGELOG.md`·`docs/release-evidence.md`를 바꾸지 않는다. 후보 workflow(`windows-package-candidate.yml`)는 제품 버전과 태그가 같아야 하므로 P3-01에서만 쓴다. 릴리스 규칙: main CI가 끝난 뒤에만 태그, 후보와 태그 사이 머지 금지, 후보 뒤 7일 안에 태그, 실패한 후보·릴리스를 새 빌드로 덮지 않음, 공개 RC 없음, 공개 자산 7개 계약 유지. 릴리스 PR은 `.agents/skills/devbox-release/SKILL.md`와 `docs/release-policy.md`를 함께 따른다.
+- **버전·릴리스(D29):** 버전은 P3-01에서 한 번만 올린다. 다른 PR은 버전 번호·`CHANGELOG.md`·`docs/release-evidence.md`를 바꾸지 않는다. 후보 workflow(`windows-package-candidate.yml`)는 제품 버전과 태그가 같아야 하므로 P3-01에서만 쓴다. 릴리스 규칙: main CI가 끝난 뒤에만 태그, 후보와 태그 사이 머지 금지, 후보 뒤 7일 안에 태그, 실패한 후보·릴리스를 새 빌드로 덮지 않음, 공개 RC 없음, 공개 자산 7개 계약 유지. 릴리스 PR은 `docs/release-policy.md`를 직접 따른다.
 - **보안:** §2.3 범위. 비밀·토큰·경로·본문을 로그·IPC 투영·오류 메시지에 넣지 않는다.
 - **UX:** 새 화면은 axe 위반 0(`@devbox/a11y/testing`). 되돌릴 수 있는 동작은 확인 없이 실행 + 8초 되돌리기(P1-18 `useUndo`), 되돌릴 수 없는 삭제·버리기는 화면 안 확인 한 번. 오류는 코드 → 문구 카탈로그(P1-11 이후 `Record<Issue, string>`).
 - **Git:** main은 linear, squash 머지만. 브랜치는 §6 묶음 브랜치. main에 force push 금지. 커밋하지 않은 작업이 있는 파일을 `git checkout -- <file>`로 되돌리지 않는다(실험을 되돌릴 때는 먼저 커밋하거나 `git stash`).

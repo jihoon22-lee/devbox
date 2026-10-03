@@ -104,3 +104,64 @@ it("keeps focus and stop actions bound to the selected native terminal", async (
     expect(call).toHaveBeenCalledWith(description, "workspace.terminal", "stop_terminal", { id }, "terminal"),
   );
 });
+
+it("retries only the list after native open succeeded but list refresh failed", async () => {
+  let opened = false;
+  const original = call.getMockImplementation()!;
+  call.mockImplementation(async (...args) => {
+    if (args[2] === "open_terminal") {
+      opened = true;
+      return {};
+    }
+    if (args[2] === "terminal_sessions" && opened) {
+      opened = false;
+      throw new Error("list unavailable");
+    }
+    return original(...args);
+  });
+  render(<Terminal description={description} registry={null} />);
+  fireEvent.click(await screen.findByRole("button", { name: "현재 프로젝트의 터미널 열기" }));
+  await screen.findByText(/열림을 확인했으나 목록/);
+  expect(screen.queryByRole("button", { name: "동일 요청 다시 확인" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(call.mock.calls.filter(([, , method]) => method === "open_terminal")).toHaveLength(1);
+});
+
+it("keeps the same open receipt on explicit uncertainty retry", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const original = call.getMockImplementation()!;
+  call.mockImplementation(async (...args) => {
+    if (args[2] === "open_terminal") {
+      requests.push(args[3]);
+      throw new Error("lost reply");
+    }
+    return original(...args);
+  });
+  render(<Terminal description={description} registry={null} />);
+  fireEvent.click(await screen.findByRole("button", { name: "현재 프로젝트의 터미널 열기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "동일 요청 다시 확인" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[0]).toEqual(requests[1]);
+});
+
+it("does not publish a late terminal error into another worktree", async () => {
+  let reject!: (error: Error) => void;
+  const original = call.getMockImplementation()!;
+  call.mockImplementation(async (...args) => {
+    if (args[2] === "open_terminal")
+      return new Promise((_resolve, fail) => {
+        reject = fail;
+      });
+    return original(...args);
+  });
+  const view = render(<Terminal description={description} registry={null} />);
+  fireEvent.click(await screen.findByRole("button", { name: "현재 프로젝트의 터미널 열기" }));
+  await waitFor(() => expect(reject).toBeDefined());
+  view.rerender(
+    <Terminal description={{ ...description, context: { ...context, worktreeId: "next" } }} registry={null} />,
+  );
+  reject(new Error("old worktree failed"));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(screen.queryByRole("button", { name: "동일 요청 다시 확인" })).toBeNull();
+});

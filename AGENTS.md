@@ -10,9 +10,10 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   환경·스택·검증·Git 정책을 읽고, 작업에 해당하는 절을 추가로 읽는다.
 - 대상 디렉터리의 AGENTS/override, `apps/<app>/README.md`, 해당 설계 문서를 확인한다.
   전체 README·과거 계획을 매번 읽지 않는다. 현재 구현은 코드와 테스트로 확인한다.
-- 진행 중인 작업의 원장은 리뷰 후속 ledger 이슈와
-  `docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md`다. PR 단위·순서·게이트는
-  로드맵 §4–§6을 따른다. v0.8 원장 #541·#542는 닫힌 역사 기록이다.
+- 현재 작업의 원장은 `docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md`와
+  그 추적표다. R00–R16을 통합 개발 브랜치에 모아 최종 PR **1개**로 제출한다.
+  작업별 branch/worktree/commit은 자유롭게 나누되 선행 변경을 통합한 뒤 후속 작업을 시작한다.
+  이전 2026-09-23 계획과 #580·#541·#542는 닫힌 역사 기록이다.
 - 현재/과거 stable의 SHA·workflow·실기 근거는 [release evidence](./docs/release-evidence.md),
   앱·공용 모듈 목록은 CONVENTIONS §2와 [projects](./docs/projects.md)를 필요할 때 읽는다.
 
@@ -32,8 +33,10 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 - 커밋은 과제 단위로 한다. push와 PR 생성은 PR의 상세 검증을 마친 뒤 한 번 한다
   (초안 PR은 CI를 실행하지 않는다). 완료 검증이 실패하면 확인된 수정을 먼저 모두 마치고
   실패·영향 범위만 다시 실행한다. 통과한 무관한 검사는 반복하지 않는다.
-- 선행 PR에 의존하는 작업은 선행 PR 머지 후 시작한다. 파일이 겹치지 않는 독립 PR은 앞 PR의 CI를
-  기다리는 동안 시작할 수 있다.
+- 작업별 전체 검증·CI를 실행하지 않는다. 결함별 최소 회귀를 로컬에서 확인하고 최종 통합 뒤
+  영향 검증을 한 번 모은다. 실패·관련 변경이 없는 통과 검사를 반복하지 않는다.
+- 메모리·swap 압박 시 worker와 동시 작업을 줄인다. 완료한 소유 임시 산출물과 clean·통합된
+  전용 worktree는 정리하되 공유 cache·활성 작업·사용자 자료는 보존한다.
 - 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
   제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
 - 로컬의 기존 서비스·Docker·방화벽·공유 네트워크를 테스트 때문에 변경하지 않는다.
@@ -59,7 +62,8 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 ## 작업 도구와 기록
 
 - 일반 개발·migration 검토에 별도 스킬을 요구하지 않는다. 이 지침과 CONVENTIONS를
-  직접 따른다. `.agents/skills/`에는 릴리스 전용 `devbox-release`만 유지한다.
-- 작업 기록은 PR 본문과 ledger 이슈 댓글로 남긴다. 새 `workthrough/` 파일은 만들지 않는다.
-  결정·영향·검증 결과·미실행 실기 항목을 PR 본문에 적고, 머지 후 ledger에 요약을 남긴다.
+  직접 따른다. 릴리스도 별도 스킬 없이 `docs/release-policy.md`를 직접 따른다.
+- 하위 에이전트는 GPT-6 Astra 또는 GPT-6.1 Sol만 필요할 때 사용한다.
+- 작업 기록은 단일 PR 본문과 현재 계획의 추적표·검증 artifact에 남긴다. 새 `workthrough/` 파일은 만들지 않는다.
+  결정·영향·검증 결과·미실행 실기 항목을 기록한다. 닫힌 #580을 재오픈하거나 사용자 실기 요청을 만들지 않는다.
   컨텍스트 인계는 CONVENTIONS §11, 개인 설정은 [Codex setup](./docs/codex-setup.md)을 따른다.

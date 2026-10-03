@@ -1,6 +1,14 @@
 import { isKeyboardActivation } from "@devbox/a11y";
 import { foldersOf } from "../lib/collections";
-import { removeEnvironment, setVariable } from "../lib/environments";
+import { useLayoutEffect, useRef, useState } from "react";
+import {
+  addVariable,
+  renameVariable,
+  removeVariable,
+  variableNameError,
+  removeEnvironment,
+  setVariable,
+} from "../lib/environments";
 import { toRequestTemplate } from "../lib/persistence";
 import {
   historyDisplayLabel,
@@ -135,6 +143,21 @@ export function RequestSidebar({
   currentEnv,
   startSecretSeal,
 }: Props) {
+  const [newVariableName, setNewVariableName] = useState("");
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
+  const [nameErrors, setNameErrors] = useState<Record<string, string>>({});
+  const variablesContainer = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pendingFocus.current === null) return;
+    const fields = variablesContainer.current?.querySelectorAll<HTMLInputElement>(".env-var-key");
+    const variableCount = currentEnv?.variables.length ?? 0;
+    const index = Math.min(pendingFocus.current, Math.max(0, variableCount - 1));
+    if ((fields?.length ?? 0) !== variableCount) return;
+    pendingFocus.current = null;
+    if (fields?.length) fields[index].focus();
+    else variablesContainer.current?.querySelector<HTMLInputElement>(".env-new-variable")?.focus();
+  }, [currentEnv]);
   return (
     <aside className="sidebar" hidden={section === "history"}>
       <h1 className="app-title">{section ? "Requests" : "API Playground"}</h1>
@@ -423,6 +446,7 @@ export function RequestSidebar({
       <div className="coll-save-row">
         <input
           className="coll-input"
+          aria-label="환경 이름"
           placeholder="환경 이름 (예: dev)"
           value={envName}
           onChange={(e) => setEnvName(e.currentTarget.value)}
@@ -435,7 +459,7 @@ export function RequestSidebar({
         .filter((env) => !apiWorkspace || apiWorkspace.links.environmentIds.includes(env.id))
         .map((env) => (
           <div key={env.id} className={`env-item ${env.id === currentEnvId ? "active" : ""}`}>
-            <button className="env-name" onClick={() => setCurrentEnvId(env.id)}>
+            <button className="env-name" aria-pressed={env.id === currentEnvId} onClick={() => setCurrentEnvId(env.id)}>
               {env.name}
             </button>
             <button
@@ -450,10 +474,37 @@ export function RequestSidebar({
           </div>
         ))}
       {currentEnv && (
-        <div className="env-vars">
-          {currentEnv.variables.map((v) => (
+        <div className="env-vars" ref={variablesContainer}>
+          {currentEnv.variables.map((v, index) => (
             <div key={v.key} className="env-var-row">
-              <span className="env-var-key">{v.key}</span>
+              <input
+                className="env-var-key coll-input"
+                aria-label={`환경 변수 ${index + 1} 이름`}
+                aria-invalid={Boolean(nameErrors[`${currentEnv.id}:${v.key}`])}
+                aria-describedby={nameErrors[`${currentEnv.id}:${v.key}`] ? `env-name-error-${index}` : undefined}
+                value={nameDrafts[`${currentEnv.id}:${v.key}`] ?? v.key}
+                disabled={environmentBusy || transferBusy || !persistenceReady}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setNameDrafts((current) => ({ ...current, [`${currentEnv.id}:${v.key}`]: value }));
+                }}
+                onBlur={(event) => {
+                  const key = event.currentTarget.value;
+                  const identity = `${currentEnv.id}:${v.key}`;
+                  const error = variableNameError(key, currentEnv, v.key);
+                  setNameErrors((current) => ({ ...current, [identity]: error ?? "" }));
+                  if (!error && key !== v.key)
+                    void tryPersistEnvs(renameVariable(envStoreRef.current, currentEnv.id, v.key, key));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur();
+                }}
+              />
+              {nameErrors[`${currentEnv.id}:${v.key}`] && (
+                <span id={`env-name-error-${index}`} role="alert">
+                  {nameErrors[`${currentEnv.id}:${v.key}`]}
+                </span>
+              )}
               {v.secret ? (
                 <>
                   <span
@@ -490,6 +541,7 @@ export function RequestSidebar({
                   <input
                     className="coll-input"
                     value={v.value}
+                    aria-label={`환경 변수 ${v.key} 값`}
                     disabled={environmentBusy || transferBusy || !persistenceReady}
                     onChange={(e) => {
                       tryPersistEnvs(
@@ -511,16 +563,49 @@ export function RequestSidebar({
                   </button>
                 </>
               )}
+              <button
+                className="btn mini"
+                aria-label={`환경 변수 ${v.key} 삭제`}
+                disabled={environmentBusy || transferBusy || !persistenceReady}
+                onClick={() => {
+                  if (!window.confirm(`${v.key} 변수를 삭제할까요? 요청의 변수 참조는 자동 변경하지 않습니다.`)) return;
+                  pendingFocus.current = index;
+                  void tryPersistEnvs(removeVariable(envStoreRef.current, currentEnv.id, v.key));
+                }}
+              >
+                삭제
+              </button>
             </div>
           ))}
-          {currentEnv.variables.length === 0 && <div className="dim">변수 없음 — {"{{var}}"}를 요청에 쓰세요.</div>}
+          {currentEnv.variables.length === 0 && (
+            <div className="dim">변수 없음 — baseUrl 같은 이름을 추가하고 {"{{baseUrl}}"}를 요청에 쓰세요.</div>
+          )}
           <div className="env-add-var">
+            <input
+              className="coll-input env-new-variable"
+              aria-label="새 변수 이름"
+              placeholder="baseUrl (비우면 자동 이름)"
+              value={newVariableName}
+              disabled={environmentBusy || transferBusy || !persistenceReady}
+              onChange={(event) => setNewVariableName(event.currentTarget.value)}
+            />
+            {nameErrors.new && <span role="alert">{nameErrors.new}</span>}
             <button
               className="btn"
               disabled={environmentBusy || transferBusy || !persistenceReady}
               onClick={() => {
-                const name = `var${currentEnv.variables.length + 1}`;
-                tryPersistEnvs(setVariable(envStoreRef.current, currentEnv.id, name, "", false));
+                try {
+                  const next = addVariable(envStoreRef.current, currentEnv.id, newVariableName);
+                  pendingFocus.current = currentEnv.variables.length;
+                  setNameErrors((current) => ({ ...current, new: "" }));
+                  void tryPersistEnvs(next);
+                  setNewVariableName("");
+                } catch (cause) {
+                  setNameErrors((current) => ({
+                    ...current,
+                    new: cause instanceof Error ? cause.message : "변수 이름을 확인하세요.",
+                  }));
+                }
               }}
             >
               + 변수

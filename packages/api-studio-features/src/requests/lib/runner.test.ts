@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runCollection, SessionVariables, type RunDeps } from "./runner";
+import { runCollection, SessionVariables, missingVariables, type RunDeps } from "./runner";
 import { emptyRequest } from "./importers";
 
 const entry = (id: string, url: string, extra: Record<string, unknown> = {}) => ({
@@ -347,4 +347,30 @@ it("does not revive sealed values when native rejects an expired undo reference"
   const undo = session.discard();
   await expect(undo()).rejects.toThrow();
   expect(session.forSend()).toEqual([]);
+});
+
+describe("active request fields", () => {
+  it("ignores hidden body and authentication drafts until selected", () => {
+    const request = {
+      ...emptyRequest(),
+      body: "{{body}}",
+      auth: {
+        kind: "none" as const,
+        username: "{{user}}",
+        password: "{{password}}",
+        token: "{{token}}",
+        api_key: "{{key}}",
+        api_value: "{{value}}",
+      },
+    };
+    expect(missingVariables(request, new Set())).toEqual([]);
+    expect(missingVariables({ ...request, body_kind: "json" }, new Set())).toEqual(["body"]);
+    for (const [kind, expected] of [
+      ["basic", ["user", "password"]],
+      ["bearer", ["token"]],
+      ["apikey", ["key", "value"]],
+    ] as const) {
+      expect(missingVariables({ ...request, auth: { ...request.auth, kind } }, new Set())).toEqual(expected);
+    }
+  });
 });

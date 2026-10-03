@@ -1249,8 +1249,9 @@ pub(crate) async fn apply_body(
         "graphql" if req.method == "POST" => builder
             .header("Content-Type", "application/json")
             .body(req.body.clone()),
-        _ if !req.body.is_empty() => builder.body(req.body.clone()),
-        _ => builder,
+        "raw" => builder.body(req.body.clone()),
+        "none" | "graphql" => builder,
+        _ => return Err("요청 본문 형식이 올바르지 않습니다".to_string()),
     })
 }
 
@@ -1512,18 +1513,38 @@ pub(crate) fn resolve_template(
                 })
                 .collect(),
             body_kind: req.body_kind.clone(),
-            body: if matches!(req.body_kind.as_str(), "multipart" | "graphql") {
+            body: if matches!(req.body_kind.as_str(), "none" | "multipart" | "graphql") {
                 String::new()
             } else {
                 replace(&req.body)
             },
             auth: req.auth.as_ref().map(|auth| AuthConfig {
                 kind: auth.kind.clone(),
-                username: replace(&auth.username),
-                password: replace(&auth.password),
-                token: replace(&auth.token),
-                api_key: replace(&auth.api_key),
-                api_value: replace(&auth.api_value),
+                username: if auth.kind == "basic" {
+                    replace(&auth.username)
+                } else {
+                    String::new()
+                },
+                password: if auth.kind == "basic" {
+                    replace(&auth.password)
+                } else {
+                    String::new()
+                },
+                token: if auth.kind == "bearer" {
+                    replace(&auth.token)
+                } else {
+                    String::new()
+                },
+                api_key: if auth.kind == "apikey" {
+                    replace(&auth.api_key)
+                } else {
+                    String::new()
+                },
+                api_value: if auth.kind == "apikey" {
+                    replace(&auth.api_value)
+                } else {
+                    String::new()
+                },
                 oauth2: (auth.kind == "oauth2")
                     .then_some(auth.oauth2.as_ref())
                     .flatten()
@@ -1748,7 +1769,7 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         })
     };
     collect(&req.url);
-    if req.body_kind != "multipart" {
+    if matches!(req.body_kind.as_str(), "json" | "form" | "raw") {
         collect(&req.body);
     }
     if req.body_kind == "graphql" {
@@ -1786,11 +1807,18 @@ fn referenced_variable_names(req: &RequestTemplate) -> BTreeSet<String> {
         collect(&param.value);
     }
     if let Some(auth) = &req.auth {
-        collect(&auth.username);
-        collect(&auth.password);
-        collect(&auth.token);
-        collect(&auth.api_key);
-        collect(&auth.api_value);
+        match auth.kind.as_str() {
+            "basic" => {
+                collect(&auth.username);
+                collect(&auth.password);
+            }
+            "bearer" => collect(&auth.token),
+            "apikey" => {
+                collect(&auth.api_key);
+                collect(&auth.api_value);
+            }
+            _ => {}
+        }
         if auth.kind == "oauth2" {
             if let Some(config) = &auth.oauth2 {
                 if config.grant_type == super::oauth2::config::GrantType::AuthorizationCode {
@@ -3119,39 +3147,44 @@ fn response_copy_error() -> String {
 }
 
 pub(crate) fn append_query(url: &str, params: &[KeyValue]) -> String {
-    let pairs = params
-        .iter()
-        .filter(|pair| !pair.key.is_empty())
-        .collect::<Vec<_>>();
-    if pairs.is_empty() {
+    let (base, fragment) = url
+        .split_once('#')
+        .map_or((url, None), |(base, fragment)| (base, Some(fragment)));
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    for pair in params.iter().filter(|pair| !pair.key.is_empty()) {
+        serializer.append_pair(&pair.key, &pair.value);
+    }
+    let query = serializer.finish();
+    if query.is_empty() {
         return url.to_string();
     }
-    let query = pairs
-        .iter()
-        .map(|pair| format!("{}={}", pair.key, pair.value))
-        .collect::<Vec<_>>()
-        .join("&");
-    if url.contains('?') {
-        format!("{url}&{query}")
+    let separator = if base.contains('?') {
+        if base.ends_with('?') || base.ends_with('&') {
+            ""
+        } else {
+            "&"
+        }
     } else {
-        format!("{url}?{query}")
+        "?"
+    };
+    let mut output = format!("{base}{separator}{query}");
+    if let Some(fragment) = fragment {
+        output.push('#');
+        output.push_str(fragment);
     }
+    output
 }
 
 fn encode_form(body: &str) -> String {
-    body.lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                return None;
-            }
-            match line.split_once('=') {
-                Some((key, value)) => Some(format!("{}={}", key.trim(), value.trim())),
-                None => Some(line.to_string()),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("&")
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    for line in body.lines() {
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            continue;
+        }
+        let (key, value) = line.split_once('=').unwrap_or((line, ""));
+        serializer.append_pair(key.trim(), value);
+    }
+    serializer.finish()
 }
 
 fn build_curl(req: &ResolvedRequest) -> String {
@@ -3234,8 +3267,15 @@ fn build_curl(req: &ResolvedRequest) -> String {
                 shell_quote(&format!("{}={value}{suffix}", part.name))
             ));
         }
-    } else if req.body_kind != "none" && req.body_kind != "graphql" && !req.body.is_empty() {
-        lines.push(format!("  --data {}", shell_quote(&req.body)));
+    } else if matches!(req.body_kind.as_str(), "json" | "form" | "raw") && !req.body.is_empty() {
+        lines.push(format!(
+            "  --data {}",
+            shell_quote(&if req.body_kind == "form" {
+                encode_form(&req.body)
+            } else {
+                req.body.clone()
+            })
+        ));
     } else if req.body_kind == "graphql" && req.method == "POST" && !req.body.is_empty() {
         lines.push(format!(
             "  --header {}",
@@ -4647,6 +4687,112 @@ mod tests {
         assert!(request.get("url").is_some());
     }
 
+    #[tokio::test]
+    async fn none_body_ignores_hidden_draft_and_rejects_unknown_kind() {
+        let mut request = template();
+        request.url = "https://example.test/".into();
+        request.headers.clear();
+        request.body_kind = "none".into();
+        request.body = "{{hidden}}".into();
+        request.auth = None;
+        let (resolved, _) = resolve_template(&request, &[], &MockSealer).unwrap();
+        assert!(referenced_variable_names(&request).is_empty());
+        let built = apply_body(reqwest::Client::new().post(&resolved.url), &resolved)
+            .await
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(built.body().is_none());
+        assert!(!build_curl(&resolved).contains("--data"));
+        let mut unknown = resolved;
+        unknown.body_kind = "invalid".into();
+        assert!(
+            apply_body(reqwest::Client::new().post(&unknown.url), &unknown)
+                .await
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn query_form_preserves_reserved_characters_duplicates_and_fragment() {
+        let pairs = [
+            ("q", "a&admin=true"),
+            ("q", "a#b"),
+            ("plus", "a+b"),
+            ("한글", " 한 글 "),
+            ("empty", ""),
+        ];
+        let params: Vec<KeyValue> = pairs
+            .iter()
+            .map(|(key, value)| KeyValue {
+                key: (*key).into(),
+                value: (*value).into(),
+            })
+            .collect();
+        let url = url::Url::parse(&append_query(
+            "https://example.test/?existing=ok#fragment",
+            &params,
+        ))
+        .unwrap();
+        assert_eq!(url.fragment(), Some("fragment"));
+        let mut expected = vec![("existing".to_string(), "ok".to_string())];
+        expected.extend(
+            pairs
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.to_string())),
+        );
+        assert_eq!(url.query_pairs().into_owned().collect::<Vec<_>>(), expected);
+        let body = pairs
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            url::form_urlencoded::parse(encode_form(&body).as_bytes())
+                .into_owned()
+                .collect::<Vec<_>>(),
+            expected[1..]
+        );
+    }
+
+    #[test]
+    fn active_auth_ignores_inactive_secret_references() {
+        let mut request = template();
+        request.url = "https://example.test/".into();
+        request.headers.clear();
+        request.body_kind = "none".into();
+        let auth = AuthConfig {
+            kind: "none".into(),
+            username: "{{user}}".into(),
+            password: "{{password}}".into(),
+            token: "{{token}}".into(),
+            api_key: "{{key}}".into(),
+            api_value: "{{value}}".into(),
+            ..Default::default()
+        };
+        for (kind, expected) in [
+            ("none", vec![]),
+            ("basic", vec!["user", "password"]),
+            ("bearer", vec!["token"]),
+            ("apikey", vec!["key", "value"]),
+        ] {
+            request.auth = Some(AuthConfig {
+                kind: kind.into(),
+                ..auth.clone()
+            });
+            let names = referenced_variable_names(&request);
+            assert_eq!(names, expected.into_iter().map(String::from).collect());
+            let (resolved, _) = resolve_template(&request, &[], &MockSealer).unwrap();
+            let resolved_auth = resolved.auth.unwrap();
+            if kind != "bearer" {
+                assert!(resolved_auth.token.is_empty());
+            }
+            if kind != "basic" {
+                assert!(resolved_auth.password.is_empty());
+            }
+        }
+    }
+
     #[test]
     fn append_query_and_form_keep_existing_behavior() {
         assert_eq!(
@@ -4661,7 +4807,7 @@ mod tests {
         );
         assert_eq!(
             encode_form("# comment\nname=John Doe\nage=30\n"),
-            "name=John Doe&age=30"
+            "name=John+Doe&age=30"
         );
     }
 

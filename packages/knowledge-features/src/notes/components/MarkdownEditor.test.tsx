@@ -1,3 +1,4 @@
+import { undo, redo } from "@codemirror/commands";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { acceptCompletion, selectedCompletion, startCompletion } from "@codemirror/autocomplete";
@@ -376,5 +377,26 @@ describe("MarkdownEditor wikilinks", () => {
     expect(document.querySelector(".cm-wikilink-missing")).toBeTruthy();
     fireEvent.mouseDown(resolved, { ctrlKey: true });
     expect(onNavigate).toHaveBeenCalledWith("Notes/Rust.md");
+  });
+});
+
+describe("document history ownership", () => {
+  it("resets undo on document generation while preserving edit undo and redo", () => {
+    const onChange = vi.fn();
+    const props = { onChange, onSave: () => undefined, onError: () => undefined, documentKey: "B.md" };
+    const rendered = render(<MarkdownEditor {...props} value="A_SENTINEL" documentGeneration={1} />);
+    const editor = () => EditorView.findFromDOM(document.querySelector(".cm-content") as HTMLElement)!;
+    editor().dispatch({ changes: { from: 0, insert: "edited " } });
+    rendered.rerender(<MarkdownEditor {...props} value="B original" documentGeneration={2} />);
+    expect(undo(editor())).toBe(false);
+    expect(editor().state.doc.toString()).toBe("B original");
+    editor().dispatch({ changes: { from: 0, insert: "B edit " } });
+    rendered.rerender(<MarkdownEditor {...props} value="B edit B original" documentGeneration={2} />);
+    expect(undo(editor())).toBe(true);
+    expect(editor().state.doc.toString()).toBe("B original");
+    expect(redo(editor())).toBe(true);
+    rendered.rerender(<MarkdownEditor {...props} value="B replaced" documentGeneration={3} />);
+    expect(undo(editor())).toBe(false);
+    expect(editor().state.doc.toString()).toBe("B replaced");
   });
 });

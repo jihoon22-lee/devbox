@@ -15,9 +15,14 @@ interface Row {
   owner: string;
   value: Observation | null;
 }
-export default function Health({ description, route }: ShellContentProps) {
+export default function Health({
+  description,
+  route,
+  onRecorded,
+}: Pick<ShellContentProps, "description" | "route"> & { onRecorded?: () => Promise<void> }) {
   const [rows, setRows] = useState<Row[]>([]),
     [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const generation = useRef(0);
   useEffect(
     () => () => {
@@ -29,6 +34,7 @@ export default function Health({ description, route }: ShellContentProps) {
     if (busy || !nativeMode) return;
     const current = ++generation.current;
     setBusy(true);
+    setError("");
     setRows([]);
     const next = await Promise.all(
       catalog.products.map(async (product) => {
@@ -65,6 +71,7 @@ export default function Health({ description, route }: ShellContentProps) {
     if (busy || !nativeMode) return;
     const current = ++generation.current;
     setBusy(true);
+    setError("");
     setRows([]);
     const next: Row[] = [];
     for (const product of catalog.products) {
@@ -91,7 +98,16 @@ export default function Health({ description, route }: ShellContentProps) {
       if (current !== generation.current) return;
       setRows([...next]);
     }
-    if (current === generation.current) setBusy(false);
+    if (current === generation.current) {
+      try {
+        await onRecorded?.();
+      } catch {
+        if (current === generation.current)
+          setError("상태 기록 뒤 설치 목록을 갱신하지 못했습니다. 다시 확인해 주세요.");
+      } finally {
+        if (current === generation.current) setBusy(false);
+      }
+    }
   };
   return (
     <section aria-label="제품 상태 확인">
@@ -103,11 +119,12 @@ export default function Health({ description, route }: ShellContentProps) {
       <button disabled={busy || !nativeMode} onClick={() => void refresh()}>
         {busy ? "제품 확인 중…" : "네 제품 상태 확인"}
       </button>
-      {["import", "health"].includes(description.deliveryState ?? "") && (
+      {["updates", "recovery"].includes(route) && ["import", "health"].includes(description.deliveryState ?? "") && (
         <button disabled={busy || !nativeMode} onClick={() => void record()}>
           상태 기록
         </button>
       )}
+      {error && <p role="alert">{error}</p>}
       {!!rows.length && (
         <table>
           <thead>

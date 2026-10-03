@@ -3,7 +3,7 @@
 현재 소스의 사용자 제품은 `apps/devbox-workspace`, `apps/devbox-api-studio`,
 `apps/devbox-knowledge`, `apps/devbox-control-center` 네 개다. 공개 제품 목록은
 `apps/catalog.json`, typed route/component/authority 목록은 `apps/products.json`이 원장이다.
-모든 제품과 Suite version은 0.9.0이다. 공개 여부는 [Release](https://github.com/jihoon22-lee/devbox/releases)와 [#580](https://github.com/jihoon22-lee/devbox/issues/580)를 따른다.
+모든 제품과 Suite version은 0.9.0이다. 공개 여부는 [Release](https://github.com/jihoon22-lee/devbox/releases)와 [릴리스 근거](release-evidence.md)를 따른다.
 
 | 소유 제품 | 프런트엔드 | 보존한 native engine |
 |---|---|---|

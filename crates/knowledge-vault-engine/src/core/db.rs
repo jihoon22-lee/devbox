@@ -404,6 +404,18 @@ pub fn product_search(
     rows.collect()
 }
 
+/// Bounded deterministic title/path candidates; body extraction is not involved.
+pub fn product_name_candidates(
+    conn: &Connection,
+    limit: i64,
+) -> rusqlite::Result<Vec<(String, String, String)>> {
+    let mut statement=conn.prepare("SELECT path,title,'' FROM docs WHERE length(CAST(path AS BLOB))<=32768 AND length(CAST(title AS BLOB))<=8192 ORDER BY title COLLATE NOCASE,path LIMIT ?1")?;
+    let rows = statement.query_map([limit.clamp(0, 2001)], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })?;
+    rows.collect()
+}
+
 pub fn list_tags(conn: &Connection) -> rusqlite::Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT tags FROM docs")?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -445,6 +457,22 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn product_name_candidates_are_metadata_only_and_not_literal_fts() {
+        let conn = mem();
+        for name in ["foo", "bar", "a---b", "한글"] {
+            index_doc(
+                &conn,
+                &format!("{name}.md"),
+                &format!("---\ntitle: {name}\n---\nPRIVATE_BODY"),
+            )
+            .unwrap();
+        }
+        let rows = product_name_candidates(&conn, 2001).unwrap();
+        assert_eq!(rows.len(), 4);
+        assert!(rows.iter().all(|(_, _, snippet)| snippet.is_empty()));
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub const DEFAULT_IDLE_THRESHOLD_MS: i64 = 5 * 60 * 1000;
 
 /// threshold 최소값 (1분) — 0이나 음수로 설정해 항상 idle이 되는 것을 막는다.
 pub const MIN_IDLE_THRESHOLD_MS: i64 = 60 * 1000;
+pub const MAX_IDLE_THRESHOLD_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// 마지막 입력 이후 경과가 threshold 이상이면 idle.
 pub fn is_idle(since_last_input_ms: i64, threshold_ms: i64) -> bool {
@@ -16,7 +17,7 @@ pub fn is_idle(since_last_input_ms: i64, threshold_ms: i64) -> bool {
 /// 앱 사용 시간에 집계되지 않도록.
 pub fn session_end_on_idle(now: i64, since_last_input_ms: i64, threshold_ms: i64) -> Option<i64> {
     if is_idle(since_last_input_ms, threshold_ms) {
-        Some(now - since_last_input_ms)
+        Some(now.saturating_sub(since_last_input_ms.max(0)))
     } else {
         None
     }
@@ -29,7 +30,7 @@ pub fn parse_threshold_ms(value: &str) -> i64 {
         .trim()
         .parse::<i64>()
         .unwrap_or(DEFAULT_IDLE_THRESHOLD_MS);
-    if parsed < MIN_IDLE_THRESHOLD_MS {
+    if !(MIN_IDLE_THRESHOLD_MS..=MAX_IDLE_THRESHOLD_MS).contains(&parsed) {
         DEFAULT_IDLE_THRESHOLD_MS
     } else {
         parsed
@@ -64,5 +65,26 @@ mod tests {
         assert_eq!(parse_threshold_ms("garbage"), DEFAULT_IDLE_THRESHOLD_MS);
         assert_eq!(parse_threshold_ms("1000"), DEFAULT_IDLE_THRESHOLD_MS); // 최소 미만
         assert_eq!(parse_threshold_ms(""), DEFAULT_IDLE_THRESHOLD_MS);
+    }
+}
+
+/// LASTINPUTINFO exposes the low 32 bits even when the uptime clock is 64-bit.
+/// Subtract in the same wrapping tick domain so an uptime wrap is not an idle day.
+#[cfg(any(windows, test))]
+pub fn duration_from_input_ticks(now: u64, last_input: u32) -> i64 {
+    i64::from((now as u32).wrapping_sub(last_input))
+}
+#[cfg(test)]
+mod tick_wrap_tests {
+    #[test]
+    fn input_ticks_share_the_low_32_bit_domain_across_uptime_wrap() {
+        assert_eq!(
+            super::duration_from_input_ticks(u64::from(u32::MAX) + 101, u32::MAX - 99),
+            200
+        );
+        assert_eq!(
+            super::duration_from_input_ticks((1u64 << 32) + 2000, 1000),
+            1000
+        );
     }
 }

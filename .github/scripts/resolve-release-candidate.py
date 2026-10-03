@@ -67,6 +67,7 @@ def select_candidate(
     commit: str,
     tag: str,
     fetch_run: Callable[[int], object],
+    fetch_jobs: Callable[[int, int], object] | None = None,
 ) -> dict[str, object]:
     """Select the newest non-expired artifact whose complete run is trusted."""
 
@@ -112,7 +113,12 @@ def select_candidate(
         candidates, key=lambda item: (item[0], item[1]), reverse=True
     ):
         run = fetch_run(run_id)
-        if _trusted_run(run, repository, commit, run_id):
+        if not _trusted_run(run, repository, commit, run_id) or fetch_jobs is None:
+            continue
+        jobs = fetch_jobs(run_id, run["run_attempt"])
+        accepted = jobs.get("jobs", []) if isinstance(jobs, dict) else []
+        gates = [job for job in accepted if isinstance(job, dict) and job.get("name") == "Verify complete user journeys and seal candidate"]
+        if len(gates) == 1 and gates[0].get("conclusion") == "success" and gates[0].get("status") == "completed":
             return {
                 "artifact_id": candidate["id"],
                 "artifact_name": expected_name,
@@ -175,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             lambda run_id: _gh_api(
                 f"repos/{arguments.repository}/actions/runs/{run_id}"
             ),
+            lambda run_id, attempt: _gh_api(f"repos/{arguments.repository}/actions/runs/{run_id}/attempts/{attempt}/jobs", ("per_page=100",)),
         )
         _write_github_output(arguments.github_output, selected)
     except CandidateResolutionError as error:

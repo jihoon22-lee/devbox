@@ -1,3 +1,4 @@
+import { deriveAvailability } from "./availability";
 import { UndoProvider } from "./undo";
 import { currentDescription, publishDescription, invalidateDescription } from "./api";
 import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
@@ -41,6 +42,7 @@ function ReadyShell({
   renderContent?: ShellContent;
   refreshContext: () => Promise<void>;
 }) {
+  const availability = deriveAvailability(description);
   const queryRoute = new URLSearchParams(location.search).get("route");
   const initial = description.features.some((f) => f.route === queryRoute)
     ? queryRoute!
@@ -132,14 +134,19 @@ function ReadyShell({
             <button aria-expanded={connectionOpen} onClick={() => setConnectionOpen((value) => !value)}>
               제품 연결
             </button>
-            <button aria-expanded={operationsOpen} onClick={() => setOperationsOpen((value) => !value)}>
+            <button
+              disabled={!availability.data}
+              title={availability.setupRequired ? "설치 준비를 완료한 뒤 사용할 수 있습니다." : undefined}
+              aria-expanded={operationsOpen}
+              onClick={() => setOperationsOpen((value) => !value)}
+            >
               작업 상태
             </button>
             <Suspense fallback={null}>
-              <AgentStatus initial={description.agent} native={nativeMode} />
+              <AgentStatus initial={description.agent} native={nativeMode} paused={availability.setupRequired} />
             </Suspense>
           </div>
-          {nativeMode && (
+          {nativeMode && availability.incoming && (
             <Suspense fallback={null}>
               <IncomingCommands
                 description={description}
@@ -149,7 +156,7 @@ function ReadyShell({
               />
             </Suspense>
           )}
-          {operationsOpen && (
+          {operationsOpen && availability.data && (
             <Suspense fallback={<p role="status">작업 상태를 불러오고 있습니다…</p>}>
               <Operations description={description} route={current} />
             </Suspense>

@@ -9,6 +9,7 @@ export type ActivityCall =
   | { method: "cancel_digest"; args: Record<symbol, never> }
   | { method: "save_digest"; args: { request: SaveDigestRequest } }
   | { method: "send_digest_to_knowledge"; args: { input: DigestInput; regeneratedFrom?: string | null } }
+  | { method: "regenerate_knowledge_draft"; args: { handoffId: string } }
   | { method: "knowledge_draft_history"; args: Record<symbol, never> }
   | { method: "export_life_log"; args: { input: ExportInput } }
   | { method: "save_life_log"; args: { input: ExportInput } }
@@ -19,6 +20,7 @@ export type ActivityCall =
   | { method: "get_range"; args: { label: string; dayStart: number; dayEnd: number } }
   | { method: "start_tracking"; args: Record<symbol, never> }
   | { method: "stop_tracking"; args: Record<symbol, never> }
+  | { method: "collection_status"; args: Record<symbol, never> }
   | { method: "is_tracking"; args: Record<symbol, never> }
   | { method: "set_idle_threshold"; args: { thresholdMs: number } }
   | { method: "get_idle_threshold"; args: Record<symbol, never> }

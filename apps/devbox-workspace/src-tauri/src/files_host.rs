@@ -1298,6 +1298,8 @@ mod tests {
                 path: path.into(),
                 content: content.into(),
                 base_hash: None,
+                encoding: None,
+                line_ending: None,
                 snapshot_at_ms: 1,
             }],
         };

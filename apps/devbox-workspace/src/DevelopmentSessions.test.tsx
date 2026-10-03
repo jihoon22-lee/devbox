@@ -221,3 +221,26 @@ it("explains recovered background ownership without restarting tasks and keeps e
   expect(screen.getByRole("button", { name: "내가 시작한 자원 정리" })).toBeTruthy();
   await assertNoA11yViolations(view.container);
 });
+
+it("checks an uncertain start by reading the existing session without preparing or starting again", async () => {
+  const original = call.getMockImplementation()!;
+  call.mockImplementation(async (...args) => {
+    if (args[2] === "start_development_session") throw new Error("lost reply");
+    return original(...args);
+  });
+  render(<DevelopmentSessions description={description} registry={null} />);
+  fireEvent.click(await screen.findByRole("checkbox"));
+  fireEvent.click(screen.getByRole("button", { name: "환경 확인·실행 검토" }));
+  fireEvent.click(await screen.findByRole("button", { name: "상태만 이어가기" }));
+  await screen.findByText(/시작 결과를 확인하지 못했습니다/);
+  const before = call.mock.calls.filter(([, , method]) =>
+    ["prepare_development_session", "start_development_session"].includes(method),
+  ).length;
+  fireEvent.click(screen.getByRole("button", { name: "세션 상태 확인" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(
+    call.mock.calls.filter(([, , method]) =>
+      ["prepare_development_session", "start_development_session"].includes(method),
+    ),
+  ).toHaveLength(before);
+});

@@ -1,4 +1,6 @@
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
+import { runInstalledKnowledgeUserFlows } from "./windows-knowledge-user-flows.mjs";
+export { runInstalledKnowledgeUserFlows };
 // Current product vault ownership, rebinding and window lifetime.
 import assert from "node:assert/strict";
 import { stageKnowledge } from "./workspace-wsl-artifact.mjs";
@@ -42,6 +44,10 @@ assert.equal(performanceConfig.idleSampleMs, 5000);
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+if (process.argv.includes("--packaged-ui")) {
+  await runInstalledKnowledgeUserFlows();
+  process.exit(0);
+}
 const directory = mkdtempSync(path.join(tmpdir(), "devbox-knowledge-lifecycle-fixture-"));
 const base = windowsLocalAppData();
 const report = "product-foundation-evidence/knowledge-lifecycle.json";

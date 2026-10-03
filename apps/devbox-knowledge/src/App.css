@@ -4,7 +4,7 @@
 .product-shell {
   height: 100dvh;
   min-height: 0;
-  grid-template-rows: 64px minmax(0, 1fr);
+  grid-template-rows: minmax(64px, auto) auto minmax(0, 1fr);
   overflow: hidden;
 }
 .product-shell > main {
@@ -149,4 +149,10 @@
   border: 1px solid var(--db-color-border);
   border-radius: 6px;
   font: inherit;
+}
+
+@media (max-width: 900px) {
+  .product-shell {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
 }

@@ -12,6 +12,7 @@ use tauri::{Manager, WebviewWindow};
 )]
 #[ts(optional_fields = nullable)]
 pub enum QuitCall {
+    LifecycleStatus {},
     PendingQuit {},
     DecideQuit { id: String, quit: bool },
 }
@@ -20,6 +21,7 @@ impl ComponentCall for QuitCall {
     const INSTALLATION_REVIEW: bool = true;
     fn method(&self) -> &'static str {
         match self {
+            Self::LifecycleStatus {} => "lifecycle_status",
             Self::PendingQuit {} => "pending_quit",
             Self::DecideQuit { .. } => "decide_quit",
         }
@@ -28,7 +30,7 @@ impl ComponentCall for QuitCall {
         ExecutionClass::Control
     }
     fn routes(&self) -> &'static [&'static str] {
-        &["notes"]
+        &["notes", "activity"]
     }
 }
 product_ipc::issue_codes! {
@@ -47,7 +49,12 @@ fn classify(error: &str) -> &'static str {
 pub async fn commands(window: WebviewWindow, request: IncomingRequest) -> Result<Reply, Problem> {
     let (admission, request) = admit_request::<QuitCall>(&window, request)?;
     Ok(admission.finish(
-        crate::lifecycle::quit_dispatch_typed(window.app_handle(), request.call),
+        match request.call {
+            QuitCall::LifecycleStatus {} => {
+                crate::lifecycle::collector_status(window.app_handle()).await
+            }
+            call => crate::lifecycle::quit_dispatch_typed(window.app_handle(), call),
+        },
         classify,
     ))
 }
@@ -57,6 +64,10 @@ pub fn result_types(
     export.register::<QuitCall>()?;
     export.register::<QuitIssue>()?;
     Ok(vec![
+        (
+            "lifecycle_status",
+            export.register::<crate::lifecycle::CollectorStatus>()?,
+        ),
         ("pending_quit", export.register::<Option<String>>()?),
         ("decide_quit", export.register::<()>()?),
     ])

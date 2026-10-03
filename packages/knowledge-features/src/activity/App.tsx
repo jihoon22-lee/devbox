@@ -20,6 +20,7 @@ import { ActivitySummary } from "./components/ActivitySummary";
 import { ActivityTimeline } from "./components/ActivityTimeline";
 import { ActivitySettings } from "./components/ActivitySettings";
 import {
+  shiftActivityDate,
   safeNativeErrorCode,
   toDateStr,
   type ViewTab,
@@ -34,6 +35,7 @@ import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/cont
 import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
+  regenerateKnowledgeDraft,
   autostartStatus,
   cancelDigest,
   exportLifeLog,
@@ -335,8 +337,8 @@ export default function App({
     }
   };
 
-  const beginDigestAction = (): { request: number; loadRequest: number } | null => {
-    if (contextActionBusy || exportBusyRef.current || digestBusyRef.current || !digest) return null;
+  const beginDigestAction = (requireDigest = true): { request: number; loadRequest: number } | null => {
+    if (contextActionBusy || exportBusyRef.current || digestBusyRef.current || (requireDigest && !digest)) return null;
     digestBusyRef.current = true;
     const request = digestRequestRef.current + 1;
     digestRequestRef.current = request;
@@ -429,11 +431,11 @@ export default function App({
   };
 
   const regenerateDraft = async (entry: KnowledgeDraftHistoryEntry) => {
-    if (!isTauri() || !digest) return;
-    const action = beginDigestAction();
+    if (!isTauri()) return;
+    const action = beginDigestAction(false);
     if (!action) return;
     try {
-      const result = await sendDigestToKnowledge(digestInputFromResponse(digest), entry.handoffId);
+      const result = await regenerateKnowledgeDraft(entry.handoffId);
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
         onDraft?.();
         await refreshDraftHistory();
@@ -667,8 +669,18 @@ export default function App({
   }, [view, date, dateStr, digestAppFilter, projectRevision]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setTransferBusy(false);
+    if (active) void load();
+    else {
+      setLoading(false);
+      if (isTauri()) void cancelDigest().catch(() => {});
+    }
+    return () => {
+      loadRequestRef.current++;
+      digestRequestRef.current++;
+      digestBusyRef.current = false;
+    };
+  }, [active, load]);
 
   // Settings are app state, not date/view state. Reloading them on every
   // navigation can race with an acknowledged save and overwrite the
@@ -677,8 +689,8 @@ export default function App({
     void loadSettings();
   }, [loadSettings]);
 
-  usePolling(refreshDraftHistory, { intervalMs: 30_000, active: isTauri(), immediate: false });
-  usePolling(load, { intervalMs: 30_000, active: view === "timeline", immediate: false });
+  usePolling(refreshDraftHistory, { intervalMs: 30_000, active: active && isTauri(), immediate: false });
+  usePolling(load, { intervalMs: 30_000, active: active && view === "timeline", immediate: false });
 
   const toggleTracking = async () => {
     setError(null);
@@ -756,10 +768,7 @@ export default function App({
 
   const shift = (delta: number) => {
     if (contextActionBusy) return;
-    const d = new Date(date);
-    if (view === "day") d.setDate(d.getDate() + delta);
-    else if (view === "week") d.setDate(d.getDate() + delta * 7);
-    else if (view === "month") d.setMonth(d.getMonth() + delta);
+    const d = shiftActivityDate(date, view, delta);
     invalidatePendingLoad();
     setDate(d);
   };
@@ -865,7 +874,6 @@ export default function App({
           contextActionBusy={contextActionBusy}
           draftHistory={draftHistory}
           regenerateDraft={regenerateDraft}
-          digest={digest}
           loading={loading}
           projects={projects}
           projectProbes={projectProbes}

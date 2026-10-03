@@ -2,7 +2,7 @@
 
 **현재 소스는 v0.9.0 네 제품** Workspace / API Studio / Knowledge / Control Center다.
 각 제품은 독립 Windows 실행 파일이며 Suite의 typed route·authority·installation identity를 공유한다.
-공개 완료 여부는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)과 Release가 원장이다.
+공개 완료 여부는 GitHub Release와 [릴리스 근거](docs/release-evidence.md)가 원장이다. #580은 철회본의 닫힌 역사 기록이다.
 v0.7의 15개 앱·32개 자산은 역사적 계약이며 frozen catalog는 migration/reference에만 사용한다.
 리뷰 후속 작업 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
 
@@ -231,11 +231,10 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 
 ## 7. 현재 개발 범위
 
-리뷰 후속 B1–B12와 릴리스 준비·코드 검토 수정을 반영한 v0.9.0은 공개됐다.
-현재 stable의 source·CI·후보·공개 검증은 [release evidence](docs/release-evidence.md)에 있다.
-사용자 실사용 항목과 새 제보는 출시 후 이슈에서 추적하며, 미실행을 PASS로 기록하지 않는다.
-진행 상태는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)이 정본이며,
-코드/의존성이 바뀌면 변경된 exact-main의 CI와 새 후보 검증이 필요하다.
+v0.9.0 공개본은 설치/UI 문제로 2026-10-03 철회했다. Release와 자산은 삭제했으며 기존 태그는 재출시 준비까지 보존한다.
+현재 구현·검증 원장은 [제품 재정비 계획](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)이다.
+모든 개선과 문서를 통합 브랜치에 모아 PR 1개로 제출하고 v0.9.0으로 재출시한다.
+철회본의 과거 성공을 수정본의 검증으로 재사용하지 않는다. #580은 닫힌 역사 기록이다.
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
 
@@ -269,15 +268,18 @@ docs/<scope>           문서 작업   예: docs/roadmap
   연결한다. 각 과제의 좁은 회귀 테스트를 실행하고, PR 전체 구현이 끝난 최종 통합 상태에서
   상세 검증·CI·Windows 수용 gate를 수행한다. 커밋별 전체 검증을 반복하지 않는다.
 
-### 리뷰 후속 작업 PR 정책
+### 현재 제품 재정비 통합 정책
 
-- 원장은 리뷰 후속 ledger 이슈이고 PR 목록·순서·게이트는
-  `docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md`가 정한다.
-  PR 하나는 로드맵 §6의 묶음 하나(계획 파일 여러 개)에 대응한다. 계획에 없는 범위를 끼워 넣지 않는다.
-- 머지는 squash만 쓴다(main은 linear history). 필수 체크 `Frontend (pnpm)`,
-  `Rust (Cargo workspace)`, `Rust (Windows)`가 통과해야 한다. `Product foundation acceptance`(Windows 전체
-  acceptance, 60–90분)는 머지를 막지 않고 머지 뒤 결과를 확인하며, 실패는 다음 묶음을 머지하기 전에 고친다(로드맵 §4.7).
-- v0.8의 B01~B09 통합 정책(#541~#551)은 닫힌 역사 기록이다.
+- 이번 R00–R16은 내부 작업 단위이며 **최종 PR은 1개**다. 작업별 브랜치·worktree·커밋을
+  통합 개발 브랜치에 반영하고, 필요한 선행 변경이 통합되면 후속 구현을 진행한다.
+  위 일반 PR 분리 지침보다 이번 사용자 지정 통합 정책이 우선한다.
+- 로컬에서 결함별 최소 회귀와 영향 검사만 수행한다. 전체 build·clippy·affected/all은
+  모든 구현·문서 통합 후 한 번 모으며 같은 검사를 다른 명령으로 반복하지 않는다.
+- main은 squash만 사용한다. 단일 PR 최종 변경의 필수 체크 `Frontend (pnpm)`,
+  `Rust (Cargo workspace)`, `Rust (Windows)` 성공 후 머지한다. 최종 main CI는 릴리스 정책상
+  별도 1회 실행하며 후보의 전체 패키지 수용을 중복 workflow로 다시 실행하지 않는다.
+- 현재 원장은 [2026-10-03 계획](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)이다.
+  이전 B1–B12 및 v0.8 통합 정책은 역사 기록이다. 기본 UI·설치 확인을 출시 후 사용자에게 넘기지 않는다.
 
 로컬 blame은 `git config blame.ignoreRevsFile .git-blame-ignore-revs`를 한 번 설정한다.
 GitHub blame은 이 파일을 자동으로 따른다.
@@ -371,7 +373,7 @@ GitHub blame은 이 파일을 자동으로 따른다.
   모든 하위 지침이 자동 로드된다고 가정하지 않는다. 명세의 planned 상태를 구현된 동작으로 읽지 않는다.
 - 일반 개발·migration 검토는 별도 스킬 없이 이 규약과 해당 설계를 직접 따른다.
   중복 절차를 만들던 `devbox-change`·`devbox-migration-review`는 제거했다.
-  릴리스 전용 `devbox-release`만 유지한다. 스킬 호출 자체가 게시 권한을 추가하지 않는다.
+  릴리스도 별도 스킬 없이 [release policy](docs/release-policy.md)를 직접 따른다. 게시 범위는 사용자의 명시적 지시로 정한다.
 - 스킬은 스택이나 승인 범위를 바꾸지 않는다. Next.js/ShadCN landing-page 절차를 devbox의
   Tauri/React/Vite/순수 CSS 제품 UI에 적용하지 않는다. 플러그인 cache의 스킬을 직접 수정하지 않는다.
 - 모델·추론·컨텍스트·계정별 실험은 개인 `~/.codex/config.toml`에서 설정한다.
@@ -380,7 +382,7 @@ GitHub blame은 이 파일을 자동으로 따른다.
 - GitHub 연결/`gh`는 이슈·PR·CI 조회에, 로컬 셸은 파일·git·pnpm·Cargo 작업에 사용한다.
   OpenAI 기능은 공식 Docs MCP에서 확인하고, 연결 불가 시 공식 문서로 확인한다.
   기존 도구가 충족하는 기능을 위해 MCP를 중복 설치하지 않는다.
-- 작업 기록은 PR 본문과 ledger 이슈 댓글이다. 새 `workthrough/` 파일은 만들지 않는다.
+- 현재 작업 기록은 단일 PR 본문과 현재 계획 추적표·검증 artifact다. 닫힌 #580에는 새 실기 요청을 남기지 않는다. 새 `workthrough/` 파일은 만들지 않는다.
   변경 목적·결정·영향 경로·실제 검증 결과·남은 제한을 적고, 실패·미실행·수동 실기 필요 상태를
   PASS와 구분한다.
 - 컨텍스트 전환 시 목표, 승인된 범위, WP/요구사항 ID, branch/worktree, 결정, 검증과 다음 작업을

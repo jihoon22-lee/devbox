@@ -9,6 +9,7 @@ import type { UpdateReview } from "./UpdateReview";
 export type DeliveryResults = {
   suite_inventory: SuiteInventory;
   open_installation_folder: InstallationOpened;
+  open_setup_product: InstallationOpened;
   suite_recovery: RecoveryStatus;
   restore_inventory: RestoreInventory;
   restore_action: DeliveryAccepted;

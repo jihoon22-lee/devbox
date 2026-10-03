@@ -1,4 +1,6 @@
 export interface NoteEditorExit {
+  prepareQuit?: (permanent?: boolean) => Promise<void>;
+  resumeAfterQuit?: () => void;
   unsaved: () => boolean;
   saveBeforeQuit: () => Promise<boolean>;
   settleBeforeQuit: () => Promise<void>;
@@ -23,3 +25,11 @@ export async function settleNoteBeforeQuit() {
 export { NoteSessionProvider, useNoteSession } from "./session";
 
 export { undoCreated } from "./undoCreated";
+
+export async function prepareNoteQuit(permanent = false) {
+  if (current?.prepareQuit) await current.prepareQuit(permanent);
+  else await current?.settleBeforeQuit();
+}
+export function resumeNoteAfterQuit() {
+  current?.resumeAfterQuit?.();
+}

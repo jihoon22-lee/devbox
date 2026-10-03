@@ -1,3 +1,11 @@
+import type { SaveOutcome, NavEntry, FileOpenRequest } from "./fileIntegrationTypes";
+import { WorkspaceScopeNote } from "./components/WorkspaceScopeNote";
+import { usePendingCloseQueue } from "./hooks/usePendingCloseQueue";
+import { useDocumentPreview } from "./hooks/useDocumentPreview";
+import { useSessionPersistence } from "./hooks/useSessionPersistence";
+import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
+import { FileConfirmationDialogs } from "./components/FileConfirmationDialogs";
+import { RecoveryWriter } from "./recoveryWriter";
 import { useFileActions } from "./hooks/useFileActions";
 import { RenameReviewDialog } from "./components/RenameReviewDialog";
 import { EditorToolbar } from "./components/EditorToolbar";
@@ -14,19 +22,20 @@ import { useOperation } from "@devbox/hooks";
 import "./App.css";
 import { isProductHosted } from "../transport";
 import { listen } from "@tauri-apps/api/event";
-import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
+import { focusFirst, restoreFocus } from "@devbox/a11y";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
 import {
+  loadRecoveryState,
+  saveRecovery,
+  discardRecovery,
   sendEditorSelection,
   listWorkspaceFiles,
   loadSession,
   loadRecovery,
   openFile,
-  renderPreview,
   saveFile,
-  saveSession,
   takePendingOpen,
   unwatchFile,
   watchFile,
@@ -54,7 +63,7 @@ import type { BookmarkCommands } from "./editor/bookmarks";
 import { LspDocumentSync } from "./lspDocumentSync";
 import { NativeEditorMirror } from "./nativeEditorMirror";
 import { matchesLspEventContext } from "./lspEventContext";
-import { createInitialEditorState, editorReducer, stateToSession, type EditorAction } from "./store/documentStore";
+import { createInitialEditorState, editorReducer, type EditorAction } from "./store/documentStore";
 import type {
   Doc,
   DocId,
@@ -63,7 +72,6 @@ import type {
   Encoding,
   LineEnding,
   PreviewResponse,
-  SavedFile,
   SessionState,
   WorkspaceFile,
   WorkspaceCapabilities,
@@ -75,35 +83,22 @@ import type {
   OpenRequest,
 } from "./types";
 
-interface SaveOutcome {
-  saved: SavedFile;
-  matchedSnapshot: boolean;
-}
+export type { NavEntry, FileOpenRequest } from "./fileIntegrationTypes";
 
-export interface NavEntry {
-  docId: DocId;
-  path: string;
-  cursor: number;
-}
-
-export interface FileOpenRequest {
-  id: string;
-  contextKey: string;
-  path: string;
-  line: number | null;
-  column?: number | null;
-  receivedReference?: string;
-}
 export default function App({
   contextKey = "standalone",
   active = true,
   onDirtyChange,
   openRequest,
+  onCloseActions,
 }: {
   contextKey?: string;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   openRequest?: FileOpenRequest | null;
+  onCloseActions?: (
+    actions: { flush(): Promise<void>; save(): Promise<void>; discard(): Promise<void> } | null,
+  ) => void;
 } = {}) {
   const handledOpenRequest = useRef<string | null>(null);
   const activeRef = useRef(active);
@@ -141,6 +136,41 @@ export default function App({
   const [navForward, setNavForward] = useState<NavEntry[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
+  const recoveryWriter = useMemo(() => {
+    void contextKey;
+    return new RecoveryWriter({ load: loadRecoveryState, save: saveRecovery, discard: discardRecovery });
+  }, [contextKey]);
+  const [recoveryStatus, setRecoveryStatus] = useState("복구 기록 대기");
+  useEffect(() => {
+    if (!hydrated || recoveryOpen) return;
+    recoveryWriter.update(
+      state.docs
+        .filter((doc) => doc.dirty)
+        .map((doc) => ({
+          path: doc.path,
+          content: doc.text,
+          baseHash: doc.contentHash,
+          snapshotAtMs: Date.now(),
+          encoding: doc.encoding,
+          lineEnding: doc.lineEnding,
+        })),
+    );
+    if (!state.docs.some((doc) => doc.dirty)) return;
+    setRecoveryStatus("복구 내용을 기록 중…");
+    const key = contextKey;
+    const timer = setTimeout(() => {
+      void recoveryWriter.flush().then(
+        () => {
+          if (contextRef.current === key) setRecoveryStatus("복구 내용을 기록했습니다.");
+        },
+        (cause) => {
+          if (contextRef.current === key)
+            setRecoveryStatus(cause instanceof Error ? cause.message : "복구 내용을 기록하지 못했습니다.");
+        },
+      );
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [contextKey, hydrated, recoveryOpen, recoveryWriter, state.docs]);
   const [editorMirror] = useState(() => new NativeEditorMirror());
   editorMirror.setContext(contextKey);
   useEffect(() => {
@@ -492,6 +522,7 @@ export default function App({
       ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
     });
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
+    if (latestDoc && !latestDoc.dirty) await recoveryWriter.discard(doc.path);
     if (latestDoc)
       void lspSync.save(
         docId,
@@ -522,6 +553,26 @@ export default function App({
     void saveDocument(activeDoc.id);
   };
 
+  const discardDocumentRecovery = async (doc: Doc) => {
+    await recoveryWriter.discard(doc.path);
+    const latest = stateRef.current.docs.find((item) => item.id === doc.id);
+    if (latest && latest.revision !== doc.revision) {
+      recoveryWriter.update(
+        stateRef.current.docs
+          .filter((item) => item.dirty)
+          .map((item) => ({
+            path: item.path,
+            content: item.text,
+            baseHash: item.contentHash,
+            snapshotAtMs: Date.now(),
+            encoding: item.encoding,
+            lineEnding: item.lineEnding,
+          })),
+      );
+      await recoveryWriter.flush();
+      throw new Error("폐기 확인 중 새 편집이 발생했습니다. 문서를 다시 확인해 주세요.");
+    }
+  };
   const removeDocument = (docId: DocId) => {
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     void lspSync.close(docId);
@@ -553,8 +604,16 @@ export default function App({
 
   const handleDiscardClose = () => {
     if (!pendingCloseDocId || renameApplyBusyRef.current) return;
-    removeDocument(pendingCloseDocId);
-    advanceCloseQueue(pendingCloseDocId);
+    const docId = pendingCloseDocId;
+    const doc = stateRef.current.docs.find((item) => item.id === docId);
+    if (doc)
+      void discardDocumentRecovery(doc).then(
+        () => {
+          removeDocument(docId);
+          advanceCloseQueue(docId);
+        },
+        (cause) => setError(cause instanceof Error ? cause.message : "복구 내용을 폐기하지 못했습니다."),
+      );
   };
 
   const handleSaveAndClose = () => {
@@ -571,6 +630,62 @@ export default function App({
       }
     })();
   };
+
+  const flushRecovery = async () => {
+    recoveryWriter.update(
+      stateRef.current.docs
+        .filter((doc) => doc.dirty)
+        .map((doc) => ({
+          path: doc.path,
+          content: doc.text,
+          baseHash: doc.contentHash,
+          snapshotAtMs: Date.now(),
+          encoding: doc.encoding,
+          lineEnding: doc.lineEnding,
+        })),
+    );
+    await recoveryWriter.flush();
+  };
+  const closeActionsRef = useRef({
+    flush: () => flushRecovery(),
+    save: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        const result = await saveDocument(doc.id);
+        if (!result?.matchedSnapshot) throw new Error("저장되지 않은 새 편집이 있습니다.");
+      }
+      await recoveryWriter.flush();
+    },
+    discard: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        await discardDocumentRecovery(doc);
+        removeDocument(doc.id);
+      }
+    },
+  });
+  closeActionsRef.current = {
+    flush: () => flushRecovery(),
+    save: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        const result = await saveDocument(doc.id);
+        if (!result?.matchedSnapshot) throw new Error("저장되지 않은 새 편집이 있습니다.");
+      }
+      await recoveryWriter.flush();
+    },
+    discard: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        await discardDocumentRecovery(doc);
+        removeDocument(doc.id);
+      }
+    },
+  };
+  useEffect(() => {
+    onCloseActions?.({
+      flush: () => closeActionsRef.current.flush(),
+      save: () => closeActionsRef.current.save(),
+      discard: () => closeActionsRef.current.discard(),
+    });
+    return () => onCloseActions?.(null);
+  }, [onCloseActions]);
 
   const handleReplaceCommandReady = (docId: DocId, command: (() => boolean) | null) => {
     if (command) replaceCommandsRef.current.set(docId, command);
@@ -1004,6 +1119,7 @@ export default function App({
     setNavForward,
     registerWatch,
     removeDocument,
+    discardDocumentRecovery,
     requestCloseDocuments,
   });
 
@@ -1405,137 +1521,58 @@ export default function App({
     };
   }, [hydrated]);
 
-  // Preview requests are tied to the document revision and discarded if a
-  // newer edit arrives before the native render returns.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Preview is keyed by document id/revision/text and workspace. Cursor or watcher metadata changes also replace activeDoc but must not restart native rendering.
-  useEffect(() => {
-    if (!previewOpen || !activeDoc || !state.workspaceFolder || !isPreviewable(activeDoc.path)) {
-      setPreview(null);
-      setPreviewError(null);
-      return;
-    }
-    const expected = { ...activeDoc };
-    let cancelled = false;
-    setPreviewError(null);
-    void renderPreview(activeDoc.path, activeDoc.text, state.workspaceFolder)
-      .then((response) => {
-        const latest = stateRef.current.docs.find((doc) => doc.id === expected.id);
-        if (cancelled || !latest || !snapshotMatches(latest, expected)) return;
-        setPreview(response);
-      })
-      .catch((cause) => {
-        const latest = stateRef.current.docs.find((doc) => doc.id === expected.id);
-        if (cancelled || !latest || !snapshotMatches(latest, expected)) return;
-        setPreviewError(safeCodePadError(cause, "미리보기를 생성하지 못했습니다."));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [previewOpen, activeDoc?.id, activeDoc?.revision, activeDoc?.text, state.workspaceFolder]);
+  useDocumentPreview({
+    previewOpen,
+    activeDoc,
+    workspaceFolder: state.workspaceFolder,
+    stateRef,
+    setPreview,
+    setPreviewError,
+  });
 
-  // A single debounced, serialized writer means a slow save cannot let an old
-  // request finish after a newer request and overwrite the newest session.
-  useEffect(() => {
-    if (!hydrated || !hydratedRef.current || !sessionPersistenceAllowed || sessionWriteBlockedRef.current) return;
-    if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
-    pendingSessionRef.current = stateToSession(state);
-    const startDrain = () => {
-      if (contextRef.current !== contextKey) return;
-      if (sessionSaveInFlightRef.current) {
-        void sessionSaveInFlightRef.current.finally(() => {
-          if (contextRef.current === contextKey && pendingSessionRef.current) startDrain();
-        });
-        return;
-      }
-      const drain = async () => {
-        while (contextRef.current === contextKey && pendingSessionRef.current && !sessionWriteBlockedRef.current) {
-          const next = pendingSessionRef.current;
-          pendingSessionRef.current = null;
-          try {
-            const revision = await saveSession(next, sessionRevisionRef.current);
-            if (contextRef.current === contextKey) sessionRevisionRef.current = revision;
-          } catch (cause) {
-            if (contextRef.current !== contextKey) return;
-            // A failed product write may be a stale revision or a committed
-            // write whose reply was lost. Never retry with the old snapshot.
-            if (isProductHosted() || sessionRevisionRef.current !== undefined) {
-              sessionWriteBlockedRef.current = true;
-              pendingSessionRef.current = null;
-              persistenceAllowedRef.current = false;
-              setSessionPersistenceAllowed(false);
-            }
-            setError(safeCodePadError(cause, "편집 세션을 저장하지 못했습니다."));
-          }
-        }
-      };
-      const inFlight = drain();
-      sessionSaveInFlightRef.current = inFlight;
-      void inFlight.finally(() => {
-        if (sessionSaveInFlightRef.current === inFlight) sessionSaveInFlightRef.current = null;
-        if (contextRef.current === contextKey && pendingSessionRef.current && !sessionSaveTimerRef.current) {
-          // Keep the same quiet debounce for edits that arrived while the
-          // previous native write was in flight.
-          sessionSaveTimerRef.current = setTimeout(() => {
-            sessionSaveTimerRef.current = null;
-            startDrain();
-          }, 1_000);
-        }
-      });
-    };
-    sessionSaveTimerRef.current = setTimeout(() => {
-      sessionSaveTimerRef.current = null;
-      startDrain();
-    }, 1_000);
-    return () => {
-      if (sessionSaveTimerRef.current) {
-        clearTimeout(sessionSaveTimerRef.current);
-        sessionSaveTimerRef.current = null;
-      }
-    };
-  }, [contextKey, hydrated, sessionPersistenceAllowed, state]);
+  useSessionPersistence({
+    contextKey,
+    hydrated,
+    sessionPersistenceAllowed,
+    state,
+    hydratedRef,
+    sessionWriteBlockedRef,
+    sessionSaveTimerRef,
+    pendingSessionRef,
+    contextRef,
+    sessionSaveInFlightRef,
+    sessionRevisionRef,
+    persistenceAllowedRef,
+    setSessionPersistenceAllowed,
+    setError,
+  });
 
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (!activeRef.current) return;
-      if (isImeComposing(event)) return;
-      if (!(event.ctrlKey || event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === "s") {
-        event.preventDefault();
-        handleSaveRef.current();
-      } else if (key === "o") {
-        event.preventDefault();
-        if (hydratedRef.current) document.getElementById("path-input")?.focus();
-      } else if (key === "p") {
-        if (hydratedRef.current) {
-          event.preventDefault();
-          quickOpenRef.current();
-        }
-      } else if (key === "h") {
-        if (renameApplyBusyRef.current) return;
-        const current = activeDocForState(stateRef.current);
-        const command = current ? replaceCommandsRef.current.get(current.id) : undefined;
-        if (command) {
-          event.preventDefault();
-          command();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
-  }, []);
+  useEditorShortcuts({
+    activeRef,
+    hydratedRef,
+    handleSaveRef,
+    quickOpenRef,
+    renameApplyBusyRef,
+    stateRef,
+    replaceCommandsRef,
+  });
 
-  useEffect(() => {
-    setPendingCloseDocIds((current) => {
-      const next = current.filter((docId) => state.docs.some((doc) => doc.id === docId));
-      return next.length === current.length ? current : next;
-    });
-  }, [state.docs]);
+  usePendingCloseQueue(state.docs, setPendingCloseDocIds);
 
   return (
     <main className="app-shell">
+      {state.docs.some((doc) => doc.dirty) && <p role="status">{recoveryStatus}</p>}
       {recoveryOpen && recoveryChecked && hydrated && (
         <RecoveryDialog
+          onRestore={async (entries) => {
+            for (const entry of entries) {
+              const opened = await openPath(entry.path);
+              dispatchAction({ type: "setDocText", docId: opened.id, text: entry.content });
+              if (entry.encoding) dispatchAction({ type: "setEncoding", docId: opened.id, encoding: entry.encoding });
+              if (entry.lineEnding)
+                dispatchAction({ type: "setLineEnding", docId: opened.id, lineEnding: entry.lineEnding });
+            }
+          }}
           onDone={(recovered) => {
             if (!recovered.length) {
               setRecoveryOpen(false);
@@ -1746,76 +1783,26 @@ export default function App({
           onClose={() => setLspNavigation(null)}
         />
       )}
-      <p className="scope-note">
-        작업 폴더: {state.workspaceFolder ?? "지정되지 않음"} · {workspaceFiles.length}개 파일
-        {workspaceTruncated && " · 일부 목록만 표시"}
-        {workspaceIncomplete && " · 일부 항목 읽기 실패"}
-        {workspaceCapabilities?.sourceKind === "wsl" &&
-          ` · WSL · 5초 폴링 · 편집 가능 · ${workspaceCapabilities.lspSupported ? "WSL 언어 서버" : "호스트 LSP 미지원"}`}
-        {workspaceCapabilities?.sourceKind === "native" && " · 네이티브 파일 감시"}
-      </p>
+      <WorkspaceScopeNote
+        workspaceFolder={state.workspaceFolder}
+        fileCount={workspaceFiles.length}
+        workspaceTruncated={workspaceTruncated}
+        workspaceIncomplete={workspaceIncomplete}
+        workspaceCapabilities={workspaceCapabilities}
+      />
 
-      {pendingCloseDoc && (
-        <div className="modal-backdrop" role="presentation">
-          <div
-            ref={appDialogRef}
-            className="confirm-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="저장되지 않은 변경 사항"
-            onKeyDown={(event) => {
-              if (appDialogRef.current) {
-                trapDialogKeyDown(event, appDialogRef.current, () => setPendingCloseDocIds([]));
-              }
-            }}
-          >
-            <h2>저장되지 않은 변경 사항</h2>
-            <p>
-              {pendingCloseDoc.path}에 저장되지 않은 변경 사항이 있습니다. 어떻게 하시겠습니까?
-              {pendingCloseDocIds.length > 1 && ` (이후 ${pendingCloseDocIds.length - 1}개 대기)`}
-            </p>
-            <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" onClick={() => setPendingCloseDocIds([])}>
-                취소
-              </button>
-              <button type="button" className="toolbar-button" onClick={handleDiscardClose}>
-                변경 내용 버리고 닫기
-              </button>
-              <button type="button" className="toolbar-button selected" onClick={handleSaveAndClose} disabled={busy}>
-                저장 후 닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pendingEncodingReopen && (
-        <div className="modal-backdrop" role="presentation">
-          <div
-            ref={appDialogRef}
-            className="confirm-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="인코딩 다시 열기"
-            onKeyDown={(event) => {
-              if (appDialogRef.current) {
-                trapDialogKeyDown(event, appDialogRef.current, () => setPendingEncodingReopen(null));
-              }
-            }}
-          >
-            <h2>인코딩을 바꿔 다시 열까요?</h2>
-            <p>저장되지 않은 변경 사항이 버려집니다. 선택한 인코딩으로 디스크 파일을 엄격하게 다시 읽습니다.</p>
-            <div className="confirm-dialog-actions">
-              <button type="button" className="toolbar-button" onClick={() => setPendingEncodingReopen(null)}>
-                취소
-              </button>
-              <button type="button" className="toolbar-button selected" onClick={confirmEncodingReopen} disabled={busy}>
-                변경 내용 버리고 다시 열기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FileConfirmationDialogs
+        appDialogRef={appDialogRef}
+        pendingCloseDoc={pendingCloseDoc}
+        pendingCloseCount={pendingCloseDocIds.length}
+        encodingReopenPending={Boolean(pendingEncodingReopen)}
+        busy={busy}
+        cancelClose={() => setPendingCloseDocIds([])}
+        cancelEncodingReopen={() => setPendingEncodingReopen(null)}
+        handleDiscardClose={handleDiscardClose}
+        handleSaveAndClose={handleSaveAndClose}
+        confirmEncodingReopen={confirmEncodingReopen}
+      />
 
       {(renamePreview || renameResult) && (
         <div className="modal-backdrop" role="presentation">

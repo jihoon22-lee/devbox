@@ -28,6 +28,9 @@ pub enum ActivityCall {
         input: crate::core::digest::DigestInput,
         regenerated_from: Option<String>,
     },
+    RegenerateKnowledgeDraft {
+        handoff_id: String,
+    },
     KnowledgeDraftHistory {},
     ExportLifeLog {
         input: crate::core::export::ExportInput,
@@ -54,6 +57,7 @@ pub enum ActivityCall {
     },
     StartTracking {},
     StopTracking {},
+    CollectionStatus {},
     IsTracking {},
     SetIdleThreshold {
         threshold_ms: i64,
@@ -84,6 +88,7 @@ pub const METHODS: &[&str] = &[
     "cancel_digest",
     "save_digest",
     "send_digest_to_knowledge",
+    "regenerate_knowledge_draft",
     "knowledge_draft_history",
     "export_life_log",
     "save_life_log",
@@ -94,6 +99,7 @@ pub const METHODS: &[&str] = &[
     "get_range",
     "start_tracking",
     "stop_tracking",
+    "collection_status",
     "is_tracking",
     "set_idle_threshold",
     "get_idle_threshold",
@@ -119,6 +125,7 @@ impl ActivityCall {
             Self::CancelDigest { .. } => "cancel_digest",
             Self::SaveDigest { .. } => "save_digest",
             Self::SendDigestToKnowledge { .. } => "send_digest_to_knowledge",
+            Self::RegenerateKnowledgeDraft { .. } => "regenerate_knowledge_draft",
             Self::KnowledgeDraftHistory { .. } => "knowledge_draft_history",
             Self::ExportLifeLog { .. } => "export_life_log",
             Self::SaveLifeLog { .. } => "save_life_log",
@@ -129,6 +136,7 @@ impl ActivityCall {
             Self::GetRange { .. } => "get_range",
             Self::StartTracking { .. } => "start_tracking",
             Self::StopTracking { .. } => "stop_tracking",
+            Self::CollectionStatus { .. } => "collection_status",
             Self::IsTracking { .. } => "is_tracking",
             Self::SetIdleThreshold { .. } => "set_idle_threshold",
             Self::GetIdleThreshold { .. } => "get_idle_threshold",
@@ -144,6 +152,10 @@ impl ActivityCall {
 }
 product_ipc::issue_codes! {
     pub enum ActivityIssue {
+    IdleThresholdInvalid = "idle_threshold_invalid",
+    IdleThresholdSaveFailed = "idle_threshold_save_failed",
+    DraftHistoryInvalid = "draft_history_invalid",
+    DraftHistoryMissing = "draft_history_missing",
     DraftDeliveryInvalid = "draft_delivery_invalid",
     DraftDeliveryUnavailable = "draft_delivery_unavailable",
     AgentUnavailable = "knowledge_agent_unavailable",
@@ -203,6 +215,9 @@ pub async fn dispatch(app: &tauri::AppHandle, call: ActivityCall) -> Result<Valu
         } => {
             to_value(handoff::send_digest_to_knowledge(app.state(), input, regenerated_from).await?)
         }
+        ActivityCall::RegenerateKnowledgeDraft { handoff_id } => {
+            to_value(handoff::regenerate_knowledge_draft(app.state(), handoff_id).await?)
+        }
         ActivityCall::KnowledgeDraftHistory {} => {
             to_value(handoff::knowledge_draft_history(app.state())?)
         }
@@ -227,6 +242,7 @@ pub async fn dispatch(app: &tauri::AppHandle, call: ActivityCall) -> Result<Valu
         } => to_value(life::get_range(app.state(), label, day_start, day_end).await?),
         ActivityCall::StartTracking {} => to_value(tracking::start_tracking(app.state())?),
         ActivityCall::StopTracking {} => to_value(tracking::stop_tracking(app.state())?),
+        ActivityCall::CollectionStatus {} => to_value(tracking::collection_status(app.state())?),
         ActivityCall::IsTracking {} => to_value(tracking::is_tracking(app.state())),
         ActivityCall::SetIdleThreshold { threshold_ms } => {
             to_value(tracking::set_idle_threshold(app.state(), threshold_ms)?)
@@ -267,6 +283,10 @@ pub fn result_types(
             export.register::<crate::commands::digest::SaveDigestResult>()?,
         ),
         (
+            "regenerate_knowledge_draft",
+            export.register::<crate::commands::handoff::SendKnowledgeDraftResult>()?,
+        ),
+        (
             "send_digest_to_knowledge",
             export.register::<crate::commands::handoff::SendKnowledgeDraftResult>()?,
         ),
@@ -298,6 +318,10 @@ pub fn result_types(
         ),
         ("start_tracking", export.register::<bool>()?),
         ("stop_tracking", export.register::<()>()?),
+        (
+            "collection_status",
+            export.register::<tracking::CollectionStatus>()?,
+        ),
         ("is_tracking", export.register::<bool>()?),
         ("set_idle_threshold", export.register::<()>()?),
         ("get_idle_threshold", export.register::<i64>()?),
@@ -356,11 +380,19 @@ mod tests {
                 serde_json::json!({"method":"app_stats","args":{"start":0,"end":1}}),
                 "app_stats",
             ),
+            (
+                serde_json::json!({"method":"collection_status","args":{}}),
+                "collection_status",
+            ),
+            (
+                serde_json::json!({"method":"regenerate_knowledge_draft","args":{"handoffId":"history-entry"}}),
+                "regenerate_knowledge_draft",
+            ),
         ] {
             let call: ActivityCall = serde_json::from_value(value).unwrap();
             assert_eq!(call.method(), method);
         }
-        assert_eq!(METHODS.len(), 24);
+        assert_eq!(METHODS.len(), 26);
         assert!(serde_json::from_value::<ActivityCall>(
             serde_json::json!({"method":"stop_tracking","args":{"unexpected":1}})
         )

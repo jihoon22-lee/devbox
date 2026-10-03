@@ -13,6 +13,10 @@ pub const RECOVERY_VERSION: u32 = 1;
 pub struct RecoveryEntry {
     pub path: String,
     pub content: String,
+    #[serde(default)]
+    pub encoding: Option<super::encoding::Encoding>,
+    #[serde(default)]
+    pub line_ending: Option<super::line_ending::LineEnding>,
     /// 이 버퍼가 마지막으로 정상 저장된 뒤의 원본 sha256 (비교용).
     #[serde(default)]
     pub base_hash: Option<String>,
@@ -111,6 +115,8 @@ mod tests {
             path: path.into(),
             content: content.into(),
             base_hash: None,
+            encoding: None,
+            line_ending: None,
             snapshot_at_ms: at,
         }
     }
@@ -142,6 +148,16 @@ mod tests {
         // 둘 다 넣으면 상한 초과 → 가장 오래된 것 제거, 새 것 유지
         assert_eq!(f.entries.len(), 1);
         assert_eq!(f.entries[0].path, "/new.rs");
+    }
+
+    #[test]
+    fn legacy_recovery_without_metadata_remains_readable() {
+        let file = RecoveryFile::load(
+            r#"{"version":1,"entries":[{"path":"/a","content":"","base_hash":null,"snapshot_at_ms":1}]}"#,
+        );
+        assert_eq!(file.entries.len(), 1);
+        assert_eq!(file.entries[0].encoding, None);
+        assert_eq!(file.entries[0].line_ending, None);
     }
 
     #[test]

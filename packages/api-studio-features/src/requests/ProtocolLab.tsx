@@ -1,3 +1,4 @@
+import { ERROR_LABELS, isPromptArgument, boundedText, formatOAuthExpiry, boundedJson } from "./lib/mcpPresentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   cancelMcpHttp,
@@ -45,55 +46,6 @@ import type {
   McpTimelineEntry,
   RequestHeader,
 } from "./types";
-
-const ERROR_LABELS: Record<string, string> = {
-  native_required: "Protocol Lab 네트워크 연결은 데스크톱 앱에서만 사용할 수 있습니다.",
-  mcp_invalid_profile: "endpoint, timeout 또는 custom header 구성을 확인하세요.",
-  mcp_secret_unavailable: "현재 Environment의 secret을 안전하게 해제할 수 없습니다.",
-  mcp_connection_limit: "열 수 있는 MCP 연결 수를 초과했습니다.",
-  mcp_connect_timeout: "MCP 연결 시간이 초과되었습니다.",
-  mcp_transport_failed: "MCP transport 요청에 실패했습니다.",
-  mcp_redirect_blocked: "credential 보호를 위해 redirect를 차단했습니다.",
-  mcp_response_type_invalid: "서버가 JSON 또는 SSE가 아닌 응답을 반환했습니다.",
-  mcp_request_too_large: "MCP 요청이 허용된 크기를 초과했습니다.",
-  mcp_response_too_large: "MCP 응답이 허용된 크기를 초과했습니다.",
-  mcp_message_invalid: "MCP message 또는 응답 구조가 올바르지 않습니다.",
-  mcp_version_unsupported: "지원하는 MCP protocol version을 협상하지 못했습니다.",
-  mcp_capability_unavailable: "서버가 이 capability를 제공하지 않습니다.",
-  mcp_request_limit: "동시에 실행할 수 있는 MCP 요청 수를 초과했습니다.",
-  mcp_request_timeout: "MCP 요청 시간이 초과되었습니다.",
-  mcp_request_cancelled: "MCP 요청을 취소했습니다.",
-  mcp_cursor_invalid: "pagination cursor가 올바르지 않습니다.",
-  mcp_schema_unsupported: "이 tool schema는 안전한 호출 형식으로 해석할 수 없습니다.",
-  mcp_connection_stale: "연결이 닫혔거나 오래되었습니다. 다시 연결하세요.",
-  mcp_server_error: "MCP 서버가 JSON-RPC 오류를 반환했습니다.",
-  mcp_stdio_selection_invalid: "선택한 native executable 또는 cwd를 다시 선택하세요.",
-  mcp_stdio_profile_invalid: "stdio profile의 executable, 인자, environment 또는 timeout을 확인하세요.",
-  mcp_stdio_environment_invalid: "stdio environment binding을 확인하세요.",
-  mcp_stdio_spawn_failed: "native executable을 시작하지 못했습니다.",
-  mcp_stdio_transport_failed: "native stdio transport 요청에 실패했습니다.",
-  mcp_stdio_protocol_invalid: "native stdio MCP message가 올바르지 않습니다.",
-  mcp_stdio_message_too_large: "native stdio MCP message가 허용된 크기를 초과했습니다.",
-  mcp_stdio_request_timeout: "native stdio MCP 요청 시간이 초과되었습니다.",
-  mcp_stdio_request_cancelled: "native stdio MCP 요청을 취소했습니다.",
-  mcp_stdio_connection_stale: "native stdio 연결이 닫혔거나 오래되었습니다. 다시 연결하세요.",
-  mcp_stdio_cleanup_failed: "native stdio process 정리를 완료하지 못했습니다.",
-  mcp_stdio_connection_limit: "열 수 있는 native stdio 연결 수를 초과했습니다.",
-  mcp_stdio_request_limit: "동시에 실행할 수 있는 native stdio 요청 수를 초과했습니다.",
-  mcp_oauth_required: "선택한 OAuth grant를 다시 인증하세요.",
-  mcp_oauth_request_invalid: "OAuth 요청 구성을 확인하세요.",
-  mcp_oauth_discovery_failed: "OAuth 보호 resource 또는 authorization server를 확인하지 못했습니다.",
-  mcp_oauth_resource_mismatch: "OAuth resource binding이 MCP endpoint와 일치하지 않습니다.",
-  mcp_oauth_issuer_mismatch: "OAuth issuer binding이 선택한 issuer와 일치하지 않습니다.",
-  mcp_oauth_pkce_required: "OAuth server가 필요한 PKCE S256을 지원하지 않습니다.",
-  mcp_oauth_client_unsupported: "OAuth public client 구성을 지원하지 않습니다.",
-  mcp_oauth_callback_failed: "OAuth browser callback을 확인하지 못했습니다.",
-  mcp_oauth_token_failed: "OAuth token 교환에 실패했습니다.",
-  mcp_oauth_storage_failed: "OAuth grant를 안전하게 저장하거나 읽지 못했습니다.",
-  mcp_oauth_reauthorization_required: "OAuth grant가 만료되어 다시 인증해야 합니다.",
-  mcp_oauth_cancelled: "OAuth authorization을 취소했습니다.",
-  mcp_oauth_revoke_failed: "OAuth grant를 원격에서 revoke하지 못했습니다. 원하면 로컬에서 제거할 수 있습니다.",
-};
 
 interface ListState {
   items: Record<string, unknown>[];
@@ -158,6 +110,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   const [oauthPhase, setOAuthPhase] = useState<OAuthPhase>("idle");
   const [oauthNotice, setOAuthNotice] = useState<OAuthNotice | null>(null);
   const [oauthFallbackGrantId, setOAuthFallbackGrantId] = useState<string | null>(null);
+  const [appliedOAuthGrant, setAppliedOAuthGrant] = useState<McpOAuthGrantProjection | null>(null);
+  const [connectionAuthInvalid, setConnectionAuthInvalid] = useState(false);
+  const connectionAuthInvalidRef = useRef(false);
   const [connection, setConnection] = useState<McpConnectResult | null>(null);
   const [phase, setPhase] = useState<"idle" | "connecting" | "connected" | "disconnecting">("idle");
   const [activeRequest, setActiveRequest] = useState<{ id: string; label: string } | null>(null);
@@ -284,6 +239,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     setPhase("connecting");
     setErrorCode(null);
     resetExplorer();
+    const grantSnapshot = requestedTransport === "http" ? selectedOAuthGrant : null;
     const profile: McpHttpProfile | McpStdioProfile =
       requestedTransport === "stdio"
         ? {
@@ -312,6 +268,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       }
       connectionTransportRef.current = requestedTransport;
       connectionRef.current = connected;
+      setAppliedOAuthGrant(grantSnapshot);
+      setConnectionAuthInvalid(false);
+      connectionAuthInvalidRef.current = false;
       setConnection(connected);
       setTimeline(connected.timeline);
       setPhase("connected");
@@ -398,7 +357,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     label: string,
   ): Promise<McpInvokeResult | null> => {
     const current = connectionRef.current;
-    if (!current || activeRequestRef.current) return null;
+    if (!current || activeRequestRef.current || connectionAuthInvalidRef.current) return null;
     const currentTransport = connectionTransportRef.current ?? transport;
     const generation = generationRef.current;
     const requestId = nextMcpRequestId();
@@ -413,11 +372,21 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       }
       setTimeline(response.timeline);
       setResult(response.result);
-      if (response.errorCode) setErrorCode(response.errorCode);
+      if (response.errorCode) {
+        setErrorCode(response.errorCode);
+        if (currentTransport === "http" && response.errorCode.startsWith("mcp_oauth_")) {
+          connectionAuthInvalidRef.current = true;
+          setConnectionAuthInvalid(true);
+        }
+      }
       return response;
     } catch (cause) {
       if (generation === generationRef.current) {
         const code = safeMcpErrorCode(cause);
+        if (currentTransport === "http" && code.startsWith("mcp_oauth_")) {
+          connectionAuthInvalidRef.current = true;
+          setConnectionAuthInvalid(true);
+        }
         if (
           code === "mcp_connection_stale" ||
           code === "mcp_stdio_connection_stale" ||
@@ -458,15 +427,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   };
 
   const onAuthorize = async () => {
-    if (
-      !native ||
-      transport !== "http" ||
-      phase === "connecting" ||
-      phase === "disconnecting" ||
-      oauthBusy ||
-      !endpoint.trim() ||
-      !oauthClientId.trim()
-    )
+    if (!native || transport !== "http" || phase !== "idle" || oauthBusy || !endpoint.trim() || !oauthClientId.trim())
       return;
     const scopes = oauthScopes.map((scope) => scope.trim()).filter(Boolean);
     if (scopes.length > 32 || new Set(scopes).size !== scopes.length) {
@@ -526,9 +487,19 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     try {
       const grants = await listMcpOAuthGrants();
       setOAuthGrants(grants);
-      setSelectedOAuthGrantId((current) =>
-        grants.some((grant) => grant.grantId === current) ? current : (grants[0]?.grantId ?? ""),
-      );
+      if (connectionRef.current) {
+        if (
+          appliedOAuthGrant &&
+          !grants.some((grant) => grant.grantId === appliedOAuthGrant.grantId && grant.status === "active")
+        ) {
+          connectionAuthInvalidRef.current = true;
+          setConnectionAuthInvalid(true);
+        }
+      } else {
+        setSelectedOAuthGrantId((current) =>
+          grants.some((grant) => grant.grantId === current) ? current : (grants[0]?.grantId ?? ""),
+        );
+      }
       setOAuthFallbackGrantId((current) =>
         current && grants.some((grant) => grant.grantId === current) ? current : null,
       );
@@ -548,6 +519,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     setErrorCode(null);
     try {
       const revoked = await revokeMcpOAuthGrant(grantId, removeLocalOnRemoteFailure);
+      if (
+        (revoked.removedLocal || revoked.remoteRevoked) &&
+        connectionRef.current &&
+        appliedOAuthGrant?.grantId === grantId
+      ) {
+        connectionAuthInvalidRef.current = true;
+        setConnectionAuthInvalid(true);
+      }
       if (revoked.removedLocal) {
         setOAuthGrants((current) => current.filter((item) => item.grantId !== grantId));
         setSelectedOAuthGrantId((current) => (current === grantId ? "" : current));
@@ -558,6 +537,10 @@ function McpLab({ environment, native }: ProtocolLabProps) {
       const code = safeMcpErrorCode(cause);
       setErrorCode(code);
       if (!removeLocalOnRemoteFailure && code === "mcp_oauth_revoke_failed") {
+        if (connectionRef.current && appliedOAuthGrant?.grantId === grantId) {
+          connectionAuthInvalidRef.current = true;
+          setConnectionAuthInvalid(true);
+        }
         setOAuthFallbackGrantId(grantId);
       }
     } finally {
@@ -609,6 +592,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
   const connected = phase === "connected" && connection !== null;
   const busy = activeRequest !== null || phase === "connecting" || phase === "disconnecting";
+  const authenticationLocked = phase !== "idle";
   const rawCapabilities = connection?.server.capabilities;
   const capabilities =
     rawCapabilities && typeof rawCapabilities === "object" && !Array.isArray(rawCapabilities) ? rawCapabilities : {};
@@ -890,7 +874,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 aria-label="OAuth 공개 클라이언트 ID"
                 value={oauthClientId}
                 maxLength={8 * 1024}
-                disabled={oauthBusy || busy}
+                disabled={oauthBusy || busy || authenticationLocked}
                 onChange={(event) => setOAuthClientId(event.currentTarget.value)}
                 spellCheck={false}
               />
@@ -901,13 +885,13 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 aria-label="OAuth 발급자(선택)"
                 value={oauthIssuer}
                 maxLength={8 * 1024}
-                disabled={oauthBusy || busy}
+                disabled={oauthBusy || busy || authenticationLocked}
                 onChange={(event) => setOAuthIssuer(event.currentTarget.value)}
                 spellCheck={false}
               />
             </label>
           </div>
-          <fieldset disabled={oauthBusy || busy}>
+          <fieldset disabled={oauthBusy || busy || authenticationLocked}>
             <legend>OAuth 범위</legend>
             {oauthScopes.map((scope, index) => (
               <div className="mcp-oauth-scope-row" key={`oauth-scope-${index}`}>
@@ -967,7 +951,13 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 type="button"
                 aria-label="시스템 브라우저에서 OAuth 인증"
                 disabled={
-                  !native || oauthBusy || busy || !endpoint.trim() || !oauthClientId.trim() || oauthScopesHaveDuplicates
+                  !native ||
+                  oauthBusy ||
+                  busy ||
+                  authenticationLocked ||
+                  !endpoint.trim() ||
+                  !oauthClientId.trim() ||
+                  oauthScopesHaveDuplicates
                 }
                 onClick={() => void onAuthorize()}
               >
@@ -989,8 +979,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             <select
               aria-label="OAuth grant"
               value={selectedOAuthGrantId}
-              disabled={oauthBusy || busy}
+              disabled={oauthBusy || busy || authenticationLocked}
               onChange={(event) => {
+                if (authenticationLocked) return;
                 setSelectedOAuthGrantId(event.currentTarget.value);
                 setOAuthFallbackGrantId(null);
                 setOAuthNotice(null);
@@ -1055,6 +1046,12 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
       {connection && (
         <div className="mcp-server-card" role="status">
+          <span>
+            연결에 적용된 인증: {appliedOAuthGrant ? boundedText(appliedOAuthGrant.clientId, 300) : "OAuth grant 없음"}
+          </span>
+          {connectionAuthInvalid && (
+            <span role="alert">권한 확인 필요. 연결을 해제한 뒤 사용할 grant를 선택하고 다시 연결하세요.</span>
+          )}
           <strong>{boundedText(connection.server.serverName, 200) || "이름 없는 MCP 서버"}</strong>
           <span>{boundedText(connection.server.serverVersion, 100) || "버전 미제공"}</span>
           <code>
@@ -1072,14 +1069,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
           <ExplorerSection title="Tools" enabled={hasMcpCapability(capabilities, "tools")}>
             <ListButton
               state={tools}
-              busy={busy}
+              busy={busy || connectionAuthInvalid}
               onClick={() => void loadList("tools", "tools/list", tools, setTools)}
             />
             {tools.items.length > 0 && (
               <select
                 aria-label="MCP tool"
                 value={selectedToolName}
-                disabled={busy}
+                disabled={busy || connectionAuthInvalid}
                 onChange={(event) => setSelectedToolName(event.currentTarget.value)}
               >
                 {tools.items.map((tool) => (
@@ -1098,7 +1095,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                   <McpSchemaEditor
                     schema={schemaAnalysis.schema}
                     value={toolArguments}
-                    disabled={busy}
+                    disabled={busy || connectionAuthInvalid}
                     onChange={(values) =>
                       setToolDrafts((current) => {
                         const next = new Map(current);
@@ -1123,7 +1120,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 <button
                   className="btn send"
                   type="button"
-                  disabled={busy || schemaAnalysis.mode !== "form" || argumentIssues.length > 0}
+                  disabled={
+                    busy || connectionAuthInvalid || schemaAnalysis.mode !== "form" || argumentIssues.length > 0
+                  }
                   onClick={() =>
                     void invoke(
                       "tools/call",
@@ -1142,13 +1141,13 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             <div className="mcp-inline-actions">
               <ListButton
                 state={resources}
-                busy={busy}
+                busy={busy || connectionAuthInvalid}
                 label="Resource"
                 onClick={() => void loadList("resources", "resources/list", resources, setResources)}
               />
               <ListButton
                 state={resourceTemplates}
-                busy={busy}
+                busy={busy || connectionAuthInvalid}
                 label="Template"
                 onClick={() =>
                   void loadList(
@@ -1164,7 +1163,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               <select
                 aria-label="MCP resource"
                 value={selectedResourceUri}
-                disabled={busy}
+                disabled={busy || connectionAuthInvalid}
                 onChange={(event) => setSelectedResourceUri(event.currentTarget.value)}
               >
                 {resources.items.map((resource) => (
@@ -1178,7 +1177,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
               aria-label="MCP resource URI"
               value={selectedResourceUri}
               maxLength={8 * 1024}
-              disabled={busy}
+              disabled={busy || connectionAuthInvalid}
               placeholder="리소스 URI"
               onChange={(event) => setSelectedResourceUri(event.currentTarget.value)}
               spellCheck={false}
@@ -1186,7 +1185,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
             <button
               className="btn send"
               type="button"
-              disabled={busy || !selectedResourceUri}
+              disabled={busy || connectionAuthInvalid || !selectedResourceUri}
               onClick={() => void invoke("resources/read", { uri: selectedResourceUri }, "resources/read")}
             >
               Resource 읽기
@@ -1208,14 +1207,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
           <ExplorerSection title="Prompts" enabled={hasMcpCapability(capabilities, "prompts")}>
             <ListButton
               state={prompts}
-              busy={busy}
+              busy={busy || connectionAuthInvalid}
               onClick={() => void loadList("prompts", "prompts/list", prompts, setPrompts)}
             />
             {prompts.items.length > 0 && (
               <select
                 aria-label="MCP prompt"
                 value={selectedPromptName}
-                disabled={busy}
+                disabled={busy || connectionAuthInvalid}
                 onChange={(event) => setSelectedPromptName(event.currentTarget.value)}
               >
                 {prompts.items.map((prompt) => (
@@ -1231,7 +1230,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                 {field.required ? " · 필수" : ""}
                 <input
                   value={promptArguments[field.name] ?? ""}
-                  disabled={busy}
+                  disabled={busy || connectionAuthInvalid}
                   maxLength={256 * 1024}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
@@ -1372,33 +1371,4 @@ function ListButton({
       {!state.loaded ? `${label} 조회` : state.nextCursor ? `${label} 다음 페이지` : `${label} 완료`}
     </button>
   );
-}
-
-function isPromptArgument(value: unknown): value is { name: string; required?: boolean } {
-  return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    typeof (value as { name?: unknown }).name === "string" &&
-    ((value as { required?: unknown }).required === undefined ||
-      typeof (value as { required?: unknown }).required === "boolean")
-  );
-}
-
-function boundedText(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max)}…`;
-}
-
-function formatOAuthExpiry(value: number | null): string {
-  if (value === null) return "제공되지 않음";
-  const formatted = new Date(value).toLocaleString();
-  return formatted === "Invalid Date" ? "제공되지 않음" : formatted;
-}
-
-function boundedJson(value: unknown, max: number): string {
-  try {
-    const serialized = JSON.stringify(value, null, 2);
-    return serialized.length <= max ? serialized : `${serialized.slice(0, max)}\n… UI preview truncated …`;
-  } catch {
-    return "[표시할 수 없는 JSON]";
-  }
 }

@@ -247,6 +247,11 @@ export function upsertPipeline(
     !validPipelineSteps(inputType, steps)
   )
     return metadata;
+  if (
+    !metadata.pipelines.some((pipeline) => pipeline.id === id) &&
+    metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines
+  )
+    return metadata;
   const saved: SavedPipelineMetadata = {
     id,
     inputType,
@@ -258,6 +263,11 @@ export function upsertPipeline(
     WORKFLOW_STORAGE_LIMITS.maxPipelines,
   );
   return { ...metadata, pipelines };
+}
+
+export function removePipeline(metadata: WorkflowMetadata, id: string): WorkflowMetadata {
+  if (!metadata.pipelines.some((pipeline) => pipeline.id === id)) return metadata;
+  return { ...metadata, pipelines: metadata.pipelines.filter((pipeline) => pipeline.id !== id) };
 }
 
 function fixedStorageError(): Error {

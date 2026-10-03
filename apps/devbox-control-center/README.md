@@ -1,7 +1,7 @@
 # Devbox Control Center
 
 v0.9.0 소스의 네 사용자 제품 중 하나다. Products·Commands·Tools·Updates·Recovery를 통합한다.
-현재 코드 검토·후보·실기·공개 상태는 [통합 점검 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)와 [릴리스 근거](../../docs/release-evidence.md)에 기록한다. 소스 버전과 공개 완료는 구분한다.
+현재 구현·검증은 [재정비 계획](../../docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)과 통합 PR, 공개 상태는 [릴리스 근거](../../docs/release-evidence.md)와 GitHub Release에서 확인한다. #580은 철회본의 닫힌 기록이다.
 
 ## 실행과 개발
 
@@ -22,7 +22,8 @@ v0.9.0 소스의 네 사용자 제품 중 하나다. Products·Commands·Tools·
   Review 창에 전달되지 않도록 한다.
 - Tools는 Environment·doctor·support bundle·Related Tools/package-only setup을 제공한다.
   경로를 읽을 수 있다는 이유로 삭제·설치·실행 권한을 부여하지 않는다.
-- 새 설치는 데이터 및 복구 화면에서 네 제품의 저장소 상태를 기록하고 활성화를 확정한다.
+- 새 설치는 **데이터 및 복구 → Devbox 사용 준비**에서 제품 열기·저장소 준비·상태 기록·활성화 검토를 이어간다. 기록 뒤 설치 목록을 다시 읽은 다음에만 다음 단계를 허용한다. 중간에 닫아도 같은 설치의 기록에서 재개한다.
+- 설치 도중 제품 연결은 저장소 준비 상태 확인에 사용할 수 있다. 일반 작업·Agent 재연결·수신 작업은 활성화 전까지 차단한다.
 - Suite installer/bootstrap은 generation·journal·owned file identity로 install/update/undo/commit/
   restore/resume/uninstall을 수행한다. postcommit 새 데이터와 제거 후 사용자 데이터를 보존한다.
 

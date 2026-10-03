@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Exercise inherited budgets, failures, cancellation, and cross-worktree exclusion."""
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,18 +13,6 @@ sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / '.github/scripts/verify-resources.py'
-spec = importlib.util.spec_from_file_location('agent_metadata', ROOT / '.github/scripts/check-agent-metadata.py')
-metadata = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(metadata)
-metadata.validate('policy:\n  allow_implicit_invocation: false\n')
-for text in ('policy:\n  allow_implicit_invocation: true', 'policy:\n  \tallow_implicit_invocation: false', 'policy:\n  allow_implicit_invocation: false\ndependencies: {}', ''):
-    try:
-        metadata.validate(text)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError('invalid metadata accepted')
-
 with tempfile.TemporaryDirectory(prefix='devbox-verification-test-') as temporary:
     root = Path(temporary) / 'repo'
     root.mkdir()
@@ -100,4 +87,4 @@ time.sleep(60)
         if holder.poll() is None:
             holder.terminate()
             holder.wait(timeout=10)
-print('Verification resource and metadata regression tests passed')
+print('Verification resource regression tests passed')

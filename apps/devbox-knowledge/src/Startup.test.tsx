@@ -66,3 +66,25 @@ it("can review a replacement folder for an unavailable binding without starting 
   expect(screen.queryByText("domain mounted")).toBeNull();
   expect(rpc.mock.calls.some(([method]) => method === "start_empty" || method === "continue_existing")).toBe(false);
 });
+
+it("reads only local recovery on fresh offline startup and keeps source mutations unavailable", async () => {
+  rpc.mockImplementation(async (method: string) =>
+    method === "status"
+      ? { active: false, hasExisting: true, bindingUnavailable: true }
+      : { entries: [{ path: "a.md", content: "LOCAL_ONLY", baseRevision: "r", savedAtMs: 1 }], otherVaultCount: 1 },
+  );
+  const copy = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+  render(
+    <Startup>
+      <p>domain mounted</p>
+    </Startup>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "로컬 복구본 확인" }));
+  await screen.findByText("LOCAL_ONLY");
+  fireEvent.click(screen.getByRole("button", { name: "복구본 복사" }));
+  expect(copy).toHaveBeenCalledWith("LOCAL_ONLY");
+  expect(rpc).toHaveBeenCalledWith("load_recovery", {});
+  expect(screen.queryByText("domain mounted")).toBeNull();
+  expect(screen.queryByRole("button", { name: "삭제된 노트 재생성" })).toBeNull();
+});

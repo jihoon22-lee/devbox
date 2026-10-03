@@ -1,5 +1,6 @@
 // Only called by the hosted disposable Suite fixture; no user data is sampled.
 import assert from "node:assert/strict";
+import { createOwnedActivityWindow } from "./windows-owned-activity-window.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -24,6 +25,8 @@ export async function exerciseAgentCollectors({
     assert.equal(observed.Created, identity.Created);
   };
   let added = false;
+  let foreground;
+  const oldThreshold = await invoke("activity", "get_idle_threshold");
   try {
     assert.equal(await invoke("activity", "is_tracking"), false, "collection starts only with explicit consent");
     await invoke("search_settings", "add_root", { path: root, indexContent: false });
@@ -33,6 +36,25 @@ export async function exerciseAgentCollectors({
     assert.equal((await invoke("search", "index_status")).indexing, false);
     await invoke("activity", "start_tracking");
     assert.equal(await invoke("activity", "is_tracking"), true);
+    await invoke("activity", "set_idle_threshold", { thresholdMs: 60000 });
+    foreground = await createOwnedActivityWindow(path.join(directory, "owned-foreground"));
+    await foreground.input();
+    await delay(4000);
+    const lastInput = await foreground.input();
+    await delay(65000);
+    const day = new Date(lastInput),
+      dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime(),
+      dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime();
+    const sessions = (await invoke("activity", "timeline", { dayStart, dayEnd })).filter((row) =>
+      row.title.startsWith(foreground.marker),
+    );
+    assert.ok(sessions.length > 0, "owned HWND must produce a real native session");
+    assert.ok(
+      sessions.every((row) => row.end_ts >= row.start_ts && row.end_ts <= lastInput + 2500),
+      "idle tail must stop at owned input",
+    );
+    await foreground.close();
+    foreground = null;
     await closeKnowledge(current);
     const changedAt = Date.now();
     writeFileSync(path.join(root, "agentclosedwindowfixture.txt"), "synthetic background index fixture\n", {
@@ -70,10 +92,14 @@ export async function exerciseAgentCollectors({
     evidence.closeExitsKnowledgeAndKeepsSameAgent = true;
     evidence.fileWatcherCompletesBeforeKnowledgeReopens = true;
     evidence.reopenedSearchReadsTheBackgroundIndex = true;
-    evidence.physicalForegroundSessionCapture = "사용자 확인 대기";
+    evidence.physicalForegroundSessionCapture = "owned HWND plus actual input and native persisted session";
+    evidence.idleBoundaryExcludesTail = true;
+    evidence.evidenceKind = "native-boundary";
     report(evidence);
     return { knowledge: current, evidence };
   } finally {
+    if (foreground) await foreground.close();
+    await invoke("activity", "set_idle_threshold", { thresholdMs: oldThreshold }).catch(() => {});
     await invoke("activity", "stop_tracking").catch(() => {});
     if (added) await invoke("search_settings", "remove_root", { path: root }).catch(() => {});
   }

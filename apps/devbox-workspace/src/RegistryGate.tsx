@@ -1,3 +1,4 @@
+import type { TransitionGuard } from "./contextTransition";
 import { useUndo } from "@devbox/product-shell/undo";
 import type { SetupCall } from "@devbox/workspace-features/generated/SetupCall";
 import type { SetupResults } from "@devbox/workspace-features/generated/setup-results";
@@ -5,7 +6,7 @@ import { bindTypedCall } from "@devbox/workspace-features/typed";
 import type { RegistryCall } from "@devbox/workspace-features/generated/RegistryCall";
 import type { RegistryResults } from "@devbox/workspace-features/generated/registry-results";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall } from "./native";
 import { workspaceIssueMessage as issueMessage } from "@devbox/workspace-features/issues/shared";
@@ -58,16 +59,28 @@ export default function RegistryGate({
   refreshSignal = 0,
   onSnapshot,
   suggestedRoot,
+  transition,
+  canonicalRegistry,
 }: {
   setupOnly?: boolean;
   context?: ProjectContext | null;
   onContextChanged?: () => Promise<void>;
   onReady?: () => void;
   editing?: boolean;
+  transition?: TransitionGuard;
+  canonicalRegistry?: Registry | null;
   refreshSignal?: number;
   onSnapshot?: (registry: Registry) => void;
   suggestedRoot?: { id: string; path: string; name: string; target?: ProjectContext["target"] } | null;
 }) {
+  const guardedCall: typeof registryCall = (method, ...args) => {
+    const operation = () => registryCall(method, ...args);
+    if (["select_project", "clear_project", "remove", "apply_registration"].includes(method)) {
+      if (transition) return transition(operation);
+      if (editingRef.current) return Promise.reject(new Error("편집 중인 내용을 정리한 뒤 다시 시도해 주세요."));
+    }
+    return operation();
+  };
   const { offer, toast } = useUndo();
   const editingRef = useRef(editing);
   editingRef.current = editing;
@@ -80,7 +93,16 @@ export default function RegistryGate({
       ? incoming.review
       : null;
   const [status, setStatus] = useState<Status>({ phase: "loading" });
-  const [registry, setRegistry] = useState<Registry | null>(null);
+  const [registry, updateRegistry] = useState<Registry | null>(null);
+  const setRegistry = useCallback((next: Registry) => {
+    updateRegistry((previous) => (previous && previous.revision > next.revision ? previous : next));
+  }, []);
+  useEffect(() => {
+    if (canonicalRegistry)
+      updateRegistry((previous) =>
+        previous && previous.revision > canonicalRegistry.revision ? previous : canonicalRegistry,
+      );
+  }, [canonicalRegistry]);
   const [templateId, setTemplateId] = useState("");
   const [root, setRoot] = useState("");
   const [name, setName] = useState("");
@@ -110,7 +132,7 @@ export default function RegistryGate({
     const requestId = ++loadId.current;
     const next = await setupCall("status");
     if (!alive.current || loadId.current !== requestId) return;
-    if (next.phase === "selected") {
+    if (next.phase === "selected" && !setupOnly) {
       const snapshot = await registryCall("snapshot", {});
       if (alive.current && loadId.current === requestId) setRegistry(snapshot);
     }
@@ -138,7 +160,7 @@ export default function RegistryGate({
           timer = setTimeout(() => {
             void load();
           }, 300);
-        if (next.phase === "selected") {
+        if (next.phase === "selected" && !setupOnly) {
           const snapshot = await registryCall("snapshot", {});
           if (!disposed && alive.current && loadId.current === requestId) setRegistry(snapshot);
         }
@@ -159,7 +181,7 @@ export default function RegistryGate({
       if (currentPreview.current)
         void registryCall("cancel_registration", { previewId: currentPreview.current }).catch(() => {});
     };
-  }, []);
+  }, [setRegistry, setupOnly]);
   async function act(action: () => Promise<void>) {
     if (busy || acting.current) return;
     acting.current = true;
@@ -210,7 +232,7 @@ export default function RegistryGate({
     if (allowImmediate && next.discovery.kind === "newProject" && !next.templateProfile && !next.importedProfileId) {
       // Consume the native preview once. Its registry revision is checked again at apply.
       currentPreview.current = null;
-      const applied = await registryCall("apply_registration", {
+      const applied = await guardedCall("apply_registration", {
         previewId: next.previewId,
         name: suggestedName.trim() || "새 프로젝트",
         action: "register",
@@ -218,7 +240,7 @@ export default function RegistryGate({
       offer("프로젝트를 등록했습니다.", async () => {
         if (editingRef.current) throw new Error("편집 중인 내용을 정리한 뒤 다시 시도해 주세요.");
         try {
-          await registryCall("remove", { revision: applied.registry.revision, context: applied.context });
+          await guardedCall("remove", { revision: applied.registry.revision, context: applied.context });
         } catch (cause) {
           if (cause instanceof Error && cause.name === "stale_registry") {
             throw new Error("이미 수정되어 되돌릴 수 없습니다");
@@ -240,8 +262,10 @@ export default function RegistryGate({
     }
   }
   async function startRegistry() {
-    await setupCall("start_empty");
-    await refresh();
+    const next = await setupCall("start_empty");
+    if (setupOnly && next.selected) {
+      if (alive.current) setStatus({ phase: "selected" });
+    } else await refresh();
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Start the empty registry once after native startup reaches the initial state.
   useEffect(() => {
@@ -283,7 +307,7 @@ export default function RegistryGate({
                 disabled={busy || editing}
                 onClick={() =>
                   void act(async () => {
-                    await registryCall("clear_project", {});
+                    await guardedCall("clear_project", {});
                     await onContextChanged();
                   })
                 }
@@ -424,7 +448,7 @@ export default function RegistryGate({
                 }
                 onClick={() =>
                   void act(async () => {
-                    await registryCall("apply_registration", {
+                    await guardedCall("apply_registration", {
                       previewId: preview.previewId,
                       name,
                       action: ["aliasOrMove", "replacedRoot"].includes(preview.discovery.kind) ? "rebind" : "register",
@@ -528,7 +552,7 @@ export default function RegistryGate({
                             revision: worktree.revision,
                             target: worktree.binding.target,
                           };
-                          await registryCall("select_project", { context: next });
+                          await guardedCall("select_project", { context: next });
                           await onContextChanged();
                           if (review?.context?.worktreeId === worktree.id) incoming.clear();
                         })
@@ -552,7 +576,7 @@ export default function RegistryGate({
                                 revision: worktree.revision,
                                 target: worktree.binding.target,
                               };
-                              await registryCall("remove", { revision: registry.revision, context });
+                              await guardedCall("remove", { revision: registry.revision, context });
                               setRemove(null);
                               await refresh();
                             })

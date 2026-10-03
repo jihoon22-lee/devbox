@@ -434,8 +434,9 @@ async function browserFetch(
     resolved.body_kind === "graphql" && graphql && resolved.method === "GET"
       ? buildGraphqlGetUrl(resolved.url, resolved.params, graphql)
       : (() => {
-          const sep = resolved.url.includes("?") ? "&" : "?";
-          return params.size ? resolved.url + sep + params.toString() : resolved.url;
+          const target = new URL(resolved.url);
+          for (const [key, value] of params) target.searchParams.append(key, value);
+          return target.toString();
         })();
   if (resolved.body_kind === "graphql") validateGraphqlEndpoint(url);
 
@@ -446,6 +447,15 @@ async function browserFetch(
   } else if (resolved.body_kind === "json" && resolved.body.trim()) {
     headers.set("Content-Type", "application/json");
     body = resolved.body;
+  } else if (resolved.body_kind === "form") {
+    headers.set("Content-Type", "application/x-www-form-urlencoded");
+    const form = new URLSearchParams();
+    for (const line of resolved.body.split(/\r?\n/)) {
+      if (!line.trim() || line.trimStart().startsWith("#")) continue;
+      const at = line.indexOf("=");
+      form.append((at < 0 ? line : line.slice(0, at)).trim(), at < 0 ? "" : line.slice(at + 1));
+    }
+    body = form.toString();
   } else if (resolved.body_kind === "raw" && resolved.body) {
     body = resolved.body;
   } else if (resolved.body_kind === "multipart") {

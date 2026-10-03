@@ -200,3 +200,27 @@ it("loads a C# trust certificate without requiring its private key", () => {
   expect(code).toContain("X509CertificateLoader.LoadPkcs12");
   expect(code).toContain("CryptographicOperations.ZeroMemory");
 });
+
+it("does not export inactive body or auth drafts and preserves form spaces", () => {
+  const request = {
+    ...emptyRequest(),
+    method: "POST",
+    url: "https://example.test",
+    body: "{{hidden}}",
+    auth: {
+      kind: "none" as const,
+      username: "{{user}}",
+      password: "{{password}}",
+      token: "{{token}}",
+      api_key: "{{key}}",
+      api_value: "{{value}}",
+    },
+  };
+  const generated = generateCode("curl", request, []);
+  expect(generated.placeholders).toEqual([]);
+  expect(generated.code).not.toContain("--data");
+  expect(generated.code).not.toContain("Authorization");
+  expect(generateCode("curl", { ...request, body_kind: "form", body: "q= a+b &x\nq=한글\nempty=" }, []).code).toContain(
+    "q=+a%2Bb+%26x&q=%ED%95%9C%EA%B8%80&empty=",
+  );
+});

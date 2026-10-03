@@ -886,3 +886,7 @@ export async function knowledgeDraftHistory(): Promise<KnowledgeDraftHistoryEntr
   if (!isTauri()) return [];
   return activityCall("knowledge_draft_history", {});
 }
+
+export async function regenerateKnowledgeDraft(handoffId: string): Promise<SendKnowledgeDraftResult> {
+  return activityCall("regenerate_knowledge_draft", { handoffId });
+}

@@ -6,7 +6,15 @@ const states = ["connected", "starting", "restarting", "unavailable", "unsupport
 function valid(value: unknown): value is AgentState {
   return typeof value === "string" && states.includes(value);
 }
-export default function AgentStatus({ initial = "unsupported", native }: { initial?: AgentState; native: boolean }) {
+export default function AgentStatus({
+  initial = "unsupported",
+  native,
+  paused = false,
+}: {
+  initial?: AgentState;
+  native: boolean;
+  paused?: boolean;
+}) {
   const [status, setStatus] = useState(initial);
   const [retrying, setRetrying] = useState(false);
   const eventRevision = useRef(0);
@@ -15,7 +23,7 @@ export default function AgentStatus({ initial = "unsupported", native }: { initi
     const generation = ++lifetime.current;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    if (native) {
+    if (native && !paused) {
       void listen<string>("product-shell://agent-status", ({ payload }) => {
         if (!disposed && valid(payload)) {
           eventRevision.current++;
@@ -45,9 +53,9 @@ export default function AgentStatus({ initial = "unsupported", native }: { initi
       if (lifetime.current === generation) lifetime.current++;
       unlisten?.();
     };
-  }, [native]);
+  }, [native, paused]);
   const reconnect = async () => {
-    if (!native || retrying) return;
+    if (!native || paused || retrying) return;
     const generation = lifetime.current,
       revision = ++eventRevision.current;
     setRetrying(true);
@@ -66,6 +74,8 @@ export default function AgentStatus({ initial = "unsupported", native }: { initi
       if (generation === lifetime.current) setRetrying(false);
     }
   };
+  if (paused) return <span role="status">설치 준비가 끝나면 백그라운드 서비스를 연결합니다.</span>;
+  if (status === "starting") return <span role="status">백그라운드 서비스를 시작하고 있습니다.</span>;
   if (status === "restarting") return <span role="status">백그라운드 서비스를 다시 시작하고 있습니다.</span>;
   return status === "unavailable" ? (
     <span role="status">

@@ -184,7 +184,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 20
     outputs:
-      artifact_name: ${{ needs.plan.outputs.artifact_name }}
+      artifact_name: candidate-assembly-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -203,7 +203,7 @@ jobs:
         run: .github/scripts/assemble-suite-candidate.ps1 -Shards candidate/shards -Output candidate/output -Tag $env:CANDIDATE_TAG -Source $env:CANDIDATE_COMMIT
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ needs.plan.outputs.artifact_name }}
+          name: candidate-assembly-${{ github.run_id }}
           path: |
             candidate/output/assets
             candidate/output/evidence
@@ -221,6 +221,8 @@ jobs:
       matrix:
         scope: [product-shells, api, knowledge, cross-product]
     env:
+      DEVBOX_USER_FLOW_ASSETS: candidate/assets
+      DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
       DEVBOX_FIXTURE_PROFILE: release
       DEVBOX_PORTABLE_FIXTURES: target/portable-fixture
       GH_TOKEN: ${{ github.token }}
@@ -311,7 +313,13 @@ jobs:
           retention-days: 14
 
   installer-acceptance:
-    name: Installer migration update recovery and removal acceptance
+    permissions:
+      contents: read
+      actions: read
+    env:
+      DEVBOX_USER_FLOW_ASSETS: candidate/assets
+      DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
+    name: Interactive installation and complete installed user journeys
     needs: assemble
     runs-on: windows-2025
     timeout-minutes: 60
@@ -327,11 +335,57 @@ jobs:
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}
           path: candidate
+      - name: Fetch the pinned withdrawn version for same-version replacement
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 37095144741 --repo jihoon22-lee/devbox --name windows-package-candidate-v0.9.0-e499ac7127269bf67863bf0fdc42eaf53236b9f3 --dir candidate/withdrawn
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned withdrawn fixture is unavailable; do not replace it with a rebuild.' }
+          python .github/scripts/verify-withdrawn-fixture.py candidate/withdrawn/assets
+          if ($LASTEXITCODE -ne 0) { throw 'Withdrawn fixture bytes changed.' }
       - name: Recover the exact private payload from public bytes
         shell: pwsh
         run: |
           python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source '${{ inputs.candidate_commit }}' --run-id '${{ github.run_id }}'
           if ($LASTEXITCODE -ne 0) { throw 'Candidate delivery inputs failed.' }
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-private-windows-lsp-${{ github.run_id }}
+          path: target/debug
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-private-wsl-lsp-${{ github.run_id }}
+          path: target/native-lsp-fixture
+      - name: Prepare owned WSL1 filesystem and Git for the installed journeys
+        shell: pwsh
+        run: |
+          .github/scripts/windows-knowledge-wsl.ps1
+          .github/scripts/windows-workspace-wsl-git.ps1
+          "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
+      - name: Install interactively and complete visible activation
+        run: node .github/scripts/windows-suite-user-flow.mjs
+      - name: Exercise actual work in the same installed namespace
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-agent-user-flows.mjs')) {
+            if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
+              node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
+              if ($LASTEXITCODE -ne 0) { $failed += 'withdrawn-same-version-update' }
+            }
+            node ".github/scripts/$script"
+            if ($LASTEXITCODE -ne 0) { $failed += $script }
+          }
+          if ($failed.Count -gt 0) { throw "Installed user journeys failed: $($failed -join ', ')" }
+      - name: Remove only the owned interactive installation and data
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-user-flow-install.ps1 -Cleanup
+      - name: Remove only the owned WSL1 fixture
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
       - name: Exercise full installed Suite migration and recovery
         shell: pwsh
         env:
@@ -422,4 +476,58 @@ jobs:
             ${{ runner.temp }}/workspace-webview-fixture/*acceptance.json
             ${{ runner.temp }}/workspace-webview-fixture/wsl2-details
           if-no-files-found: warn
+          retention-days: 14
+
+  user-flow-acceptance:
+    name: Verify complete user journeys and seal candidate
+    needs: [plan, assemble, packaged-runtime, installer-acceptance, windows-wsl2]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require every candidate acceptance scope to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          if any(value['result'] != 'success' for value in results.values()):
+              raise SystemExit('Candidate acceptance scope did not succeed')
+          PYTHON
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.assemble.outputs.artifact_name }}
+          path: candidate
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-native-*-${{ github.run_id }}
+          path: candidate/evidence/user-flow-files
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-installer-${{ github.run_id }}
+          path: candidate/evidence/user-flow-files/installer
+      - name: Require complete UI observations from the exact candidate bytes
+        env:
+          SOURCE: ${{ inputs.candidate_commit }}
+          TAG: ${{ inputs.candidate_tag }}
+        run: |
+          node .github/scripts/collect-user-flow-evidence.mjs candidate/assets "$SOURCE" candidate/evidence/user-flow-files candidate/evidence/user-flows.json
+          python3 .github/scripts/build-candidate-metadata.py --assets candidate/assets --tag "$TAG" --commit "$SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID" --user-flow-evidence candidate/evidence/user-flows.json --output candidate/evidence/candidate-metadata.json
+          python3 .github/scripts/verify-downloaded-release.py --artifact-kind candidate --require-user-flows --assets candidate/assets --release candidate/evidence/candidate-metadata.json --config candidate/evidence/windows-packaged-smoke-config.json --tag "$TAG" --commit "$SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ needs.plan.outputs.artifact_name }}
+          path: |
+            candidate/assets
+            candidate/evidence
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 14

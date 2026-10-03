@@ -1,3 +1,4 @@
+import { ContextTransitionBlocked, type TransitionGuard } from "../contextTransition";
 import { useRef, useState } from "react";
 import { useOperation, usePolling } from "@devbox/hooks";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
@@ -22,12 +23,16 @@ export default function AgentHub({
   registry,
   navigate,
   refreshContext,
+  transition,
+  refreshRegistry,
 }: {
   description: Description;
   active?: boolean;
   registry: Registry | null;
   navigate(route: string): void;
   refreshContext(): Promise<void>;
+  transition?: TransitionGuard;
+  refreshRegistry?: () => Promise<Registry>;
 }) {
   const [resources, setResources] = useState<AgentResources[]>([]);
   const [usage, setUsage] = useState<Record<string, UsageReport>>({});
@@ -41,7 +46,7 @@ export default function AgentHub({
   const projectId = description.context?.projectId;
   const selectedProject = useRef(projectId);
   selectedProject.current = projectId;
-  const ports = nativePorts(refreshContext, description.handshake.installationId);
+  const ports = nativePorts(refreshContext, description.handshake.installationId, transition, refreshRegistry);
   const wsl = description.context?.target.kind === "wsl";
   async function load() {
     const project = projectId;
@@ -60,7 +65,7 @@ export default function AgentHub({
       try {
         await load();
       } catch (error) {
-        setIssue(errorMessage(error));
+        setIssue(error instanceof ContextTransitionBlocked ? error.message : errorMessage(error));
       }
     },
     { intervalMs: 3000, active: active && wsl },
@@ -92,7 +97,7 @@ export default function AgentHub({
       try {
         await action();
       } catch (error) {
-        setIssue(errorMessage(error));
+        setIssue(error instanceof ContextTransitionBlocked ? error.message : errorMessage(error));
         setReviewRequired(errorCode(error) === "source_review_required");
       } finally {
         try {
@@ -105,6 +110,7 @@ export default function AgentHub({
     });
   }
   async function resume(task: AgentTask) {
+    if (transition) await transition(async () => {});
     const target = description.context?.target;
     if (target?.kind !== "wsl") throw new AgentFlowError("agent_wsl_required");
     await advance(task, ports, {
@@ -114,7 +120,7 @@ export default function AgentHub({
     });
   }
   async function baseOf(task: AgentTask) {
-    const snapshot = await call<Registry>("registry", "snapshot");
+    const snapshot = await (refreshRegistry ? refreshRegistry() : call<Registry>("registry", "snapshot"));
     const tree = snapshot.worktrees.find(
       (tree) => tree.id === task.baseWorktreeId && tree.projectId === task.projectId,
     );
@@ -123,6 +129,7 @@ export default function AgentHub({
     return tree;
   }
   async function cleanupTask(task: AgentTask, force: boolean) {
+    if (transition) await transition(async () => {});
     if (task.terminalId) await call("terminal", "stop_terminal", { id: task.terminalId });
     const base = await baseOf(task);
     const presence = await ports.source.inspectWorktree(task.branch, task.targetDir);
@@ -136,11 +143,12 @@ export default function AgentHub({
           operationId: crypto.randomUUID(),
         },
       });
-    const snapshot = await call<Registry>("registry", "snapshot");
+    const snapshot = await (refreshRegistry ? refreshRegistry() : call<Registry>("registry", "snapshot"));
     const tree = snapshot.worktrees.find((tree) => tree.id === task.worktreeId && tree.projectId === task.projectId);
     if (tree) await call("registry", "remove", { revision: snapshot.revision, context: contextOf(tree) });
     await agentsCall("finish", { taskId: task.id, revision: task.revision, outcome: force ? "discarded" : "merged" });
     setConfirmation(null);
+    await refreshRegistry?.();
     await refreshContext();
   }
   async function act(task: AgentTask, action: RowAction) {
@@ -151,7 +159,15 @@ export default function AgentHub({
     if (action === "resume") await resume(task);
     if (action === "focus") await call("terminal", "focus_terminal", { id: task.terminalId });
     if (action === "reopen" || action === "review" || action === "pr") {
-      const context = task.worktreeId ? worktreeContext(task.worktreeId) : null;
+      const snapshot = await refreshRegistry?.();
+      const tree = snapshot?.worktrees.find((tree) => tree.id === task.worktreeId && tree.projectId === task.projectId);
+      const context = tree
+        ? contextOf(tree)
+        : snapshot
+          ? null
+          : task.worktreeId
+            ? worktreeContext(task.worktreeId)
+            : null;
       if (!context) throw new AgentFlowError("agent_task_context_mismatch");
       await selectContext(ports, context);
       if (action === "review" || action === "pr") navigate("source");

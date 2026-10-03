@@ -148,3 +148,37 @@ it("rejects the same worktree id with a changed revision or project", async () =
     expect(p.terminal.openAgentTerminal).not.toHaveBeenCalled();
   }
 });
+
+it("reconciles a newly registered worktree from the returned native snapshot", async () => {
+  const p = ports();
+  p.refreshRegistry = vi.fn(async () => ({
+    revision: 2,
+    projects: [{ id: "p1", name: "devbox" }],
+    worktrees: [
+      { id: "w1", projectId: "p1", revision: 1, binding: { root: "/base", target: base.target }, trustedDigest: null },
+      { id: "w2", projectId: "p1", revision: 1, binding: { root: "/new", target: base.target }, trustedDigest: null },
+    ],
+  }));
+  await advance(task("created"), p, { ...env, worktreeContext: (id) => (id === "w1" ? base : null) });
+  expect(p.registry.select).toHaveBeenCalledWith(agentContext);
+  expect(p.refreshRegistry).toHaveBeenCalled();
+});
+it("does not register again after a successful bind followed by failed snapshot read", async () => {
+  const p = ports();
+  let reads = 0;
+  p.refreshRegistry = vi.fn(async () => {
+    if (++reads === 1) throw new Error("snapshot unavailable");
+    return {
+      revision: 2,
+      projects: [],
+      worktrees: [
+        { id: "w2", projectId: "p1", revision: 1, binding: { root: "/new", target: base.target }, trustedDigest: null },
+      ],
+    };
+  });
+  await expect(advance(task("created"), p, env)).rejects.toThrow("snapshot unavailable");
+  const bound = await p.agents.bindWorktree.mock.results[0].value;
+  await advance(bound, p, env);
+  expect(p.registry.apply).toHaveBeenCalledTimes(1);
+  expect(p.terminal.openAgentTerminal).toHaveBeenCalledTimes(1);
+});

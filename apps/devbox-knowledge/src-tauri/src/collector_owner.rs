@@ -120,7 +120,7 @@ pub async fn send_draft(
         app,
         "knowledge.activity",
         "native_draft_delivery",
-        json!({"kind":"prepare","input":args["input"],"regeneratedFrom":args["regeneratedFrom"]}),
+        if let Some(id)=args.get("handoffId") { json!({"kind":"regenerate","handoffId":id}) } else { json!({"kind":"prepare","input":args["input"],"regeneratedFrom":args["regeneratedFrom"]}) },
         deadline,
     )
     .await?;

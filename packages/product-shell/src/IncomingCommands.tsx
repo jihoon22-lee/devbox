@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { makeRequest, nativeMode, isProjectContext, type Description } from "./api";
+import { deriveAvailability } from "./availability";
 import { isOperation } from "./operation";
 import catalog from "../../../apps/products.json";
 import type { IncomingReview as Review } from "./incoming";
@@ -16,6 +17,9 @@ export default function IncomingCommands({
   navigate: (route: string) => void;
   onReview: (review: Review) => void;
 }) {
+  const available = deriveAvailability(description).incoming;
+  const readGeneration = useRef(0);
+  const [readIssue, setReadIssue] = useState("");
   const [reviews, setReviews] = useState<Review[]>([]),
     [opening, setOpening] = useState<{ id: string; route: string } | null>(null);
   const [busy, setBusy] = useState(false),
@@ -39,10 +43,11 @@ export default function IncomingCommands({
     [description, route],
   );
   useEffect(() => {
-    if (!nativeMode) return;
+    if (!nativeMode || !available) return;
     let active = true,
       remove: (() => void) | undefined;
     const refresh = () => {
+      const generation = ++readGeneration.current;
       void call<Review[]>({ kind: "pending" })
         .then((value) => {
           if (
@@ -59,10 +64,14 @@ export default function IncomingCommands({
             )
           )
             throw new Error("invalid navigation");
-          if (active) setReviews(value);
+          if (active && generation === readGeneration.current) {
+            setReviews(value);
+            setReadIssue("");
+          }
         })
         .catch(() => {
-          if (active) setIssue("다른 제품의 열기 요청을 확인하지 못했습니다.");
+          if (active && generation === readGeneration.current)
+            setReadIssue("다른 제품의 열기 요청을 확인하지 못했습니다.");
         });
     };
     void listen("suite-navigation", refresh)
@@ -74,23 +83,24 @@ export default function IncomingCommands({
         }
       })
       .catch(() => {
-        if (active) setIssue("제품 요청 알림을 연결하지 못했습니다.");
+        if (active) setReadIssue("제품 요청 알림을 연결하지 못했습니다.");
       });
     return () => {
       active = false;
+      readGeneration.current++;
       remove?.();
     };
-  }, [call, description]);
+  }, [call, description, available]);
   useEffect(() => {
-    if (!opening || opening.route !== route) return;
+    if (!available || !opening || opening.route !== route) return;
     const id = opening.id;
     setOpening(null);
     void call({ kind: "acknowledge", id }).catch(() =>
       setIssue("화면을 열었지만 요청 제품에 결과를 전달하지 못했습니다."),
     );
-  }, [call, opening, route]);
+  }, [call, opening, route, available]);
   const decide = async (review: Review, accept: boolean) => {
-    if (busy) return;
+    if (busy || !available) return;
     setBusy(true);
     setIssue("");
     try {
@@ -114,7 +124,7 @@ export default function IncomingCommands({
       setBusy(false);
     }
   };
-  if (!reviews.length && !issue) return null;
+  if (!available || (!reviews.length && !issue && !readIssue)) return null;
   return (
     <section aria-label="다른 제품의 열기 요청">
       {reviews.map((review) => (
@@ -140,6 +150,7 @@ export default function IncomingCommands({
           </button>
         </div>
       ))}
+      {readIssue && <p role="alert">{readIssue}</p>}
       {issue && <p role="alert">{issue}</p>}
     </section>
   );

@@ -11,6 +11,7 @@ import re
 import sys
 import zipfile
 from suite_release_contract import acceptance_config, manifest_assets, verify_archive
+from candidate_user_flow import verify_user_flow_evidence
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -45,6 +46,7 @@ def main() -> int:
     parser.add_argument("--prerelease", choices=("true", "false"))
     parser.add_argument("--repository")
     parser.add_argument("--workflow-run", type=int)
+    parser.add_argument("--require-user-flows", action="store_true")
     arguments = parser.parse_args()
 
     assets_directory = arguments.assets.resolve(strict=True)
@@ -108,6 +110,7 @@ def main() -> int:
             "workflowRun",
             "generatedAt",
             "assets",
+            "userFlowEvidence",
         }
         if (
             set(release) != expected_candidate_fields
@@ -133,6 +136,15 @@ def main() -> int:
             failures.append("candidate repository mismatch")
         if release.get("workflowRun") != arguments.workflow_run:
             failures.append("candidate workflow run mismatch")
+    if arguments.require_user_flows:
+        if arguments.artifact_kind != "candidate":
+            raise SystemExit("user-flow candidate gate only")
+        try:
+            receipt = verify_user_flow_evidence(arguments.release.parent / "user-flows.json", arguments.commit, release["assets"])
+            if release.get("userFlowEvidence") != receipt:
+                failures.append("candidate user-flow receipt mismatch")
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            failures.append(f"candidate user-flow evidence rejected: {error}")
     if release.get("targetCommit") != arguments.commit:
         failures.append("artifact target commit mismatch")
     if manifest.get("releaseTag") != arguments.tag:

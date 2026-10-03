@@ -67,8 +67,10 @@ export async function connect(port, child, deadline = performance.now() + 30_000
           state: disconnected || socket.readyState !== 1 ? "closed" : "open",
           closeCode,
         });
+        const subscribers = new Map();
         socket.addEventListener("message", ({ data }) => {
           const response = JSON.parse(data);
+          for (const listener of subscribers.get(response.method) ?? []) listener(response.params);
           const entry = pending.get(response.id);
           if (
             [
@@ -117,6 +119,15 @@ export async function connect(port, child, deadline = performance.now() + 30_000
         return {
           close: () => socket.close(),
           command,
+          onEvent(method, listener) {
+            let listeners = subscribers.get(method);
+            if (!listeners) {
+              listeners = new Set();
+              subscribers.set(method, listeners);
+            }
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
           connectionState,
           probeNewSession: () => observeFreshCdp(page.webSocketDebuggerUrl, child),
           async evaluate(expression, { timeoutMs = 10_000 } = {}) {

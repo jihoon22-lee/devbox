@@ -282,6 +282,8 @@ export const workspaceMessages: Record<WorkspaceIssue, string> = {
   project_provider_stale: unavailable,
   project_selection_required: "개요에서 작업할 프로젝트를 선택해 주세요.",
   query_cancelled: unavailable,
+  close_review_stale: "종료 요청이 변경되었습니다. 창 닫기를 다시 요청해 주세요.",
+  close_review_unavailable: "종료 검토를 준비하지 못했습니다. 다시 시도해 주세요.",
   recovery_preview_stale: "복구 대상이 변경되었습니다. 미리보기를 다시 확인해 주세요.",
   recovery_unavailable: "저장된 복구 내용을 확인하지 못했습니다.",
   referenced_worktree: unavailable,

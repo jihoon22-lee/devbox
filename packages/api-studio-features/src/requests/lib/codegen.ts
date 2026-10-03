@@ -51,8 +51,9 @@ function prepare(request: RequestTemplate, environment: EnvVariable[], placehold
   if (req.body_kind === "form") {
     const fields = new URLSearchParams();
     for (const line of body.split(/\r?\n/)) {
+      if (!line.trim() || line.trimStart().startsWith("#")) continue;
       const at = line.indexOf("=");
-      if (at >= 0) fields.append(line.slice(0, at), line.slice(at + 1));
+      fields.append((at < 0 ? line : line.slice(0, at)).trim(), at < 0 ? "" : line.slice(at + 1));
     }
     body = editableReferences(fields.toString());
   }

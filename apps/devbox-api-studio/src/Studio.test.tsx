@@ -40,10 +40,15 @@ it("keeps the actual request draft through protocol and webhook navigation witho
     await vi.dynamicImportSettled();
   });
   await screen.findByText("Webhook Lab");
+  fireEvent.change(screen.getByLabelText("path"), { target: { value: "/webhook-draft" } });
   fireEvent.click(within(nav).getByRole("button", { name: /^요청$/ }));
   expect(((await screen.findByPlaceholderText("https://api.example.com/users")) as HTMLInputElement).value).toBe(
     "http://127.0.0.1:9000/draft-only",
   );
+  expect(screen.getByLabelText("path").closest("[hidden]")).toBeTruthy();
+  fireEvent.click(within(nav).getByRole("button", { name: "웹훅 및 모의 서버" }));
+  expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/webhook-draft");
+  expect(screen.getByLabelText("path").closest("[hidden]")).toBeNull();
 }, 15_000);
 
 it("previews collections and History independently of the live request draft", async () => {

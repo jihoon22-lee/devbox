@@ -350,3 +350,17 @@ export function buildExportInput(startDate: string, endDate: string, format: Exp
     format,
   };
 }
+
+/** Day navigation includes Timeline; month navigation clamps to the destination month. */
+export function shiftActivityDate(date: Date, view: ViewTab, delta: number): Date {
+  const next = new Date(date);
+  if (view === "day" || view === "timeline") next.setDate(next.getDate() + delta);
+  else if (view === "week") next.setDate(next.getDate() + delta * 7);
+  else if (view === "month") {
+    const day = next.getDate();
+    next.setDate(1);
+    next.setMonth(next.getMonth() + delta);
+    next.setDate(Math.min(day, new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()));
+  }
+  return next;
+}

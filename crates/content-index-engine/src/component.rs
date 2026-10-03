@@ -8,7 +8,7 @@ struct Restoration(std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>
 /// connections. The domain keeps its existing filter and deepest-root rules.
 pub mod query {
     pub use crate::core::db::{
-        is_indexed_path, list_roots, search_content_with_filter,
+        is_indexed_path, list_roots, name_candidates_in_scope, search_content_with_filter,
         search_content_with_filter_in_scope, search_with_filter, search_with_filter_in_scope,
     };
     pub use crate::core::models::SearchFilter;

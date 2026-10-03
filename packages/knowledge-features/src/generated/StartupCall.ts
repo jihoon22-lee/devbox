@@ -2,5 +2,6 @@
 
 export type StartupCall =
   | { method: "status"; args: Record<symbol, never> }
+  | { method: "load_recovery"; args: Record<symbol, never> }
   | { method: "start_empty"; args: Record<symbol, never> }
   | { method: "continue_existing"; args: Record<symbol, never> };

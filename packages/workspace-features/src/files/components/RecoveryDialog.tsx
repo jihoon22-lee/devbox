@@ -17,6 +17,7 @@ import ChangeSetPreview, { type ChangeSetItem } from "./ChangeSetPreview";
 
 interface Props {
   onDone: (recovered: string[]) => void;
+  onRestore?: (entries: RecoveryEntry[]) => Promise<void>;
 }
 
 function readCurrentText(path: string): Promise<string> {
@@ -25,7 +26,7 @@ function readCurrentText(path: string): Promise<string> {
     .catch(() => "");
 }
 
-export default function RecoveryDialog({ onDone }: Props) {
+export default function RecoveryDialog({ onDone, onRestore }: Props) {
   const [items, setItems] = useState<ChangeSetItem[] | null>(null);
   const [paths, setPaths] = useState<RecoveryEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -62,7 +63,7 @@ export default function RecoveryDialog({ onDone }: Props) {
           }
           const current = preview ? preview.before : await readCurrentText(e.path);
           if (preview) approvals[e.path] = preview.previewId;
-          if (current === e.content) {
+          if (current === e.content && !e.encoding && !e.lineEnding) {
             if (preview) await cancelRecoveryPreview(preview.previewId);
             continue;
           }
@@ -109,6 +110,26 @@ export default function RecoveryDialog({ onDone }: Props) {
     setBusy(true);
     setError(null);
     try {
+      if (onRestore) {
+        const latest = await loadRecoveryState();
+        for (const entry of paths.filter((item) => selectedPaths.includes(item.path))) {
+          if (!latest.entries.some((item) => JSON.stringify(item) === JSON.stringify(entry)))
+            throw new Error("복구 내용이 변경되었습니다. 미리보기를 다시 확인해 주세요.");
+          if (isProductHosted()) {
+            const fresh = await prepareRecovery(entry.path);
+            try {
+              const original = items?.find((item) => item.path === entry.path);
+              if (fresh.before !== original?.before || fresh.after !== entry.content)
+                throw new Error("원본 파일이 변경되었습니다. 미리보기를 다시 확인해 주세요.");
+            } finally {
+              await cancelRecoveryPreview(fresh.previewId);
+            }
+          }
+        }
+        await onRestore(paths.filter((entry) => selectedPaths.includes(entry.path)));
+        onDone([]);
+        return;
+      }
       const recovered: string[] = [];
       for (const e of paths) {
         if (selectedPaths.includes(e.path)) {

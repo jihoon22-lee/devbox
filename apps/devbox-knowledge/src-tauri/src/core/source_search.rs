@@ -354,6 +354,9 @@ impl Work {
             return Err("search_cancelled".into());
         }
         job.snapshot.partial = capped || candidates.iter().any(|row| row.index_stale);
+        if capped {
+            job.snapshot.bounds["partialCause"] = serde_json::json!("candidateLimit");
+        }
         job.snapshot.rows = candidates
             .iter()
             .map(|item| Row {

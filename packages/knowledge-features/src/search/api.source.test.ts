@@ -49,3 +49,23 @@ it("sends only an opaque reference to product openers", async () => {
   await revealFile("C:/renderer/substituted.exe", "issued-reference");
   expect(mocks.invoke).toHaveBeenLastCalledWith("reveal_file", { reference: "issued-reference" });
 });
+
+it("passes explicit nameCandidates intent without converting regex to literal FTS", async () => {
+  mocks.invoke.mockResolvedValue({
+    generation: "regex-query",
+    storeGeneration: "store",
+    source: "files",
+    state: "complete",
+    partial: false,
+    bounds: {},
+    rows: [],
+  });
+  await searchSource("files", "foo|bar", "nameCandidates", 2000, {}, new AbortController().signal, () => {});
+  expect(mocks.invoke).toHaveBeenCalledWith("source_query", {
+    source: "files",
+    query: "foo|bar",
+    mode: "nameCandidates",
+    limit: 2000,
+    filter: {},
+  });
+});

@@ -127,6 +127,9 @@ where
     deny_unknown_fields
 )]
 pub enum DraftDelivery {
+    Regenerate {
+        handoff_id: String,
+    },
     Prepare {
         input: crate::core::digest::DigestInput,
         regenerated_from: Option<String>,
@@ -142,6 +145,11 @@ pub async fn draft_delivery(
 ) -> Result<serde_json::Value, String> {
     use tauri::Manager;
     match call {
+        DraftDelivery::Regenerate { handoff_id } => {
+            let state = app.state::<std::sync::Arc<crate::commands::tracking::AppState>>();
+            let input = crate::commands::handoff::historical_input(&state, &handoff_id)?;
+            crate::commands::handoff::prepare_product_draft(state, input, Some(handoff_id)).await
+        }
         DraftDelivery::Prepare {
             input,
             regenerated_from,
@@ -162,4 +170,18 @@ pub fn tracking_status(app: &tauri::AppHandle) -> Option<bool> {
     use tauri::Manager;
     app.try_state::<std::sync::Arc<crate::commands::tracking::AppState>>()
         .map(|state| state.tracking.load(std::sync::atomic::Ordering::Acquire))
+}
+
+pub async fn regenerate_product_draft<F>(
+    app: &tauri::AppHandle,
+    handoff_id: String,
+    deliver: F,
+) -> Result<serde_json::Value, String>
+where
+    F: FnOnce(&devbox_applink::OpenRequest) -> Result<(), String> + Send,
+{
+    use tauri::Manager;
+    let state = app.state::<std::sync::Arc<crate::commands::tracking::AppState>>();
+    let input = crate::commands::handoff::historical_input(&state, &handoff_id)?;
+    send_product_draft_typed(app, input, Some(handoff_id), deliver).await
 }

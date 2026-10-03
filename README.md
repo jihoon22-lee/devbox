@@ -11,9 +11,10 @@ Windows용 네 제품을 제공하는 Tauri v2·React·Rust 모노레포입니�
 
 ## 다운로드와 설치
 
-현재 공개 안정판은 [v0.9.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)입니다.
-[설치 파일 다운로드](https://github.com/jihoon22-lee/devbox/releases/download/v0.9.0/Devbox_0.9.0_x64-setup.exe) ·
-[릴리스 검증 근거](docs/release-evidence.md) · [출시 후 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)
+이 소스는 2026-10-03에 철회한 첫 v0.9.0의 설치·UI 문제를 수정한 버전입니다.
+실제 다운로드 가능한 버전은 [GitHub Releases](https://github.com/jihoon22-lee/devbox/releases),
+변경 범위와 검증 근거는 [현재 계획](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)과
+[릴리스 근거](docs/release-evidence.md)에서 확인하세요.
 
 Suite 배포는 `Devbox_0.9.0_x64-setup.exe` 하나와 제품별 portable ZIP 네 개,
 `release-manifest.json`, `THIRD_PARTY_NOTICES.md`로 구성됩니다. ZIP은 폴더 전체를
@@ -30,6 +31,6 @@ Release에서 setup을 직접 받아 실행하고, 기존 설치 폴더와 데�
 - [Windows 설치·이전·복구](docs/windows-guide.md)
 - [제품과 내부 모듈](docs/projects.md) · [아키텍처](docs/architecture.md)
 - [개발](docs/development.md) · [공통 규약](CONVENTIONS.md)
-- [v0.8 수용 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md) · [개선 로드맵](docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md)
-- [릴리스 정책](docs/release-policy.md) · [현재 준비 상태와 릴리스 근거](docs/release-evidence.md)
+- [v0.8 수용 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md) · [개선 로드맵](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)
+- [릴리스 정책](docs/release-policy.md) · [릴리스 상태와 검증 근거](docs/release-evidence.md)
 - [v0.7 역사적 제품·배포 안내](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/README.md)

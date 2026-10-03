@@ -7,10 +7,10 @@ vi.mock("@devbox/product-shell/api", () => ({ nativeMode: true }));
 vi.mock("@devbox/knowledge-features/transport", () => ({ componentInvoke: () => invoke }));
 afterEach(cleanup);
 it("explains background collection without a close-to-tray switch or implicit consent", async () => {
+  invoke.mockResolvedValue({ owner: "installedAgent", tracking: true, consent: true });
   const { container } = render(<LifecycleSettings />);
-  expect(screen.getByText(/설치본은 창을 닫아도/)).toBeTruthy();
-  expect(screen.getByText(/portable은 창을 닫으면/)).toBeTruthy();
+  expect(await screen.findByText(/설치본은 창을 닫아도/)).toBeTruthy();
   expect(screen.queryByRole("checkbox")).toBeNull();
-  expect(invoke).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("lifecycle_status", {});
   await assertNoA11yViolations(container);
 });

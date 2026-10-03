@@ -267,6 +267,8 @@ export type WorkspaceIssue =
   | "project_selection_required"
   | "query_cancelled"
   | "recovery_preview_stale"
+  | "close_review_stale"
+  | "close_review_unavailable"
   | "recovery_unavailable"
   | "referenced_worktree"
   | "registry_changed_after_save"

@@ -4,6 +4,7 @@ import type { NoteView } from "./noteDocument";
 
 class FakeDocument {
   view: NoteView = {
+    documentGeneration: 0,
     sourceVersion: 0,
     path: "a.md",
     content: "",

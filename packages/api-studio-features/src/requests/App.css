@@ -3241,3 +3241,30 @@
   overflow-wrap: anywhere;
   margin-block: 8px;
 }
+
+/* Preserve reachable request controls inside the Suite's remaining content area. */
+.api-feature-requests .content {
+  min-width: 0;
+  overflow: auto;
+}
+.api-feature-requests .request-bar,
+.api-feature-requests .tabs,
+.api-feature-requests .transfer-actions {
+  flex-wrap: wrap;
+}
+.api-feature-requests .url-input {
+  min-width: 160px;
+}
+.api-feature-requests .transfer-actions .btn {
+  flex: 1 0 80px;
+  white-space: normal;
+  word-break: keep-all;
+}
+@media (max-width: 900px) {
+  .api-feature-requests .sidebar {
+    width: 190px;
+  }
+  .api-feature-requests .request-bar {
+    padding: 10px;
+  }
+}

@@ -20,6 +20,8 @@ default = []
 
 
 [dependencies]
+chrono = { workspace = true }
+chrono-tz = "0.10"
 product-ipc = { workspace = true }
 ts-rs = { workspace = true }
 tauri = { workspace = true }

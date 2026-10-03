@@ -1,5 +1,6 @@
+import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { useCallback, useMemo, useEffect, useState } from "react";
+import { useCallback, useMemo, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { typedComponentCall } from "./native";
@@ -31,17 +32,29 @@ export default function Terminal({ description, registry }: { description: Descr
   const [sessions, setSessions] = useState<Session[]>([]);
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState("");
+  const [retry, setRetry] = useState<(() => Promise<void>) | null>(null);
+  const contextKey = JSON.stringify(description.context);
+  const currentContext = useRef(contextKey);
+  currentContext.current = contextKey;
+  const safeIssue = (cause: unknown, fallback: string) =>
+    cause instanceof WorkspaceOperationError ? cause.message : fallback;
   const call = useMemo(
     () => typedComponentCall<WorkspaceTerminalCall, TerminalResults>(description, "workspace.terminal", "terminal"),
     [description],
   );
   const refresh = useCallback(async () => {
+    const key = contextKey;
     const [sessions, commands] = await Promise.all([call("terminal_sessions", {}), call("terminal_commands", {})]);
+    if (currentContext.current !== key) return;
     setSessions(sessions);
     setCommands(commands);
-  }, [call]);
+    setIssue("");
+  }, [call, contextKey]);
   useEffect(() => {
     let current = true;
+    setIssue("");
+    setRetry(null);
+    setBusy(false);
     void Promise.all([call("terminal_sessions", {}), call("terminal_commands", {})])
       .then(([sessions, commands]) => {
         if (current) {
@@ -85,31 +98,44 @@ export default function Terminal({ description, registry }: { description: Descr
   }, [incoming, call, clearIncoming]);
 
   const action = async (operation: () => Promise<unknown>) => {
+    const key = contextKey;
     setBusy(true);
     setIssue("");
     try {
       await operation();
-      await refresh();
-    } catch {
-      setIssue("터미널 작업을 완료하지 못했습니다. 상태를 새로 고친 뒤 다시 확인해 주세요.");
+      if (currentContext.current === key) await refresh();
+    } catch (cause) {
+      if (currentContext.current === key)
+        setIssue(safeIssue(cause, "터미널 작업을 완료하지 못했습니다. 상태를 새로 고친 뒤 다시 확인해 주세요."));
     } finally {
-      setBusy(false);
+      if (currentContext.current === key) setBusy(false);
     }
   };
   const open = async () => {
     const key = `workspace-terminal-open:${description.handshake.installationId}:${JSON.stringify(description.context)}`;
+    const keyContext = contextKey;
+    let confirmed = false;
     setBusy(true);
+    setRetry(null);
     setIssue("");
     try {
       const operationId = sessionStorage.getItem(key) ?? crypto.randomUUID();
       sessionStorage.setItem(key, operationId);
       await call("open_terminal", { operationId });
       sessionStorage.removeItem(key);
-      await refresh();
-    } catch {
-      setIssue("터미널 열기를 완료하지 못했습니다. 같은 요청으로 다시 확인할 수 있습니다.");
+      confirmed = true;
+      if (currentContext.current === keyContext) await refresh();
+    } catch (cause) {
+      if (currentContext.current === keyContext) {
+        setIssue(
+          confirmed
+            ? "터미널 열림을 확인했으나 목록을 확인하지 못했습니다. 상태 새로고침을 눌러 주세요."
+            : safeIssue(cause, "터미널 열기를 완료하지 못했습니다. 같은 요청으로 다시 확인할 수 있습니다."),
+        );
+        if (!confirmed) setRetry(() => open);
+      }
     } finally {
-      setBusy(false);
+      if (currentContext.current === keyContext) setBusy(false);
     }
   };
   const openProfile = async () => {
@@ -117,23 +143,35 @@ export default function Terminal({ description, registry }: { description: Descr
     if (!profile || busy) return;
     const key =
       "workspace-terminal-profile:" + JSON.stringify(description.context) + ":" + profile.id + ":" + profile.revision;
+    const keyContext = contextKey;
+    let confirmed = false;
     setBusy(true);
+    setRetry(null);
     setIssue("");
     try {
       const operationId = sessionStorage.getItem(key) ?? crypto.randomUUID();
       sessionStorage.setItem(key, operationId);
       await call("open_terminal_profile", { operationId, profileId: profile.id, revision: profile.revision });
       sessionStorage.removeItem(key);
-      await refresh();
-    } catch {
-      setIssue("프로필이 바뀌었거나 창을 열지 못했습니다. 목록을 새로 고친 뒤 다시 확인해 주세요.");
+      confirmed = true;
+      if (currentContext.current === keyContext) await refresh();
+    } catch (cause) {
+      if (currentContext.current === keyContext) {
+        setIssue(
+          confirmed
+            ? "프로필 터미널 열림을 확인했으나 목록을 확인하지 못했습니다. 상태 새로고침을 눌러 주세요."
+            : safeIssue(cause, "프로필이 바뀌었거나 창을 열지 못했습니다. 목록을 새로 고친 뒤 다시 확인해 주세요."),
+        );
+        if (!confirmed) setRetry(() => openProfile);
+      }
     } finally {
-      setBusy(false);
+      if (currentContext.current === keyContext) setBusy(false);
     }
   };
   const summon = async (session: Session) => {
     if (busy) return;
     const key = "workspace-terminal-summon:" + session.id;
+    const keyContext = contextKey;
     setBusy(true);
     setIssue("");
     try {
@@ -149,10 +187,13 @@ export default function Terminal({ description, registry }: { description: Descr
       sessionStorage.setItem(key, JSON.stringify(request));
       await call("summon_terminal", request);
       sessionStorage.removeItem(key);
-    } catch {
-      setIssue("창 전환을 확인하지 못했습니다. 같은 요청으로 다시 확인할 수 있습니다.");
+    } catch (cause) {
+      if (currentContext.current === keyContext) {
+        setIssue(safeIssue(cause, "창 전환을 확인하지 못했습니다. 같은 요청으로 다시 확인할 수 있습니다."));
+        setRetry(() => () => summon(session));
+      }
     } finally {
-      setBusy(false);
+      if (currentContext.current === keyContext) setBusy(false);
     }
   };
   const restore = async (session: Session) => {
@@ -163,18 +204,29 @@ export default function Terminal({ description, registry }: { description: Descr
       session.id +
       ":" +
       session.restoreGeneration;
+    const keyContext = contextKey;
+    let confirmed = false;
     setBusy(true);
+    setRetry(null);
     setIssue("");
     try {
       const operationId = sessionStorage.getItem(key) ?? crypto.randomUUID();
       sessionStorage.setItem(key, operationId);
       await call("restore_terminal", { id: session.id, operationId, expectedGeneration: session.restoreGeneration });
       sessionStorage.removeItem(key);
-      await refresh();
-    } catch {
-      setIssue("재연결을 확인하지 못했습니다. 같은 요청으로 다시 확인하거나 목록을 새로 고쳐 주세요.");
+      confirmed = true;
+      if (currentContext.current === keyContext) await refresh();
+    } catch (cause) {
+      if (currentContext.current === keyContext) {
+        setIssue(
+          confirmed
+            ? "터미널 재연결을 확인했으나 목록을 확인하지 못했습니다. 상태 새로고침을 눌러 주세요."
+            : safeIssue(cause, "재연결을 확인하지 못했습니다. 같은 요청으로 다시 확인하거나 목록을 새로 고쳐 주세요."),
+        );
+        if (!confirmed) setRetry(() => () => restore(session));
+      }
     } finally {
-      setBusy(false);
+      if (currentContext.current === keyContext) setBusy(false);
     }
   };
   return (
@@ -188,14 +240,19 @@ export default function Terminal({ description, registry }: { description: Descr
       <button
         disabled={busy}
         onClick={() => {
+          const key = contextKey;
           setIssue("");
           setBusy(true);
           void refresh()
-            .catch(() => setIssue("터미널 세션 목록을 읽지 못했습니다."))
-            .finally(() => setBusy(false));
+            .catch((cause) => {
+              if (currentContext.current === key) setIssue(safeIssue(cause, "터미널 세션 목록을 읽지 못했습니다."));
+            })
+            .finally(() => {
+              if (currentContext.current === key) setBusy(false);
+            });
         }}
       >
-        새로 고침
+        상태 새로고침
       </button>
       <label>
         저장한 프로필{" "}
@@ -216,9 +273,14 @@ export default function Terminal({ description, registry }: { description: Descr
       </button>
       {!description.context && <p>프로젝트 선택 없이도 터미널과 배포판을 사용할 수 있습니다.</p>}
       {issue && <p role="alert">{issue}</p>}
+      {retry && (
+        <button type="button" disabled={busy} onClick={() => void retry()}>
+          동일 요청 다시 확인
+        </button>
+      )}
       <ul>
-        {sessions.map((session) => (
-          <li key={session.id}>
+        {sessions.map((session, index) => (
+          <li key={session.id} aria-label={`${index + 1}번째 터미널`}>
             <span>
               {session.context
                 ? `${registry?.projects.find((project) => project.id === session.context?.projectId)?.name ?? "연결되지 않은 프로젝트"} · ${registry?.worktrees.find((tree) => tree.id === session.context?.worktreeId)?.binding.root ?? "작업 폴더 확인 필요"}`

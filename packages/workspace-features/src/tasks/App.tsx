@@ -1403,6 +1403,13 @@ export default function App({
         ) : null}
 
         <RuntimeRecovery
+          onTarget={(receipt) => {
+            if (receipt.method.includes("service")) setScreen("services");
+            else {
+              setScreen("jobs");
+              if (jobs.some((job) => job.id === receipt.targetId)) setSelectedJobId(receipt.targetId);
+            }
+          }}
           active={visible}
           busy={busy}
           onReviewed={() => {

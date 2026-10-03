@@ -135,6 +135,7 @@ export function JobSection({
             return (
               <article
                 className={`job-card ${selectedJobId === job.id ? "selected" : ""}`}
+                aria-label={job.name}
                 key={job.id}
                 tabIndex={0}
                 aria-current={selectedJobId === job.id ? "true" : undefined}

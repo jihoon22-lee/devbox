@@ -1,3 +1,4 @@
+import type { JournalView } from "./JournalView";
 import type { StartupStatus } from "./StartupStatus";
 import type { VaultJob } from "./VaultJob";
 import type { VaultJobStarted } from "./VaultJobStarted";
@@ -5,6 +6,7 @@ import type { VaultScheduleView } from "./VaultScheduleView";
 
 export type SetupResults = {
   status: StartupStatus;
+  load_recovery: JournalView;
   start_empty: StartupStatus;
   continue_existing: StartupStatus;
   vault_change_status: VaultScheduleView;

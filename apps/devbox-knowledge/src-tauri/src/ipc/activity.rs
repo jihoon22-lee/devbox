@@ -79,6 +79,18 @@ pub async fn activity(window: WebviewWindow, request: IncomingRequest) -> Result
                 .await
             }
         }
+        KnowledgeActivityCall::Engine(ActivityCall::RegenerateKnowledgeDraft { handoff_id }) => {
+            if crate::collector_owner::installed(app)
+                .map_err(|_| admission.problem(ProblemCode::Unavailable))?
+            {
+                crate::collector_owner::send_draft(app, args, request.header.deadline_ms).await
+            } else {
+                activity_engine::component::regenerate_product_draft(app, handoff_id, |draft| {
+                    knowledge_vault_engine::component::offer_product_draft(app, draft)
+                })
+                .await
+            }
+        }
         KnowledgeActivityCall::Engine(call) => {
             let method = call.method();
             crate::collector_owner::call(

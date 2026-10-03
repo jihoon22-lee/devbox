@@ -4,6 +4,7 @@ import type { NoteView } from "./noteDocument";
 
 class FakeDocument {
   view: NoteView = {
+    documentGeneration: 0,
     sourceVersion: 0,
     path: "a.md",
     content: "saved",
@@ -45,9 +46,9 @@ function fixture() {
   const error = vi.fn();
   return { doc, api, error, journal: new NoteJournal(doc, api, error) };
 }
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 describe("ordered recovery journal", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
   it("records the latest input once typing pauses", async () => {
     const { doc, api, journal } = fixture();
     doc.set({ content: "a", dirty: true });
@@ -111,7 +112,7 @@ describe("ordered recovery journal", () => {
     expect(doc.view.content).toBe("draft");
     journal.dispose();
   });
-  it("only clears owned drafts after an approved switch", async () => {
+  it("retains owned drafts after an approved switch", async () => {
     const { doc, api, journal } = fixture();
     doc.set({ path: "b.md", content: "other" });
     await journal.settled();
@@ -120,7 +121,7 @@ describe("ordered recovery journal", () => {
     await journal.settled();
     doc.set({ path: "c.md", content: "third", dirty: false });
     await journal.settled();
-    expect(api.clear).toHaveBeenCalledExactlyOnceWith("b.md");
+    expect(api.clear).not.toHaveBeenCalled();
     journal.dispose();
   });
   it.each(["journal_limit", Object.assign(new Error("limit"), { name: "journal_limit" })])(
@@ -179,4 +180,45 @@ describe("ordered recovery journal", () => {
     expect(api.save).toHaveBeenLastCalledWith("a.md", "during save", "r2");
     journal.dispose();
   });
+});
+
+it("flushes pending old document bytes before a switch instead of recording the new document", async () => {
+  const { doc, api, journal } = fixture();
+  doc.set({ content: "old draft", dirty: true });
+  doc.set({ path: "b.md", content: "other", dirty: false, documentGeneration: 1 });
+  await journal.settled();
+  expect(api.save).toHaveBeenCalledWith("a.md", "old draft", "r1");
+  expect(api.clear).not.toHaveBeenCalled();
+  journal.dispose();
+});
+
+it("permanent quit drains pending work and prevents late timers from recreating only the selected entry", async () => {
+  const { doc, api, journal } = fixture();
+  doc.set({ content: "permanent draft", dirty: true });
+  await journal.prepareQuit(true);
+  await vi.advanceTimersByTimeAsync(5000);
+  doc.set({ content: "late", dirty: true });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(api.clear).toHaveBeenCalledExactlyOnceWith("a.md");
+  expect(api.save).not.toHaveBeenCalled();
+  journal.dispose();
+});
+it("keep quit records debounced content and permanent discard failure rejects quit", async () => {
+  const { doc, api, journal } = fixture();
+  doc.set({ content: "kept", dirty: true });
+  await journal.prepareQuit();
+  expect(api.save).toHaveBeenCalledWith("a.md", "kept", "r1");
+  journal.resume();
+  api.clear.mockRejectedValueOnce(new Error("offline"));
+  await expect(journal.prepareQuit(true)).rejects.toThrow("offline");
+  journal.dispose();
+});
+
+it("drains the latest buffer on lazy-view disposal and retains a serialized quit drain", async () => {
+  const { doc, api, journal } = fixture();
+  doc.set({ content: "unmounted draft", dirty: true });
+  journal.dispose();
+  await journal.prepareQuit();
+  expect(api.save).toHaveBeenLastCalledWith("a.md", "unmounted draft", "r1");
+  expect(api.clear).not.toHaveBeenCalled();
 });

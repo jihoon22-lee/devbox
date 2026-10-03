@@ -77,8 +77,15 @@ export default function Content(props: ShellContentProps) {
     return (
       <Suspense fallback={<p role="status">설치 상태를 불러오고 있습니다…</p>}>
         <Inventory {...props} />
-        <Recovery {...props} />
-        <Health {...props} />
+        {props.route === "recovery" ? (
+          <Recovery {...props} />
+        ) : (
+          <section aria-label="설치 준비">
+            <h2>사용 준비를 완료해 주세요</h2>
+            <p>저장소 준비와 활성화는 설치 안내에서 이어갈 수 있습니다.</p>
+            <button onClick={() => props.navigate("recovery")}>설치 안내 계속</button>
+          </section>
+        )}
       </Suspense>
     );
   return (
@@ -94,7 +101,6 @@ export default function Content(props: ShellContentProps) {
         {props.route === "recovery" ? (
           <>
             <Recovery {...props} />
-            <Health {...props} />
             <Tools route={props.route} />
           </>
         ) : ["environment", "diagnostics", "tools"].includes(props.route) ? (

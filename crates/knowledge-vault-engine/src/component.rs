@@ -15,7 +15,15 @@ pub fn configure_document_helper(directory: std::path::PathBuf, digest: &'static
     crate::platform::document_wsl::configure(directory, digest, bytes);
 }
 
-pub use crate::core::db::product_search as search_projection;
+pub use crate::core::db::{
+    product_name_candidates as name_candidates_projection, product_search as search_projection,
+};
+pub use crate::core::journal::JournalView as RecoveryView;
+
+/// Native selected-store recovery only; no source access or watcher startup.
+pub fn load_offline_recovery(directory: &std::path::Path) -> Result<RecoveryView, String> {
+    crate::commands::journal::NoteJournalStore::load_offline(directory)
+}
 
 /// Cached health only; a disconnected WSL vault is never probed on the IPC thread.
 pub fn product_index_health(app: &tauri::AppHandle) -> (bool, bool) {
@@ -124,6 +132,11 @@ pub fn initialize(
     let journal = Arc::new(crate::commands::journal::NoteJournalStore::new(
         dir.join("note-journal.json"),
     ));
+    if let Ok(root) = crate::commands::docs::resolve_root(&conn) {
+        if let Ok(vault) = crate::core::vault::VaultIdentity::inspect(&root) {
+            journal.remember_validated(&conn, &root, vault.canonical_path())?;
+        }
+    }
     app.manage(journal.clone());
     let state = Arc::new(AppState {
         journal,

@@ -82,7 +82,27 @@ it("keeps a pending restore visible and prevents starting a second snapshot or r
 it("offers the clean activation path for a prepared new installation", async () => {
   respond(null, { phase: "import", committed: false, recordedOwners: 4, clean: true, freshHealth: false });
   render(<Restore description={fixtureDescription("control-center")} route="recovery" />);
-  expect(await screen.findByRole("button", { name: "신규 설치 활성화 준비" })).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "다음 단계" }));
+  expect(screen.getByRole("heading", { name: "신규 설치 활성화 준비" })).toBeTruthy();
   expect(screen.queryByText("이전 검토를 반영한 설치 확정")).toBeNull();
   expect(screen.queryByText("데이터를 보존하고 이전 검토로 돌아가기")).toBeNull();
+});
+
+it("keeps product launch and fresh health recording reachable during reinstall", async () => {
+  respond(null, {
+    phase: "health",
+    committed: false,
+    recordedOwners: 4,
+    clean: false,
+    freshHealth: false,
+    reinstall: true,
+  } as never);
+  render(
+    <Restore description={{ ...fixtureDescription("control-center"), deliveryState: "health" }} route="recovery" />,
+  );
+  expect(await screen.findByRole("button", { name: "Devbox Knowledge 열기" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "상태 기록" })).toBeTruthy();
+  expect((screen.getByRole("button", { name: "보존된 데이터로 재설치 확정" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
 });

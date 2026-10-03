@@ -283,7 +283,7 @@ export type SourceSnapshot = import("../generated/SourceSnapshot").SourceSnapsho
 export async function searchSource(
   source: SearchSource,
   query: string,
-  mode: "name" | "content",
+  mode: "name" | "content" | "nameCandidates",
   limit: number,
   filter: SearchFilter,
   signal: AbortSignal,
@@ -292,9 +292,11 @@ export async function searchSource(
   if (!isTauri()) {
     const rows =
       source === "files"
-        ? mode === "name"
-          ? await searchFiles(query, limit, filter)
-          : await searchContent(query, limit, filter)
+        ? mode === "nameCandidates"
+          ? MOCK_FILES.filter((file) => matchesFilter(file, filter)).slice(0, limit)
+          : mode === "name"
+            ? await searchFiles(query, limit, filter)
+            : await searchContent(query, limit, filter)
         : [];
     const snapshot: SourceSnapshot = {
       generation: "fixture",

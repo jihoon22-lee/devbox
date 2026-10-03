@@ -1,3 +1,4 @@
+import { isImeComposing } from "@devbox/a11y";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   filterQuickOpenFiles,
@@ -109,6 +110,7 @@ export default function QuickOpen({
             setSelected(0);
           }}
           onKeyDown={(event) => {
+            if (isImeComposing(event)) return;
             if (event.key === "Escape") {
               event.preventDefault();
               onClose();

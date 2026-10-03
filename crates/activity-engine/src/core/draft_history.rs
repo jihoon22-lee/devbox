@@ -268,7 +268,6 @@ pub fn remove(conn: &Connection, handoff_id: &str) -> Result<bool, String> {
     Ok(changed == 1)
 }
 
-#[cfg(test)]
 pub fn get(conn: &Connection, handoff_id: &str) -> Result<Option<DraftHistoryEntry>, String> {
     if !valid_handoff_id(handoff_id) {
         return Err("draft 이력 ID가 올바르지 않습니다".into());

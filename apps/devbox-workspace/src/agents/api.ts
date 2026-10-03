@@ -1,3 +1,4 @@
+import type { TransitionGuard } from "../contextTransition";
 import { currentDescription } from "@devbox/product-shell/api";
 import type { AgentsCall } from "@devbox/workspace-features/generated/AgentsCall";
 import type { AgentsResults } from "@devbox/workspace-features/generated/agents-results";
@@ -16,7 +17,12 @@ export function call<T>(
 ): Promise<T> {
   return nativeCall(`workspace.${component}`, method, args, "agents");
 }
-export function nativePorts(refreshContext: () => Promise<void>, installationId: string): FlowPorts {
+export function nativePorts(
+  refreshContext: () => Promise<void>,
+  installationId: string,
+  transition?: TransitionGuard,
+  refreshRegistry?: () => Promise<Registry>,
+): FlowPorts {
   const creationKey = (id: string) => `${installationId}:workspace-agent-worktree:${id}`;
   return {
     agents: {
@@ -47,13 +53,25 @@ export function nativePorts(refreshContext: () => Promise<void>, installationId:
     registry: {
       previewWsl: (distroId, root) => call("registry", "preview_wsl", { distroId, root, startStopped: false }),
       cancel: (previewId) => call("registry", "cancel_registration", { previewId }),
-      apply: (previewId, name) => call("registry", "apply_registration", { previewId, name, action: "register" }),
-      select: (context) => call("registry", "select_project", { context }),
+      apply: (previewId, name) => {
+        const apply = () =>
+          call<{ context: import("@devbox/product-shell/api").ProjectContext }>("registry", "apply_registration", {
+            previewId,
+            name,
+            action: "register",
+          });
+        return transition ? transition(apply) : apply();
+      },
+      select: (context) => {
+        const select = () => call("registry", "select_project", { context });
+        return transition ? transition(select) : select();
+      },
     },
     terminal: {
       openAgentTerminal: (operationId, taskId) => call("terminal", "open_agent_terminal", { operationId, taskId }),
     },
     refreshContext,
+    refreshRegistry,
     currentContext: async () => (await currentDescription("workspace")).context ?? null,
     operationId: (key) => {
       const storageKey = `${installationId}:${key}`;

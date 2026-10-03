@@ -55,7 +55,7 @@ export async function createWorkspaceLspProxy() {
   };
 }
 
-async function downloadArchive(artifact, destination) {
+export async function downloadArchive(artifact, destination) {
   const expected = artifact.size_bytes;
   assert.ok(Number.isSafeInteger(expected) && expected > 0 && expected <= 64 * 1024 * 1024);
   const hosts = new Set(["github.com", "release-assets.githubusercontent.com", "registry.npmjs.org"]);

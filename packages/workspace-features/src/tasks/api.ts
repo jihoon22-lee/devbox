@@ -4,7 +4,7 @@ import type { WorkspaceRuntimeCall } from "../generated/WorkspaceRuntimeCall";
 import type { ControlAction } from "../generated/ControlAction";
 import type { RuntimeResults } from "../generated/runtime-results";
 import type { ControlResults } from "../generated/control-results";
-import { isRuntimeControl, submitRuntimeControl } from "./runtimeControls";
+import { isRuntimeControl, submitRuntimeControl, reconcileCompletedControls } from "./runtimeControls";
 const rawInvoke = componentInvoke("workspace.runtime");
 const nativeInvoke = typedCall<WorkspaceRuntimeCall, RuntimeResults>("workspace.runtime");
 const invoke = bindTypedCall<WorkspaceRuntimeCall | ControlAction, RuntimeResults & ControlResults>((method, args) =>
@@ -12,6 +12,9 @@ const invoke = bindTypedCall<WorkspaceRuntimeCall | ControlAction, RuntimeResult
     ? submitRuntimeControl(rawInvoke, method, args)
     : rawInvoke(method, args),
 );
+export function reconcileRuntimeControls() {
+  return isProductHosted() ? reconcileCompletedControls(rawInvoke) : Promise.resolve([]);
+}
 export type RuntimeControlReceipt = import("../generated/RuntimeControlReceipt").RuntimeControlReceipt;
 export function listRuntimeControls(): Promise<RuntimeControlReceipt[]> {
   return isProductHosted() ? nativeInvoke("list_runtime_controls", {}) : Promise.resolve([]);

@@ -184,7 +184,17 @@ mod tests {
         )
         .is_err());
         assert!(processes::routes_for("kill_listener").is_empty());
-        assert!(commands::METHODS.is_empty());
+        assert_eq!(
+            commands::METHODS,
+            &["prepare_close", "confirm_close", "cancel_close"]
+        );
+        for method in ["write_session", "open_terminal", "kill_listener"] {
+            assert!(commands::routes_for(method).is_empty());
+            assert!(serde_json::from_value::<commands::CommandsCall>(
+                serde_json::json!({"method":method,"args":{}})
+            )
+            .is_err());
+        }
     }
     #[test]
     fn body_limits_bound_aggregate_payload_without_serializing_it() {
@@ -516,6 +526,8 @@ pub(crate) async fn execute_admitted(
     };
     let mut result = if let Err(issue) = retired {
         Err(issue)
+    } else if let Call::Commands(call) = request.typed {
+        commands::dispatch(&window, &runtime, call)
     } else if files && request.method == "send_editor_selection" {
         drop(request.typed);
         crate::selection_send::send(

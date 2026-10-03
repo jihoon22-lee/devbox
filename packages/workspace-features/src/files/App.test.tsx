@@ -23,6 +23,8 @@ import {
   loadRecovery,
   loadRecoveryState,
   applyRecovery,
+  saveRecovery,
+  discardRecovery,
   saveSession,
   openFile,
   openLspDocument,
@@ -161,6 +163,7 @@ vi.mock("./api", () => ({
   saveSession: vi.fn().mockResolvedValue(undefined),
   loadRecovery: vi.fn().mockResolvedValue([]),
   loadRecoveryState: vi.fn().mockResolvedValue({ entries: [] }),
+  saveRecovery: vi.fn().mockResolvedValue(undefined),
   applyRecovery: vi.fn().mockResolvedValue(undefined),
   discardRecovery: vi.fn().mockResolvedValue(undefined),
   canonicalizeWorkspace: vi.fn(),
@@ -371,6 +374,8 @@ beforeEach(() => {
   vi.mocked(loadRecovery).mockReset().mockResolvedValue([]);
   vi.mocked(loadRecoveryState).mockReset().mockResolvedValue({ entries: [] });
   vi.mocked(saveSession).mockReset().mockResolvedValue(undefined);
+  vi.mocked(saveRecovery).mockReset().mockResolvedValue(undefined);
+  vi.mocked(discardRecovery).mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset();
   saveFileMock.mockReset();
   validateEncodingMock.mockReset().mockResolvedValue(undefined);
@@ -1451,7 +1456,38 @@ it("opens an imported recovery path after applying its reviewed contents", async
   const view = render(<App />);
   fireEvent.click(await view.findByRole("button", { name: "복구 (1)" }));
   await waitFor(() => expect(view.getByTestId(`doc-text-${path}`).textContent).toBe("recovered"));
-  expect(vi.mocked(applyRecovery)).toHaveBeenCalledWith(path, "recovered");
+  expect(vi.mocked(applyRecovery)).not.toHaveBeenCalled();
+  expect(vi.mocked(discardRecovery)).not.toHaveBeenCalled();
   expect(watchFileMock).toHaveBeenCalledWith(path);
   expect(view.queryByRole("button", { name: "복구 (1)" })).toBeNull();
+});
+
+it("writes real edits with metadata to the native recovery owner before close", async () => {
+  openFileMock.mockResolvedValue(openedFile("before"));
+  let actions: { flush(): Promise<void> } | null = null;
+  const view = render(
+    <App
+      onCloseActions={(value) => {
+        actions = value;
+      }}
+    />,
+  );
+  await waitFor(() => expect(view.getByLabelText("열 파일 경로")).toBeDefined());
+  fireEvent.change(view.getByLabelText("열 파일 경로"), { target: { value: "/tmp/one.ts" } });
+  fireEvent.click(view.getByRole("button", { name: "파일 열기" }));
+  fireEvent.click(await view.findByRole("button", { name: "edit /tmp/one.ts" }));
+  await act(async () => {
+    await actions?.flush();
+  });
+  expect(vi.mocked(saveRecovery)).toHaveBeenCalledWith(
+    [
+      expect.objectContaining({
+        path: "/tmp/one.ts",
+        content: "before!",
+        encoding: { encodingKind: "utf8", bom: false },
+        lineEnding: "lf",
+      }),
+    ],
+    undefined,
+  );
 });

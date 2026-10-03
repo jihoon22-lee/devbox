@@ -176,7 +176,7 @@ export function missingVariables(request: RequestTemplate, available: Set<string
     ...request.cookies.filter((cookie) => cookie.enabled !== false).map((cookie) => cookie.value),
     ...request.params.flatMap((param) => [param.key, param.value]),
   ];
-  if (request.body_kind !== "multipart") values.push(request.body);
+  if (["json", "form", "raw"].includes(request.body_kind)) values.push(request.body);
   if (request.body_kind === "graphql" && request.graphql)
     values.push(request.graphql.query, request.graphql.variables, request.graphql.operation_name);
   if (request.body_kind === "multipart")
@@ -188,14 +188,9 @@ export function missingVariables(request: RequestTemplate, available: Set<string
     if (config.grantType === "authorizationCode") values.push(config.authorizationUrl);
     values.push(config.tokenUrl, config.clientId, config.clientSecret, config.scopes);
   }
-  if (request.auth)
-    values.push(
-      request.auth.username,
-      request.auth.password,
-      request.auth.token,
-      request.auth.api_key,
-      request.auth.api_value,
-    );
+  if (request.auth?.kind === "basic") values.push(request.auth.username, request.auth.password);
+  if (request.auth?.kind === "bearer") values.push(request.auth.token);
+  if (request.auth?.kind === "apikey") values.push(request.auth.api_key, request.auth.api_value);
   const missing = new Set<string>();
   for (const value of values)
     for (const match of value.matchAll(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}|\$\{\s*([A-Za-z0-9_.-]+)\s*\}/g)) {

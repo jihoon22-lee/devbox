@@ -191,6 +191,11 @@ where
         // payload behind.  A launch race can still leave an expiring pending
         // item, which contains only the bounded summary and is retryable.
         draft_history::validate_regenerated_from(regenerated_from.as_deref())?;
+        let input = if let Some(id) = regenerated_from.as_deref() {
+            historical_input(&state, id)?
+        } else {
+            input
+        };
         if require_installation {
             return Err("Knowledge 앱을 실행할 수 없습니다".into());
         }
@@ -518,6 +523,23 @@ pub(crate) fn finish_product_draft(
         record.updated_at_ms.max(entry.updated_at_ms),
     )
 }
+/// Expired delivery descriptors may regenerate while their bounded historical
+/// summary remains valid. A missing/corrupt entry is an explicit failure.
+pub(crate) fn historical_input(state: &AppState, id: &str) -> Result<DigestInput, String> {
+    let conn = state.db.lock().map_err(|_| "draft_history_invalid")?;
+    let entry = draft_history::get(&conn, id)
+        .map_err(|_| "draft_history_invalid")?
+        .ok_or("draft_history_missing")?;
+    crate::core::digest::input_from_history(&entry.summary)
+}
+pub async fn regenerate_knowledge_draft(
+    state: tauri::State<'_, Arc<AppState>>,
+    handoff_id: String,
+) -> Result<SendKnowledgeDraftResult, String> {
+    let input = historical_input(&state, &handoff_id)?;
+    send_digest_to_knowledge(state, input, Some(handoff_id)).await
+}
+
 #[cfg(test)]
 mod delivery_tests {
     use super::*;

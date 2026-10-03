@@ -1763,3 +1763,93 @@ mod tests {
         );
     }
 }
+
+/// Reconstruct historical civil boundaries natively; renderer dates never
+/// reinterpret a saved history timezone or application filter.
+pub fn input_from_history(
+    summary: &crate::core::handoff::KnowledgeDraftSummary,
+) -> Result<DigestInput, String> {
+    use chrono::{NaiveDate, TimeZone};
+    let invalid = || "draft_history_invalid".to_owned();
+    crate::core::handoff::validate_summary(summary).map_err(|_| invalid())?;
+    let timezone: chrono_tz::Tz = summary.timezone.parse().map_err(|_| invalid())?;
+    let start =
+        NaiveDate::parse_from_str(&summary.start_date, "%Y-%m-%d").map_err(|_| invalid())?;
+    let end = NaiveDate::parse_from_str(&summary.end_date, "%Y-%m-%d").map_err(|_| invalid())?;
+    let midnight = |day: NaiveDate| -> Result<i64, String> {
+        // A small number of IANA zones skip local midnight. Use the first
+        // valid local minute of that civil day; folds use the earlier instant.
+        for minute in 0..180 {
+            let clock = day
+                .and_hms_opt(minute / 60, minute % 60, 0)
+                .ok_or_else(invalid)?;
+            if let Some(value) = timezone.from_local_datetime(&clock).earliest() {
+                return Ok(value.timestamp_millis());
+            }
+        }
+        Err(invalid())
+    };
+    let mut boundaries = Vec::new();
+    let mut day = start;
+    while day <= end {
+        if boundaries.len() >= MAX_DIGEST_DAYS {
+            return Err(invalid());
+        }
+        let next = day.succ_opt().ok_or_else(invalid)?;
+        boundaries.push(ExportDayBoundary {
+            date: day.format("%Y-%m-%d").to_string(),
+            start_ms: midnight(day)?,
+            end_ms: midnight(next)?,
+        });
+        day = next;
+    }
+    let input = DigestInput {
+        start_date: summary.start_date.clone(),
+        end_date: summary.end_date.clone(),
+        timezone: summary.timezone.clone(),
+        day_start: boundaries.first().ok_or_else(invalid)?.start_ms,
+        day_end: boundaries.last().ok_or_else(invalid)?.end_ms,
+        day_boundaries: boundaries,
+        period: match summary.period.as_str() {
+            "day" => DigestPeriod::Day,
+            "week" => DigestPeriod::Week,
+            "month" => DigestPeriod::Month,
+            _ => return Err(invalid()),
+        },
+        filter: DigestFilter {
+            app: summary.filter.clone(),
+        },
+    };
+    validate_input(&input).map_err(|_| invalid())?;
+    Ok(input)
+}
+
+#[cfg(test)]
+mod history_boundary_tests {
+    use super::*;
+    fn summary(date: &str, timezone: &str) -> crate::core::handoff::KnowledgeDraftSummary {
+        crate::core::handoff::KnowledgeDraftSummary {
+            period: "day".into(),
+            start_date: date.into(),
+            end_date: date.into(),
+            timezone: timezone.into(),
+            filter: Some("Editor".into()),
+            pc_usage_ms: 0,
+            session_count: 0,
+            active_days: 0,
+            total_days: 1,
+            average_daily_usage_ms: 0,
+            git_commits: 0,
+            top_app: None,
+        }
+    }
+    #[test]
+    fn historical_timezone_dst_and_filter_are_authoritative() {
+        let spring = input_from_history(&summary("2026-03-08", "America/New_York")).unwrap();
+        assert_eq!(spring.day_end - spring.day_start, 23 * 60 * 60 * 1000);
+        assert_eq!(spring.filter.app.as_deref(), Some("Editor"));
+        let autumn = input_from_history(&summary("2026-11-01", "America/New_York")).unwrap();
+        assert_eq!(autumn.day_end - autumn.day_start, 25 * 60 * 60 * 1000);
+        assert!(input_from_history(&summary("2026-11-01", "invalid-zone")).is_err());
+    }
+}

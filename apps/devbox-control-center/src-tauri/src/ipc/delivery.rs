@@ -89,6 +89,7 @@ impl RestoreAction {
 pub enum DeliveryAction {
     SuiteInventory {},
     OpenInstallationFolder {},
+    OpenSetupProduct { product: String },
     SuiteRecovery {},
     RestoreInventory {},
     RestoreAction { action: RestoreAction, id: String },
@@ -99,6 +100,7 @@ impl DeliveryAction {
         match self {
             Self::SuiteInventory { .. } => "suite_inventory",
             Self::OpenInstallationFolder { .. } => "open_installation_folder",
+            Self::OpenSetupProduct { .. } => "open_setup_product",
             Self::SuiteRecovery { .. } => "suite_recovery",
             Self::RestoreInventory { .. } => "restore_inventory",
             Self::RestoreAction { .. } => "restore_action",
@@ -129,6 +131,7 @@ impl ComponentCall for DeliveryCall {
                 DeliveryAction::RestoreInventory {} | DeliveryAction::RestoreAction { .. },
             ) => &["updates", "recovery", "products"],
             Self::Action(DeliveryAction::RecordSuiteHealth { .. }) => &["updates", "recovery"],
+            Self::Action(DeliveryAction::OpenSetupProduct { .. }) => &["recovery"],
             Self::Action(DeliveryAction::OpenInstallationFolder {}) => &["products"],
             _ => &["products", "updates", "components", "recovery"],
         }
@@ -146,9 +149,10 @@ impl DeliveryCall {
         match self {
             Self::Update(call) => call.id().is_none_or(product_contract::commands::revision),
             Self::Action(DeliveryAction::RestoreAction { action, id }) => action.valid_id(id),
-            Self::Action(DeliveryAction::RecordSuiteHealth { product }) => {
-                product_contract::installation::PRODUCTS.contains(&product.as_str())
-            }
+            Self::Action(
+                DeliveryAction::RecordSuiteHealth { product }
+                | DeliveryAction::OpenSetupProduct { product },
+            ) => product_contract::installation::PRODUCTS.contains(&product.as_str()),
             _ => true,
         }
     }
@@ -255,6 +259,21 @@ async fn dispatch(
             .await
             .map_err(|_| "suite_store_unavailable".to_string())
             .and_then(|v| v.map_err(str::to_owned))
+        }
+        DeliveryCall::Action(DeliveryAction::OpenSetupProduct { product }) => {
+            #[cfg(windows)]
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                crate::bootstrap::interactive::open_setup_product(&product)
+            })
+            .await
+            .map_err(|_| "bootstrap_launch_failed")
+            .and_then(|v| v);
+            #[cfg(not(windows))]
+            let result: Result<Value, &'static str> = {
+                let _ = product;
+                Err("suite_windows_required")
+            };
+            result.map_err(str::to_owned)
         }
         DeliveryCall::Action(DeliveryAction::OpenInstallationFolder {}) => {
             let app = app.clone();
@@ -530,6 +549,10 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
             "open_installation_folder",
             export.register::<InstallationOpened>()?,
         ),
+        (
+            "open_setup_product",
+            export.register::<InstallationOpened>()?,
+        ),
         ("suite_recovery", export.register::<RecoveryStatus>()?),
         ("restore_inventory", export.register::<RestoreInventory>()?),
         ("restore_action", export.register::<DeliveryAccepted>()?),
@@ -548,6 +571,24 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
 #[cfg(test)]
 mod validation_tests {
     use super::*;
+    #[test]
+    fn setup_launch_accepts_only_fixed_products_on_the_visible_recovery_route() {
+        for (product, valid) in [
+            ("workspace", true),
+            ("api-studio", true),
+            ("knowledge", true),
+            ("control-center", true),
+            ("../private.exe", false),
+            ("cmd.exe", false),
+        ] {
+            let call: DeliveryCall = serde_json::from_value(
+                serde_json::json!({"method":"open_setup_product","args":{"product":product}}),
+            )
+            .unwrap();
+            assert_eq!(call.valid(), valid);
+            assert_eq!(call.routes(), &["recovery"]);
+        }
+    }
     #[test]
     fn restore_requests_cannot_substitute_paths_or_noncanonical_ids() {
         for (action, id, accepted) in [

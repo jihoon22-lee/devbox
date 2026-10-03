@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { baseEditorExtensions, markdownEditorExtensions } from "@devbox/editor";
 import { defaultKeymap } from "@codemirror/commands";
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { readClipboardImage, readClipboardText } from "../api";
 import {
@@ -22,6 +22,7 @@ import { setWikilinkOccurrences, wikilinkEditorExtensions } from "./wikilinkEdit
 // LSP는 넣지 않는다 (knowledge-base는 노트 앱이다).
 interface Props {
   value: string;
+  documentGeneration?: number;
   onChange: (text: string) => void;
   onSave: () => void;
   onError: (message: string | null) => void;
@@ -36,6 +37,7 @@ interface Props {
 
 export default function MarkdownEditor({
   value,
+  documentGeneration = 0,
   onChange,
   onSave,
   onError,
@@ -54,6 +56,10 @@ export default function MarkdownEditor({
   const imageBusyRef = useRef(false);
   const imageTokenRef = useRef(0);
   const mountedRef = useRef(true);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const generationRef = useRef(documentGeneration);
+  generationRef.current = documentGeneration;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
@@ -84,25 +90,31 @@ export default function MarkdownEditor({
     [hasSelection, imageBusy],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
   useEffect(() => {
     if (!mountRef.current) return;
+    const generation = documentGeneration;
     mountedRef.current = true;
+    imageBusyRef.current = false;
+    setImageBusy(false);
     const view = new EditorView({
       state: EditorState.create({
-        doc: value,
+        doc: valueRef.current,
         extensions: [
+          EditorView.contentAttributes.of({ "aria-label": "Markdown 본문" }),
           baseEditorExtensions(),
           markdownEditorExtensions(),
           wikilinkEditorExtensions(
             (query) => loadCandidatesRef.current?.(query) ?? Promise.resolve([]),
-            (path) => navigateWikilinkRef.current?.(path),
+            (path) => {
+              if (generation === generationRef.current) navigateWikilinkRef.current?.(path);
+            },
           ),
           keymap.of([
             ...defaultKeymap,
             {
               key: "Mod-s",
               run: () => {
+                if (generation !== generationRef.current) return false;
                 onSaveRef.current();
                 return true;
               },
@@ -201,7 +213,7 @@ export default function MarkdownEditor({
             },
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged && !syncingValueRef.current) {
+            if (generation === generationRef.current && update.docChanged && !syncingValueRef.current) {
               onChangeRef.current(update.state.doc.toString());
             }
           }),
@@ -216,8 +228,8 @@ export default function MarkdownEditor({
       view.destroy();
       viewRef.current = null;
     };
-    // 마운트 수명은 컴포넌트 수명과 같다 (파일 전환은 value 동기화로 처리)
-  }, []);
+    // A new source owns a new state, selection, history, and async insert lifetime.
+  }, [documentGeneration]);
 
   // 외부 값 동기화 (파일 전환/저장 취소)
   useEffect(() => {
@@ -225,7 +237,10 @@ export default function MarkdownEditor({
     if (!view || view.state.doc.toString() === value) return;
     syncingValueRef.current = true;
     try {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+        annotations: Transaction.addToHistory.of(false),
+      });
     } finally {
       syncingValueRef.current = false;
     }
@@ -306,6 +321,8 @@ export default function MarkdownEditor({
   const runAction = async (id: string) => {
     const view = viewRef.current;
     if (!view) return;
+    const generation = generationRef.current;
+    const current = () => viewRef.current === view && generationRef.current === generation;
     if (id === "paste" && imageBusyRef.current) {
       onErrorRef.current(IMAGE_BUSY_ERROR);
       return;
@@ -315,7 +332,7 @@ export default function MarkdownEditor({
       const text = selectedText(view.state);
       if (!text) return;
       await navigator.clipboard.writeText(text);
-      if (id === "cut") view.dispatch(removeSelectedText(view.state));
+      if (id === "cut" && current()) view.dispatch(removeSelectedText(view.state));
       return;
     }
     if (id === "paste") {
@@ -336,12 +353,13 @@ export default function MarkdownEditor({
           // remains the explicit fallback when the capability is absent.
         }
       }
+      if (!current()) return;
       if (image) {
         await importImageRef.current(image);
         return;
       }
       const text = await readClipboardText();
-      view.dispatch(view.state.replaceSelection(text));
+      if (current()) view.dispatch(view.state.replaceSelection(text));
       return;
     }
     if (id === "insert-link") {

@@ -1,3 +1,15 @@
+import {
+  indent,
+  isMarkdown,
+  normalizeRelativePath,
+  parentPath,
+  childPath,
+  isSameOrChild,
+  utf8Bytes,
+  draftNeedsRegeneration,
+  remapPath,
+  watcherStatusLabel,
+} from "./noteHelpers";
 import { useUndo } from "@devbox/product-shell/undo";
 import { undoCreated } from "./undoCreated";
 import { usePolling } from "@devbox/hooks";
@@ -80,64 +92,6 @@ const WIKILINK_DEBOUNCE_MS = 220;
 const MAX_DRAFT_TITLE_BYTES = 256;
 const MAX_DRAFT_BODY_BYTES = 512 * 1024;
 
-function indent(path: string): number {
-  return path.split("/").length - 1;
-}
-
-function isMarkdown(path: string | null): boolean {
-  return !!path && path.endsWith(".md");
-}
-
-function normalizeRelativePath(path: string): string {
-  return path.trim().replace(/\\/g, "/").replace(/\/+/g, "/");
-}
-
-function parentPath(path: string): string {
-  const separator = path.lastIndexOf("/");
-  return separator < 0 ? "" : path.slice(0, separator);
-}
-
-function childPath(parent: string, name: string): string {
-  return parent ? `${parent}/${name}` : name;
-}
-
-function isSameOrChild(path: string | null, parent: string): boolean {
-  return path === parent || path?.startsWith(`${parent}/`) === true;
-}
-
-function utf8Bytes(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
-}
-
-function draftNeedsRegeneration(cause: unknown): boolean {
-  return cause instanceof Error && cause.name === "draft_stale";
-}
-
-function remapPath(path: string | null, from: string, to: string): string | null {
-  if (path === from) return to;
-  if (path?.startsWith(`${from}/`)) return `${to}${path.slice(from.length)}`;
-  return path;
-}
-
-function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
-  const source = status.sourceKind === "wsl" ? "WSL 저장소 · 5초 폴링" : "Windows 저장소 · 실시간 감시";
-  const error =
-    status.error === "watcher_state_poisoned"
-      ? "색인 중단 · 앱을 다시 시작하세요"
-      : status.error === "vault_unconfigured"
-        ? "저장소 미설정"
-        : status.error === "vault_unavailable"
-          ? "저장소 연결 끊김 · 마지막 색인 유지"
-          : status.error === "vault_scan_limit"
-            ? "안전 색인 한도 초과 · 마지막 색인 유지"
-            : status.error === "vault_scan_incomplete"
-              ? "일부 파일 읽기 실패 · 마지막 색인 유지"
-              : status.error === "vault_index_failed"
-                ? "색인 갱신 실패 · 마지막 색인 유지"
-                : null;
-  return error ? `${source} · ${error}` : source;
-}
-
 export default function App({
   active = true,
   onActivate,
@@ -187,6 +141,7 @@ export default function App({
   const [wikilinks, setWikilinks] = useState<WikilinkOccurrence[]>([]);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [showBacklinks, setShowBacklinks] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(true);
   const [metadataRevision, setMetadataRevision] = useState(0);
   const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
   const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
@@ -312,7 +267,25 @@ export default function App({
     });
     autosaveRef.current = autosave;
     journalRef.current = journal;
-    const release = editorDocument.setBeforeSwitch(() => autosave.flush());
+    const release = editorDocument.setBeforeSwitch(async () => {
+      await autosave.flush();
+      await journal.settled();
+    });
+    // Keep the last document-owned drain after lazy Notes unmount/failure. A new
+    // Notes mount replaces it; the shared journal queue preserves write order.
+    editorDocument.setQuitHooks({
+      prepare: async (permanent) => {
+        const generation = editorDocument.snapshot().documentGeneration;
+        autosave.suspend();
+        await editorDocument.settleBeforeQuit();
+        if (editorDocument.snapshot().documentGeneration !== generation) throw new Error("document changed");
+        await journal.prepareQuit(permanent);
+      },
+      resume: () => {
+        journal.resume();
+        autosave.resume();
+      },
+    });
     const onBlur = () => {
       if (!recoveryBusyRef.current) void autosave.flush();
     };
@@ -1201,7 +1174,7 @@ export default function App({
           {notice}
         </div>
       )}
-      <aside className="sidebar" inert={recoveryBusy}>
+      <aside id="notes-sidebar" className="sidebar" hidden={!showSidebar} inert={recoveryBusy}>
         <h1 className="app-title">Knowledge</h1>
         {watcherStatus && (
           <p
@@ -1283,10 +1256,20 @@ export default function App({
                   </button>
                   {!t.is_dir && (
                     <span className="tree-actions">
-                      <button className="mini" title="이름 변경" onClick={() => void rename(t.path)}>
+                      <button
+                        className="mini"
+                        aria-label={`${t.path.split("/").pop()} 이름 변경`}
+                        title="이름 변경"
+                        onClick={() => void rename(t.path)}
+                      >
                         ✎
                       </button>
-                      <button className="mini" title="삭제" onClick={() => void remove(t.path)}>
+                      <button
+                        className="mini"
+                        aria-label={`${t.path.split("/").pop()} 삭제`}
+                        title="삭제"
+                        onClick={() => void remove(t.path)}
+                      >
                         ✕
                       </button>
                     </span>
@@ -1314,6 +1297,14 @@ export default function App({
       </aside>
 
       <main className="content">
+        <button
+          className="btn small notes-sidebar-toggle"
+          aria-controls="notes-sidebar"
+          aria-expanded={showSidebar}
+          onClick={() => setShowSidebar((value) => !value)}
+        >
+          {showSidebar ? "노트 목록 접기" : "노트 목록 열기"}
+        </button>
         <RecoveryControls
           document={editorDocument}
           autosave={autosaveRef}
@@ -1421,8 +1412,9 @@ export default function App({
                   {mode !== "preview" && (
                     <MarkdownEditor
                       value={content}
+                      documentGeneration={note.documentGeneration}
                       onChange={(text) => {
-                        if (!recoveryBusyRef.current) editorDocument.edit(text);
+                        if (!recoveryBusyRef.current) editorDocument.edit(text, note.documentGeneration);
                       }}
                       onSave={() => void save()}
                       onError={setError}

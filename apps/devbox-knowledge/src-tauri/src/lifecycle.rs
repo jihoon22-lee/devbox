@@ -46,6 +46,7 @@ pub fn quit_dispatch_typed(
     let state = app.state::<Lifecycle>();
     let mut review = state.quit.lock().map_err(|_| "quit_unavailable")?;
     match call {
+        crate::ipc::commands::QuitCall::LifecycleStatus {} => Err("quit_unavailable".into()),
         crate::ipc::commands::QuitCall::PendingQuit {} => Ok(serde_json::json!(review.pending)),
         crate::ipc::commands::QuitCall::DecideQuit { id, quit } => {
             review.decide(&id, quit)?;
@@ -106,4 +107,53 @@ mod tests {
         assert!(review.approved);
         assert!(review.decide(&next, true).is_err());
     }
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectorStatus {
+    pub owner: CollectorOwner,
+    pub tracking: Option<bool>,
+    pub consent: Option<bool>,
+}
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum CollectorOwner {
+    InstalledAgent,
+    PortableLocal,
+    Unknown,
+}
+pub async fn collector_status(app: &tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let owner = match crate::collector_owner::installed(app) {
+        Ok(true) => CollectorOwner::InstalledAgent,
+        Ok(false) => CollectorOwner::PortableLocal,
+        Err(_) => CollectorOwner::Unknown,
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "quit_unavailable")?
+        .as_millis() as u64;
+    let status = crate::collector_owner::call(
+        app,
+        "knowledge.activity",
+        "collection_status",
+        serde_json::json!({}),
+        now.saturating_add(5000),
+    )
+    .await
+    .ok();
+    let tracking = status
+        .as_ref()
+        .and_then(|value| value.get("tracking"))
+        .and_then(serde_json::Value::as_bool);
+    let consent = status
+        .as_ref()
+        .and_then(|value| value.get("consent"))
+        .and_then(serde_json::Value::as_bool);
+    serde_json::to_value(CollectorStatus {
+        owner,
+        tracking,
+        consent,
+    })
+    .map_err(|_| "quit_unavailable".into())
 }

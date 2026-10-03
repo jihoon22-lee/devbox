@@ -81,7 +81,7 @@ export default function Recovery({ description, route }: ShellContentProps) {
         !error && <p role="status">복구 기록을 확인하고 있습니다…</p>
       )}
       {["products", "updates", "recovery", "migration"].includes(route) && (
-        <Restore description={description} route={route} />
+        <Restore description={description} route={route} recovery={status ?? { state: "none" }} />
       )}
     </section>
   );

@@ -10,10 +10,29 @@ use serde::Deserialize;
     deny_unknown_fields
 )]
 #[ts(optional_fields = nullable)]
-pub enum CommandsCall {}
-pub const METHODS: &[&str] = &[];
-pub fn routes_for(_method: &str) -> &'static [&'static str] {
-    &[]
+pub enum CommandsCall {
+    PrepareClose {},
+    ConfirmClose { nonce: String },
+    CancelClose { nonce: String },
+}
+pub const METHODS: &[&str] = &["prepare_close", "confirm_close", "cancel_close"];
+pub fn routes_for(method: &str) -> &'static [&'static str] {
+    if METHODS.contains(&method) {
+        &[
+            "overview",
+            "files",
+            "source",
+            "dependencies",
+            "tasks",
+            "runtime",
+            "logs",
+            "terminal",
+            "agents",
+            "problems",
+        ]
+    } else {
+        &[]
+    }
 }
 impl ComponentCall for CommandsCall {
     const COMPONENT: &'static str = "workspace.commands";
@@ -23,7 +42,11 @@ impl ComponentCall for CommandsCall {
         super::bounded_arguments(args, Self::MAX_ARGUMENT_BYTES)
     }
     fn method(&self) -> &'static str {
-        match *self {}
+        match self {
+            Self::PrepareClose {} => "prepare_close",
+            Self::ConfirmClose { .. } => "confirm_close",
+            Self::CancelClose { .. } => "cancel_close",
+        }
     }
     fn routes(&self) -> &'static [&'static str] {
         routes_for(self.method())
@@ -62,11 +85,49 @@ pub fn result_types(
     export: &mut product_ipc::TypeExporter<'_>,
 ) -> Result<Vec<(&'static str, String)>, String> {
     export.register::<CommandsCall>()?;
-    let mut results = Vec::new();
+    let mut results = vec![
+        (
+            "prepare_close",
+            export.register::<crate::core::close_review::CloseRequest>()?,
+        ),
+        ("confirm_close", "null".into()),
+        ("cancel_close", "null".into()),
+    ];
     results.retain(|(method, _)| METHODS.contains(method));
     results.sort_by_key(|(method, _)| *method);
     Ok(results)
 }
 pub fn deadline_budget_for(method: &str) -> u64 {
     super::deadlines::budget("workspace.commands", method)
+}
+
+pub(crate) fn dispatch(
+    window: &tauri::WebviewWindow,
+    runtime: &crate::component::Runtime,
+    call: CommandsCall,
+) -> Result<serde_json::Value, &'static str> {
+    use tauri::Manager;
+    if window.label() != "main" {
+        return Err("close_review_unavailable");
+    }
+    let context = product_shell_tauri::workspace_context(window)?;
+    let mut review = runtime
+        .close_review
+        .lock()
+        .map_err(|_| "close_review_unavailable")?;
+    match call {
+        CommandsCall::PrepareClose {} => {
+            serde_json::to_value(review.request(context)).map_err(|_| "close_review_unavailable")
+        }
+        CommandsCall::CancelClose { nonce } => {
+            review.cancel(&nonce)?;
+            Ok(serde_json::Value::Null)
+        }
+        CommandsCall::ConfirmClose { nonce } => {
+            review.confirm(&nonce, context.as_ref())?;
+            drop(review);
+            window.app_handle().exit(0);
+            Ok(serde_json::Value::Null)
+        }
+    }
 }

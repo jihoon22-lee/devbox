@@ -1,9 +1,15 @@
 # Release evidence index
 
-## v0.9.0 — 현재 공개 stable
+## v0.9.0 — 수정본 확인과 철회 이력
+
+2026-10-03 설치/UI 문제로 Release와 공개 자산을 삭제했다. #580은 NOT_PLANNED로 닫혔다.
+수정본의 최종 source SHA·후보 run·수용 결과는 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)와 연결된 통합 PR·Actions artifact가 원장이다. 이 문서에 적힌 아래 결과는 **철회본의 역사적 자동 검사 결과**이며 수정본의 PASS로 재사용하지 않는다.
+[현재 실행 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)을 따른다.
+
+### 철회 전 공개 이력
 
 [Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)는 `2026-10-03T05:31:16Z`에 공개됐으며
-Latest=true, draft=false, prerelease=false다.
+당시 Latest=true, draft=false, prerelease=false였다. 현재는 철회됐다.
 
 - source: `e499ac7127269bf67863bf0fdc42eaf53236b9f3`.
 - annotated tag object: `f31f111977956bd665cd432accdf54677444027f`.
@@ -21,7 +27,7 @@ Latest=true, draft=false, prerelease=false다.
 - [공개 근거와 7개 SHA-256](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5966029569),
   [후보 상세 근거](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5965966427)를 보존한다.
 
-### 알려진 제한과 실사용 추적
+### 철회 당시 제한과 미완료 실사용 추적(역사 기록)
 
 - 공개 v0.8.1 reader는 새 Knowledge helper·agent 구성요소를 거부한다. v0.9.0은
   Release의 setup을 직접 받아 실행한다. 중간 호환 릴리스나 manifest 검증 우회는 하지 않았다.
@@ -30,7 +36,7 @@ Latest=true, draft=false, prerelease=false다.
   제보/추적으로 전환했다. 자동 수용 결과와 구분하며, 미실행을 PASS로 기록하지 않는다.
 - #613은 npm 경고 12건을 0건으로 줄이고 캡처 보기 경쟁 상태를 RED→GREEN으로 수정했다.
   공개 전 전체 코드 검토·회귀·CI/PF 근거는 해당 PR에 있다. 이전 startup/Source와 Chromium
-  시작 일회 지연의 최초 OS 원인은 미확정이며, 재발하면 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에서 추적한다.
+  시작 일회 지연의 최초 OS 원인은 당시 미확정으로 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에 남겼다. 현재 재정비에서는 새 수용 근거를 별도로 확보한다.
 - 이전 source `444a82e4`의 [후보 36489337168](https://github.com/jihoon22-lee/devbox/actions/runs/36489337168)는
   이후 의존성/코드 변경으로 승격 대상에서 제외했다. 그 성공을 이번 source의 근거로 재사용하지 않았다.
 

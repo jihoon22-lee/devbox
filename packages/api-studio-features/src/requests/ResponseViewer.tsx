@@ -52,6 +52,7 @@ export function inspectResponseSelection(
 }
 
 interface ResponseViewerProps {
+  previous?: boolean;
   assertionResults?: AssertionResult[];
   captured?: { variable: string; target: string }[];
   response: ApiResponse | null;
@@ -188,6 +189,7 @@ function BinaryResponseSummary({
 }
 
 export function ResponseViewer({
+  previous = false,
   assertionResults = [],
   captured = [],
   response,
@@ -393,6 +395,7 @@ export function ResponseViewer({
 
   return (
     <div className="response">
+      {previous && <p role="status">이전 요청의 응답입니다. 현재 요청의 결과가 아닙니다.</p>}
       <div className="response-head">
         <span className={`status-badge ${statusClass(response.status)}`}>
           {response.status} {response.status_text}

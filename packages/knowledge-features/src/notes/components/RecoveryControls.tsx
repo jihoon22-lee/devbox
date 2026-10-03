@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import ChangeSetPreview from "@devbox/diff-view";
 import {
   clearNoteJournal,
+  readFile,
+  writeFile,
+  createFile,
   discardOtherVaultJournal,
   loadNoteJournal,
   type NoteJournalEntry,
@@ -37,6 +40,8 @@ export default function RecoveryControls({
 }) {
   const note = useSyncExternalStore(document.subscribe, document.snapshot);
   const [view, setView] = useState<NoteJournalView>(empty);
+  const [preview, setPreview] = useState<NoteJournalEntry | null>(null);
+  const [missingRevision, setMissingRevision] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [error, setError] = useState("");
@@ -88,13 +93,22 @@ export default function RecoveryControls({
     changeBusy(true);
     setError("");
     setPending(null);
+    setPreview(entry);
+    setMissingRevision(null);
     setConfirmation(null);
     try {
       await journal.current?.settled();
       if (!current(request)) return;
       const before = document.snapshot();
-      const opened = await document.openPath(entry.path, () =>
-        confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"),
+      const disk = await readFile(entry.path);
+      if (!current(request) || document.snapshot().sourceVersion !== before.sourceVersion) return;
+      if (disk.content === null) {
+        setMissingRevision(disk.revision);
+        return;
+      }
+      const opened = await document.open(
+        async () => ({ ...disk, path: entry.path, content: disk.content! }),
+        () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"),
       );
       if (!current(request) || !opened) return;
       const after = document.snapshot();
@@ -102,10 +116,6 @@ export default function RecoveryControls({
       if (after.revision === entry.baseRevision) {
         document.edit(entry.content);
         journal.current?.adoptRestored(entry.path);
-        setView((previous) => ({
-          ...previous,
-          entries: previous.entries.filter((value) => value.path !== entry.path),
-        }));
       } else
         setPending({
           entry,
@@ -115,7 +125,10 @@ export default function RecoveryControls({
           revision: after.revision,
         });
     } catch {
-      if (current(request)) setError("복구본을 열지 못했습니다. 편집 내용과 복구본은 유지됩니다.");
+      if (current(request))
+        setError(
+          "원본에 연결할 수 없습니다. 복구본 본문을 확인하거나 복사할 수 있으며 복원은 연결 후 다시 시도해 주세요.",
+        );
     } finally {
       if (current(request)) changeBusy(false);
     }
@@ -129,8 +142,40 @@ export default function RecoveryControls({
     autosave.current?.pause();
     document.edit(pending.entry.content);
     journal.current?.adoptRestored(pending.path);
-    setView((previous) => ({ ...previous, entries: previous.entries.filter((entry) => entry.path !== pending.path) }));
+
     setPending(null);
+  };
+  const restore = async (anotherName: boolean) => {
+    if (!preview || busyRef.current) return;
+    const entry = preview;
+    const target = anotherName ? prompt("복원할 새 노트 이름 (.md)", entry.path)?.trim() : entry.path;
+    if (!target || (!anotherName && !missingRevision)) return;
+    if (!confirm(`${target}에 복구본을 복원할까요? 기존 파일은 덮어쓰지 않습니다.`)) return;
+    const request = ++generation.current;
+    const source = document.snapshot().sourceVersion;
+    changeBusy(true);
+    setError("");
+    try {
+      await journal.current?.settled();
+      const latest = await loadNoteJournal();
+      if (!current(request) || !latest.entries.some((value) => sameEntry(value, entry))) throw new Error("stale");
+      if (anotherName) await createFile(target, entry.content);
+      else {
+        const saved = await writeFile(target, entry.content, missingRevision!);
+        if (saved.saveOutcome && saved.saveOutcome.state !== "applied") throw new Error("unconfirmed");
+      }
+      await clearNoteJournal(entry.path);
+      if (!current(request)) return;
+      setPreview(null);
+      setMissingRevision(null);
+      await reload();
+      if (document.snapshot().sourceVersion === source && !document.unsaved())
+        await document.openPath(target, () => true);
+    } catch {
+      if (current(request)) setError("복원을 완료하지 못했습니다. 원본과 복구본을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      if (alive.current) changeBusy(false);
+    }
   };
   const discard = async () => {
     if (!confirmation || busyRef.current) return;
@@ -189,6 +234,35 @@ export default function RecoveryControls({
         onDiscard={(entry) => setConfirmation({ kind: "entry", entry })}
         onDiscardOther={() => setConfirmation({ kind: "other", count: view.otherVaultCount })}
       />
+      {preview && (
+        <section role="region" aria-label="복구본 본문">
+          <p>{preview.path} — 저장된 복구본입니다. 복사나 편집 적용만으로 복구본을 삭제하지 않습니다.</p>
+          <pre>{preview.content}</pre>
+          <button
+            disabled={busy}
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(preview.content)
+                .catch(() => setError("복구본을 복사하지 못했습니다."));
+            }}
+          >
+            복구본 복사
+          </button>
+          {missingRevision && (
+            <button disabled={busy} onClick={() => void restore(false)}>
+              삭제된 노트 재생성
+            </button>
+          )}
+          {missingRevision && (
+            <button disabled={busy} onClick={() => void restore(true)}>
+              다른 이름으로 복원
+            </button>
+          )}
+          <button disabled={busy} onClick={() => setPreview(null)}>
+            복구본 본문 닫기
+          </button>
+        </section>
+      )}
       {confirmation && (
         <section role="region" aria-label="복구본 삭제 확인">
           <p>

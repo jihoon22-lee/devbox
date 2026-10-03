@@ -203,6 +203,7 @@ jobs:
             --artifact-kind candidate \
             --assets candidate/assets \
             --release candidate/evidence/candidate-metadata.json \
+            --require-user-flows \
             --config .github/scripts/windows-packaged-smoke-config.json \
             --tag "$TAG" \
             --commit "$EXPECTED_COMMIT" \

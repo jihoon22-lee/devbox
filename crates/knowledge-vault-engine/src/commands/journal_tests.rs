@@ -173,3 +173,41 @@ fn journal_wire_inputs_cannot_select_a_foreign_vault() {
         .is_ok());
     }
 }
+
+#[test]
+fn fresh_process_uses_only_native_persisted_recovery_scope_when_source_is_offline() {
+    let dir = tempfile::tempdir().unwrap();
+    let configured = dir.path().join("owned-offline");
+    let canonical = dir.path().join("canonical-owned");
+    let db = crate::core::db::init(&dir.path().join("data.db")).unwrap();
+    crate::core::db::set_setting(&db, "root", configured.to_str().unwrap()).unwrap();
+    let store = NoteJournalStore::new(dir.path().join("note-journal.json"));
+    store
+        .remember_validated(&db, &configured, &canonical)
+        .unwrap();
+    store
+        .save(
+            canonical.to_str().unwrap(),
+            "owned.md".into(),
+            "owned draft".into(),
+            "r".into(),
+        )
+        .unwrap();
+    store
+        .save(
+            "/other",
+            "secret.md".into(),
+            "foreign draft".into(),
+            "r".into(),
+        )
+        .unwrap();
+    drop(db);
+    drop(store);
+    let recovered = NoteJournalStore::load_offline(dir.path()).unwrap();
+    assert_eq!(recovered.entries.len(), 1);
+    assert_eq!(recovered.entries[0].content, "owned draft");
+    assert_eq!(recovered.other_vault_count, 1);
+    let db = crate::core::db::init(&dir.path().join("data.db")).unwrap();
+    crate::core::db::set_setting(&db, "root", "/different").unwrap();
+    assert!(NoteJournalStore::load_offline(dir.path()).is_err());
+}
