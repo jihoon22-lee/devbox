@@ -3,7 +3,7 @@ import { readFile, unlink } from "node:fs/promises";
 import { scenarios, editor } from "./windows-knowledge-flow-shared.mjs";
 export const scenarioIds = ["DOC-01", "DOC-02", "DOC-03"];
 export async function run(context) {
-  return scenarios(context, [
+  const results = await scenarios(context, [
     [
       "DOC-01",
       async ({ ui, fixture, assertions, screenshots }) => {
@@ -32,7 +32,7 @@ export async function run(context) {
       },
     ],
     [
-      "DOC-02",
+      "DOC-03",
       async ({ ui, fixture, assertions, screenshots }) => {
         const notes = await fixture.prepareNotes();
         await fixture.navigate("notes");
@@ -71,14 +71,14 @@ export async function run(context) {
         assert.ok(!remaining.entries.some((e) => e.path === notes.a));
         assert.ok(remaining.entries.some((e) => e.path === notes.b && e.content === "B의 보존할 복구본\n"));
         assert.equal(await readFile(notes.bFile, "utf8"), notes.bOriginal);
-        screenshots.push(await ui.screenshot("DOC-02-empty-recovery"));
+        screenshots.push(await ui.screenshot("DOC-03-empty-recovery"));
         assertions.push(
           "Empty and second-document journals survive switch/crash/keep quit; cancel preserves editor and disk; separate permanent confirmation removes only current journal",
         );
       },
     ],
     [
-      "DOC-03",
+      "DOC-02",
       async ({ ui, fixture, assertions, screenshots }) => {
         const notes = await fixture.prepareNotes();
         await fixture.navigate("notes");
@@ -112,7 +112,7 @@ export async function run(context) {
         await ui.click({ role: "button", name: "로컬 복구본 확인" });
         await fixture.waitBody("offline 합성 복구본");
         assert.equal(await fixture.offlineContents(notes.b), notes.bOriginal);
-        screenshots.push(await ui.screenshot("DOC-03-offline-preview"));
+        screenshots.push(await ui.screenshot("DOC-02-offline-preview"));
         assertions.push(
           "Missing note keeps preview and journal until explicit recreation; offline startup exposes bounded read-only local recovery",
         );
@@ -120,4 +120,5 @@ export async function run(context) {
       },
     ],
   ]);
+  return results.sort((a, b) => scenarioIds.indexOf(a.id) - scenarioIds.indexOf(b.id));
 }

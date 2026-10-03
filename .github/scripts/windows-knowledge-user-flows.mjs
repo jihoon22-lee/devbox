@@ -25,7 +25,7 @@ import { createOwnedActivityWindow } from "./windows-owned-activity-window.mjs";
 import { run as documents, scenarioIds as documentIds } from "./windows-knowledge-document-recovery.mjs";
 import { run as search, scenarioIds as searchIds } from "./windows-knowledge-search-lifecycle.mjs";
 import { run as activity, scenarioIds as activityIds } from "./windows-knowledge-activity.mjs";
-export async function runInstalledKnowledgeUserFlows() {
+export async function createInstalledKnowledgeContext() {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
@@ -320,10 +320,46 @@ export async function runInstalledKnowledgeUserFlows() {
       }
     },
   };
-  const context = { ...identity, ui, knowledgeFixture: fixture, fixtureRoot };
-  let results = [];
+  const close = async () => {
+    if (offline) {
+      await finish(true);
+      await rename(offline, notesRoot);
+      offline = null;
+    }
+    await finish(true);
+  };
   try {
     await launch();
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return {
+    ...identity,
+    ui,
+    knowledgeFixture: fixture,
+    fixtureRoot,
+    root,
+    manifest,
+    installationKey: owner.installationKey,
+    get cdp() {
+      return current?.cdp;
+    },
+    get child() {
+      return current?.child;
+    },
+    get processIdentity() {
+      return current?.identity;
+    },
+    close,
+    cleanup: close,
+  };
+}
+export async function runInstalledKnowledgeUserFlows() {
+  let context,
+    results = [];
+  try {
+    context = await createInstalledKnowledgeContext();
     results = [...(await documents(context)), ...(await search(context)), ...(await activity(context))];
     await writeUserFlowResults("knowledge", results);
     assert.ok(
@@ -332,8 +368,11 @@ export async function runInstalledKnowledgeUserFlows() {
     );
   } catch (error) {
     if (!results.length) {
+      const identity = context ?? (await packagedIdentity());
       results = [...documentIds, ...searchIds, ...activityIds].map((id) => ({
-        ...identity,
+        sourceSha: identity.sourceSha,
+        fixtureSha: identity.fixtureSha,
+        artifactDigests: identity.artifactDigests,
         id,
         status: "FAIL",
         evidenceKind: "packaged-ui",
@@ -345,13 +384,9 @@ export async function runInstalledKnowledgeUserFlows() {
     }
     throw error;
   } finally {
-    if (offline) {
-      await finish(true);
-      await rename(offline, notesRoot);
-      offline = null;
-    }
-    await finish(true);
+    await context?.close();
   }
 }
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
   await runInstalledKnowledgeUserFlows();
