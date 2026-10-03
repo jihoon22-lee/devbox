@@ -1,12 +1,43 @@
 # Release evidence index
 
-## v0.8.1 patch release
+## v0.9.0 — 준비 중, 공개 전
 
-[PR #569](https://github.com/jihoon22-lee/devbox/pull/569)에서 리뷰 결함 수정과 네 제품의
-0.8.1 버전·설치/portable 검증 설정을 함께 준비한다. 게시 완료 여부, exact-main source,
-후보·게시 workflow와 Windows 수용 결과는
-[v0.8.1 Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1) 및 #541/#542의
-후속 evidence를 원장으로 삼는다. 이 준비 문서는 게시 완료 또는 Windows PASS를 뜻하지 않는다.
+제품과 agent의 버전은 [PR #612](https://github.com/jihoon22-lee/devbox/pull/612)에서
+한 번만 0.9.0으로 올렸다. 공개 완료나 실기 PASS를 뜻하지 않는다. 코드 검토·남은 점검·
+후보 source와 공개 판단의 정본은 [통합 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)이다.
+
+준비 기준 commit `444a82e4fed8498262490bdf822c07fac99c5f51`은
+[main CI](https://github.com/jihoon22-lee/devbox/actions/runs/36487547078)와
+[후보 36489337168](https://github.com/jihoon22-lee/devbox/actions/runs/36489337168)를 통과했다.
+후보는 assembly·네 제품 native scope·설치/복구/제거·독립 WSL2/Docker를 모두 통과했고,
+다운로드한 7개 자산과 내부 구성요소의 이름·크기·SHA-256도 확인했다.
+[당시 후보 근거](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5963355875)를 보존한다.
+이번 의존성 변경은 그 후보에 포함되지 않으므로, 변경이 머지된 exact-main의 CI와 새 후보가 필요하다.
+
+2026-10-03 코드 검토에서 확인한 공개 전 조건:
+
+- 공개 v0.8.1의 `core/suite_package.rs`는 Knowledge WSL helper와 agent를 허용하지 않아
+  v0.9.0 manifest를 `suite_package_file_invalid`로 거부한다. 실제 이전 reader와 후보 manifest로
+  재현했다. 자산 7개·schema 2 유지와 이전 업데이터의 읽기 호환은 다른 조건이다.
+  기존 설치의 수동 setup 전환 또는 호환 릴리스 방안을 확정하기 전에는 자동 업데이트를 보장하지 않는다.
+- npm 감사의 undici 11건·DOMPurify 1건에 대응하여 기존 의존성을 각각 8.11.2·3.4.16으로 갱신한다.
+  undici는 jsdom 테스트 경로, DOMPurify는 Mermaid runtime 경로다. DOMPurify 경고의
+  `IN_PLACE`+노드 제거 hook 조건은 현재 렌더러에서 확인되지 않았으며, 실제 앱 XSS를 재현했다고 주장하지 않는다.
+  새 source의 최종 감사·CI 결과는 #580에 기록한다.
+- 사용자 PC에는 v0.8.1 설치가 없다. 태그 전 필수 8개는 **신규 설치** 기준으로 확인하고,
+  기존 설치 데이터 보존/이전은 별도 미실행 항목으로 남긴다. 사용자 점검 결과 또는 명시적 생략 응답 전에는 태그하지 않는다.
+- 이전 PF의 Workspace startup/Source 일회 실패는 후속 동일 바이너리 진단·full PF·후보에서
+  재현되지 않았다. 최초 OS 원인은 미확정이며, 재발 시 조사할 근거를 #580에 보존한다.
+
+## v0.8.1 — 현재 공개 stable
+
+[Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1)는 2026-09-21에 공개됐다.
+source는 `1c97b41ee10ca0df7c062338bfe85659af025a89`, annotated tag object는
+`dd5aa6581bcb48a5bf615d17f22db599aac5dace`다.
+[후보 35559779579](https://github.com/jihoon22-lee/devbox/actions/runs/35559779579)와
+[공개·공개본 검증 35564563792](https://github.com/jihoon22-lee/devbox/actions/runs/35564563792)가 성공했고,
+setup·네 ZIP·manifest·notices의 7개 공개 자산, draft=false, prerelease=false를 확인했다.
+과거 수용 원장 #541/#542는 닫힌 역사 기록이며 v0.9.0 점검 상태로 재사용하지 않는다.
 
 ## v0.8.0 source cutover — published
 
@@ -28,7 +59,7 @@ AGENTS.md에서 옮긴 historical stable 기록이다. 2026-09-07 정리 시점�
 
 - v0.5.0 stable evidence는 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`와 workflow `33216176818` 기준 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이다.
 - v0.5.1은 #470/#473/#477/#478/#479(및 닫힌 #474 계약)를 포함한 historical stable이다.
-- 현재 v0.7.0 stable은 #521~#536을 묶는다. annotated tag object는
+- 당시 v0.7.0 stable은 #521~#536을 묶는다. annotated tag object는
   `ec41ceb2ed4b4864d34afe383e5ff816481b3d37`, peeled source commit은
   `3a23f49c85aa3c3d04b86f227e8aa184ef964085`, candidate workflow는 `33782002859`, release
   workflow는 `33785966618`이다. candidate는 packaged runtime 15/15와 installer lifecycle
@@ -46,8 +77,8 @@ AGENTS.md에서 옮긴 historical stable 기록이다. 2026-09-07 정리 시점�
 
 ## Detailed records
 
-- [v0.7.0 release plan](./superpowers/plans/2026-09-03-v0.7.0-release.md)
-- [v0.7.0 publication evidence](../workthrough/2026-09-04-v0.7.0-stable-publication.md)
-- [v0.6.0 release plan](./superpowers/plans/2026-08-31-v0.6.0-release.md)
-- [v0.5.0 release plan](./superpowers/plans/2026-08-28-v0.5.0-release.md)
-- [Release status and installed-app observations](./roadmap.md#release-status)
+- [v0.7.0 release plan](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/docs/superpowers/plans/2026-09-03-v0.7.0-release.md)
+- [v0.7.0 publication evidence](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/workthrough/2026-09-04-v0.7.0-stable-publication.md)
+- [v0.6.0 release plan](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/docs/superpowers/plans/2026-08-31-v0.6.0-release.md)
+- [v0.5.0 release plan](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/docs/superpowers/plans/2026-08-28-v0.5.0-release.md)
+- [Release status and installed-app observations](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/docs/roadmap.md#release-status)

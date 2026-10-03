@@ -2,7 +2,7 @@
 
 ## [v0.9.0] - 2026-09-29
 
-v0.8.1 이후 전체 리뷰 후속 작업을 한 번에 담은 릴리스다. v0.8.x 설치본은 Control Center 업데이트로 바로 올라간다.
+v0.8.1 이후 전체 리뷰 후속 작업을 담은 릴리스 준비본이다. v0.8.1 내장 업데이터는 새 구성요소 목록을 거부하므로 바로 업데이트할 수 없다. 기존 설치 전환의 지원 범위와 공개 조건은 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에서 확정한다.
 
 - **v0.7 데이터 가져오기 제거.** v0.7 앱 데이터는 v0.8.1에서 먼저 옮긴 뒤 업데이트해야 한다. 새 설치는 Control Center "데이터 및 복구"에서 활성화를 확정한다.
 - **API Studio 저장소 이전.** 컬렉션·기록·환경·gRPC 기록·변환 워크플로를 WebView 저장소에서 제품 데이터 폴더로 첫 실행 때 자동 이전.
@@ -20,6 +20,8 @@ v0.8.1 이후 전체 리뷰 후속 작업을 한 번에 담은 릴리스다. v0.
 - 제품별 운영 로그(코드·소요 시간만, 14일 보관)와 panic 위치 기록, 지원 번들에 최근 기록 포함.
 - 명령마다 하던 제품 정보 재조회·설치 파일 재검증 제거, 터미널 출력 push 방식으로 유휴 CPU·IPC 제거.
 - Windows: Tauri 2.12.0·Tao 0.37.1로 갱신하고, 네이티브 메뉴가 없는 창에서 Alt/F10 메뉴 활성화로 생기는 메시지 대기를 차단. Alt+Space와 창 닫기·최소화·복원은 유지.
+- 의존성 점검: Mermaid의 DOMPurify를 3.4.16으로, 테스트 환경의 undici를 8.11.2로 갱신.
+- API Studio: 새 응답 캡처 직후 “보기”를 눌렀을 때 늦은 상태 초기화가 표시 요청을 취소하는 경쟁 상태 수정.
 - 내부 정리: component별 타입 명령과 코드별 오류 문구, 옛 앱 실행기·마이그레이션 코드 제거, 의존성 버전 통일, 자식 프로세스·DPAPI 처리 공용화, 개발 기록 보관소 이동, 지원 OS Windows 11 명시, 개발 도구 Rust 1.98.1·Node 24 고정.
 
 게시·Windows 실기·후보 검증 결과는 해당 Release와 릴리스 원장을 따른다.
@@ -777,10 +779,10 @@ Devbox Manager를 직접 내려받아 먼저 설치한 뒤, 나머지 앱을 새
 - **wsl-desktop 터미널 출력 손상.** PTY 읽기 경계에 걸친 멀티바이트 문자(한글·박스드로잉)가 손상돼 화면이
   간헐적으로 깨지고, `htop`/`vim`/`lazygit` 같은 TUI의 프레임이 어긋난다. 긴 줄이 있는 상태에서 창 크기를
   바꾸면 기존 출력이 망가지는 문제도 함께 있다.
-  설계·수정 계획: [`docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md`](docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md) §2
+  설계·수정 계획: [`docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md`](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/docs/superpowers/specs/2026-08-17-wsl-desktop-terminal-design.md) §2
 - **앱 간 "다른 앱으로 열기"가 경로를 전달하지 못한다.** repo-manager의 Code Pad/WSL Desktop/Workbench 열기와
   workbench의 Start Workspace는 대상 앱을 실행하지만, 대상 앱이 명령줄 인자를 읽지 않아 빈 상태로 열린다.
-  설계·수정 계획: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](docs/superpowers/specs/2026-08-17-app-interop-design.md) §5.1
+  설계·수정 계획: [`docs/superpowers/specs/2026-08-17-app-interop-design.md`](https://github.com/jihoon22-lee/devbox/blob/v0.8.1/docs/superpowers/specs/2026-08-17-app-interop-design.md) §5.1
 
 ## [v0.3.0] - 2026-08-13
 
