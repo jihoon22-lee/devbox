@@ -144,7 +144,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}-${{ inputs.suite_diagnostic_installer_ui && 'installer-ui' || inputs.suite_diagnostic_api_workflow && 'api-workflow' || 'default' }}
   cancel-in-progress: true
 
 jobs:
