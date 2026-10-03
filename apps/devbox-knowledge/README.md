@@ -1,7 +1,7 @@
 # Devbox Knowledge
 
 v0.9.0 소스의 네 사용자 제품 중 하나다. Notes·Daily·Activity·Search를 통합한다.
-현재 코드 검토·후보·실기·공개 상태는 [통합 점검 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)와 [릴리스 근거](../../docs/release-evidence.md)에 기록한다. 소스 버전과 공개 완료는 구분한다.
+현재 구현·검증은 [재정비 계획](../../docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)과 통합 PR, 공개 상태는 [릴리스 근거](../../docs/release-evidence.md)와 GitHub Release에서 확인한다. #580은 철회본의 닫힌 기록이다.
 
 ## 실행과 개발
 

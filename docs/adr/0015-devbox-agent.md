@@ -1,6 +1,6 @@
 # 0015 사용자별 백그라운드 agent
 
-상태: 채택 · B9 구현 반영(Windows 수용 결과는 ledger #580)
+상태: 채택 · B9 구현 반영(당시 Windows 수용 결과는 닫힌 ledger #580)
 
 기록일: 2026-09-25 · 확정일: 2026-09-26
 
@@ -75,4 +75,4 @@ Workspace 원본에 연결된 작업은 예약 실행을 포함해 실행 직전
 - [quiesced data checkpoint](../../apps/devbox-control-center/src-tauri/src/core/data_checkpoint.rs), [activation 계약](../../crates/product-contract/src/activation.rs)
 - [설치 namespace ADR 0007](0007-data-namespaces.md), [보안 범위 ADR 0016](0016-personal-security-scope.md)
 - [P1-19 계획](../superpowers/plans/2026-09-23-review-remediation/p1-19-agent-adr-and-protocol.md), 같은 묶음 P1-11–14의 typed 요청 및 P1-16 stream 계약, 리뷰 §8
-- 진행 원장: [ledger #580](https://github.com/jihoon22-lee/devbox/issues/580)
+- 현재 진행: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md); 과거 원장: [닫힌 #580](https://github.com/jihoon22-lee/devbox/issues/580)

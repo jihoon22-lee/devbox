@@ -36,7 +36,7 @@
   제보/추적으로 전환했다. 자동 수용 결과와 구분하며, 미실행을 PASS로 기록하지 않는다.
 - #613은 npm 경고 12건을 0건으로 줄이고 캡처 보기 경쟁 상태를 RED→GREEN으로 수정했다.
   공개 전 전체 코드 검토·회귀·CI/PF 근거는 해당 PR에 있다. 이전 startup/Source와 Chromium
-  시작 일회 지연의 최초 OS 원인은 미확정이며, 재발하면 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에서 추적한다.
+  시작 일회 지연의 최초 OS 원인은 당시 미확정으로 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에 남겼다. 현재 재정비에서는 새 수용 근거를 별도로 확보한다.
 - 이전 source `444a82e4`의 [후보 36489337168](https://github.com/jihoon22-lee/devbox/actions/runs/36489337168)는
   이후 의존성/코드 변경으로 승격 대상에서 제외했다. 그 성공을 이번 source의 근거로 재사용하지 않았다.
 

@@ -1,6 +1,6 @@
 # 감사·추가 개선·검증 추적표
 
-2026-10-03 계획 기준. 모든 행의 현재 상태는 **계획됨 / 구현 전**이다. 원 감사의 재현 결과는 결함 근거이며 아래 검사의 PASS가 아니다. 완료할 때 각 행에 `단일 PR URL / 작업 ID / 최종 commit / 테스트 이름 / scenario run / 결과`를 추가한다. 미실행과 실패는 구분한다.
+2026-10-03 실행 중. R01–R14의 주요 수정과 좁은 로컬 회귀를 아래 작업별 근거에 연결했다. Windows packaged 사용자 여정은 R15에서 연결 중이며 아직 **NOT_RUN**이다. 구현·로컬 PASS를 출시 수용 PASS로 해석하지 않는다. 최종 PR·candidate·release 결과는 같은 통합 PR 본문과 Actions artifact에 추가한다.
 
 코드 경로는 현재 `/home/jihoon/projects/devbox` 기준이다. 다른 checkout에서는 저장소 상대 위치를 그대로 사용한다. 상세 변경 파일과 assertion은 소유 작업 문서에 있다.
 
@@ -79,3 +79,34 @@ ID / owner work item / single PR URL / tested source SHA / L1-L4 또는 L5 scena
 ```
 
 R00 matrix 검사로 기존23·추가4·개선12의 소유 작업 누락과 scenario 없는 항목을 거부한다. R15/R16은 해당 source의 필수 scenario가 모두 채워졌는지 확인한다. 결함 수정 commit만 존재하고 실제 사용자 여정이 미실행이면 완료로 닫지 않는다.
+
+
+## 5. 구현과 로컬 확인 근거
+
+아래 commit은 작업별 변경 이력이며 최종 배포 source는 통합 PR의 main 머지 SHA다. 모든 작업의 Windows UI 수용은 후보 실행 전 NOT_RUN이다. 같은 테스트의 통과를 여러 번 합산하지 않는다.
+
+| 작업 | 구현 commit | 원인·직접 영향 범위의 로컬 확인 | 남은 수용 |
+|---|---|---|---|
+| R00 | `302361bb` | 실제 입력 driver, matrix·identity·미실행 거절 validator 회귀 | Windows 입력/전체 gate 연결 |
+| R01 | `600a9b06` | 문서 generation·Undo, journal/autosave/recovery·Quit·Startup, native journal 및 exporter | DOC-01–03 |
+| R02 | `50131024`, `dfc56ecf` | Files 42, Workspace 초안/종료/전이 guard, native recovery metadata·files host·close admission | WORK-01/02 |
+| R03 | `d1e87f6c` | registry projection·Agent 완료 후 갱신, typed app 검사 | WORK-03 |
+| R04 | `2fcddb4d` | HTTP native 66 및 활성 필드·browser/cURL/codegen 직접 영향 회귀 | HTTP-01–03 |
+| R05 | `6a8a29e5` | 실제 native 연결 grant snapshot, ProtocolLab 인증 잠금·불일치 거절 | AUTH-01/02 |
+| R06 | `efa8c4a4`, `a3a1895d` | shell·Agent·Incoming·SuiteConnection; Chromium Notes 720×480 편집폭 468px/1180×780 704px, API 720×480 가로 잘림 없음 | 네 제품·전체 delivery 상태/keyboard/IME UI-01/02 |
+| R07 | `50131024`, `c23f8218`, `a3a1895d`, `327e05af` | 재설치·업데이트·복원의 health 진입 회귀 RED→GREEN; setupOnly RED 2건 포함 RegistryGate; Control Center setup/Health/Restore 7, native delivery 검증 2, exporter·tsc | 실제 installer부터 INSTALL-01–03 |
+| R08 | `3e0c60b1` | sparse/rename/delete·선택·저장 실패 UI 19 | ENV-01/02 |
+| R09 | `d2221313` | Webhooks single-flight·active/hidden·읽기 회복 및 Studio 재진입 | WEB-01/02 |
+| R10 | `5ff0dd7f` | 두 stream message 뒤 INTERNAL trailer 실제 tonic 회귀와 UI/history | GRPC-01 |
+| R11 | `dbed4bdb` | full library 수정·삭제·용량 복원·지연 저장 UI/store | TRANSFORM-01 |
+| R12 | `c978c3f2` | Search UI 30/API 3, content metadata 2/Notes metadata 1, native exporter | SEARCH-01/02 |
+| R13 | `4345e80a`, `fd49b549` | idle sessionizer·실패 ack·DST 과거 기록, 날짜·privacy·owner UI, native tracking·exporter·tsc | ACTIVITY-01–03 |
+| R14 | `5b314ca7`, `a6a41fe5` | Runtime recovery/Terminal/Dependencies/Files 영향 및 tsc; 응답 유실 뒤 실제 상태 조회로 실행 여부 조정, 부작용 중복 실행 차단 | RUNTIME-01/02, LSP-01, DEPS-01 |
+| R15 | `efa4c861`, `8dc2b443`, `3ce46aac`, `8a51160d`, `33f031a3`, `f3be5eb1`, `df2fd78d` | 실제 입력·앱별 여정·handoff·설치 단계 관찰 runner 연결, exact-source/digest/전체 ID/스크린샷 gate; 로컬 runner 계약 검사 | 전체 packaged UI 여정은 후보 실행 전 NOT_RUN |
+| R16 | 문서 준비 중 | 현재 안내·닫힌 원장·철회 이력 정합성 정리 | 최종 로컬 검사→PR CI→main CI→candidate→tag/release |
+
+추가 구현 검토에서 설치 준비 중의 제품 연결과 Agent 재연결을 구분했다. 제품 버스는 준비 상태 확인에 필요하므로 복구 단계에도 명시적으로 연결할 수 있고, 일반 작업·Agent 재연결·수신 작업은 계속 차단한다. API의 좁은 창에서 숨겨지던 코드/OpenAPI/캡처 조작도 브라우저 측정으로 확인해 줄바꿈을 적용했다.
+
+R15 여정 연결에서 추가 발견한 결함도 수정했다. Workspace 빠른 열기의 한글 조합 Enter 보호(`f58a7199`), API 버튼의 실제 접근성 이름(`733d5b0b`), 대상 ES 버전에서 지원하지 않는 Array.at 사용(`3070818a`), Windows 입력 tick 순환(`fd49b549`)을 직접 영향 범위로 확인했다. 설치 수용은 동일 설치 key와 후보 digest를 추적하며, v0.8.1에서 전환하는 별도 소유 fixture만 부모 설치 key를 명시하는 예외를 둔다. 예전 공개본의 성공을 새 후보에 승계하지 않는다.
+
+기존 후보 artifact `11265063384`(run `37095144741`)의 철회본은 새 후보가 아니라 동일 버전 교체 검사의 고정 입력이다. manifest SHA-256 `27a3dd7b2dab585fa6a930d3a1e64bd4f1f3166a141c926080f005bc16114b4b` 및 7개 파일의 폐쇄 목록·크기·digest를 확인한다. 입력이 없거나 바뀌면 새 빌드로 대신하지 않는다. 별도 v0.8.1 전환과 실제 철회본→수정본 경로의 데이터 보존은 각각 구분해 기록한다.

@@ -2,7 +2,7 @@
 
 **현재 소스는 v0.9.0 네 제품** Workspace / API Studio / Knowledge / Control Center다.
 각 제품은 독립 Windows 실행 파일이며 Suite의 typed route·authority·installation identity를 공유한다.
-공개 완료 여부는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)과 Release가 원장이다.
+공개 완료 여부는 GitHub Release와 [릴리스 근거](docs/release-evidence.md)가 원장이다. #580은 철회본의 닫힌 역사 기록이다.
 v0.7의 15개 앱·32개 자산은 역사적 계약이며 frozen catalog는 migration/reference에만 사용한다.
 리뷰 후속 작업 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
 

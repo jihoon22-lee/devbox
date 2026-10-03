@@ -10,9 +10,10 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
    한 번 빌드한다. Workspace+Control Center, API Studio+Knowledge를 배정한다. private LSP fixture는
    공개 payload 밖에 둔다. Windows assembly는 pinned NSIS hash와 모든 shard/source/component
    name·size·digest를 확인하고 Suite installer와 closed manifest를 조립한다.
-3. 동일 후보 bytes로 네 native scope, 실제 WSL2/Docker, installer migration/update/undo/commit/
+3. 동일 후보 bytes로 네 native scope, 실제 UI 사용자 여정, WSL2/Docker, installer migration/update/undo/commit/
    removal 및 같은 VM의 성능 비교를 수행한다. 실패한 후보는 승격하지 않는다. fixture/model,
-   packaged native, physical-device evidence를 구분한다. 미실행 환경을 PASS로 합산하지 않는다.
+   packaged native, 실제 UI·OS evidence를 구분한다. 미실행 환경을 PASS로 합산하지 않는다.
+   assembly는 비공개 중간 artifact다. 필수 40개 사용자 여정의 source·fixture·7개 자산 digest와 실제 스크린샷을 최종 집계한 뒤에만 승격용 후보 artifact를 만든다. `Verify complete user journeys and seal candidate` job이 없거나 성공하지 않았으면 resolver가 거부한다. Release 다운로드 검증도 같은 evidence를 다시 확인한다.
 4. 성공한 비만료 후보와 같은 commit에 annotated stable tag를 만든다. Release는 tag·commit·repo·
    workflow run·7개 digest를 재확인하고 **재빌드 없이** draft에 올린다. 후보 없음/만료 시 닫힌 실패로
    끝나며 새 build를 대신 사용하지 않는다. code/package input이 바뀌면 새 exact-main 후보가 필요하다.

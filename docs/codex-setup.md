@@ -51,7 +51,8 @@ CLI·IDE·앱이 다른 Windows/WSL 호스트를 사용하면 각각의 Codex ho
   [CONVENTIONS §11](../CONVENTIONS.md#11-codex-지침스킬작업-기록)은 작업 도구 운영의 원장이다.
 - 일반 개발·migration 검토 스킬은 중복 절차를 없애기 위해 제거했다. AGENTS와
   CONVENTIONS를 직접 따른다. 릴리스는 [release policy](release-policy.md)를 직접 따른다.
-- 작업 결정·검증·남은 항목은 PR 본문과 ledger 이슈에 기록한다. 별도 workthrough 스킬은 요구하지 않는다.
+- 현재 재정비는 GPT-6 Astra 또는 GPT-6.1 Sol만 필요할 때 서브에이전트로 사용하고, 자원 제한 아래 로컬 검증을 직렬화한다. 모든 변경은 통합 브랜치의 PR 하나로 수용한다.
+- 작업 결정·검증·남은 항목은 통합 PR 본문과 현재 계획 추적표에 기록한다. 닫힌 #580을 재개하지 않는다. 별도 workthrough 스킬은 요구하지 않는다.
   저장소에서도 동일한 기록 규칙을 유지하므로 해당 개인 스킬이 없어도 협업할 수 있다.
 - OpenAI Docs MCP와 GitHub 연결/`gh`, 로컬 셸을 우선 사용한다. 추가 MCP는 실제 기능 부족이
   있을 때 검토한다. 플러그인 cache를 직접 편집하거나 무관한 스킬을 일괄 삭제하지 않는다.
