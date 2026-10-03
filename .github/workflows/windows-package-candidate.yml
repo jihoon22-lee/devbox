@@ -222,6 +222,7 @@ jobs:
         scope: [product-shells, api, knowledge, cross-product]
     env:
       DEVBOX_USER_FLOW_ASSETS: candidate/assets
+      DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
       DEVBOX_FIXTURE_PROFILE: release
       DEVBOX_PORTABLE_FIXTURES: target/portable-fixture
       GH_TOKEN: ${{ github.token }}
@@ -314,6 +315,7 @@ jobs:
   installer-acceptance:
     env:
       DEVBOX_USER_FLOW_ASSETS: candidate/assets
+      DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
     name: Interactive installation and complete installed user journeys
     needs: assemble
     runs-on: windows-2025
@@ -330,6 +332,15 @@ jobs:
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}
           path: candidate
+      - name: Fetch the pinned withdrawn version for same-version replacement
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 37095144741 --repo jihoon22-lee/devbox --name windows-package-candidate-v0.9.0-e499ac7127269bf67863bf0fdc42eaf53236b9f3 --dir candidate/withdrawn
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned withdrawn fixture is unavailable; do not replace it with a rebuild.' }
+          python .github/scripts/verify-withdrawn-fixture.py candidate/withdrawn/assets
+          if ($LASTEXITCODE -ne 0) { throw 'Withdrawn fixture bytes changed.' }
       - name: Recover the exact private payload from public bytes
         shell: pwsh
         run: |
