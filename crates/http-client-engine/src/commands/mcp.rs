@@ -2105,6 +2105,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn connection_grant_keeps_snapshot_authentication_for_tool_calls() {
+        let response = json!({"jsonrpc":"2.0", "id":"request-1", "result":{"resultType":"complete", "content":[]}});
+        let (endpoint, requests, handle) =
+            spawn_http_fixture(vec![json_response("200 OK", &response, "")]);
+        let mut snapshot = prepared_snapshot(&endpoint);
+        snapshot.profile.oauth_grant_id = Some("a".repeat(32));
+        snapshot.profile.apply_oauth_bearer(OAuthBearer {
+            token: Zeroizing::new("grant-a-secret".into()),
+        });
+        snapshot
+            .tool_schemas
+            .insert("echo".into(), json!({"type":"object", "properties":{}}));
+        let mut next_profile = snapshot.profile.clone();
+        next_profile.oauth_grant_id = Some("b".repeat(32));
+        next_profile.apply_oauth_bearer(OAuthBearer {
+            token: Zeroizing::new("grant-b-secret".into()),
+        });
+        let (_sender, mut cancellation) = watch::channel(false);
+        invoke_inner(
+            &snapshot,
+            "request-1",
+            "tools/call",
+            json!({"name":"echo", "arguments":{}}),
+            &mut cancellation,
+        )
+        .await
+        .unwrap();
+        let request = requests
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .to_ascii_lowercase();
+        assert!(request.contains("authorization: bearer grant-a-secret"));
+        assert!(!request.contains("grant-b-secret"));
+        assert_eq!(
+            snapshot.profile.oauth_grant_id.as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
     async fn oauth_bearer_is_injected_and_added_to_protocol_redaction() {
         let discover = json!({
             "jsonrpc":"2.0",
