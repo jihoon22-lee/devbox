@@ -31,3 +31,20 @@ describe("context transition", () => {
     await first;
   });
 });
+
+it("holds editor input until native context selection settles, then releases it on failure", async () => {
+  const pending = vi.fn();
+  const guard = createContextTransition(
+    () => [],
+    async () => {},
+    pending,
+  );
+  const failure = new Error("native selection failed");
+  await expect(
+    guard(async () => {
+      expect(pending).toHaveBeenLastCalledWith(true);
+      throw failure;
+    }),
+  ).rejects.toBe(failure);
+  expect(pending.mock.calls).toEqual([[true], [false]]);
+});

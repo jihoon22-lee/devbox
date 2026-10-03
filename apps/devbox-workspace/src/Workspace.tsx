@@ -143,12 +143,14 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
     sourceBusy && "Source 작업",
     sourceDirty && "Source 초안",
   ].filter((reason): reason is string => Boolean(reason));
+  const [transitionPending, setTransitionPending] = useState(false);
   const [transition] = useState(() =>
     createContextTransition(
       () => guardReasons.current,
       async () => {
         await filesCloseActions.current?.flush();
       },
+      setTransitionPending,
     ),
   );
   const [closeRequest, setCloseRequest] = useState<{ nonce: string } | null>(null);
@@ -313,7 +315,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
         </Suspense>
       )}
       {ready && description.context && (
-        <div hidden={route !== "overview"}>
+        <div hidden={route !== "overview"} inert={transitionPending}>
           <Suspense fallback={<p role="status">프로젝트 설정을 불러오고 있습니다…</p>}>
             <ProjectDefinitions
               description={description}
@@ -324,7 +326,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
         </div>
       )}
       {ready && (sourceVisited || route === "source") && (
-        <div className="workspace-feature-source" hidden={route !== "source"}>
+        <div className="workspace-feature-source" hidden={route !== "source"} inert={transitionPending}>
           {sourceNavigationError && <p role="alert">{sourceNavigationError}</p>}
           {!selectedTree ? (
             <p role="status">
@@ -349,7 +351,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
         </div>
       )}
       {ready && (dependenciesVisited || route === "dependencies") && (
-        <div className="workspace-feature-source" hidden={route !== "dependencies"}>
+        <div className="workspace-feature-source" hidden={route !== "dependencies"} inert={transitionPending}>
           {!selectedTree ? (
             <p role="status">
               {description.context
@@ -409,7 +411,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
         </Suspense>
       )}
       {ready && (filesVisited || route === "files") && (
-        <div className="workspace-feature-files" hidden={route !== "files"}>
+        <div className="workspace-feature-files" hidden={route !== "files"} inert={transitionPending}>
           <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
             <div>
               <IncomingFileReview description={description} onOpen={setFileRequest} />
