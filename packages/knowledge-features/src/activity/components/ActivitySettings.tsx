@@ -1,8 +1,9 @@
+import { useEffect, useRef, useState } from "react";
 import { DataSourceRow } from "./DataSourceRow";
 import { fmtDuration, digestSourceScope } from "../lib/activityPresentation";
 import PrivacyRulesPanel from "../PrivacyRulesPanel";
 import { isImeComposing } from "@devbox/a11y";
-import { setAutostart, setIdleThreshold } from "../api";
+import { setAutostart, setIdleThreshold, getIdleThreshold } from "../api";
 import { isTauri } from "../lib/isTauri";
 import type * as React from "react";
 
@@ -13,7 +14,6 @@ interface Props {
   contextActionBusy: boolean;
   draftHistory: import("../../generated/DraftHistoryEntry").DraftHistoryEntry[];
   regenerateDraft: (entry: import("../../generated/DraftHistoryEntry").DraftHistoryEntry) => Promise<void>;
-  digest: import("../../generated/ActivityDigestResponse").ActivityDigestResponse | null;
   loading: boolean;
   projects: string[];
   projectProbes: Record<string, import("../../generated/ProjectProbe").ProjectProbe>;
@@ -45,7 +45,6 @@ export function ActivitySettings({
   contextActionBusy,
   draftHistory,
   regenerateDraft,
-  digest,
   loading,
   projects,
   projectProbes,
@@ -67,6 +66,42 @@ export function ActivitySettings({
   setPrivacy,
   setPrivacyHealthy,
 }: Props) {
+  const [thresholdDraft, setThresholdDraft] = useState(String(Math.round(idleThreshold / 60000)));
+  const [thresholdSaving, setThresholdSaving] = useState(false);
+  const [thresholdError, setThresholdError] = useState("");
+  const thresholdSequence = useRef(0);
+  useEffect(() => {
+    setThresholdDraft(String(Math.round(idleThreshold / 60000)));
+  }, [idleThreshold]);
+  useEffect(
+    () => () => {
+      thresholdSequence.current++;
+    },
+    [],
+  );
+  const saveThreshold = async () => {
+    const minutes = Number(thresholdDraft);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+      setThresholdError("1분부터 1440분 사이의 정수를 입력해 주세요.");
+      return;
+    }
+    const sequence = ++thresholdSequence.current;
+    setThresholdSaving(true);
+    setThresholdError("");
+    try {
+      await setIdleThreshold(minutes * 60000);
+      const acknowledged = await getIdleThreshold();
+      if (sequence === thresholdSequence.current) {
+        setIdleThresholdState(acknowledged);
+        setThresholdDraft(String(Math.round(acknowledged / 60000)));
+      }
+    } catch {
+      if (sequence === thresholdSequence.current)
+        setThresholdError("유휴 시간을 저장하지 못했습니다. 이전 설정을 유지했습니다. 다시 시도해 주세요.");
+    } finally {
+      if (sequence === thresholdSequence.current) setThresholdSaving(false);
+    }
+  };
   return (
     <div className="settings">
       {lifecycleSettings}
@@ -131,7 +166,7 @@ export function ActivitySettings({
                 className="btn small"
                 type="button"
                 onClick={() => void regenerateDraft(entry)}
-                disabled={!isTauri() || !digest || contextActionBusy || loading}
+                disabled={!isTauri() || contextActionBusy || loading}
               >
                 다시 생성
               </button>
@@ -204,16 +239,18 @@ export function ActivitySettings({
           <input
             type="number"
             min={1}
-            value={Math.round(idleThreshold / 60000)}
-            onChange={(e) => {
-              const minutes = Number(e.currentTarget.value);
-              if (Number.isFinite(minutes) && minutes >= 1) {
-                setIdleThresholdState(minutes * 60000);
-                void setIdleThreshold(minutes * 60000);
-              }
-            }}
+            aria-label="유휴 시간 (분)"
+            max={1440}
+            disabled={thresholdSaving}
+            value={thresholdDraft}
+            onChange={(event) => setThresholdDraft(event.currentTarget.value)}
           />
         </div>
+        <button className="btn" disabled={thresholdSaving} onClick={() => void saveThreshold()}>
+          {thresholdSaving ? "유휴 시간 저장 중…" : "유휴 시간 저장"}
+        </button>
+        <p className="dim">적용된 유휴 시간: {Math.round(idleThreshold / 60000)}분</p>
+        {thresholdError && <p role="alert">{thresholdError}</p>}
         <div className="dim">이 시간 이상 입력이 없으면 해당 구간을 사용 시간에서 제외합니다.</div>
       </section>
 

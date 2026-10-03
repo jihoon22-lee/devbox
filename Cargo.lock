@@ -1249,6 +1249,8 @@ name = "devbox-activity-engine"
 version = "0.8.0"
 dependencies = [
  "applink",
+ "chrono",
+ "chrono-tz",
  "dirs 6.0.0",
  "filesystem",
  "git",

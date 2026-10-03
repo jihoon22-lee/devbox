@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getDay: vi.fn(),
   saveLifeLog: vi.fn(),
   sendDigestToKnowledge: vi.fn(),
+  regenerateKnowledgeDraft: vi.fn(),
   knowledgeDraftHistory: vi.fn(),
   setProjects: vi.fn(),
   probeProject: vi.fn(),
@@ -77,6 +78,7 @@ vi.mock("./api", () => ({
   setProjects: mocks.setProjects,
   saveLifeLog: mocks.saveLifeLog,
   sendDigestToKnowledge: mocks.sendDigestToKnowledge,
+  regenerateKnowledgeDraft: mocks.regenerateKnowledgeDraft,
   startTracking: vi.fn().mockResolvedValue(true),
   stopTracking: vi.fn().mockResolvedValue(undefined),
 }));
@@ -658,4 +660,35 @@ it("keeps unmapped and offline project rows visible without changing their Git c
   expect(screen.getByText(/프로젝트 오프라인/u)).toBeInTheDocument();
   expect(screen.getByText("커밋 2개")).toBeInTheDocument();
   expect(screen.getByText("커밋 1개")).toBeInTheDocument();
+});
+
+it("saves idle threshold only after native acknowledgement and preserves it on failure", async () => {
+  mocks.native = true;
+  const api = await import("./api");
+  vi.mocked(api.setIdleThreshold).mockRejectedValueOnce(new Error("disk"));
+  await renderLoadedApp();
+  fireEvent.click(screen.getByRole("button", { name: "설정" }));
+  fireEvent.change(screen.getByLabelText("유휴 시간 (분)"), { target: { value: "1" } });
+  expect(screen.getByText("적용된 유휴 시간: 5분")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "유휴 시간 저장" }));
+  await screen.findByText(/유휴 시간을 저장하지 못했습니다/u);
+  expect(screen.getByText("적용된 유휴 시간: 5분")).toBeTruthy();
+});
+it("regenerates a history entry in Settings without the current digest", async () => {
+  mocks.native = true;
+  const entry = historyEntryFixture("2024-01-01");
+  mocks.knowledgeDraftHistory.mockResolvedValue([entry]);
+  mocks.regenerateKnowledgeDraft.mockResolvedValue({
+    id: "fedcba9876543210fedcba9876543210",
+    kind: "knowledge-draft/v1",
+    expiresAtMs: Date.now() + 600000,
+    historyId: "fedcba9876543210fedcba9876543210",
+  });
+  await renderLoadedApp();
+  fireEvent.click(screen.getByRole("button", { name: "설정" }));
+  const button = await screen.findByRole("button", { name: "다시 생성" });
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() => expect(mocks.regenerateKnowledgeDraft).toHaveBeenCalledWith(entry.handoffId));
+  expect(mocks.sendDigestToKnowledge).not.toHaveBeenCalled();
 });

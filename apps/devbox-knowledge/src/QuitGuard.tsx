@@ -1,3 +1,4 @@
+import { collectorMessage, useCollectorStatus } from "./collectorStatus";
 import { useEffect, useRef, useState } from "react";
 import { quitCall } from "@devbox/knowledge-features/commands/api";
 import {
@@ -11,6 +12,7 @@ import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@de
 
 export default function QuitGuard() {
   const [request, setRequest] = useState<string | null>(null);
+  const collectorStatus = useCollectorStatus(request);
   const [busy, setBusy] = useState(false);
   const [permanent, setPermanent] = useState(false);
   const [error, setError] = useState("");
@@ -105,7 +107,7 @@ export default function QuitGuard() {
         }}
       >
         <h2 id="knowledge-quit-title">저장하지 않은 노트가 있습니다</h2>
-        <p>종료하면 Activity 수집도 중지됩니다.</p>
+        <p>{collectorMessage(collectorStatus)}</p>
         {error && <p role="alert">{error}</p>}
         <button disabled={busy} onClick={() => void decide("save")}>
           저장하고 종료

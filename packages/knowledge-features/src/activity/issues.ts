@@ -1,6 +1,10 @@
 import type { ActivityIssue } from "../generated/ActivityIssue";
 
 export const activityMessages: Record<ActivityIssue, string> = {
+  idle_threshold_invalid: "유휴 시간은 1분부터 1440분 사이로 입력해 주세요.",
+  idle_threshold_save_failed: "유휴 시간을 저장하지 못했습니다. 이전 설정을 유지했습니다.",
+  draft_history_invalid: "기록된 초안의 날짜나 시간대를 확인하지 못했습니다.",
+  draft_history_missing: "원본 초안 기록이 없습니다. 날짜를 선택해 새 요약을 만들어 주세요.",
   draft_delivery_invalid: "초안 전달 정보를 확인하지 못했습니다. 다시 준비해 주세요.",
   draft_delivery_unavailable: "초안 전달을 완료하지 못했습니다. 전달 이력을 확인해 주세요.",
   knowledge_agent_unavailable: "백그라운드 서비스에 연결하지 못했습니다. 다시 연결한 뒤 확인하세요.",

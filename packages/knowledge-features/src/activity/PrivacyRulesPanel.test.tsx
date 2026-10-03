@@ -88,3 +88,14 @@ it("lets unreadable empty rules be saved again", async () => {
   fireEvent.click(screen.getByRole("button", { name: "규칙 저장" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith(EMPTY_PRIVACY_RULES));
 });
+
+it("keeps acknowledged rules when persistence fails", async () => {
+  api.setPrivacyRules.mockRejectedValueOnce(new Error("disk"));
+  const onSaved = vi.fn();
+  render(<PrivacyRulesPanel initial={EMPTY_PRIVACY_RULES} healthy onSaved={onSaved} />);
+  fireEvent.change(screen.getByLabelText("제외할 프로세스"), { target: { value: "fixture.exe" } });
+  fireEvent.click(screen.getByRole("button", { name: "규칙 저장" }));
+  await screen.findByRole("alert");
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(screen.queryByText("규칙을 저장했습니다. 다음 기록부터 적용됩니다.")).toBeNull();
+});

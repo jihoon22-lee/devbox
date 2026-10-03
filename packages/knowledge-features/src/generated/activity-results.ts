@@ -4,6 +4,7 @@ import type { ActivityDigestResponse } from "./ActivityDigestResponse";
 import type { ActivityRangeSummary } from "./ActivityRangeSummary";
 import type { AgentAutostartStatus } from "./AgentAutostartStatus";
 import type { AppTotal } from "./AppTotal";
+import type { CollectionStatus } from "./CollectionStatus";
 import type { DraftHistoryEntry } from "./DraftHistoryEntry";
 import type { PrivacyRulesView } from "./PrivacyRulesView";
 import type { PrivacySaveResult } from "./PrivacySaveResult";
@@ -19,6 +20,7 @@ export type ActivityResults = {
   get_digest: ActivityDigestResponse;
   cancel_digest: boolean;
   save_digest: SaveDigestResult;
+  regenerate_knowledge_draft: SendKnowledgeDraftResult;
   send_digest_to_knowledge: SendKnowledgeDraftResult;
   knowledge_draft_history: Array<DraftHistoryEntry>;
   export_life_log: RenderedExport;
@@ -30,6 +32,7 @@ export type ActivityResults = {
   get_range: ActivityRangeSummary;
   start_tracking: boolean;
   stop_tracking: null;
+  collection_status: CollectionStatus;
   is_tracking: boolean;
   set_idle_threshold: null;
   get_idle_threshold: number;

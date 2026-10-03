@@ -182,14 +182,14 @@ pub(crate) fn stop_tracking_runtime(state: &AppState, update_consent: bool) -> R
         .sessionizer
         .lock()
         .map_err(|_| "tracking_state_unavailable")?
-        .finish(now_ms());
+        .finish_all(now_ms());
     let conn = state.db.lock().map_err(|_| "tracking_state_unavailable")?;
     let persisted = if update_consent && state.persist_tracking_consent {
         set_product_consent(&conn, false)
     } else {
         Ok(())
     };
-    if let Some(c) = closed {
+    for c in closed {
         insert_filtered(&conn, &c, &state.privacy.current()).map_err(|e| e.to_string())?;
     }
     persisted
@@ -228,6 +228,7 @@ pub fn spawn_poller(app: &tauri::AppHandle) -> tauri::async_runtime::JoinHandle<
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
         let mut idle_active = false;
+        let mut last_sample: Option<(std::time::Instant, i64)> = None;
         loop {
             if *shutdown.borrow() {
                 break;
@@ -241,6 +242,7 @@ pub fn spawn_poller(app: &tauri::AppHandle) -> tauri::async_runtime::JoinHandle<
             };
             if !state.tracking.load(Ordering::SeqCst) {
                 idle_active = false;
+                last_sample = None;
                 continue;
             }
             let now = now_ms();
@@ -255,16 +257,35 @@ pub fn spawn_poller(app: &tauri::AppHandle) -> tauri::async_runtime::JoinHandle<
             let threshold = crate::core::idle::parse_threshold_ms(&threshold);
             let rules = state.privacy.current();
 
-            let idle_end = crate::core::idle::session_end_on_idle(
-                now,
-                last_input_ms().unwrap_or(0),
-                threshold,
-            );
+            let idle_ms = last_input_ms().unwrap_or(0);
+            let last_input = now.saturating_sub(idle_ms);
+            let monotonic_now = std::time::Instant::now();
+            if let Some((previous, previous_input)) = last_sample {
+                if monotonic_now.duration_since(previous) > std::time::Duration::from_secs(10) {
+                    let closed = state
+                        .sessionizer
+                        .lock()
+                        .unwrap()
+                        .close_at_last_input(previous_input);
+                    let conn = state.db.lock().unwrap();
+                    for session in closed {
+                        let _ = insert_filtered(&conn, &session, &rules);
+                    }
+                    idle_active = true;
+                }
+            }
+            last_sample = Some((monotonic_now, last_input));
+            let idle_end = crate::core::idle::session_end_on_idle(now, idle_ms, threshold);
             if let Some(end_ts) = idle_end {
                 // idle 시작: 열린 세션을 idle 직전까지로 마감 (idle 시간 미집계)
-                if let Some(closed) = state.sessionizer.lock().unwrap().finish(end_ts) {
-                    let conn = state.db.lock().unwrap();
-                    let _ = insert_filtered(&conn, &closed, &rules);
+                let closed = state
+                    .sessionizer
+                    .lock()
+                    .unwrap()
+                    .close_at_last_input(end_ts);
+                let conn = state.db.lock().unwrap();
+                for session in closed {
+                    let _ = insert_filtered(&conn, &session, &rules);
                 }
                 idle_active = true;
                 continue;
@@ -280,8 +301,12 @@ pub fn spawn_poller(app: &tauri::AppHandle) -> tauri::async_runtime::JoinHandle<
             let Some((app, title)) = crate::core::window::foreground_window() else {
                 continue;
             };
-            let closed = state.sessionizer.lock().unwrap().observe(app, title, now);
-            if let Some(c) = closed {
+            let closed = state
+                .sessionizer
+                .lock()
+                .unwrap()
+                .observe_with_input(app, title, now, last_input);
+            for c in closed {
                 let conn = state.db.lock().unwrap();
                 let _ = insert_filtered(&conn, &c, &rules);
             }
@@ -314,12 +339,17 @@ pub fn set_idle_threshold(
     state: tauri::State<'_, Arc<AppState>>,
     threshold_ms: i64,
 ) -> Result<(), String> {
-    crate::core::db::set_setting(
-        &state.db.lock().unwrap(),
-        "idle_threshold_ms",
-        &threshold_ms.to_string(),
-    );
-    Ok(())
+    let conn = state.db.lock().map_err(|_| "idle_threshold_save_failed")?;
+    persist_idle_threshold(&conn, threshold_ms)
+}
+fn persist_idle_threshold(conn: &Connection, threshold_ms: i64) -> Result<(), String> {
+    if !(crate::core::idle::MIN_IDLE_THRESHOLD_MS..=crate::core::idle::MAX_IDLE_THRESHOLD_MS)
+        .contains(&threshold_ms)
+    {
+        return Err("idle_threshold_invalid".into());
+    }
+    crate::core::db::try_set_setting(conn, "idle_threshold_ms", &threshold_ms.to_string())
+        .map_err(|_| "idle_threshold_save_failed".into())
 }
 
 pub fn get_idle_threshold(state: tauri::State<'_, Arc<AppState>>) -> i64 {
@@ -553,4 +583,44 @@ mod tests {
             .unwrap();
         assert_eq!(title, "");
     }
+}
+
+#[cfg(test)]
+mod idle_threshold_persistence_tests {
+    use super::*;
+    #[test]
+    fn failed_or_unsupported_threshold_preserves_the_acknowledged_setting() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        persist_idle_threshold(&conn, 300_000).unwrap();
+        conn.execute_batch("PRAGMA query_only=ON").unwrap();
+        assert_eq!(
+            persist_idle_threshold(&conn, 60_000).unwrap_err(),
+            "idle_threshold_save_failed"
+        );
+        assert_eq!(
+            persist_idle_threshold(&conn, 0).unwrap_err(),
+            "idle_threshold_invalid"
+        );
+        assert_eq!(
+            crate::core::db::get_setting(&conn, "idle_threshold_ms", ""),
+            "300000"
+        );
+    }
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionStatus {
+    pub consent: bool,
+    pub tracking: bool,
+}
+pub fn collection_status(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<CollectionStatus, String> {
+    let conn = state.db.lock().map_err(|_| "unavailable")?;
+    Ok(CollectionStatus {
+        consent: product_consent(&conn),
+        tracking: state.tracking.load(Ordering::SeqCst),
+    })
 }

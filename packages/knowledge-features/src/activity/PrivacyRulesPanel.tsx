@@ -198,7 +198,11 @@ export default function PrivacyRulesPanel({
       )}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
-      <div className="dim">규칙은 DB 저장 전에 적용됩니다. 제외한 원문은 어디에도 남지 않습니다.</div>
+      <div className="dim">
+        규칙은 새 기록을 DB에 저장하기 전에 적용됩니다. 수집 일시중지는 앞으로의 수집을 멈추며 기존 기록을 삭제하지
+        않습니다. 타임라인과 앱 합계는 저장된 기록을 조회합니다. 내보내기·요약·Knowledge 초안에는 현재 규칙을 다시
+        적용합니다. 기존 DB 기록을 변경하려면 별도의 “기존 세션에 적용”을 확인하세요.
+      </div>
     </section>
   );
 }

@@ -131,3 +131,17 @@ JSON 응답의 보수적 상한 4 MiB, 전체 조회 시간 5초다. 디렉터�
 제품 플러그인의 명령은 `activity·notes·search·search_settings·opener·setup·commands`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/knowledge-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.
 
 활동 설정의 로그인 자동 시작은 Control Center 환경과 같은 agent 설정이다. 제품 자동 시작·트레이 숨김 설정은 없으며 활동 수집 동의는 별도로 유지한다.
+
+### Activity privacy and historical drafts
+
+| 경계 | 현재 규칙의 적용 | 기존 기록 |
+| --- | --- | --- |
+| 새 수집 | 저장 전에 프로세스 제외·제목 마스킹/치환 | 제외된 원문을 저장하지 않음 |
+| 타임라인·앱 합계 | 저장된 세션 조회 | 규칙 저장만으로 기존 DB를 변경하지 않음 |
+| 내보내기·요약·Knowledge 초안 | 집계 전에 현재 규칙과 credential 마스킹 재적용 | 원본 DB는 보존 |
+| 기존 세션에 적용 | 명시 확인 후 저장된 세션에 적용 | 되돌릴 수 없는 별도 변경 |
+| 수집 일시중지 | 앞으로의 수집 중단·동의 상태 저장 | 기록 삭제와 별개 |
+
+과거 초안 재생성은 native history의 기간·IANA 시간대·앱 필터만 사용한다. 보존된 유효 summary는 전달 reference가 만료되어도 같은 기간을 새로 집계할 수 있다. 삭제되거나 검증에 실패한 history는 명시적으로 실패한다. 새 draft ID는 기존 handoff를 변경하지 않고 `regeneratedFrom`으로 연결하며, 전달 성공은 검토 대기이고 노트 자동 저장이 아니다. source가 unavailable이면 기존 partial source 설명을 유지한다.
+
+native lifecycle 상태는 installedAgent/portableLocal/unknown과 동의·실제 추적 상태를 각각 제공한다. 연결 실패를 portable로 해석하지 않으며 설치본 창 종료와 전체 Agent 종료를 구분한다.
