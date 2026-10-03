@@ -100,6 +100,7 @@ export default function MarkdownEditor({
       state: EditorState.create({
         doc: valueRef.current,
         extensions: [
+          EditorView.contentAttributes.of({ "aria-label": "Markdown 본문" }),
           baseEditorExtensions(),
           markdownEditorExtensions(),
           wikilinkEditorExtensions(

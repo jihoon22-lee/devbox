@@ -1191,7 +1191,7 @@ export default function App({
               <button
                 className="root-del"
                 title="루트 제거"
-                aria-label="루트 제거"
+                aria-label={`${r.path} 루트 제거`}
                 disabled={removingRoots.has(r.path)}
                 onClick={() => void deleteRoot(r.path)}
               >
@@ -1202,6 +1202,7 @@ export default function App({
         })}
         <input
           className="root-input"
+          aria-label="검색 루트 경로"
           placeholder="검색 루트 (C:\projects 또는 \\wsl$\Ubuntu\home\...)"
           value={newRoot}
           maxLength={MAX_ROOT_BYTES}

@@ -812,10 +812,10 @@ it("retains a root chip and exposes remove failure", async () => {
   vi.mocked(listRoots).mockResolvedValueOnce([{ id: 1, path: "C:/owned", content: false }]);
   vi.mocked(removeRoot).mockRejectedValueOnce(new Error("failure"));
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "루트 제거" }));
+  fireEvent.click(await screen.findByRole("button", { name: "C:/owned 루트 제거" }));
   await screen.findByRole("alert");
   expect(screen.getByText("C:/owned")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "루트 제거" })).not.toBeDisabled();
+  expect(screen.getByRole("button", { name: "C:/owned 루트 제거" })).not.toBeDisabled();
 });
 it("does not run native query or metadata polling for a hidden Search", async () => {
   mocks.product = true;
