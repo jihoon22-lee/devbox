@@ -2,7 +2,7 @@ import SetupHealth from "./SetupHealth";
 import type { ShellContentProps } from "@devbox/product-shell";
 import type { RestoreInventory } from "@devbox/control-center-features/generated/RestoreInventory";
 import type { RecoveryStatus } from "@devbox/control-center-features/generated/RecoveryStatus";
-import { deriveSetupView } from "./setupFlow";
+import { deriveSetupView } from "./setupFlowState";
 export default function SetupFlow({
   description,
   route,
