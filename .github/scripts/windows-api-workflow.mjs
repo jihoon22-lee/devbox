@@ -1,5 +1,5 @@
 import {
-  establishResponseSelection,
+  prepareResponseSelection,
   responseTransformObservation,
   waitForResponseTransform,
 } from "./windows-api-response-transform.mjs";
@@ -258,8 +258,19 @@ try {
   assert.ok(masked.includes("[REDACTED]"));
   assert.ok(!masked.includes(secret));
   progress("response-transform");
-  await ui.cdp.evaluate(establishResponseSelection);
+  evidence.responseTransformBeforeFocus = await ui.cdp.evaluate(responseTransformObservation);
+  assert.equal(
+    await ui.cdp.evaluate('document.querySelector(".api-feature-requests .resp-body")?.textContent'),
+    masked,
+    "masked response changed before selection focus",
+  );
+  await prepareResponseSelection(ui.cdp);
   evidence.responseTransform = await ui.cdp.evaluate(responseTransformObservation);
+  assert.equal(
+    await ui.cdp.evaluate('document.querySelector(".api-feature-requests .resp-body")?.textContent'),
+    masked,
+    "masked response changed after selection focus",
+  );
   assert.equal(evidence.responseTransform.selectionInsideBody, true, "response selection is outside body");
   assert.equal(evidence.responseTransform.selectionNonempty, true, "response selection is empty");
   await click(".api-feature-requests .response-actions", "선택 영역을 Developer Toolbox로 보내기");

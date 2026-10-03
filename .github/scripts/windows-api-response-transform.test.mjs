@@ -3,6 +3,7 @@ import test from "node:test";
 import vm from "node:vm";
 import {
   establishResponseSelection,
+  prepareResponseSelection,
   responseTransformObservation,
   waitForResponseTransform,
 } from "./windows-api-response-transform.mjs";
@@ -73,5 +74,63 @@ test("failure observations exclude arbitrary renderer feedback and selected text
     getSelection: () => ({ rangeCount: 0, toString: () => secret }),
   });
   assert.equal(state.senderIssue, "sender-error");
+  assert.equal(JSON.stringify(state).includes(secret), false);
+});
+
+test("uses a real pointer press and release before constructing the synthetic Range", async () => {
+  const events = [];
+  const cdp = {
+    evaluate: async (expression) => {
+      if (expression === establishResponseSelection) {
+        events.push("range");
+        return;
+      }
+      events.push("read-hit-point");
+      return { x: 40, y: 60 };
+    },
+    send: async (method, params) => {
+      assert.equal(method, "Input.dispatchMouseEvent");
+      assert.equal(params.x, 40);
+      assert.equal(params.y, 60);
+      assert.equal(params.button, "left");
+      events.push(params.type);
+    },
+  };
+  await prepareResponseSelection(cdp);
+  assert.deepEqual(events, ["read-hit-point", "mousePressed", "mouseReleased", "range"]);
+});
+test("rejects invalid pointer geometry before attempting a selection", async () => {
+  await assert.rejects(
+    prepareResponseSelection({
+      evaluate: async () => ({ x: NaN, y: 20 }),
+      send: async () => assert.fail("must not click"),
+    }),
+    /pointer-invalid/,
+  );
+});
+test("distinguishes nonempty body and DOM Range from an empty focused-input Selection without exporting text", () => {
+  const secret = "synthetic-private-renderer-text";
+  const body = {
+    textContent: secret,
+    contains: () => true,
+    closest: () => null,
+    getBoundingClientRect: () => ({ x: 1, y: 2, width: 100, height: 50 }),
+  };
+  const range = { startContainer: {}, endContainer: {}, toString: () => secret };
+  const state = vm.runInNewContext(responseTransformObservation, {
+    document: {
+      activeElement: { tagName: "INPUT", type: "text", value: secret },
+      querySelector: (selector) => (selector.endsWith(".resp-body") ? body : null),
+    },
+    getSelection: () => ({ rangeCount: 1, getRangeAt: () => range, toString: () => "" }),
+    getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+  });
+  assert.equal(state.bodyTextNonempty, true);
+  assert.equal(state.rangeTextNonempty, true);
+  assert.equal(state.selectionInsideBody, true);
+  assert.equal(state.selectionNonempty, false);
+  assert.equal(state.bodyVisible, true);
+  assert.equal(state.activeElementTag, "INPUT");
+  assert.equal(state.activeElementType, "text");
   assert.equal(JSON.stringify(state).includes(secret), false);
 });
