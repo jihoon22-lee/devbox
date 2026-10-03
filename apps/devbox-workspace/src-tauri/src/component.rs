@@ -662,6 +662,38 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
     serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }
 
+fn request_close_review(app: &tauri::AppHandle) -> bool {
+    use tauri::Emitter;
+    let Some(window) = app.get_webview_window("main") else {
+        return false;
+    };
+    let runtime = app.state::<Runtime>();
+    if runtime
+        .close_review
+        .lock()
+        .is_ok_and(|review| review.approved())
+    {
+        app.exit(0);
+        return true;
+    }
+    // No editable product state exists before installation activation/registration.
+    if !runtime.ui_ready.load(Ordering::Acquire)
+        || product_shell_tauri::suite_import_only(app).unwrap_or(true)
+        || runtime.status()["phase"] != "selected"
+    {
+        return false;
+    }
+    let Ok(context) = product_shell_tauri::workspace_context(&window) else {
+        return true;
+    };
+    let Ok(mut review) = runtime.close_review.lock() else {
+        return true;
+    };
+    let request = review.request(context);
+    let _ = window.emit("workspace-close-review", request);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -995,36 +1027,4 @@ mod tests {
             );
         }
     }
-}
-
-fn request_close_review(app: &tauri::AppHandle) -> bool {
-    use tauri::Emitter;
-    let Some(window) = app.get_webview_window("main") else {
-        return false;
-    };
-    let runtime = app.state::<Runtime>();
-    if runtime
-        .close_review
-        .lock()
-        .is_ok_and(|review| review.approved())
-    {
-        app.exit(0);
-        return true;
-    }
-    // No editable product state exists before installation activation/registration.
-    if !runtime.ui_ready.load(Ordering::Acquire)
-        || product_shell_tauri::suite_import_only(app).unwrap_or(true)
-        || runtime.status()["phase"] != "selected"
-    {
-        return false;
-    }
-    let Ok(context) = product_shell_tauri::workspace_context(&window) else {
-        return true;
-    };
-    let Ok(mut review) = runtime.close_review.lock() else {
-        return true;
-    };
-    let request = review.request(context);
-    let _ = window.emit("workspace-close-review", request);
-    true
 }
