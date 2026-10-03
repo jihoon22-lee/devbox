@@ -1,3 +1,4 @@
+import { RegistryProjection } from "./registryProjection";
 import { listen } from "@tauri-apps/api/event";
 import CloseReview from "./CloseReview";
 import { nativeCall } from "./native";
@@ -98,6 +99,15 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
   }, [isRuntimeRoute]);
   const [ready, setReady] = useState(false);
   const [registry, setRegistry] = useState<Registry | null>(null);
+  const [registryProjection] = useState(
+    () => new RegistryProjection(() => nativeCall<Registry>("workspace.registry", "snapshot"), setRegistry),
+  );
+  const publishRegistry = useCallback(
+    (snapshot: Registry) => {
+      registryProjection.publish(snapshot);
+    },
+    [registryProjection],
+  );
   const [dependenciesBusy, setDependenciesBusy] = useState(false);
   const [sourceBusy, setSourceBusy] = useState(false);
   const [sourceDirty, setSourceDirty] = useState(false);
@@ -169,7 +179,11 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
     await nativeCall("workspace.commands", "confirm_close", { nonce: closeRequest.nonce });
   };
   const [registrySignal, setRegistrySignal] = useState(0);
-  const refreshRegistry = useCallback(() => setRegistrySignal((value) => value + 1), []);
+  const refreshRegistry = useCallback(async () => {
+    const snapshot = await registryProjection.refresh();
+    setRegistrySignal((value) => value + 1);
+    return snapshot;
+  }, [registryProjection]);
   const [fileRequest, setFileRequest] = useState<{
     id: string;
     contextKey: string;
@@ -269,7 +283,8 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
             editing={tasksDirty || editing || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty}
             transition={transition}
             refreshSignal={registrySignal}
-            onSnapshot={setRegistry}
+            canonicalRegistry={registry}
+            onSnapshot={publishRegistry}
             suggestedRoot={registrationRequest}
           />
         </Suspense>
@@ -367,6 +382,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
             registry={registry}
             navigate={navigate}
             refreshContext={refreshContext}
+            refreshRegistry={refreshRegistry}
             transition={transition}
           />
         </Suspense>

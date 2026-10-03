@@ -1,3 +1,4 @@
+import type { Registry } from "../RegistryGate";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import type { AgentTask } from "@devbox/workspace-features/generated/AgentTask";
 
@@ -22,6 +23,7 @@ export interface FlowPorts {
   };
   terminal: { openAgentTerminal(operationId: string, taskId: string): Promise<unknown> };
   refreshContext(): Promise<void>;
+  refreshRegistry?(): Promise<Registry>;
   currentContext(): Promise<ProjectContext | null>;
   operationId(key: string): string;
   settle(key: string): void;
@@ -49,6 +51,7 @@ export function sameContext(a: ProjectContext | null, b: ProjectContext): boolea
 }
 export async function selectContext(ports: FlowPorts, context: ProjectContext): Promise<void> {
   await ports.registry.select(context);
+  await ports.refreshRegistry?.();
   await ports.refreshContext();
   if (!sameContext(await ports.currentContext(), context)) throw new AgentFlowError("agent_context_changed");
 }
@@ -94,10 +97,29 @@ export async function advance(task: AgentTask, ports: FlowPorts, env: FlowEnv): 
     )
       throw new AgentFlowError("agent_task_context_mismatch");
     current = await ports.agents.bindWorktree(current.id, current.revision, context.worktreeId);
-    registered = context;
+    const snapshot = await ports.refreshRegistry?.();
+    const tree = snapshot?.worktrees.find(
+      (tree) => tree.id === context.worktreeId && tree.projectId === context.projectId,
+    );
+    if (snapshot && !tree) throw new AgentFlowError("agent_task_context_mismatch");
+    registered = tree
+      ? { projectId: tree.projectId, worktreeId: tree.id, revision: tree.revision, target: tree.binding.target }
+      : context;
   }
   if (current.state === "ready" || current.state === "running") {
-    const target = registered ?? (current.worktreeId ? env.worktreeContext(current.worktreeId) : null);
+    const snapshot = registered ? null : await ports.refreshRegistry?.();
+    const tree = snapshot?.worktrees.find(
+      (tree) => tree.id === current.worktreeId && tree.projectId === current.projectId,
+    );
+    const target =
+      registered ??
+      (tree
+        ? { projectId: tree.projectId, worktreeId: tree.id, revision: tree.revision, target: tree.binding.target }
+        : snapshot
+          ? null
+          : current.worktreeId
+            ? env.worktreeContext(current.worktreeId)
+            : null);
     if (
       !target ||
       target.projectId !== task.projectId ||

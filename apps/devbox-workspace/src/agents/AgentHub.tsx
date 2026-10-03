@@ -24,6 +24,7 @@ export default function AgentHub({
   navigate,
   refreshContext,
   transition,
+  refreshRegistry,
 }: {
   description: Description;
   active?: boolean;
@@ -31,6 +32,7 @@ export default function AgentHub({
   navigate(route: string): void;
   refreshContext(): Promise<void>;
   transition?: TransitionGuard;
+  refreshRegistry?: () => Promise<Registry>;
 }) {
   const [resources, setResources] = useState<AgentResources[]>([]);
   const [usage, setUsage] = useState<Record<string, UsageReport>>({});
@@ -44,7 +46,7 @@ export default function AgentHub({
   const projectId = description.context?.projectId;
   const selectedProject = useRef(projectId);
   selectedProject.current = projectId;
-  const ports = nativePorts(refreshContext, description.handshake.installationId, transition);
+  const ports = nativePorts(refreshContext, description.handshake.installationId, transition, refreshRegistry);
   const wsl = description.context?.target.kind === "wsl";
   async function load() {
     const project = projectId;
@@ -118,7 +120,7 @@ export default function AgentHub({
     });
   }
   async function baseOf(task: AgentTask) {
-    const snapshot = await call<Registry>("registry", "snapshot");
+    const snapshot = await (refreshRegistry ? refreshRegistry() : call<Registry>("registry", "snapshot"));
     const tree = snapshot.worktrees.find(
       (tree) => tree.id === task.baseWorktreeId && tree.projectId === task.projectId,
     );
@@ -141,11 +143,12 @@ export default function AgentHub({
           operationId: crypto.randomUUID(),
         },
       });
-    const snapshot = await call<Registry>("registry", "snapshot");
+    const snapshot = await (refreshRegistry ? refreshRegistry() : call<Registry>("registry", "snapshot"));
     const tree = snapshot.worktrees.find((tree) => tree.id === task.worktreeId && tree.projectId === task.projectId);
     if (tree) await call("registry", "remove", { revision: snapshot.revision, context: contextOf(tree) });
     await agentsCall("finish", { taskId: task.id, revision: task.revision, outcome: force ? "discarded" : "merged" });
     setConfirmation(null);
+    await refreshRegistry?.();
     await refreshContext();
   }
   async function act(task: AgentTask, action: RowAction) {
@@ -156,7 +159,15 @@ export default function AgentHub({
     if (action === "resume") await resume(task);
     if (action === "focus") await call("terminal", "focus_terminal", { id: task.terminalId });
     if (action === "reopen" || action === "review" || action === "pr") {
-      const context = task.worktreeId ? worktreeContext(task.worktreeId) : null;
+      const snapshot = await refreshRegistry?.();
+      const tree = snapshot?.worktrees.find((tree) => tree.id === task.worktreeId && tree.projectId === task.projectId);
+      const context = tree
+        ? contextOf(tree)
+        : snapshot
+          ? null
+          : task.worktreeId
+            ? worktreeContext(task.worktreeId)
+            : null;
       if (!context) throw new AgentFlowError("agent_task_context_mismatch");
       await selectContext(ports, context);
       if (action === "review" || action === "pr") navigate("source");

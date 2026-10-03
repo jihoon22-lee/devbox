@@ -21,6 +21,7 @@ export function nativePorts(
   refreshContext: () => Promise<void>,
   installationId: string,
   transition?: TransitionGuard,
+  refreshRegistry?: () => Promise<Registry>,
 ): FlowPorts {
   const creationKey = (id: string) => `${installationId}:workspace-agent-worktree:${id}`;
   return {
@@ -70,6 +71,7 @@ export function nativePorts(
       openAgentTerminal: (operationId, taskId) => call("terminal", "open_agent_terminal", { operationId, taskId }),
     },
     refreshContext,
+    refreshRegistry,
     currentContext: async () => (await currentDescription("workspace")).context ?? null,
     operationId: (key) => {
       const storageKey = `${installationId}:${key}`;

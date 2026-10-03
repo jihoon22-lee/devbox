@@ -60,6 +60,7 @@ export default function RegistryGate({
   onSnapshot,
   suggestedRoot,
   transition,
+  canonicalRegistry,
 }: {
   setupOnly?: boolean;
   context?: ProjectContext | null;
@@ -67,6 +68,7 @@ export default function RegistryGate({
   onReady?: () => void;
   editing?: boolean;
   transition?: TransitionGuard;
+  canonicalRegistry?: Registry | null;
   refreshSignal?: number;
   onSnapshot?: (registry: Registry) => void;
   suggestedRoot?: { id: string; path: string; name: string; target?: ProjectContext["target"] } | null;
@@ -91,7 +93,15 @@ export default function RegistryGate({
       ? incoming.review
       : null;
   const [status, setStatus] = useState<Status>({ phase: "loading" });
-  const [registry, setRegistry] = useState<Registry | null>(null);
+  const [registry, updateRegistry] = useState<Registry | null>(null);
+  const setRegistry = (next: Registry) =>
+    updateRegistry((previous) => (previous && previous.revision > next.revision ? previous : next));
+  useEffect(() => {
+    if (canonicalRegistry)
+      updateRegistry((previous) =>
+        previous && previous.revision > canonicalRegistry.revision ? previous : canonicalRegistry,
+      );
+  }, [canonicalRegistry]);
   const [templateId, setTemplateId] = useState("");
   const [root, setRoot] = useState("");
   const [name, setName] = useState("");
