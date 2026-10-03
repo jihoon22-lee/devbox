@@ -5,6 +5,7 @@ import {
   establishResponseSelection,
   diagnosticStylesConfig,
   applyDiagnosticStyles,
+  prepareDiagnosticCss,
   prepareResponseSelection,
   responseTransformObservation,
   responseGeometryObservation,
@@ -218,30 +219,64 @@ test("diagnostic styles are disabled by default and require explicit hosted sour
   for (const key of ["GITHUB_SHA", "DEVBOX_SUITE_ARTIFACT_SOURCE", "DEVBOX_SUITE_ARTIFACT_RUN"])
     assert.throws(() => diagnosticStylesConfig({ ...env, [key]: "" }), /valid-source-run-pair-required/);
 });
-test("diagnostic style injection confirms fixed element contents and preserves a specific failure", async () => {
+test("diagnostic style injection uses inspector CSS and verifies computed layout", async () => {
   const css = ".response { min-height: 320px; }";
-  const head = {
-    appendChild: (style) => {
-      style.isConnected = true;
-    },
+  const calls = [];
+  const computed = {
+    responsePresent: true,
+    responseFlexShrink: "0",
+    responseMinHeight: "320px",
+    bodyPresent: true,
+    bodyMinHeight: "160px",
   };
-  await applyDiagnosticStyles(
-    {
-      evaluate: async (expression) =>
-        vm.runInNewContext(expression, { document: { getElementById: () => null, createElement: () => ({}), head } }),
+  const cdp = {
+    send: async (method, params) => {
+      calls.push({ method, params });
+      if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "root-frame" } } };
+      if (method === "CSS.createStyleSheet") return { styleSheetId: "inspector-sheet" };
+      return {};
     },
-    css,
+    evaluate: async () => computed,
+  };
+  assert.equal(await applyDiagnosticStyles(cdp, css), computed);
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ["DOM.enable", "CSS.enable", "Page.getFrameTree", "CSS.createStyleSheet", "CSS.setStyleSheetText"],
   );
-  await assert.rejects(applyDiagnosticStyles({ evaluate: async () => false }, css), /injection-not-confirmed/);
+  assert.deepEqual(calls[3].params, { frameId: "root-frame" });
+  assert.deepEqual(calls[4].params, { styleSheetId: "inspector-sheet", text: css });
+  let observed;
+  await assert.rejects(
+    applyDiagnosticStyles(
+      { ...cdp, evaluate: async () => ({ ...computed, responseMinHeight: "0px" }) },
+      css,
+      (value) => {
+        observed = value;
+      },
+    ),
+    /computed-style-not-confirmed/,
+  );
+  assert.equal(observed.responseMinHeight, "0px");
+  await assert.rejects(
+    applyDiagnosticStyles({ ...cdp, evaluate: async () => ({ ...computed, bodyMinHeight: "0px" }) }, css),
+    /computed-style-not-confirmed/,
+  );
   await assert.rejects(
     applyDiagnosticStyles(
       {
-        evaluate: async () => {
-          throw new Error("packaged renderer evaluation failed");
+        ...cdp,
+        send: async () => {
+          throw new Error("CDP unavailable");
         },
       },
       css,
     ),
-    /api-diagnostic-styles-injection-failed/,
+    /inspector-injection-failed/,
   );
+});
+test("diagnostic stylesheet strips exactly the two packaged imports and preserves remaining CSS", () => {
+  const imports = '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n';
+  const css = "\n.response { min-height: 320px; }\n";
+  assert.equal(prepareDiagnosticCss(imports + css), css);
+  assert.throws(() => prepareDiagnosticCss('@import "other.css";\n' + css), /unexpected-imports/);
 });

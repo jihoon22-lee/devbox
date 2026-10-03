@@ -2,6 +2,7 @@ import {
   prepareResponseSelection,
   diagnosticStylesConfig,
   applyDiagnosticStyles,
+  prepareDiagnosticCss,
   responseTransformObservation,
   responseGeometryObservation,
   waitForResponseTransform,
@@ -37,6 +38,12 @@ const diagnosticCss = diagnosticStyles
 if (diagnosticStyles) {
   diagnosticStyles.stylePath = "packages/api-studio-features/src/requests/App.css";
   diagnosticStyles.styleSha256 = createHash("sha256").update(diagnosticCss).digest("hex");
+}
+const appliedDiagnosticCss = diagnosticStyles ? prepareDiagnosticCss(diagnosticCss) : null;
+if (diagnosticStyles) {
+  diagnosticStyles.appliedStyleSha256 = createHash("sha256").update(appliedDiagnosticCss).digest("hex");
+  diagnosticStyles.removedImports = ["@devbox/tokens/tokens.css", "@devbox/a11y/styles.css"];
+  diagnosticStyles.injection = "devtools-inspector-stylesheet";
 }
 const root = mkdtempSync(path.join(tmpdir(), "devbox-api-migration-fixture-s03-"));
 const executable = path.join(root, `api-s03-${randomUUID()}.exe`);
@@ -140,7 +147,10 @@ async function start() {
   await cdp.send("Page.enable");
   ui = { child, cdp, policy };
   await wait('!!document.querySelector(".url-input")', "API startup did not finish");
-  if (diagnosticStyles) await applyDiagnosticStyles(cdp, diagnosticCss);
+  if (diagnosticStyles)
+    await applyDiagnosticStyles(cdp, appliedDiagnosticCss, (computed) => {
+      evidence.diagnosticStyles.computed = computed;
+    });
 }
 async function stop() {
   const item = ui;

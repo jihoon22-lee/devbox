@@ -113,22 +113,40 @@ export function diagnosticStylesConfig(env) {
   };
 }
 
-export async function applyDiagnosticStyles(cdp, css) {
+export function prepareDiagnosticCss(css) {
+  const imports = '@import "@devbox/tokens/tokens.css";\n@import "@devbox/a11y/styles.css";\n';
+  if (typeof css !== "string" || !css.startsWith(imports)) throw new Error("api-diagnostic-styles-unexpected-imports");
+  return css.slice(imports.length);
+}
+
+export async function applyDiagnosticStyles(cdp, css, observe = () => {}) {
   if (typeof css !== "string" || !css.length || css.length > 1024 * 1024)
     throw new Error("api-diagnostic-styles-invalid-css");
-  let applied;
+  let computed;
   try {
-    applied = await cdp.evaluate(`(() => {
-      const id = 'devbox-api-diagnostic-styles';
-      if (document.getElementById(id)) return false;
-      const style = document.createElement('style');
-      style.id = id;
-      style.textContent = ${JSON.stringify(css)};
-      document.head.appendChild(style);
-      return style.isConnected && style.textContent === ${JSON.stringify(css)};
+    await cdp.send("DOM.enable");
+    await cdp.send("CSS.enable");
+    const { frameTree } = await cdp.send("Page.getFrameTree");
+    if (!frameTree?.frame?.id) throw new Error("missing-root-frame");
+    const { styleSheetId } = await cdp.send("CSS.createStyleSheet", { frameId: frameTree.frame.id });
+    if (!styleSheetId) throw new Error("missing-inspector-stylesheet");
+    await cdp.send("CSS.setStyleSheetText", { styleSheetId, text: css });
+    computed = await cdp.evaluate(`(() => {
+      const response = document.querySelector('.api-feature-requests .response');
+      const body = document.querySelector('.api-feature-requests .resp-body');
+      const style = response ? getComputedStyle(response) : null;
+      return { responsePresent: !!response, responseFlexShrink: style?.flexShrink || null, responseMinHeight: style?.minHeight || null, bodyPresent: !!body, bodyMinHeight: body ? getComputedStyle(body).minHeight : null };
     })()`);
   } catch {
-    throw new Error("api-diagnostic-styles-injection-failed");
+    throw new Error("api-diagnostic-styles-inspector-injection-failed");
   }
-  if (applied !== true) throw new Error("api-diagnostic-styles-injection-not-confirmed");
+  observe(computed);
+  if (
+    !computed.responsePresent ||
+    computed.responseFlexShrink !== "0" ||
+    computed.responseMinHeight !== "320px" ||
+    (computed.bodyPresent && computed.bodyMinHeight !== "160px")
+  )
+    throw new Error("api-diagnostic-styles-computed-style-not-confirmed");
+  return computed;
 }
