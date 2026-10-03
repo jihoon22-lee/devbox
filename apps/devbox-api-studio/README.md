@@ -1,7 +1,7 @@
 # Devbox API Studio
 
-v0.8의 네 사용자 제품 중 하나다. Requests·Protocols·Webhooks·Transforms를 통합한다.
-B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#541](https://github.com/jihoon22-lee/devbox/issues/541)에 기록한다.
+v0.9.0 소스의 네 사용자 제품 중 하나다. Requests·Protocols·Webhooks·Transforms를 통합한다.
+현재 코드 검토·후보·실기·공개 상태는 [통합 점검 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)와 [릴리스 근거](../../docs/release-evidence.md)에 기록한다. 소스 버전과 공개 완료는 구분한다.
 
 ## 실행과 개발
 

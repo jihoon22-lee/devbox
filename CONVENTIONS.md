@@ -51,7 +51,7 @@ apps/devbox-api-studio/      # Requests·Protocols·Webhooks·Transforms
 apps/devbox-knowledge/       # Notes·Daily·Activity·Search
 apps/devbox-control-center/  # 제품·명령·도구·이전·설치 복구
 packages/                   # product-shell와 domain feature UI, tokens 및 실제 공유 UI
-crates/                     # 14개 소비 engine 및 계약·migration·runtime 공용 모듈
+crates/                     # 제품 engine 및 계약·저장소·runtime 공용 모듈
 docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 ```
 
@@ -89,16 +89,16 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 중복 발견 시 → `packages/<name>`으로 추출
 
 ### 데이터 위치 규약
-Tauri의 `app_local_data_dir()`을 사용하며, 이는 **번들 identifier 기준 폴더**다.
-```
-%LOCALAPPDATA%\{identifier}\    # 예: %LOCALAPPDATA%\com.devbox.lifelog\
-```
-- SQLite: `%LOCALAPPDATA%\{identifier}\data.db`, 설정: `config.json`
-- 앱별 identifier: `com.devbox.activitytimeline`, `com.devbox.everythingplus`,
-  `com.devbox.knowledgebase`, `com.devbox.lifelog` 등
-- 앱 간 데이터 교환은 상대 앱의 `app_local_data_dir`을 직접 읽지 않고
-  `%LOCALAPPDATA%\devbox\integration\<app-id>\v<n>\`의 read-only snapshot을 사용한다.
-  (상세: `docs/product-opportunities.md` §10.1)
+
+제품 기본 identifier는 `com.devbox.v08.workspace`, `com.devbox.v08.apistudio`,
+`com.devbox.v08.knowledge`, `com.devbox.v08.controlcenter`다. v0.9.0에서도 이 값을
+유지하여 버전 변경으로 사용자 데이터 namespace가 달라지지 않게 한다.
+
+설치본은 native가 검증한 installation key로 `%LOCALAPPDATA%\{identifier}.i{key}\`를
+선택한다. 경로를 renderer 입력으로 선택하지 않는다. DB·설정·로그는 해당 제품/owner가
+소유하며, 외부 노트 폴더는 별도로 승인한다. 제품 간 작업은 검증된 Suite peer와 typed
+handoff를 거치며, UI route 이동 자체가 다른 제품 데이터 접근 권한을 주지는 않는다.
+agent의 배포 위치·writer lease·제품 데이터 소유 범위는 [ADR 0015](docs/adr/0015-devbox-agent.md)를 따른다.
 
 ## 4. 코드 규약
 
@@ -155,7 +155,7 @@ src/
 > 앱 버전은 `src-tauri/Cargo.toml`을 원본으로 하고, `src-tauri/tauri.conf.json`과
 > `package.json`은 항상 같은 값을 갖는다. 버전을 올릴 때 세 파일을 함께 수정한다.
 
-- 앱 버전은 release tag와 독립적이다. release tag는 배포 일괄 단위일 뿐 앱 버전이 아니다.
+- 현재 Suite 릴리스는 네 제품과 agent의 버전을 일치시키며 stable tag는 `v{suiteVersion}`이다. 내부 library crate와 공용 프런트 package의 버전까지 일괄 변경하지 않는다.
 - `package.json`의 버전이 `Cargo.toml`과 어긋난 상태로 커밋하지 않는다.
 
 ### 릴리스 검증 경계
@@ -231,8 +231,10 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 
 ## 7. 현재 개발 범위
 
-B01~B08의 제품·통합·delivery 구현 이후 B09에서 source/CI/배포 전환을 마무리한다.
-선행 PR이 완료되기 전에 의존 후속 작업을 시작하지 않는다. 실제 상태와 근거는 #541에 기록한다.
+리뷰 후속 B1–B12와 v0.9.0 버전 준비 PR #612는 머지됐다. 현재 작업은 전체 코드 검토의
+발견 사항, 신규 설치 실기, 기존 설치 전환 경로, 최종 후보와 공개 조건을 정리하는 것이다.
+진행 상태는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)이 정본이며,
+코드/의존성이 바뀌면 변경된 exact-main의 CI와 새 후보 검증이 필요하다.
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
 
