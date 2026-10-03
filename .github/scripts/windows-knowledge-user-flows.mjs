@@ -1,3 +1,6 @@
+import { observeKnowledgeInput } from "./windows-knowledge-input-ui.mjs";
+import { observeProductPerformance } from "./windows-suite-layout.mjs";
+import { measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
 // Real packaged UI acceptance. Provisioning and final namespace cleanup belong to the Suite fixture.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -84,6 +87,7 @@ export async function createInstalledKnowledgeContext() {
       WEBVIEW2_USER_DATA_FOLDER: profile,
     };
     for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+    const started = performance.now();
     const child = spawn(executable, [], { cwd: root, env, stdio: "ignore" });
     await once(child, "spawn");
     current = { child, identity: null, executable, policy, cdp: null };
@@ -103,6 +107,7 @@ export async function createInstalledKnowledgeContext() {
       () => current.cdp.evaluate("!!window.__TAURI_INTERNALS__ && !!document.querySelector('.product-shell')"),
       "native Knowledge shell",
     );
+    current.coldRendererReadyMs = performance.now() - started;
     return current;
   }
   async function closeOwned() {
@@ -255,6 +260,7 @@ export async function createInstalledKnowledgeContext() {
         "native root ack",
       );
     },
+    indexStats: () => observe("knowledge.search", "index_status"),
     async contentStats() {
       const stats = await observe("knowledge.search", "index_status");
       return { indexed_files: stats.content_indexed_files };
@@ -341,6 +347,11 @@ export async function createInstalledKnowledgeContext() {
     root,
     manifest,
     installationKey: owner.installationKey,
+    get coldRendererReadyMs() {
+      return current?.coldRendererReadyMs;
+    },
+    measureWarm: () => measureWarmOwnedWindow(current.windowOwner, current.cdp),
+    getIdentities: () => ownedProductCohort(current.identity),
     get cdp() {
       return current?.cdp;
     },
@@ -359,7 +370,25 @@ export async function runInstalledKnowledgeUserFlows() {
     results = [];
   try {
     context = await createInstalledKnowledgeContext();
-    results = [...(await documents(context)), ...(await search(context)), ...(await activity(context))];
+    let searchResults = [];
+    await observeProductPerformance({
+      product: "knowledge",
+      cdp: context.cdp,
+      getIdentities: context.getIdentities,
+      coldRendererReadyMs: context.coldRendererReadyMs,
+      warmExistingWindowMs: await context.measureWarm(),
+      workload: async () => {
+        searchResults = await search(context);
+        assert.ok(
+          searchResults.every((row) => row.status === "PASS"),
+          "Actual search workloads failed",
+        );
+        assert.equal(context.knowledgeFixture.performanceSearch?.fileCount, 500);
+        return context.knowledgeFixture.performanceSearch;
+      },
+    });
+    await observeKnowledgeInput({ ui: context.ui, cdp: context.cdp, fixture: context.knowledgeFixture });
+    results = [...(await documents(context)), ...searchResults, ...(await activity(context))];
     await writeUserFlowResults("knowledge", results);
     assert.ok(
       results.every((r) => r.status === "PASS"),

@@ -11,11 +11,31 @@ export async function run(context) {
         const root = await mkdtemp(path.join(fixtureRoot, "knowledge-search-"));
         for (const name of ["foo.txt", "bar.md", "a---b.log", "한글.md"])
           await writeFile(path.join(root, name), "synthetic name-only fixture\n", { flag: "wx" });
+        for (let index = 0; index < 496; index++)
+          await writeFile(path.join(root, `perf-${String(index).padStart(3, "0")}.txt`), "synthetic indexed file\n", {
+            flag: "wx",
+          });
         await fixture.navigate("search");
         const beforeContent = (await fixture.contentStats()).indexed_files;
         await ui.fill({ role: "textbox", name: "검색 루트 경로" }, root);
+        const indexStarted = performance.now();
         await ui.click({ role: "button", name: "추가" });
         await fixture.waitRoot(root);
+        await fixture.wait(async () => {
+          const status = await fixture.indexStats();
+          return !status.indexing && status.indexed_files >= 500;
+        }, "owned 500 files metadata index completed");
+        const indexMs = performance.now() - indexStarted,
+          searchMs = [];
+        if (await fixture.regexEnabled()) await ui.click({ role: "checkbox", name: "regex" });
+        for (let index = 0; index < 10; index++) {
+          const query = `perf-${String(index).padStart(3, "0")}.txt`,
+            started = performance.now();
+          await ui.fill({ role: "textbox", name: "파일 이름 검색" }, query);
+          await fixture.waitBody(query);
+          searchMs.push(performance.now() - started);
+        }
+        fixture.performanceSearch = { fileCount: 500, indexMs, searchMs };
         await ui.click({ role: "checkbox", name: "regex" });
         await ui.fill({ role: "textbox", name: "파일 이름 검색" }, "foo|bar");
         await fixture.waitBody("foo.txt");

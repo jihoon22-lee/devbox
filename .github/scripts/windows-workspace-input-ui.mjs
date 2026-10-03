@@ -1,3 +1,4 @@
+import { observeProductLayout, assertProductLayout } from "./browser-product-layout.mjs";
 import assert from "node:assert/strict";
 import { writeProductInputObservation } from "./windows-suite-layout.mjs";
 import { observeUntil } from "./windows-suite-ui-context.mjs";
@@ -23,6 +24,12 @@ export async function observeWorkspaceInput({ ui, cdp, fileName }) {
   assert.equal(await read('document.activeElement?.getAttribute("aria-label")'), "파일 검색");
   await cdp.command("Input.imeSetComposition", { text: "한글", selectionStart: 2, selectionEnd: 2 });
   await ui.press("Enter");
+  assert.equal(
+    await read('Boolean(document.querySelector(".quick-open-dialog"))'),
+    true,
+    "Composition Enter must not select a file",
+  );
+  await cdp.command("Input.imeSetComposition", { text: "한글", selectionStart: 2, selectionEnd: 2 });
   await ui.press("Escape");
   assert.equal(
     await read('Boolean(document.querySelector(".quick-open-dialog"))'),
@@ -70,6 +77,7 @@ export async function observeWorkspaceInput({ ui, cdp, fileName }) {
   );
   await cdp.command("Emulation.setPageScaleFactor", { pageScaleFactor: 1.25 });
   assert.ok(await read("visualViewport.scale>=1.2"), "Actual renderer scale did not change");
+  assertProductLayout(await cdp.evaluate(`(${observeProductLayout.toString()})()`), { editor: true });
   screenshots.push(await ui.screenshot("workspace-input-enlarged-editor"));
   await cdp.command("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
   await writeProductInputObservation({

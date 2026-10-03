@@ -26,18 +26,40 @@ export async function observeInstalledProductLayout({ cdp, ui, processIdentity, 
   const identity = await packagedIdentity();
   const installationKey = await installedFixtureIdentity();
   const owner = captureWindowOwner(processIdentity, path.dirname(root));
+  const config = JSON.parse(await readFile(path.resolve(`apps/devbox-${product}/src-tauri/tauri.conf.json`), "utf8"));
+  const window = config.app.windows.find((item) => item.label === "main");
+  assert.ok(window);
   const sizes = [
-    { name: "default", width: 1280, height: 900 },
-    { name: "minimum", width: 900, height: 700 },
+    { name: "default", width: window.width, height: window.height },
+    { name: "minimum", width: window.minWidth, height: window.minHeight },
   ];
   const observations = [];
   for (const size of sizes) {
-    nativeWindowAction(owner, "Resize", size);
+    const before = await cdp.evaluate(
+      "({width:innerWidth,height:innerHeight,outerWidth,outerHeight,pixelRatio:devicePixelRatio})",
+    );
+    assert.ok(Number.isFinite(before.pixelRatio) && before.pixelRatio > 0);
+    const nativeSize = {
+      width: Math.round(size.width * before.pixelRatio),
+      height: Math.round(size.height * before.pixelRatio),
+    };
+    nativeWindowAction(owner, "Resize", nativeSize);
     await cdp.command("Page.bringToFront");
     await cdp.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-    const observed = assertProductLayout(await cdp.evaluate(`(${observeProductLayout.toString()})()`));
+    const observed = await cdp.evaluate(`(${observeProductLayout.toString()})()`);
+    assertProductLayout(observed, { editor: Boolean(observed.editor) });
+    assert.ok(
+      Math.abs(observed.viewport.width - size.width) <= 48 && Math.abs(observed.viewport.height - size.height) <= 96,
+      "Actual client dimensions must correspond to requested native size",
+    );
+    if (size.name === "minimum")
+      assert.ok(
+        observed.viewport.width >= size.width - 2 && observed.viewport.height >= size.height - 2,
+        "OS minimum must preserve configured client task area",
+      );
     observations.push({
       size,
+      requestedNativeSize: nativeSize,
       observed,
       screenshotPath: await ui.screenshot(`layout-${product}-${state}-${size.name}`),
     });
@@ -97,6 +119,12 @@ export async function observeProductPerformance({
     ...(await packagedIdentity()),
     installationKey: await installedFixtureIdentity(),
     product,
+    conditions: {
+      cold: "Spawn to actual ready shell using prepared installed product namespace; product data is retained",
+      warm: "Existing owned primary window minimized then activated through native UI Automation",
+      idle: "Ten-second startup survival followed by five-second owned process cohort sample before representative workload",
+      input: "Actual inert F24 key dispatch and renderer acknowledgement",
+    },
     measured,
     budget,
   };
@@ -135,7 +163,7 @@ export async function aggregateLayoutEvidence() {
         ["default", "minimum"],
       );
       for (const observation of record.observations) {
-        assertProductLayout(observation.observed);
+        assertProductLayout(observation.observed, { editor: Boolean(observation.observed.editor) });
         assert.ok(observation.screenshotPath);
         screenshotPaths.push(observation.screenshotPath);
         assertions.push(
