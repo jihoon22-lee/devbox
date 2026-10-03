@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { deriveSetupView } from "./setupFlow";
+import { deriveSetupView } from "./setupFlowState";
 import type { RestoreInventory } from "@devbox/control-center-features/generated/RestoreInventory";
 const inventory: RestoreInventory = {
   checkpoints: [],
