@@ -4,6 +4,25 @@
 
 코드 경로는 현재 `/home/jihoon/projects/devbox` 기준이다. 다른 checkout에서는 저장소 상대 위치를 그대로 사용한다. 상세 변경 파일과 assertion은 소유 작업 문서에 있다.
 
+### 후보 검증 후속 보정
+
+통합 PR #616 이후 출시 차단 수정은 최소 보정 PR에 묶는다. #617은 Windows 파일명 충돌,
+#618은 commit/passive-effect 사이 작업 시작과 Transform 명시 저장의 수명 경계를 수정했다.
+후보 `37126573659`는 네 제품과 7개 자산 조립, product-shells·Knowledge·cross-product·WSL2를
+통과했지만 API 응답 선택과 installer 준비에서 실패하여 승격 대상이 아니다.
+
+- API: Windows 진단 `37132833899`에서 `.response`와 `.response-panel` 높이 0,
+  본문 높이 28px(패딩만 남음) 및 SSE 영역에 가려지는 화면을 확인했다. 응답 영역이 축소되지 않도록
+  수정하고 버튼 줄바꿈을 적용했다. 같은 개발용 Chromium 요청의 수정 전 0px → 수정 후 응답 320px 이상,
+  본문 160px 이상을 확인했으며 720×480에서도 본문 선택·포인터 접근 및 헤더 탭을 확인했다.
+  이는 browser 레이아웃 근거이고 수정된 Windows 설치본 수용 완료를 뜻하지 않는다.
+- Installer: 같은 Actions step 안에서 새 `GITHUB_ENV` 값을 읽어 WSL fixture 소유권 검사에
+  실패했다. 생산자와 소비자 step을 분리했다. 이 실패 이전에는 40개 설치 UI 여정이 실행되지 않았다.
+- 보관 후보를 재사용한 진단은 runner와 payload source를 구분하고 별도 diagnostic artifact에만
+  기록한다. 최종 exact-main 후보의 설치/UI 수용과 승격 근거를 대체하지 않는다.
+
+최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
+
 ## 1. 기존 감사 23건의 누락 없는 배정
 
 | ID | 우선 | 재현 조건·문제 | 핵심 위치 | 작업 | 검증 ID·종료 조건 |

@@ -30,6 +30,8 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
   main에서 수동 실행하여 그 commit의 성공을 확인한다. 문서 준비 중 같은 전체 검사를 반복하지 않는다.
 - 2026-10-03 철회된 v0.9.0은 현재 [제품 재정비 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)에 따라 다시 출시한다.
   모든 개선·문서 준비를 통합 브랜치의 PR 1개로 마치고 필수 설치/UI/데이터 보존 수용을 공개 전에 완료한다.
+  통합 PR #616 이후 후보에서 드러난 출시 차단 결함은 사용자 후속 승인에 따라 최소 보정 PR에 묶어 자율 처리한다.
+  기존 성공을 다른 source의 성공으로 바꾸지 않으며, PR 수 예외를 매번 다시 승인받지 않는다.
   동일 버전 철회본 위의 수정본 재설치와 데이터 보존도 필수다. 사용자 기본 실기 응답을 완료 조건으로 두지 않는다.
 - 기존 v0.9.0 태그는 재출시 후보 직전에 Release 부재와 ref object를 확인하고 명시적 lease로 제거한다.
   철회본 tag object `f31f111977956bd665cd432accdf54677444027f`와 source `e499ac7127269bf67863bf0fdc42eaf53236b9f3`를

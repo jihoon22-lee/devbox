@@ -13,6 +13,8 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 - 현재 작업의 원장은 `docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md`와
   그 추적표다. R00–R16을 통합 개발 브랜치에 모아 최종 PR **1개**로 제출한다.
   작업별 branch/worktree/commit은 자유롭게 나누되 선행 변경을 통합한 뒤 후속 작업을 시작한다.
+  통합 PR #616 이후 후보 검증에서 발견된 출시 차단 결함은 사용자 후속 지시에 따라
+  필요한 최소 보정 PR에 묶어 자율 처리한다. PR 수 예외를 매번 다시 승인받지 않는다.
   이전 2026-09-23 계획과 #580·#541·#542는 닫힌 역사 기록이다.
 - 현재/과거 stable의 SHA·workflow·실기 근거는 [release evidence](./docs/release-evidence.md),
   앱·공용 모듈 목록은 CONVENTIONS §2와 [projects](./docs/projects.md)를 필요할 때 읽는다.
