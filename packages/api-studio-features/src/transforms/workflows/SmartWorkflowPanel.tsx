@@ -1,5 +1,5 @@
 import { storageFailureMessage } from "../../storage/documentStorage";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TOOLS } from "../tools";
 import { ToolOutput, ToolTextArea } from "../tools/common";
 import { OutputSourceContext } from "../tools/outputPolicy";
@@ -32,6 +32,7 @@ import {
   sanitizeWorkflowMetadata,
   toggleFavoriteTool,
   upsertPipeline,
+  removePipeline, WORKFLOW_STORAGE_LIMITS,
   WORKFLOW_STORAGE_ERROR,
   type WorkflowMetadata,
   type WorkflowPersistence,
@@ -117,6 +118,20 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [selectedStepId, setSelectedStepId] = useState(() => firstCompatibleTransformerId("text"));
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const draftRevision = useRef(0);
+  const stepList = useRef<HTMLOListElement>(null);
+  const addStepButton = useRef<HTMLButtonElement>(null);
+  const pendingStepFocus = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pendingStepFocus.current === null) return;
+    const buttons = stepList.current?.querySelectorAll<HTMLButtonElement>("button");
+    const index = pendingStepFocus.current;
+    pendingStepFocus.current = null;
+    if (buttons?.length) buttons[Math.min(index, buttons.length - 1)].focus();
+    else addStepButton.current?.focus();
+  }, [steps]);
   const [output, setOutput] = useState("");
   const [pipelineError, setPipelineError] = useState<PipelineError | null>(null);
 
@@ -184,25 +199,51 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     });
   }, [activeToolId, loaded, persistence, storageWritable]);
 
-  const persist = (next: WorkflowMetadata) => {
-    if (!storageWritable) {
+  const persist = async (next: WorkflowMetadata): Promise<boolean> => {
+    if (!storageWritable || saveState === "saving") {
       setStorageError(WORKFLOW_STORAGE_ERROR);
-      return;
+      return false;
     }
-    const safe = sanitizeWorkflowMetadata(next, {
-      toolIds: TOOL_IDS,
-      transformerIds: TRANSFORMER_IDS,
-    });
+    const previous = metadataRef.current;
+    const safe = sanitizeWorkflowMetadata(next, { toolIds: TOOL_IDS, transformerIds: TRANSFORMER_IDS });
     metadataRef.current = safe;
-    setMetadata(safe);
     setStorageError(null);
+    setSaveState("saving");
     const revision = ++saveRevision.current;
-    void persistence.save(safe).catch((cause) => {
+    try {
+      await persistence.save(safe);
       if (mounted.current && saveRevision.current === revision) {
+        setMetadata(safe);
+        setSaveState("saved");
+      }
+      return true;
+    } catch (cause) {
+      if (mounted.current && saveRevision.current === revision) {
+        metadataRef.current = previous;
+        setMetadata(previous);
+        setSaveState("error");
         setStorageError(storageFailureMessage(cause, WORKFLOW_STORAGE_ERROR));
         setStorageWritable(false);
       }
-    });
+      return false;
+    }
+  };
+
+  const markEdited = () => { draftRevision.current++; setDirty(true); setSaveState(current => current === "saving" ? "saving" : "idle"); };
+  const newPipeline = () => {
+    draftRevision.current++;
+    setSelectedPipelineId(null);
+    setSteps([]);
+    setSelectedStepId(firstCompatibleTransformerId(inputType));
+    setDirty(false);
+    setSaveState("idle");
+    setOutput(""); setPipelineError(null);
+  };
+  const deletePipeline = async (id: string) => {
+    if (!window.confirm(`${id} 파이프라인을 삭제할까요?`)) return;
+    if (await persist(removePipeline(metadataRef.current, id))) {
+      if (selectedPipelineId === id) newPipeline();
+    }
   };
 
   const changeInput = (value: string) => {
@@ -220,7 +261,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     setInputType(nextType);
     setSteps([]);
     setSelectedStepId(firstCompatibleTransformerId(nextType));
-    setSelectedPipelineId(null);
+    markEdited();
     setOutput("");
     setPipelineError(null);
   };
@@ -237,7 +278,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     const nextSteps = [{ transformerId: candidate.transformerId }];
     setSteps(nextSteps);
     setSelectedStepId(firstCompatibleTransformerId(transformer.outputType));
-    setSelectedPipelineId(null);
+    markEdited();
     setOutput("");
     setPipelineError(null);
   };
@@ -258,16 +299,17 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     }
     setSteps((current) => [...current, { transformerId: selectedStep.id }]);
     setSelectedStepId(firstCompatibleTransformerId(selectedStep.outputType));
-    setSelectedPipelineId(null);
+    markEdited();
     setOutput("");
     setPipelineError(null);
   };
 
   const removeStep = (index: number) => {
+    pendingStepFocus.current = index;
     const nextSteps = steps.filter((_, stepIndex) => stepIndex !== index);
     setSteps(nextSteps);
     setSelectedStepId(firstCompatibleTransformerId(pipelineOutputType(inputType, nextSteps)));
-    setSelectedPipelineId(null);
+    markEdited();
     setOutput("");
     setPipelineError(null);
   };
@@ -279,7 +321,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     setPipelineError(result.error);
   };
 
-  const savePipeline = () => {
+  const savePipeline = async () => {
     if (steps.length === 0) return;
     const id = selectedPipelineId ?? nextPipelineId(metadataRef.current);
     if (id === null) {
@@ -291,8 +333,11 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
       setPipelineError(errorForAddStep("transform_failed", inputType));
       return;
     }
+    const revision = draftRevision.current;
     setSelectedPipelineId(id);
-    persist(next);
+    if (await persist(next)) {
+      if (mounted.current && draftRevision.current === revision) setDirty(false);
+    }
   };
 
   const loadPipeline = (id: string) => {
@@ -302,7 +347,10 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     const nextSteps = saved.steps.map((step) => ({ transformerId: step.transformerId }));
     setSteps(nextSteps);
     setSelectedStepId(firstCompatibleTransformerId(pipelineOutputType(saved.inputType, nextSteps)));
+    draftRevision.current++;
     setSelectedPipelineId(saved.id);
+    setDirty(false);
+    setSaveState("idle");
     setOutput("");
     setPipelineError(null);
   };
@@ -409,6 +457,10 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         <div id="smart-workflow-pipeline-title" className="smart-workflow-section-title">
           타입 지정 파이프라인
         </div>
+        <p role="status">편집 대상: {selectedPipelineId ?? "새 파이프라인"} · {dirty ? "변경사항 있음" : "변경사항 없음"}</p>
+        <p role="status">{saveState === "saving" ? "저장 중…" : saveState === "saved" ? (dirty ? "이전 변경 저장 완료 — 현재 변경사항은 미저장" : "저장 완료") : saveState === "error" ? "저장 실패 — 앱을 다시 열어 저장 상태를 확인하세요." : ""}</p>
+        <p>{metadata.pipelines.length}/{WORKFLOW_STORAGE_LIMITS.maxPipelines}개 저장됨{metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines ? " — 기존 항목을 수정하거나 삭제한 뒤 새로 저장하세요." : ""}</p>
+        <button type="button" className="btn" onClick={newPipeline} disabled={saveState === "saving"}>새 파이프라인</button>
         <div className="smart-workflow-pipeline-toolbar">
           <label>
             입력 형식
@@ -449,13 +501,14 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
             type="button"
             className="btn"
             onClick={addStep}
+            ref={addStepButton}
             disabled={!selectedStepCompatible || steps.length >= PIPELINE_LIMITS.maxSteps}
           >
             단계 추가
           </button>
         </div>
 
-        <ol className="smart-workflow-step-list" aria-label="현재 파이프라인 단계">
+        <ol ref={stepList} className="smart-workflow-step-list" aria-label="현재 파이프라인 단계">
           {steps.length === 0 ? (
             <li className="smart-workflow-empty-step">감지 후보를 선택하거나 단계를 추가하세요.</li>
           ) : null}
@@ -475,6 +528,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
                 <button
                   type="button"
                   className="btn"
+                  aria-label={`단계 ${index + 1} ${transformer?.label ?? "지원하지 않는 단계"} 제거`}
                   aria-describedby={`smart-workflow-step-${index}`}
                   onClick={() => removeStep(index)}
                 >
@@ -492,8 +546,8 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
           <button
             type="button"
             className="btn"
-            onClick={savePipeline}
-            disabled={steps.length === 0 || !loaded || !storageWritable}
+            onClick={() => void savePipeline()}
+            disabled={steps.length === 0 || !loaded || !storageWritable || saveState === "saving" || (selectedPipelineId === null && metadata.pipelines.length >= WORKFLOW_STORAGE_LIMITS.maxPipelines)}
           >
             파이프라인 저장
           </button>
@@ -571,10 +625,12 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
               <span className="smart-workflow-empty-library">저장된 파이프라인이 없습니다.</span>
             ) : null}
             {metadata.pipelines.map((pipeline) => (
+              <div key={pipeline.id}>
               <button
                 type="button"
                 className={`smart-workflow-chip ${pipeline.id === selectedPipelineId ? "selected" : ""}`}
                 key={pipeline.id}
+                disabled={saveState === "saving"}
                 onClick={() => loadPipeline(pipeline.id)}
               >
                 {pipeline.id}:{" "}
@@ -582,6 +638,8 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
                   .map((step) => TRANSFORMER_BY_ID.get(step.transformerId)?.label ?? "지원하지 않는 단계")
                   .join(" → ")}
               </button>
+              <button type="button" className="btn mini" aria-label={`${pipeline.id} 파이프라인 삭제`} disabled={!storageWritable || saveState === "saving"} onClick={() => void deletePipeline(pipeline.id)}>삭제</button>
+              </div>
             ))}
           </div>
         </div>
@@ -592,8 +650,8 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
           type="button"
           className="btn"
           aria-pressed={metadata.favoriteTools.includes(activeToolId)}
-          onClick={() => persist(toggleFavoriteTool(metadataRef.current, activeToolId, TOOL_IDS))}
-          disabled={!TOOL_BY_ID.has(activeToolId) || !loaded || !storageWritable}
+          onClick={() => void persist(toggleFavoriteTool(metadataRef.current, activeToolId, TOOL_IDS))}
+          disabled={!TOOL_BY_ID.has(activeToolId) || !loaded || !storageWritable || saveState === "saving"}
         >
           {metadata.favoriteTools.includes(activeToolId) ? "현재 도구 즐겨찾기 해제" : "현재 도구 즐겨찾기"}
         </button>

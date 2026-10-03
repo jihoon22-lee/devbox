@@ -4,6 +4,7 @@ import {
   createWorkflowPersistence,
   emptyMetadata,
   nextPipelineId,
+  removePipeline,
   recordRecentTool,
   sanitizeWorkflowMetadata,
   serializeWorkflowMetadata,
@@ -170,4 +171,16 @@ describe("workflow metadata persistence (#342)", () => {
     await expect(persistence.save(emptyMetadata())).rejects.toThrow(WORKFLOW_STORAGE_ERROR);
     expect(storage.body("workflows")).toBe(malformed);
   });
+});
+
+it("allows full-library updates and deletion without evicting unrelated metadata", () => {
+  let metadata = emptyMetadata();
+  for (let index=1; index<=20; index++) metadata = upsertPipeline(metadata, `pipeline-${index}`, "base64", [{transformerId:"base64-decode"}], index);
+  expect(upsertPipeline(metadata, "new-unrelated", "base64", [{transformerId:"base64-decode"}], 21)).toBe(metadata);
+  const updated = upsertPipeline(metadata, "pipeline-7", "base64", [{transformerId:"base64-decode"}], 99);
+  expect(updated.pipelines).toHaveLength(20);
+  expect(updated.pipelines.find(item => item.id === "pipeline-7")?.updatedAt).toBe(99);
+  const reduced = removePipeline(updated, "pipeline-7");
+  expect(reduced.pipelines).toHaveLength(19);
+  expect(nextPipelineId(reduced)).toBe("pipeline-7");
 });
