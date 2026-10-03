@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 export function messageOf(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "작업을 완료하지 못했습니다. 다시 시도해 주세요.";
@@ -16,7 +16,7 @@ export function useOperation() {
   const [issue, setIssue] = useState<string | null>(null);
   const mounted = useRef(false);
   const current = useRef<Operation | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;

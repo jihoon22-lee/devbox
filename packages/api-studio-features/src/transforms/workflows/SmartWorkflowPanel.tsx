@@ -110,6 +110,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   const mounted = useRef(true);
   const metadataRef = useRef<WorkflowMetadata>(emptyMetadata());
   const saveRevision = useRef(0);
+  const directSavePending = useRef(false);
   const [metadata, setMetadata] = useState<WorkflowMetadata>(emptyMetadata);
   const [loaded, setLoaded] = useState(false);
   const [storageWritable, setStorageWritable] = useState(false);
@@ -190,7 +191,17 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
   }, [persistence]);
 
   useEffect(() => {
-    if (!loaded || !storageWritable || !TOOL_BY_ID.has(activeToolId)) return;
+    // A recent-tool update must not supersede the explicit save's completion
+    // or persist its optimistic metadata after that save fails. Retry with the
+    // latest tool when the explicit save leaves its pending state.
+    if (
+      saveState === "saving" ||
+      directSavePending.current ||
+      !loaded ||
+      !storageWritable ||
+      !TOOL_BY_ID.has(activeToolId)
+    )
+      return;
     const next = recordRecentTool(metadataRef.current, activeToolId, Date.now(), TOOL_IDS);
     if (next === metadataRef.current) return;
     metadataRef.current = next;
@@ -202,15 +213,16 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         setStorageWritable(false);
       }
     });
-  }, [activeToolId, loaded, persistence, storageWritable]);
+  }, [activeToolId, loaded, persistence, storageWritable, saveState]);
 
   const persist = async (next: WorkflowMetadata): Promise<boolean> => {
-    if (!storageWritable || saveState === "saving") {
+    if (!storageWritable || directSavePending.current) {
       setStorageError(WORKFLOW_STORAGE_ERROR);
       return false;
     }
     const previous = metadataRef.current;
     const safe = sanitizeWorkflowMetadata(next, { toolIds: TOOL_IDS, transformerIds: TRANSFORMER_IDS });
+    directSavePending.current = true;
     metadataRef.current = safe;
     setStorageError(null);
     setSaveState("saving");
@@ -231,6 +243,8 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         setStorageWritable(false);
       }
       return false;
+    } finally {
+      directSavePending.current = false;
     }
   };
 

@@ -22,7 +22,10 @@ vi.mock("./workflowStore", async (importOriginal) => {
       const persistence = actual.createWorkflowPersistence(...args);
       return {
         ...persistence,
-        save: (metadata: Parameters<typeof persistence.save>[0]) => saveControl.pending ?? persistence.save(metadata),
+        save: async (metadata: Parameters<typeof persistence.save>[0]) => {
+          if (saveControl.pending) await saveControl.pending;
+          await persistence.save(metadata);
+        },
       };
     },
   };
@@ -173,8 +176,34 @@ it("edits a loaded pipeline at capacity and recovers room by confirmed deletion"
   await waitFor(() => expect(JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY)!).pipelines).toHaveLength(20));
   confirm.mockRestore();
 });
+it("completes a pipeline save when the active tool changes during persistence", async () => {
+  const view = render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.change(input(), { target: { value: '{"synthetic":"private-input"}' } });
+  fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));
+  let finish!: () => void;
+  saveControl.pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
+  expect(await screen.findByText("저장 중…")).toBeTruthy();
+  view.rerender(<SmartWorkflowPanel activeToolId="url-decode" onOpenTool={openTool} />);
+  finish();
+  await screen.findByText("저장 완료");
+  expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(false);
+  await waitFor(() => {
+    const saved = JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY) ?? "{}");
+    expect(saved.pipelines).toEqual([expect.objectContaining({ id: "pipeline-1" })]);
+    expect(saved.recentTools).toEqual(expect.arrayContaining([expect.objectContaining({ toolId: "url-decode" })]));
+  });
+  expect(screen.getByRole("button", { name: /pipeline-1: JSON 포매터/ })).toBeTruthy();
+  expect(input().value).toContain("private-input");
+});
+
 it("reports pending and failed saves while retaining the workflow draft", async () => {
-  render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
+  const view = render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
   await waitFor(() =>
     expect((screen.getByRole("button", { name: "현재 도구 즐겨찾기" }) as HTMLButtonElement).disabled).toBe(false),
   );
@@ -186,9 +215,12 @@ it("reports pending and failed saves while retaining the workflow draft", async 
   });
   fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
   expect(await screen.findByText("저장 중…")).toBeTruthy();
+  view.rerender(<SmartWorkflowPanel activeToolId="url-decode" onOpenTool={openTool} />);
   fail(new Error("synthetic failure"));
   await screen.findByRole("alert");
   expect(screen.queryByText("저장 완료")).toBeNull();
+  expect(screen.queryByRole("button", { name: /pipeline-1: JSON 포매터/ })).toBeNull();
+  expect(JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY) ?? "{}").pipelines).toEqual([]);
   expect(input().value).toContain("private-input");
   expect((screen.getByRole("button", { name: "파이프라인 저장" }) as HTMLButtonElement).disabled).toBe(true);
 });
