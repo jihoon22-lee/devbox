@@ -45,8 +45,35 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       y: Math.round(y),
       includeUserAgentShadowDOM: true,
     });
-    // Input still uses hit testing; evidence assertions must confirm resulting state.
-    if (hit.backendNodeId === 0) throw new Error("No visible hit target");
+    if (!Number.isInteger(hit.backendNodeId) || hit.backendNodeId <= 0) throw new Error("No visible hit target");
+    if (hit.backendNodeId !== node.backendDOMNodeId) {
+      const handles = [];
+      try {
+        async function resolve(backendNodeId) {
+          const result = await cdp.command("DOM.resolveNode", { backendNodeId });
+          if (!result.object?.objectId) throw new Error("Read-only hit node unavailable");
+          handles.push(result.object.objectId);
+          return result.object.objectId;
+        }
+        const targetObject = await resolve(node.backendDOMNodeId),
+          hitObject = await resolve(hit.backendNodeId);
+        const result = await cdp.command("Runtime.callFunctionOn", {
+          objectId: targetObject,
+          functionDeclaration:
+            "function(hit) { for(let node=hit;node;) { if(this===node || this.contains(node)) return true; const root=node.getRootNode(); node=root.host ?? null; } return false; }",
+          arguments: [{ objectId: hitObject }],
+          returnByValue: true,
+        });
+        if (result.exceptionDetails || result.result?.value !== true)
+          throw new Error("Accessible target is covered by another element");
+      } finally {
+        const released = await Promise.allSettled(
+          handles.map((objectId) => cdp.command("Runtime.releaseObject", { objectId })),
+        );
+        if (released.some((result) => result.status === "rejected"))
+          throw new Error("Read-only hit handles could not be released");
+      }
+    }
     await cdp.command("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await cdp.command("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   }

@@ -2,13 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 const control = { ignored: false, role: { value: "button" }, name: { value: "Continue" }, backendDOMNodeId: 12 };
-function transport(nodes = [control]) {
+function transport(nodes = [control], { hit = 12, contained = false, failContains = false } = {}) {
   const calls = [];
   return {
     calls,
     async command(method, params) {
       calls.push({ method, params });
       if (method === "Accessibility.getFullAXTree") return { nodes };
+      if (method === "DOM.getNodeForLocation") return { backendNodeId: hit };
+      if (method === "DOM.resolveNode") return { object: { objectId: `owned-${params.backendNodeId}` } };
+      if (method === "Runtime.callFunctionOn") {
+        if (failContains) throw new Error("Owned DOM detached");
+        return { result: { value: contained } };
+      }
       if (method === "DOM.getBoxModel") return { model: { border: [0, 0, 100, 0, 100, 30, 0, 30] } };
       return {};
     },
@@ -97,4 +103,44 @@ test("native browser confirmation uses CDP modal acceptance and rejects implicit
   await ui.confirmDialog(false);
   assert.deepEqual(cdp.calls.at(-1), { method: "Page.handleJavaScriptDialog", params: { accept: false } });
   await assert.rejects(ui.confirmDialog("yes"));
+});
+
+test("an overlay hit cannot dispatch pointer input and resolved handles are released", async () => {
+  const cdp = transport([control], { hit: 13 });
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.click({ role: "button", name: "Continue" }));
+  assert.equal(
+    cdp.calls.some((call) => call.method.startsWith("Input.")),
+    false,
+  );
+  assert.deepEqual(
+    cdp.calls
+      .filter((call) => call.method === "Runtime.releaseObject")
+      .map((call) => call.params.objectId)
+      .sort(),
+    ["owned-12", "owned-13"],
+  );
+});
+test("a verified descendant hit dispatches input only after read-only validation and cleanup", async () => {
+  const cdp = transport([control], { hit: 13, contained: true });
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await ui.click({ role: "button", name: "Continue" });
+  const read = cdp.calls.find((call) => call.method === "Runtime.callFunctionOn");
+  assert.equal(read.params.objectId, "owned-12");
+  assert.deepEqual(read.params.arguments, [{ objectId: "owned-13" }]);
+  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 2);
+  assert.ok(
+    cdp.calls.findIndex((call) => call.method === "Input.dispatchMouseEvent") >
+      cdp.calls.findLastIndex((call) => call.method === "Runtime.releaseObject"),
+  );
+});
+test("a detached DOM validation fails closed while releasing both handles", async () => {
+  const cdp = transport([control], { hit: 13, failContains: true });
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.click({ role: "button", name: "Continue" }));
+  assert.equal(
+    cdp.calls.some((call) => call.method.startsWith("Input.")),
+    false,
+  );
+  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 2);
 });
