@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { makeRequest, nativeMode, type Description } from "./api";
 import { isOperation, type Operation } from "./operation";
+import { deriveAvailability } from "./availability";
 import catalog from "../../../apps/products.json";
 const ShortcutSettings = lazy(() => import("./ShortcutSettings"));
 interface Review {
@@ -28,6 +29,8 @@ const issues: Record<string, string> = {
   suite_image_unavailable: "실행 파일 위치를 확인하지 못해 제품을 연결하지 않았습니다.",
 };
 export default function SuiteConnection({ description, route }: { description: Description; route: string }) {
+  const available = deriveAvailability(description).data;
+  const [readIssue, setReadIssue] = useState("");
   const [review, setReview] = useState<Review | null>(null),
     [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [busy, setBusy] = useState(false),
@@ -54,7 +57,7 @@ export default function SuiteConnection({ description, route }: { description: D
     [description, route],
   );
   const perform = async (action: () => Promise<void>) => {
-    if (busy) return;
+    if (busy || !available) return;
     statusRevision.current++;
     setBusy(true);
     setIssue("");
@@ -68,17 +71,20 @@ export default function SuiteConnection({ description, route }: { description: D
     }
   };
   useEffect(() => {
-    if (!nativeMode) return;
+    if (!nativeMode || !available) return;
     let active = true;
     const removers: (() => void)[] = [];
     const refresh = () => {
       const request = ++statusRevision.current;
       void call<ConnectionStatus>({ kind: "status" })
         .then((value) => {
-          if (active && request === statusRevision.current) setStatus(value);
+          if (active && request === statusRevision.current) {
+            setStatus(value);
+            setReadIssue("");
+          }
         })
         .catch(() => {
-          if (active && request === statusRevision.current) setIssue("제품 연결 상태를 확인하지 못했습니다.");
+          if (active && request === statusRevision.current) setReadIssue("제품 연결 상태를 확인하지 못했습니다.");
         });
     };
     void (async () => {
@@ -101,7 +107,8 @@ export default function SuiteConnection({ description, route }: { description: D
       statusRevision.current++;
       removers.forEach((remove) => remove());
     };
-  }, [call]);
+  }, [call, available]);
+  if (!available) return <p role="status">설치 준비가 끝나면 제품 연결을 사용할 수 있습니다.</p>;
   return (
     <section aria-label="제품 연결">
       <h2>제품 연결</h2>
@@ -174,6 +181,7 @@ export default function SuiteConnection({ description, route }: { description: D
         </Suspense>
       )}
       {busy && <p role="status">제품 연결을 확인하고 있습니다…</p>}
+      {readIssue && <p role="alert">{readIssue}</p>}
       {issue && <p role="alert">{issue}</p>}
       {!nativeMode && <p>브라우저 미리보기에서는 실제 제품을 연결하지 않습니다.</p>}
     </section>

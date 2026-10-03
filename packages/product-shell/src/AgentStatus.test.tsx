@@ -93,3 +93,13 @@ it("a manual reconnect supersedes an older initial status query", async () => {
   await act(async () => initial("unavailable"));
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+it("pauses status calls and reconnect while setup is incomplete", async () => {
+  const { invoke } = await import("@tauri-apps/api/core");
+  vi.mocked(invoke).mockClear();
+  render(<AgentStatus initial="unavailable" native paused />);
+  await act(async () => {});
+  expect(invoke).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "백그라운드 서비스 다시 연결" })).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("준비");
+});

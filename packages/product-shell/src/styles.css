@@ -32,11 +32,13 @@ main:focus-visible {
 .product-shell {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
-  grid-template-rows: 64px 1fr;
+  grid-template-areas: "header header" "notice notice" "nav main";
+  grid-template-rows: minmax(64px, auto) auto 1fr;
   min-height: 100dvh;
 }
 .product-shell > header {
-  grid-column: 1 / -1;
+  grid-area: header;
+  flex-wrap: wrap;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -51,7 +53,15 @@ main:focus-visible {
   color: var(--db-color-text-muted);
   font-size: 12px;
 }
+.shell-delivery-notice {
+  grid-area: notice;
+  margin: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--db-color-border);
+  overflow-wrap: anywhere;
+}
 .product-shell > aside {
+  grid-area: nav;
   padding: 16px 12px;
   border-right: 1px solid var(--db-color-border);
 }
@@ -71,11 +81,13 @@ main:focus-visible {
   color: var(--db-color-accent);
 }
 .product-shell > main {
+  grid-area: main;
   padding: 20px 28px;
   min-width: 0;
 }
 .shell-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   color: var(--db-color-text-muted);
@@ -112,9 +124,24 @@ main:focus-visible {
 .shell-skip:focus {
   top: 12px;
 }
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .product-shell {
-    grid-template-columns: 155px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "header" "notice" "nav" "main";
+    grid-template-rows: auto auto auto 1fr;
+  }
+  .product-shell > aside {
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--db-color-border);
+  }
+  .product-shell > aside > nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .product-shell > aside > nav button {
+    padding: 6px 8px;
   }
   .product-shell > main {
     padding: 16px;

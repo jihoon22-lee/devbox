@@ -327,7 +327,10 @@ export default function App({
         if (editorDocument.snapshot().documentGeneration !== generation) throw new Error("document changed");
         await journal.prepareQuit(permanent);
       },
-      resume: () => { journal.resume(); autosave.resume(); },
+      resume: () => {
+        journal.resume();
+        autosave.resume();
+      },
     });
     const onBlur = () => {
       if (!recoveryBusyRef.current) void autosave.flush();
@@ -1299,10 +1302,20 @@ export default function App({
                   </button>
                   {!t.is_dir && (
                     <span className="tree-actions">
-                      <button className="mini" title="이름 변경" onClick={() => void rename(t.path)}>
+                      <button
+                        className="mini"
+                        aria-label={`${t.path.split("/").pop()} 이름 변경`}
+                        title="이름 변경"
+                        onClick={() => void rename(t.path)}
+                      >
                         ✎
                       </button>
-                      <button className="mini" title="삭제" onClick={() => void remove(t.path)}>
+                      <button
+                        className="mini"
+                        aria-label={`${t.path.split("/").pop()} 삭제`}
+                        title="삭제"
+                        onClick={() => void remove(t.path)}
+                      >
                         ✕
                       </button>
                     </span>
@@ -1330,7 +1343,12 @@ export default function App({
       </aside>
 
       <main className="content">
-        <button className="btn small notes-sidebar-toggle" aria-controls="notes-sidebar" aria-expanded={showSidebar} onClick={() => setShowSidebar(value => !value)}>
+        <button
+          className="btn small notes-sidebar-toggle"
+          aria-controls="notes-sidebar"
+          aria-expanded={showSidebar}
+          onClick={() => setShowSidebar((value) => !value)}
+        >
           {showSidebar ? "노트 목록 접기" : "노트 목록 열기"}
         </button>
         <RecoveryControls

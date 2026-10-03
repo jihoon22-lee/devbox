@@ -1192,3 +1192,56 @@
 .knowledge-feature-notes .recovery-banner ul {
   padding-left: 20px;
 }
+
+/* Collapse supporting panels without remounting the editor or losing its draft. */
+.knowledge-feature-notes {
+  container-type: inline-size;
+  min-width: 0;
+}
+.knowledge-feature-notes .sidebar[hidden] {
+  display: none;
+}
+.knowledge-feature-notes .notes-sidebar-toggle {
+  align-self: flex-start;
+  flex-shrink: 0;
+  margin: 4px;
+}
+.knowledge-feature-notes .editor-head {
+  flex-wrap: wrap;
+  height: auto;
+}
+.knowledge-feature-notes .editor-head .path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 960px) {
+  .knowledge-feature-notes .editor-body {
+    flex-wrap: wrap;
+    overflow: auto;
+  }
+  .knowledge-feature-notes .backlink-panel {
+    width: 100%;
+    max-height: 140px;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .knowledge-feature-notes .note-workspace {
+    flex-direction: column;
+    overflow: auto;
+  }
+  .knowledge-feature-notes .editor-body {
+    min-height: 180px;
+  }
+  .knowledge-feature-notes .sidebar {
+    width: 220px;
+  }
+}
+@container (max-width: 680px) {
+  .knowledge-feature-notes .editor-body.mode-split .editor {
+    width: 100%;
+    flex-basis: 100%;
+  }
+  .knowledge-feature-notes .editor-body.mode-split {
+    flex-direction: column;
+  }
+}

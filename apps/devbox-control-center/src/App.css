@@ -32,3 +32,58 @@
 .hosted-launcher .launcher-shell {
   min-height: 0;
 }
+
+.product-shell > main section {
+  min-width: 0;
+  overflow-x: auto;
+}
+.product-shell > main table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.product-shell > main th,
+.product-shell > main td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--db-color-border);
+}
+.command-browser li {
+  flex-wrap: wrap;
+}
+.command-browser input {
+  min-width: 0;
+  max-width: 100%;
+}
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-left: 24px;
+}
+.setup-steps [aria-current="step"] {
+  color: var(--db-color-accent);
+  font-weight: 600;
+}
+.setup-products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.product-shell > main input,
+.product-shell > main select,
+.product-shell > main textarea {
+  font: inherit;
+  color: var(--db-color-text);
+  background: var(--db-color-surface);
+  border: 1px solid var(--db-color-border);
+  border-radius: var(--db-radius-md);
+  padding: 8px 10px;
+}
+.command-browser label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 12px 0;
+}

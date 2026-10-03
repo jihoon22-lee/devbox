@@ -96,3 +96,28 @@ it("does not let a delayed status overwrite a manual disconnect", async () => {
   });
   expect(screen.getByText("자동 연결이 꺼져 있습니다.")).toBeTruthy();
 });
+
+it("clears recovered read errors without hiding a separate failed mutation", async () => {
+  tauri.invoke.mockRejectedValueOnce(new Error("offline"));
+  render(<SuiteConnection description={description} route="overview" />);
+  await screen.findByText("제품 연결 상태를 확인하지 못했습니다.");
+  tauri.invoke.mockImplementation(async (_cmd: string, args: ConnectionArgs) => {
+    if (args.request.method.kind === "disconnect") throw new Error("denied");
+    return reply({ connected: true, generation: "g1", mode: "auto", issue: null }, args);
+  });
+  act(() => tauri.listeners.get("suite-connection-status")?.());
+  await screen.findByText("이 설치의 제품이 연결되어 있습니다.");
+  expect(screen.queryByText("제품 연결 상태를 확인하지 못했습니다.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "자동 연결 끄기" }));
+  await screen.findByText(/제품 연결을 완료하지 못했습니다/);
+  act(() => tauri.listeners.get("suite-connection-status")?.());
+  await act(async () => {});
+  expect(screen.getByText(/제품 연결을 완료하지 못했습니다/)).toBeTruthy();
+});
+it("does not query or connect a pending installation", async () => {
+  render(<SuiteConnection description={{ ...description, deliveryState: "import" }} route="overview" />);
+  await act(async () => {});
+  expect(tauri.invoke).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "이 설치 확인" })).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("준비");
+});
