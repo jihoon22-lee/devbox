@@ -146,7 +146,7 @@ export function useEnvironmentPersistence({
         envName,
         () => `e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
       );
-      const createdId = next.environments.at(-1)?.id;
+      const createdId = next.environments[next.environments.length - 1]?.id;
       const saved = await persistEnvs(next);
       if (createdId && saved.environments.some(environment => environment.id === createdId)) setCurrentEnvId(createdId);
       setEnvName("");
