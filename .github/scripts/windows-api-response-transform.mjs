@@ -56,22 +56,37 @@ export async function waitForResponseTransform(cdp, until, observe) {
   }, "response-transform-acknowledgment-or-preview-timeout");
 }
 
-// This L4 fixture uses real pointer input to release input focus, followed by
-// a synthetic DOM Range. It does not claim to exercise a user drag selection.
-export async function prepareResponseSelection(cdp) {
-  const point = await cdp.evaluate(`(() => {
-    const body = document.querySelector('.api-feature-requests .resp-body');
-    if (!body) throw new Error('response-selection-body-missing');
-    body.scrollIntoView({ block: 'center', inline: 'nearest' });
-    const rect = body.getBoundingClientRect();
-    const x = Math.max(0, rect.left) + (Math.min(innerWidth, rect.right) - Math.max(0, rect.left)) / 2;
-    const y = Math.max(0, rect.top) + (Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top)) / 2;
-    const hit = document.elementFromPoint(x, y);
-    if (!rect.width || !rect.height || !hit || !body.contains(hit)) throw new Error('response-selection-body-not-hittable');
-    return { x, y };
-  })()`);
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("response-selection-pointer-invalid");
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+export const responseGeometryObservation = `(() => {
+  const body = document.querySelector('.api-feature-requests .resp-body');
+  const rectangle = (node) => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+  const describe = (node) => {
+    const style = getComputedStyle(node);
+    return { tag: node.tagName, classes: Array.from(node.classList), rect: rectangle(node), clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, overflowX: style.overflowX, overflowY: style.overflowY, lineHeight: style.lineHeight, display: style.display, visibility: style.visibility };
+  };
+  const ancestors = [];
+  for (let node = body?.parentElement; node && ancestors.length < 12; node = node.parentElement) ancestors.push(describe(node));
+  const rect = body?.getBoundingClientRect();
+  const x = rect ? Math.max(0, rect.left) + (Math.min(innerWidth, rect.right) - Math.max(0, rect.left)) / 2 : null;
+  const y = rect ? Math.max(0, rect.top) + (Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top)) / 2 : null;
+  const intersectsViewport = !!(rect && Math.min(innerWidth, rect.right) > Math.max(0, rect.left) && Math.min(innerHeight, rect.bottom) > Math.max(0, rect.top));
+  const hit = intersectsViewport ? document.elementFromPoint(x, y) : null;
+  return { viewportWidth: innerWidth, viewportHeight: innerHeight, body: body ? describe(body) : null, ancestors, pointer: { x, y, intersectsViewport, hitsBody: !!(body && hit && body.contains(hit)), hitTag: hit?.tagName || null, hitClasses: hit ? Array.from(hit.classList) : [] } };
+})()`;
+
+// This L4 fixture uses real pointer input followed by a synthetic DOM Range.
+// It does not claim to exercise a user drag selection.
+export async function prepareResponseSelection(cdp, observeGeometry = () => {}) {
+  await cdp.evaluate(
+    `(() => { document.querySelector('.api-feature-requests .resp-body')?.scrollIntoView({ block: 'center', inline: 'nearest' }); })()`,
+  );
+  const geometry = await cdp.evaluate(responseGeometryObservation);
+  observeGeometry(geometry);
+  if (!geometry.body) throw new Error("response-selection-body-missing");
+  if (!geometry.pointer.intersectsViewport || !geometry.pointer.hitsBody)
+    throw new Error("response-selection-body-not-hittable");
+  const { x, y } = geometry.pointer;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("response-selection-pointer-invalid");
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   await cdp.evaluate(establishResponseSelection);
 }

@@ -5,6 +5,7 @@ import {
   establishResponseSelection,
   prepareResponseSelection,
   responseTransformObservation,
+  responseGeometryObservation,
   waitForResponseTransform,
 } from "./windows-api-response-transform.mjs";
 
@@ -85,8 +86,11 @@ test("uses a real pointer press and release before constructing the synthetic Ra
         events.push("range");
         return;
       }
-      events.push("read-hit-point");
-      return { x: 40, y: 60 };
+      if (expression === responseGeometryObservation) {
+        events.push("read-hit-point");
+        return { body: {}, pointer: { x: 40, y: 60, intersectsViewport: true, hitsBody: true } };
+      }
+      events.push("scroll-body");
     },
     send: async (method, params) => {
       assert.equal(method, "Input.dispatchMouseEvent");
@@ -97,12 +101,12 @@ test("uses a real pointer press and release before constructing the synthetic Ra
     },
   };
   await prepareResponseSelection(cdp);
-  assert.deepEqual(events, ["read-hit-point", "mousePressed", "mouseReleased", "range"]);
+  assert.deepEqual(events, ["scroll-body", "read-hit-point", "mousePressed", "mouseReleased", "range"]);
 });
 test("rejects invalid pointer geometry before attempting a selection", async () => {
   await assert.rejects(
     prepareResponseSelection({
-      evaluate: async () => ({ x: NaN, y: 20 }),
+      evaluate: async () => ({ body: {}, pointer: { x: NaN, y: 20, intersectsViewport: true, hitsBody: true } }),
       send: async () => assert.fail("must not click"),
     }),
     /pointer-invalid/,
@@ -133,4 +137,58 @@ test("distinguishes nonempty body and DOM Range from an empty focused-input Sele
   assert.equal(state.activeElementTag, "INPUT");
   assert.equal(state.activeElementType, "text");
   assert.equal(JSON.stringify(state).includes(secret), false);
+});
+
+test("records failed pointer geometry before throwing a specific non-hittable error", async () => {
+  const geometry = { body: {}, pointer: { x: 30, y: 1200, intersectsViewport: false, hitsBody: false } };
+  let observed;
+  await assert.rejects(
+    prepareResponseSelection(
+      { evaluate: async () => geometry, send: async () => assert.fail("must not click") },
+      (value) => {
+        observed = value;
+      },
+    ),
+    /response-selection-body-not-hittable/,
+  );
+  assert.equal(observed, geometry);
+});
+test("geometry diagnostics contain layout only and distinguish clipped body from visible text", () => {
+  const secret = "synthetic-private-renderer-text";
+  const body = {
+    tagName: "PRE",
+    classList: ["resp-body"],
+    textContent: secret,
+    clientHeight: 28,
+    scrollHeight: 28,
+    parentElement: null,
+    contains: () => true,
+    getBoundingClientRect: () => ({
+      x: 468,
+      y: 1133,
+      left: 468,
+      top: 1133,
+      right: 981,
+      bottom: 1161,
+      width: 513,
+      height: 28,
+    }),
+  };
+  const geometry = vm.runInNewContext(responseGeometryObservation, {
+    document: { querySelector: () => body, elementFromPoint: () => assert.fail("offscreen hit must not be attempted") },
+    innerWidth: 1100,
+    innerHeight: 700,
+    getComputedStyle: () => ({
+      overflowX: "auto",
+      overflowY: "auto",
+      lineHeight: "28px",
+      display: "block",
+      visibility: "visible",
+    }),
+  });
+  assert.equal(geometry.pointer.intersectsViewport, false);
+  assert.equal(geometry.pointer.hitsBody, false);
+  assert.equal(geometry.body.rect.y, 1133);
+  assert.equal(geometry.viewportHeight, 700);
+  assert.equal(JSON.stringify(geometry).includes(secret), false);
 });

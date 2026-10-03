@@ -1,6 +1,7 @@
 import {
   prepareResponseSelection,
   responseTransformObservation,
+  responseGeometryObservation,
   waitForResponseTransform,
 } from "./windows-api-response-transform.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
@@ -264,7 +265,9 @@ try {
     masked,
     "masked response changed before selection focus",
   );
-  await prepareResponseSelection(ui.cdp);
+  await prepareResponseSelection(ui.cdp, (geometry) => {
+    evidence.responseTransformPointerGeometry = geometry;
+  });
   evidence.responseTransform = await ui.cdp.evaluate(responseTransformObservation);
   assert.equal(
     await ui.cdp.evaluate('document.querySelector(".api-feature-requests .resp-body")?.textContent'),
@@ -353,6 +356,21 @@ try {
   progress("complete");
 } catch (error) {
   evidence.error = error.message;
+  if (ui?.cdp && evidence.step === "response-transform") {
+    try {
+      evidence.responseTransformFailureGeometry = await ui.cdp.evaluate(responseGeometryObservation);
+    } catch {
+      evidence.failureGeometryUnavailable = true;
+    }
+    try {
+      const shot = await ui.cdp.send("Page.captureScreenshot", { format: "png" });
+      const screenshotPath = "product-foundation-evidence/api-workflow-response-transform-failure.png";
+      writeFileSync(screenshotPath, Buffer.from(shot.data, "base64"));
+      evidence.failureScreenshot = screenshotPath;
+    } catch {
+      evidence.failureScreenshotUnavailable = true;
+    }
+  }
   throw error;
 } finally {
   ui?.cdp.close();
