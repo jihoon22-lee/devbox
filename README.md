@@ -11,9 +11,9 @@ Windows용 네 제품을 제공하는 Tauri v2·React·Rust 모노레포입니�
 
 ## 다운로드와 설치
 
-[공개 Releases](https://github.com/jihoon22-lee/devbox/releases)의 실제 게시 상태를 확인하세요.
-현재 소스는 v0.9.0이며, 후보 준비와 공개 완료는 구분합니다. 진행 및 후보·배포 근거는
-[통합 점검 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)에 기록합니다.
+현재 공개 안정판은 [v0.9.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)입니다.
+[설치 파일 다운로드](https://github.com/jihoon22-lee/devbox/releases/download/v0.9.0/Devbox_0.9.0_x64-setup.exe) ·
+[릴리스 검증 근거](docs/release-evidence.md) · [출시 후 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)
 
 Suite 배포는 `Devbox_0.9.0_x64-setup.exe` 하나와 제품별 portable ZIP 네 개,
 `release-manifest.json`, `THIRD_PARTY_NOTICES.md`로 구성됩니다. ZIP은 폴더 전체를
@@ -21,7 +21,7 @@ Suite 배포는 `Devbox_0.9.0_x64-setup.exe` 하나와 제품별 portable ZIP �
 v0.9.0에는 v0.7 데이터 가져오기가 없습니다. v0.7 데이터는 [v0.8.1](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1)에서
 먼저 이전해야 합니다. v0.8.1의 내장 업데이터로는 v0.9.0을 설치할 수 없습니다.
 Release에서 setup을 직접 받아 실행하고, 기존 설치 폴더와 데이터를 삭제하지 마세요.
-검증 범위와 알려진 제한은 [Windows 안내](docs/windows-guide.md#v090-준비-상태와-기존-설치)를 확인하세요.
+검증 범위와 알려진 제한은 [Windows 안내](docs/windows-guide.md#v090-설치와-알려진-제한)를 확인하세요.
 
 ## 문서
 

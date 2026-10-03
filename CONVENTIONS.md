@@ -231,9 +231,9 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 
 ## 7. 현재 개발 범위
 
-리뷰 후속 B1–B12, v0.9.0 버전 준비 PR #612와 코드 검토 수정 PR #613은 머지됐다.
-현재 작업은 최종 exact-main 후보 검증과 v0.9.0 공개다. 사용자 실사용 점검은 2026-10-03
-지시에 따라 출시 후 제보로 추적하며 공개 대기 조건으로 두지 않는다.
+리뷰 후속 B1–B12와 릴리스 준비·코드 검토 수정을 반영한 v0.9.0은 공개됐다.
+현재 stable의 source·CI·후보·공개 검증은 [release evidence](docs/release-evidence.md)에 있다.
+사용자 실사용 항목과 새 제보는 출시 후 이슈에서 추적하며, 미실행을 PASS로 기록하지 않는다.
 진행 상태는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)이 정본이며,
 코드/의존성이 바뀌면 변경된 exact-main의 CI와 새 후보 검증이 필요하다.
 
