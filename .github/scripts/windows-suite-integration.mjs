@@ -17,6 +17,7 @@ import {
   inspectElevatedCdpPolicy,
   installElevatedCdpPolicy,
   releaseCdpSession,
+  stopOwnedProcess,
 } from "./windows-packaged-smoke.mjs";
 import {
   requireApiContext,
@@ -230,6 +231,13 @@ export async function run(api) {
         await workspace.ui.click({ role: "textbox", name: "" });
         await workspace.ui.press("End");
         await workspace.ui.typeText(" source-revision-changed");
+        await until(async () => {
+          const response = await workspace.cdp.evaluate(workspaceRequestExpression("workspace.files", "load_recovery"));
+          assert.equal(response.operation.outcome.state, "succeeded");
+          return response.value.entries.some(
+            (entry) => entry.path === receipt.file && entry.content.includes("source-revision-changed"),
+          );
+        }, "Changed source buffer journal not observed");
         await review(api);
         await expectText(api, "원본이 변경·닫힘·만료되었거나");
         assert.equal(await api.cdp.evaluate("Boolean(document.querySelector('.toolbox-handoff-dialog'))"), false);
@@ -392,10 +400,45 @@ export async function run(api) {
     else results.push(failure);
     return results;
   } finally {
-    if (restoreImage) await rename(restoreImage.backup, restoreImage.source);
-    if (foreign) await foreign.close();
-    if (knowledge) await knowledge.close();
-    if (workspace) await workspace.close();
+    let cleanupFailed = false;
+    if (restoreImage)
+      try {
+        await rename(restoreImage.backup, restoreImage.source);
+      } catch {
+        cleanupFailed = true;
+      }
+    for (const context of [foreign, knowledge, workspace]) {
+      if (!context) continue;
+      try {
+        await context.close();
+      } catch {
+        cleanupFailed = true;
+        const identity = context.processIdentity;
+        if (identity) {
+          const child = context.child ?? {
+            pid: identity.Pid,
+            get exitCode() {
+              return allWindowsProcesses().some(
+                (p) => p.Pid === identity.Pid && p.Created === identity.Created && p.Path === identity.Path,
+              )
+                ? null
+                : 0;
+            },
+          };
+          await stopOwnedProcess(identity, context.executable ?? identity.Path, child).catch(() => {});
+        }
+      }
+    }
+    if (cleanupFailed) {
+      if (!results.length)
+        results.push(
+          await scenario(api, "HANDOFF-01", async () => {
+            throw new Error("Owned cleanup failed");
+          }),
+        );
+      results.at(-1).status = "FAIL";
+      results.at(-1).failureCode = "handoff-owned-cleanup-failed";
+    }
   }
 }
 export async function runIntegration() {
@@ -404,10 +447,26 @@ export async function runIntegration() {
   try {
     results = await run(api);
   } finally {
+    let cleanupFailed = false;
     try {
       await api.ui.closeOwnedWindow();
-    } finally {
+    } catch {
+      cleanupFailed = true;
+    }
+    try {
       await api.close();
+    } catch {
+      cleanupFailed = true;
+    }
+    if (cleanupFailed) {
+      if (!results.length)
+        results.push(
+          await scenario(api, "HANDOFF-01", async () => {
+            throw new Error("Owned cleanup failed");
+          }),
+        );
+      results.at(-1).status = "FAIL";
+      results.at(-1).failureCode = "handoff-api-cleanup-failed";
     }
     if (results.length) await writeUserFlowResults("handoff", results);
   }

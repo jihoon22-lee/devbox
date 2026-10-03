@@ -3,99 +3,204 @@ import { createServer } from "node:http2";
 import { once } from "node:events";
 import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { requireApiContext, button, textbox, select, scenario, expectText, until } from "./windows-api-user-flow-actions.mjs";
+import {
+  requireApiContext,
+  button,
+  textbox,
+  select,
+  scenario,
+  expectText,
+  until,
+} from "./windows-api-user-flow-actions.mjs";
 
-const varint=value=>{const bytes=[];do{const next=value&127;value>>>=7;bytes.push(next|(value?128:0));}while(value);return Buffer.from(bytes);};
-const field=(number,value)=>{const bytes=Buffer.isBuffer(value)?value:Buffer.from(value);return Buffer.concat([varint(number*8+2),varint(bytes.length),bytes]);};
-const scalar=(number,value)=>Buffer.concat([varint(number*8),varint(value)]);
-const protobuf=(...fields)=>Buffer.concat(fields);
-const frame=bytes=>{const prefix=Buffer.alloc(5);prefix.writeUInt32BE(bytes.length,1);return Buffer.concat([prefix,bytes]);};
-const method=(name,client,server)=>field(2,protobuf(field(1,name),field(2,".fixture.Message"),field(3,".fixture.Message"),scalar(5,client),scalar(6,server)));
-const descriptor=protobuf(field(1,"partial.proto"),field(2,"fixture"),field(4,protobuf(field(1,"Message"),field(2,protobuf(field(1,"text"),scalar(3,1),scalar(4,1),scalar(5,9))))),
-  field(6,protobuf(field(1,"Partial"),method("Unary",0,0),method("Server",0,1),method("Bidi",1,1),method("Client",1,0))),field(12,"proto3"));
+const varint = (value) => {
+  const bytes = [];
+  do {
+    const next = value & 127;
+    value >>>= 7;
+    bytes.push(next | (value ? 128 : 0));
+  } while (value);
+  return Buffer.from(bytes);
+};
+const field = (number, value) => {
+  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  return Buffer.concat([varint(number * 8 + 2), varint(bytes.length), bytes]);
+};
+const scalar = (number, value) => Buffer.concat([varint(number * 8), varint(value)]);
+const protobuf = (...fields) => Buffer.concat(fields);
+const frame = (bytes) => {
+  const prefix = Buffer.alloc(5);
+  prefix.writeUInt32BE(bytes.length, 1);
+  return Buffer.concat([prefix, bytes]);
+};
+const method = (name, client, server) =>
+  field(
+    2,
+    protobuf(
+      field(1, name),
+      field(2, ".fixture.Message"),
+      field(3, ".fixture.Message"),
+      scalar(5, client),
+      scalar(6, server),
+    ),
+  );
+const descriptor = protobuf(
+  field(1, "partial.proto"),
+  field(2, "fixture"),
+  field(
+    4,
+    protobuf(field(1, "Message"), field(2, protobuf(field(1, "text"), scalar(3, 1), scalar(4, 1), scalar(5, 9)))),
+  ),
+  field(
+    6,
+    protobuf(
+      field(1, "Partial"),
+      method("Unary", 0, 0),
+      method("Server", 0, 1),
+      method("Bidi", 1, 1),
+      method("Client", 1, 0),
+    ),
+  ),
+  field(12, "proto3"),
+);
 
 export async function createPartialGrpcFixture() {
-  const server=createServer();
-  const sessions=new Set();
-  server.on("session",session=>{sessions.add(session);session.on("error",()=>{});session.on("close",()=>sessions.delete(session));});
-  server.on("stream",(stream,headers)=>{
-    stream.on("error",()=>{});
-    const rpc=headers[":path"];
-    const reflected=rpc.includes("grpc.reflection");
-    const partial=rpc.endsWith("/Server")||rpc.endsWith("/Bidi");
-    stream.respond({":status":200,"content-type":"application/grpc"},{waitForTrailers:true});
-    stream.on("wantTrailers",()=>stream.sendTrailers({"grpc-status":partial?"13":"0","grpc-message":partial?"synthetic-terminal":""}));
-    let bytes=Buffer.alloc(0);
-    stream.on("data",chunk=>{
-      if(!reflected)return;
-      bytes=Buffer.concat([bytes,chunk]);
-      while(bytes.length>=5&&bytes.length>=5+bytes.readUInt32BE(1)) {
-        const size=bytes.readUInt32BE(1),message=bytes.subarray(5,5+size);bytes=bytes.subarray(5+size);
-        const response=message.includes(Buffer.from([0x3a,0]))?field(6,field(1,field(1,"fixture.Partial"))):field(4,field(1,descriptor));
-        stream.write(frame(protobuf(field(2,message),response)));
+  const server = createServer();
+  const sessions = new Set();
+  server.on("session", (session) => {
+    sessions.add(session);
+    session.on("error", () => {});
+    session.on("close", () => sessions.delete(session));
+  });
+  server.on("stream", (stream, headers) => {
+    stream.on("error", () => {});
+    const rpc = headers[":path"];
+    const reflected = rpc.includes("grpc.reflection");
+    const partial = rpc.endsWith("/Server") || rpc.endsWith("/Bidi");
+    stream.respond({ ":status": 200, "content-type": "application/grpc" }, { waitForTrailers: true });
+    stream.on("wantTrailers", () =>
+      stream.sendTrailers({ "grpc-status": partial ? "13" : "0", "grpc-message": partial ? "synthetic-terminal" : "" }),
+    );
+    let bytes = Buffer.alloc(0);
+    stream.on("data", (chunk) => {
+      if (!reflected) return;
+      bytes = Buffer.concat([bytes, chunk]);
+      while (bytes.length >= 5 && bytes.length >= 5 + bytes.readUInt32BE(1)) {
+        const size = bytes.readUInt32BE(1),
+          message = bytes.subarray(5, 5 + size);
+        bytes = bytes.subarray(5 + size);
+        const response = message.includes(Buffer.from([0x3a, 0]))
+          ? field(6, field(1, field(1, "fixture.Partial")))
+          : field(4, field(1, descriptor));
+        stream.write(frame(protobuf(field(2, message), response)));
       }
     });
-    stream.on("end",()=>{
-      if(reflected){stream.end();return;}
-      stream.write(frame(field(1,"first-synthetic")));
-      if(partial) stream.write(frame(field(1,"second-synthetic")));
+    stream.on("end", () => {
+      if (reflected) {
+        stream.end();
+        return;
+      }
+      stream.write(frame(field(1, "first-synthetic")));
+      if (partial) stream.write(frame(field(1, "second-synthetic")));
       // Allow message frames to flush before the terminal non-OK trailers.
-      setTimeout(()=>stream.end(),30);
+      setTimeout(() => stream.end(), 30);
     });
   });
-  server.listen(0,"127.0.0.1");await once(server,"listening");
-  return {endpoint:`http://127.0.0.1:${server.address().port}`,close:async()=>{for(const session of sessions)session.destroy();await new Promise(resolve=>server.close(resolve));}};
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return {
+    endpoint: `http://127.0.0.1:${server.address().port}`,
+    close: async () => {
+      for (const session of sessions) session.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
 }
 
 export const SCENARIO_IDS = Object.freeze(["GRPC-01"]);
 
 export async function run(context) {
   requireApiContext(context);
-  const fixture=await createPartialGrpcFixture();
+  const fixture = await createPartialGrpcFixture();
   try {
-    return [await scenario(context,"GRPC-01",async record=>{
-      await context.ui.click(button("프로토콜"));
-      await context.ui.click({role:"tab",name:"gRPC"});
-      await select(context,"gRPC 스키마 소스",1);
-      await context.ui.fill(textbox("gRPC 엔드포인트"),fixture.endpoint);
-      await context.ui.click(button("gRPC 연결"));
-      await until(async()=>await context.cdp.evaluate("document.querySelector('[aria-label=\"gRPC method\"]')?.options.length===4"),"Reflection method list missing");
-      if((await context.document("grpc_history"))?.value.entries.length) await context.ui.click(button("기록 지우기"));
-      for(const name of ["Server","Bidi","Unary","Client"]) {
-        const index=await context.cdp.evaluate(`Array.from(document.querySelector('[aria-label="gRPC method"]').options).findIndex(option=>option.value.endsWith('.${name}'))`);
-        assert.ok(index>=0);
-        await select(context,"gRPC method",index);
-        await context.ui.fill(textbox("gRPC ProtoJSON request"),["Bidi","Client"].includes(name)?'[{"text":"fixture"}]':'{"text":"fixture"}');
-        await context.ui.click(button("RPC 호출"));
-        await expectText(context,"first-synthetic");
-        if(["Server","Bidi"].includes(name)) {
-          await expectText(context,"2개 수신 후 INTERNAL 종료");
-          await expectText(context,"second-synthetic");
-          record(`Actual ${name} RPC displays both native messages alongside INTERNAL terminal status`);
-          if(name==="Server") {
-            await until(async()=>((await context.document("grpc_history"))?.value.entries[0]?.responseMessageCount===2),"Partial summary not committed");
-            const output=path.join(context.fixtureRoot,"user-flow-output");
-            await mkdir(output,{recursive:true});
-            const filename=path.join(output,"partial-server-grpc.json");
-            await context.ui.click(button("요약 내보내기"));
-            context.saveFile(filename);
-            await expectText(context,"gRPC summary를 저장했습니다");
-            const exported=JSON.parse(await readFile(filename,"utf8"));
-            assert.equal(exported.exchange.responseMessageCount,2);
-            assert.equal(exported.exchange.status,"INTERNAL");
-            assert.ok(!JSON.stringify(exported).includes("first-synthetic"));
-            assert.ok(!JSON.stringify(exported).includes(fixture.endpoint));
-            record("Real summary export uses owned native Save dialog; exported count/status match UI and exclude response payload/endpoint");
+    return [
+      await scenario(context, "GRPC-01", async (record) => {
+        await context.ui.click(button("프로토콜"));
+        await context.ui.click({ role: "tab", name: "gRPC" });
+        await select(context, "gRPC 스키마 소스", 1);
+        await context.ui.fill(textbox("gRPC 엔드포인트"), fixture.endpoint);
+        await context.ui.click(button("gRPC 연결"));
+        await until(
+          async () =>
+            await context.cdp.evaluate("document.querySelector('[aria-label=\"gRPC method\"]')?.options.length===4"),
+          "Reflection method list missing",
+        );
+        if ((await context.document("grpc_history"))?.value.entries.length)
+          await context.ui.click(button("기록 지우기"));
+        for (const name of ["Server", "Bidi", "Unary", "Client"]) {
+          const index = await context.cdp.evaluate(
+            `Array.from(document.querySelector('[aria-label="gRPC method"]').options).findIndex(option=>option.value.endsWith('.${name}'))`,
+          );
+          assert.ok(index >= 0);
+          await select(context, "gRPC method", index);
+          await context.ui.fill(
+            textbox("gRPC ProtoJSON request"),
+            ["Bidi", "Client"].includes(name) ? '[{"text":"fixture"}]' : '{"text":"fixture"}',
+          );
+          await context.ui.click(button("RPC 호출"));
+          await until(async () => {
+            const latest = (await context.document("grpc_history"))?.value.entries[0];
+            return (
+              latest?.method === name &&
+              latest.responseMessageCount === (["Server", "Bidi"].includes(name) ? 2 : 1) &&
+              latest.status === (["Server", "Bidi"].includes(name) ? "INTERNAL" : "OK")
+            );
+          }, `Current ${name} native exchange summary not committed`);
+          await expectText(context, "first-synthetic");
+          if (["Server", "Bidi"].includes(name)) {
+            await expectText(context, "2개 수신 후 INTERNAL 종료");
+            await expectText(context, "second-synthetic");
+            record(`Actual ${name} RPC displays both native messages alongside INTERNAL terminal status`);
+            if (name === "Server") {
+              await until(
+                async () => (await context.document("grpc_history"))?.value.entries[0]?.responseMessageCount === 2,
+                "Partial summary not committed",
+              );
+              const output = path.join(context.fixtureRoot, "user-flow-output");
+              await mkdir(output, { recursive: true });
+              const filename = path.join(output, "partial-server-grpc.json");
+              await context.ui.click(button("요약 내보내기"));
+              context.saveFile(filename);
+              await expectText(context, "gRPC summary를 저장했습니다");
+              const exported = JSON.parse(await readFile(filename, "utf8"));
+              assert.equal(exported.exchange.responseMessageCount, 2);
+              assert.equal(exported.exchange.status, "INTERNAL");
+              assert.ok(!JSON.stringify(exported).includes("first-synthetic"));
+              assert.ok(!JSON.stringify(exported).includes(fixture.endpoint));
+              record(
+                "Real summary export uses owned native Save dialog; exported count/status match UI and exclude response payload/endpoint",
+              );
+            }
+          } else {
+            await until(
+              async () =>
+                await context.cdp.evaluate(
+                  "document.querySelector('.grpc-result .grpc-status-ok')?.textContent==='OK'",
+                ),
+              "Nonstreaming OK result missing",
+            );
+            record(`Actual ${name} RPC retains its existing single-response OK behavior`);
           }
-        } else {
-          await until(async()=>await context.cdp.evaluate("document.querySelector('.grpc-result .grpc-status-ok')?.textContent==='OK'"),"Nonstreaming OK result missing");
-          record(`Actual ${name} RPC retains its existing single-response OK behavior`);
         }
-      }
-      const history=await context.document("grpc_history");
-      assert.ok(history.value.entries.some(item=>item.status==="INTERNAL"&&item.responseMessageCount===2));
-      record("Persisted native summary count agrees with the displayed partial result and contains only summary metadata");
-      await context.ui.click(button("연결 해제"));
-    })];
-  } finally {await fixture.close();}
+        const history = await context.document("grpc_history");
+        assert.ok(history.value.entries.some((item) => item.status === "INTERNAL" && item.responseMessageCount === 2));
+        record(
+          "Persisted native summary count agrees with the displayed partial result and contains only summary metadata",
+        );
+        await context.ui.click(button("연결 해제"));
+      }),
+    ];
+  } finally {
+    await fixture.close();
+  }
 }
