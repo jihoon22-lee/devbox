@@ -10,9 +10,11 @@ export async function run(context) {
   const results=[];
   const send=async()=>{
     const count=fixture.hits.length;
+    const start=performance.now();
     await context.ui.click(button("보내기"));
     await until(()=>fixture.hits.length===count+1,"HTTP fixture did not receive request");
     await expectText(context,"요청이 완료되었습니다.");
+    context.httpCompletedMs=Math.max(context.httpCompletedMs??0,performance.now()-start);
     return fixture.hits.at(-1);
   };
   try {

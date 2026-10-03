@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createApiUserFlowContext } from "./windows-api-user-flow-adapter.mjs";
 import { writeUserFlowResults } from "./suite-user-flow-results.mjs";
+import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { summarizeEvidence } from "./suite-user-flow-evidence.mjs";
 
 export async function runApiUserFlows() {
@@ -15,7 +16,15 @@ export async function runApiUserFlows() {
   try {
     for(const module of new Set(matrix.map(row=>row.module))) {
       const runner=await import(new URL(module,import.meta.url));
-      results.push(...await runner.run(context));
+      if(module==="windows-api-http-semantics.mjs") {
+        await observeProductPerformance({product:"api-studio",cdp:context.cdp,getIdentities:context.getIdentities,coldRendererReadyMs:context.coldRendererReadyMs,warmExistingWindowMs:context.warmExistingWindowMs,workload:async()=>{
+          results.push(...await runner.run(context));
+          assert.equal(results.length,3,"Representative HTTP scenarios incomplete");
+          assert.ok(results.every(row=>row.status==="PASS"),"Representative HTTP task failed");
+          assert.ok(Number.isFinite(context.httpCompletedMs),"Native HTTP completion latency unobserved");
+          return {taskCompleted:true,completeMs:context.httpCompletedMs,result:"passed"};
+        }});
+      } else results.push(...await runner.run(context));
       if(results.some(result=>result.status!=="PASS")) break;
     }
   } finally {

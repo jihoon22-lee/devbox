@@ -9,7 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 import { packagedIdentity, fileDigest } from "./suite-user-flow-results.mjs";
 import { freePort, connect, waitForRenderer } from "./workspace-cdp-fixture.mjs";
-import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
+import { captureWindowOwner, nativeWindowAction, measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
 import {
   allWindowsProcesses, stopOwnedProcess, windowsProcessIsElevated,
   inspectElevatedCdpPolicy, installElevatedCdpPolicy, releaseCdpSession,
@@ -42,7 +42,7 @@ export async function verifyApiInstallation(directory, assets, sourceSha) {
   return { root, executable, installationKey: registration.installationKey, manifest, ...identity };
 }
 
-export async function createApiUserFlowContext() {
+export async function createApiUserFlowContext({measureStartup=true}={}) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
@@ -78,6 +78,7 @@ export async function createApiUserFlowContext() {
   try {
     const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
     for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+    const coldStart=performance.now();
     child = spawn(installed.executable, [], { cwd: path.dirname(installed.executable), env, stdio: "ignore", windowsHide: true });
     await once(child, "spawn");
     processIdentity = allWindowsProcesses().find(item => item.Pid === child.pid &&
@@ -86,8 +87,11 @@ export async function createApiUserFlowContext() {
     windowOwner = captureWindowOwner(processIdentity, installed.root);
     cdp = await connect(port, child);
     await waitForRenderer(cdp, 'Boolean(document.querySelector(\'nav[aria-label="제품 화면"]\'))', "API user-flow boot");
+    const coldRendererReadyMs=performance.now()-coldStart;
+    const warmExistingWindowMs=measureStartup ? await measureWarmOwnedWindow(windowOwner,cdp) : null;
     const ui = createUiDriver({ cdp, evidenceRoot: "product-foundation-evidence/user-flows/screenshots/api", closeOwnedWindow: closeWindow });
-    const context = { ...installed, fixtureRoot: installed.root, ui, cdp, close, child,
+    const context = { ...installed, fixtureRoot: installed.root, ui, cdp, close, child, processIdentity, coldRendererReadyMs, warmExistingWindowMs,
+      getIdentities:()=>ownedProductCohort(processIdentity),
       namespace: path.join(process.env.LOCALAPPDATA, `com.devbox.v08.apistudio.i${installed.installationKey}`) };
     context.chooseFile = filePath => nativeWindowAction(windowOwner,"ChooseFile",{filePath});
     context.saveFile = filePath => nativeWindowAction(windowOwner,"SaveFile",{filePath});
@@ -111,7 +115,8 @@ export async function createApiUserFlowContext() {
     const restart = async () => {
       await context.ui.closeOwnedWindow();
       await context.close();
-      Object.assign(context,await createApiUserFlowContext());
+      const startup={coldRendererReadyMs:context.coldRendererReadyMs,warmExistingWindowMs:context.warmExistingWindowMs};
+      Object.assign(context,await createApiUserFlowContext({measureStartup:false}),startup);
       context.restart = restart;
       return context;
     };
