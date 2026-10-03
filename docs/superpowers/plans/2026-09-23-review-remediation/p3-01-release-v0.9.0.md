@@ -1,5 +1,7 @@
 # P3-01 v0.9.0 릴리스(버전은 한 번만 올린다) — Implementation Plan
 
+**공개 완료(2026-10-03):** [v0.9.0 stable](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0), source `e499ac7127269bf67863bf0fdc42eaf53236b9f3`. CI·후보 11개 job·공개본 검증이 통과했다. [근거](../../../release-evidence.md)와 #580이 현재 상태의 정본이며, 아래 계획 체크박스는 변경하지 않는다. 사용자 실사용 항목은 출시 후 제보로 추적한다.
+
 > **For agentic workers:** Claude Code는 REQUIRED SUB-SKILL `superpowers:executing-plans`로 이 계획을 과제 순서대로 실행한다. 릴리스 단계에서는 저장소 스킬 `.agents/skills/devbox-release/SKILL.md`와 `docs/release-policy.md`도 함께 읽는다. Codex는 같은 순서를 직접 따른다. 시작 전에 `00-roadmap.md` §3·§4를 읽는다.
 
 **Goal:** Phase 0–2의 모든 PR이 머지된 뒤 버전을 `0.8.1` → `0.9.0`으로 **한 번만** 올려 공개한다(D29). 중간 릴리스는 없다. 2026-10-03 지시에 따라 자체 검토·수정과 자동 후보 검증 후 태그·공개한다. 사용자 실사용 항목은 출시 후 제보로 추적하며 대기하지 않는다.

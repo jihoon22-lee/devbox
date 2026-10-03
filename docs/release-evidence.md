@@ -1,43 +1,40 @@
 # Release evidence index
 
-## v0.9.0 — 준비 중, 공개 전
+## v0.9.0 — 현재 공개 stable
 
-제품과 agent의 버전은 [PR #612](https://github.com/jihoon22-lee/devbox/pull/612)에서
-한 번만 0.9.0으로 올렸다. 공개 완료나 실기 PASS를 뜻하지 않는다. 코드 검토·남은 점검·
-후보 source와 공개 판단의 정본은 [통합 이슈 #580](https://github.com/jihoon22-lee/devbox/issues/580)이다.
+[Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)는 `2026-10-03T05:31:16Z`에 공개됐으며
+Latest=true, draft=false, prerelease=false다.
 
-준비 기준 commit `444a82e4fed8498262490bdf822c07fac99c5f51`은
-[main CI](https://github.com/jihoon22-lee/devbox/actions/runs/36487547078)와
-[후보 36489337168](https://github.com/jihoon22-lee/devbox/actions/runs/36489337168)를 통과했다.
-후보는 assembly·네 제품 native scope·설치/복구/제거·독립 WSL2/Docker를 모두 통과했고,
-다운로드한 7개 자산과 내부 구성요소의 이름·크기·SHA-256도 확인했다.
-[당시 후보 근거](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5963355875)를 보존한다.
-이후 [PR #613](https://github.com/jihoon22-lee/devbox/pull/613)은 의존성 갱신과 API Studio
-캡처 보기 경쟁 상태를 수정해 `07840ca82502e33f196f7098951b6dfccbf10f77`에 머지됐다.
-[최종 PR CI](https://github.com/jihoon22-lee/devbox/actions/runs/37087774292/attempts/2)와
-[Windows PF](https://github.com/jihoon22-lee/devbox/actions/runs/37087774349)가 성공했다.
-이 변경은 이전 후보에 없으므로, 공개 문서 정리까지 머지한 최종 exact-main의 CI와 새 후보가 필요하다.
+- source: `e499ac7127269bf67863bf0fdc42eaf53236b9f3`.
+- annotated tag object: `f31f111977956bd665cd432accdf54677444027f`.
+- 준비: #612 버전 0.9.0, #613 의존성·API Studio 캡처 보기 수정, #614 공개 조건·안내 정리.
+- [exact-main CI](https://github.com/jihoon22-lee/devbox/actions/runs/37094287290):
+  Frontend·Linux/Windows Rust·의존성 정책·catalog 모두 SUCCESS.
+- [후보 37095144741](https://github.com/jihoon22-lee/devbox/actions/runs/37095144741):
+  첫 실행 11개 job 모두 SUCCESS. assembly·네 native scope·설치/세대 전환/되돌리기/재설치/
+  데이터 복구/제거·독립 WSL2/Docker 수용 완료. 핵심 결과 JSON 8개의 source와 성공 상태를 대조했다.
+- [공개·공개본 검증 37100052952](https://github.com/jihoon22-lee/devbox/actions/runs/37100052952):
+  후보를 재빌드 없이 승격하고 draft 검증 후 공개했다. 공개 파일을 다시 받아 네 제품 startup,
+  native route, replay/다른 설치 요청 거부, 같은 설치 중복 실행 종료와 별도 설치 격리를 확인했다.
+- 별도 공개 파일 재다운로드: setup·네 ZIP·manifest·notices **7개 모두 후보와 크기·SHA-256 동일**.
+  manifest 네 제품·declared 6, verified 7, missing/undeclared/failures 0.
+- [공개 근거와 7개 SHA-256](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5966029569),
+  [후보 상세 근거](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5965966427)를 보존한다.
 
-2026-10-03 코드 검토에서 확인한 공개 전 조건:
+### 알려진 제한과 실사용 추적
 
-- 공개 v0.8.1의 `core/suite_package.rs`는 Knowledge WSL helper와 agent를 허용하지 않아
-  v0.9.0 manifest를 `suite_package_file_invalid`로 거부한다. 실제 이전 reader와 후보 manifest로
-  재현했다. 자산 7개·schema 2 유지와 이전 업데이터의 읽기 호환은 다른 조건이다.
-  내장 업데이터 전환은 지원하지 않으며 Release의 setup 직접 실행을 안내한다. 중간 호환 릴리스는 만들지 않는다.
-- npm 감사의 undici 11건·DOMPurify 1건에 대응하여 기존 의존성을 각각 8.11.2·3.4.16으로 갱신했다.
-  undici는 jsdom 테스트 경로, DOMPurify는 Mermaid runtime 경로다. DOMPurify 경고의
-  `IN_PLACE`+노드 제거 hook 조건은 현재 렌더러에서 확인되지 않았으며, 실제 앱 XSS를 재현했다고 주장하지 않는다.
-  PR #613에서 npm 감사 0건, 로컬 전체 검사와 PR CI/PF 통과를 확인했다. 최종 source 근거는 #580에 기록한다.
-- 2026-10-03 사용자는 실사용 중 문제를 직접 제보하며, 자체 검토·수정 후 태그와 공개까지
-  진행하도록 지시했다. 신규 설치 8개와 기존 설치 데이터 보존은 **출시 후 추적/미실행**으로 남긴다.
-  사용자 실기 대기는 해제하지만 CI·후보·설치/실행·공개본 자동 검증은 유지한다.
-- API Studio의 새 캡처 표시 직후 조회를 지연된 상태 초기화가 취소하는 경계를 RED 테스트로
-  재현하고, 화면 표시 전 초기화로 수정했다. 최종 PR CI의 Vitest 2,216개가 통과했다.
-  별개 Chromium 시작 지연은 동일 commit의 실패 잡 재실행에서 통과했으며 최초 OS 원인은 미확정이다.
-- 이전 PF의 Workspace startup/Source 일회 실패는 후속 동일 바이너리 진단·full PF·후보에서
-  재현되지 않았다. 최초 OS 원인은 미확정이며, 재발 시 조사할 근거를 #580에 보존한다.
+- 공개 v0.8.1 reader는 새 Knowledge helper·agent 구성요소를 거부한다. v0.9.0은
+  Release의 setup을 직접 받아 실행한다. 중간 호환 릴리스나 manifest 검증 우회는 하지 않았다.
+  [Windows 설치 안내](windows-guide.md#v090-설치와-알려진-제한)를 따른다.
+- 2026-10-03 사용자 지시에 따라 신규 설치 8개·기존 데이터 보존 등 사용자 실기는 출시 후
+  제보/추적으로 전환했다. 자동 수용 결과와 구분하며, 미실행을 PASS로 기록하지 않는다.
+- #613은 npm 경고 12건을 0건으로 줄이고 캡처 보기 경쟁 상태를 RED→GREEN으로 수정했다.
+  공개 전 전체 코드 검토·회귀·CI/PF 근거는 해당 PR에 있다. 이전 startup/Source와 Chromium
+  시작 일회 지연의 최초 OS 원인은 미확정이며, 재발하면 [#580](https://github.com/jihoon22-lee/devbox/issues/580)에서 추적한다.
+- 이전 source `444a82e4`의 [후보 36489337168](https://github.com/jihoon22-lee/devbox/actions/runs/36489337168)는
+  이후 의존성/코드 변경으로 승격 대상에서 제외했다. 그 성공을 이번 source의 근거로 재사용하지 않았다.
 
-## v0.8.1 — 현재 공개 stable
+## v0.8.1 — 이전 stable
 
 [Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1)는 2026-09-21에 공개됐다.
 source는 `1c97b41ee10ca0df7c062338bfe85659af025a89`, annotated tag object는

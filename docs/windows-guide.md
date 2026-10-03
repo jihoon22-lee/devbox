@@ -11,10 +11,11 @@ Suite 설치 파일 `Devbox_0.9.0_x64-setup.exe`는 Workspace·API Studio·Knowl
 옮기면 필수 component와 installation identity가 빠진다. 서로 다른 portable과 설치본은
 각자의 namespace/identity로 취급하며 임의 경로를 Suite 구성원으로 자동 등록하지 않는다.
 
-## v0.9.0 준비 상태와 기존 설치
+## v0.9.0 설치와 알려진 제한
 
-공개 여부와 후보·자동 검증 결과는 [#580](https://github.com/jihoon22-lee/devbox/issues/580)과
-Release에서 확인한다. 사용자의 신규 설치·기존 데이터 보존 점검은 출시 후 제보로 추적한다.
+[v0.9.0 Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)는 공개된 stable이다.
+후보·공개본 자동 검증 결과는 [릴리스 근거](release-evidence.md)에서 확인한다.
+사용자의 신규 설치·기존 데이터 보존 점검은 출시 후 제보로 추적한다.
 자동 후보 검증과 사용자 실사용 확인을 구분하며, 미실행 항목을 PASS로 기록하지 않는다.
 
 공개 v0.8.1 Control Center의 manifest 검사에는 Knowledge WSL helper와 devbox-agent가
