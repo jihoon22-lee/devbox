@@ -1,3 +1,5 @@
+import { RecoveryWriter } from "./recoveryWriter";
+import { loadRecoveryState, saveRecovery, discardRecovery } from "./api";
 import { useFileActions } from "./hooks/useFileActions";
 import { RenameReviewDialog } from "./components/RenameReviewDialog";
 import { EditorToolbar } from "./components/EditorToolbar";
@@ -99,11 +101,15 @@ export default function App({
   active = true,
   onDirtyChange,
   openRequest,
+  onCloseActions,
 }: {
   contextKey?: string;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   openRequest?: FileOpenRequest | null;
+  onCloseActions?: (
+    actions: { flush(): Promise<void>; save(): Promise<void>; discard(): Promise<void> } | null,
+  ) => void;
 } = {}) {
   const handledOpenRequest = useRef<string | null>(null);
   const activeRef = useRef(active);
@@ -141,6 +147,41 @@ export default function App({
   const [navForward, setNavForward] = useState<NavEntry[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
+  const recoveryWriter = useMemo(() => {
+    void contextKey;
+    return new RecoveryWriter({ load: loadRecoveryState, save: saveRecovery, discard: discardRecovery });
+  }, [contextKey]);
+  const [recoveryStatus, setRecoveryStatus] = useState("복구 기록 대기");
+  useEffect(() => {
+    if (!hydrated || recoveryOpen) return;
+    recoveryWriter.update(
+      state.docs
+        .filter((doc) => doc.dirty)
+        .map((doc) => ({
+          path: doc.path,
+          content: doc.text,
+          baseHash: doc.contentHash,
+          snapshotAtMs: Date.now(),
+          encoding: doc.encoding,
+          lineEnding: doc.lineEnding,
+        })),
+    );
+    if (!state.docs.some((doc) => doc.dirty)) return;
+    setRecoveryStatus("복구 내용을 기록 중…");
+    const key = contextKey;
+    const timer = setTimeout(() => {
+      void recoveryWriter.flush().then(
+        () => {
+          if (contextRef.current === key) setRecoveryStatus("복구 내용을 기록했습니다.");
+        },
+        (cause) => {
+          if (contextRef.current === key)
+            setRecoveryStatus(cause instanceof Error ? cause.message : "복구 내용을 기록하지 못했습니다.");
+        },
+      );
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [contextKey, hydrated, recoveryOpen, recoveryWriter, state.docs]);
   const [editorMirror] = useState(() => new NativeEditorMirror());
   editorMirror.setContext(contextKey);
   useEffect(() => {
@@ -492,6 +533,7 @@ export default function App({
       ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
     });
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
+    if (latestDoc && !latestDoc.dirty) await recoveryWriter.discard(doc.path);
     if (latestDoc)
       void lspSync.save(
         docId,
@@ -522,6 +564,26 @@ export default function App({
     void saveDocument(activeDoc.id);
   };
 
+  const discardDocumentRecovery = async (doc: Doc) => {
+    await recoveryWriter.discard(doc.path);
+    const latest = stateRef.current.docs.find((item) => item.id === doc.id);
+    if (latest && latest.revision !== doc.revision) {
+      recoveryWriter.update(
+        stateRef.current.docs
+          .filter((item) => item.dirty)
+          .map((item) => ({
+            path: item.path,
+            content: item.text,
+            baseHash: item.contentHash,
+            snapshotAtMs: Date.now(),
+            encoding: item.encoding,
+            lineEnding: item.lineEnding,
+          })),
+      );
+      await recoveryWriter.flush();
+      throw new Error("폐기 확인 중 새 편집이 발생했습니다. 문서를 다시 확인해 주세요.");
+    }
+  };
   const removeDocument = (docId: DocId) => {
     const doc = stateRef.current.docs.find((item) => item.id === docId);
     void lspSync.close(docId);
@@ -553,8 +615,16 @@ export default function App({
 
   const handleDiscardClose = () => {
     if (!pendingCloseDocId || renameApplyBusyRef.current) return;
-    removeDocument(pendingCloseDocId);
-    advanceCloseQueue(pendingCloseDocId);
+    const docId = pendingCloseDocId;
+    const doc = stateRef.current.docs.find((item) => item.id === docId);
+    if (doc)
+      void discardDocumentRecovery(doc).then(
+        () => {
+          removeDocument(docId);
+          advanceCloseQueue(docId);
+        },
+        (cause) => setError(cause instanceof Error ? cause.message : "복구 내용을 폐기하지 못했습니다."),
+      );
   };
 
   const handleSaveAndClose = () => {
@@ -571,6 +641,62 @@ export default function App({
       }
     })();
   };
+
+  const flushRecovery = async () => {
+    recoveryWriter.update(
+      stateRef.current.docs
+        .filter((doc) => doc.dirty)
+        .map((doc) => ({
+          path: doc.path,
+          content: doc.text,
+          baseHash: doc.contentHash,
+          snapshotAtMs: Date.now(),
+          encoding: doc.encoding,
+          lineEnding: doc.lineEnding,
+        })),
+    );
+    await recoveryWriter.flush();
+  };
+  const closeActionsRef = useRef({
+    flush: () => flushRecovery(),
+    save: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        const result = await saveDocument(doc.id);
+        if (!result?.matchedSnapshot) throw new Error("저장되지 않은 새 편집이 있습니다.");
+      }
+      await recoveryWriter.flush();
+    },
+    discard: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        await discardDocumentRecovery(doc);
+        removeDocument(doc.id);
+      }
+    },
+  });
+  closeActionsRef.current = {
+    flush: () => flushRecovery(),
+    save: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        const result = await saveDocument(doc.id);
+        if (!result?.matchedSnapshot) throw new Error("저장되지 않은 새 편집이 있습니다.");
+      }
+      await recoveryWriter.flush();
+    },
+    discard: async () => {
+      for (const doc of stateRef.current.docs.filter((item) => item.dirty)) {
+        await discardDocumentRecovery(doc);
+        removeDocument(doc.id);
+      }
+    },
+  };
+  useEffect(() => {
+    onCloseActions?.({
+      flush: () => closeActionsRef.current.flush(),
+      save: () => closeActionsRef.current.save(),
+      discard: () => closeActionsRef.current.discard(),
+    });
+    return () => onCloseActions?.(null);
+  }, [onCloseActions]);
 
   const handleReplaceCommandReady = (docId: DocId, command: (() => boolean) | null) => {
     if (command) replaceCommandsRef.current.set(docId, command);
@@ -1004,6 +1130,7 @@ export default function App({
     setNavForward,
     registerWatch,
     removeDocument,
+    discardDocumentRecovery,
     requestCloseDocuments,
   });
 
@@ -1534,8 +1661,18 @@ export default function App({
 
   return (
     <main className="app-shell">
+      {state.docs.some((doc) => doc.dirty) && <p role="status">{recoveryStatus}</p>}
       {recoveryOpen && recoveryChecked && hydrated && (
         <RecoveryDialog
+          onRestore={async (entries) => {
+            for (const entry of entries) {
+              const opened = await openPath(entry.path);
+              dispatchAction({ type: "setDocText", docId: opened.id, text: entry.content });
+              if (entry.encoding) dispatchAction({ type: "setEncoding", docId: opened.id, encoding: entry.encoding });
+              if (entry.lineEnding)
+                dispatchAction({ type: "setLineEnding", docId: opened.id, lineEnding: entry.lineEnding });
+            }
+          }}
           onDone={(recovered) => {
             if (!recovered.length) {
               setRecoveryOpen(false);

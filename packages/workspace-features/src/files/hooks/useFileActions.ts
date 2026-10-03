@@ -58,6 +58,7 @@ interface Props {
   setNavForward: React.Dispatch<React.SetStateAction<import("../App").NavEntry[]>>;
   registerWatch: (path: string) => Promise<void>;
   removeDocument: (docId: string) => void;
+  discardDocumentRecovery: (doc: Doc) => Promise<void>;
   requestCloseDocuments: (docIds: readonly string[]) => void;
 }
 
@@ -89,6 +90,7 @@ export function useFileActions({
   setNavForward,
   registerWatch,
   removeDocument,
+  discardDocumentRecovery,
   requestCloseDocuments,
 }: Props) {
   const handleEncodingConversion = (docId: DocId, encoding: Encoding) => {
@@ -133,6 +135,7 @@ export function useFileActions({
     if (!latest || !snapshotMatches(latest, before)) {
       throw new Error("인코딩을 다시 여는 동안 문서가 변경되었습니다. 다시 시도하세요.");
     }
+    if (before.dirty) await discardDocumentRecovery(before);
     dispatchAction({
       type: "replaceDoc",
       doc: {
@@ -260,6 +263,7 @@ export function useFileActions({
         size: doc.size,
         contentHash: doc.contentHash,
       });
+      await discardDocumentRecovery(doc);
       removeDocument(doc.id);
       await refreshCurrentWorkspace();
     });

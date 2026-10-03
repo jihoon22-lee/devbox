@@ -1,3 +1,4 @@
+import { ContextTransitionBlocked, type TransitionGuard } from "../contextTransition";
 import { useRef, useState } from "react";
 import { useOperation, usePolling } from "@devbox/hooks";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
@@ -22,12 +23,14 @@ export default function AgentHub({
   registry,
   navigate,
   refreshContext,
+  transition,
 }: {
   description: Description;
   active?: boolean;
   registry: Registry | null;
   navigate(route: string): void;
   refreshContext(): Promise<void>;
+  transition?: TransitionGuard;
 }) {
   const [resources, setResources] = useState<AgentResources[]>([]);
   const [usage, setUsage] = useState<Record<string, UsageReport>>({});
@@ -41,7 +44,7 @@ export default function AgentHub({
   const projectId = description.context?.projectId;
   const selectedProject = useRef(projectId);
   selectedProject.current = projectId;
-  const ports = nativePorts(refreshContext, description.handshake.installationId);
+  const ports = nativePorts(refreshContext, description.handshake.installationId, transition);
   const wsl = description.context?.target.kind === "wsl";
   async function load() {
     const project = projectId;
@@ -60,7 +63,7 @@ export default function AgentHub({
       try {
         await load();
       } catch (error) {
-        setIssue(errorMessage(error));
+        setIssue(error instanceof ContextTransitionBlocked ? error.message : errorMessage(error));
       }
     },
     { intervalMs: 3000, active: active && wsl },
@@ -92,7 +95,7 @@ export default function AgentHub({
       try {
         await action();
       } catch (error) {
-        setIssue(errorMessage(error));
+        setIssue(error instanceof ContextTransitionBlocked ? error.message : errorMessage(error));
         setReviewRequired(errorCode(error) === "source_review_required");
       } finally {
         try {
@@ -105,6 +108,7 @@ export default function AgentHub({
     });
   }
   async function resume(task: AgentTask) {
+    if (transition) await transition(async () => {});
     const target = description.context?.target;
     if (target?.kind !== "wsl") throw new AgentFlowError("agent_wsl_required");
     await advance(task, ports, {
@@ -123,6 +127,7 @@ export default function AgentHub({
     return tree;
   }
   async function cleanupTask(task: AgentTask, force: boolean) {
+    if (transition) await transition(async () => {});
     if (task.terminalId) await call("terminal", "stop_terminal", { id: task.terminalId });
     const base = await baseOf(task);
     const presence = await ports.source.inspectWorktree(task.branch, task.targetDir);

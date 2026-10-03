@@ -254,10 +254,38 @@ it("does not retry a failed automatic start until requested", async () => {
   await waitFor(() => expect(call.mock.calls.filter(([, method]) => method === "start_empty")).toHaveLength(2));
 });
 it("prepares only the store while Suite activation is pending", async () => {
-  render(<RegistryGate setupOnly />);
-  await waitFor(() => expect(call).toHaveBeenCalledWith("workspace.registry", "snapshot", {}));
+  let selected = false;
+  call.mockImplementation(async (component, method) => {
+    // Match the native import-phase boundary: registry calls are not admitted.
+    if (component !== "workspace.setup") throw new Error("설치 활성화 대기");
+    if (method === "status") return { phase: selected ? "selected" : "setup" };
+    if (method === "start_empty") {
+      if (selected) throw new Error("store_already_active");
+      selected = true;
+      return { selected: true };
+    }
+    throw new Error("unexpected setup method");
+  });
+  const ready = vi.fn();
+  render(<RegistryGate setupOnly onReady={ready} />);
+  await waitFor(() => expect(ready).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(call.mock.calls.filter(([, method]) => method === "start_empty")).toHaveLength(1);
+  expect(call.mock.calls.every(([component]) => component === "workspace.setup")).toBe(true);
   expect(screen.queryByLabelText("Windows 프로젝트 폴더")).toBeNull();
-  expect(call.mock.calls.some(([, method]) => method === "preview_windows")).toBe(false);
+});
+
+it("recognizes an already prepared store during pending activation without reading the registry", async () => {
+  call.mockImplementation(async (component, method) => {
+    if (component === "workspace.setup" && method === "status") return { phase: "selected" };
+    throw new Error("설치 활성화 대기");
+  });
+  const ready = vi.fn();
+  render(<RegistryGate setupOnly onReady={ready} />);
+  await waitFor(() => expect(ready).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByLabelText("Windows 프로젝트 폴더")).toBeNull();
+  expect(call.mock.calls.every(([component]) => component === "workspace.setup")).toBe(true);
 });
 
 it("registers a new project in one action and uses the returned registry revision for undo", async () => {

@@ -1,3 +1,7 @@
+import { listen } from "@tauri-apps/api/event";
+import CloseReview from "./CloseReview";
+import { nativeCall } from "./native";
+import { createContextTransition } from "./contextTransition";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
@@ -114,6 +118,56 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
   const [editing, setEditing] = useState(false);
   const [sessionRevision] = useState(0);
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
+  const filesCloseActions = useRef<{ flush(): Promise<void>; save(): Promise<void>; discard(): Promise<void> } | null>(
+    null,
+  );
+  const setFilesCloseActions = useCallback((actions: typeof filesCloseActions.current) => {
+    filesCloseActions.current = actions;
+  }, []);
+  const guardReasons = useRef<string[]>([]);
+  guardReasons.current = [
+    tasksDirty && "Tasks 편집",
+    editing && "Files 편집 또는 저장",
+    definitionsEditing && "프로젝트 정의 편집",
+    dependenciesBusy && "의존성 검토",
+    sourceBusy && "Source 작업",
+    sourceDirty && "Source 초안",
+  ].filter((reason): reason is string => Boolean(reason));
+  const [transition] = useState(() =>
+    createContextTransition(
+      () => guardReasons.current,
+      async () => {
+        await filesCloseActions.current?.flush();
+      },
+    ),
+  );
+  const [closeRequest, setCloseRequest] = useState<{ nonce: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const listener = listen<{ nonce: string }>("workspace-close-review", (event) => {
+      if (alive) setCloseRequest(event.payload);
+    });
+    return () => {
+      alive = false;
+      void listener.then((unlisten) => unlisten());
+    };
+  }, []);
+  const cancelClose = async () => {
+    if (!closeRequest) return;
+    await nativeCall("workspace.commands", "cancel_close", { nonce: closeRequest.nonce });
+    setCloseRequest(null);
+  };
+  const finishClose = async (discard: boolean) => {
+    if (!closeRequest) return;
+    const nonFiles = guardReasons.current.filter((reason) => !reason.startsWith("Files"));
+    if (nonFiles.length) throw new Error(`${nonFiles.join(", ")} 내용을 편집 화면에서 정리해 주세요.`);
+    if (discard) await filesCloseActions.current?.discard();
+    else await filesCloseActions.current?.save();
+    await filesCloseActions.current?.flush();
+    if (guardReasons.current.some((reason) => !reason.startsWith("Files")))
+      throw new Error("종료 준비 중 새 편집이 발생했습니다. 편집 화면에서 확인해 주세요.");
+    await nativeCall("workspace.commands", "confirm_close", { nonce: closeRequest.nonce });
+  };
   const [registrySignal, setRegistrySignal] = useState(0);
   const refreshRegistry = useCallback(() => setRegistrySignal((value) => value + 1), []);
   const [fileRequest, setFileRequest] = useState<{
@@ -192,6 +246,20 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
     );
   return (
     <>
+      {closeRequest && (
+        <CloseReview
+          reasons={guardReasons.current}
+          filesDirty={editing}
+          onSave={() => finishClose(false)}
+          onDiscard={() => finishClose(true)}
+          onCancel={cancelClose}
+          onReturn={() => {
+            void cancelClose().then(() =>
+              navigate(sourceDirty || sourceBusy ? "source" : editing ? "files" : tasksDirty ? "tasks" : "overview"),
+            );
+          }}
+        />
+      )}
       <div hidden={ready && route === "files"}>
         <Suspense fallback={<p role="status">프로젝트 정보를 불러오고 있습니다…</p>}>
           <RegistryGate
@@ -199,6 +267,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
             onContextChanged={refreshContext}
             onReady={markReady}
             editing={tasksDirty || editing || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty}
+            transition={transition}
             refreshSignal={registrySignal}
             onSnapshot={setRegistry}
             suggestedRoot={registrationRequest}
@@ -243,7 +312,11 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
         <div className="workspace-feature-source" hidden={route !== "source"}>
           {sourceNavigationError && <p role="alert">{sourceNavigationError}</p>}
           {!selectedTree ? (
-            <p role="status">작업할 프로젝트를 선택해 주세요.</p>
+            <p role="status">
+              {description.context
+                ? "프로젝트 정보를 동기화 중입니다. 목록을 다시 확인해 주세요."
+                : "작업할 프로젝트를 선택해 주세요."}
+            </p>
           ) : (
             <Suspense fallback={<p role="status">Source 화면을 불러오고 있습니다…</p>}>
               <NativeSource
@@ -263,7 +336,11 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
       {ready && (dependenciesVisited || route === "dependencies") && (
         <div className="workspace-feature-source" hidden={route !== "dependencies"}>
           {!selectedTree ? (
-            <p role="status">분석할 프로젝트를 선택해 주세요.</p>
+            <p role="status">
+              {description.context
+                ? "프로젝트 정보를 동기화 중입니다. 목록을 다시 확인해 주세요."
+                : "분석할 프로젝트를 선택해 주세요."}
+            </p>
           ) : (
             <Suspense fallback={<p role="status">의존성 화면을 불러오고 있습니다…</p>}>
               <Dependencies
@@ -285,7 +362,13 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
       )}
       {ready && route === "agents" && (
         <Suspense fallback={<p role="status">에이전트 작업을 불러오고 있습니다…</p>}>
-          <AgentHub description={description} registry={registry} navigate={navigate} refreshContext={refreshContext} />
+          <AgentHub
+            description={description}
+            registry={registry}
+            navigate={navigate}
+            refreshContext={refreshContext}
+            transition={transition}
+          />
         </Suspense>
       )}
       {ready && route === "terminal" && (
@@ -318,6 +401,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
                 key={sessionRevision}
                 contextKey={JSON.stringify(description.context)}
                 active={route === "files"}
+                onCloseActions={setFilesCloseActions}
                 onDirtyChange={setEditing}
                 openRequest={fileRequest}
               />

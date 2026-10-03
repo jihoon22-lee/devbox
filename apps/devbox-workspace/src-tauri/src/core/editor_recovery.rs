@@ -99,3 +99,22 @@ fn validate_recovery(bytes: &[u8]) -> Result<()> {
     }
     editor_engine::component::validate_persistent_file("recovery.json", bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn legacy_missing_metadata_is_readable_and_new_metadata_roundtrips() {
+        let old = br#"{"version":1,"entries":[{"path":"/a","content":"","base_hash":null,"snapshot_at_ms":1}]}"#;
+        let mut stored = StoredRecovery::decode(old).unwrap();
+        assert!(stored.recovery.entries[0].encoding.is_none());
+        let entry = &mut stored.recovery.entries[0];
+        entry.encoding = Some(editor_engine::core::encoding::Encoding {
+            encoding_kind: editor_engine::core::encoding::EncodingKind::Utf16Le,
+            bom: true,
+        });
+        entry.line_ending = Some(editor_engine::core::line_ending::LineEnding::CrLf);
+        let read = StoredRecovery::decode(&stored.encode().unwrap()).unwrap();
+        assert_eq!(read.recovery, stored.recovery);
+    }
+}

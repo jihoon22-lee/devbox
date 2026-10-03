@@ -16,6 +16,7 @@ use tauri::{Manager, State, WebviewWindow};
 pub(crate) struct Runtime {
     pub(crate) lanes: Lanes,
     pub(crate) agent_cpu: Arc<Mutex<crate::agent_hub::resources::CpuTracker>>,
+    pub(crate) close_review: Arc<Mutex<crate::core::close_review::CloseReview>>,
     pub(crate) shutdown_started: Arc<AtomicBool>,
     pub(crate) ui_ready: Arc<AtomicBool>,
     pub(crate) engines: Arc<crate::runtime_host::Owners>,
@@ -350,7 +351,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     // The main window owns the UI lifetime even while hidden
                     // terminal windows exist. Reuse the full native exit drain.
                     api.prevent_close();
-                    owner.app_handle().exit(0);
+                    if !request_close_review(owner.app_handle()) {
+                        owner.app_handle().exit(0);
+                    }
                 }
             });
         })
@@ -380,6 +383,15 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 return;
             }
             api.prevent_exit();
+            if !runtime
+                .close_review
+                .lock()
+                .is_ok_and(|review| review.approved())
+            {
+                if request_close_review(app) {
+                    return;
+                }
+            }
             if runtime
                 .shutdown_started
                 .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -984,4 +996,36 @@ mod tests {
             );
         }
     }
+}
+
+fn request_close_review(app: &tauri::AppHandle) -> bool {
+    use tauri::Emitter;
+    let Some(window) = app.get_webview_window("main") else {
+        return false;
+    };
+    let runtime = app.state::<Runtime>();
+    if runtime
+        .close_review
+        .lock()
+        .is_ok_and(|review| review.approved())
+    {
+        app.exit(0);
+        return true;
+    }
+    // No editable product state exists before installation activation/registration.
+    if !runtime.ui_ready.load(Ordering::Acquire)
+        || product_shell_tauri::suite_import_only(app).unwrap_or(true)
+        || runtime.status()["phase"] != "selected"
+    {
+        return false;
+    }
+    let Ok(context) = product_shell_tauri::workspace_context(&window) else {
+        return true;
+    };
+    let Ok(mut review) = runtime.close_review.lock() else {
+        return true;
+    };
+    let request = review.request(context);
+    let _ = window.emit("workspace-close-review", request);
+    true
 }

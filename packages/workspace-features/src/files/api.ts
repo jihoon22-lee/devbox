@@ -506,12 +506,16 @@ export interface RecoveryEntry {
   content: string;
   baseHash: string | null;
   snapshotAtMs: number;
+  encoding?: Encoding | null;
+  lineEnding?: LineEnding | null;
 }
 interface RecoveryWire {
   path: string;
   content: string;
   base_hash: string | null;
   snapshot_at_ms: number;
+  encoding?: Encoding | null;
+  line_ending?: LineEnding | null;
 }
 
 export interface LoadedRecovery {
@@ -525,11 +529,21 @@ export async function saveRecovery(entries: RecoveryEntry[], nativeRevision?: st
       content: entry.content,
       base_hash: entry.baseHash,
       snapshot_at_ms: entry.snapshotAtMs,
+      ...(entry.encoding === undefined ? {} : { encoding: entry.encoding }),
+      ...(entry.lineEnding === undefined ? {} : { line_ending: entry.lineEnding }),
     })),
   };
   if (isProductHosted())
-    return (await invoke("save_recovery", { ...args, nativeRevision: requiredRevision(nativeRevision) }))
-      .nativeRevision;
+    return (
+      await invoke("save_recovery", {
+        entries: args.entries.map((entry) => ({
+          ...entry,
+          encoding: entry.encoding ?? null,
+          line_ending: entry.line_ending ?? null,
+        })),
+        nativeRevision: requiredRevision(nativeRevision),
+      })
+    ).nativeRevision;
   await legacyInvoke<void>("save_recovery", args);
 }
 export async function loadRecoveryState(): Promise<LoadedRecovery> {
@@ -544,6 +558,8 @@ export async function loadRecoveryState(): Promise<LoadedRecovery> {
       content: entry.content,
       baseHash: entry.base_hash,
       snapshotAtMs: entry.snapshot_at_ms,
+      ...(entry.encoding === undefined ? {} : { encoding: entry.encoding }),
+      ...(entry.line_ending === undefined ? {} : { lineEnding: entry.line_ending }),
     })),
     nativeRevision: state.nativeRevision,
   };
