@@ -267,10 +267,14 @@ export async function observeAgentUpdateQuiesce(input) {
   assert.equal(input.actualUpdateHealthGate, true);
   assert.equal(input.previousInstallationId, context.manifest.installationId);
   assert.ok(input.reviewScreenshot, "Actual update review screenshot required");
+  const description = await context.center.cdp.evaluate(
+    "window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')",
+  );
+  assert.equal(description.deliveryState, "health");
   const body = await context.center.cdp.evaluate("document.body.innerText");
   assert.ok(
-    body.includes("설치 준비") || body.includes("준비 기록"),
-    "Actual Control Center health gate must remain visible",
+    body.includes("Suite 업데이트") && body.includes("업데이트 확정"),
+    "Actual Suite update health review must remain visible",
   );
   assert.equal(agentProcesses(context).length, 0, "Update quiesce must stop the existing Agent");
   for (let poll = 0; poll < 5; poll++) {
