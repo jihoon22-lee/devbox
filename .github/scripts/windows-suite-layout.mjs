@@ -15,6 +15,29 @@ export const layoutProducts = ["workspace", "api-studio", "knowledge", "control-
 export const layoutStates = ["direct", "committed", "import", "health", "recover"];
 const evidenceRoot = "product-foundation-evidence/user-flows/layout-observations";
 
+export function correctClientSize(nativeSize, observed, target, pixelRatio) {
+  for (const value of [
+    nativeSize.width,
+    nativeSize.height,
+    observed.width,
+    observed.height,
+    target.width,
+    target.height,
+    pixelRatio,
+  ])
+    assert.ok(Number.isFinite(value) && value > 0, "Available positive window dimensions required");
+  if (Math.abs(observed.width - target.width) <= 2 && Math.abs(observed.height - target.height) <= 2) return null;
+  const corrected = {
+    width: Math.round(nativeSize.width + (target.width - observed.width) * pixelRatio),
+    height: Math.round(nativeSize.height + (target.height - observed.height) * pixelRatio),
+  };
+  assert.ok(
+    corrected.width >= 400 && corrected.width <= 2560 && corrected.height >= 300 && corrected.height <= 1600,
+    "Corrected physical window size outside native ownership bounds",
+  );
+  return corrected;
+}
+
 // Installer calls this while the real product is in the given delivery phase.
 // Observations never change delivery state or replace a production description.
 export async function observeInstalledProductLayout({ cdp, ui, processIdentity, root, product, state }) {
@@ -39,17 +62,26 @@ export async function observeInstalledProductLayout({ cdp, ui, processIdentity, 
       "({width:innerWidth,height:innerHeight,outerWidth,outerHeight,pixelRatio:devicePixelRatio})",
     );
     assert.ok(Number.isFinite(before.pixelRatio) && before.pixelRatio > 0);
-    const nativeSize = {
+    let nativeSize = {
       width: Math.round(size.width * before.pixelRatio),
       height: Math.round(size.height * before.pixelRatio),
     };
+    const resizeRequests = [{ ...nativeSize }];
     nativeWindowAction(owner, "Resize", nativeSize);
     await cdp.command("Page.bringToFront");
     await cdp.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-    const observed = await cdp.evaluate(`(${observeProductLayout.toString()})()`);
+    let observed = await cdp.evaluate(`(${observeProductLayout.toString()})()`);
+    const corrected = correctClientSize(nativeSize, observed.viewport, size, before.pixelRatio);
+    if (corrected) {
+      nativeSize = corrected;
+      resizeRequests.push({ ...corrected });
+      nativeWindowAction(owner, "Resize", corrected);
+      await cdp.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      observed = await cdp.evaluate(`(${observeProductLayout.toString()})()`);
+    }
     assertProductLayout(observed, { editor: Boolean(observed.editor) });
     assert.ok(
-      Math.abs(observed.viewport.width - size.width) <= 48 && Math.abs(observed.viewport.height - size.height) <= 96,
+      Math.abs(observed.viewport.width - size.width) <= 2 && Math.abs(observed.viewport.height - size.height) <= 2,
       "Actual client dimensions must correspond to requested native size",
     );
     if (size.name === "minimum")
@@ -60,6 +92,7 @@ export async function observeInstalledProductLayout({ cdp, ui, processIdentity, 
     observations.push({
       size,
       requestedNativeSize: nativeSize,
+      nativeResizeRequests: resizeRequests,
       observed,
       screenshotPath: await ui.screenshot(`layout-${product}-${state}-${size.name}`),
     });
