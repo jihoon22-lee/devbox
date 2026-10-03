@@ -241,6 +241,19 @@ pub fn dispatch_typed(
     use crate::ipc::setup::StartupCall;
     let state = app.state::<Startup>();
     match call {
+        StartupCall::LoadRecovery {} => {
+            // Selection is native manifest-owned, and this path grants local journal reads only.
+            let manifest = stores::read(&state.root)?.ok_or("store_invalid")?;
+            let directory = stores::directory(&state.root, &manifest, "notes")?;
+            let database = directory.join("data.db");
+            devbox_filesystem::ensure_no_links(&database).map_err(|_| "store_invalid")?;
+            let connection =
+                Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    .map_err(|_| "store_unavailable")?;
+            stores::validate_store(&connection, stores::StoreKind::Notes)?;
+            let view = knowledge_vault_engine::component::load_offline_recovery(&directory)?;
+            serde_json::to_value(view).map_err(|_| "component_response_invalid".into())
+        }
         StartupCall::Status {} => {
             if let Some(error) = state
                 .failure

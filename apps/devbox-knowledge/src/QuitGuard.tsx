@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { quitCall } from "@devbox/knowledge-features/commands/api";
-import { hasUnsavedNote, saveNoteBeforeQuit, settleNoteBeforeQuit } from "@devbox/knowledge-features/notes-lifecycle";
+import {
+  hasUnsavedNote,
+  saveNoteBeforeQuit,
+  prepareNoteQuit,
+  resumeNoteAfterQuit,
+} from "@devbox/knowledge-features/notes-lifecycle";
 import { nativeMode } from "@devbox/product-shell/api";
 import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 
 export default function QuitGuard() {
   const [request, setRequest] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [permanent, setPermanent] = useState(false);
   const [error, setError] = useState("");
   const dialog = useRef<HTMLElement>(null);
   const handling = useRef(false);
@@ -20,8 +26,10 @@ export default function QuitGuard() {
       try {
         const id = await quitCall("pending_quit", {});
         if (disposed || !id) return;
-        if (!hasUnsavedNote()) await quitCall("decide_quit", { id, quit: true });
-        else {
+        if (!hasUnsavedNote()) {
+          await prepareNoteQuit();
+          await quitCall("decide_quit", { id, quit: true });
+        } else {
           setRequest(id);
           setError("");
         }
@@ -58,19 +66,22 @@ export default function QuitGuard() {
       restoreFocus(previous);
     };
   }, [request]);
-  const decide = async (action: "save" | "discard" | "cancel") => {
+  const decide = async (action: "save" | "discard" | "permanent" | "cancel") => {
     if (!request || busy) return;
     setBusy(true);
     setError("");
     try {
-      if (action === "discard") await settleNoteBeforeQuit();
+      if (action === "discard" || action === "permanent") await prepareNoteQuit(action === "permanent");
+      if (action === "cancel") resumeNoteAfterQuit();
       if (action === "save" && !(await saveNoteBeforeQuit())) {
         setError("저장을 완료하지 못했습니다. 종료를 취소한 뒤 저장 오류나 파일 충돌을 확인해 주세요.");
         return;
       }
+      if (action === "save") await prepareNoteQuit();
       await quitCall("decide_quit", { id: request, quit: action !== "cancel" });
       setRequest(null);
     } catch {
+      resumeNoteAfterQuit();
       setError("종료를 완료하지 못했습니다. 현재 편집 내용은 유지됩니다.");
     } finally {
       setBusy(false);
@@ -100,8 +111,23 @@ export default function QuitGuard() {
           저장하고 종료
         </button>
         <button disabled={busy} onClick={() => void decide("discard")}>
-          버리고 종료
+          저장하지 않고 종료(복구본 유지)
         </button>
+        {permanent ? (
+          <div role="group" aria-label="복구본 영구 삭제 확인">
+            <p>현재 노트의 복구본을 영구 삭제하고 종료합니다. 되돌릴 수 없습니다.</p>
+            <button disabled={busy} onClick={() => void decide("permanent")}>
+              영구 삭제하고 종료
+            </button>
+            <button disabled={busy} onClick={() => setPermanent(false)}>
+              삭제 취소
+            </button>
+          </div>
+        ) : (
+          <button disabled={busy} onClick={() => setPermanent(true)}>
+            복구본 영구 삭제…
+          </button>
+        )}
         <button disabled={busy} onClick={() => void decide("cancel")}>
           종료 취소
         </button>

@@ -1,6 +1,7 @@
 import type { InboundNote, NoteSnapshot } from "./api";
 
 export interface NoteView {
+  documentGeneration: number;
   sourceVersion: number;
   path: string | null;
   content: string;
@@ -12,6 +13,7 @@ export interface NoteView {
 }
 type Writer = (path: string, content: string, revision: string) => Promise<NoteSnapshot>;
 const empty: NoteView = {
+  documentGeneration: 0,
   sourceVersion: 0,
   path: null,
   content: "",
@@ -32,6 +34,7 @@ export class NoteDocument {
   private inspecting = 0;
   private saves = 0;
   private writing: Promise<boolean> | null = null;
+  private quitHooks: { prepare: (permanent: boolean) => Promise<void>; resume: () => void } | null = null;
   private beforeSwitch: (() => Promise<unknown>) | null = null;
   constructor(
     private read: (path: string) => Promise<NoteSnapshot>,
@@ -48,10 +51,11 @@ export class NoteDocument {
     // Reopening identical bytes is still a new source. Save/inspect status alone
     // does not invalidate a preview of unchanged editor contents.
     const sourceVersion = this.view.sourceVersion + ("path" in change || "content" in change ? 1 : 0);
-    this.view = { ...this.view, ...change, sourceVersion };
+    this.view = { ...this.view, ...change, sourceVersion, documentGeneration: this.document };
     for (const listener of this.listeners) listener();
   }
-  edit(content: string) {
+  edit(content: string, generation = this.document) {
+    if (generation !== this.document) return;
     this.edits++;
     this.publish({ content, dirty: true });
   }
@@ -88,6 +92,19 @@ export class NoteDocument {
       return true;
     };
   }
+  setQuitHooks(hooks: { prepare: (permanent: boolean) => Promise<void>; resume: () => void }) {
+    this.quitHooks = hooks;
+    return () => {
+      if (this.quitHooks === hooks) this.quitHooks = null;
+    };
+  }
+  prepareQuit = async (permanent = false) => {
+    const generation = this.document;
+    if (this.quitHooks) await this.quitHooks.prepare(permanent);
+    else await this.settleBeforeQuit();
+    if (generation !== this.document) throw new Error("종료 확인 중 노트가 바뀌었습니다. 다시 확인해 주세요.");
+  };
+  resumeAfterQuit = () => this.quitHooks?.resume();
   setBeforeSwitch(hook: () => Promise<unknown>): () => void {
     this.beforeSwitch = hook;
     return () => {
@@ -141,6 +158,8 @@ export class NoteDocument {
     const current = this.view.path;
     if (!current) return;
     const path = current === from ? to : current.startsWith(`${from}/`) ? to + current.slice(from.length) : current;
+    if (path === current) return;
+    this.document++;
     const document = this.document,
       edits = this.edits;
     this.opening++;

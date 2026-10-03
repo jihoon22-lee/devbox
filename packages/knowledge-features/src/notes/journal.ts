@@ -21,7 +21,9 @@ const queues = new WeakMap<JournalTarget, QueueState>();
 
 export class NoteJournal {
   private timer: number | null = null;
-  private lastPath: string | null;
+  private previous: NoteView;
+  private suspended = false;
+  private failure: unknown = null;
   private lastSource = -1;
   private lastRevision = "";
   private disposed = false;
@@ -37,8 +39,27 @@ export class NoteJournal {
   ) {
     this.queue = queues.get(target) ?? { tail: Promise.resolve(), owned: new Set() };
     queues.set(target, this.queue);
-    this.lastPath = target.snapshot().path;
+    this.previous = target.snapshot();
     this.stop = target.subscribe(() => this.onChange());
+    this.onChange();
+  }
+
+  async prepareQuit(permanent = false): Promise<void> {
+    this.failure = null;
+    this.suspended = true;
+    const view = this.target.snapshot();
+    this.cancel();
+    if (!permanent) this.record(view);
+    await this.settled();
+    if (this.failure) throw this.failure;
+    if (permanent && view.path) {
+      await this.api.clear(view.path);
+      this.queue.owned.delete(view.path);
+    }
+  }
+
+  resume() {
+    this.suspended = false;
     this.onChange();
   }
 
@@ -61,6 +82,8 @@ export class NoteJournal {
   }
 
   dispose() {
+    // The NoteDocument survives lazy-view failure; preserve its latest buffered input.
+    if (this.timer !== null && !this.suspended) this.record(this.target.snapshot());
     this.disposed = true;
     this.cancel();
     this.stop();
@@ -68,6 +91,7 @@ export class NoteJournal {
 
   private enqueue(action: () => Promise<void>) {
     this.queue.tail = this.queue.tail.then(action).catch((error) => {
+      this.failure = error;
       if (this.disposed) return;
       const code = error instanceof Error ? error.name : error;
       this.onError(code === "journal_limit" ? "journal_limit" : "journal_unavailable");
@@ -93,14 +117,18 @@ export class NoteJournal {
 
   private onChange() {
     const view = this.target.snapshot();
-    if (view.path !== this.lastPath) {
+    const previous = this.previous;
+    this.previous = view;
+    if (this.suspended) return;
+    const switched = view.path !== previous.path || view.documentGeneration !== previous.documentGeneration;
+    if (switched) {
       this.cancel();
-      if (this.lastPath !== null) this.clear(this.lastPath);
-      this.lastPath = view.path;
+      // A switch discards the editor buffer, never its recovery file.
+      if (previous.dirty) this.record(previous);
     }
     if (!view.path || !view.dirty) {
       this.cancel();
-      if (view.path && !view.saving) this.clear(view.path);
+      if (!switched && previous.dirty && view.path) this.clear(view.path);
       return;
     }
     if (view.sourceVersion === this.lastSource && view.revision === this.lastRevision) return;

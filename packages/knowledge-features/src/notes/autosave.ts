@@ -33,6 +33,7 @@ export class NoteAutosave {
   private lastSource = -1;
   private wasSaving = false;
   private disposed = false;
+  private suspended = false;
   private readonly state: SaveState;
   private readonly stop: () => void;
   constructor(
@@ -57,6 +58,14 @@ export class NoteAutosave {
     this.state.paused = true;
     this.cancel();
   }
+  suspend() {
+    this.suspended = true;
+    this.cancel();
+  }
+  resume() {
+    this.suspended = false;
+    this.schedule();
+  }
   async flush(): Promise<boolean> {
     this.cancel();
     let view = this.target.snapshot();
@@ -79,6 +88,7 @@ export class NoteAutosave {
     const view = this.target.snapshot();
     return (
       !this.disposed &&
+      !this.suspended &&
       this.enabled &&
       !this.state.paused &&
       !!view.path &&

@@ -297,3 +297,19 @@ it("preserves the newest open intent while pre-switch saves are waiting", async 
   expect(await first).toBe(false);
   expect(note.snapshot().path).toBe("second.md");
 });
+
+describe("document generation", () => {
+  it("changes for same-path reopen, not edits or saves, and rejects old editor callbacks", async () => {
+    const { note } = await fixture();
+    const generation = note.snapshot().documentGeneration;
+    note.edit("first", generation);
+    expect(note.snapshot().documentGeneration).toBe(generation);
+    await note.save();
+    expect(note.snapshot().documentGeneration).toBe(generation);
+    await note.openPath("A.md", () => true);
+    expect(note.snapshot().documentGeneration).toBeGreaterThan(generation);
+    note.edit("stale", generation);
+    expect(note.snapshot().content).toBe("original");
+    expect(note.snapshot().dirty).toBe(false);
+  });
+});

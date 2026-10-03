@@ -57,11 +57,28 @@ it("waits for an in-flight write before explicit discard and ignores composing E
   const dialog = await screen.findByRole("dialog");
   fireEvent.keyDown(dialog, { key: "Escape", isComposing: true });
   expect(invoke.mock.calls.some(([method]) => method === "decide_quit")).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "버리고 종료" }));
+  fireEvent.click(screen.getByRole("button", { name: "저장하지 않고 종료(복구본 유지)" }));
   expect(invoke.mock.calls.some(([method]) => method === "decide_quit")).toBe(false);
   await act(async () => {
     finish();
     await pending;
   });
   expect(invoke).toHaveBeenCalledWith("decide_quit", { id: "quit-1", quit: true });
+});
+
+it("requires separate confirmation for permanent discard and rejects failed deletion", async () => {
+  const prepare = vi.fn().mockRejectedValueOnce(new Error("journal unavailable"));
+  unregister = registerNoteEditor({
+    unsaved: () => true,
+    saveBeforeQuit: async () => true,
+    settleBeforeQuit: async () => {},
+    prepareQuit: prepare,
+  });
+  render(<QuitGuard />);
+  fireEvent.click(await screen.findByRole("button", { name: "복구본 영구 삭제…" }));
+  expect(prepare).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "영구 삭제하고 종료" }));
+  await screen.findByRole("alert");
+  expect(prepare).toHaveBeenCalledWith(true);
+  expect(invoke.mock.calls.some(([method]) => method === "decide_quit")).toBe(false);
 });

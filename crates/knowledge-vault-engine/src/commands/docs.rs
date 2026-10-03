@@ -196,7 +196,7 @@ pub fn read_file(
     let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
     let snapshot = crate::core::document::read(&path)?;
     // Local cache publication does not probe the source or widen path authority.
-    let _ = state.journal.remember_root(&root, vault.canonical_path());
+    let _ = state.journal.remember_validated(&conn, &root, vault.canonical_path());
     Ok(snapshot)
 }
 
@@ -219,7 +219,7 @@ pub fn open_inbound_note(
     if resolve_configured_root(&conn)? != root {
         return Err("preview_stale".into());
     }
-    let _ = state.journal.remember_root(&root, vault.canonical_path());
+    let _ = state.journal.remember_validated(&conn, &root, vault.canonical_path());
     Ok(InboundNote {
         path: resolved.relative_path,
         content: snapshot.content.ok_or("note_unavailable")?,

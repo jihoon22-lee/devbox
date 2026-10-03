@@ -1,7 +1,8 @@
 //! Native-owned local journal. Source access is needed only to seed the root cache.
 use crate::core::journal::{JournalEntry, JournalError, JournalFile, JournalView, MAX_FILE_BYTES};
 use crate::core::vault::VaultIdentity;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::{ErrorKind, Read, Write},
@@ -12,8 +13,11 @@ use std::{
     },
 };
 
+const RECOVERY_SCOPE: &str = "native_note_recovery_scope_v1";
 const UNAVAILABLE: &str = "journal_unavailable";
 static NEXT_BACKUP: AtomicU64 = AtomicU64::new(0);
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CachedRoot {
     configured: PathBuf,
     canonical: String,
@@ -63,6 +67,51 @@ impl NoteJournalStore {
         });
         Ok(())
     }
+    /// Persist only after native source validation; never accepted from renderer input.
+    pub(crate) fn remember_validated(
+        &self,
+        conn: &Connection,
+        configured: &Path,
+        canonical: &Path,
+    ) -> Result<(), String> {
+        let scope = CachedRoot {
+            configured: configured.into(),
+            canonical: canonical.to_str().ok_or(UNAVAILABLE)?.into(),
+        };
+        let encoded = serde_json::to_string(&scope).map_err(|_| UNAVAILABLE)?;
+        conn.execute("INSERT INTO settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", rusqlite::params![RECOVERY_SCOPE, encoded]).map_err(|_| UNAVAILABLE)?;
+        self.remember_root(configured, canonical)
+    }
+    fn persisted_scope(conn: &Connection, configured: &Path) -> Result<Option<String>, String> {
+        let value: Option<Option<String>> = conn.query_row("SELECT CASE WHEN length(CAST(value AS BLOB))<=98304 THEN value ELSE NULL END FROM settings WHERE key=?1", [RECOVERY_SCOPE], |row| row.get(0)).optional().map_err(|_| UNAVAILABLE)?;
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let scope: CachedRoot =
+            serde_json::from_str(&value.ok_or(UNAVAILABLE)?).map_err(|_| UNAVAILABLE)?;
+        if scope.configured != configured {
+            return Ok(None);
+        }
+        if scope.canonical.is_empty()
+            || scope.canonical.len() > 32768
+            || !Path::new(&scope.canonical).is_absolute()
+            || scope.canonical.chars().any(char::is_control)
+        {
+            return Err(UNAVAILABLE.into());
+        }
+        Ok(Some(scope.canonical))
+    }
+    /// Read-only recovery does not acquire source write authority or start a watcher.
+    pub fn load_offline(directory: &Path) -> Result<JournalView, String> {
+        let database = directory.join("data.db");
+        devbox_filesystem::ensure_no_links(&database).map_err(|_| UNAVAILABLE)?;
+        let conn =
+            Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(|_| UNAVAILABLE)?;
+        let configured = super::docs::resolve_configured_root(&conn).map_err(|_| UNAVAILABLE)?;
+        let canonical = Self::persisted_scope(&conn, &configured)?.ok_or(UNAVAILABLE)?;
+        Self::new(directory.join("note-journal.json")).load(&canonical)
+    }
     fn resolve_with(
         &self,
         db: &Mutex<Connection>,
@@ -78,13 +127,20 @@ impl NoteJournalStore {
         {
             return Ok(cache.canonical.clone());
         }
+        {
+            let conn = db.lock().map_err(|_| UNAVAILABLE)?;
+            if let Some(canonical) = Self::persisted_scope(&conn, &configured)? {
+                self.remember_root(&configured, Path::new(&canonical))?;
+                return Ok(canonical);
+            }
+        }
         // Neither DB nor cache mutex spans remote source I/O.
         let canonical = inspect(&configured)?;
         let conn = db.lock().map_err(|_| UNAVAILABLE)?;
         if super::docs::resolve_configured_root(&conn).map_err(|_| UNAVAILABLE)? != configured {
             return Err(UNAVAILABLE.into());
         }
-        self.remember_root(&configured, Path::new(&canonical))?;
+        self.remember_validated(&conn, &configured, Path::new(&canonical))?;
         Ok(canonical)
     }
     pub(crate) fn active_root(&self, db: &Mutex<Connection>) -> Result<String, String> {

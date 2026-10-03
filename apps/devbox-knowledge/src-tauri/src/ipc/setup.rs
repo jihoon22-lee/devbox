@@ -13,6 +13,7 @@ use tauri::{Manager, WebviewWindow};
 #[ts(optional_fields = nullable)]
 pub enum StartupCall {
     Status {},
+    LoadRecovery {},
     StartEmpty {},
     ContinueExisting {},
 }
@@ -20,6 +21,7 @@ impl StartupCall {
     pub fn method(&self) -> &'static str {
         match self {
             Self::Status { .. } => "status",
+            Self::LoadRecovery { .. } => "load_recovery",
             Self::StartEmpty { .. } => "start_empty",
             Self::ContinueExisting { .. } => "continue_existing",
         }
@@ -154,6 +156,7 @@ product_ipc::issue_codes! {
     StorePathInvalid = "store_path_invalid",
     StoreUnavailable = "store_unavailable",
     Unavailable = "unavailable",
+    JournalUnavailable = "journal_unavailable",
     VaultBindingInvalid = "vault_binding_invalid",
     VaultBindingUnavailable = "vault_binding_unavailable",
     VaultChangeCancelled = "vault_change_cancelled",
@@ -200,6 +203,10 @@ pub fn result_types(export: &mut TypeExporter<'_>) -> Result<Vec<(&'static str, 
     export.register::<SetupIssue>()?;
     Ok(vec![
         ("status", export.register::<StartupStatus>()?),
+        (
+            "load_recovery",
+            export.register::<knowledge_vault_engine::component::RecoveryView>()?,
+        ),
         ("start_empty", export.register::<StartupStatus>()?),
         ("continue_existing", export.register::<StartupStatus>()?),
         (

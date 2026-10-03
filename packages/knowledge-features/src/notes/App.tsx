@@ -187,6 +187,7 @@ export default function App({
   const [wikilinks, setWikilinks] = useState<WikilinkOccurrence[]>([]);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [showBacklinks, setShowBacklinks] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(true);
   const [metadataRevision, setMetadataRevision] = useState(0);
   const [cursorRequest, setCursorRequest] = useState<EditorCursorRequest | null>(null);
   const [renamePreview, setRenamePreview] = useState<RenamePreview | null>(null);
@@ -312,7 +313,22 @@ export default function App({
     });
     autosaveRef.current = autosave;
     journalRef.current = journal;
-    const release = editorDocument.setBeforeSwitch(() => autosave.flush());
+    const release = editorDocument.setBeforeSwitch(async () => {
+      await autosave.flush();
+      await journal.settled();
+    });
+    // Keep the last document-owned drain after lazy Notes unmount/failure. A new
+    // Notes mount replaces it; the shared journal queue preserves write order.
+    editorDocument.setQuitHooks({
+      prepare: async (permanent) => {
+        const generation = editorDocument.snapshot().documentGeneration;
+        autosave.suspend();
+        await editorDocument.settleBeforeQuit();
+        if (editorDocument.snapshot().documentGeneration !== generation) throw new Error("document changed");
+        await journal.prepareQuit(permanent);
+      },
+      resume: () => { journal.resume(); autosave.resume(); },
+    });
     const onBlur = () => {
       if (!recoveryBusyRef.current) void autosave.flush();
     };
@@ -1201,7 +1217,7 @@ export default function App({
           {notice}
         </div>
       )}
-      <aside className="sidebar" inert={recoveryBusy}>
+      <aside id="notes-sidebar" className="sidebar" hidden={!showSidebar} inert={recoveryBusy}>
         <h1 className="app-title">Knowledge</h1>
         {watcherStatus && (
           <p
@@ -1314,6 +1330,9 @@ export default function App({
       </aside>
 
       <main className="content">
+        <button className="btn small notes-sidebar-toggle" aria-controls="notes-sidebar" aria-expanded={showSidebar} onClick={() => setShowSidebar(value => !value)}>
+          {showSidebar ? "노트 목록 접기" : "노트 목록 열기"}
+        </button>
         <RecoveryControls
           document={editorDocument}
           autosave={autosaveRef}
@@ -1421,8 +1440,9 @@ export default function App({
                   {mode !== "preview" && (
                     <MarkdownEditor
                       value={content}
+                      documentGeneration={note.documentGeneration}
                       onChange={(text) => {
-                        if (!recoveryBusyRef.current) editorDocument.edit(text);
+                        if (!recoveryBusyRef.current) editorDocument.edit(text, note.documentGeneration);
                       }}
                       onSave={() => void save()}
                       onError={setError}

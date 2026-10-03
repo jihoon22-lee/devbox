@@ -17,6 +17,7 @@ export type SetupIssue =
   | "store_path_invalid"
   | "store_unavailable"
   | "unavailable"
+  | "journal_unavailable"
   | "vault_binding_invalid"
   | "vault_binding_unavailable"
   | "vault_change_cancelled"

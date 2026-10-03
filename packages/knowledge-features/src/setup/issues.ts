@@ -15,6 +15,7 @@ export const setupMessages: Record<SetupIssue, string> = {
   store_manifest_invalid: "저장소 정보를 확인할 수 없습니다. 기존 데이터는 유지됩니다.",
   store_path_invalid: "저장소 정보를 확인할 수 없습니다. 기존 데이터는 유지됩니다.",
   store_unavailable: "저장소 설정 작업을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  journal_unavailable: "로컬 복구본의 범위를 확인하지 못했습니다. 원본 연결을 복구한 뒤 다시 시도해 주세요.",
   unavailable: "저장소 설정 작업을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   vault_binding_invalid: "저장소 연결을 확인할 수 없습니다. 현재 저장소를 유지했습니다.",
   vault_binding_unavailable: "저장소 연결을 확인할 수 없습니다. 현재 저장소를 유지했습니다.",
