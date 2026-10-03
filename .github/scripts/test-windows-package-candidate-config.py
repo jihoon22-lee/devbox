@@ -30,5 +30,10 @@ assert 'cargo build' not in runtime and 'tauri build' not in runtime
 assert 'prepare-suite-runtime.py' in runtime and 'prepare-suite-fixture.py' in runtime
 assert 'DEVBOX_FIXTURE_PROFILE: release' in runtime
 assert 'gh release create' not in w and 'gh release upload' not in w
-assert 'artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT' in w
+assert 'artifact_name: candidate-assembly-' in w
+assert 'Verify complete user journeys and seal candidate' in w
+assert 'needs: [plan, assemble, packaged-runtime, installer-acceptance, windows-wsl2]' in w
+assert '--require-user-flows' in w
+assert 'collect-user-flow-evidence.mjs' in w
+assert 'name: ${{ needs.plan.outputs.artifact_name }}' in w
 print('Four-product candidate source/provenance/native gates: PASS')

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import test from "node:test";
 const matrix = JSON.parse(readFileSync(new URL("./suite-user-flow-matrix.json", import.meta.url)));
 test("planned matrix has unique owned outcomes and valid local module paths", () => {
@@ -9,6 +9,7 @@ test("planned matrix has unique owned outcomes and valid local module paths", ()
     assert.match(row.id, /^[A-Z]+-\d+$/);
     assert.match(row.ownerWorkItem, /^R\d{2}$/);
     assert.match(row.module, /^windows-[a-z0-9-]+\.mjs$/);
+    assert.ok(existsSync(new URL(row.module, import.meta.url)), `Missing implementation: ${row.id}/${row.module}`);
     assert.equal(row.evidenceKind, "packaged-ui");
     assert.ok(row.products.length);
   }

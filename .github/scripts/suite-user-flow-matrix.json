@@ -57,7 +57,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-user-flow.mjs"
+    "module": "windows-suite-delivery-user-flows.mjs"
   },
   {
     "id": "DOC-01",
@@ -93,7 +93,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-draft-recovery.mjs"
+    "module": "windows-workspace-draft-ui.mjs"
   },
   {
     "id": "WORK-02",
@@ -102,7 +102,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-draft-recovery.mjs"
+    "module": "windows-workspace-agent-registry-ui.mjs"
   },
   {
     "id": "WORK-03",
@@ -111,7 +111,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-registry.mjs"
+    "module": "windows-workspace-agent-registry-ui.mjs"
   },
   {
     "id": "HTTP-01",
@@ -264,7 +264,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-runtime.mjs"
+    "module": "windows-workspace-runtime-recovery-ui.mjs"
   },
   {
     "id": "RUNTIME-02",
@@ -273,7 +273,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-runtime.mjs"
+    "module": "windows-workspace-runtime-recovery-ui.mjs"
   },
   {
     "id": "LSP-01",
@@ -282,7 +282,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-runtime.mjs"
+    "module": "windows-workspace-runtime-recovery-ui.mjs"
   },
   {
     "id": "DEPS-01",
@@ -291,7 +291,7 @@
       "workspace"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-workspace-runtime.mjs"
+    "module": "windows-workspace-runtime-recovery-ui.mjs"
   },
   {
     "id": "AGENT-01",
@@ -303,7 +303,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-agent-user-flows.mjs"
   },
   {
     "id": "AGENT-02",
@@ -315,7 +315,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-agent-user-flows.mjs"
   },
   {
     "id": "AGENT-03",
@@ -327,7 +327,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-agent-user-flows.mjs"
   },
   {
     "id": "AGENT-04",
@@ -339,7 +339,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-agent-user-flows.mjs"
   },
   {
     "id": "HANDOFF-01",
@@ -375,7 +375,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-legacy-upgrade-ui.mjs"
   },
   {
     "id": "DELIVERY-02",
@@ -387,7 +387,7 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-delivery-user-flows.mjs"
   },
   {
     "id": "PERF-01",
@@ -399,6 +399,6 @@
       "control-center"
     ],
     "evidenceKind": "packaged-ui",
-    "module": "windows-suite-integration.mjs"
+    "module": "windows-suite-layout.mjs"
   }
 ]

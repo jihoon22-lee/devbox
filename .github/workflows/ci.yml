@@ -80,6 +80,9 @@ jobs:
           python3 .github/scripts/test-build-manifest.py
           python3 .github/scripts/test-build-suite-installer.py
           python3 .github/scripts/test-suite-release-contract.py
+          python3 .github/scripts/test-candidate-user-flow.py
+          python3 .github/scripts/test-user-flow-config.py
+          node --test .github/scripts/suite-user-flow-evidence.test.mjs .github/scripts/suite-user-flow-driver.test.mjs .github/scripts/test-suite-user-flow-matrix.mjs
           python3 .github/scripts/test-build-candidate-metadata.py
           python3 .github/scripts/test-validate-release-input.py
           python3 .github/scripts/test-windows-package-candidate-config.py

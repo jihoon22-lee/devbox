@@ -10,6 +10,7 @@ import pathlib
 import re
 from datetime import datetime, timezone
 from suite_release_contract import manifest_assets
+from candidate_user_flow import verify_user_flow_evidence
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -28,6 +29,7 @@ def main() -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--workflow-run", required=True, type=int)
     parser.add_argument("--output", required=True, type=pathlib.Path)
+    parser.add_argument("--user-flow-evidence", type=pathlib.Path)
     arguments = parser.parse_args()
 
     if re.fullmatch(r"v\d+\.\d+\.\d+", arguments.tag) is None:
@@ -80,6 +82,7 @@ def main() -> int:
             for item in files
         ],
     }
+    metadata["userFlowEvidence"] = verify_user_flow_evidence(arguments.user_flow_evidence, arguments.commit, metadata["assets"]) if arguments.user_flow_evidence else None
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"candidate metadata written: {output} ({len(files)} assets)")

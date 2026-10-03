@@ -90,8 +90,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const input = JSON.parse(await readFile(file, "utf8"));
   const matrix = JSON.parse(await readFile(new URL("./suite-user-flow-matrix.json", import.meta.url), "utf8"));
   const summary = requireCompleteEvidence({
-    requiredMatrix: matrix,
     ...input,
+    requiredMatrix: matrix,
     ownerWorkItem: ownerIndex < 0 ? undefined : args[ownerIndex + 1],
   });
   process.stdout.write(`${JSON.stringify(summary)}\n`);

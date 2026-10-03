@@ -15,6 +15,9 @@ python3 .github/scripts/test-verification-resources.py
 
 python3 .github/scripts/test-ci-scope.py
 python3 .github/scripts/test-ci-scope-runners.py
+python3 .github/scripts/test-candidate-user-flow.py
+python3 .github/scripts/test-user-flow-config.py
+node --test .github/scripts/suite-user-flow-evidence.test.mjs .github/scripts/suite-user-flow-driver.test.mjs .github/scripts/test-suite-user-flow-matrix.mjs
 
 case ${1:-} in
   --all)

@@ -161,6 +161,7 @@ def main() -> int:
         candidate_payload.update(
             {
                 "artifactKind": "candidate",
+                "userFlowEvidence": None,
                 "schemaVersion": 1,
                 "isDraft": None,
                 "repository": "jihoon22-lee/devbox",

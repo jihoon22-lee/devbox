@@ -75,7 +75,8 @@ class ResolveReleaseCandidateTests(unittest.TestCase):
         runs = {101: run(101), 102: run(102)}
 
         selected = MODULE.select_candidate(
-            artifacts, REPOSITORY, COMMIT, TAG, runs.__getitem__
+            artifacts, REPOSITORY, COMMIT, TAG, runs.__getitem__,
+            lambda _run, _attempt: {"jobs": [{"name": "Verify complete user journeys and seal candidate", "status": "completed", "conclusion": "success"}]}
         )
 
         self.assertEqual(selected["run_id"], 102)
@@ -95,7 +96,8 @@ class ResolveReleaseCandidateTests(unittest.TestCase):
         }
 
         selected = MODULE.select_candidate(
-            artifacts, REPOSITORY, COMMIT, TAG, runs.__getitem__
+            artifacts, REPOSITORY, COMMIT, TAG, runs.__getitem__,
+            lambda _run, _attempt: {"jobs": [{"name": "Verify complete user journeys and seal candidate", "status": "completed", "conclusion": "success"}]}
         )
 
         self.assertEqual(selected["run_id"], 201)
@@ -147,6 +149,15 @@ class ResolveReleaseCandidateTests(unittest.TestCase):
                 TAG,
                 lambda run_id: run(run_id),
             )
+
+    def test_rejects_missing_failed_or_skipped_user_flow_gate(self):
+        artifacts = {"artifacts": [artifact(51, 501, created_at="2026-09-03T00:00:00Z")]}
+        for conclusion in ("failure", "skipped", "cancelled", None):
+            with self.subTest(conclusion=conclusion), self.assertRaises(MODULE.CandidateResolutionError):
+                MODULE.select_candidate(artifacts, REPOSITORY, COMMIT, TAG, run,
+                    lambda _run, _attempt: {"jobs": [{"name": "Verify complete user journeys and seal candidate", "status": "completed", "conclusion": conclusion}]})
+        with self.assertRaises(MODULE.CandidateResolutionError):
+            MODULE.select_candidate(artifacts, REPOSITORY, COMMIT, TAG, run, lambda *_: {"jobs": []})
 
     def test_candidate_identity_is_strict(self) -> None:
         self.assertEqual(MODULE.artifact_name(TAG, COMMIT), ARTIFACT_NAME)
