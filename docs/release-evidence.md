@@ -1,9 +1,15 @@
 # Release evidence index
 
-## v0.9.0 — 현재 공개 stable
+## v0.9.0 — 철회본과 재출시 준비
+
+2026-10-03 설치/UI 문제로 Release와 공개 자산을 삭제했다. #580은 NOT_PLANNED로 닫혔다.
+현재 재출시 검증은 진행 중이며 아래는 **철회본의 역사적 자동 검사 결과**다. 수정본의 PASS로 재사용하지 않는다.
+[현재 실행 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)을 따른다.
+
+### 철회 전 공개 이력
 
 [Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)는 `2026-10-03T05:31:16Z`에 공개됐으며
-Latest=true, draft=false, prerelease=false다.
+당시 Latest=true, draft=false, prerelease=false였다. 현재는 철회됐다.
 
 - source: `e499ac7127269bf67863bf0fdc42eaf53236b9f3`.
 - annotated tag object: `f31f111977956bd665cd432accdf54677444027f`.
@@ -21,7 +27,7 @@ Latest=true, draft=false, prerelease=false다.
 - [공개 근거와 7개 SHA-256](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5966029569),
   [후보 상세 근거](https://github.com/jihoon22-lee/devbox/issues/580#issuecomment-5965966427)를 보존한다.
 
-### 알려진 제한과 실사용 추적
+### 철회 당시 제한과 미완료 실사용 추적(역사 기록)
 
 - 공개 v0.8.1 reader는 새 Knowledge helper·agent 구성요소를 거부한다. v0.9.0은
   Release의 setup을 직접 받아 실행한다. 중간 호환 릴리스나 manifest 검증 우회는 하지 않았다.

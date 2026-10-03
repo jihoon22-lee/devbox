@@ -1,0 +1,404 @@
+[
+  {
+    "id": "UI-01",
+    "ownerWorkItem": "R06",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-layout.mjs"
+  },
+  {
+    "id": "UI-02",
+    "ownerWorkItem": "R06",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-layout.mjs"
+  },
+  {
+    "id": "INSTALL-01",
+    "ownerWorkItem": "R07",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-user-flow.mjs"
+  },
+  {
+    "id": "INSTALL-02",
+    "ownerWorkItem": "R07",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-user-flow.mjs"
+  },
+  {
+    "id": "INSTALL-03",
+    "ownerWorkItem": "R07",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-user-flow.mjs"
+  },
+  {
+    "id": "DOC-01",
+    "ownerWorkItem": "R01",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-document-recovery.mjs"
+  },
+  {
+    "id": "DOC-02",
+    "ownerWorkItem": "R01",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-document-recovery.mjs"
+  },
+  {
+    "id": "DOC-03",
+    "ownerWorkItem": "R01",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-document-recovery.mjs"
+  },
+  {
+    "id": "WORK-01",
+    "ownerWorkItem": "R02",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-draft-recovery.mjs"
+  },
+  {
+    "id": "WORK-02",
+    "ownerWorkItem": "R02",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-draft-recovery.mjs"
+  },
+  {
+    "id": "WORK-03",
+    "ownerWorkItem": "R03",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-registry.mjs"
+  },
+  {
+    "id": "HTTP-01",
+    "ownerWorkItem": "R04",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-http-semantics.mjs"
+  },
+  {
+    "id": "HTTP-02",
+    "ownerWorkItem": "R04",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-http-semantics.mjs"
+  },
+  {
+    "id": "HTTP-03",
+    "ownerWorkItem": "R04",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-http-semantics.mjs"
+  },
+  {
+    "id": "AUTH-01",
+    "ownerWorkItem": "R05",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-mcp-auth.mjs"
+  },
+  {
+    "id": "AUTH-02",
+    "ownerWorkItem": "R05",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-mcp-auth.mjs"
+  },
+  {
+    "id": "ENV-01",
+    "ownerWorkItem": "R08",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-environments.mjs"
+  },
+  {
+    "id": "ENV-02",
+    "ownerWorkItem": "R08",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-environments.mjs"
+  },
+  {
+    "id": "WEB-01",
+    "ownerWorkItem": "R09",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-webhooks.mjs"
+  },
+  {
+    "id": "WEB-02",
+    "ownerWorkItem": "R09",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-webhooks.mjs"
+  },
+  {
+    "id": "GRPC-01",
+    "ownerWorkItem": "R10",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-grpc.mjs"
+  },
+  {
+    "id": "TRANSFORM-01",
+    "ownerWorkItem": "R11",
+    "products": [
+      "api-studio"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-api-transforms.mjs"
+  },
+  {
+    "id": "SEARCH-01",
+    "ownerWorkItem": "R12",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-search-lifecycle.mjs"
+  },
+  {
+    "id": "SEARCH-02",
+    "ownerWorkItem": "R12",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-search-lifecycle.mjs"
+  },
+  {
+    "id": "ACTIVITY-01",
+    "ownerWorkItem": "R13",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-activity.mjs"
+  },
+  {
+    "id": "ACTIVITY-02",
+    "ownerWorkItem": "R13",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-activity.mjs"
+  },
+  {
+    "id": "ACTIVITY-03",
+    "ownerWorkItem": "R13",
+    "products": [
+      "knowledge"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-knowledge-activity.mjs"
+  },
+  {
+    "id": "RUNTIME-01",
+    "ownerWorkItem": "R14",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-runtime.mjs"
+  },
+  {
+    "id": "RUNTIME-02",
+    "ownerWorkItem": "R14",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-runtime.mjs"
+  },
+  {
+    "id": "LSP-01",
+    "ownerWorkItem": "R14",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-runtime.mjs"
+  },
+  {
+    "id": "DEPS-01",
+    "ownerWorkItem": "R14",
+    "products": [
+      "workspace"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-workspace-runtime.mjs"
+  },
+  {
+    "id": "AGENT-01",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "AGENT-02",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "AGENT-03",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "AGENT-04",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "HANDOFF-01",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "HANDOFF-02",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "DELIVERY-01",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "DELIVERY-02",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  },
+  {
+    "id": "PERF-01",
+    "ownerWorkItem": "R15",
+    "products": [
+      "workspace",
+      "api-studio",
+      "knowledge",
+      "control-center"
+    ],
+    "evidenceKind": "packaged-ui",
+    "module": "windows-suite-integration.mjs"
+  }
+]
