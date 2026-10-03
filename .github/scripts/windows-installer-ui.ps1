@@ -13,6 +13,8 @@ param(
   [int]$Height
 )
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$OutputEncoding=[Console]::OutputEncoding
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes

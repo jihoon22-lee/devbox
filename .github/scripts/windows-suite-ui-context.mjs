@@ -15,6 +15,7 @@ import {
   inspectElevatedCdpPolicy,
   installElevatedCdpPolicy,
   releaseCdpSession,
+  stopOwnedProcess,
 } from "./windows-packaged-smoke.mjs";
 export async function observeUntil(check, label, timeout = 30000) {
   const deadline = Date.now() + timeout;
@@ -56,18 +57,26 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
   );
   const port = await freePort();
   const policy = windowsProcessIsElevated() ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
-  if (policy) installElevatedCdpPolicy(policy);
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
   for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
-  const child = spawn(executable, [], { cwd: root, env, stdio: "ignore" });
-  await once(child, "spawn");
-  const processIdentity = allWindowsProcesses().find(
-    (p) => p.Pid === child.pid && p.Path.toLowerCase() === executable.toLowerCase(),
-  );
-  assert.ok(processIdentity, "Owned product process missing");
-  const owner = captureWindowOwner(processIdentity, path.dirname(root));
-  let cdp;
+  let child, processIdentity, owner, cdp;
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    releaseCdpSession({ cdp, policy });
+    disposed = true;
+  };
   try {
+    if (policy) installElevatedCdpPolicy(policy);
+    child = spawn(executable, [], { cwd: root, env, stdio: "ignore" });
+    await once(child, "spawn");
+    await observeUntil(() => {
+      processIdentity = allWindowsProcesses().find(
+        (p) => p.Pid === child.pid && p.Path.toLowerCase() === executable.toLowerCase(),
+      );
+      return Boolean(processIdentity);
+    }, "owned product process");
+    owner = captureWindowOwner(processIdentity, path.dirname(root));
     cdp = await connect(port, child);
     const ui = createUiDriver({
       cdp,
@@ -97,10 +106,13 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
           }, "normal native close");
         }
       } finally {
-        releaseCdpSession({ cdp, policy });
+        try {
+          if (child.exitCode === null) await stopOwnedProcess(processIdentity, executable, child);
+        } finally {
+          dispose();
+        }
       }
     };
-    const dispose = () => releaseCdpSession({ cdp, policy });
     const delivery = async (method) => {
       assert.ok(
         ["restore_inventory", "suite_recovery", "suite_health"].includes(method),
@@ -129,9 +141,14 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
     };
   } catch (error) {
     try {
-      nativeWindowAction(owner, "Close");
+      if (child?.exitCode === null && processIdentity) {
+        await stopOwnedProcess(processIdentity, executable, child);
+      } else if (child?.exitCode === null) {
+        child.kill();
+        await observeUntil(() => child.exitCode !== null || child.signalCode !== null, "failed owned spawn cleanup");
+      }
     } finally {
-      releaseCdpSession({ cdp, policy });
+      dispose();
     }
     throw error;
   }

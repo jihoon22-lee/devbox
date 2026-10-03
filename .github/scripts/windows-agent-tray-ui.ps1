@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][int]$AgentProcessId,[Parameter(Mandatory=$true)][string]$ExpectedExecutable,[Parameter(Mandatory=$true)][string]$ExpectedStartTimeUtc)
+﻿param([Parameter(Mandatory=$true)][int]$AgentProcessId,[Parameter(Mandatory=$true)][string]$ExpectedExecutable,[Parameter(Mandatory=$true)][string]$ExpectedStartTimeUtc)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 Add-Type @'

@@ -313,6 +313,9 @@ jobs:
           retention-days: 14
 
   installer-acceptance:
+    permissions:
+      contents: read
+      actions: read
     env:
       DEVBOX_USER_FLOW_ASSETS: candidate/assets
       DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
@@ -367,6 +370,10 @@ jobs:
         run: |
           $failed = @()
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-agent-user-flows.mjs')) {
+            if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
+              node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
+              if ($LASTEXITCODE -ne 0) { $failed += 'withdrawn-same-version-update' }
+            }
             node ".github/scripts/$script"
             if ($LASTEXITCODE -ne 0) { $failed += $script }
           }

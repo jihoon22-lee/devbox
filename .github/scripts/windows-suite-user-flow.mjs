@@ -1,5 +1,6 @@
 // Interactive installer and Control Center journey; no setup/activation IPC shortcuts.
 import assert from "node:assert/strict";
+import { ownedNsisSpawnOptions } from "./windows-suite-installer-actions.mjs";
 import path from "node:path";
 import { mkdir, appendFile, copyFile, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -30,6 +31,7 @@ import {
   inspectElevatedCdpPolicy,
   installElevatedCdpPolicy,
   releaseCdpSession,
+  stopOwnedProcess,
 } from "./windows-packaged-smoke.mjs";
 export const scenarioIds = ["INSTALL-01", "INSTALL-02"];
 async function until(check, label, ms = 60000) {
@@ -57,15 +59,7 @@ export async function run() {
   await copyFile(path.join(assets, release.setup.name), setup);
   const ports = {},
     policies = [];
-  for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
-    ports[product] = await unusedPort();
-    const policy = inspectElevatedCdpPolicy(`devbox-${product}.exe`, ports[product]);
-    installElevatedCdpPolicy(policy);
-    policies.push(policy);
-  }
-  const port = ports["control-center"];
-  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
-  for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+  let port, env;
   let center = null,
     manifest = null,
     registration = null,
@@ -215,7 +209,15 @@ export async function run() {
     async function prepareStage(mode, expected) {
       const process = spawn(helper, [mode, root, payloadPath], { env, stdio: ["ignore", "pipe", "pipe"] });
       await once(process, "spawn");
-      const [code] = await once(process, "exit");
+      process.stdout.resume();
+      process.stderr.resume();
+      const timeout = setTimeout(() => process.kill(), 180000);
+      let code;
+      try {
+        [code] = await once(process, "exit");
+      } finally {
+        clearTimeout(timeout);
+      }
       assert.equal(code, 0, `Native fixture preparation ${mode} failed`);
       assert.equal(JSON.parse(await readFile(path.join(root, "devbox-activation.json"), "utf8")).phase, expected);
     }
@@ -273,7 +275,22 @@ export async function run() {
     if (expected !== "committed") await center.ui.click({ role: "button", name: "데이터 및 복구" });
   };
   try {
-    installer = spawn(setup, [`/D=${root}`], { env, stdio: "ignore", windowsHide: false });
+    for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
+      ports[product] = await unusedPort();
+      const policy = inspectElevatedCdpPolicy(`devbox-${product}.exe`, ports[product]);
+      policies.push(policy);
+      installElevatedCdpPolicy(policy);
+    }
+    port = ports["control-center"];
+    env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
+    for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+    // NSIS consumes its final /D argument unquoted, including spaces (Docs/Chapter3.html).
+    installer = spawn(setup, [`/D=${root}`], {
+      env,
+      stdio: "ignore",
+      windowsHide: false,
+      ...ownedNsisSpawnOptions(setup, [`/D=${root}`]),
+    });
     await once(installer, "spawn");
     const installerIdentity = await until(
       () => allWindowsProcesses().find((p) => p.Pid === installer.pid && p.Path.toLowerCase() === setup.toLowerCase()),
@@ -420,9 +437,38 @@ export async function run() {
       if (!results.some((row) => row.id === id))
         results.push(record(id, "FAIL", [String(error.message).slice(0, 500)], "interactive-installation-failed"));
   } finally {
+    const cleanupFailures = [];
     if (manifest)
-      for (const product of ["workspace", "api-studio", "knowledge", "control-center"])
-        await closeProduct(product).catch(() => {});
+      for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
+        try {
+          await closeProduct(product);
+        } catch (error) {
+          cleanupFailures.push(`${product}: ${String(error.message).slice(0, 160)}`);
+          for (const owned of processFor(product)) {
+            try {
+              await stopOwnedProcess(owned, imagePath(product), {
+                get exitCode() {
+                  return allWindowsProcesses().some(
+                    (p) => p.Pid === owned.Pid && p.Created === owned.Created && p.Path === owned.Path,
+                  )
+                    ? null
+                    : 0;
+                },
+                signalCode: null,
+              });
+            } catch (cleanup) {
+              cleanupFailures.push(String(cleanup.message).slice(0, 160));
+            }
+          }
+        }
+      }
+    if (cleanupFailures.length) {
+      for (const result of results) {
+        result.status = "FAIL";
+        result.failureCode = "owned-installer-cleanup-failed";
+        result.assertions.push(...cleanupFailures);
+      }
+    }
     if (center) center.cdp.close();
     for (const policy of policies.reverse()) releaseCdpSession({ policy });
     await writeFile(
