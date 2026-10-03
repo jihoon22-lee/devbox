@@ -77,8 +77,14 @@ if($windows.Count -ne 1){throw 'Expected one owned top-level window'}
 $window=$windows[0]
 if($Action -eq 'Inspect') {
   $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
-  $buttons=@($all | Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button} | ForEach-Object { @{name=$_.Current.Name;id=$_.Current.AutomationId;enabled=$_.Current.IsEnabled;visible=(-not $_.Current.IsOffscreen)} })
-  @{processId=$TargetProcessId;startTimeUtc=$started;name=$window.Current.Name;enabled=$window.Current.IsEnabled;buttons=$buttons;controls=@($all | ForEach-Object { @{name=$_.Current.Name;id=$_.Current.AutomationId;enabled=$_.Current.IsEnabled;visible=(-not $_.Current.IsOffscreen)} })} | ConvertTo-Json -Depth 4 -Compress
+  $controls=@($all | ForEach-Object {
+    $info=$_.Current
+    $invokePattern=$null
+    @{name=$info.Name;id=$info.AutomationId;enabled=$info.IsEnabled;visible=(-not $info.IsOffscreen);className=$info.ClassName;controlTypeId=$info.ControlType.Id;canInvoke=$_.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$invokePattern)}
+  })
+  # Compare the UIA identifier, not provider-returned ControlType object identity.
+  $buttons=@($controls | Where-Object {$_.controlTypeId -eq [System.Windows.Automation.ControlType]::Button.Id})
+  @{processId=$TargetProcessId;startTimeUtc=$started;name=$window.Current.Name;enabled=$window.Current.IsEnabled;buttons=$buttons;controls=$controls} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
 if($Action -in @('Minimize','Activate')) {
