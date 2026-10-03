@@ -153,3 +153,20 @@ for versions, agent_version in (
         continue
     raise AssertionError("mixed product/agent versions were accepted")
 print("Stable semver and coordinated product/agent release versions: PASS")
+
+# Retained candidate API replays remain diagnostics, preserving the runner SHA.
+suite_diagnostic = workflow.split("  suite-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
+assert "suite_diagnostic_api_workflow:" in workflow
+assert "candidate-assembly-$env:SOURCE_RUN" in suite_diagnostic
+assert ".github/workflows/windows-package-candidate.yml" in suite_diagnostic
+assert 'Assemble and verify unpublished candidate' in suite_diagnostic
+assert '.conclusion == "success"' in suite_diagnostic
+assert '$jobs -ne $record.head_sha' in suite_diagnostic
+assert 'prepare-suite-runtime.py "$env:RUNNER_TEMP/api-candidate-retained/assets" --source "$($record.head_sha)"' in suite_diagnostic
+assert 'runnerSourceSha = $env:GITHUB_SHA' in suite_diagnostic
+assert 'payloadSourceSha = $record.head_sha' in suite_diagnostic
+assert 'promotionEvidence = $false' in suite_diagnostic
+assert 'native-api-workflow-diagnostic-' in suite_diagnostic
+assert 'GITHUB_SHA=' not in suite_diagnostic and '$env:GITHUB_SHA =' not in suite_diagnostic
+assert "suite-workflow-fixture-$env:SOURCE_RUN" in suite_diagnostic
+assert "windows-suite-workflows.mjs --remaining" in suite_diagnostic

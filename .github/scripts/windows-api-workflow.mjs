@@ -1,3 +1,8 @@
+import {
+  establishResponseSelection,
+  responseTransformObservation,
+  waitForResponseTransform,
+} from "./windows-api-response-transform.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // S03: real native loopback capture/request/DPAPI/transform/diff/mock/Knowledge.
 // Only disposable GitHub-hosted Windows processes and synthetic data are used.
@@ -27,8 +32,13 @@ const executable = path.join(root, `api-s03-${randomUUID()}.exe`);
 copyFileSync(path.resolve("target/debug/devbox-api-studio.exe"), executable);
 const profile = path.join(root, "webview");
 const secret = `s03-fixture-${randomUUID()}`;
+const artifactSource = process.env.DEVBOX_SUITE_ARTIFACT_SOURCE ?? process.env.GITHUB_SHA;
 const evidence = {
   source: process.env.GITHUB_SHA,
+  runnerSourceSha: process.env.GITHUB_SHA,
+  artifactSource,
+  artifactRun: process.env.DEVBOX_SUITE_ARTIFACT_RUN ?? process.env.GITHUB_RUN_ID,
+  diagnosticOnly: process.env.GITHUB_SHA !== artifactSource,
   environment: "github-hosted-windows",
   step: "start",
   result: "failed",
@@ -248,14 +258,14 @@ try {
   assert.ok(masked.includes("[REDACTED]"));
   assert.ok(!masked.includes(secret));
   progress("response-transform");
-  await ui.cdp.evaluate(
-    '(()=>{const body=document.querySelector(".resp-body");const range=document.createRange();range.selectNodeContents(body);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);})()',
-  );
+  await ui.cdp.evaluate(establishResponseSelection);
+  evidence.responseTransform = await ui.cdp.evaluate(responseTransformObservation);
+  assert.equal(evidence.responseTransform.selectionInsideBody, true, "response selection is outside body");
+  assert.equal(evidence.responseTransform.selectionNonempty, true, "response selection is empty");
   await click(".api-feature-requests .response-actions", "선택 영역을 Developer Toolbox로 보내기");
-  await wait(
-    '!!document.querySelector(".api-feature-transforms:not([hidden]) [role=dialog]")',
-    "response transform preview did not open",
-  );
+  await waitForResponseTransform(ui.cdp, until, (state) => {
+    evidence.responseTransform = state;
+  });
   await click(".api-feature-transforms [role=dialog]", "적용");
   await wait(
     'document.querySelector("textarea[aria-label=\\"스마트 워크플로 입력\\"]")?.value.includes("s03-response")',
