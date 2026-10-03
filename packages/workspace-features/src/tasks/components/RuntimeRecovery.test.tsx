@@ -1,9 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import RuntimeRecovery from "./RuntimeRecovery";
-import { listRuntimeControls, reviewRuntimeControl } from "../api";
+import { listRuntimeControls, reconcileRuntimeControls, reviewRuntimeControl } from "../api";
 vi.mock("../../transport", () => ({ isProductHosted: () => true }));
-vi.mock("../api", () => ({ listRuntimeControls: vi.fn(), reviewRuntimeControl: vi.fn() }));
+vi.mock("../api", () => ({
+  listRuntimeControls: vi.fn(),
+  reconcileRuntimeControls: vi.fn().mockResolvedValue([]),
+  reviewRuntimeControl: vi.fn(),
+}));
 vi.mock("../runtimeControls", () => ({ forgetReviewedControl: vi.fn() }));
 afterEach(cleanup);
 const receipt = {
@@ -30,4 +34,14 @@ it("clears an old read error after successful status refresh", async () => {
   await screen.findByRole("alert");
   fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+it("shows native confirmation for a lost stop reply without submitting another control", async () => {
+  vi.mocked(listRuntimeControls).mockResolvedValue([]);
+  vi.mocked(reconcileRuntimeControls).mockResolvedValueOnce([
+    { operationId: "confirmed", method: "stop_active_run", targetId: "job", state: "completed" },
+  ]);
+  render(<RuntimeRecovery active busy={false} onReviewed={vi.fn()} />);
+  await screen.findByText(/실행 요청의 완료 상태를 확인했습니다/);
+  expect(reviewRuntimeControl).not.toHaveBeenCalled();
 });

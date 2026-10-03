@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { isProductHosted } from "../../transport";
-import { listRuntimeControls, reviewRuntimeControl, type RuntimeControlReceipt } from "../api";
+import {
+  listRuntimeControls,
+  reconcileRuntimeControls,
+  reviewRuntimeControl,
+  type RuntimeControlReceipt,
+} from "../api";
 import { forgetReviewedControl } from "../runtimeControls";
 
 export default function RuntimeRecovery({
@@ -17,17 +22,22 @@ export default function RuntimeRecovery({
   const [items, setItems] = useState<RuntimeControlReceipt[]>([]);
   const [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const refresh = useCallback(async () => {
+    const settled = await reconcileRuntimeControls();
     setItems(await listRuntimeControls());
+    if (settled.length) setConfirmed(true);
     setError("");
   }, []);
   useEffect(() => {
     if (!active || busy || !isProductHosted()) return;
     let disposed = false;
-    void listRuntimeControls()
-      .then((values) => {
+    void reconcileRuntimeControls()
+      .then(async (settled) => ({ settled, values: await listRuntimeControls() }))
+      .then(({ settled, values }) => {
         if (!disposed) {
           setItems(values);
+          if (settled.length) setConfirmed(true);
           setError("");
         }
       })
@@ -52,9 +62,14 @@ export default function RuntimeRecovery({
       setReviewing(false);
     }
   };
-  if (!items.length && !error) return null;
+  if (!items.length && !error && !confirmed) return null;
   return (
     <section aria-label="실행 요청 복구">
+      {confirmed && (
+        <p role="status">
+          응답을 확인하지 못했던 실행 요청의 완료 상태를 확인했습니다. 작업을 다시 실행하거나 중단하지 않았습니다.
+        </p>
+      )}
       <p>대상 실행과 로그를 먼저 확인하세요. 요청 기록 정리는 실행 중인 프로세스를 중단하지 않습니다.</p>
       {error && <p role="alert">{error}</p>}
       <ul>

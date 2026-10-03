@@ -85,3 +85,46 @@ export function forgetReviewedControl(operationId: string): void {
   }
   keys.forEach((key) => localStorage.removeItem(key));
 }
+
+/** A lost terminal reply can leave Stop disabled. Confirm its durable result by
+ * reading the existing ID, never by submitting another side effect. */
+export async function reconcileCompletedControls(
+  call: Call,
+): Promise<Array<{ operationId: string; method: string; targetId: string; state: string }>> {
+  const keys: string[] = [];
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (key?.startsWith(prefix())) keys.push(key);
+  }
+  if (keys.length > 64) throw new Error("완료되지 않은 실행 요청을 먼저 확인해 주세요.");
+  const settled: Array<{ operationId: string; method: string; targetId: string; state: string }> = [];
+  for (const key of keys) {
+    const pending = read(key);
+    if (!pending) continue;
+    const method = key.slice(prefix().length).split(":")[0];
+    const idKey = method === "stop_workspace_task_operation" ? "operationId" : "id";
+    const targetId = pending.args[idKey];
+    if (!isRuntimeControl(method) || typeof targetId !== "string")
+      throw new Error("저장된 실행 요청을 확인할 수 없습니다.");
+    let state = "completed";
+    try {
+      // The existing endpoint replays the stored result on success, rather
+      // than returning receipt metadata. Its authenticated success confirms
+      // exactly this operation ID; even a null stop result is valid.
+      await call("runtime_control_status", { operationId: pending.operationId });
+    } catch (error) {
+      if (error instanceof WorkspaceOperationError && error.code === "runtime_control_failed") state = "failed";
+      else if (
+        error instanceof WorkspaceOperationError &&
+        ["runtime_control_in_progress", "runtime_control_recovery_required"].includes(error.code)
+      )
+        continue;
+      else throw error;
+    }
+    // A new request may have replaced this key while its read was in flight.
+    if (read(key)?.operationId !== pending.operationId) continue;
+    localStorage.removeItem(key);
+    settled.push({ operationId: pending.operationId, method, targetId, state });
+  }
+  return settled;
+}
