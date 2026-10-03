@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { requireApiContext, button, textbox, select, scenario, until, expectText, echoFixture } from "./windows-api-user-flow-actions.mjs";
 
+import { observePipelineKeyboardModal, finishApiInputObservation } from "./windows-api-input-observations.mjs";
+
 const byId=items=>[...items].sort((left,right)=>left.id.localeCompare(right.id));
 const settled=context=>until(async()=>await context.cdp.evaluate("Boolean(Array.from(document.querySelectorAll('.smart-workflow button')).find(item=>item.textContent.startsWith('현재 도구 즐겨찾기')&&!item.disabled))&&!Array.from(document.querySelectorAll('.smart-workflow-pipeline p[role=status]')).some(item=>item.textContent==='저장 중…')"),"Workflow persistence did not settle");
 export const SCENARIO_IDS = Object.freeze(["TRANSFORM-01"]);
@@ -58,11 +60,11 @@ export async function run(context) {
     record("Real restart restores edited steps; stage deletion preserves keyboard focus; delete cancel/confirm and explicit new save recover capacity without persisting input");
     await context.ui.click(button("파이프라인 실행"));
     await until(async()=>await context.cdp.evaluate("document.querySelector('[aria-label=\"파이프라인 결과\"]')?.textContent.includes('synthetic-private-input')"),"Successful pipeline output missing");
-    await context.ui.click(button("Requests로 보내기"));
+    await observePipelineKeyboardModal(context);
     await expectText(context,"Requests 요청 미리보기");
     await context.ui.click(button("취소"));
     assert.equal(await context.cdp.evaluate("document.querySelectorAll('.api-handoff-dialog').length"),0);
-    await context.ui.click(button("Requests로 보내기"));
+    await context.ui.click(button("Requests로 보내기",{role:"region",name:"타입 지정 파이프라인"}));
     await context.ui.click(button("API Playground로 전달"));
     await context.ui.click(button("요청"));
     await expectText(context,"Toolbox 텍스트 요청 미리보기");
@@ -71,7 +73,7 @@ export async function run(context) {
     assert.equal(await context.cdp.evaluate("document.querySelector('[aria-label=\"요청 URL\"]').value"),priorUrl);
     assert.equal(echo.hits.length,0);
     await context.ui.click(button("변환"));
-    await context.ui.click(button("Requests로 보내기"));
+    await context.ui.click(button("Requests로 보내기",{role:"region",name:"타입 지정 파이프라인"}));
     await context.ui.click(button("API Playground로 전달"));
     await context.ui.click(button("요청"));
     await expectText(context,"Toolbox 텍스트 요청 미리보기");
@@ -97,5 +99,6 @@ export async function run(context) {
     await context.ui.click(button("변환"));
     assert.deepEqual((await context.document("workflows")).value.pipelines,committed.value.pipelines);
     record("Actual stale-revision save failure preserves the last committed metadata through native window close/restart");
+    await finishApiInputObservation(context);
   })]; } finally {await echo.close();}
 }

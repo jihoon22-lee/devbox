@@ -17,7 +17,7 @@ export function requireApiContext(context) {
   assert.equal(typeof context.nativeCall,"function");
 }
 
-export const button = name => ({role:"button",name});
+export const button = (name, scope) => ({role:"button",name,...(scope ? {scope} : {})});
 export const textbox = name => ({role:"textbox",name});
 export async function bodyText(context) {
   return context.cdp.evaluate("document.body.innerText");

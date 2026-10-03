@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { requireApiContext, button, textbox, scenario, until, expectText } from "./windows-api-user-flow-actions.mjs";
 
+import { observeEnvironmentIme } from "./windows-api-input-observations.mjs";
+
 export const SCENARIO_IDS = Object.freeze(["ENV-01", "ENV-02"]);
 
 export async function run(context) {
@@ -23,6 +25,7 @@ export async function run(context) {
     await context.ui.press("Tab");
     await expectText(context,"같은 이름의 변수가 있습니다.");
     assert.deepEqual((await context.document("environments")).value,stored);
+    await observeEnvironmentIme(context);
     await context.ui.fill(textbox("환경 변수 1 이름"),"accessToken");
     await context.ui.press("Tab");
     await until(async()=>((await context.document("environments")).value.environments[0].variables[0].key==="accessToken"),"Rename was not saved");
