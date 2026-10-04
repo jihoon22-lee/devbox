@@ -130,6 +130,36 @@
   최종 묶음 catalog/workflow 검사 3.981초·RSS 약 133MiB·swap 0, Biome CI 통과.
   추가 Windows 전용 소스의 실제 컴파일 및 새 제품 bytes 수용은 최종 CI·후보에서 확인한다.
 
+- #620의 PR CI `37188904663`과 exact-main CI `37189562754`은 각각 6개 job을 통과했다.
+  후보 `37190461507`(`dfadd9e5`)은 네 제품 빌드·7개 자산 조립·네 native scope·독립 VM의
+  WSL2/Docker 및 INSTALL-01/02를 통과했지만 설치 후 사용자 여정과 최종 seal은 실패했다.
+  UI-01의 40개 화면 관측과 Knowledge 입력·성능의 성공을 전체 여정 성공으로 합산하지 않는다.
+  이 후보는 승격하지 않는다. v0.9.0 태그와 Release는 아직 생성하지 않았다.
+- 같은 후보에서 업데이트가 health 단계까지 진행했으나 실제 보존본 receipt가 새 journal의
+  복구 목록에서 빠졌다. 검증된 update plan의 receipt를 health 공개 전에 기록·저장하고 이전 이력도 유지한다.
+  재개 시 중복 기록 및 충돌을 실제 Journal 회귀로 확인했다. Windows 설치 수용은 아직 남았다.
+  다른 generation의 보존본은 복원 권한을 넓히지 않고 목록에서 제한을 설명한다. 목록 갱신마다
+  데이터 전체를 읽지 않으며, 크기 제한·digest·소유권을 확인한 manifest 정보만 사용한다.
+  전체 데이터 검증은 기존 복원 준비 경계에 남긴다.
+  실제 Store의 새 작업 revision 0 조건을 유지해 이전 이력을 초기 상태로 원자 저장한다.
+  Store begin/write·닫기·재개와 중복 기록 방지 회귀도 통과했다. 이전 이력의 로컬 전달만
+  확인한 테스트로 영속 저장 성공을 대신하지 않는다.
+  Knowledge 오류·알림이 수평 flex의 직접 자식이 되어 편집 영역을 밀던 제품 레이아웃도 수정했다.
+- runner의 viewport 중앙 좌표가 부모 scrollport 밖의 다른 pane을 가리키는 오류를 Chromium의
+  실제 입력으로 재현했다. 관측한 조상 clipping 영역 안에서만 좌표를 고르고 기존 소유권
+  hit-test를 유지한다. 실제 입력 성공과 overlay 거절을 확인했다. Workspace 자동 등록·lazy 화면,
+  Knowledge 요청 문서 로딩을 읽기 전용 관측으로 기다린다. 작은 합성 문서의 비교는 AX가 덧붙이는
+  줄바꿈 대신 렌더링된 실제 줄을 사용하며 trim으로 데이터 차이를 감추지 않는다.
+  고정된 v0.8.1 import fixture는 당시 소스가 요구하는 활성화 전 migration owner 기록을 사용한다.
+  이 로컬 회귀 및 보관 bytes 진단은 새 제품 bytes의 최종 수용을 대체하지 않는다.
+  Knowledge 영향 검사에서 349개가 통과했고, 추가 오류 배치 회귀는 수정 전 실패를 확인했다.
+  수정 후 직접 영향받는 두 파일 43개·최종 frontend 빌드·catalog/workflow·Biome은 통과했다
+  (47.4초, 합산 RSS 약 1.41GiB, swap 0). 편집기가 없는 상태는 빈 문서로 인정하지 않는다.
+  Control Center의 최종 frontend 빌드·75개 테스트, Rust check/clippy/fmt·44개 테스트와
+  production TypeScript exporter를 통과했다. 실제 등록된 update 이력·Store 재개 회귀도
+  이 Rust 실행에 포함됐다. 마지막 Rust 보충 검사는 30.9초·합산 RSS 약 1.02GiB·swap 0이었다.
+  검사 중 지적된 테스트 비교 구문만 고친 뒤 Clippy와 미실행 범위를 이어서 확인했다.
+
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
 ## 1. 기존 감사 23건의 누락 없는 배정
