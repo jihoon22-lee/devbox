@@ -317,6 +317,7 @@ test("lost-reply journey explicitly stops the first live owner before requesting
     ["ready", { role: "button", name: "중지", scope }],
     ["click", { role: "button", name: "중지", scope }, true],
     ["observe"],
+    ["ready", { role: "button", name: "지금 실행", scope }],
   ]);
   await assert.rejects(
     stopReconciledRuntimeRun(

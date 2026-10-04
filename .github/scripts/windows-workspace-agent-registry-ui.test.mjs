@@ -28,12 +28,16 @@ test("nested Agent failure survives cleanup failure with first screenshot", asyn
   fixture.prepareAgent = async () => {
     throw new Error("agent original failure");
   };
+  fixture.agentFailureOperations = async () => {
+    throw new Error("diagnostic failure");
+  };
   fixture.cleanup = async () => {
     throw new Error("agent cleanup failure");
   };
   const results = await run({ workspaceFixture: fixture, ui: { screenshot: async () => "/owned/agent-first.png" } });
   assert.ok(results.every((result) => result.status === "FAIL"));
   assert.equal(results[0].error.message, "agent original failure");
+  assert.deepEqual(results[0].agentFailureOperations, { unavailable: true });
   assert.equal(results[0].cleanupError.message, "agent cleanup failure");
   assert.deepEqual(results[0].screenshotPaths, ["/owned/agent-first.png"]);
 });

@@ -1,3 +1,4 @@
+import { readWorkspaceAgentOperations } from "./windows-workspace-agent-observation.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { dismissWorkspaceUndo } from "./windows-workspace-agent-registry-ui.mjs";
 import {
@@ -91,6 +92,8 @@ export async function stopReconciledRuntimeRun(ui, wait, activeRun, scope) {
   await ui.waitForTarget(target);
   await ui.clickWithConfirmation(target, true);
   await wait(async () => (await activeRun()) === null, "original owned run stopped before the next explicit run");
+  // The native stop can settle before the renderer finishes its busy refresh.
+  await ui.waitForTarget({ role: "button", name: "지금 실행", scope });
 }
 
 export async function resumeRuntimeUi(fixture, ui) {
@@ -162,6 +165,7 @@ export function createWorkspaceUiFixture({
     return job;
   }
   return {
+    agentFailureOperations: () => readWorkspaceAgentOperations(dataRoot),
     context,
     observeInput: (fileName) => observeWorkspaceInput({ ui, cdp, fileName, windowOwner }),
     registry: () => read("workspace.registry", "snapshot"),

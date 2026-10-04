@@ -94,6 +94,7 @@ test("crash recovery returns to the owned project and Files before reading its j
     selected = true,
     route = "files";
   const boundary = "owned recovery dialog reached";
+  let closeChoiceReady = false;
   const fixture = {
     prepare: async (value) => {
       root = value;
@@ -125,8 +126,11 @@ test("crash recovery returns to the owned project and Files before reading its j
     ui: {
       click: async (target) => {
         if (target.name === "파일") route = "files";
+        if (target.name === "종료 취소") assert.ok(closeChoiceReady, "native close review is still loading");
       },
-      waitForTarget: async () => {},
+      waitForTarget: async (target) => {
+        if (target.name === "종료 취소") closeChoiceReady = true;
+      },
       fill: async () => {},
       closeOwnedWindow: async () => {},
       screenshot: async () => "/owned/recovery.png",

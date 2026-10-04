@@ -81,6 +81,7 @@ export async function run(context) {
     await ui.fill({ role: "textbox", name: "" }, "");
     await journal("");
     await ui.closeOwnedWindow();
+    await ui.waitForTarget({ role: "button", name: "종료 취소" });
     await ui.click({ role: "button", name: "종료 취소" });
     await waitForWorkspaceEditorText(cdp, fixture.wait, "");
     await journal("");
@@ -112,6 +113,7 @@ export async function run(context) {
     await ui.click({ role: "button", name: "복구 (1)" });
     await waitForWorkspaceEditorText(cdp, fixture.wait, "원본\n");
     await ui.closeOwnedWindow();
+    await ui.waitForTarget({ role: "button", name: "파일 저장 후 종료" });
     await ui.click({ role: "button", name: "파일 저장 후 종료" });
     await fixture.reopenAfterClose();
     await fixture.selectWindows();
@@ -122,6 +124,7 @@ export async function run(context) {
     await journal("폐기할 초안");
     const saved = await readFile(file);
     await ui.closeOwnedWindow();
+    await ui.waitForTarget({ role: "button", name: "파일 변경 폐기 후 종료" });
     await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
     await fixture.reopenAfterClose();
     await fixture.selectWindows();
@@ -134,14 +137,17 @@ export async function run(context) {
     await fixture.failRecoveryWriter();
     await ui.fill({ role: "textbox", name: "" }, "실패 후 보존할 초안");
     await ui.closeOwnedWindow();
+    await ui.waitForTarget({ role: "button", name: "파일 저장 후 종료" });
     await ui.click({ role: "button", name: "파일 저장 후 종료" });
     await fixture.waitForText({ role: "alert", name: "" });
     assert.deepEqual(await readFile(file), saved);
     screenshots.push(await ui.screenshot("workspace-writer-failure-retained"));
+    await ui.waitForTarget({ role: "button", name: "종료 취소" });
     await ui.click({ role: "button", name: "종료 취소" });
     await waitForWorkspaceEditorText(cdp, fixture.wait, "실패 후 보존할 초안");
     await fixture.restoreRecoveryWriter();
     await ui.closeOwnedWindow();
+    await ui.waitForTarget({ role: "button", name: "파일 변경 폐기 후 종료" });
     await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
     await fixture.reopenAfterClose();
     await fixture.selectWindows();
