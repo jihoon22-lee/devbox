@@ -69,6 +69,10 @@
   진단 `37179887712`는 health까지 24개 크기 관측을 통과하고 활성화 확정 화면까지 진행했다.
   확정 후 탐색 메뉴·본문의 동일한 복구 버튼 때문에 멈춘 driver는 `제품 화면` navigation 안으로
   대상을 한정했다. 설치·전환·재설치의 같은 탐색 동작에도 이 범위를 적용한다.
+  진단 `37180226349`는 활성화 확정·복구 화면·Control Center 성능을 통과한 뒤 keyboard Launcher에서
+  멈췄다. 실제 Chromium에서 driver Enter가 keypress 없이 기본 버튼 실행을 누락하는 현상을 재현하고,
+  keyDown의 native text·physical code를 보정했다. Enter/Space 기본 실행, shortcut 문자 미삽입,
+  한글 조합 Enter 보호를 실제 CDP 입력으로 확인했다. 제품 상태를 입력 대신 변경하지 않는다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 

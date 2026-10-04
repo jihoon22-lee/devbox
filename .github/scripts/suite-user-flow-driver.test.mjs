@@ -229,3 +229,21 @@ test("target readiness rejects ambiguity immediately and times out absent target
     if (nodes.length) assert.equal(cdp.calls.length, 1);
   }
 });
+
+test("native Enter and Space carry character text while shortcuts carry physical codes only", async () => {
+  const cdp = transport();
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  for (const key of ["Enter", "Space", "Control+0", "Control+a", "Shift+Tab"]) await ui.press(key);
+  const events = cdp.calls.filter((call) => call.method === "Input.dispatchKeyEvent").map((call) => call.params);
+  assert.equal(events[0].text, "\r");
+  assert.equal(events[0].code, "Enter");
+  assert.equal(events[1].text, undefined);
+  assert.equal(events[2].text, " ");
+  assert.equal(events[2].code, "Space");
+  assert.equal(events[4].code, "Digit0");
+  assert.equal(events[4].text, undefined);
+  assert.equal(events[6].code, "KeyA");
+  assert.equal(events[6].text, undefined);
+  assert.equal(events[8].code, "Tab");
+  assert.equal(events[8].text, undefined);
+});

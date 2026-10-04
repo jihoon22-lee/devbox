@@ -134,8 +134,17 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     };
     const virtual = map[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : null);
     if (!virtual) throw new Error("Unsupported key");
-    const params = { key: key === "Space" ? " " : key, windowsVirtualKeyCode: virtual, modifiers };
-    await cdp.command("Input.dispatchKeyEvent", { type: "keyDown", ...params });
+    const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : /^\d$/.test(key) ? `Digit${key}` : key;
+    const params = { key: key === "Space" ? " " : key, code, windowsVirtualKeyCode: virtual, modifiers };
+    // Chromium needs character text for native keypress/default activation.
+    // Ctrl/Alt/Meta shortcuts must not insert printable text into the editor.
+    const text =
+      modifiers & 11 ? undefined : key === "Enter" ? "\r" : key === "Space" ? " " : key.length === 1 ? key : undefined;
+    await cdp.command("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      ...params,
+      ...(text === undefined ? {} : { text }),
+    });
     await cdp.command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
   }
   return {
