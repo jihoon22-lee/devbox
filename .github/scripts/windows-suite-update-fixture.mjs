@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { once } from "node:events";
+import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import { fileDigest } from "./suite-user-flow-results.mjs";
 import { completeInstalledHealth } from "./windows-suite-health-actions.mjs";
 import { observeAgentUpdateQuiesce } from "./windows-suite-agent-user-flows.mjs";
@@ -19,13 +19,7 @@ export async function runFixtureHelper(image, args) {
   child.stderr.on("data", (chunk) => {
     problem = (problem + chunk.toString()).slice(-1000);
   });
-  const timeout = setTimeout(() => child.kill(), 180000);
-  let code;
-  try {
-    [code] = await once(child, "exit");
-  } finally {
-    clearTimeout(timeout);
-  }
+  const [code] = await waitForFixtureChildExit(child, 180000);
   assert.equal(code, 0, `Owned fixture helper failed: ${problem}`);
   return output.trim() ? JSON.parse(output) : null;
 }

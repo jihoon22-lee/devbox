@@ -19,3 +19,17 @@ export async function cleanupWorkspaceFixture(fixture, results) {
     for (const result of failures) result.cleanupError = boundedFailure(error);
   }
 }
+export async function stopWorkspaceBeforeDisconnect(stop, disconnect) {
+  let stopped = false;
+  try {
+    // Detaching a debugger can resume its paused reply and consume pending state.
+    await stop();
+    stopped = true;
+  } finally {
+    try {
+      await disconnect();
+    } catch (error) {
+      if (stopped) throw error;
+    }
+  }
+}

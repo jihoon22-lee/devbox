@@ -126,6 +126,14 @@ export async function run(context) {
     );
   } catch (error) {
     const failure = await observeWorkspaceFailure(ui, "WORK-02", error);
+    let operations;
+    if (fixture.agentFailureOperations) {
+      try {
+        operations = await fixture.agentFailureOperations();
+      } catch {
+        operations = { unavailable: true };
+      }
+    }
     screenshots.push(...failure.screenshotPaths);
     for (const id of scenarioIds)
       if (!results.some((result) => result.id === id))
@@ -138,6 +146,7 @@ export async function run(context) {
             "workspace-agent-registry-ui-failed",
           ),
           error: failure.error,
+          ...(operations === undefined ? {} : { agentFailureOperations: operations }),
         });
   } finally {
     await cleanupWorkspaceFixture(fixture, results);

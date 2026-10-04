@@ -4,7 +4,12 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promis
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { saveApiFileWhenReady, verifyApiInstallation } from "./windows-api-user-flow-adapter.mjs";
+import {
+  chooseApiFileWhenReady,
+  markApiCleanupFailure,
+  saveApiFileWhenReady,
+  verifyApiInstallation,
+} from "./windows-api-user-flow-adapter.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 async function fixture() {
@@ -144,11 +149,20 @@ test("native export observes owned picker readiness then saves exactly once", as
           nativeWindows:
             ++observations === 1 ? [] : [{ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" }],
         };
+      if (action === "InspectFilePicker")
+        return {
+          pickerCount: 1,
+          fieldCount: 1,
+          editCount: 0,
+          confirmCount: 1,
+          filenameReady: true,
+          confirmationReady: true,
+        };
       assert.equal(args.filePath, "owned-fixture.json");
     },
     wait: async () => {},
   });
-  assert.deepEqual(events, ["Inspect", "Inspect", "SaveFile"]);
+  assert.deepEqual(events, ["Inspect", "Inspect", "InspectFilePicker", "SaveFile"]);
 });
 test("ambiguous or foreign native picker never receives save input", async () => {
   for (const windows of [
@@ -168,4 +182,113 @@ test("ambiguous or foreign native picker never receives save input", async () =>
     );
     assert.deepEqual(events, ["Inspect"]);
   }
+});
+
+test("native executable picker readiness precedes its one ChooseFile input", async () => {
+  const events = [];
+  let count = 0;
+  await chooseApiFileWhenReady({ identity: { Pid: 42 } }, "owned.exe", {
+    action: async (_owner, action, args) => {
+      events.push(action);
+      if (action === "Inspect")
+        return {
+          processId: 42,
+          nativeWindowCount: 2,
+          nativeWindows:
+            ++count === 1 ? [] : [{ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" }],
+        };
+      if (action === "InspectFilePicker")
+        return {
+          pickerCount: 1,
+          fieldCount: 1,
+          editCount: 0,
+          confirmCount: 1,
+          filenameReady: true,
+          confirmationReady: true,
+        };
+      assert.equal(args.filePath, "owned.exe");
+    },
+    wait: async () => {},
+  });
+  assert.deepEqual(events, ["Inspect", "Inspect", "InspectFilePicker", "ChooseFile"]);
+});
+test("cleanup rejects a passing journey but never overwrites an earlier failure", () => {
+  const error = { name: "Error", message: "first failure" };
+  const failed = { status: "FAIL", failureCode: "first-error", error };
+  markApiCleanupFailure(failed, "handoff-owned-cleanup-failed");
+  assert.equal(failed.failureCode, "first-error");
+  assert.equal(failed.error, error);
+  assert.equal(failed.cleanupFailureCode, "handoff-owned-cleanup-failed");
+  const passed = { status: "PASS", failureCode: null };
+  markApiCleanupFailure(passed, "api-owned-process-cleanup-failed");
+  assert.equal(passed.status, "FAIL");
+  assert.equal(passed.failureCode, "api-owned-process-cleanup-failed");
+});
+
+test("owned window alone never permits input before its filename and confirmation controls are ready", async () => {
+  const events = [];
+  let probes = 0;
+  await chooseApiFileWhenReady({ identity: { Pid: 42 } }, "owned.exe", {
+    action: async (_owner, action) => {
+      events.push(action);
+      if (action === "Inspect")
+        return {
+          processId: 42,
+          nativeWindowCount: 2,
+          nativeWindows: [{ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" }],
+        };
+      if (action === "InspectFilePicker")
+        return ++probes === 1
+          ? {
+              pickerCount: 1,
+              fieldCount: 0,
+              editCount: 0,
+              confirmCount: 0,
+              filenameReady: false,
+              confirmationReady: false,
+            }
+          : {
+              pickerCount: 1,
+              fieldCount: 1,
+              editCount: 1,
+              confirmCount: 1,
+              filenameReady: true,
+              confirmationReady: true,
+            };
+    },
+    wait: async () => {},
+  });
+  assert.deepEqual(events, ["Inspect", "InspectFilePicker", "Inspect", "InspectFilePicker", "ChooseFile"]);
+});
+test("control-readiness timeout records only fixed counts and never performs input", async () => {
+  const events = [];
+  await assert.rejects(
+    chooseApiFileWhenReady({ identity: { Pid: 42 } }, "private-owned-path", {
+      action: async (_owner, action) => {
+        events.push(action);
+        if (action === "Inspect")
+          return {
+            processId: 42,
+            nativeWindowCount: 2,
+            nativeWindows: [{ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" }],
+          };
+        return {
+          pickerCount: 1,
+          fieldCount: 0,
+          editCount: 0,
+          confirmCount: 1,
+          filenameReady: false,
+          confirmationReady: true,
+          name: "private-document",
+        };
+      },
+      timeoutMs: 0,
+    }),
+    (error) => {
+      assert.match(error.message, /"fieldCount":0/);
+      assert.ok(!error.message.includes("private"));
+      return true;
+    },
+  );
+  assert.deepEqual(events, ["Inspect", "InspectFilePicker"]);
 });

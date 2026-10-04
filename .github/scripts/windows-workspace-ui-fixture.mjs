@@ -1,3 +1,4 @@
+import { readWorkspaceAgentOperations } from "./windows-workspace-agent-observation.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { dismissWorkspaceUndo } from "./windows-workspace-agent-registry-ui.mjs";
 import {
@@ -91,6 +92,8 @@ export async function stopReconciledRuntimeRun(ui, wait, activeRun, scope) {
   await ui.waitForTarget(target);
   await ui.clickWithConfirmation(target, true);
   await wait(async () => (await activeRun()) === null, "original owned run stopped before the next explicit run");
+  // The native stop can settle before the renderer finishes its busy refresh.
+  await ui.waitForTarget({ role: "button", name: "지금 실행", scope });
 }
 
 export async function resumeRuntimeUi(fixture, ui) {
@@ -162,6 +165,7 @@ export function createWorkspaceUiFixture({
     return job;
   }
   return {
+    agentFailureOperations: () => readWorkspaceAgentOperations(dataRoot),
     context,
     observeInput: (fileName) => observeWorkspaceInput({ ui, cdp, fileName, windowOwner }),
     registry: () => read("workspace.registry", "snapshot"),
@@ -218,6 +222,9 @@ export function createWorkspaceUiFixture({
       await ui.waitForTarget({ role: "button", name: "검토한 Git 실행 승인" });
       await ui.click({ role: "button", name: "검토한 Git 실행 승인" });
       await this.waitForText({ role: "textbox", name: "커밋 메시지" });
+      // Source mounts several native readers; the textbox can appear before the
+      // aggregate context-change blocker settles. Observe readiness before leaving.
+      await ui.waitForTarget({ role: "button", name: "Git 승인 상태 확인" });
     },
     async prepareAgent() {
       const distro = process.env.DEVBOX_KNOWLEDGE_WSL_DISTRO;
@@ -346,6 +353,11 @@ export function createWorkspaceUiFixture({
           2,
         ),
         { flag: "wx" },
+      );
+      assert.equal(
+        recoveredPending.filter((item) => item.operationId === runId).length,
+        1,
+        "Lost native reply must remain pending after the owned process exits",
       );
       await resumeRuntimeUi(this, ui);
       try {

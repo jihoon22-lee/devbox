@@ -235,7 +235,9 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 
 ## 7. 현재 개발 범위
 
-v0.9.0 공개본은 설치/UI 문제로 2026-10-03 철회했다. Release와 자산은 삭제했으며 기존 태그는 재출시 준비까지 보존한다.
+v0.9.0 공개본은 설치/UI 문제로 2026-10-03 철회했다. Release와 자산을 삭제했고, 기존 태그는
+재출시 후보 준비 중 기록된 object를 확인한 뒤 제거했다. 철회본 SHA·태그 이력은
+[릴리스 근거](docs/release-evidence.md)에 보존하며 수정본의 공개 상태는 GitHub Release를 따른다.
 현재 구현·검증 원장은 [제품 재정비 계획](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)이다.
 모든 개선과 문서를 통합 브랜치에 모아 PR 1개로 제출하고 v0.9.0으로 재출시한다.
 철회본의 과거 성공을 수정본의 검증으로 재사용하지 않는다. #580은 닫힌 역사 기록이다.

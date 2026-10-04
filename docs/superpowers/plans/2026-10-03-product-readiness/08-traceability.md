@@ -370,3 +370,95 @@ API 저장 충돌은 실제 지역화된 오류를 확인하고 OAuth·native �
 생성한 worktree의 등록 검토는 개요로 연결하고, 프로젝트 미선택 상태에는 개요 이동 버튼을
 제공한다. 준비 실패·재시도는 계속 표시한다. 이 변경 전 main CI는 중단했고, 수정한 source의
 필수 CI와 새 후보를 사용한다. 실제 로컬 화면·Windows 수용 결과는 해당 보정 PR에 기록한다.
+
+#623은 `046e0d27`로 머지했고 exact-main CI `37217839287`은 통과했다.
+후보 `37218692587`은 7개 자산 조립·native API/Knowledge/product-shells·격리 WSL2/Docker와
+최초 설치/활성화를 통과했으나 Knowledge 검색 파일을 Workspace 편집기로 전달하는
+cross-product 수용에서 실패했다. 이 후보는 승격하지 않는다. 재사용 진단은 기존 후보
+bytes와 runner source를 구분하고 `diagnosticOnly=true`, `promotionEvidence=false`를
+기록한다. 진단 `37225141266`에서는 동일 bytes로 cross-product 17개 검사를 통과했지만
+최초 실패 원인은 미확정이다. 추가 IPC 관찰자는 Tauri의 읽기 전용 invoke 속성에 연결되지
+않았으므로 실제 상세 응답을 수집하지 못했다. 효과 없는 관찰 코드는 제거하며 이 실행을
+제품 수정이나 새 source의 출시 수용 근거로 사용하지 않는다.
+
+같은 실행에서 확인된 별도 제품 결함은 portable Knowledge의 초기 저장소 준비 전에 종료
+보호가 Activity 상태를 조회하여 미등록 Tauri state에 접근하는 panic이다. 미준비 local
+collector는 owner를 보존한 미확인 상태를 반환하고 실제 준비 뒤나 installed Agent 조회는
+유지하도록 수정했다. 초기 조회·준비 완료·remote owner 회귀를 로컬에서 확인했다.
+
+후보 빌드 지연도 실제 cache 로그로 확인했다. 두 shard가 같은 exact cache를 복원하여
+추가 dependency 산출물을 저장하지 못하므로 shard별 cache namespace를 사용한다. 새
+namespace가 아직 없을 때만 기존 cache를 읽기 전용으로 복원하며 공유 cache는 삭제하지
+않는다. 이 변경의 성능 효과는 다음 후보 실행에서 측정한다. 설치 후 전체 여정 및 새로운
+제품 source의 최종 수용 결과는 보정 PR 본문과 Actions artifact에 기록한다.
+
+설치 후 실행이 계속되는 동안 검증 fixture의 대기 경계도 점검했다. Workspace의 읽지 않는
+stderr pipe는 즉시 비우고 동기 창 닫기에 10초 제한을 둔다. update·legacy helper는 180초
+실행 제한 뒤 소유한 child에 종료를 요청하며, 2초 정리 유예에도 종료 이벤트가 없으면
+명시적으로 실패하여 다음 검사와 증거 기록을 막지 않는다. 원래 오류·정상 종료 코드는
+보존한다. 종료 요청 실패·이벤트 부재 회귀와 기존 legacy 검사는 통과했지만 이것이 현재
+Windows 실행 지연의 원인이라는 증거는 아직 없으므로 별도로 기록한다.
+
+
+후보 `37218692587`의 설치 여정은 17 PASS·11 FAIL·12 미완료로 종료됐다. NSIS 업데이트가
+`bootstrap_update_pending`으로 실패한 뒤 검증 Node가 자식 프로세스 참조를 유지하여
+42분 동안 다음 단계로 진행하지 못했고 작업 제한 시간에 도달했다. 실패한 소유 설치 창은
+가능할 때 정상 취소하며, 취소가 끝나지 않아도 프로세스와 설치 증거를 보존한 채 참조를
+해제하여 원래 실패와 다음 독립 검사를 기록한다. 임의 프로세스를 강제 종료하지 않는다.
+
+Control Center는 최초 dispatcher를 업데이트 후에도 유지한다. 이후 정상 Health 업데이트가
+최초 revision으로 돌아오면 이를 잘못 거부하던 정책을 수정했다. pending 상태·candidate
+revision·기존 등록·shortcut/uninstaller·dispatcher 신뢰 검사는 유지하며 Health 중에는
+같은 revision이어도 dispatcher를 다시 등록하거나 버전을 미리 광고하지 않는다.
+Workspace의 터미널 로그 조회는 일시 실패 후 성공해도 오래된 오류 안내가 남던 결함을
+별도 회귀로 수정했다. 두 제품 수정의 Windows 수용은 새 후보에서 확인해야 한다.
+
+설치 검증 자체의 실패도 구분했다. WORK-01 재시작 뒤 같은 소유 프로젝트와 Files 화면을
+복원하고, Source 승인 이후 aggregate busy가 해제된 시점을 관찰한다. RUNTIME-01은
+디버거 연결 해제로 정지한 응답을 소비하기 전에 소유 native 프로세스 종료를 완료하며,
+재시작 직후 해당 요청이 pending인지 확인한다. API native 파일 선택 대화상자 준비를
+관찰하고 정리 실패로 최초 오류를 덮어쓰지 않는다. Knowledge는 이관 후 현재 native
+vault root를 읽고 초안 재생성 전에 UI의 기록 새로 고침을 명시적으로 수행한다.
+
+보정한 검증 코드는 기존 후보의 설치·활성화와 앱별 다섯 실행만 선택하는 재사용 진단으로
+먼저 확인한다. 이 모드는 업데이트·이관 검사를 생략했다고 receipt에 기록하고 승격 근거로
+사용하지 않는다. 기본 후보의 전체 여정은 유지하고 각 단계의 시작·종료·exit code를 남긴다.
+최종 로컬 영향 검사와 재사용/신규 후보의 실제 결과는 보정 PR 및 Actions에 기록한다.
+
+
+진단 `37228903484`는 새 apps-only receipt의 식별 문자열과 기존 검증 계약이 달라 설치 전에
+중단됐다. 공통 진단 purpose를 유지하고 `appsOnly` 필드로 범위를 구분하도록 수정했으며,
+workflow가 발행하는 실제 문자열을 receipt 검증기에 전달하는 회귀를 추가했다. 앱 실행이나
+제품 실패로 집계하지 않는다. 후속 진단은 `37229111338`이다.
+
+후속 정적 검토에서 NSIS 제거·예상 거부 검사의 예외 경로도 같은 child 참조 누락이 있어
+공통 실패 정리를 적용했다. 정상 제거 receipt와 실제 exit=0, 예상 거부의 취소 확인·실제
+nonzero 종료 조건은 유지한다. 정리 오류가 primitive/frozen 원래 오류를 덮지 않는 회귀와
+설치 실패 검사 14개가 통과했다. 보정 batch의 로컬 영향 검사는 Knowledge 102.3초,
+추가 Workspace/Control Center 97.5초로 각각 통과했으며 후자는 최대 메모리 2.34GB였다.
+카탈로그 검사에서 Source readiness 기대값 누락을 수정한 뒤 실패·미실행 범위만 통과시켰다.
+
+
+재사용 진단 `37229111338`은 설치·활성화·Knowledge 8개 여정·HTTP 3개·OAuth·Webhook 2개·
+UI-01·PERF-01·제거/정리를 통과했다. Workspace와 API 및 후속 handoff/input은 실패했다.
+WORK-01 닫기 검토 창과 RUNTIME-01 중지 후 실행 버튼의 비동기 준비 관찰을 추가했다.
+API native picker는 창뿐 아니라 파일명·확인 control 준비도 실제 UIA로 관찰한 뒤 입력한다.
+앞선 Files 복구 저널과 열린 native picker가 후속 검사에 영향을 준 실패는 독립 결함으로
+중복 집계하지 않는다. RUNTIME-01은 pending 보존과 첫 실행 재조정을 통과하여 다음 명시
+실행 단계에 도달했고, ACTIVITY-02는 기록 새로 고침 후 통과했다.
+
+WORK-02의 빈 Agent 목록은 별도 제품 결함으로 확인했다. native 프로젝트 선택 후 registry
+조회가 먼저 실행되어 이전 description cache의 context로 요청했고, 모든 요청의 session
+권한 검사에서 거부됐다. 실제 nativePorts·description cache와 같은 context 검증을 사용하는
+회귀로 재현했다. 새 description을 반영한 뒤 registry를 조회하도록 순서를 수정했으며,
+권한 검사는 완화하지 않는다. 이 변경은 재사용 payload에 없으므로 새 후보가 필요하다.
+향후 첫 Agent 실패는 소유 로그의 최근 고정 schema 오류 코드만 제한해 함께 보존한다.
+
+Windows 소유 합성 파일 선택 창에서 fallback ID `1148`이 ComboBox와 내부 Edit에 중복되는
+검증기 결함을 확인했다. 실제 Edit 하나를 선택하고, UIA Invoke의 별도 오류를 피하도록
+기존 native 도구와 같은 소유 HWND 검증·시간 제한이 있는 WM_SETTEXT/BM_CLICK을 각각
+한 번만 사용한다. 입력 전에는 확인 버튼의 존재, 입력 후에는 활성 상태를 확인하며,
+시간 초과 후 mutation을 재시도하지 않는다. 수정한 실제 Save/Open은 선택 경로·파일
+바이트 대조까지 모두 통과했고 소유 임시 fixture는 제거했다. 제품 변경의 설치 수용 PASS로
+대체하지 않는다. 최종 Workspace delta는 119개 테스트·build/type/bundle PASS(69.3초,
+최대 1.73GB, swap 0), fixture 통합 25개 PASS, Biome 1914개 파일 PASS다.

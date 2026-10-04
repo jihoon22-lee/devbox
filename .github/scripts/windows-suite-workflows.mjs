@@ -425,6 +425,7 @@ try {
       text: file.text,
     });
     stage("indexed-file-to-editor");
+    evidence.fileIpcDiagnostic = { collected: false, reason: "native-invoke-readonly" };
     await domain(knowledge, "knowledge.search-settings", "add_root", {
       path: projects[0].directory,
       indexContent: true,

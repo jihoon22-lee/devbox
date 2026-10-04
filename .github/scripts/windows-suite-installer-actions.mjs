@@ -221,6 +221,33 @@ export function inspectInstallerFailure(installer, stage) {
   }
   return baseline;
 }
+// Release only the failed owned setup's event-loop reference. Its installation
+// and process remain preserved if normal cancellation cannot complete.
+export async function releaseFailedInstaller(installer, observe = observeUntil) {
+  try {
+    if (installer.child.exitCode === null) {
+      const view = installer.inspect();
+      if (view?.buttons?.some((button) => button.id === "2" && button.enabled && button.visible)) {
+        installer.invoke("2");
+      }
+      await observe(() => installer.child.exitCode !== null, "failed owned installer normal cancellation", 10000);
+    }
+    return "cancelled";
+  } catch {
+    return "preserved";
+  } finally {
+    if (installer.child.exitCode === null) installer.child.unref();
+  }
+}
+export async function rethrowInstallerFailure(installer, error, observe = observeUntil) {
+  const cleanup = await releaseFailedInstaller(installer, observe);
+  try {
+    error.installerCleanup = cleanup;
+  } catch {
+    // A primitive or frozen thrown value must remain the original failure.
+  }
+  throw error;
+}
 export async function runVisibleSetup(setup, root, env = process.env) {
   const scratch = path.dirname(root),
     image = path.join(scratch, `setup-${randomUUID()}.exe`);
@@ -257,7 +284,7 @@ export async function runVisibleSetup(setup, root, env = process.env) {
         { flag: "wx" },
       );
     } catch {}
-    throw error;
+    await rethrowInstallerFailure(installer, error);
   }
 }
 export async function runVisibleRemoval(root, { cancel = false } = {}) {
@@ -269,31 +296,38 @@ export async function runVisibleRemoval(root, { cancel = false } = {}) {
   // NSIS _?= selects its already-owned installation and avoids an untracked
   // temporary executable. This is the same interactive confirmation/sections.
   const installer = await startOwnedInstaller(image, [`_?=${root}`], scratch);
-  await installer.wait(
-    (view) => view?.buttons?.some((b) => b.id === "1" && b.enabled && b.visible),
-    "removal confirmation",
-  );
-  if (cancel) {
-    installer.invoke("2");
-    await observeUntil(() => installer.child.exitCode !== null, "removal cancelled");
-    return;
+  try {
+    await installer.wait(
+      (view) => view?.buttons?.some((b) => b.id === "1" && b.enabled && b.visible),
+      "removal confirmation",
+    );
+    if (cancel) {
+      installer.invoke("2");
+      await observeUntil(() => installer.child.exitCode !== null, "removal cancelled");
+      return;
+    }
+    installer.invoke("1");
+    await observeUntil(
+      async () => {
+        try {
+          return Boolean(JSON.parse(await readFile(path.join(root, "uninstall-complete.json"), "utf8")));
+        } catch {
+          return false;
+        }
+      },
+      "owned removal receipt",
+      180000,
+    );
+    await installer.wait(
+      (view) => view?.buttons?.some((b) => b.id === "1" && b.enabled && b.visible),
+      "removal finish",
+    );
+    installer.invoke("1");
+    await observeUntil(() => installer.child.exitCode !== null, "removal closed");
+    assert.equal(installer.child.exitCode, 0);
+  } catch (error) {
+    await rethrowInstallerFailure(installer, error);
   }
-  installer.invoke("1");
-  await observeUntil(
-    async () => {
-      try {
-        return Boolean(JSON.parse(await readFile(path.join(root, "uninstall-complete.json"), "utf8")));
-      } catch {
-        return false;
-      }
-    },
-    "owned removal receipt",
-    180000,
-  );
-  await installer.wait((view) => view?.buttons?.some((b) => b.id === "1" && b.enabled && b.visible), "removal finish");
-  installer.invoke("1");
-  await observeUntil(() => installer.child.exitCode !== null, "removal closed");
-  assert.equal(installer.child.exitCode, 0);
 }
 
 export function rejectedInstallerIssue(view, expectedIssues) {
@@ -356,15 +390,8 @@ export async function rejectVisibleSetup(setup, root, { expectedIssues, onReject
     }, "rejected setup cancelled");
     assert.notEqual(installer.child.exitCode, 0, "Rejected setup cannot report success");
     return { issue: observed, exitCode: installer.child.exitCode };
-  } finally {
-    if (installer.child.exitCode === null) {
-      installer.invoke("2");
-      await observeUntil(() => {
-        if (installer.child.exitCode !== null) return true;
-        if (installer.inspect()?.windows?.length > 1) installer.invoke("6");
-        return false;
-      }, "owned failed installer normal cancellation");
-    }
+  } catch (error) {
+    await rethrowInstallerFailure(installer, error);
   }
 }
 export async function rejectBusyVisibleUpdate(setup, root) {

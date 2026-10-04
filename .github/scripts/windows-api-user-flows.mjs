@@ -3,7 +3,7 @@ import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { createApiUserFlowContext } from "./windows-api-user-flow-adapter.mjs";
+import { createApiUserFlowContext, markApiCleanupFailure } from "./windows-api-user-flow-adapter.mjs";
 import { writeUserFlowResults } from "./suite-user-flow-results.mjs";
 import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { summarizeEvidence } from "./suite-user-flow-evidence.mjs";
@@ -55,8 +55,7 @@ export async function runApiUserFlows() {
       await context?.close().catch(() => {});
       if (results.length) {
         const last = results.at(-1);
-        last.status = "FAIL";
-        last.failureCode = "api-owned-process-cleanup-failed";
+        markApiCleanupFailure(last, "api-owned-process-cleanup-failed");
       }
     }
     if (results.length) await writeUserFlowResults("api", results);

@@ -1,5 +1,9 @@
 import { runKnowledgeChecks } from "./knowledge-diagnostic-sequence.mjs";
-import { visibleNoteTextExpression, noteReadyExpression } from "./windows-knowledge-flow-shared.mjs";
+import {
+  visibleNoteTextExpression,
+  noteReadyExpression,
+  readCurrentKnowledgeNote,
+} from "./windows-knowledge-flow-shared.mjs";
 import { observeKnowledgeInput } from "./windows-knowledge-input-ui.mjs";
 import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
@@ -214,7 +218,7 @@ export async function createInstalledKnowledgeContext() {
       await waitFor({ role: "button", name });
       await ui.click({ role: "button", name });
       await waitFor({ role: "textbox", name: "Markdown 본문" });
-      const expected = await readFile(path.join(notesRoot, rel), "utf8");
+      const expected = await readCurrentKnowledgeNote(() => observe("knowledge.notes", "get_root"), rel);
       await this.waitNote(rel, expected);
     },
     waitNote: (rel, expected) =>

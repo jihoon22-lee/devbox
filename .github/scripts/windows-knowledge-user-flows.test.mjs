@@ -274,3 +274,40 @@ test("Activity draft review uses the actual dialog and cancels before route navi
     ["closed", "Knowledge 초안 미리보기를 취소했습니다"],
   ]);
 });
+
+test("Activity regeneration refreshes its history section before waiting for an actionable row", async () => {
+  const events = [];
+  await activity.refreshActivityHistory({
+    waitForTarget: async (target) => events.push(["ready", target]),
+    click: async (target) => events.push(["click", target]),
+  });
+  const target = { role: "button", name: "새로 고침", scope: { role: "region", name: "Knowledge 초안 handoff 기록" } };
+  assert.deepEqual(events, [
+    ["ready", target],
+    ["click", target],
+    ["ready", { role: "button", name: "다시 생성" }],
+  ]);
+});
+
+test("opening an existing Knowledge note resolves the current native root without prepareNotes", async () => {
+  const { readCurrentKnowledgeNote } = await import("./windows-knowledge-flow-shared.mjs");
+  const events = [];
+  let root = "/owned/imported-vault";
+  const observeRoot = async () => {
+    events.push("native root");
+    return root;
+  };
+  const read = async (file, encoding) => {
+    events.push([file, encoding]);
+    return "existing note";
+  };
+  assert.equal(await readCurrentKnowledgeNote(observeRoot, "Notes/legacy.md", read), "existing note");
+  root = "/owned/reconnected-vault";
+  await readCurrentKnowledgeNote(observeRoot, "Notes/legacy.md", read);
+  assert.deepEqual(events, [
+    "native root",
+    ["/owned/imported-vault/Notes/legacy.md", "utf8"],
+    "native root",
+    ["/owned/reconnected-vault/Notes/legacy.md", "utf8"],
+  ]);
+});

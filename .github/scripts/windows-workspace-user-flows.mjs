@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
+import { stopWorkspaceBeforeDisconnect } from "./windows-workspace-ui-observations.mjs";
 import { readFile, realpath, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -94,6 +95,7 @@ export async function runWorkspaceUserFlows() {
     for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
     const started = performance.now();
     child = spawn(executable, [], { cwd: path.dirname(executable), env, stdio: ["ignore", "ignore", "pipe"] });
+    child.stderr.resume();
     await once(child, "spawn");
     owner = allWindowsProcesses().find(
       (item) => item.Pid === child.pid && path.resolve(item.Path).toLowerCase() === executable.toLowerCase(),
@@ -116,7 +118,10 @@ export async function runWorkspaceUserFlows() {
     );
     const command = `$p=Get-Process -Id ${owner.Pid} -ErrorAction Stop; if(-not $p.CloseMainWindow()){throw 'Owned main window unavailable'}`;
     assert.equal(
-      spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8" }).status,
+      spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+        encoding: "utf8",
+        timeout: 10000,
+      }).status,
       0,
     );
   }
@@ -128,8 +133,12 @@ export async function runWorkspaceUserFlows() {
     ]);
   }
   async function cleanup() {
-    attached?.close();
-    if (child?.exitCode === null) await stopOwnedProcess(owner, executable, child);
+    await stopWorkspaceBeforeDisconnect(
+      async () => {
+        if (child?.exitCode === null) await stopOwnedProcess(owner, executable, child);
+      },
+      () => attached?.close(),
+    );
   }
   const ui = createUiDriver({
     cdp,

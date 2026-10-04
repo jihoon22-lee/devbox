@@ -1,3 +1,6 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 export async function scenarios(context, specifications) {
   const { sourceSha, fixtureSha, artifactDigests, ui, knowledgeFixture: fixture } = context;
   const results = [];
@@ -49,4 +52,12 @@ export function visibleNoteTextExpression() {
 }
 export function noteReadyExpression(path, content) {
   return `document.querySelector('.editor-head .path')?.textContent===${JSON.stringify(path)} && (${visibleNoteTextExpression()})===${JSON.stringify(content)}`;
+}
+
+// Existing/imported notes can be opened before the synthetic-note setup runs.
+// Resolve the native binding each time so reconnects cannot reuse an old root.
+export async function readCurrentKnowledgeNote(observeRoot, relative, read = readFile) {
+  const root = await observeRoot();
+  assert.ok(typeof root === "string" && root.length > 0, "Native note root unavailable");
+  return read(path.join(root, relative), "utf8");
 }

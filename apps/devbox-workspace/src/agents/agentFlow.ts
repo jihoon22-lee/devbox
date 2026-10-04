@@ -51,8 +51,8 @@ export function sameContext(a: ProjectContext | null, b: ProjectContext): boolea
 }
 export async function selectContext(ports: FlowPorts, context: ProjectContext): Promise<void> {
   await ports.registry.select(context);
-  await ports.refreshRegistry?.();
   await ports.refreshContext();
+  await ports.refreshRegistry?.();
   if (!sameContext(await ports.currentContext(), context)) throw new AgentFlowError("agent_context_changed");
 }
 export async function advance(task: AgentTask, ports: FlowPorts, env: FlowEnv): Promise<AgentTask> {

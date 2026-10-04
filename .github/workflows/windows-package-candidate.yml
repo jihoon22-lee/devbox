@@ -123,6 +123,9 @@ jobs:
           retention-days: 7
 
   build:
+    permissions:
+      contents: read
+      actions: read
     name: Build Windows products (shard ${{ matrix.shard }})
     needs: [plan, workspace-wsl-helper]
     runs-on: windows-2025
@@ -144,9 +147,20 @@ jobs:
           node-version-file: .nvmrc
       - run: corepack enable pnpm
       - uses: dtolnay/rust-toolchain@1.98.1
+      - id: cache-namespace
+        name: Check whether this shard has a warm cache
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CACHE_SHARD: ${{ matrix.shard }}
+        run: node .github/scripts/windows-package-cache.mjs
       - uses: Swatinem/rust-cache@v2
+        if: steps.cache-namespace.outputs.legacy-warm-start == 'true'
         with:
           shared-key: devbox-windows-package
+          save-if: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-windows-package-shard-${{ matrix.shard }}
           cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -377,11 +391,17 @@ jobs:
           $failed = @()
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-agent-user-flows.mjs')) {
             if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
+              Write-Host "Installed journey start: withdrawn-same-version-update"
               node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
-              if ($LASTEXITCODE -ne 0) { $failed += 'withdrawn-same-version-update' }
+              $withdrawnExitCode = $LASTEXITCODE
+              Write-Host "Installed journey end: withdrawn-same-version-update exit=$withdrawnExitCode"
+              if ($withdrawnExitCode -ne 0) { $failed += 'withdrawn-same-version-update' }
             }
+            Write-Host "Installed journey start: $script"
             node ".github/scripts/$script"
-            if ($LASTEXITCODE -ne 0) { $failed += $script }
+            $scriptExitCode = $LASTEXITCODE
+            Write-Host "Installed journey end: $script exit=$scriptExitCode"
+            if ($scriptExitCode -ne 0) { $failed += $script }
           }
           if ($failed.Count -gt 0) { throw "Installed user journeys failed: $($failed -join ', ')" }
       - name: Remove only the owned interactive installation and data

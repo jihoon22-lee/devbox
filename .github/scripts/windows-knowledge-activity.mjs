@@ -11,6 +11,16 @@ export async function reviewActivityDraft(ui, fixture) {
   await ui.click({ role: "button", name: "취소" });
   await fixture.waitBody("Knowledge 초안 미리보기를 취소했습니다");
 }
+export async function refreshActivityHistory(ui) {
+  const refresh = {
+    role: "button",
+    name: "새로 고침",
+    scope: { role: "region", name: "Knowledge 초안 handoff 기록" },
+  };
+  await ui.waitForTarget(refresh);
+  await ui.click(refresh);
+  await ui.waitForTarget({ role: "button", name: "다시 생성" });
+}
 export async function run(context) {
   return scenarios(context, [
     [
@@ -46,7 +56,7 @@ export async function run(context) {
         assert.ok(old.length > 0);
         await fixture.navigate("activity");
         await ui.click({ role: "button", name: "설정" });
-        await fixture.waitFor({ role: "button", name: "다시 생성" });
+        await refreshActivityHistory(ui);
         await ui.click({ role: "button", name: "다시 생성" });
         await fixture.wait(async () => {
           const rows = await fixture.history();

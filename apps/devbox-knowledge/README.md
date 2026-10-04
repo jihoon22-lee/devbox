@@ -146,3 +146,5 @@ JSON 응답의 보수적 상한 4 MiB, 전체 조회 시간 5초다. 디렉터�
 과거 초안 재생성은 native history의 기간·IANA 시간대·앱 필터만 사용한다. 보존된 유효 summary는 전달 reference가 만료되어도 같은 기간을 새로 집계할 수 있다. 삭제되거나 검증에 실패한 history는 명시적으로 실패한다. 새 draft ID는 기존 handoff를 변경하지 않고 `regeneratedFrom`으로 연결하며, 전달 성공은 검토 대기이고 노트 자동 저장이 아니다. source가 unavailable이면 기존 partial source 설명을 유지한다.
 
 native lifecycle 상태는 installedAgent/portableLocal/unknown과 동의·실제 추적 상태를 각각 제공한다. 연결 실패를 portable로 해석하지 않으며 설치본 창 종료와 전체 Agent 종료를 구분한다.
+portable 최초 저장소 준비 중에는 로컬 수집 상태를 미확인으로 표시하며, 종료 안내를 위한 조회가
+수집기를 시작하지 않는다. 준비가 끝난 뒤에는 실제 동의·추적 상태를 조회한다.

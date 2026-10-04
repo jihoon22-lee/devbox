@@ -24,14 +24,27 @@ import {
   releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
 
-// Export invokes a native dialog asynchronously after the pointer acknowledgement.
-// Poll ownership metadata only; SaveFile remains a single strict native mutation.
-export async function saveApiFileWhenReady(
+// Native pickers appear asynchronously after pointer acknowledgement. Observe
+// owned metadata before the single strict ChooseFile/SaveFile mutation.
+export function saveApiFileWhenReady(owner, filePath, options) {
+  return apiFilePickerWhenReady(owner, filePath, "SaveFile", options);
+}
+export function chooseApiFileWhenReady(owner, filePath, options) {
+  return apiFilePickerWhenReady(owner, filePath, "ChooseFile", options);
+}
+export function markApiCleanupFailure(result, code) {
+  result.status = "FAIL";
+  result.failureCode ??= code;
+  result.cleanupFailureCode = code;
+}
+async function apiFilePickerWhenReady(
   owner,
   filePath,
+  pickerAction,
   { action = nativeWindowAction, wait = delay, timeoutMs = 10000 } = {},
 ) {
   const deadline = Date.now() + timeoutMs;
+  let controls = null;
   while (true) {
     const observed = await action(owner, "Inspect");
     assert.equal(observed.processId, owner.identity.Pid, "Native picker owner changed");
@@ -44,8 +57,39 @@ export async function saveApiFileWhenReady(
       pickers.every((window) => window.nativeProcessId === owner.identity.Pid),
       "Native picker owner changed",
     );
-    if (pickers.length === 1) return await action(owner, "SaveFile", { filePath });
-    assert.ok(Date.now() < deadline, "Owned native file picker did not become ready");
+    if (pickers.length === 1) {
+      const observation = await action(owner, "InspectFilePicker");
+      controls = Object.fromEntries(
+        ["pickerCount", "fieldCount", "editCount", "confirmCount"].map((key) => {
+          const count = observation?.[key];
+          return [key, Number.isSafeInteger(count) && count >= 0 && count <= 1024 ? count : null];
+        }),
+      );
+      controls.filenameReady = observation?.filenameReady === true;
+      controls.confirmationReady = observation?.confirmationReady === true;
+      assert.ok(
+        Object.values(controls).every((value) => value !== null),
+        "Invalid native picker control counts",
+      );
+      assert.ok(
+        [controls.pickerCount, controls.fieldCount, controls.editCount, controls.confirmCount].every(
+          (count) => count <= 1,
+        ),
+        `Ambiguous native picker controls: ${JSON.stringify(controls)}`,
+      );
+      if (
+        controls.pickerCount === 1 &&
+        controls.fieldCount === 1 &&
+        controls.confirmCount === 1 &&
+        controls.filenameReady &&
+        controls.confirmationReady
+      )
+        return await action(owner, pickerAction, { filePath });
+    }
+    assert.ok(
+      Date.now() < deadline,
+      `Owned native file picker controls did not become ready: ${JSON.stringify(controls)}`,
+    );
     await wait(100);
   }
 }
@@ -163,7 +207,7 @@ export async function createApiUserFlowContext({ measureStartup = true } = {}) {
       getIdentities: () => ownedProductCohort(processIdentity),
       namespace: path.join(process.env.LOCALAPPDATA, `com.devbox.v08.apistudio.i${installed.installationKey}`),
     };
-    context.chooseFile = (filePath) => nativeWindowAction(windowOwner, "ChooseFile", { filePath });
+    context.chooseFile = (filePath) => chooseApiFileWhenReady(windowOwner, filePath);
     context.saveFile = (filePath) => saveApiFileWhenReady(windowOwner, filePath);
     context.nativeCall = async (command, method, args, route = "requests") => {
       // Fixture preparation/observation retains the actual authenticated envelope.

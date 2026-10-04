@@ -263,10 +263,7 @@ fn registration_update_policy(
     dispatcher_revision: Option<&str>,
 ) -> Result<()> {
     if let Some((state, revision)) = pending {
-        if state != "health"
-            || revision != supplied_revision
-            || !dispatcher_revision.is_some_and(|value| value != supplied_revision)
-        {
+        if state != "health" || revision != supplied_revision || dispatcher_revision.is_none() {
             return Err("bootstrap_update_pending");
         }
     }
@@ -314,11 +311,13 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
             .map(|value| value.payload_revision.as_str()),
     )?;
     let mut registration = match existing {
-        Some(value) if value.payload_revision == revision => value,
+        Some(value) if value.payload_revision == revision && pending.is_none() => value,
         Some(value) => {
             // The original installed dispatcher remains authoritative during an
             // update. A repeated NSIS invocation must neither replace it nor
-            // advertise the candidate version before health/commit.
+            // advertise the candidate version before health/commit. This also
+            // applies when a later update returns to the dispatcher's original
+            // revision: equality does not grant re-registration during Health.
             let links = value
                 .shortcut_plan
                 .as_ref()
@@ -729,13 +728,20 @@ mod registration_policy_tests {
             ("rolledBack", "candidate", Some("original")),
             ("health", "other", Some("original")),
             ("health", "candidate", None),
-            ("health", "candidate", Some("candidate")),
         ] {
             assert_eq!(
                 registration_update_policy(Some((state, candidate)), "candidate", dispatcher),
                 Err("bootstrap_update_pending")
             );
         }
+        // The first installation's dispatcher persists across commits. A
+        // later candidate can legitimately return to that original revision.
+        assert!(registration_update_policy(
+            Some(("health", "original")),
+            "original",
+            Some("original")
+        )
+        .is_ok());
         assert!(registration_update_policy(None, "candidate", None).is_ok());
     }
     #[test]

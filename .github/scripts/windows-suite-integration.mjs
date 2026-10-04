@@ -5,7 +5,7 @@ import path from "node:path";
 import { readFile, readdir, rename } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { createApiUserFlowContext } from "./windows-api-user-flow-adapter.mjs";
+import { createApiUserFlowContext, markApiCleanupFailure } from "./windows-api-user-flow-adapter.mjs";
 import { createInstalledProductContext } from "./windows-suite-ui-context.mjs";
 import { createDirectProductContext } from "./windows-suite-direct-layout.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
@@ -438,8 +438,7 @@ export async function run(api) {
             throw new Error("Owned cleanup failed");
           }),
         );
-      results.at(-1).status = "FAIL";
-      results.at(-1).failureCode = "handoff-owned-cleanup-failed";
+      markApiCleanupFailure(results.at(-1), "handoff-owned-cleanup-failed");
     }
   }
 }
@@ -467,8 +466,7 @@ export async function runIntegration() {
             throw new Error("Owned cleanup failed");
           }),
         );
-      results.at(-1).status = "FAIL";
-      results.at(-1).failureCode = "handoff-api-cleanup-failed";
+      markApiCleanupFailure(results.at(-1), "handoff-api-cleanup-failed");
     }
     if (results.length) await writeUserFlowResults("handoff", results);
   }
