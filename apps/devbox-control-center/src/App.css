@@ -57,8 +57,9 @@
 .setup-steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding-left: 24px;
+  gap: 8px 16px;
+  padding-left: 0;
+  list-style-position: inside;
 }
 .setup-steps [aria-current="step"] {
   color: var(--db-color-accent);

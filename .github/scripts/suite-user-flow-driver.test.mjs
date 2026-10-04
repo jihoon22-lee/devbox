@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 const control = { ignored: false, role: { value: "button" }, name: { value: "Continue" }, backendDOMNodeId: 12 };
-function transport(nodes = [control], { hit = 12, contained = false, failContains = false } = {}) {
+function transport(
+  nodes = [control],
+  { hit = 12, contained = false, failContains = false, pageX = 0, pageY = 0 } = {},
+) {
   const calls = [];
   return {
     calls,
@@ -10,6 +13,8 @@ function transport(nodes = [control], { hit = 12, contained = false, failContain
       calls.push({ method, params });
       if (method === "Accessibility.getFullAXTree") return { nodes };
       if (method === "DOM.getNodeForLocation") return { backendNodeId: hit };
+      if (method === "Page.getLayoutMetrics")
+        return { cssLayoutViewport: { pageX, pageY, clientWidth: 1024, clientHeight: 720 } };
       if (method === "DOM.resolveNode") return { object: { objectId: `owned-${params.backendNodeId}` } };
       if (method === "Runtime.callFunctionOn") {
         if (failContains) throw new Error("Owned DOM detached");
@@ -20,6 +25,41 @@ function transport(nodes = [control], { hit = 12, contained = false, failContain
     },
   };
 }
+test("root scrolling uses page coordinates for hit testing and viewport coordinates for real pointer input", async () => {
+  const cdp = transport([control], { pageX: 125, pageY: 1242 });
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await ui.click({ role: "button", name: "Continue" });
+  const hit = cdp.calls.find((call) => call.method === "DOM.getNodeForLocation");
+  assert.equal(hit.params.x, 175);
+  assert.equal(hit.params.y, 1257);
+  for (const event of cdp.calls.filter((call) => call.method === "Input.dispatchMouseEvent")) {
+    assert.equal(event.params.x, 50);
+    assert.equal(event.params.y, 15);
+  }
+});
+test("invalid root scroll geometry fails before hit testing or pointer input", async () => {
+  const cdp = transport([control], { pageY: NaN });
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.click({ role: "button", name: "Continue" }), /Page layout unavailable/);
+  assert.equal(
+    cdp.calls.some((call) => call.method === "DOM.getNodeForLocation" || call.method.startsWith("Input.")),
+    false,
+  );
+});
+test("offscreen control center fails before page hit testing or pointer input", async () => {
+  const cdp = transport();
+  const command = cdp.command;
+  cdp.command = async (method, params) =>
+    method === "DOM.getBoxModel"
+      ? { model: { border: [0, 800, 100, 800, 100, 900, 0, 900] } }
+      : command(method, params);
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.click({ role: "button", name: "Continue" }), /Control center outside viewport/);
+  assert.equal(
+    cdp.calls.some((call) => call.method === "DOM.getNodeForLocation" || call.method.startsWith("Input.")),
+    false,
+  );
+});
 test("click sends real pointer input and never evaluates a mutation", async () => {
   const cdp = transport();
   const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
