@@ -13,3 +13,6 @@ pub mod suite_removal;
 pub mod update_cache;
 
 pub mod owner_history;
+
+#[cfg(any(windows, test))]
+pub(crate) mod installation_path;

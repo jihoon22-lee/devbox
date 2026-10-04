@@ -1986,6 +1986,56 @@ mod setup_retention_tests {
     }
     #[cfg(windows)]
     #[test]
+    fn captured_canonical_root_reuses_setup_validation_without_relaxing_input() {
+        let fixture = tempdir().unwrap();
+        let root = fixture.path().join("Suite UI Fixture");
+        fs::create_dir(&root).unwrap();
+        let image = root.join("devbox-control-center.exe");
+        let bytes = b"owned synthetic executable";
+        fs::write(&image, bytes).unwrap();
+        let manifest = product_contract::installation::Manifest {
+            schema_version: 1,
+            installation_id: "fixture-install".into(),
+            generation: "fixture-generation".into(),
+            suite_version: env!("CARGO_PKG_VERSION").into(),
+            protocol_version: 1,
+            members: vec![product_contract::installation::Member {
+                product: "control-center".into(),
+                executable: "devbox-control-center.exe".into(),
+                sha256: hash(bytes),
+            }],
+        };
+        fs::write(
+            root.join("devbox-installation.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        let scope = crate::suite::platform::component_scope::CapturedScope::capture(
+            &root,
+            "control-center",
+            &image,
+            env!("CARGO_PKG_VERSION"),
+        )
+        .unwrap();
+        let captured = scope.review_root();
+        assert!(captured.starts_with(r"\\?\"));
+        assert!(
+            installation_tools::core::custom_root::verify_suite_directory(Path::new(&captured))
+                .is_err()
+        );
+        let ordinary = crate::core::installation_path::captured_disk_root(&captured).unwrap();
+        let verified =
+            installation_tools::core::custom_root::verify_suite_directory(Path::new(ordinary))
+                .unwrap();
+        assert_eq!(
+            filesystem_identity(&verified, true).unwrap(),
+            filesystem_identity(&captured, true).unwrap()
+        );
+        scope.revalidate().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn insufficient_space_is_refused_without_creating_a_stage_or_mutating_data() {
         let root = tempdir().unwrap();
         fs::write(root.path().join("user.json"), b"unchanged").unwrap();
