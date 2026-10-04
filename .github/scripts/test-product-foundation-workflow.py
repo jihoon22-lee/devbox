@@ -185,6 +185,7 @@ assert "payloadSourceSha = $record.head_sha" in installer_diagnostic
 for script in ("windows-suite-user-flow.mjs", "windows-workspace-user-flows.mjs", "windows-api-user-flows.mjs", "windows-knowledge-user-flows.mjs", "windows-suite-delivery-user-flows.mjs", "windows-suite-legacy-upgrade-ui.mjs", "windows-suite-integration.mjs", "windows-suite-layout.mjs", "windows-suite-agent-user-flows.mjs"):
     assert script in installer_diagnostic
 assert "--withdrawn" in installer_diagnostic
+assert installer_diagnostic.index("prepare-windows-ui-display.ps1") < installer_diagnostic.index("run: node .github/scripts/windows-suite-user-flow.mjs")
 assert "windows-user-flow-install.ps1 -Cleanup" in installer_diagnostic
 assert "windows-knowledge-wsl.ps1 -Cleanup" in installer_diagnostic
 assert "windows-suite-delivery.ps1 -Staging candidate/delivery" in installer_diagnostic

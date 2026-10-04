@@ -38,6 +38,27 @@ export function correctClientSize(nativeSize, observed, target, pixelRatio) {
   return corrected;
 }
 
+// Keep diagnostic evidence even when the OS clamps a requested native size.
+export async function persistMeasuredLayout(observation, { screenshot, persist }) {
+  const saved = { ...observation, screenshotPath: await screenshot() };
+  await persist(saved);
+  assertProductLayout(saved.observed, { editor: Boolean(saved.observed.editor) });
+  assert.ok(
+    Math.abs(saved.observed.viewport.width - saved.size.width) <= 2 &&
+      Math.abs(saved.observed.viewport.height - saved.size.height) <= 2,
+    "Actual client dimensions must correspond to requested native size",
+  );
+  if (saved.size.name === "minimum")
+    assert.ok(
+      saved.observed.viewport.width >= saved.size.width - 2 && saved.observed.viewport.height >= saved.size.height - 2,
+      "OS minimum must preserve configured client task area",
+    );
+  return saved;
+}
+
+const windowMetricsExpression =
+  "({width:innerWidth,height:innerHeight,outerWidth,outerHeight,pixelRatio:devicePixelRatio,screen:{width:screen.width,height:screen.height,availWidth:screen.availWidth,availHeight:screen.availHeight,availLeft:screen.availLeft,availTop:screen.availTop},screenX,screenY,visibility:document.visibilityState})";
+
 // Installer calls this while the real product is in the given delivery phase.
 // Observations never change delivery state or replace a production description.
 export async function observeInstalledProductLayout({ cdp, ui, processIdentity, root, product, state }) {
@@ -58,9 +79,7 @@ export async function observeInstalledProductLayout({ cdp, ui, processIdentity, 
   ];
   const observations = [];
   for (const size of sizes) {
-    const before = await cdp.evaluate(
-      "({width:innerWidth,height:innerHeight,outerWidth,outerHeight,pixelRatio:devicePixelRatio})",
-    );
+    const before = await cdp.evaluate(windowMetricsExpression);
     assert.ok(Number.isFinite(before.pixelRatio) && before.pixelRatio > 0);
     let nativeSize = {
       width: Math.round(size.width * before.pixelRatio),
@@ -79,23 +98,29 @@ export async function observeInstalledProductLayout({ cdp, ui, processIdentity, 
       await cdp.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
       observed = await cdp.evaluate(`(${observeProductLayout.toString()})()`);
     }
-    assertProductLayout(observed, { editor: Boolean(observed.editor) });
-    assert.ok(
-      Math.abs(observed.viewport.width - size.width) <= 2 && Math.abs(observed.viewport.height - size.height) <= 2,
-      "Actual client dimensions must correspond to requested native size",
+    await mkdir(evidenceRoot, { recursive: true });
+    observations.push(
+      await persistMeasuredLayout(
+        {
+          size,
+          beforeWindowMetrics: before,
+          requestedNativeSize: nativeSize,
+          nativeResizeRequests: resizeRequests,
+          windowMetrics: await cdp.evaluate(windowMetricsExpression),
+          nativeWindow: nativeWindowAction(owner, "Inspect"),
+          observed,
+        },
+        {
+          screenshot: () => ui.screenshot(`layout-${product}-${state}-${size.name}`),
+          persist: (observation) =>
+            writeFile(
+              path.join(evidenceRoot, `${product}-${state}-${size.name}-measurement.json`),
+              JSON.stringify({ ...identity, installationKey, product, state, observation }, null, 2),
+              { flag: "wx" },
+            ),
+        },
+      ),
     );
-    if (size.name === "minimum")
-      assert.ok(
-        observed.viewport.width >= size.width - 2 && observed.viewport.height >= size.height - 2,
-        "OS minimum must preserve configured client task area",
-      );
-    observations.push({
-      size,
-      requestedNativeSize: nativeSize,
-      nativeResizeRequests: resizeRequests,
-      observed,
-      screenshotPath: await ui.screenshot(`layout-${product}-${state}-${size.name}`),
-    });
   }
   await mkdir(evidenceRoot, { recursive: true });
   const record = { ...identity, installationKey, product, state, observations };

@@ -97,7 +97,7 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
             if (
               product === "workspace" &&
               !reviewed &&
-              (await cdp.evaluate("document.body.innerText")).includes("Workspace 종료 검토")
+              (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')'))
             ) {
               await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
               reviewed = true;

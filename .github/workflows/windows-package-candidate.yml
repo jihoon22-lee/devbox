@@ -357,6 +357,9 @@ jobs:
         with:
           name: candidate-private-wsl-lsp-${{ github.run_id }}
           path: target/native-lsp-fixture
+      - name: Prepare hosted display for native layout acceptance
+        shell: pwsh
+        run: .github/scripts/prepare-windows-ui-display.ps1
       - name: Prepare owned WSL1 filesystem for the installed journeys
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1

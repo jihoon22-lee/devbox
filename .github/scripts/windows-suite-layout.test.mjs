@@ -21,3 +21,48 @@ test("unsafe or unavailable client observations fail closed", () => {
     correctClientSize({ width: 1180, height: 780 }, { width: NaN, height: 700 }, { width: 1180, height: 780 }, 1),
   );
 });
+
+test("size failure persists screenshot and screen/native metrics before rejecting", async () => {
+  const { persistMeasuredLayout } = await import("./windows-suite-layout.mjs");
+  const events = [];
+  const observation = {
+    size: { name: "default", width: 1180, height: 780 },
+    requestedNativeSize: { width: 1196, height: 819 },
+    nativeResizeRequests: [
+      { width: 1180, height: 780 },
+      { width: 1196, height: 819 },
+    ],
+    windowMetrics: {
+      width: 1024,
+      height: 720,
+      outerWidth: 1040,
+      outerHeight: 759,
+      screen: { width: 1024, height: 768, availHeight: 728 },
+      pixelRatio: 1,
+    },
+    nativeWindow: { selectedWindow: { bounds: { width: 1040, height: 759 } } },
+    observed: {
+      viewport: { width: 1024, height: 720 },
+      main: { width: 800 },
+      notice: null,
+      editor: null,
+      horizontalOverflow: false,
+      clippedPrimaryControls: [],
+    },
+  };
+  await assert.rejects(
+    persistMeasuredLayout(observation, {
+      screenshot: async () => {
+        events.push("screenshot");
+        return "failure.png";
+      },
+      persist: async (saved) => {
+        events.push("persist");
+        assert.equal(saved.screenshotPath, "failure.png");
+        assert.deepEqual(saved.windowMetrics, observation.windowMetrics);
+      },
+    }),
+    /Actual client dimensions/,
+  );
+  assert.deepEqual(events, ["screenshot", "persist"]);
+});

@@ -55,6 +55,11 @@
   설치 identifier의 `-sic` 제어 창도 native/UIA에서 표시 중으로 보고되는 것을 확인했다.
   단순 visible 필터로 해결되지 않으므로 정확한 제품·보조 창 식별을 보정한다. 실제 두 앱 창이나
   modal의 모호성은 계속 거절하고, 보관 진단의 결과를 새 후보의 승격 근거로 재사용하지 않는다.
+- 보관 진단 `37178443869`에서 정확한 보조 창 제외 후 Control Center 종료·재개와 네 제품 실행은
+  통과했다. 다음 Workspace 복구 화면에서 요구한 기본 client 크기와 실제 치수가 달라 중단됐다.
+  일회성 hosted Windows에만 지원 display mode를 임시 적용하고, 크기·화면·소유 창 측정은
+  assertion 전에 보존하도록 보완했다. 기본 1180×780·최소 720×480 수용 기준은 유지한다.
+  남은 Workspace 종료 driver 세 곳도 접근성 dialog 이름으로 종료 검토를 식별하도록 맞췄다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 

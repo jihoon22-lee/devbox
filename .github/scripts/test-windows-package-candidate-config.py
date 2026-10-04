@@ -35,5 +35,7 @@ assert 'Verify complete user journeys and seal candidate' in w
 assert 'needs: [plan, assemble, packaged-runtime, installer-acceptance, windows-wsl2]' in w
 assert '--require-user-flows' in w
 assert 'collect-user-flow-evidence.mjs' in w
+installer = w.split('\n  installer-acceptance:', 1)[1].split('\n  windows-wsl2:', 1)[0]
+assert installer.index('prepare-windows-ui-display.ps1') < installer.index('run: node .github/scripts/windows-suite-user-flow.mjs')
 assert 'name: ${{ needs.plan.outputs.artifact_name }}' in w
 print('Four-product candidate source/provenance/native gates: PASS')

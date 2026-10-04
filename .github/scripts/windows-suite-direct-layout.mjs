@@ -68,8 +68,8 @@ export async function createDirectProductContext(product) {
         if (product === "workspace")
           await observeUntil(async () => {
             if (child.exitCode !== null) return true;
-            if ((await cdp.evaluate("document.body.innerText")).includes("Workspace 종료 검토")) {
-              await ui.click({ role: "button", name: "종료" });
+            if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
+              await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
               return true;
             }
             return false;
