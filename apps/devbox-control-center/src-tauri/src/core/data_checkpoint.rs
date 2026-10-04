@@ -448,6 +448,97 @@ pub fn acquire_quiesced(
 
 /// Verify a journal-selected checkpoint before any future restore review. Paths
 /// and contents stay private; only the native journal digest selects the record.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum CheckpointCompatibility {
+    CurrentGeneration,
+    DifferentGeneration,
+    Invalid,
+}
+/// Inspect a journal-pinned receipt without granting cross-generation restore.
+/// Read only the bounded, digest-pinned manifest; prepare/restore performs full verification.
+fn checkpoint_metadata(
+    parent: &Path,
+    expected: &Receipt,
+    installation_key: &str,
+) -> Result<(Manifest, Directory, Directory, usize)> {
+    if !uuid::Uuid::parse_str(&expected.id).is_ok_and(|id| id.to_string() == expected.id)
+        || !product_contract::commands::revision(&expected.revision)
+    {
+        return Err("checkpoint_manifest_invalid");
+    }
+    let parent_handle = Directory::open(parent)?;
+    let target_handle = Directory::open(&parent.join(&expected.id))?;
+    let path = parent.join(&expected.id).join("checkpoint.json");
+    ensure_no_links(&path).map_err(|_| "checkpoint_path_unsafe")?;
+    let (file, identity) =
+        open_filesystem_object(&path, false).map_err(|_| "checkpoint_manifest_missing")?;
+    let mut bytes = Vec::new();
+    file.take(MAX_MANIFEST + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "checkpoint_manifest_invalid")?;
+    if bytes.len() as u64 > MAX_MANIFEST
+        || hash(&bytes) != expected.revision
+        || filesystem_identity(&path, false).map_err(|_| "checkpoint_manifest_changed")? != identity
+    {
+        return Err("checkpoint_manifest_changed");
+    }
+    let manifest: Manifest =
+        serde_json::from_slice(&bytes).map_err(|_| "checkpoint_manifest_invalid")?;
+    if manifest.schema_version != 1
+        || manifest.id != expected.id
+        || manifest.installation_key != installation_key
+        || manifest.generation.is_empty()
+        || manifest.acquisition != "quiesced-product-copy/v1"
+        || manifest.products.len() != 4
+    {
+        return Err("checkpoint_owner_invalid");
+    }
+    let mut owners = std::collections::BTreeSet::new();
+    let mut total = 0_u64;
+    let mut count = 0_usize;
+    for product in &manifest.products {
+        if !product_contract::installation::PRODUCTS.contains(&product.owner.as_str())
+            || !owners.insert(&product.owner)
+            || (!product.present && (!product.files.is_empty() || !product.directories.is_empty()))
+        {
+            return Err("checkpoint_manifest_invalid");
+        }
+        for entry in &product.files {
+            total = total
+                .checked_add(entry.bytes)
+                .ok_or("checkpoint_size_limit")?;
+            count += 1;
+            if total > MAX_BYTES || count > MAX_FILES {
+                return Err("checkpoint_size_limit");
+            }
+        }
+    }
+    if total != expected.bytes || count != expected.files {
+        return Err("checkpoint_manifest_invalid");
+    }
+    parent_handle.check()?;
+    target_handle.check()?;
+    Ok((manifest, parent_handle, target_handle, bytes.len()))
+}
+
+pub fn restore_compatibility(
+    parent: &Path,
+    expected: &Receipt,
+    installation_key: &str,
+    current_generation: &str,
+    cancelled: &AtomicBool,
+) -> Result<CheckpointCompatibility> {
+    bounded(Instant::now(), cancelled)?;
+    let (manifest, _parent, _target, _bytes) =
+        checkpoint_metadata(parent, expected, installation_key)?;
+    Ok(if manifest.generation == current_generation {
+        CheckpointCompatibility::CurrentGeneration
+    } else {
+        CheckpointCompatibility::DifferentGeneration
+    })
+}
+
 pub fn verify(
     parent: &Path,
     expected: &Receipt,
@@ -465,41 +556,12 @@ fn verify_manifest(
     generation: &str,
     cancelled: &AtomicBool,
 ) -> Result<Manifest> {
-    if !uuid::Uuid::parse_str(&expected.id).is_ok_and(|id| id.to_string() == expected.id)
-        || !product_contract::commands::revision(&expected.revision)
-    {
-        return Err("checkpoint_manifest_invalid");
-    }
-    let parent_handle = Directory::open(parent)?;
-    let target = parent.join(&expected.id);
-    let target_handle = Directory::open(&target)?;
-    let marker_path = target.join("checkpoint.json");
-    ensure_no_links(&marker_path).map_err(|_| "checkpoint_path_unsafe")?;
-    let (marker, identity) =
-        open_filesystem_object(&marker_path, false).map_err(|_| "checkpoint_manifest_missing")?;
-    let mut bytes = Vec::new();
-    marker
-        .take(MAX_MANIFEST + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "checkpoint_manifest_invalid")?;
-    if bytes.len() as u64 > MAX_MANIFEST
-        || hash(&bytes) != expected.revision
-        || filesystem_identity(&marker_path, false).map_err(|_| "checkpoint_manifest_changed")?
-            != identity
-    {
-        return Err("checkpoint_manifest_changed");
-    }
-    let manifest: Manifest =
-        serde_json::from_slice(&bytes).map_err(|_| "checkpoint_manifest_invalid")?;
-    if manifest.schema_version != 1
-        || manifest.id != expected.id
-        || manifest.installation_key != installation_key
-        || manifest.generation != generation
-        || manifest.acquisition != "quiesced-product-copy/v1"
-        || manifest.products.len() != 4
-    {
+    let (manifest, parent_handle, target_handle, manifest_bytes) =
+        checkpoint_metadata(parent, expected, installation_key)?;
+    if manifest.generation != generation {
         return Err("checkpoint_owner_invalid");
     }
+    let target = parent.join(&expected.id);
     let mut owners = std::collections::BTreeSet::new();
     let started = Instant::now();
     let mut total = 0_u64;
@@ -563,7 +625,7 @@ fn verify_manifest(
             .map_err(|_| "checkpoint_path_unsafe")?;
         if name == "checkpoint.pending" {
             let (pending, _) = copy_or_hash(&entry.path(), None, started, cancelled)?;
-            if pending.sha256 != expected.revision || pending.bytes != bytes.len() as u64 {
+            if pending.sha256 != expected.revision || pending.bytes != manifest_bytes as u64 {
                 return Err("checkpoint_copy_changed");
             }
             continue;
@@ -798,6 +860,55 @@ mod tests {
         ));
         drop(store);
         assert!(crate::core::delivery_store::Store::open(center).is_ok());
+    }
+    #[test]
+    fn recovery_compatibility_verifies_old_receipts_without_authorizing_restore() {
+        let root = tempdir().unwrap();
+        let backup = tempdir().unwrap();
+        let sources = sources(root.path());
+        fs::create_dir(&sources["knowledge"]).unwrap();
+        fs::write(sources["knowledge"].join("note.txt"), b"owned fixture").unwrap();
+        let key = "a".repeat(64);
+        let cancelled = AtomicBool::new(false);
+        let receipt =
+            acquire_quiesced(&sources, backup.path(), &key, "previous", &cancelled).unwrap();
+        assert_eq!(
+            restore_compatibility(backup.path(), &receipt, &key, "previous", &cancelled).unwrap(),
+            CheckpointCompatibility::CurrentGeneration
+        );
+        assert_eq!(
+            restore_compatibility(backup.path(), &receipt, &key, "current", &cancelled).unwrap(),
+            CheckpointCompatibility::DifferentGeneration
+        );
+        assert_eq!(
+            verify(backup.path(), &receipt, &key, "current", &cancelled),
+            Err("checkpoint_owner_invalid")
+        );
+        assert_eq!(
+            restore_compatibility(
+                backup.path(),
+                &receipt,
+                &"b".repeat(64),
+                "current",
+                &cancelled
+            ),
+            Err("checkpoint_owner_invalid")
+        );
+        fs::write(
+            backup.path().join(&receipt.id).join("knowledge/note.txt"),
+            b"tampered",
+        )
+        .unwrap();
+        assert_eq!(
+            restore_compatibility(backup.path(), &receipt, &key, "current", &cancelled).unwrap(),
+            CheckpointCompatibility::DifferentGeneration
+        );
+        assert!(verify(backup.path(), &receipt, &key, "previous", &cancelled).is_err());
+        let marker = backup.path().join(&receipt.id).join("checkpoint.json");
+        fs::write(marker, b"tampered manifest").unwrap();
+        assert!(
+            restore_compatibility(backup.path(), &receipt, &key, "current", &cancelled).is_err()
+        );
     }
     #[test]
     fn restore_preparation_keeps_later_data_and_rejects_a_stale_preimage() {

@@ -407,8 +407,16 @@ pub struct InstallationState {
 }
 #[derive(Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+pub struct RestoreCheckpoint {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub receipt: crate::core::data_checkpoint::Receipt,
+    pub compatibility: crate::core::data_checkpoint::CheckpointCompatibility,
+}
+#[derive(Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreInventory {
-    pub checkpoints: Vec<crate::core::data_checkpoint::Receipt>,
+    pub checkpoints: Vec<RestoreCheckpoint>,
     pub operations: Vec<RestoreOperation>,
     pub active_operation: Option<String>,
     pub installation: InstallationState,

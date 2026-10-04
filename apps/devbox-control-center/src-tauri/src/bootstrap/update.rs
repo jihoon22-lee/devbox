@@ -759,6 +759,28 @@ pub(super) fn install(root: &Path, payload_path: &Path, image: &Path) -> Result<
     )
 }
 
+fn retain_update_checkpoints(
+    journal: &mut Journal,
+    previous: &[data_checkpoint::Receipt],
+) -> Result<()> {
+    // Store::begin publishes only revision zero. Retained history is part of
+    // the initial validated state, not a post-publication journal mutation.
+    let mut initial = journal.clone();
+    initial.data_checkpoints = previous.to_vec();
+    initial.validate()?;
+    *journal = initial;
+    Ok(())
+}
+
+fn record_update_checkpoint(
+    journal: &mut Journal,
+    checkpoint: &data_checkpoint::Receipt,
+) -> Result<bool> {
+    let revision = journal.revision;
+    journal.record_checkpoint(revision, checkpoint.clone())?;
+    Ok(journal.revision != revision)
+}
+
 pub(super) fn execute(
     root: &Path,
     payload_path: &Path,
@@ -1041,12 +1063,14 @@ pub(super) fn execute(
         let store = Store::open(&live["control-center"])?;
         let (mut journal, mut digest) = store.read()?.ok_or("bootstrap_journal_missing")?;
         if journal.candidate == plan.original.manifest && journal.phase == Phase::Complete {
+            let retained = journal.data_checkpoints.clone();
             journal = Journal::begin(
                 id.into(),
                 key.clone(),
                 Some(plan.original.manifest.clone()),
                 plan.candidate.manifest.clone(),
             )?;
+            retain_update_checkpoints(&mut journal, &retained)?;
             digest = store.begin(Some(&digest), &journal)?;
         }
         if journal.candidate != plan.candidate.manifest
@@ -1054,6 +1078,11 @@ pub(super) fn execute(
             || journal.installation_key != key
         {
             return Err("update_journal_changed");
+        }
+        // Publish the verified rollback snapshot in the candidate's recovery
+        // inventory before exposing its health stage. Resume is idempotent.
+        if record_update_checkpoint(&mut journal, &plan.checkpoint)? {
+            digest = store.write(Some(&digest), &journal)?;
         }
         while matches!(
             journal.phase,
@@ -1223,6 +1252,75 @@ mod tests {
         };
         write_records(&root, &plan.original, &plan.original.activation).unwrap();
         (Temp(root), plan)
+    }
+    #[test]
+    fn subsequent_update_preserves_earlier_recovery_checkpoint_inventory() {
+        let (root, plan) = fixture();
+        let directory = root.0.join("journal-fixture");
+        fs::create_dir(&directory).unwrap();
+        let store = Store::open(&directory).unwrap();
+        let mut old = Journal::begin(
+            "previous-operation".into(),
+            plan.key.clone(),
+            None,
+            plan.original.manifest.clone(),
+        )
+        .unwrap();
+        let mut earlier = plan.checkpoint.clone();
+        earlier.id = uuid::Uuid::new_v4().to_string();
+        old.data_checkpoints.push(earlier.clone());
+        let mut digest = store.begin(None, &old).unwrap();
+        old.phase = Phase::Complete;
+        old.committed = true;
+        old.revision += 1;
+        digest = store.write(Some(&digest), &old).unwrap();
+        let mut next = Journal::begin(
+            plan.id.clone(),
+            plan.key.clone(),
+            Some(plan.original.manifest.clone()),
+            plan.candidate.manifest.clone(),
+        )
+        .unwrap();
+        retain_update_checkpoints(&mut next, &old.data_checkpoints).unwrap();
+        assert_eq!(next.revision, 0);
+        digest = store.begin(Some(&digest), &next).unwrap();
+        record_update_checkpoint(&mut next, &plan.checkpoint).unwrap();
+        store.write(Some(&digest), &next).unwrap();
+        drop(store);
+        let (mut resumed, digest) = Store::inspect(&directory).unwrap().unwrap();
+        assert_eq!(resumed.data_checkpoints, [earlier, plan.checkpoint.clone()]);
+        assert!(!record_update_checkpoint(&mut resumed, &plan.checkpoint).unwrap());
+        let (unchanged, current) = Store::inspect(&directory).unwrap().unwrap();
+        assert_eq!(unchanged, resumed);
+        assert_eq!(current, digest);
+    }
+    #[test]
+    fn candidate_health_registers_original_checkpoint_once_and_rejects_conflict() {
+        let (_root, plan) = fixture();
+        let mut journal = Journal::begin(
+            plan.id.clone(),
+            plan.key.clone(),
+            Some(plan.original.manifest.clone()),
+            plan.candidate.manifest.clone(),
+        )
+        .unwrap();
+        assert!(journal.data_checkpoints.is_empty());
+        assert!(record_update_checkpoint(&mut journal, &plan.checkpoint).unwrap());
+        assert_eq!(
+            journal.data_checkpoints,
+            std::slice::from_ref(&plan.checkpoint)
+        );
+        let revision = journal.revision;
+        assert!(!record_update_checkpoint(&mut journal, &plan.checkpoint).unwrap());
+        assert_eq!(journal.revision, revision);
+        let mut changed = plan.checkpoint.clone();
+        changed.revision = "e".repeat(64);
+        assert_eq!(
+            record_update_checkpoint(&mut journal, &changed),
+            Err("suite_checkpoint_conflict")
+        );
+        assert_eq!(journal.data_checkpoints, [plan.checkpoint]);
+        assert_eq!(journal.revision, revision);
     }
     #[test]
     fn interrupted_metadata_publication_accepts_only_the_two_pinned_generations() {
