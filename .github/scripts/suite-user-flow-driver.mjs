@@ -1,9 +1,10 @@
 // Observe accessibility/layout via CDP; all renderer actions use real input events.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
   if (typeof closeOwnedWindow !== "function") throw new Error("Owned native close adapter required");
-  async function locate({ role, name, scope }) {
+  async function locate({ role, name, scope }, allowAbsent = false) {
     if (!role || typeof name !== "string") throw new Error("Exact accessible target required");
     const { nodes } = await cdp.command("Accessibility.getFullAXTree");
     let candidates = nodes;
@@ -12,6 +13,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       const ancestors = nodes.filter(
         (node) => !node.ignored && node.role?.value === scope.role && node.name?.value === scope.name,
       );
+      if (allowAbsent && ancestors.length === 0) return null;
       if (ancestors.length !== 1) throw new Error("Accessible scope must be unique");
       const descendants = new Set();
       const queue = [...(ancestors[0].childIds ?? [])];
@@ -25,8 +27,27 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       candidates = nodes.filter((node) => descendants.has(node.nodeId));
     }
     const found = candidates.filter((n) => !n.ignored && n.role?.value === role && n.name?.value === name);
+    if (allowAbsent && found.length === 0) return null;
     if (found.length !== 1) throw new Error(`Expected one accessible ${role}: ${name}; found ${found.length}`);
     return { ...found[0], axNodes: nodes };
+  }
+  async function waitForTarget(target, { timeoutMs = 10000 } = {}) {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30000)
+      throw new Error("Bounded target readiness timeout required");
+    const deadline = performance.now() + timeoutMs;
+    do {
+      const node = await locate(target, true);
+      if (
+        node?.backendDOMNodeId &&
+        !node.properties?.some((property) => property.name === "disabled" && property.value?.value === true)
+      )
+        return;
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) break;
+      // Only read accessibility state again; never retry an input action.
+      await delay(Math.min(100, remaining));
+    } while (performance.now() < deadline);
+    throw new Error(`Timed out waiting for accessible ${target.role}: ${target.name}`);
   }
   async function click(target) {
     const node = await locate(target);
@@ -119,6 +140,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
   }
   return {
     click,
+    waitForTarget,
     press,
     async fill(target, text) {
       await click(target);

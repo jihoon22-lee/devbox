@@ -184,3 +184,48 @@ test("a detached DOM validation fails closed while releasing both handles", asyn
   );
   assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 2);
 });
+
+test("target readiness observes async missing/disabled AX states without input then clicks once", async () => {
+  const cdp = transport();
+  const command = cdp.command;
+  let reads = 0;
+  cdp.command = async (method, params) => {
+    if (method === "Accessibility.getFullAXTree") {
+      reads++;
+      cdp.calls.push({ method, params });
+      return {
+        nodes:
+          reads === 1
+            ? []
+            : reads === 2
+              ? [{ ...control, properties: [{ name: "disabled", value: { value: true } }] }]
+              : [control],
+      };
+    }
+    return command(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await ui.waitForTarget({ role: "button", name: "Continue" });
+  assert.equal(reads, 3);
+  assert.equal(
+    cdp.calls.some((call) => call.method.startsWith("Input.") || call.method === "Runtime.evaluate"),
+    false,
+  );
+  await ui.click({ role: "button", name: "Continue" });
+  assert.equal(cdp.calls.filter((call) => call.method === "Input.dispatchMouseEvent").length, 2);
+});
+test("target readiness rejects ambiguity immediately and times out absent targets without action", async () => {
+  for (const nodes of [[control, control], []]) {
+    const cdp = transport(nodes);
+    const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+    await assert.rejects(
+      ui.waitForTarget({ role: "button", name: "Continue" }, { timeoutMs: 1 }),
+      nodes.length ? /found 2/ : /Timed out waiting/,
+    );
+    assert.equal(
+      cdp.calls.some((call) => call.method.startsWith("Input.")),
+      false,
+    );
+    if (nodes.length) assert.equal(cdp.calls.length, 1);
+  }
+});

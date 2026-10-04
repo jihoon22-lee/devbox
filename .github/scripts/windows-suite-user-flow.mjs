@@ -216,10 +216,12 @@ export async function run() {
   const text = () => center.cdp.evaluate("document.body.innerText");
   const openProducts = async (products) => {
     for (const product of products) {
-      await center.ui.click({
+      const target = {
         role: "button",
         name: `Devbox ${product === "api-studio" ? "API Studio" : product === "workspace" ? "Workspace" : "Knowledge"} 열기`,
-      });
+      };
+      await center.ui.waitForTarget(target);
+      await center.ui.click(target);
       await until(() => processFor(product).length === 1, `${product} visible launch`);
     }
   };
@@ -314,7 +316,12 @@ export async function run() {
     );
     center.cdp.close();
     await attach(previous);
-    if (expected !== "committed") await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    if (expected !== "committed") {
+      const recovery = { role: "button", name: "데이터 및 복구" };
+      await center.ui.waitForTarget(recovery);
+      await center.ui.click(recovery);
+      await center.ui.waitForTarget({ role: "button", name: "Devbox Workspace 열기" });
+    }
   };
   try {
     for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
