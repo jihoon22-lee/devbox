@@ -111,6 +111,25 @@
   최종 Windows CI에서 수행한다. 진단 `37186226140`은 installer 실행 전 WebView2 정책 조회에서
   중단돼 제품 결과가 없으며, 이후 runner는 종료·OS 오류·signal 코드도 보존한다.
 
+- 진단 `37186406654`는 기존 `c91d0326` payload로 UI-01의 네 제품·다섯 상태·두 크기 40개
+  화면 관찰과 PERF-01을 통과했다. 이는 필수 사용자 여정 40개 전체 통과를 뜻하지 않는다.
+  INSTALL-02·AGENT-01·HTTP-01–03·SEARCH-01/02도 통과했지만 전체 실행은 실패다.
+  철회본 위 재설치는 `bootstrap_update_pending`, 검토 후 업데이트 확정은
+  `bootstrap_root_unsafe`로 실패했다. 전자는 health 단계의 기존 dispatcher 보존 분기보다
+  먼저 적용되는 등록 차단, 후자는 설치 root를 현재 작업 폴더로 상속하는 helper 실행에서
+  원인을 확인했다. 배타적 writer lease·계획/설치 identity·경로 안전 검사는 유지한다.
+  runner는 Workspace Files 준비와 최초 실패 보존, API 환경 재시작 준비·webhook 종료 관찰,
+  MCP 합성 응답의 필수 캐시 메타데이터, Knowledge 키보드 이동을 보정한다.
+  v0.8.1의 명시적 저장소 준비 직후 typed unavailable은 정확한 역사 source·요청 provenance가
+  일치할 때만 기존 제한 시간 내 읽기 전용 재관측하며 native readiness 조건은 유지한다.
+  이 진단의 UI·성능 성공도 새 제품 bytes의 수용 근거로 이전하지 않는다.
+  보정 후 등록 정책 2개와 실제 자식 프로세스 작업 폴더 회귀를 확인했다. 후자는 기존 상속 방식
+  실패·명시적 helper 디렉터리 성공을 재현했다. 실제 Chromium에서는 CodeMirror의 Tab 들여쓰기와
+  동기 prompt의 key 응답 대기를 재현하고 Escape→Tab 및 명시적 prompt 결정의 동시 처리로
+  해결했다. Knowledge 입력 실패는 첫 화면을 보존한 뒤 검증한 합성 문서만 UI로 복구한다.
+  최종 묶음 catalog/workflow 검사 3.981초·RSS 약 133MiB·swap 0, Biome CI 통과.
+  추가 Windows 전용 소스의 실제 컴파일 및 새 제품 bytes 수용은 최종 CI·후보에서 확인한다.
+
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
 ## 1. 기존 감사 23건의 누락 없는 배정
