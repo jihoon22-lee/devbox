@@ -28,6 +28,8 @@ v0.9.0 소스의 네 사용자 제품 중 하나다. Overview·Source·Files·De
   표시한다. Source에서 생성한 작업 폴더의 등록 검토도 Overview로 이동하며 native 검증·명시 선택을 유지한다.
 - Overview의 원본 snapshot·profile/template/session/LSP/window-state import는 명시적 검토와
   source 재검증을 거쳐 적용한다. 원본 Git/worktree 파일을 복사하거나 자동 실행하지 않는다.
+- Agent 작업 폴더를 선택하면 새 native context를 먼저 반영한 뒤 프로젝트 목록과 작업을 조회한다.
+  이전 context로 조회해 작업 목록이 사라지는 오류를 방지하며 선택 권한 검사는 유지한다.
 
 ## 구현과 근거
 
