@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
+import { readFileSync } from "node:fs";
 import {
   establishResponseSelection,
   diagnosticStylesConfig,
@@ -24,6 +25,44 @@ const until = async (check) => {
   for (let attempt = 0; attempt < 3; attempt++) if (await check()) return;
   throw new Error("bounded observation timeout");
 };
+test("fixture reload restores guarded diagnostic styles before the workflow continues", async () => {
+  const source = readFileSync(new URL("./windows-api-workflow.mjs", import.meta.url), "utf8");
+  const afterReload = source.slice(
+    source.indexOf('  await ui.cdp.send("Page.reload");'),
+    source.indexOf('  await click(".api-feature-requests .env-item"'),
+  );
+  let stylesPresent = true;
+  const events = [];
+  const computed = { responsePresent: true, responseFlexShrink: "0", responseMinHeight: "320px" };
+  const evidence = { diagnosticStyles: {} };
+  await vm.runInNewContext(`(async () => { ${afterReload} })()`, {
+    ui: {
+      cdp: {
+        send: async () => {
+          stylesPresent = false;
+          events.push("reload");
+        },
+      },
+    },
+    wait: async () => events.push("ready"),
+    diagnosticStyles: {},
+    appliedDiagnosticCss: "fixture-css",
+    evidence,
+    applyDiagnosticStyles: async (_cdp, css, observe) => {
+      assert.equal(css, "fixture-css");
+      assert.equal(stylesPresent, false);
+      events.push("guarded-style-application");
+      stylesPresent = true;
+      observe(computed);
+    },
+  });
+  assert.equal(stylesPresent, true, "Page.reload discards authored stylesheet edits");
+  assert.deepEqual(events, ["reload", "ready", "guarded-style-application"]);
+  assert.equal(evidence.diagnosticStyles.computed, computed);
+  assert.equal(evidence.diagnosticStyles.applications.length, 1);
+  assert.equal(evidence.diagnosticStyles.applications[0].stage, "post-fixture-reload");
+  assert.equal(evidence.diagnosticStyles.applications[0].computed, computed);
+});
 test("requires both sender acknowledgment and recipient preview, recording intermediate states", async () => {
   const states = [{ ...ready, senderAcknowledged: false }, { ...ready, receiverPreview: false }, ready];
   const observed = [];

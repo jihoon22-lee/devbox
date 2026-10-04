@@ -124,7 +124,7 @@ async function success(component, method, args) {
   assert.equal(result.operation.outcome.state, "succeeded", method);
   return result.value;
 }
-async function start() {
+async function start(styleStage = "initial-start") {
   const port = await unusedPort();
   const policy = windowsProcessIsElevated() ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
   if (policy) {
@@ -150,6 +150,10 @@ async function start() {
   if (diagnosticStyles)
     await applyDiagnosticStyles(cdp, appliedDiagnosticCss, (computed) => {
       evidence.diagnosticStyles.computed = computed;
+      if (computed.responsePresent) {
+        evidence.diagnosticStyles.applications ??= [];
+        evidence.diagnosticStyles.applications.push({ stage: styleStage, computed });
+      }
     });
 }
 async function stop() {
@@ -180,6 +184,16 @@ try {
     '!!Array.from(document.querySelectorAll(".env-name")).find(button=>button.textContent==="S03 fixture")',
     "empty environment fixture did not load",
   );
+  // Reload replaces the authored stylesheet edited by start(). Apply the same
+  // diagnostic-only overlay to this document and verify its computed layout.
+  if (diagnosticStyles)
+    await applyDiagnosticStyles(ui.cdp, appliedDiagnosticCss, (computed) => {
+      evidence.diagnosticStyles.computed = computed;
+      if (computed.responsePresent) {
+        evidence.diagnosticStyles.applications ??= [];
+        evidence.diagnosticStyles.applications.push({ stage: "post-fixture-reload", computed });
+      }
+    });
   await click(".api-feature-requests .env-item", "S03 fixture");
   await wait(
     '!!document.querySelector(".env-var-secret.unconfigured")',
@@ -349,7 +363,7 @@ try {
   writeFileSync("product-foundation-evidence/api-workflow-knowledge.png", Buffer.from(shot.data, "base64"));
   await stop();
   progress("restart");
-  await start();
+  await start("restart");
   assert.equal((await success("api-studio.webhooks", "server_status")).running, false);
   assert.equal(hits, 1);
   const reopened = await success("api-studio.transforms", "get_knowledge_draft", { id: draftId });
