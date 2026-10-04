@@ -111,7 +111,7 @@ export class NoteDocument {
       if (this.beforeSwitch === hook) this.beforeSwitch = null;
     };
   }
-  async open(load: () => Promise<InboundNote>, discard: () => boolean): Promise<boolean> {
+  async open(load: () => Promise<InboundNote>, discard: () => boolean | Promise<boolean>): Promise<boolean> {
     const request = ++this.opening;
     if ((this.view.dirty || this.view.saving) && this.beforeSwitch) {
       try {
@@ -121,8 +121,11 @@ export class NoteDocument {
       }
       if (request !== this.opening) return false;
     }
-    if (this.view.dirty && !discard()) return false;
     const edits = this.edits;
+    if (this.view.dirty) {
+      if (!(await discard())) return false;
+      if (request !== this.opening || edits !== this.edits) return false;
+    }
     this.publish({ error: null });
     try {
       const note = await load();
@@ -147,7 +150,7 @@ export class NoteDocument {
       return false;
     }
   }
-  openPath(path: string, discard: () => boolean) {
+  openPath(path: string, discard: () => boolean | Promise<boolean>) {
     return this.open(async () => {
       const note = await this.read(path);
       if (note.content === null) throw new Error("파일이 삭제되었습니다. 현재 편집 내용은 유지됩니다.");

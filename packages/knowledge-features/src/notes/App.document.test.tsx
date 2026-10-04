@@ -1,3 +1,5 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
+vi.mock("@devbox/product-shell/confirm", () => ({ confirmAction: vi.fn().mockResolvedValue(true) }));
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
@@ -178,14 +180,14 @@ it("offers disk comparison and reviewed overwrite without losing the draft on co
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   await screen.findByRole("region", { name: "노트 저장 충돌" });
   expect(editor).toHaveValue("local draft");
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirmAction).mockResolvedValue(true);
   fireEvent.click(screen.getByRole("button", { name: /비교한 내용에 덮어쓰기/ }));
   await act(async () => {});
   expect(writeFile).toHaveBeenLastCalledWith("note.md", "local draft", "external-2");
 });
 
 it("keeps another note's unsaved buffer when a delayed context-menu deletion completes", async () => {
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirmAction).mockResolvedValue(true);
   const deleting = pending<void>();
   vi.mocked(deleteFile).mockReturnValueOnce(deleting.promise);
   render(<App />);
@@ -194,6 +196,7 @@ it("keeps another note's unsaved buffer when a delayed context-menu deletion com
   await screen.findByLabelText("note editor");
   fireEvent.contextMenu(first.closest("button")!);
   fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
+  await act(async () => {});
   expect(deleteFile).toHaveBeenCalledWith("note.md");
   fireEvent.click(screen.getByText("nested.md"));
   await act(async () => {});
@@ -204,4 +207,19 @@ it("keeps another note's unsaved buffer when a delayed context-menu deletion com
   });
   expect(screen.getByLabelText("note editor")).toHaveValue("B UNSAVED TEXT");
   expect(screen.getByText("● 저장되지 않음")).toBeInTheDocument();
+});
+
+it("waits for deletion confirmation and cancels without deleting", async () => {
+  const decision = pending<boolean>();
+  vi.mocked(confirmAction).mockReturnValueOnce(decision.promise);
+  render(<App />);
+  const first = await screen.findByText("note.md");
+  fireEvent.contextMenu(first.closest("button")!);
+  fireEvent.click(screen.getByRole("menuitem", { name: "삭제" }));
+  expect(deleteFile).not.toHaveBeenCalled();
+  await act(async () => {
+    decision.resolve(false);
+    await decision.promise;
+  });
+  expect(deleteFile).not.toHaveBeenCalled();
 });

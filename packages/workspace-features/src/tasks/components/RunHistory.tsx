@@ -1,3 +1,5 @@
+import { searchErrorMessage } from "../lib/taskPresentation";
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { usePolling } from "@devbox/hooks";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -128,12 +130,6 @@ function durationFilter(value: string): number | null {
   // the authoritative 0..30-day validation and returns a fixed error.
   if (!Number.isFinite(seconds) || !Number.isSafeInteger(millis)) return -1;
   return millis;
-}
-
-function searchErrorMessage(cause: unknown): string {
-  return String(cause) === "log-search-invalid-pattern"
-    ? "정규식 패턴이 올바르지 않습니다."
-    : "로그 검색을 완료하지 못했습니다.";
 }
 
 function levelLabel(level: LogLevel | null): string {
@@ -399,7 +395,8 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
   const handleStop = async () => {
     if (!jobId || selectedDefinition?.kind !== "job") return;
     const name = jobs.find((job) => job.id === jobId)?.name ?? "선택한 작업";
-    if (!window.confirm(`'${name}' 작업의 활성 실행을 중지할까요?`)) return;
+    if (!(await confirmAction(`'${name}' 작업의 활성 실행을 중지할까요?`))) return;
+    if (!mountedRef.current || logLensBusyRef.current) return;
     setActionBusy(true);
     try {
       await stopActiveRun(jobId);
@@ -461,11 +458,12 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     if (!run.logsAvailable || actionBusy || logLensBusyRef.current) return;
     const selectedStream = stream;
     if (
-      !window.confirm(
+      !(await confirmAction(
         `선택한 실행의 ${selectedStream} 로그를 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·경로·명령·환경변수는 handoff에 포함되지 않습니다.`,
-      )
+      ))
     )
       return;
+    if (!mountedRef.current || logLensBusyRef.current) return;
     const generation = ++logLensGeneration.current;
     const operation = ++logLensOperation.current;
     const context = { runId: run.id, stream: selectedStream };

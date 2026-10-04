@@ -187,3 +187,27 @@ main:focus-visible {
   gap: 8px;
   margin-block: 8px;
 }
+
+.product-confirm-dialog {
+  color: var(--db-color-text);
+  background: var(--db-color-surface);
+  border: 1px solid var(--db-color-border);
+  border-radius: var(--db-radius-lg);
+  padding: var(--db-space-6);
+  width: min(480px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  box-sizing: border-box;
+}
+.product-confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.product-confirm-dialog p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.product-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--db-space-2);
+}

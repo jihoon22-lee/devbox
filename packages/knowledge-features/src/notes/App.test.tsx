@@ -1,3 +1,5 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
+vi.mock("@devbox/product-shell/confirm", () => ({ confirmAction: vi.fn().mockResolvedValue(true) }));
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -335,7 +337,7 @@ describe("knowledge-base App — tree context menu", () => {
 
   it("이름변경 diff를 먼저 표시하고 전체 승인 뒤에만 transaction을 적용한다", async () => {
     vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
-    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmMock = vi.mocked(confirmAction).mockResolvedValue(true);
     render(<App />);
     const nested = treeButton(await screen.findByText("nested.md"));
 
@@ -458,7 +460,7 @@ describe("knowledge-base App — tree context menu", () => {
 });
 
 it("preserves a dirty note when Daily creation or a product open request is declined", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const confirm = vi.mocked(confirmAction).mockResolvedValue(false);
   vi.mocked(dailyNote).mockClear();
   const { rerender } = render(<App />);
   fireEvent.click(await screen.findByText("note.md"));

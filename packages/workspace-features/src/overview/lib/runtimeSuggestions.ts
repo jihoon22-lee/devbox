@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { MAX_EXPECTED_PORTS, parseExpectedPorts } from "./profileEditor";
 
 export interface RuntimePortMergeResult {
@@ -41,4 +42,13 @@ export function formatRuntimeFreshness(freshnessMs: number | null): string {
   if (freshnessMs < 60_000) return `${Math.floor(freshnessMs / 1_000)}초 전`;
   if (freshnessMs < 60 * 60_000) return `${Math.floor(freshnessMs / 60_000)}분 전`;
   return `${Math.floor(freshnessMs / (60 * 60_000))}시간 전`;
+}
+
+export async function confirmStaleRuntimePorts(status: string, count: number): Promise<boolean> {
+  return (
+    status !== "stale" ||
+    (await confirmAction(
+      `WSL runtime snapshot이 오래되었습니다. 선택한 포트 ${count}개를 편집 초안에만 반영할까요? 프로필은 저장 버튼을 누르기 전까지 변경되지 않습니다.`,
+    ))
+  );
 }

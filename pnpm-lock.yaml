@@ -338,6 +338,9 @@ importers:
       '@devbox/hooks':
         specifier: workspace:*
         version: link:../hooks
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../tokens

@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import type { Screen, WorkspaceDiagnosticState } from "./lib/taskViewTypes";
 import { useTaskOperations } from "./hooks/useTaskOperations";
 import { TaskControlDialog } from "./components/TaskControlDialog";
@@ -979,11 +980,11 @@ export default function App({
     const workspaceOperation = workspaceOperationByRootJobId.get(job.id);
     const operationActive = workspaceOperation && !isWorkspaceOperationTerminal(workspaceOperation.status);
     if (
-      !window.confirm(
+      !(await confirmAction(
         operationActive
           ? `'${job.name}' workspace task orchestration을 중지할까요?`
           : `'${job.name}' 작업의 활성 실행을 중지할까요?`,
-      )
+      ))
     )
       return;
     return runTaskAction(async () => {
@@ -1015,7 +1016,7 @@ export default function App({
   };
 
   const handleServiceStop = async (service: Job) => {
-    if (!window.confirm(`'${service.name}' 서비스를 정지할까요?`)) return;
+    if (!(await confirmAction(`'${service.name}' 서비스를 정지할까요?`))) return;
     return runTaskAction(async () => {
       try {
         await stopService(service.id);
@@ -1119,7 +1120,7 @@ export default function App({
   };
 
   const handleDelete = async (job: Job) => {
-    if (!window.confirm(`'${job.name}' 작업을 삭제할까요? 실행 기록도 함께 삭제됩니다.`)) return;
+    if (!(await confirmAction(`'${job.name}' 작업을 삭제할까요? 실행 기록도 함께 삭제됩니다.`))) return;
     return runTaskAction(async () => {
       try {
         await deleteJob(job.id);
@@ -1169,7 +1170,8 @@ export default function App({
   };
 
   const handleServiceDelete = async (service: Job) => {
-    if (!window.confirm(`'${service.name}' 서비스를 삭제할까요? 저장된 정의와 실행 기록도 함께 삭제됩니다.`)) return;
+    if (!(await confirmAction(`'${service.name}' 서비스를 삭제할까요? 저장된 정의와 실행 기록도 함께 삭제됩니다.`)))
+      return;
     return runTaskAction(async () => {
       try {
         await deleteService(service.id);
@@ -1183,7 +1185,7 @@ export default function App({
 
   const handleTrustWorkspaceTask = async (task: WorkspaceTaskState) => {
     if (busy || task.trusted) return;
-    const approved = window.confirm(
+    const approved = await confirmAction(
       `현재 source revision ${shortRevision(task.revision)}을 신뢰할까요?\n` +
         "이 승인은 이 revision을 실행 대상으로 사용할 수 있도록 권한을 부여하지만, task를 실행하거나 프로세스를 시작하지 않습니다.",
     );

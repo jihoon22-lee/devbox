@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import type { AssertionResult } from "./lib/assertions";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { isTauri } from "./lib/isTauri";
@@ -203,6 +204,15 @@ export function ResponseViewer({
   onError,
 }: ResponseViewerProps) {
   const [tab, setTab] = useState<ResponseTab>("body");
+  const confirmationMounted = useRef(true);
+  const currentResponse = useRef(response);
+  currentResponse.current = response;
+  useEffect(() => {
+    confirmationMounted.current = true;
+    return () => {
+      confirmationMounted.current = false;
+    };
+  }, []);
   const [copyingRaw, setCopyingRaw] = useState<RawResponseCopyKind | null>(null);
   const [savingBinary, setSavingBinary] = useState(false);
   const [sendingSelection, setSendingSelection] = useState(false);
@@ -270,13 +280,14 @@ export function ResponseViewer({
   const copyRaw = async (kind: RawResponseCopyKind) => {
     if (!response?.raw_headers_available || !response.response_id || copyingRaw) return;
     const label = kind === "headers" ? "header" : "Set-Cookie";
-    const confirmed = window.confirm(
+    const confirmed = await confirmAction(
       `원문 응답 ${label}에는 session, token, Cookie 같은 민감정보가 포함될 수 있습니다. 클립보드에 한 번 복사할까요?`,
     );
-    if (!confirmed) return;
+    if (!confirmed || !confirmationMounted.current || currentResponse.current !== response) return;
     setCopyingRaw(kind);
     try {
       const raw = await onRawCopy(kind, response.response_id);
+      if (!confirmationMounted.current || currentResponse.current !== response) return;
       await navigator.clipboard.writeText(raw);
     } catch {
       onError(`원문 응답 ${label}를 안전하게 복사하지 못했습니다.`);

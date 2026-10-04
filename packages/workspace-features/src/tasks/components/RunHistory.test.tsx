@@ -458,3 +458,13 @@ describe("RunHistory", () => {
     await Promise.resolve();
   });
 });
+
+vi.mock("@devbox/product-shell/confirm", () => ({
+  confirmAction: async (message: string) => {
+    try {
+      return (await window.confirm(message)) === true;
+    } catch {
+      return false;
+    }
+  },
+}));

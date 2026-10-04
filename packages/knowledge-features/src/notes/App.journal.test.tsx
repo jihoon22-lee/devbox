@@ -1,3 +1,5 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
+vi.mock("@devbox/product-shell/confirm", () => ({ confirmAction: vi.fn().mockResolvedValue(true) }));
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -65,7 +67,7 @@ beforeEach(() => {
   mock.clear.mockReset().mockResolvedValue(undefined);
   mock.discard.mockReset().mockResolvedValue(undefined);
   localStorage.clear();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirmAction).mockResolvedValue(true);
 });
 afterEach(() => {
   cleanup();

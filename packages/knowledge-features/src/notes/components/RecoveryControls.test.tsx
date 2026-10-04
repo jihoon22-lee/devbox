@@ -1,3 +1,5 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
+vi.mock("@devbox/product-shell/confirm", () => ({ confirmAction: vi.fn().mockResolvedValue(true) }));
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import RecoveryControls from "./RecoveryControls";
@@ -20,7 +22,7 @@ beforeEach(() => {
   mock.write.mockResolvedValue({ content: entry.content, revision: "published" });
   mock.clear.mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(confirmAction).mockResolvedValue(true);
 });
 afterEach(() => {
   cleanup();
@@ -84,4 +86,23 @@ it("ignores a late missing source probe after another document opens", async () 
   });
   expect(doc.snapshot().content).toBe("B");
   expect(screen.queryByRole("button", { name: "삭제된 노트 재생성" })).toBeNull();
+});
+
+it("waits for restore confirmation and cancel preserves the journal", async () => {
+  let answer!: (value: boolean) => void;
+  vi.mocked(confirmAction).mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      answer = resolve;
+    }),
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "missing.md 열어서 확인" }));
+  fireEvent.click(await screen.findByRole("button", { name: "삭제된 노트 재생성" }));
+  expect(mock.write).not.toHaveBeenCalled();
+  expect(mock.clear).not.toHaveBeenCalled();
+  await act(async () => {
+    answer(false);
+  });
+  expect(mock.write).not.toHaveBeenCalled();
+  expect(mock.clear).not.toHaveBeenCalled();
 });

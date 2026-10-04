@@ -752,3 +752,13 @@ describe("Run Manager context menus", () => {
     }
   });
 });
+
+vi.mock("@devbox/product-shell/confirm", () => ({
+  confirmAction: async (message: string) => {
+    try {
+      return (await window.confirm(message)) === true;
+    } catch {
+      return false;
+    }
+  },
+}));

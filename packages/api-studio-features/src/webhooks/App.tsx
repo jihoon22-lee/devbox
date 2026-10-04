@@ -1,3 +1,5 @@
+import { reviewedOpenApiDraft } from "./lib/reviewedOpenApi";
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { buildRuleConflictSummary } from "./lib/ruleConflictSummary";
 import { usePolling } from "@devbox/hooks";
 import { isLoopbackAddress } from "./lib/listenerAddress";
@@ -45,12 +47,7 @@ import {
 } from "./api";
 import { buildHistoryContextMenu, buildRuleContextMenu } from "./lib/contextMenus";
 import { buildExampleCurl, type CurlShell } from "./lib/exampleCurl";
-import {
-  openApiOperationToRule,
-  previewOpenApiRules,
-  type OpenApiRuleOperation,
-  type OpenApiRulePreview,
-} from "./lib/openapiRules";
+import { previewOpenApiRules, type OpenApiRuleOperation, type OpenApiRulePreview } from "./lib/openapiRules";
 import {
   MAX_METHOD_CHARS,
   MAX_RULE_PRIORITY,
@@ -363,9 +360,12 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   }, [contextRule?.id, ruleContextMenu.close, rules]);
 
   const onStart = async () => {
-    if (lanBind && !window.confirm("LAN 공개는 외부 접근을 허용합니다. 이 컴퓨터의 다른 장치에서 요청을 받을까요?"))
+    if (
+      lanBind &&
+      !(await confirmAction("LAN 공개는 외부 접근을 허용합니다. 이 컴퓨터의 다른 장치에서 요청을 받을까요?"))
+    )
       return;
-    if (!beginBusy()) return;
+    if (!mountedRef.current || !beginBusy()) return;
     setError(null);
     try {
       const bind = lanBind ? "0.0.0.0" : "127.0.0.1";
@@ -439,18 +439,11 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     void onOpenApiFile(file, format);
   };
 
-  const onApplyOpenApiDraft = () => {
+  const onApplyOpenApiDraft = async () => {
     if (!openApiPreview || !selectedOpenApiOperationId) return;
     const operation = openApiPreview.operations.find(({ id }) => id === selectedOpenApiOperationId);
-    if (!operation || !operation.applyable) return;
-    const draft = openApiOperationToRule(operation);
-    if (!draft) return;
-    if (
-      !window.confirm(
-        `${operation.method} ${operation.path} → ${operation.status} operation을 규칙 초안으로 편집기에 채울까요?`,
-      )
-    )
-      return;
+    const draft = await reviewedOpenApiDraft(operation);
+    if (!draft || !mountedRef.current) return;
     setRuleDraft(draft);
     setOpenApiError(null);
   };
@@ -520,9 +513,13 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       if (!mountedRef.current) return;
       const candidate = { ...draft, id: preview.candidateId };
       const requiresConfirmation = preview.requiresConfirmation || preview.conflicts.length > 0;
-      if (requiresConfirmation && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))) {
+      if (
+        requiresConfirmation &&
+        !(await confirmAction(buildRuleConflictSummary(candidate, preview.conflicts, rules)))
+      ) {
         return;
       }
+      if (!mountedRef.current) return;
       await setRule(candidate, requiresConfirmation);
       if (!mountedRef.current) return;
       setRuleDraft(emptyRule());
@@ -594,8 +591,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   };
 
   const onDeleteHistory = async (request: RequestRecord) => {
-    if (!window.confirm(`'${request.method} ${request.url}' 요청 기록을 삭제할까요?`)) return;
-    if (!beginBusy()) return;
+    if (!(await confirmAction(`'${request.method} ${request.url}' 요청 기록을 삭제할까요?`))) return;
+    if (!mountedRef.current || !beginBusy()) return;
     setError(null);
     try {
       await deleteHistory(request.id);
@@ -610,8 +607,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   };
 
   const onClearHistory = async () => {
-    if (!window.confirm("수신 요청 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
-    if (!beginBusy()) return;
+    if (!(await confirmAction("수신 요청 기록을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다."))) return;
+    if (!mountedRef.current || !beginBusy()) return;
     setError(null);
     try {
       await clearHistory();
@@ -786,8 +783,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   };
 
   const onDeleteFixture = async (fixture: CapturedFixture) => {
-    if (!window.confirm("선택한 마스킹된 fixture를 삭제할까요?")) return;
-    if (!beginBusy()) return;
+    if (!(await confirmAction("선택한 마스킹된 fixture를 삭제할까요?"))) return;
+    if (!mountedRef.current || !beginBusy()) return;
     setError(null);
     try {
       await deleteFixture(fixture.id);
@@ -801,8 +798,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   };
 
   const onClearFixtures = async () => {
-    if (!window.confirm("저장된 마스킹된 fixture를 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
-    if (!beginBusy()) return;
+    if (!(await confirmAction("저장된 마스킹된 fixture를 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다."))) return;
+    if (!mountedRef.current || !beginBusy()) return;
     setError(null);
     try {
       await clearFixtures();
@@ -821,8 +818,8 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       setError(STALE_RULE_MESSAGE);
       return;
     }
-    if (!window.confirm(`'${currentRule.method ?? "*"} ${currentRule.path}' 규칙을 삭제할까요?`)) return;
-    if (!beginBusy()) return;
+    if (!(await confirmAction(`'${currentRule.method ?? "*"} ${currentRule.path}' 규칙을 삭제할까요?`))) return;
+    if (!mountedRef.current || !beginBusy()) return;
     setError(null);
     try {
       await deleteRule(targetRule.id);
@@ -872,9 +869,13 @@ export default function App({ active = true }: { active?: boolean } = {}) {
       if (!mountedRef.current) return;
       const candidate = { ...duplicate, id: preview.candidateId };
       const requiresConfirmation = preview.requiresConfirmation || preview.conflicts.length > 0;
-      if (requiresConfirmation && !window.confirm(buildRuleConflictSummary(candidate, preview.conflicts, rules))) {
+      if (
+        requiresConfirmation &&
+        !(await confirmAction(buildRuleConflictSummary(candidate, preview.conflicts, rules)))
+      ) {
         return;
       }
+      if (!mountedRef.current) return;
       await setRule(candidate, requiresConfirmation);
       if (!mountedRef.current) return;
       await refresh();
@@ -925,7 +926,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     });
   };
 
-  const onHistoryContextSelect = (id: string) => {
+  const onHistoryContextSelect = async (id: string) => {
     const request = contextHistory;
     if (!request) {
       setError(STALE_HISTORY_MESSAGE);
@@ -934,10 +935,10 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     if (id === "copy-masked") {
       void copyHistoryText(() => copyMaskedHistory(request.id), "마스킹된 요청을 복사하지 못했습니다.");
     } else if (id === "copy-raw") {
-      const confirmed = window.confirm(
+      const confirmed = await confirmAction(
         "원본 요청에는 Authorization, Cookie, API key 같은 민감정보가 포함될 수 있습니다. 클립보드에 한 번 복사할까요?",
       );
-      if (confirmed) {
+      if (confirmed && mountedRef.current) {
         void copyHistoryText(() => copyRawHistory(request.id), "원본 요청을 안전하게 만들거나 복사하지 못했습니다.");
       }
     } else if (id === "copy-headers") {

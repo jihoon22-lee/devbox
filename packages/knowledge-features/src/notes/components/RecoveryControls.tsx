@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import ChangeSetPreview from "@devbox/diff-view";
 import {
@@ -108,7 +109,7 @@ export default function RecoveryControls({
       }
       const opened = await document.open(
         async () => ({ ...disk, path: entry.path, content: disk.content! }),
-        () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"),
+        () => confirmAction("저장하지 않은 변경사항이 있습니다. 계속할까요?"),
       );
       if (!current(request) || !opened) return;
       const after = document.snapshot();
@@ -150,9 +151,12 @@ export default function RecoveryControls({
     const entry = preview;
     const target = anotherName ? prompt("복원할 새 노트 이름 (.md)", entry.path)?.trim() : entry.path;
     if (!target || (!anotherName && !missingRevision)) return;
-    if (!confirm(`${target}에 복구본을 복원할까요? 기존 파일은 덮어쓰지 않습니다.`)) return;
-    const request = ++generation.current;
+    const decisionGeneration = generation.current;
     const source = document.snapshot().sourceVersion;
+    if (!(await confirmAction(`${target}에 복구본을 복원할까요? 기존 파일은 덮어쓰지 않습니다.`))) return;
+    if (busyRef.current || generation.current !== decisionGeneration || document.snapshot().sourceVersion !== source)
+      return;
+    const request = ++generation.current;
     changeBusy(true);
     setError("");
     try {

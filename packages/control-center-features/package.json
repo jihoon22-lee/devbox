@@ -26,7 +26,8 @@
     "@tauri-apps/plugin-opener": "^2",
     "@devbox/tokens": "workspace:*",
     "@devbox/context-menu": "workspace:*",
-    "@devbox/hooks": "workspace:*"
+    "@devbox/hooks": "workspace:*",
+    "@devbox/product-shell": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

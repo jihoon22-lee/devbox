@@ -18,7 +18,8 @@
     "./launcher-adapter": "./src/launcher/adapter.ts",
     "./incoming": "./src/incoming.tsx",
     "./undo": "./src/undo.tsx",
-    "./issues": "./src/issues.ts"
+    "./issues": "./src/issues.ts",
+    "./confirm": "./src/confirm.tsx"
   },
   "scripts": {
     "build": "tsc --noEmit",

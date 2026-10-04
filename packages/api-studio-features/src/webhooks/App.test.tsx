@@ -1,3 +1,4 @@
+import * as confirmation from "@devbox/product-shell/confirm";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPENAPI_DOCUMENT_LIMITS } from "@devbox/openapi";
@@ -285,7 +286,7 @@ beforeEach(() => {
   stopServerMock.mockReset().mockResolvedValue({ running: false, address: null });
   confirmMock.mockReset().mockReturnValue(false);
   writeTextMock.mockReset().mockResolvedValue(undefined);
-  Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
+  vi.spyOn(confirmation, "confirmAction").mockImplementation(async (message) => confirmMock(message));
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: writeTextMock },
@@ -765,7 +766,7 @@ describe("Webhook Lab history and rule context menus", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(apply);
     expect((screen.getByLabelText("method") as HTMLInputElement).value).toBe("POST");
-    expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/payments");
+    await waitFor(() => expect((screen.getByLabelText("path") as HTMLInputElement).value).toBe("/payments"));
     expect((screen.getByLabelText("status") as HTMLInputElement).value).toBe("202");
     expect((screen.getByLabelText("priority") as HTMLInputElement).value).toBe("0");
     expect(setRuleMock).not.toHaveBeenCalled();

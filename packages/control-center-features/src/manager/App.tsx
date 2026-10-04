@@ -1,3 +1,5 @@
+import { confirmDevSetupApply, DEV_SETUP_CONFIGURATION_EXPIRED } from "./lib/confirmDevSetupApply";
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyDevSetupConfiguration,
@@ -169,7 +171,6 @@ const DEV_SETUP_CONFIGURATION_EXPORT_ERROR = "정규화된 WinGet Configuration�
 const DEV_SETUP_CONFIGURATION_APPLY_ERROR = "Dev Setup 구성을 적용할 수 없습니다. 만료되었거나 최신 검토가 필요합니다.";
 const DEV_SETUP_CONFIGURATION_CANCEL_ERROR = "Dev Setup 적용 취소를 완료할 수 없습니다.";
 const DEV_SETUP_CONFIGURATION_DISCARD_ERROR = "Dev Setup 구성 검토를 폐기할 수 없습니다.";
-const DEV_SETUP_CONFIGURATION_EXPIRED = "Dev Setup 적용 미리 보기가 만료되었습니다. 구성을 다시 가져오세요.";
 const DEV_SETUP_CONFIGURATION_CANCELLED = "Dev Setup 적용을 취소했습니다.";
 
 const DEV_SETUP_CONFIGURATION_DESIRED_LABELS: Record<string, string> = {
@@ -612,10 +613,6 @@ export default function App({ mode }: { mode?: ToolsMode } = {}) {
 
   const onApplyDevSetupConfiguration = useCallback(async () => {
     const review = devSetupConfigurationReview;
-    const hasUnknownPackage =
-      review?.packages.some(
-        (packageReview) => packageReview.currentState === "unknown" || packageReview.action === "verify",
-      ) ?? false;
     if (
       !review ||
       devSetupConfigurationConsumed ||
@@ -625,29 +622,18 @@ export default function App({ mode }: { mode?: ToolsMode } = {}) {
       readBusyRef.current
     )
       return;
-    if (Date.now() >= review.expiresAtMs) {
-      setDevSetupConfigurationError(DEV_SETUP_CONFIGURATION_EXPIRED);
-      return;
-    }
-    if (hasUnknownPackage) {
-      setDevSetupConfigurationError("확인할 수 없는 패키지 상태가 있어 적용할 수 없습니다. 설치를 제안하지 않습니다.");
-      return;
-    }
-    if (
-      !review.canApply ||
-      !review.hasChanges ||
-      !devSetupReviewAcknowledged ||
-      !devSetupAgreementsAccepted ||
-      !devSetupAdminRiskAcknowledged
-    )
-      return;
-    if (
-      !window.confirm(
-        "정규화된 package-only 구성의 패키지 변경을 적용할까요? 네트워크와 UAC/관리자 권한이 필요할 수 있으며 자동 재부팅은 실행하지 않습니다.",
-      )
-    )
-      return;
+    if (!devSetupReviewAcknowledged || !devSetupAgreementsAccepted || !devSetupAdminRiskAcknowledged) return;
+    const confirmationRequest = devSetupConfigurationRequestIdRef.current;
+    if (!(await confirmDevSetupApply(review, setDevSetupConfigurationError))) return;
 
+    if (
+      !mountedRef.current ||
+      confirmationRequest !== devSetupConfigurationRequestIdRef.current ||
+      devSetupConfigurationApplyBusyRef.current ||
+      operationBusyRef.current ||
+      readBusyRef.current
+    )
+      return;
     const requestId = ++devSetupConfigurationApplyRequestIdRef.current;
     devSetupConfigurationApplyBusyRef.current = true;
     operationBusyRef.current = true;
@@ -714,8 +700,11 @@ export default function App({ mode }: { mode?: ToolsMode } = {}) {
 
   const onRelatedInstall = async (tool: RelatedTool) => {
     if (tool.installState !== "absent" || operationBusyRef.current || readBusyRef.current) return;
-    if (!window.confirm(`'${tool.displayName}'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.`))
+    if (
+      !(await confirmAction(`'${tool.displayName}'을 WinGet으로 설치할까요? WinGet이 공식 패키지 설치를 진행합니다.`))
+    )
       return;
+    if (!mountedRef.current || operationBusyRef.current || readBusyRef.current) return;
     const actionId = ++relatedActionIdRef.current;
     operationBusyRef.current = true;
     setBusy(`related:${tool.id}:install`);

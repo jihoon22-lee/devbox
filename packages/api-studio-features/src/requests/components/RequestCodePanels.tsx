@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { buildCurl, copyRevealedCurl } from "../lib/requestPresentation";
 import type { EnvVariable } from "../lib/environments";
 import type { RequestTemplate } from "../types";
@@ -20,6 +20,21 @@ export function RequestCodePanels({
   configurationError: string | null;
   onError: (error: string | null) => void;
 }) {
+  const mounted = useRef(true);
+  const latest = useRef({ request, environment, showCurl, configurationError });
+  latest.current = { request, environment, showCurl, configurationError };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrent = () =>
+    mounted.current &&
+    latest.current.request === request &&
+    latest.current.environment === environment &&
+    latest.current.showCurl &&
+    !latest.current.configurationError;
   return (
     <>
       {showCode && (
@@ -34,7 +49,10 @@ export function RequestCodePanels({
             <button className="copy-btn" onClick={() => void navigator.clipboard.writeText(buildCurl(request))}>
               마스킹 복사
             </button>
-            <button className="copy-btn" onClick={() => void copyRevealedCurl(request, environment, onError)}>
+            <button
+              className="copy-btn"
+              onClick={() => void copyRevealedCurl(request, environment, onError, isCurrent)}
+            >
               원문 1회 복사
             </button>
           </div>

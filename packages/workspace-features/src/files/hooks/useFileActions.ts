@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { docFromOpenedFile, fileNameForPath, snapshotMatches } from "../lib/documentPresentation";
 import {
   deleteFileAction,
@@ -250,11 +251,16 @@ export function useFileActions({
     });
   };
 
-  const deleteDocumentFile = (doc: Doc) => {
-    const confirmed = window.confirm(
+  const deleteDocumentFile = async (doc: Doc) => {
+    const confirmed = await confirmAction(
       `${doc.path}\n\n파일을 영구 삭제합니다. 미저장 변경 사항도 복구할 수 없습니다. 계속할까요?`,
     );
-    if (!confirmed) return;
+    if (
+      !confirmed ||
+      renameApplyBusyRef.current ||
+      stateRef.current.docs.find((candidate) => candidate.id === doc.id) !== doc
+    )
+      return;
     void runFileOperation(async () => {
       await deleteFileAction({
         ...(doc.nativeRevision !== undefined ? { nativeRevision: doc.nativeRevision } : {}),
@@ -289,7 +295,7 @@ export function useFileActions({
     } else if (action === "rename") {
       renameDocumentFile(doc);
     } else if (action === "delete") {
-      deleteDocumentFile(doc);
+      void deleteDocumentFile(doc);
     }
   };
   return {

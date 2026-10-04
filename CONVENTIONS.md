@@ -147,6 +147,10 @@ src/
   lib/            # 순수 유틸 (포맷터 등)
 ```
 
+확인 후 수행하는 작업은 `@devbox/product-shell/confirm`의 `await confirmAction(message)`를 사용한다.
+Tauri dialog 플러그인이 바꾸는 전역 `window.confirm`은 동기 Boolean으로 판단하지 않는다.
+확인 대기 중 대상·저장소·화면이 바뀔 수 있으므로 실행 직전에 현재 상태를 다시 확인한다.
+
 ### 명명/스타일
 - UI 문구: 한국어, 코드·식별자·git 메시지: 영어
 - 앱 이름: kebab-case, Rust 크레이트: snake_case, 패키지: `@devbox/<name>`
