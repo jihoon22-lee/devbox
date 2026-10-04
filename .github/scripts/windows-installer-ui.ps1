@@ -248,7 +248,22 @@ if($Action -in @('Close','Resize','Minimize','Activate','Inspect','ZoomIn','Zoom
   }
 }
 if($Action -eq 'Inspect' -and $windows.Count -ne 1) {
-  @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata})} | ConvertTo-Json -Depth 4 -Compress
+  # NSIS parent plus modal: read only already verified same-process native roots.
+  # Product ambiguity and all mutation selectors retain their existing strictness.
+  $diagnosticControls=@()
+  if(-not $ProductWindow -and $windows.Count -gt 1) {
+    foreach($ownedRoot in $windows) {
+      if($diagnosticControls.Count -ge 256){break}
+      $descendants=$ownedRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+      foreach($element in $descendants) {
+        if($diagnosticControls.Count -ge 256){break}
+        $info=$element.Current
+        if($info.ProcessId -ne $TargetProcessId){continue}
+        $diagnosticControls+=@{name=$info.Name.Substring(0,[Math]::Min(4096,$info.Name.Length));id=$info.AutomationId;enabled=$info.IsEnabled;visible=(-not $info.IsOffscreen);controlTypeId=$info.ControlType.Id}
+      }
+    }
+  }
+  @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata});controls=$diagnosticControls} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
 if($Action -in @('ChooseFile','SaveFile')) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, lstat } from "node:fs/promises";
 import path from "node:path";
 import { allWindowsProcesses, windowsLocalAppData } from "./windows-packaged-smoke.mjs";
 import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
@@ -47,6 +47,14 @@ export async function preserveReviewedCommitFailure(center, error, observationId
   } catch {
     operations = null;
   }
+  let activationPhase = null;
+  try {
+    const activation = JSON.parse(await readFile(path.join(center.root, "devbox-activation.json"), "utf8"));
+    if (["recover", "import", "health", "committed"].includes(activation.phase)) activationPhase = activation.phase;
+  } catch {}
+  const updateBlocked = await lstat(path.join(center.root, "suite-update.block"))
+    .then(() => true)
+    .catch((issue) => (issue.code === "ENOENT" ? false : null));
   await writeFile(
     `product-foundation-evidence/reviewed-commit-${observationId}.json`,
     JSON.stringify(
@@ -59,6 +67,8 @@ export async function preserveReviewedCommitFailure(center, error, observationId
         error: boundedFailure(error),
         helpers: issues,
         operations,
+        activationPhase,
+        updateBlocked,
       },
       null,
       2,

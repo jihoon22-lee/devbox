@@ -8,6 +8,7 @@ import {
   rejectedInstallerIssue,
   directorySpaceRejected,
   ownedNsisSpawnOptions,
+  installerFailureObservation,
 } from "./windows-suite-installer-actions.mjs";
 import { validateWithdrawnUpdateReceipt } from "./windows-suite-delivery-user-flows.mjs";
 for (const guard of [() => validateInstallerFaultOwnership(undefined), () => observeInstallerFailurePreservation({})])
@@ -74,4 +75,31 @@ test("withdrawn supplemental receipt cannot complete delivery with a failed or d
   assert.throws(() =>
     validateWithdrawnUpdateReceipt({ status: "PASS", fixtureKind: "alternate-encoding" }, identity, "c".repeat(64)),
   );
+});
+
+test("installer failure projects known status and bootstrap codes without paths or arbitrary text", () => {
+  const result = installerFailureObservation(
+    {
+      windowCount: 1,
+      selectedWindowCount: 1,
+      controls: [
+        { id: "1027", visible: true, enabled: true, name: "C:\\private\\token-secret" },
+        { id: "", visible: true, name: "설치를 준비하지 못했습니다. existing private data" },
+        { id: "", visible: true, name: "bootstrap_health_required\nC:\\private" },
+        { id: "", visible: true, name: "bootstrap_secret_private" },
+      ],
+    },
+    "installation finish",
+    null,
+  );
+  assert.deepEqual(result.issues, ["bootstrap_health_required"]);
+  assert.deepEqual(result.statuses, ["preparation_failed"]);
+  assert.equal(result.stage, "installation finish");
+  assert.equal(JSON.stringify(result).includes("private"), false);
+  assert.equal(installerFailureObservation(null, "welcome", 1).inspectionUnavailable, true);
+});
+
+test("installer issue boundaries reject adjoining digits and underscores", () => {
+  for (const name of ["1bootstrap_health_required", "bootstrap_health_required2", "bootstrap_health_required_extra"])
+    assert.deepEqual(installerFailureObservation({ controls: [{ name }] }, "installation finish", null).issues, []);
 });
