@@ -145,3 +145,21 @@ test("modern MCP tool list fixture includes required private cache metadata", ()
   assert.equal(reply.result.cacheScope, "private");
   assert.equal(reply.result.tools[0].name, "synthetic_echo");
 });
+
+test("disconnect after refresh waits for enabled control before one input", async () => {
+  const events = [];
+  await runner.disconnectMcpWhenReady({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "연결 해제");
+        events.push("ready");
+      },
+      click: async (target) => {
+        assert.equal(target.name, "연결 해제");
+        assert.deepEqual(events, ["ready"]);
+        events.push("click");
+      },
+    },
+  });
+  assert.deepEqual(events, ["ready", "click"]);
+});

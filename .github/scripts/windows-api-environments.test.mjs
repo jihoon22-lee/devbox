@@ -72,3 +72,16 @@ test("restarted environment editor observes its textbox before reading enabled s
   await checking;
   assert.deepEqual(events, ["readonly target", "enabled probe"]);
 });
+
+test("revision conflict observes the actual native issue rather than generic fallback", async () => {
+  const seen = [];
+  await runner.expectEnvironmentRevisionConflict({
+    cdp: {
+      evaluate: async () => {
+        seen.push("read");
+        return "다른 곳에서 바뀌었습니다. 다시 불러온 뒤 저장해 주세요.";
+      },
+    },
+  });
+  assert.equal(seen.length, 1);
+});

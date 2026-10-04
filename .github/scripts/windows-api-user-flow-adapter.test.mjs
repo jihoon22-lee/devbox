@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promis
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { verifyApiInstallation } from "./windows-api-user-flow-adapter.mjs";
+import { saveApiFileWhenReady, verifyApiInstallation } from "./windows-api-user-flow-adapter.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 async function fixture() {
@@ -127,5 +127,45 @@ test("installed adapter resolves validated diagnostic payload source without rep
       else process.env[name] = prior;
     }
     await rm(value.scratch, { recursive: true });
+  }
+});
+
+test("native export observes owned picker readiness then saves exactly once", async () => {
+  const events = [];
+  let observations = 0;
+  const owner = { identity: { Pid: 42 } };
+  await saveApiFileWhenReady(owner, "owned-fixture.json", {
+    action: async (_owner, action, args) => {
+      events.push(action);
+      if (action === "Inspect")
+        return {
+          processId: 42,
+          nativeWindowCount: 2,
+          nativeWindows:
+            ++observations === 1 ? [] : [{ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" }],
+        };
+      assert.equal(args.filePath, "owned-fixture.json");
+    },
+    wait: async () => {},
+  });
+  assert.deepEqual(events, ["Inspect", "Inspect", "SaveFile"]);
+});
+test("ambiguous or foreign native picker never receives save input", async () => {
+  for (const windows of [
+    Array.from({ length: 2 }, () => ({ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" })),
+    [{ nativeProcessId: 43, visible: true, topLevel: true, className: "#32770" }],
+  ]) {
+    const events = [];
+    await assert.rejects(
+      saveApiFileWhenReady({ identity: { Pid: 42 } }, "owned.json", {
+        action: async (_owner, action) => {
+          events.push(action);
+          return { processId: 42, nativeWindowCount: 2, nativeWindows: windows };
+        },
+        wait: async () => {},
+        timeoutMs: 0,
+      }),
+    );
+    assert.deepEqual(events, ["Inspect"]);
   }
 });
