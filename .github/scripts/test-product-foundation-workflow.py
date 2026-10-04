@@ -184,6 +184,14 @@ assert "runnerSourceSha = $env:GITHUB_SHA" in installer_diagnostic
 assert "payloadSourceSha = $record.head_sha" in installer_diagnostic
 for script in ("windows-suite-user-flow.mjs", "windows-workspace-user-flows.mjs", "windows-api-user-flows.mjs", "windows-knowledge-user-flows.mjs", "windows-suite-delivery-user-flows.mjs", "windows-suite-legacy-upgrade-ui.mjs", "windows-suite-integration.mjs", "windows-suite-layout.mjs", "windows-suite-agent-user-flows.mjs"):
     assert script in installer_diagnostic
+# Cross-product and layout journeys require the original committed namespace;
+# delivery intentionally changes its generation and can leave health on failure.
+for name in ("product-foundation.yml", "windows-package-candidate.yml"):
+    text = (Path(".github/workflows") / name).read_text()
+    order = next(line for line in text.splitlines() if "foreach ($script in" in line and "windows-suite-delivery-user-flows.mjs" in line)
+    assert order.index("windows-suite-integration.mjs") < order.index("windows-suite-delivery-user-flows.mjs")
+    assert order.index("windows-suite-layout.mjs") < order.index("windows-suite-delivery-user-flows.mjs")
+    assert order.index("windows-suite-agent-user-flows.mjs") > order.index("windows-suite-delivery-user-flows.mjs")
 assert "--withdrawn" in installer_diagnostic
 for step_name, evidence_name in (("Install interactively and complete visible activation", "hosted-display-installer"), ("Exercise actual work in the same installed namespace", "hosted-display-work")):
     step = installer_diagnostic.split("      - name: " + step_name + "\n", 1)[1].split("\n      - ", 1)[0]

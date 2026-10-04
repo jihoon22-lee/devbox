@@ -126,6 +126,10 @@ const installerIssues = [
   "suite_registry_foreign",
   "suite_registry_unavailable",
   "suite_reinstall_cleanup_required",
+  "suite_remove_file_changed",
+  "suite_remove_file_unavailable",
+  "suite_remove_path_unsafe",
+  "suite_remove_root_changed",
   "suite_remove_plan_invalid",
   "suite_remove_plan_unavailable",
   "suite_shortcut_com_unavailable",
@@ -198,6 +202,25 @@ export function installerFailureObservation(view, stage, exitCode) {
     })),
   };
 }
+// Failure diagnostics may reveal NSIS Details, but cannot change the first failure.
+export function inspectInstallerFailure(installer, stage) {
+  const view = installer.inspect();
+  const baseline = installerFailureObservation(view, stage, installer.child.exitCode);
+  if (
+    baseline.issues.length === 0 &&
+    baseline.statuses.some((status) => status === "registration_failed" || status === "preparation_failed") &&
+    view?.buttons?.some((button) => button.id === "1027" && button.enabled && button.visible)
+  ) {
+    try {
+      installer.invoke("1027");
+      const expanded = installerFailureObservation(installer.inspect(), stage, installer.child.exitCode);
+      return { ...expanded, statuses: [...new Set([...baseline.statuses, ...expanded.statuses])] };
+    } catch {
+      return baseline;
+    }
+  }
+  return baseline;
+}
 export async function runVisibleSetup(setup, root, env = process.env) {
   const scratch = path.dirname(root),
     image = path.join(scratch, `setup-${randomUUID()}.exe`);
@@ -224,7 +247,7 @@ export async function runVisibleSetup(setup, root, env = process.env) {
   } catch (error) {
     // Capture before caller cleanup. Diagnostics must never replace the first error.
     try {
-      const evidence = installerFailureObservation(installer.inspect(), stage, installer.child.exitCode);
+      const evidence = inspectInstallerFailure(installer, stage);
       error.installerObservation = evidence;
       const evidenceRoot = "product-foundation-evidence";
       await mkdir(evidenceRoot, { recursive: true });

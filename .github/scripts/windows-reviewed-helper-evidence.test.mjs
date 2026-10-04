@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reviewedHelperCodes } from "./windows-reviewed-helper-evidence.mjs";
+import { nativeIssueCollector, reviewedHelperCodes } from "./windows-reviewed-helper-evidence.mjs";
+
+test("owned native stderr keeps bounded complete issue codes across chunks only", () => {
+  const collector = nativeIssueCollector();
+  collector.write("bootstrap_owner_");
+  collector.write("changed\r\nsecret token=hidden\nsuite_writers_must_close\n");
+  collector.write("x".repeat(10000) + "update_plan_changed\n");
+  collector.write("bootstrap_owner_changed\n");
+  assert.deepEqual(collector.codes, ["bootstrap_owner_changed", "suite_writers_must_close"]);
+  for (let i = 0; i < 30; i++) collector.write(`update_issue_${i}\n`);
+  assert.equal(collector.codes.length, 16);
+});
 
 test("only fixed native recovery issue codes enter evidence", () => {
   const observation = {

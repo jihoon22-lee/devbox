@@ -375,7 +375,7 @@ jobs:
         run: |
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $failed = @()
-          foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-agent-user-flows.mjs')) {
+          foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-agent-user-flows.mjs')) {
             if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
               node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
               if ($LASTEXITCODE -ne 0) { $failed += 'withdrawn-same-version-update' }

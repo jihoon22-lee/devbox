@@ -92,6 +92,19 @@
   등록 확인 checkbox 너비는 공용 다크 컨트롤 기본값·Workspace 선택자 수정으로 해결했다.
   브라우저 CSS fixture의 720/1180px 너비·고대비 색상 확인은 통과했으며 packaged 수용과 구분한다.
 
+
+- 진단 `37183914862`는 32개 기록 중 6 PASS·26 FAIL을 남겼다. Workspace 저장 직후 카드 렌더 대기,
+  OAuth grant 목록 갱신 대기, webhook/gRPC/Activity 첫 route 준비 대기를 보정했다. Knowledge는
+  native 저장 경로의 슬래시 표현과 실제 접근성 이름을 맞추고 긴 편집기의 화면 내 영역을 클릭한다.
+  API 삭제 확인은 실제 Chromium에서 동기 confirm이 pointer 응답을 막는 현상을 재현해 명시적
+  취소/승인을 클릭 전에 연결했다. 원격 API 실패와 동일 원인인지는 다음 기록으로 확인한다.
+  고정 v0.8.1 fixture에는 Workspace·Knowledge의 명시적 저장소 시작 입력을 추가하며 기존 native
+  readiness·health 조건을 유지한다. 철회본 등록 오류는 Details, reviewed helper의 조기 종료는
+  소유 프로세스의 고정 형식 stderr 코드로 보존한다. 원인 미확정 제품 코드는 추측 수정하지 않았다.
+  세대 전환 실패가 독립 검사를 가리지 않도록 integration/layout을 delivery보다 먼저 실행하며
+  Agent의 update/portable 선행 근거는 유지한다. 묶음 catalog 검사는 2.893초·RSS 약 121MiB·swap 0으로
+  통과했다. 기존 payload는 새 CSS·zoom 설정이 없으며 이번 기록도 승격 근거가 아니다.
+
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
 ## 1. 기존 감사 23건의 누락 없는 배정

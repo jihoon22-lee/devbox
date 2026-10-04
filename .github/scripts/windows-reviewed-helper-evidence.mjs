@@ -6,6 +6,30 @@ import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-wind
 import { readInstallerOperations } from "./windows-suite-installer-evidence.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 
+// A GUI-launched helper inherits stderr from its owned parent. Keep only whole
+// fixed-format issue tokens; discard arbitrary output and oversized lines.
+export function nativeIssueCollector() {
+  const codes = [];
+  let line = "";
+  let oversized = false;
+  return {
+    codes,
+    write(chunk) {
+      for (const character of String(chunk)) {
+        if (character === "\n") {
+          const code = line.replace(/\r$/u, "");
+          if (!oversized && /^(?:bootstrap|suite|update|restore|checkpoint|data)_[a-z0-9_]{1,56}$/u.test(code)) {
+            if (codes.length < 16 && !codes.includes(code)) codes.push(code);
+          }
+          line = "";
+          oversized = false;
+        } else if (line.length < 80 && !oversized) line += character;
+        else oversized = true;
+      }
+    },
+  };
+}
+
 export function reviewedHelperCodes(observation) {
   if (observation?.name !== "Devbox 데이터 복구") return [];
   return [
@@ -66,6 +90,7 @@ export async function preserveReviewedCommitFailure(center, error, observationId
         status: "FAIL",
         error: boundedFailure(error),
         helpers: issues,
+        ownedProcessIssues: center.nativeIssueCodes ?? [],
         operations,
         activationPhase,
         updateBlocked,
