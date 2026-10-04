@@ -244,6 +244,50 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");
       await cdp.command("Page.handleJavaScriptDialog", { accept });
     },
+    async pressWithPrompt(key, accept, promptText) {
+      if (typeof accept !== "boolean" || (accept && typeof promptText !== "string"))
+        throw new Error("Explicit prompt decision required");
+      if (typeof cdp.onEvent !== "function") throw new Error("Dialog opening observation required");
+      let unsubscribe,
+        timer,
+        rejectDecision,
+        firstFailure,
+        handled = false;
+      const decision = new Promise((resolve, reject) => {
+        rejectDecision = (error) => {
+          firstFailure ??= error;
+          reject(error);
+        };
+        timer = setTimeout(() => {
+          handled = true;
+          rejectDecision(new Error("Expected prompt did not open"));
+        }, 10000);
+        unsubscribe = cdp.onEvent("Page.javascriptDialogOpening", ({ type }) => {
+          if (handled) return;
+          handled = true;
+          clearTimeout(timer);
+          if (type !== "prompt") {
+            rejectDecision(new Error("Expected prompt dialog type"));
+            return;
+          }
+          cdp
+            .command("Page.handleJavaScriptDialog", { accept, ...(accept ? { promptText } : {}) })
+            .then(resolve, rejectDecision);
+        });
+      });
+      try {
+        const input = press(key).catch((error) => {
+          rejectDecision(error);
+          throw error;
+        });
+        const outcomes = await Promise.allSettled([input, decision]);
+        const failure = outcomes.find((outcome) => outcome.status === "rejected");
+        if (failure) throw firstFailure ?? failure.reason;
+      } finally {
+        clearTimeout(timer);
+        unsubscribe?.();
+      }
+    },
     closeOwnedWindow,
   };
 }

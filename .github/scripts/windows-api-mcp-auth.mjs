@@ -36,6 +36,8 @@ export function toolReply(message) {
       id: message.id,
       result: {
         resultType: "complete",
+        ttlMs: 0,
+        cacheScope: "private",
         tools: [
           {
             name: "synthetic_echo",

@@ -136,7 +136,10 @@ export async function createInstalledKnowledgeContext() {
     current = null;
   }
   const ui = createUiDriver({
-    cdp: { command: (method, args) => current.cdp.command(method, args) },
+    cdp: {
+      command: (method, args) => current.cdp.command(method, args),
+      onEvent: (event, callback) => current.cdp.onEvent(event, callback),
+    },
     evidenceRoot: "product-foundation-evidence/user-flows/screenshots/knowledge",
     closeOwnedWindow: closeOwned,
   });

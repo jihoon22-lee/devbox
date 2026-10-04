@@ -1,6 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
+import { leaveWorkspaceEditorByKeyboard } from "./windows-workspace-input-ui.mjs";
+test("font-control traversal uses CodeMirror's explicit Escape Tab exit without document mutation", async () => {
+  const pressed = [];
+  await leaveWorkspaceEditorByKeyboard({ press: async (key) => pressed.push(key) }, async () => true);
+  assert.deepEqual(pressed, ["Escape", "Tab"]);
+  await leaveWorkspaceEditorByKeyboard({ press: async () => assert.fail("Unexpected input") }, async () => false);
+});
+test("keyboard prompt decision runs before the pending key acknowledgement and requires explicit intent", async () => {
+  const cdp = transport();
+  let listener,
+    release,
+    unsubscribed = false;
+  cdp.onEvent = (_event, callback) => {
+    listener = callback;
+    return () => {
+      unsubscribed = true;
+    };
+  };
+  const command = cdp.command;
+  cdp.command = async (method, params) => {
+    if (method === "Input.dispatchKeyEvent" && params.type === "keyDown") {
+      const pending = new Promise((resolve) => {
+        release = resolve;
+      });
+      listener({ type: "prompt" });
+      return pending;
+    }
+    if (method === "Page.handleJavaScriptDialog") {
+      assert.deepEqual(params, { accept: true, promptText: "owned-name" });
+      release({});
+    }
+    return command(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.pressWithPrompt("Enter", undefined), /Explicit prompt/);
+  await ui.pressWithPrompt("Enter", true, "owned-name");
+  assert.equal(unsubscribed, true);
+});
 const control = { ignored: false, role: { value: "button" }, name: { value: "Continue" }, backendDOMNodeId: 12 };
 function transport(
   nodes = [control],

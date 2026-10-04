@@ -113,8 +113,10 @@ export async function run(context) {
     if (started) {
       await context.ui.click(button("웹훅 및 모의 서버"));
       await context.ui.click(button("중지"));
-      const status = await context.nativeCall("plugin:api-studio|webhooks", "server_status", {}, "webhooks");
-      assert.equal(status.running, false, "Owned webhook listener did not stop");
+      await until(async () => {
+        const status = await context.nativeCall("plugin:api-studio|webhooks", "server_status", {}, "webhooks");
+        return status.running === false;
+      }, "Owned webhook listener did not stop");
     }
   }
 }

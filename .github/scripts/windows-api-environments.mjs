@@ -25,6 +25,7 @@ export async function run(context) {
       record(
         "L4 fixture preparation seeds one sparse var2 with native DPAPI synthetic ciphertext into the owned document namespace",
       );
+      await context.ui.waitForTarget(button("Synthetic sparse"));
       await context.ui.click(button("Synthetic sparse"));
       await context.ui.click(button("+ 변수"));
       await until(
@@ -60,6 +61,7 @@ export async function run(context) {
       );
       record("Actual delete cancel preserves metadata; confirmed deletion removes only the named row");
       await context.restart();
+      await context.ui.waitForTarget(button("Synthetic sparse"));
       await context.ui.click(button("Synthetic sparse"));
       assert.equal((await context.document("environments")).value.environments[0].variables[0].value, sealed);
       await expectText(context, "••••••••");

@@ -3,6 +3,50 @@ import test from "node:test";
 import * as document from "./windows-knowledge-document-recovery.mjs";
 import * as search from "./windows-knowledge-search-lifecycle.mjs";
 import * as activity from "./windows-knowledge-activity.mjs";
+import { reachKnowledgeControl, preserveKnowledgeInputBaselineOnFailure } from "./windows-knowledge-input-ui.mjs";
+test("failed Knowledge input preserves first evidence before restoring fixture and rethrows its original gate", async () => {
+  const error = new Error("original gate");
+  const events = [];
+  await assert.rejects(
+    preserveKnowledgeInputBaselineOnFailure(
+      async () => {
+        throw error;
+      },
+      async () => events.push("first screenshot"),
+      async () => events.push("baseline restored"),
+    ),
+    (observed) => observed === error,
+  );
+  assert.deepEqual(events, ["first screenshot", "baseline restored"]);
+  await assert.rejects(
+    preserveKnowledgeInputBaselineOnFailure(
+      async () => {
+        throw error;
+      },
+      async () => {},
+      async () => {
+        throw new Error("restore failed");
+      },
+    ),
+    (observed) => observed === error && observed.inputBaselineRestoreFailed === true,
+  );
+});
+test("rename keyboard traversal goes backward from toolbar without entering the Tab-indent editor", async () => {
+  let focus = "autosave";
+  const pressed = [];
+  await reachKnowledgeControl(
+    {
+      press: async (key) => {
+        pressed.push(key);
+        focus = key === "Shift+Tab" ? "rename" : "editor";
+      },
+    },
+    async () => focus === "rename",
+    "rename predicate",
+    "Shift+Tab",
+  );
+  assert.deepEqual(pressed, ["Shift+Tab"]);
+});
 test("search removal uses native normalized path as its exact accessible name", async () => {
   const stored = "D:/fixture/knowledge-search-watch-owned";
   assert.deepEqual(

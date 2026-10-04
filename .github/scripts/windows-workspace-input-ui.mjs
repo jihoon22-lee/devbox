@@ -3,6 +3,14 @@ import { observeProductLayout, assertProductLayout } from "./browser-product-lay
 import assert from "node:assert/strict";
 import { writeProductInputObservation } from "./windows-suite-layout.mjs";
 import { observeUntil } from "./windows-suite-ui-context.mjs";
+export async function leaveWorkspaceEditorByKeyboard(ui, read) {
+  if (await read('Boolean(document.activeElement?.closest(".cm-editor"))')) {
+    // CodeMirror permits the next Tab to leave its indentation keymap for
+    // two seconds after Escape; send the two native keys consecutively.
+    await ui.press("Escape");
+    await ui.press("Tab");
+  }
+}
 export async function observeWorkspaceInput({ ui, cdp, fileName, windowOwner }) {
   const read = (expression) => cdp.evaluate(expression);
   let editorFocused = false;
@@ -62,6 +70,7 @@ export async function observeWorkspaceInput({ ui, cdp, fileName, windowOwner }) 
     "keyboard file opened",
   );
   // The real product's font control, reached through keyboard focus, enlarges text.
+  await leaveWorkspaceEditorByKeyboard(ui, read);
   let found = false;
   for (let i = 0; i < 128; i++) {
     if (await read('document.activeElement?.getAttribute("aria-label")==="편집기 글꼴 크기 확대"')) {

@@ -13,3 +13,27 @@ test("a missing isolated Agent fixture remains NOT_RUN", async () => {
   );
   assert.ok(records.every((result) => result.status === "NOT_RUN"));
 });
+test("nested Agent failure survives cleanup failure with first screenshot", async () => {
+  const methods = [
+    "prepareAgent",
+    "configureAgent",
+    "registry",
+    "context",
+    "wait",
+    "trustSource",
+    "attemptAgentReview",
+    "crashAndReopen",
+  ];
+  const fixture = Object.fromEntries(methods.map((name) => [name, async () => {}]));
+  fixture.prepareAgent = async () => {
+    throw new Error("agent original failure");
+  };
+  fixture.cleanup = async () => {
+    throw new Error("agent cleanup failure");
+  };
+  const results = await run({ workspaceFixture: fixture, ui: { screenshot: async () => "/owned/agent-first.png" } });
+  assert.ok(results.every((result) => result.status === "FAIL"));
+  assert.equal(results[0].error.message, "agent original failure");
+  assert.equal(results[0].cleanupError.message, "agent cleanup failure");
+  assert.deepEqual(results[0].screenshotPaths, ["/owned/agent-first.png"]);
+});

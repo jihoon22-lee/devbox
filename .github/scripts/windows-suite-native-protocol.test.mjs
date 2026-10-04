@@ -1,6 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { installedFixtureCommand, prepareHistoricalNativeStore } from "./windows-suite-native-protocol.mjs";
+import {
+  installedFixtureCommand,
+  prepareHistoricalNativeStore,
+  historicalHealthUnavailable,
+} from "./windows-suite-native-protocol.mjs";
+test("historical health unavailable requires exact pinned source and typed owner provenance", () => {
+  const problem = {
+    code: "unavailable",
+    provenance: {
+      component: "control-center.commands",
+      product: "control-center",
+      revision: 13,
+      requestId: "owned-request",
+    },
+  };
+  assert.equal(historicalHealthUnavailable("1c97b41ee10ca0df7c062338bfe85659af025a89", problem), true);
+  for (const changed of [
+    { ...problem, code: "rejected" },
+    { ...problem, provenance: { ...problem.provenance, product: "workspace" } },
+    { ...problem, provenance: { ...problem.provenance, revision: 14 } },
+  ]) {
+    assert.equal(historicalHealthUnavailable("1c97b41ee10ca0df7c062338bfe85659af025a89", changed), false);
+  }
+  assert.equal(historicalHealthUnavailable("current", problem), false);
+});
 test("pinned historical empty-store preparation uses one visible setup input and never infers health", async () => {
   for (const [product, name] of [
     ["workspace", "빈 Workspace 시작"],

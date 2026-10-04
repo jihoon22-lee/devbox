@@ -4,6 +4,16 @@ export function installedFixtureCommand(command, source) {
     ? "plugin:control-center|execute"
     : command;
 }
+export function historicalHealthUnavailable(source, problem) {
+  return (
+    source === "1c97b41ee10ca0df7c062338bfe85659af025a89" &&
+    problem?.code === "unavailable" &&
+    problem.provenance?.component === "control-center.commands" &&
+    problem.provenance?.product === "control-center" &&
+    problem.provenance?.revision === 13 &&
+    typeof problem.provenance?.requestId === "string"
+  );
+}
 export async function prepareHistoricalNativeStore(source, product, nativeStoreReady, ui) {
   if (source !== "1c97b41ee10ca0df7c062338bfe85659af025a89" || nativeStoreReady === true) return null;
   const name = { workspace: "빈 Workspace 시작", knowledge: "새 저장소로 시작" }[product];

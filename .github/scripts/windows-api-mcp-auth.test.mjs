@@ -95,3 +95,13 @@ test("OAuth refresh waits for the requested grant option before one selection", 
   }
 });
 scenarioModuleContract(runner, ["AUTH-01", "AUTH-02"], "windows-api-mcp-auth.mjs");
+
+test("modern MCP tool list fixture includes required private cache metadata", () => {
+  const discovery = runner.toolReply({ id: "discover", method: "server/discover" });
+  assert.deepEqual(discovery.result.supportedVersions, ["2026-07-28"]);
+  const reply = runner.toolReply({ id: "list", method: "tools/list" });
+  assert.equal(reply.result.resultType, "complete");
+  assert.equal(reply.result.ttlMs, 0);
+  assert.equal(reply.result.cacheScope, "private");
+  assert.equal(reply.result.tools[0].name, "synthetic_echo");
+});
