@@ -377,13 +377,17 @@ jobs:
           .github/scripts/windows-workspace-wsl-git.ps1
           "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
       - name: Install interactively and complete visible activation
+        id: retained_install
         shell: pwsh
         run: |
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-installer
           node .github/scripts/windows-suite-user-flow.mjs
       - name: Exercise actual work in the same installed namespace
+        if: ${{ success() || (failure() && steps.retained_install.outcome == 'failure') }}
         shell: pwsh
         run: |
+          node .github/scripts/verify-retained-committed-install.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $failed = @()
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-agent-user-flows.mjs')) {

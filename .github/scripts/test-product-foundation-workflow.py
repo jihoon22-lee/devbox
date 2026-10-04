@@ -191,7 +191,8 @@ for step_name, evidence_name in (("Install interactively and complete visible ac
     assert "run: |" in step
     prepare = '. .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName ' + evidence_name
     assert prepare in step
-    assert step.index(prepare) < step.index("node .github/scripts/")
+    journey = "node .github/scripts/windows-suite-user-flow.mjs" if evidence_name == "hosted-display-installer" else "node .github/scripts/windows-suite-legacy-upgrade-ui.mjs"
+    assert step.index(prepare) < step.index(journey)
 assert "Prepare hosted display for native layout acceptance" not in installer_diagnostic
 assert "windows-user-flow-install.ps1 -Cleanup" in installer_diagnostic
 assert "windows-knowledge-wsl.ps1 -Cleanup" in installer_diagnostic
@@ -199,3 +200,11 @@ assert "windows-suite-delivery.ps1 -Staging candidate/delivery" in installer_dia
 assert "installer-ui-diagnostic-${{ github.run_id }}" in installer_diagnostic
 assert "collect-user" not in installer_diagnostic and "promote" not in installer_diagnostic
 assert "GITHUB_SHA=" not in installer_diagnostic and "$env:GITHUB_SHA =" not in installer_diagnostic
+
+install_step = installer_diagnostic.split("      - name: Install interactively and complete visible activation\n", 1)[1].split("\n      - ", 1)[0]
+work_step = installer_diagnostic.split("      - name: Exercise actual work in the same installed namespace\n", 1)[1].split("\n      - ", 1)[0]
+assert "id: retained_install" in install_step
+assert "continue-on-error" not in install_step
+assert "if: ${{ success() || (failure() && steps.retained_install.outcome == 'failure') }}" in work_step
+assert work_step.index("node .github/scripts/verify-retained-committed-install.mjs") < work_step.index("prepare-windows-ui-display.ps1")
+assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }" in work_step
