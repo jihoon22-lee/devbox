@@ -90,7 +90,13 @@ export async function connect(port, child, deadline = performance.now() + 30_000
           if (entry) {
             pending.delete(response.id);
             clearTimeout(entry.timer);
-            response.error ? entry.reject(new Error("CDP request failed")) : entry.resolve(response.result);
+            response.error
+              ? entry.reject(
+                  new Error(
+                    `CDP request failed: ${entry.method} (${Number.isInteger(response.error.code) ? response.error.code : "unknown"})`,
+                  ),
+                )
+              : entry.resolve(response.result);
           }
         });
         const command = (method, params = {}) => {
@@ -101,7 +107,7 @@ export async function connect(port, child, deadline = performance.now() + 30_000
               pending.delete(next);
               reject(new Error("CDP setup timeout"));
             }, 10_000);
-            pending.set(next, { resolve, reject, timer });
+            pending.set(next, { resolve, reject, timer, method });
             socket.send(JSON.stringify({ id: next, method, params }));
           });
         };
@@ -149,7 +155,7 @@ export async function connect(port, child, deadline = performance.now() + 30_000
                 );
                 reject(new Error(`CDP request timeout at ${currentProbe?.stage}`));
               }, timeoutMs);
-              pending.set(next, { resolve, reject, timer });
+              pending.set(next, { resolve, reject, timer, method: "Runtime.evaluate" });
               socket.send(
                 JSON.stringify({
                   id: next,

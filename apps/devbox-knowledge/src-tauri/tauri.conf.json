@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "zoomHotkeysEnabled": true,
         "title": "Devbox Knowledge",
         "width": 1180,
         "height": 780,

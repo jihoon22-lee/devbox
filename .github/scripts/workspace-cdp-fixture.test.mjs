@@ -69,3 +69,61 @@ test("startup failure retains a closed stage and attempt count without remote er
     globalThis.fetch = previous;
   }
 });
+
+test("protocol failures retain only command and numeric code", async () => {
+  const previous = { fetch: globalThis.fetch, WebSocket: globalThis.WebSocket, cwd: process.cwd() };
+  const directory = mkdtempSync(path.join(tmpdir(), "devbox-cdp-test-"));
+  mkdirSync(path.join(directory, "product-foundation-evidence"));
+  let socket;
+  class FakeSocket extends EventTarget {
+    readyState = 1;
+    constructor() {
+      super();
+      socket = this;
+      queueMicrotask(() => this.dispatchEvent(new Event("open")));
+    }
+    send(raw) {
+      const request = JSON.parse(raw);
+      if (request.method === "Page.handleJavaScriptDialog") {
+        queueMicrotask(() =>
+          this.dispatchEvent(
+            new MessageEvent("message", {
+              data: JSON.stringify({ id: request.id, error: { code: -32000, message: "private credential" } }),
+            }),
+          ),
+        );
+        return;
+      }
+      queueMicrotask(() =>
+        this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ id: request.id, result: {} }) })),
+      );
+    }
+    close() {
+      this.readyState = 3;
+      const event = new Event("close");
+      event.code = 1006;
+      this.dispatchEvent(event);
+    }
+  }
+  try {
+    process.chdir(directory);
+    globalThis.WebSocket = FakeSocket;
+    globalThis.fetch = async () => ({
+      json: async () => [
+        { type: "page", url: "http://tauri.localhost/", webSocketDebuggerUrl: "ws://127.0.0.1/fixture" },
+      ],
+    });
+    const cdp = await connect(1, { exitCode: null });
+    await assert.rejects(cdp.command("Page.handleJavaScriptDialog", { secret: "private argument" }), (error) => {
+      assert.equal(error.message, "CDP request failed: Page.handleJavaScriptDialog (-32000)");
+      assert.equal(error.message.includes("private"), false);
+      return true;
+    });
+    socket.close();
+  } finally {
+    globalThis.fetch = previous.fetch;
+    globalThis.WebSocket = previous.WebSocket;
+    process.chdir(previous.cwd);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

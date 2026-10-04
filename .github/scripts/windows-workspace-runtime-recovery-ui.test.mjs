@@ -13,3 +13,16 @@ test("an incomplete adapter proof cannot claim packaged UI PASS", async () => {
   const results = await run({ workspaceFixture: { runtimeLostReply: async () => ({ assertions: ["incomplete"] }) } });
   assert.equal(results[0].status, "FAIL");
 });
+test("nested runtime adapter failures retain bounded error and first screenshot", async () => {
+  const results = await run({
+    ui: { screenshot: async () => "/owned/runtime-first.png" },
+    workspaceFixture: {
+      runtimeLostReply: async () => {
+        throw new Error("runtime original failure");
+      },
+    },
+  });
+  assert.equal(results[0].status, "FAIL");
+  assert.equal(results[0].error.message, "runtime original failure");
+  assert.deepEqual(results[0].screenshotPaths, ["/owned/runtime-first.png"]);
+});

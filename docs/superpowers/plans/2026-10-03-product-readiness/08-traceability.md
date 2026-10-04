@@ -47,6 +47,88 @@
   현 CSS를 적용한 진단이며 새 배포 bytes 자체의 통과나 최종 후보 수용으로 취급하지 않는다.
 - 보관 후보를 재사용한 진단은 runner와 payload source를 구분하고 별도 diagnostic artifact에만
   기록한다. 최종 exact-main 후보의 설치/UI 수용과 승격 근거를 대체하지 않는다.
+- #619의 PR CI `37172279567`과 exact-main CI `37172648247`은 모두 통과했다. 새 후보
+  `37173572971`(`c91d0326`)은 네 제품·7개 자산, 네 native scope 및 WSL2/Docker를 통과했고,
+  실제 설치 뒤 `open_setup_product` 성공으로 경로 수정도 확인했다. 그러나 Control Center를
+  정상 종료·재개하는 검증의 창 선택이 실패해 설치 여정과 최종 seal은 실패했다. 출시 가능한 후보가 아니다.
+  보관 진단 `37177932549`는 같은 PID 아래 `Tauri Window` 외에 `Tao Thread Event Target`와
+  설치 identifier의 `-sic` 제어 창도 native/UIA에서 표시 중으로 보고되는 것을 확인했다.
+  단순 visible 필터로 해결되지 않으므로 정확한 제품·보조 창 식별을 보정한다. 실제 두 앱 창이나
+  modal의 모호성은 계속 거절하고, 보관 진단의 결과를 새 후보의 승격 근거로 재사용하지 않는다.
+- 보관 진단 `37178443869`에서 정확한 보조 창 제외 후 Control Center 종료·재개와 네 제품 실행은
+  통과했다. 다음 Workspace 복구 화면에서 요구한 기본 client 크기와 실제 치수가 달라 중단됐다.
+  일회성 hosted Windows에만 지원 display mode를 임시 적용하고, 크기·화면·소유 창 측정은
+  assertion 전에 보존하도록 보완했다. 기본 1180×780·최소 720×480 수용 기준은 유지한다.
+  남은 Workspace 종료 driver 세 곳도 접근성 dialog 이름으로 종료 검토를 식별하도록 맞췄다.
+  진단 `37179213181`은 준비 직후 1920×1080이던 화면이 별도 앱 단계에서 1024×768로 돌아간
+  기록을 남겼다. 임시 display 소유 pwsh를 각 실제 UI 여정과 같은 run block에 유지하도록 수정했다.
+  로컬 영향 검사와 해당 workflow 회귀는 통과했으며, 최종 설치 수용을 대신하지 않는다.
+  진단 `37179511129`에서는 네 제품 recover/import 각각 기본·최소 크기(16개 화면)가 통과했다.
+  INSTALL-02도 실제 종료·재개를 통과했다. health 전환 뒤 renderer 준비 전 버튼 조회가 실패해
+  전체 설치는 아직 실패이며, 접근성 준비 관측과 Workspace 보조 터미널 창 종료 경로를 보정한다.
+  진단 `37179887712`는 health까지 24개 크기 관측을 통과하고 활성화 확정 화면까지 진행했다.
+  확정 후 탐색 메뉴·본문의 동일한 복구 버튼 때문에 멈춘 driver는 `제품 화면` navigation 안으로
+  대상을 한정했다. 설치·전환·재설치의 같은 탐색 동작에도 이 범위를 적용한다.
+  진단 `37180226349`는 활성화 확정·복구 화면·Control Center 성능을 통과한 뒤 keyboard Launcher에서
+  멈췄다. 실제 Chromium에서 driver Enter가 keypress 없이 기본 버튼 실행을 누락하는 현상을 재현하고,
+  keyDown의 native text·physical code를 보정했다. Enter/Space 기본 실행, shortcut 문자 미삽입,
+  한글 조합 Enter 보호를 실제 CDP 입력으로 확인했다. 제품 상태를 입력 대신 변경하지 않는다.
+  진단 `37180653079`는 Launcher 키보드·모달·한글 조합을 통과하고 실제 배율 변경에서 멈췄다.
+  네 main 창이 Tauri 기본값인 zoom hotkeys 비활성을 사용해 설정을 명시적으로 켰으며,
+  config 회귀는 RED→GREEN을 확인했다. 새 제품 bytes의 Windows 확대 수용은 아직 미실행이다.
+- 후속 runner는 hosted Windows의 소유 main 창·foreground·WebView focus를 확인한 뒤 native
+  Ctrl+Add/Ctrl+0 입력으로 배율을 바꾸고 renderer DPR·viewport와 원상 복구를 관찰한다.
+  PowerShell/C# 구문·입력 구조·소유 계층·비 hosted 거절은 로컬에서 확인했지만 실제 확대 PASS를
+  대신하지 않는다. 실패한 최초 오류와 스크린샷은 cleanup 전에 보존한다.
+- 진단 `37181151303`은 활성화가 실제 committed임을 소유 receipt·manifest·key로 확인한 뒤
+  독립 업무를 관찰했다. 설치 확대 실패는 그대로 유지하며 이 예외는 진단 workflow에만 적용한다.
+  INSTALL-02·AGENT-01·HTTP-01–03은 통과했고, API MCP·Knowledge 검색은 lazy route 준비 전
+  입력한 runner 문제를 확인해 접근성 target 대기를 추가했다. v0.8.1 준비는 그 고정 source의
+  역사적 `execute` 명령을 사용하도록 수정했다. 철회본 설치 완료와 reviewed update commit은
+  여전히 실패 원인 확인 중이며, 추가 소유 native 오류·단계 근거를 기록한다. R16은 미완료다.
+- 진단 `37182426188`은 native 확대 입력의 소유 창·foreground·WebView focus 검사를 통과한 뒤
+  기존 payload의 배율 비활성에서 실패했다. Workspace 최초 오류는 Tasks lazy route의 `+ 새 작업`
+  target 준비 전 입력으로 확인해 같은 방식으로 보정했다. 실제 첫 화면에서 발견한 흰색 기본 입력란과
+  등록 확인 checkbox 너비는 공용 다크 컨트롤 기본값·Workspace 선택자 수정으로 해결했다.
+  브라우저 CSS fixture의 720/1180px 너비·고대비 색상 확인은 통과했으며 packaged 수용과 구분한다.
+
+
+- 진단 `37183914862`는 32개 기록 중 6 PASS·26 FAIL을 남겼다. Workspace 저장 직후 카드 렌더 대기,
+  OAuth grant 목록 갱신 대기, webhook/gRPC/Activity 첫 route 준비 대기를 보정했다. Knowledge는
+  native 저장 경로의 슬래시 표현과 실제 접근성 이름을 맞추고 긴 편집기의 화면 내 영역을 클릭한다.
+  API 삭제 확인은 실제 Chromium에서 동기 confirm이 pointer 응답을 막는 현상을 재현해 명시적
+  취소/승인을 클릭 전에 연결했다. 원격 API 실패와 동일 원인인지는 다음 기록으로 확인한다.
+  고정 v0.8.1 fixture에는 Workspace·Knowledge의 명시적 저장소 시작 입력을 추가하며 기존 native
+  readiness·health 조건을 유지한다. 철회본 등록 오류는 Details, reviewed helper의 조기 종료는
+  소유 프로세스의 고정 형식 stderr 코드로 보존한다. 원인 미확정 제품 코드는 추측 수정하지 않았다.
+  세대 전환 실패가 독립 검사를 가리지 않도록 integration/layout을 delivery보다 먼저 실행하며
+  Agent의 update/portable 선행 근거는 유지한다. 묶음 catalog 검사는 2.893초·RSS 약 121MiB·swap 0으로
+  통과했다. 기존 payload는 새 CSS·zoom 설정이 없으며 이번 기록도 승격 근거가 아니다.
+
+- reviewed helper의 시작 검증 실패가 부모 창 종료 뒤 stderr로만 사라지던 UX를 보완했다.
+  검증 실패에는 고정 오류 코드·데이터 보존·재개 안내를 한 번 표시하며 기존 Retry/Cancel 오류와
+  일반 CLI는 유지한다. 실제 production 경계 함수의 좁은 회귀 2개를 확인했고 Windows 연결 검증은
+  최종 Windows CI에서 수행한다. 진단 `37186226140`은 installer 실행 전 WebView2 정책 조회에서
+  중단돼 제품 결과가 없으며, 이후 runner는 종료·OS 오류·signal 코드도 보존한다.
+
+- 진단 `37186406654`는 기존 `c91d0326` payload로 UI-01의 네 제품·다섯 상태·두 크기 40개
+  화면 관찰과 PERF-01을 통과했다. 이는 필수 사용자 여정 40개 전체 통과를 뜻하지 않는다.
+  INSTALL-02·AGENT-01·HTTP-01–03·SEARCH-01/02도 통과했지만 전체 실행은 실패다.
+  철회본 위 재설치는 `bootstrap_update_pending`, 검토 후 업데이트 확정은
+  `bootstrap_root_unsafe`로 실패했다. 전자는 health 단계의 기존 dispatcher 보존 분기보다
+  먼저 적용되는 등록 차단, 후자는 설치 root를 현재 작업 폴더로 상속하는 helper 실행에서
+  원인을 확인했다. 배타적 writer lease·계획/설치 identity·경로 안전 검사는 유지한다.
+  runner는 Workspace Files 준비와 최초 실패 보존, API 환경 재시작 준비·webhook 종료 관찰,
+  MCP 합성 응답의 필수 캐시 메타데이터, Knowledge 키보드 이동을 보정한다.
+  v0.8.1의 명시적 저장소 준비 직후 typed unavailable은 정확한 역사 source·요청 provenance가
+  일치할 때만 기존 제한 시간 내 읽기 전용 재관측하며 native readiness 조건은 유지한다.
+  이 진단의 UI·성능 성공도 새 제품 bytes의 수용 근거로 이전하지 않는다.
+  보정 후 등록 정책 2개와 실제 자식 프로세스 작업 폴더 회귀를 확인했다. 후자는 기존 상속 방식
+  실패·명시적 helper 디렉터리 성공을 재현했다. 실제 Chromium에서는 CodeMirror의 Tab 들여쓰기와
+  동기 prompt의 key 응답 대기를 재현하고 Escape→Tab 및 명시적 prompt 결정의 동시 처리로
+  해결했다. Knowledge 입력 실패는 첫 화면을 보존한 뒤 검증한 합성 문서만 UI로 복구한다.
+  최종 묶음 catalog/workflow 검사 3.981초·RSS 약 133MiB·swap 0, Biome CI 통과.
+  추가 Windows 전용 소스의 실제 컴파일 및 새 제품 bytes 수용은 최종 CI·후보에서 확인한다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 

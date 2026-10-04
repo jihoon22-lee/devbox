@@ -1,9 +1,10 @@
 // Observe accessibility/layout via CDP; all renderer actions use real input events.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
   if (typeof closeOwnedWindow !== "function") throw new Error("Owned native close adapter required");
-  async function locate({ role, name, scope }) {
+  async function locate({ role, name, scope }, allowAbsent = false) {
     if (!role || typeof name !== "string") throw new Error("Exact accessible target required");
     const { nodes } = await cdp.command("Accessibility.getFullAXTree");
     let candidates = nodes;
@@ -12,6 +13,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       const ancestors = nodes.filter(
         (node) => !node.ignored && node.role?.value === scope.role && node.name?.value === scope.name,
       );
+      if (allowAbsent && ancestors.length === 0) return null;
       if (ancestors.length !== 1) throw new Error("Accessible scope must be unique");
       const descendants = new Set();
       const queue = [...(ancestors[0].childIds ?? [])];
@@ -25,10 +27,29 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       candidates = nodes.filter((node) => descendants.has(node.nodeId));
     }
     const found = candidates.filter((n) => !n.ignored && n.role?.value === role && n.name?.value === name);
+    if (allowAbsent && found.length === 0) return null;
     if (found.length !== 1) throw new Error(`Expected one accessible ${role}: ${name}; found ${found.length}`);
     return { ...found[0], axNodes: nodes };
   }
-  async function click(target) {
+  async function waitForTarget(target, { timeoutMs = 10000 } = {}) {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30000)
+      throw new Error("Bounded target readiness timeout required");
+    const deadline = performance.now() + timeoutMs;
+    do {
+      const node = await locate(target, true);
+      if (
+        node?.backendDOMNodeId &&
+        !node.properties?.some((property) => property.name === "disabled" && property.value?.value === true)
+      )
+        return;
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) break;
+      // Only read accessibility state again; never retry an input action.
+      await delay(Math.min(100, remaining));
+    } while (performance.now() < deadline);
+    throw new Error(`Timed out waiting for accessible ${target.role}: ${target.name}`);
+  }
+  async function click(target, beforePointer) {
     const node = await locate(target);
     if (node.properties?.some((p) => p.name === "disabled" && p.value?.value === true))
       throw new Error("Control disabled");
@@ -37,9 +58,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     await cdp.command("DOM.scrollIntoViewIfNeeded", params);
     const { model } = await cdp.command("DOM.getBoxModel", params);
     const q = model.border;
-    const x = (q[0] + q[2] + q[4] + q[6]) / 4;
-    const y = (q[1] + q[3] + q[5] + q[7]) / 4;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("Control layout unavailable");
+    if (q.length !== 8 || !q.every(Number.isFinite)) throw new Error("Control layout unavailable");
     // Box quads and Input use viewport CSS pixels. DOM hit testing uses page
     // CSS pixels, including the root scroll offset after scrollIntoView.
     const { cssLayoutViewport } = await cdp.command("Page.getLayoutMetrics");
@@ -50,7 +69,16 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     const height = cssLayoutViewport.clientHeight;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
       throw new Error("Page viewport unavailable");
-    if (x < 0 || y < 0 || x >= width || y >= height) throw new Error("Control center outside viewport");
+    const left = Math.max(0, Math.min(q[0], q[2], q[4], q[6]));
+    const right = Math.min(width, Math.max(q[0], q[2], q[4], q[6]));
+    const top = Math.max(0, Math.min(q[1], q[3], q[5], q[7]));
+    const bottom = Math.min(height, Math.max(q[1], q[3], q[5], q[7]));
+    if (right <= left || bottom <= top) throw new Error("Control center outside viewport");
+    // Large editors can extend past the viewport after scrolling. Only use
+    // their visible intersection; the ownership hit test below still rejects
+    // ancestor clipping, overlays and points outside a transformed quad.
+    const x = (left + right) / 2;
+    const y = (top + bottom) / 2;
     const hit = await cdp.command("DOM.getNodeForLocation", {
       x: Math.round(x + pageX),
       y: Math.round(y + pageY),
@@ -85,6 +113,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
           throw new Error("Read-only hit handles could not be released");
       }
     }
+    beforePointer?.();
     await cdp.command("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await cdp.command("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   }
@@ -113,12 +142,22 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     };
     const virtual = map[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : null);
     if (!virtual) throw new Error("Unsupported key");
-    const params = { key: key === "Space" ? " " : key, windowsVirtualKeyCode: virtual, modifiers };
-    await cdp.command("Input.dispatchKeyEvent", { type: "keyDown", ...params });
+    const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : /^\d$/.test(key) ? `Digit${key}` : key;
+    const params = { key: key === "Space" ? " " : key, code, windowsVirtualKeyCode: virtual, modifiers };
+    // Chromium needs character text for native keypress/default activation.
+    // Ctrl/Alt/Meta shortcuts must not insert printable text into the editor.
+    const text =
+      modifiers & 11 ? undefined : key === "Enter" ? "\r" : key === "Space" ? " " : key.length === 1 ? key : undefined;
+    await cdp.command("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      ...params,
+      ...(text === undefined ? {} : { text }),
+    });
     await cdp.command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
   }
   return {
     click,
+    waitForTarget,
     press,
     async fill(target, text) {
       await click(target);
@@ -154,9 +193,100 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       if (typeof text !== "string") throw new Error("Text input required");
       await cdp.command("Input.insertText", { text });
     },
+    async clickWithDialog(target, accept) {
+      if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");
+      if (typeof cdp.onEvent !== "function") throw new Error("Dialog opening observation required");
+      let handled = false,
+        timer,
+        unsubscribe,
+        resolveDecision,
+        rejectDecision,
+        firstFailure;
+      const decision = new Promise((resolve, reject) => {
+        resolveDecision = resolve;
+        rejectDecision = (error) => {
+          firstFailure ??= error;
+          reject(error);
+        };
+      });
+      const arm = () => {
+        timer = setTimeout(() => {
+          handled = true;
+          rejectDecision(new Error("Expected confirmation dialog did not open"));
+        }, 10000);
+        unsubscribe = cdp.onEvent("Page.javascriptDialogOpening", ({ type }) => {
+          if (handled) return;
+          clearTimeout(timer);
+          handled = true;
+          if (type !== "confirm") {
+            rejectDecision(new Error("Expected confirmation dialog type"));
+            return;
+          }
+          cdp.command("Page.handleJavaScriptDialog", { accept }).then(resolveDecision, rejectDecision);
+        });
+      };
+      try {
+        // Resolve geometry first. Keep observation until both bounded protocol
+        // operations settle, including invalid dialogs and pointer errors.
+        const pointer = click(target, arm).catch((error) => {
+          rejectDecision(error);
+          throw error;
+        });
+        const outcomes = await Promise.allSettled([pointer, decision]);
+        const failure = outcomes.find((outcome) => outcome.status === "rejected");
+        if (failure) throw firstFailure ?? failure.reason;
+      } finally {
+        clearTimeout(timer);
+        unsubscribe?.();
+      }
+    },
     async confirmDialog(accept) {
       if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");
       await cdp.command("Page.handleJavaScriptDialog", { accept });
+    },
+    async pressWithPrompt(key, accept, promptText) {
+      if (typeof accept !== "boolean" || (accept && typeof promptText !== "string"))
+        throw new Error("Explicit prompt decision required");
+      if (typeof cdp.onEvent !== "function") throw new Error("Dialog opening observation required");
+      let unsubscribe,
+        timer,
+        rejectDecision,
+        firstFailure,
+        handled = false;
+      const decision = new Promise((resolve, reject) => {
+        rejectDecision = (error) => {
+          firstFailure ??= error;
+          reject(error);
+        };
+        timer = setTimeout(() => {
+          handled = true;
+          rejectDecision(new Error("Expected prompt did not open"));
+        }, 10000);
+        unsubscribe = cdp.onEvent("Page.javascriptDialogOpening", ({ type }) => {
+          if (handled) return;
+          handled = true;
+          clearTimeout(timer);
+          if (type !== "prompt") {
+            rejectDecision(new Error("Expected prompt dialog type"));
+            return;
+          }
+          cdp
+            .command("Page.handleJavaScriptDialog", { accept, ...(accept ? { promptText } : {}) })
+            .then(resolve, rejectDecision);
+        });
+      });
+      try {
+        const input = press(key).catch((error) => {
+          rejectDecision(error);
+          throw error;
+        });
+        const outcomes = await Promise.allSettled([input, decision]);
+        const failure = outcomes.find((outcome) => outcome.status === "rejected");
+        if (failure) throw firstFailure ?? failure.reason;
+      } finally {
+        clearTimeout(timer);
+        unsubscribe?.();
+      }
     },
     closeOwnedWindow,
   };

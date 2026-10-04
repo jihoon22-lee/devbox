@@ -1,3 +1,4 @@
+import { withOwnedNativeZoom } from "./windows-user-flow-window.mjs";
 import assert from "node:assert/strict";
 import { until, button } from "./windows-api-user-flow-actions.mjs";
 import { writeProductInputObservation } from "./windows-suite-layout.mjs";
@@ -79,15 +80,7 @@ export async function observePipelineKeyboardModal(context) {
 export async function finishApiInputObservation(context) {
   const observed = context.inputObservation;
   assert.ok(observed?.keyboard && observed.modalFocusReturn && observed.ime);
-  const before = await context.cdp.evaluate("({width:innerWidth,ratio:devicePixelRatio})");
-  const key = { key: "+", code: "Equal", windowsVirtualKeyCode: 187, modifiers: 2 };
-  try {
-    await context.cdp.command("Input.dispatchKeyEvent", { type: "keyDown", ...key });
-    await context.cdp.command("Input.dispatchKeyEvent", { type: "keyUp", ...key });
-    await until(
-      async () => await context.cdp.evaluate(`innerWidth<${before.width} && devicePixelRatio>${before.ratio}`),
-      "Actual browser zoom did not change renderer scale",
-    );
+  await withOwnedNativeZoom(context.windowOwner, context.cdp, async () => {
     assert.equal(
       await context.cdp.evaluate("document.documentElement.scrollWidth<=innerWidth+1"),
       true,
@@ -104,9 +97,5 @@ export async function finishApiInputObservation(context) {
       assertions: observed.assertions,
       screenshotPaths: observed.screenshotPaths,
     });
-  } finally {
-    const reset = { key: "0", code: "Digit0", windowsVirtualKeyCode: 48, modifiers: 2 };
-    await context.cdp.command("Input.dispatchKeyEvent", { type: "keyDown", ...reset });
-    await context.cdp.command("Input.dispatchKeyEvent", { type: "keyUp", ...reset });
-  }
+  });
 }

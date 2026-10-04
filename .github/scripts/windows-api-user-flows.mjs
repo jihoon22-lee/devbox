@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -8,13 +9,14 @@ import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { summarizeEvidence } from "./suite-user-flow-evidence.mjs";
 
 export async function runApiUserFlows() {
-  const context = await createApiUserFlowContext();
+  let context;
   const matrix = JSON.parse(await readFile(new URL("./suite-user-flow-matrix.json", import.meta.url), "utf8")).filter(
     (row) => /^windows-api-(http-semantics|mcp-auth|environments|webhooks|grpc|transforms)\.mjs$/.test(row.module),
   );
   assert.equal(matrix.length, 11, "API matrix scenario registration incomplete");
   const results = [];
   try {
+    context = await createApiUserFlowContext();
     for (const module of new Set(matrix.map((row) => row.module))) {
       const runner = await import(new URL(module, import.meta.url));
       if (module === "windows-api-http-semantics.mjs") {
@@ -36,14 +38,21 @@ export async function runApiUserFlows() {
           },
         });
       } else results.push(...(await runner.run(context)));
-      if (results.some((result) => result.status !== "PASS")) break;
+      // Retained diagnostics collect independent protocol failures in one run;
+      // the unchanged summary still rejects every failed or missing scenario.
+      if (context.diagnosticOnly !== true && results.some((result) => result.status !== "PASS")) break;
     }
+  } catch (error) {
+    await preserveUserFlowFailure("api-studio", error, { ui: context?.ui, identity: context }).catch(() => {
+      console.error("API Studio original-failure evidence unavailable");
+    });
+    throw error;
   } finally {
     try {
-      await context.ui.closeOwnedWindow();
-      await context.close();
+      await context?.ui.closeOwnedWindow();
+      await context?.close();
     } catch {
-      await context.close().catch(() => {});
+      await context?.close().catch(() => {});
       if (results.length) {
         const last = results.at(-1);
         last.status = "FAIL";

@@ -184,10 +184,35 @@ assert "runnerSourceSha = $env:GITHUB_SHA" in installer_diagnostic
 assert "payloadSourceSha = $record.head_sha" in installer_diagnostic
 for script in ("windows-suite-user-flow.mjs", "windows-workspace-user-flows.mjs", "windows-api-user-flows.mjs", "windows-knowledge-user-flows.mjs", "windows-suite-delivery-user-flows.mjs", "windows-suite-legacy-upgrade-ui.mjs", "windows-suite-integration.mjs", "windows-suite-layout.mjs", "windows-suite-agent-user-flows.mjs"):
     assert script in installer_diagnostic
+# Cross-product and layout journeys require the original committed namespace;
+# delivery intentionally changes its generation and can leave health on failure.
+for name in ("product-foundation.yml", "windows-package-candidate.yml"):
+    text = (Path(".github/workflows") / name).read_text()
+    order = next(line for line in text.splitlines() if "foreach ($script in" in line and "windows-suite-delivery-user-flows.mjs" in line)
+    assert order.index("windows-suite-integration.mjs") < order.index("windows-suite-delivery-user-flows.mjs")
+    assert order.index("windows-suite-layout.mjs") < order.index("windows-suite-delivery-user-flows.mjs")
+    assert order.index("windows-suite-agent-user-flows.mjs") > order.index("windows-suite-delivery-user-flows.mjs")
 assert "--withdrawn" in installer_diagnostic
+for step_name, evidence_name in (("Install interactively and complete visible activation", "hosted-display-installer"), ("Exercise actual work in the same installed namespace", "hosted-display-work")):
+    step = installer_diagnostic.split("      - name: " + step_name + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "shell: pwsh" in step
+    assert "run: |" in step
+    prepare = '. .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName ' + evidence_name
+    assert prepare in step
+    journey = "node .github/scripts/windows-suite-user-flow.mjs" if evidence_name == "hosted-display-installer" else "node .github/scripts/windows-suite-legacy-upgrade-ui.mjs"
+    assert step.index(prepare) < step.index(journey)
+assert "Prepare hosted display for native layout acceptance" not in installer_diagnostic
 assert "windows-user-flow-install.ps1 -Cleanup" in installer_diagnostic
 assert "windows-knowledge-wsl.ps1 -Cleanup" in installer_diagnostic
 assert "windows-suite-delivery.ps1 -Staging candidate/delivery" in installer_diagnostic
 assert "installer-ui-diagnostic-${{ github.run_id }}" in installer_diagnostic
 assert "collect-user" not in installer_diagnostic and "promote" not in installer_diagnostic
 assert "GITHUB_SHA=" not in installer_diagnostic and "$env:GITHUB_SHA =" not in installer_diagnostic
+
+install_step = installer_diagnostic.split("      - name: Install interactively and complete visible activation\n", 1)[1].split("\n      - ", 1)[0]
+work_step = installer_diagnostic.split("      - name: Exercise actual work in the same installed namespace\n", 1)[1].split("\n      - ", 1)[0]
+assert "id: retained_install" in install_step
+assert "continue-on-error" not in install_step
+assert "if: ${{ success() || (failure() && steps.retained_install.outcome == 'failure') }}" in work_step
+assert work_step.index("node .github/scripts/verify-retained-committed-install.mjs") < work_step.index("prepare-windows-ui-display.ps1")
+assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }" in work_step

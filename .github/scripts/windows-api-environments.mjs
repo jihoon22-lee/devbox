@@ -25,6 +25,7 @@ export async function run(context) {
       record(
         "L4 fixture preparation seeds one sparse var2 with native DPAPI synthetic ciphertext into the owned document namespace",
       );
+      await context.ui.waitForTarget(button("Synthetic sparse"));
       await context.ui.click(button("Synthetic sparse"));
       await context.ui.click(button("+ 변수"));
       await until(
@@ -51,17 +52,16 @@ export async function run(context) {
       stored = (await context.document("environments")).value;
       assert.equal(stored.environments[0].variables[0].value, sealed);
       record("Actual duplicate rename rejects persistence, then valid rename preserves the exact sealed blob");
-      await context.ui.click(button("환경 변수 var1 삭제"));
-      await context.ui.confirmDialog(false);
+      await context.ui.clickWithDialog(button("환경 변수 var1 삭제"), false);
       assert.deepEqual((await context.document("environments")).value, stored);
-      await context.ui.click(button("환경 변수 var1 삭제"));
-      await context.ui.confirmDialog(true);
+      await context.ui.clickWithDialog(button("환경 변수 var1 삭제"), true);
       await until(
         async () => (await context.document("environments")).value.environments[0].variables.length === 1,
         "Confirmed deletion was not saved",
       );
       record("Actual delete cancel preserves metadata; confirmed deletion removes only the named row");
       await context.restart();
+      await context.ui.waitForTarget(button("Synthetic sparse"));
       await context.ui.click(button("Synthetic sparse"));
       assert.equal((await context.document("environments")).value.environments[0].variables[0].value, sealed);
       await expectText(context, "••••••••");

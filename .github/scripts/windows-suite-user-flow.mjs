@@ -216,10 +216,12 @@ export async function run() {
   const text = () => center.cdp.evaluate("document.body.innerText");
   const openProducts = async (products) => {
     for (const product of products) {
-      await center.ui.click({
+      const target = {
         role: "button",
         name: `Devbox ${product === "api-studio" ? "API Studio" : product === "workspace" ? "Workspace" : "Knowledge"} 열기`,
-      });
+      };
+      await center.ui.waitForTarget(target);
+      await center.ui.click(target);
       await until(() => processFor(product).length === 1, `${product} visible launch`);
     }
   };
@@ -314,7 +316,12 @@ export async function run() {
     );
     center.cdp.close();
     await attach(previous);
-    if (expected !== "committed") await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    if (expected !== "committed") {
+      const recovery = { role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } };
+      await center.ui.waitForTarget(recovery);
+      await center.ui.click(recovery);
+      await center.ui.waitForTarget({ role: "button", name: "Devbox Workspace 열기" });
+    }
   };
   try {
     for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
@@ -417,15 +424,31 @@ export async function run() {
     agentCheckpoint = await beforeAgentProductPreparation(agentInput());
     await checkpoint("installed-workspace-preparation");
     await openProducts(["workspace"]);
+    await checkpoint("installed-partial-health");
     await health();
     assert.ok((await text()).includes("응답 또는 저장소를 확인하지 못함"));
     assert.ok(!(await text()).includes("다음 단계"), "Unprepared products must block activation");
     const before = JSON.parse(await readFile(path.join(root, "devbox-activation.json"), "utf8"));
     const previous = center.process;
+    await checkpoint("installed-center-close-for-resume");
+    const closeWindowView = nativeWindowAction(center.owner, "Inspect");
+    await writeFile(
+      "product-foundation-evidence/interactive-center-close-window.json",
+      JSON.stringify({
+        stage,
+        sourceSha: identity.sourceSha,
+        windowCount: closeWindowView.windowCount,
+        selectedWindowCount: closeWindowView.selectedWindowCount,
+        windows: closeWindowView.windows,
+        nativeWindowCount: closeWindowView.nativeWindowCount,
+        nativeWindows: closeWindowView.nativeWindows,
+      }),
+    );
     await center.ui.closeOwnedWindow();
     await until(() => processFor("control-center").length === 0, "cancel and close setup");
     center.cdp.close();
     // Reopen the same installed executable, like the user's normal shortcut.
+    await checkpoint("installed-center-reopen");
     const reopened = spawn(imagePath("control-center"), [], { env, stdio: "ignore", windowsHide: false });
     await once(reopened, "spawn");
     await attach(previous);
@@ -473,7 +496,7 @@ export async function run() {
     };
     const warmExistingWindowMs = await measureWarmOwnedWindow(center.owner, centerTransport);
     const taskStart = performance.now();
-    await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
     await until(async () => (await text()).includes("현재 데이터 보존"), "committed recovery usable");
     const completeMs = performance.now() - taskStart;
     await observeProductPerformance({
@@ -487,6 +510,7 @@ export async function run() {
     await observeControlCenterInput({
       cdp: { command: center.cdp.send.bind(center.cdp), evaluate: center.cdp.evaluate.bind(center.cdp) },
       ui: center.ui,
+      windowOwner: center.owner,
     });
     results.push(
       record("INSTALL-01", "PASS", [
@@ -524,6 +548,11 @@ export async function run() {
       };
     }
     if (center) {
+      try {
+        observation.centerWindow = nativeWindowAction(center.owner, "Inspect");
+      } catch {
+        observation.centerWindow = { unavailable: true };
+      }
       try {
         screenshots.push(await center.ui.screenshot("interactive-first-failure"));
       } catch (captureError) {

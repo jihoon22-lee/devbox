@@ -3,6 +3,13 @@ import {
   projectConnectionDiagnostics,
   projectHandoffDiagnostics,
 } from "./agent-runtime-diagnostics.mjs";
+import {
+  installedFixtureCommand,
+  prepareHistoricalNativeStore,
+  historicalHealthUnavailable,
+} from "./windows-suite-native-protocol.mjs";
+import { createUiDriver } from "./suite-user-flow-driver.mjs";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
@@ -107,9 +114,15 @@ function captureDiagnostics() {
     evidence.runtimeDiagnosticsUnavailable = true;
   }
 }
-async function call(item, command, body, route) {
+async function call(item, command, body, route, historicalPreparationObservation = false) {
+  command = installedFixtureCommand(command, evidence.source);
+  evidence.stage = {
+    product: item.product,
+    command,
+    method: typeof body.method === "string" ? body.method : body.method?.kind,
+  };
   return item.cdp.evaluate(
-    `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){throw new Error(JSON.stringify(problem).slice(0,2000));}})()`,
+    `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){if(${JSON.stringify(historicalPreparationObservation)} && problem?.provenance?.requestId===header.requestId)return {historicalHealthProblem:{code:problem.code,provenance:problem.provenance}};throw new Error(JSON.stringify(problem).slice(0,2000));}})()`,
     { timeoutMs: 35000 },
   );
 }
@@ -253,17 +266,60 @@ try {
   }
   if (mode !== "committed") {
     for (const member of manifest.members) {
-      const readyDeadline = Date.now() + 30000;
-      let ready = false;
-      while (Date.now() < readyDeadline) {
-        const status = value(
+      if (evidence.source === "1c97b41ee10ca0df7c062338bfe85659af025a89") {
+        const initial = value(
           await call(
             center,
             "plugin:suite|connection",
-            { method: { kind: "readHealthStatus", product: member.product } },
+            {
+              method: { kind: "readHealthStatus", product: member.product },
+            },
             "recovery",
           ),
         );
+        const item = apps[member.product];
+        const receipt = await prepareHistoricalNativeStore(
+          evidence.source,
+          member.product,
+          initial.nativeStoreReady,
+          createUiDriver({
+            cdp: item.cdp,
+            evidenceRoot: "product-foundation-evidence",
+            closeOwnedWindow: async () => {
+              throw new Error("Historical preparation cannot close products");
+            },
+          }),
+        );
+        if (receipt) (evidence.historicalPreparation ??= []).push(receipt);
+      }
+      const readyDeadline = Date.now() + 30000;
+      let ready = false;
+      while (Date.now() < readyDeadline) {
+        const preparedHistorically =
+          evidence.historicalPreparation?.some((row) => row.product === member.product) === true;
+        const observed = await call(
+          center,
+          "plugin:suite|connection",
+          { method: { kind: "readHealthStatus", product: member.product } },
+          "recovery",
+          preparedHistorically,
+        );
+        if (observed.historicalHealthProblem) {
+          const problem = observed.historicalHealthProblem;
+          assert.ok(
+            historicalHealthUnavailable(evidence.source, problem),
+            "Unexpected historical health preparation failure",
+          );
+          const counts = (evidence.historicalHealthUnavailable ??= {});
+          counts[member.product] = {
+            code: problem.code,
+            component: problem.provenance.component,
+            observations: (counts[member.product]?.observations ?? 0) + 1,
+          };
+          await delay(100);
+          continue;
+        }
+        const status = value(observed);
         if (status.nativeStoreReady) {
           ready = true;
           break;
@@ -510,6 +566,7 @@ try {
   }
   evidence.result = "passed";
 } catch (error) {
+  evidence.error = boundedFailure(error);
   evidence.failure = String(error).slice(0, 3000);
   captureDiagnostics();
   process.exitCode = 1;

@@ -1,3 +1,8 @@
+import {
+  navigateWorkspaceFiles,
+  observeWorkspaceFailure,
+  cleanupWorkspaceFixture,
+} from "./windows-workspace-ui-observations.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -43,7 +48,7 @@ export async function run(context) {
     await writeFile(file, original);
     await fixture.prepare(root);
     const open = async () => {
-      await ui.click({ role: "button", name: "파일" });
+      await navigateWorkspaceFiles(ui);
       await ui.fill({ role: "textbox", name: "열 파일 경로" }, file);
       await ui.click({ role: "button", name: "파일 열기" });
       await fixture.waitForText({ role: "textbox", name: "" });
@@ -119,14 +124,17 @@ export async function run(context) {
         "Owned writer failure blocks close and retains unsaved text without rewriting original",
       ]),
     );
-  } catch {
+  } catch (error) {
+    const failure = await observeWorkspaceFailure(ui, "WORK-01", error);
+    screenshots.push(...failure.screenshotPaths);
     for (const id of scenarioIds)
       if (!results.some((result) => result.id === id))
-        results.push(
-          record(id, "FAIL", ["Owned Workspace draft UI scenario did not complete"], "workspace-draft-ui-failed"),
-        );
+        results.push({
+          ...record(id, "FAIL", ["Owned Workspace draft UI scenario did not complete"], "workspace-draft-ui-failed"),
+          error: failure.error,
+        });
   } finally {
-    await fixture.cleanup();
+    await cleanupWorkspaceFixture(fixture, results);
   }
   return results;
 }

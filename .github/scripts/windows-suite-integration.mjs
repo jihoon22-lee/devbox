@@ -1,3 +1,4 @@
+import { navigateWorkspaceFiles } from "./windows-workspace-ui-observations.mjs";
 // L4 preparations are identified separately; domain transfers/reviews use real UI input.
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -204,7 +205,7 @@ export async function run(api) {
       );
     assert.ok(project, "Retained Windows project not registered");
     await workspace.ui.click(button("프로젝트 선택", { role: "region", name: project.name }));
-    await workspace.ui.click(button("파일"));
+    await navigateWorkspaceFiles(workspace.ui);
     await workspace.ui.fill(textbox("열 파일 경로"), receipt.file);
     await workspace.ui.click(button("파일 열기"));
     await until(

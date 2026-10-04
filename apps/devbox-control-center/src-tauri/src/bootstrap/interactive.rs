@@ -4,8 +4,20 @@ use serde_json::{json, Value};
 use std::{os::windows::process::CommandExt, sync::atomic::Ordering};
 use windows::{
     core::PCWSTR,
-    Win32::UI::WindowsAndMessaging::{MessageBoxW, IDCANCEL, MB_ICONEXCLAMATION, MB_RETRYCANCEL},
+    Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDCANCEL, MB_ICONEXCLAMATION, MB_OK, MB_RETRYCANCEL,
+    },
 };
+
+/// Callers verify the retained helper's payload/hash before constructing this
+/// command. Never inherit the product's CWD: it may be the installation root,
+/// which ordinary root validation correctly protects from modification.
+pub(super) fn retained_helper_command(helper: &Path) -> Result<std::process::Command> {
+    let directory = helper.parent().ok_or("bootstrap_launch_failed")?;
+    let mut command = std::process::Command::new(helper);
+    command.current_dir(directory);
+    Ok(command)
+}
 
 static LEAVING: AtomicBool = AtomicBool::new(false);
 
@@ -77,7 +89,7 @@ pub(crate) fn resume_before_shell() -> Result<bool> {
         _ => return Err("restore_record_invalid"),
     };
     scope.revalidate()?;
-    std::process::Command::new(helper)
+    retained_helper_command(&helper)?
         .arg("--reviewed-data-action")
         .arg(root)
         .arg(payload)
@@ -344,7 +356,7 @@ pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> 
             return Err("restore_operation_invalid");
         }
         scope.revalidate()?;
-        let child = std::process::Command::new(helper)
+        let child = retained_helper_command(&helper)?
             .arg("--reviewed-data-action")
             .arg(root)
             .arg(payload)
@@ -368,7 +380,41 @@ pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> 
     }
     result
 }
+// Only reviewed handoffs have already closed the accepting product shell.
+// The operation loop owns Retry/Cancel; report only failures before that loop.
+fn run_with_preflight_reporting<T>(
+    operation: impl FnOnce(&mut bool) -> Result<T>,
+    report: impl FnOnce(&str),
+) -> Result<T> {
+    let mut entered_loop = false;
+    let result = operation(&mut entered_loop);
+    if !entered_loop {
+        if let Err(issue) = &result {
+            report(issue);
+        }
+    }
+    result
+}
 pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
+    run_with_preflight_reporting(
+        |entered_loop| run_reviewed(arguments, entered_loop),
+        |issue| {
+            let title = "Devbox 작업 시작 실패\0".encode_utf16().collect::<Vec<_>>();
+            let message = format!(
+                "검토한 작업을 시작하지 못했습니다 ({issue}).\n준비된 설치 파일과 사용자 데이터, 원본과 보존본은 유지됩니다.\n다른 Devbox 제품을 모두 닫은 뒤, 같은 설치의 Control Center를 다시 열어 작업 상태를 확인하고 다시 시도하세요.\n복구 중에는 제품 실행이 계속 차단될 수 있습니다.\0"
+            ).encode_utf16().collect::<Vec<_>>();
+            unsafe {
+                MessageBoxW(
+                    None,
+                    PCWSTR(message.as_ptr()),
+                    PCWSTR(title.as_ptr()),
+                    MB_OK | MB_ICONEXCLAMATION,
+                );
+            }
+        },
+    )
+}
+fn run_reviewed(arguments: &[std::ffi::OsString], entered_loop: &mut bool) -> Result<StageResult> {
     if arguments.len() != 5 {
         return Err("bootstrap_arguments_invalid");
     }
@@ -441,6 +487,7 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
     }
     let _helper_gate = Lock(lock);
     let mut began = std::time::Instant::now();
+    *entered_loop = true;
     loop {
         let result = match request.action.as_str() {
             "snapshot" => snapshot_install(&root, &payload, &image, false),
@@ -551,5 +598,93 @@ mod action_tests {
         for removed in ["activateReviewed", "commitReviewed", "reviewImportAgain"] {
             assert!(!known_action(removed));
         }
+    }
+}
+
+#[cfg(test)]
+mod preflight_tests {
+    use super::run_with_preflight_reporting;
+    #[test]
+    fn preflight_rejection_reports_once_and_preserves_code() {
+        let mut reports = Vec::new();
+        let result: Result<(), &str> = run_with_preflight_reporting(
+            |_| Err("bootstrap_owner_changed"),
+            |issue| reports.push(issue.to_owned()),
+        );
+        assert_eq!(result, Err("bootstrap_owner_changed"));
+        assert_eq!(reports, ["bootstrap_owner_changed"]);
+    }
+    #[test]
+    fn loop_errors_and_success_do_not_show_a_second_error() {
+        for fail in [false, true] {
+            let result = run_with_preflight_reporting(
+                |entered| {
+                    *entered = true;
+                    if fail {
+                        Err("suite_writers_must_close")
+                    } else {
+                        Ok(())
+                    }
+                },
+                |_| panic!("loop already owns error reporting"),
+            );
+            assert_eq!(result.is_err(), fail);
+        }
+    }
+}
+
+#[cfg(test)]
+mod helper_command_tests {
+    use super::retained_helper_command;
+    #[test]
+    fn retained_helper_child_does_not_inherit_installation_root() {
+        const ROOT: &str = "DEVBOX_TEST_HELPER_ROOT";
+        const CHILD: &str = "DEVBOX_TEST_HELPER_CHILD";
+        let test_name = std::thread::current().name().unwrap().to_owned();
+        if let Some(expected) = std::env::var_os(CHILD) {
+            assert_eq!(
+                std::env::current_dir().unwrap().canonicalize().unwrap(),
+                std::path::PathBuf::from(expected).canonicalize().unwrap()
+            );
+            return;
+        }
+        if let Some(root) = std::env::var_os(ROOT) {
+            let root = std::path::PathBuf::from(root);
+            assert_eq!(
+                std::env::current_dir().unwrap().canonicalize().unwrap(),
+                root.canonicalize().unwrap()
+            );
+            let directory = root.join("setup").join("owned revision");
+            let helper = directory.join("owned-helper.exe");
+            let status = retained_helper_command(&helper)
+                .unwrap()
+                .args(["--exact", &test_name, "--nocapture"])
+                .env_remove(ROOT)
+                .env(CHILD, &directory)
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let root = std::env::temp_dir().join(format!(
+            "devbox-helper-cwd-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let directory = root.join("setup").join("owned revision");
+        std::fs::create_dir_all(&directory).unwrap();
+        let image = std::env::current_exe().unwrap();
+        std::fs::copy(&image, directory.join("owned-helper.exe")).unwrap();
+        let status = std::process::Command::new(&image)
+            .args(["--exact", &test_name, "--nocapture"])
+            .current_dir(&root)
+            .env(ROOT, &root)
+            .status()
+            .unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(status.success());
     }
 }

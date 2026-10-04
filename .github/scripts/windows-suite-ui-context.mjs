@@ -9,6 +9,7 @@ import { packagedIdentity, installedFixtureIdentity, fileDigest } from "./suite-
 import { freePort, connect } from "./workspace-cdp-fixture.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
+import { nativeIssueCollector } from "./windows-reviewed-helper-evidence.mjs";
 import {
   allWindowsProcesses,
   windowsProcessIsElevated,
@@ -60,6 +61,7 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
   for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
   let child, processIdentity, owner, cdp;
+  const nativeIssues = nativeIssueCollector();
   let disposed = false;
   const dispose = () => {
     if (disposed) return;
@@ -68,7 +70,12 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
   };
   try {
     if (policy) installElevatedCdpPolicy(policy);
-    child = spawn(executable, [], { cwd: root, env, stdio: "ignore" });
+    child = spawn(executable, [], { cwd: root, env, stdio: ["ignore", "ignore", "pipe"] });
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => nativeIssues.write(chunk));
+    // A reviewed helper may retain the pipe beyond the product's shutdown.
+    // It may report a preflight failure, but must not keep this runner alive.
+    child.stderr.unref();
     await once(child, "spawn");
     await observeUntil(() => {
       processIdentity = allWindowsProcesses().find(
@@ -97,7 +104,7 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
             if (
               product === "workspace" &&
               !reviewed &&
-              (await cdp.evaluate("document.body.innerText")).includes("Workspace 종료 검토")
+              (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')'))
             ) {
               await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
               reviewed = true;
@@ -121,7 +128,14 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       const result = await cdp.evaluate(
         `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');return invoke('plugin:control-center|delivery',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+10000,route:'recovery',context:d.context},method:${JSON.stringify(method)},args:{}}});})()`,
       );
-      assert.equal(result.operation.outcome.state, "succeeded");
+      const code = [result.operation.outcome.code, result.value?.issue]
+        .filter((value) => typeof value === "string" && /^[a-z][a-z0-9_]{0,100}$/u.test(value))
+        .join("/");
+      assert.equal(
+        result.operation.outcome.state,
+        "succeeded",
+        `Read-only delivery ${method} failed: ${code || "unknown"}`,
+      );
       return result.value;
     };
     return {
@@ -131,6 +145,7 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       manifest,
       executable,
       child,
+      nativeIssueCodes: nativeIssues.codes,
       processIdentity,
       ui,
       cdp,

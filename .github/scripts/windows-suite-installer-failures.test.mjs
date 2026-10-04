@@ -8,6 +8,8 @@ import {
   rejectedInstallerIssue,
   directorySpaceRejected,
   ownedNsisSpawnOptions,
+  installerFailureObservation,
+  inspectInstallerFailure,
 } from "./windows-suite-installer-actions.mjs";
 import { validateWithdrawnUpdateReceipt } from "./windows-suite-delivery-user-flows.mjs";
 for (const guard of [() => validateInstallerFaultOwnership(undefined), () => observeInstallerFailurePreservation({})])
@@ -74,4 +76,76 @@ test("withdrawn supplemental receipt cannot complete delivery with a failed or d
   assert.throws(() =>
     validateWithdrawnUpdateReceipt({ status: "PASS", fixtureKind: "alternate-encoding" }, identity, "c".repeat(64)),
   );
+});
+
+test("installer failure projects known status and bootstrap codes without paths or arbitrary text", () => {
+  const result = installerFailureObservation(
+    {
+      windowCount: 1,
+      selectedWindowCount: 1,
+      controls: [
+        { id: "1027", visible: true, enabled: true, name: "C:\\private\\token-secret" },
+        { id: "", visible: true, name: "설치를 준비하지 못했습니다. existing private data" },
+        { id: "", visible: true, name: "bootstrap_health_required\nC:\\private" },
+        { id: "", visible: true, name: "bootstrap_secret_private" },
+      ],
+    },
+    "installation finish",
+    null,
+  );
+  assert.deepEqual(result.issues, ["bootstrap_health_required"]);
+  assert.deepEqual(result.statuses, ["preparation_failed"]);
+  assert.equal(result.stage, "installation finish");
+  assert.equal(JSON.stringify(result).includes("private"), false);
+  assert.equal(installerFailureObservation(null, "welcome", 1).inspectionUnavailable, true);
+});
+
+test("installer issue boundaries reject adjoining digits and underscores", () => {
+  for (const name of ["1bootstrap_health_required", "bootstrap_health_required2", "bootstrap_health_required_extra"])
+    assert.deepEqual(installerFailureObservation({ controls: [{ name }] }, "installation finish", null).issues, []);
+});
+
+test("failed owned installer expands exact Details once and exposes allowlisted issue", () => {
+  let expanded = false;
+  const actions = [];
+  const installer = {
+    child: { exitCode: null },
+    inspect: () => ({
+      buttons: [{ id: "1027", enabled: true, visible: true }],
+      controls: [
+        { name: "설치 항목과 바로가기를 등록하지 못했습니다" },
+        ...(expanded ? [{ name: "suite_remove_file_changed\nprivate path" }] : []),
+      ],
+    }),
+    invoke: (id) => {
+      actions.push(id);
+      expanded = true;
+    },
+  };
+  const observation = inspectInstallerFailure(installer, "installation finish");
+  assert.deepEqual(actions, ["1027"]);
+  assert.deepEqual(observation.issues, ["suite_remove_file_changed"]);
+  assert.equal(JSON.stringify(observation).includes("private path"), false);
+});
+test("Details diagnostic never invokes a healthy installer or replaces first observation on failure", () => {
+  for (const failing of [false, true]) {
+    const view = {
+      buttons: [{ id: "1027", enabled: true, visible: true }],
+      controls: [{ name: failing ? "설치 항목과 바로가기를 등록하지 못했습니다" : "Devbox 설치 준비 완료" }],
+    };
+    let invoked = 0;
+    const result = inspectInstallerFailure(
+      {
+        child: { exitCode: null },
+        inspect: () => view,
+        invoke: () => {
+          invoked++;
+          throw new Error("diagnostic unavailable");
+        },
+      },
+      "installation finish",
+    );
+    assert.equal(invoked, failing ? 1 : 0);
+    assert.deepEqual(result.statuses, [failing ? "registration_failed" : "prepared"]);
+  }
 });

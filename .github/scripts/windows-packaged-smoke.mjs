@@ -135,7 +135,13 @@ function powershellOnce(script, failureMessage) {
     maxBuffer: 1024 * 1024,
     timeout: 15_000,
   });
-  if (result.status !== 0) fail(failureMessage);
+  if (result.status !== 0) {
+    const code = /^[A-Z0-9_]{1,32}$/u.test(result.error?.code ?? "") ? result.error.code : "none";
+    const signal = /^[A-Z0-9]{1,16}$/u.test(result.signal ?? "") ? result.signal : "none";
+    fail(
+      `${failureMessage} (exit=${Number.isInteger(result.status) ? result.status : "none"}, code=${code}, signal=${signal})`,
+    );
+  }
   return result.stdout.trim();
 }
 

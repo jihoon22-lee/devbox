@@ -1,3 +1,4 @@
+import { observeWorkspaceFailure, cleanupWorkspaceFixture } from "./windows-workspace-ui-observations.mjs";
 import assert from "node:assert/strict";
 export const scenarioIds = ["WORK-02", "WORK-03"];
 export async function run(context) {
@@ -112,20 +113,23 @@ export async function run(context) {
         [...screenshots],
       ),
     );
-  } catch {
+  } catch (error) {
+    const failure = await observeWorkspaceFailure(ui, "WORK-02", error);
+    screenshots.push(...failure.screenshotPaths);
     for (const id of scenarioIds)
       if (!results.some((result) => result.id === id))
-        results.push(
-          record(
+        results.push({
+          ...record(
             id,
             "FAIL",
             ["Owned WSL Agent UI scenario did not complete"],
             screenshots,
             "workspace-agent-registry-ui-failed",
           ),
-        );
+          error: failure.error,
+        });
   } finally {
-    await fixture.cleanup();
+    await cleanupWorkspaceFixture(fixture, results);
   }
   return results;
 }

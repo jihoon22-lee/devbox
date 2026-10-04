@@ -350,7 +350,7 @@ pub(super) fn dispatch(
     let payload = Payload::parse(&bytes)?;
     let helper = directory.join("devbox-suite-bootstrap.exe");
     verify_payload_owner(&payload, &helper)?;
-    let mut command = std::process::Command::new(helper);
+    let mut command = super::interactive::retained_helper_command(&helper)?;
     if blocked {
         let pending = pending.ok_or("update_claim_invalid")?;
         let action = match pending["state"].as_str() {

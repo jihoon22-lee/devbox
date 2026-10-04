@@ -177,7 +177,7 @@ export async function closeOwnedProduct(item, force = false) {
           if (
             item.product === "workspace" &&
             !reviewed &&
-            (await item.cdp.evaluate("document.body.innerText")).includes("Workspace 종료 검토")
+            (await item.cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')'))
           ) {
             await item.ui.click({
               role: "button",

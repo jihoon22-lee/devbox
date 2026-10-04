@@ -29,6 +29,7 @@ export async function run(context) {
     results.push(
       await scenario(context, "WEB-01", async (record) => {
         await context.ui.click(button("웹훅 및 모의 서버"));
+        await context.ui.waitForTarget({ role: "spinbutton", name: "포트" });
         await context.ui.fill({ role: "spinbutton", name: "포트" }, String(port));
         await context.ui.click(button("시작"));
         await expectText(context, `127.0.0.1:${port}`);
@@ -112,8 +113,10 @@ export async function run(context) {
     if (started) {
       await context.ui.click(button("웹훅 및 모의 서버"));
       await context.ui.click(button("중지"));
-      const status = await context.nativeCall("plugin:api-studio|webhooks", "server_status", {}, "webhooks");
-      assert.equal(status.running, false, "Owned webhook listener did not stop");
+      await until(async () => {
+        const status = await context.nativeCall("plugin:api-studio|webhooks", "server_status", {}, "webhooks");
+        return status.running === false;
+      }, "Owned webhook listener did not stop");
     }
   }
 }

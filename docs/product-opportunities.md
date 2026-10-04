@@ -2,9 +2,9 @@
 
 > - 상태: **완료(Completed)** — §17 실행 계획(PR 1~39 + Stage 4/5)은 v0.4.0에서 전부 실행됨.
 > - 이 문서는 이제 **결정·분석 근거의 보존용**이다. 신규 작업은
->   `docs/roadmap.md`와
->   [`2026-08-22-v0.5.0-native-first-plan.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
->   따른다.
+>   [현재 제품 재정비 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)을 따른다.
+>   당시 후속 설계인
+>   [`2026-08-22-v0.5.0-native-first-plan.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)는 역사 기록이다.
 > - 최초 검토일: 2026-08-13 · 실행 완료: 2026-08-15 · v0.5.0 방향 개정: 2026-08-22
 > - 검토 기준: `main` (`43f941b`), 12개 앱 코드 직접 대조
 > - 범위: 앱 통폐합, 기술 스택 정책, 배포 기반, 공용 프리미티브, 앱 간 통합, 신규 앱 후보, PR 단위 실행 계획

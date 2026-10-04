@@ -1,8 +1,10 @@
+import { runKnowledgeChecks } from "./knowledge-diagnostic-sequence.mjs";
 import { observeKnowledgeInput } from "./windows-knowledge-input-ui.mjs";
 import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
 // Real packaged UI acceptance. Provisioning and final namespace cleanup belong to the Suite fixture.
 import assert from "node:assert/strict";
+import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
 import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, mkdtemp, rename, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -26,8 +28,12 @@ import { packagedIdentity, writeUserFlowResults, fileDigest } from "./suite-user
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { createOwnedActivityWindow } from "./windows-owned-activity-window.mjs";
 import { run as documents, scenarioIds as documentIds } from "./windows-knowledge-document-recovery.mjs";
-import { run as search, scenarioIds as searchIds } from "./windows-knowledge-search-lifecycle.mjs";
-import { run as activity, scenarioIds as activityIds } from "./windows-knowledge-activity.mjs";
+import {
+  run as search,
+  scenarioIds as searchIds,
+  searchRootRemovalTarget,
+} from "./windows-knowledge-search-lifecycle.mjs";
+import { run as activity, scenarioIds as activityIds, navigateKnowledgeRoute } from "./windows-knowledge-activity.mjs";
 export async function createInstalledKnowledgeContext() {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
@@ -130,7 +136,10 @@ export async function createInstalledKnowledgeContext() {
     current = null;
   }
   const ui = createUiDriver({
-    cdp: { command: (method, args) => current.cdp.command(method, args) },
+    cdp: {
+      command: (method, args) => current.cdp.command(method, args),
+      onEvent: (event, callback) => current.cdp.onEvent(event, callback),
+    },
     evidenceRoot: "product-foundation-evidence/user-flows/screenshots/knowledge",
     closeOwnedWindow: closeOwned,
   });
@@ -175,7 +184,7 @@ export async function createInstalledKnowledgeContext() {
       const d = await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')");
       const feature = d.features?.find((f) => f.route === route);
       assert.ok(feature);
-      await ui.click({ role: "button", name: feature.label });
+      await navigateKnowledgeRoute(ui, route, feature.label);
     },
     async prepareNotes() {
       await wait(async () => {
@@ -267,7 +276,9 @@ export async function createInstalledKnowledgeContext() {
     },
     regexEnabled: () => current.cdp.evaluate("document.querySelector('.regex-toggle input')?.checked===true"),
     async removeRootViaUi(value) {
-      await ui.click({ role: "button", name: `${value} 루트 제거` });
+      const target = await searchRootRemovalTarget(await this.roots(), value);
+      await ui.waitForTarget(target);
+      await ui.click(target);
       await wait(
         async () => !(await this.roots()).some((r) => path.resolve(r.path) === path.resolve(value)),
         "root removal acknowledged",
@@ -350,6 +361,9 @@ export async function createInstalledKnowledgeContext() {
     get coldRendererReadyMs() {
       return current?.coldRendererReadyMs;
     },
+    get windowOwner() {
+      return current?.windowOwner;
+    },
     measureWarm: () => measureWarmOwnedWindow(current.windowOwner, current.cdp),
     getIdentities: () => ownedProductCohort(current.identity),
     get cdp() {
@@ -367,34 +381,111 @@ export async function createInstalledKnowledgeContext() {
 }
 export async function runInstalledKnowledgeUserFlows() {
   let context,
-    results = [];
+    results = [],
+    firstFailurePreserved = false,
+    diagnosticGateError = null;
   try {
     context = await createInstalledKnowledgeContext();
     let searchResults = [];
-    await observeProductPerformance({
-      product: "knowledge",
-      cdp: context.cdp,
-      getIdentities: context.getIdentities,
-      coldRendererReadyMs: context.coldRendererReadyMs,
-      warmExistingWindowMs: await context.measureWarm(),
-      workload: async () => {
-        searchResults = await search(context);
-        assert.ok(
-          searchResults.every((row) => row.status === "PASS"),
-          "Actual search workloads failed",
-        );
-        assert.equal(context.knowledgeFixture.performanceSearch?.fileCount, 500);
-        return context.knowledgeFixture.performanceSearch;
+    let documentResults = [],
+      activityResults = [];
+    const checks = await runKnowledgeChecks({
+      diagnosticOnly: context.diagnosticOnly,
+      isUsable: () => Boolean(context.cdp) && context.child?.exitCode === null,
+      onFirstFailure: async (error) => {
+        diagnosticGateError = error;
+        await preserveUserFlowFailure("knowledge", error, { ui: context.ui, identity: context })
+          .then(() => {
+            firstFailurePreserved = true;
+          })
+          .catch(() => console.error("Knowledge original-failure evidence unavailable"));
       },
+      checks: [
+        {
+          name: "performance",
+          run: async () => {
+            await observeProductPerformance({
+              product: "knowledge",
+              cdp: context.cdp,
+              getIdentities: context.getIdentities,
+              coldRendererReadyMs: context.coldRendererReadyMs,
+              warmExistingWindowMs: await context.measureWarm(),
+              workload: async () => {
+                searchResults = await search(context);
+                // Preserve scenario failures before the performance gate reports them.
+                await writeFile(
+                  "product-foundation-evidence/knowledge-search-scenarios.json",
+                  JSON.stringify({ schemaVersion: 1, results: searchResults }, null, 2),
+                  { flag: "wx" },
+                );
+                assert.ok(
+                  searchResults.every((row) => row.status === "PASS"),
+                  `Actual search workloads failed: ${searchResults
+                    .filter((row) => row.status !== "PASS")
+                    .map((row) => `${row.id}: ${row.assertions.join("; ")}`)
+                    .join(" | ")}`,
+                );
+                assert.equal(context.knowledgeFixture.performanceSearch?.fileCount, 500);
+                return context.knowledgeFixture.performanceSearch;
+              },
+            });
+          },
+        },
+        {
+          name: "input",
+          run: async () => {
+            await observeKnowledgeInput({
+              ui: context.ui,
+              cdp: context.cdp,
+              fixture: context.knowledgeFixture,
+              windowOwner: context.windowOwner,
+            });
+          },
+        },
+        {
+          name: "documents",
+          run: async () => {
+            documentResults = await documents(context);
+          },
+        },
+        {
+          name: "activity",
+          run: async () => {
+            activityResults = await activity(context);
+          },
+        },
+      ],
     });
-    await observeKnowledgeInput({ ui: context.ui, cdp: context.cdp, fixture: context.knowledgeFixture });
-    results = [...(await documents(context)), ...searchResults, ...(await activity(context))];
+    results = [...documentResults, ...searchResults, ...activityResults];
+    if (checks.firstError) {
+      const observed = new Set(results.map((row) => row.id));
+      for (const id of [...documentIds, ...searchIds, ...activityIds]) {
+        if (!observed.has(id))
+          results.push({
+            sourceSha: context.sourceSha,
+            fixtureSha: context.fixtureSha,
+            artifactDigests: context.artifactDigests,
+            id,
+            status: "NOT_RUN",
+            evidenceKind: "packaged-ui",
+            assertions: ["Original required gate failed; owned context could not complete this independent scenario"],
+            screenshotPaths: [],
+            failureCode: "knowledge-independent-scenario-not-run",
+          });
+      }
+    }
     await writeUserFlowResults("knowledge", results);
+    if (checks.firstError) throw checks.firstError;
     assert.ok(
       results.every((r) => r.status === "PASS"),
       "Knowledge real user-flow acceptance failed",
     );
   } catch (error) {
+    const failure = diagnosticGateError ?? error;
+    if (!firstFailurePreserved)
+      await preserveUserFlowFailure("knowledge", failure, { ui: context?.ui, identity: context }).catch(() => {
+        console.error("Knowledge original-failure evidence unavailable");
+      });
     if (!results.length) {
       const identity = context ?? (await packagedIdentity());
       results = [...documentIds, ...searchIds, ...activityIds].map((id) => ({
@@ -410,9 +501,11 @@ export async function runInstalledKnowledgeUserFlows() {
       }));
       await writeUserFlowResults("knowledge", results);
     }
-    throw error;
+    throw failure;
   } finally {
-    await context?.close();
+    if (diagnosticGateError) {
+      await context?.close().catch(() => console.error("Knowledge cleanup failed after the original required gate"));
+    } else await context?.close();
   }
 }
 
