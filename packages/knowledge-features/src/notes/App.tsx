@@ -1156,22 +1156,11 @@ export default function App({
           </section>
         </div>
       )}
-      {note.error && <p role="alert">{note.error}</p>}
-      {error && (
-        <div className="error" role="alert">
-          {error}
-        </div>
-      )}
 
       {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
         <div className="quick-capture-shortcut-warning" role="status">
           전역 단축키 {quickCaptureShortcut.shortcut}를 등록하지 못했습니다. 다른 앱이 사용 중일 수 있습니다. 해당 앱의
           단축키 설정을 변경한 뒤 Knowledge를 다시 시작하거나, 아래 버튼으로 계속 빠르게 기록할 수 있습니다.
-        </div>
-      )}
-      {notice && (
-        <div className="notice" role="status">
-          {notice}
         </div>
       )}
       <aside id="notes-sidebar" className="sidebar" hidden={!showSidebar} inert={recoveryBusy}>
@@ -1297,6 +1286,17 @@ export default function App({
       </aside>
 
       <main className="content">
+        {note.error && <p role="alert">{note.error}</p>}
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="notice" role="status">
+            {notice}
+          </div>
+        )}
         <button
           className="btn small notes-sidebar-toggle"
           aria-controls="notes-sidebar"

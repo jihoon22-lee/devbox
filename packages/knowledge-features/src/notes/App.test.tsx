@@ -138,6 +138,25 @@ const readFileMock = vi.mocked(readFile);
 const listTreeMock = vi.mocked(listTree);
 const onDocsChangedMock = vi.mocked(onDocsChanged);
 
+it("노트 읽기 오류는 편집 영역 안에 표시되어 sidebar를 옆으로 밀지 않는다", async () => {
+  render(<App />);
+  const nested = treeButton(await screen.findByText("nested.md"));
+  readFileMock.mockRejectedValueOnce(new Error("합성 노트 읽기 실패"));
+  fireEvent.click(nested);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("합성 노트 읽기 실패");
+  expect(alert.closest("main.content")).not.toBeNull();
+});
+it("파일 생성 오류도 편집 영역 안에 표시되어 sidebar를 옆으로 밀지 않는다", async () => {
+  vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/new.md");
+  createFileMock.mockRejectedValueOnce(new Error("합성 파일 생성 실패"));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "+ 파일" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("합성 파일 생성 실패");
+  expect(alert.closest("main.content")).not.toBeNull();
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;

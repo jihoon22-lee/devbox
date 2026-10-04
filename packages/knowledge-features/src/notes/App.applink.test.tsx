@@ -346,7 +346,9 @@ describe("Knowledge Path/Query app-link delivery", () => {
 
     await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith("0123456789abcdef0123456789abcdef"));
     expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Knowledge 초안 미리보기를 취소했습니다. 다시 열 수 있습니다.")).toBeTruthy();
+    const notice = await screen.findByText("Knowledge 초안 미리보기를 취소했습니다. 다시 열 수 있습니다.");
+    expect(notice).toBeTruthy();
+    expect(notice.closest("main.content")).not.toBeNull();
   });
 
   it("maps Escape to cancel and restores focus to the invoking control", async () => {
