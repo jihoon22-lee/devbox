@@ -16,3 +16,40 @@ for (const module of [document, search, activity])
     );
     assert.ok(results.every((r) => r.status === "NOT_RUN" && r.failureCode));
   });
+
+test("search navigation waits for readonly accessible field readiness before returning", async () => {
+  const events = [];
+  let ready;
+  const pending = new Promise((resolve) => {
+    ready = resolve;
+  });
+  const target = { role: "textbox", name: "검색 루트 경로" };
+  const navigation = search.navigateSearch(
+    {
+      knowledgeFixture: {
+        navigate: async (route) => {
+          events.push(route);
+        },
+      },
+      ui: {
+        waitForTarget: async (field) => {
+          assert.deepEqual(field, target);
+          events.push("AX observation");
+          await pending;
+        },
+      },
+    },
+    target,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["search", "AX observation"]);
+  let completed = false;
+  navigation.then(() => {
+    completed = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(completed, false);
+  ready();
+  await navigation;
+  assert.equal(completed, true);
+});

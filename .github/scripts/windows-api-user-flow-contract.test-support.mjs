@@ -33,5 +33,7 @@ export function scenarioModuleContract(runner, ids, module) {
     assert.deepEqual(result.assertions, ["synthetic first observation"]);
     assert.deepEqual(result.screenshotPaths, ["/owned/failure.png"]);
     assert.equal(result.evidenceKind, "packaged-ui");
+    assert.equal(result.error.name, "Error");
+    assert.equal(result.error.message, "synthetic failure");
   });
 }

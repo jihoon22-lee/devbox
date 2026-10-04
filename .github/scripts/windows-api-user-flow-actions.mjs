@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -71,6 +72,7 @@ export async function scenario(context, id, actions) {
       assertions,
       screenshotPaths,
       failureCode: `${id}-assertion-failed`,
+      error: boundedFailure(error),
     };
   }
 }

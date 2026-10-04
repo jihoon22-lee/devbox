@@ -149,6 +149,7 @@ export async function run(context) {
           "L4 fixture preparation creates two bounded synthetic OAuth grants using native DPAPI ciphertext in only the prepared installed namespace",
         );
         await context.ui.click(button("프로토콜"));
+        await context.ui.waitForTarget({ role: "tab", name: "MCP" });
         await context.ui.click({ role: "tab", name: "MCP" });
         await context.ui.fill(textbox("MCP 엔드포인트"), fixture.endpoint);
         await context.ui.click(button("OAuth grant 새로 고침"));

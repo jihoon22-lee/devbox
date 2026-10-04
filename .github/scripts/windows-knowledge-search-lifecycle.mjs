@@ -3,6 +3,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { scenarios } from "./windows-knowledge-flow-shared.mjs";
 export const scenarioIds = ["SEARCH-01", "SEARCH-02"];
+export async function navigateSearch({ knowledgeFixture, ui }, target) {
+  await knowledgeFixture.navigate("search");
+  await ui.waitForTarget(target);
+}
 export async function run(context) {
   return scenarios(context, [
     [
@@ -15,7 +19,7 @@ export async function run(context) {
           await writeFile(path.join(root, `perf-${String(index).padStart(3, "0")}.txt`), "synthetic indexed file\n", {
             flag: "wx",
           });
-        await fixture.navigate("search");
+        await navigateSearch({ knowledgeFixture: fixture, ui }, { role: "textbox", name: "검색 루트 경로" });
         const beforeContent = (await fixture.contentStats()).indexed_files;
         await ui.fill({ role: "textbox", name: "검색 루트 경로" }, root);
         const indexStarted = performance.now();
@@ -60,7 +64,7 @@ export async function run(context) {
       async ({ ui, fixture, fixtureRoot, assertions, screenshots }) => {
         const root = await mkdtemp(path.join(fixtureRoot, "knowledge-search-watch-"));
         await writeFile(path.join(root, "watch-before.txt"), "fixture\n", { flag: "wx" });
-        await fixture.navigate("search");
+        await navigateSearch({ knowledgeFixture: fixture, ui }, { role: "textbox", name: "검색 루트 경로" });
         await ui.fill({ role: "textbox", name: "검색 루트 경로" }, root);
         await ui.click({ role: "button", name: "추가" });
         await fixture.waitRoot(root);
@@ -73,7 +77,7 @@ export async function run(context) {
         const agent = fixture.agentIdentity();
         await fixture.closeAndReopen();
         fixture.assertSameAgent(agent);
-        await fixture.navigate("search");
+        await navigateSearch({ knowledgeFixture: fixture, ui }, { role: "textbox", name: "파일 이름 검색" });
         await ui.fill({ role: "textbox", name: "파일 이름 검색" }, "watch-after");
         await fixture.waitBody("watch-after.txt");
         // Native root removal remains acknowledged before the renderer forgets it.

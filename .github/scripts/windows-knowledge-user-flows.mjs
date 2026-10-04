@@ -383,9 +383,18 @@ export async function runInstalledKnowledgeUserFlows() {
       warmExistingWindowMs: await context.measureWarm(),
       workload: async () => {
         searchResults = await search(context);
+        // Preserve scenario failures before the performance gate reports them.
+        await writeFile(
+          "product-foundation-evidence/knowledge-search-scenarios.json",
+          JSON.stringify({ schemaVersion: 1, results: searchResults }, null, 2),
+          { flag: "wx" },
+        );
         assert.ok(
           searchResults.every((row) => row.status === "PASS"),
-          "Actual search workloads failed",
+          `Actual search workloads failed: ${searchResults
+            .filter((row) => row.status !== "PASS")
+            .map((row) => `${row.id}: ${row.assertions.join("; ")}`)
+            .join(" | ")}`,
         );
         assert.equal(context.knowledgeFixture.performanceSearch?.fileCount, 500);
         return context.knowledgeFixture.performanceSearch;
