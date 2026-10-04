@@ -26,6 +26,7 @@ test("nested draft failure keeps its first error and screenshot despite cleanup 
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const methods = [
     "prepare",
+    "selectWindows",
     "crashAndReopen",
     "context",
     "recovery",
@@ -84,4 +85,52 @@ test("async recovery waits exact live draft before final assertion without anoth
     "",
   );
   assert.equal(reads, 3);
+});
+
+test("crash recovery returns to the owned project and Files before reading its journal dialog", async (t) => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "devbox-draft-resume-"));
+  t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
+  let root,
+    selected = true,
+    route = "files";
+  const boundary = "owned recovery dialog reached";
+  const fixture = {
+    prepare: async (value) => {
+      root = value;
+    },
+    context: async () => null,
+    recovery: async () => ({ entries: [{ path: path.join(root, "한글.txt"), content: "" }] }),
+    wait: async (probe) => assert.equal(await probe(), true),
+    observeInput: async () => {},
+    crashAndReopen: async () => {
+      selected = false;
+      route = "overview";
+    },
+    selectWindows: async () => {
+      selected = true;
+    },
+    waitForText: async (target) => {
+      if (target.name !== "복구 (1)") return;
+      assert.ok(selected && route === "files", "recovery read before restoring its owning view");
+      throw new Error(boundary);
+    },
+    failRecoveryWriter: async () => {},
+    reopenAfterClose: async () => {},
+    cleanup: async () => {},
+  };
+  const records = await run({
+    fixtureRoot,
+    workspaceFixture: fixture,
+    cdp: { evaluate: async () => [[""]] },
+    ui: {
+      click: async (target) => {
+        if (target.name === "파일") route = "files";
+      },
+      waitForTarget: async () => {},
+      fill: async () => {},
+      closeOwnedWindow: async () => {},
+      screenshot: async () => "/owned/recovery.png",
+    },
+  });
+  assert.equal(records[0].error.message, boundary);
 });

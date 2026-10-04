@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { navigateWorkspaceFiles, observeWorkspaceFailure } from "./windows-workspace-ui-observations.mjs";
+import {
+  navigateWorkspaceFiles,
+  observeWorkspaceFailure,
+  stopWorkspaceBeforeDisconnect,
+} from "./windows-workspace-ui-observations.mjs";
 test("Files navigation observes loaded path before caller input", async () => {
   const events = [];
   await navigateWorkspaceFiles({
@@ -28,4 +32,49 @@ test("screenshot failure cannot replace the bounded original nested error", asyn
   );
   assert.equal(failure.error.message, "original credential=[redacted]");
   assert.deepEqual(failure.screenshotPaths, []);
+});
+
+test("crash cleanup preserves the pending reply until the owned renderer exits", async () => {
+  let alive = true;
+  let pending = true;
+  await stopWorkspaceBeforeDisconnect(
+    async () => {
+      await Promise.resolve();
+      alive = false;
+    },
+    () => {
+      if (alive) pending = false;
+    },
+  );
+  assert.equal(alive, false);
+  assert.equal(pending, true);
+});
+test("crash cleanup disconnects after stop failure and preserves the original error", async () => {
+  const failure = new Error("owned process stop failed");
+  let disconnected = false;
+  await assert.rejects(
+    stopWorkspaceBeforeDisconnect(
+      async () => {
+        throw failure;
+      },
+      () => {
+        disconnected = true;
+        throw new Error("later disconnect failure");
+      },
+    ),
+    (error) => error === failure,
+  );
+  assert.equal(disconnected, true);
+});
+test("crash cleanup reports disconnect failure when stopping succeeded", async () => {
+  const failure = new Error("disconnect failed");
+  await assert.rejects(
+    stopWorkspaceBeforeDisconnect(
+      async () => {},
+      () => {
+        throw failure;
+      },
+    ),
+    (error) => error === failure,
+  );
 });

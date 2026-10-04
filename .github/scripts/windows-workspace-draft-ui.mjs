@@ -41,6 +41,7 @@ export async function run(context) {
   if (
     ![
       "prepare",
+      "selectWindows",
       "crashAndReopen",
       "context",
       "recovery",
@@ -64,6 +65,7 @@ export async function run(context) {
     await writeFile(file, original);
     await fixture.prepare(root);
     const open = async () => {
+      await fixture.selectWindows();
       await navigateWorkspaceFiles(ui);
       await ui.fill({ role: "textbox", name: "열 파일 경로" }, file);
       await ui.click({ role: "button", name: "파일 열기" });
@@ -85,6 +87,8 @@ export async function run(context) {
     assert.deepEqual(await readFile(file), original);
     screenshots.push(await ui.screenshot("workspace-close-cancel"));
     await fixture.crashAndReopen();
+    await fixture.selectWindows();
+    await ui.click({ role: "button", name: "파일" });
     await fixture.waitForText({ role: "button", name: "복구 (1)" });
     await ui.click({ role: "button", name: "복구 (1)" });
     await waitForWorkspaceEditorText(cdp, fixture.wait, "");
@@ -102,11 +106,15 @@ export async function run(context) {
       "encoding-only journal metadata",
     );
     await fixture.crashAndReopen();
+    await fixture.selectWindows();
+    await ui.click({ role: "button", name: "파일" });
+    await fixture.waitForText({ role: "button", name: "복구 (1)" });
     await ui.click({ role: "button", name: "복구 (1)" });
     await waitForWorkspaceEditorText(cdp, fixture.wait, "원본\n");
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "파일 저장 후 종료" });
     await fixture.reopenAfterClose();
+    await fixture.selectWindows();
     assert.deepEqual(await readFile(file), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("원본\n")]));
     assert.equal((await fixture.recovery()).entries.length, 0);
     await open();
@@ -116,6 +124,7 @@ export async function run(context) {
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
     await fixture.reopenAfterClose();
+    await fixture.selectWindows();
     assert.deepEqual(await readFile(file), saved);
     assert.equal((await fixture.recovery()).entries.length, 0);
     // Real owned filesystem failure: writer/normal-close must retain the live draft.
@@ -135,6 +144,7 @@ export async function run(context) {
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
     await fixture.reopenAfterClose();
+    await fixture.selectWindows();
     results.push(
       record("WORK-01", "PASS", [
         "Normal native close cancel/save/discard preserve drafts or exact original bytes as reviewed",

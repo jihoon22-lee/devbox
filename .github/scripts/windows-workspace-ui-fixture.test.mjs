@@ -226,7 +226,7 @@ test("paused read failure releases debugger and input while preserving first err
     ["unsubscribe", "Debugger.disable"],
   );
 });
-test("Source navigation waits both asynchronous approval controls before one click each", async () => {
+test("Source navigation waits approval controls and settled readers before returning", async () => {
   const events = [],
     ready = new Set();
   const fixture = createWorkspaceUiFixture({
@@ -254,6 +254,7 @@ test("Source navigation waits both asynchronous approval controls before one cli
     ["ready", "검토한 Git 실행 승인"],
     ["click", "검토한 Git 실행 승인"],
     ["text", "커밋 메시지"],
+    ["ready", "Git 승인 상태 확인"],
   ]);
 });
 test("runtime recovery selects its owned project before mounting Tasks after restart", async () => {

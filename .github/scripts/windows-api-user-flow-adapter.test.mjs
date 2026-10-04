@@ -4,7 +4,12 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promis
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { saveApiFileWhenReady, verifyApiInstallation } from "./windows-api-user-flow-adapter.mjs";
+import {
+  chooseApiFileWhenReady,
+  markApiCleanupFailure,
+  saveApiFileWhenReady,
+  verifyApiInstallation,
+} from "./windows-api-user-flow-adapter.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 async function fixture() {
@@ -168,4 +173,36 @@ test("ambiguous or foreign native picker never receives save input", async () =>
     );
     assert.deepEqual(events, ["Inspect"]);
   }
+});
+
+test("native executable picker readiness precedes its one ChooseFile input", async () => {
+  const events = [];
+  let count = 0;
+  await chooseApiFileWhenReady({ identity: { Pid: 42 } }, "owned.exe", {
+    action: async (_owner, action, args) => {
+      events.push(action);
+      if (action === "Inspect")
+        return {
+          processId: 42,
+          nativeWindowCount: 2,
+          nativeWindows:
+            ++count === 1 ? [] : [{ nativeProcessId: 42, visible: true, topLevel: true, className: "#32770" }],
+        };
+      assert.equal(args.filePath, "owned.exe");
+    },
+    wait: async () => {},
+  });
+  assert.deepEqual(events, ["Inspect", "Inspect", "ChooseFile"]);
+});
+test("cleanup rejects a passing journey but never overwrites an earlier failure", () => {
+  const error = { name: "Error", message: "first failure" };
+  const failed = { status: "FAIL", failureCode: "first-error", error };
+  markApiCleanupFailure(failed, "handoff-owned-cleanup-failed");
+  assert.equal(failed.failureCode, "first-error");
+  assert.equal(failed.error, error);
+  assert.equal(failed.cleanupFailureCode, "handoff-owned-cleanup-failed");
+  const passed = { status: "PASS", failureCode: null };
+  markApiCleanupFailure(passed, "api-owned-process-cleanup-failed");
+  assert.equal(passed.status, "FAIL");
+  assert.equal(passed.failureCode, "api-owned-process-cleanup-failed");
 });

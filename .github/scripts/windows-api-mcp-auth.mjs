@@ -265,7 +265,8 @@ export async function run(context) {
         );
         await select(context, "MCP 전송 방식", 1);
         await context.ui.click(button("실행 파일 선택"));
-        context.chooseFile(executable);
+        await context.chooseFile(executable);
+        await expectText(context, path.basename(executable));
         await context.ui.click(button("인자 추가"));
         await context.ui.fill(textbox("stdio 인자 1"), script);
         await context.ui.click(button("연결"));

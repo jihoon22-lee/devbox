@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
+import { stopWorkspaceBeforeDisconnect } from "./windows-workspace-ui-observations.mjs";
 import { readFile, realpath, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -132,8 +133,12 @@ export async function runWorkspaceUserFlows() {
     ]);
   }
   async function cleanup() {
-    attached?.close();
-    if (child?.exitCode === null) await stopOwnedProcess(owner, executable, child);
+    await stopWorkspaceBeforeDisconnect(
+      async () => {
+        if (child?.exitCode === null) await stopOwnedProcess(owner, executable, child);
+      },
+      () => attached?.close(),
+    );
   }
   const ui = createUiDriver({
     cdp,

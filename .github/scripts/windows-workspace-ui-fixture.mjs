@@ -218,6 +218,9 @@ export function createWorkspaceUiFixture({
       await ui.waitForTarget({ role: "button", name: "검토한 Git 실행 승인" });
       await ui.click({ role: "button", name: "검토한 Git 실행 승인" });
       await this.waitForText({ role: "textbox", name: "커밋 메시지" });
+      // Source mounts several native readers; the textbox can appear before the
+      // aggregate context-change blocker settles. Observe readiness before leaving.
+      await ui.waitForTarget({ role: "button", name: "Git 승인 상태 확인" });
     },
     async prepareAgent() {
       const distro = process.env.DEVBOX_KNOWLEDGE_WSL_DISTRO;
@@ -346,6 +349,11 @@ export function createWorkspaceUiFixture({
           2,
         ),
         { flag: "wx" },
+      );
+      assert.equal(
+        recoveredPending.filter((item) => item.operationId === runId).length,
+        1,
+        "Lost native reply must remain pending after the owned process exits",
       );
       await resumeRuntimeUi(this, ui);
       try {
