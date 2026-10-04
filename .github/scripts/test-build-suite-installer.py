@@ -58,6 +58,16 @@ class SuiteInstallerInputs(unittest.TestCase):
         with self.assertRaises(ValueError):
             installer.prepare(self.staging, self.bootstrap)
 
+    def test_existing_active_uninstaller_is_staged_for_native_commit_without_setup_overwrite(self):
+        script, _, _ = installer.prepare(self.staging, self.bootstrap)
+        text = script.read_text()
+        # Existing root bytes stay authoritative during preparation; the fresh
+        # dispatcher is passed separately for native ownership/commit review.
+        self.assertIn('IfFileExists "$INSTDIR\\Uninstall.exe" registered_uninstaller', text)
+        self.assertIn('WriteUninstaller "$PLUGINSDIR\\Uninstall.exe"', text)
+        self.assertIn('--register-install "$INSTDIR" "$PLUGINSDIR\\suite-payload.json" "$PLUGINSDIR\\Uninstall.exe"', text)
+        self.assertLess(text.index('registered_uninstaller:'), text.index('WriteUninstaller "$PLUGINSDIR\\Uninstall.exe"'))
+
     def test_changed_helper_cannot_be_embedded(self):
         self.bootstrap.write_bytes(b"unreviewed replacement bootstrap")
         self.rejected()

@@ -604,7 +604,16 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             .iter()
             .any(|value| mode == *value)
     });
-    if arguments.len() != if restore || update_action { 4 } else { 3 }
+    let staged_uninstaller = arguments
+        .first()
+        .is_some_and(|mode| mode == "--register-install")
+        && arguments.len() == 4;
+    if arguments.len()
+        != if restore || update_action || staged_uninstaller {
+            4
+        } else {
+            3
+        }
         || ![
             "--stage",
             "--reinstall-install",
@@ -681,7 +690,12 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     } else if arguments[0] == "--register-install" {
         #[cfg(windows)]
         {
-            registration::register(&root, &payload, &image)
+            registration::register(
+                &root,
+                &payload,
+                &image,
+                arguments.get(3).map(PathBuf::from).as_deref(),
+            )
         }
         #[cfg(not(windows))]
         {

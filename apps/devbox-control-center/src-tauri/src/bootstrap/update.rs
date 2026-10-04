@@ -985,6 +985,12 @@ pub(super) fn execute(
                 epoch.checked_add(4).ok_or("update_revision_exhausted")?,
             )?,
         )?;
+        #[cfg(windows)]
+        super::registration::discard_staged_uninstaller(
+            &root,
+            &key,
+            &plan.candidate.owner.payload_revision,
+        )?;
         progress.state = State::RolledBack;
         persist(&progress_path, &progress)?;
         release(&block_path, &claim_bytes)?;

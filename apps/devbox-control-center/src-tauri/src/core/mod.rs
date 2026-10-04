@@ -16,3 +16,9 @@ pub mod owner_history;
 
 #[cfg(any(windows, test))]
 pub(crate) mod installation_path;
+
+#[cfg(any(windows, test))]
+pub(crate) mod uninstaller_adoption;
+
+#[cfg(any(windows, test))]
+pub(crate) mod shortcut_adoption;

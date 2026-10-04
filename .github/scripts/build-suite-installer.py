@@ -108,7 +108,10 @@ __PAYLOAD_FILES__
   IfFileExists "$INSTDIR\Uninstall.exe" registered_uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   registered_uninstaller:
-  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --register-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
+  ; Stage the current NSIS dispatcher; native commit verifies the old owner
+  ; before replacement. Health/rollback retain the active original bytes.
+  WriteUninstaller "$PLUGINSDIR\Uninstall.exe"
+  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --register-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json" "$PLUGINSDIR\Uninstall.exe"'
   Pop $0
   Pop $1
   ${If} $0 != 0
