@@ -23,9 +23,52 @@ Add-Type -AssemblyName UIAutomationTypes
 # controls as Pane without InvokePattern. Enter through a non-inlined typed
 # frame before the first UIA query so the framework loads its standard proxies.
 Add-Type -ReferencedAssemblies UIAutomationClient,UIAutomationTypes -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Text;
 using System.Runtime.CompilerServices;
 using System.Windows.Automation;
 public static class DevboxInstallerAutomation {
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  private delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
+  public sealed class NativeWindowInfo {
+    public long nativeHandle;
+    public uint nativeProcessId;
+    public bool visible, minimized, topLevel;
+    public string className;
+  }
+  public sealed class NativeInventory {
+    public int count;
+    public NativeWindowInfo[] windows;
+  }
+  public static NativeInventory ObserveNativeWindows(uint expectedProcessId) {
+    int count=0;
+    var owned=new List<NativeWindowInfo>();
+    EnumWindowCallback callback=delegate(IntPtr window,IntPtr parameter) {
+      uint processId;
+      GetWindowThreadProcessId(window,out processId);
+      if(processId!=expectedProcessId) return true;
+      count++;
+      if(owned.Count<32) {
+        var name=new StringBuilder(100);
+        GetClassName(window,name,name.Capacity);
+        owned.Add(new NativeWindowInfo {
+          nativeHandle=window.ToInt64(),nativeProcessId=processId,
+          visible=IsWindowVisible(window),minimized=IsIconic(window),
+          topLevel=GetAncestor(window,2)==window,className=name.ToString()
+        });
+      }
+      return true;
+    };
+    if(!EnumWindows(callback,IntPtr.Zero)) throw new InvalidOperationException("Owned native window enumeration failed");
+    return new NativeInventory {count=count,windows=owned.ToArray()};
+  }
   [MethodImpl(MethodImplOptions.NoInlining)]
   public static void Initialize() {
     ClientSettings.RegisterClientSideProviders(new ClientSideProviderDescription[0]);
@@ -45,8 +88,33 @@ $windows=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([Sys
 if($WindowName) {
   $windows=@($windows | Where-Object {$_.Current.Name -ceq $WindowName})
 }
+# UIA may expose hidden Tao/WebView helper roots alongside the real main HWND.
+# Native visibility includes minimized windows; IsOffscreen cannot select Activate.
+$windowRecords=@($windows | Select-Object -First 32 | ForEach-Object {
+  $info=$_.Current
+  $handle=[IntPtr]::new($info.NativeWindowHandle)
+  $nativeOwner=[uint32]0
+  [void][DevboxInstallerAutomation]::GetWindowThreadProcessId($handle,[ref]$nativeOwner)
+  $metadata=@{
+    name=$info.Name.Substring(0,[Math]::Min(200,$info.Name.Length))
+    className=$info.ClassName.Substring(0,[Math]::Min(100,$info.ClassName.Length))
+    enabled=$info.IsEnabled;offscreen=$info.IsOffscreen;nativeHandle=$handle.ToInt64()
+    nativeProcessId=$nativeOwner;visible=[DevboxInstallerAutomation]::IsWindowVisible($handle)
+    minimized=[DevboxInstallerAutomation]::IsIconic($handle)
+    topLevel=($handle -ne [IntPtr]::Zero -and [DevboxInstallerAutomation]::GetAncestor($handle,2) -eq $handle)
+  }
+  @{element=$_;metadata=$metadata}
+})
+$observedWindowCount=$windows.Count
+$nativeInventory=[DevboxInstallerAutomation]::ObserveNativeWindows([uint32]$TargetProcessId)
+if($Action -in @('Close','Resize','Minimize','Activate','Inspect')) {
+  $windows=@($windowRecords | Where-Object {
+    $_.metadata.visible -and $_.metadata.topLevel -and $_.metadata.nativeProcessId -eq $TargetProcessId
+  } | ForEach-Object {$_.element})
+  if($observedWindowCount -gt 32){$windows=@()}
+}
 if($Action -eq 'Inspect' -and $windows.Count -ne 1) {
-  @{processId=$TargetProcessId;startTimeUtc=$started;windows=@($windows | ForEach-Object { @{name=$_.Current.Name;className=$_.Current.ClassName;enabled=$_.Current.IsEnabled} })} | ConvertTo-Json -Depth 4 -Compress
+  @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata})} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
 if($Action -in @('ChooseFile','SaveFile')) {
@@ -88,7 +156,10 @@ if($Action -eq 'Invoke' -and $windows.Count -gt 1 -and $ControlId -match '^[0-9]
     @($matches | Where-Object { $_.Current.IsEnabled -and -not $_.Current.IsOffscreen }).Count -eq 1
   })
 }
-if($windows.Count -ne 1){throw 'Expected one owned top-level window'}
+if($windows.Count -ne 1){
+  $details=@{windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata})} | ConvertTo-Json -Depth 4 -Compress
+  throw ('Expected one owned top-level window: '+$details)
+}
 $window=$windows[0]
 if($Action -eq 'Inspect') {
   $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
@@ -99,7 +170,7 @@ if($Action -eq 'Inspect') {
   })
   # Compare the UIA identifier, not provider-returned ControlType object identity.
   $buttons=@($controls | Where-Object {$_.controlTypeId -eq [System.Windows.Automation.ControlType]::Button.Id})
-  @{processId=$TargetProcessId;startTimeUtc=$started;name=$window.Current.Name;enabled=$window.Current.IsEnabled;buttons=$buttons;controls=$controls} | ConvertTo-Json -Depth 4 -Compress
+  @{processId=$TargetProcessId;startTimeUtc=$started;name=$window.Current.Name;enabled=$window.Current.IsEnabled;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata});selectedWindow=@($windowRecords | Where-Object {$_.element.Current.NativeWindowHandle -eq $window.Current.NativeWindowHandle} | ForEach-Object {$_.metadata})[0];buttons=$buttons;controls=$controls} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
 if($Action -in @('Minimize','Activate')) {

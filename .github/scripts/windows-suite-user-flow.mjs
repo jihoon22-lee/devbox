@@ -417,15 +417,31 @@ export async function run() {
     agentCheckpoint = await beforeAgentProductPreparation(agentInput());
     await checkpoint("installed-workspace-preparation");
     await openProducts(["workspace"]);
+    await checkpoint("installed-partial-health");
     await health();
     assert.ok((await text()).includes("응답 또는 저장소를 확인하지 못함"));
     assert.ok(!(await text()).includes("다음 단계"), "Unprepared products must block activation");
     const before = JSON.parse(await readFile(path.join(root, "devbox-activation.json"), "utf8"));
     const previous = center.process;
+    await checkpoint("installed-center-close-for-resume");
+    const closeWindowView = nativeWindowAction(center.owner, "Inspect");
+    await writeFile(
+      "product-foundation-evidence/interactive-center-close-window.json",
+      JSON.stringify({
+        stage,
+        sourceSha: identity.sourceSha,
+        windowCount: closeWindowView.windowCount,
+        selectedWindowCount: closeWindowView.selectedWindowCount,
+        windows: closeWindowView.windows,
+        nativeWindowCount: closeWindowView.nativeWindowCount,
+        nativeWindows: closeWindowView.nativeWindows,
+      }),
+    );
     await center.ui.closeOwnedWindow();
     await until(() => processFor("control-center").length === 0, "cancel and close setup");
     center.cdp.close();
     // Reopen the same installed executable, like the user's normal shortcut.
+    await checkpoint("installed-center-reopen");
     const reopened = spawn(imagePath("control-center"), [], { env, stdio: "ignore", windowsHide: false });
     await once(reopened, "spawn");
     await attach(previous);
@@ -524,6 +540,11 @@ export async function run() {
       };
     }
     if (center) {
+      try {
+        observation.centerWindow = nativeWindowAction(center.owner, "Inspect");
+      } catch {
+        observation.centerWindow = { unavailable: true };
+      }
       try {
         screenshots.push(await center.ui.screenshot("interactive-first-failure"));
       } catch (captureError) {
