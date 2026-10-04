@@ -1,3 +1,4 @@
+import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import {
   executeReviewedDeliveryAction,
   selectCurrentGenerationSnapshot,
@@ -56,14 +57,17 @@ async function execute(image, args, { timeout = 180000, operation = "subprocess"
   child.stderr.on("data", (chunk) => {
     error = (error + chunk).slice(-1000);
   });
-  const timer = setTimeout(() => child.kill(), timeout);
+  let code, signal;
   try {
-    const [code, signal] = await once(child, "exit");
-    if (code !== 0) throw legacyOperationFailure(operation, code, signal, output, error);
-    return output.trim();
-  } finally {
-    clearTimeout(timer);
+    [code, signal] = await waitForFixtureChildExit(child, timeout);
+  } catch (cause) {
+    if (cause.code !== "ETIMEDOUT") throw cause;
+    const failure = legacyOperationFailure(operation, null, "timeout", output, error);
+    failure.code = cause.code;
+    throw failure;
   }
+  if (code !== 0) throw legacyOperationFailure(operation, code, signal, output, error);
+  return output.trim();
 }
 export async function validateOwnedLegacyRun() {
   assert.equal(process.platform, "win32");
