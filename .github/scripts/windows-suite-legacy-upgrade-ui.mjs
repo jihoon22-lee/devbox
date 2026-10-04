@@ -1,3 +1,8 @@
+import {
+  executeReviewedDeliveryAction,
+  selectCurrentGenerationSnapshot,
+  waitDeliveryInventoryReady,
+} from "./windows-delivery-review.mjs";
 // L4 legacy preparation is separate from the actual current installer/use/restore UI journey.
 import assert from "node:assert/strict";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
@@ -78,30 +83,20 @@ async function notesStore(key) {
   assert.ok(file.toLowerCase().startsWith(root.toLowerCase() + path.sep));
   return { root, file, generation: pointer.generation };
 }
+export const legacyWalRead =
+  "import sqlite3,sys,json,pathlib; c=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); print(json.dumps(c.execute(\"SELECT value FROM settings WHERE key='devbox.fixture.legacy-wal'\").fetchone()[0]))";
+export const legacyWalWrite = `import sqlite3,sys,json,os
+c=sqlite3.connect(sys.argv[1]); c.execute('PRAGMA journal_mode=WAL'); c.execute('PRAGMA wal_autocheckpoint=0')
+c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+vault=c.execute("SELECT value FROM settings WHERE key='root'").fetchone()[0]
+c.execute("INSERT INTO settings(key,value) VALUES('devbox.fixture.legacy-wal',?)",(sys.argv[2],));c.commit()
+print(json.dumps({'vault':vault,'token':sys.argv[2]}),flush=True);os._exit(0)`;
 async function readWalRow(file) {
-  return JSON.parse(
-    await execute("python", [
-      "-c",
-      "import sqlite3,sys,json,pathlib; c=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); print(json.dumps(c.execute('SELECT value FROM fixture_legacy_wal WHERE id=1').fetchone()[0]))",
-      file,
-    ]),
-  );
+  return JSON.parse(await execute("python", ["-c", legacyWalRead, file]));
 }
 async function createSyntheticLegacyWal(store, label) {
   const token = `legacy-wal-${randomUUID()}`;
-  const result = JSON.parse(
-    await execute("python", [
-      "-c",
-      `import sqlite3,sys,json,os
-c=sqlite3.connect(sys.argv[1]); c.execute('PRAGMA journal_mode=WAL'); c.execute('PRAGMA wal_autocheckpoint=0')
-c.execute('CREATE TABLE fixture_legacy_wal(id INTEGER PRIMARY KEY,value TEXT NOT NULL)'); c.commit(); c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-vault=c.execute("SELECT value FROM settings WHERE key='root'").fetchone()[0]
-c.execute('INSERT INTO fixture_legacy_wal VALUES(1,?)',(sys.argv[2],));c.commit()
-print(json.dumps({'vault':vault,'token':sys.argv[2]}),flush=True);os._exit(0)`,
-      store.file,
-      token,
-    ]),
-  );
+  const result = JSON.parse(await execute("python", ["-c", legacyWalWrite, store.file, token]));
   assert.ok((await stat(`${store.file}-wal`)).size > 32, "Legacy committed row must remain in WAL");
   assert.equal(await readWalRow(store.file), token);
   const vault = await realpath(result.vault);
@@ -243,10 +238,67 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     screenshots.push(...(await completeInstalledHealth("업데이트 확정")));
     assert.equal((await json(path.join(root, "suite-payload.json"))).sourceSha, identity.sourceSha);
     assert.equal(await readWalRow((await notesStore(registration.installationKey)).file), synthetic.token);
+    let currentCheckpoint;
+    const launchRecovery = async () => {
+      center = await createInstalledProductContext("control-center");
+      await center.ui.click({
+        role: "button",
+        name: "데이터 및 복구",
+        scope: { role: "navigation", name: "제품 화면" },
+      });
+      await waitDeliveryInventoryReady(center.ui);
+    };
+    const review = async (target) => {
+      await executeReviewedDeliveryAction(center.ui, target, async () => {
+        screenshots.push(await center.ui.screenshot(`${evidenceId}-restore-review-${screenshots.length}`));
+      });
+      await observeUntil(() => center.child.exitCode !== null, "reviewed restore Center shutdown");
+      center.dispose();
+      const executable = center.executable;
+      await observeUntil(
+        () => allWindowsProcesses().some((item) => item.Path.toLowerCase() === executable.toLowerCase()),
+        "restore reopened Center",
+        90000,
+      );
+      await closeAutomaticallyOpenedCenter(root);
+      center = await createInstalledProductContext("control-center");
+      await center.ui.click({
+        role: "button",
+        name: "데이터 및 복구",
+        scope: { role: "navigation", name: "제품 화면" },
+      });
+      await waitDeliveryInventoryReady(center.ui);
+    };
+    if (!withdrawn) {
+      await launchRecovery();
+      const beforeSnapshot = await center.delivery("restore_inventory");
+      assert.equal(
+        beforeSnapshot.checkpoints.find((item) => item.id === checkpointId)?.compatibility,
+        "differentGeneration",
+      );
+      assert.equal(
+        await center.cdp.evaluate(`(() => {
+        const row = [...document.querySelectorAll('li')].find(item => item.getAttribute('aria-label') === ${JSON.stringify(checkpointId)});
+        const buttons = row ? [...row.querySelectorAll('button')].filter(item => item.textContent.trim() === '이 보존본으로 복원') : [];
+        return buttons.length === 1 && buttons[0].disabled;
+      })()`),
+        true,
+        "Old generation restore must remain visibly disabled",
+      );
+      await review({ role: "button", name: "현재 데이터 보존" });
+      currentCheckpoint = selectCurrentGenerationSnapshot(
+        beforeSnapshot,
+        await center.delivery("restore_inventory"),
+        checkpointId,
+      );
+      assert.equal(await readWalRow(backupStore), synthetic.token);
+      await center.close();
+      center = null;
+    }
     knowledge = await createInstalledKnowledgeContext();
     await knowledge.knowledgeFixture.navigate("notes");
     await knowledge.knowledgeFixture.openNote(synthetic.rel);
-    assert.equal(await knowledge.ui.text(editor), synthetic.original);
+    assert.equal(await knowledge.knowledgeFixture.editorText(), synthetic.original);
     await knowledge.knowledgeFixture.disableAutosave();
     const newBody = "# current에서 추가한 합성 데이터\n";
     await knowledge.ui.fill(editor, newBody);
@@ -268,28 +320,17 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
         name: "데이터 및 복구",
         scope: { role: "navigation", name: "제품 화면" },
       });
-      const review = async (target) => {
-        await center.ui.click(target);
-        await center.ui.click({ role: "checkbox", name: "선택한 작업과 제품 종료를 확인했습니다." });
-        screenshots.push(await center.ui.screenshot(`${evidenceId}-restore-review-${screenshots.length}`));
-        await center.ui.click({ role: "button", name: "Control Center를 닫고 실행" });
-        await observeUntil(() => center.child.exitCode !== null, "reviewed restore Center shutdown");
-        center.dispose();
-        const executable = center.executable;
-        await observeUntil(
-          () => allWindowsProcesses().some((item) => item.Path.toLowerCase() === executable.toLowerCase()),
-          "restore reopened Center",
-          90000,
-        );
-        await closeAutomaticallyOpenedCenter(root);
-        center = await createInstalledProductContext("control-center");
-        await center.ui.click({
-          role: "button",
-          name: "데이터 및 복구",
-          scope: { role: "navigation", name: "제품 화면" },
-        });
-      };
-      await review({ role: "button", name: "이 보존본으로 복원", scope: { role: "listitem", name: checkpointId } });
+      await waitDeliveryInventoryReady(center.ui);
+      const beforeRestore = await center.delivery("restore_inventory");
+      assert.deepEqual(
+        beforeRestore.checkpoints.find((item) => item.id === currentCheckpoint.id),
+        currentCheckpoint,
+      );
+      await review({
+        role: "button",
+        name: "이 보존본으로 복원",
+        scope: { role: "listitem", name: currentCheckpoint.id },
+      });
       const restored = await center.delivery("restore_inventory");
       assert.ok(restored.activeOperation);
       assert.equal(
@@ -300,11 +341,18 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       const operation = restored.operations.find((item) => item.id === restored.activeOperation);
       assert.equal(operation.phase, "health");
       assert.ok(
-        restored.checkpoints.length > inventory.checkpoints.length,
-        "Restore must preserve current data before applying old checkpoint",
+        restored.checkpoints.length > beforeRestore.checkpoints.length,
+        "Restore must preserve current data before applying current-generation checkpoint",
       );
       screenshots.push(await center.ui.screenshot(`${evidenceId}-restored-health`));
       await review({ role: "button", name: "원본으로 복귀", scope: { role: "listitem", name: operation.id } });
+      const afterRollback = await center.delivery("restore_inventory");
+      assert.deepEqual(
+        afterRollback.checkpoints.find((item) => item.id === checkpointId),
+        beforeRestore.checkpoints.find((item) => item.id === checkpointId),
+        "Restore and rollback must retain the pinned old checkpoint unchanged",
+      );
+      assert.equal(await readWalRow(backupStore), synthetic.token);
       assert.equal(
         await fileDigest(synthetic.note),
         newNoteHash,
@@ -315,14 +363,14 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       knowledge = await createInstalledKnowledgeContext();
       await knowledge.knowledgeFixture.navigate("notes");
       await knowledge.knowledgeFixture.openNote(synthetic.rel);
-      assert.equal(await knowledge.ui.text(editor), newBody);
+      assert.equal(await knowledge.knowledgeFixture.editorText(), newBody);
       screenshots.push(await knowledge.ui.screenshot(`${evidenceId}-new-data-restored`));
     }
     assertions.push(
       "Visible exact candidate installer upgraded pinned old generation; actual current four-product health and reviewed commit preserved WAL-only row in both checkpoint and current store",
       withdrawn
         ? "Actual current Knowledge opened withdrawn same-version note and saved new bytes after exact candidate update"
-        : "Actual current Knowledge opened the legacy note and saved new bytes; actual pre-update checkpoint restore preserved current data and explicit restore rollback recovered the new saved bytes without reverse-conversion",
+        : "Actual current Knowledge opened the legacy note and saved new bytes; old-generation checkpoint remained blocked; actual current-generation checkpoint restore preserved current data and explicit restore rollback recovered the new saved bytes without reverse-conversion",
     );
     record = {
       id: "DELIVERY-01",

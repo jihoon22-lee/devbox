@@ -1,3 +1,4 @@
+import { executeReviewedDeliveryAction } from "./windows-delivery-review.mjs";
 // Actual Recovery review, native dirty-close cancellation and installed data preservation.
 import assert from "node:assert/strict";
 import { withdrawnSource } from "./windows-suite-legacy-upgrade-ui.mjs";
@@ -52,9 +53,7 @@ export async function run() {
         path.basename(p.Path).toLowerCase() === "devbox-suite-bootstrap.exe",
     );
   const review = async (label) => {
-    await center.ui.click({ role: "button", name: label });
-    await center.ui.click({ role: "checkbox", name: "선택한 작업과 제품 종료를 확인했습니다." });
-    await center.ui.click({ role: "button", name: "Control Center를 닫고 실행" });
+    await executeReviewedDeliveryAction(center.ui, { role: "button", name: label });
     await observeUntil(() => center.child.exitCode !== null, "reviewed Center shutdown");
     center.dispose();
   };
@@ -89,8 +88,11 @@ export async function run() {
     await launchCenter();
     const before = await center.delivery("restore_inventory");
     // Cancel the visible review first: no helper or checkpoint is created.
+    await center.ui.waitForTarget({ role: "button", name: "현재 데이터 보존" });
     await center.ui.click({ role: "button", name: "현재 데이터 보존" });
-    await center.ui.click({ role: "button", name: "취소", scope: { role: "region", name: "복구 작업 검토" } });
+    const cancelReview = { role: "button", name: "취소", scope: { role: "region", name: "복구 작업 검토" } };
+    await center.ui.waitForTarget(cancelReview);
+    await center.ui.click(cancelReview);
     assert.deepEqual(await center.delivery("restore_inventory"), before);
     await review("현재 데이터 보존");
     await knowledge.ui.closeOwnedWindow();
