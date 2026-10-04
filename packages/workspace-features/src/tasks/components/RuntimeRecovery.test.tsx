@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import RuntimeRecovery from "./RuntimeRecovery";
@@ -43,5 +44,23 @@ it("shows native confirmation for a lost stop reply without submitting another c
   ]);
   render(<RuntimeRecovery active busy={false} onReviewed={vi.fn()} />);
   await screen.findByText(/실행 요청의 완료 상태를 확인했습니다/);
+  expect(reviewRuntimeControl).not.toHaveBeenCalled();
+});
+
+it("retains a completed lost-reply observation during StrictMode effect replay", async () => {
+  vi.mocked(listRuntimeControls).mockResolvedValue([]);
+  vi.mocked(reconcileRuntimeControls)
+    .mockReset()
+    .mockResolvedValue([])
+    .mockResolvedValueOnce([
+      { operationId: "original-operation", method: "run_job", targetId: "owned-job", state: "completed" },
+    ]);
+  render(
+    <StrictMode>
+      <RuntimeRecovery active busy={false} onReviewed={vi.fn()} />
+    </StrictMode>,
+  );
+  await screen.findByText(/실행 요청의 완료 상태를 확인했습니다/);
+  expect(reconcileRuntimeControls).toHaveBeenCalledTimes(1);
   expect(reviewRuntimeControl).not.toHaveBeenCalled();
 });
