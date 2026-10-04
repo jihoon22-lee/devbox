@@ -221,6 +221,24 @@ export function inspectInstallerFailure(installer, stage) {
   }
   return baseline;
 }
+// Release only the failed owned setup's event-loop reference. Its installation
+// and process remain preserved if normal cancellation cannot complete.
+export async function releaseFailedInstaller(installer, observe = observeUntil) {
+  try {
+    if (installer.child.exitCode === null) {
+      const view = installer.inspect();
+      if (view?.buttons?.some((button) => button.id === "2" && button.enabled && button.visible)) {
+        installer.invoke("2");
+      }
+      await observe(() => installer.child.exitCode !== null, "failed owned installer normal cancellation", 10000);
+    }
+    return "cancelled";
+  } catch {
+    return "preserved";
+  } finally {
+    if (installer.child.exitCode === null) installer.child.unref();
+  }
+}
 export async function runVisibleSetup(setup, root, env = process.env) {
   const scratch = path.dirname(root),
     image = path.join(scratch, `setup-${randomUUID()}.exe`);
@@ -257,6 +275,12 @@ export async function runVisibleSetup(setup, root, env = process.env) {
         { flag: "wx" },
       );
     } catch {}
+    const cleanup = await releaseFailedInstaller(installer);
+    try {
+      error.installerCleanup = cleanup;
+    } catch {
+      // A primitive or frozen thrown value must remain the original failure.
+    }
     throw error;
   }
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import test from "node:test";
 import {
   validateInstallerFaultOwnership,
@@ -148,4 +149,65 @@ test("Details diagnostic never invokes a healthy installer or replaces first obs
     assert.equal(invoked, failing ? 1 : 0);
     assert.deepEqual(result.statuses, [failing ? "registration_failed" : "prepared"]);
   }
+});
+
+test("failed installer is cancelled normally and its exit is bounded", async () => {
+  const { releaseFailedInstaller } = await import("./windows-suite-installer-actions.mjs");
+  const calls = [];
+  const child = { exitCode: null, unref: () => calls.push("unref") };
+  const installer = {
+    child,
+    inspect: () => ({ buttons: [{ id: "2", enabled: true, visible: true }] }),
+    invoke: (id) => {
+      calls.push(id);
+      child.exitCode = 1;
+    },
+  };
+  const result = await releaseFailedInstaller(installer, async (check, _label, timeout) => {
+    assert.equal(timeout, 10000);
+    assert.equal(check(), true);
+  });
+  assert.deepEqual(calls, ["2"]);
+  assert.equal(result, "cancelled");
+});
+test("failed installer stays preserved and detached if cancellation is unavailable", async () => {
+  const { releaseFailedInstaller } = await import("./windows-suite-installer-actions.mjs");
+  let detached = false;
+  const child = {
+    exitCode: null,
+    unref: () => {
+      detached = true;
+    },
+  };
+  const result = await releaseFailedInstaller(
+    { child, inspect: () => ({ buttons: [] }), invoke: () => assert.fail("unavailable Cancel must not invoke") },
+    async () => {
+      throw new Error("bounded timeout");
+    },
+  );
+  assert.equal(result, "preserved");
+  assert.equal(child.exitCode, null);
+  assert.equal(detached, true);
+});
+
+test("preserved failed installer cannot keep its runner process alive", () => {
+  const moduleUrl = new URL("./windows-suite-installer-actions.mjs", import.meta.url).href;
+  const proof = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import { spawn } from "node:child_process";
+    import { once } from "node:events";
+    import { releaseFailedInstaller } from ${JSON.stringify(moduleUrl)};
+    const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},1500)"], { stdio: "ignore" });
+    await once(child, "spawn");
+    const result = await releaseFailedInstaller({ child, inspect: () => null }, async () => { throw new Error("deadline"); });
+    console.log(JSON.stringify({ result, alive: child.exitCode === null }));
+  `,
+    ],
+    { encoding: "utf8", timeout: 1000 },
+  );
+  assert.deepEqual(JSON.parse(proof), { result: "preserved", alive: true });
 });
