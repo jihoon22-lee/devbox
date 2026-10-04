@@ -315,3 +315,79 @@ test("dialog click requires explicit Boolean intent before input", async () => {
   await assert.rejects(ui.clickWithDialog({ role: "button", name: "Continue" }, undefined), /Explicit dialog/);
   assert.equal(cdp.calls.length, 0);
 });
+
+test("slow geometry does not arm a dialog timeout or leave input after failure", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const cdp = transport();
+  const command = cdp.command.bind(cdp);
+  let releaseGeometry,
+    opening,
+    listenerCount = 0,
+    releasePointer;
+  cdp.onEvent = (_method, callback) => {
+    listenerCount++;
+    opening = callback;
+    return () => listenerCount--;
+  };
+  cdp.command = async (method, params) => {
+    if (method === "Accessibility.getFullAXTree")
+      await new Promise((resolve) => {
+        releaseGeometry = resolve;
+      });
+    if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") {
+      await command(method, params);
+      return new Promise((resolve) => {
+        releasePointer = resolve;
+        opening({ type: "alert" });
+      });
+    }
+    return command(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  let settled = false;
+  const pending = ui.clickWithDialog({ role: "button", name: "Continue" }, false).finally(() => {
+    settled = true;
+  });
+  t.mock.timers.tick(10001);
+  assert.equal(listenerCount, 0, "geometry must finish before the dialog listener/timer is armed");
+  releaseGeometry();
+  for (let i = 0; i < 100 && !releasePointer; i++) await Promise.resolve();
+  assert.equal(settled, false, "invalid dialog cannot return while the pointer response remains in flight");
+  assert.equal(listenerCount, 1);
+  releasePointer();
+  await assert.rejects(pending, /Expected confirmation dialog type/);
+  assert.equal(listenerCount, 0);
+  assert.equal(cdp.calls.filter(({ method }) => method === "Page.handleJavaScriptDialog").length, 0);
+});
+
+test("opening timeout stops once a valid dialog decision command is underway", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const cdp = transport(),
+    command = cdp.command.bind(cdp);
+  let opening, releasePointer, rejectDecision;
+  cdp.onEvent = (_method, callback) => {
+    opening = callback;
+    return () => {};
+  };
+  cdp.command = async (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") {
+      await command(method, params);
+      return new Promise((resolve) => {
+        releasePointer = resolve;
+        opening({ type: "confirm" });
+      });
+    }
+    if (method === "Page.handleJavaScriptDialog")
+      return new Promise((_resolve, reject) => {
+        rejectDecision = reject;
+      });
+    return command(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  const pending = ui.clickWithDialog({ role: "button", name: "Continue" }, true);
+  for (let i = 0; i < 100 && !rejectDecision; i++) await Promise.resolve();
+  t.mock.timers.tick(10001);
+  rejectDecision(new Error("CDP decision command timeout"));
+  releasePointer();
+  await assert.rejects(pending, /CDP decision command timeout/);
+});

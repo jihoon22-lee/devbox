@@ -49,7 +49,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     } while (performance.now() < deadline);
     throw new Error(`Timed out waiting for accessible ${target.role}: ${target.name}`);
   }
-  async function click(target) {
+  async function click(target, beforePointer) {
     const node = await locate(target);
     if (node.properties?.some((p) => p.name === "disabled" && p.value?.value === true))
       throw new Error("Control disabled");
@@ -113,6 +113,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
           throw new Error("Read-only hit handles could not be released");
       }
     }
+    beforePointer?.();
     await cdp.command("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await cdp.command("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   }
@@ -197,23 +198,43 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
       if (typeof cdp.onEvent !== "function") throw new Error("Dialog opening observation required");
       let handled = false,
         timer,
-        unsubscribe;
+        unsubscribe,
+        resolveDecision,
+        rejectDecision,
+        firstFailure;
       const decision = new Promise((resolve, reject) => {
-        timer = setTimeout(() => reject(new Error("Expected confirmation dialog did not open")), 10000);
+        resolveDecision = resolve;
+        rejectDecision = (error) => {
+          firstFailure ??= error;
+          reject(error);
+        };
+      });
+      const arm = () => {
+        timer = setTimeout(() => {
+          handled = true;
+          rejectDecision(new Error("Expected confirmation dialog did not open"));
+        }, 10000);
         unsubscribe = cdp.onEvent("Page.javascriptDialogOpening", ({ type }) => {
           if (handled) return;
+          clearTimeout(timer);
           handled = true;
           if (type !== "confirm") {
-            reject(new Error("Expected confirmation dialog type"));
+            rejectDecision(new Error("Expected confirmation dialog type"));
             return;
           }
-          cdp.command("Page.handleJavaScriptDialog", { accept }).then(resolve, reject);
+          cdp.command("Page.handleJavaScriptDialog", { accept }).then(resolveDecision, rejectDecision);
         });
-      });
+      };
       try {
-        // WebView can withhold mouseReleased acknowledgement until the caller's
-        // explicit decision resolves the synchronous renderer confirmation.
-        await Promise.all([click(target), decision]);
+        // Resolve geometry first. Keep observation until both bounded protocol
+        // operations settle, including invalid dialogs and pointer errors.
+        const pointer = click(target, arm).catch((error) => {
+          rejectDecision(error);
+          throw error;
+        });
+        const outcomes = await Promise.allSettled([pointer, decision]);
+        const failure = outcomes.find((outcome) => outcome.status === "rejected");
+        if (failure) throw firstFailure ?? failure.reason;
       } finally {
         clearTimeout(timer);
         unsubscribe?.();
