@@ -98,3 +98,18 @@ it("retains confirmed completion when the later receipt inventory read fails", a
   fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
   await screen.findByText(/실행 요청의 완료 상태를 확인했습니다/);
 });
+
+it("retains the first acknowledged completion when a later receipt fails", async () => {
+  vi.mocked(reconcileRuntimeControls)
+    .mockReset()
+    .mockResolvedValue([])
+    .mockImplementationOnce(async (onSettled) => {
+      onSettled?.();
+      throw new Error("later receipt unavailable");
+    });
+  vi.mocked(listRuntimeControls).mockResolvedValue([]);
+  render(<RuntimeRecovery active busy={false} onReviewed={vi.fn()} />);
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
+  await screen.findByText(/실행 요청의 완료 상태를 확인했습니다/);
+});

@@ -12,8 +12,8 @@ const invoke = bindTypedCall<WorkspaceRuntimeCall | ControlAction, RuntimeResult
     ? submitRuntimeControl(rawInvoke, method, args)
     : rawInvoke(method, args),
 );
-export function reconcileRuntimeControls() {
-  return isProductHosted() ? reconcileCompletedControls(rawInvoke) : Promise.resolve([]);
+export function reconcileRuntimeControls(onSettled?: () => void) {
+  return isProductHosted() ? reconcileCompletedControls(rawInvoke, onSettled) : Promise.resolve([]);
 }
 export type RuntimeControlReceipt = import("../generated/RuntimeControlReceipt").RuntimeControlReceipt;
 export function listRuntimeControls(): Promise<RuntimeControlReceipt[]> {

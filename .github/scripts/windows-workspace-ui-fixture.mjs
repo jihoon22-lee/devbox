@@ -15,6 +15,14 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { downloadArchive } from "./windows-workspace-lsp.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
+export function assertLostRuntimeReceipt(receipts, operationId, targetId, method) {
+  const matching = receipts.filter((receipt) => receipt.operationId === operationId);
+  assert.equal(matching.length, 1, "Lost native reply must retain its exact unacknowledged receipt after process exit");
+  assert.equal(matching[0].targetId, targetId);
+  assert.equal(matching[0].method, method);
+  assert.equal(matching[0].state, "completed");
+  assert.equal(matching[0].reviewed, false);
+}
 export async function loseRuntimeReply({
   cdp,
   ui,
@@ -357,6 +365,7 @@ export function createWorkspaceUiFixture({
       const runId = await loseReply("지금 실행");
       assert.equal(await readFile(counter, "utf8"), "launch\n");
       const recoveredPending = await pending();
+      const recoveredReceipts = await read("workspace.runtime", "list_runtime_controls", {});
       await writeFile(
         "product-foundation-evidence/workspace-runtime-restart-observation.json",
         JSON.stringify(
@@ -365,17 +374,14 @@ export function createWorkspaceUiFixture({
             operationId: runId,
             jobId: job.id,
             matchingPendingCount: recoveredPending.filter((item) => item.operationId === runId).length,
+            matchingNativeReceiptCount: recoveredReceipts.filter((item) => item.operationId === runId).length,
           },
           null,
           2,
         ),
         { flag: "wx" },
       );
-      assert.equal(
-        recoveredPending.filter((item) => item.operationId === runId).length,
-        1,
-        "Lost native reply must remain pending after the owned process exits",
-      );
+      assertLostRuntimeReceipt(recoveredReceipts, runId, job.id, "run_job_now");
       await resumeRuntimeUi(this, ui);
       try {
         await wait(
@@ -430,7 +436,12 @@ export function createWorkspaceUiFixture({
       }
       const completedRun = await read("workspace.runtime", "runtime_control_status", { operationId: runId });
       assert.equal(completedRun.jobId, job.id);
-      await wait(async () => (await pending()).length === 0, "lost run result reconciled read-only");
+      await wait(
+        async () =>
+          (await pending()).length === 0 &&
+          !(await read("workspace.runtime", "list_runtime_controls", {})).some((item) => item.operationId === runId),
+        "lost run result reconciled read-only",
+      );
       assert.equal(await readFile(counter, "utf8"), "launch\n");
       // The installed Agent preserves the first live run across a Workspace
       // crash. Respect overlap=skip: explicitly stop it before the next run.
@@ -444,10 +455,21 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "지금 실행", scope });
       await wait(async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n", "second explicit owned run");
       const stopId = await loseReply("중지");
+      assertLostRuntimeReceipt(
+        await read("workspace.runtime", "list_runtime_controls", {}),
+        stopId,
+        job.id,
+        "stop_active_run",
+      );
       await resumeRuntimeUi(this, ui);
       const completedStop = await read("workspace.runtime", "runtime_control_status", { operationId: stopId });
       assert.ok(completedStop === null || completedStop.jobId === job.id);
-      await wait(async () => (await pending()).length === 0, "lost stop result reconciled read-only");
+      await wait(
+        async () =>
+          (await pending()).length === 0 &&
+          !(await read("workspace.runtime", "list_runtime_controls", {})).some((item) => item.operationId === stopId),
+        "lost stop result reconciled read-only",
+      );
       assert.equal(await readFile(counter, "utf8"), "launch\nlaunch\n");
       assert.equal(await read("workspace.runtime", "get_active_run", { id: job.id }), null);
       return {

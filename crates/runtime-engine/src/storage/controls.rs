@@ -179,22 +179,30 @@ impl DatabaseState {
             return Err(invalid());
         }
         let connection = self.lock()?;
-        let mut statement = connection.prepare(&format!("SELECT {COLUMNS} FROM workspace_runtime_controls WHERE state IN ('pending','interrupted') AND reviewed=0 ORDER BY created_at DESC,operation_id LIMIT 64"))?;
+        let mut statement = connection.prepare(&format!("SELECT {COLUMNS} FROM workspace_runtime_controls WHERE reviewed=0 AND method IN ('run_job_now','stop_active_run','start_service','stop_service','restart_service','run_workspace_task_operation','stop_workspace_task_operation') ORDER BY CASE WHEN state IN ('pending','interrupted') THEN 0 ELSE 1 END,created_at DESC,operation_id LIMIT 64"))?;
         let rows = statement.query_map([], receipt)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(StorageError::from)
     }
+    /// Acknowledges a terminal reply without changing its reservation/result.
+    /// Interrupted requests still require proof that no active owner remains.
     pub fn review_runtime_control(&self, id: &str) -> Result<(), StorageError> {
         let request = self.runtime_control(id)?.ok_or_else(invalid)?;
-        if request.state != "interrupted" {
+        if !crate::core::runtime_controls::legacy_control_method(&request.method)
+            || !matches!(
+                request.state.as_str(),
+                "interrupted" | "completed" | "failed"
+            )
+        {
             return Err(invalid());
         }
-        if self.active_process_run(&request.target_id)?.is_some() {
+        if request.state == "interrupted" && self.active_process_run(&request.target_id)?.is_some()
+        {
             return Err(StorageError::ConcurrentChange(
                 "runtime-control-owner-unsettled".into(),
             ));
         }
-        let changed = self.lock_mut()?.execute("UPDATE workspace_runtime_controls SET reviewed=1 WHERE operation_id=? AND state='interrupted'", [id])?;
+        let changed = self.lock_mut()?.execute("UPDATE workspace_runtime_controls SET reviewed=1 WHERE operation_id=? AND state IN ('interrupted','completed','failed')", [id])?;
         if changed != 1 {
             return Err(invalid());
         }
@@ -347,6 +355,96 @@ mod tests {
             legacy.schema_version().unwrap(),
             database.schema_version().unwrap()
         );
+    }
+    #[test]
+    fn completed_and_failed_receipts_survive_reopen_until_acknowledged() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("data.db");
+        let database = DatabaseState::open_product(&path).unwrap();
+        let target = definition(&database);
+        let ids = [
+            uuid::Uuid::new_v4().to_string(),
+            uuid::Uuid::new_v4().to_string(),
+        ];
+        for (index, id) in ids.iter().enumerate() {
+            database
+                .reserve_runtime_control(id, "run_job_now", &target, &"a".repeat(64), 200)
+                .unwrap();
+            database
+                .finish_runtime_control(
+                    id,
+                    (index == 0).then_some(&serde_json::json!({"id":"run"})),
+                )
+                .unwrap();
+        }
+        drop(database);
+        let database = DatabaseState::open_product(&path).unwrap();
+        assert_eq!(database.unresolved_runtime_controls().unwrap().len(), 2);
+        for id in ids {
+            database.review_runtime_control(&id).unwrap();
+            database.review_runtime_control(&id).unwrap();
+            assert!(database.runtime_control(&id).unwrap().unwrap().reviewed);
+            assert!(matches!(
+                database
+                    .reserve_runtime_control(&id, "run_job_now", &target, &"a".repeat(64), 300)
+                    .unwrap(),
+                ControlReservation::Existing(_)
+            ));
+        }
+        assert!(database.unresolved_runtime_controls().unwrap().is_empty());
+    }
+    #[test]
+    fn terminal_acknowledgement_does_not_weaken_interrupted_owner_review() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = DatabaseState::open_product(&directory.path().join("data.db")).unwrap();
+        let target = definition(&database);
+        let run = database.claim_manual_run(&target, 200).unwrap().run;
+        database
+            .lock_mut()
+            .unwrap()
+            .execute("UPDATE runs SET status='running' WHERE id=?", [&run.id])
+            .unwrap();
+        assert!(database.active_process_run(&target).unwrap().is_some());
+        let id = uuid::Uuid::new_v4().to_string();
+        database
+            .reserve_runtime_control(&id, "run_job_now", &target, &"a".repeat(64), 200)
+            .unwrap();
+        assert!(database.review_runtime_control(&id).is_err());
+        database
+            .lock_mut()
+            .unwrap()
+            .execute(
+                "UPDATE workspace_runtime_controls SET state='interrupted' WHERE operation_id=?",
+                [&id],
+            )
+            .unwrap();
+        assert!(database.review_runtime_control(&id).is_err());
+        assert!(!database.runtime_control(&id).unwrap().unwrap().reviewed);
+        database
+            .lock_mut()
+            .unwrap()
+            .execute(
+                "UPDATE workspace_runtime_controls SET state='completed' WHERE operation_id=?",
+                [&id],
+            )
+            .unwrap();
+        database.review_runtime_control(&id).unwrap();
+        assert!(database.active_process_run(&target).unwrap().is_some());
+    }
+    #[test]
+    fn private_session_receipts_are_not_public_recovery_or_acknowledgement() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = DatabaseState::open_product(&directory.path().join("data.db")).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        database
+            .reserve_runtime_control(&id, "session_start_job", "job", &"a".repeat(64), 200)
+            .unwrap();
+        database
+            .finish_runtime_control(&id, Some(&serde_json::Value::Null))
+            .unwrap();
+        assert!(database.unresolved_runtime_controls().unwrap().is_empty());
+        assert!(database.review_runtime_control(&id).is_err());
+        assert!(!database.runtime_control(&id).unwrap().unwrap().reviewed);
     }
     #[test]
     fn future_control_schema_is_preserved_before_any_migration_write() {

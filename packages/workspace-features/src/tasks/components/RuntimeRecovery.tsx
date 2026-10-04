@@ -30,11 +30,13 @@ export default function RuntimeRecovery({
   }> | null>(null);
   const snapshot = useCallback(() => {
     if (reading.current) return reading.current;
-    // Reconciliation consumes a durable pending key. Effect replay must observe
+    // Reconciliation acknowledges native receipts. Effect replay must observe
     // the same result rather than discard it and start a second consuming read.
     const request = (async () => {
-      const settled = await reconcileRuntimeControls();
-      // The native read consumes pending keys. Keep its confirmation even when
+      const settled = await reconcileRuntimeControls(() => {
+        observedCompletion.current = true;
+      });
+      // Reconciliation acknowledges receipts. Keep its confirmation even when
       // the route hides or the following receipt-inventory read fails.
       if (settled.length) observedCompletion.current = true;
       const values = await listRuntimeControls();

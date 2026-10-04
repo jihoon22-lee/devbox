@@ -50,17 +50,46 @@ export async function submitRuntimeControl<T>(call: Call, method: string, args: 
   if (pending && JSON.stringify(pending.args) !== JSON.stringify(args))
     throw new Error("이전 실행 요청의 상태를 먼저 확인해 주세요.");
   if (!pending) {
-    let count = 0;
-    for (let index = 0; index < localStorage.length; index++)
-      if (localStorage.key(index)?.startsWith(prefix())) count++;
-    if (count >= 64) throw new Error("완료되지 않은 실행 요청을 먼저 확인해 주세요.");
-    pending = { operationId: crypto.randomUUID(), args };
-    // Persist before IPC. Storage failure must not turn reload into a new run.
-    localStorage.setItem(key, JSON.stringify(pending));
+    const unresolved = await call<Array<{ method: string; targetId: string; reviewed: boolean }>>(
+      "list_runtime_controls",
+      {},
+    );
+    if (
+      unresolved.length >= 64 ||
+      unresolved.some(
+        (receipt) =>
+          isRuntimeControl(receipt.method) &&
+          !receipt.reviewed &&
+          (receipt.targetId === id || (method === "stop_workspace_task_operation" && receipt.method === method)),
+      )
+    )
+      throw new Error("이전 실행 요청의 상태를 먼저 확인해 주세요.");
+    // Another invocation can cache its ID while inventory is in flight.
+    pending = read(key);
+    if (pending && JSON.stringify(pending.args) !== JSON.stringify(args))
+      throw new Error("이전 실행 요청의 상태를 먼저 확인해 주세요.");
+    if (!pending) {
+      let count = 0;
+      for (let index = 0; index < localStorage.length; index++)
+        if (localStorage.key(index)?.startsWith(prefix())) count++;
+      if (count >= 64) throw new Error("완료되지 않은 실행 요청을 먼저 확인해 주세요.");
+      pending = { operationId: crypto.randomUUID(), args };
+      // Cache before IPC for immediate retries. Native receipts own crash recovery.
+      localStorage.setItem(key, JSON.stringify(pending));
+    }
   }
   const submitted = pending;
   const remove = () => {
     if (read(key)?.operationId === submitted.operationId) localStorage.removeItem(key);
+  };
+  const acknowledge = async () => {
+    try {
+      await call("review_runtime_control", { operationId: submitted.operationId });
+      remove();
+    } catch {
+      // The side effect already settled. Preserve its recovery record if the
+      // acknowledgement reply is lost; do not report a successful run as failed.
+    }
   };
   try {
     const result = await call<T>("runtime_control", {
@@ -68,12 +97,12 @@ export async function submitRuntimeControl<T>(call: Call, method: string, args: 
       method,
       args: submitted.args,
     });
-    remove();
+    await acknowledge();
     return result;
   } catch (error) {
     // A confirmed terminal failure permits a later explicit new attempt.
     // Transport loss, pending and interrupted results retain the same ID.
-    if (error instanceof WorkspaceOperationError && error.code === "runtime_control_failed") remove();
+    if (error instanceof WorkspaceOperationError && error.code === "runtime_control_failed") await acknowledge();
     throw error;
   }
 }
@@ -90,6 +119,7 @@ export function forgetReviewedControl(operationId: string): void {
  * reading the existing ID, never by submitting another side effect. */
 export async function reconcileCompletedControls(
   call: Call,
+  onSettled?: (receipt: { operationId: string; method: string; targetId: string; state: string }) => void,
 ): Promise<Array<{ operationId: string; method: string; targetId: string; state: string }>> {
   const keys: string[] = [];
   for (let index = 0; index < localStorage.length; index++) {
@@ -97,7 +127,12 @@ export async function reconcileCompletedControls(
     if (key?.startsWith(prefix())) keys.push(key);
   }
   if (keys.length > 64) throw new Error("완료되지 않은 실행 요청을 먼저 확인해 주세요.");
-  const settled: Array<{ operationId: string; method: string; targetId: string; state: string }> = [];
+  type Receipt = { operationId: string; method: string; targetId: string; state: string; reviewed?: boolean };
+  const inventory = await call<Receipt[]>("list_runtime_controls", {});
+  const candidates = new Map<string, Receipt & { key?: string }>();
+  for (const receipt of inventory) {
+    if (isRuntimeControl(receipt.method) && !receipt.reviewed) candidates.set(receipt.operationId, receipt);
+  }
   for (const key of keys) {
     const pending = read(key);
     if (!pending) continue;
@@ -106,12 +141,22 @@ export async function reconcileCompletedControls(
     const targetId = pending.args[idKey];
     if (!isRuntimeControl(method) || typeof targetId !== "string")
       throw new Error("저장된 실행 요청을 확인할 수 없습니다.");
+    candidates.set(pending.operationId, {
+      operationId: pending.operationId,
+      method,
+      targetId,
+      state: "pending",
+      ...candidates.get(pending.operationId),
+      key,
+    });
+  }
+  const settled: Receipt[] = [];
+  for (const candidate of candidates.values()) {
+    const { operationId, method, targetId, key } = candidate;
     let state = "completed";
     try {
-      // The existing endpoint replays the stored result on success, rather
-      // than returning receipt metadata. Its authenticated success confirms
-      // exactly this operation ID; even a null stop result is valid.
-      await call("runtime_control_status", { operationId: pending.operationId });
+      // Read the original result only. Discovery does not submit a control.
+      await call("runtime_control_status", { operationId });
     } catch (error) {
       if (error instanceof WorkspaceOperationError && error.code === "runtime_control_failed") state = "failed";
       else if (
@@ -121,10 +166,12 @@ export async function reconcileCompletedControls(
         continue;
       else throw error;
     }
-    // A new request may have replaced this key while its read was in flight.
-    if (read(key)?.operationId !== pending.operationId) continue;
-    localStorage.removeItem(key);
-    settled.push({ operationId: pending.operationId, method, targetId, state });
+    if (key && read(key)?.operationId !== operationId) continue;
+    await call("review_runtime_control", { operationId });
+    const receipt = { operationId, method, targetId, state };
+    onSettled?.(receipt);
+    forgetReviewedControl(operationId);
+    settled.push(receipt);
   }
   return settled;
 }

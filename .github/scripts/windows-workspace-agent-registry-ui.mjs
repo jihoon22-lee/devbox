@@ -7,6 +7,7 @@ export async function dismissWorkspaceUndo(ui, visible, wait) {
   await wait(async () => !(await visible()), "notification dismissed before Agent input");
 }
 export async function discardAgentTask(ui) {
+  await ui.waitForTarget({ role: "button", name: "버리기" });
   await ui.click({ role: "button", name: "버리기" });
   await ui.waitForTarget({ role: "button", name: "버리기 확인" });
   await ui.click({ role: "button", name: "버리기 확인" });

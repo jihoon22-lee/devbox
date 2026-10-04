@@ -357,3 +357,22 @@ test("Agent review waits for the selected Source root and its aggregate idle con
   await fixture.waitForAgentSourceIdle();
   assert.equal(reads, 2);
 });
+
+test("lost reply requires its exact native unacknowledged receipt after crash", async () => {
+  const { assertLostRuntimeReceipt } = await import("./windows-workspace-ui-fixture.mjs");
+  const receipt = {
+    operationId: "original",
+    targetId: "job",
+    method: "run_job_now",
+    state: "completed",
+    reviewed: false,
+  };
+  assert.doesNotThrow(() => assertLostRuntimeReceipt([receipt], "original", "job", "run_job_now"));
+  for (const receipts of [
+    [],
+    [{ ...receipt, reviewed: true }],
+    [{ ...receipt, operationId: "another" }],
+    [{ ...receipt, targetId: "foreign" }],
+  ])
+    assert.throws(() => assertLostRuntimeReceipt(receipts, "original", "job", "run_job_now"));
+});

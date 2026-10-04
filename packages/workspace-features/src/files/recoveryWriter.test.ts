@@ -60,3 +60,55 @@ describe("RecoveryWriter", () => {
     await expect(writer.flush()).rejects.toThrow("다른");
   });
 });
+
+describe("failed saved-document removal", () => {
+  it("retries failed removal on a clean close and keeps rejecting while storage fails", async () => {
+    let unavailable = true;
+    let stored = [entry("old draft")];
+    let removals = 0;
+    const writer = new RecoveryWriter({
+      load: async () => ({ entries: stored, nativeRevision: "1" }),
+      save: async () => {
+        throw new Error("clean close must not save a draft");
+      },
+      discard: async (path, revision) => {
+        removals++;
+        expect(revision).toBe("1");
+        if (unavailable) throw new Error("journal unavailable");
+        stored = stored.filter((item) => item.path !== path);
+        return "2";
+      },
+    });
+    await expect(writer.discard("/a")).rejects.toThrow("journal unavailable");
+    writer.update([]);
+    await expect(writer.flush()).rejects.toThrow("journal unavailable");
+    unavailable = false;
+    await writer.flush();
+    expect(stored).toEqual([]);
+    expect(removals).toBe(3);
+    await writer.flush();
+    expect(removals).toBe(3);
+  });
+  it("persists a new edit after retrying the prior saved snapshot removal", async () => {
+    let unavailable = true;
+    let stored = [entry("old draft")];
+    const writer = new RecoveryWriter({
+      load: async () => ({ entries: stored, nativeRevision: "1" }),
+      save: async (entries, revision) => {
+        expect(revision).toBe("2");
+        stored = entries;
+        return "3";
+      },
+      discard: async () => {
+        if (unavailable) throw new Error("journal unavailable");
+        stored = [];
+        return "2";
+      },
+    });
+    await expect(writer.discard("/a")).rejects.toThrow();
+    writer.update([entry("new edit", 2)]);
+    unavailable = false;
+    await writer.flush();
+    expect(stored).toEqual([entry("new edit", 2)]);
+  });
+});
