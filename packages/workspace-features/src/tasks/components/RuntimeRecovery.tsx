@@ -23,18 +23,23 @@ export default function RuntimeRecovery({
   const [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const observedCompletion = useRef(false);
   const reading = useRef<Promise<{
-    settled: Awaited<ReturnType<typeof reconcileRuntimeControls>>;
+    confirmed: boolean;
     values: RuntimeControlReceipt[];
   }> | null>(null);
   const snapshot = useCallback(() => {
     if (reading.current) return reading.current;
     // Reconciliation consumes a durable pending key. Effect replay must observe
     // the same result rather than discard it and start a second consuming read.
-    const request = (async () => ({
-      settled: await reconcileRuntimeControls(),
-      values: await listRuntimeControls(),
-    }))();
+    const request = (async () => {
+      const settled = await reconcileRuntimeControls();
+      // The native read consumes pending keys. Keep its confirmation even when
+      // the route hides or the following receipt-inventory read fails.
+      if (settled.length) observedCompletion.current = true;
+      const values = await listRuntimeControls();
+      return { confirmed: observedCompletion.current, values };
+    })();
     reading.current = request;
     void request
       .finally(() => {
@@ -44,19 +49,19 @@ export default function RuntimeRecovery({
     return request;
   }, []);
   const refresh = useCallback(async () => {
-    const { settled, values } = await snapshot();
+    const { confirmed: completed, values } = await snapshot();
     setItems(values);
-    if (settled.length) setConfirmed(true);
+    if (completed) setConfirmed(true);
     setError("");
   }, [snapshot]);
   useEffect(() => {
     if (!active || busy || !isProductHosted()) return;
     let disposed = false;
     void snapshot()
-      .then(({ settled, values }) => {
+      .then(({ confirmed: completed, values }) => {
         if (!disposed) {
           setItems(values);
-          if (settled.length) setConfirmed(true);
+          if (completed) setConfirmed(true);
           setError("");
         }
       })
