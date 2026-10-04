@@ -50,3 +50,32 @@ test("Agent close/update receipt aggregation rejects a different installation or
     validateAgentOwnershipReceipts(context, { ...portable, screenshotPaths: ["outside.png"] }, update),
   );
 });
+test("Agent business job waits lazy create and saved card readiness before returning", async () => {
+  const { createAgentBusinessJob } = await import("./windows-suite-agent-user-flows.mjs");
+  const events = [],
+    job = { id: "owned", name: "Owned Agent job" };
+  const app = {
+    cdp: { evaluate: async () => ({ operation: { outcome: { state: "succeeded" } }, value: [job] }) },
+    ui: {
+      click: async (target) => {
+        events.push(["click", target.name]);
+      },
+      fill: async () => {},
+      waitForTarget: async (target) => {
+        events.push(["ready", target.name]);
+        if (target.name === "지금 실행") assert.deepEqual(target.scope, { role: "article", name: job.name });
+      },
+    },
+  };
+  assert.equal(
+    await createAgentBusinessJob(app, { name: job.name, command: "owned command", directory: "owned directory" }),
+    job,
+  );
+  assert.deepEqual(events, [
+    ["click", "작업 및 서비스"],
+    ["ready", "+ 새 작업"],
+    ["click", "+ 새 작업"],
+    ["click", "작업 저장"],
+    ["ready", "지금 실행"],
+  ]);
+});

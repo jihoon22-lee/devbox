@@ -1,3 +1,4 @@
+import { selectRegisteredWorkspaceRoot } from "./windows-workspace-registry-observations.mjs";
 import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
 // Owned packaged Workspace fixture. Renderer mutations always use UiDriver input.
 import assert from "node:assert/strict";
@@ -116,10 +117,7 @@ export function createWorkspaceUiFixture({
       git("commit", "-m", "owned fixture");
       await ui.fill({ role: "textbox", name: "Windows 프로젝트 폴더" }, root);
       await ui.click({ role: "button", name: "프로젝트 등록" });
-      await this.waitForText({ role: "textbox", name: "프로젝트 이름" });
-      await ui.click({ role: "button", name: "등록" });
-      await wait(async () => (await this.registry()).worktrees.length === 1, "registered root");
-      await ui.click({ role: "button", name: "프로젝트 선택" });
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, root);
       await wait(async () => !!(await context())?.worktreeId, "selected native context");
     },
     async trustSource() {
@@ -157,6 +155,7 @@ export function createWorkspaceUiFixture({
       );
       assert.equal(result.status, 0, "Owned WSL Git fixture setup failed");
       await ui.click({ role: "button", name: "개요" });
+      await ui.waitForTarget({ role: "button", name: "WSL 프로젝트 추가" });
       await ui.click({ role: "button", name: "WSL 프로젝트 추가" });
       const distros = await read("workspace.registry", "list_wsl_distros");
       const index = distros.findIndex((item) => item.name === distro);
@@ -164,15 +163,8 @@ export function createWorkspaceUiFixture({
       await selectOption({ role: "combobox", name: "WSL 배포판" }, index + 1);
       await ui.fill({ role: "textbox", name: "Linux 프로젝트 폴더" }, agentRoot);
       await ui.click({ role: "button", name: "WSL 프로젝트 등록" });
-      await this.waitForText({ role: "textbox", name: "프로젝트 이름" });
-      const name = agentRoot.split("/").pop();
-      this.agentProjectName = name;
-      await ui.click({ role: "button", name: "등록" });
-      await wait(
-        async () => (await this.registry()).projects.some((project) => project.name === name),
-        "WSL base registered",
-      );
-      await ui.click({ role: "button", name: "프로젝트 선택", scope: { role: "region", name } });
+      const project = await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
+      this.agentProjectName = project.name;
       await wait(async () => (await context())?.target?.kind === "wsl", "WSL base selected");
       await this.trustSource();
     },
@@ -206,11 +198,7 @@ export function createWorkspaceUiFixture({
       )
         return;
       await ui.click({ role: "button", name: "개요" });
-      await ui.click({
-        role: "button",
-        name: "프로젝트 선택",
-        scope: { role: "region", name: path.basename(this.windowsRoot) },
-      });
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, this.windowsRoot);
       await wait(async () => (await context())?.target?.kind === "windows", "owned Windows root selected");
     },
     async runtimeLostReply() {
@@ -311,6 +299,7 @@ export function createWorkspaceUiFixture({
         );
       await writeLock("1.2.3");
       await ui.click({ role: "button", name: "의존성" });
+      await ui.waitForTarget({ role: "button", name: "의존성 분석" });
       await ui.click({ role: "button", name: "의존성 분석" });
       const inventory = () => read("workspace.dependencies", "dependency_inventory", { request: { path: root } });
       const initial = await inventory();
@@ -450,6 +439,7 @@ export function createWorkspaceUiFixture({
     async managedLspLifecycle() {
       await this.selectWindows();
       await ui.click({ role: "button", name: "파일" });
+      await ui.waitForTarget({ role: "button", name: "언어 서버" });
       await ui.click({ role: "button", name: "언어 서버" });
       const catalog = await read("workspace.lsp", "lsp_catalog");
       const rust = catalog.find((item) => item.id === "rust-analyzer"),

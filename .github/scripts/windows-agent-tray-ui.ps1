@@ -32,7 +32,7 @@ if($icons.Count -eq 0){
  $overflow=@()
  foreach($name in @('Hidden icon menu','Show hidden icons','숨겨진 아이콘 표시')) {
   foreach($control in (FindNamed $name)) {
-   if($control.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and ([Diagnostics.Process]::GetProcessById($control.Current.ProcessId)).ProcessName -eq 'explorer'){$overflow+=,$control}
+   if($control.Current.ControlType.Id -eq [System.Windows.Automation.ControlType]::Button.Id -and ([Diagnostics.Process]::GetProcessById($control.Current.ProcessId)).ProcessName -eq 'explorer'){$overflow+=,$control}
   }
  }
  if($overflow.Count -ne 1){throw 'Exact Explorer tray overflow button missing or ambiguous'}

@@ -13,17 +13,17 @@ export async function run(context) {
         await fixture.disableAutosave();
         await ui.fill(editor, "A의 새 내용\n");
         await ui.press("Control+z");
-        assert.equal(await ui.text(editor), notes.aOriginal);
+        assert.equal(await fixture.editorText(), notes.aOriginal);
         await ui.press("Control+y");
-        assert.equal(await ui.text(editor), "A의 새 내용\n");
+        assert.equal(await fixture.editorText(), "A의 새 내용\n");
         await ui.press("Control+s");
         await fixture.wait(async () => (await readFile(notes.aFile, "utf8")) === "A의 새 내용\n", "A saved");
         await fixture.openNote(notes.b);
         await ui.press("Control+z");
-        assert.equal(await ui.text(editor), notes.bOriginal);
+        assert.equal(await fixture.editorText(), notes.bOriginal);
         await fixture.openNote(notes.a);
         await ui.press("Control+z");
-        assert.equal(await ui.text(editor), "A의 새 내용\n");
+        assert.equal(await fixture.editorText(), "A의 새 내용\n");
         assert.equal(await readFile(notes.bFile, "utf8"), notes.bOriginal);
         screenshots.push(await ui.screenshot("DOC-01-isolated-history"));
         assertions.push(
@@ -42,7 +42,7 @@ export async function run(context) {
         await fixture.waitJournal(notes.a, "");
         await ui.closeOwnedWindow();
         await ui.click({ role: "button", name: "종료 취소" });
-        assert.equal(await ui.text(editor), "");
+        assert.equal(await fixture.editorText(), "");
         assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
         const switching = fixture.openNote(notes.b);
         await fixture.confirmDialog();
@@ -53,7 +53,7 @@ export async function run(context) {
         await fixture.navigate("notes");
         await fixture.waitFor({ role: "button", name: `${notes.a} 열어서 확인` });
         await ui.click({ role: "button", name: `${notes.a} 열어서 확인` });
-        assert.equal(await ui.text(editor), "");
+        assert.equal(await fixture.editorText(), "");
         await ui.closeOwnedWindow();
         await ui.click({ role: "button", name: "저장하지 않고 종료(복구본 유지)" });
         await fixture.reopenAfterClose();

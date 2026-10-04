@@ -3,6 +3,36 @@ import test from "node:test";
 import * as document from "./windows-knowledge-document-recovery.mjs";
 import * as search from "./windows-knowledge-search-lifecycle.mjs";
 import * as activity from "./windows-knowledge-activity.mjs";
+import { visibleNoteTextExpression, noteReadyExpression } from "./windows-knowledge-flow-shared.mjs";
+test("note readiness rejects a previous textbox until exact requested path and bytes are rendered", () => {
+  const probe = Function("document", `return ${noteReadyExpression("Notes/B.md", "B\n")}`);
+  for (const [path, content, expected] of [
+    ["Notes/A.md", "B\n", false],
+    ["Notes/B.md", "A\n", false],
+    ["Notes/B.md", "B\n", true],
+  ]) {
+    const document = {
+      querySelector: () => ({ textContent: path }),
+      querySelectorAll: () => [{ querySelectorAll: () => content.split("\n").map((textContent) => ({ textContent })) }],
+    };
+    assert.equal(probe(document), expected);
+  }
+});
+test("synthetic note observation preserves exactly the rendered trailing blank lines", () => {
+  for (const lines of [["# 합성 A", ""], [""], ["a", "", ""]]) {
+    const document = {
+      querySelectorAll: () => [{ querySelectorAll: () => lines.map((textContent) => ({ textContent })) }],
+    };
+    const observed = Function("document", `return ${visibleNoteTextExpression()}`)(document);
+    assert.equal(observed, lines.join("\n"));
+  }
+});
+test("empty recovery assertions reject missing, ambiguous or unrendered editors", () => {
+  const probe = Function("document", `return ${visibleNoteTextExpression()}`);
+  for (const editors of [[], [{}, {}], [{ querySelectorAll: () => [] }]]) {
+    assert.throws(() => probe({ querySelectorAll: () => editors }), /unavailable/);
+  }
+});
 import { reachKnowledgeControl, preserveKnowledgeInputBaselineOnFailure } from "./windows-knowledge-input-ui.mjs";
 test("failed Knowledge input preserves first evidence before restoring fixture and rethrows its original gate", async () => {
   const error = new Error("original gate");

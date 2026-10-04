@@ -31,3 +31,11 @@ export async function prepareHistoricalNativeStore(source, product, nativeStoreR
     setupControl: name,
   };
 }
+
+// The published fixture records migration ownership before activation; its
+// record_suite_health command is restricted to the subsequent Health phase.
+export function installedFixtureOwnerRecording(source, mode) {
+  return source === "1c97b41ee10ca0df7c062338bfe85659af025a89" && mode === "import"
+    ? { method: "record_migration_owner", route: "migration" }
+    : { method: "record_suite_health", route: "recovery" };
+}

@@ -52,12 +52,13 @@ async function review(context) {
   await expectText(context, "다른 제품의 열기 요청");
   await context.ui.click(button("화면 열기", incoming));
 }
-async function selectSource(workspace) {
+export async function selectSource(workspace) {
   await workspace.ui.click({ role: "textbox", name: "" });
   await workspace.ui.press("Control+a");
   const key = { key: "F10", code: "F10", windowsVirtualKeyCode: 121, modifiers: 8 };
   await workspace.cdp.command("Input.dispatchKeyEvent", { type: "keyDown", ...key });
   await workspace.cdp.command("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+  await workspace.ui.waitForTarget({ role: "menuitem", name: "선택 내용을 API Studio에서 변환" });
   await workspace.ui.click({ role: "menuitem", name: "선택 내용을 API Studio에서 변환" });
 }
 async function executePipeline(api) {

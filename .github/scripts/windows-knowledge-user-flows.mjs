@@ -1,4 +1,5 @@
 import { runKnowledgeChecks } from "./knowledge-diagnostic-sequence.mjs";
+import { visibleNoteTextExpression, noteReadyExpression } from "./windows-knowledge-flow-shared.mjs";
 import { observeKnowledgeInput } from "./windows-knowledge-input-ui.mjs";
 import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
@@ -213,7 +214,10 @@ export async function createInstalledKnowledgeContext() {
       await waitFor({ role: "button", name });
       await ui.click({ role: "button", name });
       await waitFor({ role: "textbox", name: "Markdown 본문" });
+      const expected = await readFile(path.join(notesRoot, rel), "utf8");
+      await wait(() => current.cdp.evaluate(noteReadyExpression(rel, expected)), "requested synthetic note loaded");
     },
+    editorText: () => current.cdp.evaluate(visibleNoteTextExpression()),
     async disableAutosave() {
       const enabled = await current.cdp.evaluate(
         "document.querySelector('.note-toolbar input[type=checkbox]')?.checked ?? Array.from(document.querySelectorAll('label')).find(e=>e.textContent.includes('자동 저장'))?.querySelector('input')?.checked",

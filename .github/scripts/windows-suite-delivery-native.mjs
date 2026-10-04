@@ -5,6 +5,7 @@ import {
 } from "./agent-runtime-diagnostics.mjs";
 import {
   installedFixtureCommand,
+  installedFixtureOwnerRecording,
   prepareHistoricalNativeStore,
   historicalHealthUnavailable,
 } from "./windows-suite-native-protocol.mjs";
@@ -327,9 +328,9 @@ try {
         await delay(100);
       }
       assert.ok(ready, `native store preparation timed out: ${member.product}`);
-      const method = "record_suite_health";
+      const { method, route } = installedFixtureOwnerRecording(evidence.source, mode);
       const result = value(
-        await call(center, "plugin:control-center|delivery", { method, args: { product: member.product } }, "recovery"),
+        await call(center, "plugin:control-center|delivery", { method, args: { product: member.product } }, route),
       );
       assert.equal(result.recorded, true);
       evidence.checks[`recorded_${member.product}`] = true;

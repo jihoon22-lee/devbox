@@ -230,6 +230,7 @@ node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs
 node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs
 node --test .github/scripts/windows-workspace-ui-fixture.test.mjs
+node --test .github/scripts/visible-control-bounds.test.mjs .github/scripts/windows-workspace-registry-observations.test.mjs
 node --test .github/scripts/windows-workspace-ui-observations.test.mjs .github/scripts/windows-workspace-draft-ui.test.mjs .github/scripts/windows-workspace-agent-registry-ui.test.mjs .github/scripts/windows-workspace-runtime-recovery-ui.test.mjs
 node --test .github/scripts/windows-api-environments.test.mjs .github/scripts/windows-api-mcp-auth.test.mjs .github/scripts/windows-api-webhooks.test.mjs .github/scripts/windows-knowledge-user-flows.test.mjs
 node --test .github/scripts/windows-suite-native-protocol.test.mjs .github/scripts/windows-suite-legacy-upgrade-ui.test.mjs
