@@ -123,6 +123,9 @@ jobs:
           retention-days: 7
 
   build:
+    permissions:
+      contents: read
+      actions: read
     name: Build Windows products (shard ${{ matrix.shard }})
     needs: [plan, workspace-wsl-helper]
     runs-on: windows-2025
@@ -144,9 +147,20 @@ jobs:
           node-version-file: .nvmrc
       - run: corepack enable pnpm
       - uses: dtolnay/rust-toolchain@1.98.1
+      - id: cache-namespace
+        name: Check whether this shard has a warm cache
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CACHE_SHARD: ${{ matrix.shard }}
+        run: node .github/scripts/windows-package-cache.mjs
       - uses: Swatinem/rust-cache@v2
+        if: steps.cache-namespace.outputs.legacy-warm-start == 'true'
         with:
           shared-key: devbox-windows-package
+          save-if: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-windows-package-shard-${{ matrix.shard }}
           cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
