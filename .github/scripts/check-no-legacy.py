@@ -36,9 +36,15 @@ PATTERNS = [
 ]
 SUFFIXES = {".rs", ".ts", ".tsx", ".json", ".toml", ".mjs", ".ps1", ".py", ".yml", ".yaml"}
 
-# These exact current Activity DTO lines retain the pre-existing wire key. They
-# are not v0.7 source acquisition or import paths; no file-wide exemption applies.
+# Exact current Activity wire keys and the pinned v0.8.1 fixture command only.
+# No file-wide exemption or production legacy importer is permitted.
 COMPATIBILITY_LINES = {
+    ".github/scripts/windows-suite-native-protocol.mjs": {
+        '? { method: "record_migration_owner", route: "migration" }',
+    },
+    ".github/scripts/windows-suite-native-protocol.test.mjs": {
+        'method: "record_migration_owner",',
+    },
     "crates/activity-engine/src/commands/life.rs": {'#[serde(rename = "legacy_snapshot")]'},
     "packages/knowledge-features/src/generated/KnowledgeActivity.ts": {"legacy_snapshot: boolean;"},
     "packages/knowledge-features/src/activity/components/DataSourceRow.tsx": {

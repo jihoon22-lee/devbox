@@ -188,6 +188,20 @@
   API 확인 처리·동시 기록 보존·민감정보 복사의 직접 영향 검사와 공통 확인창 4개가 통과했다.
   고정 native 오류 코드·production exporter·Control Center 타입 검사도 통과했다.
   설치된 새 Windows 바이너리의 전체 수용과 최종 CI는 로컬 통과와 구분해 남겨 둔다.
+- 같은 설치 진단의 Tasks 화면에서도 900px 최소 너비가 확대된 655px viewport를 넘었다.
+  최소 너비를 제거하고 탐색·작업 조작·편집 및 기록 검색을 좁은 화면에 맞춰 배치한다.
+  실제 Chromium의 CSS 회귀에서 기존 넘침을 재현했으며 설치본의 최종 수용과 구분한다.
+- RUNTIME-01 응답 유실 검증은 native callback을 멈춘 뒤 일반 Runtime.evaluate로 읽으면서
+  멈춘 renderer의 실행을 기다렸다. 실제 Chromium에서 대기를 재현하고 캡처한 call frame의
+  동기 읽기로 변경했다. 원래 operation ID·한 번의 실행과 중지 확인·재시작 전 authority 근거는
+  유지하며 실패 시 debugger를 해제해 후속 독립 여정에 일시정지를 남기지 않는다.
+- PR CI `37200601015`는 새 테스트 fixture의 누락된 타입 필드와 notices의 lock digest를,
+  `37200916164`는 고정 v0.8.1 명령의 역사 예외 누락과 동시 브라우저의 짧은 준비 제한을 발견했다.
+  남은 실행을 취소하고 직접 영향 범위부터 보정했다. 역사 예외는 두 파일의 정확한 두 줄로
+  제한하고 다른 구버전 호출 거절 회귀를 추가했다. 브라우저는 순차 실행하고 시작 준비만
+  상한 20초로 관측한다. 기존 CI 필수 gate와 제품 수용 조건은 유지한다.
+  Tasks의 43개 제어·원래 실행 식별자를 보존하는 runner 9개 회귀 및 변경된 Workspace의
+  frontend 빌드·bundle 상한·Biome이 통과했다. 빌드의 합산 RSS는 약 1.65GiB, swap은 0이다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 

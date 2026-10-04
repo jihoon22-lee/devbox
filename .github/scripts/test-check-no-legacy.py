@@ -21,6 +21,21 @@ class GuardTest(unittest.TestCase):
             self.assertEqual(len(hits), 2)
             self.assertEqual({hit.split(":")[0] for hit in hits}, {"a.rs", "d.rs"})
 
+    def test_pinned_fixture_exception_does_not_allow_other_legacy_calls(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = pathlib.Path(root)
+            path = base / ".github/scripts/windows-suite-native-protocol.mjs"
+            path.parent.mkdir(parents=True)
+            path.write_text('? { method: "record_migration_owner", route: "migration" }\nrecord_migration_owner();\n', encoding="utf-8")
+            original = guard.ROOT
+            guard.ROOT = base
+            try:
+                hits = guard.scan(["."])
+            finally:
+                guard.ROOT = original
+            self.assertEqual(len(hits), 1)
+            self.assertIn("record_migration_owner();", hits[0])
+
     def test_current_activity_wire_lines_do_not_allow_import_entrypoints(self):
         with tempfile.TemporaryDirectory() as root:
             base = pathlib.Path(root)

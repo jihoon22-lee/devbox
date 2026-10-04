@@ -56,12 +56,16 @@ test("real confirmation input preserves cancellation, focus and bounded layout w
       { stdio: "ignore" },
     );
     let port;
-    for (let i = 0; i < 100; i++) {
+    // A fresh hosted browser took over eight seconds in the paired CSS probe.
+    // Bound startup independently of UI readiness and stop on an early exit.
+    const deadline = performance.now() + 20000;
+    while (performance.now() < deadline) {
+      if (browser.exitCode !== null) throw new Error(`Owned browser exited before readiness: ${browser.exitCode}`);
       try {
         port = (await readFile(path.join(directory, "profile/DevToolsActivePort"), "utf8")).split("\n")[0];
         break;
       } catch {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
     assert.ok(port, "Owned browser debugging endpoint unavailable");
