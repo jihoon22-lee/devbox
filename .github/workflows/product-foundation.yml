@@ -358,8 +358,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Retained candidate source/hash verification failed' }
           New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
           $receipt = Join-Path $env:GITHUB_WORKSPACE 'product-foundation-evidence/installer-ui-diagnostic-source.json'
-          $purpose = if ($appsOnly) { 'retained-installed-apps-diagnostic-only' } else { 'retained-installer-ui-diagnostic-only' }
-          @{ schemaVersion = 1; purpose = $purpose; appsOnly = $appsOnly; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding utf8
+          @{ schemaVersion = 1; purpose = 'retained-installer-ui-diagnostic-only'; appsOnly = $appsOnly; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding utf8
           "DEVBOX_USER_FLOW_DIAGNOSTIC=true" >> $env:GITHUB_ENV
           "DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
           "DEVBOX_USER_FLOW_DIAGNOSTIC_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV

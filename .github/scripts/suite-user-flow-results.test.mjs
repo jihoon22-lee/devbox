@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { diagnosticIdentity } from "./suite-user-flow-results.mjs";
@@ -34,8 +34,12 @@ test("retained UI diagnostics require a consistent explicit dispatch receipt", a
       GITHUB_RUN_ID: "456",
       GITHUB_REPOSITORY: "fixture/devbox",
     });
+    const workflow = await readFile(new URL("../workflows/product-foundation.yml", import.meta.url), "utf8");
+    const purpose = workflow.match(/purpose = '([^']+)'; appsOnly = \$appsOnly/);
+    assert.ok(purpose, "Installed diagnostic modes must emit the shared receipt purpose");
     const receipt = {
-      purpose: "retained-installer-ui-diagnostic-only",
+      purpose: purpose[1],
+      appsOnly: true,
       runnerSourceSha: process.env.GITHUB_SHA,
       runnerRunId: "456",
       payloadSourceSha: "a".repeat(40),
