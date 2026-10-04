@@ -180,6 +180,21 @@ assert "diagnosticOnly = $true" in suite_diagnostic
 assert "native-cross-product-diagnostic-" in suite_diagnostic
 assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or '${{ inputs.suite_full_workflow }}' -eq 'true'" in suite_diagnostic
 
+# A targeted Knowledge probe reuses verified candidate bytes, never rebuilds
+# products or disguises runner source as the payload source.
+assert "suite_diagnostic_knowledge:" in workflow
+assert "'${{ inputs.suite_diagnostic_knowledge }}'" in suite_diagnostic
+assert "knowledge-components-diagnostic-source.json" in suite_diagnostic
+assert "knowledge-components-diagnostic-only" in suite_diagnostic
+assert "DEVBOX_PORTABLE_FIXTURES=target/portable-fixture" in suite_diagnostic
+assert "DEVBOX_FIXTURE_PROFILE=release" in suite_diagnostic
+assert "windows-product-foundation.mjs --knowledge-diagnostic" in suite_diagnostic
+assert "native-knowledge-components-diagnostic-" in suite_diagnostic
+for job in ("workspace-wsl-helper", "windows", "baseline-performance"):
+    section = workflow.split(f"  {job}:\n", 1)[1]
+    condition = next(line for line in section.splitlines() if line.strip().startswith("if:"))
+    assert "!inputs.suite_diagnostic_knowledge" in condition, "Knowledge diagnosis must not rebuild unrelated products"
+
 installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
 assert "suite_diagnostic_installer_ui:" in workflow
 assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or $env:SOURCE_RUN" in installer_diagnostic

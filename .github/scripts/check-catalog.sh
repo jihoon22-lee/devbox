@@ -230,7 +230,7 @@ node --test .github/scripts/windows-package-cache.test.mjs
 node --test .github/scripts/fixture-child-exit.test.mjs
 node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs
-node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs
+node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs .github/scripts/product-foundation-observation.test.mjs
 node --test .github/scripts/windows-workspace-ui-fixture.test.mjs
 node --test .github/scripts/visible-control-bounds.test.mjs .github/scripts/windows-workspace-registry-observations.test.mjs
 node --test .github/scripts/windows-workspace-agent-observation.test.mjs .github/scripts/windows-workspace-ui-observations.test.mjs .github/scripts/windows-workspace-draft-ui.test.mjs .github/scripts/windows-workspace-agent-registry-ui.test.mjs .github/scripts/windows-workspace-runtime-recovery-ui.test.mjs
