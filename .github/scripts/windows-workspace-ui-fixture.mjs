@@ -9,6 +9,78 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { downloadArchive } from "./windows-workspace-lsp.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
+export async function loseRuntimeReply({
+  cdp,
+  ui,
+  wait,
+  jobId,
+  scope,
+  action,
+  pendingExpression,
+  beforeRestart,
+  restart,
+}) {
+  let enabled = false,
+    restarted = false,
+    frameId = null,
+    unsubscribe,
+    click,
+    firstError;
+  try {
+    await cdp.command("Debugger.enable");
+    enabled = true;
+    const functionValue = await cdp.command("Runtime.evaluate", {
+      expression: "window.__TAURI_INTERNALS__.runCallback",
+      returnByValue: false,
+    });
+    assert.ok(functionValue.result.objectId);
+    unsubscribe = cdp.onEvent("Debugger.paused", (event) => {
+      frameId = event?.callFrames?.[0]?.callFrameId ?? null;
+    });
+    await cdp.command("Debugger.setBreakpointOnFunctionCall", {
+      objectId: functionValue.result.objectId,
+      condition: `data?.value?.jobId===${JSON.stringify(jobId)}`,
+    });
+    const target = { role: "button", name: action, scope };
+    click = action === "중지" ? ui.clickWithConfirmation(target, true) : ui.click(target);
+    click.catch(() => {});
+    await wait(
+      async () => typeof frameId === "string" && frameId.length > 0,
+      "native result paused before renderer receipt",
+    );
+    // Runtime.evaluate awaits execution on the paused renderer. This read stays
+    // in its current call frame and never resumes/consumes the native callback.
+    const response = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: pendingExpression,
+      returnByValue: true,
+      silent: true,
+    });
+    assert.ok(!response.exceptionDetails, "Paused pending-request observation failed");
+    const requests = response.result?.value;
+    assert.ok(Array.isArray(requests), "Paused pending-request observation must be an array");
+    assert.equal(requests.length, 1, "Lost reply must retain exactly one original request");
+    await beforeRestart();
+    await restart(true);
+    restarted = true;
+    return requests[0].operationId;
+  } catch (error) {
+    firstError = error;
+    throw error;
+  } finally {
+    unsubscribe?.();
+    try {
+      // A successful crash already destroyed the paused session. On failure,
+      // release the debugger so later read-only journeys cannot inherit a pause.
+      if (enabled && !restarted) await cdp.command("Debugger.disable");
+    } catch (error) {
+      if (!firstError) throw error;
+    } finally {
+      await click?.catch(() => {});
+    }
+  }
+}
+
 export function createWorkspaceUiFixture({
   ui,
   cdp,
@@ -213,40 +285,26 @@ export function createWorkspaceUiFixture({
       );
       const job = await createRuntimeJob(name, `"${process.execPath}" "${script}"`);
       const scope = { role: "article", name };
-      const pending = () =>
-        cdp.evaluate(
-          `Object.keys(localStorage).filter(key=>key.startsWith("devbox-runtime-pending:")&&key.endsWith(":"+${JSON.stringify(job.id)})).map(key=>({key,...JSON.parse(localStorage.getItem(key))}))`,
-        );
-      async function loseReply(action) {
-        await cdp.command("Debugger.enable");
-        const functionValue = await cdp.command("Runtime.evaluate", {
-          expression: "window.__TAURI_INTERNALS__.runCallback",
-          returnByValue: false,
+      const pendingExpression = `Object.keys(localStorage).filter(key=>key.startsWith("devbox-runtime-pending:")&&key.endsWith(":"+${JSON.stringify(job.id)})).map(key=>({key,...JSON.parse(localStorage.getItem(key))}))`;
+      const pending = () => cdp.evaluate(pendingExpression);
+      const loseReply = (action) =>
+        loseRuntimeReply({
+          cdp,
+          ui,
+          wait,
+          jobId: job.id,
+          scope,
+          action,
+          pendingExpression,
+          restart,
+          beforeRestart: async () => {
+            if (action === "지금 실행")
+              await wait(
+                async () => (await readFile(counter, "utf8")).includes("launch"),
+                "owned child launched before losing reply",
+              );
+          },
         });
-        assert.ok(functionValue.result.objectId);
-        let paused = false;
-        const unsubscribe = cdp.onEvent("Debugger.paused", () => {
-          paused = true;
-        });
-        await cdp.command("Debugger.setBreakpointOnFunctionCall", {
-          objectId: functionValue.result.objectId,
-          condition: `data?.value?.jobId===${JSON.stringify(job.id)}`,
-        });
-        const click = ui.click({ role: "button", name: action, scope });
-        click.catch(() => {});
-        await wait(async () => paused, "native result paused before renderer receipt");
-        const requests = await pending();
-        assert.equal(requests.length, 1, "Lost reply must retain exactly one original request");
-        const operationId = requests[0].operationId;
-        if (action === "지금 실행")
-          await wait(
-            async () => (await readFile(counter, "utf8")).includes("launch"),
-            "owned child launched before losing reply",
-          );
-        unsubscribe();
-        await restart(true);
-        return operationId;
-      }
       const runId = await loseReply("지금 실행");
       assert.equal(await readFile(counter, "utf8"), "launch\n");
       await ui.click({ role: "button", name: "작업 및 서비스" });

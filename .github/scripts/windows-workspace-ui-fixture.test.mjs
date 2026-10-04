@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createWorkspaceUiFixture } from "./windows-workspace-ui-fixture.mjs";
+import { createWorkspaceUiFixture, loseRuntimeReply } from "./windows-workspace-ui-fixture.mjs";
 
 function performanceFixture({
   readinessFailure = null,
@@ -140,4 +140,89 @@ test("WSL combobox readiness precedes one keyboard option selection", async () =
   });
   await fixture.selectOption({ role: "combobox", name: "WSL 배포판" }, 1);
   assert.deepEqual(events, ["ready", "click", "Home", "ArrowDown", "Enter"]);
+});
+
+function pausedReplyFixture({ action = "지금 실행", readFailure = null, disableFailure = null } = {}) {
+  const events = [];
+  let listener, release;
+  const click = (target, intent) => {
+    events.push(["click", target.name, intent]);
+    listener({ callFrames: [{ callFrameId: "owned-frame" }] });
+    return new Promise((resolve) => {
+      release = resolve;
+    });
+  };
+  const options = {
+    cdp: {
+      command: async (method, params) => {
+        events.push([method, params]);
+        if (method === "Runtime.evaluate") return { result: { objectId: "owned-function" } };
+        if (method === "Debugger.evaluateOnCallFrame") {
+          if (readFailure) throw readFailure;
+          assert.equal(params.callFrameId, "owned-frame");
+          return { result: { value: [{ operationId: "original-owned-operation" }] } };
+        }
+        if (method === "Debugger.disable") {
+          release?.();
+          if (disableFailure) throw disableFailure;
+        }
+        return {};
+      },
+      onEvent: (method, callback) => {
+        listener = callback;
+        return () => events.push(["unsubscribe"]);
+      },
+      evaluate: () => {
+        throw new Error("Runtime read would hang while paused");
+      },
+    },
+    ui: { click, clickWithConfirmation: click },
+    wait: async (predicate) => assert.equal(await predicate(), true),
+    jobId: "owned-job",
+    scope: { role: "article", name: "owned job" },
+    action,
+    pendingExpression: "owned synchronous localStorage read",
+    beforeRestart: async () => events.push(["authority-evidence"]),
+    restart: async (crash) => {
+      assert.equal(crash, true);
+      events.push(["restart"]);
+      release();
+    },
+  };
+  return { events, options };
+}
+test("lost reply reads the paused call frame and preserves original operation before crash", async () => {
+  const { events, options } = pausedReplyFixture();
+  assert.equal(await loseRuntimeReply(options), "original-owned-operation");
+  assert.equal(events.filter(([event]) => event === "click").length, 1);
+  assert.ok(
+    events.findIndex(([event]) => event === "Debugger.evaluateOnCallFrame") <
+      events.findIndex(([event]) => event === "restart"),
+  );
+  assert.deepEqual(
+    events.slice(-3).map(([event]) => event),
+    ["authority-evidence", "restart", "unsubscribe"],
+  );
+  assert.ok(!events.some(([event]) => event === "Debugger.disable"));
+});
+test("stop lost reply explicitly accepts exactly one inline confirmation", async () => {
+  const { events, options } = pausedReplyFixture({ action: "중지" });
+  await loseRuntimeReply(options);
+  assert.deepEqual(
+    events.filter(([event]) => event === "click"),
+    [["click", "중지", true]],
+  );
+});
+test("paused read failure releases debugger and input while preserving first error", async () => {
+  const failure = new Error("original paused read failure");
+  const { events, options } = pausedReplyFixture({
+    readFailure: failure,
+    disableFailure: new Error("cleanup failure"),
+  });
+  await assert.rejects(loseRuntimeReply(options), (error) => error === failure);
+  assert.ok(!events.some(([event]) => event === "restart"));
+  assert.deepEqual(
+    events.slice(-2).map(([event]) => event),
+    ["unsubscribe", "Debugger.disable"],
+  );
 });
