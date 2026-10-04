@@ -1,6 +1,9 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 
+:root {
+  color-scheme: dark;
+}
 * {
   box-sizing: border-box;
 }
@@ -9,6 +12,15 @@ body {
   background: var(--db-color-bg);
   color: var(--db-color-text);
   font: var(--db-text-base) / 1.6 var(--db-font-sans);
+}
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  max-width: 100%;
+  font: inherit;
+  color: var(--db-color-text);
+  background: var(--db-color-surface);
+  border: 1px solid var(--db-color-border);
+  border-radius: var(--db-radius-md);
+  padding: 6px 8px;
 }
 button {
   font: inherit;

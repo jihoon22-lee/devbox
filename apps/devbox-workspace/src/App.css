@@ -14,7 +14,7 @@
   display: block;
   margin-block: 8px;
 }
-.workspace-registry input {
+.workspace-registry input:not([type="checkbox"]):not([type="radio"]) {
   width: min(100%, 640px);
   box-sizing: border-box;
   padding: 8px;

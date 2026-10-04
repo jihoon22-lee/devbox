@@ -86,6 +86,11 @@
   입력한 runner 문제를 확인해 접근성 target 대기를 추가했다. v0.8.1 준비는 그 고정 source의
   역사적 `execute` 명령을 사용하도록 수정했다. 철회본 설치 완료와 reviewed update commit은
   여전히 실패 원인 확인 중이며, 추가 소유 native 오류·단계 근거를 기록한다. R16은 미완료다.
+- 진단 `37182426188`은 native 확대 입력의 소유 창·foreground·WebView focus 검사를 통과한 뒤
+  기존 payload의 배율 비활성에서 실패했다. Workspace 최초 오류는 Tasks lazy route의 `+ 새 작업`
+  target 준비 전 입력으로 확인해 같은 방식으로 보정했다. 실제 첫 화면에서 발견한 흰색 기본 입력란과
+  등록 확인 checkbox 너비는 공용 다크 컨트롤 기본값·Workspace 선택자 수정으로 해결했다.
+  브라우저 CSS fixture의 720/1180px 너비·고대비 색상 확인은 통과했으며 packaged 수용과 구분한다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
