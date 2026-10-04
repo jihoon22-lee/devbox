@@ -22,7 +22,10 @@ export function captureWindowOwner(identity, fixtureRoot) {
   assert.equal(result.status, 0, "Owned window start time unavailable");
   const started = result.stdout.trim();
   assert.match(started, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/);
-  return { identity, fixtureRoot, started };
+  const productWindow = /^devbox-(workspace|api-studio|knowledge|control-center)\.exe$/i
+    .exec(path.win32.basename(identity.Path))?.[1]
+    ?.toLowerCase();
+  return { identity, fixtureRoot, started, productWindow };
 }
 export function nativeWindowAction(
   owner,
@@ -45,6 +48,8 @@ export function nativeWindowAction(
     "-Action",
     action,
   ];
+  if (owner.productWindow && ["Close", "Resize", "Minimize", "Activate", "Inspect"].includes(action))
+    args.push("-ProductWindow", owner.productWindow);
   if (controlId) args.push("-ControlId", controlId);
   if (controlName) args.push("-ControlName", controlName);
   if (filePath) args.push("-FilePath", filePath);

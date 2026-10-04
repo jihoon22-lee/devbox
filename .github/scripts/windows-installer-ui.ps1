@@ -9,6 +9,7 @@ param(
   [string]$ControlId,
   [string]$FilePath,
   [string]$WindowName,
+  [ValidateSet('workspace','api-studio','knowledge','control-center')][string]$ProductWindow,
   [int]$Width,
   [int]$Height
 )
@@ -83,6 +84,12 @@ $process=Get-Process -Id $TargetProcessId
 if(-not [string]::Equals($process.Path,$exe,[StringComparison]::OrdinalIgnoreCase)){throw 'Process executable mismatch'}
 $started=$process.StartTime.ToUniversalTime().ToString('o')
 if($started -ne $ExpectedStartTimeUtc){throw 'Process start time mismatch'}
+if($ProductWindow -and -not [string]::Equals([IO.Path]::GetFileName($exe),('devbox-'+$ProductWindow+'.exe'),[StringComparison]::OrdinalIgnoreCase)){throw 'Product window executable mismatch'}
+$productLifecycle=$ProductWindow -and $Action -in @('Close','Resize','Minimize','Activate','Inspect')
+if($productLifecycle -and $WindowName){throw 'Product lifecycle requires all owned roots for modal review'}
+$namespace=@{workspace='workspace';'api-studio'='apistudio';knowledge='knowledge';'control-center'='controlcenter'}
+$helperClass=if($ProductWindow){'^com\.devbox\.v08\.'+$namespace[$ProductWindow]+'\.i[a-f0-9]{64}-sic$'}else{''}
+
 $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty,$TargetProcessId)
 $windows=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$condition)
 if($WindowName) {
@@ -109,9 +116,20 @@ $observedWindowCount=$windows.Count
 $nativeInventory=[DevboxInstallerAutomation]::ObserveNativeWindows([uint32]$TargetProcessId)
 if($Action -in @('Close','Resize','Minimize','Activate','Inspect')) {
   $windows=@($windowRecords | Where-Object {
-    $_.metadata.visible -and $_.metadata.topLevel -and $_.metadata.nativeProcessId -eq $TargetProcessId
+    $_.metadata.visible -and $_.metadata.topLevel -and $_.metadata.nativeProcessId -eq $TargetProcessId -and
+      (-not $productLifecycle -or ($_.metadata.className -cne 'Tao Thread Event Target' -and $_.metadata.className -cnotmatch $helperClass))
   } | ForEach-Object {$_.element})
   if($observedWindowCount -gt 32){$windows=@()}
+  if($productLifecycle) {
+    # A modal omitted from the UIA root tree still blocks a product lifecycle action.
+    $nativeCandidates=@($nativeInventory.windows | Where-Object {
+      $_.visible -and $_.topLevel -and $_.className -cne 'Tao Thread Event Target' -and $_.className -cnotmatch $helperClass
+    })
+    $selectedHandles=@($windows | ForEach-Object {[long]$_.Current.NativeWindowHandle})
+    if($nativeInventory.count -gt 32 -or $nativeCandidates.Count -ne $windows.Count -or
+      @($nativeCandidates | Where-Object {$_.nativeHandle -notin $selectedHandles}).Count -ne 0 -or
+      ($windows.Count -eq 1 -and ($windows[0].Current.ClassName -cne 'Tauri Window' -or $nativeCandidates[0].className -cne 'Tauri Window'))){$windows=@()}
+  }
 }
 if($Action -eq 'Inspect' -and $windows.Count -ne 1) {
   @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata})} | ConvertTo-Json -Depth 4 -Compress

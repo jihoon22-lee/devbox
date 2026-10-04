@@ -1,10 +1,10 @@
-﻿param([string]$ScriptDirectory=$PSScriptRoot,[string]$BaselineScript)
+﻿param([string]$ScriptDirectory=$PSScriptRoot,[string]$BaselineScript,[switch]$FrameworkHelpers)
 # Disposable classic Win32 controls; no WinForms/UIA custom button provider.
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('devbox-installer-uia-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
-$image=Join-Path $fixture 'owned-classic-button.exe'
+$image=Join-Path $fixture $(if($FrameworkHelpers){'devbox-control-center.exe'}else{'owned-classic-button.exe'})
 $marker=Join-Path $fixture 'invoked.txt'
 $source=@'
 using System;
@@ -22,23 +22,34 @@ public class OwnedClassicButton {
  [DllImport("user32.dll")] static extern IntPtr DispatchMessage(ref MSG m);
  [DllImport("user32.dll")] static extern void PostQuitMessage(int code);
  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h,int command);
- static IntPtr helper;
+ static IntPtr helper,modal;
  static Proc callback=Window;
  static string marker;
  static IntPtr Window(IntPtr h,uint m,IntPtr w,IntPtr l) {
   if(m==0x111 && (w.ToInt64()&65535)==102) { ShowWindow(helper,5); return IntPtr.Zero; }
+  if(m==0x111 && (w.ToInt64()&65535)==104) { ShowWindow(modal,5); return IntPtr.Zero; }
+  if(m==0x111 && (w.ToInt64()&65535)==105) { ShowWindow(modal,0); return IntPtr.Zero; }
   if(m==0x111 && (w.ToInt64()&65535)==103) { ShowWindow(helper,0); return IntPtr.Zero; }
   if(m==0x111 && (w.ToInt64()&65535)==101) { File.WriteAllText(marker,"owned-button-invoked"); return IntPtr.Zero; }
   if(m==0x10) { PostQuitMessage(0); return IntPtr.Zero; }
   return DefWindowProc(h,m,w,l);
  }
  public static void Main(string[] args) {
-  marker=args[0]; WC cls=new WC();cls.proc=callback;cls.name="DevboxOwnedClassic";
+  marker=args[0]; bool framework=args.Length>1; WC cls=new WC();cls.proc=callback;cls.name=framework?"Tauri Window":"DevboxOwnedClassic";
   if(RegisterClass(ref cls)==0) throw new Exception("RegisterClass failed");
   IntPtr parent=CreateWindowEx(0,cls.name,"Devbox owned classic fixture",0x10CF0000,100,100,320,180,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
   if(parent==IntPtr.Zero) throw new Exception("Parent creation failed");
   helper=CreateWindowEx(0,cls.name,"Devbox owned hidden helper",0x00CF0000,450,100,320,180,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
   if(helper==IntPtr.Zero) throw new Exception("Helper creation failed");
+  if(framework) {
+   foreach(string name in new string[]{"Tao Thread Event Target","com.devbox.v08.controlcenter.i"+new string('a',64)+"-sic"}) {
+    WC extra=new WC();extra.proc=callback;extra.name=name;
+    if(RegisterClass(ref extra)==0 || CreateWindowEx(0,name,"",0x10CF0000,800,100,100,100,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero)==IntPtr.Zero) throw new Exception("Visible framework helper creation failed");
+   }
+  }
+  modal=CreateWindowEx(0,"#32770","Owned modal review",0x00CF0000,450,300,320,180,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+  if(modal==IntPtr.Zero) throw new Exception("Modal creation failed");
+  CreateWindowEx(0,"BUTTON","Show modal",0x50000000,20,105,130,25,parent,new IntPtr(104),IntPtr.Zero,IntPtr.Zero);
   CreateWindowEx(0,"BUTTON","Show helper",0x50000000,20,70,130,30,parent,new IntPtr(102),IntPtr.Zero,IntPtr.Zero);
   CreateWindowEx(0,"BUTTON","Hide helper",0x50000000,165,70,130,30,parent,new IntPtr(103),IntPtr.Zero,IntPtr.Zero);
   if(CreateWindowEx(0,"BUTTON","Owned invoke",0x50000000,20,20,160,40,parent,new IntPtr(101),IntPtr.Zero,IntPtr.Zero)==IntPtr.Zero) throw new Exception("Button creation failed");
@@ -46,7 +57,7 @@ public class OwnedClassicButton {
  }
 }
 '@
-Add-Type -TypeDefinition $source -OutputAssembly $image -OutputType ConsoleApplication
+Add-Type -TypeDefinition $source -OutputAssembly $image -OutputType $(if($FrameworkHelpers){'WindowsApplication'}else{'ConsoleApplication'})
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -65,21 +76,24 @@ public static class OwnedFixtureWindows {
    return true; },IntPtr.Zero);
   if(main!=1 || hidden!=1) throw new Exception("Exact owned main and hidden helper were not created");
  }
- public static void HideFixtureHelper(int pid) {
+ public static void HideFixtureHelper(int pid,int controlId) {
   IntPtr main=IntPtr.Zero; int count=0;
   EnumWindows(delegate(IntPtr h,IntPtr l) { uint owner; GetWindowThreadProcessId(h,out owner); var text=new System.Text.StringBuilder(256);GetWindowText(h,text,256);
    if(owner==pid && text.ToString()=="Devbox owned classic fixture") { main=h;count++; } return true; },IntPtr.Zero);
   if(count!=1) throw new Exception("Fixture main identity ambiguous");
-  PostMessage(main,0x111,new IntPtr(103),IntPtr.Zero);
+  PostMessage(main,0x111,new IntPtr(controlId),IntPtr.Zero);
   System.Threading.Thread.Sleep(200);
  }
 }
 '@
-$child=Start-Process -FilePath $image -ArgumentList $marker -PassThru
+$fixtureArguments=@($marker)
+if($FrameworkHelpers){$fixtureArguments+='framework'}
+$child=Start-Process -FilePath $image -ArgumentList $fixtureArguments -PassThru
 try {
   $started=$child.StartTime.ToUniversalTime().ToString('o')
   if($child.MainModule.FileName -cne $image){throw 'Fixture executable identity mismatch'}
   $arguments=@{TargetProcessId=$child.Id;ExpectedExecutable=$image;ExpectedStartTimeUtc=$started;FixtureRoot=$fixture}
+  if($FrameworkHelpers){$arguments.ProductWindow='control-center'}
   $scriptPath=Join-Path $ScriptDirectory 'windows-installer-ui.ps1'
   # ScriptBlock execution avoids changing execution policy on this host.
   function Invoke-OwnedAction([string]$Action,[string]$ControlId='',[string]$ObserverScript=$scriptPath) {
@@ -107,6 +121,11 @@ try {
     if($raw.Count -ne 1 -or $raw[0].controlTypeId -ne 50033 -or $raw[0].canInvoke -ne $false){throw 'Baseline did not reproduce classic Pane without InvokePattern'}
     Write-Output 'Original classic native Button: Pane/no InvokePattern reproduced'
   }
+  if($FrameworkHelpers) {
+    $frameworkView=Invoke-OwnedAction Inspect | ConvertFrom-Json
+    Write-Output ('Framework root selection: '+($frameworkView | Select-Object windowCount,selectedWindowCount,windows,nativeWindowCount,nativeWindows | ConvertTo-Json -Depth 5 -Compress))
+    if($frameworkView.selectedWindowCount -ne 1){throw 'Visible framework helpers prevented exact main selection'}
+  }
   $deadline=[DateTime]::UtcNow.AddSeconds(15)
   do {
     Start-Sleep -Milliseconds 100
@@ -120,7 +139,7 @@ try {
   if(-not(Test-Path -LiteralPath $marker) -or (Get-Content -LiteralPath $marker -Raw) -cne 'owned-button-invoked'){throw 'Classic Button Invoke did not produce its owned marker'}
   [OwnedFixtureWindows]::AssertHiddenHelper($child.Id)
   $native=Invoke-OwnedAction Inspect | ConvertFrom-Json
-  $nativeFixture=@($native.nativeWindows | Where-Object {$_.className -ceq 'DevboxOwnedClassic'})
+  $nativeFixture=@($native.nativeWindows | Where-Object {$_.className -ceq $(if($FrameworkHelpers){'Tauri Window'}else{'DevboxOwnedClassic'})})
   if($nativeFixture.Count -ne 2 -or @($nativeFixture | Where-Object visible).Count -ne 1 -or $native.nativeWindowCount -gt 32){throw 'Bounded native inventory did not retain exact main and hidden helper'}
   Write-Output ('Native owned main/hidden inventory: '+($nativeFixture | ConvertTo-Json -Compress))
   Invoke-OwnedAction Minimize
@@ -140,10 +159,20 @@ try {
   }
   if(-not $rejected -or $child.HasExited){throw 'Ambiguous visible windows must reject Close'}
   # The fixture itself hides its second visible window; production selection remains strict.
-  [OwnedFixtureWindows]::HideFixtureHelper($child.Id)
+  [OwnedFixtureWindows]::HideFixtureHelper($child.Id,103)
+  Invoke-OwnedAction Invoke 104
+  $modalView=Invoke-OwnedAction Inspect | ConvertFrom-Json
+  if($modalView.selectedWindowCount -ne 2 -or @($modalView.windows | Where-Object {$_.className -ceq '#32770' -and $_.visible}).Count -ne 1){throw 'Visible native modal was ignored by main selection'}
+  $modalRejected=$false
+  try { Invoke-OwnedAction Close } catch {
+    if($_.Exception.Message -notmatch 'Expected one owned top-level window'){throw}
+    $modalRejected=$true
+  }
+  if(-not $modalRejected -or $child.HasExited){throw 'Modal must block lifecycle Close'}
+  [OwnedFixtureWindows]::HideFixtureHelper($child.Id,105)
   Invoke-OwnedAction Close
   if(-not $child.WaitForExit(5000)){throw 'Owned fixture normal close failed'}
-  Write-Output 'Classic native Button Invoke; hidden helper/main ownership, minimized Activate, ambiguous visible Close rejection: PASS'
+  Write-Output 'Classic native Button Invoke; hidden helper/main ownership, minimized Activate, ambiguous visible/modal Close rejection: PASS'
 } finally {
   if(-not $child.HasExited){
     if($child.MainModule.FileName -cne $image -or $child.StartTime.ToUniversalTime().ToString('o') -cne $started){throw 'Fixture cleanup ownership changed'}

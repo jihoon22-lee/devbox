@@ -47,6 +47,14 @@
   현 CSS를 적용한 진단이며 새 배포 bytes 자체의 통과나 최종 후보 수용으로 취급하지 않는다.
 - 보관 후보를 재사용한 진단은 runner와 payload source를 구분하고 별도 diagnostic artifact에만
   기록한다. 최종 exact-main 후보의 설치/UI 수용과 승격 근거를 대체하지 않는다.
+- #619의 PR CI `37172279567`과 exact-main CI `37172648247`은 모두 통과했다. 새 후보
+  `37173572971`(`c91d0326`)은 네 제품·7개 자산, 네 native scope 및 WSL2/Docker를 통과했고,
+  실제 설치 뒤 `open_setup_product` 성공으로 경로 수정도 확인했다. 그러나 Control Center를
+  정상 종료·재개하는 검증의 창 선택이 실패해 설치 여정과 최종 seal은 실패했다. 출시 가능한 후보가 아니다.
+  보관 진단 `37177932549`는 같은 PID 아래 `Tauri Window` 외에 `Tao Thread Event Target`와
+  설치 identifier의 `-sic` 제어 창도 native/UIA에서 표시 중으로 보고되는 것을 확인했다.
+  단순 visible 필터로 해결되지 않으므로 정확한 제품·보조 창 식별을 보정한다. 실제 두 앱 창이나
+  modal의 모호성은 계속 거절하고, 보관 진단의 결과를 새 후보의 승격 근거로 재사용하지 않는다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
