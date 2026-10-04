@@ -1,5 +1,10 @@
 // Interactive installer and Control Center journey; no setup/activation IPC shortcuts.
 import assert from "node:assert/strict";
+import {
+  writeInstallerFailure,
+  reportInstallerResults,
+  readInstallerOperations,
+} from "./windows-suite-installer-evidence.mjs";
 import { ownedNsisSpawnOptions } from "./windows-suite-installer-actions.mjs";
 import path from "node:path";
 import { mkdir, appendFile, copyFile, readFile, writeFile } from "node:fs/promises";
@@ -65,7 +70,36 @@ export async function run() {
     registration = null,
     installer = null,
     agentCheckpoint = null,
-    coldRendererReadyMs = null;
+    coldRendererReadyMs = null,
+    installerOwner = null,
+    lastInstallerInspection = null,
+    stage = "cdp-policy-preparation";
+  const checkpoint = async (next) => {
+    stage = next;
+    await mkdir("product-foundation-evidence", { recursive: true });
+    await appendFile(
+      "product-foundation-evidence/interactive-installer-stages.jsonl",
+      `${JSON.stringify({ stage, at: new Date().toISOString() })}\n`,
+    );
+  };
+  const installerInspectionErrors = [];
+  const inspectInstaller = (owner) => {
+    try {
+      const view = nativeWindowAction(owner, "Inspect");
+      lastInstallerInspection = { stage, at: new Date().toISOString(), view, error: null };
+      return view;
+    } catch (error) {
+      lastInstallerInspection = {
+        stage,
+        at: new Date().toISOString(),
+        view: lastInstallerInspection?.view ?? null,
+        error: { message: String(error.message).slice(0, 1000), stack: String(error.stack ?? "").slice(0, 3000) },
+      };
+      installerInspectionErrors.push(lastInstallerInspection);
+      if (installerInspectionErrors.length > 2000) installerInspectionErrors.shift();
+      throw error;
+    }
+  };
   const screenshots = [],
     results = [],
     products = new Map();
@@ -108,8 +142,16 @@ export async function run() {
       if (product === "workspace" && attached) {
         await until(async () => {
           if (!allWindowsProcesses().some((p) => p.Pid === process.Pid && p.Created === process.Created)) return true;
-          if ((await attached.cdp.evaluate("document.body.innerText")).includes("Workspace 종료 검토")) {
-            await attached.ui.click({ role: "button", name: "종료" });
+          if (
+            await attached.cdp.evaluate(
+              '!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')',
+            )
+          ) {
+            await attached.ui.click({
+              role: "button",
+              name: "종료",
+              scope: { role: "dialog", name: "Workspace 종료 검토" },
+            });
             return true;
           }
           return false;
@@ -284,6 +326,7 @@ export async function run() {
     port = ports["control-center"];
     env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
     for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+    await checkpoint("installer-spawn");
     // NSIS consumes its final /D argument unquoted, including spaces (Docs/Chapter3.html).
     installer = spawn(setup, [`/D=${root}`], {
       env,
@@ -292,27 +335,34 @@ export async function run() {
       ...ownedNsisSpawnOptions(setup, [`/D=${root}`]),
     });
     await once(installer, "spawn");
+    await checkpoint("installer-process-identity");
     const installerIdentity = await until(
       () => allWindowsProcesses().find((p) => p.Pid === installer.pid && p.Path.toLowerCase() === setup.toLowerCase()),
       "installer process",
     );
     const owner = captureWindowOwner(installerIdentity, scratch);
+    installerOwner = owner;
+    await checkpoint("installer-welcome-ready");
     await until(() => {
       try {
-        return nativeWindowAction(owner, "Inspect").buttons?.some((b) => b.id === "1" && b.enabled && b.visible);
+        return inspectInstaller(owner).buttons?.some((b) => b.id === "1" && b.enabled && b.visible);
       } catch {
         return false;
       }
     }, "installer welcome");
+    await checkpoint("installer-welcome-next");
     nativeWindowAction(owner, "Invoke", { controlId: "1" });
+    await checkpoint("installer-directory-ready");
     await until(() => {
       try {
-        return nativeWindowAction(owner, "Inspect").controls?.some((b) => b.id === "1019" && b.enabled && b.visible);
+        return inspectInstaller(owner).controls?.some((b) => b.id === "1019" && b.enabled && b.visible);
       } catch {
         return false;
       }
     }, "installer directory");
+    await checkpoint("installer-directory-install");
     nativeWindowAction(owner, "Invoke", { controlId: "1" });
+    await checkpoint("installer-registration-ready");
     await until(
       async () => {
         try {
@@ -327,6 +377,7 @@ export async function run() {
       "installer registration",
       180000,
     );
+    await checkpoint("installer-owner-receipt");
     manifest = JSON.parse(await readFile(path.join(root, "devbox-installation.json"), "utf8"));
     await writeFile(
       path.join(scratch, "user-flow-owner.json"),
@@ -338,21 +389,33 @@ export async function run() {
         staging: path.resolve("candidate/delivery"),
       }),
     );
+    await checkpoint("installer-finish-ready");
     await until(() => {
       try {
-        return nativeWindowAction(owner, "Inspect").controls?.some(
-          (b) => b.name === "Devbox 설치 준비 완료" && b.visible,
-        );
+        return inspectInstaller(owner).controls?.some((b) => b.name === "Devbox 설치 준비 완료" && b.visible);
       } catch {
         return false;
       }
     }, "installer finish");
+    await checkpoint("installer-finish-open-center");
     const coldStart = performance.now();
     nativeWindowAction(owner, "Invoke", { controlId: "1" });
+    await checkpoint("installed-center-attach");
     await attach();
+    await checkpoint("installed-product-preparation");
     coldRendererReadyMs = performance.now() - coldStart;
+    await checkpoint("installed-import-screenshot");
+    const initialViewport = await center.cdp.evaluate(`(() => ({
+      visibility: document.visibilityState, width: innerWidth, height: innerHeight,
+      bodyWidth: document.body?.getBoundingClientRect().width ?? 0,
+      bodyHeight: document.body?.getBoundingClientRect().height ?? 0,
+      readyState: document.readyState
+    }))()`);
+    await writeFile("product-foundation-evidence/interactive-initial-viewport.json", JSON.stringify(initialViewport));
     screenshots.push(await center.ui.screenshot("interactive-import"));
+    await checkpoint("installed-agent-before-preparation");
     agentCheckpoint = await beforeAgentProductPreparation(agentInput());
+    await checkpoint("installed-workspace-preparation");
     await openProducts(["workspace"]);
     await health();
     assert.ok((await text()).includes("응답 또는 저장소를 확인하지 못함"));
@@ -436,6 +499,49 @@ export async function run() {
     for (const id of scenarioIds)
       if (!results.some((row) => row.id === id))
         results.push(record(id, "FAIL", [String(error.message).slice(0, 500)], "interactive-installation-failed"));
+    console.error(`Original interactive installer failure at ${stage}:`, error);
+    let observation = { lastInstallerInspection };
+    try {
+      if (installerOwner)
+        observation = {
+          kind: "owned-nsis-uia",
+          lastInstallerInspection,
+          window: nativeWindowAction(installerOwner, "Inspect"),
+        };
+      else
+        observation = {
+          kind: "owned-installer-process",
+          lastInstallerInspection,
+          spawned: Boolean(installer),
+          exitCode: installer?.exitCode ?? null,
+          signalCode: installer?.signalCode ?? null,
+        };
+    } catch (inspectionError) {
+      observation = {
+        kind: "owned-nsis-uia-unavailable",
+        lastInstallerInspection,
+        error: String(inspectionError.message).slice(0, 500),
+      };
+    }
+    if (center) {
+      try {
+        screenshots.push(await center.ui.screenshot("interactive-first-failure"));
+      } catch (captureError) {
+        console.error("Owned Center failure capture unavailable:", captureError.message);
+      }
+    }
+    if (registration?.installationKey) {
+      try {
+        observation.operations = await readInstallerOperations(process.env.LOCALAPPDATA, registration.installationKey);
+      } catch {
+        observation.operationLogs = "unavailable";
+      }
+    }
+    try {
+      await writeInstallerFailure({ stage, error, identity, results, observation });
+    } catch (reportError) {
+      console.error("Original installer failure preserved above; failure evidence write failed:", reportError);
+    }
   } finally {
     const cleanupFailures = [];
     if (manifest)
@@ -480,6 +586,6 @@ export async function run() {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const results = await run();
-  await writeUserFlowResults("installer", results);
+  await reportInstallerResults(results, (records) => writeUserFlowResults("installer", records));
   if (results.some((row) => row.status !== "PASS")) process.exitCode = 1;
 }

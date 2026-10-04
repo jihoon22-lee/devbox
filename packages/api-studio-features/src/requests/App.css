@@ -560,10 +560,13 @@
 }
 
 .api-feature-requests .response {
-  flex: 1;
+  /* Request/protocol controls may exceed the viewport; keep the result readable
+     in the content scroller instead of shrinking it to zero. */
+  flex: 1 0 auto;
+  min-height: 320px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .api-feature-requests .response-head {
@@ -617,15 +620,16 @@
 }
 
 .api-feature-requests .response-panel {
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .api-feature-requests .response-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
@@ -709,7 +713,9 @@
 }
 
 .api-feature-requests .resp-body {
-  flex: 1;
+  flex: 1 0 160px;
+  min-height: 160px;
+  max-height: 60vh;
   margin: 0;
   padding: 14px;
   font-family: "Cascadia Code", Consolas, monospace;

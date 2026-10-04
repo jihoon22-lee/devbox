@@ -48,4 +48,12 @@ assert "retention-days: 14" in CANDIDATE_WORKFLOW
 assert "published-runtime:" in WORKFLOW
 assert "mode: smoke" in WORKFLOW
 assert "./.github/workflows/windows-installer-acceptance.yml" in WORKFLOW
+# GITHUB_ENV values become available only in subsequent Actions steps. The
+# ownership-checking Git provisioner must not share the distro producer's step.
+installer = CANDIDATE_WORKFLOW.split("\n  installer-acceptance:\n", 1)[1].split("\n  windows-wsl2:\n", 1)[0]
+installer_steps = installer.split("\n      - ")
+producer = next(i for i, step in enumerate(installer_steps) if "windows-knowledge-wsl.ps1" in step and "-Cleanup" not in step)
+consumer = next(i for i, step in enumerate(installer_steps) if "windows-workspace-wsl-git.ps1" in step)
+assert consumer > producer, "WSL fixture identity must cross an Actions step boundary before Git provisioning"
+
 print("Stable candidate promotion workflow contract: PASS")

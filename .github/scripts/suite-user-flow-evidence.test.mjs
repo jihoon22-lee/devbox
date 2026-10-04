@@ -53,3 +53,17 @@ test("subset ready is scoped and cannot stand for complete release", () => {
   assert.equal(subset.scope, "work-item:R07");
   assert.equal(summarizeEvidence([...matrix, other], [result], expected).ready, false);
 });
+
+test("same-source retained diagnostics cannot satisfy release acceptance", () => {
+  for (const marker of [
+    { diagnosticOnly: true },
+    { diagnosticOnly: false },
+    { promotionEvidence: false },
+    { runnerSourceSha: sha },
+    { payloadSourceSha: sha },
+    { payloadRunId: "123" },
+  ]) {
+    assert.equal(summarizeEvidence(matrix, [{ ...result, ...marker }], expected).ready, false);
+    assert.throws(() => requireCompleteEvidence({ ...expected, results: [result], ...marker }));
+  }
+});

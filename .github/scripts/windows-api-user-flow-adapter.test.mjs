@@ -83,3 +83,49 @@ test("installed adapter rejects mismatched source and linked member before launc
     await rm(value.scratch, { recursive: true });
   }
 });
+
+test("installed adapter resolves validated diagnostic payload source without replacing runner SHA", async () => {
+  const value = await fixture();
+  const environment = {
+    DEVBOX_USER_FLOW_DIAGNOSTIC: "true",
+    DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE: value.sourceSha,
+    DEVBOX_USER_FLOW_DIAGNOSTIC_RUN: "123",
+    DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT: path.join(value.scratch, "receipt.json"),
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_WORKFLOW: "Product foundation acceptance",
+    GITHUB_SHA: "c".repeat(40),
+    GITHUB_RUN_ID: "456",
+    GITHUB_REPOSITORY: "fixture/devbox",
+  };
+  const previous = Object.fromEntries(Object.keys(environment).map((name) => [name, process.env[name]]));
+  try {
+    Object.assign(process.env, environment);
+    await writeFile(
+      environment.DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT,
+      JSON.stringify({
+        purpose: "retained-installer-ui-diagnostic-only",
+        runnerSourceSha: environment.GITHUB_SHA,
+        runnerRunId: "456",
+        payloadSourceSha: value.sourceSha,
+        payloadRunId: "123",
+        repository: "fixture/devbox",
+        sourceWorkflow: ".github/workflows/windows-package-candidate.yml",
+        assemblySucceeded: true,
+        diagnosticOnly: true,
+        promotionEvidence: false,
+      }),
+    );
+    const verified = await verifyApiInstallation(value.root, value.assets);
+    assert.equal(verified.sourceSha, value.sourceSha);
+    assert.equal(verified.runnerSourceSha, environment.GITHUB_SHA);
+    assert.equal(verified.diagnosticOnly, true);
+    assert.equal(process.env.GITHUB_SHA, environment.GITHUB_SHA);
+    await assert.rejects(() => verifyApiInstallation(value.root, value.assets, environment.GITHUB_SHA));
+  } finally {
+    for (const [name, prior] of Object.entries(previous)) {
+      if (prior === undefined) delete process.env[name];
+      else process.env[name] = prior;
+    }
+    await rm(value.scratch, { recursive: true });
+  }
+});

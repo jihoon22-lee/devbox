@@ -116,7 +116,17 @@ fn installation() -> Result<(
     PathBuf,
 )> {
     let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
-    let root = PathBuf::from(scope.review_root());
+    let captured_root = scope.review_root();
+    let root = PathBuf::from(crate::core::installation_path::captured_disk_root(
+        &captured_root,
+    )?);
+    // Only the native captured disk path loses its canonical verbatim prefix.
+    // Ordinary setup/root input validation continues to reject that syntax.
+    if filesystem_identity(&root, true).map_err(|_| "bootstrap_root_changed")?
+        != filesystem_identity(&captured_root, true).map_err(|_| "bootstrap_root_changed")?
+    {
+        return Err("bootstrap_root_changed");
+    }
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "bootstrap_owner_invalid")?;
     if owner.schema_version != 1

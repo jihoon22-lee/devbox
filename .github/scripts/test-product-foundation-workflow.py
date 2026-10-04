@@ -153,3 +153,41 @@ for versions, agent_version in (
         continue
     raise AssertionError("mixed product/agent versions were accepted")
 print("Stable semver and coordinated product/agent release versions: PASS")
+
+# Retained candidate API replays remain diagnostics, preserving the runner SHA.
+suite_diagnostic = workflow.split("  suite-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
+assert "suite_diagnostic_api_workflow:" in workflow
+assert "candidate-assembly-$env:SOURCE_RUN" in suite_diagnostic
+assert ".github/workflows/windows-package-candidate.yml" in suite_diagnostic
+assert 'Assemble and verify unpublished candidate' in suite_diagnostic
+assert '.conclusion == "success"' in suite_diagnostic
+assert '$jobs -ne $record.head_sha' in suite_diagnostic
+assert 'prepare-suite-runtime.py "$env:RUNNER_TEMP/api-candidate-retained/assets" --source "$($record.head_sha)"' in suite_diagnostic
+assert 'runnerSourceSha = $env:GITHUB_SHA' in suite_diagnostic
+assert 'payloadSourceSha = $record.head_sha' in suite_diagnostic
+assert 'promotionEvidence = $false' in suite_diagnostic
+assert 'native-api-workflow-diagnostic-' in suite_diagnostic
+assert 'GITHUB_SHA=' not in suite_diagnostic and '$env:GITHUB_SHA =' not in suite_diagnostic
+assert "suite-workflow-fixture-$env:SOURCE_RUN" in suite_diagnostic
+assert "windows-suite-workflows.mjs --remaining" in suite_diagnostic
+
+installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
+assert "suite_diagnostic_installer_ui:" in workflow
+assert "!inputs.suite_diagnostic_installer_ui" in suite_diagnostic
+assert "DEVBOX_API_DIAGNOSTIC_STYLES=1" in suite_diagnostic
+assert "candidate-assembly-$env:SOURCE_RUN" in installer_diagnostic
+assert "candidate-private-windows-lsp-${{ inputs.suite_diagnostic_run }}" in installer_diagnostic
+assert "candidate-private-wsl-lsp-${{ inputs.suite_diagnostic_run }}" in installer_diagnostic
+assert "DEVBOX_USER_FLOW_DIAGNOSTIC=true" in installer_diagnostic
+assert "diagnosticOnly = $true; promotionEvidence = $false" in installer_diagnostic
+assert "runnerSourceSha = $env:GITHUB_SHA" in installer_diagnostic
+assert "payloadSourceSha = $record.head_sha" in installer_diagnostic
+for script in ("windows-suite-user-flow.mjs", "windows-workspace-user-flows.mjs", "windows-api-user-flows.mjs", "windows-knowledge-user-flows.mjs", "windows-suite-delivery-user-flows.mjs", "windows-suite-legacy-upgrade-ui.mjs", "windows-suite-integration.mjs", "windows-suite-layout.mjs", "windows-suite-agent-user-flows.mjs"):
+    assert script in installer_diagnostic
+assert "--withdrawn" in installer_diagnostic
+assert "windows-user-flow-install.ps1 -Cleanup" in installer_diagnostic
+assert "windows-knowledge-wsl.ps1 -Cleanup" in installer_diagnostic
+assert "windows-suite-delivery.ps1 -Staging candidate/delivery" in installer_diagnostic
+assert "installer-ui-diagnostic-${{ github.run_id }}" in installer_diagnostic
+assert "collect-user" not in installer_diagnostic and "promote" not in installer_diagnostic
+assert "GITHUB_SHA=" not in installer_diagnostic and "$env:GITHUB_SHA =" not in installer_diagnostic

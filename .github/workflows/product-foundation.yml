@@ -101,6 +101,14 @@ on:
         description: Reuse retained four-product executables for remaining suite acceptance
         type: string
         default: ''
+      suite_diagnostic_api_workflow:
+        description: Diagnose only native API workflow using verified bytes from a retained candidate assembly (not promotion evidence)
+        type: boolean
+        default: false
+      suite_diagnostic_installer_ui:
+        description: Diagnose retained candidate installation and installed user journeys only (never promotion evidence)
+        type: boolean
+        default: false
       suite_remaining_only:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
@@ -136,7 +144,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}-${{ inputs.suite_diagnostic_installer_ui && 'installer-ui' || inputs.suite_diagnostic_api_workflow && 'api-workflow' || 'default' }}
   cancel-in-progress: true
 
 jobs:
@@ -226,7 +234,7 @@ jobs:
           retention-days: 7
 
   suite-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' && !inputs.suite_diagnostic_installer_ui }}
     name: Suite workflow with retained executables
     runs-on: windows-2025
     timeout-minutes: 15
@@ -246,6 +254,21 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:SOURCE_RUN -notmatch '^\d+$') { throw 'Invalid suite source run' }
           $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
+          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true') {
+            if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/windows-package-candidate.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY -or $record.head_sha -notmatch '^[a-f0-9]{40}$') { throw 'Unexpected candidate source workflow' }
+            $jobs = gh api --paginate "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Assemble and verify unpublished candidate" and .conclusion == "success") | .head_sha'
+            if ($LASTEXITCODE -ne 0 -or @($jobs).Count -ne 1 -or $jobs -ne $record.head_sha) { throw 'Original candidate assembly did not succeed at the recorded head' }
+            gh run download $env:SOURCE_RUN --name "candidate-assembly-$env:SOURCE_RUN" --dir "$env:RUNNER_TEMP/api-candidate-retained"
+            if ($LASTEXITCODE -ne 0) { throw 'Original candidate assembly artifact unavailable' }
+            python .github/scripts/prepare-suite-runtime.py "$env:RUNNER_TEMP/api-candidate-retained/assets" --source "$($record.head_sha)"
+            if ($LASTEXITCODE -ne 0) { throw 'Retained candidate bytes failed source/hash verification' }
+            "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
+            "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+            "DEVBOX_API_DIAGNOSTIC_STYLES=1" >> $env:GITHUB_ENV
+            New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
+            @{ schemaVersion = 1; purpose = 'native-api-workflow-diagnostic-only'; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; promotionEvidence = $false } | ConvertTo-Json | Set-Content product-foundation-evidence/api-diagnostic-source.json -Encoding utf8
+            exit 0
+          }
           if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected suite source workflow' }
           gh run download $env:SOURCE_RUN --name "suite-workflow-fixture-$env:SOURCE_RUN" --dir "$env:RUNNER_TEMP/suite-retained"
           if ($LASTEXITCODE -ne 0) { throw 'Original suite artifact unavailable' }
@@ -264,7 +287,9 @@ jobs:
       - name: Finish the selected Suite acceptance scope
         shell: pwsh
         run: |
-          if ('${{ inputs.suite_full_workflow }}' -eq 'true') {
+          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true') {
+            node .github/scripts/windows-api-workflow.mjs
+          } elseif ('${{ inputs.suite_full_workflow }}' -eq 'true') {
             node .github/scripts/windows-suite-workflows.mjs
           } else {
             node .github/scripts/windows-suite-workflows.mjs --remaining
@@ -274,10 +299,135 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: suite-remaining-${{ github.run_id }}
+          name: ${{ inputs.suite_diagnostic_api_workflow && format('native-api-workflow-diagnostic-{0}', github.run_id) || format('suite-remaining-{0}', github.run_id) }}
           path: product-foundation-evidence
           retention-days: 7
           if-no-files-found: error
+
+  installer-ui-diagnostic:
+    permissions:
+      contents: read
+      actions: read
+    env:
+      DEVBOX_USER_FLOW_ASSETS: candidate/assets
+      DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' && inputs.suite_diagnostic_installer_ui }}
+    name: Retained installer and installed UI diagnosis (unpromotable)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Acquire verified retained assembly and declare diagnostic identity
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.suite_diagnostic_run }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true' -or $env:SOURCE_RUN -notmatch '^\d+$') { throw 'Select exactly one valid retained candidate diagnostic mode' }
+          $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/windows-package-candidate.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY -or $record.head_sha -notmatch '^[a-f0-9]{40}$') { throw 'Unexpected retained candidate workflow' }
+          $jobs = gh api --paginate "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Assemble and verify unpublished candidate" and .conclusion == "success") | .head_sha'
+          if ($LASTEXITCODE -ne 0 -or @($jobs).Count -ne 1 -or $jobs -ne $record.head_sha) { throw 'Original candidate assembly did not succeed at the recorded head' }
+          gh run download $env:SOURCE_RUN --name "candidate-assembly-$env:SOURCE_RUN" --dir candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Retained candidate assembly unavailable' }
+          python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source "$($record.head_sha)" --run-id "$env:SOURCE_RUN"
+          if ($LASTEXITCODE -ne 0) { throw 'Retained candidate source/hash verification failed' }
+          New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
+          $receipt = Join-Path $env:GITHUB_WORKSPACE 'product-foundation-evidence/installer-ui-diagnostic-source.json'
+          @{ schemaVersion = 1; purpose = 'retained-installer-ui-diagnostic-only'; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding utf8
+          "DEVBOX_USER_FLOW_DIAGNOSTIC=true" >> $env:GITHUB_ENV
+          "DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
+          "DEVBOX_USER_FLOW_DIAGNOSTIC_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+          "DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT=$receipt" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+      - name: Fetch the pinned withdrawn version for same-version replacement
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 37095144741 --repo jihoon22-lee/devbox --name windows-package-candidate-v0.9.0-e499ac7127269bf67863bf0fdc42eaf53236b9f3 --dir candidate/withdrawn
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned withdrawn fixture is unavailable; do not replace it with a rebuild.' }
+          python .github/scripts/verify-withdrawn-fixture.py candidate/withdrawn/assets
+          if ($LASTEXITCODE -ne 0) { throw 'Withdrawn fixture bytes changed.' }
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.suite_diagnostic_run }}
+          name: candidate-private-windows-lsp-${{ inputs.suite_diagnostic_run }}
+          path: target/debug
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.suite_diagnostic_run }}
+          name: candidate-private-wsl-lsp-${{ inputs.suite_diagnostic_run }}
+          path: target/native-lsp-fixture
+      - name: Prepare owned WSL1 filesystem for the installed journeys
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Provision Git in the prepared installed-journey fixture
+        shell: pwsh
+        run: |
+          .github/scripts/windows-workspace-wsl-git.ps1
+          "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
+      - name: Install interactively and complete visible activation
+        run: node .github/scripts/windows-suite-user-flow.mjs
+      - name: Exercise actual work in the same installed namespace
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-agent-user-flows.mjs')) {
+            if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
+              node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
+              if ($LASTEXITCODE -ne 0) { $failed += 'withdrawn-same-version-update' }
+            }
+            node ".github/scripts/$script"
+            if ($LASTEXITCODE -ne 0) { $failed += $script }
+          }
+          if ($failed.Count -gt 0) { throw "Installed user journeys failed: $($failed -join ', ')" }
+      - name: Remove only the owned interactive installation and data
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-user-flow-install.ps1 -Cleanup
+      - name: Remove only the owned WSL1 fixture
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
+      - name: Exercise full installed Suite migration and recovery
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/windows-suite-delivery.ps1 -Staging candidate/delivery -Bootstrap candidate/delivery/devbox-suite-bootstrap.exe
+      - name: Mark every retained diagnosis JSON as unpromotable
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) { exit 0 }
+          $identity = Get-Content -LiteralPath $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT -Raw | ConvertFrom-Json
+          foreach ($file in Get-ChildItem product-foundation-evidence -Filter '*.json' -File -Recurse) {
+            $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+            $evidence | Add-Member -Force NoteProperty diagnosticOnly $true
+            $evidence | Add-Member -Force NoteProperty promotionEvidence $false
+            $evidence | Add-Member -Force NoteProperty runnerSourceSha $identity.runnerSourceSha
+            $evidence | Add-Member -Force NoteProperty runnerRunId $identity.runnerRunId
+            $evidence | Add-Member -Force NoteProperty payloadSourceSha $identity.payloadSourceSha
+            $evidence | Add-Member -Force NoteProperty payloadRunId $identity.payloadRunId
+            $evidence | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $file.FullName -Encoding utf8
+          }
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: installer-ui-diagnostic-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 14
 
   terminal-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '' }}

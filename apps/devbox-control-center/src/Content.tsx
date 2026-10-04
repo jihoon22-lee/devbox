@@ -76,7 +76,6 @@ export default function Content(props: ShellContentProps) {
   if (!available)
     return (
       <Suspense fallback={<p role="status">설치 상태를 불러오고 있습니다…</p>}>
-        <Inventory {...props} />
         {props.route === "recovery" ? (
           <Recovery {...props} />
         ) : (
@@ -86,6 +85,7 @@ export default function Content(props: ShellContentProps) {
             <button onClick={() => props.navigate("recovery")}>설치 안내 계속</button>
           </section>
         )}
+        <Inventory {...props} />
       </Suspense>
     );
   return (

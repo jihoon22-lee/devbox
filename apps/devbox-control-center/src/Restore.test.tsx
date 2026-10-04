@@ -106,3 +106,20 @@ it("keeps product launch and fresh health recording reachable during reinstall",
     true,
   );
 });
+
+it("puts unfinished clean setup before optional preservation details and keeps activation review visible", async () => {
+  respond(null, { phase: "import", committed: false, recordedOwners: 4, clean: true, freshHealth: false });
+  render(
+    <Restore description={{ ...fixtureDescription("control-center"), deliveryState: "import" }} route="recovery" />,
+  );
+  const setup = await screen.findByRole("region", { name: "설치 준비 안내" });
+  const details = screen.getByText("데이터 보존·복원 상세").closest("details");
+  expect(details).toBeTruthy();
+  expect(details?.open).toBe(false);
+  expect(setup.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "다음 단계" }));
+  const review = screen.getByRole("region", { name: "복구 작업 검토" });
+  expect(review.closest("details")).toBeNull();
+  expect(review.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Control Center를 닫고 실행" }) as HTMLButtonElement).disabled).toBe(true);
+});

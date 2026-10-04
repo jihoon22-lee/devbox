@@ -4,6 +4,52 @@
 
 코드 경로는 현재 `/home/jihoon/projects/devbox` 기준이다. 다른 checkout에서는 저장소 상대 위치를 그대로 사용한다. 상세 변경 파일과 assertion은 소유 작업 문서에 있다.
 
+### 후보 검증 후속 보정
+
+통합 PR #616 이후 출시 차단 수정은 최소 보정 PR에 묶는다. #617은 Windows 파일명 충돌,
+#618은 commit/passive-effect 사이 작업 시작과 Transform 명시 저장의 수명 경계를 수정했다.
+후보 `37126573659`는 네 제품과 7개 자산 조립, product-shells·Knowledge·cross-product·WSL2를
+통과했지만 API 응답 선택과 installer 준비에서 실패하여 승격 대상이 아니다.
+
+- API: Windows 진단 `37132833899`에서 `.response`와 `.response-panel` 높이 0,
+  본문 높이 28px(패딩만 남음) 및 SSE 영역에 가려지는 화면을 확인했다. 응답 영역이 축소되지 않도록
+  수정하고 버튼 줄바꿈을 적용했다. 같은 개발용 Chromium 요청의 수정 전 0px → 수정 후 응답 320px 이상,
+  본문 160px 이상을 확인했으며 720×480에서도 본문 선택·포인터 접근 및 헤더 탭을 확인했다.
+  이는 browser 레이아웃 근거이고 수정된 Windows 설치본 수용 완료를 뜻하지 않는다.
+- Installer: 같은 Actions step 안에서 새 `GITHUB_ENV` 값을 읽어 WSL fixture 소유권 검사에
+  실패했다. 생산자와 소비자 step을 분리했다. 이 실패 이전에는 40개 설치 UI 여정이 실행되지 않았다.
+- 설치 UI 진단 `37134283547`·`37134661732`에서는 Welcome 창의 활성 `다음 >` 컨트롤(id 1)을
+  관찰했지만 UI Automation이 Button 클래스를 Pane(50033)·Invoke 미지원으로 읽었다. 숫자 식별자
+  비교만으로는 해결되지 않았다. .NET Framework 기본 proxy 초기화가 PowerShell 동적 호출에서
+  `NullReferenceException`을 일으킴을 별도 재현했고, typed C# 진입점으로 기본 provider를 초기화한다.
+  Windows의 별도 raw Win32 Button fixture에서 기존 Pane/Invoke 미지원 재현과 수정 후 Button(50000)
+  인식·실제 Invoke·소유 marker·정상 종료를 확인했다. 등록 전 실패가 owner receipt 오류에 가려지지
+  않도록 원래 오류·단계·소유 창 구조를 보존한다. 설치 완료 근거는 후속 실제 여정에서 확인하며
+  초기화 및 fixture 성공만으로 설치 PASS를 기록하지 않는다.
+- 후속 진단 `37170395096`은 실제 NSIS Welcome·경로 선택·설치·Finish와 Control Center 연결까지
+  진행했다. 당시 일반 CDP 오류로 중단됐으며 `37170824962`에서 첫 화면 캡처는 성공하고 스크롤 뒤
+  Workspace 열기의 좌표 hit-test가 실패함을 확인했다. 이후 활성화·40개 여정은 완료되지 않았다.
+  GUI 프로세스 호출 뒤 미설정 `LASTEXITCODE`를 읽던 정리 코드도 발견해 정확한 자식 프로세스의
+  종료를 기다리도록 보정했고 `37170824962`의 실제 정리는 통과했다.
+  실제 Chromium에서도 root scroll 뒤 동일한 hit-test 실패를 재현했다. 검증 driver는 화면 기준
+  pointer 좌표와 페이지 기준 DOM hit-test 좌표를 구분하며, 실제 pointer 클릭과 덮인 요소 거절을
+  확인했다. 설치 단계 목록 번호가 다음 항목에 붙어 보이는 간격도 기존 토큰을 유지해 수정했다.
+- 진단 `37171221250`에서는 실제 Workspace 열기 클릭 뒤 제품 오류가 표시됐다. native가 보관한
+  `\\?\D:\…` 형식의 canonical root를 외부 입력 검사에 다시 넘겨 정상 설치를 거절하는 결함을
+  확인했다. CapturedScope에서 얻은 로컬 디스크 경로만 일반 형식으로 변환하고 동일 filesystem
+  identity를 확인한다. 외부 입력의 device·UNC·verbatim 경로 거절은 유지한다. 순수 Rust 경로 회귀와
+  Windows 파일 identity 확인은 통과했으며 실제 수정 바이너리의 설치 실행은 새 후보에서 검증한다.
+- 새 설치의 Inventory·복구 이력보다 준비 안내와 다음 동작을 먼저 배치했다. 실제 컴포넌트·CSS와
+  합성 native 응답을 사용한 브라우저에서 1024×720·720×480 모두 제품 열기와 준비 후 다음 단계를
+  첫 화면에서 확인했다. 명시 확인 전 실행 차단과 복원·재설치·업데이트 조건은 유지한다.
+- API 진단 `37170520484`는 요청·응답 선택·Transform 전달·재시작을 통과했다. 진단용 CSS가 fixture의
+  페이지 새로고침에서 제거되는 문제를 수정하고 문서별 적용 단계·계산값을 기록했다. 이전 payload에
+  현 CSS를 적용한 진단이며 새 배포 bytes 자체의 통과나 최종 후보 수용으로 취급하지 않는다.
+- 보관 후보를 재사용한 진단은 runner와 payload source를 구분하고 별도 diagnostic artifact에만
+  기록한다. 최종 exact-main 후보의 설치/UI 수용과 승격 근거를 대체하지 않는다.
+
+최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
+
 ## 1. 기존 감사 23건의 누락 없는 배정
 
 | ID | 우선 | 재현 조건·문제 | 핵심 위치 | 작업 | 검증 ID·종료 조건 |

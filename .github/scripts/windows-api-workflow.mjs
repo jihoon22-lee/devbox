@@ -1,15 +1,24 @@
+import {
+  prepareResponseSelection,
+  diagnosticStylesConfig,
+  applyDiagnosticStyles,
+  prepareDiagnosticCss,
+  responseTransformObservation,
+  responseGeometryObservation,
+  waitForResponseTransform,
+} from "./windows-api-response-transform.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // S03: real native loopback capture/request/DPAPI/transform/diff/mock/Knowledge.
 // Only disposable GitHub-hosted Windows processes and synthetic data are used.
 import assert from "node:assert/strict";
 import { exerciseControlAdmission } from "./windows-api-control.mjs";
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import {
   Cdp,
   unusedPort,
@@ -22,13 +31,33 @@ import {
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+const diagnosticStyles = diagnosticStylesConfig(process.env);
+const diagnosticCss = diagnosticStyles
+  ? readFileSync(new URL("../../packages/api-studio-features/src/requests/App.css", import.meta.url), "utf8")
+  : null;
+if (diagnosticStyles) {
+  diagnosticStyles.stylePath = "packages/api-studio-features/src/requests/App.css";
+  diagnosticStyles.styleSha256 = createHash("sha256").update(diagnosticCss).digest("hex");
+}
+const appliedDiagnosticCss = diagnosticStyles ? prepareDiagnosticCss(diagnosticCss) : null;
+if (diagnosticStyles) {
+  diagnosticStyles.appliedStyleSha256 = createHash("sha256").update(appliedDiagnosticCss).digest("hex");
+  diagnosticStyles.removedImports = ["@devbox/tokens/tokens.css", "@devbox/a11y/styles.css"];
+  diagnosticStyles.injection = "authored-stylesheet-append";
+}
 const root = mkdtempSync(path.join(tmpdir(), "devbox-api-migration-fixture-s03-"));
 const executable = path.join(root, `api-s03-${randomUUID()}.exe`);
 copyFileSync(path.resolve("target/debug/devbox-api-studio.exe"), executable);
 const profile = path.join(root, "webview");
 const secret = `s03-fixture-${randomUUID()}`;
+const artifactSource = process.env.DEVBOX_SUITE_ARTIFACT_SOURCE ?? process.env.GITHUB_SHA;
 const evidence = {
   source: process.env.GITHUB_SHA,
+  runnerSourceSha: process.env.GITHUB_SHA,
+  artifactSource,
+  artifactRun: process.env.DEVBOX_SUITE_ARTIFACT_RUN ?? process.env.GITHUB_RUN_ID,
+  diagnosticOnly: !!diagnosticStyles || process.env.GITHUB_SHA !== artifactSource,
+  ...(diagnosticStyles ? { diagnosticStyles } : {}),
   environment: "github-hosted-windows",
   step: "start",
   result: "failed",
@@ -95,7 +124,7 @@ async function success(component, method, args) {
   assert.equal(result.operation.outcome.state, "succeeded", method);
   return result.value;
 }
-async function start() {
+async function start(styleStage = "initial-start") {
   const port = await unusedPort();
   const policy = windowsProcessIsElevated() ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
   if (policy) {
@@ -118,6 +147,14 @@ async function start() {
   await cdp.send("Page.enable");
   ui = { child, cdp, policy };
   await wait('!!document.querySelector(".url-input")', "API startup did not finish");
+  if (diagnosticStyles)
+    await applyDiagnosticStyles(cdp, appliedDiagnosticCss, (computed) => {
+      evidence.diagnosticStyles.computed = computed;
+      if (computed.responsePresent) {
+        evidence.diagnosticStyles.applications ??= [];
+        evidence.diagnosticStyles.applications.push({ stage: styleStage, computed });
+      }
+    });
 }
 async function stop() {
   const item = ui;
@@ -147,6 +184,16 @@ try {
     '!!Array.from(document.querySelectorAll(".env-name")).find(button=>button.textContent==="S03 fixture")',
     "empty environment fixture did not load",
   );
+  // Reload replaces the authored stylesheet edited by start(). Apply the same
+  // diagnostic-only overlay to this document and verify its computed layout.
+  if (diagnosticStyles)
+    await applyDiagnosticStyles(ui.cdp, appliedDiagnosticCss, (computed) => {
+      evidence.diagnosticStyles.computed = computed;
+      if (computed.responsePresent) {
+        evidence.diagnosticStyles.applications ??= [];
+        evidence.diagnosticStyles.applications.push({ stage: "post-fixture-reload", computed });
+      }
+    });
   await click(".api-feature-requests .env-item", "S03 fixture");
   await wait(
     '!!document.querySelector(".env-var-secret.unconfigured")',
@@ -248,14 +295,27 @@ try {
   assert.ok(masked.includes("[REDACTED]"));
   assert.ok(!masked.includes(secret));
   progress("response-transform");
-  await ui.cdp.evaluate(
-    '(()=>{const body=document.querySelector(".resp-body");const range=document.createRange();range.selectNodeContents(body);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);})()',
+  evidence.responseTransformBeforeFocus = await ui.cdp.evaluate(responseTransformObservation);
+  assert.equal(
+    await ui.cdp.evaluate('document.querySelector(".api-feature-requests .resp-body")?.textContent'),
+    masked,
+    "masked response changed before selection focus",
   );
+  await prepareResponseSelection(ui.cdp, (geometry) => {
+    evidence.responseTransformPointerGeometry = geometry;
+  });
+  evidence.responseTransform = await ui.cdp.evaluate(responseTransformObservation);
+  assert.equal(
+    await ui.cdp.evaluate('document.querySelector(".api-feature-requests .resp-body")?.textContent'),
+    masked,
+    "masked response changed after selection focus",
+  );
+  assert.equal(evidence.responseTransform.selectionInsideBody, true, "response selection is outside body");
+  assert.equal(evidence.responseTransform.selectionNonempty, true, "response selection is empty");
   await click(".api-feature-requests .response-actions", "선택 영역을 Developer Toolbox로 보내기");
-  await wait(
-    '!!document.querySelector(".api-feature-transforms:not([hidden]) [role=dialog]")',
-    "response transform preview did not open",
-  );
+  await waitForResponseTransform(ui.cdp, until, (state) => {
+    evidence.responseTransform = state;
+  });
   await click(".api-feature-transforms [role=dialog]", "적용");
   await wait(
     'document.querySelector("textarea[aria-label=\\"스마트 워크플로 입력\\"]")?.value.includes("s03-response")',
@@ -303,7 +363,7 @@ try {
   writeFileSync("product-foundation-evidence/api-workflow-knowledge.png", Buffer.from(shot.data, "base64"));
   await stop();
   progress("restart");
-  await start();
+  await start("restart");
   assert.equal((await success("api-studio.webhooks", "server_status")).running, false);
   assert.equal(hits, 1);
   const reopened = await success("api-studio.transforms", "get_knowledge_draft", { id: draftId });
@@ -332,6 +392,21 @@ try {
   progress("complete");
 } catch (error) {
   evidence.error = error.message;
+  if (ui?.cdp && evidence.step === "response-transform") {
+    try {
+      evidence.responseTransformFailureGeometry = await ui.cdp.evaluate(responseGeometryObservation);
+    } catch {
+      evidence.failureGeometryUnavailable = true;
+    }
+    try {
+      const shot = await ui.cdp.send("Page.captureScreenshot", { format: "png" });
+      const screenshotPath = "product-foundation-evidence/api-workflow-response-transform-failure.png";
+      writeFileSync(screenshotPath, Buffer.from(shot.data, "base64"));
+      evidence.failureScreenshot = screenshotPath;
+    } catch {
+      evidence.failureScreenshotUnavailable = true;
+    }
+  }
   throw error;
 } finally {
   ui?.cdp.close();

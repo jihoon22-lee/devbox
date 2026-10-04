@@ -357,10 +357,12 @@ jobs:
         with:
           name: candidate-private-wsl-lsp-${{ github.run_id }}
           path: target/native-lsp-fixture
-      - name: Prepare owned WSL1 filesystem and Git for the installed journeys
+      - name: Prepare owned WSL1 filesystem for the installed journeys
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Provision Git in the prepared installed-journey fixture
         shell: pwsh
         run: |
-          .github/scripts/windows-knowledge-wsl.ps1
           .github/scripts/windows-workspace-wsl-git.ps1
           "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
       - name: Install interactively and complete visible activation

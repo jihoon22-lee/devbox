@@ -40,9 +40,20 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     const x = (q[0] + q[2] + q[4] + q[6]) / 4;
     const y = (q[1] + q[3] + q[5] + q[7]) / 4;
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("Control layout unavailable");
+    // Box quads and Input use viewport CSS pixels. DOM hit testing uses page
+    // CSS pixels, including the root scroll offset after scrollIntoView.
+    const { cssLayoutViewport } = await cdp.command("Page.getLayoutMetrics");
+    const pageX = cssLayoutViewport?.pageX;
+    const pageY = cssLayoutViewport?.pageY;
+    if (!Number.isFinite(pageX) || !Number.isFinite(pageY)) throw new Error("Page layout unavailable");
+    const width = cssLayoutViewport.clientWidth;
+    const height = cssLayoutViewport.clientHeight;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
+      throw new Error("Page viewport unavailable");
+    if (x < 0 || y < 0 || x >= width || y >= height) throw new Error("Control center outside viewport");
     const hit = await cdp.command("DOM.getNodeForLocation", {
-      x: Math.round(x),
-      y: Math.round(y),
+      x: Math.round(x + pageX),
+      y: Math.round(y + pageY),
       includeUserAgentShadowDOM: true,
     });
     if (!Number.isInteger(hit.backendNodeId) || hit.backendNodeId <= 0) throw new Error("No visible hit target");

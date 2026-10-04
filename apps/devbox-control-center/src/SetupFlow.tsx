@@ -39,13 +39,13 @@ export default function SetupFlow({
         ))}
       </ol>
       {view.blockedReason && <p role="status">{view.blockedReason}</p>}
-      <p>준비 기록 {inventory.installation.recordedOwners}/4 · 이미 준비한 저장소는 다시 만들지 않습니다.</p>
-      <SetupHealth description={description} route={route} onRecorded={onRecorded} busy={busy} />
       {(view.next === "activateClean" || view.next === "commitClean") && (
         <button disabled={busy} onClick={() => onAction(view.next as "activateClean" | "commitClean")}>
           다음 단계
         </button>
       )}
+      <SetupHealth description={description} route={route} onRecorded={onRecorded} busy={busy} />
+      <p>준비 기록 {inventory.installation.recordedOwners}/4 · 이미 준비한 저장소는 다시 만들지 않습니다.</p>
     </section>
   );
 }

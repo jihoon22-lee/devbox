@@ -1,7 +1,7 @@
 import { deliveryCall } from "./delivery";
 import { useEffect, useState } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
-import { makeRequest, nativeMode } from "@devbox/product-shell/api";
+import { makeRequest, nativeMode, productDataAvailable } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
 import catalog from "../../../apps/products.json";
 import Restore from "./Restore";
@@ -55,10 +55,11 @@ export default function Recovery({ description, route }: ShellContentProps) {
       active = false;
     };
   }, [description, route]);
-  return (
-    <section aria-label="Suite 복구 기록">
+  const setupFirst = route === "recovery" && !productDataAvailable(description);
+  const history = (
+    <>
       <h2>설치·데이터 복구</h2>
-      {error && <p role="alert">{error}</p>}
+      {!setupFirst && error && <p role="alert">{error}</p>}
       {status?.state === "none" ? (
         <p>이 설치에서 진행한 Suite 전환 기록이 없습니다.</p>
       ) : status?.state === "recorded" ? (
@@ -69,7 +70,7 @@ export default function Recovery({ description, route }: ShellContentProps) {
             {status.recordedOwnerCount ?? 0}/4 · 이전 기록 {status.importCount}개 · 구 설치 정리 대기{" "}
             {status.cleanupPending}개
           </p>
-          {status.failure && (
+          {!setupFirst && status.failure && (
             <p role="alert">
               {status.committed
                 ? "새 Suite 활성화는 완료됐지만 구 설치 정리가 남아 있습니다."
@@ -80,9 +81,35 @@ export default function Recovery({ description, route }: ShellContentProps) {
       ) : (
         !error && <p role="status">복구 기록을 확인하고 있습니다…</p>
       )}
+    </>
+  );
+  const restore = (
+    <>
       {["products", "updates", "recovery", "migration"].includes(route) && (
         <Restore description={description} route={route} recovery={status ?? { state: "none" }} />
       )}
+    </>
+  );
+  return (
+    <section aria-label="Suite 복구 기록">
+      {setupFirst && error && <p role="alert">{error}</p>}
+      {setupFirst && status?.state === "recorded" && status.failure && (
+        <p role="alert">
+          {status.committed
+            ? "새 Suite 활성화는 완료됐지만 구 설치 정리가 남아 있습니다."
+            : "전환을 완료하지 못했습니다. 이전 패키지와 백업을 보존한 상태에서 복구해야 합니다."}
+        </p>
+      )}
+      {setupFirst && restore}
+      {setupFirst ? (
+        <details>
+          <summary>설치·데이터 복구 기록</summary>
+          {history}
+        </details>
+      ) : (
+        history
+      )}
+      {!setupFirst && restore}
     </section>
   );
 }
