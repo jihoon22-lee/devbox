@@ -211,3 +211,33 @@ test("preserved failed installer cannot keep its runner process alive", () => {
   );
   assert.deepEqual(JSON.parse(proof), { result: "preserved", alive: true });
 });
+
+test("setup and removal failure cleanup rethrows the identical primitive or frozen failure", async () => {
+  const { rethrowInstallerFailure } = await import("./windows-suite-installer-actions.mjs");
+  for (const original of [
+    "original failure",
+    null,
+    Object.freeze(new Error("original failure")),
+    new Error("original failure"),
+  ]) {
+    let detached = false;
+    const installer = {
+      child: {
+        exitCode: null,
+        unref: () => {
+          detached = true;
+        },
+      },
+      inspect: () => null,
+    };
+    try {
+      await rethrowInstallerFailure(installer, original, async () => {
+        throw new Error("cleanup deadline");
+      });
+      assert.fail("must reject");
+    } catch (error) {
+      assert.equal(error, original);
+    }
+    assert.equal(detached, true);
+  }
+});
