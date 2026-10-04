@@ -392,8 +392,18 @@ export async function run() {
     await attach();
     await checkpoint("installed-product-preparation");
     coldRendererReadyMs = performance.now() - coldStart;
+    await checkpoint("installed-import-screenshot");
+    const initialViewport = await center.cdp.evaluate(`(() => ({
+      visibility: document.visibilityState, width: innerWidth, height: innerHeight,
+      bodyWidth: document.body?.getBoundingClientRect().width ?? 0,
+      bodyHeight: document.body?.getBoundingClientRect().height ?? 0,
+      readyState: document.readyState
+    }))()`);
+    await writeFile("product-foundation-evidence/interactive-initial-viewport.json", JSON.stringify(initialViewport));
     screenshots.push(await center.ui.screenshot("interactive-import"));
+    await checkpoint("installed-agent-before-preparation");
     agentCheckpoint = await beforeAgentProductPreparation(agentInput());
+    await checkpoint("installed-workspace-preparation");
     await openProducts(["workspace"]);
     await health();
     assert.ok((await text()).includes("응답 또는 저장소를 확인하지 못함"));

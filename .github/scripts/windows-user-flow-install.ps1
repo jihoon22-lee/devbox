@@ -3,9 +3,22 @@ param([switch]$Cleanup)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Owned user-flow installation requires disposable hosted Windows.' }
-function Run-Owned([string]$File, [string[]]$Arguments) {
-  & $File @Arguments
-  if ($LASTEXITCODE -ne 0) { throw 'Owned user-flow provisioning operation failed.' }
+function Run-Owned([string]$File, [string[]]$Arguments, [int]$TimeoutMilliseconds=180000) {
+  $start=[Diagnostics.ProcessStartInfo]::new()
+  $start.FileName=$File
+  $start.UseShellExecute=$false
+  $start.WorkingDirectory=(Get-Location).ProviderPath
+  foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+  $process=[Diagnostics.Process]::new()
+  $process.StartInfo=$start
+  try {
+    if (-not $process.Start()) { throw 'Owned user-flow provisioning operation did not start.' }
+    # GUI executables do not reliably set LASTEXITCODE. Wait for this exact child.
+    if (-not $process.WaitForExit($TimeoutMilliseconds)) { throw 'Owned user-flow provisioning operation timed out; preserve fixture rather than force terminate.' }
+    if ($process.ExitCode -ne 0) { throw 'Owned user-flow provisioning operation failed.' }
+  } finally {
+    $process.Dispose()
+  }
 }
 $payloadSource=$env:GITHUB_SHA
 $payloadRun=$env:GITHUB_RUN_ID

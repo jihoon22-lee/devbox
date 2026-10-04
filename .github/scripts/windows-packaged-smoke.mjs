@@ -632,8 +632,24 @@ export class Cdp {
         const pending = this.pending.get(message.id);
         if (!pending) return;
         this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error("CDP command failed"));
-        else pending.resolve(message.result);
+        if (message.error) {
+          // Protocol messages may contain request data. Preserve only the fixed
+          // command, numeric code and an allowlisted failure classification.
+          const reasons = new Map([
+            ["Unable to capture screenshot", "capture-unavailable"],
+            ["Cannot take screenshot with 0 width.", "zero-width"],
+            ["Cannot take screenshot with 0 height.", "zero-height"],
+            ["Not attached to an active page", "inactive-page"],
+            ["Target closed", "target-closed"],
+            ["Invalid parameters", "invalid-parameters"],
+          ]);
+          const code = Number.isSafeInteger(message.error.code) ? message.error.code : "unknown";
+          pending.reject(
+            new Error(
+              `CDP command failed: ${pending.method} (${code}; ${reasons.get(message.error.message) ?? "unclassified"})`,
+            ),
+          );
+        } else pending.resolve(message.result);
         return;
       }
       if (message.method === "Runtime.exceptionThrown") this.runtimeExceptions += 1;
@@ -659,6 +675,7 @@ export class Cdp {
         reject(new Error("CDP command timeout"));
       }, 15_000);
       this.pending.set(id, {
+        method: /^[A-Za-z]+\.[A-Za-z][A-Za-z0-9]{0,63}$/.test(method) ? method : "unknown",
         resolve: (value) => {
           clearTimeout(timer);
           resolve(value);
