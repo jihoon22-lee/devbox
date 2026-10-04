@@ -1,3 +1,4 @@
+import { runKnowledgeChecks } from "./knowledge-diagnostic-sequence.mjs";
 import { observeKnowledgeInput } from "./windows-knowledge-input-ui.mjs";
 import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
@@ -371,51 +372,111 @@ export async function createInstalledKnowledgeContext() {
 }
 export async function runInstalledKnowledgeUserFlows() {
   let context,
-    results = [];
+    results = [],
+    firstFailurePreserved = false,
+    diagnosticGateError = null;
   try {
     context = await createInstalledKnowledgeContext();
     let searchResults = [];
-    await observeProductPerformance({
-      product: "knowledge",
-      cdp: context.cdp,
-      getIdentities: context.getIdentities,
-      coldRendererReadyMs: context.coldRendererReadyMs,
-      warmExistingWindowMs: await context.measureWarm(),
-      workload: async () => {
-        searchResults = await search(context);
-        // Preserve scenario failures before the performance gate reports them.
-        await writeFile(
-          "product-foundation-evidence/knowledge-search-scenarios.json",
-          JSON.stringify({ schemaVersion: 1, results: searchResults }, null, 2),
-          { flag: "wx" },
-        );
-        assert.ok(
-          searchResults.every((row) => row.status === "PASS"),
-          `Actual search workloads failed: ${searchResults
-            .filter((row) => row.status !== "PASS")
-            .map((row) => `${row.id}: ${row.assertions.join("; ")}`)
-            .join(" | ")}`,
-        );
-        assert.equal(context.knowledgeFixture.performanceSearch?.fileCount, 500);
-        return context.knowledgeFixture.performanceSearch;
+    let documentResults = [],
+      activityResults = [];
+    const checks = await runKnowledgeChecks({
+      diagnosticOnly: context.diagnosticOnly,
+      isUsable: () => Boolean(context.cdp) && context.child?.exitCode === null,
+      onFirstFailure: async (error) => {
+        diagnosticGateError = error;
+        await preserveUserFlowFailure("knowledge", error, { ui: context.ui, identity: context })
+          .then(() => {
+            firstFailurePreserved = true;
+          })
+          .catch(() => console.error("Knowledge original-failure evidence unavailable"));
       },
+      checks: [
+        {
+          name: "performance",
+          run: async () => {
+            await observeProductPerformance({
+              product: "knowledge",
+              cdp: context.cdp,
+              getIdentities: context.getIdentities,
+              coldRendererReadyMs: context.coldRendererReadyMs,
+              warmExistingWindowMs: await context.measureWarm(),
+              workload: async () => {
+                searchResults = await search(context);
+                // Preserve scenario failures before the performance gate reports them.
+                await writeFile(
+                  "product-foundation-evidence/knowledge-search-scenarios.json",
+                  JSON.stringify({ schemaVersion: 1, results: searchResults }, null, 2),
+                  { flag: "wx" },
+                );
+                assert.ok(
+                  searchResults.every((row) => row.status === "PASS"),
+                  `Actual search workloads failed: ${searchResults
+                    .filter((row) => row.status !== "PASS")
+                    .map((row) => `${row.id}: ${row.assertions.join("; ")}`)
+                    .join(" | ")}`,
+                );
+                assert.equal(context.knowledgeFixture.performanceSearch?.fileCount, 500);
+                return context.knowledgeFixture.performanceSearch;
+              },
+            });
+          },
+        },
+        {
+          name: "input",
+          run: async () => {
+            await observeKnowledgeInput({
+              ui: context.ui,
+              cdp: context.cdp,
+              fixture: context.knowledgeFixture,
+              windowOwner: context.windowOwner,
+            });
+          },
+        },
+        {
+          name: "documents",
+          run: async () => {
+            documentResults = await documents(context);
+          },
+        },
+        {
+          name: "activity",
+          run: async () => {
+            activityResults = await activity(context);
+          },
+        },
+      ],
     });
-    await observeKnowledgeInput({
-      ui: context.ui,
-      cdp: context.cdp,
-      fixture: context.knowledgeFixture,
-      windowOwner: context.windowOwner,
-    });
-    results = [...(await documents(context)), ...searchResults, ...(await activity(context))];
+    results = [...documentResults, ...searchResults, ...activityResults];
+    if (checks.firstError) {
+      const observed = new Set(results.map((row) => row.id));
+      for (const id of [...documentIds, ...searchIds, ...activityIds]) {
+        if (!observed.has(id))
+          results.push({
+            sourceSha: context.sourceSha,
+            fixtureSha: context.fixtureSha,
+            artifactDigests: context.artifactDigests,
+            id,
+            status: "NOT_RUN",
+            evidenceKind: "packaged-ui",
+            assertions: ["Original required gate failed; owned context could not complete this independent scenario"],
+            screenshotPaths: [],
+            failureCode: "knowledge-independent-scenario-not-run",
+          });
+      }
+    }
     await writeUserFlowResults("knowledge", results);
+    if (checks.firstError) throw checks.firstError;
     assert.ok(
       results.every((r) => r.status === "PASS"),
       "Knowledge real user-flow acceptance failed",
     );
   } catch (error) {
-    await preserveUserFlowFailure("knowledge", error, { ui: context?.ui, identity: context }).catch(() => {
-      console.error("Knowledge original-failure evidence unavailable");
-    });
+    const failure = diagnosticGateError ?? error;
+    if (!firstFailurePreserved)
+      await preserveUserFlowFailure("knowledge", failure, { ui: context?.ui, identity: context }).catch(() => {
+        console.error("Knowledge original-failure evidence unavailable");
+      });
     if (!results.length) {
       const identity = context ?? (await packagedIdentity());
       results = [...documentIds, ...searchIds, ...activityIds].map((id) => ({
@@ -431,9 +492,11 @@ export async function runInstalledKnowledgeUserFlows() {
       }));
       await writeUserFlowResults("knowledge", results);
     }
-    throw error;
+    throw failure;
   } finally {
-    await context?.close();
+    if (diagnosticGateError) {
+      await context?.close().catch(() => console.error("Knowledge cleanup failed after the original required gate"));
+    } else await context?.close();
   }
 }
 
