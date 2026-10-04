@@ -226,3 +226,37 @@ assert "continue-on-error" not in install_step
 assert "if: ${{ success() || (failure() && steps.retained_install.outcome == 'failure') }}" in work_step
 assert work_step.index("node .github/scripts/verify-retained-committed-install.mjs") < work_step.index("prepare-windows-ui-display.ps1")
 assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }" in work_step
+
+# Apps-only retained diagnosis is an exclusive installer mode, never a rebuild.
+assert "suite_diagnostic_apps_only:" in workflow
+assert "retained-installed-apps-diagnostic-only" in installer_diagnostic
+assert "appsOnly = $appsOnly" in installer_diagnostic
+assert "Apps-only diagnosis requires only a retained installer source run" in installer_diagnostic
+assert "if ($appsOnly -and $script -notin" in work_step
+for stage in ("Installed journey start:", "Installed journey end:"):
+    assert stage in work_step
+assert "$scriptExitCode = $LASTEXITCODE" in work_step
+assert "if ($scriptExitCode -ne 0)" in work_step
+for title in ("Fetch the pinned withdrawn version for same-version replacement", "Exercise full installed Suite migration and recovery"):
+    selected = installer_diagnostic.split("      - name: " + title + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "if: ${{ !inputs.suite_diagnostic_apps_only }}" in selected
+candidate_work = Path(".github/workflows/windows-package-candidate.yml").read_text().split("      - name: Exercise actual work in the same installed namespace\n", 1)[1].split("\n      - ", 1)[0]
+assert "$scriptExitCode = $LASTEXITCODE" in candidate_work
+assert "Installed journey start:" in candidate_work and "Installed journey end:" in candidate_work
+assert "if ($scriptExitCode -ne 0)" in candidate_work
+
+selected_apps = re.search(r"if \(\$appsOnly -and \$script -notin @\(([^\n]+)\)\)", work_step).group(1)
+assert re.findall(r"'([^']+)'", selected_apps) == [
+    "windows-workspace-user-flows.mjs", "windows-api-user-flows.mjs",
+    "windows-knowledge-user-flows.mjs", "windows-suite-integration.mjs", "windows-suite-layout.mjs",
+]
+for job, block in re.findall(r"^  ([a-z][a-z0-9-]+):\n(.*?)(?=^  [a-z][a-z0-9-]+:|\Z)", workflow.split("jobs:\n",1)[1], re.M | re.S):
+    condition = next(line for line in block.splitlines() if line.startswith("    if:"))
+    if job == "installer-ui-diagnostic":
+        assert "|| inputs.suite_diagnostic_apps_only" in condition
+    else:
+        assert "!inputs.suite_diagnostic_apps_only" in condition
+# Exit status is captured before logging; later independent stages still run.
+for block in (work_step, candidate_work):
+    assert block.index('$scriptExitCode = $LASTEXITCODE') < block.index('Write-Host "Installed journey end: $script')
+    assert block.index('$withdrawnExitCode = $LASTEXITCODE') < block.index('Write-Host "Installed journey end: withdrawn')
