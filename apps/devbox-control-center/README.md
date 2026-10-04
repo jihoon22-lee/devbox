@@ -23,6 +23,7 @@ v0.9.0 소스의 네 사용자 제품 중 하나다. Products·Commands·Tools·
 - Tools는 Environment·doctor·support bundle·Related Tools/package-only setup을 제공한다.
   경로를 읽을 수 있다는 이유로 삭제·설치·실행 권한을 부여하지 않는다.
 - 새 설치는 **데이터 및 복구 → Devbox 사용 준비**에서 제품 열기·저장소 준비·상태 기록·활성화 검토를 이어간다. 기록 뒤 설치 목록을 다시 읽은 다음에만 다음 단계를 허용한다. 중간에 닫아도 같은 설치의 기록에서 재개한다.
+- 검토한 작업의 도우미가 시작 검증에 실패하면 native 창에 오류 코드와 보존 상태를 표시한다. 같은 설치의 Control Center를 다시 열어 상태를 확인하고 재개한다. 일반 CLI의 비대화형 실패 처리는 유지한다.
 - 설치 도중 제품 연결은 저장소 준비 상태 확인에 사용할 수 있다. 일반 작업·Agent 재연결·수신 작업은 활성화 전까지 차단한다.
 - Suite installer/bootstrap은 generation·journal·owned file identity로 install/update/undo/commit/
   restore/resume/uninstall을 수행한다. postcommit 새 데이터와 제거 후 사용자 데이터를 보존한다.

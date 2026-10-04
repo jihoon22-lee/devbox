@@ -31,12 +31,12 @@ export function nativeIssueCollector() {
 }
 
 export function reviewedHelperCodes(observation) {
-  if (observation?.name !== "Devbox 데이터 복구") return [];
+  if (!["Devbox 데이터 복구", "Devbox 작업 시작 실패"].includes(observation?.name)) return [];
   return [
     ...new Set(
       (observation.controls ?? []).slice(0, 64).flatMap((control) => {
         const match =
-          /^작업을 완료하지 못했습니다 \(((?:suite|update|bootstrap|checkpoint|restore|data)_[a-z0-9_]{1,56})\)\./mu.exec(
+          /^(?:작업을 완료하지 못했습니다|검토한 작업을 시작하지 못했습니다) \(((?:suite|update|bootstrap|checkpoint|restore|data)_[a-z0-9_]{1,56})\)\./mu.exec(
             control.name ?? "",
           );
         return match ? [match[1]] : [];

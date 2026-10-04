@@ -24,5 +24,12 @@ test("only fixed native recovery issue codes enter evidence", () => {
   };
   assert.deepEqual(reviewedHelperCodes(observation), ["suite_writers_must_close", "update_agent_busy"]);
   assert.deepEqual(reviewedHelperCodes({ ...observation, name: "Foreign dialog" }), []);
+  assert.deepEqual(
+    reviewedHelperCodes({
+      name: "Devbox 작업 시작 실패",
+      controls: [{ name: "검토한 작업을 시작하지 못했습니다 (bootstrap_helper_busy)." }],
+    }),
+    ["bootstrap_helper_busy"],
+  );
   assert.deepEqual(reviewedHelperCodes({ name: observation.name, controls: [{ name: "(token=secret)" }] }), []);
 });

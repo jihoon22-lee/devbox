@@ -4,7 +4,9 @@ use serde_json::{json, Value};
 use std::{os::windows::process::CommandExt, sync::atomic::Ordering};
 use windows::{
     core::PCWSTR,
-    Win32::UI::WindowsAndMessaging::{MessageBoxW, IDCANCEL, MB_ICONEXCLAMATION, MB_RETRYCANCEL},
+    Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDCANCEL, MB_ICONEXCLAMATION, MB_OK, MB_RETRYCANCEL,
+    },
 };
 
 static LEAVING: AtomicBool = AtomicBool::new(false);
@@ -368,7 +370,41 @@ pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> 
     }
     result
 }
+// Only reviewed handoffs have already closed the accepting product shell.
+// The operation loop owns Retry/Cancel; report only failures before that loop.
+fn run_with_preflight_reporting<T>(
+    operation: impl FnOnce(&mut bool) -> Result<T>,
+    report: impl FnOnce(&str),
+) -> Result<T> {
+    let mut entered_loop = false;
+    let result = operation(&mut entered_loop);
+    if !entered_loop {
+        if let Err(issue) = &result {
+            report(issue);
+        }
+    }
+    result
+}
 pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
+    run_with_preflight_reporting(
+        |entered_loop| run_reviewed(arguments, entered_loop),
+        |issue| {
+            let title = "Devbox 작업 시작 실패\0".encode_utf16().collect::<Vec<_>>();
+            let message = format!(
+                "검토한 작업을 시작하지 못했습니다 ({issue}).\n준비된 설치 파일과 사용자 데이터, 원본과 보존본은 유지됩니다.\n다른 Devbox 제품을 모두 닫은 뒤, 같은 설치의 Control Center를 다시 열어 작업 상태를 확인하고 다시 시도하세요.\n복구 중에는 제품 실행이 계속 차단될 수 있습니다.\0"
+            ).encode_utf16().collect::<Vec<_>>();
+            unsafe {
+                MessageBoxW(
+                    None,
+                    PCWSTR(message.as_ptr()),
+                    PCWSTR(title.as_ptr()),
+                    MB_OK | MB_ICONEXCLAMATION,
+                );
+            }
+        },
+    )
+}
+fn run_reviewed(arguments: &[std::ffi::OsString], entered_loop: &mut bool) -> Result<StageResult> {
     if arguments.len() != 5 {
         return Err("bootstrap_arguments_invalid");
     }
@@ -441,6 +477,7 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
     }
     let _helper_gate = Lock(lock);
     let mut began = std::time::Instant::now();
+    *entered_loop = true;
     loop {
         let result = match request.action.as_str() {
             "snapshot" => snapshot_install(&root, &payload, &image, false),
@@ -550,6 +587,38 @@ mod action_tests {
         assert!(known_action("activateClean") && known_action("commitClean"));
         for removed in ["activateReviewed", "commitReviewed", "reviewImportAgain"] {
             assert!(!known_action(removed));
+        }
+    }
+}
+
+#[cfg(test)]
+mod preflight_tests {
+    use super::run_with_preflight_reporting;
+    #[test]
+    fn preflight_rejection_reports_once_and_preserves_code() {
+        let mut reports = Vec::new();
+        let result: Result<(), &str> = run_with_preflight_reporting(
+            |_| Err("bootstrap_owner_changed"),
+            |issue| reports.push(issue.to_owned()),
+        );
+        assert_eq!(result, Err("bootstrap_owner_changed"));
+        assert_eq!(reports, ["bootstrap_owner_changed"]);
+    }
+    #[test]
+    fn loop_errors_and_success_do_not_show_a_second_error() {
+        for fail in [false, true] {
+            let result = run_with_preflight_reporting(
+                |entered| {
+                    *entered = true;
+                    if fail {
+                        Err("suite_writers_must_close")
+                    } else {
+                        Ok(())
+                    }
+                },
+                |_| panic!("loop already owns error reporting"),
+            );
+            assert_eq!(result.is_err(), fail);
         }
     }
 }

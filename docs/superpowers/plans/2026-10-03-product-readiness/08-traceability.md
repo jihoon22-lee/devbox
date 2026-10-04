@@ -105,6 +105,12 @@
   Agent의 update/portable 선행 근거는 유지한다. 묶음 catalog 검사는 2.893초·RSS 약 121MiB·swap 0으로
   통과했다. 기존 payload는 새 CSS·zoom 설정이 없으며 이번 기록도 승격 근거가 아니다.
 
+- reviewed helper의 시작 검증 실패가 부모 창 종료 뒤 stderr로만 사라지던 UX를 보완했다.
+  검증 실패에는 고정 오류 코드·데이터 보존·재개 안내를 한 번 표시하며 기존 Retry/Cancel 오류와
+  일반 CLI는 유지한다. 실제 production 경계 함수의 좁은 회귀 2개를 확인했고 Windows 연결 검증은
+  최종 Windows CI에서 수행한다. 진단 `37186226140`은 installer 실행 전 WebView2 정책 조회에서
+  중단돼 제품 결과가 없으며, 이후 runner는 종료·OS 오류·signal 코드도 보존한다.
+
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
 ## 1. 기존 감사 23건의 누락 없는 배정
