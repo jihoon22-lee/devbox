@@ -245,6 +245,33 @@ pub(super) fn trusts_dispatcher(root: &Path, revision: &str) -> Result<bool> {
     Ok(read_registration(root, &key)?
         .is_some_and(|registration| registration.payload_revision == revision))
 }
+fn registration_barriers(root: &Path) -> Result<()> {
+    for (name, issue) in [
+        ("uninstall-plan.json", "bootstrap_uninstall_pending"),
+        ("suite-data-restore.json", "bootstrap_data_restore_pending"),
+    ] {
+        if !matches!(fs::symlink_metadata(root.join(name)), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+        {
+            return Err(issue);
+        }
+    }
+    Ok(())
+}
+fn registration_update_policy(
+    pending: Option<(&str, &str)>,
+    supplied_revision: &str,
+    dispatcher_revision: Option<&str>,
+) -> Result<()> {
+    if let Some((state, revision)) = pending {
+        if state != "health"
+            || revision != supplied_revision
+            || !dispatcher_revision.is_some_and(|value| value != supplied_revision)
+        {
+            return Err("bootstrap_update_pending");
+        }
+    }
+    Ok(())
+}
 pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
@@ -253,7 +280,10 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
     let root = installation_tools::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let _pins = crate::suite::platform::component_scope::pin_directories(&root)?;
-    let _gate = writer_gate(&root, false)?;
+    // Update health retains the original registered dispatcher until commit.
+    // Keep the same exclusive lease, but admit only that verified read-only case.
+    let _gate = writer_gate_for_restore(&root, false)?;
+    registration_barriers(&root)?;
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "bootstrap_owner_invalid")?;
     let root_identity = filesystem_identity(&root, true)
@@ -269,7 +299,21 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
         &serde_json::to_vec(&(root_identity, &owner.installation_id))
             .map_err(|_| "bootstrap_owner_invalid")?,
     );
-    let mut registration = match read_registration(&root, &key)? {
+    let existing = read_registration(&root, &key)?;
+    let pending = update::status(&root, &key)?;
+    registration_update_policy(
+        pending.as_ref().map(|value| {
+            (
+                value["state"].as_str().unwrap_or(""),
+                value["payloadRevision"].as_str().unwrap_or(""),
+            )
+        }),
+        &revision,
+        existing
+            .as_ref()
+            .map(|value| value.payload_revision.as_str()),
+    )?;
+    let mut registration = match existing {
         Some(value) if value.payload_revision == revision => value,
         Some(value) => {
             // The original installed dispatcher remains authoritative during an
@@ -666,4 +710,56 @@ pub(super) fn sync_agent_autostart(
         policy::apply(&mut registry, &owner, &change).map_err(|_| "suite_registry_unavailable")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod registration_policy_tests {
+    use super::{registration_barriers, registration_update_policy};
+    #[test]
+    fn update_health_can_only_preserve_existing_original_dispatcher() {
+        assert!(registration_update_policy(
+            Some(("health", "candidate")),
+            "candidate",
+            Some("original")
+        )
+        .is_ok());
+        for (state, candidate, dispatcher) in [
+            ("applying", "candidate", Some("original")),
+            ("committing", "candidate", Some("original")),
+            ("rolledBack", "candidate", Some("original")),
+            ("health", "other", Some("original")),
+            ("health", "candidate", None),
+            ("health", "candidate", Some("candidate")),
+        ] {
+            assert_eq!(
+                registration_update_policy(Some((state, candidate)), "candidate", dispatcher),
+                Err("bootstrap_update_pending")
+            );
+        }
+        assert!(registration_update_policy(None, "candidate", None).is_ok());
+    }
+    #[test]
+    fn pending_recovery_and_uninstall_remain_denied() {
+        let root = std::env::temp_dir().join(format!(
+            "devbox-registration-policy-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        assert!(registration_barriers(&root).is_ok());
+        std::fs::write(root.join("suite-update.json"), b"synthetic update").unwrap();
+        assert!(registration_barriers(&root).is_ok());
+        for (name, issue) in [
+            ("uninstall-plan.json", "bootstrap_uninstall_pending"),
+            ("suite-data-restore.json", "bootstrap_data_restore_pending"),
+        ] {
+            std::fs::create_dir(root.join(name)).unwrap();
+            assert_eq!(registration_barriers(&root), Err(issue));
+            std::fs::remove_dir(root.join(name)).unwrap();
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

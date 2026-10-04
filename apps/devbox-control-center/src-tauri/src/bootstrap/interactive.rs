@@ -9,6 +9,16 @@ use windows::{
     },
 };
 
+/// Callers verify the retained helper's payload/hash before constructing this
+/// command. Never inherit the product's CWD: it may be the installation root,
+/// which ordinary root validation correctly protects from modification.
+pub(super) fn retained_helper_command(helper: &Path) -> Result<std::process::Command> {
+    let directory = helper.parent().ok_or("bootstrap_launch_failed")?;
+    let mut command = std::process::Command::new(helper);
+    command.current_dir(directory);
+    Ok(command)
+}
+
 static LEAVING: AtomicBool = AtomicBool::new(false);
 
 /// Control Center's ordinary shortcut remains a recovery entrypoint even while
@@ -79,7 +89,7 @@ pub(crate) fn resume_before_shell() -> Result<bool> {
         _ => return Err("restore_record_invalid"),
     };
     scope.revalidate()?;
-    std::process::Command::new(helper)
+    retained_helper_command(&helper)?
         .arg("--reviewed-data-action")
         .arg(root)
         .arg(payload)
@@ -346,7 +356,7 @@ pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> 
             return Err("restore_operation_invalid");
         }
         scope.revalidate()?;
-        let child = std::process::Command::new(helper)
+        let child = retained_helper_command(&helper)?
             .arg("--reviewed-data-action")
             .arg(root)
             .arg(payload)
@@ -620,5 +630,61 @@ mod preflight_tests {
             );
             assert_eq!(result.is_err(), fail);
         }
+    }
+}
+
+#[cfg(test)]
+mod helper_command_tests {
+    use super::retained_helper_command;
+    #[test]
+    fn retained_helper_child_does_not_inherit_installation_root() {
+        const ROOT: &str = "DEVBOX_TEST_HELPER_ROOT";
+        const CHILD: &str = "DEVBOX_TEST_HELPER_CHILD";
+        let test_name = std::thread::current().name().unwrap().to_owned();
+        if let Some(expected) = std::env::var_os(CHILD) {
+            assert_eq!(
+                std::env::current_dir().unwrap().canonicalize().unwrap(),
+                std::path::PathBuf::from(expected).canonicalize().unwrap()
+            );
+            return;
+        }
+        if let Some(root) = std::env::var_os(ROOT) {
+            let root = std::path::PathBuf::from(root);
+            assert_eq!(
+                std::env::current_dir().unwrap().canonicalize().unwrap(),
+                root.canonicalize().unwrap()
+            );
+            let directory = root.join("setup").join("owned revision");
+            let helper = directory.join("owned-helper.exe");
+            let status = retained_helper_command(&helper)
+                .unwrap()
+                .args(["--exact", &test_name, "--nocapture"])
+                .env_remove(ROOT)
+                .env(CHILD, &directory)
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let root = std::env::temp_dir().join(format!(
+            "devbox-helper-cwd-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let directory = root.join("setup").join("owned revision");
+        std::fs::create_dir_all(&directory).unwrap();
+        let image = std::env::current_exe().unwrap();
+        std::fs::copy(&image, directory.join("owned-helper.exe")).unwrap();
+        let status = std::process::Command::new(&image)
+            .args(["--exact", &test_name, "--nocapture"])
+            .current_dir(&root)
+            .env(ROOT, &root)
+            .status()
+            .unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(status.success());
     }
 }
