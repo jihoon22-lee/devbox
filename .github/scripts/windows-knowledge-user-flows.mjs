@@ -215,8 +215,10 @@ export async function createInstalledKnowledgeContext() {
       await ui.click({ role: "button", name });
       await waitFor({ role: "textbox", name: "Markdown 본문" });
       const expected = await readFile(path.join(notesRoot, rel), "utf8");
-      await wait(() => current.cdp.evaluate(noteReadyExpression(rel, expected)), "requested synthetic note loaded");
+      await this.waitNote(rel, expected);
     },
+    waitNote: (rel, expected) =>
+      wait(() => current.cdp.evaluate(noteReadyExpression(rel, expected)), "requested synthetic note loaded"),
     editorText: () => current.cdp.evaluate(visibleNoteTextExpression()),
     async disableAutosave() {
       const enabled = await current.cdp.evaluate(
@@ -314,7 +316,7 @@ export async function createInstalledKnowledgeContext() {
     async createDraftViaUi() {
       await waitFor({ role: "button", name: "Knowledge로 보내기" });
       await ui.click({ role: "button", name: "Knowledge로 보내기" });
-      await waitBody("Knowledge 초안");
+      await ui.waitForTarget({ role: "dialog", name: "Life Log 초안 미리보기" });
     },
     async captureOwnedIdleBoundary() {
       const window = await createOwnedActivityWindow(path.join(fixtureRoot, `foreground-${randomUUID()}`));

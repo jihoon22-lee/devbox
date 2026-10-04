@@ -26,6 +26,26 @@ export async function observeUntil(check, label, timeout = 30000) {
   }
   throw new Error(`Owned UI observation timed out: ${label}`);
 }
+// WebView shutdown precedes the exact child's exit event during normal Close.
+// A disconnected renderer is never itself proof that the owned child exited.
+export async function observeNormalClose({ child, product, cdp, ui }, observe = observeUntil) {
+  let reviewed = false;
+  let rendererClosed = false;
+  await observe(async () => {
+    if (child.exitCode !== null) return true;
+    if (product !== "workspace" || reviewed || rendererClosed) return false;
+    try {
+      if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
+        await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
+        reviewed = true;
+      }
+    } catch (error) {
+      if (error?.message !== "CDP disconnected") throw error;
+      rendererClosed = true;
+    }
+    return child.exitCode !== null;
+  }, "normal native close");
+}
 export async function createInstalledProductContext(product, { legacyAssets } = {}) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
@@ -98,19 +118,7 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       try {
         if (child.exitCode === null) {
           nativeWindowAction(owner, "Close");
-          let reviewed = false;
-          await observeUntil(async () => {
-            if (child.exitCode !== null) return true;
-            if (
-              product === "workspace" &&
-              !reviewed &&
-              (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')'))
-            ) {
-              await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
-              reviewed = true;
-            }
-            return false;
-          }, "normal native close");
+          await observeNormalClose({ child, product, cdp, ui });
         }
       } finally {
         try {

@@ -171,7 +171,7 @@ export async function run(context) {
               await mkdir(output, { recursive: true });
               const filename = path.join(output, "partial-server-grpc.json");
               await context.ui.click(button("요약 내보내기"));
-              context.saveFile(filename);
+              await context.saveFile(filename);
               await expectText(context, "gRPC summary를 저장했습니다");
               const exported = JSON.parse(await readFile(filename, "utf8"));
               assert.equal(exported.exchange.responseMessageCount, 2);

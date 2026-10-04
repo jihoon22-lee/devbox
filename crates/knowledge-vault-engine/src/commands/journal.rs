@@ -82,7 +82,10 @@ impl NoteJournalStore {
         conn.execute("INSERT INTO settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", rusqlite::params![RECOVERY_SCOPE, encoded]).map_err(|_| UNAVAILABLE)?;
         self.remember_root(configured, canonical)
     }
-    fn persisted_scope(conn: &Connection, configured: &Path) -> Result<Option<String>, String> {
+    pub(crate) fn persisted_scope(
+        conn: &Connection,
+        configured: &Path,
+    ) -> Result<Option<String>, String> {
         let value: Option<Option<String>> = conn.query_row("SELECT CASE WHEN length(CAST(value AS BLOB))<=98304 THEN value ELSE NULL END FROM settings WHERE key=?1", [RECOVERY_SCOPE], |row| row.get(0)).optional().map_err(|_| UNAVAILABLE)?;
         let Some(value) = value else {
             return Ok(None);

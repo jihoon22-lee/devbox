@@ -1,5 +1,6 @@
 // Installer checkpoints and Suite Agent acceptance use one owned candidate installation.
 import assert from "node:assert/strict";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import path from "node:path";
 import { readFile, writeFile, readdir, mkdir, realpath } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
@@ -329,6 +330,28 @@ export async function createAgentBusinessJob(app, { name, command, directory }) 
   await app.ui.waitForTarget({ role: "button", name: "지금 실행", scope: { role: "article", name } });
   return job;
 }
+export async function readPausedAgentRequest(cdp, callFrameId, jobId, installationId) {
+  assert.ok(typeof callFrameId === "string" && callFrameId.length > 0, "Exact paused call frame required");
+  assert.match(installationId ?? "", /^[A-Za-z0-9_-]{1,128}$/, "Exact installed product namespace required");
+  const key = `devbox-runtime-pending:${installationId}:run_job_now:${jobId}`;
+  const response = await cdp.command("Debugger.evaluateOnCallFrame", {
+    callFrameId,
+    expression: `(()=>{const raw=localStorage.getItem(${JSON.stringify(key)});return raw===null?[]:[JSON.parse(raw)];})()`,
+    returnByValue: true,
+    silent: true,
+  });
+  assert.ok(!response.exceptionDetails, "Paused Agent request observation failed");
+  const pending = response.result?.value;
+  assert.ok(Array.isArray(pending), "Paused Agent requests must be an array");
+  assert.equal(pending.length, 1, "Exactly one original Agent request required");
+  assert.match(
+    pending[0]?.operationId ?? "",
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+    "Original operation UUID required",
+  );
+  assert.deepEqual(pending[0].args, { id: jobId }, "Original run-job target required");
+  return pending[0];
+}
 async function agentCrashBusiness(context, app) {
   const registry = await workspaceRead(app, "workspace.registry", "snapshot");
   const root = registry.worktrees.find((item) => item.binding?.target?.kind === "windows");
@@ -354,15 +377,18 @@ async function agentCrashBusiness(context, app) {
     directory: folder,
   });
   const scope = { role: "article", name };
+  const installationId = await app.cdp.evaluate(
+    "(async()=> (await window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')).handshake.installationId)()",
+  );
   await app.cdp.command("Debugger.enable");
   const fn = await app.cdp.command("Runtime.evaluate", {
     expression: "window.__TAURI_INTERNALS__.runCallback",
     returnByValue: false,
   });
   assert.ok(fn.result.objectId);
-  let paused = false;
-  const unlisten = app.cdp.onEvent("Debugger.paused", () => {
-    paused = true;
+  let frameId = null;
+  const unlisten = app.cdp.onEvent("Debugger.paused", (event) => {
+    frameId = event?.callFrames?.[0]?.callFrameId ?? null;
   });
   await app.cdp.command("Debugger.setBreakpointOnFunctionCall", {
     objectId: fn.result.objectId,
@@ -371,12 +397,9 @@ async function agentCrashBusiness(context, app) {
   const click = app.ui.click({ role: "button", name: "지금 실행", scope });
   click.catch(() => {});
   try {
-    await until(() => paused, "business reply paused");
+    await until(() => typeof frameId === "string" && frameId.length > 0, "business reply paused");
     await until(async () => (await readFile(counter, "utf8")) === "launch\n", "single business effect before crash");
-    const pending = await app.cdp.evaluate(
-      `Object.keys(localStorage).filter(k=>k.startsWith('devbox-runtime-pending:')&&k.endsWith(':'+${JSON.stringify(job.id)})).map(k=>JSON.parse(localStorage.getItem(k)))`,
-    );
-    assert.equal(pending.length, 1);
+    const pending = await readPausedAgentRequest(app.cdp, frameId, job.id, installationId);
     const agents = agentProcesses(context);
     assert.equal(agents.length, 1);
     const crashOwner = captureWindowOwner(agents[0], context.root);
@@ -400,7 +423,7 @@ async function agentCrashBusiness(context, app) {
     await reconnectUi(app);
     assert.equal(agentProcesses(context).length, 1);
     const receipt = await workspaceRead(app, "workspace.runtime", "runtime_control_status", {
-      operationId: pending[0].operationId,
+      operationId: pending.operationId,
     });
     assert.equal(receipt?.jobId, job.id, "Original durable operation must remain queryable");
     assert.equal(
@@ -413,7 +436,7 @@ async function agentCrashBusiness(context, app) {
       async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n",
       "new explicit business request after reconnect",
     );
-    await app.ui.click({ role: "button", name: "중지", scope });
+    await app.ui.clickWithConfirmation({ role: "button", name: "중지", scope }, true);
     return {
       assertions: [
         "Owned Agent crashed with actual business receipt paused while Workspace stayed open",
@@ -424,6 +447,7 @@ async function agentCrashBusiness(context, app) {
   } finally {
     unlisten();
     await app.cdp.command("Debugger.disable").catch(() => {});
+    await click.catch(() => {});
   }
 }
 async function trayQuitReconnect(context, app) {
@@ -494,6 +518,7 @@ export async function runInstalledAgentUserFlows() {
           assertions: [String(error.message).slice(0, 300)],
           screenshotPaths: [await app.ui.screenshot(`${id}-failure`).catch(() => "")].filter(Boolean),
           failureCode: "agent-ui-scenario-failed",
+          error: boundedFailure(error),
         });
       }
     }

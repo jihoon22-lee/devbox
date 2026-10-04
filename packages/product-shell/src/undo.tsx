@@ -41,20 +41,25 @@ function restore(offer: Offer, toast: HTMLDivElement | null): void {
 export function UndoToast({
   current,
   run,
+  dismiss,
   toastRef,
 }: {
   current: Offer;
   run: () => void;
+  dismiss: () => void;
   toastRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
     <div role="status" className="shell-undo" ref={toastRef}>
-      {current.label}
+      <span className="shell-undo-label">{current.label}</span>
       {current.undo && (
         <button type="button" disabled={current.busy} onClick={run}>
           {current.busy ? "되돌리는 중…" : "되돌리기"}
         </button>
       )}
+      <button type="button" aria-label="알림 닫기" disabled={current.busy} onClick={dismiss}>
+        닫기
+      </button>
     </div>
   );
 }
@@ -124,6 +129,9 @@ function useController(): Control {
         current={current}
         run={() => {
           void run();
+        }}
+        dismiss={() => {
+          if (!active.current?.busy) clear(current.id);
         }}
         toastRef={toastRef}
       />

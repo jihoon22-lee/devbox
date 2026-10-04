@@ -1,4 +1,9 @@
-import { selectRegisteredWorkspaceRoot } from "./windows-workspace-registry-observations.mjs";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
+import { dismissWorkspaceUndo } from "./windows-workspace-agent-registry-ui.mjs";
+import {
+  selectRegisteredWorkspaceRoot,
+  waitForSelectedWorkspaceRoot,
+} from "./windows-workspace-registry-observations.mjs";
 import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
 // Owned packaged Workspace fixture. Renderer mutations always use UiDriver input.
 import assert from "node:assert/strict";
@@ -79,6 +84,19 @@ export async function loseRuntimeReply({
       await click?.catch(() => {});
     }
   }
+}
+
+export async function stopReconciledRuntimeRun(ui, wait, activeRun, scope) {
+  const target = { role: "button", name: "중지", scope };
+  await ui.waitForTarget(target);
+  await ui.clickWithConfirmation(target, true);
+  await wait(async () => (await activeRun()) === null, "original owned run stopped before the next explicit run");
+}
+
+export async function resumeRuntimeUi(fixture, ui) {
+  await fixture.selectWindows();
+  await ui.click({ role: "button", name: "작업 및 서비스" });
+  await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
 }
 
 export function createWorkspaceUiFixture({
@@ -191,11 +209,13 @@ export function createWorkspaceUiFixture({
       await ui.fill({ role: "textbox", name: "Windows 프로젝트 폴더" }, root);
       await ui.click({ role: "button", name: "프로젝트 등록" });
       await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, root);
-      await wait(async () => !!(await context())?.worktreeId, "selected native context");
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, root);
     },
     async trustSource() {
       await ui.click({ role: "button", name: "소스" });
+      await ui.waitForTarget({ role: "button", name: "Git 실행 검토" });
       await ui.click({ role: "button", name: "Git 실행 검토" });
+      await ui.waitForTarget({ role: "button", name: "검토한 Git 실행 승인" });
       await ui.click({ role: "button", name: "검토한 Git 실행 승인" });
       await this.waitForText({ role: "textbox", name: "커밋 메시지" });
     },
@@ -238,10 +258,11 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "WSL 프로젝트 등록" });
       const project = await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
       this.agentProjectName = project.name;
-      await wait(async () => (await context())?.target?.kind === "wsl", "WSL base selected");
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
       await this.trustSource();
     },
     async configureAgent() {
+      await dismissWorkspaceUndo(ui, () => cdp.evaluate("!!document.querySelector('.shell-undo')"), wait);
       await selectOption({ role: "combobox", name: "도구" }, 2);
       await ui.fill({ role: "textbox", name: "명령" }, "printf 'owned-agent-ui\\n'");
     },
@@ -257,9 +278,15 @@ export function createWorkspaceUiFixture({
     },
     async attemptAgentReview() {
       await ui.click({ role: "button", name: "에이전트" });
+      await ui.waitForTarget({ role: "button", name: "변경 검토" });
       await ui.click({ role: "button", name: "변경 검토" });
       await this.waitForText({ role: "alert", name: "" });
       return ui.text({ role: "alert", name: "" });
+    },
+    async selectRoot(root) {
+      await ui.click({ role: "button", name: "개요" });
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, root);
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, root);
     },
     async selectWindows() {
       assert.ok(this.windowsRoot);
@@ -270,9 +297,7 @@ export function createWorkspaceUiFixture({
         )
       )
         return;
-      await ui.click({ role: "button", name: "개요" });
-      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, this.windowsRoot);
-      await wait(async () => (await context())?.target?.kind === "windows", "owned Windows root selected");
+      await this.selectRoot(this.windowsRoot);
     },
     async runtimeLostReply() {
       await this.selectWindows();
@@ -307,20 +332,90 @@ export function createWorkspaceUiFixture({
         });
       const runId = await loseReply("지금 실행");
       assert.equal(await readFile(counter, "utf8"), "launch\n");
-      await ui.click({ role: "button", name: "작업 및 서비스" });
-      await wait(
-        async () => (await cdp.evaluate("document.body.innerText")).includes("실행 요청의 완료 상태를 확인했습니다"),
-        "completed request confirmation visible",
+      const recoveredPending = await pending();
+      await writeFile(
+        "product-foundation-evidence/workspace-runtime-restart-observation.json",
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            operationId: runId,
+            jobId: job.id,
+            matchingPendingCount: recoveredPending.filter((item) => item.operationId === runId).length,
+          },
+          null,
+          2,
+        ),
+        { flag: "wx" },
       );
+      await resumeRuntimeUi(this, ui);
+      try {
+        await wait(
+          async () => (await cdp.evaluate("document.body.innerText")).includes("실행 요청의 완료 상태를 확인했습니다"),
+          "completed request confirmation visible",
+        );
+      } catch (error) {
+        // Fixed fields only: preserve the first failure without dumping document,
+        // local-storage, command or response contents into an artifact.
+        const observation = { schemaVersion: 1, operationId: runId, jobId: job.id };
+        try {
+          observation.renderer = await cdp.evaluate(`(()=>{
+            const section=document.querySelector('[aria-label="실행 요청 복구"]');
+            const tasks=document.querySelector('.workspace-feature-tasks');
+            return {tasksMounted:!!tasks,tasksVisible:!!tasks&&!tasks.hidden,
+              recoveryMounted:!!section,recoveryReadFailed:!!section?.querySelector('[role="alert"]'),
+              completionVisible:!!section?.innerText.includes('실행 요청의 완료 상태를 확인했습니다'),
+              pendingOperationPresent:(${pendingExpression}).some(item=>item.operationId===${JSON.stringify(runId)})};
+          })()`);
+          observation.agentStatus = await cdp.evaluate(
+            "window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')",
+          );
+        } catch {
+          observation.rendererUnavailable = true;
+        }
+        try {
+          const receipt = await read("workspace.runtime", "runtime_control_status", { operationId: runId });
+          observation.originalReceiptReadable = true;
+          observation.originalReceiptMatchesJob = receipt?.jobId === job.id;
+        } catch (receiptError) {
+          observation.originalReceiptReadable = false;
+          observation.originalReceiptFailure = boundedFailure(receiptError);
+          observation.originalReceiptCode =
+            [
+              "runtime_control_in_progress",
+              "runtime_control_recovery_required",
+              "runtime_control_failed",
+              "runtime_control_unavailable",
+              "unavailable",
+            ].find((code) => String(receiptError?.message).includes(`"${code}"`)) ?? "unknown";
+        }
+        try {
+          await writeFile(
+            "product-foundation-evidence/workspace-runtime-recovery-first-failure.json",
+            JSON.stringify(observation, null, 2),
+            { flag: "wx" },
+          );
+        } catch {
+          /* The scenario's original failure remains authoritative. */
+        }
+        throw error;
+      }
       const completedRun = await read("workspace.runtime", "runtime_control_status", { operationId: runId });
       assert.equal(completedRun.jobId, job.id);
       await wait(async () => (await pending()).length === 0, "lost run result reconciled read-only");
       assert.equal(await readFile(counter, "utf8"), "launch\n");
+      // The installed Agent preserves the first live run across a Workspace
+      // crash. Respect overlap=skip: explicitly stop it before the next run.
+      await stopReconciledRuntimeRun(
+        ui,
+        wait,
+        () => read("workspace.runtime", "get_active_run", { id: job.id }),
+        scope,
+      );
       // A new explicit run now has a new request. Stop's reply is independently lost.
       await ui.click({ role: "button", name: "지금 실행", scope });
       await wait(async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n", "second explicit owned run");
       const stopId = await loseReply("중지");
-      await ui.click({ role: "button", name: "작업 및 서비스" });
+      await resumeRuntimeUi(this, ui);
       const completedStop = await read("workspace.runtime", "runtime_control_status", { operationId: stopId });
       assert.ok(completedStop === null || completedStop.jobId === job.id);
       await wait(async () => (await pending()).length === 0, "lost stop result reconciled read-only");
@@ -400,8 +495,8 @@ export function createWorkspaceUiFixture({
     async terminalLifecycle() {
       assert.ok(agentRoot && this.agentProjectName);
       await ui.click({ role: "button", name: "개요" });
-      await ui.click({ role: "button", name: "프로젝트 선택", scope: { role: "region", name: this.agentProjectName } });
-      await wait(async () => (await context())?.target?.kind === "wsl", "owned WSL context selected");
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
       const counter = `${agentRoot}/terminal-count`,
         afterInterrupt = `${agentRoot}/ctrl-c-confirmed`;
       const wslRead = (file) => {

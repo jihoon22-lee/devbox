@@ -226,3 +226,109 @@ test("paused read failure releases debugger and input while preserving first err
     ["unsubscribe", "Debugger.disable"],
   );
 });
+test("Source navigation waits both asynchronous approval controls before one click each", async () => {
+  const events = [],
+    ready = new Set();
+  const fixture = createWorkspaceUiFixture({
+    cdp: {},
+    ui: {
+      click: async (target) => {
+        if (target.name !== "소스") assert.ok(ready.has(target.name), `missing readiness: ${target.name}`);
+        events.push(["click", target.name]);
+      },
+      waitForTarget: async (target) => {
+        ready.add(target.name);
+        events.push(["ready", target.name]);
+      },
+      text: async (target) => {
+        events.push(["text", target.name]);
+        return "";
+      },
+    },
+  });
+  await fixture.trustSource();
+  assert.deepEqual(events, [
+    ["click", "소스"],
+    ["ready", "Git 실행 검토"],
+    ["click", "Git 실행 검토"],
+    ["ready", "검토한 Git 실행 승인"],
+    ["click", "검토한 Git 실행 승인"],
+    ["text", "커밋 메시지"],
+  ]);
+});
+test("runtime recovery selects its owned project before mounting Tasks after restart", async () => {
+  const { resumeRuntimeUi } = await import("./windows-workspace-ui-fixture.mjs");
+  const actions = [];
+  let selected = false;
+  await resumeRuntimeUi(
+    {
+      selectWindows: async () => {
+        actions.push("select");
+        selected = true;
+      },
+    },
+    {
+      click: async (target) => {
+        assert.ok(selected);
+        actions.push(target.name);
+      },
+      waitForTarget: async (target) => {
+        assert.ok(selected);
+        actions.push(target.name);
+      },
+    },
+  );
+  assert.deepEqual(actions, ["select", "작업 및 서비스", "+ 새 작업"]);
+  await assert.rejects(
+    resumeRuntimeUi(
+      {
+        selectWindows: async () => {
+          throw new Error("owned root missing");
+        },
+      },
+      {
+        click: async () => {
+          throw new Error("must not navigate before selection");
+        },
+      },
+    ),
+    /owned root missing/,
+  );
+});
+
+test("lost-reply journey explicitly stops the first live owner before requesting another run", async () => {
+  const { stopReconciledRuntimeRun } = await import("./windows-workspace-ui-fixture.mjs");
+  const events = [],
+    scope = { role: "article", name: "owned" };
+  await stopReconciledRuntimeRun(
+    {
+      waitForTarget: async (target) => events.push(["ready", target]),
+      clickWithConfirmation: async (target, confirmed) => events.push(["click", target, confirmed]),
+    },
+    async (check) => {
+      events.push(["observe"]);
+      assert.equal(await check(), true);
+    },
+    async () => null,
+    scope,
+  );
+  assert.deepEqual(events, [
+    ["ready", { role: "button", name: "중지", scope }],
+    ["click", { role: "button", name: "중지", scope }, true],
+    ["observe"],
+  ]);
+  await assert.rejects(
+    stopReconciledRuntimeRun(
+      {
+        waitForTarget: async () => {},
+        clickWithConfirmation: async () => {},
+      },
+      async (check) => {
+        if (!(await check())) throw new Error("original run still active");
+      },
+      async () => ({ jobId: "owned" }),
+      scope,
+    ),
+    /still active/,
+  );
+});

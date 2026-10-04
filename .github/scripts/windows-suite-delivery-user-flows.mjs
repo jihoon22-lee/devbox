@@ -1,3 +1,4 @@
+import { executeReviewedDeliveryAction } from "./windows-delivery-review.mjs";
 // Actual Recovery review, native dirty-close cancellation and installed data preservation.
 import assert from "node:assert/strict";
 import { withdrawnSource } from "./windows-suite-legacy-upgrade-ui.mjs";
@@ -14,6 +15,9 @@ import { completeInstalledHealth, closeAutomaticallyOpenedCenter } from "./windo
 import { prepareDistinctGeneration } from "./windows-suite-update-fixture.mjs";
 import { allWindowsProcesses } from "./windows-packaged-smoke.mjs";
 const editor = { role: "textbox", name: "Markdown 본문" };
+export async function assertKnowledgeDraft(context, expected) {
+  assert.equal(await context.knowledgeFixture.editorText(), expected);
+}
 export const scenarioIds = ["INSTALL-03", "DELIVERY-02"];
 async function exists(file) {
   try {
@@ -49,9 +53,7 @@ export async function run() {
         path.basename(p.Path).toLowerCase() === "devbox-suite-bootstrap.exe",
     );
   const review = async (label) => {
-    await center.ui.click({ role: "button", name: label });
-    await center.ui.click({ role: "checkbox", name: "선택한 작업과 제품 종료를 확인했습니다." });
-    await center.ui.click({ role: "button", name: "Control Center를 닫고 실행" });
+    await executeReviewedDeliveryAction(center.ui, { role: "button", name: label });
     await observeUntil(() => center.child.exitCode !== null, "reviewed Center shutdown");
     center.dispose();
   };
@@ -86,14 +88,17 @@ export async function run() {
     await launchCenter();
     const before = await center.delivery("restore_inventory");
     // Cancel the visible review first: no helper or checkpoint is created.
+    await center.ui.waitForTarget({ role: "button", name: "현재 데이터 보존" });
     await center.ui.click({ role: "button", name: "현재 데이터 보존" });
-    await center.ui.click({ role: "button", name: "취소", scope: { role: "region", name: "복구 작업 검토" } });
+    const cancelReview = { role: "button", name: "취소", scope: { role: "region", name: "복구 작업 검토" } };
+    await center.ui.waitForTarget(cancelReview);
+    await center.ui.click(cancelReview);
     assert.deepEqual(await center.delivery("restore_inventory"), before);
     await review("현재 데이터 보존");
     await knowledge.ui.closeOwnedWindow();
     await knowledge.ui.waitForTarget({ role: "button", name: "종료 취소" });
     await knowledge.ui.click({ role: "button", name: "종료 취소" });
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
     assert.ok(knowledge.child.exitCode === null, "Helper must not force a dirty product closed");
     screenshots.push(await knowledge.ui.screenshot("INSTALL-03-dirty-close-cancel"));
@@ -119,7 +124,7 @@ export async function run() {
     nativeWindowAction(captureWindowOwner(helper, path.dirname(knowledge.root)), "Invoke", { controlId: "2" });
     await reattachCenter();
     assert.deepEqual((await center.delivery("restore_inventory")).checkpoints, before.checkpoints);
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     // This exact public setup differs from the retained fixture generation,
     // so it enters the real update writer gate while the draft is still live.
     const candidate = JSON.parse(
@@ -132,7 +137,7 @@ export async function run() {
       knowledge.root,
     );
     assert.equal(await readFile(path.join(knowledge.root, "devbox-installation.json"), "utf8"), beforeUpdate);
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
     assert.equal(knowledge.child.exitCode, null);
     screenshots.push(await knowledge.ui.screenshot("INSTALL-03-update-cancel-preserved"));
@@ -212,7 +217,7 @@ export async function run() {
     knowledge = await createInstalledKnowledgeContext();
     await knowledge.knowledgeFixture.navigate("notes");
     await knowledge.knowledgeFixture.openNote(notes.a);
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     screenshots.push(await knowledge.ui.screenshot("DELIVERY-02-reinstalled-user-data"));
     const withdrawn = JSON.parse(
       await readFile("product-foundation-evidence/user-flows/delivery-hooks/withdrawn-update.json", "utf8"),

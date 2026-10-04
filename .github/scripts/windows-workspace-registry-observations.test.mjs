@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectRegisteredWorkspaceRoot } from "./windows-workspace-registry-observations.mjs";
+import {
+  selectRegisteredWorkspaceRoot,
+  waitForSelectedWorkspaceRoot,
+} from "./windows-workspace-registry-observations.mjs";
 test("automatic registration waits exact root persistence and native project card before one selection", async () => {
   const actions = [],
     root = "C:\\owned\\new-root";
@@ -49,4 +52,23 @@ test("missing native card readiness rejects before any selection", async () => {
     (error) => error === failure,
   );
   assert.equal(clicks, 0);
+});
+
+test("selection observation rejects a stale same-kind context until the exact owned revision attaches", async () => {
+  const tree = { id: "owned-tree", projectId: "owned-project", revision: 3, binding: { root: "/tmp/owned-project" } };
+  let selected = { projectId: "wrong-project", worktreeId: "wrong-tree", revision: 3, target: { kind: "wsl" } };
+  const results = [];
+  await waitForSelectedWorkspaceRoot(
+    async () => selected,
+    async () => ({ worktrees: [tree] }),
+    async (check) => {
+      results.push(await check());
+      selected = { ...selected, projectId: tree.projectId, worktreeId: tree.id, revision: 2 };
+      results.push(await check());
+      selected = { ...selected, revision: tree.revision };
+      results.push(await check());
+    },
+    tree.binding.root,
+  );
+  assert.deepEqual(results, [false, false, true]);
 });

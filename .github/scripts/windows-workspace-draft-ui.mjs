@@ -7,8 +7,24 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 export const scenarioIds = ["WORK-01"];
+export async function assertWorkspaceEditorText(cdp, expected) {
+  // Chromium AX adds a presentation newline for CodeMirror's empty <br> line.
+  // Compare the actual rendered lines, preserving whitespace and blank lines;
+  // the scenario separately checks exact native recovery content and file bytes.
+  const editors = await cdp.evaluate(
+    `Array.from(document.querySelectorAll('.workspace-feature-files .cm-content[role="textbox"]')).filter(editor=>editor.getClientRects().length>0).map(editor=>Array.from(editor.children).filter(line=>line.classList.contains('cm-line')).map(line=>line.textContent))`,
+  );
+  assert.deepEqual(editors, [expected.split("\n")], "Rendered owned editor lines must match the exact draft");
+}
+export async function waitForWorkspaceEditorText(cdp, wait, expected) {
+  await wait(async () => {
+    await assertWorkspaceEditorText(cdp, expected);
+    return true;
+  }, "exact owned editor draft rendered");
+  await assertWorkspaceEditorText(cdp, expected);
+}
 export async function run(context) {
-  const { ui, fixtureRoot, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
+  const { ui, cdp, fixtureRoot, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
   const results = [],
     screenshots = [];
   const record = (id, status, assertions, failureCode = null) => ({
@@ -64,13 +80,14 @@ export async function run(context) {
     await journal("");
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "종료 취소" });
-    assert.equal(await ui.text({ role: "textbox", name: "" }), "");
+    await waitForWorkspaceEditorText(cdp, fixture.wait, "");
+    await journal("");
     assert.deepEqual(await readFile(file), original);
     screenshots.push(await ui.screenshot("workspace-close-cancel"));
     await fixture.crashAndReopen();
     await fixture.waitForText({ role: "button", name: "복구 (1)" });
     await ui.click({ role: "button", name: "복구 (1)" });
-    assert.equal(await ui.text({ role: "textbox", name: "" }), "");
+    await waitForWorkspaceEditorText(cdp, fixture.wait, "");
     assert.deepEqual(await readFile(file), original);
     await journal("");
     // Metadata-only dirty recovery must preserve BOM and line ending across a crash.
@@ -86,6 +103,7 @@ export async function run(context) {
     );
     await fixture.crashAndReopen();
     await ui.click({ role: "button", name: "복구 (1)" });
+    await waitForWorkspaceEditorText(cdp, fixture.wait, "원본\n");
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "파일 저장 후 종료" });
     await fixture.reopenAfterClose();
@@ -112,7 +130,7 @@ export async function run(context) {
     assert.deepEqual(await readFile(file), saved);
     screenshots.push(await ui.screenshot("workspace-writer-failure-retained"));
     await ui.click({ role: "button", name: "종료 취소" });
-    assert.equal(await ui.text({ role: "textbox", name: "" }), "실패 후 보존할 초안");
+    await waitForWorkspaceEditorText(cdp, fixture.wait, "실패 후 보존할 초안");
     await fixture.restoreRecoveryWriter();
     await ui.closeOwnedWindow();
     await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });

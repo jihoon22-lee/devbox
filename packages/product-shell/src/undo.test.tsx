@@ -107,3 +107,35 @@ it("shares one offer across feature hooks and reports one failed undo without a 
   });
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+it("dismisses a notification without undoing and restores keyboard focus", () => {
+  const undo = vi.fn(async () => {});
+  render(<Harness undo={undo} />);
+  const opener = screen.getByText("만들기");
+  opener.focus();
+  fireEvent.click(opener);
+  const dismiss = screen.getByRole("button", { name: "알림 닫기" });
+  dismiss.focus();
+  fireEvent.click(dismiss);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(undo).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(opener);
+});
+
+it("does not dismiss an undo while its result is pending", async () => {
+  let resolve!: () => void;
+  render(
+    <Harness
+      undo={() =>
+        new Promise<void>((done) => {
+          resolve = done;
+        })
+      }
+    />,
+  );
+  fireEvent.click(screen.getByText("만들기"));
+  fireEvent.click(screen.getByRole("button", { name: "되돌리기" }));
+  expect(screen.getByRole("button", { name: "알림 닫기" }).hasAttribute("disabled")).toBe(true);
+  await act(async () => resolve());
+  expect(screen.queryByRole("status")).toBeNull();
+});

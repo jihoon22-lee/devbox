@@ -24,6 +24,32 @@ import {
   releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
 
+// Export invokes a native dialog asynchronously after the pointer acknowledgement.
+// Poll ownership metadata only; SaveFile remains a single strict native mutation.
+export async function saveApiFileWhenReady(
+  owner,
+  filePath,
+  { action = nativeWindowAction, wait = delay, timeoutMs = 10000 } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const observed = await action(owner, "Inspect");
+    assert.equal(observed.processId, owner.identity.Pid, "Native picker owner changed");
+    assert.ok(observed.nativeWindowCount <= 32, "Native picker inventory exceeded bound");
+    const pickers = observed.nativeWindows.filter(
+      (window) => window.visible && window.topLevel && window.className === "#32770",
+    );
+    assert.ok(pickers.length <= 1, "Ambiguous owned native file picker");
+    assert.ok(
+      pickers.every((window) => window.nativeProcessId === owner.identity.Pid),
+      "Native picker owner changed",
+    );
+    if (pickers.length === 1) return await action(owner, "SaveFile", { filePath });
+    assert.ok(Date.now() < deadline, "Owned native file picker did not become ready");
+    await wait(100);
+  }
+}
+
 export async function verifyApiInstallation(directory, assets, sourceSha) {
   const identity = await packagedIdentity(assets, sourceSha);
   assert.ok(directory, "Owned installation root required");
@@ -138,7 +164,7 @@ export async function createApiUserFlowContext({ measureStartup = true } = {}) {
       namespace: path.join(process.env.LOCALAPPDATA, `com.devbox.v08.apistudio.i${installed.installationKey}`),
     };
     context.chooseFile = (filePath) => nativeWindowAction(windowOwner, "ChooseFile", { filePath });
-    context.saveFile = (filePath) => nativeWindowAction(windowOwner, "SaveFile", { filePath });
+    context.saveFile = (filePath) => saveApiFileWhenReady(windowOwner, filePath);
     context.nativeCall = async (command, method, args, route = "requests") => {
       // Fixture preparation/observation retains the actual authenticated envelope.
       const result = await context.cdp.evaluate(

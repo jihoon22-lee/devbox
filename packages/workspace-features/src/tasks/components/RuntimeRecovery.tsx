@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isProductHosted } from "../../transport";
 import {
   listRuntimeControls,
@@ -23,21 +23,45 @@ export default function RuntimeRecovery({
   const [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const refresh = useCallback(async () => {
-    const settled = await reconcileRuntimeControls();
-    setItems(await listRuntimeControls());
-    if (settled.length) setConfirmed(true);
-    setError("");
+  const observedCompletion = useRef(false);
+  const reading = useRef<Promise<{
+    confirmed: boolean;
+    values: RuntimeControlReceipt[];
+  }> | null>(null);
+  const snapshot = useCallback(() => {
+    if (reading.current) return reading.current;
+    // Reconciliation consumes a durable pending key. Effect replay must observe
+    // the same result rather than discard it and start a second consuming read.
+    const request = (async () => {
+      const settled = await reconcileRuntimeControls();
+      // The native read consumes pending keys. Keep its confirmation even when
+      // the route hides or the following receipt-inventory read fails.
+      if (settled.length) observedCompletion.current = true;
+      const values = await listRuntimeControls();
+      return { confirmed: observedCompletion.current, values };
+    })();
+    reading.current = request;
+    void request
+      .finally(() => {
+        if (reading.current === request) reading.current = null;
+      })
+      .catch(() => {});
+    return request;
   }, []);
+  const refresh = useCallback(async () => {
+    const { confirmed: completed, values } = await snapshot();
+    setItems(values);
+    if (completed) setConfirmed(true);
+    setError("");
+  }, [snapshot]);
   useEffect(() => {
     if (!active || busy || !isProductHosted()) return;
     let disposed = false;
-    void reconcileRuntimeControls()
-      .then(async (settled) => ({ settled, values: await listRuntimeControls() }))
-      .then(({ settled, values }) => {
+    void snapshot()
+      .then(({ confirmed: completed, values }) => {
         if (!disposed) {
           setItems(values);
-          if (settled.length) setConfirmed(true);
+          if (completed) setConfirmed(true);
           setError("");
         }
       })
@@ -47,7 +71,7 @@ export default function RuntimeRecovery({
     return () => {
       disposed = true;
     };
-  }, [active, busy]);
+  }, [active, busy, snapshot]);
   const review = async (id: string) => {
     setReviewing(true);
     setError("");

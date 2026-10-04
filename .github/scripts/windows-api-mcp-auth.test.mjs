@@ -5,6 +5,24 @@ import test from "node:test";
 import { mkdtemp, mkdir, rm, readFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
+test("OAuth refresh follows completed disconnect and performs each input once", async () => {
+  const events = [];
+  let ready = false;
+  await runner.disconnectAndRefreshGrants({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "OAuth grant 새로 고침");
+        assert.deepEqual(events, ["연결 해제"]);
+        ready = true;
+      },
+      click: async (target) => {
+        if (target.name === "OAuth grant 새로 고침") assert.equal(ready, true);
+        events.push(target.name);
+      },
+    },
+  });
+  assert.deepEqual(events, ["연결 해제", "OAuth grant 새로 고침"]);
+});
 test("OAuth fixture reseeding restarts the native owner before any grant refresh", async () => {
   const scratch = await mkdtemp(path.join(tmpdir(), "devbox-oauth-cache-"));
   const file = path.join(scratch, "mcp-grants.json");
@@ -126,4 +144,22 @@ test("modern MCP tool list fixture includes required private cache metadata", ()
   assert.equal(reply.result.ttlMs, 0);
   assert.equal(reply.result.cacheScope, "private");
   assert.equal(reply.result.tools[0].name, "synthetic_echo");
+});
+
+test("disconnect after refresh waits for enabled control before one input", async () => {
+  const events = [];
+  await runner.disconnectMcpWhenReady({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "연결 해제");
+        events.push("ready");
+      },
+      click: async (target) => {
+        assert.equal(target.name, "연결 해제");
+        assert.deepEqual(events, ["ready"]);
+        events.push("click");
+      },
+    },
+  });
+  assert.deepEqual(events, ["ready", "click"]);
 });

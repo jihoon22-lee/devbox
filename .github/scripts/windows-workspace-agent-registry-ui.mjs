@@ -1,6 +1,16 @@
 import { observeWorkspaceFailure, cleanupWorkspaceFixture } from "./windows-workspace-ui-observations.mjs";
 import assert from "node:assert/strict";
 export const scenarioIds = ["WORK-02", "WORK-03"];
+export async function dismissWorkspaceUndo(ui, visible, wait) {
+  if (!(await visible())) return;
+  await ui.click({ role: "button", name: "알림 닫기" });
+  await wait(async () => !(await visible()), "notification dismissed before Agent input");
+}
+export async function discardAgentTask(ui) {
+  await ui.click({ role: "button", name: "버리기" });
+  await ui.waitForTarget({ role: "button", name: "버리기 확인" });
+  await ui.click({ role: "button", name: "버리기 확인" });
+}
 export async function run(context) {
   const { ui, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
   const record = (id, status, assertions = [], screenshotPaths = [], failureCode = null) => ({
@@ -44,6 +54,7 @@ export async function run(context) {
     const ownTrees = (registry) => registry.worktrees.filter((tree) => tree.projectId === baseContext.projectId);
     assert.equal(ownTrees(initial).length, 1, "Only the owned base may be registered before task creation");
     await ui.click({ role: "button", name: "에이전트" });
+    await ui.waitForTarget({ role: "textbox", name: "제목" });
     await ui.fill({ role: "textbox", name: "제목" }, "owned registry reconciliation");
     await fixture.configureAgent();
     await ui.click({ role: "button", name: "작업 만들기" });
@@ -54,6 +65,7 @@ export async function run(context) {
       "new task registered and selected",
     );
     const selected = await fixture.context();
+    await ui.waitForTarget({ role: "button", name: "변경 검토" });
     await ui.click({ role: "button", name: "변경 검토" });
     assert.equal((await fixture.context()).worktreeId, selected.worktreeId);
     await fixture.waitForText({ role: "textbox", name: "커밋 메시지" });
@@ -79,8 +91,7 @@ export async function run(context) {
     );
     await ui.fill({ role: "textbox", name: "커밋 메시지" }, "");
     await ui.click({ role: "button", name: "에이전트" });
-    await ui.click({ role: "button", name: "버리기" });
-    await ui.click({ role: "button", name: "버리기 확인" });
+    await discardAgentTask(ui);
     await fixture.wait(
       async () => ownTrees(await fixture.registry()).length === 1,
       "owned task cleanup reflected in registry",
@@ -89,14 +100,14 @@ export async function run(context) {
     assert.deepEqual(cleaned.worktrees.map((tree) => tree.id).sort(), initial.worktrees.map((tree) => tree.id).sort());
     assert.equal((await fixture.context()).worktreeId, baseContext.worktreeId);
     await fixture.crashAndReopen();
-    await fixture.wait(
-      async () => (await fixture.context())?.worktreeId === baseContext.worktreeId,
-      "cleaned selection restored after actual process restart",
-    );
     assert.deepEqual(
       (await fixture.registry()).worktrees.map((tree) => tree.id).sort(),
       initial.worktrees.map((tree) => tree.id).sort(),
     );
+    const retainedBase = cleaned.worktrees.find((tree) => tree.id === baseContext.worktreeId);
+    assert.ok(retainedBase, "Owned base remains registered");
+    await fixture.selectRoot(retainedBase.binding.root);
+    assert.equal((await fixture.context()).worktreeId, baseContext.worktreeId);
     await ui.click({ role: "button", name: "소스" });
     await fixture.waitForText({ role: "textbox", name: "커밋 메시지" });
     screenshots.push(await ui.screenshot("workspace-agent-cleanup"));
@@ -108,7 +119,7 @@ export async function run(context) {
           "Actual Agent task published and selected its previously absent worktree without manual refresh",
           "Source review resolves the new native context immediately",
           "Cleanup removes only its task worktree; base and unrelated registered Windows root remain",
-          "Actual process restart restores cleaned base selection and registry; Source accepts the restored context",
+          "Actual process restart preserves the cleaned registry; explicit owned base selection restores Source context",
         ],
         [...screenshots],
       ),

@@ -175,7 +175,7 @@ export async function runWorkspaceUserFlows() {
       warmExistingWindowMs: await measureWarmOwnedWindow(captureWindowOwner(owner, root), cdp),
       workload: () => fixture.performanceTask(),
     });
-    results.push(...(await draftFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
+    results.push(...(await draftFlows({ ...identity, ui, cdp, fixtureRoot, workspaceFixture: fixture })));
     await launch();
     results.push(...(await agentFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
     await launch();

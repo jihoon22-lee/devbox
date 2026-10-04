@@ -171,6 +171,7 @@ main:focus-visible {
   bottom: 16px;
   z-index: 1000;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   max-width: calc(100vw - 32px);
@@ -179,6 +180,14 @@ main:focus-visible {
   border-radius: var(--db-radius-md);
   background: var(--db-color-surface);
   color: var(--db-color-text);
+}
+.shell-undo-label {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.shell-undo button {
+  flex: 0 0 auto;
 }
 .shell-recent-issues li {
   display: flex;
