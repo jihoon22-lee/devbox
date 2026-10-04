@@ -5,6 +5,7 @@ import path from "node:path";
 import { createInstalledProductContext, observeUntil } from "./windows-suite-ui-context.mjs";
 import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
 import { allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+import { preserveReviewedCommitFailure } from "./windows-reviewed-helper-evidence.mjs";
 export async function closeAutomaticallyOpenedCenter(root) {
   const manifest = JSON.parse(await readFile(path.join(root, "devbox-installation.json"), "utf8"));
   const image = path.resolve(root, manifest.members.find((p) => p.product === "control-center").executable);
@@ -18,7 +19,9 @@ export async function closeAutomaticallyOpenedCenter(root) {
 }
 export async function completeInstalledHealth(label, { beforeCommit } = {}) {
   const live = [];
+  const observationId = randomUUID();
   let center;
+  let failure;
   try {
     center = await createInstalledProductContext("control-center");
     live.push(center);
@@ -35,7 +38,6 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
       async () => (await center.delivery("restore_inventory")).installation.freshHealth,
       "fresh owner health recorded",
     );
-    const observationId = randomUUID();
     const screenshot = await center.ui.screenshot(`health-${observationId}`);
     for (const item of live.slice(1).reverse()) await item.close();
     await center.ui.click({ role: "button", name: label });
@@ -65,10 +67,25 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
     );
     await closeAutomaticallyOpenedCenter(center.root);
     return [screenshot, reviewScreenshot];
+  } catch (error) {
+    failure = error;
+    if (center) {
+      try {
+        await preserveReviewedCommitFailure(center, error, observationId);
+      } catch {
+        // Evidence failure never replaces the first user journey failure.
+      }
+    }
+    throw error;
   } finally {
     for (const item of live.reverse()) {
-      if (item.child.exitCode === null) await item.close();
-      else item.dispose();
+      try {
+        if (item.child.exitCode === null) await item.close();
+        else item.dispose();
+      } catch (error) {
+        if (!failure) failure = error;
+      }
     }
+    if (failure) throw failure;
   }
 }
