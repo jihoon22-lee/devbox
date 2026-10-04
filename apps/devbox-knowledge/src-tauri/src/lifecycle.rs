@@ -133,15 +133,35 @@ pub async fn collector_status(app: &tauri::AppHandle) -> Result<serde_json::Valu
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "quit_unavailable")?
         .as_millis() as u64;
-    let status = crate::collector_owner::call(
-        app,
-        "knowledge.activity",
-        "collection_status",
-        serde_json::json!({}),
-        now.saturating_add(5000),
-    )
-    .await
-    .ok();
+    let local_ready = activity_engine::component::tracking_status(app).is_some();
+    let status = read_collector_status(owner, local_ready, || {
+        crate::collector_owner::call(
+            app,
+            "knowledge.activity",
+            "collection_status",
+            serde_json::json!({}),
+            now.saturating_add(5000),
+        )
+    })
+    .await;
+    serde_json::to_value(status).map_err(|_| "quit_unavailable".into())
+}
+
+async fn read_collector_status<F>(
+    owner: CollectorOwner,
+    local_ready: bool,
+    query: impl FnOnce() -> F,
+) -> CollectorStatus
+where
+    F: std::future::Future<Output = Result<serde_json::Value, String>>,
+{
+    // Quit review mounts before initial store preparation. Portable Activity state
+    // does not exist yet; a status read must neither initialize it nor panic.
+    let status = if matches!(owner, CollectorOwner::PortableLocal) && !local_ready {
+        None
+    } else {
+        query().await.ok()
+    };
     let tracking = status
         .as_ref()
         .and_then(|value| value.get("tracking"))
@@ -150,10 +170,67 @@ pub async fn collector_status(app: &tauri::AppHandle) -> Result<serde_json::Valu
         .as_ref()
         .and_then(|value| value.get("consent"))
         .and_then(serde_json::Value::as_bool);
-    serde_json::to_value(CollectorStatus {
+    CollectorStatus {
         owner,
         tracking,
         consent,
-    })
-    .map_err(|_| "quit_unavailable".into())
+    }
+}
+
+#[cfg(test)]
+mod collector_status_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn portable_before_engine_preparation_keeps_unknown_status_without_querying() {
+        let result = tauri::async_runtime::block_on(read_collector_status(
+            CollectorOwner::PortableLocal,
+            false,
+            || async { panic!("Unmanaged local collector must never be queried") },
+        ));
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({
+                "owner": "portableLocal", "tracking": null, "consent": null
+            })
+        );
+    }
+
+    #[test]
+    fn prepared_portable_and_remote_agent_read_actual_collection_status() {
+        for (owner, ready, name) in [
+            (CollectorOwner::PortableLocal, true, "portableLocal"),
+            (CollectorOwner::InstalledAgent, false, "installedAgent"),
+        ] {
+            let queried = std::cell::Cell::new(false);
+            let result =
+                tauri::async_runtime::block_on(read_collector_status(owner, ready, || async {
+                    queried.set(true);
+                    Ok(json!({"tracking": false, "consent": true}))
+                }));
+            assert!(queried.get());
+            assert_eq!(
+                serde_json::to_value(result).unwrap(),
+                json!({
+                    "owner": name, "tracking": false, "consent": true
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn failed_agent_query_remains_remote_with_unknown_status() {
+        let result = tauri::async_runtime::block_on(read_collector_status(
+            CollectorOwner::InstalledAgent,
+            false,
+            || async { Err("knowledge_agent_unavailable".into()) },
+        ));
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({
+                "owner": "installedAgent", "tracking": null, "consent": null
+            })
+        );
+    }
 }
