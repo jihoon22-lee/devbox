@@ -3,7 +3,8 @@ import {
   projectConnectionDiagnostics,
   projectHandoffDiagnostics,
 } from "./agent-runtime-diagnostics.mjs";
-import { installedFixtureCommand } from "./windows-suite-native-protocol.mjs";
+import { installedFixtureCommand, prepareHistoricalNativeStore } from "./windows-suite-native-protocol.mjs";
+import { createUiDriver } from "./suite-user-flow-driver.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
@@ -261,6 +262,32 @@ try {
   }
   if (mode !== "committed") {
     for (const member of manifest.members) {
+      if (evidence.source === "1c97b41ee10ca0df7c062338bfe85659af025a89") {
+        const initial = value(
+          await call(
+            center,
+            "plugin:suite|connection",
+            {
+              method: { kind: "readHealthStatus", product: member.product },
+            },
+            "recovery",
+          ),
+        );
+        const item = apps[member.product];
+        const receipt = await prepareHistoricalNativeStore(
+          evidence.source,
+          member.product,
+          initial.nativeStoreReady,
+          createUiDriver({
+            cdp: item.cdp,
+            evidenceRoot: "product-foundation-evidence",
+            closeOwnedWindow: async () => {
+              throw new Error("Historical preparation cannot close products");
+            },
+          }),
+        );
+        if (receipt) (evidence.historicalPreparation ??= []).push(receipt);
+      }
       const readyDeadline = Date.now() + 30000;
       let ready = false;
       while (Date.now() < readyDeadline) {
