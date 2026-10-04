@@ -45,6 +45,7 @@ export default function TerminalLogBridge({
           if (disposed) return;
           const request = terminalLogRequest(value, latest.current.description.context);
           if (request) latest.current.onOpen(request);
+          setIssue("");
         } while (again && !disposed);
       } catch {
         if (!disposed) setIssue("터미널의 로그 요청을 확인하지 못했습니다.");
