@@ -69,7 +69,9 @@ export function nativeWindowAction(
   if (height !== undefined) args.push("-Height", String(height));
   const result = spawnSync("powershell.exe", args, { encoding: "utf8", timeout: 20000 });
   assert.equal(result.status, 0, `Owned ${action} UI Automation failed: ${(result.stderr ?? "").slice(0, 600)}`);
-  return action === "Inspect" ? JSON.parse(result.stdout.replace(/^\uFEFF/, "")) : undefined;
+  return ["Inspect", "InspectFilePicker"].includes(action)
+    ? JSON.parse(result.stdout.replace(/^\uFEFF/, ""))
+    : undefined;
 }
 
 export function ownedProductCohort(identity) {

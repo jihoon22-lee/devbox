@@ -4,7 +4,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ExpectedExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedStartTimeUtc,
   [Parameter(Mandatory=$true)][string]$FixtureRoot,
-  [Parameter(Mandatory=$true)][ValidateSet('Invoke','Close','Inspect','ChooseFile','SaveFile','Resize','Minimize','Activate','ZoomIn','ZoomReset')][string]$Action,
+  [Parameter(Mandatory=$true)][ValidateSet('Invoke','Close','Inspect','InspectFilePicker','ChooseFile','SaveFile','Resize','Minimize','Activate','ZoomIn','ZoomReset')][string]$Action,
   [string]$ControlName,
   [string]$ControlId,
   [string]$FilePath,
@@ -179,6 +179,30 @@ public static class DevboxInstallerAutomation {
     if(!EnumWindows(callback,IntPtr.Zero)) throw new InvalidOperationException("Owned native window enumeration failed");
     return new NativeInventory {count=count,windows=owned.ToArray()};
   }
+  [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+  [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern IntPtr SendMessageTimeoutW(IntPtr window,uint message,UIntPtr wparam,IntPtr lparam,uint flags,uint timeout,out UIntPtr result);
+  public static bool IsPickerControl(int dialogHandle,int controlHandle,uint processId,string expectedClass) {
+    IntPtr dialog=new IntPtr(dialogHandle),control=new IntPtr(controlHandle);
+    uint dialogProcess,controlProcess;
+    GetWindowThreadProcessId(dialog,out dialogProcess); GetWindowThreadProcessId(control,out controlProcess);
+    var name=new StringBuilder(128); GetClassName(control,name,name.Capacity);
+    return dialogHandle!=0 && controlHandle!=0 && dialogProcess==processId && controlProcess==processId && IsChild(dialog,control) && IsWindowVisible(control) && name.ToString()==expectedClass;
+  }
+  public static void SetPickerFilename(int dialog,int edit,uint processId,string value) {
+    if(!IsPickerControl(dialog,edit,processId,"Edit") || !IsWindowEnabled(new IntPtr(edit))) throw new InvalidOperationException("Owned filename editor changed");
+    IntPtr text=Marshal.StringToHGlobalUni(value);
+    try {
+      UIntPtr result;
+      if(SendMessageTimeoutW(new IntPtr(edit),0x000C,UIntPtr.Zero,text,0x23,1500,out result)==IntPtr.Zero || result==UIntPtr.Zero) throw new InvalidOperationException("Owned filename input unavailable");
+    } finally { Marshal.FreeHGlobal(text); }
+  }
+  public static bool ClickPickerButton(int dialog,int button,uint processId) {
+    if(!IsPickerControl(dialog,button,processId,"Button") || GetDlgCtrlID(new IntPtr(button))!=1 || !IsWindowEnabled(new IntPtr(button))) throw new InvalidOperationException("Owned picker confirmation changed");
+    UIntPtr result;
+    // Timeout never cancels a message already handled: observe closure, never retry.
+    return SendMessageTimeoutW(new IntPtr(button),0x00F5,UIntPtr.Zero,IntPtr.Zero,0x03,1500,out result)!=IntPtr.Zero;
+  }
   [MethodImpl(MethodImplOptions.NoInlining)]
   public static void Initialize() {
     ClientSettings.RegisterClientSideProviders(new ClientSideProviderDescription[0]);
@@ -266,6 +290,51 @@ if($Action -eq 'Inspect' -and $windows.Count -ne 1) {
   @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata});controls=$diagnosticControls} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
+function Get-OwnedPickerControls($dialog) {
+  $hostCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'FileNameControlHost')
+  $hosts=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$hostCondition)
+  $editClass=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ClassNameProperty,'Edit')
+  $edit=$null
+  $fields=@()
+  if($hosts.Count -eq 1) {
+    $fields=@($hosts.Item(0))
+    $edits=@($hosts.Item(0).FindAll([System.Windows.Automation.TreeScope]::Descendants,$editClass))
+    if($hosts.Item(0).Current.ClassName -eq 'Edit'){$edits=@($hosts.Item(0))}
+  } elseif($hosts.Count -eq 0) {
+    # Classic chooser exposes both ComboBox and nested Edit as 1148: require
+    # exactly one native Edit, rather than selecting the first matching parent.
+    $id=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
+    $match=[System.Windows.Automation.AndCondition]::new($id,$editClass)
+    $fields=@($dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$match))
+    $edits=$fields
+  } else {$fields=@($hosts);$edits=@()}
+  if($edits.Count -eq 1){$edit=$edits[0]}
+  $buttonClass=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ClassNameProperty,'Button')
+  $buttonId=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1')
+  $buttons=@($dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.AndCondition]::new($buttonClass,$buttonId)))
+  $button=$null
+  if($buttons.Count -eq 1){$button=$buttons[0]}
+  @{fieldCount=$fields.Count;editCount=$edits.Count;confirmCount=$buttons.Count;edit=$edit;button=$button}
+}
+if($Action -eq 'InspectFilePicker') {
+  $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
+  $observation=@{pickerCount=$dialogs.Count;fieldCount=0;editCount=0;confirmCount=0;filenameReady=$false;confirmationReady=$false}
+  if($dialogs.Count -eq 1) {
+    $dialog=$dialogs[0]
+    $controls=Get-OwnedPickerControls $dialog
+    foreach($key in @('fieldCount','editCount','confirmCount')){$observation[$key]=$controls[$key]}
+    if($null -ne $controls.edit){
+      $observation.filenameReady=$controls.edit.Current.IsEnabled -and -not $controls.edit.Current.IsOffscreen -and [DevboxInstallerAutomation]::IsPickerControl($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,'Edit')
+    }
+    if($null -ne $controls.button){
+      # A blank filename may disable confirmation. Check availability before
+      # input, then require enabled state immediately before the single click.
+      $observation.confirmationReady=[DevboxInstallerAutomation]::IsPickerControl($dialog.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId,'Button')
+    }
+  }
+  $observation | ConvertTo-Json -Compress
+  exit 0
+}
 if($Action -in @('ChooseFile','SaveFile')) {
   if($Action -eq 'SaveFile') {
     $parent=(Resolve-Path -LiteralPath (Split-Path -Parent $FilePath)).Path
@@ -279,27 +348,21 @@ if($Action -in @('ChooseFile','SaveFile')) {
   $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
   if($dialogs.Count -ne 1){throw 'Expected one owned native file picker'}
   $dialog=$dialogs[0]
-  $fileNameCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'FileNameControlHost')
-  $fields=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$fileNameCondition)
-  if($fields.Count -eq 0) {
-    $fileNameCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
-    $fields=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$fileNameCondition)
-  }
-  if($fields.Count -ne 1){throw 'Owned file name field unavailable'}
-  $field=$fields.Item(0)
-  if(-not $field.Current.IsEnabled -or $field.Current.IsOffscreen){throw 'File name field unavailable'}
-  $value=$null
-  if(-not $field.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$value)) {
-    $editCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)
-    $edits=$field.FindAll([System.Windows.Automation.TreeScope]::Descendants,$editCondition)
-    if($edits.Count -ne 1){throw 'Unique file name editor unavailable'}
-    $value=$edits.Item(0).GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-  }
-  $value.SetValue($file)
-  $openCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1')
-  $buttons=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$openCondition)
-  if($buttons.Count -ne 1 -or -not $buttons.Item(0).Current.IsEnabled){throw 'Unique file picker confirmation unavailable'}
-  $buttons.Item(0).GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  $controls=Get-OwnedPickerControls $dialog
+  if($controls.fieldCount -ne 1 -or $controls.editCount -ne 1 -or $null -eq $controls.edit){throw 'Owned file name field unavailable'}
+  if($controls.confirmCount -ne 1 -or $null -eq $controls.button){throw 'Unique file picker confirmation unavailable'}
+  [DevboxInstallerAutomation]::SetPickerFilename($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)
+  $dialogHandle=$dialog.Current.NativeWindowHandle
+  $acknowledged=[DevboxInstallerAutomation]::ClickPickerButton($dialog.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId)
+  $deadline=[DateTime]::UtcNow.AddSeconds(10)
+  do {
+    $nativeAfter=[DevboxInstallerAutomation]::ObserveNativeWindows($TargetProcessId)
+    if($nativeAfter.count -gt 32){throw 'Native picker inventory exceeded bound'}
+    $stillOpen=@($nativeAfter.windows | Where-Object {$_.nativeHandle -eq $dialogHandle}).Count -gt 0
+    if(-not $stillOpen){break}
+    Start-Sleep -Milliseconds 100
+  } while([DateTime]::UtcNow -lt $deadline)
+  if($stillOpen){throw 'Owned file picker did not close after single confirmation'}
   exit 0
 }
 if($Action -eq 'Invoke' -and $windows.Count -gt 1 -and $ControlId -match '^[0-9]{1,8}$') {
