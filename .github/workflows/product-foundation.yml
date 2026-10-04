@@ -40,6 +40,7 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
+      - '.github/scripts/suite-file-ipc-diagnostic*'
       - '.github/scripts/windows-suite-delivery*'
       - '.github/scripts/windows-agent-*'
       - '.github/scripts/build-suite-*'
@@ -105,6 +106,10 @@ on:
         description: Diagnose only native API workflow using verified bytes from a retained candidate assembly (not promotion evidence)
         type: boolean
         default: false
+      suite_diagnostic_cross_product:
+        description: Diagnose only cross-product workflows using verified retained candidate bytes (never promotion evidence)
+        type: boolean
+        default: false
       suite_diagnostic_installer_ui:
         description: Diagnose retained candidate installation and installed user journeys only (never promotion evidence)
         type: boolean
@@ -144,7 +149,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}-${{ inputs.suite_diagnostic_installer_ui && 'installer-ui' || inputs.suite_diagnostic_api_workflow && 'api-workflow' || 'default' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}-${{ inputs.suite_diagnostic_installer_ui && 'installer-ui' || inputs.suite_diagnostic_api_workflow && 'api-workflow' || inputs.suite_diagnostic_cross_product && 'cross-product' || 'default' }}
   cancel-in-progress: true
 
 jobs:
@@ -253,8 +258,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:SOURCE_RUN -notmatch '^\d+$') { throw 'Invalid suite source run' }
+          $modes = @('${{ inputs.suite_diagnostic_api_workflow }}', '${{ inputs.suite_diagnostic_cross_product }}', '${{ inputs.suite_diagnostic_installer_ui }}') | Where-Object { $_ -eq 'true' }
+          if (@($modes).Count -gt 1) { throw 'Select at most one retained candidate diagnostic mode' }
           $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
-          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true') {
+          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true' -or '${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') {
             if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/windows-package-candidate.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY -or $record.head_sha -notmatch '^[a-f0-9]{40}$') { throw 'Unexpected candidate source workflow' }
             $jobs = gh api --paginate "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Assemble and verify unpublished candidate" and .conclusion == "success") | .head_sha'
             if ($LASTEXITCODE -ne 0 -or @($jobs).Count -ne 1 -or $jobs -ne $record.head_sha) { throw 'Original candidate assembly did not succeed at the recorded head' }
@@ -264,9 +271,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Retained candidate bytes failed source/hash verification' }
             "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
             "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
-            "DEVBOX_API_DIAGNOSTIC_STYLES=1" >> $env:GITHUB_ENV
+            if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true') { "DEVBOX_API_DIAGNOSTIC_STYLES=1" >> $env:GITHUB_ENV }
             New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
-            @{ schemaVersion = 1; purpose = 'native-api-workflow-diagnostic-only'; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; promotionEvidence = $false } | ConvertTo-Json | Set-Content product-foundation-evidence/api-diagnostic-source.json -Encoding utf8
+            $purpose = if ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-only' } else { 'native-api-workflow-diagnostic-only' }
+            $receipt = if ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-source.json' } else { 'api-diagnostic-source.json' }
+            @{ schemaVersion = 1; purpose = $purpose; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content "product-foundation-evidence/$receipt" -Encoding utf8
             exit 0
           }
           if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected suite source workflow' }
@@ -289,7 +298,7 @@ jobs:
         run: |
           if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true') {
             node .github/scripts/windows-api-workflow.mjs
-          } elseif ('${{ inputs.suite_full_workflow }}' -eq 'true') {
+          } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or '${{ inputs.suite_full_workflow }}' -eq 'true') {
             node .github/scripts/windows-suite-workflows.mjs
           } else {
             node .github/scripts/windows-suite-workflows.mjs --remaining
@@ -299,7 +308,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.suite_diagnostic_api_workflow && format('native-api-workflow-diagnostic-{0}', github.run_id) || format('suite-remaining-{0}', github.run_id) }}
+          name: ${{ inputs.suite_diagnostic_api_workflow && format('native-api-workflow-diagnostic-{0}', github.run_id) || inputs.suite_diagnostic_cross_product && format('native-cross-product-diagnostic-{0}', github.run_id) || format('suite-remaining-{0}', github.run_id) }}
           path: product-foundation-evidence
           retention-days: 7
           if-no-files-found: error
@@ -329,7 +338,7 @@ jobs:
           SOURCE_RUN: ${{ inputs.suite_diagnostic_run }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true' -or $env:SOURCE_RUN -notmatch '^\d+$') { throw 'Select exactly one valid retained candidate diagnostic mode' }
+          if ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true' -or '${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or $env:SOURCE_RUN -notmatch '^\d+$') { throw 'Select exactly one valid retained candidate diagnostic mode' }
           $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/windows-package-candidate.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY -or $record.head_sha -notmatch '^[a-f0-9]{40}$') { throw 'Unexpected retained candidate workflow' }
           $jobs = gh api --paginate "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Assemble and verify unpublished candidate" and .conclusion == "success") | .head_sha'

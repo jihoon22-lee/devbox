@@ -370,3 +370,21 @@ API 저장 충돌은 실제 지역화된 오류를 확인하고 OAuth·native �
 생성한 worktree의 등록 검토는 개요로 연결하고, 프로젝트 미선택 상태에는 개요 이동 버튼을
 제공한다. 준비 실패·재시도는 계속 표시한다. 이 변경 전 main CI는 중단했고, 수정한 source의
 필수 CI와 새 후보를 사용한다. 실제 로컬 화면·Windows 수용 결과는 해당 보정 PR에 기록한다.
+
+#623은 `046e0d27`로 머지했고 exact-main CI `37217839287`은 통과했다.
+후보 `37218692587`은 7개 자산 조립·native API/Knowledge/product-shells·격리 WSL2/Docker와
+최초 설치/활성화를 통과했으나 Knowledge 검색 파일을 Workspace 편집기로 전달하는
+cross-product 수용에서 실패했다. 이 후보는 승격하지 않는다. 제한된 IPC 상태·응답 형상·
+맥락 일치 여부를 관찰하는 재사용 진단으로 실패 경계를 확인하며, 진단은 기존 후보 bytes와
+runner source를 구분하고 `diagnosticOnly=true`, `promotionEvidence=false`를 기록한다.
+
+같은 실행에서 확인된 별도 제품 결함은 portable Knowledge의 초기 저장소 준비 전에 종료
+보호가 Activity 상태를 조회하여 미등록 Tauri state에 접근하는 panic이다. 미준비 local
+collector는 owner를 보존한 미확인 상태를 반환하고 실제 준비 뒤나 installed Agent 조회는
+유지하도록 수정했다. 초기 조회·준비 완료·remote owner 회귀를 로컬에서 확인했다.
+
+후보 빌드 지연도 실제 cache 로그로 확인했다. 두 shard가 같은 exact cache를 복원하여
+추가 dependency 산출물을 저장하지 못하므로 shard별 cache namespace를 사용한다. 새
+namespace가 아직 없을 때만 기존 cache를 읽기 전용으로 복원하며 공유 cache는 삭제하지
+않는다. 이 변경의 성능 효과는 다음 후보 실행에서 측정한다. 설치 후 전체 여정 및 새로운
+제품 source의 최종 수용 결과는 보정 PR 본문과 Actions artifact에 기록한다.

@@ -171,8 +171,18 @@ assert 'GITHUB_SHA=' not in suite_diagnostic and '$env:GITHUB_SHA =' not in suit
 assert "suite-workflow-fixture-$env:SOURCE_RUN" in suite_diagnostic
 assert "windows-suite-workflows.mjs --remaining" in suite_diagnostic
 
+# Cross-product diagnostics use the same verified assembly, a distinct selection,
+# and an explicit unpromotable receipt; ordinary retained fixture mode remains.
+assert "suite_diagnostic_cross_product:" in workflow
+assert "if (@($modes).Count -gt 1)" in suite_diagnostic
+assert "cross-product-diagnostic-source.json" in suite_diagnostic
+assert "diagnosticOnly = $true" in suite_diagnostic
+assert "native-cross-product-diagnostic-" in suite_diagnostic
+assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or '${{ inputs.suite_full_workflow }}' -eq 'true'" in suite_diagnostic
+
 installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
 assert "suite_diagnostic_installer_ui:" in workflow
+assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or $env:SOURCE_RUN" in installer_diagnostic
 assert "!inputs.suite_diagnostic_installer_ui" in suite_diagnostic
 assert "DEVBOX_API_DIAGNOSTIC_STYLES=1" in suite_diagnostic
 assert "candidate-assembly-$env:SOURCE_RUN" in installer_diagnostic
