@@ -73,6 +73,9 @@
   멈췄다. 실제 Chromium에서 driver Enter가 keypress 없이 기본 버튼 실행을 누락하는 현상을 재현하고,
   keyDown의 native text·physical code를 보정했다. Enter/Space 기본 실행, shortcut 문자 미삽입,
   한글 조합 Enter 보호를 실제 CDP 입력으로 확인했다. 제품 상태를 입력 대신 변경하지 않는다.
+  진단 `37180653079`는 Launcher 키보드·모달·한글 조합을 통과하고 실제 배율 변경에서 멈췄다.
+  네 main 창이 Tauri 기본값인 zoom hotkeys 비활성을 사용해 설정을 명시적으로 켰으며,
+  config 회귀는 RED→GREEN을 확인했다. 새 제품 bytes의 Windows 확대 수용은 아직 미실행이다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
