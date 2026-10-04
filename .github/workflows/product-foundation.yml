@@ -40,7 +40,6 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
-      - '.github/scripts/suite-file-ipc-diagnostic*'
       - '.github/scripts/windows-suite-delivery*'
       - '.github/scripts/windows-agent-*'
       - '.github/scripts/build-suite-*'

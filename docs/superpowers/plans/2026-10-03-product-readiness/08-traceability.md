@@ -374,9 +374,12 @@ API 저장 충돌은 실제 지역화된 오류를 확인하고 OAuth·native �
 #623은 `046e0d27`로 머지했고 exact-main CI `37217839287`은 통과했다.
 후보 `37218692587`은 7개 자산 조립·native API/Knowledge/product-shells·격리 WSL2/Docker와
 최초 설치/활성화를 통과했으나 Knowledge 검색 파일을 Workspace 편집기로 전달하는
-cross-product 수용에서 실패했다. 이 후보는 승격하지 않는다. 제한된 IPC 상태·응답 형상·
-맥락 일치 여부를 관찰하는 재사용 진단으로 실패 경계를 확인하며, 진단은 기존 후보 bytes와
-runner source를 구분하고 `diagnosticOnly=true`, `promotionEvidence=false`를 기록한다.
+cross-product 수용에서 실패했다. 이 후보는 승격하지 않는다. 재사용 진단은 기존 후보
+bytes와 runner source를 구분하고 `diagnosticOnly=true`, `promotionEvidence=false`를
+기록한다. 진단 `37225141266`에서는 동일 bytes로 cross-product 17개 검사를 통과했지만
+최초 실패 원인은 미확정이다. 추가 IPC 관찰자는 Tauri의 읽기 전용 invoke 속성에 연결되지
+않았으므로 실제 상세 응답을 수집하지 못했다. 효과 없는 관찰 코드는 제거하며 이 실행을
+제품 수정이나 새 source의 출시 수용 근거로 사용하지 않는다.
 
 같은 실행에서 확인된 별도 제품 결함은 portable Knowledge의 초기 저장소 준비 전에 종료
 보호가 Activity 상태를 조회하여 미등록 Tauri state에 접근하는 panic이다. 미준비 local

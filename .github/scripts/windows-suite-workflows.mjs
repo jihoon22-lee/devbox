@@ -1,6 +1,5 @@
 // Four actual product executables on one disposable hosted Windows VM. Reuses
 // the completed product build; no local fixture, Docker or legacy executable.
-import { installFileIpcDiagnostic } from "./suite-file-ipc-diagnostic.mjs";
 import { requireHostedNetworkFixture } from "./fixture-network-safety.mjs";
 import { freePort, connect, waitForRenderer } from "./workspace-cdp-fixture.mjs";
 import {
@@ -56,19 +55,6 @@ const stage = (value) => {
   console.log(`Suite workflow: ${value}`);
 };
 const live = [];
-let fileDiagnosticOwner;
-async function captureFileIpcDiagnostic() {
-  if (fileDiagnosticOwner) {
-    try {
-      evidence.fileIpcDiagnostic = await fileDiagnosticOwner.cdp.evaluate(
-        "(()=>{const diagnostic=window.__devboxFileIpcDiagnostic;if(!diagnostic)return [];try{return diagnostic.records;}finally{diagnostic.restore();}})()",
-      );
-    } catch {
-      evidence.fileIpcDiagnosticUnavailable = true;
-    }
-  }
-  fileDiagnosticOwner = null;
-}
 const digest = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 // WinForms SendKeys uses a literal space; {SPACE} is not a supported keyword.
 function chord(keys) {
@@ -439,8 +425,7 @@ try {
       text: file.text,
     });
     stage("indexed-file-to-editor");
-    await workspace.cdp.evaluate(`(${installFileIpcDiagnostic.toString()})(${catalog.catalogRevision})`);
-    fileDiagnosticOwner = workspace;
+    evidence.fileIpcDiagnostic = { collected: false, reason: "native-invoke-readonly" };
     await domain(knowledge, "knowledge.search-settings", "add_root", {
       path: projects[0].directory,
       indexContent: true,
@@ -475,8 +460,6 @@ try {
         "({alerts:[...document.querySelectorAll('[role=alert]')].map(node=>node.textContent),text:document.querySelector('.workspace-feature-files')?.textContent?.slice(0,4000)})",
       );
       throw error;
-    } finally {
-      await captureFileIpcDiagnostic();
     }
     const afterFile = (
       await workspace.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')")
@@ -788,7 +771,6 @@ try {
   evidence.failure = String(error).slice(0, 3000);
   process.exitCode = 1;
 } finally {
-  await captureFileIpcDiagnostic();
   evidence.cleanup = [];
   for (const item of live.reverse()) {
     item.cdp?.close();
