@@ -58,9 +58,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     await cdp.command("DOM.scrollIntoViewIfNeeded", params);
     const { model } = await cdp.command("DOM.getBoxModel", params);
     const q = model.border;
-    const x = (q[0] + q[2] + q[4] + q[6]) / 4;
-    const y = (q[1] + q[3] + q[5] + q[7]) / 4;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("Control layout unavailable");
+    if (q.length !== 8 || !q.every(Number.isFinite)) throw new Error("Control layout unavailable");
     // Box quads and Input use viewport CSS pixels. DOM hit testing uses page
     // CSS pixels, including the root scroll offset after scrollIntoView.
     const { cssLayoutViewport } = await cdp.command("Page.getLayoutMetrics");
@@ -71,7 +69,16 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     const height = cssLayoutViewport.clientHeight;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
       throw new Error("Page viewport unavailable");
-    if (x < 0 || y < 0 || x >= width || y >= height) throw new Error("Control center outside viewport");
+    const left = Math.max(0, Math.min(q[0], q[2], q[4], q[6]));
+    const right = Math.min(width, Math.max(q[0], q[2], q[4], q[6]));
+    const top = Math.max(0, Math.min(q[1], q[3], q[5], q[7]));
+    const bottom = Math.min(height, Math.max(q[1], q[3], q[5], q[7]));
+    if (right <= left || bottom <= top) throw new Error("Control center outside viewport");
+    // Large editors can extend past the viewport after scrolling. Only use
+    // their visible intersection; the ownership hit test below still rejects
+    // ancestor clipping, overlays and points outside a transformed quad.
+    const x = (left + right) / 2;
+    const y = (top + bottom) / 2;
     const hit = await cdp.command("DOM.getNodeForLocation", {
       x: Math.round(x + pageX),
       y: Math.round(y + pageY),
@@ -184,6 +191,33 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     async typeText(text) {
       if (typeof text !== "string") throw new Error("Text input required");
       await cdp.command("Input.insertText", { text });
+    },
+    async clickWithDialog(target, accept) {
+      if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");
+      if (typeof cdp.onEvent !== "function") throw new Error("Dialog opening observation required");
+      let handled = false,
+        timer,
+        unsubscribe;
+      const decision = new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Expected confirmation dialog did not open")), 10000);
+        unsubscribe = cdp.onEvent("Page.javascriptDialogOpening", ({ type }) => {
+          if (handled) return;
+          handled = true;
+          if (type !== "confirm") {
+            reject(new Error("Expected confirmation dialog type"));
+            return;
+          }
+          cdp.command("Page.handleJavaScriptDialog", { accept }).then(resolve, reject);
+        });
+      });
+      try {
+        // WebView can withhold mouseReleased acknowledgement until the caller's
+        // explicit decision resolves the synchronous renderer confirmation.
+        await Promise.all([click(target), decision]);
+      } finally {
+        clearTimeout(timer);
+        unsubscribe?.();
+      }
     },
     async confirmDialog(accept) {
       if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");

@@ -3,6 +3,20 @@ import test from "node:test";
 import * as document from "./windows-knowledge-document-recovery.mjs";
 import * as search from "./windows-knowledge-search-lifecycle.mjs";
 import * as activity from "./windows-knowledge-activity.mjs";
+test("search removal uses native normalized path as its exact accessible name", async () => {
+  const stored = "D:/fixture/knowledge-search-watch-owned";
+  assert.deepEqual(
+    await search.searchRootRemovalTarget([{ path: stored }], "D:\\fixture\\knowledge-search-watch-owned"),
+    {
+      role: "button",
+      name: `${stored} 루트 제거`,
+    },
+  );
+  await assert.rejects(
+    search.searchRootRemovalTarget([{ path: stored }], "D:\\fixture\\unowned"),
+    /Owned search root missing/,
+  );
+});
 test("activity navigation observes readiness before one settings input", async () => {
   const events = [];
   let release;

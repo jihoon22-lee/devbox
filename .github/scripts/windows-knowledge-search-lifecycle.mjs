@@ -7,6 +7,12 @@ export async function navigateSearch({ knowledgeFixture, ui }, target) {
   await knowledgeFixture.navigate("search");
   await ui.waitForTarget(target);
 }
+export async function searchRootRemovalTarget(roots, value) {
+  // Native roots use normalized forward slashes, also after renderer reopen.
+  const root = roots.find((row) => path.win32.resolve(row.path) === path.win32.resolve(value));
+  assert.ok(root, "Owned search root missing before removal");
+  return { role: "button", name: `${root.path} 루트 제거` };
+}
 export async function run(context) {
   return scenarios(context, [
     [

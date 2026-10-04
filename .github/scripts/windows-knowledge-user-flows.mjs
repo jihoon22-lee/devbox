@@ -28,7 +28,11 @@ import { packagedIdentity, writeUserFlowResults, fileDigest } from "./suite-user
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { createOwnedActivityWindow } from "./windows-owned-activity-window.mjs";
 import { run as documents, scenarioIds as documentIds } from "./windows-knowledge-document-recovery.mjs";
-import { run as search, scenarioIds as searchIds } from "./windows-knowledge-search-lifecycle.mjs";
+import {
+  run as search,
+  scenarioIds as searchIds,
+  searchRootRemovalTarget,
+} from "./windows-knowledge-search-lifecycle.mjs";
 import { run as activity, scenarioIds as activityIds, navigateKnowledgeRoute } from "./windows-knowledge-activity.mjs";
 export async function createInstalledKnowledgeContext() {
   assert.equal(process.platform, "win32");
@@ -269,7 +273,9 @@ export async function createInstalledKnowledgeContext() {
     },
     regexEnabled: () => current.cdp.evaluate("document.querySelector('.regex-toggle input')?.checked===true"),
     async removeRootViaUi(value) {
-      await ui.click({ role: "button", name: `${value} 루트 제거` });
+      const target = await searchRootRemovalTarget(await this.roots(), value);
+      await ui.waitForTarget(target);
+      await ui.click(target);
       await wait(
         async () => !(await this.roots()).some((r) => path.resolve(r.path) === path.resolve(value)),
         "root removal acknowledged",

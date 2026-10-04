@@ -112,10 +112,13 @@ export async function run(context) {
     b = await grant("b".repeat(32), "fixture-client-B", tokenB);
   const store = (grants) => JSON.stringify({ schema: "devbox.api-playground.mcp-oauth-grants", version: 1, grants });
   const selectGrant = async (id) => {
-    const index = await context.cdp.evaluate(
-      `Array.from(document.querySelector('[aria-label="OAuth grant"]').options).findIndex(option=>option.value===${JSON.stringify(id)})`,
-    );
-    assert.ok(index >= 0);
+    let index = -1;
+    await until(async () => {
+      index = await context.cdp.evaluate(
+        `Array.from(document.querySelector('[aria-label="OAuth grant"]')?.options ?? []).findIndex(option=>option.value===${JSON.stringify(id)})`,
+      );
+      return index >= 0;
+    }, "Requested OAuth grant option was not ready");
     await select(context, "OAuth grant", index);
   };
   const connect = async () => {

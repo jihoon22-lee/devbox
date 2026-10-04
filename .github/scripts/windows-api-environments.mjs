@@ -51,11 +51,9 @@ export async function run(context) {
       stored = (await context.document("environments")).value;
       assert.equal(stored.environments[0].variables[0].value, sealed);
       record("Actual duplicate rename rejects persistence, then valid rename preserves the exact sealed blob");
-      await context.ui.click(button("환경 변수 var1 삭제"));
-      await context.ui.confirmDialog(false);
+      await context.ui.clickWithDialog(button("환경 변수 var1 삭제"), false);
       assert.deepEqual((await context.document("environments")).value, stored);
-      await context.ui.click(button("환경 변수 var1 삭제"));
-      await context.ui.confirmDialog(true);
+      await context.ui.clickWithDialog(button("환경 변수 var1 삭제"), true);
       await until(
         async () => (await context.document("environments")).value.environments[0].variables.length === 1,
         "Confirmed deletion was not saved",

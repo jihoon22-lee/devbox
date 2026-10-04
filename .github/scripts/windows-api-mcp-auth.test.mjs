@@ -47,4 +47,51 @@ test("Protocols lazy route becomes accessible before the MCP tab is clicked", as
     await rm(scratch, { recursive: true, force: true });
   }
 });
+test("OAuth refresh waits for the requested grant option before one selection", async () => {
+  const scratch = await mkdtemp(path.join(tmpdir(), "devbox-suite-delivery-"));
+  const root = path.join(scratch, "Suite UI Fixture");
+  await mkdir(root);
+  const events = [];
+  let ready = false;
+  let reads = 0;
+  try {
+    const result = await runner.run({
+      root,
+      fixtureRoot: root,
+      installationKey: "a".repeat(64),
+      namespace: path.join(scratch, `com.devbox.v08.apistudio.i${"a".repeat(64)}`),
+      sourceSha: "b".repeat(40),
+      fixtureSha: "b".repeat(40),
+      artifactDigests: Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`fixture${index}`, "c".repeat(64)])),
+      cdp: { evaluate: async () => (++reads === 1 ? -1 : 0) },
+      nativeCall: async () => "synthetic-ciphertext",
+      ui: {
+        press: async () => {},
+        confirmDialog: async () => {},
+        closeOwnedWindow: async () => {},
+        click: async (target) => {
+          events.push(target.name);
+          if (target.name === "OAuth grant") {
+            assert.equal(reads, 2);
+            throw new Error("fixture stop at one grant selection");
+          }
+          if (target.name === "MCP") assert.equal(ready, true, "MCP is absent while Protocols lazy route loads");
+        },
+        waitForTarget: async (target) => {
+          assert.equal(target.name, "MCP");
+          events.push("ready");
+          ready = true;
+        },
+        fill: async () => {
+          return;
+        },
+        screenshot: async () => "/owned/failure.png",
+      },
+    });
+    assert.equal(result[0].status, "FAIL");
+    assert.deepEqual(events, ["프로토콜", "ready", "MCP", "OAuth grant 새로 고침", "OAuth grant"]);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
 scenarioModuleContract(runner, ["AUTH-01", "AUTH-02"], "windows-api-mcp-auth.mjs");

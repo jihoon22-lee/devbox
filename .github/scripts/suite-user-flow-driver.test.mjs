@@ -60,6 +60,33 @@ test("offscreen control center fails before page hit testing or pointer input", 
     false,
   );
 });
+test("a tall visible editor receives one click inside its viewport intersection", async () => {
+  const cdp = transport();
+  const command = cdp.command;
+  cdp.command = async (method, params) =>
+    method === "DOM.getBoxModel"
+      ? { model: { border: [240, 323, 690, 323, 690, 1800, 240, 1800] } }
+      : command(method, params);
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await ui.click({ role: "button", name: "Continue" });
+  const clicks = cdp.calls.filter((call) => call.method === "Input.dispatchMouseEvent");
+  assert.equal(clicks.length, 2);
+  assert.ok(clicks.every((call) => call.params.y >= 323 && call.params.y < 720));
+});
+test("a viewport intersection covered by a clipped ancestor never receives input", async () => {
+  const cdp = transport([control], { hit: 44, contained: false });
+  const command = cdp.command;
+  cdp.command = async (method, params) =>
+    method === "DOM.getBoxModel"
+      ? { model: { border: [240, 323, 690, 323, 690, 1800, 240, 1800] } }
+      : command(method, params);
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.click({ role: "button", name: "Continue" }), /covered by another element/);
+  assert.equal(
+    cdp.calls.some((call) => call.method.startsWith("Input.")),
+    false,
+  );
+});
 test("click sends real pointer input and never evaluates a mutation", async () => {
   const cdp = transport();
   const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
@@ -246,4 +273,45 @@ test("native Enter and Space carry character text while shortcuts carry physical
   assert.equal(events[6].text, undefined);
   assert.equal(events[8].code, "Tab");
   assert.equal(events[8].text, undefined);
+});
+
+test("explicit dialog decision handles opening before the mouse release acknowledgement", async () => {
+  const cdp = transport();
+  let opening, acknowledge;
+  cdp.onEvent = (method, callback) => {
+    assert.equal(method, "Page.javascriptDialogOpening");
+    opening = callback;
+    return () => {};
+  };
+  const command = cdp.command.bind(cdp);
+  cdp.command = async (method, params) => {
+    if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") {
+      await command(method, params);
+      return new Promise((resolve) => {
+        acknowledge = resolve;
+        opening({ type: "confirm" });
+        opening({ type: "confirm" });
+      });
+    }
+    if (method === "Page.handleJavaScriptDialog") {
+      assert.equal(params.accept, false);
+      acknowledge();
+    }
+    return command(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await ui.clickWithDialog({ role: "button", name: "Continue" }, false);
+  assert.equal(cdp.calls.filter(({ method }) => method === "Page.handleJavaScriptDialog").length, 1);
+  assert.equal(
+    cdp.calls.filter(({ method, params }) => method === "Input.dispatchMouseEvent" && params.type === "mouseReleased")
+      .length,
+    1,
+  );
+});
+
+test("dialog click requires explicit Boolean intent before input", async () => {
+  const cdp = transport();
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.clickWithDialog({ role: "button", name: "Continue" }, undefined), /Explicit dialog/);
+  assert.equal(cdp.calls.length, 0);
 });

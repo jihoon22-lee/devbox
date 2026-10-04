@@ -51,6 +51,24 @@ export function createWorkspaceUiFixture({
     for (let option = 0; option < index; option++) await driver.press("ArrowDown");
     await driver.press("Enter");
   }
+  async function createRuntimeJob(name, command) {
+    await ui.click({ role: "button", name: "작업 및 서비스" });
+    await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
+    await ui.click({ role: "button", name: "+ 새 작업" });
+    await ui.fill({ role: "textbox", name: "작업 이름" }, name);
+    await ui.fill({ role: "textbox", name: "실행 명령" }, command);
+    await ui.fill({ role: "textbox", name: "작업 디렉터리" }, fixtureRoot);
+    await ui.click({ role: "button", name: "작업 저장" });
+    let job;
+    await wait(async () => {
+      job = (await read("workspace.runtime", "list_jobs")).find((item) => item.name === name);
+      return !!job;
+    }, "owned disabled job definition saved");
+    assert.equal(job.enabled, false);
+    // Persistence can precede refreshJobs and closeEditor in the real UI.
+    await ui.waitForTarget({ role: "button", name: "지금 실행", scope: { role: "article", name } });
+    return job;
+  }
   return {
     context,
     observeInput: (fileName) => observeWorkspaceInput({ ui, cdp, fileName, windowOwner }),
@@ -67,19 +85,7 @@ export function createWorkspaceUiFixture({
     async performanceTask() {
       const name = "owned performance task",
         started = performance.now();
-      await ui.click({ role: "button", name: "작업 및 서비스" });
-      await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
-      await ui.click({ role: "button", name: "+ 새 작업" });
-      await ui.fill({ role: "textbox", name: "작업 이름" }, name);
-      await ui.fill({ role: "textbox", name: "실행 명령" }, `"${process.execPath}" -e "process.exit(0)"`);
-      await ui.fill({ role: "textbox", name: "작업 디렉터리" }, fixtureRoot);
-      await ui.click({ role: "button", name: "작업 저장" });
-      let job;
-      await wait(async () => {
-        job = (await read("workspace.runtime", "list_jobs")).find((item) => item.name === name);
-        return !!job;
-      }, "disabled representative task saved");
-      assert.equal(job.enabled, false);
+      const job = await createRuntimeJob(name, `"${process.execPath}" -e "process.exit(0)"`);
       await ui.click({ role: "button", name: "지금 실행", scope: { role: "article", name } });
       await wait(async () => {
         const runs = await read("workspace.runtime", "list_runs", {
@@ -216,17 +222,7 @@ export function createWorkspaceUiFixture({
         script,
         `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'launch\\n');setInterval(()=>{},1000);`,
       );
-      await ui.click({ role: "button", name: "작업 및 서비스" });
-      await ui.click({ role: "button", name: "+ 새 작업" });
-      await ui.fill({ role: "textbox", name: "작업 이름" }, name);
-      await ui.fill({ role: "textbox", name: "실행 명령" }, `"${process.execPath}" "${script}"`);
-      await ui.fill({ role: "textbox", name: "작업 디렉터리" }, fixtureRoot);
-      await ui.click({ role: "button", name: "작업 저장" });
-      await wait(
-        async () => (await read("workspace.runtime", "list_jobs")).some((job) => job.name === name),
-        "owned job definition saved",
-      );
-      const job = (await read("workspace.runtime", "list_jobs")).find((item) => item.name === name);
+      const job = await createRuntimeJob(name, `"${process.execPath}" "${script}"`);
       const scope = { role: "article", name };
       const pending = () =>
         cdp.evaluate(
