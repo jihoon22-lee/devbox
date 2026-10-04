@@ -48,8 +48,8 @@ async function pending(context) {
   assert.equal(response.operation.outcome.state, "succeeded");
   return response.value;
 }
-async function review(context) {
-  await expectText(context, "다른 제품의 열기 요청");
+export async function review(context) {
+  await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
 }
 export async function selectSource(workspace) {

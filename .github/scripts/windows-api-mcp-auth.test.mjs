@@ -2,9 +2,31 @@ import * as runner from "./windows-api-mcp-auth.mjs";
 import { scenarioModuleContract } from "./windows-api-user-flow-contract.test-support.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
+test("OAuth fixture reseeding restarts the native owner before any grant refresh", async () => {
+  const scratch = await mkdtemp(path.join(tmpdir(), "devbox-oauth-cache-"));
+  const file = path.join(scratch, "mcp-grants.json");
+  const events = [];
+  let nativeCache = "old grants";
+  try {
+    await runner.reseedOAuthGrantFixture(
+      {
+        restart: async () => {
+          events.push("restart");
+          nativeCache = await readFile(file, "utf8");
+        },
+      },
+      file,
+      "fresh synthetic grants",
+    );
+    assert.equal(nativeCache, "fresh synthetic grants");
+    assert.deepEqual(events, ["restart"]);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
 test("Protocols lazy route becomes accessible before the MCP tab is clicked", async () => {
   const scratch = await mkdtemp(path.join(tmpdir(), "devbox-suite-delivery-"));
   const root = path.join(scratch, "Suite UI Fixture");

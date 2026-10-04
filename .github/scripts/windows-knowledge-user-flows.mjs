@@ -245,10 +245,7 @@ export async function createInstalledKnowledgeContext() {
       await launch();
     },
     async confirmDialog() {
-      await wait(async () => {
-        await current.cdp.command("Page.handleJavaScriptDialog", { accept: true });
-        return true;
-      }, "explicit native confirmation");
+      await ui.confirmAction(true);
     },
     async offlineAndReopen() {
       await finish(true);

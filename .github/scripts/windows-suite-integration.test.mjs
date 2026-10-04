@@ -29,3 +29,25 @@ test("editor context menu readiness precedes one transform selection", async () 
   });
   assert.deepEqual(events, ["keyDown", "keyUp", "ready", "select"]);
 });
+test("incoming review uses accessible region name rather than absent visible heading", async () => {
+  const events = [];
+  await runner.review({
+    cdp: {
+      evaluate: async () => {
+        throw new Error("aria-label is not visible body text");
+      },
+    },
+    ui: {
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "region", name: "다른 제품의 열기 요청" });
+        events.push("ready");
+      },
+      click: async (target) => {
+        assert.equal(target.name, "화면 열기");
+        assert.equal(target.scope.name, "다른 제품의 열기 요청");
+        events.push("click");
+      },
+    },
+  });
+  assert.deepEqual(events, ["ready", "click"]);
+});

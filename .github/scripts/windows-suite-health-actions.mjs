@@ -34,6 +34,9 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
       "four native health observations",
     );
     await center.ui.click({ role: "button", name: "상태 기록" });
+    // Recording acquires the same native journal lock as inventory. Observe
+    // completion of the one UI action before polling that read-only projection.
+    await center.ui.waitForTarget({ role: "button", name: "상태 기록" });
     await observeUntil(
       async () => (await center.delivery("restore_inventory")).installation.freshHealth,
       "fresh owner health recorded",

@@ -117,3 +117,27 @@ test("lost-reply job uses the same saved-card readiness before arming debugger o
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
+test("WSL combobox readiness precedes one keyboard option selection", async () => {
+  const events = [];
+  let ready = false;
+  const fixture = createWorkspaceUiFixture({
+    cdp: {},
+    fixtureRoot: "owned",
+    ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "WSL 배포판");
+        ready = true;
+        events.push("ready");
+      },
+      click: async () => {
+        assert.equal(ready, true);
+        events.push("click");
+      },
+      press: async (key) => {
+        events.push(key);
+      },
+    },
+  });
+  await fixture.selectOption({ role: "combobox", name: "WSL 배포판" }, 1);
+  assert.deepEqual(events, ["ready", "click", "Home", "ArrowDown", "Enter"]);
+});

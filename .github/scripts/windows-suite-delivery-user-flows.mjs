@@ -91,6 +91,7 @@ export async function run() {
     assert.deepEqual(await center.delivery("restore_inventory"), before);
     await review("현재 데이터 보존");
     await knowledge.ui.closeOwnedWindow();
+    await knowledge.ui.waitForTarget({ role: "button", name: "종료 취소" });
     await knowledge.ui.click({ role: "button", name: "종료 취소" });
     assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
     assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);

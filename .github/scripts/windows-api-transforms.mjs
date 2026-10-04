@@ -75,10 +75,10 @@ export async function run(context) {
         await context.ui.click(button("단계 1 JSON 포매터 제거"));
         const focused = await context.cdp.evaluate("document.activeElement?.getAttribute('aria-label')");
         assert.equal(focused, "단계 1 JSON 포매터 제거");
-        await context.ui.clickWithDialog(button("pipeline-7 파이프라인 삭제"), false);
+        await context.ui.clickWithConfirmation(button("pipeline-7 파이프라인 삭제"), false);
         assert.equal((await context.document("workflows")).value.pipelines.length, 20);
         assert.deepEqual((await context.document("workflows")).value.pipelines, stored.pipelines);
-        await context.ui.clickWithDialog(button("pipeline-7 파이프라인 삭제"), true);
+        await context.ui.clickWithConfirmation(button("pipeline-7 파이프라인 삭제"), true);
         await until(
           async () => (await context.document("workflows")).value.pipelines.length === 19,
           "Confirmed deletion not committed",

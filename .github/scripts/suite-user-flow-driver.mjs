@@ -50,6 +50,12 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     } while (performance.now() < deadline);
     throw new Error(`Timed out waiting for accessible ${target.role}: ${target.name}`);
   }
+  async function confirmAction(accept) {
+    if (typeof accept !== "boolean") throw new Error("Explicit confirmation decision required");
+    const target = { role: "button", name: accept ? "확인" : "취소", scope: { role: "dialog", name: "작업 확인" } };
+    await waitForTarget(target);
+    await click(target);
+  }
   async function click(target, beforePointer) {
     const node = await locate(target);
     if (node.properties?.some((p) => p.name === "disabled" && p.value?.value === true))
@@ -208,6 +214,12 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     async typeText(text) {
       if (typeof text !== "string") throw new Error("Text input required");
       await cdp.command("Input.insertText", { text });
+    },
+    confirmAction,
+    async clickWithConfirmation(target, accept) {
+      if (typeof accept !== "boolean") throw new Error("Explicit confirmation decision required");
+      await click(target);
+      await confirmAction(accept);
     },
     async clickWithDialog(target, accept) {
       if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");

@@ -45,6 +45,7 @@ export function createWorkspaceUiFixture({
     throw new Error(`Owned Workspace observation timed out: ${label}`);
   }
   async function selectOption(target, index, driver = ui) {
+    await driver.waitForTarget(target);
     await driver.click(target);
     await driver.press("Home");
     // Native select keyboard/typeahead, no renderer setter or synthetic DOM event.

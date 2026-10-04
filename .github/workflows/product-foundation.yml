@@ -564,7 +564,9 @@ jobs:
       - name: Check native product chooser driver
         if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         shell: powershell
-        run: .github/scripts/windows-native-file-dialog.test.ps1
+        run: |
+          .github/scripts/windows-native-file-dialog.test.ps1
+          .github/scripts/windows-user-flow-file-picker.test.ps1
       - uses: actions/download-artifact@v8
         with:
           name: workspace-wsl-${{ github.sha }}
