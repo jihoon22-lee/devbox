@@ -356,3 +356,28 @@ it("registers a plain WSL project once after its explicit distro selection", asy
   expect(call.mock.calls.filter(([, method]) => method === "apply_registration")).toHaveLength(1);
   expect(screen.queryByRole("heading", { name: "등록 확인" })).toBeNull();
 });
+
+it("names each worktree group so sibling selection remains unambiguous", async () => {
+  const worktrees = ["base", "task"].map((id) => ({
+    id,
+    projectId: "owned",
+    revision: 1,
+    binding: { root: `/owned/${id}`, target: { kind: "wsl", distroId: "fixture" } },
+    trustedDigest: null,
+  }));
+  call.mockImplementation(async (_component, method) =>
+    method === "status"
+      ? { phase: "selected" }
+      : method === "snapshot"
+        ? { revision: 1, projects: [{ id: "owned", name: "Owned" }], worktrees }
+        : {},
+  );
+  render(<RegistryGate />);
+  const base = await screen.findByRole("group", { name: "/owned/base" });
+  fireEvent.click(within(base).getByRole("button", { name: "프로젝트 선택" }));
+  await waitFor(() =>
+    expect(call).toHaveBeenCalledWith("workspace.registry", "select_project", {
+      context: { projectId: "owned", worktreeId: "base", revision: 1, target: worktrees[0].binding.target },
+    }),
+  );
+});
