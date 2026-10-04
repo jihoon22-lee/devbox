@@ -29,6 +29,7 @@ export async function run(context) {
     results.push(
       await scenario(context, "WEB-01", async (record) => {
         await context.ui.click(button("웹훅 및 모의 서버"));
+        await context.ui.waitForTarget({ role: "spinbutton", name: "포트" });
         await context.ui.fill({ role: "spinbutton", name: "포트" }, String(port));
         await context.ui.click(button("시작"));
         await expectText(context, `127.0.0.1:${port}`);

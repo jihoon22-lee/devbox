@@ -3,6 +3,51 @@ import test from "node:test";
 import * as document from "./windows-knowledge-document-recovery.mjs";
 import * as search from "./windows-knowledge-search-lifecycle.mjs";
 import * as activity from "./windows-knowledge-activity.mjs";
+test("activity navigation observes readiness before one settings input", async () => {
+  const events = [];
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const ui = {
+    click: async (target) => {
+      events.push(target.name);
+    },
+    waitForTarget: async (target) => {
+      assert.deepEqual(target, { role: "button", name: "설정" });
+      events.push("readonly readiness");
+      await pending;
+    },
+  };
+  const journey = (async () => {
+    await activity.navigateKnowledgeRoute(ui, "activity", "활동");
+    await ui.click({ role: "button", name: "설정" });
+  })();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["활동", "readonly readiness"]);
+  release();
+  await journey;
+  assert.deepEqual(events, ["활동", "readonly readiness", "설정"]);
+});
+
+test("other Knowledge navigation keeps one input without an added readiness target", async () => {
+  for (const route of ["notes", "search", "daily"]) {
+    const events = [];
+    await activity.navigateKnowledgeRoute(
+      {
+        click: async (target) => {
+          events.push(target);
+        },
+        waitForTarget: async () => {
+          assert.fail("Unexpected readiness wait");
+        },
+      },
+      route,
+      route,
+    );
+    assert.deepEqual(events, [{ role: "button", name: route }]);
+  }
+});
 for (const module of [document, search, activity])
   test(`${module.scenarioIds.join(",")} cannot fabricate Windows PASS without an owned fixture`, async () => {
     const results = await module.run({

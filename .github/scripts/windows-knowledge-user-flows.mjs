@@ -29,7 +29,7 @@ import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { createOwnedActivityWindow } from "./windows-owned-activity-window.mjs";
 import { run as documents, scenarioIds as documentIds } from "./windows-knowledge-document-recovery.mjs";
 import { run as search, scenarioIds as searchIds } from "./windows-knowledge-search-lifecycle.mjs";
-import { run as activity, scenarioIds as activityIds } from "./windows-knowledge-activity.mjs";
+import { run as activity, scenarioIds as activityIds, navigateKnowledgeRoute } from "./windows-knowledge-activity.mjs";
 export async function createInstalledKnowledgeContext() {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
@@ -177,7 +177,7 @@ export async function createInstalledKnowledgeContext() {
       const d = await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')");
       const feature = d.features?.find((f) => f.route === route);
       assert.ok(feature);
-      await ui.click({ role: "button", name: feature.label });
+      await navigateKnowledgeRoute(ui, route, feature.label);
     },
     async prepareNotes() {
       await wait(async () => {

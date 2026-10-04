@@ -126,6 +126,7 @@ export async function run(context) {
     return [
       await scenario(context, "GRPC-01", async (record) => {
         await context.ui.click(button("프로토콜"));
+        await context.ui.waitForTarget({ role: "tab", name: "gRPC" });
         await context.ui.click({ role: "tab", name: "gRPC" });
         await select(context, "gRPC 스키마 소스", 1);
         await context.ui.fill(textbox("gRPC 엔드포인트"), fixture.endpoint);

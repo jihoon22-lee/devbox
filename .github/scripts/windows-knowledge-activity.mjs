@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { scenarios } from "./windows-knowledge-flow-shared.mjs";
 export const scenarioIds = ["ACTIVITY-01", "ACTIVITY-02", "ACTIVITY-03"];
+export async function navigateKnowledgeRoute(ui, route, label) {
+  await ui.click({ role: "button", name: label });
+  // Shell navigation can finish while the first Activity lazy import is pending.
+  if (route === "activity") await ui.waitForTarget({ role: "button", name: "설정" });
+}
 export async function run(context) {
   return scenarios(context, [
     [
