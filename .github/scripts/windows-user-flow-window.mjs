@@ -30,7 +30,7 @@ export function captureWindowOwner(identity, fixtureRoot) {
 export function nativeWindowAction(
   owner,
   action,
-  { controlId, controlName, filePath, windowName, width, height } = {},
+  { controlId, controlName, filePath, windowName, auxiliaryWindow, width, height } = {},
 ) {
   const args = [
     "-NoProfile",
@@ -50,6 +50,7 @@ export function nativeWindowAction(
   ];
   if (owner.productWindow && ["Close", "Resize", "Minimize", "Activate", "Inspect"].includes(action))
     args.push("-ProductWindow", owner.productWindow);
+  if (auxiliaryWindow) args.push("-AuxiliaryWindow", auxiliaryWindow);
   if (controlId) args.push("-ControlId", controlId);
   if (controlName) args.push("-ControlName", controlName);
   if (filePath) args.push("-FilePath", filePath);

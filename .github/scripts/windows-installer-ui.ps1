@@ -1,4 +1,4 @@
-# Native UI actions are limited to an exact process in an owned disposable fixture.
+﻿# Native UI actions are limited to an exact process in an owned disposable fixture.
 param(
   [Parameter(Mandatory=$true)][int]$TargetProcessId,
   [Parameter(Mandatory=$true)][string]$ExpectedExecutable,
@@ -10,6 +10,7 @@ param(
   [string]$FilePath,
   [string]$WindowName,
   [ValidateSet('workspace','api-studio','knowledge','control-center')][string]$ProductWindow,
+  [ValidateSet('workspace-terminal')][string]$AuxiliaryWindow,
   [int]$Width,
   [int]$Height
 )
@@ -87,6 +88,7 @@ if($started -ne $ExpectedStartTimeUtc){throw 'Process start time mismatch'}
 if($ProductWindow -and -not [string]::Equals([IO.Path]::GetFileName($exe),('devbox-'+$ProductWindow+'.exe'),[StringComparison]::OrdinalIgnoreCase)){throw 'Product window executable mismatch'}
 $productLifecycle=$ProductWindow -and $Action -in @('Close','Resize','Minimize','Activate','Inspect')
 if($productLifecycle -and $WindowName){throw 'Product lifecycle requires all owned roots for modal review'}
+if($AuxiliaryWindow -and ($ProductWindow -cne 'workspace' -or $WindowName -or $Action -notin @('Close','Inspect'))){throw 'Invalid owned auxiliary window boundary'}
 $namespace=@{workspace='workspace';'api-studio'='apistudio';knowledge='knowledge';'control-center'='controlcenter'}
 $helperClass=if($ProductWindow){'^com\.devbox\.v08\.'+$namespace[$ProductWindow]+'\.i[a-f0-9]{64}-sic$'}else{''}
 
@@ -129,6 +131,12 @@ if($Action -in @('Close','Resize','Minimize','Activate','Inspect')) {
     if($nativeInventory.count -gt 32 -or $nativeCandidates.Count -ne $windows.Count -or
       @($nativeCandidates | Where-Object {$_.nativeHandle -notin $selectedHandles}).Count -ne 0 -or
       ($windows.Count -eq 1 -and ($windows[0].Current.ClassName -cne 'Tauri Window' -or $nativeCandidates[0].className -cne 'Tauri Window'))){$windows=@()}
+    if($AuxiliaryWindow) {
+      # Review the complete eligible root set before selecting the known auxiliary.
+      $main=@($windows | Where-Object {$_.Current.ClassName -ceq 'Tauri Window' -and $_.Current.Name -ceq 'Devbox Workspace'})
+      $terminal=@($windows | Where-Object {$_.Current.ClassName -ceq 'Tauri Window' -and $_.Current.Name -ceq 'Devbox Workspace · 터미널'})
+      if($windows.Count -eq 2 -and $main.Count -eq 1 -and $terminal.Count -eq 1){$windows=$terminal}else{$windows=@()}
+    }
   }
 }
 if($Action -eq 'Inspect' -and $windows.Count -ne 1) {

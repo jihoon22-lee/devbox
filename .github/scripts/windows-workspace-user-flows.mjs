@@ -144,11 +144,10 @@ export async function runWorkspaceUserFlows() {
     async terminalUi(id) {
       const transport = await connect(port, child, performance.now() + 30_000, id);
       const windowOwner = captureWindowOwner(owner, root);
-      const windowName = "Devbox Workspace · 터미널";
       const driver = createUiDriver({
         cdp: transport,
         evidenceRoot: "product-foundation-evidence/user-flows/screenshots/workspace",
-        closeOwnedWindow: () => nativeWindowAction(windowOwner, "Close", { windowName }),
+        closeOwnedWindow: () => nativeWindowAction(windowOwner, "Close", { auxiliaryWindow: "workspace-terminal" }),
       });
       return { ui: driver, cdp: transport, close: () => transport.close() };
     },
