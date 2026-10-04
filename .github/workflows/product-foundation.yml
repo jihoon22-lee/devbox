@@ -249,7 +249,9 @@ jobs:
     if: ${{ !inputs.suite_diagnostic_apps_only && (github.event_name == 'workflow_dispatch' && (inputs.suite_diagnostic_run != '' || inputs.suite_diagnostic_knowledge) && !inputs.suite_diagnostic_installer_ui) }}
     name: Suite workflow with retained executables
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -286,7 +288,7 @@ jobs:
             New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
             $purpose = if ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') { 'knowledge-components-diagnostic-only' } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-only' } else { 'native-api-workflow-diagnostic-only' }
             $receipt = if ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') { 'knowledge-components-diagnostic-source.json' } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-source.json' } else { 'api-diagnostic-source.json' }
-            @{ schemaVersion = 1; purpose = $purpose; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content "product-foundation-evidence/$receipt" -Encoding utf8
+            @{ schemaVersion = 1; purpose = $purpose; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; sequenceReplay = ('${{ inputs.suite_full_workflow }}' -eq 'true' -and '${{ inputs.suite_diagnostic_knowledge }}' -eq 'true'); diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content "product-foundation-evidence/$receipt" -Encoding utf8
             exit 0
           }
           if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected suite source workflow' }
@@ -304,11 +306,49 @@ jobs:
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/THIRD_PARTY_NOTICES.md" -Destination THIRD_PARTY_NOTICES.md -ErrorAction Stop
           "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
           "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+      - uses: actions/download-artifact@v8
+        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.suite_diagnostic_run }}
+          name: candidate-private-windows-lsp-${{ inputs.suite_diagnostic_run }}
+          path: target/debug
+      - uses: actions/download-artifact@v8
+        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.suite_diagnostic_run }}
+          name: candidate-private-wsl-lsp-${{ inputs.suite_diagnostic_run }}
+          path: target/native-lsp-fixture
+      - uses: actions/checkout@v7
+        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        with:
+          ref: 3a23f49c85aa3c3d04b86f227e8aa184ef964085
+          path: baseline-source
+          persist-credentials: false
+      - name: Preserve the original sequence performance prerequisites
+        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        shell: pwsh
+        run: .github/scripts/windows-product-performance.ps1 -Apps @('workbench','devbox-manager','run-manager','wsl-desktop')
+      - name: Prepare owned WSL1 filesystem for the original product sequence
+        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Provision Git and private LSP for the original product sequence
+        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        shell: pwsh
+        run: |
+          .github/scripts/windows-workspace-wsl-git.ps1
+          "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
       - name: Finish the selected Suite acceptance scope
         shell: pwsh
         run: |
           if ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') {
-            node .github/scripts/windows-product-foundation.mjs --knowledge-diagnostic
+            if ('${{ inputs.suite_full_workflow }}' -eq 'true') {
+              node .github/scripts/windows-product-foundation.mjs --product-sequence-diagnostic
+            } else {
+              node .github/scripts/windows-product-foundation.mjs --knowledge-diagnostic
+            }
           } elseif ('${{ inputs.suite_diagnostic_api_workflow }}' -eq 'true') {
             node .github/scripts/windows-api-workflow.mjs
           } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or '${{ inputs.suite_full_workflow }}' -eq 'true') {
@@ -317,6 +357,10 @@ jobs:
             node .github/scripts/windows-suite-workflows.mjs --remaining
           }
           exit $LASTEXITCODE
+      - name: Remove only the owned sequence WSL1 fixture
+        if: ${{ always() && inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
       - name: Preserve remaining suite evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

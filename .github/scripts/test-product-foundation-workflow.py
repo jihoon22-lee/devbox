@@ -195,6 +195,18 @@ for job in ("workspace-wsl-helper", "windows", "baseline-performance"):
     condition = next(line for line in section.splitlines() if line.strip().startswith("if:"))
     assert "!inputs.suite_diagnostic_knowledge" in condition, "Knowledge diagnosis must not rebuild unrelated products"
 
+# The sequence replay preserves the preceding Workspace/API workloads and their
+# exact private LSP inputs; it remains a retained-byte diagnostic, never a build.
+sequence = suite_diagnostic.split("      - name: Finish the selected Suite acceptance scope", 1)[0]
+assert "windows-product-foundation.mjs --product-sequence-diagnostic" in suite_diagnostic
+assert "candidate-private-windows-lsp-${{ inputs.suite_diagnostic_run }}" in sequence
+assert "candidate-private-wsl-lsp-${{ inputs.suite_diagnostic_run }}" in sequence
+assert "windows-knowledge-wsl.ps1" in sequence
+assert "windows-workspace-wsl-git.ps1" in sequence
+assert "windows-product-performance.ps1 -Apps" in sequence
+assert "sequenceReplay =" in suite_diagnostic
+assert "always() && inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow" in suite_diagnostic
+
 installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
 assert "suite_diagnostic_installer_ui:" in workflow
 assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or $env:SOURCE_RUN" in installer_diagnostic

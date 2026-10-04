@@ -1,4 +1,4 @@
-import { knowledgeStepObserver, foundationMode } from "./product-foundation-observation.mjs";
+import { knowledgeStepObserver, foundationMode, cleanupObservation } from "./product-foundation-observation.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
@@ -43,14 +43,20 @@ const mode = foundationMode(process.argv.slice(2), process.env);
 const { smokeOnly } = mode;
 const elevated = windowsProcessIsElevated();
 const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products.filter(
-  (product) => !mode.diagnostic || product.id === "knowledge",
+  (product) => !mode.knowledgeOnly || product.id === "knowledge",
 );
 const root = mkdtempSync(path.join(tmpdir(), "devbox-product-fixture-"));
 const evidence = {
   ...mode.evidence,
   environment: "github-hosted-windows",
   fixtureVersion: 1,
-  scope: mode.diagnostic ? "knowledge-native-diagnostic" : smokeOnly ? "fresh-portable-startup" : "full-product-native",
+  scope: mode.diagnostic
+    ? mode.knowledgeOnly
+      ? "knowledge-native-diagnostic"
+      : "product-sequence-diagnostic"
+    : smokeOnly
+      ? "fresh-portable-startup"
+      : "full-product-native",
   products: [],
   result: "failed",
 };
@@ -831,6 +837,8 @@ async function start(product, suffix) {
         JSON.stringify({ ...mode.evidence, product: product.id, suffix, componentProbe }, null, 2),
       );
     return {
+      product: product.id,
+      suffix,
       child,
       cdp,
       policy,
@@ -841,7 +849,7 @@ async function start(product, suffix) {
       performanceProbe,
     };
   } catch (error) {
-    stop({ child, cdp, policy, network });
+    stop({ product: product.id, suffix, child, cdp, policy, network });
     throw error;
   }
 }
@@ -849,9 +857,30 @@ async function start(product, suffix) {
 function stop(instance) {
   instance?.network?.close();
   instance?.cdp?.close();
+  let termination;
   if (instance?.child?.pid && instance.child.exitCode === null) {
     // Kill only the process tree created by this fixture.
-    spawnSync("taskkill.exe", ["/PID", String(instance.child.pid), "/T", "/F"], { stdio: "ignore" });
+    termination = spawnSync("taskkill.exe", ["/PID", String(instance.child.pid), "/T", "/F"], { stdio: "ignore" });
+  }
+  if (mode.diagnostic && instance?.child?.pid) {
+    try {
+      writeFileSync(
+        `product-foundation-evidence/cleanup-${instance.product}-${instance.suffix}.json`,
+        JSON.stringify(
+          {
+            ...mode.evidence,
+            product: instance.product,
+            suffix: instance.suffix,
+            rootPid: instance.child.pid,
+            ...cleanupObservation(termination, () => process.kill(instance.child.pid, 0)),
+          },
+          null,
+          2,
+        ),
+      );
+    } catch {
+      /* Diagnostic collection must not alter the existing cleanup outcome. */
+    }
   }
   if (instance?.policy) restoreElevatedCdpPolicy(instance.policy);
 }

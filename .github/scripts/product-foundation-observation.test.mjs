@@ -76,3 +76,47 @@ test("Knowledge batch observes all fourteen IPC calls with unchanged native dead
   assert.equal(window.__devboxKnowledgeProbe.steps.length, 14);
   assert.equal(window.__devboxKnowledgeProbe.steps.at(-1).step, "set_root");
 });
+
+test("full sequence diagnostic preserves product selection and cannot combine modes", () => {
+  const env = { GITHUB_SHA: "b".repeat(40), DEVBOX_SUITE_ARTIFACT_SOURCE: "a".repeat(40) };
+  const mode = foundationMode(["--product-sequence-diagnostic"], env);
+  assert.equal(mode.diagnostic, true);
+  assert.equal(mode.knowledgeOnly, false);
+  assert.equal(mode.evidence.diagnosticOnly, true);
+  assert.equal(mode.evidence.promotionEvidence, false);
+  assert.equal(foundationMode(["--knowledge-diagnostic"], env).knowledgeOnly, true);
+  assert.throws(() => foundationMode(["--product-sequence-diagnostic", "--knowledge-diagnostic"], env));
+  assert.throws(() => foundationMode(["--product-sequence-diagnostic"], {}));
+});
+
+test("cleanup projection records exit evidence without exposing process error text", async () => {
+  const { cleanupObservation } = await import("./product-foundation-observation.mjs");
+  const result = {
+    status: 1,
+    signal: "SIGTERM",
+    error: { code: "ENOENT", message: "private command", path: "private path" },
+  };
+  const observed = cleanupObservation(result, () => {
+    throw Object.assign(new Error("private"), { code: "ESRCH" });
+  });
+  assert.deepEqual(observed, {
+    taskkillAttempted: true,
+    status: 1,
+    signal: "SIGTERM",
+    error: "ENOENT",
+    rootPidExists: false,
+  });
+  assert.equal(cleanupObservation(undefined, () => {}).rootPidExists, true);
+  assert.equal(
+    cleanupObservation(undefined, () => {
+      throw { code: "EPERM" };
+    }).rootPidExists,
+    true,
+  );
+  assert.equal(
+    cleanupObservation(undefined, () => {
+      throw new Error("unknown");
+    }).rootPidExists,
+    null,
+  );
+});
