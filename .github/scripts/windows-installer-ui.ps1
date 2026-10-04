@@ -18,6 +18,21 @@ $OutputEncoding=[Console]::OutputEncoding
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+# The .NET Framework proxy loader inspects its caller's reflected type. A
+# PowerShell dynamic call can have no reflected type and leave classic Win32
+# controls as Pane without InvokePattern. Enter through a non-inlined typed
+# frame before the first UIA query so the framework loads its standard proxies.
+Add-Type -ReferencedAssemblies UIAutomationClient,UIAutomationTypes -TypeDefinition @"
+using System.Runtime.CompilerServices;
+using System.Windows.Automation;
+public static class DevboxInstallerAutomation {
+  [MethodImpl(MethodImplOptions.NoInlining)]
+  public static void Initialize() {
+    ClientSettings.RegisterClientSideProviders(new ClientSideProviderDescription[0]);
+  }
+}
+"@
+[DevboxInstallerAutomation]::Initialize()
 $root=(Resolve-Path -LiteralPath $FixtureRoot).Path.TrimEnd('\')+'\'
 $exe=(Resolve-Path -LiteralPath $ExpectedExecutable).Path
 if(-not $exe.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){throw 'Executable outside fixture'}

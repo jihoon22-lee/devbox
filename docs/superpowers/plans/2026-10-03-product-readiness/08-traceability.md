@@ -18,6 +18,14 @@
   이는 browser 레이아웃 근거이고 수정된 Windows 설치본 수용 완료를 뜻하지 않는다.
 - Installer: 같은 Actions step 안에서 새 `GITHUB_ENV` 값을 읽어 WSL fixture 소유권 검사에
   실패했다. 생산자와 소비자 step을 분리했다. 이 실패 이전에는 40개 설치 UI 여정이 실행되지 않았다.
+- 설치 UI 진단 `37134283547`·`37134661732`에서는 Welcome 창의 활성 `다음 >` 컨트롤(id 1)을
+  관찰했지만 UI Automation이 Button 클래스를 Pane(50033)·Invoke 미지원으로 읽었다. 숫자 식별자
+  비교만으로는 해결되지 않았다. .NET Framework 기본 proxy 초기화가 PowerShell 동적 호출에서
+  `NullReferenceException`을 일으킴을 별도 재현했고, typed C# 진입점으로 기본 provider를 초기화한다.
+  Windows의 별도 raw Win32 Button fixture에서 기존 Pane/Invoke 미지원 재현과 수정 후 Button(50000)
+  인식·실제 Invoke·소유 marker·정상 종료를 확인했다. 등록 전 실패가 owner receipt 오류에 가려지지
+  않도록 원래 오류·단계·소유 창 구조를 보존한다. 설치 완료 근거는 후속 실제 여정에서 확인하며
+  초기화 및 fixture 성공만으로 설치 PASS를 기록하지 않는다.
 - 보관 후보를 재사용한 진단은 runner와 payload source를 구분하고 별도 diagnostic artifact에만
   기록한다. 최종 exact-main 후보의 설치/UI 수용과 승격 근거를 대체하지 않는다.
 
