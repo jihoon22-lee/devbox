@@ -437,3 +437,28 @@ nonzero 종료 조건은 유지한다. 정리 오류가 primitive/frozen 원래 
 설치 실패 검사 14개가 통과했다. 보정 batch의 로컬 영향 검사는 Knowledge 102.3초,
 추가 Workspace/Control Center 97.5초로 각각 통과했으며 후자는 최대 메모리 2.34GB였다.
 카탈로그 검사에서 Source readiness 기대값 누락을 수정한 뒤 실패·미실행 범위만 통과시켰다.
+
+
+재사용 진단 `37229111338`은 설치·활성화·Knowledge 8개 여정·HTTP 3개·OAuth·Webhook 2개·
+UI-01·PERF-01·제거/정리를 통과했다. Workspace와 API 및 후속 handoff/input은 실패했다.
+WORK-01 닫기 검토 창과 RUNTIME-01 중지 후 실행 버튼의 비동기 준비 관찰을 추가했다.
+API native picker는 창뿐 아니라 파일명·확인 control 준비도 실제 UIA로 관찰한 뒤 입력한다.
+앞선 Files 복구 저널과 열린 native picker가 후속 검사에 영향을 준 실패는 독립 결함으로
+중복 집계하지 않는다. RUNTIME-01은 pending 보존과 첫 실행 재조정을 통과하여 다음 명시
+실행 단계에 도달했고, ACTIVITY-02는 기록 새로 고침 후 통과했다.
+
+WORK-02의 빈 Agent 목록은 별도 제품 결함으로 확인했다. native 프로젝트 선택 후 registry
+조회가 먼저 실행되어 이전 description cache의 context로 요청했고, 모든 요청의 session
+권한 검사에서 거부됐다. 실제 nativePorts·description cache와 같은 context 검증을 사용하는
+회귀로 재현했다. 새 description을 반영한 뒤 registry를 조회하도록 순서를 수정했으며,
+권한 검사는 완화하지 않는다. 이 변경은 재사용 payload에 없으므로 새 후보가 필요하다.
+향후 첫 Agent 실패는 소유 로그의 최근 고정 schema 오류 코드만 제한해 함께 보존한다.
+
+Windows 소유 합성 파일 선택 창에서 fallback ID `1148`이 ComboBox와 내부 Edit에 중복되는
+검증기 결함을 확인했다. 실제 Edit 하나를 선택하고, UIA Invoke의 별도 오류를 피하도록
+기존 native 도구와 같은 소유 HWND 검증·시간 제한이 있는 WM_SETTEXT/BM_CLICK을 각각
+한 번만 사용한다. 입력 전에는 확인 버튼의 존재, 입력 후에는 활성 상태를 확인하며,
+시간 초과 후 mutation을 재시도하지 않는다. 수정한 실제 Save/Open은 선택 경로·파일
+바이트 대조까지 모두 통과했고 소유 임시 fixture는 제거했다. 제품 변경의 설치 수용 PASS로
+대체하지 않는다. 최종 Workspace delta는 119개 테스트·build/type/bundle PASS(69.3초,
+최대 1.73GB, swap 0), fixture 통합 25개 PASS, Biome 1914개 파일 PASS다.
