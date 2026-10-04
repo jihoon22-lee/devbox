@@ -14,6 +14,9 @@ import { completeInstalledHealth, closeAutomaticallyOpenedCenter } from "./windo
 import { prepareDistinctGeneration } from "./windows-suite-update-fixture.mjs";
 import { allWindowsProcesses } from "./windows-packaged-smoke.mjs";
 const editor = { role: "textbox", name: "Markdown 본문" };
+export async function assertKnowledgeDraft(context, expected) {
+  assert.equal(await context.knowledgeFixture.editorText(), expected);
+}
 export const scenarioIds = ["INSTALL-03", "DELIVERY-02"];
 async function exists(file) {
   try {
@@ -93,7 +96,7 @@ export async function run() {
     await knowledge.ui.closeOwnedWindow();
     await knowledge.ui.waitForTarget({ role: "button", name: "종료 취소" });
     await knowledge.ui.click({ role: "button", name: "종료 취소" });
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
     assert.ok(knowledge.child.exitCode === null, "Helper must not force a dirty product closed");
     screenshots.push(await knowledge.ui.screenshot("INSTALL-03-dirty-close-cancel"));
@@ -119,7 +122,7 @@ export async function run() {
     nativeWindowAction(captureWindowOwner(helper, path.dirname(knowledge.root)), "Invoke", { controlId: "2" });
     await reattachCenter();
     assert.deepEqual((await center.delivery("restore_inventory")).checkpoints, before.checkpoints);
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     // This exact public setup differs from the retained fixture generation,
     // so it enters the real update writer gate while the draft is still live.
     const candidate = JSON.parse(
@@ -132,7 +135,7 @@ export async function run() {
       knowledge.root,
     );
     assert.equal(await readFile(path.join(knowledge.root, "devbox-installation.json"), "utf8"), beforeUpdate);
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
     assert.equal(knowledge.child.exitCode, null);
     screenshots.push(await knowledge.ui.screenshot("INSTALL-03-update-cancel-preserved"));
@@ -212,7 +215,7 @@ export async function run() {
     knowledge = await createInstalledKnowledgeContext();
     await knowledge.knowledgeFixture.navigate("notes");
     await knowledge.knowledgeFixture.openNote(notes.a);
-    assert.equal(await knowledge.ui.text(editor), "설치 종료 취소 후 남아야 할 합성 초안\n");
+    await assertKnowledgeDraft(knowledge, "설치 종료 취소 후 남아야 할 합성 초안\n");
     screenshots.push(await knowledge.ui.screenshot("DELIVERY-02-reinstalled-user-data"));
     const withdrawn = JSON.parse(
       await readFile("product-foundation-evidence/user-flows/delivery-hooks/withdrawn-update.json", "utf8"),

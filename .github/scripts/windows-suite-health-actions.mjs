@@ -1,6 +1,11 @@
+import {
+  waitForOwnedHealthConnections,
+  ownedConnectionStatus,
+  projectHealthRows,
+} from "./windows-suite-health-readiness.mjs";
 // Complete the native health stage through the installed Control Center controls.
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInstalledProductContext, observeUntil } from "./windows-suite-ui-context.mjs";
 import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
@@ -22,17 +27,22 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
   const observationId = randomUUID();
   let center;
   let failure;
+  let stage = "openProducts";
   try {
     center = await createInstalledProductContext("control-center");
     live.push(center);
     await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
     for (const product of ["workspace", "api-studio", "knowledge"])
       live.push(await createInstalledProductContext(product));
+    stage = "nativeConnectionReadiness";
+    await waitForOwnedHealthConnections(live, observeUntil);
+    stage = "nativeHealthObservations";
     await center.ui.click({ role: "button", name: "네 제품 상태 확인" });
     await observeUntil(
       async () => (await center.body()).split("응답·저장소 선택 확인됨").length - 1 === 4,
       "four native health observations",
     );
+    stage = "recordedHealth";
     await center.ui.click({ role: "button", name: "상태 기록" });
     // Recording acquires the same native journal lock as inventory. Observe
     // completion of the one UI action before polling that read-only projection.
@@ -41,6 +51,7 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
       async () => (await center.delivery("restore_inventory")).installation.freshHealth,
       "fresh owner health recorded",
     );
+    stage = "reviewedCommit";
     const screenshot = await center.ui.screenshot(`health-${observationId}`);
     for (const item of live.slice(1).reverse()) await item.close();
     await center.ui.click({ role: "button", name: label });
@@ -73,6 +84,32 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
   } catch (error) {
     failure = error;
     if (center) {
+      try {
+        await center.ui.screenshot(`health-first-failure-${observationId}`);
+      } catch {
+        // A screenshot failure must never replace the original health failure.
+      }
+      try {
+        const rows = await center.cdp.evaluate(
+          `Array.from(document.querySelectorAll('[aria-label="제품 상태 확인"] tbody tr')).slice(0,4).map(row=>Array.from(row.cells).map(cell=>cell.textContent.trim()))`,
+        );
+        const connections = await Promise.all(
+          live.map(async (context) => {
+            try {
+              return await ownedConnectionStatus(context);
+            } catch {
+              return { observationUnavailable: true };
+            }
+          }),
+        );
+        await writeFile(
+          `product-foundation-evidence/health-first-failure-${observationId}.json`,
+          JSON.stringify({ stage, rows: projectHealthRows(rows), connections }, null, 2),
+          { flag: "wx" },
+        );
+      } catch {
+        // Bounded supplemental observations never replace the first failure.
+      }
       try {
         await preserveReviewedCommitFailure(center, error, observationId);
       } catch {

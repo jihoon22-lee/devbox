@@ -1,4 +1,7 @@
-import { selectRegisteredWorkspaceRoot } from "./windows-workspace-registry-observations.mjs";
+import {
+  selectRegisteredWorkspaceRoot,
+  waitForSelectedWorkspaceRoot,
+} from "./windows-workspace-registry-observations.mjs";
 import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
 // Owned packaged Workspace fixture. Renderer mutations always use UiDriver input.
 import assert from "node:assert/strict";
@@ -79,6 +82,12 @@ export async function loseRuntimeReply({
       await click?.catch(() => {});
     }
   }
+}
+
+export async function resumeRuntimeUi(fixture, ui) {
+  await fixture.selectWindows();
+  await ui.click({ role: "button", name: "작업 및 서비스" });
+  await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
 }
 
 export function createWorkspaceUiFixture({
@@ -191,11 +200,13 @@ export function createWorkspaceUiFixture({
       await ui.fill({ role: "textbox", name: "Windows 프로젝트 폴더" }, root);
       await ui.click({ role: "button", name: "프로젝트 등록" });
       await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, root);
-      await wait(async () => !!(await context())?.worktreeId, "selected native context");
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, root);
     },
     async trustSource() {
       await ui.click({ role: "button", name: "소스" });
+      await ui.waitForTarget({ role: "button", name: "Git 실행 검토" });
       await ui.click({ role: "button", name: "Git 실행 검토" });
+      await ui.waitForTarget({ role: "button", name: "검토한 Git 실행 승인" });
       await ui.click({ role: "button", name: "검토한 Git 실행 승인" });
       await this.waitForText({ role: "textbox", name: "커밋 메시지" });
     },
@@ -238,7 +249,7 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "WSL 프로젝트 등록" });
       const project = await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
       this.agentProjectName = project.name;
-      await wait(async () => (await context())?.target?.kind === "wsl", "WSL base selected");
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
       await this.trustSource();
     },
     async configureAgent() {
@@ -261,6 +272,11 @@ export function createWorkspaceUiFixture({
       await this.waitForText({ role: "alert", name: "" });
       return ui.text({ role: "alert", name: "" });
     },
+    async selectRoot(root) {
+      await ui.click({ role: "button", name: "개요" });
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, root);
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, root);
+    },
     async selectWindows() {
       assert.ok(this.windowsRoot);
       const selected = await context();
@@ -270,9 +286,7 @@ export function createWorkspaceUiFixture({
         )
       )
         return;
-      await ui.click({ role: "button", name: "개요" });
-      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, this.windowsRoot);
-      await wait(async () => (await context())?.target?.kind === "windows", "owned Windows root selected");
+      await this.selectRoot(this.windowsRoot);
     },
     async runtimeLostReply() {
       await this.selectWindows();
@@ -307,7 +321,7 @@ export function createWorkspaceUiFixture({
         });
       const runId = await loseReply("지금 실행");
       assert.equal(await readFile(counter, "utf8"), "launch\n");
-      await ui.click({ role: "button", name: "작업 및 서비스" });
+      await resumeRuntimeUi(this, ui);
       await wait(
         async () => (await cdp.evaluate("document.body.innerText")).includes("실행 요청의 완료 상태를 확인했습니다"),
         "completed request confirmation visible",
@@ -320,7 +334,7 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "지금 실행", scope });
       await wait(async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n", "second explicit owned run");
       const stopId = await loseReply("중지");
-      await ui.click({ role: "button", name: "작업 및 서비스" });
+      await resumeRuntimeUi(this, ui);
       const completedStop = await read("workspace.runtime", "runtime_control_status", { operationId: stopId });
       assert.ok(completedStop === null || completedStop.jobId === job.id);
       await wait(async () => (await pending()).length === 0, "lost stop result reconciled read-only");
@@ -400,8 +414,8 @@ export function createWorkspaceUiFixture({
     async terminalLifecycle() {
       assert.ok(agentRoot && this.agentProjectName);
       await ui.click({ role: "button", name: "개요" });
-      await ui.click({ role: "button", name: "프로젝트 선택", scope: { role: "region", name: this.agentProjectName } });
-      await wait(async () => (await context())?.target?.kind === "wsl", "owned WSL context selected");
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
+      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
       const counter = `${agentRoot}/terminal-count`,
         afterInterrupt = `${agentRoot}/ctrl-c-confirmed`;
       const wslRead = (file) => {

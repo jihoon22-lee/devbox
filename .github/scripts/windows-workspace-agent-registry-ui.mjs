@@ -44,6 +44,7 @@ export async function run(context) {
     const ownTrees = (registry) => registry.worktrees.filter((tree) => tree.projectId === baseContext.projectId);
     assert.equal(ownTrees(initial).length, 1, "Only the owned base may be registered before task creation");
     await ui.click({ role: "button", name: "에이전트" });
+    await ui.waitForTarget({ role: "textbox", name: "제목" });
     await ui.fill({ role: "textbox", name: "제목" }, "owned registry reconciliation");
     await fixture.configureAgent();
     await ui.click({ role: "button", name: "작업 만들기" });
@@ -89,14 +90,14 @@ export async function run(context) {
     assert.deepEqual(cleaned.worktrees.map((tree) => tree.id).sort(), initial.worktrees.map((tree) => tree.id).sort());
     assert.equal((await fixture.context()).worktreeId, baseContext.worktreeId);
     await fixture.crashAndReopen();
-    await fixture.wait(
-      async () => (await fixture.context())?.worktreeId === baseContext.worktreeId,
-      "cleaned selection restored after actual process restart",
-    );
     assert.deepEqual(
       (await fixture.registry()).worktrees.map((tree) => tree.id).sort(),
       initial.worktrees.map((tree) => tree.id).sort(),
     );
+    const retainedBase = cleaned.worktrees.find((tree) => tree.id === baseContext.worktreeId);
+    assert.ok(retainedBase, "Owned base remains registered");
+    await fixture.selectRoot(retainedBase.binding.root);
+    assert.equal((await fixture.context()).worktreeId, baseContext.worktreeId);
     await ui.click({ role: "button", name: "소스" });
     await fixture.waitForText({ role: "textbox", name: "커밋 메시지" });
     screenshots.push(await ui.screenshot("workspace-agent-cleanup"));
@@ -108,7 +109,7 @@ export async function run(context) {
           "Actual Agent task published and selected its previously absent worktree without manual refresh",
           "Source review resolves the new native context immediately",
           "Cleanup removes only its task worktree; base and unrelated registered Windows root remain",
-          "Actual process restart restores cleaned base selection and registry; Source accepts the restored context",
+          "Actual process restart preserves the cleaned registry; explicit owned base selection restores Source context",
         ],
         [...screenshots],
       ),

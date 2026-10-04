@@ -1,14 +1,20 @@
 ﻿param([Parameter(Mandatory=$true)][int]$AgentProcessId,[Parameter(Mandatory=$true)][string]$ExpectedExecutable,[Parameter(Mandatory=$true)][string]$ExpectedStartTimeUtc)
 $ErrorActionPreference='Stop'
+if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted'){throw 'Tray input requires the disposable hosted fixture'}
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
-Add-Type @'
+Add-Type -ReferencedAssemblies UIAutomationClient,UIAutomationTypes -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
+using System.Windows.Automation;
 public static class OwnedTrayInput {
+ [MethodImpl(MethodImplOptions.NoInlining)]
+ public static void Initialize() { ClientSettings.RegisterClientSideProviders(new ClientSideProviderDescription[0]); }
  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
  [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
 }
 '@
+[OwnedTrayInput]::Initialize()
 function AssertAgent {
  $p=[Diagnostics.Process]::GetProcessById($AgentProcessId)
  if($p.MainModule.FileName -ne $ExpectedExecutable -or $p.StartTime.ToUniversalTime().ToString('o') -ne $ExpectedStartTimeUtc){throw 'Owned Agent identity changed'}
@@ -30,12 +36,19 @@ AssertAgent
 $icons=FindNamed 'Devbox 백그라운드 서비스'
 if($icons.Count -eq 0){
  $overflow=@()
+ $observations=@()
  foreach($name in @('Hidden icon menu','Show hidden icons','숨겨진 아이콘 표시')) {
   foreach($control in (FindNamed $name)) {
+   $observations+=@{Name=$name;ControlType=$control.Current.ControlType.ProgrammaticName;AutomationId=$control.Current.AutomationId;ProcessId=$control.Current.ProcessId;Offscreen=$control.Current.IsOffscreen}
    if($control.Current.ControlType.Id -eq [System.Windows.Automation.ControlType]::Button.Id -and ([Diagnostics.Process]::GetProcessById($control.Current.ProcessId)).ProcessName -eq 'explorer'){$overflow+=,$control}
   }
  }
- if($overflow.Count -ne 1){throw 'Exact Explorer tray overflow button missing or ambiguous'}
+ if($overflow.Count -ne 1){
+  $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty,'Shell_TrayWnd')
+  $bars=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$condition)
+  $detail=@{ExplorerProcesses=@([Diagnostics.Process]::GetProcessesByName('explorer')).Count;Taskbars=$bars.Count;NamedControls=@($observations | Select-Object -First 16)} | ConvertTo-Json -Depth 4 -Compress
+  throw "Exact Explorer tray overflow button missing or ambiguous: $detail"
+ }
  ClickElement $overflow[0]
  Start-Sleep -Milliseconds 300
  $icons=FindNamed 'Devbox 백그라운드 서비스'

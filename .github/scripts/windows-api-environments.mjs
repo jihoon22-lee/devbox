@@ -4,6 +4,13 @@ import { requireApiContext, button, textbox, scenario, until, expectText } from 
 import { observeEnvironmentIme } from "./windows-api-input-observations.mjs";
 
 export const SCENARIO_IDS = Object.freeze(["ENV-01", "ENV-02"]);
+export async function waitEnvironmentEditorReady(context) {
+  await context.ui.waitForTarget(textbox("환경 이름"));
+  await until(
+    () => context.cdp.evaluate("document.querySelector('[aria-label=\"환경 이름\"]')?.disabled===false"),
+    "Restart did not recover native revision",
+  );
+}
 export async function run(context) {
   requireApiContext(context);
   const results = [];
@@ -108,10 +115,7 @@ export async function run(context) {
       );
       await context.restart();
       await context.ui.click(button("요청"));
-      await until(
-        async () => await context.cdp.evaluate("!document.querySelector('[aria-label=\"환경 이름\"]').disabled"),
-        "Restart did not recover native revision",
-      );
+      await waitEnvironmentEditorReady(context);
       assert.deepEqual((await context.document("environments")).value, stored.value);
       record(
         "Ordinary restart reloads committed native revision and recovers editable controls without force-writing stale drafts",

@@ -79,3 +79,41 @@ test("Agent business job waits lazy create and saved card readiness before retur
     ["ready", "지금 실행"],
   ]);
 });
+
+test("paused Agent receipt is read in its exact call frame without scheduling renderer execution", async () => {
+  const { readPausedAgentRequest } = await import("./windows-suite-agent-user-flows.mjs");
+  const calls = [];
+  const cdp = {
+    evaluate: async () => {
+      throw new Error("paused Runtime evaluation would deadlock");
+    },
+    command: async (method, args) => {
+      calls.push(method);
+      assert.equal(method, "Debugger.evaluateOnCallFrame");
+      assert.equal(args.callFrameId, "owned-frame");
+      assert.equal(args.returnByValue, true);
+      assert.ok(args.expression.includes("devbox-runtime-pending:installed-owner:run_job_now:owned-job"));
+      assert.ok(!args.expression.includes("Object.keys"));
+      return {
+        result: { value: [{ operationId: "aaaaaaaa-1111-2222-3333-444444444444", args: { id: "owned-job" } }] },
+      };
+    },
+  };
+  assert.deepEqual(await readPausedAgentRequest(cdp, "owned-frame", "owned-job", "installed-owner"), {
+    operationId: "aaaaaaaa-1111-2222-3333-444444444444",
+    args: { id: "owned-job" },
+  });
+  assert.deepEqual(calls, ["Debugger.evaluateOnCallFrame"]);
+  await assert.rejects(readPausedAgentRequest(cdp, null, "owned-job", "installed-owner"), /call frame/);
+  for (const response of [
+    { exceptionDetails: {} },
+    { result: { value: [] } },
+    { result: { value: [{}, {}] } },
+    { result: { value: [{}] } },
+    { result: { value: [{ operationId: "aaaaaaaa-1111-2222-3333-444444444444", args: { id: "foreign-job" } }] } },
+  ]) {
+    await assert.rejects(
+      readPausedAgentRequest({ command: async () => response }, "owned-frame", "owned-job", "installed-owner"),
+    );
+  }
+});

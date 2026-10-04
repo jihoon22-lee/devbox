@@ -44,3 +44,31 @@ test("restart waits for loaded environment name before one selection", async () 
   assert.equal(result[0].status, "FAIL");
   assert.deepEqual(events, ["restart", "ready", "select"]);
 });
+test("restarted environment editor observes its textbox before reading enabled state", async () => {
+  const events = [];
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const checking = runner.waitEnvironmentEditorReady({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "textbox", name: "환경 이름" });
+        events.push("readonly target");
+        await pending;
+      },
+    },
+    cdp: {
+      evaluate: async (expression) => {
+        events.push("enabled probe");
+        assert.match(expression, /\?\.disabled===false/);
+        return true;
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["readonly target"]);
+  release();
+  await checking;
+  assert.deepEqual(events, ["readonly target", "enabled probe"]);
+});

@@ -210,3 +210,52 @@ test("search navigation waits for readonly accessible field readiness before ret
   await navigation;
   assert.equal(completed, true);
 });
+test("recovery click waits for exact restored note readiness before returning", async () => {
+  const events = [];
+  let ready;
+  const pending = new Promise((resolve) => {
+    ready = resolve;
+  });
+  const opening = document.openKnowledgeRecoveryNote(
+    {
+      waitForTarget: async (target) => events.push(["target", target.name]),
+      click: async (target) => events.push(["click", target.name]),
+    },
+    {
+      waitNote: async (path, content) => {
+        events.push(["readonly exact note", path, content]);
+        await pending;
+      },
+    },
+    "Notes/synthetic-A.md",
+    "",
+  );
+  let settled = false;
+  opening.then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  assert.deepEqual(events, [
+    ["target", "Notes/synthetic-A.md 열어서 확인"],
+    ["click", "Notes/synthetic-A.md 열어서 확인"],
+    ["readonly exact note", "Notes/synthetic-A.md", ""],
+  ]);
+  ready();
+  await opening;
+  assert.equal(settled, true);
+});
+import { assertKnowledgeDraft } from "./windows-suite-delivery-user-flows.mjs";
+test("delivery draft assertions use exact rendered document bytes and reject real extra newlines", async () => {
+  const context = {
+    ui: {
+      text: () => {
+        throw new Error("AX serialization must not supply document bytes");
+      },
+    },
+    knowledgeFixture: { editorText: async () => "synthetic draft\n" },
+  };
+  await assertKnowledgeDraft(context, "synthetic draft\n");
+  context.knowledgeFixture.editorText = async () => "synthetic draft\n\n";
+  await assert.rejects(assertKnowledgeDraft(context, "synthetic draft\n"), assert.AssertionError);
+});

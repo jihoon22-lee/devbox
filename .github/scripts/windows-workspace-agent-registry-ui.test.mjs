@@ -37,3 +37,43 @@ test("nested Agent failure survives cleanup failure with first screenshot", asyn
   assert.equal(results[0].cleanupError.message, "agent cleanup failure");
   assert.deepEqual(results[0].screenshotPaths, ["/owned/agent-first.png"]);
 });
+test("first Agent navigation waits the title before issuing its single fill", async () => {
+  const actions = [];
+  let ready = false;
+  const stop = new Error("owned preparation boundary reached");
+  const fixture = {
+    prepareAgent: async () => {},
+    configureAgent: async () => {
+      throw stop;
+    },
+    registry: async () => ({ worktrees: [{ projectId: "owned-project", id: "owned-base" }] }),
+    context: async () => ({ projectId: "owned-project", worktreeId: "owned-base" }),
+    wait: async () => {},
+    trustSource: async () => {},
+    attemptAgentReview: async () => {},
+    crashAndReopen: async () => {},
+    cleanup: async () => {},
+  };
+  const results = await run({
+    workspaceFixture: fixture,
+    ui: {
+      click: async (target) => actions.push(["click", target.name]),
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "제목");
+        ready = true;
+        actions.push(["ready", target.name]);
+      },
+      fill: async (target) => {
+        assert.ok(ready, "Agent title still loading");
+        actions.push(["fill", target.name]);
+      },
+      screenshot: async () => "/owned/failure.png",
+    },
+  });
+  assert.equal(results[0].error.message, stop.message);
+  assert.deepEqual(actions, [
+    ["click", "에이전트"],
+    ["ready", "제목"],
+    ["fill", "제목"],
+  ]);
+});

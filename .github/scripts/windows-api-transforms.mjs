@@ -23,14 +23,18 @@ const settled = (context) =>
   );
 export const SCENARIO_IDS = Object.freeze(["TRANSFORM-01"]);
 
+export async function prepareTransformRequest(context, url) {
+  await context.ui.click(button("요청"));
+  await context.ui.waitForTarget(textbox("요청 URL"));
+  await context.ui.fill(textbox("요청 URL"), url);
+}
 export async function run(context) {
   requireApiContext(context);
   const echo = await echoFixture();
   try {
     return [
       await scenario(context, "TRANSFORM-01", async (record) => {
-        await context.ui.click(button("요청"));
-        await context.ui.fill(textbox("요청 URL"), `${echo.url}/handoff-no-auto-send`);
+        await prepareTransformRequest(context, `${echo.url}/handoff-no-auto-send`);
         await context.ui.click(button("변환"));
         await settled(context);
         const pipelines = Array.from({ length: 20 }, (_, index) => ({

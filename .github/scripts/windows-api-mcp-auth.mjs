@@ -16,6 +16,14 @@ import {
   bodyText,
 } from "./windows-api-user-flow-actions.mjs";
 
+export async function disconnectAndRefreshGrants(context) {
+  await context.ui.click(button("연결 해제"));
+  // Disconnect completion is asynchronous; observe readiness without repeating
+  // either mutation or interpreting the pointer acknowledgement as completion.
+  await context.ui.waitForTarget(button("OAuth grant 새로 고침"));
+  await context.ui.click(button("OAuth grant 새로 고침"));
+}
+
 export const discover = (id) => ({
   jsonrpc: "2.0",
   id,
@@ -228,8 +236,7 @@ export async function run(context) {
         record(
           "Actual UI revoke sends synthetic token A to owned revocation endpoint and removes only A from native grant storage",
         );
-        await context.ui.click(button("연결 해제"));
-        await context.ui.click(button("OAuth grant 새로 고침"));
+        await disconnectAndRefreshGrants(context);
         await selectGrant(b.grantId);
         await connect();
         await invoke();

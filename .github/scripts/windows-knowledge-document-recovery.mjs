@@ -8,6 +8,12 @@ export async function reviewKnowledgeQuit(ui, name) {
   await ui.waitForTarget(target);
   await ui.click(target);
 }
+export async function openKnowledgeRecoveryNote(ui, fixture, rel, content) {
+  const target = { role: "button", name: `${rel} 열어서 확인` };
+  await ui.waitForTarget(target);
+  await ui.click(target);
+  await fixture.waitNote(rel, content);
+}
 export async function run(context) {
   const results = await scenarios(context, [
     [
@@ -57,14 +63,14 @@ export async function run(context) {
         await fixture.crashAndReopen();
         await fixture.navigate("notes");
         await fixture.waitFor({ role: "button", name: `${notes.a} 열어서 확인` });
-        await ui.click({ role: "button", name: `${notes.a} 열어서 확인` });
+        await openKnowledgeRecoveryNote(ui, fixture, notes.a, "");
         assert.equal(await fixture.editorText(), "");
         await reviewKnowledgeQuit(ui, "저장하지 않고 종료(복구본 유지)");
         await fixture.reopenAfterClose();
         await fixture.navigate("notes");
         await fixture.waitFor({ role: "button", name: `${notes.a} 열어서 확인` });
         assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
-        await ui.click({ role: "button", name: `${notes.a} 열어서 확인` });
+        await openKnowledgeRecoveryNote(ui, fixture, notes.a, "");
         await reviewKnowledgeQuit(ui, "복구본 영구 삭제…");
         assert.ok((await fixture.journal()).entries.some((e) => e.path === notes.a));
         await ui.waitForTarget({ role: "button", name: "영구 삭제하고 종료" });
