@@ -160,6 +160,35 @@
   이 Rust 실행에 포함됐다. 마지막 Rust 보충 검사는 30.9초·합산 RSS 약 1.02GiB·swap 0이었다.
   검사 중 지적된 테스트 비교 구문만 고친 뒤 Clippy와 미실행 범위를 이어서 확인했다.
 
+- 보관 bytes 진단 `37197180461`(runner `a0a1fd90`, payload `dfadd9e5`)은 설치·활성화,
+  40개 화면 관측, HTTP·Webhook·문서별 Undo·검색을 통과했지만 전체 사용자 여정은 실패했다.
+  서로 다른 source의 진단이며 승격할 수 없다. 같은 draft PR #621에서 확인된 원인을 묶어 수정한다.
+  Files의 680px 최소 너비는 확대된 655px viewport를 넘었다. 실제 Chromium 레이아웃 회귀로
+  넘침을 재현·수정했다. Windows 현대식 저장창의 파일명 컨트롤을 지원하고 실제 소유 임시
+  저장창의 입력·파일 생성으로 실패/성공을 확인했다. WSL 선택 목록과 종료 확인창의 준비,
+  Handoff 접근성 이름, MCP grant의 native cache를 고려한 실제 취소·재시작 준비도 수정했다.
+- ENV 취소 실패는 제품의 전역 확인 처리 결함이었다. 설치된 Tauri dialog 2.7.2가
+  `window.confirm`을 Promise로 바꾸므로 동기 분기는 선택 전에 작업을 수행했다.
+  네 제품의 전역 확인 호출을 공통 비동기 인앱 확인창으로 교체하고 명시 승인만 실행한다.
+  취소·Esc·host 해제·표시 오류는 거절하며 확인 중 바뀐 대상과 상태를 재검사한다.
+  비동기 확인 대기·취소 때 native 부작용이 없다는 회귀와 실제 Chromium 입력·포커스 복귀를
+  확인했다. 이 브라우저 검사는 수정 바이너리의 Windows 설치 수용을 대신하지 않는다.
+- INSTALL-03의 복구 목록 조회 실패는 기존 artifact에서 상세 원인을 확인할 수 없었다.
+  입력·journal·잠금의 고정된 오류 코드만 전달해 다음 실제 실행에서 구분하고, 파일 경로나
+  원시 오류는 노출하지 않는다. 권한·복원 generation 검사는 완화하지 않았다.
+  제거 프로그램 비정상 종료는 즉시 실패로 기록하고 성공 receipt를 180초 기다리지 않는다.
+  health 기록 중에는 같은 native journal 잠금을 사용하는 목록을 동시에 조회하지 않고,
+  한 번 실행한 기록 버튼이 다시 준비된 뒤 읽기 전용 freshHealth를 확인한다.
+- 최종 영향 검증은 네 frontend 빌드·타입 검사를 통과했다. Knowledge 초기 JS는
+  확인창 추가 뒤 280,076 bytes로 상한을 넘었으므로 저장소 준비 UI를 복구 가능한 지연 로딩으로
+  옮겼다. 해당 앱만 다시 빌드해 276,521 bytes 및 실제 route·복구 테스트를 확인했다.
+  마지막 미실행 범위의 catalog/workflow·bundle·컴포넌트 크기·Biome·Rust fmt와 실제 Chromium
+  확인창/Files 검사는 통과했다(39.1초, RSS 약 1.50GiB, swap 0). 통과한 다른 앱은 다시 빌드하지 않았다.
+  Workspace 확인 처리 171개·Control Center 25개 및 새 검토 helper 3개, Knowledge 74개,
+  API 확인 처리·동시 기록 보존·민감정보 복사의 직접 영향 검사와 공통 확인창 4개가 통과했다.
+  고정 native 오류 코드·production exporter·Control Center 타입 검사도 통과했다.
+  설치된 새 Windows 바이너리의 전체 수용과 최종 CI는 로컬 통과와 구분해 남겨 둔다.
+
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
 ## 1. 기존 감사 23건의 누락 없는 배정
