@@ -121,7 +121,14 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       const result = await cdp.evaluate(
         `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');return invoke('plugin:control-center|delivery',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+10000,route:'recovery',context:d.context},method:${JSON.stringify(method)},args:{}}});})()`,
       );
-      assert.equal(result.operation.outcome.state, "succeeded");
+      const code = [result.operation.outcome.code, result.value?.issue]
+        .filter((value) => typeof value === "string" && /^[a-z][a-z0-9_]{0,100}$/u.test(value))
+        .join("/");
+      assert.equal(
+        result.operation.outcome.state,
+        "succeeded",
+        `Read-only delivery ${method} failed: ${code || "unknown"}`,
+      );
       return result.value;
     };
     return {

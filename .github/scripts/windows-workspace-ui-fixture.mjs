@@ -68,6 +68,7 @@ export function createWorkspaceUiFixture({
       const name = "owned performance task",
         started = performance.now();
       await ui.click({ role: "button", name: "작업 및 서비스" });
+      await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
       await ui.click({ role: "button", name: "+ 새 작업" });
       await ui.fill({ role: "textbox", name: "작업 이름" }, name);
       await ui.fill({ role: "textbox", name: "실행 명령" }, `"${process.execPath}" -e "process.exit(0)"`);

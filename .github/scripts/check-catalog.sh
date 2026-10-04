@@ -229,6 +229,7 @@ node --test .github/scripts/windows-suite-layout.test.mjs .github/scripts/verify
 node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs
 node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs
+node --test .github/scripts/windows-workspace-ui-fixture.test.mjs
 node --test .github/scripts/windows-suite-native-protocol.test.mjs .github/scripts/windows-suite-legacy-upgrade-ui.test.mjs
 node .github/scripts/test-windows-smoke-import.mjs
 node .github/scripts/test-product-foundation-performance.mjs
