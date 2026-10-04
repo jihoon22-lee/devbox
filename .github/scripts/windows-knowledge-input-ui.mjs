@@ -1,10 +1,11 @@
+import { withOwnedNativeZoom } from "./windows-user-flow-window.mjs";
 import { observeProductLayout, assertProductLayout } from "./browser-product-layout.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { writeProductInputObservation } from "./windows-suite-layout.mjs";
-export async function observeKnowledgeInput({ ui, cdp, fixture }) {
+export async function observeKnowledgeInput({ ui, cdp, fixture, windowOwner }) {
   const notes = await fixture.prepareNotes();
   await fixture.navigate("notes");
   await fixture.openNote(notes.a);
@@ -60,12 +61,11 @@ export async function observeKnowledgeInput({ ui, cdp, fixture }) {
   await ui.typeText(committed);
   await ui.press("Control+s");
   await fixture.wait(async () => (await readFile(notes.aFile, "utf8")) === committed, "keyboard committed note saved");
-  await cdp.command("Emulation.setPageScaleFactor", { pageScaleFactor: 1.25 });
-  assert.ok(await read("visualViewport.scale>=1.2"), "Knowledge text scale not applied");
-  assert.equal(await read('Boolean(document.activeElement?.closest(".cm-editor"))'), true);
-  assertProductLayout(await cdp.evaluate(`(${observeProductLayout.toString()})()`), { editor: true });
-  screenshots.push(await ui.screenshot("knowledge-input-scale-save"));
-  await cdp.command("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+  await withOwnedNativeZoom(windowOwner, cdp, async () => {
+    assert.equal(await read('Boolean(document.activeElement?.closest(".cm-editor"))'), true);
+    assertProductLayout(await cdp.evaluate(`(${observeProductLayout.toString()})()`), { editor: true });
+    screenshots.push(await ui.screenshot("knowledge-input-scale-save"));
+  });
   await ui.press("Control+a");
   await ui.typeText(notes.aOriginal);
   await ui.press("Control+s");

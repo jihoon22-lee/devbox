@@ -4,7 +4,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ExpectedExecutable,
   [Parameter(Mandatory=$true)][string]$ExpectedStartTimeUtc,
   [Parameter(Mandatory=$true)][string]$FixtureRoot,
-  [Parameter(Mandatory=$true)][ValidateSet('Invoke','Close','Inspect','ChooseFile','SaveFile','Resize','Minimize','Activate')][string]$Action,
+  [Parameter(Mandatory=$true)][ValidateSet('Invoke','Close','Inspect','ChooseFile','SaveFile','Resize','Minimize','Activate','ZoomIn','ZoomReset')][string]$Action,
   [string]$ControlName,
   [string]$ControlId,
   [string]$FilePath,
@@ -18,6 +18,10 @@ $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
 Set-StrictMode -Version Latest
+$zoomAction=$Action -in @('ZoomIn','ZoomReset')
+# Native input is an explicit hosted acceptance boundary; never spoof this locally.
+if($zoomAction -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted')){throw 'Native zoom requires GitHub hosted runner'}
+if($zoomAction -and (-not $ProductWindow -or $WindowName -or $AuxiliaryWindow)){throw 'Native zoom requires exact product main'}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 # The .NET Framework proxy loader inspects its caller's reflected type. A
@@ -36,6 +40,110 @@ public static class DevboxInstallerAutomation {
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent,EnumWindowCallback callback,IntPtr parameter);
+  [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+  [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent,IntPtr window);
+  [DllImport("user32.dll")] private static extern IntPtr SetFocus(IntPtr window);
+  [DllImport("user32.dll",SetLastError=true)] private static extern bool AttachThreadInput(uint from,uint to,bool attach);
+  [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+  [StructLayout(LayoutKind.Sequential)] private struct NativeMessage {
+    public IntPtr window; public uint message; public UIntPtr wParam; public IntPtr lParam;
+    public uint time; public int x,y; public uint privateData;
+  }
+  [DllImport("user32.dll")] private static extern bool PeekMessage(out NativeMessage message,IntPtr window,uint min,uint max,uint remove);
+
+  [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
+  [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
+  [DllImport("user32.dll",SetLastError=true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+  [StructLayout(LayoutKind.Sequential)] private struct Rect { public int left,top,right,bottom; }
+  [StructLayout(LayoutKind.Sequential)] private struct GuiThreadInfo {
+    public int size,flags; public IntPtr active,focus,capture,menuOwner,moveSize,caret; public Rect caretRect;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct KeyboardInput { public ushort key,scan; public uint flags,time; public UIntPtr extra; }
+  [StructLayout(LayoutKind.Sequential)] public struct MouseInput { public int x,y; public uint data,flags,time; public UIntPtr extra; }
+  [StructLayout(LayoutKind.Explicit)] public struct InputUnion {
+    [FieldOffset(0)] public KeyboardInput keyboard;
+    [FieldOffset(0)] public MouseInput mouse;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct Input { public uint type; public InputUnion value; }
+  // Pure serialization is tested locally; native injection runs only after hosted guards.
+  public static Input[] ZoomChord(bool reset,bool releaseOnly) {
+    ushort key=reset?(ushort)0x30:(ushort)0x6B;
+    ushort[] keys=releaseOnly?new ushort[]{key,0x11}:new ushort[]{0x11,key,key,0x11};
+    var result=new Input[keys.Length];
+    for(int i=0;i<keys.Length;i++) {
+      result[i].type=1; result[i].value.keyboard.key=keys[i];
+      result[i].value.keyboard.flags=(releaseOnly || i>=2)?2u:0u;
+    }
+    return result;
+  }
+  public static void FocusMain(IntPtr window) {
+    if(!SetForegroundWindow(window) && GetForegroundWindow()!=window) throw new InvalidOperationException("Owned foreground unavailable");
+  }
+  public static bool IsUniqueWebViewLayout(int observed,int containers,int browsers,bool parentOwned,bool browserNested) {
+    return observed<=256 && containers==1 && browsers==1 && parentOwned && browserNested;
+  }
+  public static IntPtr FocusWebView(IntPtr window,uint expectedProcessId) {
+    IntPtr container=IntPtr.Zero,browser=IntPtr.Zero;
+    int observed=0,containers=0,browsers=0;
+    EnumWindowCallback callback=delegate(IntPtr child,IntPtr parameter) {
+      observed++;
+      if(observed>256) return false;
+      if(!IsWindowVisible(child)) return true;
+      var name=new StringBuilder(100); GetClassName(child,name,name.Capacity);
+      if(name.ToString()=="WRY_WEBVIEW") {container=child;containers++;}
+      if(name.ToString()=="Chrome_WidgetWin_1") {browser=child;browsers++;}
+      return true;
+    };
+    EnumChildWindows(window,callback,IntPtr.Zero);
+    uint containerOwner;
+    uint ownerThread=GetWindowThreadProcessId(container,out containerOwner);
+    if(!IsUniqueWebViewLayout(observed,containers,browsers,
+      containerOwner==expectedProcessId && GetParent(container)==window,
+      IsChild(container,browser) && GetAncestor(browser,2)==window))
+      throw new InvalidOperationException("Unique owned native WebView hierarchy unavailable");
+    uint currentThread=GetCurrentThreadId(); bool attached=false;
+    try {
+      if(currentThread!=ownerThread) {
+        // AttachThreadInput requires a message queue on the observer thread.
+        NativeMessage ignored; PeekMessage(out ignored,IntPtr.Zero,0,0,0);
+        if(!AttachThreadInput(currentThread,ownerThread,true)) throw new InvalidOperationException("Owned WebView focus attachment failed");
+        attached=true;
+      }
+      // wry 0.57.0 forwards WRY_WEBVIEW WM_SETFOCUS to its WebView child.
+      SetFocus(container);
+    } finally {
+      if(attached && !AttachThreadInput(currentThread,ownerThread,false)) throw new InvalidOperationException("Owned WebView focus detach failed");
+    }
+    VerifyZoomFocus(window,expectedProcessId,browser);
+    return browser;
+  }
+  public static void VerifyZoomFocus(IntPtr window,uint expectedProcessId,IntPtr browser) {
+
+    uint owner; uint thread=GetWindowThreadProcessId(window,out owner);
+    var info=new GuiThreadInfo(); info.size=Marshal.SizeOf(typeof(GuiThreadInfo));
+    if(owner!=expectedProcessId || GetForegroundWindow()!=window || !GetGUIThreadInfo(thread,ref info) ||
+      info.focus==IntPtr.Zero || info.focus==window || GetAncestor(info.focus,2)!=window ||
+      (info.focus!=browser && !IsChild(browser,info.focus)))
+      throw new InvalidOperationException("Owned foreground or focused WebView descendant changed");
+  }
+  public static void SendZoom(IntPtr window,uint expectedProcessId,IntPtr browser,bool reset) {
+    VerifyZoomFocus(window,expectedProcessId,browser);
+    foreach(int key in new int[]{0x10,0x11,0x12,0x5B,0x5C,0x30,0x6B})
+      if((GetAsyncKeyState(key)&0x8000)!=0) throw new InvalidOperationException("Native zoom keyboard is busy");
+    var chord=ZoomChord(reset,false);
+    try {
+      VerifyZoomFocus(window,expectedProcessId,browser);
+      if(SendInput((uint)chord.Length,chord,Marshal.SizeOf(typeof(Input)))!=(uint)chord.Length)
+        throw new InvalidOperationException("Owned zoom input was not fully inserted");
+    } finally {
+      var release=ZoomChord(reset,true);
+      if(SendInput((uint)release.Length,release,Marshal.SizeOf(typeof(Input)))!=(uint)release.Length)
+        throw new InvalidOperationException("Owned zoom key release failed");
+    }
+  }
   private delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
   [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
@@ -86,7 +194,7 @@ if(-not [string]::Equals($process.Path,$exe,[StringComparison]::OrdinalIgnoreCas
 $started=$process.StartTime.ToUniversalTime().ToString('o')
 if($started -ne $ExpectedStartTimeUtc){throw 'Process start time mismatch'}
 if($ProductWindow -and -not [string]::Equals([IO.Path]::GetFileName($exe),('devbox-'+$ProductWindow+'.exe'),[StringComparison]::OrdinalIgnoreCase)){throw 'Product window executable mismatch'}
-$productLifecycle=$ProductWindow -and $Action -in @('Close','Resize','Minimize','Activate','Inspect')
+$productLifecycle=$ProductWindow -and $Action -in @('Close','Resize','Minimize','Activate','Inspect','ZoomIn','ZoomReset')
 if($productLifecycle -and $WindowName){throw 'Product lifecycle requires all owned roots for modal review'}
 if($AuxiliaryWindow -and ($ProductWindow -cne 'workspace' -or $WindowName -or $Action -notin @('Close','Inspect'))){throw 'Invalid owned auxiliary window boundary'}
 $namespace=@{workspace='workspace';'api-studio'='apistudio';knowledge='knowledge';'control-center'='controlcenter'}
@@ -116,7 +224,7 @@ $windowRecords=@($windows | Select-Object -First 32 | ForEach-Object {
 })
 $observedWindowCount=$windows.Count
 $nativeInventory=[DevboxInstallerAutomation]::ObserveNativeWindows([uint32]$TargetProcessId)
-if($Action -in @('Close','Resize','Minimize','Activate','Inspect')) {
+if($Action -in @('Close','Resize','Minimize','Activate','Inspect','ZoomIn','ZoomReset')) {
   $windows=@($windowRecords | Where-Object {
     $_.metadata.visible -and $_.metadata.topLevel -and $_.metadata.nativeProcessId -eq $TargetProcessId -and
       (-not $productLifecycle -or ($_.metadata.className -cne 'Tao Thread Event Target' -and $_.metadata.className -cnotmatch $helperClass))
@@ -187,6 +295,21 @@ if($windows.Count -ne 1){
   throw ('Expected one owned top-level window: '+$details)
 }
 $window=$windows[0]
+if($zoomAction) {
+  $titles=@{workspace='Devbox Workspace';'api-studio'='Devbox API Studio';knowledge='Devbox Knowledge';'control-center'='Devbox Control Center'}
+  if($window.Current.Name -cne $titles[$ProductWindow]){throw 'Native zoom main title mismatch'}
+  $runnerRoot=(Resolve-Path -LiteralPath $env:RUNNER_TEMP).Path.TrimEnd('\')+'\'
+  if(-not $root.StartsWith($runnerRoot,[StringComparison]::OrdinalIgnoreCase)){throw 'Native zoom fixture outside hosted temporary root'}
+  $pattern=$window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
+  $pattern.SetWindowVisualState([System.Windows.Automation.WindowVisualState]::Normal)
+  $handle=[IntPtr]::new($window.Current.NativeWindowHandle)
+  [DevboxInstallerAutomation]::FocusMain($handle)
+  $browser=[DevboxInstallerAutomation]::FocusWebView($handle,[uint32]$TargetProcessId)
+  $process.Refresh()
+  if($process.HasExited -or $process.StartTime.ToUniversalTime().ToString('o') -cne $started -or -not [string]::Equals($process.Path,$exe,[StringComparison]::OrdinalIgnoreCase)){throw 'Native zoom process identity changed'}
+  [DevboxInstallerAutomation]::SendZoom($handle,[uint32]$TargetProcessId,$browser,($Action -eq 'ZoomReset'))
+  exit 0
+}
 if($Action -eq 'Inspect') {
   $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
   $controls=@($all | ForEach-Object {

@@ -131,6 +131,7 @@ export async function createApiUserFlowContext({ measureStartup = true } = {}) {
       close,
       child,
       processIdentity,
+      windowOwner,
       coldRendererReadyMs,
       warmExistingWindowMs,
       getIdentities: () => ownedProductCohort(processIdentity),

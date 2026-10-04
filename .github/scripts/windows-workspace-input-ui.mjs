@@ -1,8 +1,9 @@
+import { withOwnedNativeZoom } from "./windows-user-flow-window.mjs";
 import { observeProductLayout, assertProductLayout } from "./browser-product-layout.mjs";
 import assert from "node:assert/strict";
 import { writeProductInputObservation } from "./windows-suite-layout.mjs";
 import { observeUntil } from "./windows-suite-ui-context.mjs";
-export async function observeWorkspaceInput({ ui, cdp, fileName }) {
+export async function observeWorkspaceInput({ ui, cdp, fileName, windowOwner }) {
   const read = (expression) => cdp.evaluate(expression);
   let editorFocused = false;
   for (let i = 0; i < 128; i++) {
@@ -75,11 +76,10 @@ export async function observeWorkspaceInput({ ui, cdp, fileName }) {
     async () => (await read('parseFloat(getComputedStyle(document.querySelector(".cm-content")).fontSize)')) > oldFont,
     "actual enlarged editor text",
   );
-  await cdp.command("Emulation.setPageScaleFactor", { pageScaleFactor: 1.25 });
-  assert.ok(await read("visualViewport.scale>=1.2"), "Actual renderer scale did not change");
-  assertProductLayout(await cdp.evaluate(`(${observeProductLayout.toString()})()`), { editor: true });
-  screenshots.push(await ui.screenshot("workspace-input-enlarged-editor"));
-  await cdp.command("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+  await withOwnedNativeZoom(windowOwner(), cdp, async () => {
+    assertProductLayout(await cdp.evaluate(`(${observeProductLayout.toString()})()`), { editor: true });
+    screenshots.push(await ui.screenshot("workspace-input-enlarged-editor"));
+  });
   await writeProductInputObservation({
     product: "workspace",
     checks: { keyboard: true, modalFocusReturn: true, ime: true, scale: true, taskComplete: true },

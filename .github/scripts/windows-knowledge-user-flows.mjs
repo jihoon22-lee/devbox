@@ -3,6 +3,7 @@ import { observeProductPerformance } from "./windows-suite-layout.mjs";
 import { measureWarmOwnedWindow, ownedProductCohort } from "./windows-user-flow-window.mjs";
 // Real packaged UI acceptance. Provisioning and final namespace cleanup belong to the Suite fixture.
 import assert from "node:assert/strict";
+import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
 import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, mkdtemp, rename, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -350,6 +351,9 @@ export async function createInstalledKnowledgeContext() {
     get coldRendererReadyMs() {
       return current?.coldRendererReadyMs;
     },
+    get windowOwner() {
+      return current?.windowOwner;
+    },
     measureWarm: () => measureWarmOwnedWindow(current.windowOwner, current.cdp),
     getIdentities: () => ownedProductCohort(current.identity),
     get cdp() {
@@ -387,7 +391,12 @@ export async function runInstalledKnowledgeUserFlows() {
         return context.knowledgeFixture.performanceSearch;
       },
     });
-    await observeKnowledgeInput({ ui: context.ui, cdp: context.cdp, fixture: context.knowledgeFixture });
+    await observeKnowledgeInput({
+      ui: context.ui,
+      cdp: context.cdp,
+      fixture: context.knowledgeFixture,
+      windowOwner: context.windowOwner,
+    });
     results = [...(await documents(context)), ...searchResults, ...(await activity(context))];
     await writeUserFlowResults("knowledge", results);
     assert.ok(
@@ -395,6 +404,9 @@ export async function runInstalledKnowledgeUserFlows() {
       "Knowledge real user-flow acceptance failed",
     );
   } catch (error) {
+    await preserveUserFlowFailure("knowledge", error, { ui: context?.ui, identity: context }).catch(() => {
+      console.error("Knowledge original-failure evidence unavailable");
+    });
     if (!results.length) {
       const identity = context ?? (await packagedIdentity());
       results = [...documentIds, ...searchIds, ...activityIds].map((id) => ({

@@ -13,6 +13,7 @@ export function createWorkspaceUiFixture({
   cdp,
   dataRoot,
   fixtureRoot,
+  windowOwner,
   network,
   chooseArchive,
   terminalUi,
@@ -52,7 +53,7 @@ export function createWorkspaceUiFixture({
   }
   return {
     context,
-    observeInput: (fileName) => observeWorkspaceInput({ ui, cdp, fileName }),
+    observeInput: (fileName) => observeWorkspaceInput({ ui, cdp, fileName, windowOwner }),
     registry: () => read("workspace.registry", "snapshot"),
     recovery: () => read("workspace.files", "load_recovery"),
     wait,

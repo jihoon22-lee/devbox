@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
 import { readFile, realpath, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -140,6 +141,7 @@ export async function runWorkspaceUserFlows() {
     cdp,
     dataRoot,
     fixtureRoot,
+    windowOwner: () => captureWindowOwner(owner, root),
     network,
     async terminalUi(id) {
       const transport = await connect(port, child, performance.now() + 30_000, id);
@@ -178,7 +180,10 @@ export async function runWorkspaceUserFlows() {
     results.push(...(await agentFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
     await launch();
     results.push(...(await runtimeFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
-  } catch {
+  } catch (error) {
+    await preserveUserFlowFailure("workspace", error, { ui: attached ? ui : null, identity }).catch(() => {
+      console.error("Workspace original-failure evidence unavailable");
+    });
     for (const id of scenarioIds)
       if (!results.some((result) => result.id === id))
         results.push({

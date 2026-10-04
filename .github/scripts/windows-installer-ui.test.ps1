@@ -1,7 +1,45 @@
-﻿param([string]$ScriptDirectory=$PSScriptRoot,[string]$BaselineScript,[switch]$FrameworkHelpers,[switch]$WorkspaceAuxiliary)
+﻿param([string]$ScriptDirectory=$PSScriptRoot,[string]$BaselineScript,[switch]$FrameworkHelpers,[switch]$WorkspaceAuxiliary,[switch]$ZoomSerialization)
 # Disposable classic Win32 controls; no WinForms/UIA custom button provider.
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+if($ZoomSerialization) {
+  $scriptPath=Join-Path $ScriptDirectory 'windows-installer-ui.ps1'
+  $content=[IO.File]::ReadAllText($scriptPath)
+  $tokens=$null;$parseErrors=$null
+  [void][Management.Automation.Language.Parser]::ParseInput($content,[ref]$tokens,[ref]$parseErrors)
+  if($parseErrors.Count -ne 0){throw 'Native script PowerShell syntax failed'}
+  $source=[regex]::Match($content,'(?s)Add-Type -ReferencedAssemblies UIAutomationClient,UIAutomationTypes -TypeDefinition @"\r?\n(.*?)\r?\n"@').Groups[1].Value
+  if(-not $source){throw 'Native helper source unavailable'}
+  Add-Type -ReferencedAssemblies UIAutomationClient,UIAutomationTypes -TypeDefinition $source
+  if(-not [DevboxInstallerAutomation]::IsUniqueWebViewLayout(2,1,1,$true,$true)){throw 'Exact native WebView layout rejected'}
+  foreach($shape in @(@(257,1,1,$true,$true),@(2,0,1,$true,$true),@(3,2,1,$true,$true),@(3,1,2,$true,$true),@(2,1,1,$false,$true),@(2,1,1,$true,$false))) {
+    if([DevboxInstallerAutomation]::IsUniqueWebViewLayout($shape[0],$shape[1],$shape[2],$shape[3],$shape[4])){throw 'Ambiguous or foreign WebView layout accepted'}
+  }
+  $expectedSize=if([IntPtr]::Size -eq 8){40}else{28}
+  if([Runtime.InteropServices.Marshal]::SizeOf([type][DevboxInstallerAutomation+Input]) -ne $expectedSize){throw 'Native INPUT layout mismatch'}
+  foreach($reset in @($false,$true)) {
+    $key=if($reset){48}else{107}
+    $chord=[DevboxInstallerAutomation]::ZoomChord($reset,$false)
+    if($chord.Count -ne 4){throw 'Zoom chord length'}
+    $keys=@(17,$key,$key,17);$flags=@(0,0,2,2)
+    for($index=0;$index -lt 4;$index++) {
+      if($chord[$index].type -ne 1 -or $chord[$index].value.keyboard.key -ne $keys[$index] -or $chord[$index].value.keyboard.flags -ne $flags[$index] -or $chord[$index].value.keyboard.scan -ne 0){throw 'Zoom allowlist serialization mismatch'}
+    }
+    $release=[DevboxInstallerAutomation]::ZoomChord($reset,$true)
+    if($release.Count -ne 2 -or $release[0].value.keyboard.key -ne $key -or $release[1].value.keyboard.key -ne 17 -or @($release | Where-Object {$_.value.keyboard.flags -ne 2}).Count -ne 0){throw 'Zoom finally key release mismatch'}
+  }
+  # Never set hosted variables or execute SendInput in this local test.
+  if($env:GITHUB_ACTIONS -ceq 'true' -or $env:RUNNER_ENVIRONMENT -ceq 'github-hosted'){throw 'Local guard test requires ordinary local environment'}
+  foreach($action in @('ZoomIn','ZoomReset')) {
+    $blocked=$false
+    try {& ([scriptblock]::Create($content)) -TargetProcessId 1 -ExpectedExecutable 'unused.exe' -ExpectedStartTimeUtc 'unused' -FixtureRoot 'unused' -Action $action -ProductWindow workspace} catch {
+      if($_.Exception.Message -notmatch 'Native zoom requires GitHub hosted runner'){throw};$blocked=$true
+    }
+    if(-not $blocked){throw 'Local native zoom was not blocked'}
+  }
+  Write-Output 'Native zoom C# compile/native hierarchy selection/INPUT layout/allowlist key serialization/finally releases/local hosted guard: PASS (no native input)'
+  return
+}
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('devbox-installer-uia-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
 $image=Join-Path $fixture $(if($WorkspaceAuxiliary){'devbox-workspace.exe'}elseif($FrameworkHelpers){'devbox-control-center.exe'}else{'owned-classic-button.exe'})

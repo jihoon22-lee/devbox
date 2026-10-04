@@ -510,6 +510,7 @@ export async function run() {
     await observeControlCenterInput({
       cdp: { command: center.cdp.send.bind(center.cdp), evaluate: center.cdp.evaluate.bind(center.cdp) },
       ui: center.ui,
+      windowOwner: center.owner,
     });
     results.push(
       record("INSTALL-01", "PASS", [
