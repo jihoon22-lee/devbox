@@ -209,7 +209,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
       target: description.context.target,
       name: registry?.projects.find((project) => project.id === description.context?.projectId)?.name ?? "",
     });
-    navigate("source");
+    navigate("overview");
   };
   const openSourceFile = (relative: string, line: number | null) => {
     if (!selectedTree) return;
@@ -276,7 +276,7 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
           }}
         />
       )}
-      <div hidden={ready && route === "files"}>
+      <div hidden={ready && route !== "overview"}>
         <Suspense fallback={<p role="status">프로젝트 정보를 불러오고 있습니다…</p>}>
           <RegistryGate
             context={description.context}
@@ -291,6 +291,11 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
           />
         </Suspense>
       </div>
+      {ready && !description.context && route !== "overview" && (
+        <button type="button" onClick={() => navigate("overview")}>
+          개요에서 프로젝트 선택
+        </button>
+      )}
       {ready && selectedTree && (
         <Suspense fallback={null}>
           <ContextStatus

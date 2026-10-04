@@ -22,6 +22,9 @@ v0.9.0 소스의 네 사용자 제품 중 하나다. Overview·Source·Files·De
   Port→Log→Problem→File 이동은 검토된 context/opaque reference를 전달한다.
 - Terminal 보조 창은 hide/reload와 종료를 구분하며 tabs/panes/exact layout/cwd·tmux/Zellij를 유지한다.
   종료 중에는 마지막 레이아웃을 고정하고, 이전 창에서 늦게 도착한 저장 요청은 복원된 새 창에 적용하지 않는다.
+- 프로젝트 등록·선택·관리는 Overview에서 한다. 다른 화면은 현재 context와 해당 작업을 표시하며,
+  프로젝트가 없으면 Overview의 선택 화면으로 이동할 수 있다. 저장소 준비 실패·재시도는 어느 화면에서나
+  표시한다. Source에서 생성한 작업 폴더의 등록 검토도 Overview로 이동하며 native 검증·명시 선택을 유지한다.
 - Overview의 원본 snapshot·profile/template/session/LSP/window-state import는 명시적 검토와
   source 재검증을 거쳐 적용한다. 원본 Git/worktree 파일을 복사하거나 자동 실행하지 않는다.
 

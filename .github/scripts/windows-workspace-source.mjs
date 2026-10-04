@@ -164,6 +164,7 @@ export async function exerciseWorkspaceSource({
     );
   };
   const selectTree = async (tree) => {
+    await navigate("overview");
     const button = `Array.from(document.querySelectorAll(".workspace-registry section > div")).find(div=>div.querySelector(":scope > p")?.textContent===${JSON.stringify(tree.binding.root)})?.querySelector("button")`;
     await waitForRenderer(cdp, `!!(${button})&&!(${button}).disabled`, "Worktree selection unavailable");
     await cdp.evaluate(`${button}.click()`);
@@ -172,6 +173,7 @@ export async function exerciseWorkspaceSource({
       `(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");return d.context?.worktreeId===${JSON.stringify(tree.id)};})()`,
       "Worktree context did not change",
     );
+    await navigate("source");
     await waitForRenderer(
       cdp,
       `document.querySelector(".workspace-native-source")?.textContent.includes(${JSON.stringify(tree.binding.root)})&&document.querySelector(".workspace-source-trust")?.getAttribute("aria-busy")==="false"`,
