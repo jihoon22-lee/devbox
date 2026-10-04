@@ -522,3 +522,13 @@ timeout에도 최초 경계를 잃지 않는다. 실제 legacy 제거 실패 원
 (cgroup 최대 1.63GB, swap 0). catalog/workflow/fixture 계약과 Biome 1920개 파일은
 8.0초에 통과했다. 같은 compiler scope는 반복하지 않으며 기존 후보의 설치 여정 진단과
 새 제품 source의 최종 Windows 수용은 이 로컬 결과와 구분한다.
+
+
+보관 설치 진단 `37240354785`(runner `43cbc8b2`, payload `7f5c0614`)은 합성 Windows
+정리 회귀, 실제 설치·중단 재개와 네 제품 준비 관찰을 통과한 뒤 reviewed activation의
+Health marker를 기다리다 실패했다. 이전 stage 이름 `installed-center-reopen`은 갱신되지
+않은 진단 이름이며 실제 실패 위치는 `advance("health")`다. 종료된 Center의 CDP 오류를
+제품 hang으로 단정하지 않는다. helper의 native 상태·고정 오류 코드와 activation phase,
+종료·재연결 세부 경계를 추가 보존한다. 제품 동작과 제한 시간은 유지한다. 후속 여정은
+committed 설치가 없어 미실행이며 정리는 살아 있는 소유 프로세스를 감지해 보존했다.
+이 진단 역시 승격 근거로 사용하지 않는다.

@@ -263,3 +263,38 @@ test("delivery health releases the exited Knowledge policy before another Knowle
     /normal saved close/,
   );
 });
+
+import { activationStateObservation, bestEffortActivationObservation } from "./windows-suite-user-flow.mjs";
+test("activation failure evidence exposes only bounded phase and revision", () => {
+  assert.deepEqual(activationStateObservation({ phase: "health", revision: 3, secret: "private" }), {
+    phase: "health",
+    revision: 3,
+  });
+  assert.deepEqual(activationStateObservation({ phase: "private", revision: -1 }), { phase: null, revision: null });
+});
+test("activation evidence failure cannot replace original failure", async () => {
+  const original = Object.freeze(new Error("original"));
+  let preserved;
+  try {
+    throw original;
+  } catch (error) {
+    assert.deepEqual(
+      await bestEffortActivationObservation(async () => {
+        throw new Error("observer");
+      }),
+      { unavailable: true },
+    );
+    preserved = error;
+  }
+  assert.equal(preserved, original);
+});
+
+test("owned helper observation retains emitted checkpoint source codes without raw text", () => {
+  const observation = installerFailureObservation(
+    { controls: [{ name: "작업을 완료하지 못했습니다 (checkpoint_source_changed). private-path" }] },
+    "activation-health-wait-marker",
+    null,
+  );
+  assert.deepEqual(observation.issues, ["checkpoint_source_changed"]);
+  assert.ok(!JSON.stringify(observation).includes("private-path"));
+});
