@@ -295,3 +295,40 @@ test("runtime recovery selects its owned project before mounting Tasks after res
     /owned root missing/,
   );
 });
+
+test("lost-reply journey explicitly stops the first live owner before requesting another run", async () => {
+  const { stopReconciledRuntimeRun } = await import("./windows-workspace-ui-fixture.mjs");
+  const events = [],
+    scope = { role: "article", name: "owned" };
+  await stopReconciledRuntimeRun(
+    {
+      waitForTarget: async (target) => events.push(["ready", target]),
+      clickWithConfirmation: async (target, confirmed) => events.push(["click", target, confirmed]),
+    },
+    async (check) => {
+      events.push(["observe"]);
+      assert.equal(await check(), true);
+    },
+    async () => null,
+    scope,
+  );
+  assert.deepEqual(events, [
+    ["ready", { role: "button", name: "중지", scope }],
+    ["click", { role: "button", name: "중지", scope }, true],
+    ["observe"],
+  ]);
+  await assert.rejects(
+    stopReconciledRuntimeRun(
+      {
+        waitForTarget: async () => {},
+        clickWithConfirmation: async () => {},
+      },
+      async (check) => {
+        if (!(await check())) throw new Error("original run still active");
+      },
+      async () => ({ jobId: "owned" }),
+      scope,
+    ),
+    /still active/,
+  );
+});

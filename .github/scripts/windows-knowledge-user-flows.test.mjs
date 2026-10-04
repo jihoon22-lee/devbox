@@ -259,3 +259,18 @@ test("delivery draft assertions use exact rendered document bytes and reject rea
   context.knowledgeFixture.editorText = async () => "synthetic draft\n\n";
   await assert.rejects(assertKnowledgeDraft(context, "synthetic draft\n"), assert.AssertionError);
 });
+
+test("Activity draft review uses the actual dialog and cancels before route navigation", async () => {
+  const events = [];
+  const ui = {
+    waitForTarget: async (target) => events.push(["observe", target.role, target.name]),
+    click: async (target) => events.push(["click", target.name]),
+  };
+  const fixture = { waitBody: async (text) => events.push(["closed", text]) };
+  await activity.reviewActivityDraft(ui, fixture);
+  assert.deepEqual(events, [
+    ["observe", "dialog", "Life Log 초안 미리보기"],
+    ["click", "취소"],
+    ["closed", "Knowledge 초안 미리보기를 취소했습니다"],
+  ]);
+});

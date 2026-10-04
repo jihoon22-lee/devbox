@@ -77,3 +77,39 @@ test("first Agent navigation waits the title before issuing its single fill", as
     ["fill", "제목"],
   ]);
 });
+test("task discard confirms once only after asynchronous review is ready", async () => {
+  const { discardAgentTask } = await import("./windows-workspace-agent-registry-ui.mjs");
+  const events = [];
+  let ready = false;
+  await discardAgentTask({
+    click: async (target) => {
+      if (target.name === "버리기 확인") assert.ok(ready);
+      events.push(target.name);
+    },
+    waitForTarget: async (target) => {
+      assert.equal(target.name, "버리기 확인");
+      assert.deepEqual(events, ["버리기"]);
+      ready = true;
+    },
+  });
+  assert.deepEqual(events, ["버리기", "버리기 확인"]);
+});
+
+test("Agent notification dismissal uses actual input only when a toast is visible", async () => {
+  const { dismissWorkspaceUndo } = await import("./windows-workspace-agent-registry-ui.mjs");
+  for (const visible of [false, true]) {
+    const events = [];
+    let shown = visible;
+    await dismissWorkspaceUndo(
+      {
+        click: async (target) => {
+          events.push(target);
+          shown = false;
+        },
+      },
+      async () => shown,
+      async (probe) => assert.equal(await probe(), true),
+    );
+    assert.deepEqual(events, visible ? [{ role: "button", name: "알림 닫기" }] : []);
+  }
+});

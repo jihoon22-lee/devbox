@@ -1,5 +1,6 @@
 // Installer checkpoints and Suite Agent acceptance use one owned candidate installation.
 import assert from "node:assert/strict";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import path from "node:path";
 import { readFile, writeFile, readdir, mkdir, realpath } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
@@ -517,6 +518,7 @@ export async function runInstalledAgentUserFlows() {
           assertions: [String(error.message).slice(0, 300)],
           screenshotPaths: [await app.ui.screenshot(`${id}-failure`).catch(() => "")].filter(Boolean),
           failureCode: "agent-ui-scenario-failed",
+          error: boundedFailure(error),
         });
       }
     }

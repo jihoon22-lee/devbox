@@ -1,6 +1,16 @@
 import { observeWorkspaceFailure, cleanupWorkspaceFixture } from "./windows-workspace-ui-observations.mjs";
 import assert from "node:assert/strict";
 export const scenarioIds = ["WORK-02", "WORK-03"];
+export async function dismissWorkspaceUndo(ui, visible, wait) {
+  if (!(await visible())) return;
+  await ui.click({ role: "button", name: "알림 닫기" });
+  await wait(async () => !(await visible()), "notification dismissed before Agent input");
+}
+export async function discardAgentTask(ui) {
+  await ui.click({ role: "button", name: "버리기" });
+  await ui.waitForTarget({ role: "button", name: "버리기 확인" });
+  await ui.click({ role: "button", name: "버리기 확인" });
+}
 export async function run(context) {
   const { ui, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
   const record = (id, status, assertions = [], screenshotPaths = [], failureCode = null) => ({
@@ -55,6 +65,7 @@ export async function run(context) {
       "new task registered and selected",
     );
     const selected = await fixture.context();
+    await ui.waitForTarget({ role: "button", name: "변경 검토" });
     await ui.click({ role: "button", name: "변경 검토" });
     assert.equal((await fixture.context()).worktreeId, selected.worktreeId);
     await fixture.waitForText({ role: "textbox", name: "커밋 메시지" });
@@ -80,8 +91,7 @@ export async function run(context) {
     );
     await ui.fill({ role: "textbox", name: "커밋 메시지" }, "");
     await ui.click({ role: "button", name: "에이전트" });
-    await ui.click({ role: "button", name: "버리기" });
-    await ui.click({ role: "button", name: "버리기 확인" });
+    await discardAgentTask(ui);
     await fixture.wait(
       async () => ownTrees(await fixture.registry()).length === 1,
       "owned task cleanup reflected in registry",

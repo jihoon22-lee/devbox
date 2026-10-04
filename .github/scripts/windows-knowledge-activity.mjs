@@ -6,6 +6,11 @@ export async function navigateKnowledgeRoute(ui, route, label) {
   // Shell navigation can finish while the first Activity lazy import is pending.
   if (route === "activity") await ui.waitForTarget({ role: "button", name: "설정" });
 }
+export async function reviewActivityDraft(ui, fixture) {
+  await ui.waitForTarget({ role: "dialog", name: "Life Log 초안 미리보기" });
+  await ui.click({ role: "button", name: "취소" });
+  await fixture.waitBody("Knowledge 초안 미리보기를 취소했습니다");
+}
 export async function run(context) {
   return scenarios(context, [
     [
@@ -36,6 +41,7 @@ export async function run(context) {
         await ui.click({ role: "button", name: "일" });
         await fixture.waitBody("일간 로컬 요약");
         await fixture.createDraftViaUi();
+        await reviewActivityDraft(ui, fixture);
         const old = await fixture.history();
         assert.ok(old.length > 0);
         await fixture.navigate("activity");
@@ -51,8 +57,9 @@ export async function run(context) {
         for (const key of ["period", "startDate", "endDate", "timezone", "filter"])
           assert.deepEqual(fresh.summary[key], old[0].summary[key]);
         assert.ok(rows.some((r) => r.handoffId === old[0].handoffId));
-        await fixture.waitBody("Knowledge 초안");
+        await ui.waitForTarget({ role: "dialog", name: "Life Log 초안 미리보기" });
         screenshots.push(await ui.screenshot("ACTIVITY-02-history-regenerate"));
+        await reviewActivityDraft(ui, fixture);
         assertions.push(
           "Settings regeneration uses preserved historical range/timezone/filter and creates a new linked draft while previous history survives; delivery awaits note review",
         );

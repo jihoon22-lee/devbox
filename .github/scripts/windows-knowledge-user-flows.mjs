@@ -316,7 +316,7 @@ export async function createInstalledKnowledgeContext() {
     async createDraftViaUi() {
       await waitFor({ role: "button", name: "Knowledge로 보내기" });
       await ui.click({ role: "button", name: "Knowledge로 보내기" });
-      await waitBody("Knowledge 초안");
+      await ui.waitForTarget({ role: "dialog", name: "Life Log 초안 미리보기" });
     },
     async captureOwnedIdleBoundary() {
       const window = await createOwnedActivityWindow(path.join(fixtureRoot, `foreground-${randomUUID()}`));
