@@ -287,3 +287,12 @@ for job, block in re.findall(r"^  ([a-z][a-z0-9-]+):\n(.*?)(?=^  [a-z][a-z0-9-]+
 for block in (work_step, candidate_work):
     assert block.index('$scriptExitCode = $LASTEXITCODE') < block.index('Write-Host "Installed journey end: $script')
     assert block.index('$withdrawnExitCode = $LASTEXITCODE') < block.index('Write-Host "Installed journey end: withdrawn')
+
+# The synthetic WindowsApplication helper requires Windows PowerShell 5.1.
+# Keep its interpreter explicit while actual installed journeys remain on pwsh.
+for name in ("product-foundation.yml", "windows-package-candidate.yml"):
+    text = (root / ".github/workflows" / name).read_text()
+    step = text.split("      - name: Check owned cleanup helpers\n", 1)[1].split("\n      - ", 1)[0]
+    assert "shell: powershell" in step
+    assert "windows-user-flow-cleanup-uninstall.test.ps1" in step
+    assert "windows-user-flow-cleanup-observation.test.ps1" in step
