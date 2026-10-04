@@ -357,9 +357,6 @@ jobs:
         with:
           name: candidate-private-wsl-lsp-${{ github.run_id }}
           path: target/native-lsp-fixture
-      - name: Prepare hosted display for native layout acceptance
-        shell: pwsh
-        run: .github/scripts/prepare-windows-ui-display.ps1
       - name: Prepare owned WSL1 filesystem for the installed journeys
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1
@@ -369,10 +366,14 @@ jobs:
           .github/scripts/windows-workspace-wsl-git.ps1
           "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
       - name: Install interactively and complete visible activation
-        run: node .github/scripts/windows-suite-user-flow.mjs
+        shell: pwsh
+        run: |
+          . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-installer
+          node .github/scripts/windows-suite-user-flow.mjs
       - name: Exercise actual work in the same installed namespace
         shell: pwsh
         run: |
+          . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $failed = @()
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-agent-user-flows.mjs')) {
             if ($script -eq 'windows-suite-delivery-user-flows.mjs') {

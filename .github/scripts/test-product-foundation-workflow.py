@@ -185,7 +185,14 @@ assert "payloadSourceSha = $record.head_sha" in installer_diagnostic
 for script in ("windows-suite-user-flow.mjs", "windows-workspace-user-flows.mjs", "windows-api-user-flows.mjs", "windows-knowledge-user-flows.mjs", "windows-suite-delivery-user-flows.mjs", "windows-suite-legacy-upgrade-ui.mjs", "windows-suite-integration.mjs", "windows-suite-layout.mjs", "windows-suite-agent-user-flows.mjs"):
     assert script in installer_diagnostic
 assert "--withdrawn" in installer_diagnostic
-assert installer_diagnostic.index("prepare-windows-ui-display.ps1") < installer_diagnostic.index("run: node .github/scripts/windows-suite-user-flow.mjs")
+for step_name, evidence_name in (("Install interactively and complete visible activation", "hosted-display-installer"), ("Exercise actual work in the same installed namespace", "hosted-display-work")):
+    step = installer_diagnostic.split("      - name: " + step_name + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "shell: pwsh" in step
+    assert "run: |" in step
+    prepare = '. .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName ' + evidence_name
+    assert prepare in step
+    assert step.index(prepare) < step.index("node .github/scripts/")
+assert "Prepare hosted display for native layout acceptance" not in installer_diagnostic
 assert "windows-user-flow-install.ps1 -Cleanup" in installer_diagnostic
 assert "windows-knowledge-wsl.ps1 -Cleanup" in installer_diagnostic
 assert "windows-suite-delivery.ps1 -Staging candidate/delivery" in installer_diagnostic

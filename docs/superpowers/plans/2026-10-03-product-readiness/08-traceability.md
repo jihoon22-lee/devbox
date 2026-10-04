@@ -60,6 +60,9 @@
   일회성 hosted Windows에만 지원 display mode를 임시 적용하고, 크기·화면·소유 창 측정은
   assertion 전에 보존하도록 보완했다. 기본 1180×780·최소 720×480 수용 기준은 유지한다.
   남은 Workspace 종료 driver 세 곳도 접근성 dialog 이름으로 종료 검토를 식별하도록 맞췄다.
+  진단 `37179213181`은 준비 직후 1920×1080이던 화면이 별도 앱 단계에서 1024×768로 돌아간
+  기록을 남겼다. 임시 display 소유 pwsh를 각 실제 UI 여정과 같은 run block에 유지하도록 수정했다.
+  로컬 영향 검사와 해당 workflow 회귀는 통과했으며, 최종 설치 수용을 대신하지 않는다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 

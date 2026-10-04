@@ -1,16 +1,18 @@
-param([int]$ClientWidth=1180,[int]$ClientHeight=780)
+param([int]$ClientWidth=1180,[int]$ClientHeight=780,[ValidatePattern('^[a-z][a-z0-9-]{0,63}$')][string]$EvidenceName='hosted-display')
 $ErrorActionPreference='Stop'
 # Display mutation is allowed only on the disposable hosted runner used by CI.
 if (-not $IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows' -or $env:GITHUB_REPOSITORY -ne 'jihoon22-lee/devbox' -or $env:GITHUB_RUN_ID -notmatch '^\d+$' -or $env:GITHUB_SHA -notmatch '^[a-f0-9]{40}$') {
   throw 'Display preparation requires disposable GitHub-hosted Windows; never spoof CI environment variables.'
 }
 if ($ClientWidth -lt 720 -or $ClientWidth -gt 2000 -or $ClientHeight -lt 480 -or $ClientHeight -gt 1200) { throw 'Invalid required client dimensions' }
-$destination=Join-Path (Get-Location) 'product-foundation-evidence/hosted-display.json'
+$destination=Join-Path (Get-Location) "product-foundation-evidence/$EvidenceName.json"
 New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
 $report=[ordered]@{sourceSha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;requestedClient=@{width=$ClientWidth;height=$ClientHeight};status='FAIL';temporary=$true;before=$null;after=$null;modes=@();selected=$null;testResult=$null;applyResult=$null;failure=$null}
 # EnumDisplaySettings returns the complete driver-supported DEVMODEW buffer.
 # Pass that same buffer to ChangeDisplaySettings (CDS_TEST then CDS_FULLSCREEN).
 # No CDS_UPDATEREGISTRY and no fabricated driver mode are used.
+# Dot-source this script in the same pwsh process that runs the GUI journeys: the
+# temporary mode belongs to that process and must remain alive during node.
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;

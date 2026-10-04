@@ -36,6 +36,13 @@ assert 'needs: [plan, assemble, packaged-runtime, installer-acceptance, windows-
 assert '--require-user-flows' in w
 assert 'collect-user-flow-evidence.mjs' in w
 installer = w.split('\n  installer-acceptance:', 1)[1].split('\n  windows-wsl2:', 1)[0]
-assert installer.index('prepare-windows-ui-display.ps1') < installer.index('run: node .github/scripts/windows-suite-user-flow.mjs')
+for step_name, evidence_name in (("Install interactively and complete visible activation", "hosted-display-installer"), ("Exercise actual work in the same installed namespace", "hosted-display-work")):
+    step = installer.split("      - name: " + step_name + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "shell: pwsh" in step
+    assert "run: |" in step
+    prepare = '. .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName ' + evidence_name
+    assert prepare in step
+    assert step.index(prepare) < step.index("node .github/scripts/")
+assert "Prepare hosted display for native layout acceptance" not in installer
 assert 'name: ${{ needs.plan.outputs.artifact_name }}' in w
 print('Four-product candidate source/provenance/native gates: PASS')
