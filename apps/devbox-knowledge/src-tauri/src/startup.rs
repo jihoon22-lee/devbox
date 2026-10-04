@@ -180,7 +180,10 @@ pub fn owner(app: &tauri::AppHandle, manifest: &stores::Manifest) -> Result<Vaul
     let state = app.state::<Startup>();
     let (vault, external) = binding(&state.root, manifest)?;
     if !external {
-        knowledge_vault_engine::component::create_private_vault(&vault)?;
+        knowledge_vault_engine::component::create_private_vault(
+            &vault,
+            &stores::directory(&state.root, manifest, "notes")?.join("data.db"),
+        )?;
     }
     vault_owner::acquire(&state.lease_base, &vault)
 }

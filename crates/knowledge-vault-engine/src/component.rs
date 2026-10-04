@@ -172,8 +172,22 @@ pub fn initialize(
     Ok(())
 }
 
-/// The product passes only its own new-user vault here, never an imported binding.
-pub fn create_private_vault(path: &std::path::Path) -> Result<(), String> {
+/// The product passes only its private vault here, never an imported binding.
+/// Once native validation has persisted its scope, startup only checks availability.
+pub fn create_private_vault(
+    path: &std::path::Path,
+    database: &std::path::Path,
+) -> Result<(), String> {
+    let conn =
+        rusqlite::Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| "vault_binding_unavailable")?;
+    // A native recovery scope proves this binding has already been opened.
+    // Recreating its missing root would hide disconnection and replace the vault.
+    if crate::commands::journal::NoteJournalStore::persisted_scope(&conn, path)?.is_some() {
+        return crate::core::vault::VaultIdentity::inspect(path)
+            .map(|_| ())
+            .map_err(|_| "vault_binding_unavailable".into());
+    }
     crate::core::store::ensure_layout(path)
 }
 
@@ -222,4 +236,33 @@ pub fn offer_product_draft(
     // also survives Notes not having been mounted/listening yet.
     let _ = app.emit_to("main", "devbox://open", ());
     Ok(())
+}
+
+#[cfg(test)]
+mod private_vault_tests {
+    use super::*;
+
+    #[test]
+    fn private_vault_startup_preserves_a_previously_validated_missing_vault() {
+        let parent = tempfile::tempdir().unwrap();
+        let vault = parent.path().join("notes-vault");
+        let database = parent.path().join("data.db");
+        create_empty_store(&database, &vault).unwrap();
+        create_private_vault(&vault, &database).unwrap();
+        let conn = crate::core::db::init(&database).unwrap();
+        let journal = crate::commands::journal::NoteJournalStore::new(
+            parent.path().join("note-journal.json"),
+        );
+        journal.remember_validated(&conn, &vault, &vault).unwrap();
+        let offline = parent.path().join("offline");
+        std::fs::rename(&vault, &offline).unwrap();
+        assert_eq!(
+            create_private_vault(&vault, &database).unwrap_err(),
+            "vault_binding_unavailable"
+        );
+        assert!(!vault.exists());
+        assert!(offline.is_dir());
+        std::fs::rename(&offline, &vault).unwrap();
+        create_private_vault(&vault, &database).unwrap();
+    }
 }
