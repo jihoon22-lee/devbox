@@ -76,6 +76,16 @@
   진단 `37180653079`는 Launcher 키보드·모달·한글 조합을 통과하고 실제 배율 변경에서 멈췄다.
   네 main 창이 Tauri 기본값인 zoom hotkeys 비활성을 사용해 설정을 명시적으로 켰으며,
   config 회귀는 RED→GREEN을 확인했다. 새 제품 bytes의 Windows 확대 수용은 아직 미실행이다.
+- 후속 runner는 hosted Windows의 소유 main 창·foreground·WebView focus를 확인한 뒤 native
+  Ctrl+Add/Ctrl+0 입력으로 배율을 바꾸고 renderer DPR·viewport와 원상 복구를 관찰한다.
+  PowerShell/C# 구문·입력 구조·소유 계층·비 hosted 거절은 로컬에서 확인했지만 실제 확대 PASS를
+  대신하지 않는다. 실패한 최초 오류와 스크린샷은 cleanup 전에 보존한다.
+- 진단 `37181151303`은 활성화가 실제 committed임을 소유 receipt·manifest·key로 확인한 뒤
+  독립 업무를 관찰했다. 설치 확대 실패는 그대로 유지하며 이 예외는 진단 workflow에만 적용한다.
+  INSTALL-02·AGENT-01·HTTP-01–03은 통과했고, API MCP·Knowledge 검색은 lazy route 준비 전
+  입력한 runner 문제를 확인해 접근성 target 대기를 추가했다. v0.8.1 준비는 그 고정 source의
+  역사적 `execute` 명령을 사용하도록 수정했다. 철회본 설치 완료와 reviewed update commit은
+  여전히 실패 원인 확인 중이며, 추가 소유 native 오류·단계 근거를 기록한다. R16은 미완료다.
 
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
