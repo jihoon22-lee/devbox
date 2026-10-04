@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { reviewedHistoryRemoval } from "./reviewedHistory";
 import { confirmAction } from "@devbox/product-shell/confirm";
 import type { HistoryItem } from "../types";
+import { emptyRequest } from "./importers";
 vi.mock("@devbox/product-shell/confirm", () => ({ confirmAction: vi.fn() }));
 it("reads the latest history after approval and preserves rows appended during review", async () => {
   let decide!: (accepted: boolean) => void;
@@ -11,14 +12,11 @@ it("reads the latest history after approval and preserves rows appended during r
         decide = resolve;
       }),
   );
-  const request = {
-    method: "GET",
+  const request: HistoryItem["request"] = {
+    ...emptyRequest(),
     url: "https://synthetic.test",
-    headers: [],
-    body: "",
-    body_kind: "none",
-    timeout_ms: 30000,
-  } as HistoryItem["request"];
+    requiresSecretReview: false,
+  };
   const original: HistoryItem = { id: "old", saved_at: 1, request };
   const completed: HistoryItem = { id: "new", saved_at: 2, request };
   let latest = [original];
@@ -31,7 +29,11 @@ it("does not return a deletion after owner unmount", async () => {
   vi.mocked(confirmAction).mockResolvedValueOnce(true);
   expect(
     await reviewedHistoryRemoval(
-      { id: "old", saved_at: 1, request: { url: "https://synthetic.test" } } as HistoryItem,
+      {
+        id: "old",
+        saved_at: 1,
+        request: { ...emptyRequest(), url: "https://synthetic.test", requiresSecretReview: false },
+      },
       () => null,
     ),
   ).toBeNull();
