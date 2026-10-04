@@ -3,6 +3,8 @@ import {
   projectConnectionDiagnostics,
   projectHandoffDiagnostics,
 } from "./agent-runtime-diagnostics.mjs";
+import { installedFixtureCommand } from "./windows-suite-native-protocol.mjs";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
 import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
@@ -108,6 +110,12 @@ function captureDiagnostics() {
   }
 }
 async function call(item, command, body, route) {
+  command = installedFixtureCommand(command, evidence.source);
+  evidence.stage = {
+    product: item.product,
+    command,
+    method: typeof body.method === "string" ? body.method : body.method?.kind,
+  };
   return item.cdp.evaluate(
     `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){throw new Error(JSON.stringify(problem).slice(0,2000));}})()`,
     { timeoutMs: 35000 },
@@ -510,6 +518,7 @@ try {
   }
   evidence.result = "passed";
 } catch (error) {
+  evidence.error = boundedFailure(error);
   evidence.failure = String(error).slice(0, 3000);
   captureDiagnostics();
   process.exitCode = 1;

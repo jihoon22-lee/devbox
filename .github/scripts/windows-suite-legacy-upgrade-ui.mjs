@@ -1,5 +1,6 @@
 // L4 legacy preparation is separate from the actual current installer/use/restore UI journey.
 import assert from "node:assert/strict";
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import path from "node:path";
 import { readFile, writeFile, mkdir, stat, realpath } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -20,7 +21,23 @@ import { createInstalledKnowledgeContext } from "./windows-knowledge-user-flows.
 import { windowsLocalAppData, allWindowsProcesses } from "./windows-packaged-smoke.mjs";
 const editor = { role: "textbox", name: "Markdown 본문" };
 const json = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^\uFEFF/u, ""));
-async function execute(image, args, { timeout = 180000 } = {}) {
+export function legacyOperationFailure(operation, code, signal, stdout, stderr) {
+  let issue = null;
+  try {
+    const value = JSON.parse(stdout.trim());
+    if (typeof value.issue === "string" && /^[a-z][a-z0-9_]{0,100}$/.test(value.issue)) issue = value.issue;
+  } catch {}
+  return Object.assign(new Error(`Owned legacy fixture operation failed: ${operation}`), {
+    operation: {
+      operation,
+      exitCode: code,
+      signal: signal ?? null,
+      issue,
+      stderr: boundedFailure(new Error(stderr)).message,
+    },
+  });
+}
+async function execute(image, args, { timeout = 180000, operation = "subprocess" } = {}) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
   const nsis = args.at(-1)?.startsWith("/D=") ? ownedNsisSpawnOptions(image, args) : {};
@@ -36,8 +53,8 @@ async function execute(image, args, { timeout = 180000 } = {}) {
   });
   const timer = setTimeout(() => child.kill(), timeout);
   try {
-    const [code] = await once(child, "exit");
-    assert.equal(code, 0, `Owned legacy fixture operation failed: ${error}`);
+    const [code, signal] = await once(child, "exit");
+    if (code !== 0) throw legacyOperationFailure(operation, code, signal, output, error);
     return output.trim();
   } finally {
     clearTimeout(timer);
@@ -143,12 +160,14 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
   const scratch = path.join(process.env.RUNNER_TEMP, `devbox-suite-delivery-${randomUUID().replaceAll("-", "")}`),
     root = path.join(scratch, "Suite UI Fixture");
   await mkdir(scratch);
-  let center, knowledge, registration, record;
+  let center, knowledge, registration, record, originalFailure;
+  let stage = "prepare-pinned-assets";
   try {
     const legacy = withdrawn
       ? await prepareWithdrawnSuite(path.join(scratch, "withdrawn-assets"))
       : await prepareLegacySuite(path.join(scratch, "legacy-assets"));
-    await execute(legacy.setup, ["/S", `/D=${root}`]);
+    stage = "install-pinned-setup";
+    await execute(legacy.setup, ["/S", `/D=${root}`], { operation: stage });
     registration = await json(path.join(root, "suite-registration.json"));
     assert.match(registration.installationKey, /^[a-f0-9]{64}$/u);
     assert.notEqual(registration.installationKey, parent.parentInstallationKey);
@@ -165,16 +184,25 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     );
     process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = root;
     await closeAutomaticallyOpenedCenter(root);
-    await execute(process.execPath, [".github/scripts/windows-suite-delivery-native.mjs", root, "import"]);
-    await execute(legacy.helper, ["--activate-clean-install", root, legacy.payloadPath]);
-    await execute(process.execPath, [".github/scripts/windows-suite-delivery-native.mjs", root, "health"]);
-    await execute(legacy.helper, ["--commit-clean-install", root, legacy.payloadPath]);
+    stage = "prepare-pinned-import";
+    await execute(process.execPath, [".github/scripts/windows-suite-delivery-native.mjs", root, "import"], {
+      operation: stage,
+    });
+    stage = "activate-pinned-install";
+    await execute(legacy.helper, ["--activate-clean-install", root, legacy.payloadPath], { operation: stage });
+    stage = "prepare-pinned-health";
+    await execute(process.execPath, [".github/scripts/windows-suite-delivery-native.mjs", root, "health"], {
+      operation: stage,
+    });
+    stage = "commit-pinned-install";
+    await execute(legacy.helper, ["--commit-clean-install", root, legacy.payloadPath], { operation: stage });
     assert.equal((await json(path.join(root, "devbox-activation.json"))).phase, "committed");
     assert.equal(
       (await json(path.join(root, "suite-payload.json"))).sourceSha,
       withdrawn ? withdrawnSource : legacySource,
     );
     await closeAutomaticallyOpenedCenter(root);
+    stage = "prepare-pinned-wal";
     const oldStore = await notesStore(registration.installationKey),
       synthetic = await createSyntheticLegacyWal(oldStore, withdrawn ? "withdrawn v0.9.0" : "published v0.8.1"),
       oldManifest = await json(path.join(root, "devbox-installation.json"));
@@ -182,7 +210,9 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       `Pinned ${withdrawn ? "withdrawn v0.9.0" : "published v0.8.1"} hashes verified; silent/native old activation is fixture preparation only; synthetic committed WAL and native default-vault note created in separate owned namespace`,
     );
     const release = await json(path.join(process.env.DEVBOX_USER_FLOW_ASSETS, "release-manifest.json"));
+    stage = "visible-current-upgrade";
     const updated = await runVisibleSetup(path.resolve(process.env.DEVBOX_USER_FLOW_ASSETS, release.setup.name), root);
+    stage = "current-upgrade-health";
     assert.equal(updated.installationKey, registration.installationKey);
     await closeAutomaticallyOpenedCenter(root);
     center = await createInstalledProductContext("control-center");
@@ -307,6 +337,11 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       failureCode: null,
     };
   } catch (error) {
+    originalFailure = error;
+    try {
+      const ui = knowledge?.ui ?? center?.ui;
+      if (ui) screenshots.push(await ui.screenshot(`${evidenceId}-first-failure`));
+    } catch {}
     record = {
       id: "DELIVERY-01",
       status: "FAIL",
@@ -318,25 +353,57 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       assertions: [...assertions, String(error.message).slice(0, 500)],
       screenshotPaths: screenshots,
       failureCode: "legacy-upgrade-ui-failed",
+      stage,
+      error: boundedFailure(error),
+      operation: error.operation,
     };
+    await mkdir("product-foundation-evidence", { recursive: true });
+    await writeFile(
+      `product-foundation-evidence/${withdrawn ? "withdrawn" : "legacy"}-upgrade-first-failure.json`,
+      JSON.stringify(
+        {
+          stage,
+          ...identity,
+          status: "FAIL",
+          error: record.error,
+          operation: record.operation,
+          screenshotPaths: screenshots,
+        },
+        null,
+        2,
+      ),
+      { flag: "wx" },
+    ).catch(() => {});
   } finally {
-    if (center) await center.close().catch(() => {});
-    if (knowledge) await knowledge.close();
     try {
-      if (registration) {
-        try {
-          await writeUpgradeEvidence(record, withdrawn, registration.installationKey);
-        } finally {
-          await execute("pwsh", ["-NoProfile", "-File", ".github/scripts/windows-user-flow-install.ps1", "-Cleanup"]);
+      if (center) await center.close().catch(() => {});
+      if (knowledge) await knowledge.close();
+      try {
+        if (registration) {
+          try {
+            await writeUpgradeEvidence(record, withdrawn, registration.installationKey);
+          } finally {
+            await execute(
+              "pwsh",
+              ["-NoProfile", "-File", ".github/scripts/windows-user-flow-install.ps1", "-Cleanup"],
+              { operation: "cleanup-owned-installation" },
+            );
+          }
+        } else {
+          process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
+          await writeUpgradeEvidence(record, withdrawn, parent.parentInstallationKey);
         }
-      } else {
+      } finally {
         process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
-        await writeUpgradeEvidence(record, withdrawn, parent.parentInstallationKey);
       }
+    } catch (cleanupError) {
+      if (originalFailure) throw originalFailure;
+      throw cleanupError;
     } finally {
       process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
     }
   }
+  if (originalFailure) throw originalFailure;
   assert.equal(record.status, "PASS", "Inspect actual legacy-upgrade UI failure evidence");
   return record;
 }

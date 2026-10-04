@@ -228,6 +228,7 @@ python3 .github/scripts/test-product-foundation-workflow.py
 node --test .github/scripts/windows-suite-layout.test.mjs .github/scripts/verify-retained-committed-install.test.mjs
 node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs
+node --test .github/scripts/windows-suite-native-protocol.test.mjs .github/scripts/windows-suite-legacy-upgrade-ui.test.mjs
 node .github/scripts/test-windows-smoke-import.mjs
 node .github/scripts/test-product-foundation-performance.mjs
 python3 .github/scripts/test-windows-packaged-smoke-config.py
