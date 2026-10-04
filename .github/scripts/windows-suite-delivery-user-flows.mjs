@@ -39,7 +39,7 @@ export async function run() {
   });
   const launchCenter = async () => {
     center = await createInstalledProductContext("control-center");
-    await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
     await observeUntil(async () => (await center.body()).includes("현재 데이터 보존"), "recovery ready");
   };
   const nativeHelper = () =>

@@ -317,7 +317,7 @@ export async function run() {
     center.cdp.close();
     await attach(previous);
     if (expected !== "committed") {
-      const recovery = { role: "button", name: "데이터 및 복구" };
+      const recovery = { role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } };
       await center.ui.waitForTarget(recovery);
       await center.ui.click(recovery);
       await center.ui.waitForTarget({ role: "button", name: "Devbox Workspace 열기" });
@@ -496,7 +496,7 @@ export async function run() {
     };
     const warmExistingWindowMs = await measureWarmOwnedWindow(center.owner, centerTransport);
     const taskStart = performance.now();
-    await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
     await until(async () => (await text()).includes("현재 데이터 보존"), "committed recovery usable");
     const completeMs = performance.now() - taskStart;
     await observeProductPerformance({

@@ -186,7 +186,7 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     assert.equal(updated.installationKey, registration.installationKey);
     await closeAutomaticallyOpenedCenter(root);
     center = await createInstalledProductContext("control-center");
-    await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
     const inventory = await center.delivery("restore_inventory");
     assert.equal(inventory.update.previousVersion, oldManifest.suiteVersion);
     assert.equal(inventory.update.version, release.suiteVersion);
@@ -233,7 +233,11 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     knowledge = null;
     if (!withdrawn) {
       center = await createInstalledProductContext("control-center");
-      await center.ui.click({ role: "button", name: "데이터 및 복구" });
+      await center.ui.click({
+        role: "button",
+        name: "데이터 및 복구",
+        scope: { role: "navigation", name: "제품 화면" },
+      });
       const review = async (target) => {
         await center.ui.click(target);
         await center.ui.click({ role: "checkbox", name: "선택한 작업과 제품 종료를 확인했습니다." });
@@ -249,7 +253,11 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
         );
         await closeAutomaticallyOpenedCenter(root);
         center = await createInstalledProductContext("control-center");
-        await center.ui.click({ role: "button", name: "데이터 및 복구" });
+        await center.ui.click({
+          role: "button",
+          name: "데이터 및 복구",
+          scope: { role: "navigation", name: "제품 화면" },
+        });
       };
       await review({ role: "button", name: "이 보존본으로 복원", scope: { role: "listitem", name: checkpointId } });
       const restored = await center.delivery("restore_inventory");

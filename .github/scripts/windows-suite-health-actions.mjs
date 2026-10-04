@@ -22,7 +22,7 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
   try {
     center = await createInstalledProductContext("control-center");
     live.push(center);
-    await center.ui.click({ role: "button", name: "데이터 및 복구" });
+    await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
     for (const product of ["workspace", "api-studio", "knowledge"])
       live.push(await createInstalledProductContext(product));
     await center.ui.click({ role: "button", name: "네 제품 상태 확인" });
