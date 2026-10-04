@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http2";
 import { once } from "node:events";
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir, stat, opendir } from "node:fs/promises";
 import path from "node:path";
 import {
   requireApiContext,
@@ -12,6 +12,54 @@ import {
   expectText,
   until,
 } from "./windows-api-user-flow-actions.mjs";
+
+export async function grpcExportObservation(filename) {
+  const exists = async (file) => {
+    try {
+      await stat(file);
+      return true;
+    } catch (error) {
+      return error.code === "ENOENT" ? false : null;
+    }
+  };
+  const parent = path.dirname(filename);
+  let fileCount = null;
+  try {
+    fileCount = 0;
+    let entries = 0;
+    for await (const entry of await opendir(parent)) {
+      if (entry.isFile()) fileCount++;
+      if (++entries >= 64 || fileCount > 32) {
+        fileCount = null;
+        break;
+      }
+    }
+  } catch {
+    fileCount = null;
+  }
+  return {
+    expectedExists: await exists(filename),
+    parentExists: await exists(parent),
+    fileCount,
+    defaultNameExists: await exists(path.join(parent, "grpc-exchange.json")),
+  };
+}
+export async function readExactGrpcExport(filename, observe, read = readFile, inspect = grpcExportObservation) {
+  try {
+    return await read(filename, "utf8");
+  } catch (error) {
+    try {
+      observe(await inspect(filename));
+    } catch {
+      try {
+        observe({ unavailable: true });
+      } catch {
+        /* Preserve the original read failure. */
+      }
+    }
+    throw error;
+  }
+}
 
 const varint = (value) => {
   const bytes = [];
@@ -123,84 +171,98 @@ export async function run(context) {
   requireApiContext(context);
   const fixture = await createPartialGrpcFixture();
   try {
-    return [
-      await scenario(context, "GRPC-01", async (record) => {
-        await context.ui.click(button("프로토콜"));
-        await context.ui.waitForTarget({ role: "tab", name: "gRPC" });
-        await context.ui.click({ role: "tab", name: "gRPC" });
-        await select(context, "gRPC 스키마 소스", 1);
-        await context.ui.fill(textbox("gRPC 엔드포인트"), fixture.endpoint);
-        await context.ui.click(button("gRPC 연결"));
-        await until(
-          async () =>
-            await context.cdp.evaluate("document.querySelector('[aria-label=\"gRPC method\"]')?.options.length===4"),
-          "Reflection method list missing",
+    let exportFailureObservation, exportPickerObservation;
+    const result = await scenario(context, "GRPC-01", async (record) => {
+      await context.ui.click(button("프로토콜"));
+      await context.ui.waitForTarget({ role: "tab", name: "gRPC" });
+      await context.ui.click({ role: "tab", name: "gRPC" });
+      await select(context, "gRPC 스키마 소스", 1);
+      await context.ui.fill(textbox("gRPC 엔드포인트"), fixture.endpoint);
+      await context.ui.click(button("gRPC 연결"));
+      await until(
+        async () =>
+          await context.cdp.evaluate("document.querySelector('[aria-label=\"gRPC method\"]')?.options.length===4"),
+        "Reflection method list missing",
+      );
+      if ((await context.document("grpc_history"))?.value.entries.length) await context.ui.click(button("기록 지우기"));
+      for (const name of ["Server", "Bidi", "Unary", "Client"]) {
+        const index = await context.cdp.evaluate(
+          `Array.from(document.querySelector('[aria-label="gRPC method"]').options).findIndex(option=>option.value.endsWith('.${name}'))`,
         );
-        if ((await context.document("grpc_history"))?.value.entries.length)
-          await context.ui.click(button("기록 지우기"));
-        for (const name of ["Server", "Bidi", "Unary", "Client"]) {
-          const index = await context.cdp.evaluate(
-            `Array.from(document.querySelector('[aria-label="gRPC method"]').options).findIndex(option=>option.value.endsWith('.${name}'))`,
+        assert.ok(index >= 0);
+        await select(context, "gRPC method", index);
+        await context.ui.fill(
+          textbox("gRPC ProtoJSON request"),
+          ["Bidi", "Client"].includes(name) ? '[{"text":"fixture"}]' : '{"text":"fixture"}',
+        );
+        await context.ui.click(button("RPC 호출"));
+        await until(async () => {
+          const latest = (await context.document("grpc_history"))?.value.entries[0];
+          return (
+            latest?.method === name &&
+            latest.responseMessageCount === (["Server", "Bidi"].includes(name) ? 2 : 1) &&
+            latest.status === (["Server", "Bidi"].includes(name) ? "INTERNAL" : "OK")
           );
-          assert.ok(index >= 0);
-          await select(context, "gRPC method", index);
-          await context.ui.fill(
-            textbox("gRPC ProtoJSON request"),
-            ["Bidi", "Client"].includes(name) ? '[{"text":"fixture"}]' : '{"text":"fixture"}',
-          );
-          await context.ui.click(button("RPC 호출"));
-          await until(async () => {
-            const latest = (await context.document("grpc_history"))?.value.entries[0];
-            return (
-              latest?.method === name &&
-              latest.responseMessageCount === (["Server", "Bidi"].includes(name) ? 2 : 1) &&
-              latest.status === (["Server", "Bidi"].includes(name) ? "INTERNAL" : "OK")
-            );
-          }, `Current ${name} native exchange summary not committed`);
-          await expectText(context, "first-synthetic");
-          if (["Server", "Bidi"].includes(name)) {
-            await expectText(context, "2개 수신 후 INTERNAL 종료");
-            await expectText(context, "second-synthetic");
-            record(`Actual ${name} RPC displays both native messages alongside INTERNAL terminal status`);
-            if (name === "Server") {
-              await until(
-                async () => (await context.document("grpc_history"))?.value.entries[0]?.responseMessageCount === 2,
-                "Partial summary not committed",
-              );
-              const output = path.join(context.fixtureRoot, "user-flow-output");
-              await mkdir(output, { recursive: true });
-              const filename = path.join(output, "partial-server-grpc.json");
-              await context.ui.click(button("요약 내보내기"));
-              await context.saveFile(filename);
-              await expectText(context, "gRPC summary를 저장했습니다");
-              const exported = JSON.parse(await readFile(filename, "utf8"));
-              assert.equal(exported.exchange.responseMessageCount, 2);
-              assert.equal(exported.exchange.status, "INTERNAL");
-              assert.ok(!JSON.stringify(exported).includes("first-synthetic"));
-              assert.ok(!JSON.stringify(exported).includes(fixture.endpoint));
-              record(
-                "Real summary export uses owned native Save dialog; exported count/status match UI and exclude response payload/endpoint",
-              );
-            }
-          } else {
+        }, `Current ${name} native exchange summary not committed`);
+        await expectText(context, "first-synthetic");
+        if (["Server", "Bidi"].includes(name)) {
+          await expectText(context, "2개 수신 후 INTERNAL 종료");
+          await expectText(context, "second-synthetic");
+          record(`Actual ${name} RPC displays both native messages alongside INTERNAL terminal status`);
+          if (name === "Server") {
             await until(
-              async () =>
-                await context.cdp.evaluate(
-                  "document.querySelector('.grpc-result .grpc-status-ok')?.textContent==='OK'",
-                ),
-              "Nonstreaming OK result missing",
+              async () => (await context.document("grpc_history"))?.value.entries[0]?.responseMessageCount === 2,
+              "Partial summary not committed",
             );
-            record(`Actual ${name} RPC retains its existing single-response OK behavior`);
+            const output = path.join(context.fixtureRoot, "user-flow-output");
+            await mkdir(output, { recursive: true });
+            const filename = path.join(output, "partial-server-grpc.json");
+            const savedNotice = "gRPC summary를 저장했습니다. message body와 credential 정보는 포함하지 않았습니다.";
+            const exactSavedNotice = () =>
+              context.cdp.evaluate(
+                `(() => { const node = document.querySelector('.grpc-notice'); return !!node && !node.closest('[hidden]') && node.textContent === ${JSON.stringify(savedNotice)}; })()`,
+              );
+            assert.equal(await exactSavedNotice(), false, "Export saved notice must not precede this export");
+            await context.ui.click(button("요약 내보내기"));
+            const picker = await context.saveFile(filename);
+            exportPickerObservation = {
+              filenameMatched: picker?.filenameMatched === true,
+              chooserClosed: picker?.chooserClosed === true,
+              dispatchAcknowledged: picker?.dispatchAcknowledged === true,
+            };
+            await until(exactSavedNotice, "Exact current gRPC export saved notice missing");
+            const exported = JSON.parse(
+              await readExactGrpcExport(filename, (observation) => {
+                exportFailureObservation = observation;
+              }),
+            );
+            assert.equal(exported.exchange.responseMessageCount, 2);
+            assert.equal(exported.exchange.status, "INTERNAL");
+            assert.ok(!JSON.stringify(exported).includes("first-synthetic"));
+            assert.ok(!JSON.stringify(exported).includes(fixture.endpoint));
+            record(
+              "Real summary export uses owned native Save dialog; exported count/status match UI and exclude response payload/endpoint",
+            );
           }
+        } else {
+          await until(
+            async () =>
+              await context.cdp.evaluate("document.querySelector('.grpc-result .grpc-status-ok')?.textContent==='OK'"),
+            "Nonstreaming OK result missing",
+          );
+          record(`Actual ${name} RPC retains its existing single-response OK behavior`);
         }
-        const history = await context.document("grpc_history");
-        assert.ok(history.value.entries.some((item) => item.status === "INTERNAL" && item.responseMessageCount === 2));
-        record(
-          "Persisted native summary count agrees with the displayed partial result and contains only summary metadata",
-        );
-        await context.ui.click(button("연결 해제"));
-      }),
-    ];
+      }
+      const history = await context.document("grpc_history");
+      assert.ok(history.value.entries.some((item) => item.status === "INTERNAL" && item.responseMessageCount === 2));
+      record(
+        "Persisted native summary count agrees with the displayed partial result and contains only summary metadata",
+      );
+      await context.ui.click(button("연결 해제"));
+    });
+    if (exportFailureObservation) result.exportFailureObservation = exportFailureObservation;
+    if (exportPickerObservation) result.exportPickerObservation = exportPickerObservation;
+    return [result];
   } finally {
     await fixture.close();
   }

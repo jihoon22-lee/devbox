@@ -126,3 +126,47 @@ test("legacy WAL proof writes only an existing schema setting and survives a con
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+test("committed upgrade proves all four registered shortcuts without a direct-launch fallback", async () => {
+  const { verifyRegisteredShortcutLaunches } = await import("./windows-suite-legacy-upgrade-ui.mjs");
+  const products = [];
+  const proofs = await verifyRegisteredShortcutLaunches(async (product) => {
+    products.push(product);
+    return {
+      product,
+      registeredLink: true,
+      freshProcess: true,
+      imageVerified: true,
+      ownedWindowReady: true,
+      screenshot: `${product}.png`,
+    };
+  });
+  assert.deepEqual(products, ["workspace", "api-studio", "knowledge", "control-center"]);
+  assert.equal(proofs.length, 4);
+  const attempted = [];
+  await assert.rejects(
+    verifyRegisteredShortcutLaunches(async (product) => {
+      attempted.push(product);
+      throw new Error("registered link failed");
+    }),
+    /registered link failed/,
+  );
+  assert.deepEqual(attempted, ["workspace"]);
+});
+
+test("shortcut readiness requires the exact product window and usable navigation", async () => {
+  const { shortcutWindowReady } = await import("./windows-suite-legacy-upgrade-ui.mjs");
+  const view = {
+    name: "Devbox Workspace",
+    enabled: true,
+    selectedWindowCount: 1,
+    buttons: [{ name: "개요", enabled: true, visible: true }],
+  };
+  assert.equal(shortcutWindowReady("workspace", view), true);
+  for (const bad of [
+    { ...view, name: "foreign" },
+    { ...view, selectedWindowCount: 0 },
+    { ...view, buttons: [] },
+  ])
+    assert.equal(shortcutWindowReady("workspace", bad), false);
+});

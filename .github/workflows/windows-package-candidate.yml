@@ -384,6 +384,8 @@ jobs:
         run: |
           .github/scripts/windows-user-flow-cleanup-observation.test.ps1
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
+          .github/scripts/windows-owned-installer-capture.test.ps1
+          .github/scripts/windows-suite-shortcut-launch.test.ps1
       - name: Install interactively and complete visible activation
         shell: pwsh
         run: |

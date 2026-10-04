@@ -296,3 +296,5 @@ for name in ("product-foundation.yml", "windows-package-candidate.yml"):
     assert "shell: powershell" in step
     assert "windows-user-flow-cleanup-uninstall.test.ps1" in step
     assert "windows-user-flow-cleanup-observation.test.ps1" in step
+    assert "windows-owned-installer-capture.test.ps1" in step
+    assert "windows-suite-shortcut-launch.test.ps1" in step

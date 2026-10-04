@@ -36,3 +36,20 @@ test("transform setup navigates once and observes Requests URL readiness before 
   await preparing;
   assert.deepEqual(events, ["navigation", "readonly target", "fill"]);
 });
+
+test("delivered transform waits for automatic Requests preview without clicking covered navigation", async () => {
+  const events = [];
+  await runner.deliverTransformPreview({
+    ui: {
+      click: async (target) => {
+        assert.equal(target.name, "API Playground로 전달");
+        events.push("deliver");
+      },
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "dialog", name: "Toolbox 텍스트 요청 미리보기" });
+        events.push("preview-ready");
+      },
+    },
+  });
+  assert.deepEqual(events, ["deliver", "preview-ready"]);
+});

@@ -28,6 +28,11 @@ export async function prepareTransformRequest(context, url) {
   await context.ui.waitForTarget(textbox("요청 URL"));
   await context.ui.fill(textbox("요청 URL"), url);
 }
+export async function deliverTransformPreview(context) {
+  await context.ui.click(button("API Playground로 전달"));
+  // Native delivery itself navigates Requests and opens the modal preview.
+  await context.ui.waitForTarget({ role: "dialog", name: "Toolbox 텍스트 요청 미리보기" });
+}
 export async function run(context) {
   requireApiContext(context);
   const echo = await echoFixture();
@@ -118,19 +123,15 @@ export async function run(context) {
         await context.ui.click(button("취소"));
         assert.equal(await context.cdp.evaluate("document.querySelectorAll('.api-handoff-dialog').length"), 0);
         await context.ui.click(button("Requests로 보내기", { role: "region", name: "타입 지정 파이프라인" }));
-        await context.ui.click(button("API Playground로 전달"));
-        await context.ui.click(button("요청"));
-        await expectText(context, "Toolbox 텍스트 요청 미리보기");
+        await deliverTransformPreview(context);
         const priorUrl = await context.cdp.evaluate("document.querySelector('[aria-label=\"요청 URL\"]').value");
-        await context.ui.click(button("취소"));
+        await context.ui.click(button("취소", { role: "dialog", name: "Toolbox 텍스트 요청 미리보기" }));
         assert.equal(await context.cdp.evaluate("document.querySelector('[aria-label=\"요청 URL\"]').value"), priorUrl);
         assert.equal(echo.hits.length, 0);
         await context.ui.click(button("변환"));
         await context.ui.click(button("Requests로 보내기", { role: "region", name: "타입 지정 파이프라인" }));
-        await context.ui.click(button("API Playground로 전달"));
-        await context.ui.click(button("요청"));
-        await expectText(context, "Toolbox 텍스트 요청 미리보기");
-        await context.ui.click(button("적용"));
+        await deliverTransformPreview(context);
+        await context.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 요청 미리보기" }));
         await context.ui.click(button("BODY"));
         assert.ok(
           await context.cdp.evaluate(
