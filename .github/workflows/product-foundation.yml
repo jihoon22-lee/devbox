@@ -453,6 +453,8 @@ jobs:
         id: retained_install
         shell: pwsh
         run: |
+          .github/scripts/windows-user-flow-cleanup-observation.test.ps1
+          .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-installer
           node .github/scripts/windows-suite-user-flow.mjs
       - name: Exercise actual work in the same installed namespace
@@ -649,6 +651,8 @@ jobs:
         run: |
           .github/scripts/windows-native-file-dialog.test.ps1
           .github/scripts/windows-user-flow-file-picker.test.ps1
+          .github/scripts/windows-user-flow-cleanup-observation.test.ps1
+          .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
       - uses: actions/download-artifact@v8
         with:
           name: workspace-wsl-${{ github.sha }}

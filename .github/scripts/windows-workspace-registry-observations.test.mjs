@@ -29,7 +29,7 @@ test("automatic registration waits exact root persistence and native project car
     actions.map(([event]) => event),
     ["ready", "click"],
   );
-  assert.equal(actions[0][1].scope.name, project.name);
+  assert.deepEqual(actions[0][1].scope, { role: "region", name: project.name });
 });
 test("missing native card readiness rejects before any selection", async () => {
   let clicks = 0;
@@ -71,4 +71,26 @@ test("selection observation rejects a stale same-kind context until the exact ow
     tree.binding.root,
   );
   assert.deepEqual(results, [false, false, true]);
+});
+
+test("sibling worktrees use the exact native root group instead of ambiguous project region", async () => {
+  let clicked;
+  await selectRegisteredWorkspaceRoot(
+    {
+      waitForTarget: async () => {},
+      click: async (target) => {
+        clicked = target;
+      },
+    },
+    async () => ({
+      projects: [{ id: "p", name: "same project" }],
+      worktrees: [
+        { projectId: "p", binding: { root: "/owned/base" } },
+        { projectId: "p", binding: { root: "/owned/task" } },
+      ],
+    }),
+    async (check) => assert.equal(await check(), true),
+    "/owned/base",
+  );
+  assert.deepEqual(clicked.scope, { role: "group", name: "/owned/base" });
 });

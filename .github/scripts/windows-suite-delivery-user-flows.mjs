@@ -19,6 +19,14 @@ export async function assertKnowledgeDraft(context, expected) {
   assert.equal(await context.knowledgeFixture.editorText(), expected);
 }
 export const scenarioIds = ["INSTALL-03", "DELIVERY-02"];
+export async function completeHealthAfterKnowledgeClose(knowledge, label, completeHealth = completeInstalledHealth) {
+  assert.notEqual(knowledge.child.exitCode, null, "Knowledge normal saved close must precede health");
+  // Native X already exited the first owner; release its per-image CDP policy
+  // before health opens the same executable under a fresh debugging owner.
+  await knowledge.close();
+  return completeHealth(label);
+}
+
 async function exists(file) {
   try {
     await access(file);
@@ -158,7 +166,7 @@ export async function run() {
     await center.close();
     await runVisibleSetup(path.resolve(process.env.DEVBOX_USER_FLOW_ASSETS, candidate.setup.name), knowledge.root);
     await closeAutomaticallyOpenedCenter(knowledge.root);
-    screenshots.push(...(await completeInstalledHealth("업데이트 확정")));
+    screenshots.push(...(await completeHealthAfterKnowledgeClose(knowledge, "업데이트 확정")));
     await launchCenter();
     const marker = path.join(knowledge.root, "owned-user-file-preserved.txt");
     await writeFile(marker, "synthetic unlisted installer preservation\n", { flag: "wx" });

@@ -38,9 +38,8 @@ export async function runApiUserFlows() {
           },
         });
       } else results.push(...(await runner.run(context)));
-      // Retained diagnostics collect independent protocol failures in one run;
-      // the unchanged summary still rejects every failed or missing scenario.
-      if (context.diagnosticOnly !== true && results.some((result) => result.status !== "PASS")) break;
+      // Collect independent protocol journeys even after a recorded failure.
+      // The final summary still rejects every failed or missing scenario.
     }
   } catch (error) {
     await preserveUserFlowFailure("api-studio", error, { ui: context?.ui, identity: context }).catch(() => {

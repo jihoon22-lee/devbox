@@ -1,3 +1,4 @@
+import { cleanupOwnedFixture, withOwnedCleanup } from "./owned-fixture-cleanup.mjs";
 import { runKnowledgeChecks } from "./knowledge-diagnostic-sequence.mjs";
 import {
   visibleNoteTextExpression,
@@ -100,8 +101,8 @@ export async function createInstalledKnowledgeContext() {
     for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
     const started = performance.now();
     const child = spawn(executable, [], { cwd: root, env, stdio: "ignore" });
-    await once(child, "spawn");
     current = { child, identity: null, executable, policy, cdp: null };
+    await once(child, "spawn");
     await wait(
       () =>
         allWindowsProcesses().some(
@@ -128,17 +129,25 @@ export async function createInstalledKnowledgeContext() {
   async function finish(crash = false) {
     if (!current) return;
     const item = current;
-    if (item.child.exitCode === null) {
-      if (crash) {
-        assert.ok(item.identity, "No owned process identity; preserve failed fixture");
-        await stopOwnedProcess(item.identity, executable, item.child);
-      } else {
-        await closeOwned();
-        await wait(() => item.child.exitCode !== null, "owned Knowledge close");
-      }
-    }
-    await releaseCdpSession(item);
-    current = null;
+    await withOwnedCleanup(
+      async () => {
+        if (item.child.exitCode === null && !crash) {
+          await closeOwned();
+          await wait(() => item.child.exitCode !== null, "owned Knowledge close");
+        }
+      },
+      async () => {
+        try {
+          await cleanupOwnedFixture(
+            item,
+            () => stopOwnedProcess(item.identity, executable, item.child),
+            () => releaseCdpSession(item),
+          );
+        } finally {
+          current = null;
+        }
+      },
+    );
   }
   const ui = createUiDriver({
     cdp: {
@@ -354,7 +363,7 @@ export async function createInstalledKnowledgeContext() {
   try {
     await launch();
   } catch (error) {
-    await close();
+    await close().catch(() => {});
     throw error;
   }
   return {

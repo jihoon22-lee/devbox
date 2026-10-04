@@ -1,3 +1,5 @@
+import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
+import { crashOwnedWorkspace } from "./windows-workspace-crash.mjs";
 import assert from "node:assert/strict";
 import { preserveUserFlowFailure } from "./user-flow-failure-evidence.mjs";
 import { stopWorkspaceBeforeDisconnect } from "./windows-workspace-ui-observations.mjs";
@@ -126,11 +128,7 @@ export async function runWorkspaceUserFlows() {
     );
   }
   async function waitForExit() {
-    if (child.exitCode !== null) return;
-    await Promise.race([
-      once(child, "exit"),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Reviewed native close did not exit")), 20_000)),
-    ]);
+    await waitForFixtureChildExit(child, 20_000);
   }
   async function cleanup() {
     await stopWorkspaceBeforeDisconnect(
@@ -168,7 +166,11 @@ export async function runWorkspaceUserFlows() {
     waitForExit,
     cleanup,
     async restart(crash) {
-      if (crash) await cleanup();
+      if (crash)
+        await stopWorkspaceBeforeDisconnect(
+          () => crashOwnedWorkspace({ owner, executable, child, waitForExit }),
+          () => attached?.close(),
+        );
       await launch();
     },
   });

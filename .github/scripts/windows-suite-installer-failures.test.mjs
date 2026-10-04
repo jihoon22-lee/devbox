@@ -241,3 +241,25 @@ test("setup and removal failure cleanup rethrows the identical primitive or froz
     assert.equal(detached, true);
   }
 });
+
+test("delivery health releases the exited Knowledge policy before another Knowledge owner starts", async () => {
+  const { completeHealthAfterKnowledgeClose } = await import("./windows-suite-delivery-user-flows.mjs");
+  let policyOwned = true;
+  const knowledge = {
+    child: { exitCode: 0 },
+    close: async () => {
+      policyOwned = false;
+    },
+  };
+  const result = await completeHealthAfterKnowledgeClose(knowledge, "health", async (label) => {
+    assert.equal(label, "health");
+    assert.equal(policyOwned, false, "Second Knowledge CDP owner must not collide with exited first owner");
+    return ["screenshot"];
+  });
+  assert.deepEqual(result, ["screenshot"]);
+  knowledge.child.exitCode = null;
+  await assert.rejects(
+    completeHealthAfterKnowledgeClose(knowledge, "health", () => assert.fail("live Knowledge must not be replaced")),
+    /normal saved close/,
+  );
+});

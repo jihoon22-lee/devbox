@@ -20,9 +20,53 @@ function Run-Owned([string]$File, [string[]]$Arguments, [int]$TimeoutMillisecond
     $process.Dispose()
   }
 }
-function Wait-OwnedUninstall([Diagnostics.Process]$Process) {
-  if (-not $Process.WaitForExit(180000)) { throw 'Owned user-flow uninstall timed out.' }
-  if ($Process.ExitCode -ne 0) { throw 'Owned user-flow uninstall failed; preserve fixture for inspection.' }
+function Wait-OwnedUninstall([Diagnostics.Process]$Process,[object]$ExitCode=$null) {
+  try {
+    if (-not $Process.WaitForExit(180000)) { throw 'Owned user-flow uninstall timed out.' }
+    if ($Process.ExitCode -ne 0) { throw 'Owned user-flow uninstall failed; preserve fixture for inspection.' }
+  } finally {
+    if($null -ne $ExitCode -and $Process.HasExited){$ExitCode.Value=$Process.ExitCode}
+  }
+}
+function Start-OwnedCleanupUninstaller([string]$Root,[string]$Scratch) {
+  if(-not [IO.Path]::IsPathRooted($Root) -or $Root.Contains('"') -or $Root.Contains("`r") -or $Root.Contains("`n") -or
+    (Split-Path -Leaf $Root) -cne 'Suite UI Fixture' -or
+    -not $Root.StartsWith($Scratch.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid owned uninstaller directory.' }
+  $source=Join-Path $Root 'Uninstall.exe'
+  foreach($ownedPath in @($Root,$Scratch,$source)) {
+    if((Get-Item -LiteralPath $ownedPath -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked owned uninstaller input; preserved.' }
+  }
+  $image=Join-Path $Scratch ('owned-uninstall-'+[guid]::NewGuid().ToString('N')+'.exe')
+  Copy-Item -LiteralPath $source -Destination $image -ErrorAction Stop
+  if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash) { throw 'Owned uninstaller copy changed.' }
+  $start=[Diagnostics.ProcessStartInfo]::new()
+  $start.FileName=$image
+  $start.UseShellExecute=$false
+  $start.WorkingDirectory=(Get-Location).ProviderPath
+  # NSIS requires the final _?= directory raw, including spaces. The copied
+  # child avoids its automatic temporary relaunch, preserving actual exit code.
+  $start.Arguments='/S _?='+$Root
+  $process=[Diagnostics.Process]::new()
+  $process.StartInfo=$start
+  try {
+    if(-not $process.Start()){throw 'Owned uninstaller did not start.'}
+    return $process
+  } catch {
+    try{$process.Dispose()}catch{}
+    throw
+  }
+}
+function Write-OwnedCleanupObservation([string]$Root,[string]$EvidencePath,
+  [ValidateSet('stop-agent','check-live-products','start-uninstall','wait-uninstaller','wait-removal-receipt','remove-owned-data','remove-owned-installation')][string]$Stage,
+  [ValidateSet('running','failed','completed')][string]$Status,[object]$ExitCode=$null) {
+  $observation=[ordered]@{
+    schemaVersion=1;stage=$Stage;status=$Status;exitCode=$ExitCode
+    updatePending=[bool](Test-Path -LiteralPath (Join-Path $Root 'suite-update.json'))
+    restorePending=[bool](Test-Path -LiteralPath (Join-Path $Root 'suite-data-restore.json'))
+    uninstallPending=[bool](Test-Path -LiteralPath (Join-Path $Root 'uninstall-plan.json'))
+    removalReceipt=[bool](Test-Path -LiteralPath (Join-Path $Root 'uninstall-complete.json'))
+  }
+  [IO.File]::WriteAllText($EvidencePath,($observation | ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
 }
 $payloadSource=$env:GITHUB_SHA
 $payloadRun=$env:GITHUB_RUN_ID
@@ -73,22 +117,57 @@ $registration=Get-Content -LiteralPath (Join-Path $root 'suite-registration.json
 if ($registration.installationKey -cne $key) { throw 'User-flow installation changed.' }
 $manifest=Get-Content -LiteralPath (Join-Path $root 'devbox-installation.json') -Raw | ConvertFrom-Json
 $center=Join-Path $root ($manifest.members | Where-Object product -eq 'control-center').executable
-Run-Owned $center @('--stop-agent-for-update')
-$live=@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase) })
-if ($live.Count -ne 0) { throw 'Owned product process still running; preserve fixture rather than force terminate.' }
-$uninstall=Start-Process -FilePath (Join-Path $root 'Uninstall.exe') -ArgumentList '/S' -PassThru
-Wait-OwnedUninstall $uninstall
-$timer=[Diagnostics.Stopwatch]::StartNew()
-while (-not (Test-Path -LiteralPath (Join-Path $root 'uninstall-complete.json'))) {
-  if ($timer.Elapsed.TotalSeconds -gt 180) { throw 'Owned user-flow removal receipt missing.' }
-  Start-Sleep -Milliseconds 250
-}
-foreach ($namespace in @('workspace','apistudio','knowledge','controlcenter','agent','suite-restore','suite-backups','suite-updates')) {
-  $data=Join-Path $env:LOCALAPPDATA "com.devbox.v08.$namespace.i$key"
-  if (Test-Path -LiteralPath $data) {
-    if (@(Get-ChildItem -LiteralPath $data -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count) { throw 'Linked fixture namespace; preserved.' }
-    Remove-Item -LiteralPath $data -Recurse -Force
+$evidenceDirectory=Join-Path (Get-Location).ProviderPath 'product-foundation-evidence'
+New-Item -ItemType Directory -Force -Path $evidenceDirectory | Out-Null
+$cleanupEvidence=Join-Path $evidenceDirectory ("owned-cleanup-$key.json")
+$cleanupStage='stop-agent'
+$cleanupExitCode=$null
+$uninstall=$null
+$cleanupCompleted=$false
+try {
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running'
+  Run-Owned $center @('--stop-agent-for-update')
+  $cleanupStage='check-live-products'
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running'
+  $live=@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase) })
+  if ($live.Count -ne 0) { throw 'Owned product process still running; preserve fixture rather than force terminate.' }
+  $cleanupStage='start-uninstall'
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running'
+  $uninstall=Start-OwnedCleanupUninstaller $root $scratch
+  $cleanupStage='wait-uninstaller'
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running'
+  Wait-OwnedUninstall $uninstall ([ref]$cleanupExitCode)
+  $cleanupStage='wait-removal-receipt'
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running' $cleanupExitCode
+  $timer=[Diagnostics.Stopwatch]::StartNew()
+  while (-not (Test-Path -LiteralPath (Join-Path $root 'uninstall-complete.json'))) {
+    if ($timer.Elapsed.TotalSeconds -gt 180) { throw 'Owned user-flow removal receipt missing.' }
+    Start-Sleep -Milliseconds 250
+  }
+  $cleanupStage='remove-owned-data'
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running' $cleanupExitCode
+  foreach ($namespace in @('workspace','apistudio','knowledge','controlcenter','agent','suite-restore','suite-backups','suite-updates')) {
+    $data=Join-Path $env:LOCALAPPDATA "com.devbox.v08.$namespace.i$key"
+    if (Test-Path -LiteralPath $data) {
+      if (@(Get-ChildItem -LiteralPath $data -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count) { throw 'Linked fixture namespace; preserved.' }
+      Remove-Item -LiteralPath $data -Recurse -Force
+    }
+  }
+  $cleanupStage='remove-owned-installation'
+  Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running' $cleanupExitCode
+  if (@(Get-ChildItem -LiteralPath $scratch -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count) { throw 'Linked installation fixture; preserved.' }
+  Remove-Item -LiteralPath $scratch -Recurse -Force
+  $cleanupCompleted=$true
+} finally {
+  try {
+    if($null -ne $uninstall -and $uninstall.HasExited){$cleanupExitCode=$uninstall.ExitCode}
+    $cleanupStatus=if($cleanupCompleted){'completed'}else{'failed'}
+    Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage $cleanupStatus $cleanupExitCode
+  } catch {
+    # Evidence must never replace the original owned cleanup failure.
+  } finally {
+    if($null -ne $uninstall){
+      try{$uninstall.Dispose()}catch{}
+    }
   }
 }
-if (@(Get-ChildItem -LiteralPath $scratch -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count) { throw 'Linked installation fixture; preserved.' }
-Remove-Item -LiteralPath $scratch -Recurse -Force

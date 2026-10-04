@@ -283,6 +283,23 @@ export function createWorkspaceUiFixture({
         );
       }, "Agent UI settled");
     },
+    async waitForAgentSourceIdle() {
+      const selected = await context();
+      const tree = (await this.registry()).worktrees.find(
+        (item) => item.id === selected.worktreeId && item.projectId === selected.projectId,
+      );
+      assert.ok(tree, "Selected Agent worktree absent");
+      await wait(
+        () =>
+          cdp.evaluate(`(() => {
+        const source = document.querySelector('.workspace-feature-source .workspace-native-source');
+        if (!source || !Array.from(source.querySelectorAll('p')).some(node => node.textContent === ${JSON.stringify(tree.binding.root)})) return false;
+        const button = Array.from(source.querySelectorAll('button')).find(node => node.textContent.trim() === 'Git 승인 상태 확인');
+        return !!button && !button.disabled;
+      })()`),
+        "selected Source inspection idle before Agent review",
+      );
+    },
     async attemptAgentReview() {
       await ui.click({ role: "button", name: "에이전트" });
       await ui.waitForTarget({ role: "button", name: "변경 검토" });

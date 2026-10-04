@@ -117,3 +117,25 @@ test("Agent notification dismissal uses actual input only when a toast is visibl
     assert.deepEqual(events, visible ? [{ role: "button", name: "알림 닫기" }] : []);
   }
 });
+
+test("review observes idle Source then explicitly approves the newly selected worktree", async () => {
+  const { reviewAgentWorktree } = await import("./windows-workspace-agent-registry-ui.mjs");
+  const events = [];
+  await reviewAgentWorktree(
+    {
+      waitForTarget: async (target) => events.push(`ready:${target.name}`),
+      click: async (target) => events.push(`click:${target.name}`),
+    },
+    {
+      waitForAgentSourceIdle: async () => events.push("idle"),
+      trustSource: async () => events.push("approve-current-worktree"),
+    },
+  );
+  assert.deepEqual(events, [
+    "idle",
+    "ready:변경 검토",
+    "click:변경 검토",
+    "ready:Git 실행 승인",
+    "approve-current-worktree",
+  ]);
+});

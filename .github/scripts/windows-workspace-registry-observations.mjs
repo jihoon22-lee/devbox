@@ -19,14 +19,19 @@ export async function waitForSelectedWorkspaceRoot(context, registry, wait, root
   }, "exact owned root native context selected");
 }
 export async function selectRegisteredWorkspaceRoot(ui, registry, wait, root) {
-  let project;
+  let project, tree, siblings;
   await wait(async () => {
     const snapshot = await registry();
-    const tree = snapshot.worktrees.find((item) => sameRoot(root, item.binding.root));
+    tree = snapshot.worktrees.find((item) => sameRoot(root, item.binding.root));
+    siblings = snapshot.worktrees.filter((item) => item.projectId === tree?.projectId).length;
     project = snapshot.projects.find((item) => item.id === tree?.projectId);
     return !!project;
   }, "owned root registered");
-  const target = { role: "button", name: "프로젝트 선택", scope: { role: "region", name: project.name } };
+  const target = {
+    role: "button",
+    name: "프로젝트 선택",
+    scope: siblings === 1 ? { role: "region", name: project.name } : { role: "group", name: tree.binding.root },
+  };
   await ui.waitForTarget(target);
   await ui.click(target);
   return project;

@@ -1,3 +1,5 @@
+import vm from "node:vm";
+import { summarizeEvidence } from "./suite-user-flow-evidence.mjs";
 import * as runner from "./windows-api-mcp-auth.mjs";
 import { scenarioModuleContract } from "./windows-api-user-flow-contract.test-support.mjs";
 import assert from "node:assert/strict";
@@ -94,6 +96,7 @@ test("OAuth refresh waits for the requested grant option before one selection", 
   const events = [];
   let ready = false;
   let reads = 0;
+  let grantReady = false;
   try {
     const result = await runner.run({
       root,
@@ -113,11 +116,17 @@ test("OAuth refresh waits for the requested grant option before one selection", 
           events.push(target.name);
           if (target.name === "OAuth grant") {
             assert.equal(reads, 2);
+            assert.equal(grantReady, true);
             throw new Error("fixture stop at one grant selection");
           }
           if (target.name === "MCP") assert.equal(ready, true, "MCP is absent while Protocols lazy route loads");
         },
         waitForTarget: async (target) => {
+          if (target.name === "OAuth grant") {
+            grantReady = true;
+            events.push("grant-ready");
+            return;
+          }
           assert.equal(target.name, "MCP");
           events.push("ready");
           ready = true;
@@ -129,7 +138,7 @@ test("OAuth refresh waits for the requested grant option before one selection", 
       },
     });
     assert.equal(result[0].status, "FAIL");
-    assert.deepEqual(events, ["프로토콜", "ready", "MCP", "OAuth grant 새로 고침", "OAuth grant"]);
+    assert.deepEqual(events, ["프로토콜", "ready", "MCP", "OAuth grant 새로 고침", "grant-ready", "OAuth grant"]);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -162,4 +171,95 @@ test("disconnect after refresh waits for enabled control before one input", asyn
     },
   });
   assert.deepEqual(events, ["ready", "click"]);
+});
+
+test("Grant selection observes enabled control after refresh before resolving current option", async () => {
+  const events = [];
+  let ready = false;
+  await runner.selectOAuthGrant(
+    {
+      ui: {
+        waitForTarget: async (target) => {
+          assert.deepEqual(target, { role: "combobox", name: "OAuth grant" });
+          events.push("ready");
+          ready = true;
+        },
+        click: async () => {
+          assert.equal(ready, true);
+          events.push("click");
+        },
+        press: async (key) => events.push(key),
+      },
+      cdp: {
+        evaluate: async () => {
+          assert.equal(ready, true);
+          events.push("current-options");
+          return 1;
+        },
+      },
+    },
+    "owned-grant-B",
+  );
+  assert.deepEqual(events, ["ready", "current-options", "click", "Home", "ArrowDown", "Enter"]);
+});
+
+test("Candidate API continues independent modules after AUTH failure while final gate rejects", async () => {
+  const matrix = JSON.parse(await readFile(new URL("./suite-user-flow-matrix.json", import.meta.url), "utf8")).filter(
+    (row) => /^windows-api-(http-semantics|mcp-auth|environments|webhooks|grpc|transforms)\.mjs$/.test(row.module),
+  );
+  const source = await readFile(new URL("./windows-api-user-flows.mjs", import.meta.url), "utf8");
+  const body = source
+    .slice(source.indexOf("export async function runApiUserFlows"), source.indexOf("if (process.argv[1]"))
+    .replace("export async function", "async function")
+    .replace('new URL("./suite-user-flow-matrix.json", import.meta.url)', '"matrix"')
+    .replace("await import(new URL(module, import.meta.url))", "await loadRunner(module)");
+  const visited = [];
+  const firstFailure = { name: "Error", message: "owned AUTH first failure" };
+  const context = {
+    diagnosticOnly: false,
+    httpCompletedMs: 1,
+    sourceSha: "a".repeat(40),
+    fixtureSha: "a".repeat(40),
+    artifactDigests: { fixture: "b".repeat(64) },
+    ui: { closeOwnedWindow: async () => {} },
+    close: async () => {},
+  };
+  let saved;
+  const result = vm.runInNewContext(`${body} runApiUserFlows()`, {
+    assert,
+    readFile: async () => JSON.stringify(matrix),
+    createApiUserFlowContext: async () => context,
+    observeProductPerformance: async ({ workload }) => workload(),
+    loadRunner: async (module) => ({
+      run: async () => {
+        visited.push(module);
+        return matrix
+          .filter((row) => row.module === module)
+          .map((row) => ({
+            ...context,
+            ui: undefined,
+            close: undefined,
+            id: row.id,
+            evidenceKind: "packaged-ui",
+            status: row.id === "AUTH-02" ? "FAIL" : "PASS",
+            assertions: ["owned observation"],
+            screenshotPaths: ["/owned/image.png"],
+            failureCode: row.id === "AUTH-02" ? "AUTH-02-assertion-failed" : null,
+            error: row.id === "AUTH-02" ? firstFailure : undefined,
+          }));
+      },
+    }),
+    writeUserFlowResults: async (_, rows) => {
+      saved = rows;
+    },
+    summarizeEvidence,
+    preserveUserFlowFailure: async () => {},
+    console,
+  });
+  await assert.rejects(result, /"ready":false/);
+  assert.equal(visited.length, 6);
+  assert.equal(saved.length, 11);
+  assert.equal(saved.find((row) => row.id === "AUTH-02").error, firstFailure);
+  assert.equal(saved.find((row) => row.id === "AUTH-02").status, "FAIL");
+  assert.ok(saved.some((row) => row.id === "TRANSFORM-01"));
 });

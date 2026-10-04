@@ -29,6 +29,19 @@ export async function disconnectAndRefreshGrants(context) {
   await context.ui.click(button("OAuth grant 새로 고침"));
 }
 
+export async function selectOAuthGrant(context, id) {
+  // Existing options survive while native refresh disables authentication input.
+  await context.ui.waitForTarget({ role: "combobox", name: "OAuth grant" });
+  let index = -1;
+  await until(async () => {
+    index = await context.cdp.evaluate(
+      `Array.from(document.querySelector('[aria-label="OAuth grant"]')?.options ?? []).findIndex(option=>option.value===${JSON.stringify(id)})`,
+    );
+    return index >= 0;
+  }, "Requested OAuth grant option was not ready");
+  await select(context, "OAuth grant", index);
+}
+
 export const discover = (id) => ({
   jsonrpc: "2.0",
   id,
@@ -139,16 +152,7 @@ export async function run(context) {
     await context.ui.fill(textbox("MCP 엔드포인트"), fixture.endpoint);
     await context.ui.click(button("OAuth grant 새로 고침"));
   };
-  const selectGrant = async (id) => {
-    let index = -1;
-    await until(async () => {
-      index = await context.cdp.evaluate(
-        `Array.from(document.querySelector('[aria-label="OAuth grant"]')?.options ?? []).findIndex(option=>option.value===${JSON.stringify(id)})`,
-      );
-      return index >= 0;
-    }, "Requested OAuth grant option was not ready");
-    await select(context, "OAuth grant", index);
-  };
+  const selectGrant = (id) => selectOAuthGrant(context, id);
   const connect = async () => {
     await context.ui.click(button("연결"));
     await expectText(context, "연결에 적용된 인증:");
