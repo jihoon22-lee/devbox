@@ -1,6 +1,10 @@
 // Interactive installer and Control Center journey; no setup/activation IPC shortcuts.
 import assert from "node:assert/strict";
-import { writeInstallerFailure, reportInstallerResults } from "./windows-suite-installer-evidence.mjs";
+import {
+  writeInstallerFailure,
+  reportInstallerResults,
+  readInstallerOperations,
+} from "./windows-suite-installer-evidence.mjs";
 import { ownedNsisSpawnOptions } from "./windows-suite-installer-actions.mjs";
 import path from "node:path";
 import { mkdir, appendFile, copyFile, readFile, writeFile } from "node:fs/promises";
@@ -138,8 +142,16 @@ export async function run() {
       if (product === "workspace" && attached) {
         await until(async () => {
           if (!allWindowsProcesses().some((p) => p.Pid === process.Pid && p.Created === process.Created)) return true;
-          if ((await attached.cdp.evaluate("document.body.innerText")).includes("Workspace 종료 검토")) {
-            await attached.ui.click({ role: "button", name: "종료" });
+          if (
+            await attached.cdp.evaluate(
+              '!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')',
+            )
+          ) {
+            await attached.ui.click({
+              role: "button",
+              name: "종료",
+              scope: { role: "dialog", name: "Workspace 종료 검토" },
+            });
             return true;
           }
           return false;
@@ -516,6 +528,13 @@ export async function run() {
         screenshots.push(await center.ui.screenshot("interactive-first-failure"));
       } catch (captureError) {
         console.error("Owned Center failure capture unavailable:", captureError.message);
+      }
+    }
+    if (registration?.installationKey) {
+      try {
+        observation.operations = await readInstallerOperations(process.env.LOCALAPPDATA, registration.installationKey);
+      } catch {
+        observation.operationLogs = "unavailable";
       }
     }
     try {

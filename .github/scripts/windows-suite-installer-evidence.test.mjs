@@ -1,9 +1,43 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { writeInstallerFailure, reportInstallerResults } from "./windows-suite-installer-evidence.mjs";
+import {
+  writeInstallerFailure,
+  reportInstallerResults,
+  readInstallerOperations,
+} from "./windows-suite-installer-evidence.mjs";
+
+test("installer failure reads only its installed namespace and fixed delivery operation fields", async () => {
+  const parent = await mkdtemp(path.join(tmpdir(), "devbox-installer-log-"));
+  const key = "a".repeat(64);
+  const logs = path.join(parent, `com.devbox.v08.controlcenter.i${key}`, "logs");
+  try {
+    await mkdir(logs, { recursive: true });
+    await writeFile(
+      path.join(logs, "operations-2026-10-04.jsonl"),
+      JSON.stringify({
+        product: "control-center",
+        component: "control-center.delivery",
+        method: "open_setup_product",
+        outcome: "failed",
+        code: "bootstrap_root_unsafe",
+        durationMs: 42,
+        tsMs: 1,
+        args: { private: "must not escape" },
+        message: "private text",
+      }) + "\n",
+    );
+    await writeFile(path.join(logs, "private.json"), "must not read");
+    assert.deepEqual(await readInstallerOperations(parent, key), [
+      { method: "open_setup_product", outcome: "failed", code: "bootstrap_root_unsafe", durationMs: 42, tsMs: 1 },
+    ]);
+    await assert.rejects(readInstallerOperations(parent, "../other"), /installation key/);
+  } finally {
+    await rm(parent, { recursive: true });
+  }
+});
 
 test("pre-registration failure survives missing installed-identity reporting without inventing a key", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "devbox-installer-evidence-"));
