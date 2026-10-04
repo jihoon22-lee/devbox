@@ -81,7 +81,7 @@ R01–R06은 설치 flow 수정 전이므로 L4를 **미리 준비한 소유 fix
 | AGENT-04 | R15 | installed 제품 X/portable X/update quiesce | 소유권대로 background 유지/정리, update 중 재기동 없음 |
 | HANDOFF-01 | R15 | Workspace 선택→API 변환→Knowledge draft, hot/cold product | 대상/내용 확인, 취소/만료/revision 변경 거절, 중복 소비 없음 |
 | HANDOFF-02 | R15 | 다른 installation/연결 off/수신 unavailable→복구 | 원래 권한 경계 유지, 현재 상태 안내, 자동 외부 작업 없음 |
-| DELIVERY-01 | R15/R16 | v0.8.1 합성 데이터/WAL→업데이트→사용→rollback/restore | 원본 보존, namespace 불혼합, postcommit 새 데이터 보존 |
+| DELIVERY-01 | R15/R16 | v0.8.1 합성 데이터/WAL→업데이트→등록된 네 제품 바로가기 실행→사용→rollback/restore | 원본 보존, namespace 불혼합, postcommit 새 데이터 보존, 바로가기의 현재 제품 연결 |
 | DELIVERY-02 | R15/R16 | 재설치·제거·재설치와 취소/공간·쓰기 실패 | 사용자 자료 보존, owned 파일만 정리, 재개/복구 가능 |
 | PERF-01 | R15/R16 | 네 제품 cold/warm/idle, 500-file search, 대표 작업 | 기존 budget 준수, 누락 앱은 NOT_RUN, owner/process 누수 없음 |
 

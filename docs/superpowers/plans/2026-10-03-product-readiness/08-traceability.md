@@ -532,3 +532,55 @@ Health marker를 기다리다 실패했다. 이전 stage 이름 `installed-cente
 종료·재연결 세부 경계를 추가 보존한다. 제품 동작과 제한 시간은 유지한다. 후속 여정은
 committed 설치가 없어 미실행이며 정리는 살아 있는 소유 프로세스를 감지해 보존했다.
 이 진단 역시 승격 근거로 사용하지 않는다.
+
+
+진단 `37241133911`(runner `6289f827`, 같은 payload `7f5c0614`)에서는 설치·재개·활성화가
+통과했다. 앞선 Health 전환 시간 초과는 재현되지 않았고 해결됐다고 단정하지 않는다.
+필수 여정 기록은 25 PASS·10 FAIL·1 NOT_RUN·4개 결과 없음이다. AUTH-02와 환경·웹훅,
+Knowledge 8개는 통과했다. WORK-01은 native journal 삭제가 실패한 뒤 삭제 의도를 잊는
+실제 RecoveryWriter 결함으로 확인했다. 이때 남은 과거 초안의 복구 modal이 LSP·DEPS
+입력을 가렸다. WORK-03과 Transform은 비동기 화면 준비·자동 전달 modal을 잘못 다룬
+fixture 결함으로 구분한다. Runtime의 재시작 후 브라우저 pending 부재는 native receipt
+기반 복구 경계를 보강하며, gRPC 저장 경로 불일치는 아직 원인을 확정하지 않았다.
+
+DELIVERY-02는 visible removal 후 실패 fixture 화면 캡처에서 포커스 불가능한 UIA root에
+SetFocus를 호출해 중단됐다. 재설치 전 중단으로 같은 설치 manifest가 없어졌으므로 뒤따른
+Agent 및 최종 정리의 ENOENT는 후속 영향이다. 캡처는 소유 HWND의 native foreground로
+한 번 전환해 확인한다. 별도 v0.8.1 업그레이드 fixture의 정리는 실제 uninstaller exit=1을
+관찰했다. 보존된 v0.8.1 제거 도우미가 새 Knowledge·Agent 구성요소를 파싱하지 못해 새
+도우미에 위임하기 전에 거부하는 호환성 결함을 확인했으며, 소유권과 rollback을 보존하는
+제거 프로그램 교체를 같은 보정 PR에서 다룬다. 진단 결과는 승격 근거가 아니다.
+
+같은 v0.8.1 도우미의 시작 메뉴 전달 경로도 현재 payload를 먼저 파싱하므로 새 구성요소를
+거부한다. 기존 DELIVERY-01은 설치된 실행 파일을 직접 열어 이 바로가기 경로를 검증하지
+못했다. 보정 범위에 확정 시 소유 바로가기의 도우미·인자 갱신과 실제 등록된 `.lnk` 실행을
+추가한다. 등록 JSON의 닫힌 기존 형식은 유지하며, 확정 전 되돌리기와 중단된 교체의 재개를
+검증한다. 제거 프로그램만 교체하고 바로가기 호환성도 해결된 것으로 간주하지 않는다.
+
+Workspace journal 삭제 재시도 5개, Runtime native receipt 7개·프런트 복구 18개·crash
+fixture 14개의 좁은 회귀와 프런트 타입 검사는 통과했다. Runtime은 브라우저 저장소와
+무관하게 원래 native 완료 결과를 조회하고 확인 처리하며, private Session 기록과 중단된
+실행 소유권 검사는 유지한다. 일부 결과를 확인한 뒤 후속 조회가 실패해도 확인한 결과를
+화면에서 잃지 않는다. 이 변경들의 실제 Windows 수용은 새 payload에서 수행한다.
+
+제거 프로그램·바로가기 교체의 production core와 실제 removal Plan을 연결한 좁은 검사
+12개, NSIS 입력 회귀 7개가 통과했다. 확정 전 기존 등록 보존, 부분 복사 정리, 네 링크의
+각 교체 전후 중단, 등록 저장 후 receipt 정리 재개와 foreign 파일 거부를 포함한다. 기존
+Registration 형식의 payload revision·shortcut Plan은 하나의 원자적 저장으로 함께 갱신한다.
+새 NSIS 단계가 없는 앱 내 업데이트에서는 기존 제거 프로그램의 검증된 revision 권한을
+별도로 유지한다. 독립 검토에서 추가 blocker는 없었으며 Windows native 컴파일·설치 수용은
+최종 CI와 새 후보에서 확인한다.
+
+legacy/철회본 업데이트 확정 뒤 등록된 네 `.lnk`를 직접 실행하는 수용을 추가했다.
+등록 Plan의 파일 identity·SHA와 target/args, 실행 전 해당 제품 프로세스 부재, 실행 후
+정확한 새 제품 PID·이미지·소유 창과 사용 가능한 탐색 버튼을 확인하고 스크린샷을 보존한다.
+Node 회귀 9개와 문법·포맷은 통과했다. 새 PowerShell identity 회귀는 이 PC의 실행 정책이
+UNC와 전용 로컬 TEMP 모두에서 거절해 미실행이다. 정책을 변경하지 않았고 소유 TEMP는
+정리했다. 해당 검사는 격리 hosted Windows의 명시적 PowerShell 필수 단계에 등록했다.
+
+보정 묶음의 최종 `verify:affected`는 Workspace·workspace-features 프런트 977개와 Rust
+역의존 5개 패키지의 596개 테스트, build/type/bundle·check/clippy/fmt·생성 타입 정합성을
+512.4초에 통과했다. 실제 WSL interoperability 테스트 1개는 로컬 조건상 ignored이며
+Windows/WSL 수용 PASS에 합산하지 않는다. cgroup memory peak 5.56GB, 마지막 swap
+5.22MB로 설정한 예산 안에서 완료했다. 변경된 catalog/workflow/fixture·NSIS 계약 검사는
+4.2초에 통과했다. Biome 1920개 파일도 통과했고 추가 전체 재실행은 하지 않았다.
