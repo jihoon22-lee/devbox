@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as confirmation from "@devbox/product-shell/confirm";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "../App";
 import { sanitizePersistedJson } from "../api";
@@ -52,7 +53,7 @@ it("adds a variable without overwriting a sparse secret and supports rename and 
       ],
     }),
   );
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const confirm = vi.spyOn(confirmation, "confirmAction").mockResolvedValue(false);
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "synthetic dev" }));
   const add = await screen.findByRole("button", { name: "+ 변수" });
@@ -66,9 +67,20 @@ it("adds a variable without overwriting a sparse secret and supports rename and 
   fireEvent.change(added, { target: { value: "baseUrl" } });
   fireEvent.blur(added);
   const remove = await screen.findByRole("button", { name: "환경 변수 baseUrl 삭제" });
+  let decide!: (accepted: boolean) => void;
+  confirm.mockImplementationOnce(
+    () =>
+      new Promise<boolean>((resolve) => {
+        decide = resolve;
+      }),
+  );
   fireEvent.click(remove);
   expect(screen.getByRole("button", { name: "환경 변수 baseUrl 삭제" })).toBeTruthy();
-  confirm.mockReturnValue(true);
+  await act(async () => {
+    decide(false);
+  });
+  expect(screen.getByRole("button", { name: "환경 변수 baseUrl 삭제" })).toBeTruthy();
+  confirm.mockResolvedValue(true);
   fireEvent.click(remove);
   await waitFor(() => expect(screen.queryByRole("button", { name: "환경 변수 baseUrl 삭제" })).toBeNull());
   const retained = JSON.parse(localStorage.getItem(previewDocumentKey("environments"))!);

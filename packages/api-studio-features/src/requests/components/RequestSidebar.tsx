@@ -1,6 +1,7 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { isKeyboardActivation } from "@devbox/a11y";
 import { foldersOf } from "../lib/collections";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   addVariable,
   renameVariable,
@@ -147,6 +148,13 @@ export function RequestSidebar({
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const [nameErrors, setNameErrors] = useState<Record<string, string>>({});
   const variablesContainer = useRef<HTMLDivElement>(null);
+  const confirmationMounted = useRef(true);
+  useEffect(() => {
+    confirmationMounted.current = true;
+    return () => {
+      confirmationMounted.current = false;
+    };
+  }, []);
   const pendingFocus = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (pendingFocus.current === null) return;
@@ -567,8 +575,16 @@ export function RequestSidebar({
                 className="btn mini"
                 aria-label={`환경 변수 ${v.key} 삭제`}
                 disabled={environmentBusy || transferBusy || !persistenceReady}
-                onClick={() => {
-                  if (!window.confirm(`${v.key} 변수를 삭제할까요? 요청의 변수 참조는 자동 변경하지 않습니다.`)) return;
+                onClick={async () => {
+                  if (!(await confirmAction(`${v.key} 변수를 삭제할까요? 요청의 변수 참조는 자동 변경하지 않습니다.`)))
+                    return;
+                  if (!confirmationMounted.current) return;
+                  if (
+                    !envStoreRef.current.environments.some(
+                      (env) => env.id === currentEnv.id && env.variables.some((variable) => variable.key === v.key),
+                    )
+                  )
+                    return;
                   pendingFocus.current = index;
                   void tryPersistEnvs(removeVariable(envStoreRef.current, currentEnv.id, v.key));
                 }}

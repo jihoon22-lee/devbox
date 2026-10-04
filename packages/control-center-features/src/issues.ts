@@ -15,6 +15,17 @@ export const toolsMessages: Record<ToolsIssue, string> = {
 };
 import type { DeliveryIssue } from "./generated/DeliveryIssue";
 export const deliveryMessages: Record<DeliveryIssue, string> = {
+  bootstrap_input_changed: "설치 기록이 읽는 동안 바뀌었습니다. 상태를 다시 확인해 주세요.",
+  bootstrap_input_unavailable: "설치 기록을 읽지 못했습니다. 파일 접근 상태를 확인한 뒤 다시 시도해 주세요.",
+  bootstrap_input_unsafe: "설치 기록의 위치를 안전하게 확인하지 못했습니다. 작업을 중단했습니다.",
+  suite_journal_invalid: "설치 진행 기록을 해석하지 못했습니다. 복구 상태를 확인해 주세요.",
+  suite_journal_unavailable: "설치 진행 기록을 읽지 못했습니다. 다시 시도해 주세요.",
+  suite_journal_unsafe: "설치 진행 기록의 위치가 올바르지 않아 작업을 중단했습니다.",
+  suite_lock_unavailable: "설치 기록에 접근할 수 없습니다. 실행 중인 설치 작업을 확인해 주세요.",
+  suite_lock_unsafe: "설치 기록 잠금의 위치가 올바르지 않아 작업을 중단했습니다.",
+  suite_store_changed: "설치 기록 저장소가 변경됐습니다. 현재 상태를 다시 확인해 주세요.",
+  suite_store_unsafe: "설치 기록 저장소의 위치가 올바르지 않아 작업을 중단했습니다.",
+  suite_update_busy: "다른 설치 작업이 기록을 사용 중입니다. 잠시 후 다시 시도해 주세요.",
   bootstrap_arguments_invalid: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
   bootstrap_clock_invalid: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",
   bootstrap_data_unavailable: "작업을 완료하지 못했습니다. 현재 상태와 검토한 대상을 확인해 주세요.",

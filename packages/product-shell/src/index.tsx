@@ -1,3 +1,4 @@
+import { ConfirmationHost } from "./confirm";
 import { deriveAvailability } from "./availability";
 import { UndoProvider } from "./undo";
 import { currentDescription, publishDescription, invalidateDescription } from "./api";
@@ -247,6 +248,7 @@ export function ProductShell({ product, renderContent }: { product: ProductId; r
     );
   return (
     <UndoProvider key={product}>
+      <ConfirmationHost />
       <ReadyShell description={description} renderContent={renderContent} refreshContext={refreshContext} />
     </UndoProvider>
   );

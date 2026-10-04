@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   installedFixtureCommand,
+  installedFixtureOwnerRecording,
   prepareHistoricalNativeStore,
   historicalHealthUnavailable,
 } from "./windows-suite-native-protocol.mjs";
@@ -74,4 +75,21 @@ test("only pinned v0.8.1 uses its historical execute command for delivery fixtur
     installedFixtureCommand("plugin:suite|connection", "1c97b41ee10ca0df7c062338bfe85659af025a89"),
     "plugin:suite|connection",
   );
+});
+
+test("published historical import records owner readiness before separate health activation", () => {
+  const pinned = "1c97b41ee10ca0df7c062338bfe85659af025a89";
+  assert.deepEqual(installedFixtureOwnerRecording(pinned, "import"), {
+    method: "record_migration_owner",
+    route: "migration",
+  });
+  for (const [source, mode] of [
+    [pinned, "health"],
+    ["current-candidate", "import"],
+    ["current-candidate", "health"],
+  ])
+    assert.deepEqual(installedFixtureOwnerRecording(source, mode), {
+      method: "record_suite_health",
+      route: "recovery",
+    });
 });

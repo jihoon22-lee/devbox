@@ -131,11 +131,23 @@ export default function Restore({
               <code>{checkpoint.id}</code> · {checkpoint.files.toLocaleString()}개 파일 ·{" "}
               {(checkpoint.bytes / 1024 / 1024).toFixed(1)} MiB{" "}
               <button
-                disabled={busy || !!inventory.activeOperation || !!inventory.update}
+                disabled={
+                  busy ||
+                  !!inventory.activeOperation ||
+                  !!inventory.update ||
+                  checkpoint.compatibility !== "currentGeneration"
+                }
                 onClick={() => select("restore", checkpoint.id)}
               >
                 이 보존본으로 복원
               </button>
+              {checkpoint.compatibility === "differentGeneration" ? (
+                <p>
+                  이전 설치 상태의 보존본입니다. 데이터와 보존 이력은 유지되지만 현재 버전에서는 복원할 수 없습니다.
+                </p>
+              ) : checkpoint.compatibility !== "currentGeneration" ? (
+                <p>이 보존본 정보를 검증하지 못했습니다. 안전하게 복원할 수 없어 복원이 차단되었습니다.</p>
+              ) : null}
             </li>
           ))}
         </ul>

@@ -1491,3 +1491,13 @@ it("writes real edits with metadata to the native recovery owner before close", 
     undefined,
   );
 });
+
+vi.mock("@devbox/product-shell/confirm", () => ({
+  confirmAction: async (message: string) => {
+    try {
+      return (await window.confirm(message)) === true;
+    } catch {
+      return false;
+    }
+  },
+}));

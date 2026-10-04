@@ -1,3 +1,5 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
+vi.mock("@devbox/product-shell/confirm", () => ({ confirmAction: vi.fn().mockResolvedValue(true) }));
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -137,6 +139,25 @@ const openInMock = vi.mocked(openIn);
 const readFileMock = vi.mocked(readFile);
 const listTreeMock = vi.mocked(listTree);
 const onDocsChangedMock = vi.mocked(onDocsChanged);
+
+it("노트 읽기 오류는 편집 영역 안에 표시되어 sidebar를 옆으로 밀지 않는다", async () => {
+  render(<App />);
+  const nested = treeButton(await screen.findByText("nested.md"));
+  readFileMock.mockRejectedValueOnce(new Error("합성 노트 읽기 실패"));
+  fireEvent.click(nested);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("합성 노트 읽기 실패");
+  expect(alert.closest("main.content")).not.toBeNull();
+});
+it("파일 생성 오류도 편집 영역 안에 표시되어 sidebar를 옆으로 밀지 않는다", async () => {
+  vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/new.md");
+  createFileMock.mockRejectedValueOnce(new Error("합성 파일 생성 실패"));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "+ 파일" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("합성 파일 생성 실패");
+  expect(alert.closest("main.content")).not.toBeNull();
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -316,7 +337,7 @@ describe("knowledge-base App — tree context menu", () => {
 
   it("이름변경 diff를 먼저 표시하고 전체 승인 뒤에만 transaction을 적용한다", async () => {
     vi.spyOn(window, "prompt").mockReturnValueOnce("Notes/renamed.md");
-    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmMock = vi.mocked(confirmAction).mockResolvedValue(true);
     render(<App />);
     const nested = treeButton(await screen.findByText("nested.md"));
 
@@ -439,7 +460,7 @@ describe("knowledge-base App — tree context menu", () => {
 });
 
 it("preserves a dirty note when Daily creation or a product open request is declined", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const confirm = vi.mocked(confirmAction).mockResolvedValue(false);
   vi.mocked(dailyNote).mockClear();
   const { rerender } = render(<App />);
   fireEvent.click(await screen.findByText("note.md"));

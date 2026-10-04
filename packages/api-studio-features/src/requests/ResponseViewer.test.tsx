@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as confirmation from "@devbox/product-shell/confirm";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ResponseViewer, TOOLBOX_SELECTION_MESSAGES } from "./ResponseViewer";
 import type { ApiResponse, ToolboxDispatch } from "./types";
@@ -83,7 +84,7 @@ beforeEach(() => {
     configurable: true,
     value: { writeText: writeTextMock },
   });
-  Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
+  vi.spyOn(confirmation, "confirmAction").mockImplementation(async (message) => confirmMock(message));
 });
 
 afterEach(() => {
@@ -355,4 +356,25 @@ it("shows response assertion results and capture labels in the checks tab", () =
   expect(screen.getByText("3개 중 2개 통과")).toBeTruthy();
   expect(screen.getByText("기대 200, 실제 201")).toBeTruthy();
   expect(screen.getByText("token ← $.access_token 캡처함")).toBeTruthy();
+});
+
+it("does not copy raw secrets when the response owner unmounts during native retrieval", async () => {
+  confirmMock.mockReturnValueOnce(true);
+  let reveal!: (value: string) => void;
+  rawCopyMock.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        reveal = resolve;
+      }),
+  );
+  const view = renderViewer();
+  fireEvent.click(screen.getByRole("tab", { name: "쿠키 (1)" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "원본 쿠키 복사" }));
+  });
+  view.unmount();
+  await act(async () => {
+    reveal("synthetic-secret-cookie");
+  });
+  expect(writeTextMock).not.toHaveBeenCalled();
 });

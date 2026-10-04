@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { ProfileTemplateManager } from "./components/ProfileTemplateManager";
 import { ProjectWizard } from "./components/ProjectWizard";
 import { ProfileDetails } from "./components/ProfileDetails";
@@ -56,7 +57,7 @@ import {
   validateProfileDraft,
   type ProfileDraft,
 } from "./lib/profileEditor";
-import { mergeSuggestedPorts } from "./lib/runtimeSuggestions";
+import { confirmStaleRuntimePorts, mergeSuggestedPorts } from "./lib/runtimeSuggestions";
 import WorkspaceTaskControlPanel from "./components/WorkspaceTaskControlPanel";
 import {
   emptyProfileTemplateDraft,
@@ -401,7 +402,8 @@ export default function App() {
   const onDeleteTemplate = async (templateId: string) => {
     const template = templates.find((candidate) => candidate.id === templateId);
     if (!template || templateBusy) return;
-    if (!window.confirm(`'${template.name}' 템플릿을 삭제할까요? 기존 프로젝트 프로필은 변경하지 않습니다.`)) return;
+    if (!(await confirmAction(`'${template.name}' 템플릿을 삭제할까요? 기존 프로젝트 프로필은 변경하지 않습니다.`)))
+      return;
     const operationRequest = templateRequest.current;
     return runTemplateOperation(async () => {
       setTemplateError(null);
@@ -688,17 +690,10 @@ export default function App() {
         setError("WSL runtime 상태가 변경되었습니다. 제안을 다시 확인하세요.");
         return;
       }
-      if (
-        latest.status === "stale" &&
-        !window.confirm(
-          `WSL runtime snapshot이 오래되었습니다. 선택한 포트 ${selected.length}개를 편집 초안에만 반영할까요? 프로필은 저장 버튼을 누르기 전까지 변경되지 않습니다.`,
-        )
-      ) {
-        return;
-      }
+      if (!(await confirmStaleRuntimePorts(latest.status, selected.length))) return;
 
       const currentDraft = editingRef.current;
-      if (!currentDraft) return;
+      if (request !== runtimeRequest.current || !currentDraft) return;
       const merged = mergeSuggestedPorts(currentDraft.expectedPortsText, selected);
       if (merged.nextText === null) {
         setError(merged.error ?? "WSL runtime 포트를 편집 초안에 반영하지 못했습니다.");
@@ -752,9 +747,9 @@ export default function App() {
       return;
     }
     if (
-      !window.confirm(
+      !(await confirmAction(
         `'${profile.name}' 프로필을 삭제할까요? 저장된 프로필 정의만 삭제하며 프로젝트 파일과 이미 실행 중이던 외부 리소스는 변경하지 않습니다.`,
-      )
+      ))
     )
       return;
     return runProfileOperation(async () => {
@@ -932,9 +927,9 @@ export default function App() {
       return;
     }
     if (
-      !window.confirm(
+      !(await confirmAction(
         `'${profile.name}'에서 Workbench가 시작한 리소스만 중지할까요? 시작 전부터 실행 중이던 리소스는 유지됩니다.`,
-      )
+      ))
     )
       return;
     return runProfileOperation(async () => {

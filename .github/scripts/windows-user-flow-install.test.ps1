@@ -29,6 +29,20 @@ public class OwnedGuiFixture {
   if ($errors.Count) { throw 'Provisioning script has parse errors.' }
   $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Run-Owned'},$true)
   if ($null -eq $function) { throw 'Run-Owned was not found.' }
+  $uninstallFunction=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Wait-OwnedUninstall'},$true)
+  if ($null -eq $uninstallFunction) { throw 'Wait-OwnedUninstall was not found.' }
+  . ([scriptblock]::Create($uninstallFunction.Extent.Text))
+  $failedUninstall=Start-Process -FilePath $image -ArgumentList '0 - 7' -PassThru
+  try {
+    $rejected=$false
+    try { Wait-OwnedUninstall $failedUninstall } catch {
+      if ($_.Exception.Message -notmatch 'uninstall failed; preserve fixture') { throw }
+      $rejected=$true
+    }
+    if (-not $rejected) { throw 'Nonzero uninstall exit was accepted.' }
+  } finally { $failedUninstall.Dispose() }
+  $successfulUninstall=Start-Process -FilePath $image -ArgumentList '0 - 0' -PassThru
+  try { Wait-OwnedUninstall $successfulUninstall } finally { $successfulUninstall.Dispose() }
   # Extract only the function; never bypass or invoke the hosted installation guard.
   . ([scriptblock]::Create($function.Extent.Text))
   Remove-Variable LASTEXITCODE -ErrorAction SilentlyContinue

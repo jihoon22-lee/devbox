@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { storageFailureMessage } from "../../storage/documentStorage";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TOOLS } from "../tools";
@@ -264,7 +265,8 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
     setPipelineError(null);
   };
   const deletePipeline = async (id: string) => {
-    if (!window.confirm(`${id} 파이프라인을 삭제할까요?`)) return;
+    if (!(await confirmAction(`${id} 파이프라인을 삭제할까요?`))) return;
+    if (!mounted.current) return;
     if (await persist(removePipeline(metadataRef.current, id))) {
       if (selectedPipelineId === id) newPipeline();
     }

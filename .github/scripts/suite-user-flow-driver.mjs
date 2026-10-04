@@ -2,6 +2,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { visibleControlBounds } from "./visible-control-bounds.mjs";
 export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
   if (typeof closeOwnedWindow !== "function") throw new Error("Owned native close adapter required");
   async function locate({ role, name, scope }, allowAbsent = false) {
@@ -49,6 +50,12 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     } while (performance.now() < deadline);
     throw new Error(`Timed out waiting for accessible ${target.role}: ${target.name}`);
   }
+  async function confirmAction(accept) {
+    if (typeof accept !== "boolean") throw new Error("Explicit confirmation decision required");
+    const target = { role: "button", name: accept ? "확인" : "취소", scope: { role: "dialog", name: "작업 확인" } };
+    await waitForTarget(target);
+    await click(target);
+  }
   async function click(target, beforePointer) {
     const node = await locate(target);
     if (node.properties?.some((p) => p.name === "disabled" && p.value?.value === true))
@@ -69,14 +76,29 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     const height = cssLayoutViewport.clientHeight;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
       throw new Error("Page viewport unavailable");
-    const left = Math.max(0, Math.min(q[0], q[2], q[4], q[6]));
-    const right = Math.min(width, Math.max(q[0], q[2], q[4], q[6]));
-    const top = Math.max(0, Math.min(q[1], q[3], q[5], q[7]));
-    const bottom = Math.min(height, Math.max(q[1], q[3], q[5], q[7]));
+    let left = Math.max(0, Math.min(q[0], q[2], q[4], q[6]));
+    let right = Math.min(width, Math.max(q[0], q[2], q[4], q[6]));
+    let top = Math.max(0, Math.min(q[1], q[3], q[5], q[7]));
+    let bottom = Math.min(height, Math.max(q[1], q[3], q[5], q[7]));
     if (right <= left || bottom <= top) throw new Error("Control center outside viewport");
-    // Large editors can extend past the viewport after scrolling. Only use
-    // their visible intersection; the ownership hit test below still rejects
-    // ancestor clipping, overlays and points outside a transformed quad.
+    const resolved = await cdp.command("DOM.resolveNode", params);
+    if (!resolved.object?.objectId) throw new Error("Read-only layout node unavailable");
+    try {
+      const observed = await cdp.command("Runtime.callFunctionOn", {
+        objectId: resolved.object.objectId,
+        functionDeclaration: visibleControlBounds.toString(),
+        arguments: [{ value: [left, top, right, bottom] }],
+        returnByValue: true,
+      });
+      const bounds = observed.result?.value;
+      if (observed.exceptionDetails || !Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite))
+        throw new Error("Control clipping layout unavailable");
+      [left, top, right, bottom] = bounds;
+    } finally {
+      await cdp.command("Runtime.releaseObject", { objectId: resolved.object.objectId });
+    }
+    if (right <= left || bottom <= top) throw new Error("Control is clipped outside its scrollport");
+    // Hit ownership still rejects unrelated overlays and transformed corners.
     const x = (left + right) / 2;
     const y = (top + bottom) / 2;
     const hit = await cdp.command("DOM.getNodeForLocation", {
@@ -192,6 +214,12 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     async typeText(text) {
       if (typeof text !== "string") throw new Error("Text input required");
       await cdp.command("Input.insertText", { text });
+    },
+    confirmAction,
+    async clickWithConfirmation(target, accept) {
+      if (typeof accept !== "boolean") throw new Error("Explicit confirmation decision required");
+      await click(target);
+      await confirmAction(accept);
     },
     async clickWithDialog(target, accept) {
       if (typeof accept !== "boolean") throw new Error("Explicit dialog decision required");

@@ -279,8 +279,12 @@ if($Action -in @('ChooseFile','SaveFile')) {
   $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
   if($dialogs.Count -ne 1){throw 'Expected one owned native file picker'}
   $dialog=$dialogs[0]
-  $fileNameCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
+  $fileNameCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'FileNameControlHost')
   $fields=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$fileNameCondition)
+  if($fields.Count -eq 0) {
+    $fileNameCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
+    $fields=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$fileNameCondition)
+  }
   if($fields.Count -ne 1){throw 'Owned file name field unavailable'}
   $field=$fields.Item(0)
   if(-not $field.Current.IsEnabled -or $field.Current.IsOffscreen){throw 'File name field unavailable'}

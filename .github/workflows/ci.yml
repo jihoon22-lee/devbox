@@ -230,9 +230,9 @@ jobs:
           node --test .github/scripts/check-component-size.test.mjs
           node .github/scripts/check-component-size.mjs
 
-      - name: Check generated Workspace fixture requests
+      - name: Check frontend input and fixture contracts
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
-        run: node --test .github/scripts/windows-workspace-registration.test.mjs
+        run: node --test --test-concurrency=1 .github/scripts/windows-workspace-registration.test.mjs .github/scripts/product-confirmation-browser.test.mjs .github/scripts/windows-workspace-files-layout.test.mjs .github/scripts/windows-workspace-tasks-layout.test.mjs
 
       - name: Build frontends
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}

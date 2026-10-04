@@ -1,3 +1,5 @@
+import { listenerStopMessage } from "./lib/listenerConfirmation";
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { usePolling } from "@devbox/hooks";
 import { isProductHosted, WorkspaceOperationError } from "../transport";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
@@ -544,17 +546,14 @@ export default function App({
       await onOpenCorrelation(owner);
       return;
     }
-    const processLabel = row.process_name ? " (" + row.process_name + ")" : "";
-    const actionLabel =
-      row.source === "container" ? (isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지") : "리스너 종료";
-    if (!window.confirm(row.local_addr + processLabel + " " + actionLabel + "할까요?")) return;
-
     const rowKey = portRowKey(row);
     busyActionRef.current = rowKey;
     setBusyRowKey(rowKey);
     setError(null);
     setHandoff(null);
     try {
+      if (!(await confirmAction(listenerStopMessage(row, isProductHosted())))) return;
+      if (!mounted.current || !snapshotHealthyRef.current) return;
       const result: ListenerActionResult =
         row.source === "container" && !isProductHosted()
           ? { kind: "handoff", handoff: await handoffContainerStop(request) }

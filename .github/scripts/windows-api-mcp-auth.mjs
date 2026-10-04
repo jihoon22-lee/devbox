@@ -86,6 +86,12 @@ export async function createOAuthMcpFixture() {
 }
 
 export const SCENARIO_IDS = Object.freeze(["AUTH-01", "AUTH-02"]);
+export async function reseedOAuthGrantFixture(context, file, body) {
+  await writeFile(file, body);
+  // The native OAuth owner caches its loaded grant store. Fixture replacement
+  // is preparation for a new process, never an external live-cache mutation.
+  await context.restart();
+}
 
 export async function run(context) {
   requireApiContext(context);
@@ -113,6 +119,13 @@ export async function run(context) {
   const a = await grant("a".repeat(32), "fixture-client-A", tokenA),
     b = await grant("b".repeat(32), "fixture-client-B", tokenB);
   const store = (grants) => JSON.stringify({ schema: "devbox.api-playground.mcp-oauth-grants", version: 1, grants });
+  const openMcp = async () => {
+    await context.ui.click(button("프로토콜"));
+    await context.ui.waitForTarget({ role: "tab", name: "MCP" });
+    await context.ui.click({ role: "tab", name: "MCP" });
+    await context.ui.fill(textbox("MCP 엔드포인트"), fixture.endpoint);
+    await context.ui.click(button("OAuth grant 새로 고침"));
+  };
   const selectGrant = async (id) => {
     let index = -1;
     await until(async () => {
@@ -153,11 +166,7 @@ export async function run(context) {
         record(
           "L4 fixture preparation creates two bounded synthetic OAuth grants using native DPAPI ciphertext in only the prepared installed namespace",
         );
-        await context.ui.click(button("프로토콜"));
-        await context.ui.waitForTarget({ role: "tab", name: "MCP" });
-        await context.ui.click({ role: "tab", name: "MCP" });
-        await context.ui.fill(textbox("MCP 엔드포인트"), fixture.endpoint);
-        await context.ui.click(button("OAuth grant 새로 고침"));
+        await openMcp();
         await selectGrant(a.grantId);
         await connect();
         assert.equal(
@@ -176,7 +185,10 @@ export async function run(context) {
           "Actual A connection locks grant selection; native tools/call retains Authorization A while displayed connection metadata identifies A and hides both tokens",
         );
         const count = fixture.calls.length;
-        await writeFile(file, store([b]));
+        await context.ui.click(button("OAuth grant 취소"));
+        await expectText(context, "권한 확인 필요");
+        assert.equal(fixture.revocations.at(-1).token, tokenA);
+        assert.ok(!JSON.parse(await readFile(file, "utf8")).grants.some((item) => item.grantId === a.grantId));
         await context.ui.click(button("OAuth grant 새로 고침"));
         await expectText(context, "권한 확인 필요");
         assert.notEqual(
@@ -192,11 +204,14 @@ export async function run(context) {
         );
         assert.equal(fixture.calls.length, count);
         record(
-          "Actual grant refresh after L4 removal of A invalidates the existing connection without silently selecting B or invoking another tool",
+          "Actual connected A revocation and grant refresh retain invalidated A connection metadata without silently selecting B or invoking another tool",
         );
         await context.ui.click(button("연결 해제"));
-        await writeFile(file, store([a, b]));
-        await context.ui.click(button("OAuth grant 새로 고침"));
+        await reseedOAuthGrantFixture(context, file, store([a, b]));
+        record(
+          "L4 reseeds synthetic grants only for a restarted native owner before the independent revocation journey",
+        );
+        await openMcp();
       }),
     );
     if (results.at(-1).status !== "PASS") return results;

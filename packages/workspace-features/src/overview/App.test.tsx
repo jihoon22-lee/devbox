@@ -1225,3 +1225,13 @@ describe("Workbench profile context menu", () => {
     expect(await screen.findByText("code-pad를 시작했습니다")).toBeTruthy();
   });
 });
+
+vi.mock("@devbox/product-shell/confirm", () => ({
+  confirmAction: async (message: string) => {
+    try {
+      return (await window.confirm(message)) === true;
+    } catch {
+      return false;
+    }
+  },
+}));

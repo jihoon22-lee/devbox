@@ -313,3 +313,28 @@ describe("document generation", () => {
     expect(note.snapshot().dirty).toBe(false);
   });
 });
+
+it("waits for asynchronous discard approval and preserves the draft on cancel", async () => {
+  const { note, read } = await fixture();
+  note.edit("keep draft");
+  const decision = deferred<boolean>();
+  const opening = note.openPath("B.md", () => decision.promise);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(note.snapshot()).toMatchObject({ path: "A.md", content: "keep draft", dirty: true });
+  decision.resolve(false);
+  expect(await opening).toBe(false);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(note.snapshot()).toMatchObject({ path: "A.md", content: "keep draft", dirty: true });
+});
+
+it("does not discard edits made while asynchronous approval is pending", async () => {
+  const { note, read } = await fixture();
+  note.edit("reviewed draft");
+  const decision = deferred<boolean>();
+  const opening = note.openPath("B.md", () => decision.promise);
+  note.edit("newer draft");
+  decision.resolve(true);
+  expect(await opening).toBe(false);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(note.snapshot()).toMatchObject({ path: "A.md", content: "newer draft", dirty: true });
+});

@@ -42,3 +42,11 @@ export async function scenarios(context, specifications) {
   return results;
 }
 export const editor = { role: "textbox", name: "Markdown 본문" };
+// These fixtures contain only a few visible lines. AX textbox serialization
+// adds a final visual newline; read actual rendered lines without trimming.
+export function visibleNoteTextExpression() {
+  return '(()=>{const editors=document.querySelectorAll(".cm-content");if(editors.length!==1)throw new Error("Unique synthetic note editor unavailable");const lines=editors[0].querySelectorAll(".cm-line");if(!lines.length)throw new Error("Synthetic note lines unavailable");return Array.from(lines,line=>line.textContent).join("\\n");})()';
+}
+export function noteReadyExpression(path, content) {
+  return `document.querySelector('.editor-head .path')?.textContent===${JSON.stringify(path)} && (${visibleNoteTextExpression()})===${JSON.stringify(content)}`;
+}

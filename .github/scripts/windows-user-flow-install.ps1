@@ -20,6 +20,10 @@ function Run-Owned([string]$File, [string[]]$Arguments, [int]$TimeoutMillisecond
     $process.Dispose()
   }
 }
+function Wait-OwnedUninstall([Diagnostics.Process]$Process) {
+  if (-not $Process.WaitForExit(180000)) { throw 'Owned user-flow uninstall timed out.' }
+  if ($Process.ExitCode -ne 0) { throw 'Owned user-flow uninstall failed; preserve fixture for inspection.' }
+}
 $payloadSource=$env:GITHUB_SHA
 $payloadRun=$env:GITHUB_RUN_ID
 if ($env:DEVBOX_USER_FLOW_DIAGNOSTIC -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) {
@@ -73,7 +77,7 @@ Run-Owned $center @('--stop-agent-for-update')
 $live=@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase) })
 if ($live.Count -ne 0) { throw 'Owned product process still running; preserve fixture rather than force terminate.' }
 $uninstall=Start-Process -FilePath (Join-Path $root 'Uninstall.exe') -ArgumentList '/S' -PassThru
-if (-not $uninstall.WaitForExit(180000)) { throw 'Owned user-flow uninstall timed out.' }
+Wait-OwnedUninstall $uninstall
 $timer=[Diagnostics.Stopwatch]::StartNew()
 while (-not (Test-Path -LiteralPath (Join-Path $root 'uninstall-complete.json'))) {
   if ($timer.Elapsed.TotalSeconds -gt 180) { throw 'Owned user-flow removal receipt missing.' }

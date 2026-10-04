@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFile, unlink } from "node:fs/promises";
 import { scenarios, editor } from "./windows-knowledge-flow-shared.mjs";
 export const scenarioIds = ["DOC-01", "DOC-02", "DOC-03"];
+export async function reviewKnowledgeQuit(ui, name) {
+  await ui.closeOwnedWindow();
+  const target = { role: "button", name };
+  await ui.waitForTarget(target);
+  await ui.click(target);
+}
 export async function run(context) {
   const results = await scenarios(context, [
     [
@@ -13,17 +19,17 @@ export async function run(context) {
         await fixture.disableAutosave();
         await ui.fill(editor, "A의 새 내용\n");
         await ui.press("Control+z");
-        assert.equal(await ui.text(editor), notes.aOriginal);
+        assert.equal(await fixture.editorText(), notes.aOriginal);
         await ui.press("Control+y");
-        assert.equal(await ui.text(editor), "A의 새 내용\n");
+        assert.equal(await fixture.editorText(), "A의 새 내용\n");
         await ui.press("Control+s");
         await fixture.wait(async () => (await readFile(notes.aFile, "utf8")) === "A의 새 내용\n", "A saved");
         await fixture.openNote(notes.b);
         await ui.press("Control+z");
-        assert.equal(await ui.text(editor), notes.bOriginal);
+        assert.equal(await fixture.editorText(), notes.bOriginal);
         await fixture.openNote(notes.a);
         await ui.press("Control+z");
-        assert.equal(await ui.text(editor), "A의 새 내용\n");
+        assert.equal(await fixture.editorText(), "A의 새 내용\n");
         assert.equal(await readFile(notes.bFile, "utf8"), notes.bOriginal);
         screenshots.push(await ui.screenshot("DOC-01-isolated-history"));
         assertions.push(
@@ -40,9 +46,8 @@ export async function run(context) {
         await fixture.disableAutosave();
         await ui.fill(editor, "");
         await fixture.waitJournal(notes.a, "");
-        await ui.closeOwnedWindow();
-        await ui.click({ role: "button", name: "종료 취소" });
-        assert.equal(await ui.text(editor), "");
+        await reviewKnowledgeQuit(ui, "종료 취소");
+        assert.equal(await fixture.editorText(), "");
         assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
         const switching = fixture.openNote(notes.b);
         await fixture.confirmDialog();
@@ -53,17 +58,16 @@ export async function run(context) {
         await fixture.navigate("notes");
         await fixture.waitFor({ role: "button", name: `${notes.a} 열어서 확인` });
         await ui.click({ role: "button", name: `${notes.a} 열어서 확인` });
-        assert.equal(await ui.text(editor), "");
-        await ui.closeOwnedWindow();
-        await ui.click({ role: "button", name: "저장하지 않고 종료(복구본 유지)" });
+        assert.equal(await fixture.editorText(), "");
+        await reviewKnowledgeQuit(ui, "저장하지 않고 종료(복구본 유지)");
         await fixture.reopenAfterClose();
         await fixture.navigate("notes");
         await fixture.waitFor({ role: "button", name: `${notes.a} 열어서 확인` });
         assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
         await ui.click({ role: "button", name: `${notes.a} 열어서 확인` });
-        await ui.closeOwnedWindow();
-        await ui.click({ role: "button", name: "복구본 영구 삭제…" });
+        await reviewKnowledgeQuit(ui, "복구본 영구 삭제…");
         assert.ok((await fixture.journal()).entries.some((e) => e.path === notes.a));
+        await ui.waitForTarget({ role: "button", name: "영구 삭제하고 종료" });
         await ui.click({ role: "button", name: "영구 삭제하고 종료" });
         await fixture.reopenAfterClose();
         await fixture.navigate("notes");

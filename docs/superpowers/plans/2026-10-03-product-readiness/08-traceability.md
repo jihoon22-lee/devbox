@@ -130,6 +130,79 @@
   최종 묶음 catalog/workflow 검사 3.981초·RSS 약 133MiB·swap 0, Biome CI 통과.
   추가 Windows 전용 소스의 실제 컴파일 및 새 제품 bytes 수용은 최종 CI·후보에서 확인한다.
 
+- #620의 PR CI `37188904663`과 exact-main CI `37189562754`은 각각 6개 job을 통과했다.
+  후보 `37190461507`(`dfadd9e5`)은 네 제품 빌드·7개 자산 조립·네 native scope·독립 VM의
+  WSL2/Docker 및 INSTALL-01/02를 통과했지만 설치 후 사용자 여정과 최종 seal은 실패했다.
+  UI-01의 40개 화면 관측과 Knowledge 입력·성능의 성공을 전체 여정 성공으로 합산하지 않는다.
+  이 후보는 승격하지 않는다. v0.9.0 태그와 Release는 아직 생성하지 않았다.
+- 같은 후보에서 업데이트가 health 단계까지 진행했으나 실제 보존본 receipt가 새 journal의
+  복구 목록에서 빠졌다. 검증된 update plan의 receipt를 health 공개 전에 기록·저장하고 이전 이력도 유지한다.
+  재개 시 중복 기록 및 충돌을 실제 Journal 회귀로 확인했다. Windows 설치 수용은 아직 남았다.
+  다른 generation의 보존본은 복원 권한을 넓히지 않고 목록에서 제한을 설명한다. 목록 갱신마다
+  데이터 전체를 읽지 않으며, 크기 제한·digest·소유권을 확인한 manifest 정보만 사용한다.
+  전체 데이터 검증은 기존 복원 준비 경계에 남긴다.
+  실제 Store의 새 작업 revision 0 조건을 유지해 이전 이력을 초기 상태로 원자 저장한다.
+  Store begin/write·닫기·재개와 중복 기록 방지 회귀도 통과했다. 이전 이력의 로컬 전달만
+  확인한 테스트로 영속 저장 성공을 대신하지 않는다.
+  Knowledge 오류·알림이 수평 flex의 직접 자식이 되어 편집 영역을 밀던 제품 레이아웃도 수정했다.
+- runner의 viewport 중앙 좌표가 부모 scrollport 밖의 다른 pane을 가리키는 오류를 Chromium의
+  실제 입력으로 재현했다. 관측한 조상 clipping 영역 안에서만 좌표를 고르고 기존 소유권
+  hit-test를 유지한다. 실제 입력 성공과 overlay 거절을 확인했다. Workspace 자동 등록·lazy 화면,
+  Knowledge 요청 문서 로딩을 읽기 전용 관측으로 기다린다. 작은 합성 문서의 비교는 AX가 덧붙이는
+  줄바꿈 대신 렌더링된 실제 줄을 사용하며 trim으로 데이터 차이를 감추지 않는다.
+  고정된 v0.8.1 import fixture는 당시 소스가 요구하는 활성화 전 migration owner 기록을 사용한다.
+  이 로컬 회귀 및 보관 bytes 진단은 새 제품 bytes의 최종 수용을 대체하지 않는다.
+  Knowledge 영향 검사에서 349개가 통과했고, 추가 오류 배치 회귀는 수정 전 실패를 확인했다.
+  수정 후 직접 영향받는 두 파일 43개·최종 frontend 빌드·catalog/workflow·Biome은 통과했다
+  (47.4초, 합산 RSS 약 1.41GiB, swap 0). 편집기가 없는 상태는 빈 문서로 인정하지 않는다.
+  Control Center의 최종 frontend 빌드·75개 테스트, Rust check/clippy/fmt·44개 테스트와
+  production TypeScript exporter를 통과했다. 실제 등록된 update 이력·Store 재개 회귀도
+  이 Rust 실행에 포함됐다. 마지막 Rust 보충 검사는 30.9초·합산 RSS 약 1.02GiB·swap 0이었다.
+  검사 중 지적된 테스트 비교 구문만 고친 뒤 Clippy와 미실행 범위를 이어서 확인했다.
+
+- 보관 bytes 진단 `37197180461`(runner `a0a1fd90`, payload `dfadd9e5`)은 설치·활성화,
+  40개 화면 관측, HTTP·Webhook·문서별 Undo·검색을 통과했지만 전체 사용자 여정은 실패했다.
+  서로 다른 source의 진단이며 승격할 수 없다. 같은 draft PR #621에서 확인된 원인을 묶어 수정한다.
+  Files의 680px 최소 너비는 확대된 655px viewport를 넘었다. 실제 Chromium 레이아웃 회귀로
+  넘침을 재현·수정했다. Windows 현대식 저장창의 파일명 컨트롤을 지원하고 실제 소유 임시
+  저장창의 입력·파일 생성으로 실패/성공을 확인했다. WSL 선택 목록과 종료 확인창의 준비,
+  Handoff 접근성 이름, MCP grant의 native cache를 고려한 실제 취소·재시작 준비도 수정했다.
+- ENV 취소 실패는 제품의 전역 확인 처리 결함이었다. 설치된 Tauri dialog 2.7.2가
+  `window.confirm`을 Promise로 바꾸므로 동기 분기는 선택 전에 작업을 수행했다.
+  네 제품의 전역 확인 호출을 공통 비동기 인앱 확인창으로 교체하고 명시 승인만 실행한다.
+  취소·Esc·host 해제·표시 오류는 거절하며 확인 중 바뀐 대상과 상태를 재검사한다.
+  비동기 확인 대기·취소 때 native 부작용이 없다는 회귀와 실제 Chromium 입력·포커스 복귀를
+  확인했다. 이 브라우저 검사는 수정 바이너리의 Windows 설치 수용을 대신하지 않는다.
+- INSTALL-03의 복구 목록 조회 실패는 기존 artifact에서 상세 원인을 확인할 수 없었다.
+  입력·journal·잠금의 고정된 오류 코드만 전달해 다음 실제 실행에서 구분하고, 파일 경로나
+  원시 오류는 노출하지 않는다. 권한·복원 generation 검사는 완화하지 않았다.
+  제거 프로그램 비정상 종료는 즉시 실패로 기록하고 성공 receipt를 180초 기다리지 않는다.
+  health 기록 중에는 같은 native journal 잠금을 사용하는 목록을 동시에 조회하지 않고,
+  한 번 실행한 기록 버튼이 다시 준비된 뒤 읽기 전용 freshHealth를 확인한다.
+- 최종 영향 검증은 네 frontend 빌드·타입 검사를 통과했다. Knowledge 초기 JS는
+  확인창 추가 뒤 280,076 bytes로 상한을 넘었으므로 저장소 준비 UI를 복구 가능한 지연 로딩으로
+  옮겼다. 해당 앱만 다시 빌드해 276,521 bytes 및 실제 route·복구 테스트를 확인했다.
+  마지막 미실행 범위의 catalog/workflow·bundle·컴포넌트 크기·Biome·Rust fmt와 실제 Chromium
+  확인창/Files 검사는 통과했다(39.1초, RSS 약 1.50GiB, swap 0). 통과한 다른 앱은 다시 빌드하지 않았다.
+  Workspace 확인 처리 171개·Control Center 25개 및 새 검토 helper 3개, Knowledge 74개,
+  API 확인 처리·동시 기록 보존·민감정보 복사의 직접 영향 검사와 공통 확인창 4개가 통과했다.
+  고정 native 오류 코드·production exporter·Control Center 타입 검사도 통과했다.
+  설치된 새 Windows 바이너리의 전체 수용과 최종 CI는 로컬 통과와 구분해 남겨 둔다.
+- 같은 설치 진단의 Tasks 화면에서도 900px 최소 너비가 확대된 655px viewport를 넘었다.
+  최소 너비를 제거하고 탐색·작업 조작·편집 및 기록 검색을 좁은 화면에 맞춰 배치한다.
+  실제 Chromium의 CSS 회귀에서 기존 넘침을 재현했으며 설치본의 최종 수용과 구분한다.
+- RUNTIME-01 응답 유실 검증은 native callback을 멈춘 뒤 일반 Runtime.evaluate로 읽으면서
+  멈춘 renderer의 실행을 기다렸다. 실제 Chromium에서 대기를 재현하고 캡처한 call frame의
+  동기 읽기로 변경했다. 원래 operation ID·한 번의 실행과 중지 확인·재시작 전 authority 근거는
+  유지하며 실패 시 debugger를 해제해 후속 독립 여정에 일시정지를 남기지 않는다.
+- PR CI `37200601015`는 새 테스트 fixture의 누락된 타입 필드와 notices의 lock digest를,
+  `37200916164`는 고정 v0.8.1 명령의 역사 예외 누락과 동시 브라우저의 짧은 준비 제한을 발견했다.
+  남은 실행을 취소하고 직접 영향 범위부터 보정했다. 역사 예외는 두 파일의 정확한 두 줄로
+  제한하고 다른 구버전 호출 거절 회귀를 추가했다. 브라우저는 순차 실행하고 시작 준비만
+  상한 20초로 관측한다. 기존 CI 필수 gate와 제품 수용 조건은 유지한다.
+  Tasks의 43개 제어·원래 실행 식별자를 보존하는 runner 9개 회귀 및 변경된 Workspace의
+  frontend 빌드·bundle 상한·Biome이 통과했다. 빌드의 합산 RSS는 약 1.65GiB, swap은 0이다.
+
 최종 보정 PR·새 후보·공개 결과는 같은 PR 본문과 Actions artifact·Release notes에 기록한다.
 
 ## 1. 기존 감사 23건의 누락 없는 배정

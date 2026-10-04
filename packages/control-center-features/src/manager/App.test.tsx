@@ -750,3 +750,32 @@ describe("Devbox Manager Dev Setup audit", () => {
     }
   });
 });
+
+it("does not install while an asynchronous confirmation is pending or cancelled", async () => {
+  let decide!: (value: boolean) => void;
+  confirmMock.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      decide = resolve;
+    }) as never,
+  );
+  render(<App />);
+  await screen.findByText("Control Center 도구");
+  fireEvent.click(screen.getByRole("button", { name: "관련 도구" }));
+  await screen.findByText("Visual Studio Code");
+  fireEvent.click(screen.getByRole("button", { name: "확인 후 WinGet 설치" }));
+  expect(installRelatedToolMock).not.toHaveBeenCalled();
+  await act(async () => {
+    decide(false);
+  });
+  expect(installRelatedToolMock).not.toHaveBeenCalled();
+});
+
+vi.mock("@devbox/product-shell/confirm", () => ({
+  confirmAction: async (message: string) => {
+    try {
+      return (await window.confirm(message)) === true;
+    } catch {
+      return false;
+    }
+  },
+}));

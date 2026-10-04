@@ -1,3 +1,4 @@
+import * as confirmation from "@devbox/product-shell/confirm";
 import { browserDocumentStorage } from "../storage/documentStorage";
 import { previewDocumentKey, seedPreviewDocument } from "../storage/testDocuments";
 const COLLECTION_V2_LS_KEY = previewDocumentKey("collections");
@@ -118,7 +119,7 @@ beforeEach(() => {
   confirmMock.mockReset().mockReturnValue(false);
   promptMock.mockReset().mockReturnValue(null);
   writeTextMock.mockReset().mockResolvedValue(undefined);
-  Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
+  vi.spyOn(confirmation, "confirmAction").mockImplementation(async (message) => confirmMock(message));
   Object.defineProperty(window, "prompt", { configurable: true, value: promptMock });
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,

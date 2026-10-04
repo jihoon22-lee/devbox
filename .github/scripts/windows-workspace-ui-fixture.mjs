@@ -1,3 +1,4 @@
+import { selectRegisteredWorkspaceRoot } from "./windows-workspace-registry-observations.mjs";
 import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
 // Owned packaged Workspace fixture. Renderer mutations always use UiDriver input.
 import assert from "node:assert/strict";
@@ -8,6 +9,78 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { downloadArchive } from "./windows-workspace-lsp.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
+export async function loseRuntimeReply({
+  cdp,
+  ui,
+  wait,
+  jobId,
+  scope,
+  action,
+  pendingExpression,
+  beforeRestart,
+  restart,
+}) {
+  let enabled = false,
+    restarted = false,
+    frameId = null,
+    unsubscribe,
+    click,
+    firstError;
+  try {
+    await cdp.command("Debugger.enable");
+    enabled = true;
+    const functionValue = await cdp.command("Runtime.evaluate", {
+      expression: "window.__TAURI_INTERNALS__.runCallback",
+      returnByValue: false,
+    });
+    assert.ok(functionValue.result.objectId);
+    unsubscribe = cdp.onEvent("Debugger.paused", (event) => {
+      frameId = event?.callFrames?.[0]?.callFrameId ?? null;
+    });
+    await cdp.command("Debugger.setBreakpointOnFunctionCall", {
+      objectId: functionValue.result.objectId,
+      condition: `data?.value?.jobId===${JSON.stringify(jobId)}`,
+    });
+    const target = { role: "button", name: action, scope };
+    click = action === "중지" ? ui.clickWithConfirmation(target, true) : ui.click(target);
+    click.catch(() => {});
+    await wait(
+      async () => typeof frameId === "string" && frameId.length > 0,
+      "native result paused before renderer receipt",
+    );
+    // Runtime.evaluate awaits execution on the paused renderer. This read stays
+    // in its current call frame and never resumes/consumes the native callback.
+    const response = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: pendingExpression,
+      returnByValue: true,
+      silent: true,
+    });
+    assert.ok(!response.exceptionDetails, "Paused pending-request observation failed");
+    const requests = response.result?.value;
+    assert.ok(Array.isArray(requests), "Paused pending-request observation must be an array");
+    assert.equal(requests.length, 1, "Lost reply must retain exactly one original request");
+    await beforeRestart();
+    await restart(true);
+    restarted = true;
+    return requests[0].operationId;
+  } catch (error) {
+    firstError = error;
+    throw error;
+  } finally {
+    unsubscribe?.();
+    try {
+      // A successful crash already destroyed the paused session. On failure,
+      // release the debugger so later read-only journeys cannot inherit a pause.
+      if (enabled && !restarted) await cdp.command("Debugger.disable");
+    } catch (error) {
+      if (!firstError) throw error;
+    } finally {
+      await click?.catch(() => {});
+    }
+  }
+}
+
 export function createWorkspaceUiFixture({
   ui,
   cdp,
@@ -44,6 +117,7 @@ export function createWorkspaceUiFixture({
     throw new Error(`Owned Workspace observation timed out: ${label}`);
   }
   async function selectOption(target, index, driver = ui) {
+    await driver.waitForTarget(target);
     await driver.click(target);
     await driver.press("Home");
     // Native select keyboard/typeahead, no renderer setter or synthetic DOM event.
@@ -116,10 +190,7 @@ export function createWorkspaceUiFixture({
       git("commit", "-m", "owned fixture");
       await ui.fill({ role: "textbox", name: "Windows 프로젝트 폴더" }, root);
       await ui.click({ role: "button", name: "프로젝트 등록" });
-      await this.waitForText({ role: "textbox", name: "프로젝트 이름" });
-      await ui.click({ role: "button", name: "등록" });
-      await wait(async () => (await this.registry()).worktrees.length === 1, "registered root");
-      await ui.click({ role: "button", name: "프로젝트 선택" });
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, root);
       await wait(async () => !!(await context())?.worktreeId, "selected native context");
     },
     async trustSource() {
@@ -157,6 +228,7 @@ export function createWorkspaceUiFixture({
       );
       assert.equal(result.status, 0, "Owned WSL Git fixture setup failed");
       await ui.click({ role: "button", name: "개요" });
+      await ui.waitForTarget({ role: "button", name: "WSL 프로젝트 추가" });
       await ui.click({ role: "button", name: "WSL 프로젝트 추가" });
       const distros = await read("workspace.registry", "list_wsl_distros");
       const index = distros.findIndex((item) => item.name === distro);
@@ -164,15 +236,8 @@ export function createWorkspaceUiFixture({
       await selectOption({ role: "combobox", name: "WSL 배포판" }, index + 1);
       await ui.fill({ role: "textbox", name: "Linux 프로젝트 폴더" }, agentRoot);
       await ui.click({ role: "button", name: "WSL 프로젝트 등록" });
-      await this.waitForText({ role: "textbox", name: "프로젝트 이름" });
-      const name = agentRoot.split("/").pop();
-      this.agentProjectName = name;
-      await ui.click({ role: "button", name: "등록" });
-      await wait(
-        async () => (await this.registry()).projects.some((project) => project.name === name),
-        "WSL base registered",
-      );
-      await ui.click({ role: "button", name: "프로젝트 선택", scope: { role: "region", name } });
+      const project = await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
+      this.agentProjectName = project.name;
       await wait(async () => (await context())?.target?.kind === "wsl", "WSL base selected");
       await this.trustSource();
     },
@@ -206,11 +271,7 @@ export function createWorkspaceUiFixture({
       )
         return;
       await ui.click({ role: "button", name: "개요" });
-      await ui.click({
-        role: "button",
-        name: "프로젝트 선택",
-        scope: { role: "region", name: path.basename(this.windowsRoot) },
-      });
+      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, this.windowsRoot);
       await wait(async () => (await context())?.target?.kind === "windows", "owned Windows root selected");
     },
     async runtimeLostReply() {
@@ -224,40 +285,26 @@ export function createWorkspaceUiFixture({
       );
       const job = await createRuntimeJob(name, `"${process.execPath}" "${script}"`);
       const scope = { role: "article", name };
-      const pending = () =>
-        cdp.evaluate(
-          `Object.keys(localStorage).filter(key=>key.startsWith("devbox-runtime-pending:")&&key.endsWith(":"+${JSON.stringify(job.id)})).map(key=>({key,...JSON.parse(localStorage.getItem(key))}))`,
-        );
-      async function loseReply(action) {
-        await cdp.command("Debugger.enable");
-        const functionValue = await cdp.command("Runtime.evaluate", {
-          expression: "window.__TAURI_INTERNALS__.runCallback",
-          returnByValue: false,
+      const pendingExpression = `Object.keys(localStorage).filter(key=>key.startsWith("devbox-runtime-pending:")&&key.endsWith(":"+${JSON.stringify(job.id)})).map(key=>({key,...JSON.parse(localStorage.getItem(key))}))`;
+      const pending = () => cdp.evaluate(pendingExpression);
+      const loseReply = (action) =>
+        loseRuntimeReply({
+          cdp,
+          ui,
+          wait,
+          jobId: job.id,
+          scope,
+          action,
+          pendingExpression,
+          restart,
+          beforeRestart: async () => {
+            if (action === "지금 실행")
+              await wait(
+                async () => (await readFile(counter, "utf8")).includes("launch"),
+                "owned child launched before losing reply",
+              );
+          },
         });
-        assert.ok(functionValue.result.objectId);
-        let paused = false;
-        const unsubscribe = cdp.onEvent("Debugger.paused", () => {
-          paused = true;
-        });
-        await cdp.command("Debugger.setBreakpointOnFunctionCall", {
-          objectId: functionValue.result.objectId,
-          condition: `data?.value?.jobId===${JSON.stringify(job.id)}`,
-        });
-        const click = ui.click({ role: "button", name: action, scope });
-        click.catch(() => {});
-        await wait(async () => paused, "native result paused before renderer receipt");
-        const requests = await pending();
-        assert.equal(requests.length, 1, "Lost reply must retain exactly one original request");
-        const operationId = requests[0].operationId;
-        if (action === "지금 실행")
-          await wait(
-            async () => (await readFile(counter, "utf8")).includes("launch"),
-            "owned child launched before losing reply",
-          );
-        unsubscribe();
-        await restart(true);
-        return operationId;
-      }
       const runId = await loseReply("지금 실행");
       assert.equal(await readFile(counter, "utf8"), "launch\n");
       await ui.click({ role: "button", name: "작업 및 서비스" });
@@ -311,6 +358,7 @@ export function createWorkspaceUiFixture({
         );
       await writeLock("1.2.3");
       await ui.click({ role: "button", name: "의존성" });
+      await ui.waitForTarget({ role: "button", name: "의존성 분석" });
       await ui.click({ role: "button", name: "의존성 분석" });
       const inventory = () => read("workspace.dependencies", "dependency_inventory", { request: { path: root } });
       const initial = await inventory();
@@ -450,6 +498,7 @@ export function createWorkspaceUiFixture({
     async managedLspLifecycle() {
       await this.selectWindows();
       await ui.click({ role: "button", name: "파일" });
+      await ui.waitForTarget({ role: "button", name: "언어 서버" });
       await ui.click({ role: "button", name: "언어 서버" });
       const catalog = await read("workspace.lsp", "lsp_catalog");
       const rust = catalog.find((item) => item.id === "rust-analyzer"),

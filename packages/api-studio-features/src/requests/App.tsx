@@ -1,3 +1,5 @@
+import { reviewedHistoryRemoval } from "./lib/reviewedHistory";
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { createRequestSessionVariables } from "./lib/requestSessionVariables";
 import { createRequestTransferActions } from "./controllers/requestTransfer";
 import { RequestCodePanels } from "./components/RequestCodePanels";
@@ -68,12 +70,7 @@ import {
   renameEntry,
   type CollectionEntry,
 } from "./lib/collections";
-import {
-  buildRequestItemContextMenu,
-  duplicateHistoryItem,
-  removeHistoryItem,
-  renameHistoryItem,
-} from "./lib/contextMenu";
+import { buildRequestItemContextMenu, duplicateHistoryItem, renameHistoryItem } from "./lib/contextMenu";
 import { emptyStore as emptyEnvStore, type EnvironmentStore, loadStore as loadEnvStore } from "./lib/environments";
 import {
   emptyHistoryStore,
@@ -174,6 +171,8 @@ export default function App({
   >("params");
   const [pretty, setPretty] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const historyRef = useRef(history);
+  historyRef.current = history;
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyMethod, setHistoryMethod] = useState("");
   const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>("all");
@@ -1299,11 +1298,11 @@ export default function App({
     }, "기록 이름을 안전하게 저장하지 못했습니다.");
   };
 
-  const deleteHistory = (item: HistoryItem) => {
-    const label = (item.name ?? item.request.url) || "(no url)";
-    if (!window.confirm(`'${label}' 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+  const deleteHistory = async (item: HistoryItem) => {
+    const store = await reviewedHistoryRemoval(item, () => (mountedRef.current ? historyRef.current : null));
+    if (!store) return;
     void runContextAction(async () => {
-      await persistHistory(removeHistoryItem({ ...emptyHistoryStore(), history }, item.id));
+      await persistHistory(store);
     }, "기록 삭제 상태를 안전하게 저장하지 못했습니다.");
   };
 
@@ -1333,14 +1332,15 @@ export default function App({
     }, "컬렉션 이름을 안전하게 저장하지 못했습니다.");
   };
 
-  const deleteCollection = (item: CollectionEntry) => {
-    if (!window.confirm(`'${item.name}' 컬렉션을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+  const deleteCollection = async (item: CollectionEntry) => {
+    if (!(await confirmAction(`'${item.name}' 컬렉션을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`))) return;
+    if (!mountedRef.current) return;
     void runContextAction(async () => {
       await persistCollections(removeEntry(collectionStoreRef.current, item.id));
     }, "컬렉션 삭제 상태를 안전하게 저장하지 못했습니다.");
   };
 
-  const onHistoryContextSelect = (id: string) => {
+  const onHistoryContextSelect = async (id: string) => {
     const item = contextHistory;
     if (!item) return;
     if (id === "duplicate") duplicateHistory(item);

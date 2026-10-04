@@ -1,3 +1,4 @@
+import * as confirmation from "@devbox/product-shell/confirm";
 import { previewDocumentKey, seedPreviewDocument } from "../../storage/testDocuments";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -144,7 +145,7 @@ it("edits a loaded pipeline at capacity and recovers room by confirmed deletion"
     updatedAt: index + 1,
   }));
   seedPreviewDocument("workflows", JSON.stringify({ schemaVersion: 1, recentTools: [], favoriteTools: [], pipelines }));
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const confirm = vi.spyOn(confirmation, "confirmAction").mockResolvedValue(false);
   const view = render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
   fireEvent.click(await screen.findByRole("button", { name: /^pipeline-7:/ }));
   fireEvent.click(screen.getByRole("button", { name: "단계 추가" }));
@@ -166,7 +167,7 @@ it("edits a loaded pipeline at capacity and recovers room by confirmed deletion"
   const remove = screen.getByRole("button", { name: "pipeline-7 파이프라인 삭제" });
   fireEvent.click(remove);
   expect(screen.getByRole("button", { name: /^pipeline-7:/ })).toBeTruthy();
-  confirm.mockReturnValue(true);
+  confirm.mockResolvedValue(true);
   fireEvent.click(remove);
   await waitFor(() => expect(JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY)!).pipelines).toHaveLength(19));
   fireEvent.click(screen.getByRole("button", { name: "새 파이프라인" }));

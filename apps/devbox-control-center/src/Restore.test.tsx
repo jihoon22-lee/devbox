@@ -17,6 +17,7 @@ const checkpoint = "fa2c49ba-1368-4c79-aafb-d7a6c7ef6c14";
 function respond(
   activeOperation: string | null = null,
   installation?: { phase: string; committed: boolean; recordedOwners: number; clean: boolean; freshHealth: boolean },
+  compatibility: "currentGeneration" | "differentGeneration" | "invalid" = "currentGeneration",
 ) {
   vi.mocked(invoke).mockImplementation(async (_command, args) => {
     const { request } = args as { request: { header: { requestId: string }; method: string } };
@@ -34,7 +35,7 @@ function respond(
         request.method === "restore_inventory"
           ? {
               installation,
-              checkpoints: [{ id: checkpoint, bytes: 512, files: 2 }],
+              checkpoints: [{ id: checkpoint, bytes: 512, files: 2, compatibility }],
               operations: activeOperation ? [{ id: activeOperation, phase: "health" }] : [],
               activeOperation,
             }
@@ -123,3 +124,22 @@ it("puts unfinished clean setup before optional preservation details and keeps a
   expect(review.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect((screen.getByRole("button", { name: "Control Center를 닫고 실행" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it.each(["differentGeneration", "invalid"] as const)(
+  "keeps %s checkpoint visible and blocks restore before review",
+  async (compatibility) => {
+    respond(null, undefined, compatibility);
+    render(<Restore description={fixtureDescription("control-center")} route="recovery" />);
+    const restore = await screen.findByRole("button", { name: "이 보존본으로 복원" });
+    expect((restore as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(checkpoint)).toBeTruthy();
+    expect(
+      screen.getByText(
+        compatibility === "differentGeneration" ? /현재 버전에서는 복원할 수 없습니다/ : /안전하게 복원할 수 없어/,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(restore);
+    expect(screen.queryByRole("region", { name: "복구 작업 검토" })).toBeNull();
+    expect(invoke).toHaveBeenCalledTimes(1);
+  },
+);

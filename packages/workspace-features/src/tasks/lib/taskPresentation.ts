@@ -146,3 +146,9 @@ export function taskControlReceiptStatusLabel(status: WorkspaceTaskControlReceip
       return "실패";
   }
 }
+
+export function searchErrorMessage(cause: unknown): string {
+  return String(cause) === "log-search-invalid-pattern"
+    ? "정규식 패턴이 올바르지 않습니다."
+    : "로그 검색을 완료하지 못했습니다.";
+}

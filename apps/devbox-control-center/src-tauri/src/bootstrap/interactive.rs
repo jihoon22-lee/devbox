@@ -212,7 +212,25 @@ pub(crate) fn inventory() -> Result<Value> {
         });
     let installation = json!({"phase":journal.phase,"committed":journal.committed,"recordedOwners":journal.owner_evidence.len(),
         "clean":clean,"reinstall":reinstall::pending(&root)?,"freshHealth":fresh_health});
-    let checkpoints = journal.data_checkpoints;
+    let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
+    let checkpoints = journal
+        .data_checkpoints
+        .into_iter()
+        .map(|receipt| {
+            let compatibility = crate::core::data_checkpoint::restore_compatibility(
+                &backup,
+                &receipt,
+                key,
+                &scope.manifest.generation,
+                &AtomicBool::new(false),
+            )
+            .unwrap_or(crate::core::data_checkpoint::CheckpointCompatibility::Invalid);
+            crate::ipc::delivery::RestoreCheckpoint {
+                receipt,
+                compatibility,
+            }
+        })
+        .collect::<Vec<_>>();
     let recovery = parent.join(format!("com.devbox.v08.suite-restore.i{key}"));
     let mut operations = Vec::new();
     match fs::symlink_metadata(&recovery) {

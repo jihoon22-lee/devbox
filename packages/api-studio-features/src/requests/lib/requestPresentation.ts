@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import { apiMessages } from "../../issues/catalog";
 import { buildRevealedCurl } from "../api";
 import { sanitizeRequestForPersistence } from "./persistence";
@@ -416,15 +417,17 @@ export async function copyRevealedCurl(
   req: RequestTemplate,
   environment: Parameters<typeof buildRevealedCurl>[1],
   setError: (message: string | null) => void,
+  isCurrent: () => boolean,
 ): Promise<void> {
-  const confirmed = window.confirm(
+  const confirmed = await confirmAction(
     "원문 cURL에는 Authorization, Cookie, API key와 secret 값이 포함될 수 있습니다. 클립보드에 한 번 복사할까요?",
   );
-  if (!confirmed) return;
+  if (!confirmed || !isCurrent()) return;
   try {
     const revealed = await buildRevealedCurl(req, environment);
+    if (!isCurrent()) return;
     await navigator.clipboard.writeText(revealed);
   } catch {
-    setError("원문 cURL을 안전하게 만들거나 복사하지 못했습니다.");
+    if (isCurrent()) setError("원문 cURL을 안전하게 만들거나 복사하지 못했습니다.");
   }
 }

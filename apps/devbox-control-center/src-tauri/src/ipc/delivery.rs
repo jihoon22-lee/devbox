@@ -407,8 +407,16 @@ pub struct InstallationState {
 }
 #[derive(Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+pub struct RestoreCheckpoint {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub receipt: crate::core::data_checkpoint::Receipt,
+    pub compatibility: crate::core::data_checkpoint::CheckpointCompatibility,
+}
+#[derive(Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreInventory {
-    pub checkpoints: Vec<crate::core::data_checkpoint::Receipt>,
+    pub checkpoints: Vec<RestoreCheckpoint>,
     pub operations: Vec<RestoreOperation>,
     pub active_operation: Option<String>,
     pub installation: InstallationState,
@@ -436,6 +444,9 @@ product_ipc::issue_codes! {
     BootstrapGateUnsafe = "bootstrap_gate_unsafe",
     BootstrapHelperBusy = "bootstrap_helper_busy",
     BootstrapIdentityUnavailable = "bootstrap_identity_unavailable",
+    BootstrapInputChanged = "bootstrap_input_changed",
+    BootstrapInputUnavailable = "bootstrap_input_unavailable",
+    BootstrapInputUnsafe = "bootstrap_input_unsafe",
     BootstrapJournalMissing = "bootstrap_journal_missing",
     BootstrapLaunchFailed = "bootstrap_launch_failed",
     BootstrapOwnerChanged = "bootstrap_owner_changed",
@@ -466,6 +477,14 @@ product_ipc::issue_codes! {
     SuiteHealthInvalid = "suite_health_invalid",
     SuiteHealthRequired = "suite_health_required",
     SuiteJournalChanged = "suite_journal_changed",
+    SuiteJournalInvalid = "suite_journal_invalid",
+    SuiteJournalUnavailable = "suite_journal_unavailable",
+    SuiteJournalUnsafe = "suite_journal_unsafe",
+    SuiteLockUnavailable = "suite_lock_unavailable",
+    SuiteLockUnsafe = "suite_lock_unsafe",
+    SuiteStoreChanged = "suite_store_changed",
+    SuiteStoreUnsafe = "suite_store_unsafe",
+    SuiteUpdateBusy = "suite_update_busy",
     SuiteJournalMissing = "suite_journal_missing",
     SuiteJournalStale = "suite_journal_stale",
     SuiteOwnerChanged = "suite_owner_changed",
@@ -589,6 +608,29 @@ mod validation_tests {
             assert_eq!(call.routes(), &["recovery"]);
         }
     }
+    #[test]
+    fn bootstrap_read_failures_keep_only_fixed_issue_codes() {
+        for code in [
+            "bootstrap_input_changed",
+            "bootstrap_input_unavailable",
+            "bootstrap_input_unsafe",
+            "suite_journal_invalid",
+            "suite_journal_unavailable",
+            "suite_journal_unsafe",
+            "suite_lock_unavailable",
+            "suite_lock_unsafe",
+            "suite_store_changed",
+            "suite_store_unsafe",
+            "suite_update_busy",
+        ] {
+            assert_eq!(classify(code), code);
+        }
+        assert_eq!(
+            classify("bootstrap_input_unavailable: C:\\private"),
+            "unavailable"
+        );
+    }
+
     #[test]
     fn restore_requests_cannot_substitute_paths_or_noncanonical_ids() {
         for (action, id, accepted) in [

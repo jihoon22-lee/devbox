@@ -314,6 +314,21 @@ async function workspaceRead(app, component, method, args = {}) {
   assert.equal(value?.operation?.outcome?.state, "succeeded");
   return value.value;
 }
+export async function createAgentBusinessJob(app, { name, command, directory }) {
+  await app.ui.click({ role: "button", name: "작업 및 서비스" });
+  await app.ui.waitForTarget({ role: "button", name: "+ 새 작업" });
+  await app.ui.click({ role: "button", name: "+ 새 작업" });
+  await app.ui.fill({ role: "textbox", name: "작업 이름" }, name);
+  await app.ui.fill({ role: "textbox", name: "실행 명령" }, command);
+  await app.ui.fill({ role: "textbox", name: "작업 디렉터리" }, directory);
+  await app.ui.click({ role: "button", name: "작업 저장" });
+  const job = await until(
+    async () => (await workspaceRead(app, "workspace.runtime", "list_jobs")).find((item) => item.name === name),
+    "saved business job",
+  );
+  await app.ui.waitForTarget({ role: "button", name: "지금 실행", scope: { role: "article", name } });
+  return job;
+}
 async function agentCrashBusiness(context, app) {
   const registry = await workspaceRead(app, "workspace.registry", "snapshot");
   const root = registry.worktrees.find((item) => item.binding?.target?.kind === "windows");
@@ -333,16 +348,11 @@ async function agentCrashBusiness(context, app) {
     script,
     `require('node:fs').appendFileSync(${JSON.stringify(counter)},'launch\\n');setInterval(()=>{},1000);`,
   );
-  await app.ui.click({ role: "button", name: "작업 및 서비스" });
-  await app.ui.click({ role: "button", name: "+ 새 작업" });
-  await app.ui.fill({ role: "textbox", name: "작업 이름" }, name);
-  await app.ui.fill({ role: "textbox", name: "실행 명령" }, `"${process.execPath}" "${script}"`);
-  await app.ui.fill({ role: "textbox", name: "작업 디렉터리" }, folder);
-  await app.ui.click({ role: "button", name: "작업 저장" });
-  const job = await until(
-    async () => (await workspaceRead(app, "workspace.runtime", "list_jobs")).find((item) => item.name === name),
-    "saved business job",
-  );
+  const job = await createAgentBusinessJob(app, {
+    name,
+    command: `"${process.execPath}" "${script}"`,
+    directory: folder,
+  });
   const scope = { role: "article", name };
   await app.cdp.command("Debugger.enable");
   const fn = await app.cdp.command("Runtime.evaluate", {

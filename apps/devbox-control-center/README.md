@@ -28,6 +28,9 @@ v0.9.0 소스의 네 사용자 제품 중 하나다. Products·Commands·Tools·
 - 설치 도중 제품 연결은 저장소 준비 상태 확인에 사용할 수 있다. 일반 작업·Agent 재연결·수신 작업은 활성화 전까지 차단한다.
 - Suite installer/bootstrap은 generation·journal·owned file identity로 install/update/undo/commit/
   restore/resume/uninstall을 수행한다. postcommit 새 데이터와 제거 후 사용자 데이터를 보존한다.
+- 업데이트 상태 확인 단계에서 업데이트 전 보존본을 복구 목록에 기록하고, 이전 업데이트의 보존본 이력도 유지한다.
+  다른 설치 세대의 보존본은 목록에 유지하되 현재 버전에서 복원할 수 없음을 표시한다.
+  목록에서는 보존본 정보만 확인하고 실제 복원 준비 때 내용 전체와 소유권을 다시 검증한다.
 
 ## 구현과 근거
 

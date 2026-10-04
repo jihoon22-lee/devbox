@@ -55,6 +55,8 @@ function transport(
         return { cssLayoutViewport: { pageX, pageY, clientWidth: 1024, clientHeight: 720 } };
       if (method === "DOM.resolveNode") return { object: { objectId: `owned-${params.backendNodeId}` } };
       if (method === "Runtime.callFunctionOn") {
+        if (params.functionDeclaration.startsWith("function visibleControlBounds"))
+          return { result: { value: params.arguments[0].value } };
         if (failContains) throw new Error("Owned DOM detached");
         return { result: { value: contained } };
       }
@@ -223,17 +225,17 @@ test("an overlay hit cannot dispatch pointer input and resolved handles are rele
       .filter((call) => call.method === "Runtime.releaseObject")
       .map((call) => call.params.objectId)
       .sort(),
-    ["owned-12", "owned-13"],
+    ["owned-12", "owned-12", "owned-13"],
   );
 });
 test("a verified descendant hit dispatches input only after read-only validation and cleanup", async () => {
   const cdp = transport([control], { hit: 13, contained: true });
   const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
   await ui.click({ role: "button", name: "Continue" });
-  const read = cdp.calls.find((call) => call.method === "Runtime.callFunctionOn");
+  const read = cdp.calls.find((call) => call.method === "Runtime.callFunctionOn" && call.params.arguments[0].objectId);
   assert.equal(read.params.objectId, "owned-12");
   assert.deepEqual(read.params.arguments, [{ objectId: "owned-13" }]);
-  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 2);
+  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 3);
   assert.ok(
     cdp.calls.findIndex((call) => call.method === "Input.dispatchMouseEvent") >
       cdp.calls.findLastIndex((call) => call.method === "Runtime.releaseObject"),
@@ -247,7 +249,7 @@ test("a detached DOM validation fails closed while releasing both handles", asyn
     cdp.calls.some((call) => call.method.startsWith("Input.")),
     false,
   );
-  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 2);
+  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 3);
 });
 
 test("target readiness observes async missing/disabled AX states without input then clicks once", async () => {
@@ -428,4 +430,46 @@ test("opening timeout stops once a valid dialog decision command is underway", a
   rejectDecision(new Error("CDP decision command timeout"));
   releasePointer();
   await assert.rejects(pending, /CDP decision command timeout/);
+});
+
+test("product confirmation waits for the scoped accessible dialog and sends only the explicit decision", async () => {
+  for (const accept of [false, true]) {
+    const nodes = [control];
+    const cdp = transport(nodes, { contained: true });
+    const command = cdp.command;
+    let opened = false;
+    cdp.command = async (method, params) => {
+      if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased" && !opened) {
+        opened = true;
+        nodes.push(
+          {
+            nodeId: "dialog",
+            role: { value: "dialog" },
+            name: { value: "작업 확인" },
+            childIds: ["cancel", "ok"],
+            backendDOMNodeId: 30,
+          },
+          { nodeId: "cancel", role: { value: "button" }, name: { value: "취소" }, backendDOMNodeId: 31 },
+          { nodeId: "ok", role: { value: "button" }, name: { value: "확인" }, backendDOMNodeId: 32 },
+          { nodeId: "unrelated", role: { value: "button" }, name: { value: "확인" }, backendDOMNodeId: 99 },
+        );
+      }
+      return command(method, params);
+    };
+    const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+    await assert.rejects(
+      ui.clickWithConfirmation({ role: "button", name: "Continue" }, undefined),
+      /Explicit confirmation/,
+    );
+    assert.equal(cdp.calls.length, 0);
+    await ui.clickWithConfirmation({ role: "button", name: "Continue" }, accept);
+    const targets = cdp.calls
+      .filter(({ method }) => method === "DOM.scrollIntoViewIfNeeded")
+      .map(({ params }) => params.backendNodeId);
+    assert.deepEqual(targets, [12, accept ? 32 : 31]);
+    assert.equal(
+      cdp.calls.some(({ method }) => method === "Page.handleJavaScriptDialog"),
+      false,
+    );
+  }
 });

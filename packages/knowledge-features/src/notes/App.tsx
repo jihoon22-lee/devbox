@@ -1,3 +1,4 @@
+import { confirmAction } from "@devbox/product-shell/confirm";
 import {
   indent,
   isMarkdown,
@@ -492,7 +493,7 @@ export default function App({
     };
   }, []);
 
-  const confirmDiscard = useCallback(() => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?"), []);
+  const confirmDiscard = useCallback(() => confirmAction("저장하지 않은 변경사항이 있습니다. 계속할까요?"), []);
   const openFile = async (path: string, fragment?: string) => {
     if (recoveryBusyRef.current) return;
     setError(null);
@@ -629,8 +630,9 @@ export default function App({
 
   const openDraftPreview = useCallback(
     async (id: string, kind: KnowledgeDraftPreview["kind"]) => {
-      if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
-      if (draftBusyRef.current) return;
+      const decisionSource = editorDocument.snapshot().sourceVersion;
+      if (dirty && !(await confirmAction("저장하지 않은 변경사항이 있습니다. 계속할까요?"))) return;
+      if (editorDocument.snapshot().sourceVersion !== decisionSource || draftBusyRef.current) return;
       const request = draftRequestRef.current + 1;
       draftRequestRef.current = request;
       draftRestoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -654,7 +656,7 @@ export default function App({
         if (draftMountedRef.current && draftRequestRef.current === request) setDraftBusy(false);
       }
     },
-    [dirty],
+    [dirty, editorDocument],
   );
 
   // A draft is a modal transaction, not a passive notification.  Keep focus
@@ -911,7 +913,7 @@ export default function App({
 
   const remove = async (path: string, isDir = false) => {
     const kind = isDir ? "폴더와 그 안의 모든 항목" : "파일";
-    if (!confirm(`'${path}' ${kind}을(를) 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!(await confirmAction(`'${path}' ${kind}을(를) 삭제할까요? 이 작업은 되돌릴 수 없습니다.`))) return;
     setError(null);
     const completeRemoval = editorDocument.approveRemoval(path);
     try {
@@ -1156,22 +1158,11 @@ export default function App({
           </section>
         </div>
       )}
-      {note.error && <p role="alert">{note.error}</p>}
-      {error && (
-        <div className="error" role="alert">
-          {error}
-        </div>
-      )}
 
       {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
         <div className="quick-capture-shortcut-warning" role="status">
           전역 단축키 {quickCaptureShortcut.shortcut}를 등록하지 못했습니다. 다른 앱이 사용 중일 수 있습니다. 해당 앱의
           단축키 설정을 변경한 뒤 Knowledge를 다시 시작하거나, 아래 버튼으로 계속 빠르게 기록할 수 있습니다.
-        </div>
-      )}
-      {notice && (
-        <div className="notice" role="status">
-          {notice}
         </div>
       )}
       <aside id="notes-sidebar" className="sidebar" hidden={!showSidebar} inert={recoveryBusy}>
@@ -1297,6 +1288,17 @@ export default function App({
       </aside>
 
       <main className="content">
+        {note.error && <p role="alert">{note.error}</p>}
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="notice" role="status">
+            {notice}
+          </div>
+        )}
         <button
           className="btn small notes-sidebar-toggle"
           aria-controls="notes-sidebar"
@@ -1378,9 +1380,15 @@ export default function App({
                     selectable={false}
                     disabled={note.saving}
                     approveLabel="비교한 내용에 덮어쓰기"
-                    onApprove={() => {
+                    onApprove={async () => {
                       const revision = note.conflict?.revision;
-                      if (revision && confirm("비교한 디스크 내용을 현재 편집 내용으로 덮어쓸까요?"))
+                      const source = editorDocument.snapshot().sourceVersion;
+                      if (
+                        revision &&
+                        (await confirmAction("비교한 디스크 내용을 현재 편집 내용으로 덮어쓸까요?")) &&
+                        editorDocument.snapshot().sourceVersion === source &&
+                        editorDocument.snapshot().conflict?.revision === revision
+                      )
                         void editorDocument.save(revision).then((saved) => {
                           if (saved) void loadMeta();
                         });

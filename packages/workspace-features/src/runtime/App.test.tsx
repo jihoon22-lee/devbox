@@ -1,4 +1,4 @@
-import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App, {
@@ -519,6 +519,7 @@ describe("port context menu", () => {
 
     expect(confirmMock).toHaveBeenCalledWith("127.0.0.1:3000 (node.exe) 리스너 종료할까요?");
     expect(killListenerMock).not.toHaveBeenCalled();
+    await act(async () => {});
 
     confirmMock.mockReturnValueOnce(true);
     openRowMenu("node.exe");
@@ -714,7 +715,7 @@ describe("identity-safe listener UI boundaries", () => {
     fireEvent.click(button);
 
     expect(confirmMock).toHaveBeenCalledTimes(1);
-    expect(killListenerMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(killListenerMock).toHaveBeenCalledTimes(1));
     resolveKill?.();
     await waitFor(() => expect(listPortObservationsMock).toHaveBeenCalledTimes(2));
   });
@@ -743,7 +744,7 @@ describe("identity-safe listener UI boundaries", () => {
     await vi.advanceTimersByTimeAsync(DEFAULT_PREFERENCES.refresh_interval_ms);
     expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "리스너 종료" }));
-    await Promise.resolve();
+    await act(async () => {});
     expect(killListenerMock).toHaveBeenCalledTimes(1);
     expect(listPortObservationsMock).toHaveBeenCalledTimes(2);
 
@@ -921,3 +922,31 @@ it("selects an exact Problem port without terminating a process", async () => {
   expect(killListener).not.toHaveBeenCalled();
   expect(handoffContainerStop).not.toHaveBeenCalled();
 });
+
+it("does not kill while an asynchronous confirmation is pending or cancelled", async () => {
+  let decide!: (value: boolean) => void;
+  confirmMock.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      decide = resolve;
+    }) as never,
+  );
+  render(<App />);
+  await screen.findByText("node.exe");
+  openRowMenu("node.exe");
+  fireEvent.click(screen.getByRole("menuitem", { name: "리스너 종료" }));
+  expect(killListenerMock).not.toHaveBeenCalled();
+  await act(async () => {
+    decide(false);
+  });
+  expect(killListenerMock).not.toHaveBeenCalled();
+});
+
+vi.mock("@devbox/product-shell/confirm", () => ({
+  confirmAction: async (message: string) => {
+    try {
+      return (await window.confirm(message)) === true;
+    } catch {
+      return false;
+    }
+  },
+}));

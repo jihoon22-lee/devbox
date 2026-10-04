@@ -4,7 +4,6 @@ import { requireApiContext, button, textbox, scenario, until, expectText } from 
 import { observeEnvironmentIme } from "./windows-api-input-observations.mjs";
 
 export const SCENARIO_IDS = Object.freeze(["ENV-01", "ENV-02"]);
-
 export async function run(context) {
   requireApiContext(context);
   const results = [];
@@ -52,9 +51,9 @@ export async function run(context) {
       stored = (await context.document("environments")).value;
       assert.equal(stored.environments[0].variables[0].value, sealed);
       record("Actual duplicate rename rejects persistence, then valid rename preserves the exact sealed blob");
-      await context.ui.clickWithDialog(button("환경 변수 var1 삭제"), false);
+      await context.ui.clickWithConfirmation(button("환경 변수 var1 삭제"), false);
       assert.deepEqual((await context.document("environments")).value, stored);
-      await context.ui.clickWithDialog(button("환경 변수 var1 삭제"), true);
+      await context.ui.clickWithConfirmation(button("환경 변수 var1 삭제"), true);
       await until(
         async () => (await context.document("environments")).value.environments[0].variables.length === 1,
         "Confirmed deletion was not saved",
