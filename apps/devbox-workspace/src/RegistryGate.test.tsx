@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import RegistryGate from "./RegistryGate";
+import { IncomingReviewContext, type IncomingReview } from "@devbox/product-shell/incoming";
 import { nativeCall } from "./native";
 vi.mock("./native", () => ({ nativeCall: vi.fn() }));
 const call = vi.mocked(nativeCall);
@@ -380,4 +381,51 @@ it("names each worktree group so sibling selection remains unambiguous", async (
       context: { projectId: "owned", worktreeId: "base", revision: 1, target: worktrees[0].binding.target },
     }),
   );
+});
+
+it("retains a newer incoming review when an earlier project selection completes", async () => {
+  const context = { projectId: "project-a", worktreeId: "tree-a", revision: 2, target: { kind: "windows" as const } };
+  const registry = {
+    revision: 2,
+    projects: [{ id: "project-a", name: "fixture" }],
+    worktrees: [{ id: "tree-a", projectId: "project-a", revision: 2, binding: preview.binding, trustedDigest: null }],
+  };
+  let complete!: () => void;
+  const selected = new Promise<void>((resolve) => {
+    complete = resolve;
+  });
+  call.mockImplementation(async (_component, method) => {
+    if (method === "status") return { phase: "selected" };
+    if (method === "snapshot") return registry;
+    if (method === "select_project") return selected;
+    return {};
+  });
+  const clear = vi.fn();
+  const first: IncomingReview = {
+    operationId: "review-one",
+    revision: "one",
+    commandRevision: "one",
+    label: "First review",
+    route: "overview",
+    target: { kind: "entity", entity: "worktree", id: "tree-a" },
+    context,
+  };
+  const content = (review: IncomingReview) => (
+    <IncomingReviewContext.Provider value={{ review, clear }}>
+      <RegistryGate />
+    </IncomingReviewContext.Provider>
+  );
+  const view = render(content(first));
+  fireEvent.click(await screen.findByRole("button", { name: "프로젝트 선택" }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith("workspace.registry", "select_project", { context }));
+  view.rerender(content({ ...first, operationId: "review-two", label: "New review" }));
+  await act(async () => {
+    complete();
+    await selected;
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "프로젝트 선택" }).hasAttribute("disabled")).toBe(false),
+  );
+  expect(clear).not.toHaveBeenCalled();
+  expect(screen.getByText(/New review 프로젝트/)).toBeTruthy();
 });

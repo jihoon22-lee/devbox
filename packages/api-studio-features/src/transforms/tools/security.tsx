@@ -12,23 +12,46 @@ export function HashTool() {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
+  const revision = useRef(0);
+  useEffect(
+    () => () => {
+      revision.current += 1;
+    },
+    [],
+  );
+  const invalidate = () => {
+    revision.current += 1;
+    setOutput("");
+    setError(null);
+    setRunning(false);
+  };
+
   const run = async () => {
+    const current = ++revision.current;
     setRunning(true);
     setError(null);
     try {
-      setOutput(await hash(input, algorithm));
+      const result = await hash(input, algorithm);
+      if (current === revision.current) setOutput(result);
     } catch (e) {
+      if (current !== revision.current) return;
       setError(e instanceof Error ? e.message : String(e));
       setOutput("");
     } finally {
-      setRunning(false);
+      if (current === revision.current) setRunning(false);
     }
   };
 
   return (
     <div className="tool">
       <div className="row">
-        <select value={algorithm} onChange={(e) => setAlgorithm(e.currentTarget.value)}>
+        <select
+          value={algorithm}
+          onChange={(e) => {
+            invalidate();
+            setAlgorithm(e.currentTarget.value);
+          }}
+        >
           {ALGORITHMS.map((a) => (
             <option key={a} value={a}>
               {a}
@@ -47,7 +70,10 @@ export function HashTool() {
             className="io-input"
             rows={5}
             value={input}
-            onValueChange={setInput}
+            onValueChange={(value) => {
+              invalidate();
+              setInput(value);
+            }}
             spellCheck={false}
           />
         </div>

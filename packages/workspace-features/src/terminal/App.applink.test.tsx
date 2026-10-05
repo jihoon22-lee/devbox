@@ -163,6 +163,21 @@ async function acceptDialog(): Promise<void> {
 afterEach(() => cleanup());
 
 describe("App app-link delivery", () => {
+  it("removes every pane and its tab when native close events arrive in one batch", async () => {
+    listWorkspaceProfilesMock.mockResolvedValueOnce([profile]);
+    takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "profile", id: profile.id }, from: "devbox-launcher" });
+    render(<App />);
+    await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "dev 터미널 탭" })).toBeInTheDocument());
+    const closed = onTerminalClosedMock.mock.calls[0][0];
+    act(() => {
+      closed({ session_id: "session-pane-1", data: "" });
+      closed({ session_id: "session-pane-2", data: "" });
+    });
+    expect(screen.queryByRole("tab", { name: "dev 터미널 탭" })).not.toBeInTheDocument();
+    expect((mocks.paneCanvasProps as { panes: unknown[] }).panes).toEqual([]);
+  });
+
   it("waits for the Windows build lookup before mounting PaneCanvas", async () => {
     let resolveBuild: ((value: number | null) => void) | undefined;
     getWindowsBuildNumberMock.mockImplementationOnce(

@@ -1,7 +1,7 @@
 import { bindTypedCall } from "@devbox/workspace-features/typed";
 import type { WorkspaceRuntimeCall } from "@devbox/workspace-features/generated/WorkspaceRuntimeCall";
 import type { RuntimeResults } from "@devbox/workspace-features/generated/runtime-results";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
 import type { Description } from "@devbox/product-shell/api";
 import { componentCall } from "./native";
@@ -19,6 +19,8 @@ interface Run {
 }
 export default function IncomingRuntimeReview({ description }: { description: Description }) {
   const { review, clear } = useIncomingReview();
+  const actionGeneration = useRef(0);
+  const operationId = review?.operationId;
   const [run, setRun] = useState<Run | null>(null),
     [issue, setIssue] = useState(""),
     [busy, setBusy] = useState(false);
@@ -26,10 +28,13 @@ export default function IncomingRuntimeReview({ description }: { description: De
     review?.route === "tasks" && review.target.kind === "entity" && review.target.entity === "run"
       ? review.target.id
       : null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new operation for the same run must invalidate the previous review's pending actions.
   useEffect(() => {
     let current = true;
+    actionGeneration.current += 1;
     setRun(null);
     setIssue("");
+    setBusy(false);
     if (id)
       void runtimeCall(description)("get_run", { id })
         .then((value) => {
@@ -43,19 +48,21 @@ export default function IncomingRuntimeReview({ description }: { description: De
         });
     return () => {
       current = false;
+      actionGeneration.current += 1;
     };
-  }, [description, id]);
+  }, [description, id, operationId]);
   if (!id) return null;
   const openLog = async (stream: "stdout" | "stderr") => {
+    const generation = actionGeneration.current;
     setBusy(true);
     setIssue("");
     try {
       await runtimeCall(description)("open_run_log_in_log_lens", { runId: id, stream });
-      clear();
+      if (actionGeneration.current === generation) clear();
     } catch {
-      setIssue("현재 실행 로그를 열지 못했습니다.");
+      if (actionGeneration.current === generation) setIssue("현재 실행 로그를 열지 못했습니다.");
     } finally {
-      setBusy(false);
+      if (actionGeneration.current === generation) setBusy(false);
     }
   };
   const labels: Record<string, string> = {

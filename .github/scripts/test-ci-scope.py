@@ -44,20 +44,23 @@ for path in ("apps/devbox-agent/src/runtime.rs", "apps/devbox-agent/build.rs", "
     assert native_agent.rust_packages == ["devbox-agent"], path
     assert native_agent.frontend_scope == "none", path
 native_agent_manifest = resolve("apps/devbox-agent/Cargo.toml", "Cargo.lock")
-assert native_agent_manifest.rust_scope == "packages"
-assert native_agent_manifest.rust_packages == ["devbox-agent"]
+assert native_agent_manifest.rust_scope == "all"
+assert native_agent_manifest.rust_packages == []
 assert native_agent_manifest.dependency_scope == "all"
 deleted_native_app = resolve("apps/deleted-headless/src/main.rs")
 assert deleted_native_app.rust_scope == "all"
 
+# A manifest edit cannot prove that a shared lockfile changed only its closure.
+# A package update may re-resolve shared dependencies or include unrelated
+# updates; without a lockfile graph diff every consumer must be checked.
 frontend_manifest_lock = resolve("apps/devbox-workspace/package.json", "pnpm-lock.yaml")
-assert frontend_manifest_lock.frontend_scope == "apps"
-assert frontend_manifest_lock.frontend_packages == ["apps/devbox-workspace"]
+assert frontend_manifest_lock.frontend_scope == "all"
+assert frontend_manifest_lock.frontend_packages == []
 assert frontend_manifest_lock.dependency_scope == "all"
 
 rust_manifest_lock = resolve("crates/installation-tools/Cargo.toml", "Cargo.lock")
-assert rust_manifest_lock.rust_scope == "packages"
-assert rust_manifest_lock.rust_packages == ["devbox-control-center", "devbox-installation-tools"]
+assert rust_manifest_lock.rust_scope == "all"
+assert rust_manifest_lock.rust_packages == []
 assert rust_manifest_lock.dependency_scope == "all"
 
 lock_only = resolve("Cargo.lock")

@@ -4,6 +4,8 @@ import {
   appendMcpListPage,
   hasMcpCapability,
   initialMcpArguments,
+  getMcpValueAtPath,
+  removeMcpValueAtPath,
   parseMcpJsonObject,
   projectMcpListPage,
   setMcpValueAtPath,
@@ -66,6 +68,38 @@ describe("MCP schema projection", () => {
       tags: { type: "array", maxItems: 3, items: { type: "string" } },
     },
   };
+
+  it("keeps special JSON property names as own data without mutating prototypes", () => {
+    const marker = "devboxMcpPrototypeFixture";
+    try {
+      const updated = setMcpValueAtPath({}, ["__proto__", marker], "safe");
+      expect(Object.prototype.hasOwnProperty.call(Object.prototype, marker)).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(updated, "__proto__")).toBe(true);
+      expect(getMcpValueAtPath(updated, ["__proto__", marker])).toBe("safe");
+      expect(getMcpValueAtPath({}, ["__proto__"])).toBeUndefined();
+      expect(getMcpValueAtPath({}, ["constructor"])).toBeUndefined();
+      Object.defineProperty(Object.prototype, marker, { value: "inherited", configurable: true });
+      removeMcpValueAtPath({}, ["__proto__", marker]);
+      expect(Object.prototype.hasOwnProperty.call(Object.prototype, marker)).toBe(true);
+      const removed = removeMcpValueAtPath(updated, ["__proto__", marker]);
+      expect(getMcpValueAtPath(removed, ["__proto__", marker])).toBeUndefined();
+    } finally {
+      Reflect.deleteProperty(Object.prototype, marker);
+    }
+  });
+
+  it("initializes and validates required special names using only own JSON properties", () => {
+    const schema = JSON.parse(
+      '{"type":"object","required":["__proto__","constructor"],"properties":{"__proto__":{"type":"object","required":["value"],"properties":{"value":{"type":"string"}}},"constructor":{"type":"string"}}}',
+    );
+    expect(analyzeMcpToolSchema(schema).mode).toBe("form");
+    const initial = initialMcpArguments(schema);
+    expect(Object.prototype.hasOwnProperty.call(initial, "__proto__")).toBe(true);
+    expect(JSON.parse(JSON.stringify(initial))).toEqual(JSON.parse('{"__proto__":{"value":""},"constructor":""}'));
+    expect(validateMcpArguments(schema, {})).toHaveLength(2);
+    expect(validateMcpArguments({ type: "object" }, JSON.parse('{"constructor":"invalid"}'))).toHaveLength(1);
+    expect(validateMcpArguments(schema, initial)).toEqual([]);
+  });
 
   it("builds and validates the supported deterministic form subset", () => {
     const analysis = analyzeMcpToolSchema({

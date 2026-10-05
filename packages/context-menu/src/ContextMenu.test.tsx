@@ -119,6 +119,26 @@ describe("context menu triggers", () => {
 });
 
 describe("ContextMenu keyboard and item semantics", () => {
+  it("recovers focus when an open menu loses its active item or becomes empty", () => {
+    const props = {
+      open: true,
+      anchor: { x: 10, y: 10 },
+      onSelect: vi.fn(),
+      onClose: vi.fn(),
+      ariaLabel: "Changing actions",
+    };
+    const { rerender } = render(<ContextMenu {...props} items={ITEMS} />);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "End" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Delete" }));
+
+    rerender(<ContextMenu {...props} items={[ITEMS[0]]} />);
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Copy" }));
+    rerender(<ContextMenu {...props} items={[]} />);
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+    rerender(<ContextMenu {...props} items={[ITEMS[0]]} />);
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Copy" }));
+  });
+
   it("skips disabled/separator rows, wraps, and traps Tab focus", () => {
     render(<Harness />);
     fireEvent.contextMenu(screen.getByTestId("trigger"), { clientX: 10, clientY: 10 });

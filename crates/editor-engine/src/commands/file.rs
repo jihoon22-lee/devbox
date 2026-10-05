@@ -7,8 +7,8 @@ use crate::core::{
     line_ending::{self, LineEnding},
 };
 use devbox_filesystem::{
-    filesystem_identity, open_filesystem_metadata_object, opened_filesystem_identity,
-    FilesystemIdentity,
+    filesystem_identity, open_filesystem_metadata_object, open_filesystem_object,
+    opened_filesystem_identity, FilesystemIdentity,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1275,40 +1275,29 @@ pub(crate) fn read_stable_limited(
     path: &Path,
     max_bytes: Option<u64>,
 ) -> Result<(fs::Metadata, Vec<u8>), FileError> {
-    // The identity helper opens the final component without following a
-    // symlink/reparse point. Keep identities on both sides of the read so a
-    // delete-and-recreate race cannot silently turn a snapshot into another
-    // file with the same size and timestamp.
-    let before_identity = filesystem_identity(path, false).map_err(|source| FileError::Io {
-        operation: "identify file before read",
+    // Read from the exact non-link regular-file handle whose identity was
+    // authorized. Reopening the pathname after a metadata-only preflight could
+    // follow a replacement link or block indefinitely on a swapped FIFO.
+    let (mut file, before_identity) =
+        open_filesystem_object(path, false).map_err(|source| FileError::Io {
+            operation: "open file before read",
+            source,
+        })?;
+    let before = file.metadata().map_err(|source| FileError::Io {
+        operation: "read file metadata",
         source,
     })?;
-    let before = metadata(path)?;
     if guard::should_reject_open(before.len()) {
         return Err(FileError::TooLargeToOpen(before.len()));
     }
     if max_bytes.is_some_and(|limit| before.len() > limit) {
         return Err(FileError::TooLargeToOpen(before.len()));
     }
-    let mut file = File::open(path).map_err(|source| FileError::Io {
-        operation: "read file",
-        source,
-    })?;
-    let capacity = max_bytes
-        .map(|limit| limit.min(before.len()))
-        .unwrap_or(before.len())
-        .try_into()
-        .unwrap_or(usize::MAX);
-    let mut bytes = Vec::with_capacity(capacity);
-    let read_result = match max_bytes {
-        Some(limit) => std::io::Read::by_ref(&mut file)
-            .take(limit.saturating_add(1))
-            .read_to_end(&mut bytes),
-        None => file.read_to_end(&mut bytes),
-    };
-    read_result.map_err(|source| FileError::Io {
-        operation: "read file",
-        source,
+    let bytes = read_snapshot_bytes(&mut file, before.len(), max_bytes).map_err(|source| {
+        FileError::Io {
+            operation: "read file",
+            source,
+        }
     })?;
     let handle_metadata = file.metadata().map_err(|source| FileError::Io {
         operation: "read file metadata",
@@ -1330,6 +1319,25 @@ pub(crate) fn read_stable_limited(
         return Err(FileError::ChangedDuringRead);
     }
     Ok((after, bytes))
+}
+
+fn read_snapshot_bytes(
+    reader: &mut impl Read,
+    snapshot_len: u64,
+    max_bytes: Option<u64>,
+) -> io::Result<Vec<u8>> {
+    // Metadata is only a preflight observation: a concurrent writer can grow
+    // the file while it is being read. Enforce the global budget on the stream
+    // even when the caller did not request a smaller limit.
+    let limit = max_bytes
+        .unwrap_or(guard::MAX_OPENABLE_BYTES)
+        .min(guard::MAX_OPENABLE_BYTES);
+    let capacity = limit.min(snapshot_len).try_into().unwrap_or(usize::MAX);
+    let mut bytes = Vec::with_capacity(capacity);
+    reader
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn metadata(path: &Path) -> Result<fs::Metadata, FileError> {
@@ -1664,6 +1672,15 @@ fn sync_parent(_target: &Path) -> Result<(), FileError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn growing_snapshot_read_never_exceeds_the_global_open_budget() {
+        // Metadata admitted a tiny file, then its writer appended beyond the
+        // global cap. Exercise the same stream reader as real file snapshots.
+        let mut growing = std::io::repeat(0).take(guard::MAX_OPENABLE_BYTES + 4096);
+        let bytes = read_snapshot_bytes(&mut growing, 1, None).unwrap();
+        assert_eq!(bytes.len() as u64, guard::MAX_OPENABLE_BYTES + 1);
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn interrupted_compatibility_move_preserves_both_names_without_overwriting() {

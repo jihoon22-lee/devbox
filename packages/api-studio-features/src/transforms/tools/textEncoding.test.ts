@@ -32,6 +32,14 @@ describe("HTML entity text codec", () => {
     }
   });
 
+  it("rejects a trailing high surrogate in every text codec", () => {
+    for (const transform of [htmlEntityEncode, htmlEntityDecode, urlComponentEncode, urlComponentDecode]) {
+      for (const input of ["\ud800", "prefix\udbff"]) {
+        expect(() => transform(input)).toThrowError(new TextTransformError("invalid_unicode"));
+      }
+    }
+  });
+
   it("bounds entity expansion and input before unbounded work", () => {
     expect(() => htmlEntityDecode("&amp;".repeat(TEXT_ENCODING_LIMITS.maxEntityCount + 1))).toThrowError(
       new TextTransformError("entity_limit"),

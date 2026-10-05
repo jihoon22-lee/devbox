@@ -26,6 +26,7 @@ pub fn parse_status(path: &str, input: &str) -> RepoSnapshot {
                 detached = true;
                 branch = "(detached)".to_string();
             } else {
+                let rest = rest.strip_prefix("No commits yet on ").unwrap_or(rest);
                 let base = rest.split("...").next().unwrap_or(rest);
                 branch = base.to_string();
             }
@@ -78,6 +79,14 @@ pub fn parse_worktrees(input: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unborn_status_uses_the_actual_branch_name() {
+        let snapshot = parse_status("C:/p", "## No commits yet on feature/new\n?? a.txt\n");
+        assert_eq!(snapshot.branch.current, "feature/new");
+        assert!(!snapshot.branch.detached);
+        assert_eq!(snapshot.changes, 1);
+    }
 
     #[test]
     fn parses_clean_branch() {

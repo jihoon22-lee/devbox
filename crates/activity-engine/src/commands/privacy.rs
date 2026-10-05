@@ -2,18 +2,15 @@
 //! setting and compiled once into [`PrivacyState`].
 
 use crate::commands::tracking::AppState;
-use crate::core::privacy::{parse_stored_rules, CompiledRules, InvalidRule, PrivacyRules};
+use crate::core::privacy::{
+    parse_stored_rules, CompiledRules, InvalidRule, PrivacyRules, MAX_RULES_JSON_BYTES,
+};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 pub(crate) const RULES_KEY: &str = "privacy_rules";
-// Cover all three maximum-length lists, including JSON escaping of each character.
-const MAX_RULES_JSON_BYTES: usize =
-    3 * crate::core::privacy::MAX_RULES_PER_LIST * (crate::core::privacy::MAX_RULE_CHARS * 6 + 3)
-        + 128;
-
 /// Compiled rules plus whether the stored value was readable.
 pub struct PrivacyState {
     compiled: RwLock<Arc<CompiledRules>>,

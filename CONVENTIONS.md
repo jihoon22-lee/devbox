@@ -59,7 +59,8 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 현재 모듈 소유권은 [projects](docs/projects.md), workspace members는 Cargo.toml이 원장이다.
 - `apps/catalog.json`은 네 공개 제품, `apps/products.json`은 typed route·component 계약이다.
 - engine에는 standalone bootstrap·installer를 두지 않는다. 순수 로직은 core/, OS 처리는
-  command/platform 계층으로 분리한다. B09 추출은 이미 사용 중인 엔진의 소유 위치 변경이다.
+  command/platform 계층으로 분리한다. 과거 B09 추출은 기존 엔진의 소유 위치 변경이었으며
+  당시 계획은 [이전 기록](docs/history.md)에 보존한다.
 
 ## 3. 공통 기술 스택
 
@@ -80,9 +81,9 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 새 코드는 suppression 없이 `useExhaustiveDependencies`를 지킨다.
 - Vite + **React 19 + TypeScript(엄격 모드)**
 - 스타일: **순수 CSS (앱별 `App.css`)**. 공용 토큰은 `packages/tokens` (`@devbox/tokens`)
-- 편집기: `@codemirror/*` 직접 사용 (code-pad). 공용 설정은 `packages/editor` (추출 완료, knowledge-base·code-pad 사용)
+- 편집기: `@codemirror/*` 직접 사용 (Workspace Files·Knowledge Notes). 공용 설정은 `packages/editor`
 - 컨텍스트 메뉴: 위치·keyboard·focus·submenu·상태 표현은 `packages/context-menu`; 항목·action·파괴적 확인은 각 앱이 소유
-- 다이어그램: `mermaid` (code-pad, knowledge-base만)
+- 다이어그램: `mermaid`와 `packages/mermaid-renderer` (Workspace Files·Knowledge Notes)
 - Tauri API: `@tauri-apps/api`
 - **선언했으나 실제 사용이 없는 라이브러리**(`lucide-react`, `zustand`, `@tanstack/react-table`,
   `recharts`, `react-router-dom`)는 **필요해지면 그때 도입한다.** 미리 선언하지 않는다.
@@ -198,8 +199,8 @@ Tauri dialog 플러그인이 바꾸는 전역 `window.confirm`은 동기 Boolean
 - 9p 마운트 성능: cargo `target-dir`은 `.cargo/config.toml`로 Linux 네이티브 경로 지정
 - `verify:affected`는 `origin/main`과 현재 branch의 merge-base 이후 commit 및 staged,
   unstaged, untracked 파일을 합친다. 앱 변경은 해당 앱만, 공용 package/crate 변경은
-  dependency graph의 역의존 closure만 검사한다. 미분류 경로·lockfile 단독 변경은 fail-safe로
-  전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip한다. 릴리스는 전체 범위의
+  dependency graph의 역의존 closure만 검사한다. 미분류 경로는 fail-safe로 전체 검증하며, 공유 lockfile 변경은 manifest 동반 변경 여부와
+  무관하게 해당 생태계 전체를 선택한다. 영향이 없는 CI job은 runner 할당 전에 skip한다. 릴리스는 전체 범위의
   검증 근거를 요구하되, 동일 입력의 신뢰 가능한 성공 CI 근거는 출처를 기록하여 재사용한다.
   주간 전체 감사와 현재 의존성·advisory 검사는 실제로 실행한다.
   정상 조회에서 성공 근거가 없거나 입력이 달라진 범위만 추가 검사한다. 근거 조회·전송·

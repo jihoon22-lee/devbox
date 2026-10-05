@@ -10,7 +10,7 @@ API와 Runtime은 비밀값을 저장하고 실행 시에만 사용해야 한다
 
 ## 결정
 
-비밀은 Windows DPAPI CurrentUser로 봉인하고 평문 내보내기를 제공하지 않는다. 공유 Sealer 계약과 버전 envelope를 유지하며 OS 구현 통합은 P1-09에서 수행한다.
+비밀은 Windows DPAPI CurrentUser로 봉인하고 평문 내보내기를 제공하지 않는다. 공유 Sealer 계약과 버전 envelope를 유지하며 Windows 구현은 `crates/secrets`가 소유한다.
 
 ## 결과
 
@@ -19,6 +19,6 @@ API와 Runtime은 비밀값을 저장하고 실행 시에만 사용해야 한다
 ## 근거
 
 - [crates/secrets/src/lib.rs](../../crates/secrets/src/lib.rs)
-- [docs/superpowers/plans/2026-09-23-review-remediation/p1-09-secrets-dpapi.md](../../docs/superpowers/plans/2026-09-23-review-remediation/p1-09-secrets-dpapi.md)
+- [docs/superpowers/plans/2026-09-23-review-remediation/p1-09-secrets-dpapi.md](https://github.com/jihoon22-lee/devbox/blob/ab2ee78a54d3aef7a0e2d546349574bc12a4c2ac/docs/superpowers/plans/2026-09-23-review-remediation/p1-09-secrets-dpapi.md)
 
 현재 구현·검증: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).

@@ -684,6 +684,21 @@ describe("Run Manager context menus", () => {
     expect(restartServiceMock).not.toHaveBeenCalled();
   });
 
+  it("refreshes service lifecycle after background retirement and fails closed on read failure", async () => {
+    getServiceInstanceMock.mockResolvedValue({ ...stoppedInstance, state: "stopping" });
+    render(<App />);
+    await screen.findByRole("heading", { name: "백업" });
+    fireEvent.click(screen.getByRole("button", { name: /^서비스/ }));
+    await screen.findByRole("heading", { name: "로컬 서버" });
+    const start = within(card("로컬 서버")).getByRole("button", { name: "시작" });
+    expect(start).toBeDisabled();
+    getServiceInstanceMock.mockResolvedValue(stoppedInstance);
+    await waitFor(() => expect(start).toBeEnabled(), { timeout: 2_000 });
+    getServiceInstanceMock.mockRejectedValue(new Error("read failed"));
+    await waitFor(() => expect(start).toBeDisabled(), { timeout: 2_000 });
+    expect(within(card("로컬 서버")).getByText("상태 확인 불가")).toBeInTheDocument();
+  });
+
   it("deletes a stopped service only after explicit confirmation", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "백업" });

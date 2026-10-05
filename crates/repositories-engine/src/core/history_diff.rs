@@ -227,6 +227,15 @@ pub fn parse_diff(
             continue;
         }
 
+        // Once a hunk begins, leading +/- characters belong to file content.
+        // For example a removed SQL comment can itself look like "--- text".
+        if line.starts_with("@@ ") {
+            file.in_hunk = true;
+        }
+        if file.in_hunk {
+            file.append_line(line);
+            continue;
+        }
         if let Some(path) = line.strip_prefix("--- ") {
             file.append_line(&format!("--- {}", display_side_path(path, true)?));
             continue;
@@ -466,6 +475,7 @@ fn validate_relative_path(value: &str) -> Result<String, String> {
 }
 
 struct DiffFileBuilder {
+    in_hunk: bool,
     path: String,
     old_path: Option<String>,
     status: String,
@@ -478,6 +488,7 @@ impl DiffFileBuilder {
     fn new(old_path: String, path: String) -> Self {
         let old_path = (old_path != path).then_some(old_path);
         Self {
+            in_hunk: false,
             path,
             old_path,
             status: "modified".to_string(),
@@ -522,6 +533,14 @@ impl DiffFileBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_resembling_side_headers_remains_hunk_data() {
+        let patch = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n--- removed text\n+++ added text\n";
+        let result = parse_diff(patch, "workingTree", None, false).unwrap();
+        assert_eq!(result.files[0].patch, patch);
+        assert_eq!(result.files[0].status, "modified");
+    }
 
     const OID: &str = "0123456789abcdef0123456789abcdef01234567";
     const PARENT: &str = "89abcdef0123456789abcdef0123456789abcdef";

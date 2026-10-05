@@ -10,7 +10,7 @@
 
 ## 결정
 
-exact-main 후보의 assembly·packaged runtime·installer를 확인하고 같은 commit의 annotated tag로 재빌드 없이 승격한다. 공개 자산은 Suite setup·네 portable ZIP·manifest·notices의 7개이며 서명 범위는 ADR 0016을 따른다.
+exact-main 후보의 assembly·packaged runtime·installer를 확인하고 같은 commit의 annotated tag로 재빌드 없이 승격한다. 제품·빌드 입력이 같은 fixture-only 보정은 릴리스 정책의 한정된 receipt 절차로 원본 빌드 SHA·bytes와 새 검증 SHA/run을 구분한다. 제품 입력이 바뀌면 새 exact-main 후보가 필요하다. 공개 자산은 Suite setup·네 portable ZIP·manifest·notices의 7개이며 서명 범위는 ADR 0016을 따른다.
 
 ## 결과
 

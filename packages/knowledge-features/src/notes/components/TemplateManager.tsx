@@ -17,24 +17,21 @@ interface TemplateManagerProps {
   onSaved?: (result: QuickCaptureSaved) => void;
 }
 
-const today = new Date();
-const defaultDate =
-  String(today.getFullYear()).padStart(4, "0") +
-  "-" +
-  String(today.getMonth() + 1).padStart(2, "0") +
-  "-" +
-  String(today.getDate()).padStart(2, "0");
-const defaultTime = String(today.getHours()).padStart(2, "0") + ":" + String(today.getMinutes()).padStart(2, "0");
-
 export default function TemplateManager({ active = true, onClose, onSaved }: TemplateManagerProps) {
+  const [openedAt] = useState(() => new Date());
   const [templates, setTemplates] = useState<NoteTemplate[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [body, setBody] = useState("# {{title}}\n\n{{date}} {{time}}에 작성되었습니다.\n");
   const [target, setTarget] = useState("Notes/new-note.md");
   const [title, setTitle] = useState("새 노트");
-  const [date, setDate] = useState(defaultDate);
-  const [time, setTime] = useState(defaultTime);
+  const [date, setDate] = useState(
+    () =>
+      `${String(openedAt.getFullYear()).padStart(4, "0")}-${String(openedAt.getMonth() + 1).padStart(2, "0")}-${String(openedAt.getDate()).padStart(2, "0")}`,
+  );
+  const [time, setTime] = useState(
+    () => `${String(openedAt.getHours()).padStart(2, "0")}:${String(openedAt.getMinutes()).padStart(2, "0")}`,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);

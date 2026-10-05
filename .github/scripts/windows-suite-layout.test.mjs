@@ -66,3 +66,69 @@ test("size failure persists screenshot and screen/native metrics before rejectin
   );
   assert.deepEqual(events, ["screenshot", "persist"]);
 });
+
+test("performance evidence captures the current measured renderer and persists its PNG", async () => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const { capturePerformanceScreenshot } = await import("./windows-suite-layout.mjs");
+  const directory = await mkdtemp(path.join(tmpdir(), "devbox-performance-capture-"));
+  const bytes = Buffer.from("89504e470d0a1a0a00000000", "hex");
+  const calls = [];
+  try {
+    const paths = await capturePerformanceScreenshot(
+      {
+        command: async (...args) => {
+          calls.push(args);
+          return { data: bytes.toString("base64") };
+        },
+      },
+      "workspace",
+      directory,
+    );
+    assert.deepEqual(calls, [["Page.captureScreenshot", { format: "png" }]]);
+    assert.equal(paths.length, 1);
+    assert.deepEqual(await readFile(paths[0]), bytes);
+    await assert.rejects(
+      capturePerformanceScreenshot(
+        {
+          command: async () => {
+            throw new Error("capture failed");
+          },
+        },
+        "workspace",
+        directory,
+      ),
+      /capture failed/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("successful layout status includes the explicit null required by the release validator", async () => {
+  const { layoutEvidenceStatus } = await import("./windows-suite-layout.mjs");
+  const { summarizeEvidence } = await import("./suite-user-flow-evidence.mjs");
+  const digest = { image: "a".repeat(64) },
+    source = "b".repeat(40);
+  const row = { id: "PERF-01", evidenceKind: "packaged-ui" };
+  const result = {
+    ...row,
+    ...layoutEvidenceStatus([], "missing"),
+    sourceSha: source,
+    fixtureSha: source,
+    artifactDigests: digest,
+    assertions: ["measured"],
+    screenshotPaths: ["performance.png"],
+  };
+  assert.equal(
+    summarizeEvidence([row], [result], { expectedSource: source, expectedFixture: source, expectedDigests: digest })
+      .ready,
+    true,
+  );
+  assert.deepEqual(layoutEvidenceStatus(["knowledge"], "missing"), {
+    status: "NOT_RUN",
+    failureCode: "missing",
+    missing: ["knowledge"],
+  });
+});

@@ -41,12 +41,14 @@ it("applies or pops and reports conflicts while retaining the stash", async () =
   render(<StashPanel repo={repo} />);
   await screen.findByText("On main: work");
   fireEvent.click(screen.getByRole("button", { name: "stash 0 적용" }));
-  await waitFor(() => expect(api.repoStashApply).toHaveBeenCalledWith(repo.path, 0, false, expect.any(String)));
+  await waitFor(() =>
+    expect(api.repoStashApply).toHaveBeenCalledWith(repo.path, 0, "a".repeat(40), false, expect.any(String)),
+  );
   vi.mocked(api.repoStashApply).mockResolvedValue({ applied: false, conflicts: ["README.md"] });
   await waitFor(() => expect(screen.getByRole("button", { name: "stash 0 꺼내기" })).not.toBeDisabled());
   fireEvent.click(screen.getByRole("button", { name: "stash 0 꺼내기" }));
   await screen.findByText("충돌 파일 1개: README.md");
-  expect(api.repoStashApply).toHaveBeenLastCalledWith(repo.path, 0, true, expect.any(String));
+  expect(api.repoStashApply).toHaveBeenLastCalledWith(repo.path, 0, "a".repeat(40), true, expect.any(String));
   expect(screen.getByText("On main: work")).toBeTruthy();
 });
 it("restores a dropped stash through the saved commit and message", async () => {
@@ -54,6 +56,7 @@ it("restores a dropped stash through the saved commit and message", async () => 
   await screen.findByText("On main: work");
   fireEvent.click(screen.getByRole("button", { name: "stash 0 삭제" }));
   fireEvent.click(await screen.findByRole("button", { name: "되돌리기" }));
+  expect(api.repoStashDrop).toHaveBeenCalledWith(repo.path, 0, "a".repeat(40), expect.any(String));
   await waitFor(() =>
     expect(api.repoStashStore).toHaveBeenCalledWith(repo.path, "a".repeat(40), "On main: work", expect.any(String)),
   );

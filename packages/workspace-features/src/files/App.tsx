@@ -455,10 +455,12 @@ export default function App({
       if (watchRegistered) await unregisterWatch(opened.path);
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
-    const alreadyOpen = stateRef.current.docs.some((doc) => doc.path === opened.path);
-    const doc = docFromOpenedFile(opened, metadata);
+    const existing = stateRef.current.docs.find((doc) => doc.path === opened.path);
+    // Renaming keeps the editor's stable ID. Reuse that ID and buffer when the
+    // renamed path is opened again, instead of creating a second disk-backed tab.
+    const doc = existing ?? docFromOpenedFile(opened, metadata);
     dispatchAction({ type: "addDoc", doc });
-    if (!alreadyOpen) void lspSync.open(doc);
+    if (!existing) void lspSync.open(doc);
     return stateRef.current.docs.find((item) => item.id === doc.id) ?? doc;
   };
 
@@ -521,8 +523,18 @@ export default function App({
       durabilityWarning: saved.durabilityWarning,
       ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
     });
+    const savedDoc = stateRef.current.docs.find((item) => item.id === docId);
+    if (savedDoc && !savedDoc.dirty) {
+      try {
+        await recoveryWriter.discard(doc.path);
+      } catch {
+        setError("파일은 저장했지만 복구 기록을 정리하지 못했습니다. 다시 저장해 주세요.");
+        return undefined;
+      }
+    }
+    // Recovery cleanup is asynchronous too. A newer edit must remain open even
+    // when it arrives after the disk save completed, while its old draft clears.
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
-    if (latestDoc && !latestDoc.dirty) await recoveryWriter.discard(doc.path);
     if (latestDoc)
       void lspSync.save(
         docId,
@@ -769,6 +781,7 @@ export default function App({
     if (renameApplyGuard()) return;
     const doc = stateRef.current.docs.find((d) => d.id === entry.docId);
     if (doc) {
+      dispatchAction({ type: "addDoc", doc });
       dispatchAction({ type: "setCursor", docId: entry.docId, cursor: entry.cursor });
       return;
     }

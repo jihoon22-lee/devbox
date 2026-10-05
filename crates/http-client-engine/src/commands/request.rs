@@ -2328,7 +2328,7 @@ fn sanitize_json_value_in(
         return;
     }
     if is_sensitive_name(key) {
-        if value.as_str().is_some_and(contains_reference) {
+        if value.as_str().is_some_and(is_exact_reference) {
             return;
         }
         *value = serde_json::Value::String(REDACTED.to_string());
@@ -2580,12 +2580,6 @@ fn mask_graphql_query_literals(query: &str) -> String {
     output
 }
 
-fn contains_reference(value: &str) -> bool {
-    let mut found = false;
-    visit_references(value, |_| found = true);
-    found
-}
-
 fn is_exact_reference(value: &str) -> bool {
     let candidate = if value.starts_with("{{") && value.ends_with("}}") {
         &value[2..value.len().saturating_sub(2)]
@@ -2618,7 +2612,7 @@ fn redact_sensitive_assignments(value: &str) -> String {
         let key = raw_key.trim_matches(|character: char| {
             matches!(character, '"' | '\'' | '{' | '}' | '[' | ']')
         });
-        if is_sensitive_name(key) && !contains_reference(raw_value) {
+        if is_sensitive_name(key) && !is_exact_reference(raw_value) {
             let separator = if segment.contains('=') { '=' } else { ':' };
             output = output.replace(segment, &format!("{raw_key}{separator}{REDACTED}"));
         }
@@ -3297,6 +3291,30 @@ fn curl_form_quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mixed_variable_references_do_not_exempt_literal_credentials_from_redaction() {
+        let redactor = Redactor::from_secrets(Vec::new());
+        let body = redactor.redact_body(
+            r#"{"password":"literal-private${UNUSED}","token":"${TOKEN}","secret":"{{KEY}}"}"#,
+        );
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["password"], REDACTED);
+        assert_eq!(value["token"], "${TOKEN}");
+        assert_eq!(value["secret"], "{{KEY}}");
+        let persisted = sanitize_persisted_json_with_sealer(
+            r#"{"password":"literal-private${UNUSED}","token":"${TOKEN}"}"#,
+            &[],
+            &MockSealer,
+        )
+        .unwrap();
+        let persisted: serde_json::Value = serde_json::from_str(&persisted).unwrap();
+        assert_eq!(persisted["password"], REDACTED);
+        assert_eq!(persisted["token"], "${TOKEN}");
+        assert_eq!(
+            redactor.redact_text("password=literal-private${UNUSED} token=${TOKEN}"),
+            "password=[REDACTED] token=${TOKEN}"
+        );
+    }
     use devbox_secrets::{SealError, Sealer};
     use std::io::{Read, Write};
     use std::net::TcpListener;

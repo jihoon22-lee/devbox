@@ -24,14 +24,29 @@ fn parse_scalar(value: &str) -> String {
 /// body...
 /// ```
 pub fn parse(content: &str) -> (DocMeta, &str) {
-    let Some(rest) = content.strip_prefix("---\n") else {
+    let Some(rest) = content
+        .strip_prefix("---\r\n")
+        .or_else(|| content.strip_prefix("---\n"))
+    else {
         return (DocMeta::default(), content);
     };
-    let Some(end) = rest.find("\n---") else {
+    let mut offset = 0;
+    let mut closing = None;
+    for line in rest.split_inclusive('\n') {
+        let fence = line.strip_suffix('\n').unwrap_or(line);
+        let fence = fence.strip_suffix('\r').unwrap_or(fence);
+        if fence == "---" {
+            closing = Some(offset);
+            break;
+        }
+        offset += line.len();
+    }
+    let Some(end) = closing else {
         return (DocMeta::default(), content);
     };
     let front = &rest[..end];
-    let body = &rest[end + 4..];
+    // Retain the exact original line endings and bytes after the closing fence.
+    let body = &rest[end + 3..];
     let mut meta = DocMeta::default();
 
     for line in front.lines() {
@@ -101,6 +116,26 @@ body"##;
         let content = "---\ntags:\n  - rust\n  - wsl\n---\nbody";
         let (meta, _) = parse(content);
         assert_eq!(meta.tags, vec!["rust", "wsl"]);
+    }
+
+    #[test]
+    fn parses_crlf_frontmatter_without_rewriting_the_body() {
+        let content = "---\r\ntitle: Windows\r\ntags: [rust, windows]\r\n---\r\n\r\n# Body\r\n";
+        let (meta, body) = parse(content);
+        assert_eq!(meta.title.as_deref(), Some("Windows"));
+        assert_eq!(meta.tags, ["rust", "windows"]);
+        assert_eq!(body, "\r\n\r\n# Body\r\n");
+    }
+
+    #[test]
+    fn closing_frontmatter_fence_must_be_an_entire_line() {
+        let content = "---\ntitle: preserved\n---not-a-fence\nbody";
+        let (meta, body) = parse(content);
+        assert!(meta.title.is_none());
+        assert_eq!(body, content);
+        let (meta, body) = parse("---\ntitle: Valid\n---");
+        assert_eq!(meta.title.as_deref(), Some("Valid"));
+        assert_eq!(body, "");
     }
 
     #[test]

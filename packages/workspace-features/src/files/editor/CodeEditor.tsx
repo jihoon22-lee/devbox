@@ -331,6 +331,7 @@ export default function CodeEditor({
       if (!text || (id === "cut" && readOnlyRef.current)) return;
       await navigator.clipboard.writeText(text);
       if (id === "cut") {
+        if (viewRef.current !== view || readOnlyRef.current) return;
         if (!sameClipboardTarget(before, view.state)) {
           onErrorRef.current?.("클립보드 처리 중 선택 영역이 변경되어 잘라내기를 취소했습니다.");
           return;
@@ -343,6 +344,7 @@ export default function CodeEditor({
       if (readOnlyRef.current) return;
       const before = view.state;
       const text = await readClipboardText();
+      if (viewRef.current !== view || readOnlyRef.current) return;
       if (!sameClipboardTarget(before, view.state)) {
         onErrorRef.current?.("클립보드 처리 중 편집 위치가 변경되어 붙여넣기를 취소했습니다.");
         return;

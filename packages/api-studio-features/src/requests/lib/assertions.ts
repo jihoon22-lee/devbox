@@ -1,3 +1,4 @@
+import { matchAssertionRegex } from "./assertionRegex";
 import { looksLikeSecret } from "./secretPatterns";
 import type { ApiResponse } from "../types";
 import { evaluateJsonPath } from "./jsonPath";
@@ -77,56 +78,64 @@ export function responseValue(response: ApiResponse, source: AssertionSource, ta
   return typeof values[0] === "string" ? values[0] : JSON.stringify(values[0]);
 }
 const numeric = (value: string) => value.trim() !== "" && Number.isFinite(Number(value));
-export function evaluateAssertions(assertions: Assertion[], response: ApiResponse): AssertionResult[] {
-  return assertions
-    .slice(0, 50)
-    .filter((a) => a.enabled)
-    .map((a) => {
-      let actual: string | null = null;
-      try {
-        const invalid = validateAssertion(a);
-        if (invalid) return { id: a.id, passed: false, actual, message: invalid };
-        actual = responseValue(response, a.source, a.target);
-        let passed = false;
-        if (a.operator === "exists") passed = actual !== null;
-        else if (a.operator === "notExists") passed = actual === null;
-        else if (actual === null) return { id: a.id, passed: false, actual, message: "값을 찾지 못했습니다" };
-        else {
-          const numbers = numeric(actual) && numeric(a.expected);
-          switch (a.operator) {
-            case "equals":
-              passed = numbers ? Number(actual) === Number(a.expected) : actual === a.expected;
-              break;
-            case "notEquals":
-              passed = numbers ? Number(actual) !== Number(a.expected) : actual !== a.expected;
-              break;
-            case "contains":
-              passed = actual.includes(a.expected);
-              break;
-            case "notContains":
-              passed = !actual.includes(a.expected);
-              break;
-            case "matches":
-              passed = new RegExp(a.expected, "u").test(actual);
-              break;
-            case "lessThan":
-            case "greaterThan":
-              if (!numbers) return { id: a.id, passed: false, actual, message: "숫자가 아닌 값입니다" };
-              passed =
-                a.operator === "lessThan" ? Number(actual) < Number(a.expected) : Number(actual) > Number(a.expected);
-              break;
-          }
+export async function evaluateAssertions(
+  assertions: Assertion[],
+  response: ApiResponse,
+  signal?: AbortSignal,
+): Promise<AssertionResult[]> {
+  const evaluate = async (a: Assertion): Promise<AssertionResult> => {
+    let actual: string | null = null;
+    try {
+      if (signal?.aborted) throw new Error("검증을 취소했습니다");
+      const invalid = validateAssertion(a);
+      if (invalid) return { id: a.id, passed: false, actual, message: invalid };
+      actual = responseValue(response, a.source, a.target);
+      let passed = false;
+      if (a.operator === "exists") passed = actual !== null;
+      else if (a.operator === "notExists") passed = actual === null;
+      else if (actual === null) return { id: a.id, passed: false, actual, message: "값을 찾지 못했습니다" };
+      else {
+        const numbers = numeric(actual) && numeric(a.expected);
+        switch (a.operator) {
+          case "equals":
+            passed = numbers ? Number(actual) === Number(a.expected) : actual === a.expected;
+            break;
+          case "notEquals":
+            passed = numbers ? Number(actual) !== Number(a.expected) : actual !== a.expected;
+            break;
+          case "contains":
+            passed = actual.includes(a.expected);
+            break;
+          case "notContains":
+            passed = !actual.includes(a.expected);
+            break;
+          case "matches":
+            passed = await matchAssertionRegex(a.expected, actual, signal);
+            break;
+          case "lessThan":
+          case "greaterThan":
+            if (!numbers) return { id: a.id, passed: false, actual, message: "숫자가 아닌 값입니다" };
+            passed =
+              a.operator === "lessThan" ? Number(actual) < Number(a.expected) : Number(actual) > Number(a.expected);
+            break;
         }
-        return { id: a.id, passed, actual, message: passed ? "" : `기대 ${a.expected}, 실제 ${actual ?? "없음"}` };
-      } catch (cause) {
-        return {
-          id: a.id,
-          passed: false,
-          actual,
-          message: cause instanceof Error ? cause.message : "검증에 실패했습니다",
-        };
       }
-    });
+      return { id: a.id, passed, actual, message: passed ? "" : `기대 ${a.expected}, 실제 ${actual ?? "없음"}` };
+    } catch (cause) {
+      return {
+        id: a.id,
+        passed: false,
+        actual,
+        message: cause instanceof Error ? cause.message : "검증에 실패했습니다",
+      };
+    }
+  };
+  const results: AssertionResult[] = [];
+  // Serialize workers so a collection cannot start fifty regex processes at once.
+  for (const assertion of assertions.slice(0, 50).filter((item) => item.enabled)) {
+    results.push(await evaluate(assertion));
+  }
+  return results;
 }
 
 export function cleanAssertions(value: unknown): { assertions: Assertion[]; dropped: number } {

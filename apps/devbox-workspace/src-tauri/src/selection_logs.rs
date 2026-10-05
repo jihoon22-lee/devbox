@@ -161,12 +161,26 @@ pub(crate) async fn revalidate(app: &tauri::AppHandle, proof: &Proof, deadline: 
         crate::files_host::current_deadline(deadline)?;
         let mut request = group.request.clone();
         request["operationId"] = Value::String(uuid::Uuid::new_v4().to_string());
-        let current = logs_engine::api::dispatch(
-            app,
-            serde_json::from_value(json!({"method":"read_sources","args":request}))
-                .map_err(|_| "selection_stale")?,
-        )
-        .await
+        let current = if crate::runtime_owner::installed(app)? {
+            crate::runtime_owner::call_until(
+                app,
+                "workspace.logs",
+                "read_sources",
+                request,
+                "logs",
+                group.context.as_ref(),
+                deadline,
+            )
+            .await
+        } else {
+            logs_engine::api::dispatch(
+                app,
+                serde_json::from_value(json!({"method":"read_sources","args":request}))
+                    .map_err(|_| "selection_stale")?,
+            )
+            .await
+            .map_err(|_| "selection_stale")
+        }
         .map_err(|_| "selection_stale")?;
         let rows = current["records"].as_array().ok_or("selection_stale")?;
         if group

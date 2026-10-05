@@ -37,7 +37,7 @@ pub struct ChangeEntry {
     pub index_status: String,
     pub worktree_status: String,
     #[ts(
-        type = "\"untracked\" | \"renamed\" | \"copied\" | \"added\" | \"deleted\" | \"modified\""
+        type = "\"untracked\" | \"untracked-directory\" | \"renamed\" | \"copied\" | \"added\" | \"deleted\" | \"modified\" | \"conflict\""
     )]
     pub kind: String,
     pub staged: bool,
@@ -241,6 +241,20 @@ mod tests {
             "R  folder/\0old\0",
         ] {
             assert_eq!(parse_status_changes(input).unwrap_err(), GIT_MUTATION_ERROR);
+        }
+    }
+
+    #[test]
+    fn generated_change_kind_contract_accepts_every_emitted_status_kind() {
+        use ts_rs::TS;
+        let declaration = ChangeEntry::decl(&ts_rs::Config::default());
+        let records = "?? new.txt\0?? nested/\0R  new.rs\0old.rs\0C  copied.rs\0original.rs\0A  added.rs\0 D deleted.rs\0 M changed.rs\0UU conflicted.rs\0";
+        for entry in parse_status_changes(records).unwrap() {
+            assert!(
+                declaration.contains(&format!("\"{}\"", entry.kind)),
+                "generated ChangeEntry excludes runtime kind {}",
+                entry.kind
+            );
         }
     }
 

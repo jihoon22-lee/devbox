@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../api", () => mocks);
 
-import { UuidTool } from "./security";
+import { HashTool, UuidTool } from "./security";
 
 afterEach(() => {
   cleanup();
@@ -89,4 +89,22 @@ describe("UuidTool", () => {
     expect(alert.textContent).toBe(IDENTIFIER_GENERATION_ERROR);
     expect(alert.textContent).not.toContain("DO_NOT_REFLECT_PLATFORM_DETAIL");
   });
+});
+
+it("does not display a completed hash for input changed while calculating", async () => {
+  let resolve!: (value: string) => void;
+  mocks.hash.mockReturnValueOnce(
+    new Promise<string>((done) => {
+      resolve = done;
+    }),
+  );
+  render(<HashTool />);
+  fireEvent.change(screen.getByLabelText("해시 입력"), { target: { value: "first" } });
+  fireEvent.click(screen.getByRole("button", { name: "해시 계산" }));
+  fireEvent.change(screen.getByLabelText("해시 입력"), { target: { value: "second" } });
+  resolve("FIRST_HASH");
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "해시 계산" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  expect(screen.getByLabelText("출력").textContent).not.toContain("FIRST_HASH");
 });

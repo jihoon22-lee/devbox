@@ -1503,17 +1503,12 @@ fn read_optional_json<T: for<'de> Deserialize<'de>>(
 }
 
 /// Open a managed state file without following its final link/reparse point.
-/// The metadata check in `read_bounded` remains useful for regular-file/type
-/// validation, but this handle-level boundary closes the check/open race for
-/// descriptor files in a shared per-user handoff directory.
+/// Revalidate the opened handle as well as the earlier path metadata so a
+/// replacement cannot turn a bounded descriptor read into special-file IO.
 fn open_managed_file(path: &Path) -> Result<File, std::io::Error> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
+        devbox_filesystem::open_filesystem_object(path, false).map(|(file, _)| file)
     }
 
     #[cfg(windows)]
@@ -1877,6 +1872,23 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_open_rejects_special_files_before_reading() {
+        use std::os::unix::ffi::OsStrExt;
+
+        // Revalidate the opened handle, even if the earlier path metadata
+        // described a regular file before a concurrent replacement.
+        assert!(open_managed_file(Path::new("/dev/null")).is_err());
+        let root = TestRoot::new("special-file");
+        fs::create_dir_all(&root.path).unwrap();
+        let fifo = root.path.join("pending.json");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        // There is deliberately no writer: rejecting a FIFO must not wait.
+        assert!(open_managed_file(&fifo).is_err());
     }
 
     fn request(target: Option<&str>) -> CreateHandoff {

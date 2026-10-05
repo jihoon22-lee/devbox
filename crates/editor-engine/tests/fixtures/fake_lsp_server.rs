@@ -31,6 +31,12 @@ async fn main() {
         env::args().find_map(|argument| argument.strip_prefix("--fake-marker=").map(PathBuf::from));
     let fake_log =
         env::args().find_map(|argument| argument.strip_prefix("--fake-log=").map(PathBuf::from));
+    let replay_gate = env::args().find_map(|argument| {
+        argument
+            .strip_prefix("--fake-replay-gate=")
+            .map(PathBuf::from)
+    });
+    let replaying = fake_marker.as_ref().is_some_and(|path| path.exists());
     if mode == "owned_descendant" {
         // Bounded fallback lifetime keeps a failing test from leaving a helper.
         tokio::time::sleep(Duration::from_secs(12)).await;
@@ -113,6 +119,17 @@ async fn main() {
                         cancellations.lock().await.insert(id);
                     }
                 } else if method == "textDocument/didOpen" || method == "textDocument/didChange" {
+                    if replaying && method == "textDocument/didOpen" {
+                        if let Some(gate) = &replay_gate {
+                            fs::write(gate, "replaying").unwrap();
+                            let deadline = std::time::Instant::now() + Duration::from_secs(8);
+                            while !gate.with_extension("release").exists()
+                                && std::time::Instant::now() < deadline
+                            {
+                                tokio::time::sleep(Duration::from_millis(5)).await;
+                            }
+                        }
+                    }
                     let writer = Arc::clone(&writer);
                     let cancellations = Arc::clone(&cancellations);
                     let mode = mode.clone();

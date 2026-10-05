@@ -132,3 +132,7 @@ describe("formatMarkdownTable", () => {
     });
   });
 });
+
+it("rejects a trailing high surrogate instead of preserving invalid text", () => {
+  expect(formatMarkdownTable("a|b\nx|\ud800").error?.code).toBe("INVALID_UNICODE");
+});

@@ -253,7 +253,8 @@ export async function runCollection(
           if (signal.aborted) throw new Error("cancelled");
           step.httpStatus = response.status;
           step.durationMs = response.duration_ms;
-          step.assertions = evaluateAssertions(entry.assertions ?? [], response);
+          step.assertions = await evaluateAssertions(entry.assertions ?? [], response, signal);
+          if (signal.aborted) throw new Error("cancelled");
           const captured = await applyResponseCaptures(entry.captures ?? [], response, session, deps, signal);
           step.captured = captured.names;
           step.status = step.assertions.some((result) => !result.passed)

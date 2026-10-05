@@ -19,6 +19,7 @@ $install = Join-Path $scratch 'Suite Custom Directory'
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $evidence = [ordered]@{ sourceSha=$artifactSource; productSources=$productSources; fixtureSourceSha=$source; artifactRun=$env:DEVBOX_SUITE_ARTIFACT_RUN; scope='installed-activation-generation-update-reinstall-data-restore-removal'; result='failed'; checks=[ordered]@{} }
 if ($RemainingOnly) { $evidence.scope = 'remaining-updated-uninstaller-restore-reinstall' }
+$evidence.diagnostics = [ordered]@{ helperOperations = [Collections.Generic.List[object]]::new(); namespaceSnapshots = [Collections.Generic.List[object]]::new() }
 $caseFailures = [Collections.Generic.List[string]]::new()
 $key = $null
 $registration = $null
@@ -29,16 +30,74 @@ function Require([bool]$Condition, [string]$Check) {
   if (-not $Condition) { throw "Suite fixture failed: $Check" }
   $evidence.checks[$Check] = $true
 }
-function Helper([string[]]$Arguments, [string]$ExpectedFailure = '') {
-  $output = & $Bootstrap @Arguments 2>&1
-  $code = $LASTEXITCODE
-  $text = ($output | Out-String).Trim()
-  if ($ExpectedFailure) {
-    Require ($code -ne 0 -and $text.Contains($ExpectedFailure)) $ExpectedFailure
-    return
+function Observe-OwnedNamespaceSizes {
+  $snapshot = [ordered]@{ stage='before-prepare-update'; status='complete'; products=[Collections.Generic.List[object]]::new() }
+  $observationTimer = [Diagnostics.Stopwatch]::StartNew()
+  $record = $null
+  try {
+    if ($key -notmatch '^[a-f0-9]{64}$') { throw 'unverified ownership' }
+    $namespaces = @($catalog.products | ForEach-Object { @{ product=$_.id; identifier=$_.identifier } })
+    $namespaces += @{ product='agent'; identifier='com.devbox.v08.agent' }
+    foreach ($namespace in $namespaces) {
+      $record = [ordered]@{ product=$namespace.product; status='complete'; webViewFiles=0; webViewBytes=[long]0; otherFiles=0; otherBytes=[long]0; skippedLinks=0 }
+      $snapshot.products.Add($record)
+      $ownedRoot = Join-Path $env:LOCALAPPDATA "$($namespace.identifier).i$key"
+      if (-not (Test-Path -LiteralPath $ownedRoot)) { $record.status='absent'; continue }
+      $pending = [Collections.Generic.Stack[string]]::new()
+      $pending.Push($ownedRoot)
+      $seen = 0
+      while ($pending.Count -gt 0) {
+        if ($observationTimer.Elapsed.TotalSeconds -gt 15) { throw 'observation bound' }
+        $directory = Get-Item -LiteralPath $pending.Pop() -Force
+        if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { $record.skippedLinks++; continue }
+        foreach ($entry in Get-ChildItem -LiteralPath $directory.FullName -Force) {
+          $seen++
+          if ($seen -gt 100000 -or $observationTimer.Elapsed.TotalSeconds -gt 15) { throw 'observation bound' }
+          if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { $record.skippedLinks++; continue }
+          if ($entry.PSIsContainer) { $pending.Push($entry.FullName); continue }
+          $relative = $entry.FullName.Substring($ownedRoot.Length)
+          if ($relative -match '(?i)(^|[\\/])EBWebView([\\/]|$)') {
+            $record.webViewFiles++; $record.webViewBytes += [long]$entry.Length
+          } else {
+            $record.otherFiles++; $record.otherBytes += [long]$entry.Length
+          }
+        }
+      }
+    }
+  } catch {
+    # Observation must never replace the helper's original success or failure.
+    $snapshot.status='incomplete'
+    if ($record) { $record.status='incomplete' }
+  } finally {
+    $snapshot.elapsedMs = $observationTimer.ElapsedMilliseconds
+    $evidence.diagnostics.namespaceSnapshots.Add($snapshot)
+    Write-Host ("Suite namespace observation: " + ($snapshot | ConvertTo-Json -Depth 5 -Compress))
   }
-  if ($code -ne 0) { throw "Suite helper failed ($code): $text" }
-  return $text | ConvertFrom-Json
+}
+function Helper([string[]]$Arguments, [string]$ExpectedFailure = '') {
+  $operation = if ($Arguments.Count -gt 0 -and $Arguments[0] -match '^--[a-z-]+$') { $Arguments[0] } else { 'unknown' }
+  if ($operation -eq '--prepare-update' -and $evidence.diagnostics.namespaceSnapshots.Count -eq 0) { Observe-OwnedNamespaceSizes }
+  $observation = [ordered]@{ operation=$operation; elapsedMs=[long]0; result='failed'; expectedFailure=([bool]$ExpectedFailure); exitCode=$null }
+  $timer = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    $output = & $Bootstrap @Arguments 2>&1
+    $code = $LASTEXITCODE
+    $observation.exitCode = $code
+    $text = ($output | Out-String).Trim()
+    if ($ExpectedFailure) {
+      Require ($code -ne 0 -and $text.Contains($ExpectedFailure)) $ExpectedFailure
+      $observation.result = 'passed'
+      return
+    }
+    if ($code -ne 0) { throw "Suite helper failed ($code): $text" }
+    $result = $text | ConvertFrom-Json
+    $observation.result = 'passed'
+    return $result
+  } finally {
+    $observation.elapsedMs = $timer.ElapsedMilliseconds
+    $evidence.diagnostics.helperOperations.Add($observation)
+    Write-Host ("Suite helper observation: " + ($observation | ConvertTo-Json -Compress))
+  }
 }
 function Run-Installer([string]$File, [string]$Arguments) {
   $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru

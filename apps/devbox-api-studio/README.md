@@ -104,3 +104,13 @@ base64로 기록·fixture 저장하고 재전송 시 원래 바이트로 복원�
 ## 타입 IPC 개발
 
 제품 플러그인의 명령은 `api·webhooks·transforms`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/api-studio-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.
+
+### 응답 검증 정규식
+
+단일 요청과 컬렉션 실행의 `matches` 검증은 별도 worker에서 수행한다. 표현식마다
+500ms 제한을 적용하며 제한 초과는 검증 실패로 표시한다. 취소하면 worker도 종료하며
+늦게 도착한 결과로 현재 요청 상태를 바꾸지 않는다.
+
+MCP tool 인자 편집은 서버가 지정한 `__proto__`·`constructor` 같은 이름도 JSON의 own data property로 보존한다. 초기화·읽기·편집·삭제·필수 값 검증에서 JavaScript prototype을 탐색하거나 변경하지 않는다.
+
+민감 JSON 필드와 텍스트 대입값의 변수 참조는 값 전체가 참조일 때만 보존합니다. 평문 자격 증명에 참조를 덧붙여도 응답·저장용 마스킹을 건너뛰지 않습니다.

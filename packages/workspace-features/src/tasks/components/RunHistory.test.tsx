@@ -105,6 +105,34 @@ afterEach(() => {
 });
 
 describe("RunHistory", () => {
+  it("continues reading a completed run past the first bounded log chunk", async () => {
+    tailLogMock
+      .mockResolvedValueOnce({
+        data: Array.from(new TextEncoder().encode("x".repeat(256 * 1024))),
+        retainedStartOffset: "0",
+        nextCursor: String(256 * 1024),
+        truncated: false,
+      })
+      .mockResolvedValue({
+        data: Array.from(new TextEncoder().encode("final diagnostic")),
+        retainedStartOffset: "0",
+        nextCursor: String(256 * 1024 + 16),
+        truncated: false,
+      });
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(view.getByLabelText("stdout 로그").textContent).toContain("final diagnostic"), {
+      timeout: 2_000,
+    });
+  });
+
+  it("suppresses native read error details in history and active snapshots", async () => {
+    listRunsMock.mockRejectedValue(new Error("synthetic-secret /private/log"));
+    listActiveRunsMock.mockRejectedValue(new Error("synthetic-secret /private/process"));
+    const view = render(<RunHistory jobs={[job]} />);
+    await waitFor(() => expect(view.getByRole("alert")).toHaveTextContent("요청을 완료하지 못했습니다."));
+    expect(view.container.textContent).not.toContain("synthetic-secret");
+  });
+
   it("requires an explicit confirmation before publishing the selected stream to Log Lens", async () => {
     confirmMock.mockReturnValueOnce(false);
     const view = render(<RunHistory jobs={[job]} />);
@@ -167,12 +195,12 @@ describe("RunHistory", () => {
     const view = render(<RunHistory jobs={[job]} />);
 
     await waitFor(() => expect(listRunsMock).toHaveBeenCalledWith(job.id, expect.objectContaining({ limit: 50 })));
-    await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stdout", null));
+    await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stdout", null, 256 * 1024));
     expect((await view.findByLabelText("stdout 로그")).textContent).toContain("finished");
     expect(view.getByRole("button", { name: "stdout" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(view.getByRole("button", { name: "stderr" }));
-    await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stderr", null));
+    await waitFor(() => expect(tailLogMock).toHaveBeenCalledWith(run.id, "stderr", null, 256 * 1024));
     expect(view.getByRole("button", { name: "stderr" }).getAttribute("aria-pressed")).toBe("true");
   });
 

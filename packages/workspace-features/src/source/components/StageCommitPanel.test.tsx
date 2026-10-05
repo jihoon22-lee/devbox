@@ -212,6 +212,8 @@ describe("StageCommitPanel", () => {
     render(<StageCommitPanel repo={repo} />);
     fireEvent.click(screen.getByRole("button", { name: "변경 파일 불러오기" }));
     const checkbox = await screen.findByRole("checkbox", { name: "stage src/main.ts" });
+    const message = screen.getByRole("textbox", { name: "커밋 메시지" }) as HTMLTextAreaElement;
+    fireEvent.change(message, { target: { value: "preserve this draft after cancelling stage" } });
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole("button", { name: /선택 항목 stage/ }));
 
@@ -226,6 +228,7 @@ describe("StageCommitPanel", () => {
     expect(screen.queryByRole("button", { name: "취소" })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "stage src/main.ts" })).toBeNull();
     expect(screen.getByRole("alert").textContent).toBe(GIT_MUTATION_ERROR);
+    expect(message.value).toBe("preserve this draft after cancelling stage");
   });
 
   it("loads status and stages only the explicitly selected path", async () => {

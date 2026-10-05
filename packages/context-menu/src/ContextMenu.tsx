@@ -37,11 +37,11 @@ interface MenuLevelProps {
   className?: string;
 }
 
-function interactive(entry: ContextMenuEntry): entry is Exclude<ContextMenuEntry, { type: "separator" }> {
-  return entry.type !== "separator";
+function interactive(entry: ContextMenuEntry | undefined): entry is Exclude<ContextMenuEntry, { type: "separator" }> {
+  return entry !== undefined && entry.type !== "separator";
 }
 
-function enabled(entry: ContextMenuEntry): entry is Exclude<ContextMenuEntry, { type: "separator" }> {
+function enabled(entry: ContextMenuEntry | undefined): entry is Exclude<ContextMenuEntry, { type: "separator" }> {
   return interactive(entry) && !entry.disabled;
 }
 

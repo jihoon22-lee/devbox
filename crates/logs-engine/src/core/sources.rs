@@ -529,8 +529,20 @@ fn read_file_with_limit(
     context: &LoadContext<'_>,
 ) -> Result<ReadResult, CoreError> {
     let byte_limit = byte_limit.min(MAX_SOURCE_BYTES);
-    let mut file = File::open(path).map_err(|_| CoreError::Io)?;
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Inspect the opened object without waiting for a FIFO writer. A
+        // pre-open metadata check alone can race a directory member swap.
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let mut file = options.open(path).map_err(|_| CoreError::Io)?;
     let metadata = file.metadata().map_err(|_| CoreError::Io)?;
+    if !metadata.is_file() {
+        return Err(CoreError::Io);
+    }
     let identity = file_identity(&file, &metadata);
     let (mut offset, mut status, mut truncated) = match previous {
         None => (
@@ -1059,6 +1071,65 @@ mod tests {
         registry: &'a OperationRegistry,
     ) -> LoadContext<'a> {
         LoadContext::new(id, generation, token, registry)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_log_rejects_fifo_without_waiting_for_a_writer() {
+        use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("source.fifo");
+        let native_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(native_path.as_ptr(), 0o600) }, 0);
+        let reader_path = path.clone();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let registry = OperationRegistry::default();
+            let token = registry.begin("fifo-read", 1).unwrap();
+            let result = read_file(
+                &reader_path,
+                None,
+                &context("fifo-read", 1, &token, &registry),
+            );
+            sender.send(result.map(|_| ())).unwrap();
+        });
+        let result = receiver.recv_timeout(Duration::from_secs(1));
+        // Release a regressed blocking reader before asserting, so even the
+        // failing test never leaves a worker or FIFO writer behind.
+        let cleanup = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&path)
+            .unwrap();
+        if result.is_err() {
+            let _ = receiver.recv_timeout(Duration::from_secs(1));
+        }
+        worker.join().unwrap();
+        drop(cleanup);
+        assert!(matches!(result, Ok(Err(CoreError::Io))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_log_rejects_devices_but_preserves_selected_regular_file_links() {
+        let registry = OperationRegistry::default();
+        let token = registry.begin("regular-read", 1).unwrap();
+        let context = context("regular-read", 1, &token, &registry);
+        assert!(matches!(
+            read_file(Path::new("/dev/null"), None, &context),
+            Err(CoreError::Io)
+        ));
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("source.log");
+        let link = directory.path().join("selected.log");
+        fs::write(&path, "a regular log\n").unwrap();
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert_eq!(
+            read_file(&link, None, &context).unwrap().bytes,
+            b"a regular log\n"
+        );
     }
 
     #[test]

@@ -1801,7 +1801,7 @@ impl SchedulerCoordinator {
             .map(|run| run.job_id.clone())
             .collect::<std::collections::HashSet<_>>();
         for run in stale {
-            let Some(job) = self.inner.database.get_job(&run.job_id)? else {
+            let Some(job) = self.inner.database.get_run_job(&run.job_id)? else {
                 continue;
             };
             let owner = run
@@ -1856,9 +1856,13 @@ impl SchedulerCoordinator {
             }
             if terminalized {
                 recovered += 1;
+                self.handle_service_terminal(&run.job_id, &run.id, RunStatus::Failed, now);
                 self.emit_failure(&run.job_id, &run.id, TerminalFailureCode::ProcessCrashed);
             }
         }
+        self.inner
+            .database
+            .recover_unstarted_service_instances(&self.inner.config.owner_instance_id, now)?;
         for job_id in stale_job_ids {
             if !blocked_jobs.contains(&job_id) {
                 self.clear_cleanup_pending(&job_id).await;
@@ -3644,6 +3648,123 @@ mod tests {
             database.get_run(&run.id).unwrap().unwrap().status,
             RunStatus::Failed
         );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stale_service_recovery_retires_unlinked_start_without_touching_current_owner() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        let current = database
+            .create_service_at(service_input("current", false), 1_000)
+            .unwrap();
+        database
+            .claim_service_start(
+                &current.id,
+                scheduler.native_owner_id(),
+                "current-token",
+                1_001,
+            )
+            .unwrap()
+            .unwrap();
+        for queued in [false, true] {
+            let service = database
+                .create_service_at(service_input("orphan start", false), 1_000)
+                .unwrap();
+            database
+                .claim_service_start(&service.id, "old-owner", "service-token", 1_001)
+                .unwrap()
+                .unwrap();
+            let run = queued.then(|| database.create_service_run_at(&service.id, 1_002).unwrap());
+            scheduler.recover_stale_at(2_000).await.unwrap();
+            assert_eq!(
+                database
+                    .get_service_instance(&service.id)
+                    .unwrap()
+                    .unwrap()
+                    .state,
+                ServiceInstanceState::Stopped
+            );
+            if let Some(run) = run {
+                assert_eq!(
+                    database.get_run(&run.id).unwrap().unwrap().status,
+                    RunStatus::Cancelled
+                );
+            }
+        }
+        assert_eq!(
+            database
+                .get_service_instance(&current.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Starting
+        );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stale_service_recovery_keeps_failed_cleanup_blocked_then_retires_instance() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("stale service", false), 1_000)
+            .unwrap();
+        let instance = database
+            .claim_service_start(&service.id, "old-owner", "service-token", 1_001)
+            .unwrap()
+            .unwrap();
+        let run = database.create_service_run_at(&service.id, 1_002).unwrap();
+        assert!(database
+            .claim_run_starting(&run.id, "old-owner", "run-token")
+            .unwrap());
+        assert!(database
+            .mark_run_running(&run.id, "old-owner", "run-token", 1_003)
+            .unwrap());
+        assert!(database
+            .mark_service_running(
+                &service.id,
+                instance.generation,
+                "old-owner",
+                "service-token",
+                &run.id,
+                1_003
+            )
+            .unwrap());
+        let adapter = Arc::new(TransientStaleRecoveryAdapter {
+            attempts: AtomicUsize::new(0),
+            starts: AtomicUsize::new(0),
+        });
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        assert_eq!(scheduler.recover_stale_at(2_000).await.unwrap(), 0);
+        assert_eq!(adapter.attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+        assert_eq!(
+            database
+                .get_service_instance(&service.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Running
+        );
+        assert!(!scheduler.cleanup_confirmed().await);
+        assert_eq!(scheduler.recover_stale_at(2_001).await.unwrap(), 1);
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Failed
+        );
+        assert_eq!(
+            database
+                .get_service_instance(&service.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Stopped
+        );
+        assert!(scheduler.cleanup_confirmed().await);
         assert_eq!(adapter.starts.load(Ordering::SeqCst), 0);
     }
 

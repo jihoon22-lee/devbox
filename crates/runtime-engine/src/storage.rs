@@ -3075,6 +3075,48 @@ impl DatabaseState {
         Ok(true)
     }
 
+    /// Retire a previous owner's service claim only after every potentially
+    /// running process has been confirmed terminal. A queued run has not
+    /// spawned and can be cancelled atomically with the abandoned claim.
+    /// Current-owner claims and backoff retries retain their normal lifecycle.
+    pub(crate) fn recover_unstarted_service_instances(
+        &self,
+        current_owner: &str,
+        now: i64,
+    ) -> Result<(), StorageError> {
+        let mut connection = self.lock_mut()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "UPDATE runs SET status = 'cancelled', ended_at = ?,
+                    error_message = 'scheduler-stale-recovery'
+             WHERE status = 'queued' AND job_id IN (
+                 SELECT job_id FROM service_instances
+                 WHERE owner_instance_id IS NOT ?
+                   AND state IN ('starting', 'running', 'stopping')
+                   AND NOT EXISTS (
+                       SELECT 1 FROM runs active
+                       WHERE active.job_id = service_instances.job_id
+                         AND active.status IN ('starting', 'running', 'stopping')
+                   )
+             )",
+            params![now, current_owner],
+        )?;
+        transaction.execute(
+            "UPDATE service_instances SET state = 'stopped', active_run_id = NULL,
+                    owner_instance_id = NULL, attempt_token = NULL,
+                    next_retry_at = NULL, updated_at = ?
+             WHERE owner_instance_id IS NOT ?
+               AND state IN ('starting', 'running', 'stopping')
+               AND NOT EXISTS (
+                   SELECT 1 FROM runs WHERE runs.job_id = service_instances.job_id
+                     AND status IN ('queued', 'starting', 'running', 'stopping')
+               )",
+            params![now, current_owner],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Startup is fail-safe: rows from a previous daemon that were in
     /// `starting`, `running`, or `stopping` are terminalized as failed and
     /// never respawned.  Blocked queued rows linked to stale stopping rows are
@@ -3877,7 +3919,7 @@ fn validate_workspace_task_item(item: &WorkspaceTaskItem) -> Result<(), StorageE
             "workspace task argument",
             argument,
             MAX_TASK_STRING_BYTES,
-            false,
+            true,
         )?;
         argument_bytes = argument_bytes.saturating_add(argument.len());
     }
@@ -6719,6 +6761,23 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn workspace_task_import_preserves_empty_arguments() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let mut item = workspace_item("task-a", "build", "node");
+        item.args = vec!["--value".into(), String::new()];
+        let plan = workspace_plan(&"b".repeat(64), vec![item]);
+        database
+            .apply_workspace_task_import_at(&plan, &["task-a".into()], 100)
+            .unwrap();
+        let state = database.list_workspace_task_states().unwrap();
+        let execution = database
+            .get_workspace_task_execution(&state[0].job_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(execution.args, ["--value", ""]);
     }
 
     #[test]

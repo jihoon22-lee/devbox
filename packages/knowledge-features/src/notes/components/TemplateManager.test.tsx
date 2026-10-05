@@ -43,6 +43,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -62,6 +63,18 @@ async function readyManager() {
 }
 
 describe("Knowledge template manager", () => {
+  it("initializes note date and time when each dialog opens", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2031, 0, 2, 23, 58));
+    const first = renderManager();
+    expect(screen.getByLabelText("날짜")).toHaveValue("2031-01-02");
+    expect(screen.getByLabelText("시간")).toHaveValue("23:58");
+    first.unmount();
+    vi.setSystemTime(new Date(2031, 0, 3, 0, 4));
+    renderManager();
+    expect(screen.getByLabelText("날짜")).toHaveValue("2031-01-03");
+    expect(screen.getByLabelText("시간")).toHaveValue("00:04");
+  });
   it("creates from the saved definition with one action", async () => {
     const { onSaved } = renderManager();
     const dialog = await readyManager();

@@ -15,10 +15,18 @@
 빌드 SHA와 새 fixture SHA/run은 receipt와 Release에 각각 남기며, 새 seal·공개본 검증의
 성공 전에는 재출시 완료로 기록하지 않는다.
 
+재검증 `37322897417`에서는 전체 migration의 generation update가 `checkpoint_expired`로
+실패하여 게시를 차단했다. 별도 진단 `37325623409`에서 원본 bytes의 전체 migration은
+통과했고 업데이트 준비는 30.9초·34.0초였다. 최초 runner의 120초 초과 원인은 미확정이다.
+진단은 승격 근거가 아니며, checkpoint 처리와 최종 리뷰에서 제품 코드를 변경한 보정은
+fixture-only 예외에 해당하지 않는다. 원본 bytes의 통과 기록과
+새 제품 bytes의 검증 기록을 구분하며, 최종 게시 상태는 위 원장의 최신 결과를 따른다.
+
 ### 철회 전 공개 이력
 
-[Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)는 `2026-10-03T05:31:16Z`에 공개됐으며
-당시 Latest=true, draft=false, prerelease=false였다. 현재는 철회됐다.
+첫 v0.9.0은 `2026-10-03T05:31:16Z`에 공개됐으며 당시 Latest=true, draft=false,
+prerelease=false였다. 해당 원본과 자산은 설치·UI 문제로 철회했다. 같은 버전으로 재출시한
+수정본이 있다면 그 출처는 이 역사 기록이 아니라 문서 첫 부분의 최신 Release 원장을 따른다.
 
 - source: `e499ac7127269bf67863bf0fdc42eaf53236b9f3`.
 - annotated tag object: `f31f111977956bd665cd432accdf54677444027f`.

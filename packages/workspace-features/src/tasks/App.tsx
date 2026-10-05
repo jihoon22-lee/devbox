@@ -290,13 +290,23 @@ export default function App({
     }
   }, [refreshActiveRuns]);
 
+  const serviceRefreshSequence = useRef(0);
   const refreshServices = useCallback(async () => {
     if (!mountedRef.current) return;
     const view = viewGenerationRef.current;
-    const snapshot = await loadServiceSnapshot();
-    if (!mountedRef.current || view !== viewGenerationRef.current) return;
-    setServices(snapshot.services);
-    setServiceInstances(snapshot.instances);
+    const sequence = ++serviceRefreshSequence.current;
+    try {
+      const snapshot = await loadServiceSnapshot();
+      if (!mountedRef.current || view !== viewGenerationRef.current || sequence !== serviceRefreshSequence.current)
+        return;
+      setServices(snapshot.services);
+      setServiceInstances(snapshot.instances);
+    } catch (cause) {
+      if (mountedRef.current && view === viewGenerationRef.current && sequence === serviceRefreshSequence.current) {
+        setServiceInstances({});
+      }
+      throw cause;
+    }
   }, []);
 
   const stopWorkspaceOperationPolling = useCallback((operationId: string) => {
@@ -925,7 +935,11 @@ export default function App({
 
   usePolling(
     async () => {
-      await Promise.all([refreshStatus(), refreshActiveRuns()]);
+      await Promise.all([
+        refreshStatus(),
+        refreshActiveRuns(),
+        screen === "services" && !busy ? refreshServices().catch(() => undefined) : Promise.resolve(),
+      ]);
     },
     { intervalMs: 1_000, active: visible, immediate: false },
   );

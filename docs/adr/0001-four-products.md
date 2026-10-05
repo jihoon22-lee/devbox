@@ -19,6 +19,6 @@ Workspace·API Studio·Knowledge·Control Center 네 제품으로 유지한다. 
 ## 근거
 
 - [apps/products.json](../../apps/products.json)
-- [docs/architecture/v0.8-foundation.md](../../docs/architecture/v0.8-foundation.md)
+- [docs/architecture/v0.8-foundation.md](https://github.com/jihoon22-lee/devbox/blob/ab2ee78a54d3aef7a0e2d546349574bc12a4c2ac/docs/architecture/v0.8-foundation.md)
 
 현재 구현·검증: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).

@@ -139,15 +139,16 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           // the first placement and its normal activation behavior.
           const views = completeViews(state, cleanViews(state), existingView);
           views[1 - existingView] = views[1 - existingView].filter((id) => id !== action.doc.id);
-          views[existingView] = [action.doc.id, ...views[existingView].filter((id) => id !== action.doc.id)];
+          const activeDocByView: [DocId | null, DocId | null] = [
+            views[0].includes(state.activeDocByView[0] ?? "") ? state.activeDocByView[0] : lastId(views[0]),
+            views[1].includes(state.activeDocByView[1] ?? "") ? state.activeDocByView[1] : lastId(views[1]),
+          ];
+          activeDocByView[existingView] = action.doc.id;
           return {
             ...state,
             views,
             activeView: existingView,
-            activeDocByView: [
-              views[0].includes(state.activeDocByView[0] ?? "") ? state.activeDocByView[0] : lastId(views[0]),
-              views[1].includes(state.activeDocByView[1] ?? "") ? state.activeDocByView[1] : lastId(views[1]),
-            ],
+            activeDocByView,
           };
         }
 

@@ -37,6 +37,7 @@ import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./l
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { nextPaneIndex, type FocusDirection } from "./lib/paneGeometry";
 import { normalizePaneSizing } from "./lib/paneSizing";
+import { removePaneFromTopology } from "./lib/paneTopology";
 import { MAX_BROADCAST_TARGETS, nextBroadcastTargets } from "./lib/broadcastSafety";
 import {
   loadCopyOnSelect,
@@ -633,42 +634,15 @@ export default function App() {
   // 팬 하나(연결된 session id 또는 실패 placeholder key)를 제거한다. 마지막 팬이면 탭도 닫는다.
   // stateRef를 통해서만 tabs/activeTabId/activePaneId를 읽는다 — 위 주석 참고.
   const dropPane = useCallback((paneId: string) => {
-    const { tabs: curTabs, activeTabId: curActiveTabId, activePaneId: curActivePaneId } = stateRef.current;
-    setPanes((prev) => {
-      const next = prev.filter((pane) => paneIdentity(pane) !== paneId);
-      panesRef.current = next;
-      return next;
-    });
-
-    const ownerIdx = curTabs.findIndex((t) => t.paneIds.includes(paneId));
-    if (ownerIdx === -1) {
-      setActivePaneId((prev) => (prev === paneId ? null : prev));
-      return;
-    }
-    const owner = curTabs[ownerIdx];
-    const remaining = owner.paneIds.filter((id) => id !== paneId);
-    const tabClosed = remaining.length === 0;
-
-    const nextTabs = tabClosed
-      ? curTabs.filter((t) => t.id !== owner.id)
-      : curTabs.map((tab) =>
-          tab.id === owner.id
-            ? {
-                ...tab,
-                paneIds: remaining,
-                sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
-              }
-            : tab,
-        );
-    setTabs(nextTabs);
-
-    if (tabClosed && curActiveTabId === owner.id) {
-      const fallback = nextTabs[Math.min(ownerIdx, nextTabs.length - 1)] ?? null;
-      setActiveTabId(fallback ? fallback.id : "");
-      setActivePaneId(fallback ? (fallback.paneIds[fallback.paneIds.length - 1] ?? null) : null);
-    } else if (curActivePaneId === paneId) {
-      setActivePaneId(remaining[remaining.length - 1] ?? null);
-    }
+    const nextPanes = panesRef.current.filter((pane) => paneIdentity(pane) !== paneId);
+    panesRef.current = nextPanes;
+    setPanes(nextPanes);
+    const next = removePaneFromTopology(stateRef.current, paneId);
+    // Publish before React commits so a second close event uses the reduced topology.
+    stateRef.current = next;
+    setTabs(next.tabs);
+    setActiveTabId(next.activeTabId);
+    setActivePaneId(next.activePaneId);
   }, []);
 
   useEffect(() => {

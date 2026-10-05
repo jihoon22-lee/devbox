@@ -10,16 +10,16 @@
 
 ## 결정
 
-로드맵 D4는 과제별 실패 테스트와 좁은 회귀, 묶음 끝 verify:affected·Clippy·Windows 검증을 정한다. 실패 후에는 수정들을 모아 실패·영향 범위만 재검증한다. 이번 실행의 2026-09-25 사용자 직접 지시는 테스트를 개발 중 작성하되 묶음 구현 완료 후 모아서 실행하도록 우선 적용했고 PR에 기록한다.
+과제별로 실패를 재현하는 좁은 회귀를 실행하고, 구현을 통합한 뒤 verify:affected·Clippy·필요한 Windows 검증을 한 번 모은다. 실패 후에는 수정들을 모아 실패·영향 범위만 재검증한다. 현재 실행 순서와 성공 CI 근거 재사용은 CONVENTIONS §5·8과 검증 운영 문서가 원장이다.
 
 ## 결과
 
-최종 게이트를 유지하면서 중복 검증을 줄인다. 실행하지 않은 환경은 PASS로 쓰지 않으며 선행 묶음의 main CI가 끝나야 후속 구현을 시작한다.
+최종 게이트를 유지하면서 중복 검증을 줄인다. 실행하지 않은 환경은 PASS로 쓰지 않는다. 선행 변경을 통합 개발 브랜치에 반영하면 후속 구현을 진행하고, 작업마다 main 머지나 CI 대기를 만들지 않는다.
 
 ## 근거
 
 - [docs/verification.md](../../docs/verification.md)
 - [CONVENTIONS.md](../../CONVENTIONS.md)
-- [docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md](../../docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md)
+- [docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md](https://github.com/jihoon22-lee/devbox/blob/ab2ee78a54d3aef7a0e2d546349574bc12a4c2ac/docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md)
 
 현재 구현·검증: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).

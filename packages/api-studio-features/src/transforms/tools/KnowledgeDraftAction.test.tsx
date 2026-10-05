@@ -74,8 +74,8 @@ describe("Knowledge draft output action", () => {
     expect(screen.queryByRole("dialog", { name: "Knowledge 초안 미리보기" })).toBeNull();
   });
 
-  it("rejects an unbounded output with a fixed error before native invocation", () => {
-    openPreview("unsafe\0output");
+  it.each(["unsafe\0output", "unsafe\ud800"])("rejects invalid output before native invocation: %j", (input) => {
+    openPreview(input);
 
     fireEvent.click(screen.getByRole("button", { name: "초안 저장" }));
     expect(screen.getByRole("alert").textContent).toContain("Knowledge 초안으로 전달할 텍스트가 유효하지 않습니다");

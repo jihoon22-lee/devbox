@@ -34,7 +34,7 @@ export function encodingOptionValue(encoding: Encoding): string {
  */
 export function cursorPosition(text: string, cursor: number): { line: number; column: number } {
   const offset = Number.isFinite(cursor) ? Math.min(Math.max(0, Math.trunc(cursor)), text.length) : 0;
-  const lineStart = text.lastIndexOf("\n", Math.max(0, offset - 1));
+  const lineStart = offset === 0 ? -1 : text.lastIndexOf("\n", offset - 1);
   return {
     line: text.slice(0, offset).split("\n").length,
     column: offset - lineStart,

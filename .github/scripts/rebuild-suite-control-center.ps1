@@ -37,7 +37,7 @@ foreach ($product in @('workspace','api-studio','knowledge')) {
   $archive = Join-Path $Retained $name
   if ((Get-Item -LiteralPath $archive).Length -ne $definition.portable.size -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $definition.portable.sha256) { throw 'Retained archive changed' }
   $names = @("devbox-$product.exe")
-  if ($product -eq 'workspace') { $names += @('resources/wsl/manifest.json','resources/wsl/devbox-workspace-wsl') }
+  if ($product -in @('workspace','knowledge')) { $names += @('resources/wsl/manifest.json','resources/wsl/devbox-workspace-wsl') }
   $zip = [IO.Compression.ZipFile]::OpenRead($archive)
   try {
     foreach ($name in $names) {

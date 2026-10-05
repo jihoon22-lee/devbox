@@ -30,10 +30,10 @@ pub(crate) fn open_readonly_with_identity(
 
         let file = std::fs::OpenOptions::new()
             .read(true)
-            .custom_flags(NO_FOLLOW)
+            .custom_flags(NO_FOLLOW | libc::O_NONBLOCK)
             .open(path)?;
         let metadata = file.metadata()?;
-        if metadata.is_dir() != directory {
+        if (directory && !metadata.is_dir()) || (!directory && !metadata.is_file()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "unexpected file type",
@@ -132,4 +132,41 @@ pub(crate) fn open_readonly_with_identity(
 
 pub(crate) fn path_identity(path: &Path, directory: bool) -> std::io::Result<FileIdentity> {
     open_readonly_with_identity(path, directory).map(|(_, identity)| identity)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
+    use std::time::Duration;
+
+    #[test]
+    fn metadata_reader_rejects_fifo_without_waiting_and_rejects_devices() {
+        let path =
+            std::env::temp_dir().join(format!("devbox-projects-fifo-{}", uuid::Uuid::new_v4()));
+        let native = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(native.as_ptr(), 0o600) }, 0);
+        let reader_path = path.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            sender
+                .send(open_readonly_with_identity(&reader_path, false).is_err())
+                .unwrap();
+        });
+        let result = receiver.recv_timeout(Duration::from_secs(1));
+        let cleanup = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&path)
+            .unwrap();
+        if result.is_err() {
+            let _ = receiver.recv_timeout(Duration::from_secs(1));
+        }
+        worker.join().unwrap();
+        drop(cleanup);
+        std::fs::remove_file(path).unwrap();
+        assert!(matches!(result, Ok(true)));
+        assert!(open_readonly_with_identity(Path::new("/dev/null"), false).is_err());
+    }
 }

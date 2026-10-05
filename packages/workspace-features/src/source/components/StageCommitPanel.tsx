@@ -178,7 +178,6 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
       setStageSelection(new Set());
       setUnstageSelection(new Set());
       setCommitConfirmation(null);
-      setMessage("");
       setError(GIT_MUTATION_ERROR);
       setOperationStatus("Git 작업을 취소했습니다. 최신 변경 파일을 다시 불러오세요.");
     }

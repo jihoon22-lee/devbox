@@ -61,6 +61,10 @@ Frontend의 format·component size·fixture 계약 검사도 compiler 결과 재
 이 재사용은 compiler/test CI 근거에 한정한다. 최종 exact-main 후보의 네 native scope,
 40개 설치 사용자 여정, WSL2/Docker, migration/recovery 및 sealing 조건은 그대로 적용한다.
 
+`Product foundation acceptance`는 수동 진단 전용이다. PR에서 별도 제품 빌드·수용을
+자동 실행하지 않는다. 필수 PR CI는 유지하며 최종 제품 bytes의 native·UI·WSL2·migration
+수용은 `Windows package candidate`가 수행한다. 진단 결과를 최종 후보의 PASS로 바꾸지 않는다.
+
 ## 기존 서비스와 공유 네트워크 보호
 
 로컬 테스트 때문에 기존 Docker 서비스, 방화벽 또는 네트워크 상태가 바뀌어서는 안 된다.

@@ -163,3 +163,7 @@ describe("JWT key and browser verification boundary", () => {
     ).resolves.toBe(true);
   });
 });
+
+it("rejects a trailing unpaired surrogate in a raw JWT key", () => {
+  expect(() => decodeJwtKey("prefix\ud800", "utf8")).toThrowError(new JwtError("invalid_key"));
+});

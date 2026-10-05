@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_RULES_PER_LIST: usize = 64;
 pub const MAX_RULE_CHARS: usize = 512;
+// Cover all three maximum-length lists, including JSON escaping of each character.
+pub const MAX_RULES_JSON_BYTES: usize = 3 * MAX_RULES_PER_LIST * (MAX_RULE_CHARS * 6 + 3) + 128;
 const REGEX_SIZE_LIMIT: usize = 1 << 20;
 pub const REDACTED: &str = "[redacted]";
 
