@@ -709,3 +709,35 @@ native picker HWND를 재검증해 연결하며 기존 단일 입력·control �
 Inventory의 무관한 통과 검사는 반복하지 않았다. Windows 전용 이전 세대 제거 회귀는
 실제 함수·파일 검증을 추출한 최소 Rust 재현에서 RED→GREEN이며, 정식 Windows 테스트와
 수정 payload의 실제 제거는 필수 CI·새 후보에서 확인한다.
+
+앱 전용 보관 진단 [37258325249](https://github.com/jihoon22-lee/devbox/actions/runs/37258325249)는
+runner `af5008ff`·동일 payload `99beac69`로 15 PASS·6 FAIL·2 NOT_RUN이었다. 설치·활성화,
+WORK-01/02·RUNTIME-01·Knowledge 8개·UI-01을 통과했다. 앱 전용 실행이므로 delivery와
+migration을 실행하지 않았으며, API 조기 중단으로 일부 결과가 없다. native picker 소유
+root 회귀는 통과했고 LSP archive 선택도 진행했다. COM fixture는 실제 최종 경로가 기본
+파일명에 머문 것을 확인했다. 입력란의 텍스트만 바꾸던 호출을 검증된 소유 입력란의 실제
+키보드 입력으로 바꾸며, 최종 COM 선택 경로 일치 검사는 유지한다. 새 helper의 Windows
+C# 컴파일·입력 직렬화 및 PowerShell 구문 검사는 통과했으나 실제 chooser는 새 후보에서
+확인한다.
+
+HTTP 완료 문구가 capture/history 저장보다 먼저 표시되는 구간은 전송 버튼 준비까지
+관찰한다. HANDOFF는 실제 입력 수용을 통과했고, 다음 변환 예상값 계산에서 화면 밖
+textbox의 접근성 이름을 값으로 읽던 문제를 확인했다. 공용 관찰은 정확한 DOM input/
+textarea의 현재 value를 읽고 handle을 정리하며, 읽기·정리 동시 실패 시 최초 오류를
+보존한다. 변형 입력이나 UI 동작 재시도는 추가하지 않았다. Terminal companion은 실제
+시작 경로 입력란과 실행 확인 준비를 기다리고 첫 실패 화면을 보존한다.
+
+Workspace 관리형 서버의 의도한 offline 설치 실패는 열린 확인창 뒤에서만 오류를
+표시했다. 설치·제거 실패 안내를 확인창 안에 표시하고 취소·재시도는 유지하며 새 작업
+검토 시 이전 오류를 지운다. 수용 runner도 실패 안내를 확인하고 취소하여 확인창이 닫힌
+후 후속 제거를 수행한다. 해당 UI 회귀는 RED→GREEN 34개, Workspace runner 19개,
+HTTP 완료 대기 5개가 통과했다. 수정 전 payload의 Source·Transform 실패를 새 코드의
+성공으로 바꾸지 않으며 전체 실제 설치·업데이트·제거 수용은 새 후보에서 확인한다.
+
+마지막 Workspace 변경의 영향 검사는 프런트 979개·타입/빌드/번들·Biome를 132.3초에
+통과했다(cgroup peak 1.69GB, swap 3.11MB). DOM 읽기·정리 동시 실패 회귀도 최초 오류
+보존을 RED→GREEN으로 확인했다. 무관한 이전 제품/Rust 검사는 반복하지 않았다.
+카탈로그·후보/승격 계약은 4.2초, 최종 Biome 1923개 파일도 통과했다. native 입력 교차
+검토에서 포커스 확인 실패로 입력하지 않은 경우 key-up도 보내지 않도록 보정했고,
+기존 A 키 눌림도 거부한다. 실제 Windows C# 컴파일·0/부분 입력 해제 직렬화·구문 검사는
+통과했으며 로컬 UI 실행이나 PowerShell 실행 정책 우회는 하지 않았다.
