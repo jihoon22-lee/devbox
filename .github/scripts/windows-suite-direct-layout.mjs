@@ -16,7 +16,7 @@ import {
   installElevatedCdpPolicy,
   releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
-import { observeUntil } from "./windows-suite-ui-context.mjs";
+import { observeUntil, observeNormalClose } from "./windows-suite-ui-context.mjs";
 export async function copyDirectProductImage(source, root) {
   await cp(path.dirname(source), root, { recursive: true, errorOnExist: true });
   // WebView2 policy uses the image basename. A concurrent installed copy owns
@@ -72,16 +72,7 @@ export async function createDirectProductContext(product) {
     const close = async () => {
       try {
         nativeWindowAction(owner, "Close");
-        if (product === "workspace")
-          await observeUntil(async () => {
-            if (child.exitCode !== null) return true;
-            if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
-              await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
-              return true;
-            }
-            return false;
-          }, "portable Workspace close review");
-        await observeUntil(() => child.exitCode !== null, "portable normal close");
+        await observeNormalClose({ child, product, cdp, ui });
       } finally {
         if (child.exitCode === null) await stopOwnedProcess(processIdentity, executable, child);
         releaseCdpSession({ cdp, policy });
