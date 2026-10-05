@@ -121,6 +121,11 @@ on:
         description: Diagnose only Agent tray and updated checkpoint reopen using retained bytes; never promotion evidence
         type: boolean
         default: false
+      suite_boundary_scope:
+        description: Select only the unresolved retained boundary; requires boundaries-only diagnosis
+        type: choice
+        options: [both, tray, delivery]
+        default: both
       suite_diagnostic_apps_only:
         description: With retained installer diagnosis, run only installed app journeys without update or migration cases
         type: boolean
@@ -482,7 +487,7 @@ jobs:
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $appsOnly = '${{ inputs.suite_diagnostic_apps_only }}' -eq 'true'
           if ('${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true') {
-            node .github/scripts/windows-suite-boundary-diagnostic.mjs
+            node .github/scripts/windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'
             exit $LASTEXITCODE
           }
           $failed = @()

@@ -64,3 +64,29 @@ $info.AutomationId='1500'
 if((Convert-TrayObservation $info 1).automationId -cne '1500'){throw 'Bounded numerical native tray ID must remain visible'}
 $info.AutomationId='123456789'
 if($null -ne (Convert-TrayObservation $info 1).automationId){throw 'Oversized numerical tray ID must be omitted'}
+
+foreach($functionName in @('Test-TrayOverflowInfo','Select-TrayOverflow')) {
+ $definition=$trayAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName},$true)
+ . ([scriptblock]::Create($definition.Extent.Text))
+}
+$info.ClassName='SystemTray.NormalButton';$info.AutomationId='SystemTrayIcon'
+foreach($label in @(' Show Hidden Icons ','HIDDEN ICON MENU',' 숨겨진 아이콘 표시 ')) {
+ $info.Name=$label
+ if(-not (Test-TrayOverflowInfo $info)){throw 'Normalized known overflow label must match'}
+}
+$info.Name='IME'
+if(Test-TrayOverflowInfo $info){throw 'Same-class same-ID IME must not match'}
+$info.Name='Show hidden icons';$info.AutomationId='Other'
+if(Test-TrayOverflowInfo $info){throw 'Wrong modern automation ID must reject'}
+$info.AutomationId='SystemTrayIcon'
+$candidate=[pscustomobject]@{Current=$info}
+foreach($candidates in @(@(),@($candidate,$candidate))) {
+ $rejected=$false
+ try{Select-TrayOverflow $candidates | Out-Null}catch{$rejected=$true}
+ if(-not $rejected){throw 'Missing or ambiguous overflow candidate must reject'}
+}
+if((Select-TrayOverflow @($candidate)).Current -ne $info){throw 'Unique known overflow candidate required'}
+$info.Name='English system label'
+if((Convert-TrayObservation $info 3).name -cne $info.Name){throw 'Modern system tray label must remain observable'}
+$info.ClassName='Taskbar.TaskListButtonAutomationPeer'
+if($null -ne (Convert-TrayObservation $info 3).name){throw 'Application taskbar label must remain omitted'}

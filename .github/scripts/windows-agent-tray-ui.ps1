@@ -64,10 +64,50 @@ function AssertExplorer($element) {
  }
  throw 'Explorer native ancestor unavailable'
 }
+function Test-TrayOverflowInfo($Info) {
+ if($Info.IsOffscreen -or -not $Info.IsEnabled -or $Info.ControlType.Id -ne 50000){return $false}
+ $label=[string]$Info.Name
+ $known=$false
+ foreach($name in @('Hidden icon menu','Show hidden icons','숨겨진 아이콘 표시')) {
+  if([string]::Equals($label.Trim(),$name,[StringComparison]::OrdinalIgnoreCase)){$known=$true;break}
+ }
+ if(-not $known){return $false}
+ if($Info.ClassName -ceq 'SystemTray.NormalButton'){return $Info.AutomationId -ceq 'SystemTrayIcon'}
+ return $Info.ClassName -ceq 'Button'
+}
+function Select-TrayOverflow($Candidates) {
+ $matches=@($Candidates | Where-Object {Test-TrayOverflowInfo $_.Current})
+ if($matches.Count -ne 1){throw 'Exact Explorer tray overflow button missing or ambiguous'}
+ return $matches[0]
+}
+function Find-TrayOverflow {
+ $session=([Diagnostics.Process]::GetProcessById($AgentProcessId)).SessionId
+ $explorers=@([Diagnostics.Process]::GetProcessesByName('explorer') | Where-Object {$_.SessionId -eq $session -and $_.MainModule.FileName -ieq (Join-Path $env:WINDIR 'explorer.exe')})
+ $native=@([OwnedTrayInput]::Observe([uint32[]]@($explorers | ForEach-Object {$_.Id})))
+ $queue=[Collections.Generic.Queue[object]]::new();$candidates=@();$visited=0
+ foreach($window in $native | Where-Object {$_.visible -and $_.className -cin @('Shell_TrayWnd','Shell_SecondaryTrayWnd')}) {
+  $queue.Enqueue(@{element=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$window.handle);owner=$window.processId;depth=0})
+ }
+ while($queue.Count -gt 0 -and $visited -lt 128) {
+  $next=$queue.Dequeue();$element=$next.element;$info=$element.Current;$visited++
+  if($info.ProcessId -ne $next.owner){continue}
+  if(Test-TrayOverflowInfo $info){AssertExplorer $element;$candidates+=,$element}
+  if($next.depth -ge 6){continue}
+  $child=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetFirstChild($element)
+  for($index=0;$index -lt 16 -and $null -ne $child;$index++) {
+   if($queue.Count -ge 128){throw 'Tray subtree observation limit exceeded'}
+   $queue.Enqueue(@{element=$child;owner=$next.owner;depth=$next.depth+1})
+   $child=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetNextSibling($child)
+  }
+  if($null -ne $child){throw 'Tray sibling observation limit exceeded'}
+ }
+ if($queue.Count -gt 0){throw 'Tray subtree observation limit exceeded'}
+ return Select-TrayOverflow $candidates
+}
 function Convert-TrayObservation($Info,[int]$Depth) {
  $known=@('Hidden icon menu','Show hidden icons','숨겨진 아이콘 표시','Devbox 백그라운드 서비스','백그라운드 작업 모두 멈추고 종료')
- $ids=@('SystemTray.OverflowButton','NotificationChevron','OverflowButton','Chevron')
- @{depth=$Depth;processId=$Info.ProcessId;name=$(if($known -ccontains $Info.Name){$Info.Name}else{$null});namePresent=[bool]$Info.Name;automationId=$(if($ids -ccontains $Info.AutomationId -or $Info.AutomationId -cmatch '^[0-9]{1,8}$'){$Info.AutomationId}else{$null});automationIdPresent=[bool]$Info.AutomationId;className=$Info.ClassName.Substring(0,[Math]::Min(100,$Info.ClassName.Length));controlTypeId=$Info.ControlType.Id;offscreen=$Info.IsOffscreen;enabled=$Info.IsEnabled;nativeHandle=$Info.NativeWindowHandle}
+ $ids=@('SystemTrayIcon','SystemTray.OverflowButton','NotificationChevron','OverflowButton','Chevron')
+ @{depth=$Depth;processId=$Info.ProcessId;name=$(if($known -ccontains $Info.Name -or ($Info.ClassName -ceq 'SystemTray.NormalButton' -and $Info.AutomationId -ceq 'SystemTrayIcon' -and $Info.Name.Length -le 128)){$Info.Name}else{$null});namePresent=[bool]$Info.Name;automationId=$(if($ids -ccontains $Info.AutomationId -or $Info.AutomationId -cmatch '^[0-9]{1,8}$'){$Info.AutomationId}else{$null});automationIdPresent=[bool]$Info.AutomationId;className=$Info.ClassName.Substring(0,[Math]::Min(100,$Info.ClassName.Length));controlTypeId=$Info.ControlType.Id;offscreen=$Info.IsOffscreen;enabled=$Info.IsEnabled;nativeHandle=$Info.NativeWindowHandle}
 }
 function Save-TrayFailureObservation {
  AssertAgent
@@ -121,21 +161,8 @@ try {
 AssertAgent
 $icons=FindNamed 'Devbox 백그라운드 서비스'
 if($icons.Count -eq 0){
- $overflow=@()
- $observations=@()
- foreach($name in @('Hidden icon menu','Show hidden icons','숨겨진 아이콘 표시')) {
-  foreach($control in (FindNamed $name)) {
-   $observations+=@{Name=$name;ControlType=$control.Current.ControlType.ProgrammaticName;AutomationId=$control.Current.AutomationId;ProcessId=$control.Current.ProcessId;Offscreen=$control.Current.IsOffscreen}
-   if($control.Current.ControlType.Id -eq [System.Windows.Automation.ControlType]::Button.Id -and ([Diagnostics.Process]::GetProcessById($control.Current.ProcessId)).ProcessName -eq 'explorer'){$overflow+=,$control}
-  }
- }
- if($overflow.Count -ne 1){
-  $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty,'Shell_TrayWnd')
-  $bars=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$condition)
-  $detail=@{ExplorerProcesses=@([Diagnostics.Process]::GetProcessesByName('explorer')).Count;Taskbars=$bars.Count;NamedControls=@($observations | Select-Object -First 16)} | ConvertTo-Json -Depth 4 -Compress
-  throw "Exact Explorer tray overflow button missing or ambiguous: $detail"
- }
- ClickElement $overflow[0]
+ $overflow=Find-TrayOverflow
+ ClickElement $overflow
  Start-Sleep -Milliseconds 300
  $icons=FindNamed 'Devbox 백그라운드 서비스'
 }

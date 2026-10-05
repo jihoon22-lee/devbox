@@ -313,3 +313,6 @@ for title in ("Prepare owned WSL1 filesystem for the installed journeys", "Provi
     step = installer_diagnostic.split("      - name: " + title + "\n", 1)[1].split("\n      - ", 1)[0]
     assert "!inputs.suite_diagnostic_boundaries_only" in step
 assert "suite_diagnostic_boundaries_only" not in Path(".github/workflows/windows-package-candidate.yml").read_text()
+
+assert "options: [both, tray, delivery]" in workflow
+assert "windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'" in work_step
