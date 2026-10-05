@@ -2,6 +2,7 @@ param([Parameter(Mandatory)][string]$Root,[Parameter(Mandatory)][string]$Image,[
 $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:GITHUB_REPOSITORY -cne 'jihoon22-lee/devbox' -or $env:GITHUB_RUN_ID -notmatch '^\d+$'){throw 'Receiver fixture requires disposable hosted Windows; never spoof CI'}
 foreach($module in @('Microsoft.PowerShell.Management','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Security')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$module,$module+'.psd1')) -ErrorAction Stop}
+if(-not ('DevboxReceiverAccess' -as [type])){Microsoft.PowerShell.Utility\Add-Type -Path ([IO.Path]::Combine($PSScriptRoot,'windows-suite-receiver-access.native.cs'))}
 $rootPath=(Microsoft.PowerShell.Management\Resolve-Path -LiteralPath $Root).Path.TrimEnd('\')
 $tempPath=(Microsoft.PowerShell.Management\Resolve-Path -LiteralPath $env:RUNNER_TEMP).Path.TrimEnd('\')
 if(-not $rootPath.StartsWith($tempPath+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Receiver root outside runner temp'}
@@ -21,10 +22,13 @@ if((Microsoft.PowerShell.Management\Test-Path -LiteralPath $receipt) -and ((Micr
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 function Restore-ReceiverAccess($state) {
   if($state.image -cne $file -or $state.digest -cne $ExpectedDigest -or $state.sid -cne $sid.Value -or $state.runId -cne $env:GITHUB_RUN_ID){throw 'Receiver restoration ownership mismatch'}
-  $acl=[Security.AccessControl.FileSecurity]::new()
-  $acl.SetSecurityDescriptorSddlForm($state.sddl,[Security.AccessControl.AccessControlSections]::Access)
-  [IO.File]::SetAccessControl($file,$acl)
-  if([IO.File]::GetAccessControl($file,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $state.sddl){throw 'Receiver ACL restoration mismatch'}
+  [DevboxReceiverAccess]::Restore($file,$state.sddl)
+  $actualSddl=[IO.File]::GetAccessControl($file,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+  if($actualSddl -cne $state.sddl){
+    $diagnostic=@{code='receiver_acl_restoration_mismatch';expectedSddl=$state.sddl;actualSddl=$actualSddl;expectedControlFlags=[int]([Security.AccessControl.RawSecurityDescriptor]::new($state.sddl)).ControlFlags;actualControlFlags=[int]([Security.AccessControl.RawSecurityDescriptor]::new($actualSddl)).ControlFlags}
+    [Console]::Error.WriteLine(($diagnostic | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress))
+    throw 'Receiver ACL restoration mismatch'
+  }
   if((Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedDigest){throw 'Restored receiver bytes changed'}
   Microsoft.PowerShell.Management\Remove-Item -LiteralPath $receipt
 }

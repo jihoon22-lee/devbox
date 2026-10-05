@@ -481,6 +481,7 @@ export async function run(api) {
         await review(knowledge);
         await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), before);
+        assert.deepEqual(await readFile(receipt.file), sourceBytes);
         record(
           "Actual recovered receiver review succeeds after exact member restoration; cancellation still creates no note and source bytes remain intact",
         );

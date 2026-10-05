@@ -976,3 +976,15 @@ Win32 error 5로 거부되며, fresh descriptor에 원래 SDDL을 설정해 정�
 프로필 갱신이 끝나기 전 companion 삭제가 경쟁하지 않도록 하고, 복원 후 main 목록 갱신이
 끝난 뒤 기존 native ID의 행 범위를 계산한다. 회귀 두 개를 RED→GREEN으로 확인했다.
 기존 프로필 선택은 enabled combobox를 기다려 이미 갱신 완료를 보장하므로 변경하지 않았다.
+
+[37297320649](https://github.com/jihoon22-lee/devbox/actions/runs/37297320649)도 receiver 사전 검사에서
+같은 정확 복원 조건에 실패했다. 이후 두 독립 검토가 실제 Windows의 상속 플래그 차이를
+재현했다. managed ACL setter는 원래 `D:`/`D:P`를 `D:AI`/`D:PAI`로 바꾸거나 상위 ACE를
+추가한다. 이전 UserTemp 검증은 이미 AI인 원본만 확인해 이 차이를 놓쳤다. 원래 AI에만
+일시 AR 요청 비트를 붙인 `SetFileSecurityW` 복원으로 바꾸고 정확 SDDL·digest 비교를 유지했다.
+실제 구현의 128가지 상속 조합이 통과했고, 별도 실행 검증 6가지에서 read pin·실행 거부·hash
+보존·정확 복원·재실행을 확인했다. hosted 실패의 원래 SDDL은 남아 있지 않아 같은 원인으로
+단정하지 않으며, 이후 mismatch에는 원래/실제 SDDL과 control flags를 남긴다.
+새 native source는 전체 checkout으로 전달되며 실제 Windows 구문·inbox 명령 해석과
+정리/원래 오류 보존의 Node 회귀 4개를 통과했다. 복구 후 수신 검토 취소도 vault뿐 아니라
+원래 source bytes를 다시 비교해 수용 기록과 일치시켰다.
