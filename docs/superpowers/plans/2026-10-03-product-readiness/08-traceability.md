@@ -1058,3 +1058,11 @@ Product foundation 37304128296도 최종 exact-main 후보와 전체 제품 빌�
 Control Center 추가 영향 검증(check·clippy·fmt·tests·bindings)은 134초에 통과했다.
 샘플 RSS peak는 1.56GiB, cgroup peak는 2.19GiB였다. 이미 통과한 Knowledge 검사와
 frontend 검사는 다시 실행하지 않았다. 최종 updater diff의 독립 검토도 완료했다.
+
+최종 후보 `37306773490`은 네 native scope·WSL2/Docker와 설치된 사용자 여정 36개를
+통과했지만 portable Agent 관측기가 고정 실행 파일명을 요구해 layout 관측을 중단했다.
+직접 실행 fixture는 동시 WebView 정책 충돌을 피하려고 소유 복사본의 이름을 바꾸므로,
+검증·실행한 실제 executable을 context로 전달하여 정확한 프로세스 경로와 소유 폴더를
+비교하도록 수정했다. 원래 불일치를 로컬 회귀로 재현하고 관련 17개 검사를 통과했다.
+Agent 01–03은 통과했고 04는 선행 종료 증거 부재의 연쇄 NOT_RUN이었다. 기존 후보는
+승격할 수 없으며, 새 exact-main의 layout·Agent 종료·전체 migration과 sealing이 필요하다.

@@ -601,16 +601,17 @@ export async function runInstalledAgentUserFlows() {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   await runInstalledAgentUserFlows();
 
+export function assertPortableAgentImage(context, portableRoot, installedRoot) {
+  assert.equal(context.product, "workspace");
+  assert.notEqual(portableRoot.toLowerCase(), installedRoot.toLowerCase());
+  assert.equal(path.dirname(context.executable).toLowerCase(), portableRoot.toLowerCase());
+  assert.equal(context.processIdentity.Path.toLowerCase(), context.executable.toLowerCase());
+}
 export async function observePortableAgentBeforeClose(context) {
   assert.equal(process.platform, "win32");
-  assert.equal(context.product, "workspace");
   const installedRoot = await realpath(process.env.DEVBOX_USER_FLOW_INSTALL_ROOT),
     portableRoot = await realpath(context.root);
-  assert.notEqual(portableRoot.toLowerCase(), installedRoot.toLowerCase());
-  assert.equal(
-    context.processIdentity.Path.toLowerCase(),
-    path.join(portableRoot, "devbox-workspace.exe").toLowerCase(),
-  );
+  assertPortableAgentImage(context, portableRoot, installedRoot);
   assert.equal(
     await nativeStatus(context),
     "unsupported",
