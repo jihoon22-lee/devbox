@@ -169,7 +169,8 @@ main:focus-visible {
   position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 1000;
+  /* Feedback stays below feature modal backdrops; native dialogs use the top layer. */
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

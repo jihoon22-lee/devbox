@@ -65,6 +65,34 @@ describe("product shell", () => {
     expect(screen.getByLabelText("fixture buffer")).toBe(input);
     expect((input as HTMLInputElement).value).toBe("unsaved 한글");
   });
+  it("keeps modal and already-handled keys from traversing background history", async () => {
+    render(
+      <ProductShell
+        product="api-studio"
+        renderContent={() => (
+          <>
+            <section role="dialog" aria-modal="true" aria-label="feature review">
+              <input aria-label="modal input" />
+            </section>
+            <dialog open aria-label="native review">
+              <input aria-label="native modal input" />
+            </dialog>
+            <input aria-label="handled input" onKeyDown={(event) => event.preventDefault()} />
+          </>
+        )}
+      />,
+    );
+    const navigation = await screen.findByRole("navigation", { name: "제품 화면" });
+    const buttons = navigation.querySelectorAll("button");
+    fireEvent.click(buttons[1]);
+    expect(buttons[1].getAttribute("aria-current")).toBe("page");
+    for (const label of ["modal input", "native modal input", "handled input"]) {
+      fireEvent.keyDown(screen.getByLabelText(label), { key: "ArrowLeft", altKey: true });
+      expect(buttons[1].getAttribute("aria-current")).toBe("page");
+    }
+    fireEvent.keyDown(navigation, { key: "ArrowLeft", altKey: true });
+    expect(buttons[0].getAttribute("aria-current")).toBe("page");
+  });
   it("opens all four products with keyboard navigation and accessible empty states", async () => {
     for (const product of ["workspace", "api-studio", "knowledge", "control-center"] as const) {
       const { container, unmount } = render(<ProductShell product={product} />);

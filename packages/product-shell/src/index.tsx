@@ -79,9 +79,11 @@ function ReadyShell({
       <div
         className="product-shell"
         onKeyDown={(event) => {
-          if (isImeComposing(event)) return;
+          if (event.defaultPrevented || isImeComposing(event)) return;
           if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
             event.preventDefault();
+            if (event.target instanceof Element && event.target.closest("dialog, [role=dialog], [role=alertdialog]"))
+              return;
             setHistory((h) => traverse(h, event.key === "ArrowLeft" ? -1 : 1));
           }
         }}
