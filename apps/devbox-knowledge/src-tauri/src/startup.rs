@@ -71,7 +71,22 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+fn startup_issue(error: &str) -> &'static str {
+    match error {
+        "import_database_invalid" => "import_database_invalid",
+        "import_schema_unsupported" => "import_schema_unsupported",
+        _ => crate::ipc::setup::classify(error),
+    }
+}
 fn failure(app: &tauri::AppHandle, error: String) -> Result<(), String> {
+    // Health intentionally denies setup IPC. The owned launcher can still retain
+    // this fixed issue token; never print a path, database message, or raw error.
+    use std::io::Write;
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "knowledge_startup_{}",
+        startup_issue(&error)
+    );
     *app.state::<Startup>()
         .failure
         .lock()
@@ -108,20 +123,30 @@ pub(crate) fn require_ready(app: &tauri::AppHandle) -> Result<(), String> {
         Err("setup_required".into())
     }
 }
+// Only existing selected product stores reach this metadata reader. SQLite must
+// roll back interrupted owned writes before reading; queries cannot change rows,
+// migrate schemas, or create a missing database during Health preparation.
+fn selected_store_metadata(database: &Path) -> Result<Connection, String> {
+    let connection = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|_| "store_unavailable")?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(100))
+        .map_err(|_| "store_unavailable")?;
+    connection
+        .execute_batch("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON")
+        .map_err(|_| "store_unavailable")?;
+    Ok(connection)
+}
+
 fn validate_prepared_stores(root: &Path, manifest: &stores::Manifest) -> Result<(), String> {
     for source in [
         stores::StoreKind::Notes,
         stores::StoreKind::Activity,
         stores::StoreKind::Search,
     ] {
-        let connection = Connection::open_with_flags(
-            stores::directory(root, manifest, source.key())?.join("data.db"),
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|_| "store_unavailable")?;
-        connection
-            .busy_timeout(std::time::Duration::from_millis(100))
-            .map_err(|_| "store_unavailable")?;
+        let connection = selected_store_metadata(
+            &stores::directory(root, manifest, source.key())?.join("data.db"),
+        )?;
         stores::validate_store(&connection, source)?;
     }
     Ok(())
@@ -161,8 +186,7 @@ pub fn reserve(app: &tauri::AppHandle) -> Result<Reservation, String> {
 }
 pub fn binding(root: &Path, manifest: &stores::Manifest) -> Result<(PathBuf, bool), String> {
     let path = stores::directory(root, manifest, "notes")?.join("data.db");
-    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|_| "store_unavailable")?;
+    let connection = selected_store_metadata(&path)?;
     let raw:Option<String>=connection.query_row("SELECT CASE WHEN length(CAST(value AS BLOB)) BETWEEN 1 AND 32768 THEN value ELSE NULL END FROM settings WHERE key='root'",[],|r|r.get(0)).map_err(|_|"vault_binding_invalid")?;
     let raw = raw.ok_or("vault_binding_invalid")?;
     if raw.chars().any(char::is_control) {
@@ -345,6 +369,149 @@ mod suite_preparation_tests {
     }
 
     use super::*;
+    #[test]
+    fn interrupted_owned_store_writer_fixture() {
+        let Some(path) = std::env::var_os("DEVBOX_STARTUP_JOURNAL_FIXTURE") else {
+            return;
+        };
+        let path = PathBuf::from(path);
+        let table = if path.parent().unwrap().file_name().unwrap() == "search" {
+            "meta"
+        } else {
+            "settings"
+        };
+        let connection =
+            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        connection
+            .execute_batch("PRAGMA cache_size=1; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;")
+            .unwrap();
+        for index in 0..32 {
+            connection
+                .execute(
+                    &format!("INSERT INTO {table}(key,value) VALUES(?1,?2)"),
+                    rusqlite::params![format!("uncommitted-{index}"), "x".repeat(8192)],
+                )
+                .unwrap();
+        }
+        std::process::exit(0);
+    }
+
+    fn interrupt_writer(path: &Path) {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "startup::suite_preparation_tests::interrupted_owned_store_writer_fixture",
+                "--nocapture",
+            ])
+            .env("DEVBOX_STARTUP_JOURNAL_FIXTURE", path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(path.with_extension("db-journal").metadata().unwrap().len() > 0);
+    }
+
+    #[test]
+    fn startup_binding_recovers_selected_notes_hot_journal() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = stores::create_empty(root.path()).unwrap();
+        let path = stores::directory(root.path(), &manifest, "notes")
+            .unwrap()
+            .join("data.db");
+        interrupt_writer(&path);
+        assert_eq!(
+            binding(root.path(), &manifest).unwrap(),
+            (root.path().join("notes-vault"), false)
+        );
+        assert!(!path.with_extension("db-journal").exists());
+    }
+
+    #[test]
+    fn health_preparation_recovers_selected_stores_hot_journals() {
+        for component in ["notes", "activity", "search"] {
+            let root = tempfile::tempdir().unwrap();
+            let manifest = stores::create_empty(root.path()).unwrap();
+            let path = stores::directory(root.path(), &manifest, component)
+                .unwrap()
+                .join("data.db");
+            interrupt_writer(&path);
+            validate_prepared_stores(root.path(), &manifest).unwrap();
+            let connection =
+                Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+            let table = if component == "search" {
+                "meta"
+            } else {
+                "settings"
+            };
+            assert_eq!(
+                connection
+                    .query_row(
+                        &format!("SELECT count(*) FROM {table} WHERE key LIKE 'uncommitted-%'"),
+                        [],
+                        |row| row.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                0
+            );
+            assert!(!path.with_extension("db-journal").exists());
+        }
+    }
+
+    #[test]
+    fn selected_metadata_reader_cannot_create_database_or_mutate_settings() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing.db");
+        assert!(selected_store_metadata(&missing).is_err());
+        assert!(!missing.exists());
+        let manifest = stores::create_empty(root.path()).unwrap();
+        let path = stores::directory(root.path(), &manifest, "notes")
+            .unwrap()
+            .join("data.db");
+        let connection = selected_store_metadata(&path).unwrap();
+        assert!(connection
+            .execute("UPDATE settings SET value='changed' WHERE key='root'", [])
+            .is_err());
+        assert!(connection
+            .execute_batch("CREATE TABLE changed(value TEXT)")
+            .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_selected_database_cannot_trigger_recovery_outside_its_store() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = stores::create_empty(root.path()).unwrap();
+        let path = stores::directory(root.path(), &manifest, "notes")
+            .unwrap()
+            .join("data.db");
+        let outside = root.path().join("outside.db");
+        std::fs::rename(&path, &outside).unwrap();
+        let original = std::fs::read(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        assert!(binding(root.path(), &manifest).is_err());
+        assert!(validate_prepared_stores(root.path(), &manifest).is_err());
+        assert_eq!(std::fs::read(&outside).unwrap(), original);
+    }
+
+    #[test]
+    fn startup_diagnostic_uses_fixed_codes_without_private_error_values() {
+        for issue in [
+            "store_unavailable",
+            "vault_binding_invalid",
+            "import_database_invalid",
+            "import_schema_unsupported",
+        ] {
+            assert_eq!(startup_issue(issue), issue);
+        }
+        for private in [
+            "C:\\private\\notes.db",
+            "password=secret",
+            "store_unavailable path=private",
+            "unknown_future_issue",
+        ] {
+            assert_eq!(startup_issue(private), "unavailable");
+        }
+    }
+
     #[test]
     fn import_only_store_readiness_checks_schema_without_opening_engines() {
         let root = tempfile::tempdir().unwrap();
