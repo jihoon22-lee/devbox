@@ -127,3 +127,34 @@
 .workspace-development-sessions li {
   margin-block: 0.75rem;
 }
+
+.workspace-close-review {
+  box-sizing: border-box;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  color: var(--db-color-text);
+  background: var(--db-color-surface);
+  border: 1px solid var(--db-color-border);
+  border-radius: var(--db-radius-lg);
+}
+.workspace-close-review::backdrop {
+  background: rgb(0 0 0 / 60%);
+}
+.workspace-close-review h2,
+.workspace-close-review p {
+  overflow-wrap: anywhere;
+}
+.workspace-close-review p {
+  white-space: pre-wrap;
+}
+.workspace-close-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.workspace-close-review-actions button {
+  padding: 8px 12px;
+}

@@ -269,11 +269,11 @@ function NativeContent({ route, description, refreshContext, navigate }: ShellCo
           onSave={() => finishClose(false)}
           onDiscard={() => finishClose(true)}
           onCancel={cancelClose}
-          onReturn={() => {
-            void cancelClose().then(() =>
+          onReturn={() =>
+            cancelClose().then(() =>
               navigate(sourceDirty || sourceBusy ? "source" : editing ? "files" : tasksDirty ? "tasks" : "overview"),
-            );
-          }}
+            )
+          }
         />
       )}
       <div hidden={ready && route !== "overview"}>
