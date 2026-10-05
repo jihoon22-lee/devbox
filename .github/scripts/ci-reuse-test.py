@@ -81,9 +81,11 @@ class ReuseTests(unittest.TestCase):
         self.assertFalse(any(results.values()))
         api.assert_not_called()
 
-    def test_api_error_executes_normal_checks(self):
+    def test_api_error_stops_before_expensive_checks(self):
         with patch.dict(MODULE.os.environ, {"GITHUB_REPOSITORY": "owner/repo"}, clear=True), patch.object(MODULE, "resolve", side_effect=ValueError("API unavailable")), redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(MODULE.main(), 0)
+            self.assertEqual(MODULE.main(), 2)
+        self.assertIn("Compiler verification stopped", output.getvalue())
+        self.assertIn("API unavailable", output.getvalue())
         for name in ("frontend", "rust", "rust_windows"):
             self.assertIn(name + "_reuse=false", output.getvalue())
 
@@ -128,6 +130,37 @@ class ReuseTests(unittest.TestCase):
             text = (root / name).read_text()
             imports = re.findall(r"(?:from\s+|import\s*\()['\"](\./[^'\"]+)['\"]", text)
             self.assertLessEqual({str(Path(name).parent / value) for value in imports}, MODULE.DRIVERS, name)
+
+    def test_lookup_diagnostics_redact_credentials_and_url_queries(self):
+        with patch.dict(MODULE.os.environ, {"GH_TOKEN": "synthetic-auth-secret"}):
+            message = MODULE.safe_diagnostic("fatal synthetic-auth-secret HTTP 403 https://example.test/path?sig=confidential\nnext")
+        self.assertNotIn("synthetic-auth-secret", message)
+        self.assertNotIn("confidential", message)
+        self.assertIn("HTTP 403", message)
+
+    def test_command_failure_exposes_stage_and_safe_stderr(self):
+        failure = SimpleNamespace(returncode=1, stderr="gh: Resource not accessible by integration (HTTP 403)", stdout="")
+        with patch.object(MODULE.subprocess, "run", return_value=failure):
+            with self.assertRaisesRegex(ValueError, "HTTP 403"):
+                MODULE.command("gh", "api", "repos/owner/repo/actions/jobs/123/logs")
+        self.assertIn("actions/jobs/123/logs", MODULE.LOOKUP_STAGE)
+
+    def test_malformed_historical_receipt_does_not_discard_later_valid_receipt(self):
+        rejected = []
+        self.assertIsNone(MODULE.historical_receipt("malformed", "rust", 12, rejected))
+        self.assertEqual(len(rejected), 1)
+        sha = "b" * 40
+        valid = f"2026-10-05T00:00:00Z [command]git log -1 --format=%H\n2026-10-05T00:00:01Z {sha}\n2026-10-05T00:00:02Z   RUST_SCOPE: all\n2026-10-05T00:00:03Z   RUST_PACKAGES: \n"
+        self.assertEqual(MODULE.historical_receipt(valid, "rust", 13, rejected), (sha, "all", ""))
+
+    def test_discovery_uses_verified_numeric_identity_and_explicit_first_page(self):
+        replies = [{"id": 123, "path": ".github/workflows/ci.yml", "state": "active"}, {"workflow_runs": [{"id": 456}]}]
+        with patch.object(MODULE, "api", side_effect=replies) as api:
+            self.assertEqual(MODULE.prior_runs("owner/repo"), (123, [{"id": 456}]))
+        self.assertEqual(api.call_args_list[1].args[0], "repos/owner/repo/actions/workflows/123/runs?status=success&per_page=30&page=1")
+        with patch.object(MODULE, "api", return_value={"id": 123, "path": ".github/workflows/other.yml", "state": "active"}):
+            with self.assertRaises(MODULE.LookupFailure):
+                MODULE.prior_runs("owner/repo")
 
 
 if __name__ == "__main__":

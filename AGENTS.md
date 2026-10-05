@@ -56,6 +56,8 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   GitHub Actions CI 통과**가 필수다. 미실행 Windows 검증은 PASS로 보고하지 않는다.
   CI가 동일 입력·범위의 신뢰 가능한 이전 성공을 확인한 경우에는 그 출처를 기록하여
   재사용하고, 새로 실행한 검사와 구분한다. 주간 전체 감사·현재 의존성 검사는 실제 실행한다.
+  정상 조회로 성공 근거가 없거나 입력이 바뀐 범위는 검사한다. 근거 조회·전송·해석 오류는
+  scope gate에서 진단과 함께 중단하며, 전체 컴파일 재실행으로 대신하지 않는다.
 - 릴리스 작업은 [release policy](./docs/release-policy.md)를 읽는다. exact-main 후보의
   assembly·packaged runtime·installer 검증 후 같은 commit의 stable만 승격한다.
   후보가 없거나 만료됐을 때 새 build로 대체하지 않는다. 명시 요청 없는 public RC는 만들지 않는다.

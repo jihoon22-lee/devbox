@@ -3,7 +3,7 @@
 
 GitHub job metadata and authenticated logs are the receipts, including for runs
 that predate this resolver. A successful job whose compiler steps were skipped
-is never evidence. Failure to establish evidence always runs the normal checks.
+is never evidence. Missing coverage runs checks; lookup faults stop the gate.
 """
 from __future__ import annotations
 
@@ -38,12 +38,29 @@ DRIVERS = {
 }
 MAX_RUNS = 30
 MAX_LOG_BYTES = 32 * 1024 * 1024
+LOOKUP_STAGE = "initialization"
+
+
+class LookupFailure(ValueError):
+    """Operational failure; never silently replace it with compiler work."""
+
+
+def safe_diagnostic(value: str) -> str:
+    for key, secret in os.environ.items():
+        if len(secret) >= 6 and re.search(r"TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY", key, re.I):
+            value = value.replace(secret, "[REDACTED]")
+    value = re.sub(r"(https?://[^\s?]+)\?[^\s]+", r"\1?[REDACTED]", value)
+    value = re.sub(r"(?i)(bearer|authorization:)\s+\S+", r"\1 [REDACTED]", value)
+    return " ".join(value.split())[:800]
 
 
 def command(*args: str) -> str:
+    global LOOKUP_STAGE
+    LOOKUP_STAGE = safe_diagnostic(" ".join(args))
+    print(f"Evidence lookup: {LOOKUP_STAGE}", flush=True)
     result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=55, check=False)
     if result.returncode:
-        raise ValueError(f"{args[0]} failed to resolve verification evidence")
+        raise LookupFailure(f"command exit {result.returncode}: {safe_diagnostic(result.stderr)}")
     return result.stdout
 
 
@@ -84,6 +101,15 @@ def covered_packages(scope: str, packages: str, universe: set[str]) -> set[str]:
 
 def unchanged_coverage(covered: set[str], affected: set[str]) -> set[str]:
     return covered - affected
+
+
+def historical_receipt(log: str, family: str, job_id: int, rejected: list[str]):
+    try:
+        return log_evidence(log, family)
+    except ValueError as error:
+        rejected.append(f"job {job_id}: {safe_diagnostic(str(error))}")
+        print(f"Historical receipt rejected: {rejected[-1]}", flush=True)
+        return None
 
 
 def log_evidence(log: str, family: str) -> tuple[str, str, str]:
@@ -198,9 +224,21 @@ def checkout_matches_run(sha: str, run: dict) -> bool:
     return run.get("event") == "pull_request" and len(parents) == 2 and parents[1] == head
 
 
+def prior_runs(repository: str):
+    workflow_info = api(f"repos/{repository}/actions/workflows/ci.yml")
+    workflow_id = workflow_info.get("id")
+    if type(workflow_id) is not int or workflow_info.get("path") != WORKFLOW or workflow_info.get("state") != "active":
+        raise LookupFailure("CI workflow identity could not be verified")
+    # Resolve the stable numeric identity first. The filename alias has returned
+    # stale historical pages even while the numeric endpoint returns latest runs.
+    runs = api(f"repos/{repository}/actions/workflows/{workflow_id}/runs?status=success&per_page={MAX_RUNS}&page=1")["workflow_runs"]
+    return workflow_id, runs
+
+
 def resolve(repository: str) -> tuple[dict[str, bool], list[str]]:
     results = {gate: False for gate in GATES}
     evidence = []
+    rejected: list[str] = []
     if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
         return results, ["Weekly scheduled audit: all selected compiler checks execute."]
     scope_module = load_scope()
@@ -219,9 +257,9 @@ def resolve(repository: str) -> tuple[dict[str, bool], list[str]]:
     current = git("rev-parse", "HEAD")
     workflow = (ROOT / WORKFLOW).read_text()
     signatures = {gate: compiler_contract(workflow, gate) for gate in GATES}
-    runs = api(f"repos/{repository}/actions/workflows/ci.yml/runs?status=success&per_page={MAX_RUNS}")["workflow_runs"]
+    workflow_id, runs = prior_runs(repository)
     for run in runs:
-        if not trusted_run(run, repository) or str(run.get("id")) == os.environ.get("GITHUB_RUN_ID"):
+        if run.get("workflow_id") != workflow_id or not trusted_run(run, repository) or str(run.get("id")) == os.environ.get("GITHUB_RUN_ID"):
             continue
         jobs = api(f"repos/{repository}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100")["jobs"]
         for gate, name in GATES.items():
@@ -232,17 +270,27 @@ def resolve(repository: str) -> tuple[dict[str, bool], list[str]]:
                 continue
             job = matches[0]
             family = "frontend" if gate == "frontend" else "rust"
-            sha, prior_scope, prior_packages = log_evidence(api(f"repos/{repository}/actions/jobs/{job['id']}/logs", raw=True), family)
+            log = api(f"repos/{repository}/actions/jobs/{job['id']}/logs", raw=True)
+            receipt = historical_receipt(log, family, job["id"], rejected)
+            if receipt is None:
+                continue
+            sha, prior_scope, prior_packages = receipt
             ensure_commit(sha)
             if not checkout_matches_run(sha, run):
                 continue
-            if compiler_contract(git("show", f"{sha}:{WORKFLOW}"), gate) != signatures[gate]:
+            prior_workflow = git("show", f"{sha}:{WORKFLOW}")
+            try:
+                contract = compiler_contract(prior_workflow, gate)
+                covered = covered_packages(prior_scope, prior_packages, universes[gate])
+            except (ValueError, KeyError, TypeError) as error:
+                rejected.append(f"job {job['id']}: prior contract/scope invalid ({type(error).__name__})")
+                continue
+            if contract != signatures[gate]:
                 continue
             paths = git("diff", "--name-only", sha, current, "--").splitlines()
             # Reconstructing coverage with a modified resolver would be unsafe.
             if any(path in {".github/scripts/resolve-ci-scope.py", ".github/scripts/ci-scope.sh"} for path in paths):
                 continue
-            covered = covered_packages(prior_scope, prior_packages, universes[gate])
             affected = affected_packages(paths, gate, universes[gate], scope_module)
             reusable = unchanged_coverage(covered, affected) & outstanding[gate]
             if gate == "rust" and not any(compiler_input(path, gate) for path in paths):
@@ -252,6 +300,9 @@ def resolve(repository: str) -> tuple[dict[str, bool], list[str]]:
                 evidence.append(f"{name}: {len(reusable)} unchanged package(s), actual compiler success [run {run['id']} / job {job['id']}](https://github.com/{repository}/actions/runs/{run['id']}/job/{job['id']}), checkout `{sha}`; coverage `{','.join(sorted(reusable))}`.")
         if all(not value for value in outstanding.values()) and (not requested["rust"] or linux_global):
             break
+    if rejected and (any(outstanding.values()) or (requested["rust"] and not linux_global)):
+        raise LookupFailure("Valid evidence remains incomplete after rejecting historical receipts: " + "; ".join(rejected[:3]))
+    evidence.extend(f"Historical receipt not used: {reason}." for reason in rejected)
     for gate in GATES:
         results[gate] = bool(requested[gate]) and not outstanding[gate] and (gate != "rust" or linux_global)
         if not results[gate]:
@@ -261,15 +312,18 @@ def resolve(repository: str) -> tuple[dict[str, bool], list[str]]:
 
 def main() -> int:
     results = {gate: False for gate in GATES}
+    exit_code = 0
     try:
         repository = os.environ["GITHUB_REPOSITORY"]
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
             raise ValueError("invalid repository")
         results, evidence = resolve(repository)
     except Exception as error:
-        # Retrieval, parsing, missing Git objects and runner dependencies are
-        # optimization misses, never authority to mark unverified work passed.
-        evidence = [f"Reuse unavailable ({type(error).__name__}); normal compiler checks execute."]
+        # An operational lookup failure is not evidence of changed inputs.
+        # Stop the scope gate before expensive jobs can start; do not silently
+        # spend another complete build attempting to hide a resolver fault.
+        exit_code = 2
+        evidence = [f"Compiler verification stopped at `{safe_diagnostic(LOOKUP_STAGE)}`: {type(error).__name__}: {safe_diagnostic(str(error))}. No compiler rerun authorized by this lookup failure."]
     output = "".join(f"{gate.replace('-', '_')}_reuse={str(value).lower()}\n" for gate, value in results.items())
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
@@ -281,7 +335,7 @@ def main() -> int:
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
             stream.write(summary)
     print(summary)
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

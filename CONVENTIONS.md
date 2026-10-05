@@ -200,6 +200,8 @@ Tauri dialog 플러그인이 바꾸는 전역 `window.confirm`은 동기 Boolean
   전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip한다. 릴리스는 전체 범위의
   검증 근거를 요구하되, 동일 입력의 신뢰 가능한 성공 CI 근거는 출처를 기록하여 재사용한다.
   주간 전체 감사와 현재 의존성·advisory 검사는 실제로 실행한다.
+  정상 조회에서 성공 근거가 없거나 입력이 달라진 범위만 추가 검사한다. 근거 조회·전송·
+  해석 오류가 발생하면 scope gate를 실패시켜 진단하며, 전체 컴파일로 자동 전환하지 않는다.
 - 로컬 테스트는 기존 서비스의 실행 상태·Docker 데몬·방화벽·공유 네트워크를 변경하지 않는다.
   전용 WSL 배포판, 별도 Docker socket/data-root, 고유 container 이름은 네트워크 격리 증거가
   아니다. Docker 설치/데몬 시작·종료/container·network 조작, iptables/nftables/라우팅 변경,

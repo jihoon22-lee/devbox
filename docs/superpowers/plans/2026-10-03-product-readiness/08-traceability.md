@@ -1000,3 +1000,13 @@ read pin·실행 거부·hash·정확 복원·재실행 조건은 유지하며 �
 read-only GitHub 대조는 Workspace를 37291826867, 나머지 Rust와 frontend를 37273563670에서
 충족했다. 이 결과는 새 제품의 설치 수용 근거가 아니며, final exact-main 패키지 수용은 유지한다.
 현재 advisory와 frontend fixture·format은 새로 확인하고 주간 감사는 재사용 없이 실행한다.
+
+[37299140746](https://github.com/jihoon22-lee/devbox/actions/runs/37299140746)은 설치·활성화,
+DEPS와 HANDOFF의 실제 사용자 여정 및 정리를 통과했다. 이 retained 증거는 runner
+`5d2a6e71`과 이전 payload를 구분하며 새 제품 후보의 수용을 대신하지 않는다.
+
+첫 CI 재사용 실행 37299370992는 조회 오류 뒤 전체 검사로 전환하려 해 즉시 취소했다.
+동일 파일명 endpoint가 최신 성공 대신 과거 목록을 돌려주는 차이를 로컬 조회에서도 확인했다.
+workflow metadata의 numeric ID와 명시적 첫 페이지로 조회하고 각 run의 workflow ID를
+검증한다. 조회·전송·해석 장애는 scope gate에서 원인 정보를 남기며 중단하고, 전체 컴파일을
+대신 시작하지 않는다. 정상적으로 확인된 변경·근거 부족에만 필요한 검사를 실행한다.
