@@ -677,3 +677,35 @@ child 참조 잔류, Knowledge 창 닫기 실패로 정리가 생략되는 경�
 없는 프로세스를 종료하지 않고 참조만 해제하며, 원래 여정 실패와 native 실패 관찰은
 보존한다. 좁은 정리 실패 회귀 35개와 PowerShell 구문 검사, Biome를 통과했다. 이 결과를
 제품 설치·업데이트 수용 통과로 취급하지 않는다.
+
+보관 진단 [37255553441](https://github.com/jihoon22-lee/devbox/actions/runs/37255553441)는
+runner `1df52e7f`·동일 payload `99beac69`로 설치·활성화와 RUNTIME-01, Knowledge 8개,
+기본/최소 창 및 성능을 통과했다. 결과는 26 PASS·9 FAIL·1 NOT_RUN·4개 결과 없음이다.
+업데이트 Health는 이번 실행에서 통과했고 DELIVERY-02는 실제 제거 후 용량 부족 설치의
+취소 대기에서 실패했다. 재설치 전 중단돼 뒤따르는 Agent 여정의 설치 manifest가 없었다.
+이를 Agent 실행 결함으로 단정하지 않는다. 설치 취소는 UIA root 개수 대신 소유한 유일한
+활성 Yes 버튼을 확인하며 한 번만 입력한다. 실패 시 고정 native 관찰도 보존한다.
+이 보정의 좁은 회귀 22개가 통과했으며 실제 취소 수용은 남아 있다.
+
+legacy·철회본 업데이트의 바로가기 검사는 native Health·commit 뒤 PowerShell의
+`Get-FileHash` 명령을 찾지 못해 실패했다. legacy 제거의 표시형 진단은 처음으로
+`bootstrap_version_mismatch`를 확인했다. 보관된 이전 세대 helper까지 현재 실행 버전과
+같아야 한다고 검사한 경계이며, 실행 helper 버전 검사는 유지하면서 보관 helper의
+자체 payload digest 검증을 분리한다. COM picker fixture의 초기 종료는 managed worker의
+MTA/STA 충돌(`80010106`)이었다. 명시 STA worker로 수정 후 Windows의 무창 COM 초기화·
+생성 최소 재현을 통과했다. 실제 chooser의 최종 경로 일치는 별도로 확인해야 한다.
+
+Transform의 다음 실패에서는 같은 활성 도구의 최근 사용 정보가 explicit save 상태 전환마다
+다시 저장되는 실제 경쟁을 재현했다. 이미 최근 목록 첫 항목인 도구는 다시 저장하지 않되
+저장 중 변경한 도구의 보류 갱신은 유지한다. 지연 저장·실제 실패 안내·기존 데이터 보존을
+포함한 관련 21개 회귀가 통과했다. HANDOFF 입력은 아래쪽 화면의 접근성 이름 fallback이
+아닌 실제 controlled textarea 값을 합성 원본과 정확히 비교하며, 실패 시 원문 없는
+불리언 관찰을 보존한다. 파일 선택은 UIA 최상위 목록에서 누락될 수 있는 유일한 소유
+native picker HWND를 재검증해 연결하며 기존 단일 입력·control 검증을 유지한다.
+
+추가 변경 최종 영향 검사는 API Studio 두 프런트 패키지 821개, Control Center Rust 58개와
+생성 계약 1개·check/clippy/fmt·타입/빌드/번들·Biome를 123.2초에 통과했다(cgroup peak
+2.33GB, swap 1.97MB). catalog와 변경된 workflow 계약은 3.9초에 통과했다. 기존 Source와
+Inventory의 무관한 통과 검사는 반복하지 않았다. Windows 전용 이전 세대 제거 회귀는
+실제 함수·파일 검증을 추출한 최소 Rust 재현에서 RED→GREEN이며, 정식 Windows 테스트와
+수정 payload의 실제 제거는 필수 CI·새 후보에서 확인한다.

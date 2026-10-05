@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   selectRegisteredWorkspaceRoot,
+  observeWorkspaceSelection,
   waitForSelectedWorkspaceRoot,
 } from "./windows-workspace-registry-observations.mjs";
 test("automatic registration waits exact root persistence and native project card before one selection", async () => {
@@ -93,4 +94,32 @@ test("sibling worktrees use the exact native root group instead of ambiguous pro
     "/owned/base",
   );
   assert.deepEqual(clicked.scope, { role: "group", name: "/owned/base" });
+});
+
+test("selection failure projection distinguishes context revision and never emits owned paths", async () => {
+  const observed = await observeWorkspaceSelection({
+    root: "/owned/private-base",
+    context: async () => ({ projectId: "p", worktreeId: "w", revision: 1 }),
+    registry: async () => ({
+      worktrees: [{ id: "w", projectId: "p", revision: 2, binding: { root: "/owned/private-base" } }],
+    }),
+  });
+  assert.deepEqual(observed, {
+    contextPresent: true,
+    targetCount: 1,
+    projectMatches: true,
+    worktreeMatches: true,
+    revisionMatches: false,
+  });
+  assert.ok(!JSON.stringify(observed).includes("private-base"));
+});
+test("selection observation failure remains bounded and never replaces original selection failure", async () => {
+  const observed = await observeWorkspaceSelection({
+    root: "/owned",
+    context: async () => {
+      throw new Error("secret");
+    },
+    registry: async () => ({}),
+  });
+  assert.deepEqual(observed, { unavailable: true });
 });

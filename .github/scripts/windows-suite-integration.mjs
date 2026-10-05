@@ -2,7 +2,7 @@ import { navigateWorkspaceFiles } from "./windows-workspace-ui-observations.mjs"
 // L4 preparations are identified separately; domain transfers/reviews use real UI input.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { readFile, readdir, rename } from "node:fs/promises";
+import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { createApiUserFlowContext, markApiCleanupFailure } from "./windows-api-user-flow-adapter.mjs";
@@ -52,12 +52,37 @@ export async function review(context) {
   await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
 }
-export async function applySourceSelection(api) {
+export async function applySourceSelection(api, expected) {
+  assert.ok(typeof expected === "string" && expected.length > 0 && Buffer.byteLength(expected) <= 1_000_000);
   await api.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
-  await until(
-    async () => (await api.ui.text(textbox("스마트 워크플로 입력"))).includes("원본"),
-    "Accepted source selection did not reach Smart input",
-  );
+  try {
+    await until(
+      // Read the controlled textarea itself, including when it is below the
+      // viewport. An AX name fallback is not evidence of its accepted value.
+      () =>
+        api.cdp.evaluate(`(()=>{
+      const inputs = document.querySelectorAll('textarea[aria-label="스마트 워크플로 입력"]');
+      return inputs.length === 1 && inputs[0].value === ${JSON.stringify(expected)};
+    })()`),
+      "Accepted source selection did not reach Smart input",
+    );
+  } catch (error) {
+    try {
+      const observation = await api.cdp.evaluate(`(()=>{
+        const inputs = document.querySelectorAll('textarea[aria-label="스마트 워크플로 입력"]');
+        const value = inputs.length === 1 ? inputs[0].value : null;
+        return { inputCount: Math.min(inputs.length, 2), empty: value === '',
+          exact: value === ${JSON.stringify(expected)},
+          containsExpected: typeof value === 'string' && value.includes(${JSON.stringify(expected)}),
+          previewPresent: !!document.querySelector('.toolbox-handoff-dialog'),
+          acceptedActionsPresent: !!document.querySelector('.incoming-diff-actions') };
+      })()`);
+      await writeFile("product-foundation-evidence/handoff-input-first-failure.json", JSON.stringify(observation), {
+        flag: "wx",
+      });
+    } catch {}
+    throw error;
+  }
 }
 export async function awaitKnowledgePreviewClosed(knowledge) {
   await until(
@@ -272,7 +297,13 @@ export async function run(api) {
         await selectSource(workspace);
         await review(api);
         await expectText(api, "Toolbox 텍스트 미리보기");
-        await applySourceSelection(api);
+        await applySourceSelection(
+          api,
+          original
+            .toString("utf8")
+            .replace(/^\uFEFF/u, "")
+            .replace(/\r\n/g, "\n"),
+        );
         await selectSource(workspace);
         expiredAt = Date.now() + 122000;
         record(

@@ -456,6 +456,7 @@ jobs:
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1
           .github/scripts/windows-suite-shortcut-launch.test.ps1
+          .github/scripts/windows-installer-ui.test.ps1 -NativePickerRoots
       - name: Install interactively and complete visible activation
         id: retained_install
         shell: pwsh
@@ -664,6 +665,7 @@ jobs:
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1
           .github/scripts/windows-suite-shortcut-launch.test.ps1
+          .github/scripts/windows-installer-ui.test.ps1 -NativePickerRoots
       - uses: actions/download-artifact@v8
         with:
           name: workspace-wsl-${{ github.sha }}

@@ -265,6 +265,51 @@ test("delivery health releases the exited Knowledge policy before another Knowle
 });
 
 import { activationStateObservation, bestEffortActivationObservation } from "./windows-suite-user-flow.mjs";
+test("rejected setup cancellation confirms one owned nested abort prompt exactly once", async () => {
+  const { cancelRejectedInstaller } = await import("./windows-suite-installer-actions.mjs");
+  const calls = [];
+  let confirmations = 0;
+  const child = { exitCode: null };
+  const installer = {
+    child,
+    invoke: (id) => {
+      calls.push(id);
+      if (id === "6") confirmations++;
+    },
+    inspect: () => ({ windows: [{}], controls: [{ id: "6", enabled: true, visible: true }] }),
+  };
+  await cancelRejectedInstaller(installer, async (check) => {
+    assert.equal(check(), false);
+    assert.equal(check(), false);
+    child.exitCode = 1;
+    assert.equal(check(), true);
+  });
+  assert.equal(confirmations, 1);
+  assert.deepEqual(calls, ["2", "6"]);
+});
+test("rejected setup never confirms hidden, disabled or ambiguous abort controls", async () => {
+  const { cancelRejectedInstaller } = await import("./windows-suite-installer-actions.mjs");
+  for (const controls of [
+    [{ id: "6", enabled: false, visible: true }],
+    [{ id: "6", enabled: true, visible: false }],
+    [
+      { id: "6", enabled: true, visible: true },
+      { id: "6", enabled: true, visible: true },
+    ],
+  ]) {
+    const calls = [],
+      child = { exitCode: null };
+    await cancelRejectedInstaller(
+      { child, invoke: (id) => calls.push(id), inspect: () => ({ controls }) },
+      async (check) => {
+        assert.equal(check(), false);
+        child.exitCode = 1;
+        assert.equal(check(), true);
+      },
+    );
+    assert.deepEqual(calls, ["2"]);
+  }
+});
 test("activation failure evidence exposes only bounded phase and revision", () => {
   assert.deepEqual(activationStateObservation({ phase: "health", revision: 3, secret: "private" }), {
     phase: "health",

@@ -3,6 +3,7 @@ import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { dismissWorkspaceUndo } from "./windows-workspace-agent-registry-ui.mjs";
 import {
   selectRegisteredWorkspaceRoot,
+  observeWorkspaceSelection,
   waitForSelectedWorkspaceRoot,
 } from "./windows-workspace-registry-observations.mjs";
 import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
@@ -597,8 +598,38 @@ export function createWorkspaceUiFixture({
     async terminalLifecycle() {
       assert.ok(agentRoot && this.agentProjectName);
       await ui.click({ role: "button", name: "개요" });
-      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
-      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
+      try {
+        await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
+        await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
+      } catch (error) {
+        const observation = {
+          schemaVersion: 1,
+          selection: await observeWorkspaceSelection({ context, registry: () => this.registry(), root: agentRoot }),
+        };
+        try {
+          observation.guards = await cdp.evaluate(`(() => {
+            const text = Array.from(document.querySelectorAll('[role="alert"],[role="status"]')).slice(0,32).map(node => node.textContent).join('\\n');
+            return {runtimeRecoveryAlert:!!document.querySelector('[aria-label="실행 요청 복구"] [role="alert"]'),runtimeRecoveryItems:document.querySelectorAll('[aria-label="실행 요청 복구"] li').length,...Object.fromEntries(Object.entries({tasksDirty:'Tasks 편집',filesDirty:'Files 편집 또는 저장',definitionsDirty:'프로젝트 정의 편집',dependenciesBusy:'의존성 검토',sourceBusy:'Source 작업',sourceDirty:'Source 초안',transitionPending:'프로젝트 전환을 확인 중입니다',contextBusy:'파일 또는 Git 작업이 진행 중입니다',runtimePending:'이전 실행 요청의 상태를 먼저 확인',runtimeRecovery:'완료되지 않은 실행 요청'}).map(([key,value]) => [key,text.includes(value)]))};
+          })()`);
+        } catch {
+          observation.guardsUnavailable = true;
+        }
+        try {
+          observation.operations = await readWorkspaceAgentOperations(dataRoot);
+        } catch {
+          observation.operationsUnavailable = true;
+        }
+        try {
+          await writeFile(
+            "product-foundation-evidence/workspace-runtime-context-first-failure.json",
+            JSON.stringify(observation, null, 2),
+            { flag: "wx" },
+          );
+        } catch {
+          /* Preserve the original selection failure. */
+        }
+        throw error;
+      }
       const counter = `${agentRoot}/terminal-count`,
         afterInterrupt = `${agentRoot}/ctrl-c-confirmed`;
       const wslRead = (file) => {

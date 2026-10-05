@@ -182,6 +182,12 @@ public static class DevboxInstallerAutomation {
   [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
   [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
   [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern IntPtr SendMessageTimeoutW(IntPtr window,uint message,UIntPtr wparam,IntPtr lparam,uint flags,uint timeout,out UIntPtr result);
+  public static bool IsPickerRoot(int dialogHandle,uint processId) {
+    IntPtr dialog=new IntPtr(dialogHandle);
+    uint owner; GetWindowThreadProcessId(dialog,out owner);
+    var name=new StringBuilder(128); GetClassName(dialog,name,name.Capacity);
+    return dialogHandle!=0 && owner==processId && GetAncestor(dialog,2)==dialog && IsWindowVisible(dialog) && name.ToString()=="#32770";
+  }
   public static bool IsPickerControl(int dialogHandle,int controlHandle,uint processId,string expectedClass) {
     IntPtr dialog=new IntPtr(dialogHandle),control=new IntPtr(controlHandle);
     uint dialogProcess,controlProcess;
@@ -299,6 +305,24 @@ if($Action -eq 'Inspect' -and $windows.Count -ne 1) {
   @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata});controls=$diagnosticControls} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
+function Get-OwnedNativePickers($inventory,[int]$ownerProcessId,[scriptblock]$resolve={
+  param($handle,$owner)
+  if(-not [DevboxInstallerAutomation]::IsPickerRoot([int]$handle,$owner)){throw 'Owned native picker changed'}
+  $element=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]::new($handle))
+  if(-not [DevboxInstallerAutomation]::IsPickerRoot([int]$handle,$owner)){throw 'Owned native picker changed'}
+  $element
+}) {
+  if($inventory.count -gt 32 -or @($inventory.windows).Count -gt 32){throw 'Native picker inventory exceeded bound'}
+  $candidates=@($inventory.windows | Where-Object {$_.visible -and $_.topLevel -and $_.className -ceq '#32770'})
+  if($candidates.Count -gt 1){throw 'Ambiguous owned native file picker'}
+  foreach($candidate in $candidates) {
+    if($candidate.nativeHandle -eq 0 -or $candidate.nativeProcessId -ne $ownerProcessId){throw 'Native picker owner changed'}
+    $element=& $resolve $candidate.nativeHandle $ownerProcessId
+    if($null -eq $element -or $element.Current.NativeWindowHandle -ne $candidate.nativeHandle -or
+      $element.Current.ProcessId -ne $ownerProcessId -or $element.Current.ClassName -cne '#32770'){throw 'Native picker UIA root changed'}
+    $element
+  }
+}
 function Get-OwnedPickerControls($dialog) {
   $hostCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'FileNameControlHost')
   $hosts=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$hostCondition)
@@ -326,7 +350,7 @@ function Get-OwnedPickerControls($dialog) {
   @{fieldCount=$fields.Count;editCount=$edits.Count;confirmCount=$buttons.Count;edit=$edit;button=$button}
 }
 if($Action -eq 'InspectFilePicker') {
-  $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
+  $dialogs=@(Get-OwnedNativePickers $nativeInventory $TargetProcessId)
   $observation=@{pickerCount=$dialogs.Count;fieldCount=0;editCount=0;confirmCount=0;filenameReady=$false;confirmationReady=$false}
   if($dialogs.Count -eq 1) {
     $dialog=$dialogs[0]
@@ -354,7 +378,7 @@ if($Action -in @('ChooseFile','SaveFile')) {
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'File picker input must be regular file'}
   }
   if(-not $file.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){throw 'File picker path outside owned fixture'}
-  $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
+  $dialogs=@(Get-OwnedNativePickers $nativeInventory $TargetProcessId)
   if($dialogs.Count -ne 1){throw 'Expected one owned native file picker'}
   $dialog=$dialogs[0]
   $controls=Get-OwnedPickerControls $dialog

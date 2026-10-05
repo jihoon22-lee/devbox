@@ -68,6 +68,8 @@ public static class OwnedSavePicker {
     if(initialized >= 0) CoUninitialize();
    }
   });
+  // CLR initializes a managed worker as MTA unless STA is selected before start.
+  worker.SetApartmentState(System.Threading.ApartmentState.STA);
   worker.Start(); worker.Join();
   if(failure != null) throw failure;
   return selected;

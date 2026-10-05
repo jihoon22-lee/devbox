@@ -56,19 +56,25 @@ test("incoming review uses accessible region name rather than absent visible hea
 test("source apply observes the accepted Unicode input before continuing without replay", async () => {
   let clicks = 0;
   let reads = 0;
-  await runner.applySourceSelection({
-    ui: {
-      click: async (target) => {
-        assert.equal(target.name, "적용");
-        assert.equal(target.scope.name, "Toolbox 텍스트 미리보기");
-        clicks++;
+  await runner.applySourceSelection(
+    {
+      ui: {
+        click: async (target) => {
+          assert.equal(target.name, "적용");
+          assert.equal(target.scope.name, "Toolbox 텍스트 미리보기");
+          clicks++;
+        },
       },
-      text: async (target) => {
-        assert.equal(target.name, "스마트 워크플로 입력");
-        return ++reads === 1 ? "previous input" : "원본\n";
+      cdp: {
+        evaluate: async (expression) => {
+          assert.ok(expression.includes('textarea[aria-label="스마트 워크플로 입력"]'));
+          assert.ok(expression.includes('.value === "원본\\n"'));
+          return ++reads !== 1;
+        },
       },
     },
-  });
+    "원본\n",
+  );
   assert.equal(clicks, 1);
   assert.equal(reads, 2);
 });

@@ -403,6 +403,23 @@ export function directorySpaceRejected(view, proof) {
     /(?:사용 가능|남은).*(?:공간|디스크)/.test(labels)
   );
 }
+export async function cancelRejectedInstaller(installer, observe = observeUntil) {
+  installer.invoke("2");
+  let confirmed = false;
+  await observe(() => {
+    if (installer.child.exitCode !== null) return true;
+    const view = installer.inspect();
+    // UIA can expose the abort prompt beneath one owned root. A root count
+    // does not establish whether its unique enabled Yes control is ready.
+    const controls = view?.controls ?? view?.buttons ?? [];
+    const yes = controls.filter((control) => control.id === "6" && control.enabled && control.visible);
+    if (!confirmed && yes.length === 1) {
+      installer.invoke("6");
+      confirmed = true;
+    }
+    return false;
+  }, "rejected setup cancelled");
+}
 export async function rejectVisibleSetup(setup, root, { expectedIssues, onRejected, spaceProof } = {}) {
   assert.ok(Array.isArray(expectedIssues) && expectedIssues.length > 0);
   assert.ok(expectedIssues.every((issue) => /^[a-z_]+$/.test(issue)));
@@ -438,16 +455,21 @@ export async function rejectVisibleSetup(setup, root, { expectedIssues, onReject
         return !!observed;
       }, "owned installer displays expected native preparation issue");
     if (onRejected) await onRejected(installer, observed);
-    installer.invoke("2");
-    await observeUntil(() => {
-      if (installer.child.exitCode !== null) return true;
-      const view = installer.inspect();
-      if (view?.windows?.length > 1) installer.invoke("6");
-      return false;
-    }, "rejected setup cancelled");
+    await cancelRejectedInstaller(installer);
     assert.notEqual(installer.child.exitCode, 0, "Rejected setup cannot report success");
     return { issue: observed, exitCode: installer.child.exitCode };
   } catch (error) {
+    try {
+      await writeFile(
+        path.join("product-foundation-evidence", `rejected-installer-first-failure-${randomUUID()}.json`),
+        JSON.stringify(
+          { schemaVersion: 1, status: "FAIL", ...inspectInstallerFailure(installer, "rejected setup") },
+          null,
+          2,
+        ),
+        { flag: "wx" },
+      );
+    } catch {}
     await rethrowInstallerFailure(installer, error);
   }
 }

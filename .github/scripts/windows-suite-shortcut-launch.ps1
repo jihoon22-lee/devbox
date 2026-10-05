@@ -2,7 +2,7 @@ param([Parameter(Mandatory=$true)][string]$Root,[Parameter(Mandatory=$true)][Val
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 function Get-ShortcutFailureObservation($Failure,[ValidateSet('ownership','activation','physical-identity','retained-payload','link-target','registered-link-launch')][string]$Stage) {
- $knownCommands=@('Assert-Unlinked','Assert-Identity','Get-Content','Get-Item','Get-FileHash','Split-Path','Join-Path','Add-Type','New-Object','ConvertFrom-Json','ConvertTo-Json','Where-Object')
+ $knownCommands=@('Assert-Unlinked','Assert-Identity','Get-Content','Get-Item','Get-FileHash','Get-OwnedShortcutDigest','Split-Path','Join-Path','Add-Type','New-Object','ConvertFrom-Json','ConvertTo-Json','Where-Object')
  $missing=$null
  if($Failure.Exception -is [Management.Automation.CommandNotFoundException]) {
   $property=$Failure.Exception.PSObject.Properties['CommandName']
@@ -11,6 +11,14 @@ function Get-ShortcutFailureObservation($Failure,[ValidateSet('ownership','activ
  $line=0
  if($null -ne $Failure.InvocationInfo){$line=$Failure.InvocationInfo.ScriptLineNumber}
  @{schemaVersion=1;issue=$(if($Failure.Exception -is [Management.Automation.CommandNotFoundException]){'shortcut_command_unavailable'}else{'shortcut_launch_failed'});stage=$Stage;command=$missing;line=$(if($line -ge 1 -and $line -le 2000){$line}else{$null})}
+}
+function Get-OwnedShortcutDigest([string]$Path) {
+ $stream=[IO.File]::OpenRead($Path)
+ $sha=$null
+ try {
+  $sha=[Security.Cryptography.SHA256]::Create()
+  return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant()
+ } finally { if($null -ne $sha){$sha.Dispose()};$stream.Dispose() }
 }
 $shortcutStage='ownership'
 try {
@@ -73,7 +81,7 @@ Assert-Identity $rootPath $registration.rootIdentity
 Assert-Identity $directory $registration.shortcutIdentity
 Assert-Identity $directory $plan.rootIdentity
 Assert-Identity $link $entries[0].identity
-if((Get-Item -LiteralPath $link).Length -ne $entries[0].bytes -or (Get-FileHash -LiteralPath $link -Algorithm SHA256).Hash -ine $entries[0].sha256){throw 'Shortcut plan bytes changed'}
+if((Get-Item -LiteralPath $link).Length -ne $entries[0].bytes -or (Get-OwnedShortcutDigest $link) -ine $entries[0].sha256){throw 'Shortcut plan bytes changed'}
 $shortcutStage='retained-payload'
 $revision=[string]$registration.payloadRevision
 if($revision -notmatch '^[a-f0-9]{64}$'){throw 'Shortcut revision invalid'}
@@ -82,10 +90,10 @@ $payload=Join-Path $cached 'suite-payload.json'
 $helper=Join-Path $cached 'devbox-suite-bootstrap.exe'
 Assert-Unlinked $payload
 Assert-Unlinked $helper
-if((Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash -ine $revision){throw 'Shortcut payload changed'}
+if((Get-OwnedShortcutDigest $payload) -ine $revision){throw 'Shortcut payload changed'}
 $package=Get-Content -LiteralPath $payload -Raw | ConvertFrom-Json
 $asset=@($package.products | Where-Object {$_.id -ceq 'control-center'})[0].files | Where-Object {$_.name -ceq 'resources/suite/devbox-suite-bootstrap.exe'}
-if((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash -ine $asset.sha256){throw 'Shortcut helper changed'}
+if((Get-OwnedShortcutDigest $helper) -ine $asset.sha256){throw 'Shortcut helper changed'}
 $shortcutStage='link-target'
 $shell=New-Object -ComObject WScript.Shell
 $shortcut=$null
