@@ -1,10 +1,11 @@
-use crate::core::db;
 use crate::core::entry_actions::{canonical_existing_entry, validated_new_entry};
 use crate::core::frontmatter::parse;
 use crate::core::store;
 use crate::core::wikilink::{
     normalize_link_key, note_link_keys, note_link_target, parse_wikilinks,
 };
+use crate::core::{db, document};
+use crate::platform::document_publish;
 use rusqlite::Connection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -20,8 +21,7 @@ const MAX_PREVIEW_LINK_BYTES: usize = 1_024;
 const PREVIEW_FAILED: &str = "이름 변경 미리보기를 만들 수 없습니다";
 const PLAN_CONFLICT: &str = "미리보기 이후 항목이 변경되었습니다. 다시 미리보기를 실행하세요";
 const APPLY_FAILED: &str = "이름 변경을 적용할 수 없습니다";
-const ROLLBACK_FAILED: &str =
-    "이름 변경을 되돌리는 중 문제가 발생했습니다. Knowledge 폴더를 확인하세요";
+const ROLLBACK_FAILED: &str = "rename_recovery_required";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -102,8 +102,8 @@ pub struct RenamePlan {
 
 struct FileRewrite {
     path: String,
-    final_path: String,
     before: String,
+    revision: String,
     after: String,
 }
 
@@ -246,12 +246,16 @@ pub fn prepare(
             return Err("변경할 위키링크가 너무 많아 이름 변경을 중단했습니다".to_string());
         }
         let after = apply_replacements(&note.content, &replacements)?;
-        let final_path = remap_path(&note.path, from, to);
+        let snapshot =
+            document::read(&scan.root.join(&note.path)).map_err(|_| PREVIEW_FAILED.to_string())?;
+        if snapshot.content.as_deref() != Some(note.content.as_str()) {
+            return Err(PLAN_CONFLICT.to_string());
+        }
         rewrites.push((
             FileRewrite {
                 path: note.path.clone(),
-                final_path,
                 before: note.content.clone(),
+                revision: snapshot.revision,
                 after,
             },
             replacements,
@@ -337,6 +341,22 @@ pub fn apply(
     conn: &mut Connection,
     plan: RenamePlan,
 ) -> Result<RenameApplied, String> {
+    apply_with(root, conn, plan, |_| {})
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ApplyPhase {
+    Validated,
+    Rewritten,
+    Renamed,
+}
+
+fn apply_with(
+    root: &Path,
+    conn: &mut Connection,
+    plan: RenamePlan,
+    mut hook: impl FnMut(ApplyPhase),
+) -> Result<RenameApplied, String> {
     let current_root = root.canonicalize().map_err(|_| PLAN_CONFLICT.to_string())?;
     if current_root != plan.root {
         return Err(PLAN_CONFLICT.to_string());
@@ -357,6 +377,7 @@ pub fn apply(
         ..
     } = current;
 
+    hook(ApplyPhase::Validated);
     let transaction = conn
         .transaction()
         .map_err(|_| "검색 인덱스 transaction을 시작할 수 없습니다".to_string())?;
@@ -371,29 +392,47 @@ pub fn apply(
         created_dirs.push(path);
     }
 
-    let mut written = 0_usize;
+    let mut written = Vec::new();
     for rewrite in &plan.rewrites {
-        if devbox_filesystem::atomic_write(
-            operation_root.join(&rewrite.path),
-            rewrite.after.as_bytes(),
-        )
-        .is_err()
-        {
-            drop(transaction);
-            let rolled_back = rollback(&operation_root, &plan, written, false, &created_dirs);
-            return Err(if rolled_back {
-                APPLY_FAILED
-            } else {
-                ROLLBACK_FAILED
+        let saved = document::save(
+            &operation_root.join(&rewrite.path),
+            &rewrite.after,
+            &rewrite.revision,
+        );
+        match saved {
+            Ok(saved)
+                if saved
+                    .save_outcome
+                    .as_ref()
+                    .is_none_or(|outcome| outcome.state == "applied") =>
+            {
+                written.push(saved.revision);
             }
-            .to_string());
+            Ok(_) => {
+                // Publication may already have displaced an external version.
+                // Its private recovery directory owns those bytes; do not
+                // overwrite it or mistake this write for an uncommitted error.
+                drop(transaction);
+                let _ = rollback(&operation_root, &plan, &written, false, &created_dirs);
+                return Err(ROLLBACK_FAILED.to_string());
+            }
+            Err(_) => {
+                drop(transaction);
+                let rolled_back = rollback(&operation_root, &plan, &written, false, &created_dirs);
+                return Err(if rolled_back {
+                    APPLY_FAILED
+                } else {
+                    ROLLBACK_FAILED
+                }
+                .to_string());
+            }
         }
-        written += 1;
+        hook(ApplyPhase::Rewritten);
     }
 
-    if std::fs::rename(&current_source, &current_destination).is_err() {
+    if document_publish::move_no_replace(&current_source, &current_destination).is_err() {
         drop(transaction);
-        let rolled_back = rollback(&operation_root, &plan, written, false, &created_dirs);
+        let rolled_back = rollback(&operation_root, &plan, &written, false, &created_dirs);
         return Err(if rolled_back {
             APPLY_FAILED
         } else {
@@ -402,6 +441,7 @@ pub fn apply(
         .to_string());
     }
 
+    hook(ApplyPhase::Renamed);
     let index_result = (|| -> Result<(), String> {
         db::remove_docs_under(&transaction, &plan.from)
             .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
@@ -413,7 +453,7 @@ pub fn apply(
     })();
     if let Err(error) = index_result {
         drop(transaction);
-        let rolled_back = rollback(&operation_root, &plan, written, true, &created_dirs);
+        let rolled_back = rollback(&operation_root, &plan, &written, true, &created_dirs);
         return Err(if rolled_back {
             error
         } else {
@@ -421,7 +461,7 @@ pub fn apply(
         });
     }
     if transaction.commit().is_err() {
-        let rolled_back = rollback(&operation_root, &plan, written, true, &created_dirs);
+        let rolled_back = rollback(&operation_root, &plan, &written, true, &created_dirs);
         return Err(if rolled_back {
             "검색 인덱스 transaction을 완료할 수 없습니다".to_string()
         } else {
@@ -586,21 +626,29 @@ fn apply_replacements(content: &str, replacements: &[Replacement]) -> Result<Str
 fn rollback(
     root: &Path,
     plan: &RenamePlan,
-    written: usize,
+    written: &[String],
     renamed: bool,
     created_dirs: &[PathBuf],
 ) -> bool {
-    let rename_restored =
-        !renamed || std::fs::rename(root.join(&plan.to), root.join(&plan.from)).is_ok();
+    let rename_restored = !renamed
+        || document_publish::move_no_replace(&root.join(&plan.to), &root.join(&plan.from)).is_ok();
     let mut restored = rename_restored;
-    for rewrite in plan.rewrites[..written].iter().rev() {
-        let path = if renamed && !rename_restored && is_same_or_child(&rewrite.path, &plan.from) {
-            root.join(&rewrite.final_path)
-        } else {
-            root.join(&rewrite.path)
-        };
-        if devbox_filesystem::atomic_write(path, rewrite.before.as_bytes()).is_err() {
+    for (rewrite, revision) in plan.rewrites.iter().zip(written).rev() {
+        if renamed && !rename_restored && is_same_or_child(&rewrite.path, &plan.from) {
+            // The issued revision belongs to the original logical path. A
+            // failed reverse move cannot authorize a write at its new path.
             restored = false;
+            continue;
+        }
+        match document::save(&root.join(&rewrite.path), &rewrite.before, revision) {
+            Ok(saved)
+                if saved
+                    .save_outcome
+                    .as_ref()
+                    .is_none_or(|outcome| outcome.state == "applied") => {}
+            // Conflict/unknown saves retain their own displaced-file recovery;
+            // never mint a fresh revision to force compensation over an edit.
+            _ => restored = false,
         }
     }
     cleanup_created_dirs(created_dirs);
@@ -692,6 +740,112 @@ mod tests {
         let target = root.join(path);
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(target, content).unwrap();
+    }
+
+    #[test]
+    fn external_edit_after_validation_is_not_overwritten() {
+        let (root, mut conn) = fixture();
+        write(root.path(), "Notes/Old.md", "# original\n");
+        write(root.path(), "source.md", "[[Old]]\n");
+        let (_, plan) = prepare(
+            root.path(),
+            "Notes/Old.md",
+            "Notes/New.md",
+            "rename-1".into(),
+        )
+        .unwrap();
+        let result = apply_with(root.path(), &mut conn, plan, |phase| {
+            if phase == ApplyPhase::Validated {
+                write(root.path(), "source.md", "external edit\n");
+            }
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("source.md")).unwrap(),
+            "external edit\n"
+        );
+        assert!(root.path().join("Notes/Old.md").is_file());
+    }
+
+    #[test]
+    fn concurrent_destination_creation_is_not_replaced() {
+        let (root, mut conn) = fixture();
+        write(root.path(), "Notes/Old.md", "# original\n");
+        let (_, plan) = prepare(
+            root.path(),
+            "Notes/Old.md",
+            "Notes/New.md",
+            "rename-1".into(),
+        )
+        .unwrap();
+        let result = apply_with(root.path(), &mut conn, plan, |phase| {
+            if phase == ApplyPhase::Validated {
+                write(root.path(), "Notes/New.md", "external destination\n");
+            }
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("Notes/New.md")).unwrap(),
+            "external destination\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("Notes/Old.md")).unwrap(),
+            "# original\n"
+        );
+    }
+
+    #[test]
+    fn rollback_does_not_replace_a_recreated_original_path() {
+        let (root, mut conn) = fixture();
+        write(root.path(), "Notes/Old.md", "# original\n");
+        let (_, plan) = prepare(
+            root.path(),
+            "Notes/Old.md",
+            "Notes/New.md",
+            "rename-1".into(),
+        )
+        .unwrap();
+        conn.execute_batch("CREATE TRIGGER fail_index BEFORE INSERT ON docs BEGIN SELECT RAISE(ABORT, 'fixture'); END;").unwrap();
+        let result = apply_with(root.path(), &mut conn, plan, |phase| {
+            if phase == ApplyPhase::Renamed {
+                write(root.path(), "Notes/Old.md", "external recreation\n");
+            }
+        });
+        assert_eq!(result.unwrap_err(), ROLLBACK_FAILED);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("Notes/Old.md")).unwrap(),
+            "external recreation\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("Notes/New.md")).unwrap(),
+            "# original\n"
+        );
+    }
+
+    #[test]
+    fn rollback_preserves_external_edit_after_rewrite() {
+        let (root, mut conn) = fixture();
+        write(root.path(), "Notes/Old.md", "# original\n");
+        write(root.path(), "source.md", "[[Old]]\n");
+        let (_, plan) = prepare(
+            root.path(),
+            "Notes/Old.md",
+            "Notes/New.md",
+            "rename-1".into(),
+        )
+        .unwrap();
+        conn.execute_batch("CREATE TRIGGER fail_index BEFORE INSERT ON docs BEGIN SELECT RAISE(ABORT, 'fixture'); END;").unwrap();
+        let result = apply_with(root.path(), &mut conn, plan, |phase| {
+            if phase == ApplyPhase::Rewritten {
+                write(root.path(), "source.md", "external edit after rewrite\n");
+            }
+        });
+        assert_eq!(result.unwrap_err(), ROLLBACK_FAILED);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("source.md")).unwrap(),
+            "external edit after rewrite\n"
+        );
+        assert!(root.path().join("Notes/Old.md").is_file());
     }
 
     #[test]

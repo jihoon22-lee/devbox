@@ -79,6 +79,13 @@ pub fn create(staged: &Path, target: &Path) -> io::Result<()> {
             &[staged, target],
         );
     }
+    move_no_replace(staged, target)
+}
+
+/// Move an existing file or directory without replacing a concurrent creator.
+/// UNC renames retain the native Windows provider semantics; unlike document
+/// publication, this operation does not use the private-staging WSL protocol.
+pub(crate) fn move_no_replace(staged: &Path, target: &Path) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
         rename_linux(staged, target, libc::RENAME_NOREPLACE)
@@ -104,6 +111,46 @@ pub fn create(staged: &Path, target: &Path) -> io::Result<()> {
     {
         let _ = (staged, target);
         Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", windows)))]
+mod move_tests {
+    use super::*;
+
+    #[test]
+    fn moves_files_and_directories_but_preserves_existing_destinations() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.md");
+        let target = root.path().join("target.md");
+        fs::write(&source, "reviewed source").unwrap();
+        fs::write(&target, "external destination").unwrap();
+        assert!(move_no_replace(&source, &target).is_err());
+        assert_eq!(fs::read_to_string(&source).unwrap(), "reviewed source");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "external destination");
+        fs::remove_file(&target).unwrap();
+        move_no_replace(&source, &target).unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "reviewed source");
+
+        let source_dir = root.path().join("source-dir");
+        let target_dir = root.path().join("target-dir");
+        fs::create_dir(&source_dir).unwrap();
+        fs::write(source_dir.join("note.md"), "nested source").unwrap();
+        fs::create_dir(&target_dir).unwrap();
+        assert!(move_no_replace(&source_dir, &target_dir).is_err());
+        assert_eq!(
+            fs::read_to_string(source_dir.join("note.md")).unwrap(),
+            "nested source"
+        );
+        assert!(target_dir.is_dir());
+        fs::remove_dir(&target_dir).unwrap();
+        move_no_replace(&source_dir, &target_dir).unwrap();
+        assert!(!source_dir.exists());
+        assert_eq!(
+            fs::read_to_string(target_dir.join("note.md")).unwrap(),
+            "nested source"
+        );
     }
 }
 

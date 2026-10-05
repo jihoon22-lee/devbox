@@ -50,6 +50,7 @@ export type NotesIssue =
   | "note_unavailable"
   | "preview_expired"
   | "preview_stale"
+  | "rename_recovery_required"
   | "quick_capture_body_required"
   | "quick_capture_save_failed"
   | "search_stale"
