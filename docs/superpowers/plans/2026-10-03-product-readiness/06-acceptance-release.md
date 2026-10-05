@@ -187,7 +187,7 @@ python3 .github/scripts/test-release-candidate-promotion-config.py
 ### Task 16.2 — 최종 main·기존 태그 처리·후보(머지 후)
 
 - [ ] 최종 main SHA를 고정하고 `ci.yml` workflow_dispatch를 **1회** 실행한다. PR CI는 squash 전 결과이므로 exact-main 결과로 바꾸어 기록하지 않는다. main CI 외 별도 전체 감사/PF dispatch를 중복 실행하지 않는다.
-- [ ] v0.9.0 Release가 여전히 없고 기존 태그 ref가 기록한 object `f31f111977956bd665cd432accdf54677444027f` / peeled commit `e499ac7127269bf67863bf0fdc42eaf53236b9f3`와 같은지 재확인한다. 철회 이력과 tag object를 보존한 후 후보 시작 직전에 기존 원격/로컬 태그를 제거한다. ref가 달라졌으면 덮어쓰지 않고 변경 원인을 확인한다.
+- [ ] 후보 시작 전에 v0.9.0 Release와 태그가 없는지 확인한다. 철회본 tag object `f31f111977956bd665cd432accdf54677444027f` / peeled commit `e499ac7127269bf67863bf0fdc42eaf53236b9f3`의 이력과 제거 근거는 보존했다. 제거 완료를 이유로 태그를 다시 만들지 않는다. 예상하지 않은 태그나 Release가 존재하면 덮어쓰거나 삭제하지 않고 원인을 확인한다.
 - [ ] 원격 삭제는 현재 확인한 **태그 ref object**를 명시적 lease로 고정한다: `git push --force-with-lease=refs/tags/v0.9.0:<확인한-tag-object-SHA> origin :refs/tags/v0.9.0`. peeled commit을 lease 값으로 쓰지 않는다. 다른 태그/릴리스는 변경하지 않는다. 계획 작성 단계에서는 실행하지 않는다.
 - [ ] 태그/Release 부재를 확인하고 exact current main SHA·`candidate_tag=v0.9.0`으로 `Windows package candidate`를 실행한다. 기존 후보의 tag-exists 거부 조건을 비활성화하지 않는다.
 - [ ] 한 후보의 assembly·native·격리 WSL2/Docker·interactive installer/UI·migration/update/restore/removal·성능 결과를 연결한다. 기존 job/runner에 필요한 assertion을 통합하고 같은 검사를 독립 workflow로 다시 실행하지 않는다. 모든 packaged evidence의 source/fixture/digest가 일치해야 한다.

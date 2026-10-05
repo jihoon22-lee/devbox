@@ -19,6 +19,6 @@
 | 0011 | [과제 회귀와 묶음 최종 검증](0011-verification-policy.md) | 채택 |
 | 0012 | [고정 스키마 운영 로그](0012-operation-log.md) | 채택 |
 | 0013 | [v0.7 가져오기 종료](0013-drop-v07-migration.md) | 채택 |
-| 0014 | [component별 타입 IPC](0014-typed-ipc.md) | 제안 |
-| 0015 | [사용자별 백그라운드 agent](0015-devbox-agent.md) | 제안 |
+| 0014 | [component별 타입 IPC](0014-typed-ipc.md) | 채택 |
+| 0015 | [사용자별 백그라운드 agent](0015-devbox-agent.md) | 채택 |
 | 0016 | [개인용 보안 범위](0016-personal-security-scope.md) | 채택 |

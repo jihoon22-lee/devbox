@@ -74,5 +74,5 @@ Workspace 원본에 연결된 작업은 예약 실행을 포함해 실행 직전
 - [설치 identity·writer lease](../../crates/product-shell-tauri/src/installation.rs), [bootstrap의 exclusive writer gate](../../apps/devbox-control-center/src-tauri/src/bootstrap.rs)
 - [quiesced data checkpoint](../../apps/devbox-control-center/src-tauri/src/core/data_checkpoint.rs), [activation 계약](../../crates/product-contract/src/activation.rs)
 - [설치 namespace ADR 0007](0007-data-namespaces.md), [보안 범위 ADR 0016](0016-personal-security-scope.md)
-- [P1-19 계획](../superpowers/plans/2026-09-23-review-remediation/p1-19-agent-adr-and-protocol.md), 같은 묶음 P1-11–14의 typed 요청 및 P1-16 stream 계약, 리뷰 §8
+- [P1-19 계획](https://github.com/jihoon22-lee/devbox/blob/ab2ee78a54d3aef7a0e2d546349574bc12a4c2ac/docs/superpowers/plans/2026-09-23-review-remediation/p1-19-agent-adr-and-protocol.md), 같은 묶음 P1-11–14의 typed 요청 및 P1-16 stream 계약, 리뷰 §8
 - 현재 진행: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md); 과거 원장: [닫힌 #580](https://github.com/jihoon22-lee/devbox/issues/580)

@@ -20,7 +20,7 @@
 
 - `/home/jihoon/projects/devbox/AGENTS.md`, `CONVENTIONS.md`
 - `/home/jihoon/projects/devbox/docs/release-policy.md`, `release-evidence.md`, `windows-guide.md`, `codex-setup.md`, `verification.md`
-- `/home/jihoon/projects/devbox/docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md`, `p3-01-release-v0.9.0.md`
+- [이전 실행·릴리스 계획](../../../history.md)
 - 네 `/home/jihoon/projects/devbox/apps/devbox-{workspace,api-studio,knowledge,control-center}/README.md`의 현재 원장 링크
 - 기존 미커밋 스킬/전용 metadata 검사 제거 파일들(원 diff만 이동)
 
