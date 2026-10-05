@@ -584,3 +584,15 @@ UNC와 전용 로컬 TEMP 모두에서 거절해 미실행이다. 정책을 변�
 Windows/WSL 수용 PASS에 합산하지 않는다. cgroup memory peak 5.56GB, 마지막 swap
 5.22MB로 설정한 예산 안에서 완료했다. 변경된 catalog/workflow/fixture·NSIS 계약 검사는
 4.2초에 통과했다. Biome 1920개 파일도 통과했고 추가 전체 재실행은 하지 않았다.
+
+### exact-main 전체 검사에서 확인한 템플릿 테스트 대기 보정
+
+#625의 필수 CI 6개가 통과하고 `f0d03868`로 통합된 뒤, exact-main 전체 CI
+[37245988476](https://github.com/jihoon22-lee/devbox/actions/runs/37245988476)의 프런트
+검사에서 Overview 프로젝트 생성 테스트가 템플릿 응답 전 option을 조회해 실패했다.
+대화상자는 로딩 중에도 열리므로 dialog 존재만으로 편집 가능 상태를 보장하지 않는다.
+deferred 응답으로 같은 실패를 재현하고, 로딩 중 disabled·mutation 부재를 확인한 뒤 실제
+`aria-busy=false`를 기다리도록 보정했다. 같은 로딩 경계의 인접 템플릿 테스트도 정렬했다.
+제품 코드와 timeout은 변경하지 않았다. 영향받는 Overview 테스트 파일 44개는 6.3초에
+통과했다(cgroup peak 518MB, swap 0). 완료 검증 실패의 좁은 보정이므로 무관한 로컬 전체
+검사를 반복하지 않는다. 필수 PR CI와 최종 exact-main CI·새 후보 수용은 여전히 필요하다.

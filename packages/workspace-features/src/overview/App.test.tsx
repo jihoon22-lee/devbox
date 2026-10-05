@@ -1121,10 +1121,17 @@ describe("Workbench profile context menu", () => {
   });
 
   it("creates a project from a selected template without importing environment data", async () => {
+    const templates = deferred<ProfileTemplateSnapshot>();
+    listProfileTemplatesMock.mockReturnValueOnce(templates.promise);
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 마법사" }));
     const dialog = await screen.findByRole("dialog", { name: "새 프로젝트 마법사" });
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("combobox", { name: "프로필 템플릿" })).toBeDisabled();
+    expect(createProfileFromTemplateMock).not.toHaveBeenCalled();
+    templates.resolve(templateSnapshot);
+    await waitFor(() => expect(dialog).toHaveAttribute("aria-busy", "false"));
     expect(screen.getByRole("option", { name: "Node 서비스" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
     fireEvent.change(screen.getByLabelText("Windows 경로"), { target: { value: "E:\\projects\\node-app" } });
@@ -1143,7 +1150,8 @@ describe("Workbench profile context menu", () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "새 프로젝트 마법사" }));
-    await screen.findByRole("dialog", { name: "새 프로젝트 마법사" });
+    const dialog = await screen.findByRole("dialog", { name: "새 프로젝트 마법사" });
+    await waitFor(() => expect(dialog).toHaveAttribute("aria-busy", "false"));
     await screen.findByDisplayValue("/mnt/e/projects/node");
 
     fireEvent.change(screen.getByLabelText("프로젝트 이름"), { target: { value: "node-app" } });
@@ -1158,7 +1166,8 @@ describe("Workbench profile context menu", () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "템플릿 관리" }));
-    await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
+    const dialog = await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
+    await waitFor(() => expect(dialog).toHaveAttribute("aria-busy", "false"));
     fireEvent.change(screen.getByLabelText("템플릿 이름"), { target: { value: "Node updated" } });
     fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
     await waitFor(() =>
@@ -1173,7 +1182,8 @@ describe("Workbench profile context menu", () => {
     render(<App />);
     await screen.findByRole("button", { name: "devbox" });
     fireEvent.click(screen.getByRole("button", { name: "템플릿 관리" }));
-    await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
+    const dialog = await screen.findByRole("dialog", { name: "프로필 템플릿 관리" });
+    await waitFor(() => expect(dialog).toHaveAttribute("aria-busy", "false"));
     fireEvent.click(screen.getByRole("button", { name: "+ 새 템플릿" }));
     fireEvent.change(screen.getByLabelText("템플릿 이름"), { target: { value: "Generic" } });
     fireEvent.click(screen.getByRole("button", { name: "템플릿 저장" }));
