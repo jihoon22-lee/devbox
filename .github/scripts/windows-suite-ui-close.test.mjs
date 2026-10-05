@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { JSDOM } from "jsdom";
 import { observeNormalClose, requestNormalClose } from "./windows-suite-ui-context.mjs";
 test("native close requests once, confirms review, and waits for child exit before cleanup", async () => {
   const child = { exitCode: null };
@@ -203,3 +204,49 @@ test("explicit owned handoff close review still waits for native process exit", 
     },
   );
 });
+
+for (const [name, markup, expected] of [
+  ["native open review", '<dialog open aria-label="Workspace 종료 검토"><button>종료</button></dialog>', true],
+  [
+    "retained legacy review",
+    '<section role="dialog" aria-label="Workspace 종료 검토"><button>종료</button></section>',
+    true,
+  ],
+  ["closed native review", '<dialog aria-label="Workspace 종료 검토"><button>종료</button></dialog>', false],
+  [
+    "closed explicitly named native review",
+    '<dialog role="dialog" aria-label="Workspace 종료 검토"><button>종료</button></dialog>',
+    false,
+  ],
+  ["other open dialog", '<dialog open aria-label="다른 검토"><button>종료</button></dialog>', false],
+]) {
+  test(`normal close recognizes only actionable Workspace review: ${name}`, async () => {
+    const dom = new JSDOM(markup);
+    const child = { exitCode: null };
+    let clicks = 0;
+    try {
+      await observeNormalClose(
+        {
+          child,
+          product: "workspace",
+          cdp: { evaluate: async (script) => new Function("document", `return ${script}`)(dom.window.document) },
+          ui: {
+            click: async () => {
+              clicks++;
+            },
+          },
+        },
+        async (check) => {
+          assert.equal(await check(), false, "review submission never claims process exit");
+          assert.equal(clicks, expected ? 1 : 0);
+          assert.equal(await check(), false);
+          assert.equal(clicks, expected ? 1 : 0, "never resubmit the close action");
+          child.exitCode = 0;
+          assert.equal(await check(), true);
+        },
+      );
+    } finally {
+      dom.window.close();
+    }
+  });
+}

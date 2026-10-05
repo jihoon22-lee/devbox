@@ -19,6 +19,10 @@ import {
   releaseCdpSession,
   stopOwnedProcess,
 } from "./windows-packaged-smoke.mjs";
+// Native dialogs expose an implicit accessibility role; retained fixtures may
+// still render an explicit-role section. A closed native dialog is not actionable.
+export const workspaceCloseReviewSelector =
+  'dialog[open][aria-label="Workspace 종료 검토"], [role="dialog"]:not(dialog)[aria-label="Workspace 종료 검토"]';
 export async function observeUntil(check, label, timeout = 30000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -51,7 +55,7 @@ export async function observeNormalClose(
     }
     if (product !== "workspace" || reviewed || rendererClosed) return false;
     try {
-      if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
+      if (await cdp.evaluate(`!!document.querySelector(${JSON.stringify(workspaceCloseReviewSelector)})`)) {
         reviewObserved = true;
         report();
         if (reviewWorkspaceClose) await reviewWorkspaceClose();

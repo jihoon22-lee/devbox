@@ -216,3 +216,26 @@ Undo 알림은 feature modal보다 아래에 배치한다. Workspace 편집 화�
 빌드의 Workspace 약 30분과 Control Center+Agent 약 21분 직렬 작업은 독립 hosted
 shard로 분리했다. 각 호스트 Cargo worker 2개·전체 최대 3호스트와 모든 수용 gate를
 유지한다. 약 30분 임계 경로는 기존 실측을 바탕으로 한 추정이며 새 실행에서 측정한다.
+
+## 9. Native 종료창 관측기 정합성
+
+후보 `37380678856`은 main `bc48a839`에서 세 Windows shard와 assembly를 모두
+통과했다. 설치·복구와 최초 Agent 연결 후 종료 관측은 native `<dialog>`에 명시적
+`role` 속성이 없다는 이유로 정상 표시된 확인창을 놓쳤다. 실제 Windows PNG에는
+배경이 가려진 확인창과 활성화된 종료 버튼이 있고, 관측기는 버튼을 누르지 않은 채
+기한이 지났다. 제품의 종료 교착으로 기록하지 않는다.
+
+종료 관측·실패 진단·installer의 세 선택자는 같은 유한한 predicate로 통일한다.
+현재 열린 native dialog 또는 기존 명시적 role의 section만 선택하고, 닫힌 native
+창과 다른 이름의 창은 거절한다. 실제 DOM 표현식을 실행한 회귀는 native 누락과
+닫힌 창 오인을 먼저 재현한 뒤 통과했으며, 클릭 1회와 정확한 소유 프로세스 종료
+대기는 유지한다. 변경한 관측기·테스트 네 경로만 재검증 receipt의 유한 목록에
+추가하고, 제품·빌드 입력과 미검토 경로·symlink 차단을 계속 확인한다.
+
+이 후보의 WSL2 검사는 합성 프로젝트를 생성하는 외부 `wsl.exe`가
+`Wsl/Service/E_UNEXPECTED`로 실패했다. 관련 fixture와 터미널 종료 코드는 이전
+후보와 같고 동일 오류가 후속 정리에도 발생했다. 정확한 WSL 내부 원인은 미확정이며
+해당 작업만 새 hosted VM에서 실행한다. 기존 build·native 성공을 반복하지 않는다.
+필수 원본 native·WSL2가 모두 통과한 뒤에만 같은 제품 bytes로 수정된 전체 UI·
+설치/복구·seal을 수행한다. 실제 결과는 보정 PR과 workflow artifact에 기록하며
+수용 완료 전 stable tag나 공개 완료를 선언하지 않는다.
