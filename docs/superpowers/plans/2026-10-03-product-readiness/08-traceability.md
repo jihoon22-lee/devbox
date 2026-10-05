@@ -1041,3 +1041,20 @@ check·clippy가 통과했다. 테스트 assertion의 서식 한 곳을 로컬�
 628초였으며 cgroup memory peak는 각각 3.06GiB·4.44GiB로 8GiB 제한 안이었다.
 Windows no-replace semantics·폴더 역이동 revision·오류 분류의 독립 검토에서 추가 차단 결함은
 발견하지 않았다. 실제 Windows 회귀·후보 수용은 아직 별도 CI 단계다.
+
+
+PR #630의 병렬 검토에서 Control Center updater가 captured root의 Windows verbatim 표기를
+NSIS `/D=`에 그대로 전달하는 경로를 확인했다. 고정 NSIS 3.11은 이 표기를 보존하고 설치
+bootstrap은 이를 거부한다. 기존 installer fixture는 일반 경로를 직접 전달해 앱 내 updater
+진입점의 이 결함을 검사하지 않았다. 기존 interactive 설치의 filesystem identity 대조를
+공용 helper로 유지하고 updater에도 적용했다. UNC·device namespace 거부·owner 확인·scope
+재검증은 유지한다. 관련 순수 경계 2개 테스트가 통과했으며 실제 Windows identity 회귀는
+Windows CI에서 실행한다. NSIS runtime을 로컬에서 재현했다고 보고하지 않는다.
+
+선행 PR CI 37304128363은 frontend 성공 후 이 추가 수정 통합을 위해 취소했다. 별도 optional
+Product foundation 37304128296도 최종 exact-main 후보와 전체 제품 빌드·설치 수용을 중복해
+제품 빌드 전에 취소했다. 필수 PR CI와 새 exact-main 후보의 전체 수용·sealing은 유지한다.
+
+Control Center 추가 영향 검증(check·clippy·fmt·tests·bindings)은 134초에 통과했다.
+샘플 RSS peak는 1.56GiB, cgroup peak는 2.19GiB였다. 이미 통과한 Knowledge 검사와
+frontend 검사는 다시 실행하지 않았다. 최종 updater diff의 독립 검토도 완료했다.
