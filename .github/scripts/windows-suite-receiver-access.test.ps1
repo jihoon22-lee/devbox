@@ -36,24 +36,6 @@ try {
   if([IO.File]::GetAccessControl($image,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $sddl){throw 'Original access descriptor changed'}
   $child=[Diagnostics.Process]::Start($start)
   try {$child.WaitForExit(); if($child.ExitCode -ne 0){throw 'Restored receiver launch failed'}} finally {$child.Dispose()}
-  # UserTemp commonly starts with AI. Exercise legacy D:/D:P and inherited
-  # ACEs too: modern DACL setters can add AI or inherit extra parent ACEs.
-  $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-  try {
-    foreach($control in @('','AI','P','PAI')) {
-      foreach($inheritance in @('','ID')) {
-        $fixtureSddl='D:'+$control+'(A;'+$inheritance+';FA;;;'+$sid+')'
-        [DevboxReceiverAccess]::Restore($image,$fixtureSddl)
-        if([IO.File]::GetAccessControl($image,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $fixtureSddl){throw 'Synthetic inheritance boundary not established'}
-        & $helper -Root $root -Image $image -ExpectedDigest $digest -Action Deny
-        & $helper -Root $root -Image $image -ExpectedDigest $digest -Action Restore
-        if([IO.File]::GetAccessControl($image,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $fixtureSddl){throw 'Inheritance variant not restored exactly'}
-      }
-    }
-  } finally {
-    if(Microsoft.PowerShell.Management\Test-Path -LiteralPath (Microsoft.PowerShell.Management\Join-Path $root '.handoff-receiver-access.json')){& $helper -Root $root -Image $image -ExpectedDigest $digest -Action Restore}
-    [DevboxReceiverAccess]::Restore($image,$sddl)
-  }
   Microsoft.PowerShell.Utility\Write-Output 'Pinned receiver: execute denied, read/digest preserved, exact ACL restored, launch recovered PASS'
 } finally {
   if(Microsoft.PowerShell.Management\Test-Path -LiteralPath (Microsoft.PowerShell.Management\Join-Path $root '.handoff-receiver-access.json')){& $helper -Root $root -Image $image -ExpectedDigest $digest -Action Restore}

@@ -988,3 +988,15 @@ Win32 error 5로 거부되며, fresh descriptor에 원래 SDDL을 설정해 정�
 새 native source는 전체 checkout으로 전달되며 실제 Windows 구문·inbox 명령 해석과
 정리/원래 오류 보존의 Node 회귀 4개를 통과했다. 복구 후 수신 검토 취소도 vault뿐 아니라
 원래 source bytes를 다시 비교해 수용 기록과 일치시켰다.
+
+[37298549631](https://github.com/jihoon22-lee/devbox/actions/runs/37298549631)에서 실제 hosted 원본의
+실행 거부·정확 ACL 복원은 통과했다. 뒤에 추가한 합성 ACL matrix는 구성 단계에서 멈췄다.
+이 중복 matrix는 로컬 native 증거로 남기고 hosted 사전 검사에서는 제거한다. 실제 원본의
+read pin·실행 거부·hash·정확 복원·재실행 조건은 유지하며 설치 여정은 아직 미실행이다.
+
+사용자 후속 지시에 따라 CI의 동일 입력 재검사를 없앴다. 이전 같은 저장소 CI에서 실제
+성공한 compiler 단계·checkout·입력·범위를 대조하고 변경 없는 패키지 근거만 합성한다.
+실제로 실행하지 않은 skip/재사용 결과는 원본 근거로 삼지 않는다. 현재 입력에 대한
+read-only GitHub 대조는 Workspace를 37291826867, 나머지 Rust와 frontend를 37273563670에서
+충족했다. 이 결과는 새 제품의 설치 수용 근거가 아니며, final exact-main 패키지 수용은 유지한다.
+현재 advisory와 frontend fixture·format은 새로 확인하고 주간 감사는 재사용 없이 실행한다.

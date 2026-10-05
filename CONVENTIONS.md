@@ -197,8 +197,9 @@ Tauri dialog 플러그인이 바꾸는 전역 `window.confirm`은 동기 Boolean
 - `verify:affected`는 `origin/main`과 현재 branch의 merge-base 이후 commit 및 staged,
   unstaged, untracked 파일을 합친다. 앱 변경은 해당 앱만, 공용 package/crate 변경은
   dependency graph의 역의존 closure만 검사한다. 미분류 경로·lockfile 단독 변경은 fail-safe로
-  전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip하며, release와 주간 CI 감사는
-  전체 검증을 유지한다.
+  전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip한다. 릴리스는 전체 범위의
+  검증 근거를 요구하되, 동일 입력의 신뢰 가능한 성공 CI 근거는 출처를 기록하여 재사용한다.
+  주간 전체 감사와 현재 의존성·advisory 검사는 실제로 실행한다.
 - 로컬 테스트는 기존 서비스의 실행 상태·Docker 데몬·방화벽·공유 네트워크를 변경하지 않는다.
   전용 WSL 배포판, 별도 Docker socket/data-root, 고유 container 이름은 네트워크 격리 증거가
   아니다. Docker 설치/데몬 시작·종료/container·network 조작, iptables/nftables/라우팅 변경,
@@ -285,8 +286,9 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 로컬에서 결함별 최소 회귀와 영향 검사만 수행한다. 전체 build·clippy·affected/all은
   모든 구현·문서 통합 후 한 번 모으며 같은 검사를 다른 명령으로 반복하지 않는다.
 - main은 squash만 사용한다. 단일 PR 최종 변경의 필수 체크 `Frontend (pnpm)`,
-  `Rust (Cargo workspace)`, `Rust (Windows)` 성공 후 머지한다. 최종 main CI는 릴리스 정책상
-  별도 1회 실행하며 후보의 전체 패키지 수용을 중복 workflow로 다시 실행하지 않는다.
+  `Rust (Cargo workspace)`, `Rust (Windows)` 성공 후 머지한다. 최종 main CI는 그 SHA의 입력·범위에
+  맞는 성공 근거를 확인한다. 동일 입력의 이전 성공을 검증해 연결할 수 있으면 컴파일·테스트를
+  반복하지 않는다. 후보의 전체 패키지 수용을 중복 workflow로 다시 실행하지 않는다.
 - 현재 원장은 [2026-10-03 계획](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)이다.
   이전 B1–B12 및 v0.8 통합 정책은 역사 기록이다. 기본 UI·설치 확인을 출시 후 사용자에게 넘기지 않는다.
 
