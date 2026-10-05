@@ -34,9 +34,13 @@ function respond(declaration = "verified", foreignFolder = false) {
             generation: "g1",
             suiteVersion: "0.8.0",
             declaration,
-            installerRegistration: "verified",
-            products: [],
-            components: [],
+            installerRegistration: "unknown",
+            products: [
+              { id: "workspace", name: "Devbox Workspace", binary: "verified", version: "0.8.0", runtime: "unknown" },
+            ],
+            components: [
+              { id: "workspace.files", owner: "workspace", binary: "verified", version: "0.8.0", runtime: "unknown" },
+            ],
           },
     } as never;
   });
@@ -92,3 +96,26 @@ it("rejects a folder result from another native owner", async () => {
   fireEvent.click(button);
   await screen.findByRole("alert");
 });
+
+it.each(["products", "components"])(
+  "%s shows measured file facts without unmeasured registration or runtime claims",
+  async (route) => {
+    respond();
+    render(
+      <Inventory
+        description={fixtureDescription("control-center")}
+        route={route}
+        navigate={vi.fn()}
+        refreshContext={async () => {}}
+      />,
+    );
+    await screen.findByText(/Suite 0.8.0/);
+    expect(screen.getByRole("cell", { name: "0.8.0" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "파일 확인됨" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "실행 상태" })).toBeNull();
+    expect(screen.queryByText(/설치 프로그램 등록/)).toBeNull();
+    expect(
+      screen.getByText("제품 응답과 저장소 상태는 업데이트 → 제품 응답·저장소 확인에서 확인할 수 있습니다."),
+    ).toBeTruthy();
+  },
+);

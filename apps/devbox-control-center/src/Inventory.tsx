@@ -97,7 +97,6 @@ export default function Inventory({ description, route }: ShellContentProps) {
                   <th>담당 제품</th>
                   <th>버전</th>
                   <th>파일</th>
-                  <th>실행 상태</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,7 +106,6 @@ export default function Inventory({ description, route }: ShellContentProps) {
                     <td>{item.owner}</td>
                     <td>{item.version ?? "—"}</td>
                     <td>{label(item.binary)}</td>
-                    <td>{label(item.runtime)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -119,7 +117,6 @@ export default function Inventory({ description, route }: ShellContentProps) {
                   <th>제품</th>
                   <th>버전</th>
                   <th>파일</th>
-                  <th>실행 상태</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,16 +125,12 @@ export default function Inventory({ description, route }: ShellContentProps) {
                     <td>{item.name}</td>
                     <td>{item.version ?? "—"}</td>
                     <td>{label(item.binary)}</td>
-                    <td>{label(item.runtime)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <p>
-            설치 프로그램 등록: {label(snapshot.installerRegistration)}. 파일 확인만으로 실행 중인 상태를 판단하지
-            않습니다.
-          </p>
+          <p>제품 응답과 저장소 상태는 업데이트 → 제품 응답·저장소 확인에서 확인할 수 있습니다.</p>
         </>
       )}
     </section>

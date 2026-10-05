@@ -661,3 +661,13 @@ RUNTIME-02는 터미널 route 로딩 중 opener를 눌렀고, LSP-01은 native p
 추가 fixture 회귀와 전체 catalog/workflow 계약은 4.5초, Biome 1923개 파일은 0.6초에
 통과했다. 새 PowerShell 함수는 구문 검사를 통과했으나 실제 호출은 격리 Windows 진단에서
 확인한다. gRPC COM fixture도 Windows 컴파일과 실제 chooser 실행을 구분한다.
+
+
+화면 직접 검토에서는 Control Center 목록의 실행 상태·설치 등록이 native에서 항상
+`unknown`으로 반환되는데도 조회 실패처럼 표시되는 문제를 추가로 확인했다. 실제 확인한
+패키지·버전·파일 상태는 유지하고, 측정하지 않는 열과 등록 문구를 제거했다. 기존
+**업데이트 → 제품 응답·저장소 확인** 화면으로 안내하며 IPC·실행 권한은 바꾸지 않는다.
+Control Center README도 실제 관찰 범위에 맞췄다. 두 화면 회귀 RED→GREEN과 최종 변경의
+앱 영향 검사 33개·타입/빌드/번들·Biome는 21.8초에 통과했다(cgroup peak 585MB, swap 0).
+이 변경에 무관한 Workspace Rust 검사는 반복하지 않았다. 실제 새 UI는 최종 새 후보에서
+확인한다.

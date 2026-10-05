@@ -15,7 +15,8 @@ v0.9.0 소스의 네 사용자 제품 중 하나다. Products·Commands·Tools·
 
 ## 유지하는 계약
 
-- 네 제품과 필수 components의 package identity·실행 상태·설치 상태를 구분해 표시한다.
+- 제품·구성 요소 목록은 확인한 패키지 identity·버전·파일 상태를 표시한다. 실행 여부나 Windows 설치 등록을
+  파일 검증으로 추정하지 않는다. 실제 제품 응답·저장소 상태는 **업데이트 → 제품 응답·저장소 확인**에서 조회한다.
 - Commands는 bounded federated source와 한 개의 shortcut owner를 사용한다. 충돌·missing product·
   stale source를 진단하며 typed context를 통해 승인된 Suite member만 실행한다.
   기억한 Suite 연결은 제품의 창·shell 준비 완료 후 재개하여 cold start 요청이 준비되지 않은
