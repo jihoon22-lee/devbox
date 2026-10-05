@@ -12,7 +12,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     time::{Duration, Instant},
 };
 type Result<T> = std::result::Result<T, &'static str>;
@@ -186,11 +186,56 @@ fn listing(root: &Path) -> Result<(Vec<String>, Vec<String>)> {
     files.sort();
     Ok((directories, files))
 }
+// One scoped worker plus this thread overlaps bounded filesystem waits. Every
+// file keeps the caller's original deadline and identity/content checks. Join
+// both workers before returning any failure; no publication may outlive them.
+fn parallel_files<I: Sync, O: Send>(
+    items: &[I],
+    operation: impl Fn(&I) -> Result<O> + Sync,
+) -> Result<Vec<O>> {
+    if items.len() < 2 {
+        return items.iter().map(operation).collect();
+    }
+    let next = AtomicUsize::new(0);
+    let failed = AtomicBool::new(false);
+    let worker = || {
+        let mut completed = Vec::new();
+        while !failed.load(Ordering::Acquire) {
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            let Some(item) = items.get(index) else {
+                break;
+            };
+            let result = operation(item);
+            if result.is_err() {
+                failed.store(true, Ordering::Release);
+            }
+            completed.push((index, result));
+        }
+        completed
+    };
+    std::thread::scope(|scope| {
+        let child = scope.spawn(worker);
+        let mut completed = worker();
+        completed.extend(child.join().map_err(|_| "checkpoint_worker_failed")?);
+        completed.sort_unstable_by_key(|(index, _)| *index);
+        completed.into_iter().map(|(_, result)| result).collect()
+    })
+}
+
 fn copy_or_hash(
     source: &Path,
     destination: Option<&Path>,
     started: Instant,
     cancelled: &AtomicBool,
+) -> Result<(Entry, FilesystemIdentity)> {
+    copy_or_hash_with_budget(source, destination, started, cancelled, None)
+}
+fn copy_or_hash_with_budget(
+    source: &Path,
+    destination: Option<&Path>,
+    started: Instant,
+    cancelled: &AtomicBool,
+    reserved_bytes: Option<&AtomicU64>,
 ) -> Result<(Entry, FilesystemIdentity)> {
     bounded(started, cancelled)?;
     ensure_no_links(source).map_err(|_| "checkpoint_path_unsafe")?;
@@ -201,6 +246,19 @@ fn copy_or_hash(
         .map_err(|_| "checkpoint_source_unavailable")?;
     if before.len() > MAX_BYTES {
         return Err("checkpoint_size_limit");
+    }
+    if destination.is_some() {
+        if let Some(reserved) = reserved_bytes {
+            // Reserve before creating/writing a destination. Parallel files may
+            // never collectively exceed the original whole-checkpoint limit.
+            reserved
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |total| {
+                    total
+                        .checked_add(before.len())
+                        .filter(|bytes| *bytes <= MAX_BYTES)
+                })
+                .map_err(|_| "checkpoint_size_limit")?;
+        }
     }
     let mut output = destination
         .map(|path| {
@@ -303,6 +361,7 @@ pub fn acquire_quiesced(
     let mut retained = Vec::new();
     let mut total = 0_u64;
     let mut file_count = 0;
+    let reserved_bytes = AtomicU64::new(0);
     for (owner, source) in sources {
         bounded(started, cancelled)?;
         if source.starts_with(parent) || parent.starts_with(source) {
@@ -338,14 +397,17 @@ pub fn acquire_quiesced(
             fs::create_dir(&directory).map_err(|_| "checkpoint_copy_failed")?;
             retained.push(Directory::open(&directory)?);
         }
-        let mut entries = Vec::new();
-        for relative in files {
-            let (mut entry, identity) = copy_or_hash(
-                &source.join(&relative),
-                Some(&destination.join(&relative)),
+        let copied = parallel_files(&files, |relative| {
+            copy_or_hash_with_budget(
+                &source.join(relative),
+                Some(&destination.join(relative)),
                 started,
                 cancelled,
-            )?;
+                Some(&reserved_bytes),
+            )
+        })?;
+        let mut entries = Vec::new();
+        for (relative, (mut entry, identity)) in files.into_iter().zip(copied) {
             total += entry.bytes;
             if total > MAX_BYTES {
                 return Err("checkpoint_size_limit");
@@ -383,7 +445,7 @@ pub fn acquire_quiesced(
         {
             return Err("checkpoint_source_changed");
         }
-        for expected in &product.files {
+        parallel_files(&product.files, |expected| {
             let (mut actual, identity) =
                 copy_or_hash(&source.join(&expected.relative), None, started, cancelled)?;
             actual.relative = expected.relative.clone();
@@ -402,7 +464,8 @@ pub fn acquire_quiesced(
             if &copy != expected {
                 return Err("checkpoint_copy_changed");
             }
-        }
+            Ok(())
+        })?;
     }
     for directory in retained {
         directory.check()?;
@@ -599,12 +662,6 @@ fn verify_manifest(
             retained.push(Directory::open(&root.join(directory))?);
         }
         for entry in &product.files {
-            let (mut actual, _) =
-                copy_or_hash(&root.join(&entry.relative), None, started, cancelled)?;
-            actual.relative = entry.relative.clone();
-            if &actual != entry {
-                return Err("checkpoint_copy_changed");
-            }
             total = total
                 .checked_add(entry.bytes)
                 .ok_or("checkpoint_size_limit")?;
@@ -613,6 +670,15 @@ fn verify_manifest(
                 return Err("checkpoint_size_limit");
             }
         }
+        parallel_files(&product.files, |entry| {
+            let (mut actual, _) =
+                copy_or_hash(&root.join(&entry.relative), None, started, cancelled)?;
+            actual.relative = entry.relative.clone();
+            if &actual != entry {
+                return Err("checkpoint_copy_changed");
+            }
+            Ok(())
+        })?;
     }
     if total != expected.bytes || count != expected.files {
         return Err("checkpoint_manifest_invalid");
@@ -686,14 +752,15 @@ pub fn matches_quiesced_sources(
         for relative in &directories {
             retained.push(Directory::open(&source.join(relative))?);
         }
-        for entry in &product.files {
+        parallel_files(&product.files, |entry| {
             let (mut actual, _) =
                 copy_or_hash(&source.join(&entry.relative), None, started, cancelled)?;
             actual.relative = entry.relative.clone();
             if &actual != entry {
                 return Err("checkpoint_source_changed");
             }
-        }
+            Ok(())
+        })?;
     }
     for directory in retained {
         directory.check()?;
@@ -728,6 +795,7 @@ pub fn materialize(
     let started = Instant::now();
     let source = parent.join(&expected.id);
     let mut retained = Vec::new();
+    let reserved_bytes = AtomicU64::new(0);
     for product in &manifest.products {
         bounded(started, cancelled)?;
         if !product.present {
@@ -741,18 +809,20 @@ pub fn materialize(
             fs::create_dir(&directory).map_err(|_| "checkpoint_copy_failed")?;
             retained.push(Directory::open(&directory)?);
         }
-        for entry in &product.files {
-            let (mut actual, _) = copy_or_hash(
+        parallel_files(&product.files, |entry| {
+            let (mut actual, _) = copy_or_hash_with_budget(
                 &source.join(&product.owner).join(&entry.relative),
                 Some(&destination.join(&entry.relative)),
                 started,
                 cancelled,
+                Some(&reserved_bytes),
             )?;
             actual.relative = entry.relative.clone();
             if &actual != entry {
                 return Err("checkpoint_copy_changed");
             }
-        }
+            Ok(())
+        })?;
         let (directories, files) = listing(&destination)?;
         if directories != product.directories
             || files
@@ -764,14 +834,15 @@ pub fn materialize(
         {
             return Err("checkpoint_copy_changed");
         }
-        for entry in &product.files {
+        parallel_files(&product.files, |entry| {
             let (mut actual, _) =
                 copy_or_hash(&destination.join(&entry.relative), None, started, cancelled)?;
             actual.relative = entry.relative.clone();
             if &actual != entry {
                 return Err("checkpoint_copy_changed");
             }
-        }
+            Ok(())
+        })?;
     }
     // Publish readiness only after the selected immutable source and every copy
     // still match. Incomplete directories remain private recovery evidence.
@@ -861,6 +932,170 @@ mod tests {
         drop(store);
         assert!(crate::core::delivery_store::Store::open(center).is_ok());
     }
+    #[test]
+    fn file_workers_overlap_but_never_exceed_two_and_keep_input_order() {
+        use std::sync::{atomic::AtomicUsize, Barrier};
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let both = Barrier::new(2);
+        let inputs = [0, 1, 2, 3, 4, 5];
+        let result = parallel_files(&inputs, |value| {
+            let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(current, Ordering::SeqCst);
+            both.wait();
+            active.fetch_sub(1, Ordering::SeqCst);
+            Ok(value * 2)
+        })
+        .unwrap();
+        assert_eq!(peak.load(Ordering::SeqCst), 2);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert_eq!(result, vec![0, 2, 4, 6, 8, 10]);
+    }
+
+    #[test]
+    fn file_worker_failure_is_not_partial_success() {
+        let result = parallel_files(&[0, 1, 2, 3], |value| {
+            if *value == 0 {
+                Err("checkpoint_copy_changed")
+            } else {
+                Ok(*value)
+            }
+        });
+        assert_eq!(result, Err("checkpoint_copy_changed"));
+    }
+
+    #[test]
+    fn parallel_copy_reserves_the_global_byte_limit_before_creating_files() {
+        let root = tempdir().unwrap();
+        let sources = [root.path().join("first"), root.path().join("second")];
+        let targets = [
+            root.path().join("copy-first"),
+            root.path().join("copy-second"),
+        ];
+        for source in &sources {
+            fs::write(source, b"data").unwrap();
+        }
+        let reserved = AtomicU64::new(MAX_BYTES - 4);
+        let cancelled = AtomicBool::new(false);
+        let started = Instant::now();
+        let result = parallel_files(&[0, 1], |index| {
+            copy_or_hash_with_budget(
+                &sources[*index],
+                Some(&targets[*index]),
+                started,
+                &cancelled,
+                Some(&reserved),
+            )
+        });
+        assert_eq!(result.unwrap_err(), "checkpoint_size_limit");
+        assert_eq!(reserved.load(Ordering::Acquire), MAX_BYTES);
+        assert_eq!(targets.iter().filter(|target| target.exists()).count(), 1);
+        for source in &sources {
+            assert_eq!(fs::read(source).unwrap(), b"data");
+        }
+        assert!(!root.path().join("checkpoint.json").exists());
+    }
+
+    #[test]
+    fn file_workers_share_the_original_deadline_and_cancellation() {
+        let root = tempdir().unwrap();
+        let source = root.path().join("source");
+        fs::write(&source, b"unchanged").unwrap();
+        for (started, cancelled, expected) in [
+            (
+                Instant::now() - Duration::from_secs(121),
+                false,
+                "checkpoint_expired",
+            ),
+            (Instant::now(), true, "checkpoint_cancelled"),
+        ] {
+            let cancelled = AtomicBool::new(cancelled);
+            let result = parallel_files(&["first", "second"], |name| {
+                copy_or_hash(&source, Some(&root.path().join(name)), started, &cancelled)
+            });
+            assert_eq!(result.unwrap_err(), expected);
+            assert!(!root.path().join("first").exists());
+            assert!(!root.path().join("second").exists());
+            assert_eq!(fs::read(&source).unwrap(), b"unchanged");
+        }
+    }
+
+    #[test]
+    fn parallel_checkpoint_round_trip_preserves_all_product_trees_and_rejects_later_edits() {
+        let live = tempdir().unwrap();
+        let backup = tempdir().unwrap();
+        let prepared = tempdir().unwrap();
+        let sources = sources(live.path());
+        let mut expected = Vec::new();
+        for (owner, source) in &sources {
+            fs::create_dir_all(source.join("empty/nested")).unwrap();
+            for directory in 0..4 {
+                let parent = source.join(format!("closed-browser/{directory}/store"));
+                fs::create_dir_all(&parent).unwrap();
+                for file in 0..4 {
+                    let relative = format!("closed-browser/{directory}/store/{file}.bin");
+                    let bytes = format!("{owner}:{directory}:{file}:")
+                        .repeat(256)
+                        .into_bytes();
+                    fs::write(source.join(&relative), &bytes).unwrap();
+                    expected.push((owner.clone(), relative, bytes));
+                }
+            }
+        }
+        let cancelled = AtomicBool::new(false);
+        let key = "b".repeat(64);
+        let receipt =
+            acquire_quiesced(&sources, backup.path(), &key, "generation", &cancelled).unwrap();
+        assert_eq!(receipt.files, 64);
+        assert_eq!(
+            receipt.bytes,
+            expected
+                .iter()
+                .map(|(_, _, bytes)| bytes.len() as u64)
+                .sum::<u64>()
+        );
+        verify(backup.path(), &receipt, &key, "generation", &cancelled).unwrap();
+        matches_quiesced_sources(
+            &sources,
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &cancelled,
+        )
+        .unwrap();
+        let target = prepared.path().join(&receipt.id);
+        materialize(
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &target,
+            &cancelled,
+        )
+        .unwrap();
+        verify(prepared.path(), &receipt, &key, "generation", &cancelled).unwrap();
+        for (owner, relative, bytes) in &expected {
+            assert_eq!(fs::read(sources[owner].join(relative)).unwrap(), *bytes);
+            assert_eq!(fs::read(target.join(owner).join(relative)).unwrap(), *bytes);
+            assert!(target.join(owner).join("empty/nested").is_dir());
+        }
+        let (owner, relative, _) = &expected[17];
+        fs::write(sources[owner].join(relative), b"newer user bytes").unwrap();
+        assert_eq!(
+            matches_quiesced_sources(
+                &sources,
+                backup.path(),
+                &receipt,
+                &key,
+                "generation",
+                &cancelled
+            ),
+            Err("checkpoint_source_changed")
+        );
+        verify(prepared.path(), &receipt, &key, "generation", &cancelled).unwrap();
+    }
+
     #[test]
     fn recovery_compatibility_verifies_old_receipts_without_authorizing_restore() {
         let root = tempdir().unwrap();

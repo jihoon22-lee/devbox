@@ -1071,3 +1071,31 @@ Agent 01–03은 통과했고 04는 선행 종료 증거 부재의 연쇄 NOT_RU
 새 실행의 같은 설치 cohort에서 전체 40개 여정을 관측하고 별도 Windows VM의 전체 migration·
 recovery를 병렬 확인한 뒤 새 seal을 만든다. tag는 원본 빌드 SHA이며 새 fixture SHA와
 검증 run을 별도로 기록한다. 구현 중인 절차를 수용·게시 PASS로 기록하지 않는다.
+
+
+재검증 `37322897417`의 전체 migration은 초기 snapshot·restore·rollback·제거·재설치를
+통과한 뒤 generation update 구간에서 `checkpoint_expired`로 중단됐다. 이는 review token의
+수명이 아니라 실제 checkpoint 파일 처리의 120초 제한이다. 실패 로그에 작업별 시간과
+namespace 규모가 없어, 원본 bytes를 유지한 진단 `37325623409`에 helper 작업명·소요 시간과
+소유 namespace 파일 수·용량 관측을 추가했다. 파일 내용과 실제 경로는 기록하지 않는다.
+
+보정은 같은 deadline 아래 파일 복사·검증을 최대 두 개씩 병렬 처리하고, 복사 전 전체 용량을
+원자적으로 예약한다. 경로·identity·원본/복사본 해시·취소·최종 marker 공개 조건은 유지한다.
+worker 실패는 진행 중인 작업의 종료를 기다린 뒤 반환하며 일부 결과를 PASS로 수용하지 않는다.
+이 변경은 제품 코드이므로 기존 `5d25aa75` 패키지를 수정본의 성공 근거로 바꿀 수 없다.
+최종 로컬 회귀·필수 CI·새 제품 bytes의 Windows 수용 결과는 보정 PR에 기록한다.
+시간 절반 단축이나 설치 성공을 구현만으로 선언하지 않는다.
+
+같은 묶음에서 Windows 패키징의 중복 helper 컴파일을 제거한다. 고정 Tauri CLI 2.12의
+`--bins` 빌드가 생성한 Suite bootstrap을 Agent 컴파일 전에 staging에 보관하며, 뒤의
+동일 helper 단독 컴파일은 실행하지 않는다. 기존 실행에서 이 중복 단계는 6분 4초였다.
+도우미는 Tauri 빌드의 `tauri/custom-protocol` feature variant를 사용하지만 CLI 진입점은
+Tauri 앱을 시작하지 않는다. 누락 산출물 거부와 기존 source·파일 hash receipt를 유지하고,
+새 후보에서 실제 설치·업데이트 동작을 검증한다.
+
+최종 로컬 영향 범위는 Control Center 한 제품이었다. check는 통과했고 Clippy가 scoped
+worker closure의 불필요한 참조 하나를 지적해 수정한 뒤, 실패한 Clippy와 미실행 fmt·64개
+library test·bindings 검사를 완료했다. 통과한 check나 다른 제품 검사는 반복하지 않았다.
+두 실행 합계는 약 31초, cgroup peak는 최대 1.71GiB이며 swap을 사용하지 않았다.
+패키징 계약과 실제 Windows PowerShell 구문 검사도 통과했다. 이 결과는 Windows runtime
+PASS나 실제 처리 시간 단축 측정을 대신하지 않는다.

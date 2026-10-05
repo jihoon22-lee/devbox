@@ -38,12 +38,14 @@ try {
       if ($LASTEXITCODE -ne 0) { throw 'Private LSP fixture build failed.' }
     }
     if ($product -eq 'control-center') {
+      # Pinned Tauri CLI 2.12 builds --bins with tauri/custom-protocol. The
+      # bootstrap CLI does not start Tauri; retain that already-built variant
+      # before the Agent build changes the shared target dependency features.
+      New-Item -ItemType Directory -Path "$destination/resources/suite" -Force | Out-Null
+      Copy-Item -LiteralPath 'target/release/devbox-suite-bootstrap.exe' -Destination "$destination/resources/suite/"
       cargo build --locked --release -p devbox-agent
       if ($LASTEXITCODE -ne 0) { throw 'Agent build failed.' }
-      cargo build --locked --release -p devbox-control-center --bin devbox-suite-bootstrap
-      if ($LASTEXITCODE -ne 0) { throw 'Suite helper build failed.' }
-      New-Item -ItemType Directory -Path "$destination/resources/suite" -Force | Out-Null
-      Copy-Item -LiteralPath 'target/release/devbox-suite-bootstrap.exe','target/release/devbox-agent.exe' -Destination "$destination/resources/suite/"
+      Copy-Item -LiteralPath 'target/release/devbox-agent.exe' -Destination "$destination/resources/suite/"
     }
     $receipt.products += $product
     foreach ($file in Get-ChildItem -LiteralPath $destination -File -Recurse) {
