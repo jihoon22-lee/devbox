@@ -246,8 +246,6 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
 
     frontend_seeds: set[str] = set()
     rust_seeds: set[str] = set()
-    frontend_manifest_seeds: set[str] = set()
-    rust_manifest_seeds: set[str] = set()
     frontend_all = False
     rust_all = False
     dependency_required = False
@@ -373,7 +371,6 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             else:
                 frontend_seeds.add(node_name)
                 if path == f"{directory}/package.json":
-                    frontend_manifest_seeds.add(node_name)
                     dependency_required = True
             continue
 
@@ -386,7 +383,6 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             else:
                 rust_seeds.add(node_name)
                 if path == f"{directory}/Cargo.toml":
-                    rust_manifest_seeds.add(node_name)
                     dependency_required = True
             continue
 
@@ -396,7 +392,6 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             if headless_rust is not None:
                 rust_seeds.add(headless_rust)
                 if path == f"{app_directory}/Cargo.toml":
-                    rust_manifest_seeds.add(headless_rust)
                     dependency_required = True
             elif len(parts) >= 3 and parts[2] == "src-tauri":
                 rust_directory = f"{app_directory}/{parts[2]}"
@@ -407,7 +402,6 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
                 else:
                     rust_seeds.add(node_name)
                     if path == f"{rust_directory}/Cargo.toml":
-                        rust_manifest_seeds.add(node_name)
                         dependency_required = True
             else:
                 node_name = frontend.by_directory.get(app_directory)
@@ -420,7 +414,6 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
                 else:
                     frontend_seeds.add(node_name)
                     if path == f"{app_directory}/package.json":
-                        frontend_manifest_seeds.add(node_name)
                         dependency_required = True
             continue
 
@@ -428,18 +421,15 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
         rust_all = True
         reasons.append(f"unclassified workspace path: {path}")
 
+    # A changed manifest does not prove that the shared lockfile changed only
+    # its dependency closure. Until exact resolved-graph changes are inspected,
+    # every consumer in that ecosystem has potentially different build inputs.
     if pnpm_lock_changed:
-        if frontend_manifest_seeds:
-            reasons.append("pnpm lockfile paired with changed workspace manifest")
-        elif not frontend_all:
-            frontend_all = True
-            reasons.append("pnpm lockfile changed without a workspace manifest")
+        frontend_all = True
+        reasons.append("shared pnpm lockfile changed")
     if cargo_lock_changed:
-        if rust_manifest_seeds:
-            reasons.append("Cargo lockfile paired with changed workspace manifest")
-        elif not rust_all:
-            rust_all = True
-            reasons.append("Cargo lockfile changed without a workspace manifest")
+        rust_all = True
+        reasons.append("shared Cargo lockfile changed")
 
     if frontend_all:
         frontend_scope = "all"

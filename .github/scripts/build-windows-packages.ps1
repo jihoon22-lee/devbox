@@ -33,6 +33,8 @@ try {
     if ($product -in @('workspace','knowledge')) {
       New-Item -ItemType Directory -Path "$destination/resources/wsl" -Force | Out-Null
       Copy-Item -LiteralPath "apps/devbox-$product/src-tauri/resources/wsl/manifest.json","apps/devbox-$product/src-tauri/resources/wsl/devbox-workspace-wsl" -Destination "$destination/resources/wsl"
+    }
+    if ($product -eq 'workspace') {
       # A private test executable is never part of the product archive.
       cargo build --locked --release -p devbox-editor-engine --bin fake-lsp-server
       if ($LASTEXITCODE -ne 0) { throw 'Private LSP fixture build failed.' }

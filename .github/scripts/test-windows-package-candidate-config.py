@@ -19,8 +19,11 @@ for script in ['build-suite-package.py', 'build-suite-installer.py', 'acquire-su
     assert script in a, script
 assert '--artifact-kind candidate' in a and 'if ($AllowPrerelease) { return }' in a
 assert 'tauri build --no-bundle' in b and 'Four-product catalog required' in b
+assert "if ($product -eq 'workspace') {\n      # A private test executable" in b, 'Only the Workspace shard consumes the private Windows LSP fixture'
 assert 'fake-lsp-server.exe' not in a and 'resources/suite/devbox-suite-bootstrap.exe' in a
 assert 'resources/wsl/devbox-workspace-wsl' in a and 'resources/wsl/manifest.json' in a
+rebuild = read('.github/scripts/rebuild-suite-control-center.ps1')
+assert "if ($product -in @('workspace','knowledge')) { $names +=" in rebuild, 'Retained rebuild must preserve both products WSL resources required by portable assembly'
 for scope in ['product-shells', 'api', 'knowledge', 'cross-product']:
     assert scope in w
 for script in ['windows-product-foundation.mjs',  'windows-api-lifecycle.mjs', 'windows-api-workflow.mjs', 'windows-knowledge-lifecycle.mjs', 'windows-suite-workflows.mjs', 'windows-suite-delivery.ps1', 'windows-workspace-owned-wsl2.ps1', 'compare-product-performance.mjs']:

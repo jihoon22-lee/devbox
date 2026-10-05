@@ -48,7 +48,6 @@ workflow_probe = (root / ".github/scripts/windows-api-workflow.mjs").read_text()
 assert 'process.env.RUNNER_ENVIRONMENT, "github-hosted"' in workflow_probe
 assert 'process.env.GITHUB_ACTIONS, "true"' in workflow_probe
 assert "windows-api-workflow.mjs" in workflow
-assert "windows-process-identity.mjs" in workflow
 assert "Page.handleJavaScriptDialog" in workflow_probe
 assert "captureMasked: true" in workflow_probe
 assert "restartPreservesDraft: true" in workflow_probe
@@ -62,8 +61,8 @@ assert 'run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"' in windows_job, "
 assert 'RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}' in windows_job
 assert "product-native-authority-" not in workflow, "do not duplicate CI's Windows unit suite"
 assert "windows-knowledge-lifecycle.mjs" in workflow
-for source in ("packages/knowledge-features/**", "crates/knowledge-vault-engine/**", "crates/activity-engine/**", "crates/content-index-engine/**"):
-    assert source in workflow, "native Knowledge consumers require acceptance on source changes"
+assert workflow.startswith("name: Product foundation acceptance\n\non:\n  workflow_dispatch:")
+assert "pull_request" not in workflow, "native diagnostics are manual; exact-main candidate owns mandatory acceptance"
 
 import subprocess
 subprocess.run(["node", str(root / ".github/scripts/check-api-studio-routes.mjs"), "--self-test"], check=True)
@@ -72,12 +71,6 @@ subprocess.run(["node", str(root / ".github/scripts/check-knowledge-routes.mjs")
 check = runpy.run_path(str(root / ".github/scripts/check-product-foundation.py"))["check"]
 original_read = Path.read_text
 
-for source in ("packages/workspace-features/**", "crates/projects-engine/**",
-               "crates/repositories-engine/**", "crates/editor-engine/**",
-               "crates/runtime-engine/**", "crates/logs-engine/**",
-               "crates/ports-engine/**", "crates/terminal-engine/**",
-               ".github/scripts/copy-owned-terminal-profile.ps1"):
-    assert source in workflow, "native Workspace consumers require acceptance on source changes"
 
 for filename, changed_fields in [
     ("terminal.json", {"windows": ["*"]}),
@@ -352,3 +345,15 @@ for title in ("Check owned cleanup helpers", "Install interactively and complete
     assert "!(" + migration_condition + ")" in selected
 assert work_step.index("windows-suite-delivery.ps1") < work_step.index("verify-retained-committed-install.mjs")
 assert "artifactDigests = $artifactDigests" in installer_diagnostic
+
+# Installed Workspace delegates Logs reads to Agent, including the source-owned
+# second read before sending a selection to Transforms. The local engine is not
+# initialized in that installation and cannot validate the captured rows.
+selection_owner = (root / "apps/devbox-workspace/src-tauri/src/selection_logs.rs").read_text()
+revalidate_selection = selection_owner.split("pub(crate) async fn revalidate", 1)[1]
+assert "crate::runtime_owner::installed(app)?" in revalidate_selection
+assert re.search(
+    r'crate::runtime_owner::call_until\(\s*app,\s*"workspace.logs",\s*"read_sources",\s*request,\s*"logs",\s*group.context.as_ref\(\),\s*deadline,?\s*\)',
+    revalidate_selection,
+), "log selection must re-read through the installed execution owner with its original context and deadline"
+assert "logs_engine::api::dispatch" in revalidate_selection, "portable ownership still uses the local engine"

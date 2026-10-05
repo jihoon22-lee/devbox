@@ -147,6 +147,25 @@ export async function writeProductInputObservation({ product, checks, assertions
   return record;
 }
 
+export async function capturePerformanceScreenshot(
+  cdp,
+  product,
+  directory = "product-foundation-evidence/user-flows/screenshots/performance",
+) {
+  assert.ok(layoutProducts.includes(product));
+  const { data } = await cdp.command("Page.captureScreenshot", { format: "png" });
+  const bytes = Buffer.from(data, "base64");
+  assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "Performance PNG capture required");
+  const file = path.resolve(directory, `performance-${product}-completed.png`);
+  await mkdir(directory, { recursive: true });
+  await writeFile(file, bytes, { flag: "wx" });
+  return [file];
+}
+
+export function layoutEvidenceStatus(missing, failureCode) {
+  return missing.length ? { status: "NOT_RUN", failureCode, missing } : { status: "PASS", failureCode: null };
+}
+
 // Inserted in the existing first installed launch, before synthetic business work.
 export async function observeProductPerformance({
   product,
@@ -185,6 +204,7 @@ export async function observeProductPerformance({
     },
     measured,
     budget,
+    screenshotPaths: await capturePerformanceScreenshot(cdp, product),
   };
   await mkdir(evidenceRoot, { recursive: true });
   await writeFile(path.join(evidenceRoot, `performance-${product}.json`), JSON.stringify(record, null, 2), {
@@ -233,10 +253,9 @@ export async function aggregateLayoutEvidence() {
     ...identity,
     id: "UI-01",
     evidenceKind: "packaged-ui",
-    status: missing.length ? "NOT_RUN" : "PASS",
+    ...layoutEvidenceStatus(missing, "missing-actual-delivery-layout-observations"),
     assertions,
     screenshotPaths,
-    ...(missing.length ? { failureCode: "missing-actual-delivery-layout-observations", missing } : {}),
   };
 }
 
@@ -295,6 +314,8 @@ export async function runSuiteLayout() {
         screenshotPaths.push(...record.screenshotPaths);
       } else {
         assert.equal(record.budget.passed, true);
+        assert.ok(Array.isArray(record.screenshotPaths) && record.screenshotPaths.length === 1);
+        screenshotPaths.push(...record.screenshotPaths);
         assertions.push(`${product}: actual cold/warm/input/owned-idle measurements within existing budgets`);
       }
       records.push(record);
@@ -316,12 +337,11 @@ export async function runSuiteLayout() {
     results.push({
       ...identity,
       id,
-      status: missing.length ? "NOT_RUN" : "PASS",
+      ...layoutEvidenceStatus(missing, "missing-actual-input-or-performance-observations"),
       evidenceKind: "packaged-ui",
       assertions,
       screenshotPaths,
       measurements: records,
-      ...(missing.length ? { failureCode: "missing-actual-input-or-performance-observations", missing } : {}),
     });
   }
   await writeUserFlowResults("suite-layout", results);

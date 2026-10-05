@@ -71,7 +71,7 @@ def check(root=ROOT):
     for source in (root / "crates/suite-runtime/src").rglob("*.rs"):
         assert "CARGO_PKG_VERSION" not in source.read_text(), "Suite library metadata is not product identity"
     workflow = (root / ".github/workflows/product-foundation.yml").read_text()
-    assert "'crates/suite-runtime/**'" in workflow, "Suite-only changes require native acceptance"
+    assert "  workflow_dispatch:" in workflow and "  pull_request:" not in workflow, "Native diagnostics are manual; the exact-main candidate owns release acceptance"
     print("Product foundation: four products with exact local capability boundaries")
 
 
