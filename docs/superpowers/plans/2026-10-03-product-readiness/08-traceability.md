@@ -817,3 +817,24 @@ Windows 사전 검사와 설치·활성화를 통과하고 실제 트레이를 �
 `TopLevelWindowForOverflowXamlIsland` 팝업을 기존 root 목록이 거부했다. 확보한 native
 창 정보에 따라 이 정확한 class를 인식하고 기존 PID·이미지·세션·native 소유권 검사는
 유지했다. 실제 Windows ParseFile과 허용/거부 predicate 회귀는 통과했다.
+
+
+#628은 exact-main `1e5035a663c160a77c5ff22139fac7bcbcbfcca7`로 병합됐고
+[전체 CI 37273563670](https://github.com/jihoon22-lee/devbox/actions/runs/37273563670)의
+6개 job을 통과했다. 실제 트레이 종료·자동 재시작 거부·명시적 재연결은
+[집중 진단 37273128904](https://github.com/jihoon22-lee/devbox/actions/runs/37273128904)에서 통과했다.
+
+[후보 37274754806](https://github.com/jihoon22-lee/devbox/actions/runs/37274754806)은
+두 Windows 빌드·조립·API 및 cross-product native·독립 WSL2/Docker를 통과했다.
+Knowledge native는 최초 CDP target이 `about:blank`인 상태로 30초 후 실패했다.
+product-shells는 Knowledge 자동 준비와 기본 14개 호출을 통과한 뒤 Daily 또는 수집
+동의 묶음에서 CDP 응답 제한에 도달했다. 후속 marker 조회는 응답했으므로 두 실패를
+같은 원인이나 전체 renderer 정지로 단정하지 않는다. 기존 기록은 후속 묶음의 개별
+대기 호출을 식별하지 못했다. 설치 사용자 여정은 계속 수집 중이며 태그·공개는 보류한다.
+
+원인 분리를 위해 기존 marker를 Daily·수집 동의 단계에도 적용하고, portable 최초
+시작 실패 시 소유 프로세스·native 응답·CDP 위치·WCT 관찰을 정리 전에 보존한다.
+원래 오류·기존 제한은 유지하고 업무 재실행이나 페이지 reload는 추가하지 않는다.
+보관된 같은 bytes의 정확한 lifecycle 진단 경로를 추가하며 원본/검증 코드 source를
+구분하고 승격 근거로 사용할 수 없게 표시한다. 로컬 최소 회귀·workflow 계약·actionlint와
+실제 Windows PowerShell ParseFile 검사를 통과했다. 제품 원인은 아직 미확정이다.

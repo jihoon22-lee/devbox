@@ -190,6 +190,12 @@ assert "DEVBOX_PORTABLE_FIXTURES=target/portable-fixture" in suite_diagnostic
 assert "DEVBOX_FIXTURE_PROFILE=release" in suite_diagnostic
 assert "windows-product-foundation.mjs --knowledge-diagnostic" in suite_diagnostic
 assert "native-knowledge-components-diagnostic-" in suite_diagnostic
+assert "suite_knowledge_lifecycle:" in workflow
+assert "Lifecycle diagnosis requires only retained Knowledge mode" in suite_diagnostic
+assert "windows-knowledge-lifecycle.mjs --retained-diagnostic" in suite_diagnostic
+assert "inputs.suite_full_workflow || inputs.suite_knowledge_lifecycle" in suite_diagnostic
+assert "lifecycleDiagnostic =" in suite_diagnostic
+assert "inputs.suite_knowledge_lifecycle && 'knowledge-lifecycle'" in workflow
 for job in ("workspace-wsl-helper", "windows", "baseline-performance"):
     section = workflow.split(f"  {job}:\n", 1)[1]
     condition = next(line for line in section.splitlines() if line.strip().startswith("if:"))
@@ -205,7 +211,7 @@ assert "windows-knowledge-wsl.ps1" in sequence
 assert "windows-workspace-wsl-git.ps1" in sequence
 assert "windows-product-performance.ps1 -Apps" in sequence
 assert "sequenceReplay =" in suite_diagnostic
-assert "always() && inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow" in suite_diagnostic
+assert "always() && inputs.suite_diagnostic_knowledge && (inputs.suite_full_workflow || inputs.suite_knowledge_lifecycle)" in suite_diagnostic
 
 installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
 assert "suite_diagnostic_installer_ui:" in workflow

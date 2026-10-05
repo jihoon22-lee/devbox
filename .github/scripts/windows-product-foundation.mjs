@@ -157,12 +157,19 @@ async function connect(port, child, deadline = performance.now() + 30_000, termi
             const result = await new Promise((resolve, reject) => {
               const timer = setTimeout(() => {
                 pending.delete(next);
-                writeFileSync(
-                  "product-foundation-evidence/renderer-timeout.json",
-                  JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2),
-                );
-                const original = new Error(`CDP request timeout at ${currentProbe?.stage}`);
-                if (currentProbe?.stage !== "knowledge-components") {
+                const probe = currentProbe;
+                const original = new Error(`CDP request timeout at ${probe?.stage}`);
+                try {
+                  writeFileSync(
+                    "product-foundation-evidence/renderer-timeout.json",
+                    JSON.stringify({ currentProbe: probe, diagnostics, expression: expression.slice(0, 240) }, null, 2),
+                  );
+                } catch {
+                  /* Keep the original timeout authoritative. */
+                }
+                if (
+                  !["knowledge-components", "knowledge-daily", "knowledge-collection-consent"].includes(probe?.stage)
+                ) {
                   reject(original);
                   return;
                 }
@@ -177,19 +184,15 @@ async function connect(port, child, deadline = performance.now() + 30_000, termi
                 )
                   .then((value) => {
                     writeFileSync(
-                      `product-foundation-evidence/knowledge-steps-${currentProbe.suffix}.json`,
-                      JSON.stringify(
-                        { ...mode.evidence, probe: currentProbe, marker: value.result?.value ?? null },
-                        null,
-                        2,
-                      ),
+                      `product-foundation-evidence/knowledge-steps-${probe.suffix}.json`,
+                      JSON.stringify({ ...mode.evidence, probe, marker: value.result?.value ?? null }, null, 2),
                     );
                   })
                   .catch(() => {
                     try {
                       writeFileSync(
-                        `product-foundation-evidence/knowledge-steps-${currentProbe.suffix}.json`,
-                        JSON.stringify({ ...mode.evidence, probe: currentProbe, markerUnavailable: true }, null, 2),
+                        `product-foundation-evidence/knowledge-steps-${probe.suffix}.json`,
+                        JSON.stringify({ ...mode.evidence, probe, markerUnavailable: true }, null, 2),
                       );
                     } catch {
                       /* Keep the original timeout authoritative. */
@@ -759,8 +762,11 @@ async function start(product, suffix) {
           'document.querySelectorAll(".knowledge-feature-notes .app, .knowledge-feature-activity .app, .knowledge-feature-search .app").length === 3',
         );
         assert.equal(componentProbe.routesRemainMounted, true);
+        progress(product, suffix, "knowledge-daily");
         componentProbe.daily = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
+        const marker = window.__devboxKnowledgeProbe = { stage: "knowledge-daily", steps: [] };
+        const step = (${knowledgeStepObserver.toString()})(marker);
+        const invoke = (method, args) => step(args?.request?.method ?? method, () => window.__TAURI_INTERNALS__.invoke(method, args)); ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const call = (component, route, method, args = {}) => invokeComponent("knowledge", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route }, component, method, args } });
@@ -799,8 +805,11 @@ async function start(product, suffix) {
           editedNoteRetained: true,
           legacyDailyRejected: true,
         });
+        progress(product, suffix, "knowledge-collection-consent");
         componentProbe.collectionConsent = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
+        const marker = window.__devboxKnowledgeProbe = { stage: "knowledge-collection-consent", steps: [] };
+        const step = (${knowledgeStepObserver.toString()})(marker);
+        const invoke = (method, args) => step(args?.request?.method ?? method, () => window.__TAURI_INTERNALS__.invoke(method, args)); ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const call = (method, args = {}) => invokeComponent("knowledge", { request: {
           header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "activity" }, component: "knowledge.activity", method, args } });
