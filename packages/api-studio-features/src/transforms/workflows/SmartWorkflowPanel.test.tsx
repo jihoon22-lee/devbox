@@ -14,7 +14,7 @@ vi.mock("../../transport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../transport")>()),
   isProductHosted: () => hosted.value,
 }));
-const saveControl = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
+const saveControl = vi.hoisted(() => ({ pending: null as Promise<void> | null, calls: 0 }));
 vi.mock("./workflowStore", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./workflowStore")>();
   return {
@@ -24,6 +24,7 @@ vi.mock("./workflowStore", async (importOriginal) => {
       return {
         ...persistence,
         save: async (metadata: Parameters<typeof persistence.save>[0]) => {
+          saveControl.calls++;
           if (saveControl.pending) await saveControl.pending;
           await persistence.save(metadata);
         },
@@ -35,6 +36,7 @@ const openTool = vi.fn();
 
 beforeEach(() => {
   saveControl.pending = null;
+  saveControl.calls = 0;
   hosted.value = false;
   localStorage.removeItem(WORKFLOW_STORAGE_KEY);
   localStorage.removeItem(`${WORKFLOW_STORAGE_KEY}.revision`);
@@ -235,4 +237,34 @@ it("does not offer a handoff after a failed pipeline execution", () => {
   fireEvent.click(screen.getByRole("button", { name: "파이프라인 실행" }));
   expect(screen.getByRole("alert")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "API Playground로 보내기" })).toBeNull();
+});
+
+it("does not launch a redundant recent-tool write when save completion and draft editing keep the same tool", async () => {
+  render(<SmartWorkflowPanel activeToolId="json-format" onOpenTool={openTool} />);
+  await waitFor(() => expect(saveControl.calls).toBe(1));
+  await waitFor(() => expect(localStorage.getItem(WORKFLOW_STORAGE_KEY)).not.toBeNull());
+  fireEvent.change(input(), { target: { value: '{"synthetic":"input"}' } });
+  fireEvent.click(screen.getByRole("button", { name: "추천 단계로 사용" }));
+  let finish!: () => void;
+  saveControl.pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
+  await screen.findByText("저장 중…");
+  expect(saveControl.calls).toBe(2);
+  finish();
+  await screen.findByText("저장 완료");
+  fireEvent.change(input(), { target: { value: "invalid-json" } });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "파이프라인 저장" }).hasAttribute("disabled")).toBe(false),
+  );
+  expect(saveControl.calls).toBe(2);
+  const committed = localStorage.getItem(WORKFLOW_STORAGE_KEY);
+  const revisionKey = `${WORKFLOW_STORAGE_KEY}.revision`;
+  localStorage.setItem(revisionKey, String(Number(localStorage.getItem(revisionKey)) + 1));
+  fireEvent.click(screen.getByRole("button", { name: "단계 추가" }));
+  fireEvent.click(screen.getByRole("button", { name: "파이프라인 저장" }));
+  await screen.findByText("저장 실패 — 앱을 다시 열어 저장 상태를 확인하세요.");
+  expect(localStorage.getItem(WORKFLOW_STORAGE_KEY)).toBe(committed);
+  expect(saveControl.calls).toBe(3);
 });

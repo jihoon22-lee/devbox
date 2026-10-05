@@ -203,6 +203,9 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
       !TOOL_BY_ID.has(activeToolId)
     )
       return;
+    // Save-state changes retry a pending tool visit, not a new visit to the
+    // same tool. Avoid a background write racing the next explicit edit.
+    if (metadataRef.current.recentTools[0]?.toolId === activeToolId) return;
     const next = recordRecentTool(metadataRef.current, activeToolId, Date.now(), TOOL_IDS);
     if (next === metadataRef.current) return;
     metadataRef.current = next;
