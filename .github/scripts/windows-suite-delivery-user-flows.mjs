@@ -56,10 +56,12 @@ async function exists(file) {
     return false;
   }
 }
-export async function run() {
+export async function run({ checkpointOnly = false } = {}) {
   const identity = await packagedIdentity(),
     results = [],
     screenshots = [];
+  if (checkpointOnly)
+    assert.equal(identity.diagnosticOnly, true, "Checkpoint-only execution requires retained diagnostic identity");
   let center, knowledge;
   const record = (id, status, assertions, failureCode = null) => ({
     id,
@@ -192,6 +194,15 @@ export async function run() {
     await reattachCenter();
     assert.ok((await center.delivery("restore_inventory")).checkpoints.length > before.checkpoints.length);
     screenshots.push(await center.ui.screenshot("DELIVERY-02-real-data-checkpoint"));
+    if (checkpointOnly) {
+      return [
+        {
+          ...record("CHECKPOINT-DIAGNOSTIC", "PASS", ["Updated installation created a checkpoint and reopened Center"]),
+          diagnosticOnly: true,
+          promotionEvidence: false,
+        },
+      ];
+    }
     // The interactive reinstall/removal runner appends this same identity after
     // the visible NSIS journey, retaining this checkpoint and exact saved hash.
     const receipt = {

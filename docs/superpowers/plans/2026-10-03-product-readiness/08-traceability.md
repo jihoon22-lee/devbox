@@ -741,3 +741,47 @@ HTTP 완료 대기 5개가 통과했다. 수정 전 payload의 Source·Transform
 검토에서 포커스 확인 실패로 입력하지 않은 경우 key-up도 보내지 않도록 보정했고,
 기존 A 키 눌림도 거부한다. 실제 Windows C# 컴파일·0/부분 입력 해제 직렬화·구문 검사는
 통과했으며 로컬 UI 실행이나 PowerShell 실행 정책 우회는 하지 않았다.
+
+
+후보 [37262016303](https://github.com/jihoon22-lee/devbox/actions/runs/37262016303)는
+#627의 exact-main `1dafe10c8c07c5f11f7e7edfa48518f1a0aca696`으로 두 Windows 빌드,
+7개 자산 조립, 네 native scope, 독립 WSL2/Docker, 설치·활성화를 통과했다. 설치 후
+사용자 여정은 **30 PASS·9 FAIL·1 누락**이며 full migration/recovery는 선행 실패로
+미실행, 최종 봉인은 실패했다. 승격할 수 없다. API Studio 11개·Knowledge 8개,
+화면·성능은 통과했고 실제 gRPC 저장 경로와 Transform 지속 저장을 확인했다.
+legacy·철회본의 역사적 helper 제거도 각각 실제 exit 0/completed였다. 실패한 primary
+정리는 살아 있는 Knowledge를 발견한 것으로, 과거 helper 버전 거부와 구분한다.
+
+후속 보정은 한 브랜치에 모은다. Workspace 재시작 뒤 Git 실행 승인을 실제 UI에서
+다시 검토하며, terminal 여정 동안 검증된 소유 WSL fixture만 명시적으로 유지한다.
+변환 단계 선택은 비활성 옵션을 제외한 키보드 이동과 실제 Base64 선택값을 확인한다.
+바로가기 실행 후 제품 캡처는 helper 창을 엄격히 구분하며 일반 NSIS 단일 창 조건을
+유지한다. Agent 비정상 종료는 ADR 0015의 다음 읽기 요청에 의한 재연결도 관찰하고,
+의도한 트레이 종료는 명시적 UI 재연결을 계속 요구한다. 원래 업무 요청의 재실행 금지와
+새 Agent 소유 identity·단일 업무 효과 검사는 유지한다.
+
+LSP import 직후 fixture의 native 상태 조회가 화면 갱신과 같은 설치 잠금을 경합하는
+경로를 확인해 최초 표시·각 전환의 화면 준비 뒤에만 native 상태를 조회하도록 바꿨다.
+제품 자체의 동시 조회 결함은 확인되지 않았다. 데이터 보존 helper 이후 Center 재실행
+실패는 아직 원인을 확정하지 않았다. 최초 실패의 고정 코드·UI 불리언·helper 기록을 먼저
+보존하며 LSP 오류 화면 포착 뒤에만 확인창을 닫아 다음 DEPS 여정의 전파 실패를 막는다.
+로컬 회귀 통과를 실제 Windows 성공으로 바꾸지 않는다. 제품 재빌드 전에 같은 후보
+bytes를 보관 진단에 사용하고, 최종 소스 병합 후에는 새 exact-main 봉인 후보가 필요하다.
+
+이번 검증 코드 묶음의 catalog는 5.97초, 영향 검사는 10.55초에 통과했다. 제품
+frontend/Rust 변경이 없어 compiler 범위는 none이며 무관한 제품 검사를 반복하지 않았다.
+Agent 회복 10개, HANDOFF 10개, shortcut/delivery Node 14개, Workspace 최초 묶음 35개와
+최종 LSP/WSL 회귀 22개는 각 변경 범위로 통과했다(서로 중복된 숫자를 합산하지 않는다).
+WSL 소유 자식의 stdin 오류도 최초 실패를 보존하고 반드시 bounded 종료 대기를 거친다.
+트레이 실패는 같은 세션의 정확한 Explorer 이미지·native 창·제한된 UIA subtree를 별도
+artifact에 먼저 보존한다. 임의 이름/ID는 제외하며 기존 선택자·provider를 추측으로
+바꾸지 않았다. 최종 Biome 1924개 파일과 Windows helper 구문/C# 컴파일은 통과했다.
+실제 트레이 선택과 helper 재실행 원인은 다음 보관 진단으로 확인한다.
+
+
+사용자의 반복 검증 축소 지시에 따라 남은 원인 조사는 보관된 같은 설치 파일의 트레이와
+업데이트 후 checkpoint 재실행 두 경로만 분리한다. focused 진단은 제품 build·WSL 준비·
+기존 앱 여정·철회본 교체·전체 migration을 실행하지 않고 20분 상한을 둔다. 최초 오류와
+독립 후속 경로의 결과는 별도 diagnostic artifact에 보존하며 40개 출시 수용의 PASS로
+합산하지 않는다. 최종 후보의 전체 수용 및 봉인 조건은 변경하지 않는다. 새로운 workflow
+분기는 로컬 actionlint·실제 Windows PowerShell 파서로 검사했다.

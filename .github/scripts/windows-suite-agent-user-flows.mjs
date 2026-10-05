@@ -38,7 +38,7 @@ export async function until(check, label, ms = 30000) {
   }
   throw new Error(label);
 }
-async function verifiedScope(context) {
+export async function verifiedScope(context) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
@@ -293,7 +293,7 @@ export async function observeAgentUpdateQuiesce(input) {
   return receipt;
 }
 
-const nativeStatus = (app) =>
+export const nativeStatus = (app) =>
   app.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')");
 async function reconnectUi(app) {
   await until(
@@ -468,7 +468,7 @@ async function agentCrashBusiness(context, app) {
     await click.catch(() => {});
   }
 }
-async function trayQuitReconnect(context, app) {
+export async function trayQuitReconnect(context, app) {
   const agents = agentProcesses(context);
   assert.equal(agents.length, 1);
   const owner = captureWindowOwner(agents[0], context.root);
