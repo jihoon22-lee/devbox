@@ -35,8 +35,10 @@ use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(any(windows, test))]
+use std::path::Path;
 #[cfg(windows)]
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, PathBuf};
 #[cfg(windows)]
 use windows::core::{PCWSTR, PWSTR};
 #[cfg(windows)]
@@ -1080,15 +1082,16 @@ fn system_directory() -> Option<PathBuf> {
     safe_root_path(PathBuf::from(OsString::from_wide(&buffer[..length])))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 fn path_is_under(path: &Path, root: &Path) -> bool {
     let path = path.to_string_lossy();
     let root_lossy = root.to_string_lossy();
     let root = root_lossy.trim_end_matches(['\\', '/']);
-    path.eq_ignore_ascii_case(root)
-        || path
-            .get(root.len()..)
-            .is_some_and(|suffix| suffix.starts_with('\\') || suffix.starts_with('/'))
+    path.get(..root.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(root))
+        && path.get(root.len()..).is_some_and(|suffix| {
+            suffix.is_empty() || suffix.starts_with('\\') || suffix.starts_with('/')
+        })
 }
 
 #[cfg(windows)]
@@ -1491,6 +1494,27 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 mod tests {
     use super::*;
     use crate::core::related_tools::{curated_tools, DetectionSource};
+
+    #[test]
+    fn trusted_path_requires_the_actual_root_prefix_and_component_boundary() {
+        let root = Path::new(r"C:\Windows\System32");
+        assert!(path_is_under(
+            Path::new(r"c:\WINDOWS\system32\winget.exe"),
+            root
+        ));
+        assert!(!path_is_under(
+            Path::new(r"C:\Untrust\System32\winget.exe"),
+            root
+        ));
+        assert!(!path_is_under(
+            Path::new(r"C:\Windows\System32-extra\winget.exe"),
+            root
+        ));
+        assert!(!path_is_under(
+            Path::new(r"D:\Windows\System32\winget.exe"),
+            root
+        ));
+    }
 
     #[test]
     fn detection_view_contains_no_path_or_process_output() {

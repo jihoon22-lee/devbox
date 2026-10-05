@@ -219,7 +219,7 @@ pub fn opened_filesystem_identity(
     {
         use std::os::unix::fs::MetadataExt;
         let metadata = handle.metadata()?;
-        if metadata.is_dir() != directory || metadata.file_type().is_symlink() {
+        if (directory && !metadata.is_dir()) || (!directory && !metadata.is_file()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unexpected file type",
@@ -279,9 +279,13 @@ fn open_object(
     let handle = {
         use std::os::unix::fs::OpenOptionsExt;
         #[cfg(target_os = "linux")]
-        let flags = libc::O_NOFOLLOW | if _read_contents { 0 } else { libc::O_PATH };
+        // A project entry can be replaced with a FIFO between any path check
+        // and this open. Never wait for its writer before rejecting the opened
+        // object's non-regular type. O_NONBLOCK has no effect on regular files.
+        let flags =
+            libc::O_NOFOLLOW | libc::O_NONBLOCK | if _read_contents { 0 } else { libc::O_PATH };
         #[cfg(not(target_os = "linux"))]
-        let flags = libc::O_NOFOLLOW;
+        let flags = libc::O_NOFOLLOW | libc::O_NONBLOCK;
         OpenOptions::new()
             .read(true)
             .custom_flags(flags)
@@ -913,6 +917,24 @@ mod identity_tests {
         assert!(handle.read(&mut [0u8; 1]).is_err());
         drop(handle);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn special_files_are_not_regular_file_identity_or_read_authorities() {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = fixture_root();
+        let fifo = root.join("untrusted-project-input");
+        let name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        assert!(filesystem_identity(&fifo, false).is_err());
+        // No writer exists: opening for content must reject, never wait for one.
+        assert!(open_filesystem_object(&fifo, false).is_err());
+        assert!(filesystem_identity("/dev/null", false).is_err());
+        assert!(open_filesystem_object("/dev/null", false).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]
