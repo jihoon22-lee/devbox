@@ -21,10 +21,10 @@ if((Microsoft.PowerShell.Management\Test-Path -LiteralPath $receipt) -and ((Micr
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
 function Restore-ReceiverAccess($state) {
   if($state.image -cne $file -or $state.digest -cne $ExpectedDigest -or $state.sid -cne $sid.Value -or $state.runId -cne $env:GITHUB_RUN_ID){throw 'Receiver restoration ownership mismatch'}
-  $acl=Microsoft.PowerShell.Security\Get-Acl -LiteralPath $file
+  $acl=[Security.AccessControl.FileSecurity]::new()
   $acl.SetSecurityDescriptorSddlForm($state.sddl,[Security.AccessControl.AccessControlSections]::Access)
-  Microsoft.PowerShell.Security\Set-Acl -LiteralPath $file -AclObject $acl
-  if((Microsoft.PowerShell.Security\Get-Acl -LiteralPath $file).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $state.sddl){throw 'Receiver ACL restoration mismatch'}
+  [IO.File]::SetAccessControl($file,$acl)
+  if([IO.File]::GetAccessControl($file,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $state.sddl){throw 'Receiver ACL restoration mismatch'}
   if((Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedDigest){throw 'Restored receiver bytes changed'}
   Microsoft.PowerShell.Management\Remove-Item -LiteralPath $receipt
 }
@@ -32,7 +32,7 @@ if($Action -ceq 'Restore') {
   Restore-ReceiverAccess (Microsoft.PowerShell.Management\Get-Content -LiteralPath $receipt -Raw | Microsoft.PowerShell.Utility\ConvertFrom-Json)
 } else {
   if(Microsoft.PowerShell.Management\Test-Path -LiteralPath $receipt){throw 'Receiver restoration already pending'}
-  $acl=Microsoft.PowerShell.Security\Get-Acl -LiteralPath $file
+  $acl=[IO.File]::GetAccessControl($file,[Security.AccessControl.AccessControlSections]::Access)
   $state=@{image=$file;digest=$ExpectedDigest;sid=$sid.Value;runId=$env:GITHUB_RUN_ID;sddl=$acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)}
   $bytes=[Text.Encoding]::UTF8.GetBytes(($state | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress))
   $stream=[IO.File]::Open($receipt,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
@@ -40,8 +40,8 @@ if($Action -ceq 'Restore') {
   try {
     $rule=[Security.AccessControl.FileSystemAccessRule]::new($sid,[Security.AccessControl.FileSystemRights]::ExecuteFile,[Security.AccessControl.AccessControlType]::Deny)
     $acl.AddAccessRule($rule)
-    Microsoft.PowerShell.Security\Set-Acl -LiteralPath $file -AclObject $acl
-    $denied=@((Microsoft.PowerShell.Security\Get-Acl -LiteralPath $file).GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]) | Where-Object {$_.IdentityReference.Value -ceq $sid.Value -and $_.AccessControlType -eq 'Deny' -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ExecuteFile)})
+    [IO.File]::SetAccessControl($file,$acl)
+    $denied=@([IO.File]::GetAccessControl($file,[Security.AccessControl.AccessControlSections]::Access).GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]) | Where-Object {$_.IdentityReference.Value -ceq $sid.Value -and $_.AccessControlType -eq 'Deny' -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ExecuteFile)})
     if($denied.Count -ne 1){throw 'Receiver execute denial not observed'}
     if((Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedDigest){throw 'Receiver bytes changed'}
   } catch {

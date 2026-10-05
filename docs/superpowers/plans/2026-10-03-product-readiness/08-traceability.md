@@ -964,3 +964,15 @@ SDDL과 digest를 복원·확인하는 방식으로 바꾼다. 독립 C# 검증 
 Win32 error 5로 거부되며, fresh descriptor에 원래 SDDL을 설정해 정확히 복원한 뒤 같은
 이미지 실행과 digest 일치를 확인했다. 검증용 파일·프로그램은 정리했다. 사용자 앱·서비스·
 방화벽은 변경하지 않았다. 실제 hosted helper에도 설치 여정 전 같은 좁은 회귀를 한 번 연결했다.
+
+
+[37296270693](https://github.com/jihoon22-lee/devbox/actions/runs/37296270693)은 새 사전 회귀에서
+중단됐다. dependency 전체 명령·hash는 통과했으나 PowerShell provider를 통한 receiver ACL
+복원이 원래 SDDL과 달라 설치 여정은 시작하지 않았다. 도우미의 capture/deny/restore/비교를
+직접 File API로 일치시키고 새 FileSecurity에 원래 Access SDDL을 설정했다. 실제 Windows에서
+동일 API 순서의 독립 C# 검증과 PowerShell 구문을 통과했으며 SDDL 일치 조건은 유지했다.
+
+아직 새 제품 후보에서 실행하지 않은 RUNTIME-02 후반도 코드로 검토했다. 창 표시 뒤 main
+프로필 갱신이 끝나기 전 companion 삭제가 경쟁하지 않도록 하고, 복원 후 main 목록 갱신이
+끝난 뒤 기존 native ID의 행 범위를 계산한다. 회귀 두 개를 RED→GREEN으로 확인했다.
+기존 프로필 선택은 enabled combobox를 기다려 이미 갱신 완료를 보장하므로 변경하지 않았다.

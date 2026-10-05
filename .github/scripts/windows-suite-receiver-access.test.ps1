@@ -14,7 +14,7 @@ try {
   Microsoft.PowerShell.Management\Copy-Item -LiteralPath (Microsoft.PowerShell.Management\Join-Path $env:WINDIR 'System32\whoami.exe') -Destination $image
   $digest=(Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
   @{generation='g1';members=@(@{product='knowledge';executable=$relative;sha256=$digest})} | Microsoft.PowerShell.Utility\ConvertTo-Json -Depth 5 | Microsoft.PowerShell.Management\Set-Content -LiteralPath (Microsoft.PowerShell.Management\Join-Path $root 'devbox-installation.json')
-  $sddl=(Microsoft.PowerShell.Security\Get-Acl -LiteralPath $image).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+  $sddl=[IO.File]::GetAccessControl($image,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
   $pin=[IO.File]::Open($image,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
   & $helper -Root $root -Image $image -ExpectedDigest $digest -Action Deny
   $start=[Diagnostics.ProcessStartInfo]::new($image)
@@ -33,7 +33,7 @@ try {
   }
   if(-not $denied -or (Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $digest){throw 'Execute-only access proof failed'}
   & $helper -Root $root -Image $image -ExpectedDigest $digest -Action Restore
-  if((Microsoft.PowerShell.Security\Get-Acl -LiteralPath $image).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $sddl){throw 'Original access descriptor changed'}
+  if([IO.File]::GetAccessControl($image,[Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $sddl){throw 'Original access descriptor changed'}
   $child=[Diagnostics.Process]::Start($start)
   try {$child.WaitForExit(); if($child.ExitCode -ne 0){throw 'Restored receiver launch failed'}} finally {$child.Dispose()}
   Microsoft.PowerShell.Utility\Write-Output 'Pinned receiver: execute denied, read/digest preserved, exact ACL restored, launch recovered PASS'

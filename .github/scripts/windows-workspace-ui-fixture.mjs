@@ -74,7 +74,18 @@ export async function observeManagedLspTransition(ui, scope, nextAction, observe
   await ui.waitForTarget({ role: "button", name: nextAction, scope }, { timeoutMs });
   return observe();
 }
+export async function clickTerminalSessionAction(ui, scope, name) {
+  // The manager publishes refreshed rows before clearing busy. Sample its
+  // ordinal scope only after that publication; native state can change first.
+  await ui.waitForTarget({ role: "button", name: "상태 새로고침" });
+  const target = { role: "button", name, scope: await scope() };
+  await ui.waitForTarget(target);
+  await ui.click(target);
+}
 export async function deleteTerminalProfile(surface, mainUi, wait) {
+  // Focus also refreshes the main profile catalog. Finish it before deleting
+  // the companion profile so the main selection remains deliberately stale.
+  await mainUi.waitForTarget({ role: "button", name: "상태 새로고침" });
   const remove = { role: "button", name: "owned terminal profile 프로필 삭제" };
   await surface.ui.waitForTarget(remove);
   await surface.ui.click(remove);
@@ -826,7 +837,7 @@ export function createWorkspaceUiFixture({
         async () => (await sessions()).find((session) => session.id === opened.id)?.state === "interrupted",
         "interrupted original generation",
       );
-      await ui.click({ role: "button", name: "상태만 다시 연결", scope: await scoped(opened.id) });
+      await clickTerminalSessionAction(ui, () => scoped(opened.id), "상태만 다시 연결");
       await wait(
         async () => (await sessions()).find((session) => session.id === opened.id)?.state === "active",
         "explicit restore generation active",
@@ -835,7 +846,7 @@ export function createWorkspaceUiFixture({
       surface = await terminalUi(opened.id);
       try {
         const screenshot = await surface.ui.screenshot("workspace-terminal-explicit-restore");
-        await ui.click({ role: "button", name: "이 터미널 종료", scope: await scoped(opened.id) });
+        await clickTerminalSessionAction(ui, () => scoped(opened.id), "이 터미널 종료");
         await wait(
           async () => (await sessions()).find((session) => session.id === opened.id)?.state === "stopped",
           "exact owned terminal stopped",

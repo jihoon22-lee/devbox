@@ -696,16 +696,25 @@ test("managed LSP readiness preserves the transition budget before native observ
 test("terminal profile deletion waits its queued dialog and companion acknowledgement before stale main open", async () => {
   const { deleteTerminalProfile } = await import("./windows-workspace-ui-fixture.mjs");
   const events = [];
-  let removed = false;
+  let removed = false,
+    focusRefreshed = false;
   await deleteTerminalProfile(
     {
       ui: {
         waitForTarget: async (target) => events.push(`ready:${target.name}`),
-        click: async (target) => events.push(`click:${target.name}`),
+        click: async (target) => {
+          assert.equal(focusRefreshed, true, "Companion deletion raced the main focus refresh");
+          events.push(`click:${target.name}`);
+        },
       },
       cdp: { evaluate: async () => removed },
     },
     {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "상태 새로고침");
+        focusRefreshed = true;
+        events.push("focus refresh completed");
+      },
       click: async (target) => {
         assert.equal(removed, true);
         events.push(`main:${target.name}`);
@@ -718,10 +727,43 @@ test("terminal profile deletion waits its queued dialog and companion acknowledg
     },
   );
   assert.deepEqual(events, [
+    "focus refresh completed",
     "ready:owned terminal profile 프로필 삭제",
     "click:owned terminal profile 프로필 삭제",
     "ready:삭제",
     "click:삭제",
     "main:프로필로 터미널 열기",
   ]);
+});
+
+test("terminal session action resolves the current row only after renderer refresh and target readiness", async () => {
+  const { clickTerminalSessionAction } = await import("./windows-workspace-ui-fixture.mjs");
+  const events = [];
+  let refreshed = false,
+    targetReady = false;
+  await clickTerminalSessionAction(
+    {
+      waitForTarget: async (target) => {
+        if (target.name === "상태 새로고침") {
+          refreshed = true;
+          events.push("refresh complete");
+        } else {
+          assert.equal(target.scope.name, "2번째 터미널");
+          targetReady = true;
+          events.push("target ready");
+        }
+      },
+      click: async (target) => {
+        assert.equal(targetReady, true);
+        events.push(target.name);
+      },
+    },
+    async () => {
+      assert.equal(refreshed, true, "Native row index was sampled before renderer refresh");
+      events.push("current owned row");
+      return { role: "listitem", name: "2번째 터미널" };
+    },
+    "이 터미널 종료",
+  );
+  assert.deepEqual(events, ["refresh complete", "current owned row", "target ready", "이 터미널 종료"]);
 });
