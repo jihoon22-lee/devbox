@@ -45,3 +45,22 @@ $rejected=$false
 try{Select-OwnedCaptureWindow @($main,$helper,$sic) $inventory '' | Out-Null}catch{$rejected=$true}
 if(-not $rejected){throw 'Generic installer capture must retain unique-root guard'}
 Write-Output 'Owned installer nonfocusable UIA capture boundary: PASS (no native input)'
+
+# Pure tray evidence projection; never enumerate the local desktop or send input.
+$trayTokens=$null;$trayErrors=$null
+$trayAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'windows-agent-tray-ui.ps1'),[ref]$trayTokens,[ref]$trayErrors)
+if($trayErrors.Count){throw 'Tray diagnostic parse failed'}
+$projection=$trayAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Convert-TrayObservation'},$true)
+if($null -eq $projection){throw 'Tray evidence projection missing'}
+. ([scriptblock]::Create($projection.Extent.Text))
+$info=[pscustomobject]@{ProcessId=17;Name='private document title';AutomationId='private-path';ClassName='ToolbarWindow32';ControlType=[pscustomobject]@{Id=50000};IsOffscreen=$false;IsEnabled=$true;NativeWindowHandle=42}
+$projected=Convert-TrayObservation $info 2
+if($null -ne $projected.name -or $null -ne $projected.automationId -or -not $projected.namePresent -or $projected.depth -ne 2 -or $projected.processId -ne 17){throw 'Tray projection must omit arbitrary names/IDs'}
+$info.Name='Show hidden icons';$info.AutomationId='SystemTray.OverflowButton'
+$projected=Convert-TrayObservation $info 3
+if($projected.name -cne $info.Name -or $projected.automationId -cne $info.AutomationId){throw 'Fixed tray identity must remain observable'}
+
+$info.AutomationId='1500'
+if((Convert-TrayObservation $info 1).automationId -cne '1500'){throw 'Bounded numerical native tray ID must remain visible'}
+$info.AutomationId='123456789'
+if($null -ne (Convert-TrayObservation $info 1).automationId){throw 'Oversized numerical tray ID must be omitted'}
