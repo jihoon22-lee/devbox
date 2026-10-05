@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   createWorkspaceUiFixture,
+  prepareTerminalStart,
+  dismissFailedManagedInstall,
   loseRuntimeReply,
   openCurrentProjectTerminal,
   waitForRuntimeControlIdle,
@@ -445,4 +447,67 @@ test("next lost reply waits for the prior local and durable acknowledgement", as
     },
     "job",
   );
+});
+
+test("terminal companion waits for its renderer and review before actual input", async () => {
+  const actions = [];
+  let ready = false,
+    reviewed = false;
+  await prepareTerminalStart(
+    {
+      async waitForTarget(target) {
+        actions.push(target.name);
+        if (target.name === "시작 경로") ready = true;
+        if (target.name === "실행") reviewed = true;
+      },
+      async fill(target) {
+        assert.equal(ready, true);
+        actions.push(target.name);
+      },
+      async click(target) {
+        if (target.name === "실행") assert.equal(reviewed, true);
+        actions.push(target.name);
+      },
+    },
+    "owned-root",
+    "owned-command",
+  );
+  assert.deepEqual(actions, ["시작 경로", "시작 경로", "시작 명령", "+ 터미널", "실행", "실행"]);
+});
+
+test("failed managed install is observed before cancel and waits for dialog retirement", async () => {
+  let failed = false,
+    ready = false,
+    closing = false,
+    open = true;
+  const confirmation = { role: "dialog", name: "관리형 서버 작업 확인" };
+  await dismissFailedManagedInstall({
+    ui: {
+      async text() {
+        failed = true;
+        return "관리형 서버를 설치하지 못했습니다.";
+      },
+      async waitForTarget(target) {
+        assert.equal(failed, true);
+        assert.deepEqual(target.scope, confirmation);
+        ready = true;
+      },
+      async click(target) {
+        assert.equal(ready, true);
+        assert.equal(target.name, "취소");
+        closing = true;
+      },
+    },
+    async isOpen() {
+      return open;
+    },
+    async wait(predicate) {
+      if (closing) {
+        assert.equal(await predicate(), false);
+        open = false;
+      }
+      assert.equal(await predicate(), true);
+    },
+  });
+  assert.equal(open, false);
 });

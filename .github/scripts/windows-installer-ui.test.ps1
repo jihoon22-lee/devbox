@@ -57,6 +57,28 @@ if($ZoomSerialization) {
     $release=[DevboxInstallerAutomation]::ZoomChord($reset,$true)
     if($release.Count -ne 2 -or $release[0].value.keyboard.key -ne $key -or $release[1].value.keyboard.key -ne 17 -or @($release | Where-Object {$_.value.keyboard.flags -ne 2}).Count -ne 0){throw 'Zoom finally key release mismatch'}
   }
+  # Native picker text uses one select-all chord and UTF-16 Unicode pairs.
+  $filename='C:\owned\한글😀.json'
+  $typed=[DevboxInstallerAutomation]::PickerTextInput($filename)
+  if($typed.Count -ne (4+2*$filename.Length)){throw 'Picker input count mismatch'}
+  $keys=@(17,65,65,17);$flags=@(0,0,2,2)
+  for($index=0;$index -lt 4;$index++) {
+    if($typed[$index].type -ne 1 -or $typed[$index].value.keyboard.key -ne $keys[$index] -or $typed[$index].value.keyboard.flags -ne $flags[$index]){throw 'Picker select-all chord mismatch'}
+  }
+  for($index=0;$index -lt $filename.Length;$index++) {
+    $down=$typed[4+2*$index];$up=$typed[5+2*$index]
+    if($down.type -ne 1 -or $up.type -ne 1 -or $down.value.keyboard.key -ne 0 -or $up.value.keyboard.key -ne 0 -or $down.value.keyboard.scan -ne [int]$filename[$index] -or $up.value.keyboard.scan -ne [int]$filename[$index] -or $down.value.keyboard.flags -ne 4 -or $up.value.keyboard.flags -ne 6){throw 'Picker Unicode key serialization mismatch'}
+  }
+  if([DevboxInstallerAutomation]::PickerKeyRelease($typed,0).Length -ne 0){throw 'No filename dispatch must send no key releases'}
+  $release=[DevboxInstallerAutomation]::PickerKeyRelease($typed,1)
+  if($release.Length -ne 2 -or $release[0].value.keyboard.key -ne 65 -or $release[1].value.keyboard.key -ne 17 -or @($release | Where-Object {$_.value.keyboard.flags -ne 2}).Count -ne 0){throw 'Partial chord release mismatch'}
+  $release=[DevboxInstallerAutomation]::PickerKeyRelease($typed,5)
+  if($release.Length -ne 3 -or $release[2].value.keyboard.scan -ne [int]$filename[0] -or $release[2].value.keyboard.flags -ne 6){throw 'Partial Unicode release mismatch'}
+  foreach($invalid in @('',("a"*32768),("a"+[char]0+"b"))) {
+    $rejected=$false
+    try {[DevboxInstallerAutomation]::PickerTextInput($invalid) | Out-Null} catch {$rejected=$true}
+    if(-not $rejected){throw 'Unbounded picker text accepted'}
+  }
   # Never set hosted variables or execute SendInput in this local test.
   if($env:GITHUB_ACTIONS -ceq 'true' -or $env:RUNNER_ENVIRONMENT -ceq 'github-hosted'){throw 'Local guard test requires ordinary local environment'}
   foreach($action in @('ZoomIn','ZoomReset')) {

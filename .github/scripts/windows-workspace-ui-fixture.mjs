@@ -16,6 +16,24 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { downloadArchive } from "./windows-workspace-lsp.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
+export async function prepareTerminalStart(ui, root, command) {
+  await ui.waitForTarget({ role: "textbox", name: "시작 경로" });
+  await ui.fill({ role: "textbox", name: "시작 경로" }, root);
+  await ui.fill({ role: "textbox", name: "시작 명령" }, command);
+  await ui.click({ role: "button", name: "+ 터미널" });
+  await ui.waitForTarget({ role: "button", name: "실행" });
+  await ui.click({ role: "button", name: "실행" });
+}
+export async function dismissFailedManagedInstall({ ui, wait, isOpen }) {
+  await wait(
+    async () => (await ui.text({ role: "alert", name: "" })).includes("관리형 서버를 설치하지 못했습니다."),
+    "managed install failed",
+  );
+  const cancel = { role: "button", name: "취소", scope: { role: "dialog", name: "관리형 서버 작업 확인" } };
+  await ui.waitForTarget(cancel);
+  await ui.click(cancel);
+  await wait(async () => !(await isOpen()), "failed managed install review closed");
+}
 export function assertLostRuntimeReceipt(receipts, operationId, targetId, method) {
   const matching = receipts.filter((receipt) => receipt.operationId === operationId);
   assert.equal(matching.length, 1, "Lost native reply must retain its exact unacknowledged receipt after process exit");
@@ -657,10 +675,7 @@ export function createWorkspaceUiFixture({
       let surface = await terminalUi(opened.id);
       try {
         const command = `printf 'launch\\n' >> '${counter}'; sleep 300`;
-        await surface.ui.fill({ role: "textbox", name: "시작 경로" }, agentRoot);
-        await surface.ui.fill({ role: "textbox", name: "시작 명령" }, command);
-        await surface.ui.click({ role: "button", name: "+ 터미널" });
-        await surface.ui.click({ role: "button", name: "실행" });
+        await prepareTerminalStart(surface.ui, agentRoot, command);
         await wait(async () => wslRead(counter) === "launch\n", "explicit terminal start command");
         await surface.ui.press("Control+c");
         await surface.ui.typeText(`printf 'ctrl-c\\n' > '${afterInterrupt}'`);
@@ -687,6 +702,13 @@ export function createWorkspaceUiFixture({
         await ui.click({ role: "button", name: "프로필로 터미널 열기" });
         await this.waitForText({ role: "alert", name: "" });
         assert.equal(wslRead(counter), "launch\n");
+      } catch (error) {
+        try {
+          await surface.ui.screenshot("RUNTIME-02-terminal-first-failure");
+        } catch {
+          /* preserve the original failure */
+        }
+        throw error;
       } finally {
         surface.close();
       }
@@ -764,6 +786,12 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "설치", scope: { role: "article", name: `${node.id} ${node.version}` } });
       await ui.click({ role: "button", name: "설치 확인" });
       await network.waitForAttempt(beforeAttempts);
+      await dismissFailedManagedInstall({
+        ui,
+        wait,
+        isOpen: () =>
+          cdp.evaluate(`document.querySelector('[role="dialog"][aria-label="관리형 서버 작업 확인"]') !== null`),
+      });
       await this.waitForText({ role: "button", name: "설치 상태 새로 고침" });
       assert.equal((await state(node)).state, "not_installed");
       assert.equal((await state(rust)).installed.sha256, imported.installed.sha256);
