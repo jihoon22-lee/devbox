@@ -45,7 +45,7 @@ def release_app_ids(catalog: object) -> list[str]:
         raise ShardPlanError("release catalog contains duplicate application ids")
     if set(selected) != PRODUCT_IDS:
         raise ShardPlanError("release catalog must contain exactly the four Suite products")
-    # Pair the large Workspace with Control Center, and API with Knowledge.
+    # Stable catalog order also preserves the older two/four-shard cache mapping.
     return ["devbox-workspace", "devbox-api-studio", "devbox-control-center", "devbox-knowledge"]
 
 
@@ -62,9 +62,14 @@ def build_matrix(app_ids: list[str], shard_count: int) -> dict[str, object]:
     ) or len(set(app_ids)) != len(app_ids):
         raise ShardPlanError("package shard input contains unsafe or duplicate ids")
 
-    shards: list[list[str]] = [[] for _ in range(shard_count)]
-    for index, app_id in enumerate(app_ids):
-        shards[index % shard_count].append(app_id)
+    if shard_count == 3 and set(app_ids) == PRODUCT_IDS:
+        # Measured release work: Workspace + private LSP ~30 min; API/Knowledge
+        # ~22 min; Center + its Agent ~21 min. Keep the latter off Workspace.
+        shards = [["devbox-workspace"], ["devbox-api-studio", "devbox-knowledge"], ["devbox-control-center"]]
+    else:
+        shards = [[] for _ in range(shard_count)]
+        for index, app_id in enumerate(app_ids):
+            shards[index % shard_count].append(app_id)
 
     sizes = [len(shard) for shard in shards]
     if not sizes or min(sizes) == 0 or max(sizes) - min(sizes) > 1:

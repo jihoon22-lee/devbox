@@ -294,15 +294,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: scope
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || (needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true')) }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
-
-      - name: Report reused compiler evidence
-        if: ${{ needs.scope.outputs.rust_reuse == 'true' }}
-        run: echo "Compiler inputs and scope are covered by prior actual successful checks. Source run/job/checkout evidence is recorded in Detect changed scope."
 
       - uses: actions/checkout@v7
         if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
@@ -386,15 +382,11 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 2
     needs: scope
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || (needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true')) }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
-
-      - name: Report reused compiler evidence
-        if: ${{ needs.scope.outputs.rust_windows_reuse == 'true' }}
-        run: echo "Compiler inputs and scope are covered by prior actual successful checks. Source run/job/checkout evidence is recorded in Detect changed scope."
 
       - uses: actions/checkout@v7
         if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}

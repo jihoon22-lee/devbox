@@ -72,13 +72,13 @@ jobs:
           echo "artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
 
       - id: shards
-        name: Plan two bounded product shards
+        name: Plan three bounded product shards by measured build cost
         shell: bash
         run: |
           set -euo pipefail
           python3 .github/scripts/plan-windows-package-shards.py \
             --catalog apps/catalog.json \
-            --shards 2 \
+            --shards 3 \
             --github-output "$GITHUB_OUTPUT"
 
   workspace-wsl-helper:
@@ -132,7 +132,7 @@ jobs:
     timeout-minutes: 100
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -154,9 +154,16 @@ jobs:
           CACHE_SHARD: ${{ matrix.shard }}
         run: node .github/scripts/windows-package-cache.mjs
       - uses: Swatinem/rust-cache@v2
-        if: steps.cache-namespace.outputs.legacy-warm-start == 'true'
+        if: steps.cache-namespace.outputs.legacy-warm-start == 'true' && matrix.shard != '03'
         with:
           shared-key: devbox-windows-package
+          save-if: false
+      # Center/Agent previously shared shard01 with Workspace. Seed only missing
+      # shard03 caches from that trusted namespace, without writing back to it.
+      - uses: Swatinem/rust-cache@v2
+        if: steps.cache-namespace.outputs.legacy-warm-start == 'true' && matrix.shard == '03'
+        with:
+          shared-key: devbox-windows-package-shard-01
           save-if: false
       - uses: Swatinem/rust-cache@v2
         with:
@@ -420,17 +427,45 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
-      - name: Exercise full installed Suite migration and recovery
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEVBOX_SUITE_ARTIFACT_SOURCE: ${{ inputs.candidate_commit }}
-          DEVBOX_SUITE_ARTIFACT_RUN: ${{ github.run_id }}
-        run: .github/scripts/windows-suite-delivery.ps1 -Staging candidate/delivery -Bootstrap candidate/delivery/devbox-suite-bootstrap.exe
       - uses: actions/upload-artifact@v7
         if: ${{ always() }}
         with:
           name: candidate-installer-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  migration-acceptance:
+    name: Full candidate migration and recovery on an independent runner
+    needs: assemble
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVBOX_SUITE_ARTIFACT_SOURCE: ${{ inputs.candidate_commit }}
+      DEVBOX_SUITE_ARTIFACT_RUN: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.assemble.outputs.artifact_name }}
+          path: candidate
+      - name: Exercise all original migration and recovery phases
+        shell: pwsh
+        run: |
+          python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source $env:DEVBOX_SUITE_ARTIFACT_SOURCE --run-id $env:DEVBOX_SUITE_ARTIFACT_RUN
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate delivery inputs failed.' }
+          .github/scripts/windows-suite-delivery.ps1 -Staging candidate/delivery -Bootstrap candidate/delivery/devbox-suite-bootstrap.exe
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: candidate-migration-${{ github.run_id }}
           path: product-foundation-evidence
           if-no-files-found: error
           retention-days: 14
@@ -514,7 +549,7 @@ jobs:
 
   user-flow-acceptance:
     name: Verify complete user journeys and seal candidate
-    needs: [plan, assemble, packaged-runtime, installer-acceptance, windows-wsl2]
+    needs: [plan, assemble, packaged-runtime, installer-acceptance, migration-acceptance, windows-wsl2]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -548,11 +583,27 @@ jobs:
         with:
           name: candidate-installer-${{ github.run_id }}
           path: candidate/evidence/user-flow-files/installer
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-migration-${{ github.run_id }}
+          path: candidate/evidence/migration
       - name: Require complete UI observations from the exact candidate bytes
         env:
           SOURCE: ${{ inputs.candidate_commit }}
           TAG: ${{ inputs.candidate_tag }}
         run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          record = json.loads(Path('candidate/evidence/migration/suite-delivery.json').read_text(encoding='utf-8-sig'))
+          if (record.get('result') != 'passed' or record.get('sourceSha') != os.environ['SOURCE']
+              or record.get('fixtureSourceSha') != os.environ['SOURCE']
+              or str(record.get('artifactRun')) != os.environ['GITHUB_RUN_ID']
+              or record.get('scope') != 'installed-activation-generation-update-reinstall-data-restore-removal'
+              or record.get('cleanupFailures') != []):
+              raise SystemExit('Complete migration and owned cleanup evidence required')
+          PYTHON
           node .github/scripts/collect-user-flow-evidence.mjs candidate/assets "$SOURCE" candidate/evidence/user-flow-files candidate/evidence/user-flows.json
           python3 .github/scripts/build-candidate-metadata.py --assets candidate/assets --tag "$TAG" --commit "$SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID" --user-flow-evidence candidate/evidence/user-flows.json --output candidate/evidence/candidate-metadata.json
           python3 .github/scripts/verify-downloaded-release.py --artifact-kind candidate --require-user-flows --assets candidate/assets --release candidate/evidence/candidate-metadata.json --config candidate/evidence/windows-packaged-smoke-config.json --tag "$TAG" --commit "$SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID"

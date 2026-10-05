@@ -6,12 +6,14 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
 
 1. 릴리스 준비 변경의 merge와 required CI/full audit가 끝나면 정확한 current main SHA와 예정 stable tag로
    `Windows package candidate`를 main에서 dispatch한다. 이미 있는 tag/release·다른 source는 거부한다.
-2. Linux에서 고정 source의 static WSL component를 만들고, 두 Windows shard에서 네 제품을
-   한 번 빌드한다. Workspace+Control Center, API Studio+Knowledge를 배정한다. private LSP fixture는
+2. Linux에서 고정 source의 static WSL component를 만들고, 세 Windows shard에서 네 제품을
+   한 번 빌드한다. Workspace, API Studio+Knowledge, Control Center+Agent를 각각 배정한다. private LSP fixture는
    공개 payload 밖에 둔다. Windows assembly는 pinned NSIS hash와 모든 shard/source/component
    name·size·digest를 확인하고 Suite installer와 closed manifest를 조립한다.
 3. 동일 후보 bytes로 네 native scope, 실제 UI 사용자 여정, WSL2/Docker, installer migration/update/undo/commit/
-   removal 및 같은 VM의 성능 비교를 수행한다. 실패한 후보는 승격하지 않는다. fixture/model,
+   removal 및 같은 VM의 성능 비교를 수행한다. 전체 migration/recovery는 assembly 직후 별도
+   일회성 Windows VM에서 40개 UI 여정과 병렬 실행한다. seal은 두 job의 성공과 migration의
+   전체 scope·source/fixture SHA·원본 run·빈 cleanup 실패 목록을 모두 확인한다. 실패한 후보는 승격하지 않는다. fixture/model,
    packaged native, 실제 UI·OS evidence를 구분한다. 미실행 환경을 PASS로 합산하지 않는다.
    assembly는 비공개 중간 artifact다. 필수 40개 사용자 여정의 source·fixture·7개 자산 digest와 실제 스크린샷을 최종 집계한 뒤에만 승격용 후보 artifact를 만든다. `Verify complete user journeys and seal candidate` job이 없거나 성공하지 않았으면 resolver가 거부한다. Release 다운로드 검증도 같은 evidence를 다시 확인한다.
 4. 성공한 비만료 후보와 같은 commit에 annotated stable tag를 만든다. Release는 tag·commit·repo·
@@ -36,6 +38,8 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
   `cancelled`여도 이 성공 근거와 원본 자산이 모두 남아 있을 때만 재사용한다. 필수 job 하나라도
   실패·취소·미실행·진행 중이면 거절한다. 이 예외 역시 아래의 새 40개 UI·migration 수용과
   seal을 모두 요구하며, 취소된 원본을 그대로 승격하는 절차가 아니다.
+  현재 후보는 세 제품 빌드 shard의 성공을 모두 요구한다. Control Center·Agent를 담당하는
+  shard03이 없거나 실패한 두-shard 과거 실행은 현재 재검증 원본으로 허용하지 않는다.
 - 원본 빌드 SHA와 현재 main의 fixture SHA 사이 모든 tracked 파일의 blob·mode를 비교한다.
   검토된 유한한 정확한 경로 목록 밖의 차이는 거부한다. 디렉터리 전체 제외나 제품·빌드 입력
   변경은 허용하지 않는다. 후자는 기존 exact-main 전체 후보 빌드와 수용 절차를 따른다.

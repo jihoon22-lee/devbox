@@ -193,3 +193,26 @@ check·Clippy·fmt와 2,947개 테스트 및 생성 타입 일치를 확인했�
 모두 확보된 뒤 이전 관측을 중단하고 수정된 40개 UI·migration을 같은 7개 파일로
 수용하는 경우 [제한적 재검증 정책](../../../release-policy.md#fixture만-바뀐-후보의-제한적-재검증)을 따른다.
 어느 필수 독립 job이라도 완료·성공하지 않았으면 재사용하지 않는다.
+
+
+## 8. 종료 확인창 소유권과 패키징 병목 보정
+
+`e5c8bd19` 후보의 빌드 중 실제 Chromium·제품 CSS로 종료 취소의 지연 응답을
+재현하자 Knowledge의 최상위 QuitGuard가 Notes 하위 전용 CSS를 사용해 배경
+버튼을 차단하지 못했다. 같은 유형의 교차 검토에서 Workspace CloseReview도
+일반 section으로 렌더되어 배경을 조작할 수 있음을 확인했다. 두 확인창은 native
+modal의 top-layer·배경 차단과 기존 저장/폐기/취소 계약을 함께 검증한다. Control
+Center와 공용 shell의 기존 native modal은 같은 CSS 범위 결함이 없음을 확인했다.
+이것은 앞선 의미 검토에서 빠진 실제 UI 경계이며 fixture 보정으로 대체하지 않는다.
+
+해당 제품 입력이 바뀌므로 후보 `37359453414`는 취소했으며 자산을 승격하지 않는다.
+최종 보정 PR에 두 제품의 회귀·실제 브라우저 화면 근거와 패키징 분할 검증을 함께
+기록한 뒤 새 exact-main 후보로 전체 설치·복구 수용을 진행한다. 로컬 브라우저
+검증은 Windows 설치본의 검증을 대신하지 않는다.
+
+공용 shell은 이미 처리한 키와 dialog 내부 Alt+Arrow로 배경 history를 바꾸지 않으며,
+Undo 알림은 feature modal보다 아래에 배치한다. Workspace 편집 화면 복귀는 native
+취소를 기다려 성공한 뒤만 이동하고, 실패·중복 실행을 종료 확인창에 남긴다.
+빌드의 Workspace 약 30분과 Control Center+Agent 약 21분 직렬 작업은 독립 hosted
+shard로 분리했다. 각 호스트 Cargo worker 2개·전체 최대 3호스트와 모든 수용 gate를
+유지한다. 약 30분 임계 경로는 기존 실측을 바탕으로 한 추정이며 새 실행에서 측정한다.

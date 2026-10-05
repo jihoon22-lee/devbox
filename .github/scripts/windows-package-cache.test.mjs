@@ -62,10 +62,12 @@ test("HTTP denial, invalid JSON and network failure preserve warm start", async 
   }
 });
 test("invalid candidate scope is rejected before querying", async () => {
-  await assert.rejects(
-    needsLegacyWarmStart({ ...scope, shard: "../01", fetchCache: () => assert.fail("must not query") }),
-    /Invalid candidate cache scope/,
-  );
+  for (const invalid of [{ shard: "../01" }, { shard: "03", ref: "refs/heads/other" }]) {
+    await assert.rejects(
+      needsLegacyWarmStart({ ...scope, ...invalid, fetchCache: () => assert.fail("must not query") }),
+      /Invalid candidate cache scope/,
+    );
+  }
 });
 test("workflow restores legacy without saving, then saves independent shards", () => {
   const workflow = readFileSync(new URL("../workflows/windows-package-candidate.yml", import.meta.url), "utf8");
@@ -75,4 +77,20 @@ test("workflow restores legacy without saving, then saves independent shards", (
   );
   assert.match(workflow, /shared-key: devbox-windows-package-shard-\$\{\{ matrix\.shard \}\}/);
   assert.match(workflow, /permissions:\n\s+contents: read\n\s+actions: read/);
+});
+
+test("new Center shard restores existing main shard01 cache read-only before its own namespace", () => {
+  const workflow = readFileSync(new URL("../workflows/windows-package-candidate.yml", import.meta.url), "utf8");
+  assert.match(
+    workflow,
+    /if: steps\.cache-namespace\.outputs\.legacy-warm-start == 'true' && matrix\.shard != '03'[\s\S]*?shared-key: devbox-windows-package\n\s+save-if: false/,
+  );
+  assert.match(
+    workflow,
+    /if: steps\.cache-namespace\.outputs\.legacy-warm-start == 'true' && matrix\.shard == '03'[\s\S]*?shared-key: devbox-windows-package-shard-01\n\s+save-if: false/,
+  );
+  assert.ok(
+    workflow.indexOf("shared-key: devbox-windows-package-shard-01") <
+      workflow.indexOf("shared-key: devbox-windows-package-shard-${{ matrix.shard }}"),
+  );
 });

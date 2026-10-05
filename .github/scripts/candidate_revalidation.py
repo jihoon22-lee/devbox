@@ -16,6 +16,7 @@ REQUIRED_JOBS = (
     'Build required static Workspace component',
     'Build Windows products (shard 01)',
     'Build Windows products (shard 02)',
+    'Build Windows products (shard 03)',
     'Assemble and verify unpublished candidate',
     'Packaged native acceptance (product-shells)',
     'Packaged native acceptance (api)',
