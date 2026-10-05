@@ -194,3 +194,23 @@ test("Base64 stage selection counts enabled options and confirms the exact value
   assert.equal(clicks, 1);
   assert.equal(valueReads, 1);
 });
+
+test("connection lazy mount and status readiness precede exactly one disconnect", async () => {
+  const events = [];
+  let ready = false;
+  await runner.disconnectSuiteConnection({
+    ui: {
+      click: async (target) => {
+        if (target.name === "자동 연결 끄기") assert.equal(ready, true);
+        events.push(target.name);
+      },
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "자동 연결 끄기");
+        await Promise.resolve();
+        ready = true;
+        events.push("connected readiness");
+      },
+    },
+  });
+  assert.deepEqual(events, ["제품 연결", "connected readiness", "자동 연결 끄기"]);
+});

@@ -94,6 +94,11 @@ export async function cancelKnowledgePreview(knowledge) {
   await knowledge.ui.click(button("취소", draftDialog));
   await awaitKnowledgePreviewClosed(knowledge);
 }
+export async function disconnectSuiteConnection(api) {
+  await api.ui.click(button("제품 연결"));
+  await api.ui.waitForTarget(button("자동 연결 끄기"));
+  await api.ui.click(button("자동 연결 끄기"));
+}
 export async function restoreSuiteConnection(api) {
   await api.ui.click(button("이 설치 확인"));
   await api.ui.waitForTarget(button("연결 켜기"));
@@ -408,8 +413,7 @@ export async function run(api) {
         record(
           "L4 exact-candidate direct copy has a genuine different native installation; its authenticated foreign-artifact rejection probe cannot open the original offer, and actual foreign UI/source bytes remain unchanged",
         );
-        await api.ui.click(button("제품 연결"));
-        await api.ui.click(button("자동 연결 끄기"));
+        await disconnectSuiteConnection(api);
         await expectText(api, "자동 연결이 꺼져 있습니다.");
         await sendStored(api);
         await expectText(api, "전달 결과를 확인하지 못했습니다.");

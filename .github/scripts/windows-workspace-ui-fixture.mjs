@@ -73,6 +73,20 @@ export async function observeManagedLspTransition(ui, scope, nextAction, observe
   await ui.waitForTarget({ role: "button", name: nextAction, scope }, { timeoutMs });
   return observe();
 }
+export async function deleteTerminalProfile(surface, mainUi, wait) {
+  const remove = { role: "button", name: "owned terminal profile 프로필 삭제" };
+  await surface.ui.waitForTarget(remove);
+  await surface.ui.click(remove);
+  const confirm = { role: "button", name: "삭제" };
+  await surface.ui.waitForTarget(confirm);
+  await surface.ui.click(confirm);
+  await wait(
+    () => surface.cdp.evaluate(`!document.querySelector('button[aria-label="owned terminal profile 프로필 삭제"]')`),
+    "companion acknowledged profile deletion",
+  );
+  // Preserve the main window's stale selected profile to exercise native rejection.
+  await mainUi.click({ role: "button", name: "프로필로 터미널 열기" });
+}
 export async function prepareTerminalStart(ui, root, command) {
   await ui.waitForTarget({ role: "textbox", name: "시작 경로" });
   await ui.fill({ role: "textbox", name: "시작 경로" }, root);
@@ -749,6 +763,7 @@ export function createWorkspaceUiFixture({
         await surface.ui.press("Enter");
         await wait(async () => wslRead(afterInterrupt) === "ctrl-c\n", "Ctrl+C returns the exact owned shell");
         await surface.ui.click({ role: "button", name: "현재 상태 저장" });
+        await surface.ui.waitForTarget({ role: "textbox", name: "프로필 이름" });
         await surface.ui.fill({ role: "textbox", name: "프로필 이름" }, "owned terminal profile");
         await surface.ui.click({ role: "button", name: "저장" });
         await wait(
@@ -764,9 +779,7 @@ export function createWorkspaceUiFixture({
         await surface.ui.closeOwnedWindow();
         assert.equal((await sessions()).find((session) => session.id === opened.id).state, "active");
         await ui.click({ role: "button", name: "창 표시", scope: await scoped(opened.id) });
-        await surface.ui.click({ role: "button", name: "owned terminal profile 프로필 삭제" });
-        await surface.ui.click({ role: "button", name: "삭제" });
-        await ui.click({ role: "button", name: "프로필로 터미널 열기" });
+        await deleteTerminalProfile(surface, ui, wait);
         await this.waitForText({ role: "alert", name: "" });
         assert.equal(wslRead(counter), "launch\n");
       } catch (error) {

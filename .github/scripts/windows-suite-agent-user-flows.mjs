@@ -449,11 +449,13 @@ async function agentCrashBusiness(context, app) {
       "launch\n",
       "Uncertain operation must not replay after Agent reconnect",
     );
+    await app.ui.waitForTarget({ role: "button", name: "지금 실행", scope });
     await app.ui.click({ role: "button", name: "지금 실행", scope });
     await until(
       async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n",
       "new explicit business request after reconnect",
     );
+    await app.ui.waitForTarget({ role: "button", name: "중지", scope });
     await app.ui.clickWithConfirmation({ role: "button", name: "중지", scope }, true);
     return {
       assertions: [

@@ -637,3 +637,36 @@ test("managed LSP readiness preserves the transition budget before native observ
     assert.equal(observed, true);
   }
 });
+
+test("terminal profile deletion waits its queued dialog and companion acknowledgement before stale main open", async () => {
+  const { deleteTerminalProfile } = await import("./windows-workspace-ui-fixture.mjs");
+  const events = [];
+  let removed = false;
+  await deleteTerminalProfile(
+    {
+      ui: {
+        waitForTarget: async (target) => events.push(`ready:${target.name}`),
+        click: async (target) => events.push(`click:${target.name}`),
+      },
+      cdp: { evaluate: async () => removed },
+    },
+    {
+      click: async (target) => {
+        assert.equal(removed, true);
+        events.push(`main:${target.name}`);
+      },
+    },
+    async (probe) => {
+      assert.equal(await probe(), false);
+      removed = true;
+      assert.equal(await probe(), true);
+    },
+  );
+  assert.deepEqual(events, [
+    "ready:owned terminal profile 프로필 삭제",
+    "click:owned terminal profile 프로필 삭제",
+    "ready:삭제",
+    "click:삭제",
+    "main:프로필로 터미널 열기",
+  ]);
+});
