@@ -108,6 +108,17 @@ export async function selectSource(workspace) {
   await workspace.ui.waitForTarget({ role: "menuitem", name: "선택 내용을 API Studio에서 변환" });
   await workspace.ui.click({ role: "menuitem", name: "선택 내용을 API Studio에서 변환" });
 }
+export async function selectBase64Stage(api) {
+  const index = await api.cdp.evaluate(
+    "Array.from(document.querySelector('[aria-label=\"변환 단계 추가\"]').options).filter(option=>!option.disabled).findIndex(option=>option.value==='base64-encode')",
+  );
+  assert.ok(index >= 0);
+  await select(api, "변환 단계 추가", index);
+  await until(
+    () => api.cdp.evaluate("document.querySelector('[aria-label=\"변환 단계 추가\"]').value==='base64-encode'"),
+    "Base64 stage selection not observed",
+  );
+}
 async function executePipeline(api) {
   const input = await api.ui.text(textbox("스마트 워크플로 입력"));
   const expected = Buffer.from(input, "utf8").toString("base64");
@@ -311,11 +322,7 @@ export async function run(api) {
         );
         await api.ui.click(button("새 파이프라인"));
         await select(api, "파이프라인 입력 형식", 0);
-        const index = await api.cdp.evaluate(
-          "Array.from(document.querySelector('[aria-label=\"변환 단계 추가\"]').options).findIndex(option=>option.value==='base64-encode')",
-        );
-        assert.ok(index >= 0);
-        await select(api, "변환 단계 추가", index);
+        await selectBase64Stage(api);
         await api.ui.click(button("단계 추가"));
         const output = await executePipeline(api);
         assert.ok(output.trim());
