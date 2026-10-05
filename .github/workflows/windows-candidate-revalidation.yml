@@ -1,0 +1,421 @@
+name: Windows candidate revalidation
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_source:
+        description: Original immutable product build commit
+        required: true
+        type: string
+        default: 5d25aa75c3637e9d2e3ec1d0a5b25c2642960436
+      build_run:
+        description: Original candidate assembly and successful native acceptance run
+        required: true
+        type: string
+        default: '37306773490'
+      tag:
+        description: Stable tag to create at the original product build commit after all gates pass
+        required: true
+        type: string
+        default: v0.9.0
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-candidate-revalidation-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Verify retained product bytes and fixture-only changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      build_source: ${{ steps.resolve.outputs.build_source }}
+      input_artifact_id: ${{ steps.inputs.outputs.artifact-id }}
+      windows_lsp_artifact_id: ${{ steps.resolve.outputs.windows_lsp_artifact_id }}
+      wsl_lsp_artifact_id: ${{ steps.resolve.outputs.wsl_lsp_artifact_id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_SOURCE: ${{ inputs.build_source }}
+      BUILD_RUN: ${{ inputs.build_run }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: resolve
+        name: Verify original assembly and all retained native gates
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          python3 .github/scripts/prepare-candidate-revalidation.py --repository "$GITHUB_REPOSITORY" --source "$BUILD_SOURCE" --fixture "$GITHUB_SHA" --build-run "$BUILD_RUN" --run "$GITHUB_RUN_ID" --tag "$TAG" --resolve --github-output "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.resolve.outputs.artifact_id }}
+          path: candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run }}
+      - name: Hash all seven original files and bind the revalidation proof
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/prepare-candidate-revalidation.py --repository "$GITHUB_REPOSITORY" --source "$BUILD_SOURCE" --fixture "$GITHUB_SHA" --build-run "$BUILD_RUN" --run "$GITHUB_RUN_ID" --tag "$TAG" --assets candidate/assets --output candidate/evidence/revalidation-proof.json
+          python3 .github/scripts/verify-downloaded-release.py --artifact-kind candidate --assets candidate/assets --release candidate/evidence/candidate-metadata.json --config .github/scripts/windows-packaged-smoke-config.json --tag "$TAG" --commit "$BUILD_SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$BUILD_RUN"
+      - uses: actions/upload-artifact@v7
+        id: inputs
+        with:
+          name: verified-revalidation-inputs-${{ github.run_id }}
+          path: candidate
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  installed:
+    name: Fresh complete installed user journeys
+    needs: plan
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      DEVBOX_USER_FLOW_ASSETS: candidate/assets
+      DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.input_artifact_id }}
+          path: candidate
+      - name: Bind the verified build and actual fixture source
+        shell: pwsh
+        run: |
+          "DEVBOX_USER_FLOW_REVALIDATION_PROOF=$((Resolve-Path candidate/evidence/revalidation-proof.json).Path)" >> $env:GITHUB_ENV
+      - name: Fetch the pinned withdrawn version for same-version replacement
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 37095144741 --repo jihoon22-lee/devbox --name windows-package-candidate-v0.9.0-e499ac7127269bf67863bf0fdc42eaf53236b9f3 --dir candidate/withdrawn
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned withdrawn fixture is unavailable; do not replace it with a rebuild.' }
+          python .github/scripts/verify-withdrawn-fixture.py candidate/withdrawn/assets
+          if ($LASTEXITCODE -ne 0) { throw 'Withdrawn fixture bytes changed.' }
+      - name: Recover the exact private payload from public bytes
+        shell: pwsh
+        run: |
+          python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source '${{ needs.plan.outputs.build_source }}' --run-id '${{ github.run_id }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate delivery inputs failed.' }
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.windows_lsp_artifact_id }}
+          path: target/debug
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run }}
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.wsl_lsp_artifact_id }}
+          path: target/native-lsp-fixture
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run }}
+      - name: Prepare owned WSL1 filesystem for the installed journeys
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Provision Git in the prepared installed-journey fixture
+        shell: pwsh
+        run: |
+          .github/scripts/windows-workspace-wsl-git.ps1
+          "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
+      - name: Check owned cleanup helpers
+        shell: powershell
+        run: |
+          .github/scripts/windows-user-flow-cleanup-observation.test.ps1
+          .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
+          .github/scripts/windows-owned-installer-capture.test.ps1
+          .github/scripts/windows-suite-shortcut-launch.test.ps1
+          .github/scripts/windows-installer-ui.test.ps1 -NativePickerRoots
+      - name: Install interactively and complete visible activation
+        shell: pwsh
+        run: |
+          . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-installer
+          node .github/scripts/windows-suite-user-flow.mjs
+      - name: Exercise actual work in the same installed namespace
+        shell: pwsh
+        run: |
+          . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
+          $failed = @()
+          foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-agent-user-flows.mjs')) {
+            if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
+              Write-Host "Installed journey start: withdrawn-same-version-update"
+              node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
+              $withdrawnExitCode = $LASTEXITCODE
+              Write-Host "Installed journey end: withdrawn-same-version-update exit=$withdrawnExitCode"
+              if ($withdrawnExitCode -ne 0) { $failed += 'withdrawn-same-version-update' }
+            }
+            Write-Host "Installed journey start: $script"
+            node ".github/scripts/$script"
+            $scriptExitCode = $LASTEXITCODE
+            Write-Host "Installed journey end: $script exit=$scriptExitCode"
+            if ($scriptExitCode -ne 0) { $failed += $script }
+          }
+          if ($failed.Count -gt 0) { throw "Installed user journeys failed: $($failed -join ', ')" }
+      - name: Remove only the owned interactive installation and data
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-user-flow-install.ps1 -Cleanup
+      - name: Remove only the owned WSL1 fixture
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: revalidated-installer-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  migration:
+    name: Full migration and recovery on an independent runner
+    needs: plan
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVBOX_SUITE_ARTIFACT_SOURCE: ${{ needs.plan.outputs.build_source }}
+      DEVBOX_SUITE_ARTIFACT_RUN: ${{ inputs.build_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.input_artifact_id }}
+          path: candidate
+      - name: Exercise all original migration and recovery phases
+        shell: pwsh
+        run: |
+          $env:DEVBOX_USER_FLOW_REVALIDATION_PROOF = (Resolve-Path candidate/evidence/revalidation-proof.json).Path
+          python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source $env:DEVBOX_SUITE_ARTIFACT_SOURCE --run-id $env:DEVBOX_SUITE_ARTIFACT_RUN
+          if ($LASTEXITCODE -ne 0) { throw 'Retained delivery inputs failed.' }
+          .github/scripts/windows-suite-delivery.ps1 -Staging candidate/delivery -Bootstrap candidate/delivery/devbox-suite-bootstrap.exe
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: revalidated-migration-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  seal:
+    name: Seal complete revalidation of unchanged product bytes
+    needs: [plan, installed, migration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.sealed.outputs.artifact-id }}
+    env:
+      BUILD_SOURCE: ${{ needs.plan.outputs.build_source }}
+      BUILD_RUN: ${{ inputs.build_run }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.plan.outputs.input_artifact_id }}
+          path: candidate
+      - uses: actions/download-artifact@v8
+        with:
+          name: revalidated-installer-${{ github.run_id }}
+          path: candidate/evidence/user-flow-files/installer
+      - uses: actions/download-artifact@v8
+        with:
+          name: revalidated-migration-${{ github.run_id }}
+          path: candidate/evidence/migration
+      - name: Verify all forty fresh journeys and seal their original asset identities
+        run: |
+          set -euo pipefail
+          export DEVBOX_USER_FLOW_REVALIDATION_PROOF="$PWD/candidate/evidence/revalidation-proof.json"
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          record = json.loads(Path('candidate/evidence/migration/suite-delivery.json').read_text(encoding='utf-8-sig'))
+          if (record.get('result') != 'passed' or record.get('sourceSha') != os.environ['BUILD_SOURCE']
+              or record.get('fixtureSourceSha') != os.environ['GITHUB_SHA']
+              or str(record.get('artifactRun')) != os.environ['BUILD_RUN']
+              or record.get('scope') != 'installed-activation-generation-update-reinstall-data-restore-removal'
+              or record.get('cleanupFailures') != []):
+              raise SystemExit('Complete migration and owned cleanup evidence required')
+          PYTHON
+          node .github/scripts/collect-user-flow-evidence.mjs candidate/assets "$BUILD_SOURCE" candidate/evidence/user-flow-files candidate/evidence/user-flows.json
+          python3 .github/scripts/build-candidate-metadata.py --assets candidate/assets --tag "$TAG" --commit "$BUILD_SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID" --user-flow-evidence candidate/evidence/user-flows.json --revalidation-proof "$DEVBOX_USER_FLOW_REVALIDATION_PROOF" --output candidate/evidence/candidate-metadata.json
+          python3 .github/scripts/verify-downloaded-release.py --artifact-kind candidate --require-user-flows --assets candidate/assets --release candidate/evidence/candidate-metadata.json --config .github/scripts/windows-packaged-smoke-config.json --tag "$TAG" --commit "$BUILD_SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID" --revalidation-proof "$DEVBOX_USER_FLOW_REVALIDATION_PROOF"
+      - uses: actions/upload-artifact@v7
+        id: sealed
+        with:
+          name: revalidated-candidate-${{ github.run_id }}
+          path: candidate
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish only freshly verified revalidated bytes
+    needs: [plan, seal]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_SOURCE: ${{ needs.plan.outputs.build_source }}
+      BUILD_RUN: ${{ inputs.build_run }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.seal.outputs.artifact_id }}
+          path: candidate
+      - name: Independently verify the sealed candidate before creating any public reference
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify-downloaded-release.py --artifact-kind candidate --require-user-flows --assets candidate/assets --release candidate/evidence/candidate-metadata.json --config .github/scripts/windows-packaged-smoke-config.json --tag "$TAG" --commit "$BUILD_SOURCE" --repository "$GITHUB_REPOSITORY" --workflow-run "$GITHUB_RUN_ID" --revalidation-proof candidate/evidence/revalidation-proof.json
+      - name: Create a new annotated tag at the actual product source and upload a draft
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          [[ -z "$existing" ]]
+          [[ -z "$(git ls-remote --tags --refs origin "refs/tags/$TAG")" ]]
+          python3 .github/scripts/extract-release-notes.py CHANGELOG.md "$TAG" > /tmp/revalidation-release-notes.md
+          {
+            printf '\nProduct bytes: %s (original build run %s).\n' "$BUILD_SOURCE" "$BUILD_RUN"
+            printf 'Validation fixtures: %s; complete acceptance: https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          } >> /tmp/revalidation-release-notes.md
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          Path('/tmp/revalidation-tag.json').write_text(json.dumps({
+              'tag': os.environ['TAG'], 'message': 'Verified Devbox Suite ' + os.environ['TAG'],
+              'object': os.environ['BUILD_SOURCE'], 'type': 'commit',
+          }))
+          PYTHON
+          tag_object=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" --input /tmp/revalidation-tag.json --jq .sha)
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$tag_object" > /tmp/revalidation-tag-reference.json
+          shopt -s nullglob
+          assets=(candidate/assets/*)
+          [[ ${#assets[@]} -eq 7 ]]
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "devbox $TAG" --notes-file /tmp/revalidation-release-notes.md "${assets[@]}"
+      - name: Freshly download and verify the draft before publication
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          [[ "$(git cat-file -t "refs/tags/$TAG")" == tag ]]
+          [[ "$(git rev-parse "$TAG^{}")" == "$BUILD_SOURCE" ]]
+          mkdir downloaded-release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets | jq --arg source "$BUILD_SOURCE" '. + {targetCommit: $source}' > downloaded-release-metadata.json
+          python3 .github/scripts/verify-downloaded-release.py --assets downloaded-release --release downloaded-release-metadata.json --config .github/scripts/windows-packaged-smoke-config.json --tag "$TAG" --commit "$BUILD_SOURCE" --draft true --prerelease false
+          python3 - <<'PYTHON'
+          import hashlib, json
+          from pathlib import Path
+          expected = json.loads(Path('candidate/evidence/revalidation-proof.json').read_text())['assetDigests']
+          actual = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('downloaded-release').iterdir() if p.is_file()}
+          if actual != expected:
+              raise SystemExit('Fresh draft bytes differ from original candidate assets')
+          PYTHON
+      - name: Publish the verified stable draft
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease | jq -e --arg tag "$TAG" '.tagName == $tag and .isDraft == false and .isPrerelease == false'
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isLatest | jq -e --arg tag "$TAG" 'any(.[]; .tagName == $tag and .isLatest == true)'
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: revalidated-publication-${{ github.run_id }}
+          path: downloaded-release-metadata.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  public-smoke:
+    name: Fresh public download and four-product native startup
+    needs: [plan, seal, publish]
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      SOURCE: ${{ needs.plan.outputs.build_source }}
+      DEVBOX_USER_FLOW_ASSETS: public-assets
+      DEVBOX_FIXTURE_PROFILE: release
+      DEVBOX_PORTABLE_FIXTURES: target/portable-fixture
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.seal.outputs.artifact_id }}
+          path: candidate
+      - name: Verify annotated product source and fresh public bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin "refs/tags/$env:TAG`:refs/tags/$env:TAG"
+          if ($LASTEXITCODE -ne 0 -or (git cat-file -t "refs/tags/$env:TAG").Trim() -cne 'tag' -or (git rev-parse "refs/tags/$env:TAG^{}").Trim() -cne $env:SOURCE) { throw 'Annotated release source differs.' }
+          New-Item -ItemType Directory -Path public-assets,public-evidence | Out-Null
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --dir public-assets
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh release download failed.' }
+          $release = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json tagName,isDraft,isPrerelease,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $release.isDraft -or $release.isPrerelease) { throw 'Published stable release required.' }
+          $release | Add-Member -NotePropertyName targetCommit -NotePropertyValue $env:SOURCE
+          $release | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 public-evidence/release.json
+          python .github/scripts/verify-downloaded-release.py --assets public-assets --release public-evidence/release.json --config .github/scripts/windows-packaged-smoke-config.json --tag $env:TAG --commit $env:SOURCE --draft false --prerelease false > public-evidence/readback.json
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh public byte identity failed.' }
+          $proof = Get-Content -Raw candidate/evidence/revalidation-proof.json | ConvertFrom-Json
+          $files = @(Get-ChildItem -LiteralPath public-assets -File)
+          if ($files.Count -ne 7) { throw 'Public asset set differs.' }
+          foreach ($file in $files) {
+            $expected = $proof.assetDigests.PSObject.Properties[$file.Name].Value
+            if (-not $expected -or (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Public asset differs from original candidate.' }
+          }
+          "DEVBOX_USER_FLOW_REVALIDATION_PROOF=$((Resolve-Path candidate/evidence/revalidation-proof.json).Path)" >> $env:GITHUB_ENV
+      - name: Start all four freshly downloaded public products
+        shell: pwsh
+        run: |
+          python .github/scripts/prepare-suite-runtime.py public-assets --source $env:SOURCE
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime preparation failed.' }
+          node .github/scripts/windows-product-foundation.mjs --smoke-only
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh portable startup failed.' }
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: revalidated-public-smoke-${{ github.run_id }}
+          path: |
+            public-evidence
+            product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 14

@@ -3,15 +3,25 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from candidate_revalidation import validate_revalidation_proof
 
 
-def verify_user_flow_evidence(file: Path, commit: str, assets: list[dict]) -> dict:
+def reject_diagnostic(value):
+    if any(key in value for key in ("diagnosticOnly", "runnerSourceSha", "runnerRunId", "payloadSourceSha", "payloadRunId")) or value.get("promotionEvidence") is False:
+        raise ValueError("diagnostic evidence cannot be promoted")
+
+
+def verify_user_flow_evidence(file: Path, commit: str, assets: list[dict], revalidation_proof=None) -> dict:
     if file.is_symlink() or not file.is_file():
         raise ValueError("user-flow evidence file missing")
     evidence = json.loads(file.read_text(encoding="utf-8"))
+    reject_diagnostic(evidence)
+    fixture = commit
+    if revalidation_proof is not None:
+        fixture = validate_revalidation_proof(revalidation_proof, commit, assets=assets)["fixtureSha"]
     matrix = json.loads((Path(__file__).parent / "suite-user-flow-matrix.json").read_text(encoding="utf-8"))
     expected = {item["name"]: item["digest"].removeprefix("sha256:") for item in assets}
-    if evidence.get("schemaVersion") != 1 or evidence.get("expectedSource") != commit or evidence.get("expectedFixture") != commit or evidence.get("expectedDigests") != expected:
+    if evidence.get("schemaVersion") != 1 or evidence.get("expectedSource") != commit or evidence.get("expectedFixture") != fixture or evidence.get("expectedDigests") != expected:
         raise ValueError("user-flow package identity mismatch")
     results, screenshots = evidence.get("results"), evidence.get("screenshots")
     if not isinstance(results, list) or not isinstance(screenshots, dict) or len(results) != len(matrix):
@@ -23,10 +33,11 @@ def verify_user_flow_evidence(file: Path, commit: str, assets: list[dict]) -> di
         raise ValueError("interactive installation identity missing")
     for required in matrix:
         row = next(row for row in results if row["id"] == required["id"])
+        reject_diagnostic(row)
         assertions, paths = row.get("assertions"), row.get("screenshotPaths")
         same_installation = row.get("installationKey") == installation_key
         legacy_child = row.get("id") == "DELIVERY-01" and row.get("fixtureKind") == "legacy-upgrade" and row.get("parentInstallationKey") == installation_key and re.fullmatch(r"[a-f0-9]{64}", row.get("installationKey", ""))
-        if not (same_installation or legacy_child) or row.get("status") != "PASS" or row.get("sourceSha") != commit or row.get("fixtureSha") != commit or row.get("artifactDigests") != expected or row.get("evidenceKind") != required["evidenceKind"] or row.get("failureCode") is not None:
+        if not (same_installation or legacy_child) or row.get("status") != "PASS" or row.get("sourceSha") != commit or row.get("fixtureSha") != fixture or row.get("artifactDigests") != expected or row.get("evidenceKind") != required["evidenceKind"] or row.get("failureCode") is not None:
             raise ValueError(f"user-flow scenario rejected: {required['id']}")
         if not isinstance(assertions, list) or not assertions or not all(isinstance(a, str) and a.strip() for a in assertions) or not isinstance(paths, list) or not paths:
             raise ValueError("user-flow observations missing")

@@ -60,6 +60,8 @@ Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   scope gate에서 진단과 함께 중단하며, 전체 컴파일 재실행으로 대신하지 않는다.
 - 릴리스 작업은 [release policy](./docs/release-policy.md)를 읽는다. exact-main 후보의
   assembly·packaged runtime·installer 검증 후 같은 commit의 stable만 승격한다.
+  fixture만 바뀐 경우에는 release policy의 유한 경로 입력 동일성 receipt·새 수용/seal 예외를 따른다.
+  이 경우에도 tag는 실제 빌드 SHA이며 제품·빌드 입력 변경에는 전체 후보 빌드가 필요하다.
   후보가 없거나 만료됐을 때 새 build로 대체하지 않는다. 명시 요청 없는 public RC는 만들지 않는다.
 - 직접 만든 전용 worktree는 clean·merged 확인 → 제거 → `git worktree prune` → 로컬 브랜치
   삭제 → 원격 브랜치 삭제 순으로 정리한다. 활성·잠김·미머지·dirty·호스트 소유 worktree는

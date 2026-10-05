@@ -12,6 +12,7 @@ import sys
 import zipfile
 from suite_release_contract import acceptance_config, manifest_assets, verify_archive
 from candidate_user_flow import verify_user_flow_evidence
+from candidate_revalidation import load_revalidation_proof
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -47,6 +48,7 @@ def main() -> int:
     parser.add_argument("--repository")
     parser.add_argument("--workflow-run", type=int)
     parser.add_argument("--require-user-flows", action="store_true")
+    parser.add_argument("--revalidation-proof", type=pathlib.Path)
     arguments = parser.parse_args()
 
     assets_directory = arguments.assets.resolve(strict=True)
@@ -63,6 +65,14 @@ def main() -> int:
     if not isinstance(manifest, dict):
         raise SystemExit("release manifest must be an object")
     failures: list[str] = []
+    proof = None
+    if arguments.revalidation_proof:
+        if arguments.artifact_kind != "candidate" or not arguments.require_user_flows:
+            raise SystemExit("revalidation proof requires the complete candidate user-flow gate")
+        proof = load_revalidation_proof(arguments.revalidation_proof, arguments.commit,
+                                        arguments.repository, arguments.workflow_run, release.get("assets", []))
+        if release.get("revalidationProof") != proof:
+            failures.append("candidate revalidation proof mismatch")
 
     if release.get("tagName") != arguments.tag:
         failures.append("artifact tag mismatch")
@@ -112,6 +122,8 @@ def main() -> int:
             "assets",
             "userFlowEvidence",
         }
+        if proof is not None:
+            expected_candidate_fields.add("revalidationProof")
         if (
             set(release) != expected_candidate_fields
             or release.get("artifactKind") != "candidate"
@@ -140,7 +152,7 @@ def main() -> int:
         if arguments.artifact_kind != "candidate":
             raise SystemExit("user-flow candidate gate only")
         try:
-            receipt = verify_user_flow_evidence(arguments.release.parent / "user-flows.json", arguments.commit, release["assets"])
+            receipt = verify_user_flow_evidence(arguments.release.parent / "user-flows.json", arguments.commit, release["assets"], proof)
             if release.get("userFlowEvidence") != receipt:
                 failures.append("candidate user-flow receipt mismatch")
         except (ValueError, OSError, KeyError, TypeError) as error:

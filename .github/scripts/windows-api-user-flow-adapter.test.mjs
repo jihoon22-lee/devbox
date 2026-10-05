@@ -292,3 +292,73 @@ test("control-readiness timeout records only fixed counts and never performs inp
   );
   assert.deepEqual(events, ["Inspect", "InspectFilePicker"]);
 });
+
+test("API context binds split fixture source only through the current revalidation proof", async () => {
+  const { requireApiContext } = await import("./windows-api-user-flow-actions.mjs");
+  const scratch = await mkdtemp(path.join(tmpdir(), "devbox-suite-delivery-api-proof-"));
+  const sourceSha = "a".repeat(40),
+    fixtureSha = "b".repeat(40);
+  const artifactDigests = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`asset${i}`, "c".repeat(64)]));
+  const root = path.join(scratch, "Fixture");
+  const context = {
+    root,
+    fixtureRoot: root,
+    sourceSha,
+    fixtureSha,
+    artifactDigests,
+    installationKey: "d".repeat(64),
+    namespace: `com.devbox.v08.apistudio.i${"d".repeat(64)}`,
+    ui: Object.fromEntries(
+      ["click", "fill", "press", "screenshot", "confirmDialog", "closeOwnedWindow"].map((name) => [name, () => {}]),
+    ),
+    cdp: { evaluate() {} },
+    nativeCall() {},
+  };
+  const env = {
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_WORKFLOW: "Windows candidate revalidation",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_WORKFLOW_REF: "fixture/devbox/.github/workflows/windows-candidate-revalidation.yml@refs/heads/main",
+    GITHUB_REPOSITORY: "fixture/devbox",
+    GITHUB_SHA: fixtureSha,
+    GITHUB_RUN_ID: "456",
+    DEVBOX_USER_FLOW_REVALIDATION_PROOF: path.join(scratch, "proof.json"),
+  };
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  try {
+    delete process.env.DEVBOX_USER_FLOW_REVALIDATION_PROOF;
+    assert.throws(() => requireApiContext(context));
+    requireApiContext({ ...context, fixtureSha: sourceSha });
+    await writeFile(
+      env.DEVBOX_USER_FLOW_REVALIDATION_PROOF,
+      JSON.stringify({
+        schemaVersion: 1,
+        purpose: "candidate-fixture-revalidation",
+        repository: env.GITHUB_REPOSITORY,
+        sourceSha,
+        fixtureSha,
+        buildRunId: 123,
+        revalidationRunId: 456,
+        artifactId: 789,
+        artifactName: "candidate-assembly-123",
+        artifactDigest: `sha256:${"e".repeat(64)}`,
+        assetDigests: artifactDigests,
+      }),
+    );
+    Object.assign(process.env, env);
+    requireApiContext(context);
+    assert.throws(() => requireApiContext({ ...context, sourceSha: fixtureSha }));
+    assert.throws(() => requireApiContext({ ...context, fixtureSha: sourceSha }));
+    assert.throws(() =>
+      requireApiContext({ ...context, artifactDigests: { ...artifactDigests, asset0: "f".repeat(64) } }),
+    );
+    process.env.GITHUB_RUN_ID = "457";
+    assert.throws(() => requireApiContext(context));
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
