@@ -1,3 +1,4 @@
+import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { observeWorkspaceFailure } from "./windows-workspace-ui-observations.mjs";
 import assert from "node:assert/strict";
 export const scenarioIds = ["RUNTIME-01", "RUNTIME-02", "LSP-01", "DEPS-01"];
@@ -44,6 +45,13 @@ export async function run(context) {
       result.status = "FAIL";
       result.failureCode = `${id.toLowerCase()}-ui-failed`;
       result.assertions = ["Owned packaged UI scenario failed before all required assertions completed"];
+      if (id === "LSP-01" && fixture.closeFailedLsp) {
+        try {
+          await fixture.closeFailedLsp();
+        } catch (cleanupError) {
+          result.cleanupError = boundedFailure(cleanupError);
+        }
+      }
     }
     results.push(result);
   }

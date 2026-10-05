@@ -511,3 +511,107 @@ test("failed managed install is observed before cancel and waits for dialog reti
   });
   assert.equal(open, false);
 });
+
+test("owned WSL lifetime validates ownership and releases its exact child on failure", async () => {
+  const { withOwnedWslRunning } = await import("./windows-workspace-ui-fixture.mjs");
+  const { EventEmitter } = await import("node:events");
+  const owner = { name: "DevboxKnowledgeFixture-42-aabbccddeeff", runId: "42" };
+  const original = new Error("journey failure");
+  let released = false,
+    launches = 0;
+  const launch = (exe, args) => {
+    launches++;
+    assert.equal(exe, "wsl.exe");
+    assert.deepEqual(args.slice(0, 3), ["--distribution", owner.name, "--exec"]);
+    const child = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    child.stdout = new EventEmitter();
+    child.stdin = Object.assign(new EventEmitter(), {
+      end() {
+        released = true;
+        child.exitCode = 0;
+        child.emit("exit", 0, null);
+      },
+    });
+    queueMicrotask(() => child.stdout.emit("data", Buffer.from("ready\n")));
+    return child;
+  };
+  await assert.rejects(
+    withOwnedWslRunning(
+      owner,
+      "42",
+      async () => {
+        throw original;
+      },
+      launch,
+    ),
+    (error) => error === original,
+  );
+  assert.equal(released, true);
+  await assert.rejects(withOwnedWslRunning(owner, "other", async () => {}, launch));
+  assert.equal(launches, 1);
+});
+
+test("managed LSP native observation follows settled renderer and never competes with its refresh", async () => {
+  const { observeManagedLspTransition } = await import("./windows-workspace-ui-fixture.mjs");
+  for (const ready of [true, false]) {
+    let observed = false;
+    const error = new Error("renderer refresh failed");
+    const result = observeManagedLspTransition(
+      {
+        waitForTarget: async () => {
+          if (!ready) throw error;
+        },
+      },
+      {},
+      "제거",
+      async () => {
+        observed = true;
+      },
+    );
+    if (ready) await result;
+    else await assert.rejects(result, (value) => value === error);
+    assert.equal(observed, ready);
+  }
+});
+
+test("owned WSL pipe errors preserve journey failure while still awaiting child exit", async () => {
+  const { withOwnedWslRunning } = await import("./windows-workspace-ui-fixture.mjs");
+  const { EventEmitter } = await import("node:events");
+  for (const sync of [false, true]) {
+    const child = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    child.stdout = new EventEmitter();
+    child.stdin = new EventEmitter();
+    const pipeError = new Error("owned pipe failed"),
+      original = new Error("original journey failed");
+    let exited = false;
+    child.stdin.end = () => {
+      setImmediate(() => {
+        exited = true;
+        child.exitCode = 0;
+        child.emit("exit", 0, null);
+      });
+      if (sync) throw pipeError;
+      child.stdin.emit("error", pipeError);
+    };
+    const launch = () => {
+      queueMicrotask(() => child.stdout.emit("data", Buffer.from("ready\n")));
+      return child;
+    };
+    await assert.rejects(
+      withOwnedWslRunning(
+        { runId: "42", name: "DevboxKnowledgeFixture-42-aabbccddeeff" },
+        "42",
+        async () => {
+          throw original;
+        },
+        launch,
+      ),
+      (error) => error === original,
+    );
+    assert.equal(exited, true);
+  }
+});

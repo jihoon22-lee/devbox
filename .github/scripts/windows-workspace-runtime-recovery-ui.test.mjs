@@ -26,3 +26,31 @@ test("nested runtime adapter failures retain bounded error and first screenshot"
   assert.equal(results[0].error.message, "runtime original failure");
   assert.deepEqual(results[0].screenshotPaths, ["/owned/runtime-first.png"]);
 });
+
+test("LSP failure is captured before closing its panel and preserves cleanup failure separately", async () => {
+  const events = [];
+  const results = await run({
+    ui: {
+      screenshot: async () => {
+        events.push("capture");
+        return "/owned/lsp.png";
+      },
+    },
+    workspaceFixture: {
+      managedLspLifecycle: async () => {
+        throw new Error("original LSP failure");
+      },
+      closeFailedLsp: async () => {
+        events.push("close");
+        throw new Error("close failure");
+      },
+      dependencyRefresh: async () => {
+        events.push("deps");
+        return { notRun: "unavailable" };
+      },
+    },
+  });
+  assert.deepEqual(events, ["capture", "close", "deps"]);
+  assert.equal(results[2].error.message, "original LSP failure");
+  assert.equal(results[2].cleanupError.message, "close failure");
+});

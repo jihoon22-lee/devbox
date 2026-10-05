@@ -157,3 +157,29 @@ test("discard waits for the remounted Agent list before actual input", async () 
   });
   assert.deepEqual(clicks, ["버리기", "버리기 확인"]);
 });
+
+test("reopened Source requires a new reviewed Git grant after exact base selection", async () => {
+  const { reviewReopenedSource } = await import("./windows-workspace-agent-registry-ui.mjs");
+  const events = [];
+  await reviewReopenedSource(
+    {
+      selectRoot: async (root) => events.push(["select", root]),
+      context: async () => ({ worktreeId: "base" }),
+      trustSource: async () => events.push(["review"]),
+    },
+    "/owned/base",
+    "base",
+  );
+  assert.deepEqual(events, [["select", "/owned/base"], ["review"]]);
+  await assert.rejects(
+    reviewReopenedSource(
+      {
+        selectRoot: async () => {},
+        context: async () => ({ worktreeId: "other" }),
+        trustSource: async () => assert.fail("Never approve a mismatched context"),
+      },
+      "/owned/base",
+      "base",
+    ),
+  );
+});

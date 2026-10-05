@@ -38,7 +38,9 @@ export async function readWorkspaceAgentOperations(dataRoot) {
         if (
           !entry ||
           entry.product !== "workspace" ||
-          !["workspace.agents", "workspace.registry", "workspace.terminal"].includes(entry.component) ||
+          !["workspace.agents", "workspace.registry", "workspace.terminal", "workspace.lsp"].includes(
+            entry.component,
+          ) ||
           !["failed", "cancelled", "rejected", "panicked", "limit"].includes(entry.outcome) ||
           !token(entry.method) ||
           (entry.code != null && !token(entry.code)) ||

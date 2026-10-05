@@ -1,3 +1,4 @@
+import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import { readWorkspaceAgentOperations } from "./windows-workspace-agent-observation.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { dismissWorkspaceUndo } from "./windows-workspace-agent-registry-ui.mjs";
@@ -11,11 +12,67 @@ import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
 import assert from "node:assert/strict";
 import { readFile, readdir, rename, mkdir, rm, writeFile, lstat } from "node:fs/promises";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { downloadArchive } from "./windows-workspace-lsp.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
+export async function withOwnedWslRunning(owner, runId, action, launch = spawn) {
+  assert.equal(owner.runId, runId);
+  assert.match(owner.name, /^DevboxKnowledgeFixture-[0-9]+-[a-f0-9]{12}$/);
+  const child = launch(
+    "wsl.exe",
+    ["--distribution", owner.name, "--exec", "/bin/bash", "-c", "printf 'ready\\n'; read -r -t 900 || true"],
+    { stdio: ["pipe", "pipe", "ignore"] },
+  );
+  let original, pipeError;
+  child.stdin.on("error", (error) => {
+    pipeError ??= error;
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      let received = "";
+      const timer = setTimeout(() => finish(new Error("Owned WSL keepalive readiness timed out")), 20_000);
+      const finish = (error) => {
+        clearTimeout(timer);
+        child.stdout.removeListener("data", data);
+        child.removeListener("exit", exited);
+        error ? reject(error) : resolve();
+      };
+      const data = (chunk) => {
+        received += chunk.toString();
+        if (received.length > 64) finish(new Error("Invalid owned WSL readiness"));
+        else if (received === "ready\n") finish();
+      };
+      const exited = () => finish(new Error("Owned WSL keepalive exited before readiness"));
+      child.stdout.on("data", data);
+      child.once("exit", exited);
+      child.on("error", finish);
+    });
+    return await action();
+  } catch (error) {
+    original = error;
+    throw error;
+  } finally {
+    try {
+      child.stdin.end();
+    } catch (error) {
+      pipeError ??= error;
+    }
+    try {
+      await waitForFixtureChildExit(child, 5000);
+    } catch (error) {
+      pipeError ??= error;
+    }
+    if (!original && pipeError) throw pipeError;
+  }
+}
+export async function observeManagedLspTransition(ui, scope, nextAction, observe) {
+  // Native status verifies archives under the same exclusive installer lock as
+  // the renderer refresh. Never introduce a competing observer before it settles.
+  await ui.waitForTarget({ role: "button", name: nextAction, scope });
+  return observe();
+}
 export async function prepareTerminalStart(ui, root, command) {
   await ui.waitForTarget({ role: "textbox", name: "시작 경로" });
   await ui.fill({ role: "textbox", name: "시작 경로" }, root);
@@ -614,6 +671,16 @@ export function createWorkspaceUiFixture({
       };
     },
     async terminalLifecycle() {
+      const owner = JSON.parse(
+        (await readFile(path.join(process.env.RUNNER_TEMP, "devbox-knowledge-wsl-owner.json"), "utf8")).replace(
+          /^\uFEFF/,
+          "",
+        ),
+      );
+      assert.equal(owner.name, agentDistro);
+      return withOwnedWslRunning(owner, process.env.GITHUB_RUN_ID, () => this.terminalLifecycleWhileRunning());
+    },
+    async terminalLifecycleWhileRunning() {
       assert.ok(agentRoot && this.agentProjectName);
       await ui.click({ role: "button", name: "개요" });
       try {
@@ -744,6 +811,23 @@ export function createWorkspaceUiFixture({
         surface.close();
       }
     },
+    async closeFailedLsp() {
+      const confirmationOpen = () =>
+        cdp.evaluate(`!!document.querySelector('[role="dialog"][aria-label="관리형 서버 작업 확인"]')`);
+      if (await confirmationOpen()) {
+        const cancel = { role: "button", name: "취소", scope: { role: "dialog", name: "관리형 서버 작업 확인" } };
+        await ui.waitForTarget(cancel);
+        await ui.click(cancel);
+        await wait(async () => !(await confirmationOpen()), "failed LSP confirmation dismissed");
+      }
+      const panelOpen = () => cdp.evaluate(`!!document.querySelector('[role="dialog"][aria-label="언어 서버 설정"]')`);
+      if (await panelOpen()) {
+        const close = { role: "button", name: "닫기", scope: { role: "dialog", name: "언어 서버 설정" } };
+        await ui.waitForTarget(close);
+        await ui.click(close);
+        await wait(async () => !(await panelOpen()), "failed LSP panel dismissed");
+      }
+    },
     async managedLspLifecycle() {
       await this.selectWindows();
       await ui.click({ role: "button", name: "파일" });
@@ -761,7 +845,9 @@ export function createWorkspaceUiFixture({
         (await read("workspace.lsp", "lsp_installed")).find(
           (status) => status.manifest_id === item.id && status.version === item.version,
         );
-      assert.equal((await state(rust)).state, "not_installed");
+      await observeManagedLspTransition(ui, scope, "설치", async () =>
+        assert.equal((await state(rust)).state, "not_installed"),
+      );
       await ui.click({ role: "button", name: "설치", scope });
       const confirmation = { role: "dialog", name: "관리형 서버 작업 확인" };
       assert.ok((await ui.text(confirmation)).includes(rust.artifact.sha256));
@@ -772,7 +858,34 @@ export function createWorkspaceUiFixture({
       await this.waitForText({ role: "button", name: "가져오기 확인" });
       assert.ok((await ui.text(confirmation)).includes(rust.artifact.sha256));
       await ui.click({ role: "button", name: "가져오기 확인" });
-      await wait(async () => (await state(rust)).state === "installed", "digest-verified archive imported", 120_000);
+      // Native commit can precede the response and renderer status refresh.
+      // Do not overwrite an import error with the later intentional download failure.
+      try {
+        await observeManagedLspTransition(ui, scope, "제거", () =>
+          wait(async () => (await state(rust)).state === "installed", "digest-verified archive imported", 120_000),
+        );
+      } catch (error) {
+        try {
+          await writeFile(
+            "product-foundation-evidence/workspace-lsp-import-first-failure.json",
+            JSON.stringify(
+              {
+                schemaVersion: 1,
+                operations: await readWorkspaceAgentOperations(dataRoot),
+                ui: await cdp.evaluate(
+                  `(() => { const text = document.querySelector('[aria-label="언어 서버 설정"]')?.textContent ?? ''; return {importFailed:text.includes('local archive를 가져오지 못했습니다.'), statusFailed:text.includes('관리형 서버 상태를 확인하지 못했습니다.'), confirmationOpen:!!document.querySelector('[aria-label="관리형 서버 작업 확인"]')}; })()`,
+                ),
+              },
+              null,
+              2,
+            ),
+            { flag: "wx" },
+          );
+        } catch {
+          /* Preserve original readiness failure. */
+        }
+        throw error;
+      }
       const imported = await state(rust);
       assert.equal(imported.installed.sha256, rust.artifact.sha256);
       assert.equal(imported.installed.install_source, "local_archive");
@@ -804,25 +917,34 @@ export function createWorkspaceUiFixture({
         }
       }
       await assertNoPartial(lspRoot);
+      await ui.waitForTarget({ role: "button", name: "제거", scope });
       await ui.click({ role: "button", name: "제거", scope });
       await ui.click({ role: "button", name: "제거 확인" });
-      await wait(async () => (await state(rust)).state === "not_installed", "exact indexed installation removed");
+      await observeManagedLspTransition(ui, scope, "설치", () =>
+        wait(async () => (await state(rust)).state === "not_installed", "exact indexed installation removed"),
+      );
       await assert.rejects(readdir(installed));
       assert.equal((await state(rust)).archive_cached, true);
       // A cancelled cached reinstall stays absent; approved cache reinstall creates the exact reviewed version.
+      await ui.waitForTarget({ role: "button", name: "설치", scope });
       await ui.click({ role: "button", name: "설치", scope });
       await ui.click({ role: "button", name: "취소", scope: confirmation });
       assert.equal((await state(rust)).state, "not_installed");
       const cachedAttempts = network.attempts();
       await ui.click({ role: "button", name: "설치", scope });
       await ui.click({ role: "button", name: "설치 확인" });
-      await wait(async () => (await state(rust)).state === "installed", "cached exact server installed", 120_000);
+      await observeManagedLspTransition(ui, scope, "제거", () =>
+        wait(async () => (await state(rust)).state === "installed", "cached exact server installed", 120_000),
+      );
       assert.equal((await state(rust)).installed.install_source, "archive_cache");
       assert.equal(network.attempts(), cachedAttempts);
       const screenshot = await ui.screenshot("workspace-lsp-reviewed-lifecycle");
+      await ui.waitForTarget({ role: "button", name: "제거", scope });
       await ui.click({ role: "button", name: "제거", scope });
       await ui.click({ role: "button", name: "제거 확인" });
-      await wait(async () => (await state(rust)).state === "not_installed", "owned server removed after cache proof");
+      await observeManagedLspTransition(ui, scope, "설치", () =>
+        wait(async () => (await state(rust)).state === "not_installed", "owned server removed after cache proof"),
+      );
       await ui.press("Escape");
       return {
         assertions: [
