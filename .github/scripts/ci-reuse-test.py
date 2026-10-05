@@ -19,6 +19,28 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ReuseTests(unittest.TestCase):
+    def test_reused_rust_checks_do_not_allocate_runners_but_scope_errors_fail_closed(self):
+        import yaml
+        workflow = yaml.safe_load((MODULE.ROOT / MODULE.WORKFLOW).read_text())
+        for gate in ('rust', 'rust-windows'):
+            condition = workflow['jobs'][gate]['if']
+            for result, scope, reuse, expected in (
+                ('success', 'all', 'true', False),
+                ('success', 'all', 'false', True),
+                ('success', 'none', 'false', False),
+                ('failure', 'all', 'true', True),
+                ('failure', 'none', '', True),
+            ):
+                expression = condition.removeprefix('${{').removesuffix('}}').strip()
+                values = {'cancelled()': False, 'github.event_name': 'workflow_dispatch',
+                          'github.event.pull_request.draft': False, 'needs.scope.result': result,
+                          'needs.scope.outputs.rust_scope': scope,
+                          f'needs.scope.outputs.{gate.replace("-", "_")}_reuse': reuse}
+                for key, value in values.items(): expression = expression.replace(key, repr(value))
+                expression = re.sub(r'!(?!=)', 'not ', expression).replace('&&', ' and ').replace('||', ' or ')
+                with self.subTest(gate=gate,result=result,scope=scope,reuse=reuse):
+                    self.assertEqual(eval(expression, {'__builtins__': {}}, {}), expected)
+
     def test_only_successful_same_repository_runs_are_trusted(self):
         run = {"status": "completed", "conclusion": "success", "event": "pull_request", "path": ".github/workflows/ci.yml", "repository": {"full_name": "owner/repo"}, "head_repository": {"full_name": "owner/repo"}}
         self.assertTrue(MODULE.trusted_run(run, "owner/repo"))

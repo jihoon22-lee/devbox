@@ -16,7 +16,7 @@ export default function QuitGuard() {
   const [busy, setBusy] = useState(false);
   const [permanent, setPermanent] = useState(false);
   const [error, setError] = useState("");
-  const dialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const handling = useRef(false);
   useEffect(() => {
     if (!nativeMode) return;
@@ -32,6 +32,7 @@ export default function QuitGuard() {
           await prepareNoteQuit();
           await quitCall("decide_quit", { id, quit: true });
         } else {
+          setPermanent(false);
           setRequest(id);
           setError("");
         }
@@ -63,8 +64,11 @@ export default function QuitGuard() {
   useEffect(() => {
     if (!request) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (dialog.current) focusFirst(dialog.current);
+    const element = dialog.current;
+    element?.showModal();
+    if (element) focusFirst(element);
     return () => {
+      element?.close();
       restoreFocus(previous);
     };
   }, [request]);
@@ -91,49 +95,53 @@ export default function QuitGuard() {
   };
   if (!request) return error ? <p role="alert">{error}</p> : null;
   return (
-    <div className="modal-backdrop">
-      <section
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="knowledge-quit-title"
-        className="rename-dialog"
-        onKeyDown={(event) => {
-          if (isImeComposing(event)) return;
-          if (event.key === "Escape" && !busy) {
-            event.preventDefault();
-            void decide("cancel");
-          } else if (dialog.current) trapDialogKeyDown(event, dialog.current);
-        }}
-      >
-        <h2 id="knowledge-quit-title">저장하지 않은 노트가 있습니다</h2>
-        <p>{collectorMessage(collectorStatus)}</p>
-        {error && <p role="alert">{error}</p>}
-        <button disabled={busy} onClick={() => void decide("save")}>
-          저장하고 종료
-        </button>
-        <button disabled={busy} onClick={() => void decide("discard")}>
-          저장하지 않고 종료(복구본 유지)
-        </button>
-        {permanent ? (
-          <div role="group" aria-label="복구본 영구 삭제 확인">
-            <p>현재 노트의 복구본을 영구 삭제하고 종료합니다. 되돌릴 수 없습니다.</p>
-            <button disabled={busy} onClick={() => void decide("permanent")}>
-              영구 삭제하고 종료
-            </button>
-            <button disabled={busy} onClick={() => setPermanent(false)}>
-              삭제 취소
-            </button>
-          </div>
-        ) : (
-          <button disabled={busy} onClick={() => setPermanent(true)}>
-            복구본 영구 삭제…
+    <dialog
+      ref={dialog}
+      aria-modal="true"
+      aria-labelledby="knowledge-quit-title"
+      className="knowledge-quit-dialog"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) void decide("cancel");
+      }}
+      onKeyDown={(event) => {
+        if (isImeComposing(event)) {
+          if (event.key === "Escape") event.preventDefault();
+          return;
+        }
+        if (event.key === "Escape" && !busy) {
+          event.preventDefault();
+          void decide("cancel");
+        } else if (dialog.current) trapDialogKeyDown(event, dialog.current);
+      }}
+    >
+      <h2 id="knowledge-quit-title">저장하지 않은 노트가 있습니다</h2>
+      <p>{collectorMessage(collectorStatus)}</p>
+      {error && <p role="alert">{error}</p>}
+      <button disabled={busy} onClick={() => void decide("save")}>
+        저장하고 종료
+      </button>
+      <button disabled={busy} onClick={() => void decide("discard")}>
+        저장하지 않고 종료(복구본 유지)
+      </button>
+      {permanent ? (
+        <div role="group" aria-label="복구본 영구 삭제 확인">
+          <p>현재 노트의 복구본을 영구 삭제하고 종료합니다. 되돌릴 수 없습니다.</p>
+          <button disabled={busy} onClick={() => void decide("permanent")}>
+            영구 삭제하고 종료
           </button>
-        )}
-        <button disabled={busy} onClick={() => void decide("cancel")}>
-          종료 취소
+          <button disabled={busy} onClick={() => setPermanent(false)}>
+            삭제 취소
+          </button>
+        </div>
+      ) : (
+        <button disabled={busy} onClick={() => setPermanent(true)}>
+          복구본 영구 삭제…
         </button>
-      </section>
-    </div>
+      )}
+      <button disabled={busy} onClick={() => void decide("cancel")}>
+        종료 취소
+      </button>
+    </dialog>
   );
 }

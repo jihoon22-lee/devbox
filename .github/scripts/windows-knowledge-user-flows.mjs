@@ -194,6 +194,8 @@ export async function createInstalledKnowledgeContext() {
     body,
     waitBody,
     waitFor,
+    quitReviewOpen: () =>
+      current.cdp.evaluate('document.querySelector("[aria-labelledby=knowledge-quit-title]") !== null'),
     async navigate(route) {
       const d = await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')");
       const feature = d.features?.find((f) => f.route === route);

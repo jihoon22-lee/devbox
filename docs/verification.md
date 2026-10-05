@@ -60,6 +60,10 @@ CI가 같은 저장소의 신뢰 가능한 이전 성공에서 실제 실행한 
 Frontend의 format·component size·fixture 계약 검사도 compiler 결과 재사용과 별개로 실행한다.
 이 재사용은 compiler/test CI 근거에 한정한다. 최종 exact-main 후보의 네 native scope,
 40개 설치 사용자 여정, WSL2/Docker, migration/recovery 및 sealing 조건은 그대로 적용한다.
+일반 후보에서도 전체 migration/recovery를 assembly에 의존하는 별도 Windows job으로 실행해
+40개 UI 여정과 겹쳐 수행한다. 두 job은 같은 후보 7개 bytes를 사용하되 각자 소유한 설치 namespace를
+사용한다. 최종 seal은 두 job의 성공 및 migration의 전체 scope·source/fixture SHA·run·cleanup
+완료 receipt를 요구하고 migration artifact를 보존한다. 실제 소요시간 개선은 새 후보에서 측정한다.
 
 `Product foundation acceptance`는 수동 진단 전용이다. PR에서 별도 제품 빌드·수용을
 자동 실행하지 않는다. 필수 PR CI는 유지하며 최종 제품 bytes의 native·UI·WSL2·migration
@@ -140,6 +144,19 @@ Windows Rust CI의 Cargo build job은 2개다. 네 제품 build.rs는
 Tauri 공유 staging을 복사한다. Windows sharing violation 32를 일으키던 복사 구간을
 직렬화하고 독립 crate 컴파일은 병렬로 유지한다. Linux/로컬 예산은 그대로다.
 
+제품 후보 빌드는 별도 Windows hosted runner 최대 3개로 나눈다. shard01은 Workspace와
+private LSP fixture, shard02는 API Studio·Knowledge, shard03은 Control Center와 필수 Agent를
+순서대로 빌드한다. 각 호스트의 Cargo worker는 여전히 2개이며 release 최적화·제품 구성·수용
+gate는 바꾸지 않는다. 기존 두 shard 실행에서 Workspace 28분 15초와 fixture 1분 22초 뒤에
+Control Center 9분 16초·Agent 11분 44초가 이어져 한쪽에 작업이 몰렸다. 분리 후 약 30분의
+제품 컴파일 임계 경로를 예상하지만 cache 복원·runner 대기·실제 변경량은 별도로 측정한다.
+실제 Windows 실행 전에는 이 추정을 단축 실적으로 기록하지 않는다.
+
+각 shard는 독립된 `devbox-windows-package-shard-01/02/03` cache를 사용한다. main의 shard03
+cache가 없거나 metadata 조회가 불가하면 기존 shard01을 `save-if: false`로 먼저 복원하고
+자기 namespace만 저장한다. 다른 shard의 cache를 덮어쓰지 않으며, compiler·환경·lock 해시가
+맞지 않거나 cache가 없으면 정상 컴파일한다. cache는 빌드 산출물·수용 성공의 근거가 아니다.
+
 ## 실행 잠금과 측정
 
 Git common directory의 `devbox-verification/lock`으로 linked worktree까지 한 번에 하나의
@@ -189,3 +206,8 @@ Windows와 WSL 대형 빌드를 겹치지 않는다. 하위 에이전트의 검�
 완료한 소유 fixture·임시 설치본·중복 archive는 필요한 최초 실패/최신 증거를 보존한 뒤 정리한다.
 공유 cache를 매번 삭제하지 않는다. 정리 전에 소유권·실행 프로세스·통합 여부를 확인한다.
 40개 수용 ID는 추적 단위로서 공통 사용자 여정에서 함께 판정하며 별도 40회 실행을 뜻하지 않는다.
+
+재사용이 확정된 Rust job은 scope 단계의 성공·동일 입력 증명 뒤 runner 배정 전에
+건너뛴다. 근거를 다시 출력하는 것만을 위해 Linux/Windows 실행기를 기다리지 않는다.
+scope 실패 시에는 job의 실패 경로를 유지하며, 재사용 근거가 없거나 정기 전체 감사인
+경우 실제 컴파일을 실행한다. 프런트엔드의 가벼운 현행 계약 검사는 기존대로 유지한다.

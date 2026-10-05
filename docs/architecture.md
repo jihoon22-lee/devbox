@@ -14,7 +14,7 @@
 - **데이터 이전:** 원본을 보존한 WAL consistent snapshot, destination namespace, idempotency와
   conflict 검토를 사용한다. 사용자 Git/vault 원본은 그대로 참조한다. cache와 live process는
   사용자 설정의 이전과 구분한다. secret은 raw payload로 전달하지 않고 재연결한다.
-- **배포:** 두 Windows shard가 네 제품을 한 번 빌드한다. Windows assembly가 WSL/Suite helper를
+- **배포:** 세 Windows shard가 Workspace·API Studio/Knowledge·Control Center/Agent를 나눠 네 제품을 한 번 빌드한다. Windows assembly가 WSL/Suite helper를
   포함한 closed manifest·ZIP을 검사하고 Suite setup 하나를 만든다. 동일 bytes로 native,
   WSL2/Docker, migration/update/undo/commit/uninstall과 성능을 검증한다.
 - **게시:** 성공 후보를 annotated stable tag로 승격한다. 제품 입력 변경은 새 exact-main 후보를 요구하고,

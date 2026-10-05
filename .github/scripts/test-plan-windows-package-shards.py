@@ -20,6 +20,17 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PlanWindowsPackageShardsTests(unittest.TestCase):
+    def test_three_product_shards_separate_workspace_and_center_agent_cost(self) -> None:
+        catalog = json.loads((ROOT / "apps/catalog.json").read_text(encoding="utf-8"))
+        app_ids = MODULE.release_app_ids(catalog)
+        expected = ["devbox-workspace", "devbox-api-studio,devbox-knowledge", "devbox-control-center"]
+        for ordered in (app_ids, list(reversed(app_ids))):
+            matrix = MODULE.build_matrix(ordered, 3)["include"]
+            self.assertEqual([item["apps"] for item in matrix], expected)
+            self.assertEqual([item["shard"] for item in matrix], ["01", "02", "03"])
+            self.assertEqual([item["app_count"] for item in matrix], [1, 2, 1])
+            self.assertCountEqual([app for item in matrix for app in item["apps"].split(",")], app_ids)
+
     def test_current_catalog_is_covered_once_by_two_balanced_shards(self) -> None:
         catalog = json.loads((ROOT / "apps/catalog.json").read_text(encoding="utf-8"))
         app_ids = MODULE.release_app_ids(catalog)

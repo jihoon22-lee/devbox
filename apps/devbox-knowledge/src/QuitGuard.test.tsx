@@ -8,6 +8,12 @@ vi.mock("@devbox/knowledge-features/transport", () => ({ componentInvoke: () => 
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 let unregister: (() => void) | undefined;
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  });
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  });
   invoke
     .mockReset()
     .mockImplementation((method: string) => Promise.resolve(method === "pending_quit" ? "quit-1" : null));
@@ -55,7 +61,7 @@ it("waits for an in-flight write before explicit discard and ignores composing E
   });
   render(<QuitGuard />);
   const dialog = await screen.findByRole("dialog");
-  fireEvent.keyDown(dialog, { key: "Escape", isComposing: true });
+  expect(fireEvent.keyDown(dialog, { key: "Escape", isComposing: true })).toBe(false);
   expect(invoke.mock.calls.some(([method]) => method === "decide_quit")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "저장하지 않고 종료(복구본 유지)" }));
   expect(invoke.mock.calls.some(([method]) => method === "decide_quit")).toBe(false);
@@ -81,4 +87,67 @@ it("requires separate confirmation for permanent discard and rejects failed dele
   await screen.findByRole("alert");
   expect(prepare).toHaveBeenCalledWith(true);
   expect(invoke.mock.calls.some(([method]) => method === "decide_quit")).toBe(false);
+});
+
+it("owns a native modal until cancellation is acknowledged, then restores focus and resets confirmation", async () => {
+  let acknowledge!: () => void;
+  invoke.mockImplementation((method: string) =>
+    method === "pending_quit"
+      ? Promise.resolve("quit-1")
+      : method === "decide_quit"
+        ? new Promise<void>((resolve) => {
+            acknowledge = resolve;
+          })
+        : Promise.resolve(null),
+  );
+  unregister = registerNoteEditor({
+    unsaved: () => true,
+    saveBeforeQuit: async () => true,
+    settleBeforeQuit: async () => {},
+  });
+  const origin = document.createElement("button");
+  document.body.append(origin);
+  origin.focus();
+  try {
+    render(<QuitGuard />);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toBeInstanceOf(HTMLDialogElement);
+    expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "복구본 영구 삭제…" }));
+    fireEvent.click(screen.getByRole("button", { name: "종료 취소" }));
+    const nativeCancel = new Event("cancel", { cancelable: true });
+    fireEvent(dialog, nativeCancel);
+    expect(nativeCancel.defaultPrevented).toBe(true);
+    expect(dialog.hasAttribute("open")).toBe(true);
+    expect(invoke.mock.calls.filter(([method]) => method === "decide_quit")).toHaveLength(1);
+    await act(async () => acknowledge());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(HTMLDialogElement.prototype.close).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(origin);
+    await act(async () => listen.mock.calls[0][1]());
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("group", { name: "복구본 영구 삭제 확인" })).toBeNull();
+  } finally {
+    origin.remove();
+  }
+});
+
+it("keeps the modal on a rejected native cancellation and permits an explicit retry", async () => {
+  invoke.mockImplementation((method: string) =>
+    method === "pending_quit" ? Promise.resolve("quit-1") : Promise.resolve(null),
+  );
+  unregister = registerNoteEditor({
+    unsaved: () => true,
+    saveBeforeQuit: async () => true,
+    settleBeforeQuit: async () => {},
+  });
+  render(<QuitGuard />);
+  const dialog = await screen.findByRole("dialog");
+  invoke.mockImplementationOnce(() => Promise.reject(new Error("native unavailable")));
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  await screen.findByRole("alert");
+  expect(dialog.hasAttribute("open")).toBe(true);
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(invoke.mock.calls.filter(([method]) => method === "decide_quit")).toHaveLength(2);
 });

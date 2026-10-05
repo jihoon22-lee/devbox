@@ -156,3 +156,43 @@
     grid-template-rows: auto auto auto minmax(0, 1fr);
   }
 }
+
+.knowledge-quit-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+  color: var(--db-color-text);
+  background: var(--db-color-surface);
+  border: 1px solid var(--db-color-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
+  overflow-wrap: anywhere;
+}
+.knowledge-quit-dialog::backdrop {
+  background: rgb(3 7 12 / 72%);
+}
+.knowledge-quit-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+.knowledge-quit-dialog p {
+  line-height: 1.6;
+}
+.knowledge-quit-dialog button {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--db-color-text);
+  background: var(--db-color-surface);
+  border: 1px solid var(--db-color-border);
+  border-radius: 6px;
+}
+.knowledge-quit-dialog button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

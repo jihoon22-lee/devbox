@@ -18,6 +18,18 @@ def proof():
                 requiredJobs=[dict(id=i+1,name=name,status='completed',conclusion='success') for i,name in enumerate(REQUIRED_JOBS)])
 
 class RevalidationTests(unittest.TestCase):
+    def test_third_product_shard_cannot_be_missing_or_failed(self):
+        name='Build Windows products (shard 03)'
+        self.assertIn(name, REQUIRED_JOBS)
+        for conclusion in (None, 'failure', 'cancelled', 'skipped'):
+            bad=proof()
+            if conclusion is None:
+                bad['requiredJobs']=[job for job in bad['requiredJobs'] if job['name'] != name]
+            else:
+                next(job for job in bad['requiredJobs'] if job['name'] == name)['conclusion']=conclusion
+            with self.subTest(conclusion=conclusion), self.assertRaises(ValueError):
+                validate_revalidation_proof(bad,SOURCE,FIXTURE,REPO,22)
+
     def test_proof_identity_and_required_success(self):
         p=proof()
         self.assertEqual(validate_revalidation_proof(p,SOURCE,FIXTURE,REPO,22),p)

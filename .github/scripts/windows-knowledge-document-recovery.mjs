@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { readFile, unlink } from "node:fs/promises";
 import { scenarios, editor } from "./windows-knowledge-flow-shared.mjs";
 export const scenarioIds = ["DOC-01", "DOC-02", "DOC-03"];
-export async function reviewKnowledgeQuit(ui, name) {
+export async function reviewKnowledgeQuit(ui, name, fixture) {
   await ui.closeOwnedWindow();
   const target = { role: "button", name };
   await ui.waitForTarget(target);
   await ui.click(target);
+  if (name === "종료 취소") {
+    await fixture.wait(async () => !(await fixture.quitReviewOpen()), "Knowledge quit cancellation acknowledged");
+  }
 }
 export async function openKnowledgeRecoveryNote(ui, fixture, rel, content) {
   const target = { role: "button", name: `${rel} 열어서 확인` };
@@ -52,7 +55,7 @@ export async function run(context) {
         await fixture.disableAutosave();
         await ui.fill(editor, "");
         await fixture.waitJournal(notes.a, "");
-        await reviewKnowledgeQuit(ui, "종료 취소");
+        await reviewKnowledgeQuit(ui, "종료 취소", fixture);
         assert.equal(await fixture.editorText(), "");
         assert.equal(await readFile(notes.aFile, "utf8"), notes.aOriginal);
         const switching = fixture.openNote(notes.b);
