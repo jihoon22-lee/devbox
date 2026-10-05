@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { evaluateAssertions, type Assertion } from "./assertions";
 import type { ApiResponse } from "../types";
 
@@ -33,8 +33,8 @@ const a = (source: Assertion["source"], operator: Assertion["operator"], expecte
 });
 
 describe("assertions", () => {
-  it("checks status, headers, JSON values and duration", () => {
-    const results = evaluateAssertions(
+  it("checks status, headers, JSON values and duration", async () => {
+    const results = await evaluateAssertions(
       [
         a("status", "equals", "201"),
         a("header", "equals", "42", "x-id"),
@@ -49,8 +49,8 @@ describe("assertions", () => {
     expect(results.map((r) => r.passed)).toEqual([true, true, true, true, true, true, true]);
   });
 
-  it("reports actual values and reasons on failure", () => {
-    const [status, regex, numeric] = evaluateAssertions(
+  it("reports actual values and reasons on failure", async () => {
+    const [status, regex, numeric] = await evaluateAssertions(
       [
         a("status", "equals", "200"),
         a("body", "matches", "(unclosed"),
@@ -63,8 +63,8 @@ describe("assertions", () => {
     expect(numeric).toMatchObject({ passed: false, message: "숫자가 아닌 값입니다" });
   });
 
-  it("fails JSON checks on non-JSON and binary responses without stopping others", () => {
-    const text = evaluateAssertions(
+  it("fails JSON checks on non-JSON and binary responses without stopping others", async () => {
+    const text = await evaluateAssertions(
       [a("jsonPath", "exists", "", "$.a"), a("status", "equals", "201")],
       response({ is_json: false, body: "<html>" }),
     );
@@ -72,7 +72,7 @@ describe("assertions", () => {
       [false, "JSON이 아닌 응답"],
       [true, ""],
     ]);
-    const binary = evaluateAssertions(
+    const binary = await evaluateAssertions(
       [a("body", "contains", "x")],
       response({
         binary: {
@@ -86,7 +86,60 @@ describe("assertions", () => {
     expect(binary[0]).toMatchObject({ passed: false, message: "binary 응답" });
   });
 
-  it("skips disabled assertions", () => {
-    expect(evaluateAssertions([{ ...a("status", "equals", "500"), enabled: false }], response())).toEqual([]);
+  it("skips disabled assertions", async () => {
+    expect(await evaluateAssertions([{ ...a("status", "equals", "500"), enabled: false }], response())).toEqual([]);
   });
+});
+
+const workers: Array<{
+  terminate: ReturnType<typeof vi.fn>;
+  postMessage: ReturnType<typeof vi.fn>;
+  onmessage?: (event: { data: unknown }) => void;
+}> = [];
+function installWorker() {
+  vi.stubGlobal(
+    "Worker",
+    class {
+      terminate = vi.fn();
+      postMessage = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    },
+  );
+}
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  workers.length = 0;
+});
+it("bounds regex assertion work without blocking other assertions", async () => {
+  installWorker();
+  vi.useFakeTimers();
+  const task = evaluateAssertions([a("body", "matches", "safe"), a("status", "equals", "201")], response());
+  expect(workers).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(500);
+  expect(await task).toEqual([
+    expect.objectContaining({ passed: false, message: expect.stringContaining("제한 시간") }),
+    expect.objectContaining({ passed: true }),
+  ]);
+  expect(workers[0].terminate).toHaveBeenCalledOnce();
+});
+it("terminates regex matching on cancellation and ignores stale replies", async () => {
+  installWorker();
+  const controller = new AbortController();
+  const task = evaluateAssertions([a("body", "matches", "safe")], response(), controller.signal);
+  expect(workers).toHaveLength(1);
+  controller.abort();
+  workers[0].onmessage?.({ data: { matched: true } });
+  expect((await task)[0]).toMatchObject({ passed: false });
+  expect(workers[0].terminate).toHaveBeenCalledOnce();
+});
+it("reports a worker regex match and cleans up ownership", async () => {
+  installWorker();
+  const task = evaluateAssertions([a("body", "matches", "kim")], response());
+  expect(workers).toHaveLength(1);
+  workers[0].onmessage?.({ data: { matched: true } });
+  expect((await task)[0]).toMatchObject({ passed: true });
+  expect(workers[0].terminate).toHaveBeenCalledOnce();
 });

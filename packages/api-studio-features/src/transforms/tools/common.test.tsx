@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readClipboardText } from "../api";
-import { ToolOutput, ToolTextArea, TransformerTool } from "./common";
+import { CopyBtn, ToolOutput, ToolTextArea, TransformerTool } from "./common";
 
 vi.mock("../api", () => ({
   createApiRequestHandoff: vi.fn(),
@@ -152,43 +152,46 @@ describe("ToolTextArea context menu", () => {
     expect(new TextEncoder().encode(input.value).byteLength).toBe(8);
   });
 
-  it("stops before malformed Unicode and discards a paste after the value changes", async () => {
-    readClipboardTextMock.mockResolvedValueOnce(`a${"\ud800"}b`);
-    const view = render(<InputHarness initial="" maxPasteBytes={10} />);
-    const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
-    openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
-    await waitFor(() => expect(input.value).toBe("a"));
+  it.each(["a\ud800b", "a\ud800"])(
+    "stops before malformed Unicode and discards a stale paste: %j",
+    async (inputText) => {
+      readClipboardTextMock.mockResolvedValueOnce(inputText);
+      const view = render(<InputHarness initial="" maxPasteBytes={10} />);
+      const input = screen.getByRole("textbox", { name: "Tool input" }) as HTMLTextAreaElement;
+      openMenu(input);
+      fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
+      await waitFor(() => expect(input.value).toBe("a"));
 
-    let resolvePaste: (value: string) => void = () => undefined;
-    readClipboardTextMock.mockReturnValueOnce(
-      new Promise<string>((resolve) => {
-        resolvePaste = resolve;
-      }),
-    );
-    openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
-    fireEvent.change(input, { target: { value: "new" } });
-    await act(async () => {
-      resolvePaste("stale");
-      await Promise.resolve();
-    });
-    expect(input.value).toBe("new");
+      let resolvePaste: (value: string) => void = () => undefined;
+      readClipboardTextMock.mockReturnValueOnce(
+        new Promise<string>((resolve) => {
+          resolvePaste = resolve;
+        }),
+      );
+      openMenu(input);
+      fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
+      fireEvent.change(input, { target: { value: "new" } });
+      await act(async () => {
+        resolvePaste("stale");
+        await Promise.resolve();
+      });
+      expect(input.value).toBe("new");
 
-    let resolveUnmountedPaste: (value: string) => void = () => undefined;
-    readClipboardTextMock.mockReturnValueOnce(
-      new Promise<string>((resolve) => {
-        resolveUnmountedPaste = resolve;
-      }),
-    );
-    openMenu(input);
-    fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
-    view.unmount();
-    await act(async () => {
-      resolveUnmountedPaste("after-unmount");
-      await Promise.resolve();
-    });
-  });
+      let resolveUnmountedPaste: (value: string) => void = () => undefined;
+      readClipboardTextMock.mockReturnValueOnce(
+        new Promise<string>((resolve) => {
+          resolveUnmountedPaste = resolve;
+        }),
+      );
+      openMenu(input);
+      fireEvent.click(screen.getByRole("menuitem", { name: "붙여넣기" }));
+      view.unmount();
+      await act(async () => {
+        resolveUnmountedPaste("after-unmount");
+        await Promise.resolve();
+      });
+    },
+  );
 });
 
 describe("ToolOutput context menu", () => {
@@ -256,4 +259,11 @@ describe("useAsyncTransform cancellation", () => {
     view.unmount();
     expect(signals[signals.length - 1]?.aborted).toBe(true);
   });
+});
+
+it("reports explicit copy failure without an unhandled rejection", async () => {
+  writeTextMock.mockRejectedValueOnce(new Error("private clipboard detail"));
+  render(<CopyBtn value="result" />);
+  fireEvent.click(screen.getByRole("button", { name: "복사" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("결과를 클립보드에 복사하지 못했습니다.");
 });

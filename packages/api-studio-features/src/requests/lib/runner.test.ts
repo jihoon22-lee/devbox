@@ -374,3 +374,50 @@ describe("active request fields", () => {
     }
   });
 });
+
+it("cancels during regex assertions before captures or a subsequent request", async () => {
+  const terminate = vi.fn();
+  let created!: () => void;
+  const started = new Promise<void>((resolve) => {
+    created = resolve;
+  });
+  vi.stubGlobal(
+    "Worker",
+    class {
+      terminate = terminate;
+      postMessage = vi.fn();
+      constructor() {
+        created();
+      }
+    },
+  );
+  try {
+    const controller = new AbortController();
+    const d = deps(() => ok('{"token":"new"}'));
+    const session = new SessionVariables();
+    const first = entry("first", "https://x.test/first", {
+      assertions: [{ id: "regex", enabled: true, source: "body", target: "", operator: "matches", expected: "token" }],
+      captures: [{ id: "capture", enabled: true, variable: "token", source: "jsonPath", target: "$.token" }],
+    });
+    const task = runCollection(
+      [first, entry("next", "https://x.test/next")],
+      [],
+      session,
+      { stopOnFailure: false, delayMs: 0 },
+      d,
+      controller.signal,
+      () => {},
+    );
+    await started;
+    controller.abort();
+    const result = await task;
+    expect(result.cancelled).toBe(true);
+    expect(result.steps.map((step) => step.status)).toEqual(["error", "skipped"]);
+    expect(d.send).toHaveBeenCalledOnce();
+    expect(d.seal).not.toHaveBeenCalled();
+    expect(session.entries()).toEqual([]);
+    expect(terminate).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

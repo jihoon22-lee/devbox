@@ -131,3 +131,39 @@ it("names active body and authentication controls for real keyboard input", asyn
   fireEvent.change(screen.getByRole("combobox", { name: "인증 종류" }), { target: { value: "bearer" } });
   expect(screen.getByRole("textbox", { name: "토큰" })).toBeTruthy();
 });
+
+it("cancels a pending assertion worker without publishing its late result", async () => {
+  let worker!: { terminate: ReturnType<typeof vi.fn>; onmessage?: (event: { data: unknown }) => void };
+  vi.stubGlobal(
+    "Worker",
+    class {
+      terminate = vi.fn();
+      postMessage = vi.fn();
+      constructor() {
+        worker = this;
+      }
+    },
+  );
+  try {
+    vi.mocked(sendRequest).mockResolvedValue(response("a".repeat(32) + "!"));
+    render(<App />);
+    fireEvent.change(await screen.findByRole("textbox", { name: "요청 URL" }), {
+      target: { value: "https://example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "검증" }));
+    fireEvent.click(await screen.findByRole("button", { name: "검증 추가" }));
+    fireEvent.change(screen.getByLabelText("출처 1"), { target: { value: "body" } });
+    fireEvent.change(screen.getByLabelText("연산 1"), { target: { value: "matches" } });
+    fireEvent.change(screen.getByLabelText("기대값 1"), { target: { value: "^(a+)+$" } });
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+    await waitFor(() => expect(worker).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(worker.terminate).toHaveBeenCalledOnce());
+    worker.onmessage?.({ data: { matched: true } });
+    await screen.findByText(/서버 작업의 취소 여부/);
+    expect(screen.queryByText("1개 중 1개 통과")).toBeNull();
+    expect((screen.getByRole("button", { name: "보내기" }) as HTMLButtonElement).disabled).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

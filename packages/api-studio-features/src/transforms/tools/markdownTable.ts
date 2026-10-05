@@ -80,7 +80,7 @@ function hasWellFormedUnicode(value: string): boolean {
     const code = value.charCodeAt(index);
     if (code >= 0xd800 && code <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return false;
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
       index += 1;
     } else if (code >= 0xdc00 && code <= 0xdfff) {
       return false;

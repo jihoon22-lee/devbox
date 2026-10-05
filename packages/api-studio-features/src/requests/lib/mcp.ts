@@ -127,10 +127,16 @@ export function initialMcpFieldValue(schema: Record<string, unknown>): unknown {
   return initialValue(schema);
 }
 
+// JSON names such as __proto__ are ordinary data. Assignment to that key on
+// an ordinary object invokes an inherited setter; define an own data property.
+function setOwnValue(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
 export function getMcpValueAtPath(root: Record<string, unknown>, path: readonly string[]): unknown {
   let current: unknown = root;
   for (const segment of path) {
-    if (!isRecord(current)) return undefined;
+    if (!isRecord(current) || !Object.prototype.hasOwnProperty.call(current, segment)) return undefined;
     current = current[segment];
   }
   return current;
@@ -145,11 +151,11 @@ export function setMcpValueAtPath(
   const output = structuredClone(root);
   let current = output;
   for (const segment of path.slice(0, -1)) {
-    const child = current[segment];
-    if (!isRecord(child)) current[segment] = {};
+    const child = Object.prototype.hasOwnProperty.call(current, segment) ? current[segment] : undefined;
+    if (!isRecord(child)) setOwnValue(current, segment, {});
     current = current[segment] as Record<string, unknown>;
   }
-  current[path[path.length - 1]] = value;
+  setOwnValue(current, path[path.length - 1], value);
   return output;
 }
 
@@ -158,7 +164,7 @@ export function removeMcpValueAtPath(root: Record<string, unknown>, path: readon
   const output = structuredClone(root);
   let current: Record<string, unknown> = output;
   for (const segment of path.slice(0, -1)) {
-    const child: unknown = current[segment];
+    const child: unknown = Object.prototype.hasOwnProperty.call(current, segment) ? current[segment] : undefined;
     if (!isRecord(child)) return output;
     current = child;
   }
@@ -298,10 +304,10 @@ function validateValue(
     const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
     const required = new Set(schema.required as string[] | undefined);
     for (const name of required) {
-      if (!(name in value)) issues.push(`${path}.${name}: 필수 값입니다.`);
+      if (!Object.prototype.hasOwnProperty.call(value, name)) issues.push(`${path}.${name}: 필수 값입니다.`);
     }
     for (const name of Object.keys(value)) {
-      const child = properties[name];
+      const child = Object.prototype.hasOwnProperty.call(properties, name) ? properties[name] : undefined;
       if (!child) {
         issues.push(`${path}.${name}: schema에 없는 값입니다.`);
       } else {
@@ -354,7 +360,7 @@ function initialValue(schema: Record<string, unknown>, root = false): unknown {
       const required = new Set(schema.required as string[] | undefined);
       const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
       for (const [name, child] of Object.entries(properties)) {
-        if (required.has(name) || child.default !== undefined) output[name] = initialValue(child);
+        if (required.has(name) || child.default !== undefined) setOwnValue(output, name, initialValue(child));
       }
       return output;
     }

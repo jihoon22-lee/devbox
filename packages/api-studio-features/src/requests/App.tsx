@@ -777,6 +777,7 @@ export default function App({
     const controller = new AbortController();
     const sequence = requestSequenceRef.current + 1;
     requestSequenceRef.current = sequence;
+    const isCurrent = () => mountedRef.current && requestSequenceRef.current === sequence;
     abortControllerRef.current = controller;
     setSending(true);
     setExecutionStatus("요청을 보내는 중입니다.");
@@ -784,12 +785,14 @@ export default function App({
     setError(null);
     try {
       const result = await sendRequest(requestSnapshot, environmentSnapshot, controller.signal, captureSnapshot);
-      if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+      if (!isCurrent()) return;
       setResp(result);
       setPreviousResponse(false);
       setExecutionStatus("요청이 완료되었습니다.");
       setOAuthStatusKey((key) => key + 1);
-      setAssertionResults(evaluateAssertions(assertionSnapshot, result));
+      const evaluated = await evaluateAssertions(assertionSnapshot, result, controller.signal);
+      if (!isCurrent() || controller.signal.aborted) return;
+      setAssertionResults(evaluated);
       setCaptured([]);
       try {
         const captureResult = await applyResponseCaptures(
@@ -798,9 +801,9 @@ export default function App({
           sessionVariables,
           runnerDeps,
           controller.signal,
-          () => mountedRef.current && requestSequenceRef.current === sequence,
+          isCurrent,
         );
-        if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+        if (!isCurrent()) return;
         const capturedNames = new Set(captureResult.names);
         setCaptured(
           captureSnapshot
@@ -811,18 +814,14 @@ export default function App({
       } catch {
         for (const capture of captureSnapshot)
           if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
-        if (mountedRef.current && requestSequenceRef.current === sequence) setError("캡처 값을 봉인하지 못했습니다.");
+        if (isCurrent()) setError("캡처 값을 봉인하지 못했습니다.");
       } finally {
         refreshSession();
       }
       try {
-        await persistHistoryRequest(
-          requestSnapshot,
-          result.status,
-          () => mountedRef.current && requestSequenceRef.current === sequence,
-        );
+        await persistHistoryRequest(requestSnapshot, result.status, isCurrent);
       } catch (storageCause) {
-        if (mountedRef.current && requestSequenceRef.current === sequence) {
+        if (isCurrent()) {
           setPersistenceWarning(
             storageFailureMessage(
               storageCause,
@@ -832,7 +831,7 @@ export default function App({
         }
       }
     } catch (cause) {
-      if (!mountedRef.current || requestSequenceRef.current !== sequence) return;
+      if (!isCurrent()) return;
       for (const capture of captureSnapshot)
         if (capture.enabled && VARIABLE_NAME.test(capture.variable)) sessionVariables.delete(capture.variable);
       refreshSession();
@@ -840,13 +839,9 @@ export default function App({
       setError(safeRequestError(cause));
       setResp(null);
       try {
-        await persistHistoryRequest(
-          requestSnapshot,
-          undefined,
-          () => mountedRef.current && requestSequenceRef.current === sequence,
-        );
+        await persistHistoryRequest(requestSnapshot, undefined, isCurrent);
       } catch (storageCause) {
-        if (mountedRef.current && requestSequenceRef.current === sequence) {
+        if (isCurrent()) {
           setPersistenceWarning(
             storageFailureMessage(
               storageCause,
@@ -856,7 +851,7 @@ export default function App({
         }
       }
     } finally {
-      if (mountedRef.current && requestSequenceRef.current === sequence) {
+      if (isCurrent()) {
         setSending(false);
         abortControllerRef.current = null;
       }

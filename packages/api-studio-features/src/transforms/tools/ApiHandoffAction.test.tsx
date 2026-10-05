@@ -73,17 +73,20 @@ describe("API Playground output handoff", () => {
     expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
   });
 
-  it("rejects an unpaired surrogate without invoking the native producer", () => {
-    render(<ApiHandoffAction value="safe output" />);
-    fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "API Playground 요청 본문" }), {
-      target: { value: "unsafe\ud800output" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
+  it.each(["unsafe\ud800output", "unsafe\ud800"])(
+    "rejects an unpaired surrogate without invoking the native producer: %j",
+    (input) => {
+      render(<ApiHandoffAction value="safe output" />);
+      fireEvent.click(screen.getByRole("button", { name: "API Playground로 보내기" }));
+      fireEvent.change(screen.getByRole("textbox", { name: "API Playground 요청 본문" }), {
+        target: { value: input },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "API Playground로 전달" }));
 
-    expect(screen.getByRole("alert").textContent).toBe("API Playground로 전달할 텍스트가 유효하지 않습니다");
-    expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
-  });
+      expect(screen.getByRole("alert").textContent).toBe("API Playground로 전달할 텍스트가 유효하지 않습니다");
+      expect(createApiRequestHandoffMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps an in-flight publish single-flight when the source output changes", async () => {
     let resolveDispatch!: (value: Awaited<ReturnType<typeof createApiRequestHandoff>>) => void;

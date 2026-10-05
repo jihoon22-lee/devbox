@@ -3,7 +3,6 @@ import { diff } from "../api";
 import type { DiffHunk } from "../types";
 import { ToolOutput, ToolTextArea } from "./common";
 
-const KIND_CLASS = ["diff-eq", "diff-add", "diff-del"];
 export const DiffDraftContext = createContext<{
   a: string;
   b: string;
@@ -21,12 +20,19 @@ export function DiffTool() {
   const setA = shared?.setA ?? setLocalA,
     setB = shared?.setB ?? setLocalB;
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    diff(a, b).then((h) => {
-      if (!cancelled) setHunks(h);
-    });
+    setHunks([]);
+    setError(null);
+    void diff(a, b)
+      .then((h) => {
+        if (!cancelled) setHunks(h);
+      })
+      .catch(() => {
+        if (!cancelled) setError("차이를 계산하지 못했습니다. 입력 크기와 연결 상태를 확인해 주세요.");
+      });
     return () => {
       cancelled = true;
     };
@@ -55,7 +61,9 @@ export function DiffTool() {
             </div>
           ));
         }
-        return Array.from({ length: end - start }, (_, j) => <div key={`${i}-${j}`} className="diff-line diff-gap" />);
+        return Array.from({ length: h.new_end - h.new_start }, (_, j) => (
+          <div key={`${i}-${j}`} className="diff-line diff-gap" />
+        ));
       }
       // new side
       if (h.kind === 1) {
@@ -65,11 +73,11 @@ export function DiffTool() {
           </div>
         ));
       }
-      return Array.from({ length: end - start }, (_, j) => <div key={`${i}-${j}`} className="diff-line diff-gap" />);
+      return Array.from({ length: h.old_end - h.old_start }, (_, j) => (
+        <div key={`${i}-${j}`} className="diff-line diff-gap" />
+      ));
     });
   };
-
-  void KIND_CLASS;
 
   return (
     <div className="tool">
@@ -97,6 +105,11 @@ export function DiffTool() {
           />
         </div>
       </div>
+      {error && (
+        <div className="error-inline" role="alert">
+          {error}
+        </div>
+      )}
       <div className="io-grid diff-view">
         <ToolOutput
           asDiv

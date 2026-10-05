@@ -235,7 +235,7 @@ function takeUtf8Prefix(value: string, maxBytes: number, maxCodeUnits: number): 
     else if (first <= 0x7ff) characterBytes = 2;
     else if (first >= 0xd800 && first <= 0xdbff) {
       const second = value.charCodeAt(index + 1);
-      if (second < 0xdc00 || second > 0xdfff) break;
+      if (!(second >= 0xdc00 && second <= 0xdfff)) break;
       characterBytes = 4;
       characterUnits = 2;
     } else if (first >= 0xdc00 && first <= 0xdfff) {
@@ -613,11 +613,7 @@ export function TransformerTool({
                 (실행 중...)
               </span>
             )}
-            {output && !error && (
-              <button className="copy-btn" onClick={() => navigator.clipboard.writeText(output)}>
-                복사
-              </button>
-            )}
+            {output && !error && <CopyBtn value={output} />}
           </div>
           <ToolOutput
             className={`io-output ${error ? "io-error" : ""}`}
@@ -631,10 +627,32 @@ export function TransformerTool({
 }
 
 export function CopyBtn({ value }: { value: string }) {
+  const [result, setResult] = useState<{ value: string; failed: boolean } | null>(null);
+  const currentValue = useRef(value);
+  currentValue.current = value;
+  const revision = useRef(0);
+  useEffect(
+    () => () => {
+      revision.current += 1;
+    },
+    [],
+  );
+  const copy = async () => {
+    const current = ++revision.current;
+    setResult(null);
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      if (current === revision.current && currentValue.current === value) setResult({ value, failed: true });
+    }
+  };
   if (!value) return null;
   return (
-    <button className="copy-btn" onClick={() => navigator.clipboard.writeText(value)}>
-      복사
-    </button>
+    <>
+      <button className="copy-btn" onClick={() => void copy()}>
+        복사
+      </button>
+      {result?.value === value && result.failed && <span role="alert">결과를 클립보드에 복사하지 못했습니다.</span>}
+    </>
   );
 }

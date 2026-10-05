@@ -97,7 +97,7 @@ function assertWellFormedUnicode(input: string): void {
     const code = input.charCodeAt(index);
     if (code >= 0xd800 && code <= 0xdbff) {
       const next = input.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) throw new TextTransformError("invalid_unicode");
+      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new TextTransformError("invalid_unicode");
       index += 1;
     } else if (code >= 0xdc00 && code <= 0xdfff) {
       throw new TextTransformError("invalid_unicode");
