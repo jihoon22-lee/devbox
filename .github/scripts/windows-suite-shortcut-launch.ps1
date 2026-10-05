@@ -52,7 +52,7 @@ public static class OwnedShortcutIdentity {
 '@
 function Assert-Identity([string]$Path,$Expected) {
  $actual=[OwnedShortcutIdentity]::Read($Path)
- if($Expected.Count -ne 2 -or $actual[0] -ne [ulong]$Expected[0] -or $actual[1] -ne [ulong]$Expected[1]){throw 'Shortcut physical identity changed'}
+ if($Expected.Count -ne 2 -or $actual[0] -ne [System.UInt64]$Expected[0] -or $actual[1] -ne [System.UInt64]$Expected[1]){throw 'Shortcut physical identity changed'}
 }
 Assert-Identity $rootPath $registration.rootIdentity
 Assert-Identity $directory $registration.shortcutIdentity
