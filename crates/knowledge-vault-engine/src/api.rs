@@ -524,6 +524,7 @@ product_ipc::issue_codes! {
     NoteUnavailable = "note_unavailable",
     PreviewExpired = "preview_expired",
     PreviewStale = "preview_stale",
+    RenameRecoveryRequired = "rename_recovery_required",
     QuickCaptureBodyRequired = "quick_capture_body_required",
     QuickCaptureSaveFailed = "quick_capture_save_failed",
     SearchStale = "search_stale",
@@ -704,10 +705,15 @@ mod tests {
             "preview_expired",
             "quick_capture_body_required",
             "note_conflict",
+            "rename_recovery_required",
         ] {
             assert!(NotesIssue::from_code(code).is_some());
         }
         assert_eq!(classify("private/path/token"), "unavailable");
+        assert_eq!(
+            classify("rename_recovery_required"),
+            "rename_recovery_required"
+        );
     }
     #[test]
     fn immediate_creation_retires_preview_commands_without_accepting_target_overrides() {

@@ -50,6 +50,8 @@ export const notesMessages: Record<NotesIssue, string> = {
   note_unavailable: "파일을 읽거나 저장하지 못했습니다. 편집 내용은 유지됩니다.",
   preview_expired: "미리보기가 만료되었습니다. 새로 준비해 주세요.",
   preview_stale: "미리보기가 오래되었습니다. 다시 확인해 주세요.",
+  rename_recovery_required:
+    "이름 변경을 안전하게 마치거나 되돌리지 못해 일부 변경이 남아 있을 수 있습니다. 외부에서 변경한 내용은 보존했습니다. 다시 이름을 바꾸기 전에 해당 노트 폴더의 현재 파일을 확인하고, .devbox-save-* 복구 폴더가 있는 경우 그 안의 보존 파일도 확인해 주세요.",
   quick_capture_body_required: "빠른 캡처 본문을 입력하세요",
   quick_capture_save_failed: "빠른 캡처를 저장하지 못했습니다",
   search_stale: "검색 결과가 오래되었거나 파일 연결이 바뀌었습니다. 다시 검색해 주세요.",

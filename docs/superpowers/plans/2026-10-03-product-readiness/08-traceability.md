@@ -1016,3 +1016,28 @@ ANSI를 포함한 job log 출력을 거부한 것이 직접 원인이었다. 공
 로컬에서 같은 거부를 재현했고, 지원 여부를 확인한 raw-log 옵션·메모리 내 ANSI 제거 후 같은
 성공 기록을 정확히 해석했다. 전체 resolver도 이 실제 최신 CLI에서 세 compiler gate의
 재사용을 확인했다. 조회는 최근 7일로 제한하고 응답 날짜까지 확인해 과거 페이지 혼입을 막는다.
+
+
+PR #629의 최종 CI [37300982723](https://github.com/jihoon22-lee/devbox/actions/runs/37300982723)과
+exact-main CI [37301421950](https://github.com/jihoon22-lee/devbox/actions/runs/37301421950)은
+동일 compiler 입력의 실제 성공 근거를 재사용하고 현재 fixture·format·의존성 검사를 통과했다.
+main `bd916a5637f99cdc26688bfe58b3e6d3e28eebb2` 후보
+[37301747678](https://github.com/jihoon22-lee/devbox/actions/runs/37301747678)은 병렬 검토에서
+Knowledge 이름 변경의 외부 편집 유실 경로를 발견해 Windows 제품 shard 시작 전에 취소했다.
+이 후보는 assembly·수용·sealing을 완료하지 않았으며 승격할 수 없다.
+
+Knowledge 이름 변경은 미리 보기 이후 링크를 고치는 사이와 실패 후 되돌리는 사이에 외부에서
+바뀐 파일을 무조건 덮어쓰고 있었다. 세 회귀로 원래 결함을 재현한 뒤, 기존 document save의
+revision·보존본 계약으로 갱신과 보상을 제한했다. 이동과 역이동은 원자적 no-replace를 사용해
+동시에 생성된 목적지·원래 경로를 보존한다. 역이동 충돌 회귀를 추가했고, 이름 변경·문서
+publication·이동의 관련 19개 테스트가 통과했다. 불확실한 publication은 성공으로 처리하지
+않으며 보존본을 남기고 명시적 복구 오류로 안내한다. 새로운 source의 최종 CI·Windows 후보
+수용은 별도로 완료해야 한다.
+
+
+최종 영향 검증에서 Knowledge frontend의 355개 테스트·build·typecheck와 Rust 소비자 4개의
+check·clippy가 통과했다. 테스트 assertion의 서식 한 곳을 로컬에서 수정한 뒤 통과한 검사는
+반복하지 않고 fmt·미실행 Rust 테스트·generated bindings만 완료했다. 두 실행의 합계는
+628초였으며 cgroup memory peak는 각각 3.06GiB·4.44GiB로 8GiB 제한 안이었다.
+Windows no-replace semantics·폴더 역이동 revision·오류 분류의 독립 검토에서 추가 차단 결함은
+발견하지 않았다. 실제 Windows 회귀·후보 수용은 아직 별도 CI 단계다.
