@@ -91,8 +91,13 @@ export async function awaitKnowledgePreviewClosed(knowledge) {
   );
 }
 export async function cancelKnowledgePreview(knowledge) {
+  await knowledge.ui.waitForTarget(button("취소", draftDialog));
   await knowledge.ui.click(button("취소", draftDialog));
   await awaitKnowledgePreviewClosed(knowledge);
+}
+export async function saveKnowledgePreview(knowledge) {
+  await knowledge.ui.waitForTarget(button("초안 저장", draftDialog));
+  await knowledge.ui.click(button("초안 저장", draftDialog));
 }
 export async function disconnectSuiteConnection(api) {
   await api.ui.click(button("제품 연결"));
@@ -340,7 +345,7 @@ export async function run(api) {
         assert.deepEqual(await snapshotFiles(root), before);
         await sendStored(api);
         await review(knowledge);
-        await knowledge.ui.click(button("초안 저장", draftDialog));
+        await saveKnowledgePreview(knowledge);
         await until(
           async () => Object.keys(await snapshotFiles(root)).length === Object.keys(before).length + 1,
           "Explicit draft save did not create exactly one note",

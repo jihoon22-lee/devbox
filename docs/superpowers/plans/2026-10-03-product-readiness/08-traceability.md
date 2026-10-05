@@ -869,3 +869,10 @@ legacy 선택은 기존 boundary 진단의 opt-in이며 기본 tray/delivery 묶
 두 경로 모두 기존 assembly의 동일 7개 파일을 검증해 사용하며 제품 build나 승격은 하지 않는다.
 이 묶음의 로컬 영향 검사는 8.66초·peak RSS 약 138MB로 통과했고 compiler 범위는 none이다.
 관련 브라우저·Workspace·legacy·workflow 회귀만 실행했으며 무관한 제품 검사는 반복하지 않았다.
+
+후속 HANDOFF 검토에서 native 초안 도착 전에 저장·취소를 누를 수 있는 두 지점을 찾아
+해당 버튼 준비를 먼저 관찰하도록 했다. 지연된 초안 회귀를 RED→GREEN으로 확인했고
+관련 12개 검사를 통과했다. 선행 UI 실패로 실행되지 못했던 전체 native migration/recovery는
+보관된 후보로 별도 실행할 수 있게 기존 boundary 진단에 분리했다. 자체 임시 설치와
+정리를 사용하며 부모 UI 설치·WSL·build를 생략하고, 원본 7개 digest와 진단 전용 표식을
+보존한다. workflow 계약·actionlint·변경된 PowerShell 본문의 실제 ParseFile을 통과했다.

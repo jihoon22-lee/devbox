@@ -320,5 +320,15 @@ for title in ("Prepare owned WSL1 filesystem for the installed journeys", "Provi
     assert "!inputs.suite_diagnostic_boundaries_only" in step
 assert "suite_diagnostic_boundaries_only" not in Path(".github/workflows/windows-package-candidate.yml").read_text()
 
-assert "options: [both, tray, delivery, legacy]" in workflow
+assert "options: [both, tray, delivery, legacy, migration]" in workflow
 assert "windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'" in work_step
+
+# Native migration owns its independent installs; no interactive parent is required.
+migration_condition = "inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration'"
+assert "inputs.suite_diagnostic_boundaries_only && format('boundary-{0}', inputs.suite_boundary_scope || 'both')" in workflow
+assert "timeout-minutes: ${{ " + migration_condition + " && 40 || inputs.suite_diagnostic_boundaries_only && 20 || 60 }}" in installer_diagnostic
+for title in ("Check owned cleanup helpers", "Install interactively and complete visible activation", "Remove only the owned interactive installation and data"):
+    selected = installer_diagnostic.split("      - name: " + title + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "!(" + migration_condition + ")" in selected
+assert work_step.index("windows-suite-delivery.ps1") < work_step.index("verify-retained-committed-install.mjs")
+assert "artifactDigests = $artifactDigests" in installer_diagnostic

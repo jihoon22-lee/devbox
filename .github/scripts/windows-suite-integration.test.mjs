@@ -81,13 +81,26 @@ test("source apply observes the accepted Unicode input before continuing without
 
 test("Knowledge cancel waits for delayed native discard and preview removal without replay", async () => {
   const events = [];
+  let previewReady = false;
+  let releasePreview;
+  const preview = new Promise((resolve) => {
+    releasePreview = resolve;
+  });
   let release;
   const discarded = new Promise((resolve) => {
     release = resolve;
   });
   const pending = runner.cancelKnowledgePreview({
     ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "취소");
+        assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
+        events.push("wait preview");
+        await preview;
+        previewReady = true;
+      },
       click: async (target) => {
+        assert.equal(previewReady, true, "Preview must arrive before cancellation input");
         assert.equal(target.name, "취소");
         assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
         events.push("cancel");
@@ -101,11 +114,15 @@ test("Knowledge cancel waits for delayed native discard and preview removal with
       },
     },
   });
+  pending.catch(() => {});
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(events, ["cancel", "observe"]);
+  assert.deepEqual(events, ["wait preview"]);
+  releasePreview();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["wait preview", "cancel", "observe"]);
   release();
   await pending;
-  assert.deepEqual(events, ["cancel", "observe"]);
+  assert.deepEqual(events, ["wait preview", "cancel", "observe"]);
 });
 
 test("Knowledge saved file does not authorize duplicate review before preview closes", async () => {
@@ -123,6 +140,36 @@ test("Knowledge saved file does not authorize duplicate review before preview cl
   });
   assert.equal(closed, true);
   assert.equal(observations, 2);
+});
+
+test("Knowledge save waits for its delayed preview before exactly one input", async () => {
+  const events = [];
+  let ready = false;
+  let release;
+  const preview = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = runner.saveKnowledgePreview({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "초안 저장");
+        assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
+        events.push("wait preview");
+        await preview;
+        ready = true;
+      },
+      click: async () => {
+        assert.equal(ready, true, "Preview must arrive before save input");
+        events.push("save");
+      },
+    },
+  });
+  pending.catch(() => {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["wait preview"]);
+  release();
+  await pending;
+  assert.deepEqual(events, ["wait preview", "save"]);
 });
 
 test("connection review waits for delayed enabled approval before exactly one approval", async () => {
