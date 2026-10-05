@@ -7,6 +7,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
 import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
+import { reconnectAgent } from "./windows-agent-reconnect.mjs";
 
 export async function exerciseAgentRuntime({
   workspace,
@@ -207,20 +208,11 @@ export async function exerciseAgentRuntime({
 
     stage("agent-crash");
     await crashAgent(agentIdentity());
-    stage("wait-agent-disconnect");
-    await until(async () => {
-      const status = await current.cdp.evaluate(
-        "window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')",
-      );
-      return status === "unavailable";
-    }, "disconnected native owner was not observed");
     stage("agent-reconnect");
-    assert.equal(
-      await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
-        timeoutMs: 35000,
-      }),
-      "connected",
-    );
+    await reconnectAgent(current, "after-crash", (state) => {
+      evidence.agentRecovery = state;
+      report(evidence);
+    });
     Object.assign(
       evidence,
       await verifyRuntimeCrash(current.cdp, crashFixture, (step) => stage(`runtime-recovery-${step}`)),

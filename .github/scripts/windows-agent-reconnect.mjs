@@ -6,7 +6,7 @@ export async function observeReconnectBaseline(item, enabled = false) {
 export async function reconnectAgent(item, phase, report) {
   if (
     !["workspace", "api-studio", "knowledge", "control-center"].includes(item.product) ||
-    !["before-stop", "after-stop"].includes(phase)
+    !["before-stop", "after-stop", "after-crash"].includes(phase)
   )
     throw new Error("invalid reconnect probe");
   const base = { product: item.product, phase };

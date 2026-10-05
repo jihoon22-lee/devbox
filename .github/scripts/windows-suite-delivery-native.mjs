@@ -10,6 +10,8 @@ import {
   historicalHealthUnavailable,
 } from "./windows-suite-native-protocol.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
+import { requestNormalClose } from "./windows-suite-ui-context.mjs";
+import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
@@ -421,6 +423,14 @@ try {
       directory: fixture,
       agentIdentity,
       closeWorkspace: async (item) => {
+        const owner = captureWindowOwner(item.identity, path.dirname(root));
+        const closeWindow = () => nativeWindowAction(owner, "Close");
+        const ui = createUiDriver({
+          cdp: item.cdp,
+          evidenceRoot: "product-foundation-evidence",
+          closeOwnedWindow: closeWindow,
+        });
+        await requestNormalClose({ ...item, ui }, closeWindow);
         const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
         assert.equal(stopped.forced, false, "Workspace close must drain and exit instead of hiding");
         assert.equal(sameProcess(item.identity), false, "Workspace must finish ordinary owner shutdown");

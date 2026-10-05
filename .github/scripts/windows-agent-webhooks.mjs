@@ -1,8 +1,8 @@
 // The caller owns a disposable installed Suite and captured native identities.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import { freePort } from "./workspace-cdp-fixture.mjs";
+import { reconnectAgent } from "./windows-agent-reconnect.mjs";
 export async function exerciseAgentWebhooks({ api, call, closeApi, restartApi, connectionStatus, crashAgent, report }) {
   let current = api;
   const invoke = (method, args = {}) => call(current, method, args);
@@ -10,14 +10,6 @@ export async function exerciseAgentWebhooks({ api, call, closeApi, restartApi, c
   const progress = (stage) => {
     evidence.stage = stage;
     report(evidence);
-  };
-  const until = async (read, message) => {
-    const deadline = Date.now() + 30000;
-    do {
-      if (await read()) return;
-      await delay(100);
-    } while (Date.now() < deadline);
-    assert.fail(message);
   };
   const port = await freePort();
   const url = `http://127.0.0.1:${port}/agent-owned-${randomUUID()}`;
@@ -71,14 +63,9 @@ export async function exerciseAgentWebhooks({ api, call, closeApi, restartApi, c
 
     progress("agent-restart");
     await crashAgent();
-    await until(
-      async () =>
-        (await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')")) ===
-        "unavailable",
-      "API Studio did not observe agent loss",
-    );
-    await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
-      timeoutMs: 35000,
+    await reconnectAgent(current, "after-crash", (state) => {
+      evidence.agentRecovery = state;
+      report(evidence);
     });
     const resumed = await invoke("server_status");
     assert.equal(resumed.running, true);

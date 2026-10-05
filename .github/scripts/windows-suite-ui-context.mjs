@@ -29,7 +29,7 @@ export async function observeUntil(check, label, timeout = 30000) {
 }
 // WebView shutdown precedes the exact child's exit event during normal Close.
 // A disconnected renderer is never itself proof that the owned child exited.
-export async function observeNormalClose({ child, product, cdp, ui }, observe = observeUntil) {
+export async function observeNormalClose({ child, product, cdp, ui, reviewWorkspaceClose }, observe = observeUntil) {
   let reviewed = false;
   let rendererClosed = false;
   await observe(async () => {
@@ -37,7 +37,8 @@ export async function observeNormalClose({ child, product, cdp, ui }, observe = 
     if (product !== "workspace" || reviewed || rendererClosed) return false;
     try {
       if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
-        await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
+        if (reviewWorkspaceClose) await reviewWorkspaceClose();
+        else await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
         reviewed = true;
       }
     } catch (error) {
@@ -46,6 +47,11 @@ export async function observeNormalClose({ child, product, cdp, ui }, observe = 
     }
     return child.exitCode !== null;
   }, "normal native close");
+}
+export async function requestNormalClose(context, closeWindow, observe = observeUntil) {
+  if (context.child.exitCode !== null) return;
+  await closeWindow();
+  await observeNormalClose(context, observe);
 }
 export async function createInstalledProductContext(product, { legacyAssets } = {}) {
   assert.equal(process.platform, "win32");
@@ -121,12 +127,11 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
         () => stopOwnedProcess(processIdentity, executable, child),
         dispose,
       );
-    const close = () =>
+    const close = ({ reviewWorkspaceClose } = {}) =>
       withOwnedCleanup(async () => {
-        if (child.exitCode === null) {
-          nativeWindowAction(owner, "Close");
-          await observeNormalClose({ child, product, cdp, ui });
-        }
+        await requestNormalClose({ child, product, cdp, ui, reviewWorkspaceClose }, () =>
+          nativeWindowAction(owner, "Close"),
+        );
       }, cleanup);
     const delivery = async (method) => {
       assert.ok(
