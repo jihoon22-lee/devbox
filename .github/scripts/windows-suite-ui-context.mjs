@@ -163,6 +163,20 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       body: () => cdp.evaluate("document.body.innerText"),
     };
   } catch (error) {
+    // Retain the first launch boundary before releasing its pipes and policy.
+    // Fixed issue tokens are already filtered by nativeIssueCollector.
+    if (error && typeof error === "object" && Object.isExtensible(error)) {
+      error.launch = {
+        product,
+        identityCaptured: Boolean(processIdentity),
+        exitCode: Number.isInteger(child?.exitCode) ? child.exitCode : null,
+        signal:
+          typeof child?.signalCode === "string" && /^SIG[A-Z0-9]{1,16}$/.test(child.signalCode)
+            ? child.signalCode
+            : null,
+        nativeIssues: [...nativeIssues.codes],
+      };
+    }
     await cleanupOwnedFixture(
       { identity: processIdentity, child },
       () => stopOwnedProcess(processIdentity, executable, child),

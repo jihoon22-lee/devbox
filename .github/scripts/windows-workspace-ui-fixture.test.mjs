@@ -457,11 +457,16 @@ test("terminal companion waits for its renderer and review before actual input",
     {
       async waitForTarget(target) {
         actions.push(target.name);
-        if (target.name === "시작 경로") ready = true;
+        if (target.name === "시작 경로") {
+          // TerminalToolbar's input has a datalist: Chromium exposes a combobox.
+          assert.equal(target.role, "combobox");
+          ready = true;
+        }
         if (target.name === "실행") reviewed = true;
       },
       async fill(target) {
         assert.equal(ready, true);
+        if (target.name === "시작 경로") assert.equal(target.role, "combobox");
         actions.push(target.name);
       },
       async click(target) {

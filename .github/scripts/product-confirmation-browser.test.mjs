@@ -9,6 +9,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Cdp } from "./windows-packaged-smoke.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
+import { prepareTerminalStart } from "./windows-workspace-ui-fixture.mjs";
+import { visibleControlBounds } from "./visible-control-bounds.mjs";
 
 const chrome = "/usr/bin/google-chrome";
 
@@ -229,6 +231,60 @@ test("real confirmation input preserves cancellation, focus and bounded layout w
     assert.deepEqual(await cdp.evaluate("window.decisions"), [false, true, false]);
     assert.equal(await cdp.evaluate("window.nativeCalls"), 0);
     assert.equal(await cdp.evaluate("document.activeElement.id"), "origin");
+    stage = "fixed-dialog-source-scrollport";
+    const { frameTree } = await cdp.send("Page.getFrameTree");
+    const knowledgeCss = await readFile(
+      path.join(root, "packages/api-studio-features/src/knowledge/knowledge.css"),
+      "utf8",
+    );
+    await cdp.send("Page.setDocumentContent", {
+      frameId: frameTree.frame.id,
+      html: `<style>${knowledgeCss}
+        *{box-sizing:border-box} body{margin:0} #source{position:relative;margin-top:350px;height:60px;overflow:auto}
+        .studio-knowledge-dialog{background:white} button{height:32px}
+        </style><div id="source"><div class="studio-knowledge-backdrop"><div class="studio-knowledge-dialog">
+        <h2>Knowledge 초안 보관</h2><p>합성 결과를 보관합니다.</p><pre>synthetic</pre>
+        <button onclick="this.dataset.accepted='yes'">마스킹 사본 보관</button></div></div></div>`,
+    });
+    const target = { role: "button", name: "마스킹 사본 보관" };
+    await ui.waitForTarget(target);
+    assert.equal(
+      await cdp.evaluate(`(()=>{const b=document.querySelector('button'),r=b.getBoundingClientRect();
+      return document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2)===b})()`),
+      true,
+    );
+    await ui.click(target);
+    assert.equal(await cdp.evaluate("document.querySelector('button').dataset.accepted"), "yes");
+    stage = "fixed-containing-block-clipping";
+    for (const effect of ["transform:translateZ(0)", "filter:blur(0px)", "contain:layout", "contain:paint"]) {
+      await cdp.send("Page.setDocumentContent", {
+        frameId: frameTree.frame.id,
+        html: `<style>body{margin:0} #source{position:relative;margin-top:100px;width:300px;height:50px;overflow:clip;${effect}}
+          #fixed{position:fixed;top:0;left:0} button{position:relative;top:100px;width:120px;height:30px}</style>
+          <div id="source"><div id="fixed"><button>잘린 확인</button></div></div>`,
+      });
+      const observed = await cdp.evaluate(`(()=>{const b=document.querySelector('button'),r=b.getBoundingClientRect();
+        return {hit:document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2)===b,
+          bounds:(${visibleControlBounds}).call(b,[r.left,r.top,r.right,r.bottom])}})()`);
+      assert.equal(observed.hit, false, effect);
+      assert.ok(observed.bounds[1] >= observed.bounds[3], effect);
+      await assert.rejects(ui.click({ role: "button", name: "잘린 확인" }), /clipped outside its scrollport/);
+    }
+    stage = "terminal-datalist-input";
+    await cdp.send("Page.setDocumentContent", {
+      frameId: frameTree.frame.id,
+      html: `<meta charset="utf-8"><input aria-label="시작 경로" list="cwd-recent"><datalist id="cwd-recent"></datalist>
+        <input aria-label="시작 명령"><button onclick="document.getElementById('review').hidden=false">+ 터미널</button>
+        <div id="review" hidden><button onclick="this.dataset.accepted='yes'">실행</button></div>`,
+    });
+    const { nodes } = await cdp.send("Accessibility.getFullAXTree");
+    assert.equal(nodes.find((node) => !node.ignored && node.name?.value === "시작 경로")?.role?.value, "combobox");
+    await prepareTerminalStart(ui, "/owned/root", "echo synthetic");
+    assert.deepEqual(await cdp.evaluate("[...document.querySelectorAll('input')].map(input=>input.value)"), [
+      "/owned/root",
+      "echo synthetic",
+    ]);
+    assert.equal(await cdp.evaluate("document.querySelector('#review button').dataset.accepted"), "yes");
     console.log(JSON.stringify({ fixture: "product-confirmation", stage: "assertions-complete", status: "PASS" }));
   } catch (error) {
     firstError = error;

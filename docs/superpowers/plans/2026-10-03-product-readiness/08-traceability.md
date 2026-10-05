@@ -838,3 +838,34 @@ product-shells는 Knowledge 자동 준비와 기본 14개 호출을 통과한 �
 보관된 같은 bytes의 정확한 lifecycle 진단 경로를 추가하며 원본/검증 코드 source를
 구분하고 승격 근거로 사용할 수 없게 표시한다. 로컬 최소 회귀·workflow 계약·actionlint와
 실제 Windows PowerShell ParseFile 검사를 통과했다. 제품 원인은 아직 미확정이다.
+
+후보 37274754806의 설치 결과는 40개 중 **35 PASS·4 FAIL·1 미실행**으로 종료됐다.
+실패는 RUNTIME-02·DEPS-01·HANDOFF-01·DELIVERY-01이며 HANDOFF-02는 앞선 전송 실패로
+실행되지 않았다. 전체 migration/recovery는 선행 실패로 생략됐고 후보 봉인은 실패했다.
+API 11개·Knowledge 8개와 트레이·철회본 동일 버전 교체·업데이트 후 checkpoint는 통과했다.
+
+화면·코드와 로컬 실제 Chromium 재현으로 확인한 검증기 결함 세 가지를 수정했다.
+Terminal 시작 경로의 datalist 입력을 실제 접근성 역할인 combobox로 조작하고,
+성공한 LSP 검사의 마지막 창도 명시적 닫기와 소멸 관찰을 거친다. HANDOFF 고정 확인창은
+뒤쪽 일반 scrollport의 잘림을 상속하지 않으며 실제 containing block과 내부 잘림은
+유지한다. Chromium에서 원래 클릭 실패를 재현한 뒤 실제 pointer 입력과 transform·filter·
+contain의 잘림 거부를 확인했다. Terminal 경로·명령 입력도 실제 접근성 트리와 키보드로
+확인했다. 이 로컬 결과를 Windows 설치 수용 PASS로 대신하지 않는다.
+
+DELIVERY-01은 복원 후 재실행한 Center의 프로세스를 관찰하지 못했다. 기존 코드도 원래
+Center 종료를 기다렸으므로 종료 지연만으로 원인을 단정하지 않는다. 재시작 진행 조건을
+새 PID·생성 시각, 정확한 설치/generation의 기대 activation 단계, 복원 block 해제로
+명확히 하고, 실패 시 helper 기록과 새 프로세스의 종료/고정 native 오류를 정리 전에 보존한다.
+실제 실패 원인은 아직 미확정이며 재실행·timeout 연장으로 숨기지 않는다.
+
+동일 payload `1e5035a6`의 [Knowledge lifecycle 진단 37282800742](https://github.com/jihoon22-lee/devbox/actions/runs/37282800742)과
+[원래 전체 native 순서 진단 37282804908](https://github.com/jihoon22-lee/devbox/actions/runs/37282804908)은
+검증 코드 `f697cc7a`로 통과했다. 앞선 blank startup·후속 호출 timeout은 재현되지 않았으며
+원인 해결이나 승격 근거로 간주하지 않는다. 두 진단 모두 원본/fixture source와
+`diagnosticOnly: true`, `promotionEvidence: false`를 기록했다.
+
+남은 설치본 진단은 기존 apps-only 경로와 새 legacy-only 경로로 분리해 동시에 실행한다.
+legacy 선택은 기존 boundary 진단의 opt-in이며 기본 tray/delivery 묶음을 바꾸지 않는다.
+두 경로 모두 기존 assembly의 동일 7개 파일을 검증해 사용하며 제품 build나 승격은 하지 않는다.
+이 묶음의 로컬 영향 검사는 8.66초·peak RSS 약 138MB로 통과했고 compiler 범위는 none이다.
+관련 브라우저·Workspace·legacy·workflow 회귀만 실행했으며 무관한 제품 검사는 반복하지 않았다.

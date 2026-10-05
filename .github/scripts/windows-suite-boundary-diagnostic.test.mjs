@@ -167,3 +167,33 @@ test("evidence write failure preserves original error and identity while next pr
     assert.equal(receipt.artifactDigests, identity.artifactDigests);
   }
 });
+
+test("legacy-only dispatch runs no tray or delivery and requires its exact PASS receipt", async () => {
+  const identity = { diagnosticOnly: true, promotionEvidence: false };
+  for (const observation of [
+    undefined,
+    { id: "DELIVERY-02", status: "PASS" },
+    { id: "DELIVERY-01", status: "FAIL" },
+    { id: "DELIVERY-01", status: "PASS" },
+  ]) {
+    let calls = 0;
+    const receipts = await executeBoundaryProbes(identity, {
+      modes: ["legacy"],
+      tray: () => assert.fail("unrelated tray probe"),
+      delivery: () => assert.fail("unrelated delivery probe"),
+      legacy: async () => {
+        calls++;
+        return observation;
+      },
+      persist: async () => {},
+    });
+    assert.equal(calls, 1);
+    assert.equal(receipts.length, 1);
+    assert.equal(
+      receipts[0].status,
+      observation?.id === "DELIVERY-01" && observation.status === "PASS" ? "PASS" : "FAIL",
+    );
+    assert.equal(receipts[0].diagnosticOnly, true);
+    assert.equal(receipts[0].promotionEvidence, false);
+  }
+});

@@ -1,3 +1,4 @@
+import { preserveReviewedCommitFailure } from "./windows-reviewed-helper-evidence.mjs";
 import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import {
   executeReviewedDeliveryAction,
@@ -9,7 +10,7 @@ import {
 import assert from "node:assert/strict";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import path from "node:path";
-import { readFile, writeFile, mkdir, stat, realpath } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat, realpath, lstat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createRequire } from "node:module";
@@ -31,6 +32,30 @@ import { windowsLocalAppData, allWindowsProcesses, stopOwnedProcess } from "./wi
 const editor = { role: "textbox", name: "Markdown 본문" };
 const json = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^\uFEFF/u, ""));
 export { readRestoreInventory as readLegacyRestoreInventory } from "./windows-delivery-review.mjs";
+// Process presence is not a completed restore: the replacement must own a new
+// native lifetime and the durable barrier must permit its selected generation.
+export function legacyReviewReopenReady(center, action, { processes, activation, restoreBlocked }) {
+  const phase = action === "restore" ? "health" : ["snapshot", "rollback"].includes(action) ? "committed" : null;
+  return Boolean(
+    phase &&
+      restoreBlocked === false &&
+      activation?.phase === phase &&
+      activation.installationId === center.manifest.installationId &&
+      activation.generation === center.manifest.generation &&
+      processes.some(
+        (item) =>
+          item.Path.toLowerCase() === center.executable.toLowerCase() &&
+          item.Pid !== center.processIdentity.Pid &&
+          item.Created > center.processIdentity.Created,
+      ),
+  );
+}
+export async function preserveLegacyReviewFailure(center, error, preserve = preserveReviewedCommitFailure) {
+  try {
+    await preserve(center, error, randomUUID());
+  } catch {}
+  throw error;
+}
 export async function finishLegacyCleanup(close, remove, originalFailure) {
   let cleanupFailure;
   try {
@@ -460,26 +485,43 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       });
       await waitDeliveryInventoryReady(center.ui);
     };
-    const review = async (target) => {
-      await executeReviewedDeliveryAction(center.ui, target, async () => {
-        screenshots.push(await center.ui.screenshot(`${evidenceId}-restore-review-${screenshots.length}`));
-      });
-      await observeUntil(() => center.child.exitCode !== null, "reviewed restore Center shutdown");
-      center.dispose();
-      const executable = center.executable;
-      await observeUntil(
-        () => allWindowsProcesses().some((item) => item.Path.toLowerCase() === executable.toLowerCase()),
-        "restore reopened Center",
-        90000,
-      );
-      await closeAutomaticallyOpenedCenter(root);
-      center = await createInstalledProductContext("control-center");
-      await center.ui.click({
-        role: "button",
-        name: "데이터 및 복구",
-        scope: { role: "navigation", name: "제품 화면" },
-      });
-      await waitDeliveryInventoryReady(center.ui);
+    const review = async (target, action) => {
+      const reviewedCenter = center;
+      stage = `reviewed-${action}`;
+      try {
+        await executeReviewedDeliveryAction(center.ui, target, async () => {
+          screenshots.push(await center.ui.screenshot(`${evidenceId}-restore-review-${screenshots.length}`));
+        });
+        await observeUntil(() => center.child.exitCode !== null, "reviewed restore Center shutdown");
+        center.dispose();
+        stage = `reviewed-${action}-completion`;
+        await observeUntil(
+          async () => {
+            const activation = await json(path.join(root, "devbox-activation.json")).catch(() => null);
+            const restoreBlocked = await lstat(path.join(root, "suite-data-restore.block"))
+              .then(() => true)
+              .catch((error) => (error.code === "ENOENT" ? false : null));
+            return legacyReviewReopenReady(reviewedCenter, action, {
+              processes: allWindowsProcesses(),
+              activation,
+              restoreBlocked,
+            });
+          },
+          "restore reopened fresh Center with completed activation",
+          90000,
+        );
+        await closeAutomaticallyOpenedCenter(root);
+        stage = `reviewed-${action}-reattach`;
+        center = await createInstalledProductContext("control-center");
+        await center.ui.click({
+          role: "button",
+          name: "데이터 및 복구",
+          scope: { role: "navigation", name: "제품 화면" },
+        });
+        await waitDeliveryInventoryReady(center.ui);
+      } catch (error) {
+        return preserveLegacyReviewFailure(reviewedCenter, error);
+      }
     };
     if (!withdrawn) {
       await launchRecovery();
@@ -497,7 +539,7 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
         true,
         "Old generation restore must remain visibly disabled",
       );
-      await review({ role: "button", name: "현재 데이터 보존" });
+      await review({ role: "button", name: "현재 데이터 보존" }, "snapshot");
       currentCheckpoint = selectCurrentGenerationSnapshot(
         beforeSnapshot,
         await center.delivery("restore_inventory"),
@@ -538,11 +580,14 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
         beforeRestore.checkpoints.find((item) => item.id === currentCheckpoint.id),
         currentCheckpoint,
       );
-      await review({
-        role: "button",
-        name: "이 보존본으로 복원",
-        scope: { role: "listitem", name: currentCheckpoint.id },
-      });
+      await review(
+        {
+          role: "button",
+          name: "이 보존본으로 복원",
+          scope: { role: "listitem", name: currentCheckpoint.id },
+        },
+        "restore",
+      );
       const restored = await center.delivery("restore_inventory");
       assert.ok(restored.activeOperation);
       assert.equal(
@@ -557,7 +602,10 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
         "Restore must preserve current data before applying current-generation checkpoint",
       );
       screenshots.push(await center.ui.screenshot(`${evidenceId}-restored-health`));
-      await review({ role: "button", name: "원본으로 복귀", scope: { role: "listitem", name: operation.id } });
+      await review(
+        { role: "button", name: "원본으로 복귀", scope: { role: "listitem", name: operation.id } },
+        "rollback",
+      );
       const afterRollback = await center.delivery("restore_inventory");
       assert.deepEqual(
         afterRollback.checkpoints.find((item) => item.id === checkpointId),
@@ -616,6 +664,7 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
       stage,
       error: boundedFailure(error),
       operation: error.operation,
+      launch: error.launch,
     };
     await mkdir("product-foundation-evidence", { recursive: true });
     await writeFile(
@@ -627,6 +676,7 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
           status: "FAIL",
           error: record.error,
           operation: record.operation,
+          launch: record.launch,
           screenshotPaths: screenshots,
         },
         null,

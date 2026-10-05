@@ -88,8 +88,8 @@ export async function deleteTerminalProfile(surface, mainUi, wait) {
   await mainUi.click({ role: "button", name: "프로필로 터미널 열기" });
 }
 export async function prepareTerminalStart(ui, root, command) {
-  await ui.waitForTarget({ role: "textbox", name: "시작 경로" });
-  await ui.fill({ role: "textbox", name: "시작 경로" }, root);
+  await ui.waitForTarget({ role: "combobox", name: "시작 경로" });
+  await ui.fill({ role: "combobox", name: "시작 경로" }, root);
   await ui.fill({ role: "textbox", name: "시작 명령" }, command);
   await ui.click({ role: "button", name: "+ 터미널" });
   await ui.waitForTarget({ role: "button", name: "실행" });
@@ -967,7 +967,7 @@ export function createWorkspaceUiFixture({
       await observeManagedLspTransition(ui, scope, "설치", () =>
         wait(async () => (await state(rust)).state === "not_installed", "owned server removed after cache proof"),
       );
-      await ui.press("Escape");
+      await this.closeFailedLsp();
       return {
         assertions: [
           "Actual UI review shows fixed catalog digest before archive import and cached installation",

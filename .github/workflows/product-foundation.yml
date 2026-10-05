@@ -122,13 +122,13 @@ on:
         type: boolean
         default: false
       suite_diagnostic_boundaries_only:
-        description: Diagnose only Agent tray and updated checkpoint reopen using retained bytes; never promotion evidence
+        description: Diagnose a selected Agent tray, checkpoint reopen, or legacy upgrade boundary using retained bytes; never promotion evidence
         type: boolean
         default: false
       suite_boundary_scope:
         description: Select only the unresolved retained boundary; requires boundaries-only diagnosis
         type: choice
-        options: [both, tray, delivery]
+        options: [both, tray, delivery, legacy]
         default: both
       suite_diagnostic_apps_only:
         description: With retained installer diagnosis, run only installed app journeys without update or migration cases

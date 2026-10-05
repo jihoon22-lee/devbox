@@ -258,3 +258,45 @@ test("legacy removal is attempted after close fails while first error survives",
   }
   assert.equal(removes, 2);
 });
+
+test("reviewed restore waits for a fresh Center identity and coherent unblocked activation", async () => {
+  const { legacyReviewReopenReady } = await import("./windows-suite-legacy-upgrade-ui.mjs");
+  const center = {
+    executable: "C:\\owned\\devbox-control-center.exe",
+    processIdentity: { Pid: 7, Created: "2026-10-05T08:00:00.0000000Z" },
+    manifest: { installationId: "owned", generation: "generation" },
+  };
+  const original = { ...center.processIdentity, Path: center.executable };
+  const fresh = { Pid: 8, Created: "2026-10-05T08:00:01.0000000Z", Path: center.executable };
+  const marker = { installationId: "owned", generation: "generation", phase: "health" };
+  const ready = (processes, activation = marker, restoreBlocked = false) =>
+    legacyReviewReopenReady(center, "restore", { processes, activation, restoreBlocked });
+  assert.equal(ready([original]), false);
+  assert.equal(ready([{ ...fresh, Created: original.Created }]), false);
+  assert.equal(ready([{ ...fresh, Pid: original.Pid }]), false);
+  assert.equal(ready([fresh], { ...marker, phase: "recover" }), false);
+  assert.equal(ready([fresh], { ...marker, generation: "other" }), false);
+  assert.equal(ready([fresh], marker, true), false);
+  assert.equal(ready([fresh], marker, null), false);
+  assert.equal(ready([fresh]), true);
+  assert.equal(
+    legacyReviewReopenReady(center, "snapshot", { processes: [fresh], activation: marker, restoreBlocked: false }),
+    false,
+  );
+});
+
+test("review failure is preserved before cleanup even when helper observation fails", async () => {
+  const { preserveLegacyReviewFailure } = await import("./windows-suite-legacy-upgrade-ui.mjs");
+  const original = Object.freeze(new Error("owned process failed"));
+  let called = 0;
+  await assert.rejects(
+    preserveLegacyReviewFailure({}, original, async (_center, error, id) => {
+      assert.equal(error, original);
+      assert.match(id, /^[a-f0-9-]{36}$/);
+      called++;
+      throw new Error("observation failed");
+    }),
+    (error) => error === original,
+  );
+  assert.equal(called, 1);
+});
