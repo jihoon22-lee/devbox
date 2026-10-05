@@ -171,6 +171,30 @@ export async function verifyRegisteredShortcutLaunches(verify) {
   }
   return proofs;
 }
+export async function closeLegacyShortcut(
+  identity,
+  executable,
+  child,
+  { stop = stopOwnedProcess, read = allWindowsProcesses, wait = observeUntil } = {},
+) {
+  const result = await stop(identity, executable, child);
+  const webviews = result.descendants.filter((item) => item.Name.toLowerCase() === "msedgewebview2.exe");
+  if (webviews.length) {
+    await wait(() => {
+      const current = read();
+      return !webviews.some((owned) =>
+        current.some(
+          (item) =>
+            item.Pid === owned.Pid &&
+            item.Created === owned.Created &&
+            item.Name === owned.Name &&
+            item.Path === owned.Path,
+        ),
+      );
+    }, "shortcut-owned WebView processes retired");
+  }
+  return result;
+}
 async function verifyInstalledShortcut(root, product, evidenceId) {
   const manifest = await json(path.join(root, "devbox-installation.json"));
   const member = manifest.members.find((item) => item.product === product);
@@ -271,7 +295,7 @@ async function verifyInstalledShortcut(root, product, evidenceId) {
         },
       };
       try {
-        await stopOwnedProcess(identity, executable, child);
+        await closeLegacyShortcut(identity, executable, child);
       } catch (cleanupError) {
         if (!failure) throw cleanupError;
         failure.shortcutCleanupError = boundedFailure(cleanupError);

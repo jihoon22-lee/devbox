@@ -7,6 +7,28 @@ import {
   observeAgentUpdateQuiesce,
   until,
 } from "./windows-suite-agent-user-flows.mjs";
+test("incomplete activation records dependent journeys as unrun without reporting Agent failures", async () => {
+  const { requireCommittedAgentActivation } = await import("./windows-suite-agent-user-flows.mjs");
+  const identity = { sourceSha: "a".repeat(40), fixtureSha: "b".repeat(40), artifactDigests: {} };
+  const writes = [];
+  await assert.rejects(
+    requireCommittedAgentActivation({ phase: "health" }, identity, async (name, rows) => writes.push([name, rows])),
+    /activation is not committed/,
+  );
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], "agent");
+  assert.deepEqual(
+    writes[0][1].map((row) => row.id),
+    ["AGENT-02", "AGENT-03", "AGENT-04"],
+  );
+  for (const row of writes[0][1]) {
+    assert.equal(row.status, "NOT_RUN");
+    assert.equal(row.failureCode, "agent-activation-prerequisite-incomplete");
+    assert.equal(row.sourceSha, identity.sourceSha);
+    assert.deepEqual(row.screenshotPaths, []);
+  }
+  await requireCommittedAgentActivation({ phase: "committed" }, identity, async () => assert.fail("no skipped rows"));
+});
 for (const hook of [
   beforeAgentProductPreparation,
   afterAgentProductPreparation,

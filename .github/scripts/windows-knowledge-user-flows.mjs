@@ -423,6 +423,7 @@ export async function runInstalledKnowledgeUserFlows() {
             await observeProductPerformance({
               product: "knowledge",
               cdp: context.cdp,
+              getCdp: () => context.cdp,
               getIdentities: context.getIdentities,
               coldRendererReadyMs: context.coldRendererReadyMs,
               warmExistingWindowMs: await context.measureWarm(),

@@ -27,7 +27,7 @@ pub fn required_space(sources: &BTreeMap<String, PathBuf>) -> Result<u64> {
     for root in sources.values() {
         match fs::symlink_metadata(root) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => return Err("checkpoint_source_unavailable"),
+            Err(error) => return Err(source_failure("root_metadata", error)),
             Ok(_) => {}
         }
         let (directories, files) = listing(root)?;
@@ -39,7 +39,7 @@ pub fn required_space(sources: &BTreeMap<String, PathBuf>) -> Result<u64> {
             total = total
                 .checked_add(
                     fs::metadata(root.join(name))
-                        .map_err(|_| "checkpoint_source_unavailable")?
+                        .map_err(|error| source_failure("metadata", error))?
                         .len(),
                 )
                 .filter(|value| *value <= MAX_BYTES)
@@ -101,14 +101,14 @@ impl Directory {
                 .share_mode(3)
                 .custom_flags(0x0220_0000)
                 .open(path)
-                .map_err(|_| "checkpoint_source_unavailable")?;
+                .map_err(|error| source_failure("directory_open", error))?;
             let identity = devbox_filesystem::opened_filesystem_identity(&file, true)
-                .map_err(|_| "checkpoint_source_unavailable")?;
+                .map_err(|error| source_failure("directory_identity", error))?;
             (file, identity)
         };
         #[cfg(not(windows))]
-        let (_handle, identity) =
-            open_filesystem_object(path, true).map_err(|_| "checkpoint_source_unavailable")?;
+        let (_handle, identity) = open_filesystem_object(path, true)
+            .map_err(|error| source_failure("directory_open", error))?;
         Ok(Self {
             path: path.into(),
             identity,
@@ -140,6 +140,53 @@ fn bounded(started: Instant, cancelled: &AtomicBool) -> Result<()> {
     }
     Ok(())
 }
+// File handle teardown can trail its product writer lease on Windows.
+fn retry_source_io<T>(
+    started: Instant,
+    cancelled: &AtomicBool,
+    windows_errors: bool,
+    mut operation: impl FnMut() -> std::io::Result<T>,
+) -> Result<T> {
+    loop {
+        bounded(started, cancelled)?;
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(error) if windows_errors && matches!(error.raw_os_error(), Some(32 | 33)) => {
+                bounded(started, cancelled)?;
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(_) => return Err("checkpoint_source_unavailable"),
+        }
+    }
+}
+// Only fixed operation labels and the numeric OS code reach native diagnostics.
+fn source_failure(stage: &str, error: std::io::Error) -> &'static str {
+    source_diagnostic(stage, error.raw_os_error().unwrap_or(0));
+    "checkpoint_source_unavailable"
+}
+fn source_diagnostic(stage: &str, code: i32) {
+    eprintln!(
+        "checkpoint_source_{stage}_os_{}",
+        u32::try_from(code).unwrap_or(0)
+    );
+}
+fn source_io<T>(
+    stage: &str,
+    started: Instant,
+    cancelled: &AtomicBool,
+    mut operation: impl FnMut() -> std::io::Result<T>,
+) -> Result<T> {
+    let mut last_code = None;
+    let result = retry_source_io(started, cancelled, cfg!(windows), || {
+        operation().inspect_err(|error| last_code = Some(error.raw_os_error().unwrap_or(0)))
+    });
+    if result.is_err() {
+        if let Some(code) = last_code {
+            source_diagnostic(stage, code);
+        }
+    }
+    result
+}
 fn listing(root: &Path) -> Result<(Vec<String>, Vec<String>)> {
     let root_handle = Directory::open(root)?;
     let mut directories = Vec::new();
@@ -147,11 +194,13 @@ fn listing(root: &Path) -> Result<(Vec<String>, Vec<String>)> {
     let mut pending = vec![root.to_owned()];
     while let Some(path) = pending.pop() {
         let directory = Directory::open(&path)?;
-        for entry in fs::read_dir(&path).map_err(|_| "checkpoint_source_unavailable")? {
-            let path = entry.map_err(|_| "checkpoint_source_unavailable")?.path();
+        for entry in fs::read_dir(&path).map_err(|error| source_failure("directory_list", error))? {
+            let path = entry
+                .map_err(|error| source_failure("directory_entry", error))?
+                .path();
             ensure_no_links(&path).map_err(|_| "checkpoint_path_unsafe")?;
             let metadata =
-                fs::symlink_metadata(&path).map_err(|_| "checkpoint_source_unavailable")?;
+                fs::symlink_metadata(&path).map_err(|error| source_failure("metadata", error))?;
             let relative = path
                 .strip_prefix(root)
                 .map_err(|_| "checkpoint_path_unsafe")?
@@ -239,11 +288,12 @@ fn copy_or_hash_with_budget(
 ) -> Result<(Entry, FilesystemIdentity)> {
     bounded(started, cancelled)?;
     ensure_no_links(source).map_err(|_| "checkpoint_path_unsafe")?;
-    let (mut input, identity) =
-        open_filesystem_object(source, false).map_err(|_| "checkpoint_source_unavailable")?;
+    let (mut input, identity) = source_io("open", started, cancelled, || {
+        open_filesystem_object(source, false)
+    })?;
     let before = input
         .metadata()
-        .map_err(|_| "checkpoint_source_unavailable")?;
+        .map_err(|error| source_failure("file_metadata", error))?;
     if before.len() > MAX_BYTES {
         return Err("checkpoint_size_limit");
     }
@@ -281,9 +331,9 @@ fn copy_or_hash_with_budget(
     while bytes < before.len() {
         bounded(started, cancelled)?;
         let remaining = (before.len() - bytes).min(buffer.len() as u64) as usize;
-        let count = input
-            .read(&mut buffer[..remaining])
-            .map_err(|_| "checkpoint_source_unavailable")?;
+        let count = source_io("read", started, cancelled, || {
+            input.read(&mut buffer[..remaining])
+        })?;
         if count == 0 {
             break;
         }
@@ -377,7 +427,7 @@ pub fn acquire_quiesced(
                 });
                 continue;
             }
-            Err(_) => return Err("checkpoint_source_unavailable"),
+            Err(error) => return Err(source_failure("root_metadata", error)),
             Ok(_) => {}
         }
         retained.push(Directory::open(source)?);
@@ -897,6 +947,111 @@ mod tests {
             .iter()
             .map(|owner| (owner.to_string(), root.join(owner)))
             .collect()
+    }
+    #[test]
+    fn source_io_retry_does_not_replay_completed_reads() {
+        let cancelled = AtomicBool::new(false);
+        let started = Instant::now();
+        let mut reads = [
+            Ok(b"ab".to_vec()),
+            Err(std::io::Error::from_raw_os_error(33)),
+            Ok(b"cd".to_vec()),
+        ]
+        .into_iter();
+        let mut copied = Vec::new();
+        for _ in 0..2 {
+            copied.extend(
+                retry_source_io(started, &cancelled, true, || {
+                    reads.next().expect("must not replay the copy")
+                })
+                .unwrap(),
+            );
+        }
+        assert_eq!(copied, b"abcd");
+        assert!(reads.next().is_none());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn checkpoint_waits_for_a_closing_windows_file_handle_without_skipping_bytes() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempdir().unwrap();
+        let source = root.path().join("closed-webview-profile");
+        let destination = root.path().join("copy");
+        fs::write(&source, b"preserve every source byte").unwrap();
+        let locked = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&source)
+            .unwrap();
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                std::thread::sleep(Duration::from_millis(100));
+                drop(locked);
+            });
+            copy_or_hash(
+                &source,
+                Some(&destination),
+                Instant::now(),
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        });
+        assert_eq!(fs::read(source).unwrap(), fs::read(destination).unwrap());
+    }
+    #[test]
+    fn source_io_waits_only_for_windows_handle_release_with_original_budget() {
+        for code in [32, 33] {
+            let cancelled = AtomicBool::new(false);
+            let mut attempts = 0;
+            let actual = retry_source_io(Instant::now(), &cancelled, true, || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err(std::io::Error::from_raw_os_error(code))
+                } else {
+                    Ok(b"same bytes")
+                }
+            });
+            assert_eq!(actual, Ok(b"same bytes"));
+            assert_eq!(attempts, 3);
+        }
+        for (code, windows_errors) in [(5, true), (2, true), (32, false), (33, false)] {
+            let mut attempts = 0;
+            assert_eq!(
+                retry_source_io(
+                    Instant::now(),
+                    &AtomicBool::new(false),
+                    windows_errors,
+                    || {
+                        attempts += 1;
+                        Err::<(), _>(std::io::Error::from_raw_os_error(code))
+                    }
+                ),
+                Err("checkpoint_source_unavailable")
+            );
+            assert_eq!(attempts, 1);
+        }
+        let cancelled = AtomicBool::new(false);
+        let mut attempts = 0;
+        assert_eq!(
+            retry_source_io(Instant::now(), &cancelled, true, || {
+                attempts += 1;
+                cancelled.store(true, Ordering::Release);
+                Err::<(), _>(std::io::Error::from_raw_os_error(32))
+            }),
+            Err("checkpoint_cancelled")
+        );
+        assert_eq!(attempts, 1);
+        assert_eq!(
+            retry_source_io::<()>(
+                Instant::now() - Duration::from_secs(121),
+                &AtomicBool::new(false),
+                true,
+                || {
+                    panic!("An expired acquisition must not reopen a source");
+                }
+            ),
+            Err("checkpoint_expired")
+        );
     }
     #[test]
     fn checkpoint_preserves_empty_coordinator_lock_without_releasing_its_lease() {

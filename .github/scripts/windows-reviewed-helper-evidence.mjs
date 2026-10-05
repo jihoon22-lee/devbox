@@ -18,7 +18,10 @@ export function nativeIssueCollector() {
       for (const character of String(chunk)) {
         if (character === "\n") {
           const code = line.replace(/\r$/u, "");
-          if (!oversized && /^(?:bootstrap|suite|update|restore|checkpoint|data)_[a-z0-9_]{1,56}$/u.test(code)) {
+          if (
+            !oversized &&
+            /^(?:bootstrap|suite|update|restore|checkpoint|data|knowledge_startup)_[a-z0-9_]{1,56}$/u.test(code)
+          ) {
             if (codes.length < 16 && !codes.includes(code)) codes.push(code);
           }
           line = "";

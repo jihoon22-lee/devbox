@@ -110,7 +110,16 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
         } catch {}
         await writeFile(
           `product-foundation-evidence/health-first-failure-${observationId}.json`,
-          JSON.stringify({ stage, rows: projectHealthRows(rows), connections, knowledgeStartup }, null, 2),
+          JSON.stringify(
+            {
+              stage,
+              rows: projectHealthRows(rows),
+              connections,
+              knowledgeStartup: { ...knowledgeStartup, nativeIssueCodes: [...(knowledge?.nativeIssueCodes ?? [])] },
+            },
+            null,
+            2,
+          ),
           { flag: "wx" },
         );
       } catch {

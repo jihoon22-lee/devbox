@@ -132,3 +132,40 @@ test("successful layout status includes the explicit null required by the releas
     missing: ["knowledge"],
   });
 });
+
+test("performance capture resolves the replacement Knowledge session after a restart workload", async () => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const { capturePerformanceScreenshot } = await import("./windows-suite-layout.mjs");
+  const directory = await mkdtemp(path.join(tmpdir(), "devbox-performance-restarted-"));
+  const bytes = Buffer.from("89504e470d0a1a0a00000000", "hex");
+  const calls = [];
+  let disconnected = false;
+  const oldSession = {
+    command: async () => {
+      assert.equal(disconnected, false, "CDP disconnected");
+      throw new Error("The completed workload must use its replacement renderer");
+    },
+  };
+  let current = oldSession;
+  const getCdp = () => current;
+  const workload = async () => {
+    disconnected = true;
+    current = {
+      command: async (...args) => {
+        calls.push(args);
+        return { data: bytes.toString("base64") };
+      },
+    };
+  };
+  try {
+    await workload();
+    await assert.rejects(capturePerformanceScreenshot(oldSession, "knowledge", directory), /CDP disconnected/);
+    const paths = await capturePerformanceScreenshot(getCdp, "knowledge", directory);
+    assert.deepEqual(calls, [["Page.captureScreenshot", { format: "png" }]]);
+    assert.deepEqual(await readFile(paths[0]), bytes);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

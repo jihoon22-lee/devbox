@@ -32,6 +32,7 @@ import {
   type TerminalKeyAction,
 } from "../lib/terminalUx";
 import { assessBroadcastInput } from "../lib/broadcastSafety";
+import { createOrderedInput } from "../lib/orderedInput";
 import type { AskDialog } from "./AppDialog";
 import type { CursorStyle, TerminalTheme } from "../lib/settings";
 import type { MultiplexerKind } from "../types";
@@ -517,11 +518,20 @@ export default function TermPane({
       return false;
     });
 
+    const input = createOrderedInput(() => {
+      broadcastPendingCommandRef.current = "";
+      queuedInputRef.current = [];
+      onBroadcastFailureRef.current?.();
+      onTerminalErrorRef.current("터미널 입력 전달이 중단되었습니다. 터미널을 닫고 다시 열어 주세요.");
+    });
     const sendBroadcast = (targets: string[], data: string) => {
-      void broadcast(targets, data).catch(() => {
-        broadcastPendingCommandRef.current = "";
-        onBroadcastFailureRef.current?.();
-        onTerminalErrorRef.current("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
+      input.enqueue(data, async () => {
+        // A write waiting for an earlier ACK must not outlive its target approval.
+        const current = broadcastTargetsRef.current;
+        if (!broadcastRef.current || current.length !== targets.length || current.some((id, i) => id !== targets[i])) {
+          throw new Error("Broadcast targets changed");
+        }
+        await broadcast(targets, data);
       });
     };
 
@@ -535,9 +545,7 @@ export default function TermPane({
       const targets = broadcastTargetsRef.current;
       if (!broadcastRef.current || targets.length < 2) {
         broadcastPendingCommandRef.current = "";
-        void writeSession(sessionId, data).catch(() => {
-          onTerminalErrorRef.current("터미널 입력을 전달하지 못했습니다.");
-        });
+        input.enqueue(data, () => writeSession(sessionId, data));
         return;
       }
       const assessment = assessBroadcastInput(data, broadcastPendingCommandRef.current, targets.length);
@@ -555,6 +563,7 @@ export default function TermPane({
           danger: true,
         })
         .then((approved) => {
+          if (torndown) return;
           confirmOpenRef.current = false;
           // The confirmation belongs to the exact mode/target generation that opened it. A pane
           // may close or the user may disarm/change targets while the modal is visible; approving
@@ -651,9 +660,8 @@ export default function TermPane({
         )
       : () => undefined;
     if (initialCommand) {
-      void (isProductHosted() ? writeInitialCommand : writeSession)(sessionId, `${initialCommand}\r`).catch(() => {
-        onTerminalErrorRef.current("프로필 시작 명령을 터미널에 전달하지 못했습니다.");
-      });
+      const data = `${initialCommand}\r`;
+      input.enqueue(data, () => (isProductHosted() ? writeInitialCommand : writeSession)(sessionId, data));
     }
 
     const ro = new ResizeObserver(() => {
@@ -667,6 +675,7 @@ export default function TermPane({
 
     return () => {
       torndown = true;
+      input.dispose();
       stopOutput();
       completeOutputWrite?.();
       window.clearTimeout(selectionCopyTimerRef.current);

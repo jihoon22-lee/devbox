@@ -28,7 +28,7 @@ export async function reviewRecoveryWriterFailure({ ui, fixture, readBytes, befo
   await ui.closeOwnedWindow();
   await ui.waitForTarget({ role: "button", name: "파일 저장 후 종료" });
   await ui.click({ role: "button", name: "파일 저장 후 종료" });
-  await fixture.waitForText({ role: "alert", name: "" });
+  await fixture.waitForText({ role: "alert", name: "", scope: { role: "dialog", name: "Workspace 종료 검토" } });
   assert.deepEqual(await readBytes(), after, "Explicit save commits file bytes before recovery flush fails");
 }
 export async function run(context) {
