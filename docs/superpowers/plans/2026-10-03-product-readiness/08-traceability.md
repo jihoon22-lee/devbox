@@ -785,3 +785,28 @@ artifact에 먼저 보존한다. 임의 이름/ID는 제외하며 기존 선택�
 독립 후속 경로의 결과는 별도 diagnostic artifact에 보존하며 40개 출시 수용의 PASS로
 합산하지 않는다. 최종 후보의 전체 수용 및 봉인 조건은 변경하지 않는다. 새로운 workflow
 분기는 로컬 actionlint·실제 Windows PowerShell 파서로 검사했다.
+
+
+집중 진단 [37270511641](https://github.com/jihoon22-lee/devbox/actions/runs/37270511641)은
+runner `6468050c`·기존 payload `1dafe10c`로 설치·활성화와 업데이트 후 실제 checkpoint
+생성·Center 재실행을 통과했다. 앞선 전체 순서의 재실행 실패 원인을 단독 성공만으로
+해결됐다고 단정하지 않는다. 트레이는 기존 이름 탐색 실패를 재현했고 modern XAML
+버튼 구조를 확보했다. 로컬 Windows에서 읽기 전용으로 확인한 chevron과 IME는 같은
+AutomationId를 공유하므로 ID만으로 클릭하지 않는다. 이름 공백·대소문자 정규화와
+소유 taskbar의 제한된 UIA 탐색을 결합하며 잘못된 ID·복수 후보는 거부한다. 이 보정은
+실제 hosted 성공을 의미하지 않으며, 다음 진단은 트레이만 실행한다.
+
+병렬 교차 검토로 발견한 후속 경합도 같은 묶음에 반영했다. Terminal 프로필 삭제의
+화면 반영 뒤에 본창의 기존 캐시 선택으로 stale-profile 거부를 확인하고, lazy 제품
+연결 화면은 버튼이 준비된 뒤 조작한다. Agent 복구 후 업무 버튼도 준비를 관찰한다.
+LSP import/cache의 기존 120초 예산이 새 helper의 기본 10초로 단축되던 문제는 명시적
+bounded 예산 전달로 바로잡았다. 해당 경계·삭제 순서 회귀와 관련 Agent/Integration
+21개 검사는 로컬에서 통과했다. 무관한 전체 제품 검사는 반복하지 않았다.
+
+
+트레이 전용 진단 [37271999110](https://github.com/jihoon22-lee/devbox/actions/runs/37271999110)은
+제품 실행 전 PowerShell 회귀 파일의 UTF-8 BOM 누락으로 실패했다. 문자열로 디코딩한
+ParseInput 검사가 Windows PowerShell 5.1의 실제 파일 해석 차이를 놓쳤다. 해당 파일에
+BOM을 복구하고 실제 ParseFile에서 한글 AST literal을 확인해 RED→GREEN으로 검증했다.
+다른 PowerShell 파일에는 같은 누락이 없었다. 로컬 최종 영향 검사는 8.37초에 통과했고
+compiler 범위는 none, peak 79MB였다. 통과한 제품·데이터 보존 검사는 재실행하지 않는다.

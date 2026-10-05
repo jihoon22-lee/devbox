@@ -1,6 +1,9 @@
-param([string]$Driver=(Join-Path $PSScriptRoot 'windows-owned-installer-fault.ps1'))
+﻿param([string]$Driver=(Join-Path $PSScriptRoot 'windows-owned-installer-fault.ps1'))
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+# Windows PowerShell 5.1 reads non-ASCII script literals correctly only with UTF-8 BOM.
+$scriptBytes=[IO.File]::ReadAllBytes($PSCommandPath)
+if($scriptBytes.Length -lt 3 -or $scriptBytes[0] -ne 239 -or $scriptBytes[1] -ne 187 -or $scriptBytes[2] -ne 191){throw 'Owned capture test requires UTF-8 BOM for Windows PowerShell 5.1'}
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Driver,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Owned capture driver syntax invalid'}
