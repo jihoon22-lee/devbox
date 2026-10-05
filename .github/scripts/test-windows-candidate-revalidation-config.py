@@ -1,6 +1,12 @@
 """Fail closed on revalidation wiring that can lose provenance or skip acceptance."""
 import pathlib
 import unittest
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tempfile
 
 import yaml
 
@@ -80,6 +86,56 @@ class RevalidationWorkflowTests(unittest.TestCase):
         self.assertEqual(self.document["name"], "Windows candidate revalidation")
         self.assertFalse(self.document["concurrency"]["cancel-in-progress"])
         self.assertEqual(self.jobs["publish"]["permissions"]["contents"], "write")
+
+    def render_notes(self, change=None):
+        steps = self.jobs['publish']['steps']
+        step = next(item for item in steps if item.get('name') == 'Generate final Korean notes from verified original assets')
+        script = step['run'].split("python3 - <<'PYTHON'\n", 1)[1].split('\nPYTHON', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            assets = root / 'candidate/assets'; assets.mkdir(parents=True)
+            evidence = root / 'candidate/evidence'; evidence.mkdir()
+            names = ['workspace.zip', 'api.zip', 'knowledge.zip', 'center.zip', 'setup.exe', 'notices.md']
+            for name in names: (assets / name).write_bytes(name.encode())
+            manifest = {'products': [{'portable': {'name': name}} for name in names[:4]], 'setup': {'name': names[4]}, 'notices': {'name': names[5]}}
+            (assets / 'release-manifest.json').write_text(json.dumps(manifest))
+            digests = {file.name: hashlib.sha256(file.read_bytes()).hexdigest() for file in assets.iterdir()}
+            proof = dict(sourceSha='a'*40,fixtureSha='b'*40,buildRunId=11,revalidationRunId=12,repository='owner/repo',assetDigests=digests)
+            (evidence / 'revalidation-proof.json').write_text(json.dumps(proof))
+            notes = evidence / 'release-notes.md'
+            notes.write_text('v0.8.1은 setup 직접 설치. 철회된 v0.9.0 데이터는 삭제하지 마세요.\n', encoding='utf-8')
+            if change: change(assets, notes)
+            env = {**os.environ,'BUILD_SOURCE':'a'*40,'BUILD_RUN':'11','GITHUB_SHA':'b'*40,'GITHUB_RUN_ID':'12','GITHUB_REPOSITORY':'owner/repo'}
+            result = subprocess.run([sys.executable, '-c', script], cwd=root, env=env, capture_output=True, text=True)
+            return result, notes.read_text(encoding='utf-8'), digests
+
+    def test_release_notes_use_seven_actual_files_and_distinct_build_fixture_identity(self):
+        result, notes, digests = self.render_notes()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('v0.8.1은 setup 직접 설치', notes)
+        self.assertIn('데이터는 삭제하지 마세요', notes)
+        rows = [line for line in notes.splitlines() if line.startswith('| `')]
+        self.assertEqual(len(rows), 7)
+        for name, digest in digests.items():
+            self.assertTrue(any(f'`{name}`' in row and digest in row for row in rows))
+        self.assertIn('a'*40, notes); self.assertIn('b'*40, notes)
+        self.assertIn('/actions/runs/11', notes); self.assertIn('/actions/runs/12', notes)
+        self.assertNotIn('PENDING', notes)
+        self.assertNotIn('공개본 검사 PASS', notes)
+        self.assertIn('공개 후 새로 다운로드', notes)
+        publish = self.commands('publish')
+        self.assertLess(publish.index('Release notes contain unfinished placeholders'), publish.index('git/tags'))
+        self.assertIn('--notes-file candidate/evidence/release-notes.md', publish)
+
+    def test_release_notes_reject_placeholders_missing_and_changed_assets(self):
+        for change in (
+            lambda assets, notes: notes.write_text('PENDING_CANDIDATE_RESULT'),
+            lambda assets, notes: (assets / 'workspace.zip').unlink(),
+            lambda assets, notes: (assets / 'workspace.zip').write_bytes(b'changed'),
+        ):
+            with self.subTest(change=change):
+                result, _, _ = self.render_notes(change)
+                self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":
