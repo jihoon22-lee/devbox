@@ -300,3 +300,42 @@ test("review failure is preserved before cleanup even when helper observation fa
   );
   assert.equal(called, 1);
 });
+
+test("shortcut close waits for captured WebView lifetimes, ignoring Agent and recycled PIDs", async () => {
+  const { closeLegacyShortcut } = await import("./windows-suite-legacy-upgrade-ui.mjs");
+  const webview = {
+    Pid: 10,
+    Created: "2026-10-06T00:00:00Z",
+    Name: "msedgewebview2.exe",
+    Path: "C:\\WebView\\msedgewebview2.exe",
+  };
+  const agent = {
+    Pid: 20,
+    Created: "2026-10-06T00:00:00Z",
+    Name: "devbox-agent.exe",
+    Path: "C:\\Suite\\devbox-agent.exe",
+  };
+  let stopped = false,
+    observed = false;
+  let processes = [webview, agent];
+  await closeLegacyShortcut(
+    {},
+    "fixture",
+    {},
+    {
+      stop: async () => {
+        stopped = true;
+        return { descendants: [webview, agent] };
+      },
+      read: () => processes,
+      wait: async (ready) => {
+        observed = true;
+        assert.equal(stopped, true);
+        assert.equal(ready(), false, "parent exit does not release live WebView files");
+        processes = [{ ...webview, Created: "2026-10-06T00:00:01Z" }, agent];
+        assert.equal(ready(), true, "do not wait for an unrelated recycled process or the installed Agent");
+      },
+    },
+  );
+  assert.equal(observed, true);
+});
