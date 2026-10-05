@@ -39,3 +39,35 @@ test("only original exit 1 before any partial removal permits one visible diagno
     ),
   );
 });
+
+import { runUninstallDiagnostic } from "./windows-suite-uninstall-diagnostic.mjs";
+test("acquisition failure replaces running diagnostic with fixed failure receipt", async () => {
+  const receipts = [];
+  await runUninstallDiagnostic(
+    root,
+    evidence,
+    async () => {
+      throw new Error("private path");
+    },
+    async (receipt) => {
+      receipts.push(receipt);
+    },
+  );
+  assert.deepEqual(receipts, [{ schemaVersion: 1, status: "FAIL", originalExitCode: 1, inspectionUnavailable: true }]);
+});
+test("a captured native failure survives outer diagnostic catch", async () => {
+  const receipts = [];
+  await runUninstallDiagnostic(
+    root,
+    evidence,
+    async (_root, { failureObservation }) => {
+      await failureObservation({ stage: "removal execution", issues: ["bootstrap_owner_changed"] });
+      throw new Error("first");
+    },
+    async (receipt) => {
+      receipts.push(receipt);
+    },
+  );
+  assert.equal(receipts.length, 1);
+  assert.deepEqual(receipts[0].issues, ["bootstrap_owner_changed"]);
+});

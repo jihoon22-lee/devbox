@@ -31,6 +31,21 @@ import { windowsLocalAppData, allWindowsProcesses, stopOwnedProcess } from "./wi
 const editor = { role: "textbox", name: "Markdown 본문" };
 const json = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^\uFEFF/u, ""));
 export { readRestoreInventory as readLegacyRestoreInventory } from "./windows-delivery-review.mjs";
+export async function finishLegacyCleanup(close, remove, originalFailure) {
+  let cleanupFailure;
+  try {
+    await close();
+  } catch (error) {
+    cleanupFailure = error;
+  }
+  try {
+    await remove();
+  } catch (error) {
+    cleanupFailure ??= error;
+  }
+  if (originalFailure) throw originalFailure;
+  if (cleanupFailure) throw cleanupFailure;
+}
 export function legacyOperationFailure(operation, code, signal, stdout, stderr) {
   let issue = null,
     shortcut = null;
@@ -619,26 +634,33 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     ).catch(() => {});
   } finally {
     try {
-      if (center) await center.close().catch(() => {});
-      if (knowledge) await knowledge.close();
-      try {
-        if (registration) {
+      await finishLegacyCleanup(
+        async () => {
+          if (center) await center.close().catch(() => {});
+          if (knowledge) await knowledge.close();
+        },
+        async () => {
           try {
-            await writeUpgradeEvidence(record, withdrawn, registration.installationKey);
+            if (registration) {
+              try {
+                await writeUpgradeEvidence(record, withdrawn, registration.installationKey);
+              } finally {
+                await execute(
+                  "pwsh",
+                  ["-NoProfile", "-File", ".github/scripts/windows-user-flow-install.ps1", "-Cleanup"],
+                  { operation: "cleanup-owned-installation" },
+                );
+              }
+            } else {
+              process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
+              await writeUpgradeEvidence(record, withdrawn, parent.parentInstallationKey);
+            }
           } finally {
-            await execute(
-              "pwsh",
-              ["-NoProfile", "-File", ".github/scripts/windows-user-flow-install.ps1", "-Cleanup"],
-              { operation: "cleanup-owned-installation" },
-            );
+            process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
           }
-        } else {
-          process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
-          await writeUpgradeEvidence(record, withdrawn, parent.parentInstallationKey);
-        }
-      } finally {
-        process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
-      }
+        },
+        originalFailure,
+      );
     } catch (cleanupError) {
       if (originalFailure) throw originalFailure;
       throw cleanupError;

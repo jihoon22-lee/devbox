@@ -320,3 +320,35 @@ test("owned removal failure expands exact Details and preserves only fixed nativ
   assert.deepEqual(evidence.issues, ["bootstrap_owner_changed"]);
   assert.ok(!JSON.stringify(evidence).includes("private-path"));
 });
+
+import { acquireOwnedInstaller } from "./windows-suite-installer-actions.mjs";
+test("failed installer acquisition releases only child reference and preserves first failure", async () => {
+  const original = Object.freeze(new Error("identity unavailable"));
+  let unrefs = 0;
+  const child = {
+    unref: () => {
+      unrefs++;
+    },
+    kill: () => assert.fail("unverified child must not be killed"),
+  };
+  await assert.rejects(
+    acquireOwnedInstaller(child, async () => {
+      throw original;
+    }),
+    (error) => error === original,
+  );
+  assert.equal(unrefs, 1);
+  await assert.rejects(
+    acquireOwnedInstaller(
+      {
+        unref: () => {
+          throw new Error("unref");
+        },
+      },
+      async () => {
+        throw original;
+      },
+    ),
+    (error) => error === original,
+  );
+});

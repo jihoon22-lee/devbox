@@ -102,6 +102,7 @@ public static class OwnedSavePicker {
 }
 '@
 $child = $null
+$primaryFailure = $null
 try {
  Add-Type -TypeDefinition $source -ReferencedAssemblies System.Windows.Forms -OutputAssembly $image -OutputType WindowsApplication
  Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
@@ -154,10 +155,25 @@ public static class SaveFixtureAutomation {
  if($child.ExitCode -ne 0 -or [IO.File]::ReadAllText($marker) -ne $output -or [IO.File]::ReadAllText($output) -ne 'owned-save-fixture'){throw 'Owned save selection/output mismatch'}
  Write-Output ('Actual owned ' + $action + ' chooser and exact selected output: PASS')
  }
+} catch {
+ $primaryFailure = $_
+ throw
 } finally {
- if($child -and -not $child.HasExited){
-  $current = [Diagnostics.Process]::GetProcessById($child.Id)
-  if($current.MainModule.FileName -eq $image -and $current.StartTime.ToUniversalTime().ToString('o') -eq $started){$current.Kill();$current.WaitForExit()}
+ $cleanupFailure = $null
+ try {
+  if($child -and -not $child.HasExited){
+   $current = [Diagnostics.Process]::GetProcessById($child.Id)
+   if($current.MainModule.FileName -ne $image -or $current.StartTime.ToUniversalTime().ToString('o') -ne $started){throw 'Owned fixture cleanup identity changed'}
+   $current.Kill()
+   if(-not $current.WaitForExit(5000)){throw 'Owned fixture termination unconfirmed'}
+  }
+  Remove-Item -LiteralPath $fixture -Recurse -Force
+ } catch {
+  $cleanupFailure = $_
  }
- Remove-Item -LiteralPath $fixture -Recurse -Force
+ if($cleanupFailure){
+  # Keep an active/unconfirmed fixture and the original assertion failure.
+  Write-Output 'Owned picker fixture cleanup: FAIL (fixture preserved if removal incomplete)'
+  if(-not $primaryFailure){throw 'Owned picker fixture cleanup failed'}
+ }
 }

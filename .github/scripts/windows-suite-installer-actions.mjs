@@ -21,18 +21,31 @@ export function ownedNsisSpawnOptions(image, args) {
   );
   return { windowsVerbatimArguments: true, argv0: `"${image}"` };
 }
+export async function acquireOwnedInstaller(child, acquire) {
+  try {
+    return await acquire();
+  } catch (error) {
+    // Ownership has not been established: do not terminate or manipulate UI.
+    try {
+      child.unref();
+    } catch {}
+    throw error;
+  }
+}
 export async function startOwnedInstaller(image, args, fixtureRoot, env = process.env) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   const child = spawn(image, args, { env, stdio: "ignore", windowsHide: false, ...ownedNsisSpawnOptions(image, args) });
-  await once(child, "spawn");
-  let identity;
-  await observeUntil(() => {
-    identity = allWindowsProcesses().find((p) => p.Pid === child.pid && p.Path.toLowerCase() === image.toLowerCase());
-    return !!identity;
-  }, "owned NSIS process");
-  const owner = captureWindowOwner(identity, fixtureRoot);
+  const owner = await acquireOwnedInstaller(child, async () => {
+    await once(child, "spawn");
+    let identity;
+    await observeUntil(() => {
+      identity = allWindowsProcesses().find((p) => p.Pid === child.pid && p.Path.toLowerCase() === image.toLowerCase());
+      return !!identity;
+    }, "owned NSIS process");
+    return captureWindowOwner(identity, fixtureRoot);
+  });
   const inspect = () => {
     try {
       return nativeWindowAction(owner, "Inspect");

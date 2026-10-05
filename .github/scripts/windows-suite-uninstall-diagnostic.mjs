@@ -36,18 +36,30 @@ export async function diagnoseUninstall(root, evidence) {
   const output = evidence.replace(/\.json$/, "-visible.json");
   // Exclusive receipt prevents repeated removal attempts, including interrupted diagnostics.
   await writeFile(output, JSON.stringify({ schemaVersion: 1, status: "running", originalExitCode: 1 }), { flag: "wx" });
+  await runUninstallDiagnostic(root, output);
+}
+export async function runUninstallDiagnostic(
+  root,
+  output,
+  remove = runVisibleRemoval,
+  persist = async (receipt) => writeFile(output, JSON.stringify(receipt, null, 2)),
+) {
+  let recorded = false;
   try {
-    await runVisibleRemoval(root, {
+    await remove(root, {
       failureObservation: async (observation) => {
-        await writeFile(
-          output,
-          JSON.stringify({ schemaVersion: 1, status: "FAIL", originalExitCode: 1, ...observation }, null, 2),
-        );
+        await persist({ schemaVersion: 1, status: "FAIL", originalExitCode: 1, ...observation });
+        recorded = true;
       },
     });
-    await writeFile(output, JSON.stringify({ schemaVersion: 1, status: "completed", originalExitCode: 1 }));
+    await persist({ schemaVersion: 1, status: "completed", originalExitCode: 1 });
   } catch {
-    /* Original cleanup remains FAIL; owned removal already preserves fixed evidence and releases UI. */
+    if (!recorded) {
+      try {
+        await persist({ schemaVersion: 1, status: "FAIL", originalExitCode: 1, inspectionUnavailable: true });
+      } catch {}
+    }
+    // Never replace the original silent cleanup error, or overwrite native failure evidence.
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

@@ -234,3 +234,27 @@ test("only exact read-only inventory busy is observed again; deadline keeps orig
     (error) => error === other,
   );
 });
+
+import { finishLegacyCleanup } from "./windows-suite-legacy-upgrade-ui.mjs";
+test("legacy removal is attempted after close fails while first error survives", async () => {
+  const original = Object.freeze(new Error("journey")),
+    closeError = new Error("close"),
+    removeError = new Error("remove");
+  let removes = 0;
+  for (const first of [original, null]) {
+    await assert.rejects(
+      finishLegacyCleanup(
+        async () => {
+          throw closeError;
+        },
+        async () => {
+          removes++;
+          throw removeError;
+        },
+        first,
+      ),
+      (error) => error === (first ?? closeError),
+    );
+  }
+  assert.equal(removes, 2);
+});
