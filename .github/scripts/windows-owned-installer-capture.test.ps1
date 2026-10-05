@@ -27,4 +27,21 @@ foreach($case in @(@{ProcessId=18;NativeWindowHandle=42},@{ProcessId=17;NativeWi
 $failed=$false
 try{Focus-OwnedCaptureWindow $window 17 {throw 'Owned capture foreground unavailable'}}catch{$failed=$true}
 if(-not $failed){throw 'Failed native foreground must prevent capture'}
+$selection=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Select-OwnedCaptureWindow'},$true)
+if($null -eq $selection){throw 'Product capture selection missing'}
+. ([scriptblock]::Create($selection.Extent.Text))
+function CaptureFixture($handle,$class) { [pscustomobject]@{Current=[pscustomobject]@{NativeWindowHandle=$handle;ClassName=$class}} }
+$main=CaptureFixture 42 'Tauri Window'
+$helper=CaptureFixture 43 'Tao Thread Event Target'
+$sic=CaptureFixture 44 ('com.devbox.v08.workspace.i'+('a'*64)+'-sic')
+$inventory=@([pscustomobject]@{handle=42;className='Tauri Window';visible=$true;topLevel=$true},[pscustomobject]@{handle=43;className='Tao Thread Event Target';visible=$true;topLevel=$true},[pscustomobject]@{handle=44;className=$sic.Current.ClassName;visible=$true;topLevel=$true})
+if((Select-OwnedCaptureWindow @($main,$helper,$sic) $inventory 'workspace').Current.NativeWindowHandle -ne 42){throw 'Known product helpers must not block actual main capture'}
+foreach($extra in @([pscustomobject]@{handle=45;className='Tauri Window';visible=$true;topLevel=$true},[pscustomobject]@{handle=45;className='#32770';visible=$true;topLevel=$true},[pscustomobject]@{handle=45;className='foreign';visible=$true;topLevel=$true})) {
+ $rejected=$false
+ try{Select-OwnedCaptureWindow @($main,$helper,$sic) @($inventory+$extra) 'workspace' | Out-Null}catch{$rejected=$true}
+ if(-not $rejected){throw 'Second visible product/modal root must reject capture'}
+}
+$rejected=$false
+try{Select-OwnedCaptureWindow @($main,$helper,$sic) $inventory '' | Out-Null}catch{$rejected=$true}
+if(-not $rejected){throw 'Generic installer capture must retain unique-root guard'}
 Write-Output 'Owned installer nonfocusable UIA capture boundary: PASS (no native input)'

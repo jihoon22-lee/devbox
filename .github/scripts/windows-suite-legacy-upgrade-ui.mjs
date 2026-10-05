@@ -206,6 +206,8 @@ async function verifyInstalledShortcut(root, product, evidenceId) {
         path.resolve(".github/scripts/windows-owned-installer-fault.ps1"),
         "-Action",
         "Capture",
+        "-ProductWindow",
+        product,
         "-FixtureRoot",
         path.dirname(root),
         "-FilePath",

@@ -1,6 +1,8 @@
 import { executeReviewedDeliveryAction } from "./windows-delivery-review.mjs";
 // Actual Recovery review, native dirty-close cancellation and installed data preservation.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { preserveReviewedCommitFailure } from "./windows-reviewed-helper-evidence.mjs";
 import { withdrawnSource } from "./windows-suite-legacy-upgrade-ui.mjs";
 import { observeInstallerFailurePreservation } from "./windows-suite-installer-failures.mjs";
 import { readFile, writeFile, access } from "node:fs/promises";
@@ -14,6 +16,25 @@ import { runVisibleSetup, runVisibleRemoval, rejectBusyVisibleUpdate } from "./w
 import { completeInstalledHealth, closeAutomaticallyOpenedCenter } from "./windows-suite-health-actions.mjs";
 import { prepareDistinctGeneration } from "./windows-suite-update-fixture.mjs";
 import { allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+export async function observeDeliveryReopen(
+  center,
+  observe = observeUntil,
+  read = allWindowsProcesses,
+  preserve = preserveReviewedCommitFailure,
+) {
+  try {
+    await observe(
+      () => read().some((p) => p.Path.toLowerCase() === center.executable.toLowerCase()),
+      "helper reopened Center",
+      90000,
+    );
+  } catch (error) {
+    try {
+      await preserve(center, error, randomUUID());
+    } catch {}
+    throw error;
+  }
+}
 const editor = { role: "textbox", name: "Markdown 본문" };
 export async function assertKnowledgeDraft(context, expected) {
   assert.equal(await context.knowledgeFixture.editorText(), expected);
@@ -69,11 +90,7 @@ export async function run() {
     // The reviewed helper launches Center as a normal shortcut; close only this
     // exact resulting image before a new debugging session takes ownership.
     const executable = center.executable;
-    await observeUntil(
-      () => allWindowsProcesses().some((p) => p.Path.toLowerCase() === executable.toLowerCase()),
-      "helper reopened Center",
-      90000,
-    );
+    await observeDeliveryReopen(center);
     const item = allWindowsProcesses().find((p) => p.Path.toLowerCase() === executable.toLowerCase());
     nativeWindowAction(captureWindowOwner(item, path.dirname(center.root)), "Close");
     await observeUntil(
