@@ -162,6 +162,32 @@ class ReuseTests(unittest.TestCase):
             with self.assertRaises(MODULE.LookupFailure):
                 MODULE.prior_runs("owner/repo")
 
+    def test_old_malformed_receipt_does_not_block_changed_package_checks(self):
+        sha = "b" * 40
+        log = f"2026-10-05T00:00:00Z [command]git log -1 --format=%H\n2026-10-05T00:00:01Z {sha}\n2026-10-05T00:00:02Z   RUST_SCOPE: all\n2026-10-05T00:00:03Z   RUST_PACKAGES: \n"
+        run = {"workflow_id": 123, "status": "completed", "conclusion": "success", "event": "workflow_dispatch", "path": MODULE.WORKFLOW, "repository": {"full_name": "owner/repo"}, "head_repository": {"full_name": "owner/repo"}, "head_sha": sha}
+        runs = [dict(run, id=1), dict(run, id=2)]
+        def api(endpoint, **kwargs):
+            if "/runs/" in endpoint:
+                number = 1 if "/runs/1/" in endpoint else 2
+                return {"jobs": [{"id": number, "name": MODULE.GATES["rust-windows"], "conclusion": "success", "steps": [{"name": name, "conclusion": "success"} for name in MODULE.REQUIRED["rust-windows"]]}]}
+            return "malformed old log" if "/jobs/1/" in endpoint else log
+        workflow = (MODULE.ROOT / MODULE.WORKFLOW).read_text()
+        def git(*args):
+            if args[0] == "diff":
+                return "crates/changed/src/lib.rs"
+            return workflow if args[0] == "show" else "a" * 40
+        scope = SimpleNamespace(
+            load_frontend_graph=lambda: SimpleNamespace(nodes={}),
+            load_rust_graph=lambda: SimpleNamespace(nodes={"changed": object()}),
+            resolve_paths=lambda paths: SimpleNamespace(rust_scope="packages", rust_packages=["changed"]),
+        )
+        with patch.dict(MODULE.os.environ, {"GITHUB_EVENT_NAME": "pull_request", "FRONTEND_SCOPE": "none", "RUST_SCOPE": "all"}, clear=True), patch.object(MODULE, "load_scope", return_value=scope), patch.object(MODULE, "prior_runs", return_value=(123, runs)), patch.object(MODULE, "api", side_effect=api), patch.object(MODULE, "git", side_effect=git), patch.object(MODULE, "ensure_commit"):
+            results, evidence = MODULE.resolve("owner/repo")
+        self.assertFalse(results["rust-windows"])
+        self.assertTrue(any("Historical receipt not used" in line for line in evidence))
+        self.assertTrue(any("Rust (Windows): normal execution (1 package(s)" in line for line in evidence))
+
 
 if __name__ == "__main__":
     unittest.main()

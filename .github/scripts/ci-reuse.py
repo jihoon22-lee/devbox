@@ -300,8 +300,8 @@ def resolve(repository: str) -> tuple[dict[str, bool], list[str]]:
                 evidence.append(f"{name}: {len(reusable)} unchanged package(s), actual compiler success [run {run['id']} / job {job['id']}](https://github.com/{repository}/actions/runs/{run['id']}/job/{job['id']}), checkout `{sha}`; coverage `{','.join(sorted(reusable))}`.")
         if all(not value for value in outstanding.values()) and (not requested["rust"] or linux_global):
             break
-    if rejected and (any(outstanding.values()) or (requested["rust"] and not linux_global)):
-        raise LookupFailure("Valid evidence remains incomplete after rejecting historical receipts: " + "; ".join(rejected[:3]))
+    # Ineligible history does not block a legitimate fresh check of changed
+    # inputs. Only operational failures interrupt resolution (handled by main).
     evidence.extend(f"Historical receipt not used: {reason}." for reason in rejected)
     for gate in GATES:
         results[gate] = bool(requested[gate]) and not outstanding[gate] and (gate != "rust" or linux_global)
