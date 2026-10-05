@@ -27,6 +27,10 @@ REQUIRED_JOBS = (
 # Every other tracked blob AND mode must match, including build scripts/locks.
 # These exact reviewed paths only affect evidence, never packaged product inputs.
 ALLOWED_CHANGES = frozenset({
+    '.github/scripts/windows-suite-ui-context.mjs',
+    '.github/scripts/windows-suite-ui-close.test.mjs',
+    '.github/scripts/windows-suite-delivery-native.mjs',
+    '.github/scripts/windows-suite-user-flow.mjs',
     '.github/scripts/windows-suite-agent-user-flows.mjs',
     '.github/scripts/windows-suite-direct-layout.mjs',
     '.github/scripts/windows-suite-direct-layout.test.mjs',

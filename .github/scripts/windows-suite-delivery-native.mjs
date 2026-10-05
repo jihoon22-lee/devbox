@@ -10,7 +10,7 @@ import {
   historicalHealthUnavailable,
 } from "./windows-suite-native-protocol.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
-import { requestNormalClose } from "./windows-suite-ui-context.mjs";
+import { requestNormalClose, workspaceCloseReviewSelector } from "./windows-suite-ui-context.mjs";
 import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
@@ -460,7 +460,7 @@ try {
           }
           try {
             evidence.workspaceClose.renderer = await item.cdp.evaluate(`(() => {
-              const review=document.querySelector('[role="dialog"][aria-label="Workspace 종료 검토"]');
+              const review=document.querySelector(${JSON.stringify(workspaceCloseReviewSelector)});
               const buttons=Array.from(review?.querySelectorAll('button')??[]);
               const alert=review?.querySelector('[role="alert"]');
               return {reviewPresent:!!review,reviewErrorPresent:!!alert,

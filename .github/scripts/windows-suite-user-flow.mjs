@@ -21,6 +21,7 @@ import {
 } from "./windows-suite-agent-user-flows.mjs";
 import { observeInstalledProductLayout, observeProductPerformance } from "./windows-suite-layout.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
+import { workspaceCloseReviewSelector } from "./windows-suite-ui-context.mjs";
 import { packagedIdentity, writeUserFlowResults, fileDigest } from "./suite-user-flow-results.mjs";
 import {
   captureWindowOwner,
@@ -156,9 +157,7 @@ export async function run() {
         await until(async () => {
           if (!allWindowsProcesses().some((p) => p.Pid === process.Pid && p.Created === process.Created)) return true;
           if (
-            await attached.cdp.evaluate(
-              '!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')',
-            )
+            await attached.cdp.evaluate(`!!document.querySelector(${JSON.stringify(workspaceCloseReviewSelector)})`)
           ) {
             await attached.ui.click({
               role: "button",

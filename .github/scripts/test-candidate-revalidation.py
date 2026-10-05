@@ -18,6 +18,19 @@ def proof():
                 requiredJobs=[dict(id=i+1,name=name,status='completed',conclusion='success') for i,name in enumerate(REQUIRED_JOBS)])
 
 class RevalidationTests(unittest.TestCase):
+    def test_native_dialog_observers_are_finite_fixture_only_inputs(self):
+        for name in ('windows-suite-ui-context.mjs', 'windows-suite-ui-close.test.mjs',
+                     'windows-suite-delivery-native.mjs', 'windows-suite-user-flow.mjs'):
+            path = '.github/scripts/' + name
+            self.assertEqual(compare_inputs({}, {path: ('100644', 'a'*40)})[0]['path'], path)
+            for rejected, mode in ((path + '.unreviewed', '100644'), (path, '120000')):
+                with self.subTest(path=rejected, mode=mode), self.assertRaises(ValueError):
+                    compare_inputs({}, {rejected: (mode, 'a'*40)})
+        for path in ('apps/devbox-workspace/src/CloseReview.tsx',
+                     '.github/scripts/build-windows-packages.ps1'):
+            with self.assertRaises(ValueError):
+                compare_inputs({}, {path: ('100644', 'a'*40)})
+
     def test_third_product_shard_cannot_be_missing_or_failed(self):
         name='Build Windows products (shard 03)'
         self.assertIn(name, REQUIRED_JOBS)

@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { observeNormalClose, requestNormalClose } from "./windows-suite-ui-context.mjs";
+// Catalog runs without pnpm install; only the optional DOM cases need jsdom.
+// Resolve separately so a broken installed package (or its dependency) still fails.
+let jsdomPath;
+try {
+  jsdomPath = createRequire(import.meta.url).resolve("jsdom");
+} catch (error) {
+  if (error?.code !== "MODULE_NOT_FOUND" || !error.message.startsWith("Cannot find module 'jsdom'\n")) throw error;
+}
+const JSDOM = jsdomPath ? (await import(pathToFileURL(jsdomPath).href)).JSDOM : undefined;
+if (jsdomPath) assert.equal(typeof JSDOM, "function", "Installed jsdom must export JSDOM");
+
 test("native close requests once, confirms review, and waits for child exit before cleanup", async () => {
   const child = { exitCode: null };
   const events = [];
@@ -203,3 +216,51 @@ test("explicit owned handoff close review still waits for native process exit", 
     },
   );
 });
+
+for (const [name, markup, expected] of [
+  ["native open review", '<dialog open aria-label="Workspace 종료 검토"><button>종료</button></dialog>', true],
+  [
+    "retained legacy review",
+    '<section role="dialog" aria-label="Workspace 종료 검토"><button>종료</button></section>',
+    true,
+  ],
+  ["closed native review", '<dialog aria-label="Workspace 종료 검토"><button>종료</button></dialog>', false],
+  [
+    "closed explicitly named native review",
+    '<dialog role="dialog" aria-label="Workspace 종료 검토"><button>종료</button></dialog>',
+    false,
+  ],
+  ["other open dialog", '<dialog open aria-label="다른 검토"><button>종료</button></dialog>', false],
+]) {
+  test(`normal close recognizes only actionable Workspace review: ${name}`, {
+    skip: JSDOM ? false : "jsdom is not installed; DOM cases run after pnpm install",
+  }, async () => {
+    const dom = new JSDOM(markup);
+    const child = { exitCode: null };
+    let clicks = 0;
+    try {
+      await observeNormalClose(
+        {
+          child,
+          product: "workspace",
+          cdp: { evaluate: async (script) => new Function("document", `return ${script}`)(dom.window.document) },
+          ui: {
+            click: async () => {
+              clicks++;
+            },
+          },
+        },
+        async (check) => {
+          assert.equal(await check(), false, "review submission never claims process exit");
+          assert.equal(clicks, expected ? 1 : 0);
+          assert.equal(await check(), false);
+          assert.equal(clicks, expected ? 1 : 0, "never resubmit the close action");
+          child.exitCode = 0;
+          assert.equal(await check(), true);
+        },
+      );
+    } finally {
+      dom.window.close();
+    }
+  });
+}
