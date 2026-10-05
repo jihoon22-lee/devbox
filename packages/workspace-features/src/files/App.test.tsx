@@ -979,6 +979,36 @@ describe("App editor shell operations", () => {
     await waitFor(() => expect(rendered.queryByRole("tab", { name: /one\.ts/ })).toBeNull());
   });
 
+  it("keeps edits made while saved recovery cleanup is pending instead of closing the tab", async () => {
+    const cleanup = deferred<Awaited<ReturnType<typeof discardRecovery>>>();
+    vi.mocked(discardRecovery).mockReturnValueOnce(cleanup.promise);
+    saveFileMock.mockResolvedValue(savedFile());
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
+    fireEvent.click(rendered.getByRole("button", { name: "저장 후 닫기" }));
+    await waitFor(() => expect(discardRecovery).toHaveBeenCalledTimes(1));
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    await act(async () => cleanup.resolve(undefined));
+    expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!!");
+    expect(rendered.getByRole("tab", { name: /one\.ts/ }).textContent).toContain("●");
+    expect(rendered.getByText("저장 중 새 편집이 발생해 탭을 닫지 않았습니다.")).toBeTruthy();
+  });
+
+  it("reports failed recovery cleanup after saving without an unhandled rejection or closing the tab", async () => {
+    vi.mocked(discardRecovery).mockRejectedValueOnce(new Error("journal unavailable"));
+    saveFileMock.mockResolvedValue(savedFile());
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    fireEvent.click(rendered.getByRole("button", { name: "/tmp/one.ts 닫기" }));
+    fireEvent.click(rendered.getByRole("button", { name: "저장 후 닫기" }));
+    await waitFor(() => expect(discardRecovery).toHaveBeenCalledTimes(1));
+    expect(
+      await rendered.findByText("파일은 저장했지만 복구 기록을 정리하지 못했습니다. 다시 저장해 주세요."),
+    ).toBeTruthy();
+    expect(rendered.getByRole("tab", { name: /one\.ts/ })).toBeTruthy();
+  });
+
   it("closes clean right-hand tabs immediately and queues dirty confirmations in tab order", async () => {
     const rendered = await openOne();
     await openAdditional(rendered, "/tmp/two.ts");
@@ -1102,6 +1132,30 @@ describe("App editor shell operations", () => {
     expect(openFileMock.mock.calls[1][1]).toEqual({ encodingKind: "utf16Le", bom: false });
   });
 
+  it("reopens a renamed path using its existing dirty document and single watch", async () => {
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("renamed.ts");
+    renameFileActionMock.mockResolvedValue({
+      path: "/tmp/renamed.ts",
+      mtimeNanos: "2",
+      size: 6,
+      contentHash: "hash-1",
+    });
+    fireEvent.contextMenu(rendered.getByRole("tab", { name: /one\.ts/ }), { clientX: 10, clientY: 10 });
+    fireEvent.click(rendered.getByRole("menuitem", { name: "이름 변경" }));
+    await waitFor(() => expect(rendered.getByRole("tab", { name: /renamed\.ts/ })).toBeTruthy());
+    await waitFor(() => expect(watchFileMock).toHaveBeenCalledWith("/tmp/renamed.ts"));
+    openFileMock.mockResolvedValue(openedFile("before", "/tmp/renamed.ts"));
+    fireEvent.change(rendered.getByRole("textbox", { name: "열 파일 경로" }), { target: { value: "/tmp/renamed.ts" } });
+    fireEvent.click(rendered.getByRole("button", { name: "파일 열기" }));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(2));
+    expect(rendered.getAllByRole("tab", { name: /renamed\.ts/ })).toHaveLength(1);
+    expect(rendered.getByTestId("doc-text-/tmp/renamed.ts").textContent).toBe("before!");
+    expect(watchFileMock.mock.calls.filter(([path]) => path === "/tmp/renamed.ts")).toHaveLength(1);
+    prompt.mockRestore();
+  });
+
   it("validates an encoding conversion before changing save metadata", async () => {
     const rendered = await openOne();
     const conversion = rendered.getByRole("combobox", { name: "저장 인코딩" });
@@ -1157,6 +1211,44 @@ describe("App editor shell operations", () => {
     expect(rendered.getByText("/tmp/target.ts")).toBeTruthy();
     expect(requestLspDefinitionMock).toHaveBeenCalledTimes(1);
     expect(requestLspReferencesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates retained dirty tabs when navigating backward and forward", async () => {
+    configureDiagnosticsApp();
+    requestLspDefinitionMock.mockResolvedValue({
+      metadata: { uri: "file:///tmp/one.ts", version: 1 },
+      value: {
+        locations: [
+          {
+            uri: "file:///tmp/target.ts",
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          },
+        ],
+        rejected: 0,
+      },
+      stale: false,
+    });
+    const rendered = await openOne();
+    fireEvent.click(rendered.getByRole("button", { name: "edit /tmp/one.ts" }));
+    fireEvent.click(rendered.getByRole("button", { name: "정의" }));
+    const location = await rendered.findByRole("button", { name: /\/tmp\/target\.ts/ });
+    openFileMock.mockResolvedValueOnce(openedFile("target", "/tmp/target.ts"));
+    fireEvent.click(location);
+    await waitFor(() =>
+      expect(rendered.getByRole("tab", { name: /target\.ts/ }).getAttribute("aria-selected")).toBe("true"),
+    );
+    const opens = openFileMock.mock.calls.length;
+
+    fireEvent.click(rendered.getByTitle("뒤로"));
+    await waitFor(() =>
+      expect(rendered.getByRole("tab", { name: /one\.ts/ }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
+    fireEvent.click(rendered.getByTitle("앞으로"));
+    await waitFor(() =>
+      expect(rendered.getByRole("tab", { name: /target\.ts/ }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(openFileMock).toHaveBeenCalledTimes(opens);
   });
 
   it("applies formatting and rename buffers without autosaving", async () => {

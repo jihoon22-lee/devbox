@@ -16,6 +16,7 @@ pub struct StashPushRequest {
 pub struct StashApplyRequest {
     pub path: String,
     pub index: u32,
+    pub expected_commit: String,
     pub pop: bool,
     pub operation_id: String,
 }
@@ -24,6 +25,7 @@ pub struct StashApplyRequest {
 pub struct StashDropRequest {
     pub path: String,
     pub index: u32,
+    pub expected_commit: String,
     pub operation_id: String,
 }
 #[derive(serde::Deserialize, ts_rs::TS)]
@@ -80,10 +82,15 @@ fn entries(
         cancel,
     )?)
 }
-fn selected(root: &Path, cancel: &AtomicBool, index: u32) -> Result<StashEntry, String> {
+fn selected(
+    root: &Path,
+    cancel: &AtomicBool,
+    index: u32,
+    expected_commit: &str,
+) -> Result<StashEntry, String> {
     entries(root, cancel, Some(index))?
         .into_iter()
-        .find(|entry| entry.index == index)
+        .find(|entry| entry.index == index && entry.commit == expected_commit)
         .ok_or_else(|| "stash_missing".into())
 }
 fn validate_index(index: u32) -> Result<(), String> {
@@ -147,8 +154,9 @@ pub async fn repo_stash_push(request: StashPushRequest) -> Result<(), String> {
 }
 pub async fn repo_stash_apply(request: StashApplyRequest) -> Result<StashApplyResult, String> {
     validate_index(request.index)?;
+    validate_commit_id(&request.expected_commit).map_err(|_| "stash_missing")?;
     change(request.path, request.operation_id, move |root, cancel| {
-        selected(root, cancel, request.index)?;
+        selected(root, cancel, request.index, &request.expected_commit)?;
         let selector = format!("stash@{{{}}}", request.index);
         if mutate(
             root,
@@ -190,8 +198,9 @@ pub async fn repo_stash_apply(request: StashApplyRequest) -> Result<StashApplyRe
 }
 pub async fn repo_stash_drop(request: StashDropRequest) -> Result<DroppedStash, String> {
     validate_index(request.index)?;
+    validate_commit_id(&request.expected_commit).map_err(|_| "stash_missing")?;
     change(request.path, request.operation_id, move |root, cancel| {
-        let entry = selected(root, cancel, request.index)?;
+        let entry = selected(root, cancel, request.index, &request.expected_commit)?;
         mutate(
             root,
             &["stash", "drop", &format!("stash@{{{}}}", request.index)],
@@ -237,6 +246,46 @@ mod tests {
     }
 
     #[test]
+    fn changed_stash_index_cannot_apply_or_delete_another_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        init_repo(tmp.path());
+        fs::write(tmp.path().join("README.md"), "reviewed\n").unwrap();
+        git(tmp.path(), &["stash", "push", "--quiet", "-m", "reviewed"]);
+        let reviewed = block(repo_stash_list(PathRequest {
+            path: path(tmp.path()),
+        }))
+        .unwrap();
+        fs::write(tmp.path().join("README.md"), "external\n").unwrap();
+        git(tmp.path(), &["stash", "push", "--quiet", "-m", "external"]);
+        let before = git(tmp.path(), &["stash", "list", "--format=%H"]);
+        for pop in [false, true] {
+            assert_eq!(
+                block(repo_stash_apply(StashApplyRequest {
+                    path: path(tmp.path()),
+                    index: reviewed[0].index,
+                    expected_commit: reviewed[0].commit.clone(),
+                    pop,
+                    operation_id: format!("stale-apply-{pop}"),
+                }))
+                .unwrap_err(),
+                "stash_missing"
+            );
+            assert!(git(tmp.path(), &["status", "--porcelain"]).is_empty());
+        }
+        assert_eq!(
+            block(repo_stash_drop(StashDropRequest {
+                path: path(tmp.path()),
+                index: reviewed[0].index,
+                expected_commit: reviewed[0].commit.clone(),
+                operation_id: "stale-drop".into(),
+            }))
+            .unwrap_err(),
+            "stash_missing"
+        );
+        assert_eq!(git(tmp.path(), &["stash", "list", "--format=%H"]), before);
+    }
+
+    #[test]
     fn push_list_pop_round_trip_including_untracked_files() {
         let tmp = tempfile::tempdir().unwrap();
         init_repo(tmp.path());
@@ -258,6 +307,7 @@ mod tests {
         let result = block(repo_stash_apply(StashApplyRequest {
             path: path(tmp.path()),
             index: 0,
+            expected_commit: git(tmp.path(), &["rev-parse", "refs/stash"]).trim().into(),
             pop: true,
             operation_id: "s2".into(),
         }))
@@ -344,6 +394,7 @@ mod tests {
         let result = block(repo_stash_apply(StashApplyRequest {
             path: path(tmp.path()),
             index: 0,
+            expected_commit: git(tmp.path(), &["rev-parse", "refs/stash"]).trim().into(),
             pop: true,
             operation_id: "p1".into(),
         }))
@@ -369,6 +420,7 @@ mod tests {
         let dropped = block(repo_stash_drop(StashDropRequest {
             path: path(tmp.path()),
             index: 0,
+            expected_commit: git(tmp.path(), &["rev-parse", "refs/stash"]).trim().into(),
             operation_id: "r1".into(),
         }))
         .unwrap();
@@ -393,6 +445,7 @@ mod tests {
             block(repo_stash_drop(StashDropRequest {
                 path: path(tmp.path()),
                 index: 5,
+                expected_commit: dropped.commit.clone(),
                 operation_id: "r3".into()
             }))
             .unwrap_err(),

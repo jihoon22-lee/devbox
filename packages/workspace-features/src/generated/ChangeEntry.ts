@@ -16,7 +16,7 @@ export type ChangeEntry = {
    */
   indexStatus: string;
   worktreeStatus: string;
-  kind: "untracked" | "renamed" | "copied" | "added" | "deleted" | "modified";
+  kind: "untracked" | "untracked-directory" | "renamed" | "copied" | "added" | "deleted" | "modified" | "conflict";
   staged: boolean;
   unstaged: boolean;
 };

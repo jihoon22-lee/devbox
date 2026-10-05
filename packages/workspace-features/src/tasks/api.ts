@@ -683,7 +683,11 @@ export function friendlyErrorMessage(cause: unknown): string {
   const value = cause instanceof Error ? cause.message : String(cause);
   const normalized = value.trim();
   const code = normalized.startsWith("workspace-task-") ? normalized : `workspace-task-${normalized}`;
-  return FRIENDLY_BACKEND_ERRORS[normalized] ?? FRIENDLY_BACKEND_ERRORS[code] ?? "요청을 완료하지 못했습니다.";
+  for (const candidate of [normalized, code]) {
+    if (Object.prototype.hasOwnProperty.call(FRIENDLY_BACKEND_ERRORS, candidate))
+      return FRIENDLY_BACKEND_ERRORS[candidate];
+  }
+  return "요청을 완료하지 못했습니다.";
 }
 
 export function startService(id: string): Promise<ServiceInstance> {

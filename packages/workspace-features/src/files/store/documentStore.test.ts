@@ -78,6 +78,16 @@ describe("document registry transitions", () => {
     expect(isEditorStateInvariantValid(state)).toBe(true);
   });
 
+  it("activates the existing buffer when another tab is active during reopen", () => {
+    const state = withDocs({ ...doc("one"), dirty: true, text: "unsaved" }, doc("two"));
+    const reopened = editorReducer(state, { type: "addDoc", doc: doc("one"), view: 1 });
+    expect(reopened.activeView).toBe(0);
+    expect(reopened.activeDocByView[0]).toBe("one");
+    expect(reopened.docs[0].text).toBe("unsaved");
+    expect(reopened.views).toEqual(state.views);
+    expect(isEditorStateInvariantValid(reopened)).toBe(true);
+  });
+
   it("selects a neighboring tab when the active tab is closed, including the last tab", () => {
     let state = withDocs(doc("one"), doc("two"), doc("three"));
     state = editorReducer(state, { type: "activateDoc", view: 0, docId: "two" });

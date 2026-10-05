@@ -38,16 +38,35 @@ function hasControl(value: string): boolean {
 }
 
 function hasUnsafeRegexConstruct(value: string): boolean {
+  const groups: boolean[] = [];
+  let inClass = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const token = value[index];
+    if (token === "\\") {
+      index += 1;
+      continue;
+    }
+    if (token === "[") inClass = true;
+    if (token === "]") inClass = false;
+    if (inClass) continue;
+    if (token === "(") {
+      groups.push(false);
+      if (value.slice(index + 1, index + 3) === "?:") index += 2;
+    } else if (token === ")") {
+      const ambiguous = groups.pop() ?? false;
+      if (ambiguous && /[+*{]/.test(value[index + 1] ?? "")) return true;
+      if (ambiguous && groups.length) groups[groups.length - 1] = true;
+    } else if (groups.length && /[+*?{|]/.test(token)) {
+      groups[groups.length - 1] = true;
+    }
+  }
   // Browser mode must fail closed too: unlike the Rust regex engine, native
   // JavaScript RegExp can backtrack catastrophically. Keep highlighting and
   // fixture filtering to a small, predictable subset. The native command
-  // remains authoritative in Tauri mode.
-  return (
-    /\\(?:[1-9]|k<)|\(\?[=!<]/.test(value) ||
-    /\([^()]*[+*][^()]*\)[+*{]/.test(value) ||
-    /\([^()]*\|[^()]*\)[+*{]/.test(value) ||
-    /\{\s*\d{3,}(?:\s*,\s*\d*)?\s*\}/.test(value)
-  );
+  // validates native results; this guard also filters displayed rows in Tauri.
+  // The group stack rejects repeated nested/optional/bounded repetitions and
+  // alternatives while retaining fixed groups and escaped/class punctuation.
+  return /\\(?:[1-9]|k<)|\(\?[=!<]/.test(value) || /\{\s*\d{3,}(?:\s*,\s*\d*)?\s*\}/.test(value);
 }
 
 /** Build a bounded browser regexp, or return null to fail closed. */

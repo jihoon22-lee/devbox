@@ -930,13 +930,24 @@ export async function repoStashPush(
   if (!isTauri()) return;
   await invoke("repo_stash_push", { request: { path, ...options, operationId } });
 }
-export function repoStashApply(path: string, index: number, pop: boolean, operationId: string = crypto.randomUUID()) {
+export function repoStashApply(
+  path: string,
+  index: number,
+  expectedCommit: string,
+  pop: boolean,
+  operationId: string = crypto.randomUUID(),
+) {
   if (!isTauri()) return Promise.resolve({ applied: true, conflicts: [] as string[] });
-  return invoke("repo_stash_apply", { request: { path, index, pop, operationId } });
+  return invoke("repo_stash_apply", { request: { path, index, expectedCommit, pop, operationId } });
 }
-export function repoStashDrop(path: string, index: number, operationId: string = crypto.randomUUID()) {
+export function repoStashDrop(
+  path: string,
+  index: number,
+  expectedCommit: string,
+  operationId: string = crypto.randomUUID(),
+) {
   if (!isTauri()) return Promise.resolve({ commit: "0".repeat(40), message: "browser fixture" });
-  return invoke("repo_stash_drop", { request: { path, index, operationId } });
+  return invoke("repo_stash_drop", { request: { path, index, expectedCommit, operationId } });
 }
 export async function repoStashStore(
   path: string,

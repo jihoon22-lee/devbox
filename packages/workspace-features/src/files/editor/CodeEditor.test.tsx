@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +43,35 @@ const baseProps = {
 };
 
 describe("CodeEditor lifecycle", () => {
+  it.each(["잘라내기", "붙여넣기"])("cancels pending %s when editing becomes read-only", async (action) => {
+    let complete!: () => void;
+    if (action === "잘라내기") {
+      writeClipboardTextMock.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            complete = resolve;
+          }),
+      );
+    } else {
+      readClipboardTextMock.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            complete = () => resolve("replacement");
+          }),
+      );
+    }
+    const onChange = vi.fn();
+    const rendered = render(<CodeEditor {...baseProps} value="one two" onChange={onChange} />);
+    const view = EditorView.findFromDOM(rendered.container.querySelector(".cm-editor") as HTMLElement)!;
+    view.dispatch({ selection: { anchor: 0, head: 3 } });
+    fireEvent.contextMenu(rendered.container.querySelector(".cm-content") as HTMLElement);
+    fireEvent.click(within(rendered.getByRole("menu")).getByRole("menuitem", { name: action }));
+    rendered.rerender(<CodeEditor {...baseProps} readOnly value="one two" onChange={onChange} />);
+    await act(async () => complete());
+    expect(view.state.doc.toString()).toBe("one two");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("syncs external values without reporting them as local edits", () => {
     const onChange = vi.fn();
     const { container, rerender } = render(<CodeEditor {...baseProps} value="before" onChange={onChange} />);

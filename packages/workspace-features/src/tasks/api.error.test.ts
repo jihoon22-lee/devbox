@@ -9,3 +9,7 @@ describe("Run Manager display error boundary", () => {
     expect(friendlyErrorMessage(new Error("native path /private/run.log"))).toBe("요청을 완료하지 못했습니다.");
   });
 });
+
+it.each(["__proto__", "constructor", "toString"])("suppresses inherited error code %s", (code) => {
+  expect(friendlyErrorMessage(code)).toBe("요청을 완료하지 못했습니다.");
+});

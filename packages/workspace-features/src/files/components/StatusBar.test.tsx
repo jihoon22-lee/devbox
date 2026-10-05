@@ -3,6 +3,7 @@ import { cursorPosition, encodingForOption, encodingOptionValue } from "./Status
 
 describe("status bar metadata", () => {
   it("reports one-based line and UTF-16 column positions", () => {
+    expect(cursorPosition("\nnext", 0)).toEqual({ line: 1, column: 1 });
     expect(cursorPosition("one\n두😀", 0)).toEqual({ line: 1, column: 1 });
     expect(cursorPosition("one\n두😀", 4)).toEqual({ line: 2, column: 1 });
     expect(cursorPosition("one\n두😀", 7)).toEqual({ line: 2, column: 4 });

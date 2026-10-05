@@ -86,6 +86,8 @@ export default function RegistryGate({
   editingRef.current = editing;
   const acting = useRef(false);
   const incoming = useIncomingReview();
+  const currentReview = useRef(incoming.review);
+  currentReview.current = incoming.review;
   const review =
     incoming.review?.route === "overview" &&
     incoming.review.target.kind === "entity" &&
@@ -559,7 +561,13 @@ export default function RegistryGate({
                           };
                           await guardedCall("select_project", { context: next });
                           await onContextChanged();
-                          if (review?.context?.worktreeId === worktree.id) incoming.clear();
+                          if (
+                            alive.current &&
+                            review?.context?.worktreeId === worktree.id &&
+                            currentReview.current?.operationId === review.operationId
+                          ) {
+                            incoming.clear();
+                          }
                         })
                       }
                     >

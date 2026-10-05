@@ -2,8 +2,10 @@
 //!
 //! One session is allowed per language id. Starts are reserved before process
 //! creation so concurrent commands cannot orphan a duplicate child. Document
-//! mutations are staged and committed only after the corresponding JSON-RPC
-//! notification has been written successfully.
+//! mutations commit to the authoritative mirror before notification delivery;
+//! a failed delivery restarts the server and replays that mirror. Replacement
+//! publication is serialized with document mutations so replay cannot overwrite
+//! edits, opens, or closes admitted while the server is unavailable.
 
 pub mod recovery;
 
@@ -2668,6 +2670,10 @@ impl LspManager {
             match result {
                 Ok(session) => {
                     let session = Arc::new(session);
+                    // Keep the snapshot, replay, and publication atomic with
+                    // lifecycle mutations. Commands queued during replay must
+                    // mutate the newly published store, not the retired one.
+                    let _mutation_guard = self.document_mutation_gate.lock().await;
                     // Lifecycle commands continue to commit the authoritative
                     // document store while this session is unavailable. Capture
                     // the snapshot as late as possible — after the replacement
@@ -2677,7 +2683,21 @@ impl LspManager {
                     // Replay is staged entirely in the replacement session.
                     // Do not publish it as the current session until every
                     // didOpen has been written successfully.
-                    if let Err(error) = self.replay_documents(&session, &snapshots).await {
+                    let replay = tokio::time::timeout(
+                        MUTATION_TIMEOUT,
+                        self.replay_documents(&session, &snapshots),
+                    )
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(LspManagerError::Protocol(
+                            "replacement document replay timed out".to_owned(),
+                        ))
+                    });
+                    if let Err(error) = replay {
+                        // The replacement cannot publish now. Let queued
+                        // commands keep updating the authoritative old mirror
+                        // while its unpublished child is being retired.
+                        drop(_mutation_guard);
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
                         let reason = error.to_string();
@@ -2698,6 +2718,7 @@ impl LspManager {
                     ) {
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
+                        drop(_mutation_guard);
                         let reason =
                             "replacement language server exited during document replay".to_owned();
                         stop_unpublished(&session.client, &session.process).await;
@@ -2735,6 +2756,7 @@ impl LspManager {
                         }
                     };
                     if !accepted {
+                        drop(_mutation_guard);
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
                         stop_unpublished(&session.client, &session.process).await;

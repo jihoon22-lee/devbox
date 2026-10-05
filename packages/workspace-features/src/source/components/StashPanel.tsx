@@ -43,15 +43,15 @@ export default function StashPanel({ repo, onBusyChange, onChanged }: Props) {
     await load(signal);
     if (!signal.aborted) onChanged?.();
   };
-  const apply = (index: number, pop: boolean) =>
+  const apply = (entry: StashEntry, pop: boolean) =>
     void execute(async (id, signal) => {
-      const result = await repoStashApply(repo.path, index, pop, id);
+      const result = await repoStashApply(repo.path, entry.index, entry.commit, pop, id);
       if (!signal.aborted) setConflicts(result.conflicts);
       await updated(signal);
     });
-  const drop = async (index: number) => {
+  const drop = async (entry: StashEntry) => {
     const deleted = await execute(async (id, signal) => {
-      const receipt = await repoStashDrop(repo.path, index, id);
+      const receipt = await repoStashDrop(repo.path, entry.index, entry.commit, id);
       await updated(signal).catch(() => {
         if (!signal.aborted) {
           setEntries([]);
@@ -62,7 +62,7 @@ export default function StashPanel({ repo, onBusyChange, onChanged }: Props) {
     });
     if (!deleted) return;
     offer(
-      `stash ${index}를 삭제했습니다.`,
+      `stash ${entry.index}를 삭제했습니다.`,
       scopedUndo(async (undoId, signal) => {
         await repoStashStore(repo.path, deleted.commit, deleted.message, undoId);
         await updated(signal);
@@ -114,7 +114,7 @@ export default function StashPanel({ repo, onBusyChange, onChanged }: Props) {
               type="button"
               disabled={busy}
               aria-label={`stash ${entry.index} 적용`}
-              onClick={() => apply(entry.index, false)}
+              onClick={() => apply(entry, false)}
             >
               적용
             </button>
@@ -122,16 +122,11 @@ export default function StashPanel({ repo, onBusyChange, onChanged }: Props) {
               type="button"
               disabled={busy}
               aria-label={`stash ${entry.index} 꺼내기`}
-              onClick={() => apply(entry.index, true)}
+              onClick={() => apply(entry, true)}
             >
               꺼내기
             </button>
-            <button
-              type="button"
-              disabled={busy}
-              aria-label={`stash ${entry.index} 삭제`}
-              onClick={() => drop(entry.index)}
-            >
+            <button type="button" disabled={busy} aria-label={`stash ${entry.index} 삭제`} onClick={() => drop(entry)}>
               삭제
             </button>
           </li>

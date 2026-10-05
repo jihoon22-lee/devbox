@@ -417,6 +417,7 @@ pub fn parse_worktree_records(input: &str) -> Result<Vec<ParsedWorktree>, String
             bare: false,
         };
         let mut saw_head = false;
+        let mut detached = false;
         let mut saw_separator = false;
         while index < records.len() {
             let record = records[index];
@@ -435,12 +436,18 @@ pub fn parse_worktree_records(input: &str) -> Result<Vec<ParsedWorktree>, String
                 }
             } else if let Some(value) = record.strip_prefix("branch ") {
                 let branch = value.strip_prefix("refs/heads/").ok_or_else(fixed_error)?;
-                if worktree.branch.is_some() || !valid_ref_name(branch) {
+                if detached || worktree.bare || worktree.branch.is_some() || !valid_ref_name(branch)
+                {
                     return Err(fixed_error());
                 }
                 worktree.branch = Some(branch.to_string());
+            } else if record == "detached" {
+                if detached || worktree.bare || worktree.branch.is_some() {
+                    return Err(fixed_error());
+                }
+                detached = true;
             } else if record == "bare" {
-                if worktree.bare {
+                if worktree.bare || detached || worktree.branch.is_some() {
                     return Err(fixed_error());
                 }
                 worktree.bare = true;
@@ -826,6 +833,38 @@ mod tests {
         assert!(worktrees[1].locked);
         assert!(worktrees[2].bare);
         assert!(worktrees[2].head.is_none());
+    }
+
+    #[test]
+    fn detached_worktrees_are_previewed_and_conflicting_markers_fail_closed() {
+        let input = format!(
+            "worktree C:/repo\0HEAD {OID}\0branch refs/heads/main\0\0worktree C:/detached\0HEAD {OID_2}\0detached\0\0"
+        );
+        let worktrees = parse_worktree_records(&input).unwrap();
+        assert_eq!(worktrees[1].head.as_deref(), Some(OID_2));
+        assert_eq!(worktrees[1].branch, None);
+        let preview = classify_preview(
+            Some(OID.into()),
+            &[],
+            &worktrees,
+            &HashSet::new(),
+            &[Some(WorktreeStatus::default()); 2],
+            0,
+        );
+        assert!(preview.worktrees[1].eligible);
+        assert_eq!(preview.worktrees[1].reasons, ["detachedWorktree"]);
+        for markers in [
+            "detached\0detached\0",
+            "detached\0branch refs/heads/main\0",
+            "branch refs/heads/main\0detached\0",
+            "bare\0detached\0",
+            "detached\0bare\0",
+        ] {
+            assert!(parse_worktree_records(&format!(
+                "worktree C:/detached\0HEAD {OID}\0{markers}\0"
+            ))
+            .is_err());
+        }
     }
 
     #[test]

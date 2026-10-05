@@ -200,12 +200,12 @@ pub fn canonical_project_key(
             ));
         }
         if let Some(rest) = p.trim().strip_prefix("/mnt/") {
-            let drive = rest.chars().next().unwrap_or_default();
-            if drive.is_ascii_alphabetic() {
+            let (drive, tail) = rest.split_once('/').unwrap_or((rest, ""));
+            if drive.len() == 1 && drive.as_bytes()[0].is_ascii_alphabetic() {
                 return Ok(format!(
                     "win:{}:/{}",
                     drive.to_ascii_lowercase(),
-                    rest[1..].trim_matches('/')
+                    tail.trim_matches('/')
                 ));
             }
         }
@@ -439,6 +439,18 @@ mod tests {
         let wsl = canonical_project_key(None, Some(("Ubuntu", "/mnt/e/projects/devbox"))).unwrap();
         assert_eq!(win, wsl);
         assert_eq!(win, "win:e:/projects/devbox");
+    }
+
+    #[test]
+    fn canonical_key_keeps_non_drive_mounts_distro_scoped() {
+        for path in ["/mnt/data/project", "/mnt/ab/project", "/mnt/cache"] {
+            let key = canonical_project_key(None, Some(("Ubuntu", path))).unwrap();
+            assert_eq!(key, format!("wsl:ubuntu:{}", path.trim_start_matches('/')));
+            assert_ne!(
+                key,
+                canonical_project_key(None, Some(("Debian", path))).unwrap()
+            );
+        }
     }
 
     #[test]

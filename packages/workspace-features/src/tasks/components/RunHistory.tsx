@@ -328,9 +328,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
               }
               setHistoryError(null);
             } else {
-              setHistoryError(
-                historyResult.reason instanceof Error ? historyResult.reason.message : String(historyResult.reason),
-              );
+              setHistoryError(friendlyErrorMessage(historyResult.reason));
             }
             if (activeResult.status === "fulfilled") {
               setActiveRuns(activeResult.value);
@@ -339,9 +337,7 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
             } else {
               setActiveRuns([]);
               setActiveSnapshotFresh(false);
-              setActiveSnapshotError(
-                activeResult.reason instanceof Error ? activeResult.reason.message : String(activeResult.reason),
-              );
+              setActiveSnapshotError(friendlyErrorMessage(activeResult.reason));
             }
           } finally {
             if (mountedRef.current && generation === viewGeneration.current) setLoading(false);
@@ -631,9 +627,13 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
     let timer = 0;
 
     const poll = async () => {
+      let chunkFull = false;
       try {
-        const response = await tailLog(selectedRun.id, stream, nextCursor);
+        const response = await tailLog(selectedRun.id, stream, nextCursor, LOG_EXPORT_CHUNK_BYTES);
         if (!active) return;
+        // Completed runs can still have several bounded chunks left to read.
+        // Require cursor progress so a malformed response cannot poll forever.
+        chunkFull = response.data.length >= LOG_EXPORT_CHUNK_BYTES && response.nextCursor !== nextCursor;
         nextCursor = response.nextCursor;
         logCursor.current = response.nextCursor;
         setLogBytes((current) => {
@@ -652,8 +652,9 @@ export default function RunHistory({ active: visible = true, jobs, requestedJobI
       }
       if (
         active &&
-        selectedStatusRef.current !== null &&
-        ["queued", "starting", "running", "stopping"].includes(selectedStatusRef.current)
+        (chunkFull ||
+          (selectedStatusRef.current !== null &&
+            ["queued", "starting", "running", "stopping"].includes(selectedStatusRef.current)))
       ) {
         timer = window.setTimeout(() => void poll(), 1_000);
       }

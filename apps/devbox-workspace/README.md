@@ -48,6 +48,10 @@ project/source/target 승인을 계속 요구한다.
 
 ### Review corrections (2026-09-21)
 
+Stash apply/pop/drop carry the displayed commit identity as well as the index. If another Git
+operation changes that index before execution, the action is rejected until the list is refreshed.
+This is an optimistic identity check; it does not lock arbitrary external Git writers.
+
 Source commit confirmation reads a native Git index/HEAD witness. The approval includes that
 revision; execution rejects external add/reset, changed staged blobs (including the same path),
 or a changed HEAD until the user reviews again. Existing repository identity, Git trust and
@@ -80,6 +84,8 @@ Files는 dirty 본문(빈 본문 포함)과 encoding/BOM/line ending을 native �
 파일 접근과 인코딩을 먼저 확인한다. main X는 종료 검토를 열고 저장·폐기·취소를 구분한다.
 파일 저장 뒤 복구 기록 삭제가 실패하면 삭제 요청을 유지하고 다음 기록·종료 시 재시도한다.
 삭제에 계속 실패하면 정상 종료를 차단하여 오래된 초안이 제거된 것처럼 표시하지 않는다.
+저장 후 복구 기록을 정리하는 동안 새로 입력한 내용도 dirty 버퍼로 남겨 탭을 닫지 않는다.
+이름을 바꾼 파일을 다시 열면 기존 탭·수정 내용을 유지하고 해당 탭을 선택한다.
 Source 초안은 context 전환과 정상 종료를 보호한다. Source crash 복원은 제공하지 않는다.
 
 Windows 수용은 임시 소유 namespace에서 `WORK-01/02/03` UI 모듈로 정상 종료 취소,

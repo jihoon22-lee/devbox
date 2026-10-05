@@ -55,9 +55,30 @@ describe("Log Lens filter", () => {
     expect(createSafeRegex("(a+)+$")).toBeNull();
     expect(createSafeRegex("(a|aa)+$")).toBeNull();
     expect(createSafeRegex("a{1000}")).toBeNull();
+    expect(createSafeRegex("(a{1,2})+$")).toBeNull();
+    expect(createSafeRegex("(a?)+$")).toBeNull();
+    expect(createSafeRegex("((a+))+$")).toBeNull();
+    expect(createSafeRegex("((a{1,2}))+$")).toBeNull();
+    expect(createSafeRegex("((a?))+$")).toBeNull();
+    expect(createSafeRegex("((ab)+)+$")).toBeNull();
+    expect(createSafeRegex("(?:a?)+$")).toBeNull();
     expect(
       filterRecords([{ ...records[0], message: "aaaaaaaaaaaaaaaaaaaaaaaa" }], { text: "(a+)+$", regex: true }),
     ).toEqual([]);
+  });
+
+  it("keeps fixed repeated groups and escaped or class punctuation usable", () => {
+    for (const [pattern, message] of [
+      ["^(foo)+$", "foofoo"],
+      ["^(?:foo)+$", "foofoo"],
+      ["^((foo))+$", "foofoo"],
+      ["^(foo\\+)+$", "foo+foo+"],
+      ["^([()+?{}|])+$", "+?(){}|"],
+      ["^\\)+$", "))"],
+    ]) {
+      expect(createSafeRegex(pattern), pattern).not.toBeNull();
+      expect(filterRecords([{ ...records[0], message }], { text: pattern, regex: true }), pattern).toHaveLength(1);
+    }
   });
 
   it("keeps browser fixture source IDs distinct for multi-source views", () => {

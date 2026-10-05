@@ -168,25 +168,14 @@ pub fn sanitize_stderr_line(bytes: &[u8]) -> String {
         return "서버 진단에 경로 또는 URL이 포함되어 내용을 숨겼습니다".into();
     }
     let mut sanitized = Vec::new();
-    let mut redact_following = 0_u8;
     for token in normalized.split_whitespace() {
-        if redact_following > 0 {
-            sanitized.push("<redacted>".to_owned());
-            redact_following -= 1;
-            continue;
-        }
-
         let lower = token.to_ascii_lowercase();
-        if let Some(redacted) = redact_sensitive_token(token, &lower) {
-            redact_following = if lower.contains("authorization") || lower.contains("bearer") {
-                2
-            } else if !token.contains('=') && !token.contains(':') {
-                1
-            } else {
-                0
-            };
-            sanitized.push(redacted);
-        } else if looks_like_known_token(token) {
+        if contains_credential_marker(&lower) {
+            // Values may follow whitespace around a separator or span several
+            // quoted words. A token count cannot establish their safe boundary.
+            return "서버 진단에 자격 증명이 포함되어 내용을 숨겼습니다 (<redacted>)".into();
+        }
+        if looks_like_known_token(token) {
             sanitized.push("<redacted>".to_owned());
         } else {
             sanitized.push(token.to_owned());
@@ -195,7 +184,7 @@ pub fn sanitize_stderr_line(bytes: &[u8]) -> String {
     bound_message(sanitized.join(" "))
 }
 
-fn redact_sensitive_token(token: &str, lower: &str) -> Option<String> {
+fn contains_credential_marker(lower: &str) -> bool {
     const MARKERS: &[&str] = &[
         "authorization",
         "cookie",
@@ -213,14 +202,7 @@ fn redact_sensitive_token(token: &str, lower: &str) -> Option<String> {
         "token",
         "secret",
     ];
-    if !MARKERS.iter().any(|marker| lower.contains(marker)) {
-        return None;
-    }
-    let separator = token.find(['=', ':']);
-    Some(match separator {
-        Some(index) => format!("{}<redacted>", &token[..=index]),
-        None => "<redacted>".into(),
-    })
+    MARKERS.iter().any(|marker| lower.contains(marker))
 }
 
 fn looks_like_known_token(token: &str) -> bool {
@@ -281,6 +263,22 @@ mod tests {
         assert!(!output.contains("ghp_123456"));
         assert!(!output.contains("sk-fixture"));
         assert!(output.contains("<redacted>"));
+    }
+
+    #[test]
+    fn separated_and_quoted_credentials_never_leak_value_fragments() {
+        for line in [
+            r#"password: plain-value"#,
+            r#"api_key = plain-value"#,
+            r#"{"client_secret": "plain-value second-fragment"}"#,
+            r#"password="plain-value second-fragment""#,
+            r#"Authorization: Bearer "plain-value second-fragment""#,
+        ] {
+            let output = sanitize_stderr_line(line.as_bytes());
+            assert!(!output.contains("plain-value"), "{output}");
+            assert!(!output.contains("second-fragment"), "{output}");
+            assert!(output.contains("<redacted>"));
+        }
     }
 
     #[test]

@@ -941,12 +941,12 @@ mod branch_stash_tests {
             ),
             (
                 "repo_stash_apply",
-                serde_json::json!({"index": 0, "pop": true, "operationId": "op", "path": "/repo"}),
+                serde_json::json!({"index": 0, "expectedCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "pop": true, "operationId": "op", "path": "/repo"}),
                 true,
             ),
             (
                 "repo_stash_drop",
-                serde_json::json!({"index": 0, "operationId": "op", "path": "/repo"}),
+                serde_json::json!({"index": 0, "expectedCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "operationId": "op", "path": "/repo"}),
                 true,
             ),
             (

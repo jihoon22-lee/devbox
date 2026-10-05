@@ -11,6 +11,7 @@ import {
 import type { TabContextAction } from "../components/TabBar";
 import type { Doc, DocId, Encoding } from "../types";
 import type * as React from "react";
+import type { Diagnostic } from "@codemirror/lint";
 
 interface Props {
   renameApplyBusyRef: React.RefObject<boolean>;
@@ -47,14 +48,7 @@ interface Props {
       rejected: number;
     } | null>
   >;
-  setLspDiagnostics: React.Dispatch<
-    React.SetStateAction<
-      Record<
-        string,
-        import("../../../../../node_modules/.pnpm/@codemirror+lint@6.9.7/node_modules/@codemirror/lint/dist/index").Diagnostic[]
-      >
-    >
-  >;
+  setLspDiagnostics: React.Dispatch<React.SetStateAction<Record<string, Diagnostic[]>>>;
   setNavBack: React.Dispatch<React.SetStateAction<import("../App").NavEntry[]>>;
   setNavForward: React.Dispatch<React.SetStateAction<import("../App").NavEntry[]>>;
   registerWatch: (path: string) => Promise<void>;

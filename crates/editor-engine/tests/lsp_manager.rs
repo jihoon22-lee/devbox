@@ -240,6 +240,106 @@ async fn crash_backoff_replays_the_latest_open_change_close_snapshot_atomically(
 }
 
 #[tokio::test]
+async fn closing_during_restart_replay_cannot_resurrect_the_document() {
+    close_during_restart_replay(false).await;
+}
+
+#[tokio::test]
+async fn blocked_restart_replay_releases_document_mutations_at_deadline() {
+    assert!(
+        close_during_restart_replay(true).await,
+        "blocked replay must release queued document mutations at its deadline"
+    );
+}
+
+async fn close_during_restart_replay(wait_for_deadline: bool) -> bool {
+    let data = tempdir().unwrap();
+    let workspace = tempdir().unwrap();
+    let marker = data.path().join("crashed");
+    let gate = data.path().join("replay-gate");
+    let first = workspace.path().join("a.rs");
+    let second = workspace.path().join("z.rs");
+    fs::write(&first, "first").unwrap();
+    fs::write(&second, "second").unwrap();
+    let executable = fixture_binary().canonicalize().unwrap();
+    save_to_app_local_data_dir(
+        data.path(),
+        &feature_config_with_args(
+            workspace.path(),
+            &executable,
+            "crash_once",
+            [
+                format!("--fake-marker={}", marker.display()),
+                format!("--fake-replay-gate={}", gate.display()),
+            ],
+        ),
+    )
+    .unwrap();
+    let manager = LspManager::new(data.path(), "test");
+    let mut events = manager.subscribe_events();
+    manager.start("rust").await.unwrap();
+    let _ = manager.open_document("rust", &first, "first".into()).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let LspEvent::Status(event) = events.recv().await.unwrap() {
+                if event.restarting {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+    // The replacement reads the first didOpen and then pauses. Its second
+    // didOpen exceeds pipe capacity, keeping replay incomplete at the barrier.
+    let opened = manager
+        .open_document("rust", &second, "x".repeat(2 * 1024 * 1024))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !gate.exists() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut close = Box::pin(manager.close_document("rust", &opened.uri));
+    let close_deadline = if wait_for_deadline {
+        Duration::from_secs(6)
+    } else {
+        Duration::from_millis(50)
+    };
+    let early = tokio::time::timeout(close_deadline, &mut close).await;
+    let completed_before_release = early.is_ok();
+    fs::write(gate.with_extension("release"), "release").unwrap();
+    if let Ok(result) = early {
+        result.unwrap();
+    } else {
+        close.await.unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let LspEvent::Status(event) = events.recv().await.unwrap() {
+                if !event.restarting
+                    && event.status.status == editor_engine::lsp::ClientStatus::Ready
+                {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let count = manager.statuses().await[0].document_count;
+    manager.shutdown_for_exit().await.unwrap();
+    assert_eq!(
+        count, 1,
+        "a close admitted during replay must survive publication"
+    );
+    completed_before_release
+}
+
+#[tokio::test]
 async fn circuit_open_allows_explicit_restart_after_repeated_crashes() {
     let app_data = tempdir().unwrap();
     let workspace = tempdir().unwrap();
