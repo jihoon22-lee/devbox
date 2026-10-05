@@ -650,6 +650,94 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
 });
 
 describe("TermPane — profile command와 safe broadcast (#263)", () => {
+  it("waits for pasted text to reach the PTY before submitting Enter", async () => {
+    let completeText: (() => void) | undefined;
+    const received: string[] = [];
+    mockWriteSession.mockImplementation((_sessionId: string, data: string) => {
+      if (data === "printf ctrl-c") {
+        return new Promise<void>((resolve) => {
+          completeText = () => {
+            received.push(data);
+            resolve();
+          };
+        });
+      }
+      received.push(data);
+      return Promise.resolve();
+    });
+    render(<TermPane {...baseProps()} />);
+    act(() => {
+      createdTerminals[0].dataHandler?.("printf ctrl-c");
+      createdTerminals[0].dataHandler?.("\r");
+    });
+    expect(completeText).toBeDefined();
+    expect(received).toEqual([]);
+    expect(mockWriteSession).toHaveBeenCalledTimes(1);
+    await act(async () => completeText?.());
+    expect(received).toEqual(["printf ctrl-c", "\r"]);
+  });
+
+  it("serializes broadcast text and Enter and drops queued input for changed targets", async () => {
+    let completeText: (() => void) | undefined;
+    mockBroadcast.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          completeText = resolve;
+        }),
+    );
+    const registerWrite = vi.fn();
+    const unregisterWrite = vi.fn();
+    const props = (targets: string[]) =>
+      baseProps({
+        broadcastOn: true,
+        broadcastTargetIds: targets,
+        registerWrite,
+        unregisterWrite,
+      });
+    const { rerender } = render(<TermPane {...props(["s1", "s2"])} />);
+    act(() => {
+      createdTerminals[0].dataHandler?.("echo safe");
+      createdTerminals[0].dataHandler?.("\r");
+    });
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    rerender(<TermPane {...props(["s1", "s3"])} />);
+    await act(async () => completeText?.());
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send a queued Enter after the pane unmounts", async () => {
+    let completeText: (() => void) | undefined;
+    mockWriteSession.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          completeText = resolve;
+        }),
+    );
+    const { unmount } = render(<TermPane {...baseProps()} />);
+    act(() => {
+      createdTerminals[0].dataHandler?.("echo safe");
+      createdTerminals[0].dataHandler?.("\r");
+    });
+    unmount();
+    await act(async () => completeText?.());
+    expect(mockWriteSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the initial command before admitting user input", async () => {
+    let completeInitial: (() => void) | undefined;
+    mockWriteSession.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          completeInitial = resolve;
+        }),
+    );
+    render(<TermPane {...baseProps({ initialCommand: "pnpm dev" })} />);
+    act(() => createdTerminals[0].dataHandler?.("\x03"));
+    expect(mockWriteSession).toHaveBeenCalledTimes(1);
+    await act(async () => completeInitial?.());
+    expect(mockWriteSession.mock.calls.map((call) => call[1])).toEqual(["pnpm dev\r", "\x03"]);
+  });
+
   it("새 세션의 시작 명령은 한 번만 보내고 rerender에서 재실행하지 않는다", async () => {
     const registerWrite = vi.fn();
     const unregisterWrite = vi.fn();
@@ -784,7 +872,7 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
 
     act(() => createdTerminals[0].dataHandler?.("echo safe"));
     await waitFor(() => expect(onBroadcastFailure).toHaveBeenCalledTimes(1));
-    expect(onTerminalError).toHaveBeenCalledWith("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
+    expect(onTerminalError).toHaveBeenCalledWith("터미널 입력 전달이 중단되었습니다. 터미널을 닫고 다시 열어 주세요.");
     expect(onTerminalError).not.toHaveBeenCalledWith(expect.stringContaining(raw));
   });
 });
