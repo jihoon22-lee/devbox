@@ -15,6 +15,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ".github/workflows/ci.yml"
@@ -45,7 +48,13 @@ class LookupFailure(ValueError):
     """Operational failure; never silently replace it with compiler work."""
 
 
+def strip_terminal_controls(value: str) -> str:
+    value = re.sub(r"\x1b\][^\x07]*(?:\x07|\x1b\\)", "", value)
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
+
+
 def safe_diagnostic(value: str) -> str:
+    value = strip_terminal_controls(value)
     for key, secret in os.environ.items():
         if len(secret) >= 6 and re.search(r"TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY", key, re.I):
             value = value.replace(secret, "[REDACTED]")
@@ -68,8 +77,18 @@ def git(*args: str) -> str:
     return command("git", *args).strip()
 
 
+@lru_cache(maxsize=1)
+def api_raw_flags() -> tuple[str, ...]:
+    # New gh versions reject ANSI-bearing job logs even when stdout is a pipe.
+    # Detect the installed CLI capability; older versions reject this flag.
+    help_text = command("gh", "api", "--help")
+    return ("--allow-escape-sequences",) if "--allow-escape-sequences" in help_text else ()
+
+
 def api(path: str, *, raw: bool = False):
-    value = command("gh", "api", path)
+    # command captures stdout. Raw job logs are parsed in memory, never printed.
+    flags = api_raw_flags() if raw else ()
+    value = command("gh", "api", *flags, path)
     if len(value.encode()) > MAX_LOG_BYTES:
         raise ValueError("verification evidence exceeds size limit")
     return value if raw else json.loads(value)
@@ -115,7 +134,7 @@ def historical_receipt(log: str, family: str, job_id: int, rejected: list[str]):
 def log_evidence(log: str, family: str) -> tuple[str, str, str]:
     # Read runner-emitted checkout and environment records; ambiguous values are
     # rejected. Do not use run.head_sha: PR checkout normally builds a merge SHA.
-    lines = [re.sub(r"^\d{4}-\d\d-\d\dT\S+\s", "", line).rstrip("\r") for line in log.splitlines()]
+    lines = [re.sub(r"^\d{4}-\d\d-\d\dT\S+\s", "", line).rstrip("\r") for line in strip_terminal_controls(log).splitlines()]
     commits = {lines[index + 1].strip() for index, line in enumerate(lines[:-1]) if "[command]" in line and line.endswith("log -1 --format=%H")}
     prefix = family.upper()
     scopes = {line.removeprefix(f"  {prefix}_SCOPE: ") for line in lines if line.startswith(f"  {prefix}_SCOPE: ")}
@@ -229,9 +248,23 @@ def prior_runs(repository: str):
     workflow_id = workflow_info.get("id")
     if type(workflow_id) is not int or workflow_info.get("path") != WORKFLOW or workflow_info.get("state") != "active":
         raise LookupFailure("CI workflow identity could not be verified")
-    # Resolve the stable numeric identity first. The filename alias has returned
-    # stale historical pages even while the numeric endpoint returns latest runs.
-    runs = api(f"repos/{repository}/actions/workflows/{workflow_id}/runs?status=success&per_page={MAX_RUNS}&page=1")["workflow_runs"]
+    # GitHub has returned stale pages for both filename and unbounded numeric
+    # endpoints. Bound history to the weekly audit interval and verify the
+    # response obeyed that filter before reading any historical job logs.
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).replace(microsecond=0)
+    query = urlencode({"status": "success", "per_page": MAX_RUNS, "page": 1, "created": ">=" + cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")})
+    runs = api(f"repos/{repository}/actions/workflows/{workflow_id}/runs?{query}")["workflow_runs"]
+    if not isinstance(runs, list) or len(runs) > MAX_RUNS:
+        raise LookupFailure("CI recent run discovery returned an invalid page")
+    for run in runs:
+        try:
+            created = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00"))
+            valid = type(run["id"]) is int and run["id"] > 0 and created.tzinfo is not None and created >= cutoff
+        except (KeyError, TypeError, AttributeError, ValueError):
+            valid = False
+        if not valid:
+            raise LookupFailure("CI run discovery violated the recent seven-day filter")
+    runs.sort(key=lambda run: run["id"], reverse=True)
     return workflow_id, runs
 
 

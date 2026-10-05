@@ -6,6 +6,7 @@ import unittest
 import io
 import re
 import subprocess
+from urllib.parse import parse_qs, urlsplit
 from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -154,10 +155,17 @@ class ReuseTests(unittest.TestCase):
         self.assertEqual(MODULE.historical_receipt(valid, "rust", 13, rejected), (sha, "all", ""))
 
     def test_discovery_uses_verified_numeric_identity_and_explicit_first_page(self):
-        replies = [{"id": 123, "path": ".github/workflows/ci.yml", "state": "active"}, {"workflow_runs": [{"id": 456}]}]
+        recent = MODULE.datetime.now(MODULE.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        record = {"id": 456, "created_at": recent}
+        replies = [{"id": 123, "path": ".github/workflows/ci.yml", "state": "active"}, {"workflow_runs": [record]}]
         with patch.object(MODULE, "api", side_effect=replies) as api:
-            self.assertEqual(MODULE.prior_runs("owner/repo"), (123, [{"id": 456}]))
-        self.assertEqual(api.call_args_list[1].args[0], "repos/owner/repo/actions/workflows/123/runs?status=success&per_page=30&page=1")
+            self.assertEqual(MODULE.prior_runs("owner/repo"), (123, [record]))
+        endpoint = api.call_args_list[1].args[0]
+        self.assertTrue(endpoint.startswith("repos/owner/repo/actions/workflows/123/runs?"))
+        query = parse_qs(urlsplit(endpoint).query)
+        self.assertEqual(query["page"], ["1"])
+        self.assertEqual(query["per_page"], ["30"])
+        self.assertTrue(query["created"][0].startswith(">="))
         with patch.object(MODULE, "api", return_value={"id": 123, "path": ".github/workflows/other.yml", "state": "active"}):
             with self.assertRaises(MODULE.LookupFailure):
                 MODULE.prior_runs("owner/repo")
@@ -187,6 +195,38 @@ class ReuseTests(unittest.TestCase):
         self.assertFalse(results["rust-windows"])
         self.assertTrue(any("Historical receipt not used" in line for line in evidence))
         self.assertTrue(any("Rust (Windows): normal execution (1 package(s)" in line for line in evidence))
+
+    def test_new_cli_raw_logs_require_detected_escape_flag_and_never_print_payload(self):
+        MODULE.api_raw_flags.cache_clear()
+        payload = "raw secret log with \x1b[31mcolor\x1b[0m"
+        def cli(args, **kwargs):
+            if args == ("gh", "api", "--help"):
+                return SimpleNamespace(returncode=0, stderr="", stdout="--allow-escape-sequences")
+            allowed = "--allow-escape-sequences" in args
+            return SimpleNamespace(returncode=0 if allowed else 1, stderr="response contains terminal escape sequences", stdout=payload if allowed else "")
+        with patch.object(MODULE.subprocess, "run", side_effect=cli) as cli_mock, redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(MODULE.api("repos/owner/repo/actions/jobs/1/logs", raw=True), payload)
+        self.assertNotIn("raw secret log", output.getvalue())
+        self.assertIn("--allow-escape-sequences", cli_mock.call_args.args[0])
+        MODULE.api_raw_flags.cache_clear()
+
+    def test_old_cli_does_not_receive_unsupported_escape_flag(self):
+        MODULE.api_raw_flags.cache_clear()
+        with patch.object(MODULE, "command", side_effect=["older help", "raw log"]) as command:
+            self.assertEqual(MODULE.api("repos/owner/repo/actions/jobs/1/logs", raw=True), "raw log")
+        self.assertEqual(command.call_args.args, ("gh", "api", "repos/owner/repo/actions/jobs/1/logs"))
+        MODULE.api_raw_flags.cache_clear()
+
+    def test_colored_checkout_logs_parse_after_terminal_controls_removed(self):
+        sha = "a" * 40
+        log = f"2026-10-05T00:00:00Z \x1b[36m[command]git log -1 --format=%H\x1b[0m\n2026-10-05T00:00:01Z \x1b[32m{sha}\x1b[0m\n2026-10-05T00:00:02Z   RUST_SCOPE: all\n2026-10-05T00:00:03Z   RUST_PACKAGES: \n"
+        self.assertEqual(MODULE.log_evidence(log, "rust"), (sha, "all", ""))
+
+    def test_discovery_rejects_server_response_violating_recent_time_filter(self):
+        replies = [{"id": 123, "path": MODULE.WORKFLOW, "state": "active"}, {"workflow_runs": [{"id": 456, "created_at": "2020-01-01T00:00:00Z"}]}]
+        with patch.object(MODULE, "api", side_effect=replies):
+            with self.assertRaisesRegex(MODULE.LookupFailure, "recent"):
+                MODULE.prior_runs("owner/repo")
 
 
 if __name__ == "__main__":
