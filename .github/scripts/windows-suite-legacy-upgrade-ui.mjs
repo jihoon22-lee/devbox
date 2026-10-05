@@ -3,6 +3,7 @@ import {
   executeReviewedDeliveryAction,
   selectCurrentGenerationSnapshot,
   waitDeliveryInventoryReady,
+  readRestoreInventory,
 } from "./windows-delivery-review.mjs";
 // L4 legacy preparation is separate from the actual current installer/use/restore UI journey.
 import assert from "node:assert/strict";
@@ -29,11 +30,57 @@ import { createInstalledKnowledgeContext } from "./windows-knowledge-user-flows.
 import { windowsLocalAppData, allWindowsProcesses, stopOwnedProcess } from "./windows-packaged-smoke.mjs";
 const editor = { role: "textbox", name: "Markdown 본문" };
 const json = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^\uFEFF/u, ""));
+export { readRestoreInventory as readLegacyRestoreInventory } from "./windows-delivery-review.mjs";
+export async function finishLegacyCleanup(close, remove, originalFailure) {
+  let cleanupFailure;
+  try {
+    await close();
+  } catch (error) {
+    cleanupFailure = error;
+  }
+  try {
+    await remove();
+  } catch (error) {
+    cleanupFailure ??= error;
+  }
+  if (originalFailure) throw originalFailure;
+  if (cleanupFailure) throw cleanupFailure;
+}
 export function legacyOperationFailure(operation, code, signal, stdout, stderr) {
-  let issue = null;
+  let issue = null,
+    shortcut = null;
   try {
     const value = JSON.parse(stdout.trim());
     if (typeof value.issue === "string" && /^[a-z][a-z0-9_]{0,100}$/.test(value.issue)) issue = value.issue;
+    if (operation === "registered-shortcut-launch") {
+      const stages = [
+        "ownership",
+        "activation",
+        "physical-identity",
+        "retained-payload",
+        "link-target",
+        "registered-link-launch",
+      ];
+      const commands = [
+        "Assert-Unlinked",
+        "Assert-Identity",
+        "Get-Content",
+        "Get-Item",
+        "Get-FileHash",
+        "Split-Path",
+        "Join-Path",
+        "Add-Type",
+        "New-Object",
+        "ConvertFrom-Json",
+        "ConvertTo-Json",
+        "Where-Object",
+      ];
+      shortcut = {
+        stage: stages.includes(value.stage) ? value.stage : null,
+        command: commands.includes(value.command) ? value.command : null,
+        line: Number.isInteger(value.line) && value.line >= 1 && value.line <= 2000 ? value.line : null,
+      };
+    }
   } catch {}
   return Object.assign(new Error(`Owned legacy fixture operation failed: ${operation}`), {
     operation: {
@@ -41,6 +88,7 @@ export function legacyOperationFailure(operation, code, signal, stdout, stderr) 
       exitCode: code,
       signal: signal ?? null,
       issue,
+      ...(shortcut ? { shortcut } : {}),
       stderr: boundedFailure(new Error(stderr)).message,
     },
   });
@@ -351,7 +399,7 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     await closeAutomaticallyOpenedCenter(root);
     center = await createInstalledProductContext("control-center");
     await center.ui.click({ role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } });
-    const inventory = await center.delivery("restore_inventory");
+    const inventory = await readRestoreInventory(center);
     assert.equal(inventory.update.previousVersion, oldManifest.suiteVersion);
     assert.equal(inventory.update.version, release.suiteVersion);
     const checkpointId = inventory.update.checkpointId;
@@ -586,26 +634,33 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     ).catch(() => {});
   } finally {
     try {
-      if (center) await center.close().catch(() => {});
-      if (knowledge) await knowledge.close();
-      try {
-        if (registration) {
+      await finishLegacyCleanup(
+        async () => {
+          if (center) await center.close().catch(() => {});
+          if (knowledge) await knowledge.close();
+        },
+        async () => {
           try {
-            await writeUpgradeEvidence(record, withdrawn, registration.installationKey);
+            if (registration) {
+              try {
+                await writeUpgradeEvidence(record, withdrawn, registration.installationKey);
+              } finally {
+                await execute(
+                  "pwsh",
+                  ["-NoProfile", "-File", ".github/scripts/windows-user-flow-install.ps1", "-Cleanup"],
+                  { operation: "cleanup-owned-installation" },
+                );
+              }
+            } else {
+              process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
+              await writeUpgradeEvidence(record, withdrawn, parent.parentInstallationKey);
+            }
           } finally {
-            await execute(
-              "pwsh",
-              ["-NoProfile", "-File", ".github/scripts/windows-user-flow-install.ps1", "-Cleanup"],
-              { operation: "cleanup-owned-installation" },
-            );
+            process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
           }
-        } else {
-          process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
-          await writeUpgradeEvidence(record, withdrawn, parent.parentInstallationKey);
-        }
-      } finally {
-        process.env.DEVBOX_USER_FLOW_INSTALL_ROOT = parent.parentRoot;
-      }
+        },
+        originalFailure,
+      );
     } catch (cleanupError) {
       if (originalFailure) throw originalFailure;
       throw cleanupError;

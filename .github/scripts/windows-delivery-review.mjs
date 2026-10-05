@@ -1,4 +1,27 @@
 import assert from "node:assert/strict";
+import { observeUntil } from "./windows-suite-ui-context.mjs";
+export async function readRestoreInventory(center, observe = observeUntil, accept = () => true) {
+  let inventory, firstBusy;
+  try {
+    await observe(async () => {
+      try {
+        inventory = await center.delivery("restore_inventory");
+        return accept(inventory);
+      } catch (error) {
+        if (error?.message !== "Read-only delivery restore_inventory failed: unavailable/suite_update_busy")
+          throw error;
+        firstBusy ??= error;
+        return false;
+      }
+    }, "owned restore inventory lock available");
+  } catch (error) {
+    if (error?.message === "Owned UI observation timed out: owned restore inventory lock available" && firstBusy)
+      throw firstBusy;
+    throw error;
+  }
+  return inventory;
+}
+
 export async function waitDeliveryInventoryReady(ui) {
   // This heading is rendered only once inventory exists, even during restore health.
   await ui.waitForTarget({ role: "heading", name: "제품 데이터 보존본" });

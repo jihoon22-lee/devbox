@@ -1,7 +1,36 @@
-﻿param([string]$ScriptDirectory=$PSScriptRoot,[string]$BaselineScript,[switch]$FrameworkHelpers,[switch]$WorkspaceAuxiliary,[switch]$ZoomSerialization)
+﻿param([string]$ScriptDirectory=$PSScriptRoot,[string]$BaselineScript,[switch]$FrameworkHelpers,[switch]$WorkspaceAuxiliary,[switch]$ZoomSerialization,[switch]$NativePickerRoots)
 # Disposable classic Win32 controls; no WinForms/UIA custom button provider.
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+if($NativePickerRoots) {
+  $content=[IO.File]::ReadAllText((Join-Path $ScriptDirectory 'windows-installer-ui.ps1'))
+  $tokens=$null;$errors=$null
+  $ast=[Management.Automation.Language.Parser]::ParseInput($content,[ref]$tokens,[ref]$errors)
+  if($errors.Count -ne 0){throw 'Picker driver syntax invalid'}
+  $definition=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-OwnedNativePickers'},$true)
+  if($null -eq $definition){throw 'Owned native picker resolver missing'}
+  . ([scriptblock]::Create($definition.Extent.Text))
+  $native=[pscustomobject]@{nativeHandle=101;nativeProcessId=42;visible=$true;topLevel=$true;className='#32770'}
+  $inventory=[pscustomobject]@{count=1;windows=@($native)}
+  $resolved=[pscustomobject]@{Current=[pscustomobject]@{NativeWindowHandle=101;ProcessId=42;ClassName='#32770'}}
+  $resolver={param($handle,$owner) if($handle -ne 101 -or $owner -ne 42){throw 'Unexpected picker resolution'}; $resolved}
+  # No UIA desktop children are supplied: resolve the native-owned HWND directly.
+  $roots=@(Get-OwnedNativePickers $inventory 42 $resolver)
+  if($roots.Count -ne 1 -or $roots[0].Current.NativeWindowHandle -ne 101){throw 'Native picker omitted by UIA desktop tree was lost'}
+  foreach($kind in @('ambiguous','foreign','overflow','changed-handle')) {
+    $sample=[pscustomobject]@{count=1;windows=@($native)}
+    $resolve=$resolver
+    if($kind -eq 'ambiguous'){$sample.count=2;$sample.windows=@($native,$native)}
+    if($kind -eq 'foreign'){$sample.windows=@([pscustomobject]@{nativeHandle=101;nativeProcessId=43;visible=$true;topLevel=$true;className='#32770'})}
+    if($kind -eq 'overflow'){$sample.count=33}
+    if($kind -eq 'changed-handle'){$resolve={param($handle,$owner) [pscustomobject]@{Current=[pscustomobject]@{NativeWindowHandle=102;ProcessId=42;ClassName='#32770'}}}}
+    $rejected=$false
+    try {Get-OwnedNativePickers $sample 42 $resolve | Out-Null} catch {$rejected=$true}
+    if(-not $rejected){throw ('Unsafe native picker was accepted: '+$kind)}
+  }
+  Write-Output 'Native picker exact HWND selection and ownership rejection: PASS (no native windows/input)'
+  return
+}
 if($ZoomSerialization) {
   $scriptPath=Join-Path $ScriptDirectory 'windows-installer-ui.ps1'
   $content=[IO.File]::ReadAllText($scriptPath)
@@ -27,6 +56,28 @@ if($ZoomSerialization) {
     }
     $release=[DevboxInstallerAutomation]::ZoomChord($reset,$true)
     if($release.Count -ne 2 -or $release[0].value.keyboard.key -ne $key -or $release[1].value.keyboard.key -ne 17 -or @($release | Where-Object {$_.value.keyboard.flags -ne 2}).Count -ne 0){throw 'Zoom finally key release mismatch'}
+  }
+  # Native picker text uses one select-all chord and UTF-16 Unicode pairs.
+  $filename='C:\owned\한글😀.json'
+  $typed=[DevboxInstallerAutomation]::PickerTextInput($filename)
+  if($typed.Count -ne (4+2*$filename.Length)){throw 'Picker input count mismatch'}
+  $keys=@(17,65,65,17);$flags=@(0,0,2,2)
+  for($index=0;$index -lt 4;$index++) {
+    if($typed[$index].type -ne 1 -or $typed[$index].value.keyboard.key -ne $keys[$index] -or $typed[$index].value.keyboard.flags -ne $flags[$index]){throw 'Picker select-all chord mismatch'}
+  }
+  for($index=0;$index -lt $filename.Length;$index++) {
+    $down=$typed[4+2*$index];$up=$typed[5+2*$index]
+    if($down.type -ne 1 -or $up.type -ne 1 -or $down.value.keyboard.key -ne 0 -or $up.value.keyboard.key -ne 0 -or $down.value.keyboard.scan -ne [int]$filename[$index] -or $up.value.keyboard.scan -ne [int]$filename[$index] -or $down.value.keyboard.flags -ne 4 -or $up.value.keyboard.flags -ne 6){throw 'Picker Unicode key serialization mismatch'}
+  }
+  if([DevboxInstallerAutomation]::PickerKeyRelease($typed,0).Length -ne 0){throw 'No filename dispatch must send no key releases'}
+  $release=[DevboxInstallerAutomation]::PickerKeyRelease($typed,1)
+  if($release.Length -ne 2 -or $release[0].value.keyboard.key -ne 65 -or $release[1].value.keyboard.key -ne 17 -or @($release | Where-Object {$_.value.keyboard.flags -ne 2}).Count -ne 0){throw 'Partial chord release mismatch'}
+  $release=[DevboxInstallerAutomation]::PickerKeyRelease($typed,5)
+  if($release.Length -ne 3 -or $release[2].value.keyboard.scan -ne [int]$filename[0] -or $release[2].value.keyboard.flags -ne 6){throw 'Partial Unicode release mismatch'}
+  foreach($invalid in @('',("a"*32768),("a"+[char]0+"b"))) {
+    $rejected=$false
+    try {[DevboxInstallerAutomation]::PickerTextInput($invalid) | Out-Null} catch {$rejected=$true}
+    if(-not $rejected){throw 'Unbounded picker text accepted'}
   }
   # Never set hosted variables or execute SendInput in this local test.
   if($env:GITHUB_ACTIONS -ceq 'true' -or $env:RUNNER_ENVIRONMENT -ceq 'github-hosted'){throw 'Local guard test requires ordinary local environment'}

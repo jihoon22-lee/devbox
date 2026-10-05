@@ -167,7 +167,7 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
                         verified_file(&cached.join(&product.portable.name), &product.portable)?;
                         files.push(format!("setup/{stage_revision}/{}", product.portable.name));
                     }
-                    verify_payload_owner(
+                    verify_payload_helper(
                         &generation_payload,
                         &cached.join("devbox-suite-bootstrap.exe"),
                     )?;

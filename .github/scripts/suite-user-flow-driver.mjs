@@ -188,6 +188,32 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     },
     async text(target) {
       const node = await locate(target);
+      if (node.role?.value === "textbox" && node.backendDOMNodeId) {
+        const resolved = await cdp.command("DOM.resolveNode", { backendNodeId: node.backendDOMNodeId });
+        const objectId = resolved.object?.objectId;
+        if (!objectId) throw new Error("Read-only textbox node unavailable");
+        let readFailed = false;
+        try {
+          const result = await cdp.command("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration:
+              "function() { return this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement ? this.value : null; }",
+            returnByValue: true,
+          });
+          if (result.exceptionDetails) throw new Error("Read-only textbox value unavailable");
+          if (typeof result.result?.value === "string") return result.result.value;
+        } catch (error) {
+          readFailed = true;
+          throw error;
+        } finally {
+          try {
+            await cdp.command("Runtime.releaseObject", { objectId });
+          } catch (error) {
+            if (!readFailed) throw error;
+          }
+        }
+        if (typeof node.value?.value !== "string") throw new Error("Textbox value absent from accessibility tree");
+      }
       if (["alert", "status", "region", "dialog"].includes(node.role?.value)) {
         const byId = new Map(node.axNodes.map((item) => [item.nodeId, item]));
         const text = [],

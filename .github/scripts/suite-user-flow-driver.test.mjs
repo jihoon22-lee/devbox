@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 import { leaveWorkspaceEditorByKeyboard } from "./windows-workspace-input-ui.mjs";
 test("font-control traversal uses CodeMirror's explicit Escape Tab exit without document mutation", async () => {
@@ -40,6 +41,49 @@ test("keyboard prompt decision runs before the pending key acknowledgement and r
   assert.equal(unsubscribed, true);
 });
 const control = { ignored: false, role: { value: "button" }, name: { value: "Continue" }, backendDOMNodeId: 12 };
+test("textbox observation reads its real value when accessibility only contains its label", async () => {
+  class Input {}
+  class TextArea {
+    value = "원본\n";
+  }
+  const node = { ...control, role: { value: "textbox" }, name: { value: "스마트 워크플로 입력" } };
+  const cdp = transport([node]);
+  const original = cdp.command;
+  cdp.command = async (method, params) => {
+    if (method === "Runtime.callFunctionOn") {
+      assert.equal(params.objectId, "owned-12");
+      const observe = runInNewContext(`(${params.functionDeclaration})`, {
+        HTMLInputElement: Input,
+        HTMLTextAreaElement: TextArea,
+      });
+      return { result: { value: observe.call(new TextArea()) } };
+    }
+    return original(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  assert.equal(await ui.text({ role: "textbox", name: "스마트 워크플로 입력" }), "원본\n");
+  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 1);
+  assert.equal(
+    cdp.calls.some((call) => call.method.startsWith("Input.")),
+    false,
+  );
+});
+test("textbox value observation releases its handle when the node detaches", async () => {
+  const cdp = transport([{ ...control, role: { value: "textbox" } }], { failContains: true });
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.text({ role: "textbox", name: "Continue" }), /detached/);
+  assert.equal(cdp.calls.filter((call) => call.method === "Runtime.releaseObject").length, 1);
+});
+test("textbox observation preserves the read error if handle cleanup also fails", async () => {
+  const cdp = transport([{ ...control, role: { value: "textbox" } }], { failContains: true });
+  const original = cdp.command;
+  cdp.command = async (method, params) => {
+    if (method === "Runtime.releaseObject") throw new Error("Release transport closed");
+    return original(method, params);
+  };
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await assert.rejects(ui.text({ role: "textbox", name: "Continue" }), /Owned DOM detached/);
+});
 function transport(
   nodes = [control],
   { hit = 12, contained = false, failContains = false, pageX = 0, pageY = 0 } = {},

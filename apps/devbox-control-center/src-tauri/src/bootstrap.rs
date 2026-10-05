@@ -196,6 +196,11 @@ fn verify_payload_owner(payload: &Payload, own_image: &Path) -> Result<()> {
     if payload.suite_version != env!("CARGO_PKG_VERSION") {
         return Err("bootstrap_version_mismatch");
     }
+    verify_payload_helper(payload, own_image)
+}
+// A cached historical helper is data being removed, not this running executable.
+// Its own payload digest and physical file identity remain mandatory.
+fn verify_payload_helper(payload: &Payload, helper_image: &Path) -> Result<()> {
     let helper = payload
         .products
         .iter()
@@ -206,7 +211,7 @@ fn verify_payload_owner(payload: &Payload, own_image: &Path) -> Result<()> {
                 .find(|f| f.name == "resources/suite/devbox-suite-bootstrap.exe")
         })
         .ok_or("bootstrap_identity_missing")?;
-    verified_file(own_image, helper)
+    verified_file(helper_image, helper)
 }
 
 /// Retain verified setup inputs independently of NSIS's temporary directory.
@@ -1997,6 +2002,45 @@ mod setup_retention_tests {
             sha256: hash(bytes),
             size: bytes.len() as u64,
         }
+    }
+    #[test]
+    fn historical_uninstall_helper_keeps_digest_checks_without_current_version_requirement() {
+        let fixture = tempdir().unwrap();
+        let image = fixture.path().join("devbox-suite-bootstrap.exe");
+        let bytes = b"verified historical helper fixture";
+        fs::write(&image, bytes).unwrap();
+        let mut helper = asset(bytes);
+        helper.name = "resources/suite/devbox-suite-bootstrap.exe".into();
+        let mut payload = Payload {
+            schema_version: 1,
+            suite_version: "0.8.1".into(),
+            source_sha: "a".repeat(40),
+            protocol_version: 1,
+            products: vec![crate::core::suite_package::ProductPackage {
+                id: "control-center".into(),
+                version: "0.8.1".into(),
+                portable: asset(b"portable"),
+                files: vec![helper],
+            }],
+            notices: asset(b"notices"),
+        };
+        assert_eq!(verify_payload_helper(&payload, &image), Ok(()));
+        assert_eq!(
+            verify_payload_owner(&payload, &image),
+            Err("bootstrap_version_mismatch")
+        );
+        payload.suite_version = env!("CARGO_PKG_VERSION").into();
+        assert_eq!(verify_payload_owner(&payload, &image), Ok(()));
+        fs::write(&image, b"foreign replacement").unwrap();
+        assert_eq!(
+            verify_payload_helper(&payload, &image),
+            Err("bootstrap_file_changed")
+        );
+        payload.products.clear();
+        assert_eq!(
+            verify_payload_helper(&payload, &image),
+            Err("bootstrap_identity_missing")
+        );
     }
     #[cfg(windows)]
     #[test]

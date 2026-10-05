@@ -170,3 +170,91 @@ test("shortcut readiness requires the exact product window and usable navigation
   ])
     assert.equal(shortcutWindowReady("workspace", bad), false);
 });
+
+test("shortcut subprocess preserves fixed source stage and command while omitting arbitrary values", () => {
+  const failure = legacyOperationFailure(
+    "registered-shortcut-launch",
+    1,
+    null,
+    JSON.stringify({
+      issue: "shortcut_command_unavailable",
+      stage: "retained-payload",
+      command: "Get-FileHash",
+      line: 91,
+      path: "private",
+    }),
+    "",
+  );
+  assert.deepEqual(failure.operation.shortcut, { stage: "retained-payload", command: "Get-FileHash", line: 91 });
+  assert.ok(!JSON.stringify(failure.operation).includes("private"));
+});
+
+import { readLegacyRestoreInventory } from "./windows-suite-legacy-upgrade-ui.mjs";
+test("only exact read-only inventory busy is observed again; deadline keeps original error", async () => {
+  const busy = new Error("Read-only delivery restore_inventory failed: unavailable/suite_update_busy");
+  let calls = 0;
+  const center = {
+    delivery: async (method) => {
+      assert.equal(method, "restore_inventory");
+      if (++calls === 1) throw busy;
+      return { checkpoints: [] };
+    },
+  };
+  assert.deepEqual(
+    await readLegacyRestoreInventory(center, async (check) => {
+      assert.equal(await check(), false);
+      assert.equal(await check(), true);
+    }),
+    { checkpoints: [] },
+  );
+  await assert.rejects(
+    readLegacyRestoreInventory(
+      {
+        delivery: async () => {
+          throw busy;
+        },
+      },
+      async (check) => {
+        await check();
+        throw new Error("Owned UI observation timed out: owned restore inventory lock available");
+      },
+    ),
+    (error) => error === busy,
+  );
+  const other = new Error("Read-only delivery restore_inventory failed: unavailable/suite_journal_invalid");
+  await assert.rejects(
+    readLegacyRestoreInventory(
+      {
+        delivery: async () => {
+          throw other;
+        },
+      },
+      async (check) => check(),
+    ),
+    (error) => error === other,
+  );
+});
+
+import { finishLegacyCleanup } from "./windows-suite-legacy-upgrade-ui.mjs";
+test("legacy removal is attempted after close fails while first error survives", async () => {
+  const original = Object.freeze(new Error("journey")),
+    closeError = new Error("close"),
+    removeError = new Error("remove");
+  let removes = 0;
+  for (const first of [original, null]) {
+    await assert.rejects(
+      finishLegacyCleanup(
+        async () => {
+          throw closeError;
+        },
+        async () => {
+          removes++;
+          throw removeError;
+        },
+        first,
+      ),
+      (error) => error === (first ?? closeError),
+    );
+  }
+  assert.equal(removes, 2);
+});

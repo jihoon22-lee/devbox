@@ -53,3 +53,48 @@ test("delivered transform waits for automatic Requests preview without clicking 
   });
   assert.deepEqual(events, ["deliver", "preview-ready"]);
 });
+
+test("new pipeline waits for renderer readiness after native deletion commits", async () => {
+  const events = [];
+  let release;
+  const ready = new Promise((resolve) => {
+    release = resolve;
+  });
+  const operation = runner.beginNewPipeline({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "button", name: "새 파이프라인" });
+        events.push("observe");
+        await ready;
+      },
+      click: async (target) => {
+        assert.equal(target.name, "새 파이프라인");
+        events.push("click");
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["observe"]);
+  release();
+  await operation;
+  assert.deepEqual(events, ["observe", "click"]);
+});
+
+test("recipient apply waits for acknowledged preview removal before opening body", async () => {
+  const events = [];
+  let observations = 0;
+  await runner.applyTransformBody({
+    ui: {
+      click: async (target) => {
+        events.push(target.name);
+      },
+    },
+    cdp: {
+      evaluate: async () => {
+        events.push("observe");
+        return ++observations > 1;
+      },
+    },
+  });
+  assert.deepEqual(events, ["적용", "observe", "observe", "BODY"]);
+});

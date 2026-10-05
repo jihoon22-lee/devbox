@@ -456,6 +456,7 @@ jobs:
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1
           .github/scripts/windows-suite-shortcut-launch.test.ps1
+          .github/scripts/windows-installer-ui.test.ps1 -NativePickerRoots
       - name: Install interactively and complete visible activation
         id: retained_install
         shell: pwsh
@@ -471,6 +472,10 @@ jobs:
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $appsOnly = '${{ inputs.suite_diagnostic_apps_only }}' -eq 'true'
           $failed = @()
+          # Exercise the same COM SaveDialog result contract as rfd before the
+          # installed export. Preserve its failure and collect independent journeys.
+          & powershell.exe -NoProfile -File .github/scripts/windows-user-flow-file-picker.test.ps1
+          if ($LASTEXITCODE -ne 0) { $failed += 'owned-native-file-picker' }
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-agent-user-flows.mjs')) {
             if ($appsOnly -and $script -notin @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')) { continue }
             if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
@@ -660,6 +665,7 @@ jobs:
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1
           .github/scripts/windows-suite-shortcut-launch.test.ps1
+          .github/scripts/windows-installer-ui.test.ps1 -NativePickerRoots
       - uses: actions/download-artifact@v8
         with:
           name: workspace-wsl-${{ github.sha }}

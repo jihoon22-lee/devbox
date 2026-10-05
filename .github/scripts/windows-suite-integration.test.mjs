@@ -51,3 +51,101 @@ test("incoming review uses accessible region name rather than absent visible hea
   });
   assert.deepEqual(events, ["ready", "click"]);
 });
+
+// Native accept acknowledgement and React's incomingText effect complete after input dispatch.
+test("source apply observes the accepted Unicode input before continuing without replay", async () => {
+  let clicks = 0;
+  let reads = 0;
+  await runner.applySourceSelection(
+    {
+      ui: {
+        click: async (target) => {
+          assert.equal(target.name, "적용");
+          assert.equal(target.scope.name, "Toolbox 텍스트 미리보기");
+          clicks++;
+        },
+      },
+      cdp: {
+        evaluate: async (expression) => {
+          assert.ok(expression.includes('textarea[aria-label="스마트 워크플로 입력"]'));
+          assert.ok(expression.includes('.value === "원본\\n"'));
+          return ++reads !== 1;
+        },
+      },
+    },
+    "원본\n",
+  );
+  assert.equal(clicks, 1);
+  assert.equal(reads, 2);
+});
+
+test("Knowledge cancel waits for delayed native discard and preview removal without replay", async () => {
+  const events = [];
+  let release;
+  const discarded = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = runner.cancelKnowledgePreview({
+    ui: {
+      click: async (target) => {
+        assert.equal(target.name, "취소");
+        assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
+        events.push("cancel");
+      },
+    },
+    cdp: {
+      evaluate: async () => {
+        events.push("observe");
+        await discarded;
+        return true;
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["cancel", "observe"]);
+  release();
+  await pending;
+  assert.deepEqual(events, ["cancel", "observe"]);
+});
+
+test("Knowledge saved file does not authorize duplicate review before preview closes", async () => {
+  let closed = false;
+  let observations = 0;
+  await runner.awaitKnowledgePreviewClosed({
+    cdp: {
+      evaluate: async () => {
+        assert.equal(closed, false);
+        if (++observations === 1) return false;
+        closed = true;
+        return true;
+      },
+    },
+  });
+  assert.equal(closed, true);
+  assert.equal(observations, 2);
+});
+
+test("connection review waits for delayed enabled approval before exactly one approval", async () => {
+  const events = [];
+  let release;
+  const approvedReady = new Promise((resolve) => {
+    release = resolve;
+  });
+  const operation = runner.restoreSuiteConnection({
+    ui: {
+      click: async (target) => {
+        events.push(target.name);
+      },
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "button", name: "연결 켜기" });
+        events.push("observe approval");
+        await approvedReady;
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["이 설치 확인", "observe approval"]);
+  release();
+  await operation;
+  assert.deepEqual(events, ["이 설치 확인", "observe approval", "연결 켜기"]);
+});

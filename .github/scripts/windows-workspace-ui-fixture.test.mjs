@@ -3,7 +3,14 @@ import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createWorkspaceUiFixture, loseRuntimeReply } from "./windows-workspace-ui-fixture.mjs";
+import {
+  createWorkspaceUiFixture,
+  prepareTerminalStart,
+  dismissFailedManagedInstall,
+  loseRuntimeReply,
+  openCurrentProjectTerminal,
+  waitForRuntimeControlIdle,
+} from "./windows-workspace-ui-fixture.mjs";
 
 function performanceFixture({
   readinessFailure = null,
@@ -144,7 +151,9 @@ test("WSL combobox readiness precedes one keyboard option selection", async () =
 
 function pausedReplyFixture({ action = "지금 실행", readFailure = null, disableFailure = null } = {}) {
   const events = [];
-  let listener, release;
+  let listener,
+    release,
+    responsePaused = false;
   const click = (target, intent) => {
     events.push(["click", target.name, intent]);
     listener({ callFrames: [{ callFrameId: "owned-frame" }] });
@@ -157,9 +166,18 @@ function pausedReplyFixture({ action = "지금 실행", readFailure = null, disa
       command: async (method, params) => {
         events.push([method, params]);
         if (method === "Runtime.evaluate") return { result: { objectId: "owned-function" } };
+        if (method === "Debugger.setBreakpointOnFunctionCall") return { breakpointId: "owned-breakpoint" };
+        if (method === "Debugger.resume") {
+          responsePaused = true;
+          listener({ callFrames: [{ callFrameId: "owned-frame" }] });
+        }
         if (method === "Debugger.evaluateOnCallFrame") {
           if (readFailure) throw readFailure;
+          if (params.expression === "window.__TAURI_INTERNALS__.runCallback")
+            return { result: { objectId: "owned-callback" } };
           assert.equal(params.callFrameId, "owned-frame");
+          if (!responsePaused)
+            return { result: { value: { requestId: "owned-request", operationId: "original-owned-operation" } } };
           return { result: { value: [{ operationId: "original-owned-operation" }] } };
         }
         if (method === "Debugger.disable") {
@@ -375,4 +393,121 @@ test("lost reply requires its exact native unacknowledged receipt after crash", 
     [{ ...receipt, targetId: "foreign" }],
   ])
     assert.throws(() => assertLostRuntimeReceipt(receipts, "original", "job", "run_job_now"));
+});
+
+test("lost reply binds the intended control request before accepting its response", async () => {
+  const { events, options } = pausedReplyFixture({ action: "중지" });
+  await loseRuntimeReply(options);
+  const conditions = events
+    .filter(([event]) => event === "Debugger.setBreakpointOnFunctionCall")
+    .map(([, params]) => params.condition);
+  assert.equal(conditions.length, 2);
+  const matchRequest = new Function("cmd", "payload", `return ${conditions[0]}`);
+  const request = (method) => ({ request: { method: "runtime_control", args: { method, args: { id: "owned-job" } } } });
+  assert.equal(matchRequest("plugin:workspace|runtime", request("run_job_now")), false);
+  assert.equal(matchRequest("plugin:workspace|runtime", request("stop_active_run")), true);
+  const matchResponse = new Function("data", `return ${conditions[1]}`);
+  assert.equal(
+    matchResponse({ value: { jobId: "owned-job" }, operation: { provenance: { requestId: "earlier-run" } } }),
+    false,
+  );
+  assert.equal(
+    matchResponse({ value: { jobId: "owned-job" }, operation: { provenance: { requestId: "owned-request" } } }),
+    true,
+  );
+});
+
+test("terminal route waits for its actionable opener after lazy navigation", async () => {
+  const events = [];
+  let ready = false;
+  await openCurrentProjectTerminal({
+    click: async ({ name }) => {
+      if (name !== "터미널") assert.ok(ready);
+      events.push(name);
+    },
+    waitForTarget: async ({ name }) => {
+      assert.equal(name, "현재 프로젝트의 터미널 열기");
+      ready = true;
+    },
+  });
+  assert.deepEqual(events, ["터미널", "현재 프로젝트의 터미널 열기"]);
+});
+test("next lost reply waits for the prior local and durable acknowledgement", async () => {
+  let local = [{ operationId: "prior" }],
+    receipts = [{ targetId: "job", reviewed: false }];
+  await waitForRuntimeControlIdle(
+    () => local,
+    () => receipts,
+    async (probe) => {
+      assert.equal(await probe(), false);
+      local = [];
+      assert.equal(await probe(), false);
+      receipts = [];
+      assert.equal(await probe(), true);
+    },
+    "job",
+  );
+});
+
+test("terminal companion waits for its renderer and review before actual input", async () => {
+  const actions = [];
+  let ready = false,
+    reviewed = false;
+  await prepareTerminalStart(
+    {
+      async waitForTarget(target) {
+        actions.push(target.name);
+        if (target.name === "시작 경로") ready = true;
+        if (target.name === "실행") reviewed = true;
+      },
+      async fill(target) {
+        assert.equal(ready, true);
+        actions.push(target.name);
+      },
+      async click(target) {
+        if (target.name === "실행") assert.equal(reviewed, true);
+        actions.push(target.name);
+      },
+    },
+    "owned-root",
+    "owned-command",
+  );
+  assert.deepEqual(actions, ["시작 경로", "시작 경로", "시작 명령", "+ 터미널", "실행", "실행"]);
+});
+
+test("failed managed install is observed before cancel and waits for dialog retirement", async () => {
+  let failed = false,
+    ready = false,
+    closing = false,
+    open = true;
+  const confirmation = { role: "dialog", name: "관리형 서버 작업 확인" };
+  await dismissFailedManagedInstall({
+    ui: {
+      async text() {
+        failed = true;
+        return "관리형 서버를 설치하지 못했습니다.";
+      },
+      async waitForTarget(target) {
+        assert.equal(failed, true);
+        assert.deepEqual(target.scope, confirmation);
+        ready = true;
+      },
+      async click(target) {
+        assert.equal(ready, true);
+        assert.equal(target.name, "취소");
+        closing = true;
+      },
+    },
+    async isOpen() {
+      return open;
+    },
+    async wait(predicate) {
+      if (closing) {
+        assert.equal(await predicate(), false);
+        open = false;
+      }
+      assert.equal(await predicate(), true);
+    },
+  });
+  assert.equal(open, false);
 });

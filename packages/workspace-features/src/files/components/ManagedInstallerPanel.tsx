@@ -375,6 +375,11 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
     }
   };
 
+  const beginReview = (next: PendingAction) => {
+    setError(null);
+    setPending(next);
+  };
+
   const confirmPending = async () => {
     if (!pending || operationInFlightRef.current) return;
     const { manifest, status, kind } = pending;
@@ -443,7 +448,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
         <span className="lsp-installer-state">자동 설치 안 함</span>
       </div>
 
-      {error && (
+      {error && !pending && (
         <div className="lsp-installer-error" role="alert">
           <span>{error}</span>
           <button
@@ -497,11 +502,11 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
               busyKey={busyKey}
               recoveryBusy={recoveryBusy}
               onInstall={(nextManifest, nextStatus) =>
-                setPending({ kind: "install", manifest: nextManifest, status: nextStatus })
+                beginReview({ kind: "install", manifest: nextManifest, status: nextStatus })
               }
               onImport={(nextManifest, nextStatus) => void chooseArchive(nextManifest, nextStatus)}
               onUninstall={(nextManifest, nextStatus) =>
-                setPending({ kind: "uninstall", manifest: nextManifest, status: nextStatus })
+                beginReview({ kind: "uninstall", manifest: nextManifest, status: nextStatus })
               }
             />
           );
@@ -523,7 +528,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
                 onInstall={() => undefined}
                 onImport={() => undefined}
                 onUninstall={(nextManifest, nextStatus) =>
-                  setPending({ kind: "uninstall", manifest: nextManifest, status: nextStatus })
+                  beginReview({ kind: "uninstall", manifest: nextManifest, status: nextStatus })
                 }
               />
             );
@@ -558,6 +563,11 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
                   : "선택한 archive는 아래 SHA-256과 일치할 때만 app-owned cache에 복사됩니다."
                 : "다음 metadata를 확인한 뒤 작업을 승인하세요. 제거는 정확한 indexed key에만 적용됩니다."}
             </p>
+            {error && (
+              <p className="lsp-installer-error" role="alert">
+                {error}
+              </p>
+            )}
             <dl className="lsp-confirmation-metadata">
               <div>
                 <dt>이름 / 버전</dt>

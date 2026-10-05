@@ -2,7 +2,7 @@ import { navigateWorkspaceFiles } from "./windows-workspace-ui-observations.mjs"
 // L4 preparations are identified separately; domain transfers/reviews use real UI input.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { readFile, readdir, rename } from "node:fs/promises";
+import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { createApiUserFlowContext, markApiCleanupFailure } from "./windows-api-user-flow-adapter.mjs";
@@ -51,6 +51,53 @@ async function pending(context) {
 export async function review(context) {
   await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
+}
+export async function applySourceSelection(api, expected) {
+  assert.ok(typeof expected === "string" && expected.length > 0 && Buffer.byteLength(expected) <= 1_000_000);
+  await api.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
+  try {
+    await until(
+      // Read the controlled textarea itself, including when it is below the
+      // viewport. An AX name fallback is not evidence of its accepted value.
+      () =>
+        api.cdp.evaluate(`(()=>{
+      const inputs = document.querySelectorAll('textarea[aria-label="스마트 워크플로 입력"]');
+      return inputs.length === 1 && inputs[0].value === ${JSON.stringify(expected)};
+    })()`),
+      "Accepted source selection did not reach Smart input",
+    );
+  } catch (error) {
+    try {
+      const observation = await api.cdp.evaluate(`(()=>{
+        const inputs = document.querySelectorAll('textarea[aria-label="스마트 워크플로 입력"]');
+        const value = inputs.length === 1 ? inputs[0].value : null;
+        return { inputCount: Math.min(inputs.length, 2), empty: value === '',
+          exact: value === ${JSON.stringify(expected)},
+          containsExpected: typeof value === 'string' && value.includes(${JSON.stringify(expected)}),
+          previewPresent: !!document.querySelector('.toolbox-handoff-dialog'),
+          acceptedActionsPresent: !!document.querySelector('.incoming-diff-actions') };
+      })()`);
+      await writeFile("product-foundation-evidence/handoff-input-first-failure.json", JSON.stringify(observation), {
+        flag: "wx",
+      });
+    } catch {}
+    throw error;
+  }
+}
+export async function awaitKnowledgePreviewClosed(knowledge) {
+  await until(
+    () => knowledge.cdp.evaluate("document.querySelector('.handoff-dialog') === null"),
+    "Knowledge preview decision did not complete",
+  );
+}
+export async function cancelKnowledgePreview(knowledge) {
+  await knowledge.ui.click(button("취소", draftDialog));
+  await awaitKnowledgePreviewClosed(knowledge);
+}
+export async function restoreSuiteConnection(api) {
+  await api.ui.click(button("이 설치 확인"));
+  await api.ui.waitForTarget(button("연결 켜기"));
+  await api.ui.click(button("연결 켜기"));
 }
 export async function selectSource(workspace) {
   await workspace.ui.click({ role: "textbox", name: "" });
@@ -250,8 +297,13 @@ export async function run(api) {
         await selectSource(workspace);
         await review(api);
         await expectText(api, "Toolbox 텍스트 미리보기");
-        await api.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
-        assert.ok((await api.ui.text(textbox("스마트 워크플로 입력"))).includes("원본"));
+        await applySourceSelection(
+          api,
+          original
+            .toString("utf8")
+            .replace(/^\uFEFF/u, "")
+            .replace(/\r\n/g, "\n"),
+        );
         await selectSource(workspace);
         expiredAt = Date.now() + 122000;
         record(
@@ -272,7 +324,7 @@ export async function run(api) {
         await sendStored(api);
         await review(knowledge);
         await expectText(knowledge, output.trim());
-        await knowledge.ui.click(button("취소", draftDialog));
+        await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), before);
         await sendStored(api);
         await review(knowledge);
@@ -282,6 +334,7 @@ export async function run(api) {
           "Explicit draft save did not create exactly one note",
         );
         const saved = await snapshotFiles(root);
+        await awaitKnowledgePreviewClosed(knowledge);
         await sendStored(api);
         await review(knowledge);
         await expectText(knowledge, "이미 저장한 결과 초안입니다.");
@@ -296,7 +349,7 @@ export async function run(api) {
         knowledge = await coldReceiver(knowledge, () => sendStored(api));
         await review(knowledge);
         await expectText(knowledge, Buffer.from("cold owned output").toString("base64"));
-        await knowledge.ui.click(button("취소", draftDialog));
+        await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), saved);
         record(
           "Normal product activation launches the exact candidate Knowledge member from a closed state; owned registry CDP instrumentation observes actual preview/cancel without relaunch",
@@ -354,8 +407,7 @@ export async function run(api) {
         await sendStored(api);
         await expectText(api, "전달 결과를 확인하지 못했습니다.");
         assert.deepEqual(await snapshotFiles(root), before);
-        await api.ui.click(button("이 설치 확인"));
-        await api.ui.click(button("연결 켜기"));
+        await restoreSuiteConnection(api);
         await expectText(api, "이 설치의 제품이 연결되어 있습니다.");
         await api.ui.click(button("제품 연결"));
         record(
@@ -381,7 +433,7 @@ export async function run(api) {
         knowledge = await createInstalledProductContext("knowledge");
         await sendStored(api);
         await review(knowledge);
-        await knowledge.ui.click(button("취소", draftDialog));
+        await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), before);
         record(
           "Actual recovered receiver review succeeds after exact member restoration; cancellation still creates no note and source bytes remain intact",

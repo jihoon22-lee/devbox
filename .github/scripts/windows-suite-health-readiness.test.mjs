@@ -67,3 +67,23 @@ test("duplicate products cannot substitute for the four owned identities", async
     ),
   );
 });
+
+import { projectKnowledgeStartupStatus } from "./windows-suite-health-readiness.mjs";
+test("Knowledge startup failure evidence keeps fixed readiness reason without private values", () => {
+  const value = projectKnowledgeStartupStatus({
+    operation: { outcome: { state: "failed", code: "vault_owner_busy" } },
+    value: { vaultChange: true, root: "private-path" },
+  });
+  assert.equal(value.code, "vault_owner_busy");
+  assert.equal(value.vaultChange, null);
+  assert.equal(
+    projectKnowledgeStartupStatus({ operation: { outcome: { state: "failed", code: "import_schema_unsupported" } } })
+      .code,
+    "import_schema_unsupported",
+  );
+  assert.ok(!JSON.stringify(value).includes("private-path"));
+  assert.equal(
+    projectKnowledgeStartupStatus({ operation: { outcome: { state: "failed", code: "private-path" } } }).code,
+    null,
+  );
+});

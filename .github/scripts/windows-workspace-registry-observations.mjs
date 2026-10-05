@@ -36,3 +36,21 @@ export async function selectRegisteredWorkspaceRoot(ui, registry, wait, root) {
   await ui.click(target);
   return project;
 }
+
+export async function observeWorkspaceSelection({ context, registry, root }) {
+  try {
+    const selected = await context();
+    const snapshot = await registry();
+    const matches = snapshot.worktrees.filter((tree) => sameRoot(root, tree.binding.root));
+    const target = matches.length === 1 ? matches[0] : null;
+    return {
+      contextPresent: selected != null,
+      targetCount: matches.length,
+      projectMatches: !!target && target.projectId === selected?.projectId,
+      worktreeMatches: !!target && target.id === selected?.worktreeId,
+      revisionMatches: !!target && target.revision === selected?.revision,
+    };
+  } catch {
+    return { unavailable: true };
+  }
+}

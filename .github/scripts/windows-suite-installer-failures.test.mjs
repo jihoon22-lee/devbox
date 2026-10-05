@@ -265,6 +265,51 @@ test("delivery health releases the exited Knowledge policy before another Knowle
 });
 
 import { activationStateObservation, bestEffortActivationObservation } from "./windows-suite-user-flow.mjs";
+test("rejected setup cancellation confirms one owned nested abort prompt exactly once", async () => {
+  const { cancelRejectedInstaller } = await import("./windows-suite-installer-actions.mjs");
+  const calls = [];
+  let confirmations = 0;
+  const child = { exitCode: null };
+  const installer = {
+    child,
+    invoke: (id) => {
+      calls.push(id);
+      if (id === "6") confirmations++;
+    },
+    inspect: () => ({ windows: [{}], controls: [{ id: "6", enabled: true, visible: true }] }),
+  };
+  await cancelRejectedInstaller(installer, async (check) => {
+    assert.equal(check(), false);
+    assert.equal(check(), false);
+    child.exitCode = 1;
+    assert.equal(check(), true);
+  });
+  assert.equal(confirmations, 1);
+  assert.deepEqual(calls, ["2", "6"]);
+});
+test("rejected setup never confirms hidden, disabled or ambiguous abort controls", async () => {
+  const { cancelRejectedInstaller } = await import("./windows-suite-installer-actions.mjs");
+  for (const controls of [
+    [{ id: "6", enabled: false, visible: true }],
+    [{ id: "6", enabled: true, visible: false }],
+    [
+      { id: "6", enabled: true, visible: true },
+      { id: "6", enabled: true, visible: true },
+    ],
+  ]) {
+    const calls = [],
+      child = { exitCode: null };
+    await cancelRejectedInstaller(
+      { child, invoke: (id) => calls.push(id), inspect: () => ({ controls }) },
+      async (check) => {
+        assert.equal(check(), false);
+        child.exitCode = 1;
+        assert.equal(check(), true);
+      },
+    );
+    assert.deepEqual(calls, ["2"]);
+  }
+});
 test("activation failure evidence exposes only bounded phase and revision", () => {
   assert.deepEqual(activationStateObservation({ phase: "health", revision: 3, secret: "private" }), {
     phase: "health",
@@ -297,4 +342,58 @@ test("owned helper observation retains emitted checkpoint source codes without r
   );
   assert.deepEqual(observation.issues, ["checkpoint_source_changed"]);
   assert.ok(!JSON.stringify(observation).includes("private-path"));
+});
+
+test("owned removal failure expands exact Details and preserves only fixed native codes", () => {
+  let expanded = false;
+  const installer = {
+    child: { exitCode: null },
+    inspect: () => ({
+      controls: [
+        { name: "제거를 완료하지 못했습니다" },
+        ...(expanded ? [{ name: "bootstrap_owner_changed private-path" }] : []),
+      ],
+      buttons: [{ id: "1027", enabled: true, visible: true }],
+    }),
+    invoke: (id) => {
+      assert.equal(id, "1027");
+      expanded = true;
+    },
+  };
+  const evidence = inspectInstallerFailure(installer, "removal execution");
+  assert.deepEqual(evidence.statuses, ["removal_failed"]);
+  assert.deepEqual(evidence.issues, ["bootstrap_owner_changed"]);
+  assert.ok(!JSON.stringify(evidence).includes("private-path"));
+});
+
+import { acquireOwnedInstaller } from "./windows-suite-installer-actions.mjs";
+test("failed installer acquisition releases only child reference and preserves first failure", async () => {
+  const original = Object.freeze(new Error("identity unavailable"));
+  let unrefs = 0;
+  const child = {
+    unref: () => {
+      unrefs++;
+    },
+    kill: () => assert.fail("unverified child must not be killed"),
+  };
+  await assert.rejects(
+    acquireOwnedInstaller(child, async () => {
+      throw original;
+    }),
+    (error) => error === original,
+  );
+  assert.equal(unrefs, 1);
+  await assert.rejects(
+    acquireOwnedInstaller(
+      {
+        unref: () => {
+          throw new Error("unref");
+        },
+      },
+      async () => {
+        throw original;
+      },
+    ),
+    (error) => error === original,
+  );
 });

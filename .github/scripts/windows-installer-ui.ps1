@@ -182,6 +182,12 @@ public static class DevboxInstallerAutomation {
   [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
   [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
   [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern IntPtr SendMessageTimeoutW(IntPtr window,uint message,UIntPtr wparam,IntPtr lparam,uint flags,uint timeout,out UIntPtr result);
+  public static bool IsPickerRoot(int dialogHandle,uint processId) {
+    IntPtr dialog=new IntPtr(dialogHandle);
+    uint owner; GetWindowThreadProcessId(dialog,out owner);
+    var name=new StringBuilder(128); GetClassName(dialog,name,name.Capacity);
+    return dialogHandle!=0 && owner==processId && GetAncestor(dialog,2)==dialog && IsWindowVisible(dialog) && name.ToString()=="#32770";
+  }
   public static bool IsPickerControl(int dialogHandle,int controlHandle,uint processId,string expectedClass) {
     IntPtr dialog=new IntPtr(dialogHandle),control=new IntPtr(controlHandle);
     uint dialogProcess,controlProcess;
@@ -189,13 +195,68 @@ public static class DevboxInstallerAutomation {
     var name=new StringBuilder(128); GetClassName(control,name,name.Capacity);
     return dialogHandle!=0 && controlHandle!=0 && dialogProcess==processId && controlProcess==processId && IsChild(dialog,control) && IsWindowVisible(control) && name.ToString()==expectedClass;
   }
+  public static Input[] PickerTextInput(string value) {
+    if(String.IsNullOrEmpty(value) || value.Length>32767 || value.IndexOf('\0')>=0)
+      throw new InvalidOperationException("Owned filename input outside bound");
+    var input=new Input[4+value.Length*2];
+    ushort[] keys={0x11,0x41,0x41,0x11};
+    for(int i=0;i<4;i++) { input[i].type=1; input[i].value.keyboard.key=keys[i]; input[i].value.keyboard.flags=i>=2?2u:0u; }
+    for(int i=0;i<value.Length;i++) {
+      input[4+i*2].type=1; input[4+i*2].value.keyboard.scan=value[i]; input[4+i*2].value.keyboard.flags=4;
+      input[5+i*2]=input[4+i*2]; input[5+i*2].value.keyboard.flags=6;
+    }
+    return input;
+  }
+  public static Input[] PickerKeyRelease(Input[] input,uint sent) {
+    if(sent==0) return new Input[0];
+    var release=new List<Input>();
+    foreach(ushort key in new ushort[]{0x41,0x11}) {
+      var item=new Input(); item.type=1; item.value.keyboard.key=key; item.value.keyboard.flags=2; release.Add(item);
+    }
+    if(sent>4 && sent<(uint)input.Length && input[(int)sent-1].value.keyboard.flags==4) {
+      var item=input[(int)sent-1]; item.value.keyboard.flags=6; release.Add(item);
+    }
+    return release.ToArray();
+  }
+  public static void VerifyPickerFocus(int dialog,int edit,uint processId) {
+    uint owner; uint thread=GetWindowThreadProcessId(new IntPtr(dialog),out owner);
+    var info=new GuiThreadInfo(); info.size=Marshal.SizeOf(typeof(GuiThreadInfo));
+    if(!IsPickerControl(dialog,edit,processId,"Edit") || owner!=processId ||
+      GetForegroundWindow()!=new IntPtr(dialog) || !GetGUIThreadInfo(thread,ref info) || info.focus!=new IntPtr(edit))
+      throw new InvalidOperationException("Owned filename focus changed");
+  }
   public static void SetPickerFilename(int dialog,int edit,uint processId,string value) {
     if(!IsPickerControl(dialog,edit,processId,"Edit") || !IsWindowEnabled(new IntPtr(edit))) throw new InvalidOperationException("Owned filename editor changed");
-    IntPtr text=Marshal.StringToHGlobalUni(value);
+    var input=PickerTextInput(value);
+    foreach(int key in new[]{0x10,0x11,0x12,0x41,0x5B,0x5C})
+      if((GetAsyncKeyState(key)&0x8000)!=0) throw new InvalidOperationException("Native modifier already pressed");
+    FocusMain(new IntPtr(dialog));
+    uint owner; uint targetThread=GetWindowThreadProcessId(new IntPtr(edit),out owner);
+    uint currentThread=GetCurrentThreadId(); bool attached=false;
     try {
-      UIntPtr result;
-      if(SendMessageTimeoutW(new IntPtr(edit),0x000C,UIntPtr.Zero,text,0x23,1500,out result)==IntPtr.Zero || result==UIntPtr.Zero) throw new InvalidOperationException("Owned filename input unavailable");
-    } finally { Marshal.FreeHGlobal(text); }
+      if(currentThread!=targetThread) {
+        NativeMessage ignored; PeekMessage(out ignored,IntPtr.Zero,0,0,0);
+        if(!AttachThreadInput(currentThread,targetThread,true)) throw new InvalidOperationException("Owned filename focus attachment failed");
+        attached=true;
+      }
+      SetFocus(new IntPtr(edit));
+    } finally {
+      if(attached && !AttachThreadInput(currentThread,targetThread,false)) throw new InvalidOperationException("Owned filename focus detach failed");
+    }
+    VerifyPickerFocus(dialog,edit,processId);
+    uint sent=0; bool failed=false;
+    try {
+      // Real keyboard notifications update IFileDialog's selected filename;
+      // WM_SETTEXT alone changes the visible Edit without committing COM state.
+      VerifyPickerFocus(dialog,edit,processId);
+      sent=SendInput((uint)input.Length,input,Marshal.SizeOf(typeof(Input)));
+      if(sent!=(uint)input.Length) throw new InvalidOperationException("Owned filename input incomplete");
+    } catch { failed=true; throw; }
+    finally {
+      var release=PickerKeyRelease(input,sent);
+      if(release.Length>0 && SendInput((uint)release.Length,release,Marshal.SizeOf(typeof(Input)))!=(uint)release.Length && !failed)
+        throw new InvalidOperationException("Owned filename key release incomplete");
+    }
   }
   public static bool PickerFilenameMatches(int dialog,int edit,uint processId,string expected) {
     if(!IsPickerControl(dialog,edit,processId,"Edit")) throw new InvalidOperationException("Owned filename editor changed");
@@ -206,7 +267,8 @@ public static class DevboxInstallerAutomation {
       return String.Equals(Marshal.PtrToStringUni(text,(int)result.ToUInt64()),expected,StringComparison.Ordinal);
     } finally { Marshal.FreeHGlobal(text); }
   }
-  public static bool ClickPickerButton(int dialog,int button,uint processId) {
+  public static bool ClickPickerButton(int dialog,int edit,int button,uint processId) {
+    VerifyPickerFocus(dialog,edit,processId);
     if(!IsPickerControl(dialog,button,processId,"Button") || GetDlgCtrlID(new IntPtr(button))!=1 || !IsWindowEnabled(new IntPtr(button))) throw new InvalidOperationException("Owned picker confirmation changed");
     UIntPtr result;
     // Timeout never cancels a message already handled: observe closure, never retry.
@@ -299,6 +361,24 @@ if($Action -eq 'Inspect' -and $windows.Count -ne 1) {
   @{processId=$TargetProcessId;startTimeUtc=$started;windowCount=$observedWindowCount;selectedWindowCount=$windows.Count;nativeWindowCount=$nativeInventory.count;nativeWindows=$nativeInventory.windows;windows=@($windowRecords | ForEach-Object {$_.metadata});controls=$diagnosticControls} | ConvertTo-Json -Depth 4 -Compress
   exit 0
 }
+function Get-OwnedNativePickers($inventory,[int]$ownerProcessId,[scriptblock]$resolve={
+  param($handle,$owner)
+  if(-not [DevboxInstallerAutomation]::IsPickerRoot([int]$handle,$owner)){throw 'Owned native picker changed'}
+  $element=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]::new($handle))
+  if(-not [DevboxInstallerAutomation]::IsPickerRoot([int]$handle,$owner)){throw 'Owned native picker changed'}
+  $element
+}) {
+  if($inventory.count -gt 32 -or @($inventory.windows).Count -gt 32){throw 'Native picker inventory exceeded bound'}
+  $candidates=@($inventory.windows | Where-Object {$_.visible -and $_.topLevel -and $_.className -ceq '#32770'})
+  if($candidates.Count -gt 1){throw 'Ambiguous owned native file picker'}
+  foreach($candidate in $candidates) {
+    if($candidate.nativeHandle -eq 0 -or $candidate.nativeProcessId -ne $ownerProcessId){throw 'Native picker owner changed'}
+    $element=& $resolve $candidate.nativeHandle $ownerProcessId
+    if($null -eq $element -or $element.Current.NativeWindowHandle -ne $candidate.nativeHandle -or
+      $element.Current.ProcessId -ne $ownerProcessId -or $element.Current.ClassName -cne '#32770'){throw 'Native picker UIA root changed'}
+    $element
+  }
+}
 function Get-OwnedPickerControls($dialog) {
   $hostCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,'FileNameControlHost')
   $hosts=$dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$hostCondition)
@@ -326,7 +406,7 @@ function Get-OwnedPickerControls($dialog) {
   @{fieldCount=$fields.Count;editCount=$edits.Count;confirmCount=$buttons.Count;edit=$edit;button=$button}
 }
 if($Action -eq 'InspectFilePicker') {
-  $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
+  $dialogs=@(Get-OwnedNativePickers $nativeInventory $TargetProcessId)
   $observation=@{pickerCount=$dialogs.Count;fieldCount=0;editCount=0;confirmCount=0;filenameReady=$false;confirmationReady=$false}
   if($dialogs.Count -eq 1) {
     $dialog=$dialogs[0]
@@ -354,16 +434,22 @@ if($Action -in @('ChooseFile','SaveFile')) {
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'File picker input must be regular file'}
   }
   if(-not $file.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){throw 'File picker path outside owned fixture'}
-  $dialogs=@($windows | Where-Object {$_.Current.ClassName -eq '#32770'})
+  $dialogs=@(Get-OwnedNativePickers $nativeInventory $TargetProcessId)
   if($dialogs.Count -ne 1){throw 'Expected one owned native file picker'}
   $dialog=$dialogs[0]
   $controls=Get-OwnedPickerControls $dialog
   if($controls.fieldCount -ne 1 -or $controls.editCount -ne 1 -or $null -eq $controls.edit){throw 'Owned file name field unavailable'}
   if($controls.confirmCount -ne 1 -or $null -eq $controls.button){throw 'Unique file picker confirmation unavailable'}
   [DevboxInstallerAutomation]::SetPickerFilename($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)
-  if(-not [DevboxInstallerAutomation]::PickerFilenameMatches($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)){throw 'Owned filename did not match exact requested path before confirmation'}
+  $inputDeadline=[DateTime]::UtcNow.AddSeconds(2)
+  do {
+    $matched=[DevboxInstallerAutomation]::PickerFilenameMatches($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)
+    if($matched){break}
+    Start-Sleep -Milliseconds 25
+  } while([DateTime]::UtcNow -lt $inputDeadline)
+  if(-not $matched){throw 'Owned filename did not match exact requested path before confirmation'}
   $dialogHandle=$dialog.Current.NativeWindowHandle
-  $acknowledged=[DevboxInstallerAutomation]::ClickPickerButton($dialog.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId)
+  $acknowledged=[DevboxInstallerAutomation]::ClickPickerButton($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId)
   $deadline=[DateTime]::UtcNow.AddSeconds(10)
   do {
     $nativeAfter=[DevboxInstallerAutomation]::ObserveNativeWindows($TargetProcessId)

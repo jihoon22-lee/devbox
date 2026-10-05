@@ -3,6 +3,7 @@ import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { dismissWorkspaceUndo } from "./windows-workspace-agent-registry-ui.mjs";
 import {
   selectRegisteredWorkspaceRoot,
+  observeWorkspaceSelection,
   waitForSelectedWorkspaceRoot,
 } from "./windows-workspace-registry-observations.mjs";
 import { observeWorkspaceInput } from "./windows-workspace-input-ui.mjs";
@@ -15,6 +16,24 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { downloadArchive } from "./windows-workspace-lsp.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
+export async function prepareTerminalStart(ui, root, command) {
+  await ui.waitForTarget({ role: "textbox", name: "시작 경로" });
+  await ui.fill({ role: "textbox", name: "시작 경로" }, root);
+  await ui.fill({ role: "textbox", name: "시작 명령" }, command);
+  await ui.click({ role: "button", name: "+ 터미널" });
+  await ui.waitForTarget({ role: "button", name: "실행" });
+  await ui.click({ role: "button", name: "실행" });
+}
+export async function dismissFailedManagedInstall({ ui, wait, isOpen }) {
+  await wait(
+    async () => (await ui.text({ role: "alert", name: "" })).includes("관리형 서버를 설치하지 못했습니다."),
+    "managed install failed",
+  );
+  const cancel = { role: "button", name: "취소", scope: { role: "dialog", name: "관리형 서버 작업 확인" } };
+  await ui.waitForTarget(cancel);
+  await ui.click(cancel);
+  await wait(async () => !(await isOpen()), "failed managed install review closed");
+}
 export function assertLostRuntimeReceipt(receipts, operationId, targetId, method) {
   const matching = receipts.filter((receipt) => receipt.operationId === operationId);
   assert.equal(matching.length, 1, "Lost native reply must retain its exact unacknowledged receipt after process exit");
@@ -44,23 +63,51 @@ export async function loseRuntimeReply({
     await cdp.command("Debugger.enable");
     enabled = true;
     const functionValue = await cdp.command("Runtime.evaluate", {
-      expression: "window.__TAURI_INTERNALS__.runCallback",
+      expression: "window.__TAURI_INTERNALS__.invoke",
       returnByValue: false,
     });
     assert.ok(functionValue.result.objectId);
     unsubscribe = cdp.onEvent("Debugger.paused", (event) => {
       frameId = event?.callFrames?.[0]?.callFrameId ?? null;
     });
-    await cdp.command("Debugger.setBreakpointOnFunctionCall", {
+    const method = action === "중지" ? "stop_active_run" : "run_job_now";
+    const entry = await cdp.command("Debugger.setBreakpointOnFunctionCall", {
       objectId: functionValue.result.objectId,
-      condition: `data?.value?.jobId===${JSON.stringify(jobId)}`,
+      condition: `cmd==="plugin:workspace|runtime"&&payload?.request?.method==="runtime_control"&&payload.request.args?.method===${JSON.stringify(method)}&&payload.request.args.args?.id===${JSON.stringify(jobId)}`,
     });
     const target = { role: "button", name: action, scope };
     click = action === "중지" ? ui.clickWithConfirmation(target, true) : ui.click(target);
     click.catch(() => {});
     await wait(
       async () => typeof frameId === "string" && frameId.length > 0,
-      "native result paused before renderer receipt",
+      "intended native control request observed before dispatch",
+    );
+    const submitted = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: "({requestId:payload.request.header.requestId,operationId:payload.request.args.operationId})",
+      returnByValue: true,
+      silent: true,
+    });
+    assert.ok(!submitted.exceptionDetails, "Native control request observation failed");
+    const request = submitted.result?.value;
+    assert.equal(typeof request?.requestId, "string");
+    assert.equal(typeof request?.operationId, "string");
+    const callback = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: "window.__TAURI_INTERNALS__.runCallback",
+      returnByValue: false,
+    });
+    assert.ok(callback.result.objectId);
+    await cdp.command("Debugger.removeBreakpoint", { breakpointId: entry.breakpointId });
+    await cdp.command("Debugger.setBreakpointOnFunctionCall", {
+      objectId: callback.result.objectId,
+      condition: `data?.operation?.provenance?.requestId===${JSON.stringify(request.requestId)}&&data?.value?.jobId===${JSON.stringify(jobId)}`,
+    });
+    frameId = null;
+    await cdp.command("Debugger.resume");
+    await wait(
+      async () => typeof frameId === "string" && frameId.length > 0,
+      "exact native control result paused before renderer receipt",
     );
     // Runtime.evaluate awaits execution on the paused renderer. This read stays
     // in its current call frame and never resumes/consumes the native callback.
@@ -74,6 +121,7 @@ export async function loseRuntimeReply({
     const requests = response.result?.value;
     assert.ok(Array.isArray(requests), "Paused pending-request observation must be an array");
     assert.equal(requests.length, 1, "Lost reply must retain exactly one original request");
+    assert.equal(requests[0].operationId, request.operationId, "Paused reply must match the original control request");
     await beforeRestart();
     await restart(true);
     restarted = true;
@@ -93,6 +141,22 @@ export async function loseRuntimeReply({
       await click?.catch(() => {});
     }
   }
+}
+
+export async function openCurrentProjectTerminal(ui) {
+  await ui.click({ role: "button", name: "터미널" });
+  const target = { role: "button", name: "현재 프로젝트의 터미널 열기" };
+  await ui.waitForTarget(target);
+  await ui.click(target);
+}
+
+export async function waitForRuntimeControlIdle(pending, receipts, wait, jobId) {
+  await wait(
+    async () =>
+      (await pending()).length === 0 &&
+      !(await receipts()).some((receipt) => receipt.targetId === jobId && !receipt.reviewed),
+    "previous explicit control acknowledged before the next lost reply",
+  );
 }
 
 export async function stopReconciledRuntimeRun(ui, wait, activeRun, scope) {
@@ -454,6 +518,12 @@ export function createWorkspaceUiFixture({
       // A new explicit run now has a new request. Stop's reply is independently lost.
       await ui.click({ role: "button", name: "지금 실행", scope });
       await wait(async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n", "second explicit owned run");
+      await waitForRuntimeControlIdle(
+        pending,
+        () => read("workspace.runtime", "list_runtime_controls", {}),
+        wait,
+        job.id,
+      );
       const stopId = await loseReply("중지");
       assertLostRuntimeReceipt(
         await read("workspace.runtime", "list_runtime_controls", {}),
@@ -546,8 +616,38 @@ export function createWorkspaceUiFixture({
     async terminalLifecycle() {
       assert.ok(agentRoot && this.agentProjectName);
       await ui.click({ role: "button", name: "개요" });
-      await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
-      await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
+      try {
+        await selectRegisteredWorkspaceRoot(ui, () => this.registry(), wait, agentRoot);
+        await waitForSelectedWorkspaceRoot(context, () => this.registry(), wait, agentRoot);
+      } catch (error) {
+        const observation = {
+          schemaVersion: 1,
+          selection: await observeWorkspaceSelection({ context, registry: () => this.registry(), root: agentRoot }),
+        };
+        try {
+          observation.guards = await cdp.evaluate(`(() => {
+            const text = Array.from(document.querySelectorAll('[role="alert"],[role="status"]')).slice(0,32).map(node => node.textContent).join('\\n');
+            return {runtimeRecoveryAlert:!!document.querySelector('[aria-label="실행 요청 복구"] [role="alert"]'),runtimeRecoveryItems:document.querySelectorAll('[aria-label="실행 요청 복구"] li').length,...Object.fromEntries(Object.entries({tasksDirty:'Tasks 편집',filesDirty:'Files 편집 또는 저장',definitionsDirty:'프로젝트 정의 편집',dependenciesBusy:'의존성 검토',sourceBusy:'Source 작업',sourceDirty:'Source 초안',transitionPending:'프로젝트 전환을 확인 중입니다',contextBusy:'파일 또는 Git 작업이 진행 중입니다',runtimePending:'이전 실행 요청의 상태를 먼저 확인',runtimeRecovery:'완료되지 않은 실행 요청'}).map(([key,value]) => [key,text.includes(value)]))};
+          })()`);
+        } catch {
+          observation.guardsUnavailable = true;
+        }
+        try {
+          observation.operations = await readWorkspaceAgentOperations(dataRoot);
+        } catch {
+          observation.operationsUnavailable = true;
+        }
+        try {
+          await writeFile(
+            "product-foundation-evidence/workspace-runtime-context-first-failure.json",
+            JSON.stringify(observation, null, 2),
+            { flag: "wx" },
+          );
+        } catch {
+          /* Preserve the original selection failure. */
+        }
+        throw error;
+      }
       const counter = `${agentRoot}/terminal-count`,
         afterInterrupt = `${agentRoot}/ctrl-c-confirmed`;
       const wslRead = (file) => {
@@ -560,8 +660,7 @@ export function createWorkspaceUiFixture({
       };
       const sessions = () => read("workspace.terminal", "terminal_sessions");
       const initial = await sessions();
-      await ui.click({ role: "button", name: "터미널" });
-      await ui.click({ role: "button", name: "현재 프로젝트의 터미널 열기" });
+      await openCurrentProjectTerminal(ui);
       let opened;
       await wait(async () => {
         opened = (await sessions()).find(
@@ -576,10 +675,7 @@ export function createWorkspaceUiFixture({
       let surface = await terminalUi(opened.id);
       try {
         const command = `printf 'launch\\n' >> '${counter}'; sleep 300`;
-        await surface.ui.fill({ role: "textbox", name: "시작 경로" }, agentRoot);
-        await surface.ui.fill({ role: "textbox", name: "시작 명령" }, command);
-        await surface.ui.click({ role: "button", name: "+ 터미널" });
-        await surface.ui.click({ role: "button", name: "실행" });
+        await prepareTerminalStart(surface.ui, agentRoot, command);
         await wait(async () => wslRead(counter) === "launch\n", "explicit terminal start command");
         await surface.ui.press("Control+c");
         await surface.ui.typeText(`printf 'ctrl-c\\n' > '${afterInterrupt}'`);
@@ -606,6 +702,13 @@ export function createWorkspaceUiFixture({
         await ui.click({ role: "button", name: "프로필로 터미널 열기" });
         await this.waitForText({ role: "alert", name: "" });
         assert.equal(wslRead(counter), "launch\n");
+      } catch (error) {
+        try {
+          await surface.ui.screenshot("RUNTIME-02-terminal-first-failure");
+        } catch {
+          /* preserve the original failure */
+        }
+        throw error;
       } finally {
         surface.close();
       }
@@ -683,6 +786,12 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "설치", scope: { role: "article", name: `${node.id} ${node.version}` } });
       await ui.click({ role: "button", name: "설치 확인" });
       await network.waitForAttempt(beforeAttempts);
+      await dismissFailedManagedInstall({
+        ui,
+        wait,
+        isOpen: () =>
+          cdp.evaluate(`document.querySelector('[role="dialog"][aria-label="관리형 서버 작업 확인"]') !== null`),
+      });
       await this.waitForText({ role: "button", name: "설치 상태 새로 고침" });
       assert.equal((await state(node)).state, "not_installed");
       assert.equal((await state(rust)).installed.sha256, imported.installed.sha256);

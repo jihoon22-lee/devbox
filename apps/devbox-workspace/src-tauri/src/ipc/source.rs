@@ -313,39 +313,19 @@ pub(crate) async fn execute_source(
             .map_err(|error| crate::source_host::issue(&error))?;
         return Ok(json!(admitted || running.as_bool() == Some(true)));
     }
-    let filesystem = if matches!(
-        request.method.as_str(),
-        "cancel_trust"
-            | "revoke_trust"
-            | "cancel_worktree"
-            | "cancel_cleanup_scope"
-            | "revoke_cleanup_scope"
-            | "cleanup_scope_status"
-    ) {
-        None
-    } else {
-        Some(
-            runtime
-                .filesystem_activity
-                .enter(source_mutation(&request.method))?,
-        )
-    };
-    let queued = runtime.lanes.try_enter(Lane::Source)?;
-    let operation_id = if request.method == "create_worktree" {
-        request.args.get("operationId")
-    } else {
-        request
-            .args
-            .get("request")
-            .and_then(|value| value.get("operationId"))
-    };
-    let operation_id = operation_id
-        .map(|value| value.as_str().ok_or("invalid_request"))
-        .transpose()?;
-    let admitted = runtime
-        .source_operations
-        .register(&operation_key, operation_id)?;
-    let _cancel_on_drop = admitted.cancel_on_drop();
+    let SourceAdmission {
+        queued,
+        admitted,
+        cancel_on_drop: _cancel_on_drop,
+        filesystem,
+    } = admit_source(
+        runtime,
+        &operation_key,
+        &request.method,
+        &request.args,
+        deadline,
+    )
+    .await?;
     let worker_slot = tokio::time::timeout(
         remaining()?,
         admitted.until_cancelled(runtime.lanes.workers(Lane::Source).acquire_owned()),
@@ -436,6 +416,71 @@ pub(crate) async fn execute_source(
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(crate::source_host::issue(&error)),
         Err(_) => Err("request_expired"),
+    }
+}
+
+struct SourceAdmission {
+    queued: crate::ipc::lanes::RequestPermit,
+    admitted: crate::core::source_operations::Request,
+    cancel_on_drop: crate::core::source_operations::CancelOnDrop,
+    filesystem: Option<crate::core::context_activity::ContextPermit>,
+}
+
+async fn admit_source(
+    runtime: &Runtime,
+    operation_key: &str,
+    method: &str,
+    args: &Value,
+    deadline: u64,
+) -> Result<SourceAdmission, &'static str> {
+    let queued = runtime.lanes.try_enter(Lane::Source)?;
+    let operation_id = if method == "create_worktree" {
+        args.get("operationId")
+    } else {
+        args.get("request")
+            .and_then(|value| value.get("operationId"))
+    };
+    let operation_id = operation_id
+        .map(|value| value.as_str().ok_or("invalid_request"))
+        .transpose()?;
+    let admitted = runtime
+        .source_operations
+        .register(operation_key, operation_id)?;
+    let cancel_on_drop = admitted.cancel_on_drop();
+    // Bound and register the waiter before it can yield. Cancellation must wake
+    // it without waiting for the reader or allowing any Source IO to dispatch.
+    let filesystem = admitted
+        .until_cancelled(source_filesystem_permit(runtime, method, deadline))
+        .await??;
+    Ok(SourceAdmission {
+        queued,
+        admitted,
+        cancel_on_drop,
+        filesystem,
+    })
+}
+
+async fn source_filesystem_permit(
+    runtime: &Runtime,
+    method: &str,
+    deadline: u64,
+) -> Result<Option<crate::core::context_activity::ContextPermit>, &'static str> {
+    if matches!(
+        method,
+        "cancel_trust"
+            | "revoke_trust"
+            | "cancel_worktree"
+            | "cancel_cleanup_scope"
+            | "revoke_cleanup_scope"
+            | "cleanup_scope_status"
+    ) {
+        Ok(None)
+    } else {
+        Ok(Some(
+            runtime
+                .filesystem_permit(source_mutation(method), deadline)
+                .await?,
+        ))
     }
 }
 
@@ -644,5 +689,119 @@ mod conflict_pr_tests {
             assert_eq!(super::routes_for(method), &["source"]);
             assert_eq!(super::deadline_budget_for(method), budget);
         }
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+
+    fn deadline(milliseconds: u64) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + milliseconds
+    }
+
+    #[tokio::test]
+    async fn agent_cleanup_waits_for_existing_source_reader_before_exclusive_admission() {
+        let runtime = Runtime::default();
+        let reader = runtime.filesystem_activity.enter(false).unwrap();
+        let mut cleanup = Box::pin(source_filesystem_permit(
+            &runtime,
+            "remove_agent_worktree",
+            deadline(2000),
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(15), &mut cleanup)
+                .await
+                .is_err()
+        );
+        drop(reader);
+        let permit = cleanup.await.unwrap().unwrap();
+        assert!(runtime.filesystem_activity.enter(false).is_err());
+        drop(permit);
+        assert!(runtime.filesystem_activity.enter(false).is_ok());
+    }
+
+    #[tokio::test]
+    async fn blocked_cleanup_expires_without_admission_but_cancellation_remains_available() {
+        let runtime = Runtime::default();
+        let _reader = runtime.filesystem_activity.enter(false).unwrap();
+        assert!(matches!(
+            source_filesystem_permit(&runtime, "remove_agent_worktree", deadline(15)).await,
+            Err("request_expired")
+        ));
+        assert!(
+            source_filesystem_permit(&runtime, "cancel_cleanup_scope", deadline(15))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    #[tokio::test]
+    async fn admitted_cleanup_cancel_wakes_before_reader_release_without_dispatch() {
+        let runtime = Runtime::default();
+        let reader = runtime.filesystem_activity.enter(false).unwrap();
+        let args = json!({"request":{"operationId":"owned-cleanup"}});
+        let dispatched = std::sync::atomic::AtomicBool::new(false);
+        let mut cleanup = Box::pin(async {
+            let admission = admit_source(
+                &runtime,
+                "owned-context",
+                "remove_agent_worktree",
+                &args,
+                deadline(2000),
+            )
+            .await?;
+            dispatched.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok::<_, &'static str>(admission)
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(15), &mut cleanup)
+                .await
+                .is_err()
+        );
+        assert_eq!(runtime.lanes.active(Lane::Source), 1);
+        assert!(runtime
+            .source_operations
+            .cancel("owned-context", "owned-cleanup")
+            .unwrap());
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_millis(100), &mut cleanup)
+                .await
+                .unwrap(),
+            Err("source_cancelled")
+        ));
+        assert!(!dispatched.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(runtime.lanes.active(Lane::Source), 0);
+        assert!(runtime.filesystem_activity.enter(true).is_err());
+        drop(reader);
+    }
+
+    #[tokio::test]
+    async fn source_lane_saturation_rejects_before_waiting_for_a_reader() {
+        let runtime = Runtime::default();
+        let _reader = runtime.filesystem_activity.enter(false).unwrap();
+        let _requests = (0..16)
+            .map(|_| runtime.lanes.try_enter(Lane::Source).unwrap())
+            .collect::<Vec<_>>();
+        let args = json!({"request":{"operationId":"excess-cleanup"}});
+        assert!(matches!(
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                admit_source(
+                    &runtime,
+                    "owned-context",
+                    "remove_agent_worktree",
+                    &args,
+                    deadline(2000)
+                )
+            )
+            .await
+            .unwrap(),
+            Err("busy")
+        ));
     }
 }

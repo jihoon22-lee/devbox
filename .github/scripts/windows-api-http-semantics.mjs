@@ -14,19 +14,24 @@ import {
 
 export const SCENARIO_IDS = Object.freeze(["HTTP-01", "HTTP-02", "HTTP-03"]);
 
+export async function sendHttpFixtureRequest(context, fixture) {
+  // Completion text precedes native capture/history persistence. Observe the
+  // exact enabled request control before allowing the next real click.
+  await context.ui.waitForTarget(button("보내기"));
+  const count = fixture.hits.length;
+  const start = performance.now();
+  await context.ui.click(button("보내기"));
+  await until(() => fixture.hits.length === count + 1, "HTTP fixture did not receive request");
+  await expectText(context, "요청이 완료되었습니다.");
+  await context.ui.waitForTarget(button("보내기"));
+  context.httpCompletedMs = Math.max(context.httpCompletedMs ?? 0, performance.now() - start);
+  return fixture.hits.at(-1);
+}
 export async function run(context) {
   requireApiContext(context);
   const fixture = await echoFixture();
   const results = [];
-  const send = async () => {
-    const count = fixture.hits.length;
-    const start = performance.now();
-    await context.ui.click(button("보내기"));
-    await until(() => fixture.hits.length === count + 1, "HTTP fixture did not receive request");
-    await expectText(context, "요청이 완료되었습니다.");
-    context.httpCompletedMs = Math.max(context.httpCompletedMs ?? 0, performance.now() - start);
-    return fixture.hits.at(-1);
-  };
+  const send = () => sendHttpFixtureRequest(context, fixture);
   try {
     await context.ui.click(button("요청"));
     results.push(

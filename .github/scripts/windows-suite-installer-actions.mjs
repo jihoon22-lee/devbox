@@ -21,18 +21,31 @@ export function ownedNsisSpawnOptions(image, args) {
   );
   return { windowsVerbatimArguments: true, argv0: `"${image}"` };
 }
+export async function acquireOwnedInstaller(child, acquire) {
+  try {
+    return await acquire();
+  } catch (error) {
+    // Ownership has not been established: do not terminate or manipulate UI.
+    try {
+      child.unref();
+    } catch {}
+    throw error;
+  }
+}
 export async function startOwnedInstaller(image, args, fixtureRoot, env = process.env) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   const child = spawn(image, args, { env, stdio: "ignore", windowsHide: false, ...ownedNsisSpawnOptions(image, args) });
-  await once(child, "spawn");
-  let identity;
-  await observeUntil(() => {
-    identity = allWindowsProcesses().find((p) => p.Pid === child.pid && p.Path.toLowerCase() === image.toLowerCase());
-    return !!identity;
-  }, "owned NSIS process");
-  const owner = captureWindowOwner(identity, fixtureRoot);
+  const owner = await acquireOwnedInstaller(child, async () => {
+    await once(child, "spawn");
+    let identity;
+    await observeUntil(() => {
+      identity = allWindowsProcesses().find((p) => p.Pid === child.pid && p.Path.toLowerCase() === image.toLowerCase());
+      return !!identity;
+    }, "owned NSIS process");
+    return captureWindowOwner(identity, fixtureRoot);
+  });
   const inspect = () => {
     try {
       return nativeWindowAction(owner, "Inspect");
@@ -199,6 +212,7 @@ export function installerFailureObservation(view, stage, exitCode) {
   const controls = Array.isArray(view?.controls) ? view.controls.slice(0, 256) : [];
   const text = controls.map((control) => String(control.name ?? "").slice(0, 4096)).join("\n");
   const statuses = [
+    ["removal_failed", "제거를 완료하지 못했습니다"],
     ["preparation_failed", "설치를 준비하지 못했습니다"],
     ["registration_failed", "설치 항목과 바로가기를 등록하지 못했습니다"],
     ["prepared", "Devbox 설치 준비 완료"],
@@ -226,7 +240,9 @@ export function inspectInstallerFailure(installer, stage) {
   const baseline = installerFailureObservation(view, stage, installer.child.exitCode);
   if (
     baseline.issues.length === 0 &&
-    baseline.statuses.some((status) => status === "registration_failed" || status === "preparation_failed") &&
+    baseline.statuses.some(
+      (status) => status === "registration_failed" || status === "preparation_failed" || status === "removal_failed",
+    ) &&
     view?.buttons?.some((button) => button.id === "1027" && button.enabled && button.visible)
   ) {
     try {
@@ -305,7 +321,7 @@ export async function runVisibleSetup(setup, root, env = process.env) {
     await rethrowInstallerFailure(installer, error);
   }
 }
-export async function runVisibleRemoval(root, { cancel = false } = {}) {
+export async function runVisibleRemoval(root, { cancel = false, failureObservation = null } = {}) {
   const scratch = path.dirname(root),
     source = path.join(root, "Uninstall.exe"),
     image = path.join(scratch, `uninstall-${randomUUID()}.exe`);
@@ -314,10 +330,14 @@ export async function runVisibleRemoval(root, { cancel = false } = {}) {
   // NSIS _?= selects its already-owned installation and avoids an untracked
   // temporary executable. This is the same interactive confirmation/sections.
   const installer = await startOwnedInstaller(image, [`_?=${root}`], scratch);
+  const deadline = Date.now() + (failureObservation ? 30000 : 180000);
+  const remaining = () => Math.max(1, deadline - Date.now());
+  let stage = "removal confirmation";
   try {
     await installer.wait(
       (view) => view?.buttons?.some((b) => b.id === "1" && b.enabled && b.visible),
       "removal confirmation",
+      failureObservation ? remaining() : 180000,
     );
     if (cancel) {
       installer.invoke("2");
@@ -325,8 +345,17 @@ export async function runVisibleRemoval(root, { cancel = false } = {}) {
       return;
     }
     installer.invoke("1");
+    stage = "removal execution";
     await observeUntil(
       async () => {
+        if (failureObservation) {
+          const observation = inspectInstallerFailure(installer, stage);
+          if (
+            observation.statuses.includes("removal_failed") ||
+            (installer.child.exitCode !== null && installer.child.exitCode !== 0)
+          )
+            throw new Error("Owned visible removal failed");
+        }
         try {
           return Boolean(JSON.parse(await readFile(path.join(root, "uninstall-complete.json"), "utf8")));
         } catch {
@@ -334,16 +363,26 @@ export async function runVisibleRemoval(root, { cancel = false } = {}) {
         }
       },
       "owned removal receipt",
-      180000,
+      failureObservation ? remaining() : 180000,
     );
     await installer.wait(
       (view) => view?.buttons?.some((b) => b.id === "1" && b.enabled && b.visible),
       "removal finish",
+      failureObservation ? remaining() : 180000,
     );
     installer.invoke("1");
-    await observeUntil(() => installer.child.exitCode !== null, "removal closed");
+    await observeUntil(
+      () => installer.child.exitCode !== null,
+      "removal closed",
+      failureObservation ? remaining() : 30000,
+    );
     assert.equal(installer.child.exitCode, 0);
   } catch (error) {
+    if (failureObservation) {
+      try {
+        await failureObservation(inspectInstallerFailure(installer, stage));
+      } catch {}
+    }
     await rethrowInstallerFailure(installer, error);
   }
 }
@@ -363,6 +402,23 @@ export function directorySpaceRejected(view, proof) {
     /필요.*(?:공간|디스크)/.test(labels) &&
     /(?:사용 가능|남은).*(?:공간|디스크)/.test(labels)
   );
+}
+export async function cancelRejectedInstaller(installer, observe = observeUntil) {
+  installer.invoke("2");
+  let confirmed = false;
+  await observe(() => {
+    if (installer.child.exitCode !== null) return true;
+    const view = installer.inspect();
+    // UIA can expose the abort prompt beneath one owned root. A root count
+    // does not establish whether its unique enabled Yes control is ready.
+    const controls = view?.controls ?? view?.buttons ?? [];
+    const yes = controls.filter((control) => control.id === "6" && control.enabled && control.visible);
+    if (!confirmed && yes.length === 1) {
+      installer.invoke("6");
+      confirmed = true;
+    }
+    return false;
+  }, "rejected setup cancelled");
 }
 export async function rejectVisibleSetup(setup, root, { expectedIssues, onRejected, spaceProof } = {}) {
   assert.ok(Array.isArray(expectedIssues) && expectedIssues.length > 0);
@@ -399,16 +455,21 @@ export async function rejectVisibleSetup(setup, root, { expectedIssues, onReject
         return !!observed;
       }, "owned installer displays expected native preparation issue");
     if (onRejected) await onRejected(installer, observed);
-    installer.invoke("2");
-    await observeUntil(() => {
-      if (installer.child.exitCode !== null) return true;
-      const view = installer.inspect();
-      if (view?.windows?.length > 1) installer.invoke("6");
-      return false;
-    }, "rejected setup cancelled");
+    await cancelRejectedInstaller(installer);
     assert.notEqual(installer.child.exitCode, 0, "Rejected setup cannot report success");
     return { issue: observed, exitCode: installer.child.exitCode };
   } catch (error) {
+    try {
+      await writeFile(
+        path.join("product-foundation-evidence", `rejected-installer-first-failure-${randomUUID()}.json`),
+        JSON.stringify(
+          { schemaVersion: 1, status: "FAIL", ...inspectInstallerFailure(installer, "rejected setup") },
+          null,
+          2,
+        ),
+        { flag: "wx" },
+      );
+    } catch {}
     await rethrowInstallerFailure(installer, error);
   }
 }

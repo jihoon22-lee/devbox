@@ -596,3 +596,148 @@ deferred 응답으로 같은 실패를 재현하고, 로딩 중 disabled·mutati
 제품 코드와 timeout은 변경하지 않았다. 영향받는 Overview 테스트 파일 44개는 6.3초에
 통과했다(cgroup peak 518MB, swap 0). 완료 검증 실패의 좁은 보정이므로 무관한 로컬 전체
 검사를 반복하지 않는다. 필수 PR CI와 최종 exact-main CI·새 후보 수용은 여전히 필요하다.
+
+
+### 설치 후보 `99beac69`의 실제 입력·업데이트 경계 후속 보정
+
+#626 통합 후 exact-main CI [37247169797](https://github.com/jihoon22-lee/devbox/actions/runs/37247169797)의
+6개 필수 검사가 통과했다. 같은 source의 후보 [37247915255](https://github.com/jihoon22-lee/devbox/actions/runs/37247915255)는
+네 native 범위·Windows/WSL2·assembly를 통과했으나 설치 전 PowerShell 5.1 검사가
+`[ulong]` 별칭을 해석하지 못해 중단됐다. 실제 설치 수용과 seal은 통과하지 않았으므로
+승격할 수 없다. 바로가기 identity 검사의 두 캐스트를 `[System.UInt64]`로 명시했다.
+
+같은 payload를 재빌드하지 않은 보관 설치 진단
+[37252238669](https://github.com/jihoon22-lee/devbox/actions/runs/37252238669)는
+runner `36f1e840`과 payload `99beac69`를 구분한다. PowerShell 5.1의 실제 identity 회귀와
+설치·가시적 활성화, WORK-01/02, Knowledge 8개, 전체 기본/최소 창 레이아웃 및 성능은
+통과했다. 필수 여정은 25 PASS·13 FAIL·1 NOT_RUN·1개 결과 없음으로, 출시 근거가 아니다.
+
+Transform 삭제의 native 저장 완료를 관찰해도 renderer의 저장 상태 해제보다 이를 먼저
+볼 수 있었다. 새 파이프라인 버튼의 실제 활성 상태를 기다리고 한 번만 누른다.
+HANDOFF-01 역시 적용 입력 직후 native ack와 React 입력 반영 전에 값을 읽었다.
+원래 Unicode 입력이 실제 입력란에 반영될 때까지 읽기 전용 관찰하며 적용을 재전송하지
+않는다. 각각 지연 상태를 재현하는 좁은 회귀를 추가했고 기존 종료 시간은 늘리지 않는다.
+API 키보드·IME 결과 누락은 Transform 중단 뒤 수집 단계에 도달하지 못한 후속 영향이다.
+
+AGENT-02/03/04의 최초 실패 시 Workspace는 업데이트 Health 미확정 안내를 표시했고
+설치 Agent는 이미 정지해 있었다. 앞선 DELIVERY-02가 활성화를 끝내지 못한 상태에서
+일반 작업을 차단한 결과이며, Agent 중단·재연결 시나리오 자체의 통과 근거가 아니다.
+업데이트 차단을 우회해 검사를 진행하지 않는다. gRPC 최종 저장 경로, 업데이트 Health,
+등록 바로가기 및 legacy 제거 실패는 별도 원인 조사와 실제 Windows 재검증이 필요하다.
+
+
+WORK-03은 Source의 기존 읽기가 진행 중이면 정리 mutation을 즉시 `context_busy`로
+거절하는 실제 admission 결함이었다. Source도 Files와 같은 writer 대기 규칙을 사용한다.
+대기 전에 bounded lane·operation 취소 등록을 완료하고, 원래 deadline·취소·context 보유와
+worker의 권한 재검증을 유지한다. held reader·독점 입장·만료·취소 및 요청 한도 회귀를
+확인했다. 제품 변경의 실제 수용은 새 payload에서 수행한다.
+
+RUNTIME-01의 응답 중단 조건은 job ID만 같으면 직전 실행 응답까지 선택할 수 있었다.
+이제 실제 invoke의 method·job·request ID를 읽고 그 요청의 callback만 중단한다.
+RUNTIME-02는 터미널 route 로딩 중 opener를 눌렀고, LSP-01은 native picker 생성 전
+파일 선택을 시도했다. 기존 엄격한 picker 소유권·준비 관찰을 Workspace와 API에서
+공유하며, 이전 LSP modal에 가려진 DEPS-01을 별도 제품 결함으로 단정하지 않는다.
+
+최종 경로가 비어 있던 gRPC 저장은 실제 rfd와 같은 COM SaveDialog fixture로 조사한다.
+입력란 문자열 일치뿐 아니라 `GetResult`의 최종 선택 경로를 확인하고, 요청 경로와
+다르면 파일을 쓰기 전에 실패한다. 컴파일 확인과 실제 Windows chooser 실행을 구분한다.
+보관 진단은 이 실패를 보존하면서 독립 여정의 결과도 수집하며, 새 제품의 검증이나
+릴리스 승격을 대신하지 않는다.
+
+
+위 Source 변경의 최종 로컬 영향 검사는 Workspace Rust 121개와 생성 TypeScript 계약
+1개, check·clippy·fmt·생성 binding 정합성을 169.5초에 통과했다. 프런트 소스 변경이 없어
+프런트 전체 검사는 선택되지 않았다. cgroup memory peak 3.51GB, swap 5.19MB로 기본
+자원 한도 안에서 완료했다. 별도 Windows 제품 실행은 이 결과에 포함하지 않는다.
+
+
+상태 기록 직후 inventory 읽기의 `unavailable/suite_update_busy`만 기존 관찰 기한 안에서
+다시 읽는다. UI 작업은 반복하지 않고 기한이 끝나면 최초 오류를 보존한다. Knowledge
+준비 실패와 등록 바로가기의 원인은 고정 코드·단계로 추가 관찰한다. legacy 제거 exit 1은
+원래 실패를 보존한 뒤 native root identity·등록된 제거 프로그램의 identity/크기/SHA와
+등록/manifest 불변, pending·부분 제거·실행 중 제품 부재를 모두 확인한 소유 fixture에서만
+표시형 제거를 한 번 진단한다. 진단이 성공해도 원래 정리를 PASS로 바꾸지 않는다.
+
+추가 fixture 회귀와 전체 catalog/workflow 계약은 4.5초, Biome 1923개 파일은 0.6초에
+통과했다. 새 PowerShell 함수는 구문 검사를 통과했으나 실제 호출은 격리 Windows 진단에서
+확인한다. gRPC COM fixture도 Windows 컴파일과 실제 chooser 실행을 구분한다.
+
+
+화면 직접 검토에서는 Control Center 목록의 실행 상태·설치 등록이 native에서 항상
+`unknown`으로 반환되는데도 조회 실패처럼 표시되는 문제를 추가로 확인했다. 실제 확인한
+패키지·버전·파일 상태는 유지하고, 측정하지 않는 열과 등록 문구를 제거했다. 기존
+**업데이트 → 제품 응답·저장소 확인** 화면으로 안내하며 IPC·실행 권한은 바꾸지 않는다.
+Control Center README도 실제 관찰 범위에 맞췄다. 두 화면 회귀 RED→GREEN과 최종 변경의
+앱 영향 검사 33개·타입/빌드/번들·Biome는 21.8초에 통과했다(cgroup peak 585MB, swap 0).
+이 변경에 무관한 Workspace Rust 검사는 반복하지 않았다. 실제 새 UI는 최종 새 후보에서
+확인한다.
+
+보관 진단의 추가 코드 검토에서 picker 종료의 무한 대기, installer 소유 확인 실패 시
+child 참조 잔류, Knowledge 창 닫기 실패로 정리가 생략되는 경계를 보정했다. 소유 확인
+없는 프로세스를 종료하지 않고 참조만 해제하며, 원래 여정 실패와 native 실패 관찰은
+보존한다. 좁은 정리 실패 회귀 35개와 PowerShell 구문 검사, Biome를 통과했다. 이 결과를
+제품 설치·업데이트 수용 통과로 취급하지 않는다.
+
+보관 진단 [37255553441](https://github.com/jihoon22-lee/devbox/actions/runs/37255553441)는
+runner `1df52e7f`·동일 payload `99beac69`로 설치·활성화와 RUNTIME-01, Knowledge 8개,
+기본/최소 창 및 성능을 통과했다. 결과는 26 PASS·9 FAIL·1 NOT_RUN·4개 결과 없음이다.
+업데이트 Health는 이번 실행에서 통과했고 DELIVERY-02는 실제 제거 후 용량 부족 설치의
+취소 대기에서 실패했다. 재설치 전 중단돼 뒤따르는 Agent 여정의 설치 manifest가 없었다.
+이를 Agent 실행 결함으로 단정하지 않는다. 설치 취소는 UIA root 개수 대신 소유한 유일한
+활성 Yes 버튼을 확인하며 한 번만 입력한다. 실패 시 고정 native 관찰도 보존한다.
+이 보정의 좁은 회귀 22개가 통과했으며 실제 취소 수용은 남아 있다.
+
+legacy·철회본 업데이트의 바로가기 검사는 native Health·commit 뒤 PowerShell의
+`Get-FileHash` 명령을 찾지 못해 실패했다. legacy 제거의 표시형 진단은 처음으로
+`bootstrap_version_mismatch`를 확인했다. 보관된 이전 세대 helper까지 현재 실행 버전과
+같아야 한다고 검사한 경계이며, 실행 helper 버전 검사는 유지하면서 보관 helper의
+자체 payload digest 검증을 분리한다. COM picker fixture의 초기 종료는 managed worker의
+MTA/STA 충돌(`80010106`)이었다. 명시 STA worker로 수정 후 Windows의 무창 COM 초기화·
+생성 최소 재현을 통과했다. 실제 chooser의 최종 경로 일치는 별도로 확인해야 한다.
+
+Transform의 다음 실패에서는 같은 활성 도구의 최근 사용 정보가 explicit save 상태 전환마다
+다시 저장되는 실제 경쟁을 재현했다. 이미 최근 목록 첫 항목인 도구는 다시 저장하지 않되
+저장 중 변경한 도구의 보류 갱신은 유지한다. 지연 저장·실제 실패 안내·기존 데이터 보존을
+포함한 관련 21개 회귀가 통과했다. HANDOFF 입력은 아래쪽 화면의 접근성 이름 fallback이
+아닌 실제 controlled textarea 값을 합성 원본과 정확히 비교하며, 실패 시 원문 없는
+불리언 관찰을 보존한다. 파일 선택은 UIA 최상위 목록에서 누락될 수 있는 유일한 소유
+native picker HWND를 재검증해 연결하며 기존 단일 입력·control 검증을 유지한다.
+
+추가 변경 최종 영향 검사는 API Studio 두 프런트 패키지 821개, Control Center Rust 58개와
+생성 계약 1개·check/clippy/fmt·타입/빌드/번들·Biome를 123.2초에 통과했다(cgroup peak
+2.33GB, swap 1.97MB). catalog와 변경된 workflow 계약은 3.9초에 통과했다. 기존 Source와
+Inventory의 무관한 통과 검사는 반복하지 않았다. Windows 전용 이전 세대 제거 회귀는
+실제 함수·파일 검증을 추출한 최소 Rust 재현에서 RED→GREEN이며, 정식 Windows 테스트와
+수정 payload의 실제 제거는 필수 CI·새 후보에서 확인한다.
+
+앱 전용 보관 진단 [37258325249](https://github.com/jihoon22-lee/devbox/actions/runs/37258325249)는
+runner `af5008ff`·동일 payload `99beac69`로 15 PASS·6 FAIL·2 NOT_RUN이었다. 설치·활성화,
+WORK-01/02·RUNTIME-01·Knowledge 8개·UI-01을 통과했다. 앱 전용 실행이므로 delivery와
+migration을 실행하지 않았으며, API 조기 중단으로 일부 결과가 없다. native picker 소유
+root 회귀는 통과했고 LSP archive 선택도 진행했다. COM fixture는 실제 최종 경로가 기본
+파일명에 머문 것을 확인했다. 입력란의 텍스트만 바꾸던 호출을 검증된 소유 입력란의 실제
+키보드 입력으로 바꾸며, 최종 COM 선택 경로 일치 검사는 유지한다. 새 helper의 Windows
+C# 컴파일·입력 직렬화 및 PowerShell 구문 검사는 통과했으나 실제 chooser는 새 후보에서
+확인한다.
+
+HTTP 완료 문구가 capture/history 저장보다 먼저 표시되는 구간은 전송 버튼 준비까지
+관찰한다. HANDOFF는 실제 입력 수용을 통과했고, 다음 변환 예상값 계산에서 화면 밖
+textbox의 접근성 이름을 값으로 읽던 문제를 확인했다. 공용 관찰은 정확한 DOM input/
+textarea의 현재 value를 읽고 handle을 정리하며, 읽기·정리 동시 실패 시 최초 오류를
+보존한다. 변형 입력이나 UI 동작 재시도는 추가하지 않았다. Terminal companion은 실제
+시작 경로 입력란과 실행 확인 준비를 기다리고 첫 실패 화면을 보존한다.
+
+Workspace 관리형 서버의 의도한 offline 설치 실패는 열린 확인창 뒤에서만 오류를
+표시했다. 설치·제거 실패 안내를 확인창 안에 표시하고 취소·재시도는 유지하며 새 작업
+검토 시 이전 오류를 지운다. 수용 runner도 실패 안내를 확인하고 취소하여 확인창이 닫힌
+후 후속 제거를 수행한다. 해당 UI 회귀는 RED→GREEN 34개, Workspace runner 19개,
+HTTP 완료 대기 5개가 통과했다. 수정 전 payload의 Source·Transform 실패를 새 코드의
+성공으로 바꾸지 않으며 전체 실제 설치·업데이트·제거 수용은 새 후보에서 확인한다.
+
+마지막 Workspace 변경의 영향 검사는 프런트 979개·타입/빌드/번들·Biome를 132.3초에
+통과했다(cgroup peak 1.69GB, swap 3.11MB). DOM 읽기·정리 동시 실패 회귀도 최초 오류
+보존을 RED→GREEN으로 확인했다. 무관한 이전 제품/Rust 검사는 반복하지 않았다.
+카탈로그·후보/승격 계약은 4.2초, 최종 Biome 1923개 파일도 통과했다. native 입력 교차
+검토에서 포커스 확인 실패로 입력하지 않은 경우 key-up도 보내지 않도록 보정했고,
+기존 A 키 눌림도 거부한다. 실제 Windows C# 컴파일·0/부분 입력 해제 직렬화·구문 검사는
+통과했으며 로컬 UI 실행이나 PowerShell 실행 정책 우회는 하지 않았다.

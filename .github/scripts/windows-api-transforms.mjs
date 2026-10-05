@@ -23,6 +23,23 @@ const settled = (context) =>
   );
 export const SCENARIO_IDS = Object.freeze(["TRANSFORM-01"]);
 
+export async function beginNewPipeline(context) {
+  await context.ui.waitForTarget(button("새 파이프라인"));
+  await context.ui.click(button("새 파이프라인"));
+}
+
+export async function resolveTransformPreview(context, decision) {
+  await context.ui.click(button(decision, { role: "dialog", name: "Toolbox 텍스트 요청 미리보기" }));
+  await until(
+    () => context.cdp.evaluate("document.querySelector('.handoff-dialog') === null"),
+    "Recipient preview decision did not complete",
+  );
+}
+export async function applyTransformBody(context) {
+  await resolveTransformPreview(context, "적용");
+  await context.ui.click(button("BODY"));
+}
+
 export async function prepareTransformRequest(context, url) {
   await context.ui.click(button("요청"));
   await context.ui.waitForTarget(textbox("요청 URL"));
@@ -92,7 +109,7 @@ export async function run(context) {
           async () => (await context.document("workflows")).value.pipelines.length === 19,
           "Confirmed deletion not committed",
         );
-        await context.ui.click(button("새 파이프라인"));
+        await beginNewPipeline(context);
         await select(context, "파이프라인 입력 형식", 1);
         const nextIndex = await context.cdp.evaluate(
           "Array.from(document.querySelector('[aria-label=\"변환 단계 추가\"]').options).findIndex(option=>option.value==='json-format')",
@@ -125,14 +142,13 @@ export async function run(context) {
         await context.ui.click(button("Requests로 보내기", { role: "region", name: "타입 지정 파이프라인" }));
         await deliverTransformPreview(context);
         const priorUrl = await context.cdp.evaluate("document.querySelector('[aria-label=\"요청 URL\"]').value");
-        await context.ui.click(button("취소", { role: "dialog", name: "Toolbox 텍스트 요청 미리보기" }));
+        await resolveTransformPreview(context, "취소");
         assert.equal(await context.cdp.evaluate("document.querySelector('[aria-label=\"요청 URL\"]').value"), priorUrl);
         assert.equal(echo.hits.length, 0);
         await context.ui.click(button("변환"));
         await context.ui.click(button("Requests로 보내기", { role: "region", name: "타입 지정 파이프라인" }));
         await deliverTransformPreview(context);
-        await context.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 요청 미리보기" }));
-        await context.ui.click(button("BODY"));
+        await applyTransformBody(context);
         assert.ok(
           await context.cdp.evaluate(
             "document.querySelector('.body-input')?.value.includes('synthetic-private-input')",
