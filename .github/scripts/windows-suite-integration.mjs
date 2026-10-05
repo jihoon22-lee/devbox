@@ -2,7 +2,12 @@ import { navigateWorkspaceFiles } from "./windows-workspace-ui-observations.mjs"
 // L4 preparations are identified separately; domain transfers/reviews use real UI input.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  changeKnowledgeExecuteAccess,
+  receiverAccessPending,
+  withUnavailableReceiver,
+} from "./windows-suite-receiver-access.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { createApiUserFlowContext, markApiCleanupFailure } from "./windows-api-user-flow-adapter.mjs";
@@ -259,7 +264,7 @@ export async function run(api) {
   requireApiContext(api);
   const results = [];
   let workspace, knowledge, foreign, ownedSourceFile;
-  let restoreImage = null;
+  let restoreAccess = null;
   try {
     const receipt = JSON.parse(
       (await readFile(path.join(path.dirname(api.root), "workspace-handoff-fixture.json"), "utf8")).replace(
@@ -449,18 +454,24 @@ export async function run(api) {
           "Actual connection-off action blocks outgoing transfer and displays current failure guidance; explicit installation review restores the same connection without consuming another installation's offer",
         );
         await knowledge.close();
-        restoreImage = { source: knowledge.executable, backup: knowledge.executable + ".owned-unavailable" };
-        await rename(restoreImage.source, restoreImage.backup);
-        try {
-          await sendStored(api);
-          await expectText(api, "전달 결과를 확인하지 못했습니다.");
-          assert.deepEqual(await snapshotFiles(root), before);
-        } finally {
-          await rename(restoreImage.backup, restoreImage.source);
-          restoreImage = null;
-        }
+        const receiver = knowledge;
+        knowledge = null;
+        await withUnavailableReceiver(
+          (action) => {
+            if (action === "Deny") restoreAccess = receiver;
+            changeKnowledgeExecuteAccess(receiver, action);
+            restoreAccess = action === "Deny" ? receiver : null;
+          },
+          async () => {
+            await sendStored(api);
+            await expectText(api, "전달 결과를 확인하지 못했습니다.");
+            await api.ui.waitForTarget(button("Knowledge에서 초안 검토", pipeline));
+            assert.deepEqual(await snapshotFiles(root), before);
+            assert.deepEqual(await readFile(receipt.file), sourceBytes);
+          },
+        );
         record(
-          "L4 temporarily withholds only the owned exact candidate receiver image; actual UI transfer reports unavailable and preserves the producer/vault, then restores the same bytes",
+          "L4 temporarily denies execution only on the closed owned receiver image while Suite integrity pins remain active; actual UI transfer reports unavailable and preserves source/vault, then restores the original ACL and verifies identical bytes",
         );
         await api.ui.fill(textbox("스마트 워크플로 입력"), "recovered owned output");
         await executePipeline(api);
@@ -490,9 +501,9 @@ export async function run(api) {
     return results;
   } finally {
     let cleanupFailed = false;
-    if (restoreImage)
+    if (restoreAccess && receiverAccessPending(restoreAccess))
       try {
-        await rename(restoreImage.backup, restoreImage.source);
+        changeKnowledgeExecuteAccess(restoreAccess, "Restore");
       } catch {
         cleanupFailed = true;
       }

@@ -226,7 +226,7 @@ python3 .github/scripts/check-feature-fixtures.py
 python3 .github/scripts/test-scaffold-product-feature.py
 python3 .github/scripts/test-product-foundation-workflow.py
 node --test .github/scripts/windows-suite-boundary-diagnostic.test.mjs .github/scripts/windows-suite-delivery-reopen.test.mjs .github/scripts/windows-suite-layout.test.mjs .github/scripts/verify-retained-committed-install.test.mjs
-node --test .github/scripts/windows-package-cache.test.mjs .github/scripts/windows-suite-direct-layout.test.mjs .github/scripts/windows-dependency-network.test.mjs .github/scripts/windows-agent-runtime.test.mjs
+node --test .github/scripts/windows-package-cache.test.mjs .github/scripts/windows-suite-direct-layout.test.mjs .github/scripts/windows-suite-receiver-access.test.mjs .github/scripts/windows-dependency-network.test.mjs .github/scripts/windows-agent-runtime.test.mjs
 node --test .github/scripts/fixture-child-exit.test.mjs .github/scripts/owned-fixture-cleanup.test.mjs .github/scripts/windows-suite-uninstall-diagnostic.test.mjs
 node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs

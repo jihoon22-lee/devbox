@@ -948,3 +948,19 @@ module-qualified 명령을 확인하도록 보완하며 고정 stage/허용 명�
 보존한다. HANDOFF-02는 portable foreign 권한 거부·원본 보존 후 정리에서 실패했다.
 고유 basename을 기존 product-window 판별기가 인식하지 않아 native 보조 창을 잘못 셌다.
 정확한 fixture 경로·basename만 기존 product 창 검증에 연결하며 modal·외부 창 거부는 유지한다.
+
+
+[후속 진단 37293692460](https://github.com/jihoon22-lee/devbox/actions/runs/37293692460)은
+DEPS의 누락 명령을 `Get-FileHash`로 확정했다. helper 전체 AST의 25개 호출을 점검하고
+Management·Utility·NetSecurity를 inbox 경로로 명시적으로 로드·한정했다. 실제 Windows에서
+자동 명령 탐색을 끄고 전체 호출 해석과 실제 system image SHA256의 독립 계산 일치를 확인했다.
+HANDOFF-02는 foreign 거부와 연결 해제/복구를 통과한 뒤 receiver 파일 이동에서 실패했다.
+`CapturedScope`가 모든 member 파일을 `FILE_SHARE_READ`로 보관하고 Agent도 이를 유지하므로
+실행 파일 이동은 제품의 정상 보호 계약과 양립하지 않는다. 보호를 약화하거나 재시도하지 않는다.
+
+receiver 실패 재현은 정확한 임시 설치 이미지의 ExecuteFile 권한만 일시 거부하고 원래 Access
+SDDL과 digest를 복원·확인하는 방식으로 바꾼다. 독립 C# 검증 프로그램을 Windows compiler로
+빌드해 자체 임시 whoami 복사본과 동일 read pin으로 확인했다. 읽기/hash는 유지되고 실행은
+Win32 error 5로 거부되며, fresh descriptor에 원래 SDDL을 설정해 정확히 복원한 뒤 같은
+이미지 실행과 digest 일치를 확인했다. 검증용 파일·프로그램은 정리했다. 사용자 앱·서비스·
+방화벽은 변경하지 않았다. 실제 hosted helper에도 설치 여정 전 같은 좁은 회귀를 한 번 연결했다.

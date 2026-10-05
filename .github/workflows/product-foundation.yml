@@ -490,6 +490,9 @@ jobs:
           if ('${{ inputs.suite_diagnostic_boundaries_only }}' -ne 'true' -and (-not $env:SELECTED_APP_JOURNEYS -or 'dependencies' -in $selectedApps -or 'workspace' -in $selectedApps)) {
             .github/scripts/test-windows-dependency-network-commands.ps1
           }
+          if ('${{ inputs.suite_diagnostic_boundaries_only }}' -ne 'true' -and (-not $env:SELECTED_APP_JOURNEYS -or 'handoff' -in $selectedApps)) {
+            .github/scripts/windows-suite-receiver-access.test.ps1
+          }
           .github/scripts/windows-user-flow-cleanup-observation.test.ps1
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1

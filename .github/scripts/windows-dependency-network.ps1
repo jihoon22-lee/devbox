@@ -13,26 +13,27 @@ Set-StrictMode -Version Latest
 $failureStage='host-guard'
 trap {
   $command='unavailable'
-  $required=@('Get-Item','Get-Content','Get-FileHash','Get-Process','Get-NetFirewallRule','Get-NetFirewallProfile','Get-NetFirewallApplicationFilter','Get-NetFirewallPortFilter','New-NetFirewallRule','Remove-NetFirewallRule','Get-OwnedRule','Assert-RuleScope','Import-Module','Get-Command')
+  $required=@('Split-Path','Test-Path','Join-Path','ConvertFrom-Json','Get-Item','Get-Content','Get-FileHash','Get-Process','Get-NetFirewallRule','Get-NetFirewallProfile','Get-NetFirewallApplicationFilter','Get-NetFirewallPortFilter','New-NetFirewallRule','Remove-NetFirewallRule','Get-OwnedRule','Assert-RuleScope','Import-Module','Get-Command')
   if($_.Exception -is [System.Management.Automation.CommandNotFoundException]) {
-    $missing=$_.Exception.CommandName -replace '^NetSecurity\\',''
+    $missing=$_.Exception.CommandName -replace '^(NetSecurity|Microsoft[.]PowerShell[.](Utility|Management))\\',''
     if($missing -cin $required){$command=$missing}
   }
   [Console]::Error.WriteLine("DependencyFirewallFailure stage=$failureStage command=$command")
   break # Retain the original terminating error after the fixed diagnostic line.
 }
 function Initialize-DependencyFirewallCommands {
-  # A pwsh parent may supply a different PSModulePath. Import the inbox module
-  # from this Windows PowerShell installation, without changing that environment.
-  Import-Module (Join-Path $PSHOME 'Modules\NetSecurity\NetSecurity.psd1') -ErrorAction Stop
-  foreach($name in @('Get-NetFirewallRule','Get-NetFirewallProfile','Get-NetFirewallApplicationFilter','Get-NetFirewallPortFilter','New-NetFirewallRule','Remove-NetFirewallRule')) {
-    Get-Command -Name ('NetSecurity\'+$name) -ErrorAction Stop | Out-Null
+  # Resolve every non-core dependency from this Windows PowerShell installation;
+  # a pwsh parent's PSModulePath must not select an incompatible Utility module.
+  foreach($module in @('Microsoft.PowerShell.Management','Microsoft.PowerShell.Utility','NetSecurity')) {
+    Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$module,$module+'.psd1')) -ErrorAction Stop
   }
 }
 
 if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
   $env:RUNNER_OS -cne 'Windows' -or $env:GITHUB_REPOSITORY -cne 'jihoon22-lee/devbox' -or
   $env:GITHUB_RUN_ID -notmatch '^\d+$'){throw 'Dependency firewall fixture requires disposable GitHub-hosted Windows; never spoof CI'}
+$failureStage='command-resolution'
+Initialize-DependencyFirewallCommands
 $failureStage='ownership-guard'
 if($RuleName -cnotmatch '^DevboxFixture-Dependencies-[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$' -or
   $ExpectedDigest -cnotmatch '^[a-f0-9]{64}$' -or $OwnerProcessId -le 0 -or
@@ -40,14 +41,12 @@ if($RuleName -cnotmatch '^DevboxFixture-Dependencies-[a-f0-9]{8}(-[a-f0-9]{4}){3
 $root=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
 $image=[IO.Path]::GetFullPath($Executable)
 $temp=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')+'\'
-$parent=Split-Path -Parent $root
-if((Split-Path -Leaf $root) -cne 'Suite UI Fixture' -or
-  (Split-Path -Leaf $parent) -cnotmatch '^devbox-suite-delivery-[a-f0-9]{32}$' -or
+$parent=Microsoft.PowerShell.Management\Split-Path -Parent $root
+if((Microsoft.PowerShell.Management\Split-Path -Leaf $root) -cne 'Suite UI Fixture' -or
+  (Microsoft.PowerShell.Management\Split-Path -Leaf $parent) -cnotmatch '^devbox-suite-delivery-[a-f0-9]{32}$' -or
   -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or
   -not $image.StartsWith($root+'\generations\',[StringComparison]::OrdinalIgnoreCase) -or
   $image.Substring($root.Length) -cnotmatch '^\\generations\\[^\\]+\\products\\workspace\\devbox-workspace\.exe$'){throw 'Firewall image outside owned installation'}
-$failureStage='command-resolution'
-Initialize-DependencyFirewallCommands
 $group='Devbox owned dependency fixture'
 $description="run=$($env:GITHUB_RUN_ID);pid=$OwnerProcessId;started=$ExpectedStart;sha256=$ExpectedDigest;image=$image"
 function Get-OwnedRule {
@@ -78,18 +77,18 @@ if($Action -eq 'Remove') {
 }
 $failureStage='image-identity'
 # Validate immutable image and current PID again immediately before changing policy.
-if(-not (Test-Path -LiteralPath $image -PathType Leaf)){throw 'Owned image missing'}
-$node=Get-Item -LiteralPath $image
+if(-not (Microsoft.PowerShell.Management\Test-Path -LiteralPath $image -PathType Leaf)){throw 'Owned image missing'}
+$node=Microsoft.PowerShell.Management\Get-Item -LiteralPath $image
 while($null -ne $node -and $node.FullName.Length -ge $parent.Length){
   if(($node.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Owned firewall path contains a link'}
   $node=if($node -is [IO.DirectoryInfo]){$node.Parent}else{$node.Directory}
 }
-$manifest=Get-Content -LiteralPath (Join-Path $root 'devbox-installation.json') -Raw | ConvertFrom-Json
+$manifest=Microsoft.PowerShell.Management\Get-Content -LiteralPath (Microsoft.PowerShell.Management\Join-Path $root 'devbox-installation.json') -Raw | Microsoft.PowerShell.Utility\ConvertFrom-Json
 $members=@($manifest.members | Where-Object {$_.product -ceq 'workspace'})
 if($members.Count -ne 1 -or $members[0].executable -cne "generations/$($manifest.generation)/products/workspace/devbox-workspace.exe" -or
-  [IO.Path]::GetFullPath((Join-Path $root $members[0].executable)) -ine $image -or
-  $members[0].sha256 -cne $ExpectedDigest -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedDigest){throw 'Owned Workspace digest changed'}
-$process=Get-Process -Id $OwnerProcessId
+  [IO.Path]::GetFullPath((Microsoft.PowerShell.Management\Join-Path $root $members[0].executable)) -ine $image -or
+  $members[0].sha256 -cne $ExpectedDigest -or (Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedDigest){throw 'Owned Workspace digest changed'}
+$process=Microsoft.PowerShell.Management\Get-Process -Id $OwnerProcessId
 if($process.Path -ine $image -or $process.StartTime.ToUniversalTime().ToString('o') -cne $ExpectedStart){throw 'Owned Workspace PID identity changed'}
 if(@(NetSecurity\Get-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -ErrorAction SilentlyContinue).Count -ne 0){throw 'Refusing to replace an existing firewall rule'}
 $failureStage='effective-profile'

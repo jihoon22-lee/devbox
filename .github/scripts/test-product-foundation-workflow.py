@@ -269,6 +269,9 @@ assert '.github/scripts/test-windows-dependency-network-commands.ps1' in helper_
 assert "'dependencies' -in $selectedApps" in helper_step
 assert "'workspace' -in $selectedApps" in helper_step
 assert "inputs.suite_diagnostic_boundaries_only" in helper_step
+assert workflow.count('.github/scripts/windows-suite-receiver-access.test.ps1') == 1
+assert '.github/scripts/windows-suite-receiver-access.test.ps1' in helper_step
+assert "'handoff' -in $selectedApps" in helper_step
 assert "$selectedApps = @()" in work_step
 assert "$selectedAppScripts = @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')" in work_step
 assert "$selectedAppScripts = @($appScripts.Values)" not in work_step
