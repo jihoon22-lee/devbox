@@ -1,3 +1,4 @@
+import { knowledgeStepObserver, foundationMode, cleanupObservation } from "./product-foundation-observation.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
@@ -38,16 +39,24 @@ if (process.argv.includes("--workspace-user-flows")) {
   await runWorkspaceUserFlows();
   process.exit(0);
 }
-const smokeOnly = process.argv.includes("--smoke-only");
-assert.ok(process.argv.slice(2).every((value) => value === "--smoke-only"));
+const mode = foundationMode(process.argv.slice(2), process.env);
+const { smokeOnly } = mode;
 const elevated = windowsProcessIsElevated();
-const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products;
+const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products.filter(
+  (product) => !mode.knowledgeOnly || product.id === "knowledge",
+);
 const root = mkdtempSync(path.join(tmpdir(), "devbox-product-fixture-"));
 const evidence = {
-  source: process.env.GITHUB_SHA,
+  ...mode.evidence,
   environment: "github-hosted-windows",
   fixtureVersion: 1,
-  scope: smokeOnly ? "fresh-portable-startup" : "full-product-native",
+  scope: mode.diagnostic
+    ? mode.knowledgeOnly
+      ? "knowledge-native-diagnostic"
+      : "product-sequence-diagnostic"
+    : smokeOnly
+      ? "fresh-portable-startup"
+      : "full-product-native",
   products: [],
   result: "failed",
 };
@@ -119,13 +128,13 @@ async function connect(port, child, deadline = performance.now() + 30_000, termi
             response.error ? entry.reject(new Error("CDP request failed")) : entry.resolve(response.result);
           }
         });
-        const command = (method, params = {}) => {
+        const command = (method, params = {}, timeoutMs = 10_000) => {
           const next = ++id;
           return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
               pending.delete(next);
               reject(new Error("CDP setup timeout"));
-            }, 10_000);
+            }, timeoutMs);
             pending.set(next, { resolve, reject, timer });
             socket.send(JSON.stringify({ id: next, method, params }));
           });
@@ -152,7 +161,41 @@ async function connect(port, child, deadline = performance.now() + 30_000, termi
                   "product-foundation-evidence/renderer-timeout.json",
                   JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2),
                 );
-                reject(new Error(`CDP request timeout at ${currentProbe?.stage}`));
+                const original = new Error(`CDP request timeout at ${currentProbe?.stage}`);
+                if (currentProbe?.stage !== "knowledge-components") {
+                  reject(original);
+                  return;
+                }
+                void command(
+                  "Runtime.evaluate",
+                  {
+                    expression: "window.__devboxKnowledgeProbe ?? null",
+                    returnByValue: true,
+                    awaitPromise: false,
+                  },
+                  2000,
+                )
+                  .then((value) => {
+                    writeFileSync(
+                      `product-foundation-evidence/knowledge-steps-${currentProbe.suffix}.json`,
+                      JSON.stringify(
+                        { ...mode.evidence, probe: currentProbe, marker: value.result?.value ?? null },
+                        null,
+                        2,
+                      ),
+                    );
+                  })
+                  .catch(() => {
+                    try {
+                      writeFileSync(
+                        `product-foundation-evidence/knowledge-steps-${currentProbe.suffix}.json`,
+                        JSON.stringify({ ...mode.evidence, probe: currentProbe, markerUnavailable: true }, null, 2),
+                      );
+                    } catch {
+                      /* Keep the original timeout authoritative. */
+                    }
+                  })
+                  .finally(() => reject(original));
               }, timeoutMs);
               pending.set(next, { resolve, reject, timer });
               socket.send(
@@ -635,7 +678,9 @@ async function start(product, suffix) {
         );
         progress(product, suffix, "knowledge-components");
         componentProbe = await cdp.evaluate(`(async () => {
-        const invoke = window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}
+        const marker = window.__devboxKnowledgeProbe = { steps: [] };
+        const step = (${knowledgeStepObserver.toString()})(marker);
+        const invoke = (method, args) => step(args?.request?.method ?? method, () => window.__TAURI_INTERNALS__.invoke(method, args)); ${typedComponentBridge}
         const d = await invoke("plugin:product-shell|describe");
         const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route });
         const call = (component, route, method, args = {}) => invokeComponent("knowledge", { request: { header: header(route), component, method, args } });
@@ -673,6 +718,20 @@ async function start(product, suffix) {
           unapprovedBindingRejected: true,
         });
         componentProbe.automaticStartup = true;
+        writeFileSync(
+          `product-foundation-evidence/components-knowledge-${suffix}.json`,
+          JSON.stringify(
+            {
+              ...mode.evidence,
+              product: product.id,
+              suffix,
+              componentProbe,
+              marker: await cdp.evaluate("window.__devboxKnowledgeProbe"),
+            },
+            null,
+            2,
+          ),
+        );
         await cdp.evaluate(
           `Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "활동").click()`,
         );
@@ -772,7 +831,14 @@ async function start(product, suffix) {
       restoreElevatedCdpPolicy(policy);
       policy = null;
     }
+    if (product.id !== "knowledge")
+      writeFileSync(
+        `product-foundation-evidence/components-${product.id}-${suffix}.json`,
+        JSON.stringify({ ...mode.evidence, product: product.id, suffix, componentProbe }, null, 2),
+      );
     return {
+      product: product.id,
+      suffix,
       child,
       cdp,
       policy,
@@ -783,7 +849,7 @@ async function start(product, suffix) {
       performanceProbe,
     };
   } catch (error) {
-    stop({ child, cdp, policy, network });
+    stop({ product: product.id, suffix, child, cdp, policy, network });
     throw error;
   }
 }
@@ -791,9 +857,30 @@ async function start(product, suffix) {
 function stop(instance) {
   instance?.network?.close();
   instance?.cdp?.close();
+  let termination;
   if (instance?.child?.pid && instance.child.exitCode === null) {
     // Kill only the process tree created by this fixture.
-    spawnSync("taskkill.exe", ["/PID", String(instance.child.pid), "/T", "/F"], { stdio: "ignore" });
+    termination = spawnSync("taskkill.exe", ["/PID", String(instance.child.pid), "/T", "/F"], { stdio: "ignore" });
+  }
+  if (mode.diagnostic && instance?.child?.pid) {
+    try {
+      writeFileSync(
+        `product-foundation-evidence/cleanup-${instance.product}-${instance.suffix}.json`,
+        JSON.stringify(
+          {
+            ...mode.evidence,
+            product: instance.product,
+            suffix: instance.suffix,
+            rootPid: instance.child.pid,
+            ...cleanupObservation(termination, () => process.kill(instance.child.pid, 0)),
+          },
+          null,
+          2,
+        ),
+      );
+    } catch {
+      /* Diagnostic collection must not alter the existing cleanup outcome. */
+    }
   }
   if (instance?.policy) restoreElevatedCdpPolicy(instance.policy);
 }

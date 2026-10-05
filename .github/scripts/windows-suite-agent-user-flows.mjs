@@ -1,3 +1,4 @@
+import { cleanupOwnedFixture, withOwnedCleanup } from "./owned-fixture-cleanup.mjs";
 // Installer checkpoints and Suite Agent acceptance use one owned candidate installation.
 import assert from "node:assert/strict";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
@@ -21,7 +22,7 @@ import {
   stopOwnedProcess,
 } from "./windows-packaged-smoke.mjs";
 import { focusWindowsCdpHost } from "./windows-cdp-host.mjs";
-import { createInstalledProductContext } from "./windows-suite-ui-context.mjs";
+import { createInstalledProductContext, observeNormalClose } from "./windows-suite-ui-context.mjs";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -139,13 +140,15 @@ export async function launchOwnedProduct(context, product) {
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
   for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
   const child = spawn(executable, [], { cwd: path.dirname(executable), env, stdio: "ignore" });
-  await once(child, "spawn");
-  const identity = await until(
-    () => allWindowsProcesses().find((p) => p.Pid === child.pid && p.Path?.toLowerCase() === executable.toLowerCase()),
-    "owned product identity",
-  );
-  const item = { product, identity, executable, child, policy, cdp: null };
+  const item = { product, identity: null, executable, child, policy, cdp: null };
   try {
+    await once(child, "spawn");
+    const identity = await until(
+      () =>
+        allWindowsProcesses().find((p) => p.Pid === child.pid && p.Path?.toLowerCase() === executable.toLowerCase()),
+      "owned product identity",
+    );
+    item.identity = identity;
     item.cdp = await connect(port, child);
     item.windowOwner = captureWindowOwner(identity, context.root);
     await focusWindowsCdpHost(identity);
@@ -161,39 +164,29 @@ export async function launchOwnedProduct(context, product) {
     );
     return item;
   } catch (error) {
-    await stopOwnedProcess(identity, executable, child);
-    releaseCdpSession(item);
+    await cleanupOwnedFixture(
+      item,
+      () => stopOwnedProcess(item.identity, executable, child),
+      () => releaseCdpSession(item),
+    ).catch(() => {});
     throw error;
   }
 }
 export async function closeOwnedProduct(item, force = false) {
-  try {
-    if (item.child?.exitCode === null) {
-      if (force) await stopOwnedProcess(item.identity, item.executable, item.child);
-      else {
+  return withOwnedCleanup(
+    async () => {
+      if (item.child?.exitCode === null && !force) {
         await item.ui.closeOwnedWindow();
-        let reviewed = false;
-        await until(async () => {
-          if (item.child.exitCode !== null) return true;
-          if (
-            item.product === "workspace" &&
-            !reviewed &&
-            (await item.cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')'))
-          ) {
-            await item.ui.click({
-              role: "button",
-              name: "종료",
-              scope: { role: "dialog", name: "Workspace 종료 검토" },
-            });
-            reviewed = true;
-          }
-          return false;
-        }, "normal owned product close");
+        await observeNormalClose(item, until);
       }
-    }
-  } finally {
-    releaseCdpSession(item);
-  }
+    },
+    () =>
+      cleanupOwnedFixture(
+        item,
+        () => stopOwnedProcess(item.identity, item.executable, item.child),
+        () => releaseCdpSession(item),
+      ),
+  );
 }
 export async function afterAgentCommit(input) {
   const context = await verifiedScope(input),

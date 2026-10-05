@@ -11,6 +11,8 @@ import path from "node:path";
 import { readFile, writeFile, mkdir, stat, realpath } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { createRequire } from "node:module";
+import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { prepareLegacySuite, legacySource } from "./windows-legacy-suite-fixture.mjs";
@@ -24,7 +26,7 @@ import { runVisibleSetup, ownedNsisSpawnOptions } from "./windows-suite-installe
 import { completeInstalledHealth, closeAutomaticallyOpenedCenter } from "./windows-suite-health-actions.mjs";
 import { createInstalledProductContext, observeUntil } from "./windows-suite-ui-context.mjs";
 import { createInstalledKnowledgeContext } from "./windows-knowledge-user-flows.mjs";
-import { windowsLocalAppData, allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+import { windowsLocalAppData, allWindowsProcesses, stopOwnedProcess } from "./windows-packaged-smoke.mjs";
 const editor = { role: "textbox", name: "Markdown 본문" };
 const json = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^\uFEFF/u, ""));
 export function legacyOperationFailure(operation, code, signal, stdout, stderr) {
@@ -68,6 +70,139 @@ async function execute(image, args, { timeout = 180000, operation = "subprocess"
   }
   if (code !== 0) throw legacyOperationFailure(operation, code, signal, output, error);
   return output.trim();
+}
+const productCatalog = createRequire(import.meta.url)("../../apps/products.json");
+export function shortcutWindowReady(product, view) {
+  const definition = productCatalog.products.find((item) => item.id === product);
+  const feature = productCatalog.features.find(
+    (item) => item.owner === product && item.route === definition?.defaultRoute,
+  );
+  return (
+    !!definition &&
+    !!feature &&
+    view.name === definition.label &&
+    view.enabled === true &&
+    view.selectedWindowCount === 1 &&
+    view.buttons?.some((button) => button.name === feature.label && button.enabled && button.visible) === true
+  );
+}
+export async function verifyRegisteredShortcutLaunches(verify) {
+  const proofs = [];
+  for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
+    const proof = await verify(product);
+    assert.equal(proof.product, product);
+    for (const field of ["registeredLink", "freshProcess", "imageVerified", "ownedWindowReady"])
+      assert.equal(proof[field], true);
+    assert.equal(typeof proof.screenshot, "string");
+    proofs.push(proof);
+  }
+  return proofs;
+}
+async function verifyInstalledShortcut(root, product, evidenceId) {
+  const manifest = await json(path.join(root, "devbox-installation.json"));
+  const member = manifest.members.find((item) => item.product === product);
+  assert.equal(member?.executable, `generations/${manifest.generation}/products/${product}/devbox-${product}.exe`);
+  const executable = await realpath(path.join(root, member.executable));
+  assert.equal(executable.toLowerCase(), path.resolve(root, member.executable).toLowerCase());
+  const release = await json(path.join(process.env.DEVBOX_USER_FLOW_ASSETS, "release-manifest.json"));
+  const expected = release.products
+    .find((item) => item.id === product)
+    .files.find((item) => item.name === `devbox-${product}.exe`);
+  assert.equal(await fileDigest(executable), member.sha256);
+  assert.equal(member.sha256, expected.sha256);
+  const matches = () => allWindowsProcesses().filter((item) => item.Path.toLowerCase() === executable.toLowerCase());
+  assert.equal(matches().length, 0, "Existing product must not satisfy a shortcut launch");
+  let identity, owner, failure;
+  try {
+    const launched = JSON.parse(
+      await execute(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-File",
+          path.resolve(".github/scripts/windows-suite-shortcut-launch.ps1"),
+          "-Root",
+          root,
+          "-Product",
+          product,
+        ],
+        { operation: "registered-shortcut-launch", timeout: 30000 },
+      ),
+    );
+    assert.deepEqual(launched, { schemaVersion: 1, product, shortcutVerified: true, launchedRegisteredLink: true });
+    await observeUntil(() => {
+      const found = matches();
+      assert.ok(found.length <= 1, "Ambiguous shortcut product process");
+      identity = found[0];
+      return !!identity;
+    }, "registered shortcut product process");
+    owner = captureWindowOwner(identity, path.dirname(root));
+    await observeUntil(() => {
+      try {
+        return shortcutWindowReady(product, nativeWindowAction(owner, "Inspect"));
+      } catch {
+        return false;
+      }
+    }, "registered shortcut usable product window");
+    const screenshot = path.resolve(
+      `product-foundation-evidence/user-flows/screenshots/installer/${evidenceId}-shortcut-${product}.png`,
+    );
+    await mkdir(path.dirname(screenshot), { recursive: true });
+    await execute(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        path.resolve(".github/scripts/windows-owned-installer-fault.ps1"),
+        "-Action",
+        "Capture",
+        "-FixtureRoot",
+        path.dirname(root),
+        "-FilePath",
+        screenshot,
+        "-TargetProcessId",
+        String(identity.Pid),
+        "-ExpectedExecutable",
+        executable,
+        "-ExpectedStartTimeUtc",
+        owner.started,
+      ],
+      { operation: "registered-shortcut-window-capture", timeout: 30000 },
+    );
+    assert.deepEqual(await json(path.join(root, "devbox-installation.json")), manifest);
+    return {
+      product,
+      registeredLink: true,
+      freshProcess: true,
+      imageVerified: true,
+      ownedWindowReady: true,
+      screenshot,
+    };
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    // Only the newly observed exact image/creation identity is eligible.
+    if (!identity) {
+      const found = matches();
+      if (found.length === 1) identity = found[0];
+    }
+    if (identity) {
+      const child = {
+        get exitCode() {
+          return matches().some((item) => item.Pid === identity.Pid && item.Created === identity.Created) ? null : 0;
+        },
+      };
+      try {
+        await stopOwnedProcess(identity, executable, child);
+      } catch (cleanupError) {
+        if (!failure) throw cleanupError;
+        failure.shortcutCleanupError = boundedFailure(cleanupError);
+      }
+    }
+  }
 }
 export async function validateOwnedLegacyRun() {
   assert.equal(process.platform, "win32");
@@ -242,6 +377,29 @@ export async function runLegacyUpgradeUserFlow({ withdrawn = false } = {}) {
     screenshots.push(...(await completeInstalledHealth("업데이트 확정")));
     assert.equal((await json(path.join(root, "suite-payload.json"))).sourceSha, identity.sourceSha);
     assert.equal(await readWalRow((await notesStore(registration.installationKey)).file), synthetic.token);
+    stage = "committed-registered-shortcuts";
+    const shortcutProofs = await verifyRegisteredShortcutLaunches(async (product) => {
+      const proof = await verifyInstalledShortcut(root, product, evidenceId);
+      screenshots.push(proof.screenshot);
+      return proof;
+    });
+    assertions.push(
+      "All four registered Start Menu links launched fresh exact committed product images with owned HWND and usable product navigation; no direct executable fallback",
+    );
+    await writeFile(
+      `product-foundation-evidence/${evidenceId}-registered-shortcuts.json`,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          sourceSha: identity.sourceSha,
+          products: shortcutProofs.map(({ screenshot, ...proof }) => proof),
+        },
+        null,
+        2,
+      ),
+      { flag: "wx" },
+    );
+
     let currentCheckpoint;
     const launchRecovery = async () => {
       center = await createInstalledProductContext("control-center");

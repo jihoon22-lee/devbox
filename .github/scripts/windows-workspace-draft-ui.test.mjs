@@ -138,3 +138,26 @@ test("crash recovery returns to the owned project and Files before reading its j
   });
   assert.equal(records[0].error.message, boundary);
 });
+
+test("failed recovery journal distinguishes explicit file save from unsaved preservation", async () => {
+  const { reviewRecoveryWriterFailure } = await import("./windows-workspace-draft-ui.mjs");
+  const before = Buffer.from("before");
+  const after = Buffer.from("after");
+  let bytes = before;
+  const events = [];
+  await reviewRecoveryWriterFailure({
+    ui: {
+      closeOwnedWindow: async () => events.push("close"),
+      waitForTarget: async () => {},
+      click: async ({ name }) => {
+        events.push(name);
+        if (name === "파일 저장 후 종료") bytes = after;
+      },
+    },
+    fixture: { waitForText: async () => events.push("flush-failed") },
+    readBytes: async () => bytes,
+    before,
+    after,
+  });
+  assert.deepEqual(events, ["close", "파일 저장 후 종료", "flush-failed"]);
+});

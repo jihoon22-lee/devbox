@@ -5,7 +5,7 @@ import {
   reportInstallerResults,
   readInstallerOperations,
 } from "./windows-suite-installer-evidence.mjs";
-import { ownedNsisSpawnOptions } from "./windows-suite-installer-actions.mjs";
+import { ownedNsisSpawnOptions, installerFailureObservation } from "./windows-suite-installer-actions.mjs";
 import path from "node:path";
 import { mkdir, appendFile, copyFile, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
@@ -38,6 +38,19 @@ import {
   releaseCdpSession,
   stopOwnedProcess,
 } from "./windows-packaged-smoke.mjs";
+export async function bestEffortActivationObservation(observe) {
+  try {
+    return await observe();
+  } catch {
+    return { unavailable: true };
+  }
+}
+export function activationStateObservation(state) {
+  return {
+    phase: ["recover", "import", "health", "committed"].includes(state?.phase) ? state.phase : null,
+    revision: Number.isSafeInteger(state?.revision) && state.revision >= 0 ? state.revision : null,
+  };
+}
 export const scenarioIds = ["INSTALL-01", "INSTALL-02"];
 async function until(check, label, ms = 60000) {
   const deadline = Date.now() + ms;
@@ -306,15 +319,19 @@ export async function run() {
   };
   const advance = async (expected) => {
     const previous = center.process;
+    await checkpoint(`activation-${expected}-close-products`);
     for (const product of ["workspace", "api-studio", "knowledge"]) await closeProduct(product);
+    await checkpoint(`activation-${expected}-review`);
     await center.ui.click({ role: "button", name: "다음 단계" });
     await center.ui.click({ role: "checkbox", name: "선택한 작업과 제품 종료를 확인했습니다." });
     await center.ui.click({ role: "button", name: "Control Center를 닫고 실행" });
+    await checkpoint(`activation-${expected}-wait-marker`);
     await until(
       async () => JSON.parse(await readFile(path.join(root, "devbox-activation.json"), "utf8")).phase === expected,
       `activation ${expected}`,
     );
     center.cdp.close();
+    await checkpoint(`activation-${expected}-reattach`);
     await attach(previous);
     if (expected !== "committed") {
       const recovery = { role: "button", name: "데이터 및 복구", scope: { role: "navigation", name: "제품 화면" } };
@@ -547,6 +564,30 @@ export async function run() {
         error: String(inspectionError.message).slice(0, 500),
       };
     }
+    observation.activation = await bestEffortActivationObservation(async () =>
+      activationStateObservation(JSON.parse(await readFile(path.join(root, "devbox-activation.json"), "utf8"))),
+    );
+    observation.reviewedHelpers = await bestEffortActivationObservation(async () => {
+      const payloadRevision = await fileDigest(path.join(root, "suite-payload.json"));
+      const payloadPath = path.join(root, "setup", payloadRevision, "suite-payload.json");
+      assert.equal(await fileDigest(payloadPath), payloadRevision);
+      const payload = JSON.parse(await readFile(payloadPath, "utf8"));
+      const helper = path.join(path.dirname(payloadPath), "devbox-suite-bootstrap.exe");
+      const entry = payload.products
+        .find((product) => product.id === "control-center")
+        .files.find((file) => file.name === "resources/suite/devbox-suite-bootstrap.exe");
+      assert.equal(await fileDigest(helper), entry.sha256);
+      const owned = allWindowsProcesses().filter((item) => item.Path.toLowerCase() === helper.toLowerCase());
+      assert.ok(owned.length <= 4, "Unexpected owned helper count");
+      return Promise.all(
+        owned.map(async (item) => ({
+          pid: item.Pid,
+          observation: await bestEffortActivationObservation(async () =>
+            installerFailureObservation(nativeWindowAction(captureWindowOwner(item, scratch), "Inspect"), stage, null),
+          ),
+        })),
+      );
+    });
     if (center) {
       try {
         observation.centerWindow = nativeWindowAction(center.owner, "Inspect");
@@ -604,7 +645,27 @@ export async function run() {
         result.assertions.push(...cleanupFailures);
       }
     }
+    for (const attached of products.values()) attached.cdp.close();
+    products.clear();
     if (center) center.cdp.close();
+    try {
+      await writeFile(
+        "product-foundation-evidence/interactive-installer-cleanup.json",
+        JSON.stringify({
+          schemaVersion: 1,
+          stage,
+          failures: cleanupFailures,
+          products: manifest
+            ? ["workspace", "api-studio", "knowledge", "control-center"].map((product) => ({
+                product,
+                remainingCount: processFor(product).length,
+              }))
+            : [],
+        }),
+      );
+    } catch (error) {
+      console.error("Owned installer cleanup evidence unavailable:", error.message);
+    }
     for (const policy of policies.reverse()) releaseCdpSession({ policy });
     await writeFile(
       path.join(scratch, "interactive-owner.json"),

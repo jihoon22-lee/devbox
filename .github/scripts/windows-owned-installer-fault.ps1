@@ -54,6 +54,13 @@ if($Action -in @('CreateVolume','CleanupVolume')) {
  }
  exit 0
 }
+function Focus-OwnedCaptureWindow($Window,[int]$ExpectedProcessId,[scriptblock]$NativeFocus) {
+ $current=$Window.Current
+ if($current.ProcessId -ne $ExpectedProcessId -or $current.NativeWindowHandle -eq 0){throw 'Owned capture HWND identity unavailable'}
+ # UIA top-level windows need not implement keyboard focus. Native foreground
+ # selection is checked independently before reading/capturing their rectangle.
+ & $NativeFocus ([IntPtr]$current.NativeWindowHandle) $ExpectedProcessId
+}
 if($Action -eq 'Capture') {
  $image=AssertPath $ExpectedExecutable
  $process=[Diagnostics.Process]::GetProcessById($TargetProcessId)
@@ -64,7 +71,30 @@ if($Action -eq 'Capture') {
  $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty,$TargetProcessId)
  $windows=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$condition)
  if($windows.Count -ne 1){throw 'One owned installer window required'}
- $window=$windows.Item(0);$window.SetFocus();$rectangle=$window.Current.BoundingRectangle
+ Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class OwnedInstallerCapture {
+ [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
+ [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+ [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+ [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+ public static void Focus(IntPtr window,int expectedProcess) {
+  uint process;
+  GetWindowThreadProcessId(window,out process);
+  if(!IsWindow(window) || !IsWindowVisible(window) || process!=(uint)expectedProcess)
+   throw new InvalidOperationException("Owned capture HWND identity changed");
+  SetForegroundWindow(window);
+  GetWindowThreadProcessId(window,out process);
+  if(GetForegroundWindow()!=window || !IsWindow(window) || process!=(uint)expectedProcess)
+   throw new InvalidOperationException("Owned capture foreground unavailable");
+ }
+}
+'@
+ $window=$windows.Item(0)
+ Focus-OwnedCaptureWindow $window $TargetProcessId {param($handle,$owner) [OwnedInstallerCapture]::Focus($handle,$owner)}
+ $rectangle=$window.Current.BoundingRectangle
  if($rectangle.IsEmpty -or $rectangle.Width -lt 100 -or $rectangle.Height -lt 100 -or $rectangle.Width -gt 2560 -or $rectangle.Height -gt 1600){throw 'Invalid owned installer rectangle'}
  [void][IO.Directory]::CreateDirectory((Split-Path -Parent $output))
  $bitmap=[Drawing.Bitmap]::new([int]$rectangle.Width,[int]$rectangle.Height);$graphics=[Drawing.Graphics]::FromImage($bitmap)

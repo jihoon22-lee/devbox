@@ -462,3 +462,125 @@ Windows 소유 합성 파일 선택 창에서 fallback ID `1148`이 ComboBox와 
 바이트 대조까지 모두 통과했고 소유 임시 fixture는 제거했다. 제품 변경의 설치 수용 PASS로
 대체하지 않는다. 최종 Workspace delta는 119개 테스트·build/type/bundle PASS(69.3초,
 최대 1.73GB, swap 0), fixture 통합 25개 PASS, Biome 1914개 파일 PASS다.
+
+
+#624는 `7f5c0614`로 통합됐고 PR CI와 exact-main CI `37232555115`는 통과했다.
+새 후보 `37233593068`은 7개 자산 조립, native API·Knowledge·cross-product 17개 및
+격리 WSL2/Docker를 통과했으나 product-shells의 두 번째 Knowledge 인스턴스에서
+component 호출의 CDP 10초 제한에 도달했다. 원인은 미확정이며 이 후보는 승격하지 않는다.
+
+보관한 동일 바이너리의 Knowledge 단독 진단 `37238298578`은 두 인스턴스 모두 통과했고,
+14개 호출 합계는 각각 121ms·232ms였다. 제한 시간 부족이라고 판단하거나 시간을 늘릴
+근거는 없다. 진단은 호출 이름·시작·완료·소요 시간만 기록하고 인자·결과·오류 본문은
+수집하지 않는다. 첫 인스턴스의 성공 근거는 다음 인스턴스 실패와 무관하게 즉시 보존한다.
+원래 Workspace·API Studio 선행 실행, owned WSL1·Git·private LSP 준비까지 유지하는
+전체 순서 진단으로 조건 차이를 좁힌다. 소유 프로세스의 기존 종료 명령 결과와 root PID
+잔존 여부만 추가 관찰하며 종료 전략은 바꾸지 않는다. 두 진단 모두 payload/runner source를
+구분하고 `diagnosticOnly=true`, `promotionEvidence=false`로 기록한다. 최종 설치 여정과
+원인 확인 결과는 같은 보정 PR 본문 및 Actions artifact에 남긴다.
+
+
+정리 코드의 별도 검토에서는 Agent identity 관측·정상 종료 실패, Knowledge 종료 실패,
+공용 설치 context의 소유 종료 실패 시 child/CDP 참조가 남는 경로를 확인했다. 검증된
+identity에만 기존 소유 종료 절차를 적용하고, 오류가 나도 CDP·pipe·live child 참조를
+해제한다. identity가 없으면 프로세스를 보존하며 원래 primitive/frozen 오류도 cleanup
+오류로 덮지 않는다. Agent 정상 종료는 기존 소켓 종료 race 관측기를 재사용한다. 관련
+27개 회귀는 통과했으며 진행 중 후보의 실패 원인이라는 의미로 기록하지 않는다.
+
+
+전체 순서 보관 진단 `37238846964`는 네 제품 모두 통과했다. payload는 `7f5c0614`,
+runner는 `3b9dadcc`이며 Knowledge 호출 합계는 260ms·113ms, 여덟 소유 root의 종료
+명령 exit=0과 PID 부재를 관찰했다. 최초 시간 초과는 재현되지 않았고 원인 해결이라고
+주장하지 않는다. 원래 후보는 native gate 실패로 계속 승격 불가다.
+설치 여정 `37233593068`의 기록은 19 PASS·13 FAIL·1 NOT_RUN·7개 결과 없음이다.
+철회본 동일 버전 업데이트와 INSTALL-03의 dirty 종료/업데이트 취소는 이번에 통과했다.
+API AUTH-02는 새로 고침 중 기존 option만 보고 비활성 combobox를 클릭한 fixture 오류라
+활성 상태를 먼저 관찰한다. 독립 후속 API 모듈을 계속 실행하되 기존 FAIL/missing 판정은
+유지한다. 업데이트 Health 진입 전 종료된 Knowledge의 CDP 정책을 해제하지 않은 별도
+fixture 오류는 이전 context 정리를 완료한 뒤 새 Health context를 열도록 보정한다.
+
+
+WORK-01의 journal 실패 검사는 명시적 파일 저장 전 원본 보존, 저장 후 정확한 새 바이트,
+종료 차단·취소 후 편집 내용 보존·journal 복구 후 정상 종료를 나누어 검증한다. 이전 검사는
+사용자가 저장을 승인한 뒤에도 원본 바이트를 기대해 실패했으며 그때 남긴 복구 창이 후속
+LSP/Dependencies 검사를 가렸다. WORK-02는 선택한 worktree의 Source 준비 완료 후 검토하고
+새 context의 Git 권한을 실제 UI로 승인한다. Runtime crash 검사는 정상 닫기를 먼저 시도하던
+정리 함수를 쓰지 않고 PID·생성 시각·이미지가 일치하는 소유 root를 즉시 강제 종료하며,
+종료까지 디버거를 유지하고 pending 복구 조건은 유지한다. 여러 worktree 선택은 이미 표시된
+경로별 접근성 그룹으로 구분한다. 기존 보관 바이너리에는 이 그룹이 없어 다중 worktree의
+최종 수용은 새 후보에서 확인한다.
+
+제거 검증은 NSIS 원본 실행기가 self-copy child를 시작하고 반환한 exit=0을 실제 제거 성공으로
+잘못 해석할 수 있었다. 기존 visible 제거와 같이 SHA가 같은 소유 임시 복사본을 final raw
+`_?=root` 인자로 실행해 실제 uninstaller 종료를 기다리며 receipt·pending·소유권 조건을
+유지한다. 기다리는 단계와 실제 종료 코드, pending/receipt 존재 여부를 즉시 보존해 outer
+timeout에도 최초 경계를 잃지 않는다. 실제 legacy 제거 실패 원인은 아직 미확정이며 이
+관찰 보정을 제품 제거 성공으로 취급하지 않는다.
+
+
+최종 로컬 영향 검사는 Workspace build/type/bundle 및 120개 테스트를 66.5초에 통과했다
+(cgroup 최대 1.63GB, swap 0). catalog/workflow/fixture 계약과 Biome 1920개 파일은
+8.0초에 통과했다. 같은 compiler scope는 반복하지 않으며 기존 후보의 설치 여정 진단과
+새 제품 source의 최종 Windows 수용은 이 로컬 결과와 구분한다.
+
+
+보관 설치 진단 `37240354785`(runner `43cbc8b2`, payload `7f5c0614`)은 합성 Windows
+정리 회귀, 실제 설치·중단 재개와 네 제품 준비 관찰을 통과한 뒤 reviewed activation의
+Health marker를 기다리다 실패했다. 이전 stage 이름 `installed-center-reopen`은 갱신되지
+않은 진단 이름이며 실제 실패 위치는 `advance("health")`다. 종료된 Center의 CDP 오류를
+제품 hang으로 단정하지 않는다. helper의 native 상태·고정 오류 코드와 activation phase,
+종료·재연결 세부 경계를 추가 보존한다. 제품 동작과 제한 시간은 유지한다. 후속 여정은
+committed 설치가 없어 미실행이며 정리는 살아 있는 소유 프로세스를 감지해 보존했다.
+이 진단 역시 승격 근거로 사용하지 않는다.
+
+
+진단 `37241133911`(runner `6289f827`, 같은 payload `7f5c0614`)에서는 설치·재개·활성화가
+통과했다. 앞선 Health 전환 시간 초과는 재현되지 않았고 해결됐다고 단정하지 않는다.
+필수 여정 기록은 25 PASS·10 FAIL·1 NOT_RUN·4개 결과 없음이다. AUTH-02와 환경·웹훅,
+Knowledge 8개는 통과했다. WORK-01은 native journal 삭제가 실패한 뒤 삭제 의도를 잊는
+실제 RecoveryWriter 결함으로 확인했다. 이때 남은 과거 초안의 복구 modal이 LSP·DEPS
+입력을 가렸다. WORK-03과 Transform은 비동기 화면 준비·자동 전달 modal을 잘못 다룬
+fixture 결함으로 구분한다. Runtime의 재시작 후 브라우저 pending 부재는 native receipt
+기반 복구 경계를 보강하며, gRPC 저장 경로 불일치는 아직 원인을 확정하지 않았다.
+
+DELIVERY-02는 visible removal 후 실패 fixture 화면 캡처에서 포커스 불가능한 UIA root에
+SetFocus를 호출해 중단됐다. 재설치 전 중단으로 같은 설치 manifest가 없어졌으므로 뒤따른
+Agent 및 최종 정리의 ENOENT는 후속 영향이다. 캡처는 소유 HWND의 native foreground로
+한 번 전환해 확인한다. 별도 v0.8.1 업그레이드 fixture의 정리는 실제 uninstaller exit=1을
+관찰했다. 보존된 v0.8.1 제거 도우미가 새 Knowledge·Agent 구성요소를 파싱하지 못해 새
+도우미에 위임하기 전에 거부하는 호환성 결함을 확인했으며, 소유권과 rollback을 보존하는
+제거 프로그램 교체를 같은 보정 PR에서 다룬다. 진단 결과는 승격 근거가 아니다.
+
+같은 v0.8.1 도우미의 시작 메뉴 전달 경로도 현재 payload를 먼저 파싱하므로 새 구성요소를
+거부한다. 기존 DELIVERY-01은 설치된 실행 파일을 직접 열어 이 바로가기 경로를 검증하지
+못했다. 보정 범위에 확정 시 소유 바로가기의 도우미·인자 갱신과 실제 등록된 `.lnk` 실행을
+추가한다. 등록 JSON의 닫힌 기존 형식은 유지하며, 확정 전 되돌리기와 중단된 교체의 재개를
+검증한다. 제거 프로그램만 교체하고 바로가기 호환성도 해결된 것으로 간주하지 않는다.
+
+Workspace journal 삭제 재시도 5개, Runtime native receipt 7개·프런트 복구 18개·crash
+fixture 14개의 좁은 회귀와 프런트 타입 검사는 통과했다. Runtime은 브라우저 저장소와
+무관하게 원래 native 완료 결과를 조회하고 확인 처리하며, private Session 기록과 중단된
+실행 소유권 검사는 유지한다. 일부 결과를 확인한 뒤 후속 조회가 실패해도 확인한 결과를
+화면에서 잃지 않는다. 이 변경들의 실제 Windows 수용은 새 payload에서 수행한다.
+
+제거 프로그램·바로가기 교체의 production core와 실제 removal Plan을 연결한 좁은 검사
+12개, NSIS 입력 회귀 7개가 통과했다. 확정 전 기존 등록 보존, 부분 복사 정리, 네 링크의
+각 교체 전후 중단, 등록 저장 후 receipt 정리 재개와 foreign 파일 거부를 포함한다. 기존
+Registration 형식의 payload revision·shortcut Plan은 하나의 원자적 저장으로 함께 갱신한다.
+새 NSIS 단계가 없는 앱 내 업데이트에서는 기존 제거 프로그램의 검증된 revision 권한을
+별도로 유지한다. 독립 검토에서 추가 blocker는 없었으며 Windows native 컴파일·설치 수용은
+최종 CI와 새 후보에서 확인한다.
+
+legacy/철회본 업데이트 확정 뒤 등록된 네 `.lnk`를 직접 실행하는 수용을 추가했다.
+등록 Plan의 파일 identity·SHA와 target/args, 실행 전 해당 제품 프로세스 부재, 실행 후
+정확한 새 제품 PID·이미지·소유 창과 사용 가능한 탐색 버튼을 확인하고 스크린샷을 보존한다.
+Node 회귀 9개와 문법·포맷은 통과했다. 새 PowerShell identity 회귀는 이 PC의 실행 정책이
+UNC와 전용 로컬 TEMP 모두에서 거절해 미실행이다. 정책을 변경하지 않았고 소유 TEMP는
+정리했다. 해당 검사는 격리 hosted Windows의 명시적 PowerShell 필수 단계에 등록했다.
+
+보정 묶음의 최종 `verify:affected`는 Workspace·workspace-features 프런트 977개와 Rust
+역의존 5개 패키지의 596개 테스트, build/type/bundle·check/clippy/fmt·생성 타입 정합성을
+512.4초에 통과했다. 실제 WSL interoperability 테스트 1개는 로컬 조건상 ignored이며
+Windows/WSL 수용 PASS에 합산하지 않는다. cgroup memory peak 5.56GB, 마지막 swap
+5.22MB로 설정한 예산 안에서 완료했다. 변경된 catalog/workflow/fixture·NSIS 계약 검사는
+4.2초에 통과했다. Biome 1920개 파일도 통과했고 추가 전체 재실행은 하지 않았다.

@@ -1,3 +1,4 @@
+import { cleanupOwnedFixture, withOwnedCleanup } from "./owned-fixture-cleanup.mjs";
 // Attach real input and read-only observations to an exact owned installed product.
 import assert from "node:assert/strict";
 import { readFile, realpath } from "node:fs/promises";
@@ -114,20 +115,19 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       () => cdp.evaluate(`Boolean(document.querySelector('nav[aria-label="제품 화면"]'))`),
       "product shell",
     );
-    const close = async () => {
-      try {
+    const cleanup = () =>
+      cleanupOwnedFixture(
+        { identity: processIdentity, child },
+        () => stopOwnedProcess(processIdentity, executable, child),
+        dispose,
+      );
+    const close = () =>
+      withOwnedCleanup(async () => {
         if (child.exitCode === null) {
           nativeWindowAction(owner, "Close");
           await observeNormalClose({ child, product, cdp, ui });
         }
-      } finally {
-        try {
-          if (child.exitCode === null) await stopOwnedProcess(processIdentity, executable, child);
-        } finally {
-          dispose();
-        }
-      }
-    };
+      }, cleanup);
     const delivery = async (method) => {
       assert.ok(
         ["restore_inventory", "suite_recovery", "suite_health"].includes(method),
@@ -163,16 +163,11 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       body: () => cdp.evaluate("document.body.innerText"),
     };
   } catch (error) {
-    try {
-      if (child?.exitCode === null && processIdentity) {
-        await stopOwnedProcess(processIdentity, executable, child);
-      } else if (child?.exitCode === null) {
-        child.kill();
-        await observeUntil(() => child.exitCode !== null || child.signalCode !== null, "failed owned spawn cleanup");
-      }
-    } finally {
-      dispose();
-    }
+    await cleanupOwnedFixture(
+      { identity: processIdentity, child },
+      () => stopOwnedProcess(processIdentity, executable, child),
+      dispose,
+    ).catch(() => {});
     throw error;
   }
 }

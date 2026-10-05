@@ -216,16 +216,182 @@ fn registry(root: &Path, key: &str, version: &str) -> Result<()> {
     }
     Ok(())
 }
-/// Existing links and the generated uninstaller are stable dispatchers pinned
-/// by the first installation. Updates retain those bytes and change ARP version.
+fn replace_dispatcher_file(source: &Path, destination: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(destination.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|_| "suite_shortcut_unavailable")
+}
+fn create_dispatcher_link(
+    destination: &Path,
+    root: &Path,
+    cached: &Path,
+    helper: &Path,
+    id: &str,
+    label: &str,
+) -> Result<()> {
+    let link: IShellLinkW = unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }
+        .map_err(|_| "suite_shortcut_unavailable")?;
+    let target = wide(helper.to_str().ok_or("bootstrap_root_unsafe")?);
+    let args = wide(&format!(
+        "--open-{id} \"{}\" \"{}\"",
+        root.to_string_lossy(),
+        cached.join("suite-payload.json").to_string_lossy()
+    ));
+    let description = wide(&format!("Devbox {label}"));
+    unsafe {
+        link.SetPath(PCWSTR(target.as_ptr()))
+            .and_then(|()| link.SetArguments(PCWSTR(args.as_ptr())))
+            .and_then(|()| link.SetDescription(PCWSTR(description.as_ptr())))
+    }
+    .map_err(|_| "suite_shortcut_unavailable")?;
+    let persist: IPersistFile = link.cast().map_err(|_| "suite_shortcut_unavailable")?;
+    let temporary = destination
+        .parent()
+        .ok_or("suite_shortcut_directory_unsafe")?
+        .join(format!(".{}.lnk", uuid::Uuid::new_v4()));
+    let path = wide(
+        temporary
+            .to_str()
+            .ok_or("suite_shortcut_directory_unsafe")?,
+    );
+    unsafe { persist.Save(PCWSTR(path.as_ptr()), true) }
+        .map_err(|_| "suite_shortcut_unavailable")?;
+    fs::hard_link(&temporary, destination).map_err(|_| "suite_shortcut_conflict")?;
+    fs::remove_file(&temporary).map_err(|_| "suite_shortcut_unavailable")?;
+    verify_link(
+        destination,
+        helper,
+        &format!(
+            "--open-{id} \"{}\" \"{}\"",
+            root.to_string_lossy(),
+            cached.join("suite-payload.json").to_string_lossy()
+        ),
+    )
+}
+/// Refresh the registered links at commit so old helpers need not parse newer
+/// package closures. A staged NSIS uninstaller is adopted at the same boundary.
 pub(super) fn update_version(root: &Path, key: &str, version: &str) -> Result<()> {
-    if let Some(registration) = read_registration(root, key)? {
+    if let Some(mut registration) = read_registration(root, key)? {
+        let owner: InstallOwner =
+            serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+                .map_err(|_| "bootstrap_owner_invalid")?;
+        let original = registration
+            .uninstaller
+            .as_ref()
+            .ok_or("suite_registration_incomplete")?;
+        if let Some(adopted) = crate::core::uninstaller_adoption::adopt(
+            root,
+            key,
+            &owner.payload_revision,
+            original,
+            replace_dispatcher_file,
+        )? {
+            registration.uninstaller = Some(adopted);
+            save(root, &registration)?;
+            crate::core::uninstaller_adoption::finish(root)?;
+        }
         registration
             .uninstaller
             .as_ref()
             .ok_or("suite_registration_incomplete")?
             .verify_remaining(root)?;
+        if registration.payload_revision != owner.payload_revision
+            || crate::core::shortcut_adoption::has_pending(root)?
+        {
+            let cached = root.join("setup").join(&owner.payload_revision);
+            let bytes = read(&cached.join("suite-payload.json"), MAX_RELEASE_BYTES as u64)?;
+            if hash(&bytes) != owner.payload_revision {
+                return Err("bootstrap_payload_changed");
+            }
+            let payload = Payload::parse(&bytes)?;
+            if payload.suite_version != version {
+                return Err("suite_registration_changed");
+            }
+            let helper = cached.join("devbox-suite-bootstrap.exe");
+            verify_payload_owner(&payload, &helper)?;
+            let _pins = crate::suite::platform::component_scope::pin_directories(
+                &registration.shortcut_directory,
+            )?;
+            unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+                .ok()
+                .map_err(|_| "suite_shortcut_com_unavailable")?;
+            let _com = Com;
+            // An in-app update has no fresh NSIS uninstaller. Keep its verified
+            // revision authorized independently when shortcut revision advances.
+            crate::core::uninstaller_adoption::remember(
+                root,
+                key,
+                &registration.payload_revision,
+                registration
+                    .uninstaller
+                    .as_ref()
+                    .ok_or("suite_registration_incomplete")?,
+            )?;
+            let original = registration
+                .shortcut_plan
+                .as_ref()
+                .ok_or("suite_registration_incomplete")?;
+            let adopted = crate::core::shortcut_adoption::adopt(
+                root,
+                &registration.shortcut_directory,
+                key,
+                &owner.payload_revision,
+                original,
+                |staging| {
+                    for (id, label) in PRODUCTS {
+                        create_dispatcher_link(
+                            &staging.join(format!("{label}.lnk")),
+                            root,
+                            &cached,
+                            &helper,
+                            id,
+                            label,
+                        )?;
+                    }
+                    Ok(())
+                },
+                replace_dispatcher_file,
+            )?;
+            registration.shortcut_plan = Some(adopted);
+            registration.payload_revision = owner.payload_revision.clone();
+            save(root, &registration)?;
+            crate::core::shortcut_adoption::finish(
+                root,
+                &registration.shortcut_directory,
+                key,
+                &owner.payload_revision,
+                registration
+                    .shortcut_plan
+                    .as_ref()
+                    .ok_or("suite_registration_incomplete")?,
+            )?;
+        }
         registry(root, key, version)?;
+    }
+    Ok(())
+}
+pub(super) fn discard_staged_uninstaller(root: &Path, key: &str, revision: &str) -> Result<()> {
+    if let Some(registration) = read_registration(root, key)? {
+        let plan = registration
+            .uninstaller
+            .as_ref()
+            .ok_or("suite_registration_incomplete")?;
+        crate::core::uninstaller_adoption::discard(root, key, revision, plan)?;
     }
     Ok(())
 }
@@ -242,8 +408,17 @@ pub(super) fn trusts_dispatcher(root: &Path, revision: &str) -> Result<bool> {
         &serde_json::to_vec(&(identity, &owner.installation_id))
             .map_err(|_| "bootstrap_owner_invalid")?,
     );
-    Ok(read_registration(root, &key)?
-        .is_some_and(|registration| registration.payload_revision == revision))
+    let Some(registration) = read_registration(root, &key)? else {
+        return Ok(false);
+    };
+    if registration.payload_revision == revision {
+        return Ok(true);
+    }
+    let plan = registration
+        .uninstaller
+        .as_ref()
+        .ok_or("suite_registration_incomplete")?;
+    crate::core::uninstaller_adoption::trusted(root, &key, revision, plan)
 }
 fn registration_barriers(root: &Path) -> Result<()> {
     for (name, issue) in [
@@ -269,7 +444,45 @@ fn registration_update_policy(
     }
     Ok(())
 }
-pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
+fn verify_uninstaller(path: &Path) -> Result<()> {
+    use std::io::{Seek, SeekFrom};
+    let (mut file, _) =
+        open_filesystem_object(path, false).map_err(|_| "suite_uninstaller_missing")?;
+    let size = file
+        .metadata()
+        .map_err(|_| "suite_uninstaller_invalid")?
+        .len();
+    let mut dos = [0u8; 64];
+    file.read_exact(&mut dos)
+        .map_err(|_| "suite_uninstaller_invalid")?;
+    let offset = u32::from_le_bytes(
+        dos[60..64]
+            .try_into()
+            .map_err(|_| "suite_uninstaller_invalid")?,
+    ) as u64;
+    if &dos[..2] != b"MZ"
+        || !(1024..=512 * 1024 * 1024).contains(&size)
+        || offset > size.saturating_sub(4)
+        || offset > 1024 * 1024
+    {
+        return Err("suite_uninstaller_invalid");
+    }
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|_| "suite_uninstaller_invalid")?;
+    let mut pe = [0u8; 4];
+    file.read_exact(&mut pe)
+        .map_err(|_| "suite_uninstaller_invalid")?;
+    if &pe != b"PE\0\0" {
+        return Err("suite_uninstaller_invalid");
+    }
+    Ok(())
+}
+pub(super) fn register(
+    root: &Path,
+    payload_path: &Path,
+    image: &Path,
+    staged_uninstaller: Option<&Path>,
+) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
     verify_payload_owner(&payload, image)?;
@@ -342,6 +555,24 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
             if !trusts_dispatcher(&root, &value.payload_revision)? {
                 return Err("suite_registration_changed");
             }
+            if let Some(source) = staged_uninstaller.filter(|_| pending.is_some()) {
+                if source
+                    != payload_path
+                        .parent()
+                        .ok_or("suite_uninstaller_invalid")?
+                        .join("Uninstall.exe")
+                {
+                    return Err("suite_uninstaller_invalid");
+                }
+                verify_uninstaller(source)?;
+                crate::core::uninstaller_adoption::stage(
+                    &root,
+                    &key,
+                    &revision,
+                    source,
+                    uninstaller,
+                )?;
+            }
             return Ok(StageResult {
                 state: "existingSuiteDispatcherPreserved",
                 operation_id: None,
@@ -411,35 +642,7 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
         let name = format!("{label}.lnk");
         let destination = registration.shortcut_directory.join(&name);
         if !destination.exists() {
-            let link: IShellLinkW =
-                unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }
-                    .map_err(|_| "suite_shortcut_unavailable")?;
-            let target = wide(helper.to_str().ok_or("bootstrap_root_unsafe")?);
-            let args = wide(&format!(
-                "--open-{id} \"{}\" \"{}\"",
-                root.to_string_lossy(),
-                cached.join("suite-payload.json").to_string_lossy()
-            ));
-            let description = wide(&format!("Devbox {label}"));
-            unsafe {
-                link.SetPath(PCWSTR(target.as_ptr()))
-                    .and_then(|()| link.SetArguments(PCWSTR(args.as_ptr())))
-                    .and_then(|()| link.SetDescription(PCWSTR(description.as_ptr())))
-            }
-            .map_err(|_| "suite_shortcut_unavailable")?;
-            let persist: IPersistFile = link.cast().map_err(|_| "suite_shortcut_unavailable")?;
-            let temporary = registration
-                .shortcut_directory
-                .join(format!(".{}.lnk", uuid::Uuid::new_v4()));
-            let path = wide(
-                temporary
-                    .to_str()
-                    .ok_or("suite_shortcut_directory_unsafe")?,
-            );
-            unsafe { persist.Save(PCWSTR(path.as_ptr()), true) }
-                .map_err(|_| "suite_shortcut_unavailable")?;
-            fs::hard_link(&temporary, &destination).map_err(|_| "suite_shortcut_conflict")?;
-            fs::remove_file(&temporary).map_err(|_| "suite_shortcut_unavailable")?;
+            create_dispatcher_link(&destination, &root, &cached, &helper, id, label)?;
         } else {
             // A prior interrupted publication is inspected below before it can
             // be accepted. It must resolve to this exact helper and closed args.
@@ -460,38 +663,7 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
         &key,
         &names,
     )?);
-    {
-        use std::io::{Seek, SeekFrom};
-        let (mut file, _) = open_filesystem_object(root.join("Uninstall.exe"), false)
-            .map_err(|_| "suite_uninstaller_missing")?;
-        let size = file
-            .metadata()
-            .map_err(|_| "suite_uninstaller_invalid")?
-            .len();
-        let mut dos = [0u8; 64];
-        file.read_exact(&mut dos)
-            .map_err(|_| "suite_uninstaller_invalid")?;
-        let offset = u32::from_le_bytes(
-            dos[60..64]
-                .try_into()
-                .map_err(|_| "suite_uninstaller_invalid")?,
-        ) as u64;
-        if &dos[..2] != b"MZ"
-            || !(1024..=512 * 1024 * 1024).contains(&size)
-            || offset > size.saturating_sub(4)
-            || offset > 1024 * 1024
-        {
-            return Err("suite_uninstaller_invalid");
-        }
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|_| "suite_uninstaller_invalid")?;
-        let mut pe = [0u8; 4];
-        file.read_exact(&mut pe)
-            .map_err(|_| "suite_uninstaller_invalid")?;
-        if &pe != b"PE\0\0" {
-            return Err("suite_uninstaller_invalid");
-        }
-    }
+    verify_uninstaller(&root.join("Uninstall.exe"))?;
     if let Some(plan) = &registration.uninstaller {
         plan.verify_remaining(&root)?;
     }

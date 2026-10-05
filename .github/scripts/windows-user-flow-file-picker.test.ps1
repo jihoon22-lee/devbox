@@ -16,6 +16,7 @@ public static class OwnedSavePicker {
    dialog.AutoUpgradeEnabled = true;
    dialog.InitialDirectory = args[0];
    dialog.Filter = "JSON files|*.json";
+   if (args[2] == "SaveFile") dialog.FileName = "grpc-exchange.json";
    dialog.Title = "Devbox owned save fixture";
    if (dialog.ShowDialog() == DialogResult.OK) {
     if (args[2] == "SaveFile") File.WriteAllText(dialog.FileName,"owned-save-fixture");
@@ -67,7 +68,8 @@ public static class SaveFixtureAutomation {
  if($observed.pickerCount -ne 1 -or $observed.fieldCount -ne 1 -or $observed.confirmCount -ne 1 -or -not $observed.filenameReady){throw 'Owned picker input controls were not ready'}
  if($child.HasExited -or (Test-Path -LiteralPath $marker) -or @(Get-ChildItem -LiteralPath $fixture -File).Count -ne $before){throw 'Readonly picker observation changed fixture state'}
  try {
-  & $Driver -TargetProcessId $child.Id -ExpectedExecutable $image -ExpectedStartTimeUtc $started -FixtureRoot $fixture -Action $action -FilePath $output
+  $receipt = (& $Driver -TargetProcessId $child.Id -ExpectedExecutable $image -ExpectedStartTimeUtc $started -FixtureRoot $fixture -Action $action -FilePath $output) | ConvertFrom-Json
+  if(-not $receipt.filenameMatched -or -not $receipt.chooserClosed){throw 'Owned exact filename/chooser receipt missing'}
  } catch {
   Write-Output ($action + ' mutation failure state: ' + (@{childExited=$child.HasExited;markerExists=(Test-Path -LiteralPath $marker);outputExists=(Test-Path -LiteralPath $output)} | ConvertTo-Json -Compress))
   throw

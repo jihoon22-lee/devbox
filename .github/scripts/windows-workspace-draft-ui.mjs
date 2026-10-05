@@ -23,6 +23,14 @@ export async function waitForWorkspaceEditorText(cdp, wait, expected) {
   }, "exact owned editor draft rendered");
   await assertWorkspaceEditorText(cdp, expected);
 }
+export async function reviewRecoveryWriterFailure({ ui, fixture, readBytes, before, after }) {
+  assert.deepEqual(await readBytes(), before, "Failed journal must not save the file implicitly");
+  await ui.closeOwnedWindow();
+  await ui.waitForTarget({ role: "button", name: "파일 저장 후 종료" });
+  await ui.click({ role: "button", name: "파일 저장 후 종료" });
+  await fixture.waitForText({ role: "alert", name: "" });
+  assert.deepEqual(await readBytes(), after, "Explicit save commits file bytes before recovery flush fails");
+}
 export async function run(context) {
   const { ui, cdp, fixtureRoot, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
   const results = [],
@@ -136,26 +144,29 @@ export async function run(context) {
     await journal("실패 전 초안");
     await fixture.failRecoveryWriter();
     await ui.fill({ role: "textbox", name: "" }, "실패 후 보존할 초안");
-    await ui.closeOwnedWindow();
-    await ui.waitForTarget({ role: "button", name: "파일 저장 후 종료" });
-    await ui.click({ role: "button", name: "파일 저장 후 종료" });
-    await fixture.waitForText({ role: "alert", name: "" });
-    assert.deepEqual(await readFile(file), saved);
+    await reviewRecoveryWriterFailure({
+      ui,
+      fixture,
+      readBytes: () => readFile(file),
+      before: saved,
+      after: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("실패 후 보존할 초안")]),
+    });
     screenshots.push(await ui.screenshot("workspace-writer-failure-retained"));
     await ui.waitForTarget({ role: "button", name: "종료 취소" });
     await ui.click({ role: "button", name: "종료 취소" });
     await waitForWorkspaceEditorText(cdp, fixture.wait, "실패 후 보존할 초안");
     await fixture.restoreRecoveryWriter();
     await ui.closeOwnedWindow();
-    await ui.waitForTarget({ role: "button", name: "파일 변경 폐기 후 종료" });
-    await ui.click({ role: "button", name: "파일 변경 폐기 후 종료" });
+    await ui.waitForTarget({ role: "button", name: "종료" });
+    await ui.click({ role: "button", name: "종료" });
     await fixture.reopenAfterClose();
     await fixture.selectWindows();
+    assert.equal((await fixture.recovery()).entries.length, 0);
     results.push(
       record("WORK-01", "PASS", [
         "Normal native close cancel/save/discard preserve drafts or exact original bytes as reviewed",
         "Crash restores empty and encoding/BOM/line-ending metadata into dirty buffers; journal removed only after save/discard",
-        "Owned writer failure blocks close and retains unsaved text without rewriting original",
+        "Recovery writer failure blocks close; only explicit save updates file bytes, and repairing the journal permits clean close",
       ]),
     );
   } catch (error) {

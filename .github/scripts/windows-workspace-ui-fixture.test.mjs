@@ -334,3 +334,45 @@ test("lost-reply journey explicitly stops the first live owner before requesting
     /still active/,
   );
 });
+
+test("Agent review waits for the selected Source root and its aggregate idle control", async () => {
+  let reads = 0;
+  const fixture = createWorkspaceUiFixture({
+    cdp: {
+      evaluate: async (expression) => {
+        if (expression.includes("workspace-native-source")) {
+          reads++;
+          return reads > 1;
+        }
+        if (expression.includes('"snapshot"'))
+          return {
+            operation: { outcome: { state: "succeeded" } },
+            value: { worktrees: [{ id: "tree", projectId: "project", binding: { root: "/owned" } }] },
+          };
+        return { context: { projectId: "project", worktreeId: "tree" } };
+      },
+    },
+    ui: {},
+  });
+  await fixture.waitForAgentSourceIdle();
+  assert.equal(reads, 2);
+});
+
+test("lost reply requires its exact native unacknowledged receipt after crash", async () => {
+  const { assertLostRuntimeReceipt } = await import("./windows-workspace-ui-fixture.mjs");
+  const receipt = {
+    operationId: "original",
+    targetId: "job",
+    method: "run_job_now",
+    state: "completed",
+    reviewed: false,
+  };
+  assert.doesNotThrow(() => assertLostRuntimeReceipt([receipt], "original", "job", "run_job_now"));
+  for (const receipts of [
+    [],
+    [{ ...receipt, reviewed: true }],
+    [{ ...receipt, operationId: "another" }],
+    [{ ...receipt, targetId: "foreign" }],
+  ])
+    assert.throws(() => assertLostRuntimeReceipt(receipts, "original", "job", "run_job_now"));
+});

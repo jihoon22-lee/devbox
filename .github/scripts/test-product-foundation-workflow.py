@@ -180,6 +180,33 @@ assert "diagnosticOnly = $true" in suite_diagnostic
 assert "native-cross-product-diagnostic-" in suite_diagnostic
 assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or '${{ inputs.suite_full_workflow }}' -eq 'true'" in suite_diagnostic
 
+# A targeted Knowledge probe reuses verified candidate bytes, never rebuilds
+# products or disguises runner source as the payload source.
+assert "suite_diagnostic_knowledge:" in workflow
+assert "'${{ inputs.suite_diagnostic_knowledge }}'" in suite_diagnostic
+assert "knowledge-components-diagnostic-source.json" in suite_diagnostic
+assert "knowledge-components-diagnostic-only" in suite_diagnostic
+assert "DEVBOX_PORTABLE_FIXTURES=target/portable-fixture" in suite_diagnostic
+assert "DEVBOX_FIXTURE_PROFILE=release" in suite_diagnostic
+assert "windows-product-foundation.mjs --knowledge-diagnostic" in suite_diagnostic
+assert "native-knowledge-components-diagnostic-" in suite_diagnostic
+for job in ("workspace-wsl-helper", "windows", "baseline-performance"):
+    section = workflow.split(f"  {job}:\n", 1)[1]
+    condition = next(line for line in section.splitlines() if line.strip().startswith("if:"))
+    assert "!inputs.suite_diagnostic_knowledge" in condition, "Knowledge diagnosis must not rebuild unrelated products"
+
+# The sequence replay preserves the preceding Workspace/API workloads and their
+# exact private LSP inputs; it remains a retained-byte diagnostic, never a build.
+sequence = suite_diagnostic.split("      - name: Finish the selected Suite acceptance scope", 1)[0]
+assert "windows-product-foundation.mjs --product-sequence-diagnostic" in suite_diagnostic
+assert "candidate-private-windows-lsp-${{ inputs.suite_diagnostic_run }}" in sequence
+assert "candidate-private-wsl-lsp-${{ inputs.suite_diagnostic_run }}" in sequence
+assert "windows-knowledge-wsl.ps1" in sequence
+assert "windows-workspace-wsl-git.ps1" in sequence
+assert "windows-product-performance.ps1 -Apps" in sequence
+assert "sequenceReplay =" in suite_diagnostic
+assert "always() && inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow" in suite_diagnostic
+
 installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
 assert "suite_diagnostic_installer_ui:" in workflow
 assert "'${{ inputs.suite_diagnostic_cross_product }}' -eq 'true' -or $env:SOURCE_RUN" in installer_diagnostic
@@ -260,3 +287,14 @@ for job, block in re.findall(r"^  ([a-z][a-z0-9-]+):\n(.*?)(?=^  [a-z][a-z0-9-]+
 for block in (work_step, candidate_work):
     assert block.index('$scriptExitCode = $LASTEXITCODE') < block.index('Write-Host "Installed journey end: $script')
     assert block.index('$withdrawnExitCode = $LASTEXITCODE') < block.index('Write-Host "Installed journey end: withdrawn')
+
+# The synthetic WindowsApplication helper requires Windows PowerShell 5.1.
+# Keep its interpreter explicit while actual installed journeys remain on pwsh.
+for name in ("product-foundation.yml", "windows-package-candidate.yml"):
+    text = (root / ".github/workflows" / name).read_text()
+    step = text.split("      - name: Check owned cleanup helpers\n", 1)[1].split("\n      - ", 1)[0]
+    assert "shell: powershell" in step
+    assert "windows-user-flow-cleanup-uninstall.test.ps1" in step
+    assert "windows-user-flow-cleanup-observation.test.ps1" in step
+    assert "windows-owned-installer-capture.test.ps1" in step
+    assert "windows-suite-shortcut-launch.test.ps1" in step

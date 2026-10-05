@@ -197,6 +197,15 @@ public static class DevboxInstallerAutomation {
       if(SendMessageTimeoutW(new IntPtr(edit),0x000C,UIntPtr.Zero,text,0x23,1500,out result)==IntPtr.Zero || result==UIntPtr.Zero) throw new InvalidOperationException("Owned filename input unavailable");
     } finally { Marshal.FreeHGlobal(text); }
   }
+  public static bool PickerFilenameMatches(int dialog,int edit,uint processId,string expected) {
+    if(!IsPickerControl(dialog,edit,processId,"Edit")) throw new InvalidOperationException("Owned filename editor changed");
+    IntPtr text=Marshal.AllocHGlobal(32768*2);
+    try {
+      UIntPtr result;
+      if(SendMessageTimeoutW(new IntPtr(edit),0x000D,new UIntPtr(32768),text,0x23,1500,out result)==IntPtr.Zero || result.ToUInt64()>=32768) throw new InvalidOperationException("Owned filename observation unavailable");
+      return String.Equals(Marshal.PtrToStringUni(text,(int)result.ToUInt64()),expected,StringComparison.Ordinal);
+    } finally { Marshal.FreeHGlobal(text); }
+  }
   public static bool ClickPickerButton(int dialog,int button,uint processId) {
     if(!IsPickerControl(dialog,button,processId,"Button") || GetDlgCtrlID(new IntPtr(button))!=1 || !IsWindowEnabled(new IntPtr(button))) throw new InvalidOperationException("Owned picker confirmation changed");
     UIntPtr result;
@@ -352,6 +361,7 @@ if($Action -in @('ChooseFile','SaveFile')) {
   if($controls.fieldCount -ne 1 -or $controls.editCount -ne 1 -or $null -eq $controls.edit){throw 'Owned file name field unavailable'}
   if($controls.confirmCount -ne 1 -or $null -eq $controls.button){throw 'Unique file picker confirmation unavailable'}
   [DevboxInstallerAutomation]::SetPickerFilename($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)
+  if(-not [DevboxInstallerAutomation]::PickerFilenameMatches($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)){throw 'Owned filename did not match exact requested path before confirmation'}
   $dialogHandle=$dialog.Current.NativeWindowHandle
   $acknowledged=[DevboxInstallerAutomation]::ClickPickerButton($dialog.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId)
   $deadline=[DateTime]::UtcNow.AddSeconds(10)
@@ -363,6 +373,7 @@ if($Action -in @('ChooseFile','SaveFile')) {
     Start-Sleep -Milliseconds 100
   } while([DateTime]::UtcNow -lt $deadline)
   if($stillOpen){throw 'Owned file picker did not close after single confirmation'}
+  @{filenameMatched=$true;dispatchAcknowledged=$acknowledged;chooserClosed=$true} | ConvertTo-Json -Compress
   exit 0
 }
 if($Action -eq 'Invoke' -and $windows.Count -gt 1 -and $ControlId -match '^[0-9]{1,8}$') {

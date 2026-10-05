@@ -12,6 +12,7 @@ export class RecoveryWriter {
   private generation = 0;
   private written = 0;
   private loaded = false;
+  private pendingDiscards = new Set<string>();
   private tail: Promise<void> = Promise.resolve();
   constructor(private readonly ports: Ports) {}
   update(entries: RecoveryEntry[]) {
@@ -29,9 +30,17 @@ export class RecoveryWriter {
     this.baseline = state.entries;
     this.loaded = true;
   }
+  private async flushDiscards() {
+    for (const path of this.pendingDiscards) {
+      this.revision = await this.ports.discard(path, this.revision);
+      this.baseline = this.baseline.filter((entry) => entry.path !== path);
+      this.pendingDiscards.delete(path);
+    }
+  }
   flush(): Promise<void> {
     return this.enqueue(async () => {
       if (!this.loaded) await this.load();
+      await this.flushDiscards();
       while (this.written !== this.generation) {
         const generation = this.generation;
         const entries = structuredClone(this.desired);
@@ -69,10 +78,10 @@ export class RecoveryWriter {
   discard(path: string): Promise<void> {
     this.desired = this.desired.filter((entry) => entry.path !== path);
     this.generation++;
+    this.pendingDiscards.add(path);
     return this.enqueue(async () => {
       if (!this.loaded) await this.load();
-      this.revision = await this.ports.discard(path, this.revision);
-      this.baseline = this.baseline.filter((entry) => entry.path !== path);
+      await this.flushDiscards();
     });
   }
 }

@@ -241,3 +241,60 @@ test("setup and removal failure cleanup rethrows the identical primitive or froz
     assert.equal(detached, true);
   }
 });
+
+test("delivery health releases the exited Knowledge policy before another Knowledge owner starts", async () => {
+  const { completeHealthAfterKnowledgeClose } = await import("./windows-suite-delivery-user-flows.mjs");
+  let policyOwned = true;
+  const knowledge = {
+    child: { exitCode: 0 },
+    close: async () => {
+      policyOwned = false;
+    },
+  };
+  const result = await completeHealthAfterKnowledgeClose(knowledge, "health", async (label) => {
+    assert.equal(label, "health");
+    assert.equal(policyOwned, false, "Second Knowledge CDP owner must not collide with exited first owner");
+    return ["screenshot"];
+  });
+  assert.deepEqual(result, ["screenshot"]);
+  knowledge.child.exitCode = null;
+  await assert.rejects(
+    completeHealthAfterKnowledgeClose(knowledge, "health", () => assert.fail("live Knowledge must not be replaced")),
+    /normal saved close/,
+  );
+});
+
+import { activationStateObservation, bestEffortActivationObservation } from "./windows-suite-user-flow.mjs";
+test("activation failure evidence exposes only bounded phase and revision", () => {
+  assert.deepEqual(activationStateObservation({ phase: "health", revision: 3, secret: "private" }), {
+    phase: "health",
+    revision: 3,
+  });
+  assert.deepEqual(activationStateObservation({ phase: "private", revision: -1 }), { phase: null, revision: null });
+});
+test("activation evidence failure cannot replace original failure", async () => {
+  const original = Object.freeze(new Error("original"));
+  let preserved;
+  try {
+    throw original;
+  } catch (error) {
+    assert.deepEqual(
+      await bestEffortActivationObservation(async () => {
+        throw new Error("observer");
+      }),
+      { unavailable: true },
+    );
+    preserved = error;
+  }
+  assert.equal(preserved, original);
+});
+
+test("owned helper observation retains emitted checkpoint source codes without raw text", () => {
+  const observation = installerFailureObservation(
+    { controls: [{ name: "작업을 완료하지 못했습니다 (checkpoint_source_changed). private-path" }] },
+    "activation-health-wait-marker",
+    null,
+  );
+  assert.deepEqual(observation.issues, ["checkpoint_source_changed"]);
+  assert.ok(!JSON.stringify(observation).includes("private-path"));
+});

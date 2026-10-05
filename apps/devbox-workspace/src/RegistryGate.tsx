@@ -530,7 +530,12 @@ export default function RegistryGate({
               {registry.worktrees
                 .filter((worktree) => worktree.projectId === project.id)
                 .map((worktree) => (
-                  <div key={worktree.id} data-command-review={review?.context?.worktreeId === worktree.id || undefined}>
+                  <div
+                    key={worktree.id}
+                    role="group"
+                    aria-label={worktree.binding.root}
+                    data-command-review={review?.context?.worktreeId === worktree.id || undefined}
+                  >
                     {review?.context?.worktreeId === worktree.id && <p role="status">요청한 작업 폴더</p>}
                     <p>{worktree.binding.root}</p>
                     <p>

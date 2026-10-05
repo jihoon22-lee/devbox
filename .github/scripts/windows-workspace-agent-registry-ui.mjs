@@ -7,9 +7,17 @@ export async function dismissWorkspaceUndo(ui, visible, wait) {
   await wait(async () => !(await visible()), "notification dismissed before Agent input");
 }
 export async function discardAgentTask(ui) {
+  await ui.waitForTarget({ role: "button", name: "버리기" });
   await ui.click({ role: "button", name: "버리기" });
   await ui.waitForTarget({ role: "button", name: "버리기 확인" });
   await ui.click({ role: "button", name: "버리기 확인" });
+}
+export async function reviewAgentWorktree(ui, fixture) {
+  await fixture.waitForAgentSourceIdle();
+  await ui.waitForTarget({ role: "button", name: "변경 검토" });
+  await ui.click({ role: "button", name: "변경 검토" });
+  await ui.waitForTarget({ role: "region", name: "Git 실행 승인" });
+  await fixture.trustSource();
 }
 export async function run(context) {
   const { ui, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
@@ -65,8 +73,7 @@ export async function run(context) {
       "new task registered and selected",
     );
     const selected = await fixture.context();
-    await ui.waitForTarget({ role: "button", name: "변경 검토" });
-    await ui.click({ role: "button", name: "변경 검토" });
+    await reviewAgentWorktree(ui, fixture);
     assert.equal((await fixture.context()).worktreeId, selected.worktreeId);
     await fixture.waitForText({ role: "textbox", name: "커밋 메시지" });
     screenshots.push(await ui.screenshot("workspace-agent-new-worktree"));

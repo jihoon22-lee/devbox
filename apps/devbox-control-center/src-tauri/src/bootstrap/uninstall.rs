@@ -185,6 +185,8 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
             {
                 return Err("bootstrap_payload_changed");
             }
+            #[cfg(windows)]
+            files.extend(crate::core::uninstaller_adoption::owned_files(&root, &key)?);
             files.extend(
                 crate::suite::mcp_launcher::owned_files(&root)
                     .map_err(|_| "bootstrap_mcp_launcher_changed")?,
