@@ -227,7 +227,7 @@ python3 .github/scripts/test-scaffold-product-feature.py
 python3 .github/scripts/test-product-foundation-workflow.py
 node --test .github/scripts/windows-suite-layout.test.mjs .github/scripts/verify-retained-committed-install.test.mjs
 node --test .github/scripts/windows-package-cache.test.mjs
-node --test .github/scripts/fixture-child-exit.test.mjs .github/scripts/owned-fixture-cleanup.test.mjs
+node --test .github/scripts/fixture-child-exit.test.mjs .github/scripts/owned-fixture-cleanup.test.mjs .github/scripts/windows-suite-uninstall-diagnostic.test.mjs
 node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs
 node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs .github/scripts/product-foundation-observation.test.mjs

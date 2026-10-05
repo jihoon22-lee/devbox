@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const catalog = createRequire(import.meta.url)("../../apps/products.json");
@@ -52,4 +53,74 @@ export function projectHealthRows(rows) {
     version: typeof cells[1] === "string" && /^\d+\.\d+\.\d+$/.test(cells[1]) ? cells[1] : null,
     status: healthStates.has(cells[2]) ? cells[2] : null,
   }));
+}
+
+const startupIssues = new Set([
+  "import_schema_unsupported",
+  "import_database_invalid",
+  "import_restart_required",
+  "unavailable",
+  "store_future_schema",
+  "store_manifest_invalid",
+  "future_schema",
+  "journal_unavailable",
+  "setup_required",
+  "store_unavailable",
+  "store_invalid",
+  "store_busy",
+  "store_path_invalid",
+  "vault_binding_unavailable",
+  "vault_binding_invalid",
+  "vault_owner_busy",
+  "vault_owner_unavailable",
+  "vault_change_conflict",
+  "component_initialization_failed",
+  "component_state_conflict",
+]);
+export function projectKnowledgeStartupStatus(result) {
+  return {
+    state: ["succeeded", "failed", "cancelled", "expired"].includes(result?.operation?.outcome?.state)
+      ? result.operation.outcome.state
+      : null,
+    code: startupIssues.has(result?.operation?.outcome?.code) ? result.operation.outcome.code : null,
+    active:
+      result?.operation?.outcome?.state === "succeeded" && typeof result?.value?.active === "boolean"
+        ? result.value.active
+        : null,
+    prepared:
+      result?.operation?.outcome?.state === "succeeded" && typeof result?.value?.prepared === "boolean"
+        ? result.value.prepared
+        : null,
+    hasExisting:
+      result?.operation?.outcome?.state === "succeeded" && typeof result?.value?.hasExisting === "boolean"
+        ? result.value.hasExisting
+        : null,
+    bindingUnavailable:
+      result?.operation?.outcome?.state === "succeeded" && typeof result?.value?.bindingUnavailable === "boolean"
+        ? result.value.bindingUnavailable
+        : null,
+    vaultChange:
+      result?.operation?.outcome?.state === "succeeded" && typeof result?.value?.vaultChange === "boolean"
+        ? result.value.vaultChange
+        : null,
+  };
+}
+export async function ownedKnowledgeStartupStatus(context) {
+  assert.ok(typeof context.executable === "string" && /(?:^|[\\/])devbox-knowledge\.exe$/i.test(context.executable));
+  assert.ok(typeof context.processIdentity?.Path === "string");
+  assert.equal(
+    context.processIdentity?.Path?.toLowerCase(),
+    context.executable?.toLowerCase(),
+    "Owned Knowledge image required",
+  );
+  const result = await context.cdp.evaluate(`(async()=>{
+    const invoke=window.__TAURI_INTERNALS__.invoke;${typedComponentBridge}
+    const d=await invoke('plugin:product-shell|describe');
+    if(d.product.id!=='knowledge')throw new Error('Owned Knowledge status unavailable');
+    const requestId=crypto.randomUUID();
+    const r=await invokeComponent('knowledge',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId,deadlineMs:Date.now()+5000,route:'notes',context:d.context},component:'knowledge.setup',method:'status',args:{}}});
+    if(r.operation.provenance.requestId!==requestId||r.operation.provenance.product!=='knowledge'||r.operation.provenance.component!=='knowledge.setup'||r.operation.provenance.revision!==${catalog.catalogRevision})throw new Error('Owned Knowledge status unavailable');
+    return r;
+  })()`);
+  return projectKnowledgeStartupStatus(result);
 }

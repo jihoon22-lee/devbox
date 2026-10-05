@@ -2,8 +2,10 @@ import {
   waitForOwnedHealthConnections,
   ownedConnectionStatus,
   projectHealthRows,
+  ownedKnowledgeStartupStatus,
 } from "./windows-suite-health-readiness.mjs";
 // Complete the native health stage through the installed Control Center controls.
+import { readRestoreInventory } from "./windows-delivery-review.mjs";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -47,10 +49,7 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
     // Recording acquires the same native journal lock as inventory. Observe
     // completion of the one UI action before polling that read-only projection.
     await center.ui.waitForTarget({ role: "button", name: "상태 기록" });
-    await observeUntil(
-      async () => (await center.delivery("restore_inventory")).installation.freshHealth,
-      "fresh owner health recorded",
-    );
+    await readRestoreInventory(center, observeUntil, (inventory) => inventory.installation.freshHealth);
     stage = "reviewedCommit";
     const screenshot = await center.ui.screenshot(`health-${observationId}`);
     for (const item of live.slice(1).reverse()) await item.close();
@@ -102,9 +101,16 @@ export async function completeInstalledHealth(label, { beforeCommit } = {}) {
             }
           }),
         );
+        let knowledgeStartup = { observationUnavailable: true };
+        const knowledge = live.find((context) =>
+          context.processIdentity?.Path?.toLowerCase().endsWith("devbox-knowledge.exe"),
+        );
+        try {
+          if (knowledge) knowledgeStartup = await ownedKnowledgeStartupStatus(knowledge);
+        } catch {}
         await writeFile(
           `product-foundation-evidence/health-first-failure-${observationId}.json`,
-          JSON.stringify({ stage, rows: projectHealthRows(rows), connections }, null, 2),
+          JSON.stringify({ stage, rows: projectHealthRows(rows), connections, knowledgeStartup }, null, 2),
           { flag: "wx" },
         );
       } catch {

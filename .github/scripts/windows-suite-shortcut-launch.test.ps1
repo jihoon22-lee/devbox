@@ -4,6 +4,17 @@ $source=Join-Path $PSScriptRoot 'windows-suite-shortcut-launch.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Shortcut launcher parse failed'}
+$failureFunction=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-ShortcutFailureObservation'},$true)
+if($null -eq $failureFunction){throw 'Shortcut failure projection missing'}
+Invoke-Expression $failureFunction.Extent.Text
+foreach($command in @('Get-FileHash','private-user-command')) {
+ $failure=[Management.Automation.ErrorRecord]::new([Management.Automation.CommandNotFoundException]::new($command),'CommandNotFoundException',[Management.Automation.ErrorCategory]::ObjectNotFound,$null)
+ $failure.Exception.CommandName=$command
+ $observation=Get-ShortcutFailureObservation $failure 'retained-payload'
+ if($observation.issue -cne 'shortcut_command_unavailable'){throw 'Exact missing-command issue required'}
+ if($command -ceq 'Get-FileHash' -and $observation.command -cne $command){throw 'Allowlisted command should remain available'}
+ if($command -ceq 'private-user-command' -and $null -ne $observation.command){throw 'Unknown command must be omitted'}
+}
 # Load only the physical identity reader and assertion; never execute ShellExecute.
 $types=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Add-Type'},$true))
 if($types.Count -ne 1){throw 'One native identity reader required'}

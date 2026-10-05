@@ -1,3 +1,4 @@
+import { ownedFilePickerWhenReady } from "./windows-owned-file-picker.mjs";
 import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import { crashOwnedWorkspace } from "./windows-workspace-crash.mjs";
 import assert from "node:assert/strict";
@@ -161,7 +162,7 @@ export async function runWorkspaceUserFlows() {
       return { ui: driver, cdp: transport, close: () => transport.close() };
     },
     async chooseArchive(file) {
-      nativeWindowAction(captureWindowOwner(owner, root), "ChooseFile", { filePath: file });
+      await ownedFilePickerWhenReady(captureWindowOwner(owner, root), file, "ChooseFile");
     },
     waitForExit,
     cleanup,

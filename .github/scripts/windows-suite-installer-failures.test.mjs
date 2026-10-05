@@ -298,3 +298,25 @@ test("owned helper observation retains emitted checkpoint source codes without r
   assert.deepEqual(observation.issues, ["checkpoint_source_changed"]);
   assert.ok(!JSON.stringify(observation).includes("private-path"));
 });
+
+test("owned removal failure expands exact Details and preserves only fixed native codes", () => {
+  let expanded = false;
+  const installer = {
+    child: { exitCode: null },
+    inspect: () => ({
+      controls: [
+        { name: "제거를 완료하지 못했습니다" },
+        ...(expanded ? [{ name: "bootstrap_owner_changed private-path" }] : []),
+      ],
+      buttons: [{ id: "1027", enabled: true, visible: true }],
+    }),
+    invoke: (id) => {
+      assert.equal(id, "1027");
+      expanded = true;
+    },
+  };
+  const evidence = inspectInstallerFailure(installer, "removal execution");
+  assert.deepEqual(evidence.statuses, ["removal_failed"]);
+  assert.deepEqual(evidence.issues, ["bootstrap_owner_changed"]);
+  assert.ok(!JSON.stringify(evidence).includes("private-path"));
+});

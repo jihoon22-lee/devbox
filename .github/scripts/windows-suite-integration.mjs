@@ -52,6 +52,28 @@ export async function review(context) {
   await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
 }
+export async function applySourceSelection(api) {
+  await api.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
+  await until(
+    async () => (await api.ui.text(textbox("스마트 워크플로 입력"))).includes("원본"),
+    "Accepted source selection did not reach Smart input",
+  );
+}
+export async function awaitKnowledgePreviewClosed(knowledge) {
+  await until(
+    () => knowledge.cdp.evaluate("document.querySelector('.handoff-dialog') === null"),
+    "Knowledge preview decision did not complete",
+  );
+}
+export async function cancelKnowledgePreview(knowledge) {
+  await knowledge.ui.click(button("취소", draftDialog));
+  await awaitKnowledgePreviewClosed(knowledge);
+}
+export async function restoreSuiteConnection(api) {
+  await api.ui.click(button("이 설치 확인"));
+  await api.ui.waitForTarget(button("연결 켜기"));
+  await api.ui.click(button("연결 켜기"));
+}
 export async function selectSource(workspace) {
   await workspace.ui.click({ role: "textbox", name: "" });
   await workspace.ui.press("Control+a");
@@ -250,8 +272,7 @@ export async function run(api) {
         await selectSource(workspace);
         await review(api);
         await expectText(api, "Toolbox 텍스트 미리보기");
-        await api.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
-        assert.ok((await api.ui.text(textbox("스마트 워크플로 입력"))).includes("원본"));
+        await applySourceSelection(api);
         await selectSource(workspace);
         expiredAt = Date.now() + 122000;
         record(
@@ -272,7 +293,7 @@ export async function run(api) {
         await sendStored(api);
         await review(knowledge);
         await expectText(knowledge, output.trim());
-        await knowledge.ui.click(button("취소", draftDialog));
+        await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), before);
         await sendStored(api);
         await review(knowledge);
@@ -282,6 +303,7 @@ export async function run(api) {
           "Explicit draft save did not create exactly one note",
         );
         const saved = await snapshotFiles(root);
+        await awaitKnowledgePreviewClosed(knowledge);
         await sendStored(api);
         await review(knowledge);
         await expectText(knowledge, "이미 저장한 결과 초안입니다.");
@@ -296,7 +318,7 @@ export async function run(api) {
         knowledge = await coldReceiver(knowledge, () => sendStored(api));
         await review(knowledge);
         await expectText(knowledge, Buffer.from("cold owned output").toString("base64"));
-        await knowledge.ui.click(button("취소", draftDialog));
+        await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), saved);
         record(
           "Normal product activation launches the exact candidate Knowledge member from a closed state; owned registry CDP instrumentation observes actual preview/cancel without relaunch",
@@ -354,8 +376,7 @@ export async function run(api) {
         await sendStored(api);
         await expectText(api, "전달 결과를 확인하지 못했습니다.");
         assert.deepEqual(await snapshotFiles(root), before);
-        await api.ui.click(button("이 설치 확인"));
-        await api.ui.click(button("연결 켜기"));
+        await restoreSuiteConnection(api);
         await expectText(api, "이 설치의 제품이 연결되어 있습니다.");
         await api.ui.click(button("제품 연결"));
         record(
@@ -381,7 +402,7 @@ export async function run(api) {
         knowledge = await createInstalledProductContext("knowledge");
         await sendStored(api);
         await review(knowledge);
-        await knowledge.ui.click(button("취소", draftDialog));
+        await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), before);
         record(
           "Actual recovered receiver review succeeds after exact member restoration; cancellation still creates no note and source bytes remain intact",

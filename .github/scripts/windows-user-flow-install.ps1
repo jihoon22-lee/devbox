@@ -68,6 +68,30 @@ function Write-OwnedCleanupObservation([string]$Root,[string]$EvidencePath,
   }
   [IO.File]::WriteAllText($EvidencePath,($observation | ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
 }
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class OwnedCleanupIdentity {
+ [StructLayout(LayoutKind.Sequential)] public struct Info {
+  public uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh;
+  public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+ }
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern SafeFileHandle CreateFileW(string path,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
+ [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetFileInformationByHandle(SafeFileHandle file,out Info info);
+ public static ulong[] Read(string path) {
+  using(var file=CreateFileW(path,0x80,3,IntPtr.Zero,3,0x02200000,IntPtr.Zero)) {
+   Info info;
+   if(file.IsInvalid || !GetFileInformationByHandle(file,out info) || (info.Attributes&0x400)!=0) throw new InvalidOperationException("Shortcut identity unavailable");
+   return new ulong[]{info.Volume,((ulong)info.IndexHigh<<32)|info.IndexLow};
+  }
+ }
+}
+'@
+function Assert-OwnedCleanupIdentity([string]$Root,$Expected) {
+  $actual=[OwnedCleanupIdentity]::Read($Root)
+  if($Expected.Count -ne 2 -or $actual[0] -ne [System.UInt64]$Expected[0] -or $actual[1] -ne [System.UInt64]$Expected[1]){throw 'Owned cleanup root identity changed.'}
+}
 $payloadSource=$env:GITHUB_SHA
 $payloadRun=$env:GITHUB_RUN_ID
 if ($env:DEVBOX_USER_FLOW_DIAGNOSTIC -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) {
@@ -124,6 +148,10 @@ $cleanupStage='stop-agent'
 $cleanupExitCode=$null
 $uninstall=$null
 $cleanupCompleted=$false
+Assert-OwnedCleanupIdentity $root $registration.rootIdentity
+$diagnosticInputs=@('suite-registration.json','devbox-installation.json','Uninstall.exe')
+$diagnosticHashes=@{}
+foreach($name in $diagnosticInputs){$diagnosticHashes[$name]=(Get-FileHash -LiteralPath (Join-Path $root $name) -Algorithm SHA256).Hash}
 try {
   Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'running'
   Run-Owned $center @('--stop-agent-for-update')
@@ -158,6 +186,36 @@ try {
   if (@(Get-ChildItem -LiteralPath $scratch -Recurse -Force | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count) { throw 'Linked installation fixture; preserved.' }
   Remove-Item -LiteralPath $scratch -Recurse -Force
   $cleanupCompleted=$true
+} catch {
+  $originalFailure=$_
+  try {
+    Write-OwnedCleanupObservation $root $cleanupEvidence $cleanupStage 'failed' $cleanupExitCode
+    if($cleanupStage -ceq 'wait-uninstaller' -and $cleanupExitCode -eq 1) {
+      Assert-OwnedCleanupIdentity $root $registration.rootIdentity
+      $plan=$registration.uninstaller
+      $entries=@($plan.files | Where-Object {$_.relative -ceq 'Uninstall.exe'})
+      if($plan.schemaVersion -ne 1 -or $plan.installationKey -cne $key -or $entries.Count -ne 1){throw 'Invalid registered uninstall diagnostic plan.'}
+      Assert-OwnedCleanupIdentity $root $plan.rootIdentity
+      $source=Join-Path $root 'Uninstall.exe'
+      Assert-OwnedCleanupIdentity $source $entries[0].identity
+      if((Get-Item -LiteralPath $source -Force).Length -ne $entries[0].bytes -or
+        (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ine $entries[0].sha256){throw 'Registered uninstaller changed; diagnostic skipped.'}
+      foreach($name in $diagnosticInputs){
+        $inputPath=Join-Path $root $name
+        if((Get-Item -LiteralPath $inputPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint -or
+          (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash -cne $diagnosticHashes[$name]){throw 'Changed uninstall diagnostic input; preserved.'}
+      }
+      foreach($name in @('suite-update.json','suite-data-restore.json','uninstall-plan.json','uninstall-complete.json')) {
+        if(Test-Path -LiteralPath (Join-Path $root $name)){throw 'Partial or pending uninstall; diagnostic skipped.'}
+      }
+      $live=@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase) })
+      if($live.Count -ne 0){throw 'Owned process remains; diagnostic skipped.'}
+      Run-Owned 'node' @('.github/scripts/windows-suite-uninstall-diagnostic.mjs',$root,$cleanupEvidence) 90000
+    }
+  } catch {
+    # Diagnostic input refusals and failures never replace original exit 1.
+  }
+  throw $originalFailure
 } finally {
   try {
     if($null -ne $uninstall -and $uninstall.HasExited){$cleanupExitCode=$uninstall.ExitCode}

@@ -44,23 +44,51 @@ export async function loseRuntimeReply({
     await cdp.command("Debugger.enable");
     enabled = true;
     const functionValue = await cdp.command("Runtime.evaluate", {
-      expression: "window.__TAURI_INTERNALS__.runCallback",
+      expression: "window.__TAURI_INTERNALS__.invoke",
       returnByValue: false,
     });
     assert.ok(functionValue.result.objectId);
     unsubscribe = cdp.onEvent("Debugger.paused", (event) => {
       frameId = event?.callFrames?.[0]?.callFrameId ?? null;
     });
-    await cdp.command("Debugger.setBreakpointOnFunctionCall", {
+    const method = action === "중지" ? "stop_active_run" : "run_job_now";
+    const entry = await cdp.command("Debugger.setBreakpointOnFunctionCall", {
       objectId: functionValue.result.objectId,
-      condition: `data?.value?.jobId===${JSON.stringify(jobId)}`,
+      condition: `cmd==="plugin:workspace|runtime"&&payload?.request?.method==="runtime_control"&&payload.request.args?.method===${JSON.stringify(method)}&&payload.request.args.args?.id===${JSON.stringify(jobId)}`,
     });
     const target = { role: "button", name: action, scope };
     click = action === "중지" ? ui.clickWithConfirmation(target, true) : ui.click(target);
     click.catch(() => {});
     await wait(
       async () => typeof frameId === "string" && frameId.length > 0,
-      "native result paused before renderer receipt",
+      "intended native control request observed before dispatch",
+    );
+    const submitted = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: "({requestId:payload.request.header.requestId,operationId:payload.request.args.operationId})",
+      returnByValue: true,
+      silent: true,
+    });
+    assert.ok(!submitted.exceptionDetails, "Native control request observation failed");
+    const request = submitted.result?.value;
+    assert.equal(typeof request?.requestId, "string");
+    assert.equal(typeof request?.operationId, "string");
+    const callback = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: "window.__TAURI_INTERNALS__.runCallback",
+      returnByValue: false,
+    });
+    assert.ok(callback.result.objectId);
+    await cdp.command("Debugger.removeBreakpoint", { breakpointId: entry.breakpointId });
+    await cdp.command("Debugger.setBreakpointOnFunctionCall", {
+      objectId: callback.result.objectId,
+      condition: `data?.operation?.provenance?.requestId===${JSON.stringify(request.requestId)}&&data?.value?.jobId===${JSON.stringify(jobId)}`,
+    });
+    frameId = null;
+    await cdp.command("Debugger.resume");
+    await wait(
+      async () => typeof frameId === "string" && frameId.length > 0,
+      "exact native control result paused before renderer receipt",
     );
     // Runtime.evaluate awaits execution on the paused renderer. This read stays
     // in its current call frame and never resumes/consumes the native callback.
@@ -74,6 +102,7 @@ export async function loseRuntimeReply({
     const requests = response.result?.value;
     assert.ok(Array.isArray(requests), "Paused pending-request observation must be an array");
     assert.equal(requests.length, 1, "Lost reply must retain exactly one original request");
+    assert.equal(requests[0].operationId, request.operationId, "Paused reply must match the original control request");
     await beforeRestart();
     await restart(true);
     restarted = true;
@@ -93,6 +122,22 @@ export async function loseRuntimeReply({
       await click?.catch(() => {});
     }
   }
+}
+
+export async function openCurrentProjectTerminal(ui) {
+  await ui.click({ role: "button", name: "터미널" });
+  const target = { role: "button", name: "현재 프로젝트의 터미널 열기" };
+  await ui.waitForTarget(target);
+  await ui.click(target);
+}
+
+export async function waitForRuntimeControlIdle(pending, receipts, wait, jobId) {
+  await wait(
+    async () =>
+      (await pending()).length === 0 &&
+      !(await receipts()).some((receipt) => receipt.targetId === jobId && !receipt.reviewed),
+    "previous explicit control acknowledged before the next lost reply",
+  );
 }
 
 export async function stopReconciledRuntimeRun(ui, wait, activeRun, scope) {
@@ -454,6 +499,12 @@ export function createWorkspaceUiFixture({
       // A new explicit run now has a new request. Stop's reply is independently lost.
       await ui.click({ role: "button", name: "지금 실행", scope });
       await wait(async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n", "second explicit owned run");
+      await waitForRuntimeControlIdle(
+        pending,
+        () => read("workspace.runtime", "list_runtime_controls", {}),
+        wait,
+        job.id,
+      );
       const stopId = await loseReply("중지");
       assertLostRuntimeReceipt(
         await read("workspace.runtime", "list_runtime_controls", {}),
@@ -560,8 +611,7 @@ export function createWorkspaceUiFixture({
       };
       const sessions = () => read("workspace.terminal", "terminal_sessions");
       const initial = await sessions();
-      await ui.click({ role: "button", name: "터미널" });
-      await ui.click({ role: "button", name: "현재 프로젝트의 터미널 열기" });
+      await openCurrentProjectTerminal(ui);
       let opened;
       await wait(async () => {
         opened = (await sessions()).find(
