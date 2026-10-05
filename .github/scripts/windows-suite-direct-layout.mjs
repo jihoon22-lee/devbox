@@ -88,7 +88,7 @@ export async function createDirectProductContext(product) {
         await rm(root, { recursive: true, force: true });
       }
     };
-    return { root, product, ui, cdp, processIdentity, close };
+    return { root, product, executable, ui, cdp, processIdentity, close };
   } catch (error) {
     if (child?.exitCode === null && processIdentity) await stopOwnedProcess(processIdentity, executable, child);
     releaseCdpSession({ cdp, policy });

@@ -6,6 +6,30 @@ import test from "node:test";
 import { copyDirectProductImage } from "./windows-suite-direct-layout.mjs";
 import { fileDigest } from "./suite-user-flow-results.mjs";
 import { productWindowForImage } from "./windows-user-flow-window.mjs";
+import { assertPortableAgentImage } from "./windows-suite-agent-user-flows.mjs";
+
+test("portable Agent observation accepts the exact renamed copy and rejects unrelated owners", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "portable-agent-test-"));
+  try {
+    const installed = path.join(directory, "installed");
+    await mkdir(installed);
+    const source = path.join(installed, "devbox-workspace.exe");
+    await writeFile(source, "synthetic exact candidate bytes");
+    const root = path.join(directory, "direct-workspace-Ab123x");
+    const executable = await copyDirectProductImage(source, root);
+    const context = { product: "workspace", executable, processIdentity: { Path: executable } };
+    assertPortableAgentImage(context, root, installed);
+    assert.throws(() => assertPortableAgentImage(context, root, root));
+    for (const Path of [source, path.join(root, "devbox-workspace.exe"), path.join(root, "other.exe")])
+      assert.throws(() => assertPortableAgentImage({ ...context, processIdentity: { Path } }, root, installed));
+    assert.throws(() => assertPortableAgentImage({ ...context, product: "knowledge" }, root, installed));
+    assert.throws(() =>
+      assertPortableAgentImage({ ...context, executable: source, processIdentity: { Path: source } }, root, installed),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("renamed direct images retain product lifecycle filtering only inside their owned copy", () => {
   const root = `C:\\Temp\\devbox-suite-delivery-${"a".repeat(32)}`;
