@@ -3646,7 +3646,9 @@ fn detect_xls_encryption(stream: &[u8], started: Instant) -> Result<bool, XlsPre
             if record.payload.len() < 2 {
                 return Err(XlsPreflightFailure::Malformed);
             }
-            return Ok(u16::from_le_bytes([record.payload[0], record.payload[1]]) != 0);
+            // FILEPASS presence denotes encryption. Its zero type selects XOR
+            // obfuscation; it does not mean that the workbook is plaintext.
+            return Ok(true);
         }
         if record.typ == 0x000A {
             return Ok(false);
@@ -5127,6 +5129,23 @@ mod tests {
             preflight_biff(&stream, now()),
             Err(XlsPreflightFailure::ResourceLimit)
         );
+    }
+
+    #[test]
+    fn xls_filepass_zero_type_is_xor_encryption_not_plaintext() {
+        // MS-XLS 2.4.117: FilePass type 0 is XOR obfuscation; type 1 is RC4.
+        // A FilePass record always marks an encrypted workbook.
+        for encryption_type in [0_u16, 1_u16] {
+            let mut stream = Vec::new();
+            let mut payload = encryption_type.to_le_bytes().to_vec();
+            payload.extend([0x12, 0x34, 0x56, 0x78]);
+            push_biff_record(&mut stream, 0x002f, &payload);
+            push_biff_record(&mut stream, 0x000a, &[]);
+            assert_eq!(
+                preflight_biff(&stream, now()),
+                Err(XlsPreflightFailure::Encrypted)
+            );
+        }
     }
 
     #[test]

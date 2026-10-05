@@ -7,7 +7,9 @@
 
 use crate::core::db;
 use crate::core::models::Session;
-use crate::core::privacy::{CompiledRules, PrivacyRules};
+#[cfg(test)]
+use crate::core::privacy::PrivacyRules;
+use crate::core::privacy::{parse_stored_rules, CompiledRules, MAX_RULES_JSON_BYTES};
 use devbox_filesystem::{parse_safe_project_path, MAX_PROJECT_PATH_BYTES};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -32,9 +34,6 @@ const MAX_PATH_BYTES: usize = MAX_PROJECT_PATH_BYTES;
 const MIN_CIVIL_DAY_MS: i64 = DAY_MS - 60 * 60 * 1_000;
 const MAX_CIVIL_DAY_MS: i64 = DAY_MS + 60 * 60 * 1_000;
 pub const MAX_PROVENANCE_FRESHNESS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
-const MAX_PRIVACY_JSON_BYTES: usize = 64 * 1024;
-const MAX_PRIVACY_RULES: usize = 128;
-const MAX_REGEX_BYTES: usize = 512;
 #[cfg(test)]
 const MAX_RUN_SERVICES: usize = 256;
 #[cfg(test)]
@@ -1246,40 +1245,19 @@ fn is_snapshot_error_code(value: &str) -> bool {
 }
 
 fn read_privacy_rules(conn: &Connection) -> CompiledRules {
-    let raw = match db::get_setting_bounded(conn, "privacy_rules", "{}", MAX_PRIVACY_JSON_BYTES) {
+    let raw = match db::get_setting_bounded(conn, "privacy_rules", "{}", MAX_RULES_JSON_BYTES) {
         Ok(raw) => raw,
         Err(_) => return privacy_fail_closed(),
     };
-    let rules = match serde_json::from_str::<PrivacyRules>(&raw) {
+    let rules = match parse_stored_rules(Some(&raw)) {
         Ok(rules) => rules,
         Err(_) => return privacy_fail_closed(),
     };
-    if rules.excluded_processes.len() > MAX_PRIVACY_RULES
-        || rules.excluded_title_patterns.len() > MAX_PRIVACY_RULES
-        || rules.redact_title_patterns.len() > MAX_PRIVACY_RULES
-        || rules
-            .excluded_processes
-            .iter()
-            .any(|value| !bounded_rule_text(value, MAX_APP_BYTES))
-        || rules
-            .excluded_title_patterns
-            .iter()
-            .chain(rules.redact_title_patterns.iter())
-            .any(|value| {
-                !bounded_rule_text(value, MAX_REGEX_BYTES) || regex::Regex::new(value).is_err()
-            })
-    {
-        return privacy_fail_closed();
-    }
     CompiledRules::compile(&rules).unwrap_or_else(|_| privacy_fail_closed())
 }
 
 fn privacy_fail_closed() -> CompiledRules {
     CompiledRules::fail_closed()
-}
-
-fn bounded_rule_text(value: &str, max_bytes: usize) -> bool {
-    !value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
 fn sanitized_session(
@@ -1295,7 +1273,12 @@ fn sanitized_session(
     }
     // Bound untrusted DB text before regex/privacy work so a malformed local
     // row cannot make export allocate proportional to an unbounded title.
-    let app_input = bounded_text(&session.app, MAX_APP_BYTES, false);
+    // Match every accepted process rule before applying the smaller display cap.
+    let app_input = bounded_text(
+        &session.app,
+        crate::core::privacy::MAX_RULE_CHARS * 4,
+        false,
+    );
     let title_input = bounded_text(&session.title, MAX_TITLE_BYTES, true);
     let Some((app, title)) = rules.apply(&app_input, &title_input) else {
         return Ok(None);
@@ -3512,13 +3495,74 @@ mod tests {
     }
 
     #[test]
+    fn valid_unicode_privacy_rules_preserve_process_exclusions_in_exports() {
+        let connection = database();
+        insert(
+            &connection,
+            "private.exe",
+            "historical private activity",
+            0,
+            100,
+        );
+        let mut large = PrivacyRules {
+            excluded_processes: vec!["😀".repeat(512); 63],
+            redact_title_patterns: vec!["😀".repeat(512)],
+            ..Default::default()
+        };
+        large.excluded_processes.push("private.exe".into());
+        let multibyte = PrivacyRules {
+            excluded_processes: vec!["private.exe".into()],
+            redact_title_patterns: vec!["한".repeat(200)],
+            ..Default::default()
+        };
+        assert!(serde_json::to_vec(&large).unwrap().len() > 64 * 1024);
+        for rules in [large, multibyte] {
+            assert!(
+                CompiledRules::compile(&rules).is_ok(),
+                "accepted settings policy"
+            );
+            db::set_setting(
+                &connection,
+                "privacy_rules",
+                &serde_json::to_string(&rules).unwrap(),
+            );
+            let document = futures_not_required_build(&connection, &input(ExportFormat::Json));
+            assert!(
+                document.sessions.is_empty(),
+                "excluded process must not reappear in export"
+            );
+        }
+    }
+
+    #[test]
+    fn privacy_excludes_unicode_process_before_display_truncation() {
+        let connection = database();
+        // 104 UTF-16 code units: a valid Windows executable filename, but
+        // its UTF-8 representation exceeds the export display limit.
+        let app = format!("{}.exe", "한".repeat(100));
+        assert!(app.len() > MAX_APP_BYTES);
+        insert(&connection, &app, "historical private activity", 0, 100);
+        let rules = PrivacyRules {
+            excluded_processes: vec![app],
+            ..Default::default()
+        };
+        db::set_setting(
+            &connection,
+            "privacy_rules",
+            &serde_json::to_string(&rules).unwrap(),
+        );
+        let document = futures_not_required_build(&connection, &input(ExportFormat::Json));
+        assert!(document.sessions.is_empty());
+    }
+
+    #[test]
     fn privacy_rules_are_bounded_before_regex_compilation() {
         let connection = database();
         db::set_setting(
             &connection,
             "privacy_rules",
             &serde_json::json!({
-                "redactTitlePatterns": ["x".repeat(MAX_REGEX_BYTES + 1)]
+                "redactTitlePatterns": ["x".repeat(crate::core::privacy::MAX_RULE_CHARS + 1)]
             })
             .to_string(),
         );

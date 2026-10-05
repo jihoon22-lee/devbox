@@ -490,47 +490,28 @@ fn run_observed_index(
                 all_scans_complete = false;
                 continue;
             }
-            conn.execute("BEGIN TRANSACTION", [])?;
-            let mut failed = None;
+            // Every early DB error (including cleanup and commit failures)
+            // must roll back before releasing the shared connection.
+            let transaction = conn.unchecked_transaction()?;
             for (path, size, modified_ts, record) in &prepared {
-                if let Err(error) = conn.execute(
+                transaction.execute(
                     "INSERT OR IGNORE INTO devbox_scan_seen(path) VALUES(?1)",
                     [crate::core::db::normalize_path(path)],
-                ) {
-                    failed = Some(error);
-                    break;
-                }
-                let file_id = match upsert_file(&conn, path, *size, *modified_ts, root.id) {
-                    Ok(file_id) => file_id,
-                    Err(error) => {
-                        failed = Some(error);
-                        break;
-                    }
-                };
-                let Some((_, content_enabled)) = root_row_for(&conn, path)? else {
-                    // A root can be removed while this bounded batch is being
-                    // committed. Never resurrect the row through the stale
-                    // fallback root id supplied by the scan snapshot.
-                    delete_file_by_id(&conn, file_id)?;
+                )?;
+                let file_id = upsert_file(&transaction, path, *size, *modified_ts, root.id)?;
+                let Some((_, content_enabled)) = root_row_for(&transaction, path)? else {
+                    delete_file_by_id(&transaction, file_id)?;
                     continue;
                 };
                 if content_enabled {
                     if let Some(record) = record {
-                        if let Err(error) = upsert_content_record(&conn, file_id, record, now_ms())
-                        {
-                            failed = Some(error);
-                            break;
-                        }
+                        upsert_content_record(&transaction, file_id, record, now_ms())?;
                     }
                 } else {
-                    clear_content_for_file(&conn, file_id)?;
+                    clear_content_for_file(&transaction, file_id)?;
                 }
             }
-            if let Some(error) = failed {
-                let _ = conn.execute("ROLLBACK", []);
-                return Err(error);
-            }
-            conn.execute("COMMIT", [])?;
+            transaction.commit()?;
             state
                 .indexed
                 .fetch_add(prepared.len() as i64, Ordering::SeqCst);
@@ -881,6 +862,48 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
 
     static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn failed_content_cleanup_rolls_back_batch_and_allows_retry() {
+        let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root =
+            std::env::temp_dir().join(format!("devbox-index-rollback-{}-{id}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("fixture.txt");
+        fs::write(&file, "old").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let state = state(conn);
+        run_index_with_filter(&state, &[], IndexFilter::All).unwrap();
+        state
+            .db
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "UPDATE roots SET content=0;
+             CREATE TRIGGER reject_cleanup BEFORE DELETE ON file_content
+             BEGIN SELECT RAISE(FAIL, 'fixture cleanup failure'); END;",
+            )
+            .unwrap();
+        fs::write(&file, "updated").unwrap();
+        assert!(run_index_with_filter(&state, &[], IndexFilter::All).is_err());
+        {
+            let conn = state.db.lock().unwrap();
+            assert!(
+                conn.is_autocommit(),
+                "failed batch must release its transaction"
+            );
+            let size: i64 = conn
+                .query_row("SELECT size FROM files", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(size, 3, "earlier batch changes must roll back");
+            conn.execute_batch("DROP TRIGGER reject_cleanup").unwrap();
+        }
+        run_index_with_filter(&state, &[], IndexFilter::All).unwrap();
+        assert!(state.db.lock().unwrap().is_autocommit());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn retired_index_owner_cannot_queue_a_restart_behind_active_work() {

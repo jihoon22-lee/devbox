@@ -28,12 +28,16 @@ pub fn attribute_title<'a>(title: &str, profiles: &'a [ProjectMatch]) -> Option<
     let title_lower = title.to_lowercase();
     profiles
         .iter()
-        .filter(|p| {
+        .filter_map(|p| {
             p.basenames
                 .iter()
-                .any(|b| !b.is_empty() && title_lower.contains(&b.to_lowercase()))
+                .filter(|b| !b.is_empty() && title_lower.contains(&b.to_lowercase()))
+                .map(|b| b.len())
+                .max()
+                .map(|length| (p, length))
         })
-        .max_by_key(|p| p.basenames.iter().map(|b| b.len()).max().unwrap_or(0))
+        .max_by_key(|(_, length)| *length)
+        .map(|(profile, _)| profile)
 }
 
 /// 세션 목록을 프로젝트별로 집계한다. 미귀속은 별도로 반환한다.
@@ -111,6 +115,20 @@ mod tests {
     fn longest_basename_wins() {
         let profiles = [
             profile("outer", &["devbox"]),
+            profile("inner", &["devbox-api"]),
+        ];
+        assert_eq!(
+            attribute_title("devbox-api — readme", &profiles)
+                .unwrap()
+                .project_id,
+            "inner"
+        );
+    }
+
+    #[test]
+    fn unmatched_long_alias_does_not_override_a_more_specific_match() {
+        let profiles = [
+            profile("outer", &["devbox", "unrelated-very-long-project-alias"]),
             profile("inner", &["devbox-api"]),
         ];
         assert_eq!(
