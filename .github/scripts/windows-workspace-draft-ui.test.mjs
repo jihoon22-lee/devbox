@@ -154,7 +154,18 @@ test("failed recovery journal distinguishes explicit file save from unsaved pres
         if (name === "파일 저장 후 종료") bytes = after;
       },
     },
-    fixture: { waitForText: async () => events.push("flush-failed") },
+    fixture: {
+      waitForText: async (target) => {
+        // Both Files and the close review report this failure. An unscoped
+        // alert is ambiguous and must not masquerade as a missing native reply.
+        assert.deepEqual(target, {
+          role: "alert",
+          name: "",
+          scope: { role: "dialog", name: "Workspace 종료 검토" },
+        });
+        events.push("flush-failed");
+      },
+    },
     readBytes: async () => bytes,
     before,
     after,

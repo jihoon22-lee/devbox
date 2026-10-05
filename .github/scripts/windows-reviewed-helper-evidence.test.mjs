@@ -33,3 +33,13 @@ test("only fixed native recovery issue codes enter evidence", () => {
   );
   assert.deepEqual(reviewedHelperCodes({ name: observation.name, controls: [{ name: "(token=secret)" }] }), []);
 });
+
+test("Knowledge startup tokens are bounded whole lines without private stderr payloads", () => {
+  const collector = nativeIssueCollector();
+  collector.write("knowledge_startup_import_");
+  collector.write("database_invalid\r\n");
+  collector.write("knowledge_startup_store_unavailable path=C:\\private\n");
+  collector.write("knowledge_startup_unavailable\nknowledge_private_title\n");
+  collector.write("knowledge_startup_" + "x".repeat(100) + "\n");
+  assert.deepEqual(collector.codes, ["knowledge_startup_import_database_invalid", "knowledge_startup_unavailable"]);
+});

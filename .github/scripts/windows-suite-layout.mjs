@@ -153,7 +153,9 @@ export async function capturePerformanceScreenshot(
   directory = "product-foundation-evidence/user-flows/screenshots/performance",
 ) {
   assert.ok(layoutProducts.includes(product));
-  const { data } = await cdp.command("Page.captureScreenshot", { format: "png" });
+  // Restarting workloads replace their owned renderer; resolve its session only at capture time.
+  const current = typeof cdp === "function" ? cdp() : cdp;
+  const { data } = await current.command("Page.captureScreenshot", { format: "png" });
   const bytes = Buffer.from(data, "base64");
   assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "Performance PNG capture required");
   const file = path.resolve(directory, `performance-${product}-completed.png`);
@@ -170,6 +172,7 @@ export function layoutEvidenceStatus(missing, failureCode) {
 export async function observeProductPerformance({
   product,
   cdp,
+  getCdp = () => cdp,
   getIdentities,
   coldRendererReadyMs,
   warmExistingWindowMs,
@@ -204,7 +207,7 @@ export async function observeProductPerformance({
     },
     measured,
     budget,
-    screenshotPaths: await capturePerformanceScreenshot(cdp, product),
+    screenshotPaths: await capturePerformanceScreenshot(getCdp, product),
   };
   await mkdir(evidenceRoot, { recursive: true });
   await writeFile(path.join(evidenceRoot, `performance-${product}.json`), JSON.stringify(record, null, 2), {

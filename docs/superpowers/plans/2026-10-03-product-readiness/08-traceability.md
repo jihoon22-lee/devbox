@@ -3,9 +3,10 @@
 ## 현재 상태와 증거 원장
 
 R00–R16 통합 구현은 [PR #616](https://github.com/jihoon22-lee/devbox/pull/616)에 반영했다.
-출시 차단 보정은 후속 PR에 모으며 현재 [#633](https://github.com/jihoon22-lee/devbox/pull/633)에서
-최종 Astra 병렬 리뷰·수정·문서 정리를 묶었다. 아래는 출시 준비 커밋의 검증 기록이며,
-**최종 공개 여부는 v0.9.0 Release와 #633의 최신 결과를 따른다.**
+출시 차단 보정은 후속 PR에 모으며 [#633](https://github.com/jihoon22-lee/devbox/pull/633)에서
+최종 Astra 병렬 리뷰·수정·문서 정리를 묶었다. 이후 설치형 후보에서 확인된 결함은
+최소 보정 PR로 이어간다. 아래는 출시 준비 커밋의 검증 기록이며,
+**최종 공개 여부는 v0.9.0 Release와 연결된 최신 보정 PR의 결과를 따른다.**
 소스·fixture·실제 실행·결과 집계·공개를 구분하고, 최종 source와 artifact는 PR 본문에 기록한다.
 
 | 근거 | 실제 결과와 제한 |
@@ -13,9 +14,10 @@ R00–R16 통합 구현은 [PR #616](https://github.com/jihoon22-lee/devbox/pull
 | 제품 빌드 `5d25aa75`, 후보 `37306773490` | 7개 파일·네 native scope·WSL2 통과. portable 관측기 오류로 전체 수용 실패; 직접 승격 불가 |
 | fixture `ab2ee78a`, 재검증 `37322897417` | 동일 설치 UI 실행 40행 PASS 및 owned cleanup 통과. migration의 generation update에서 `checkpoint_expired`; UI 성능 증거의 PNG·일부 성공 failureCode 누락도 집계 전에 발견. seal·게시 미완료 |
 | 진단 `37325623409`, 원본 제품 bytes | 전체 migration 통과, 업데이트 준비 30.9초·34.0초. 소유 파일 약 1,081개·61MiB. 앞선 120초 초과의 정확한 runner 원인은 미확정. 진단은 승격 증거가 아님 |
-| PR #633 제품 보정 | checkpoint 파일 작업 최대 2개 병렬, 전체 byte 상한 사전 예약. 기존 120초·취소·path/identity/hash·전체 보존·marker 조건 유지. 12개 직접 회귀와 최종 Control Center 64개 테스트 통과; Windows 새 bytes는 미실행 |
+| PR #633 제품 보정 | checkpoint 파일 작업 최대 2개 병렬, 전체 byte 상한 사전 예약. 기존 120초·취소·path/identity/hash·전체 보존·marker 조건 유지. 12개 직접 회귀와 최종 Control Center 64개 테스트 통과; 이후 Windows 결과는 다음 후보 행과 구분 |
 | PR #633 패키징·검증 보정 | Tauri `--bins` 산출물인 helper의 중복 컴파일 제거, Product foundation PR 자동 실행 제거, 실제 성능 화면을 캡처하는 증거 생성 및 성공 행 계약 수정. 필수 CI·최종 후보 gate 유지 |
 | 최종 전수 리뷰 | 최초 tracked 3,144개를 Workspace/Agent 1,327·API/Knowledge 1,017·공용/배포 709·문서 91개로 배정. 생성 파일·asset 검사와 깊은 소스 검토를 구분하고 추가 변경 파일도 최종 범위에 포함. 발견 결함과 최종 검증은 #633에 통합 기록 |
+| 제품 빌드 `45443fd8`, 후보 `37344312789` | PR #633·exact-main CI 통과 후 새 7개 파일 assembly·네 native scope·WSL2 및 초기 설치/활성화 통과. 설치형 UI 여정 실패로 seal 거절, migration 미실행. 터미널 입력 순서 결함을 로컬에서 재현했으므로 fixture-only 재사용 대상이 아님 |
 
 제품 코드·패키징 입력이 바뀌었으므로 `5d25aa75`를 새 제품의 PASS로 바꾸지 않는다.
 새 exact-main 후보 수용과 동일 bytes 공개 확인을 완료해야 R16을 닫는다.
@@ -164,3 +166,21 @@ check·Clippy·fmt와 2,947개 테스트 및 생성 타입 일치를 확인했�
 필터 9개와 영향받은 Workspace 타입·빌드·번들만 확인했다. Rust harness의 ignored 3개 중
 하나는 통과한 부모 테스트가 실행하는 subprocess fixture이고, 나머지 Windows→WSL 및
 설치된 LSP 수용은 새 후보에서 별도로 확인한다. CI·공개 결과는 #633과 Release 원장에 남긴다.
+
+## 7. 후보 `37344312789` 이후 직접 보정
+
+세 Astra 리뷰어가 설치형 실패의 최초 원인과 후속 오류를 분리하고 수정 범위를 서로
+교차 검토했다. 전체 감사를 다시 실행하지 않고 직접 회귀와 영향받은 타입·빌드·Rust
+검사를 수행한다. 다음 로컬 재현은 새 Windows 설치본의 PASS를 뜻하지 않는다.
+
+| 경계 | 확인·보정 | 검증과 한계 |
+|---|---|---|
+| Terminal | 비동기 PTY 쓰기의 완료 전에 다음 Enter가 먼저 도달. pane별 제한된 대기열로 실제 쓰기·flush ACK 순서를 보존하고 종료·실패 시 대기 입력 폐기, 재전송 금지 | 지연된 첫 쓰기와 Enter로 RED→GREEN. 초기 명령·broadcast 대상 변경·실패·상한·pane 독립성 포함 |
+| Knowledge 시작·Health | 기존 제품 DB에 중단된 rollback journal이 있으면 읽기 전용 metadata 연결이 복구를 거절. 기존 선택 파일만 READ_WRITE로 열어 SQLite 복구를 허용하고 query_only·trusted_schema 제한 유지 | 실제 subprocess 중단 journal로 binding 및 Notes/Activity/Search 준비 실패를 재현. DB 생성·row/schema 변경은 금지. 원본 후보에는 journal 근거가 없어 동일 원인이라고 단정하지 않음 |
+| checkpoint | 제품 writer 종료보다 Windows 파일 handle 해제가 늦을 수 있음. 개별 open/read의 OS 32·33만 원래 120초·취소 범위에서 기다리며 나머지 오류는 즉시 거절 | byte/hash/identity·전체 보존 조건 유지, 완료된 read 재실행 없음. 실제 Windows exclusive handle 회귀는 Windows 검사에서 실행 예정이며 로컬 WSL에서는 미실행. 원본 후보의 정확한 파일·OS 원인은 미확정 |
+| 설치 관측 | 종료 dialog 안의 경고를 명시적으로 선택, Knowledge 재시작 뒤 새 CDP로 성능 PNG 캡처, shortcut의 정확한 WebView 자식 종료까지 관측 | WORK 경고 중복과 이전 CDP 재사용은 fixture 결함으로 재현. 후속 LSP/Dependencies의 가림은 앞선 종료 dialog에서 발생 |
+| 실패 기록 | 미완료 activation의 Agent 여정은 NOT_RUN으로 기록하고 전체 gate는 실패 유지. 시작 시 Agent가 없던 경우 X가 종료시켰다고 표시하지 않음 | 최초 delivery 실패를 보존하며 성공을 만들기 위한 재시작·상태 변경은 하지 않음 |
+
+이 보정에는 제품 변경이 포함되므로 `45443fd8`의 자산을 승격하거나 새 source로
+재표기하지 않는다. 같은 보정 PR에 로컬 결과와 필수 CI를 기록한 뒤 새 exact-main
+후보의 설치·복구·전체 여정과 공개본 다운로드를 확인한다.

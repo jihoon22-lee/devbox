@@ -87,3 +87,71 @@ test("Knowledge startup failure evidence keeps fixed readiness reason without pr
     null,
   );
 });
+
+test("Knowledge startup diagnostics read the typed domain issue instead of the generic outcome code", () => {
+  const status = projectKnowledgeStartupStatus({
+    operation: { outcome: { state: "failed", code: "unavailable" } },
+    value: { issue: "journal_unavailable", root: "private-path" },
+  });
+  assert.equal(status.code, "journal_unavailable");
+  assert.ok(!JSON.stringify(status).includes("private-path"));
+});
+
+test("Health-phase Knowledge admission rejection is retained without enabling its setup command", async () => {
+  const { ownedKnowledgeStartupStatus } = await import("./windows-suite-health-readiness.mjs");
+  const { runInNewContext } = await import("node:vm");
+  const { createRequire } = await import("node:module");
+  const catalog = createRequire(import.meta.url)("../../apps/products.json");
+  const executable = "C:\\fixture\\devbox-knowledge.exe";
+  const calls = [];
+  const status = await ownedKnowledgeStartupStatus({
+    executable,
+    processIdentity: { Path: executable },
+    cdp: {
+      evaluate: (expression) =>
+        runInNewContext(expression, {
+          crypto: { randomUUID: () => "owned-request" },
+          window: {
+            __TAURI_INTERNALS__: {
+              invoke: async (command, args) => {
+                calls.push(command);
+                if (command === "plugin:product-shell|describe")
+                  return {
+                    product: { id: "knowledge" },
+                    handshake: { installationId: "owned", sessionId: "session" },
+                    context: {},
+                    deliveryState: "health",
+                  };
+                assert.equal(command, "plugin:knowledge|setup");
+                assert.equal(args.request.method, "status");
+                throw {
+                  code: "unavailable",
+                  provenance: {
+                    requestId: "owned-request",
+                    product: "knowledge",
+                    component: "knowledge.setup",
+                    revision: catalog.catalogRevision,
+                  },
+                  message: "private-path",
+                };
+              },
+            },
+          },
+        }),
+    },
+  });
+  assert.deepEqual(status, { observationUnavailable: true, admissionCode: "unavailable", deliveryState: "health" });
+  assert.equal(calls.length, 2);
+  assert.ok(!JSON.stringify(status).includes("private-path"));
+});
+
+test("Knowledge admission diagnostics discard unrecognized values", () => {
+  assert.deepEqual(
+    projectKnowledgeStartupStatus({ admissionRejected: true, code: "private-path", deliveryState: "private-title" }),
+    {
+      observationUnavailable: true,
+      admissionCode: null,
+      deliveryState: null,
+    },
+  );
+});

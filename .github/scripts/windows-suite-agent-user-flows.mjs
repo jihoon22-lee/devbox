@@ -507,12 +507,29 @@ export async function trayQuitReconnect(context, app) {
     screenshotPaths: [await app.ui.screenshot("AGENT-03-tray-reconnect")],
   };
 }
+export async function requireCommittedAgentActivation(activation, identity, write = writeUserFlowResults) {
+  if (activation?.phase === "committed") return;
+  await write(
+    "agent",
+    ["AGENT-02", "AGENT-03", "AGENT-04"].map((id) => ({
+      ...identity,
+      id,
+      status: "NOT_RUN",
+      evidenceKind: "packaged-ui",
+      assertions: ["Earlier delivery did not commit activation; dependent Agent scenarios were not executed"],
+      screenshotPaths: [],
+      failureCode: "agent-activation-prerequisite-incomplete",
+    })),
+  );
+  throw new Error("Agent prerequisite activation is not committed; inspect the original delivery failure");
+}
 export async function runInstalledAgentUserFlows() {
   const identity = await packagedIdentity(),
     root = await realpath(process.env.DEVBOX_USER_FLOW_INSTALL_ROOT),
     registration = await json(path.join(root, "suite-registration.json")),
     manifest = await json(path.join(root, "devbox-installation.json"));
   const context = await verifiedScope({ root, manifest, identity, installationKey: registration.installationKey });
+  await requireCommittedAgentActivation(await json(path.join(root, "devbox-activation.json")), identity);
   const records = [],
     app = await createInstalledProductContext("workspace");
   try {
@@ -583,12 +600,16 @@ export async function runInstalledAgentUserFlows() {
     } else
       records.push({
         id: "AGENT-04",
-        status: "FAIL",
+        status: previous.length === 0 ? "NOT_RUN" : "FAIL",
         ...identity,
         evidenceKind: "packaged-ui",
-        assertions: ["Installed normal X changed or stopped the installed Agent owner"],
+        assertions: [
+          previous.length === 0
+            ? "No installed Agent owner existed before normal X; its lifetime could not be observed"
+            : "Installed normal X changed or stopped the installed Agent owner",
+        ],
         screenshotPaths: [],
-        failureCode: "installed-X-owner-changed",
+        failureCode: previous.length === 0 ? "installed-X-owner-prerequisite-absent" : "installed-X-owner-changed",
       });
   }
   await writeUserFlowResults("agent", records);

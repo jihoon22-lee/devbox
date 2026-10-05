@@ -78,11 +78,30 @@ const startupIssues = new Set([
   "component_state_conflict",
 ]);
 export function projectKnowledgeStartupStatus(result) {
+  if (result?.admissionRejected === true)
+    return {
+      observationUnavailable: true,
+      admissionCode: [
+        "unauthorized",
+        "invalid-request",
+        "expired",
+        "replayed",
+        "overloaded",
+        "stale-context",
+        "unavailable",
+      ].includes(result.code)
+        ? result.code
+        : null,
+      deliveryState: ["direct", "import", "health", "committed", "recover"].includes(result.deliveryState)
+        ? result.deliveryState
+        : null,
+    };
+  const issue = result?.value?.issue ?? result?.operation?.outcome?.code;
   return {
     state: ["succeeded", "failed", "cancelled", "expired"].includes(result?.operation?.outcome?.state)
       ? result.operation.outcome.state
       : null,
-    code: startupIssues.has(result?.operation?.outcome?.code) ? result.operation.outcome.code : null,
+    code: startupIssues.has(issue) ? issue : null,
     active:
       result?.operation?.outcome?.state === "succeeded" && typeof result?.value?.active === "boolean"
         ? result.value.active
@@ -118,7 +137,13 @@ export async function ownedKnowledgeStartupStatus(context) {
     const d=await invoke('plugin:product-shell|describe');
     if(d.product.id!=='knowledge')throw new Error('Owned Knowledge status unavailable');
     const requestId=crypto.randomUUID();
-    const r=await invokeComponent('knowledge',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId,deadlineMs:Date.now()+5000,route:'notes',context:d.context},component:'knowledge.setup',method:'status',args:{}}});
+    let r;
+    try { r=await invokeComponent('knowledge',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId,deadlineMs:Date.now()+5000,route:'notes',context:d.context},component:'knowledge.setup',method:'status',args:{}}}); }
+    catch(error) {
+      const p=error?.provenance;
+      if(p?.requestId!==requestId||p.product!=='knowledge'||p.component!=='knowledge.setup'||p.revision!==${catalog.catalogRevision})throw new Error('Owned Knowledge admission unavailable');
+      return {admissionRejected:true,code:error.code,deliveryState:d.deliveryState};
+    }
     if(r.operation.provenance.requestId!==requestId||r.operation.provenance.product!=='knowledge'||r.operation.provenance.component!=='knowledge.setup'||r.operation.provenance.revision!==${catalog.catalogRevision})throw new Error('Owned Knowledge status unavailable');
     return r;
   })()`);

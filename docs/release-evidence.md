@@ -22,6 +22,12 @@
 fixture-only 예외에 해당하지 않는다. 원본 bytes의 통과 기록과
 새 제품 bytes의 검증 기록을 구분하며, 최종 게시 상태는 위 원장의 최신 결과를 따른다.
 
+PR #633의 main `45443fd8b90af6af76d90d7339deebd1b488f579`에서 만든 후보
+`37344312789`는 assembly·네 native scope·WSL2/Docker·초기 설치와 활성화를 통과했다.
+설치형 사용자 여정에서 실패하여 seal은 거절됐고 전체 migration은 미실행이다.
+이후 터미널 입력 전송 순서의 제품 결함을 로컬에서 재현했으므로 이 후보 역시
+fixture-only 재검증으로 승격하지 않는다. 새 제품 source의 수용 결과를 별도로 기록한다.
+
 ### 철회 전 공개 이력
 
 첫 v0.9.0은 `2026-10-03T05:31:16Z`에 공개됐으며 당시 Latest=true, draft=false,
