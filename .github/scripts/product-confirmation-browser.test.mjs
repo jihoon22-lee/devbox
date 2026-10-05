@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Cdp } from "./windows-packaged-smoke.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
 import { prepareTerminalStart } from "./windows-workspace-ui-fixture.mjs";
+import { prepareExpiryPipeline, reviewHandoffClose } from "./windows-suite-integration.mjs";
 import { visibleControlBounds } from "./visible-control-bounds.mjs";
 
 const chrome = "/usr/bin/google-chrome";
@@ -285,6 +286,54 @@ test("real confirmation input preserves cancellation, focus and bounded layout w
       "echo synthetic",
     ]);
     assert.equal(await cdp.evaluate("document.querySelector('#review button').dataset.accepted"), "yes");
+    stage = "pending-handoff-transform-controls";
+    const apiCss = (
+      await Promise.all(
+        [
+          "packages/tokens/tokens.css",
+          "packages/product-shell/src/styles.css",
+          "packages/api-studio-features/src/transforms/App.css",
+          "apps/devbox-api-studio/src/App.css",
+        ].map((file) => readFile(path.join(root, file), "utf8")),
+      )
+    )
+      .join("\n")
+      .replace(/@import\s+[^;]+;/g, "");
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 720,
+      height: 480,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await cdp.send("Page.setDocumentContent", {
+      frameId: frameTree.frame.id,
+      html: `<style>${apiCss}</style><div class="product-shell"><header><strong>Devbox API Studio</strong></header>
+        <aside><nav><button>요청</button><button>변환</button></nav></aside><main>
+        <div class="shell-toolbar"><button>뒤로</button><span>프로젝트 선택 없이 사용</span><button>제품 연결</button></div>
+        <section aria-label="다른 제품의 열기 요청"><strong>Workspace 선택 내용 검토</strong>
+        <dl><dt>담당 제품</dt><dd>Devbox API Studio</dd><dt>대상</dt><dd>artifact · synthetic-owned-reference</dd>
+        <dt>변경 내용</dt><dd>담당 화면을 열고 현재 대상을 확인합니다. 실행·저장·삭제는 해당 화면에서 별도로 검토합니다.</dd>
+        <dt>확인한 버전</dt><dd>synthetic-revision</dd></dl><button>화면 열기</button><button>거절</button>
+        <p>미리보기를 확인한 뒤 변환 도구에 적용하세요.</p></section>
+        <div class="api-feature-transforms"><div class="app"><aside class="sidebar">Transforms</aside>
+        <div class="content"><section class="smart-workflow"><div style="height:500px">합성 입력 및 감지</div>
+        <section class="smart-workflow-pipeline"><button>새 파이프라인</button>
+        <div class="smart-workflow-pipeline-toolbar"><label>입력 형식<select aria-label="파이프라인 입력 형식">
+        <option>텍스트</option><option>JSON</option></select></label></div></section></section></div></div></div></main></div>`,
+    });
+    await prepareExpiryPipeline({ ui });
+    stage = "owned-handoff-dirty-close";
+    await cdp.send("Page.setDocumentContent", {
+      frameId: frameTree.frame.id,
+      html: `<button class="document-tab-select" role="tab" title="owned-source.txt"><span class="document-tab-name">● owned-source.txt</span></button>
+        <section role="dialog" aria-label="Workspace 종료 검토"><button>파일 저장 후 종료</button>
+        <button onclick="this.dataset.accepted='yes'">파일 변경 폐기 후 종료</button></section>`,
+    });
+    await reviewHandoffClose({ ui, cdp }, "owned-source.txt");
+    assert.equal(
+      await cdp.evaluate("document.querySelector('[role=dialog] button:last-child').dataset.accepted"),
+      "yes",
+    );
     console.log(JSON.stringify({ fixture: "product-confirmation", stage: "assertions-complete", status: "PASS" }));
   } catch (error) {
     firstError = error;

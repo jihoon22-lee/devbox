@@ -91,6 +91,7 @@ export async function prepareTerminalStart(ui, root, command) {
   await ui.waitForTarget({ role: "combobox", name: "시작 경로" });
   await ui.fill({ role: "combobox", name: "시작 경로" }, root);
   await ui.fill({ role: "textbox", name: "시작 명령" }, command);
+  await ui.waitForTarget({ role: "button", name: "+ 터미널" });
   await ui.click({ role: "button", name: "+ 터미널" });
   await ui.waitForTarget({ role: "button", name: "실행" });
   await ui.click({ role: "button", name: "실행" });
@@ -172,14 +173,29 @@ export async function loseRuntimeReply({
     await cdp.command("Debugger.removeBreakpoint", { breakpointId: entry.breakpointId });
     await cdp.command("Debugger.setBreakpointOnFunctionCall", {
       objectId: callback.result.objectId,
-      condition: `data?.operation?.provenance?.requestId===${JSON.stringify(request.requestId)}&&data?.value?.jobId===${JSON.stringify(jobId)}`,
+      condition: `(data?.operation?.provenance?.requestId??data?.provenance?.requestId)===${JSON.stringify(request.requestId)}`,
     });
     frameId = null;
     await cdp.command("Debugger.resume");
     await wait(
       async () => typeof frameId === "string" && frameId.length > 0,
       "exact native control result paused before renderer receipt",
+      35_000,
     );
+    // Native runtime controls have a 29s budget. Observe their exact response,
+    // including failures, before deciding whether a successful reply can be lost.
+    // Project fixed metadata only; never include native payloads in failures.
+    const observed = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: `({requestMatches:(data?.operation?.provenance?.requestId??data?.provenance?.requestId)===${JSON.stringify(request.requestId)},outcome:["succeeded","failed","cancelled","stale","running"].includes(data?.operation?.outcome?.state)?data.operation.outcome.state:"rejected",jobMatches:data?.value?.jobId===${JSON.stringify(jobId)},code:["unauthorized","invalid-request","expired","replayed","overloaded","stale-context","unavailable"].includes(data?.code??data?.operation?.outcome?.code)?(data.code??data.operation.outcome.code):null})`,
+      returnByValue: true,
+      silent: true,
+    });
+    assert.ok(!observed.exceptionDetails, "Paused native response observation failed");
+    const reply = observed.result?.value;
+    assert.equal(reply?.requestMatches, true, "Paused native response must match the original request");
+    assert.equal(reply?.outcome, "succeeded", `Native runtime reply: ${JSON.stringify(reply)}`);
+    assert.equal(reply?.jobMatches, true, "Native runtime reply must match the original job");
     // Runtime.evaluate awaits execution on the paused renderer. This read stays
     // in its current call frame and never resumes/consumes the native callback.
     const response = await cdp.command("Debugger.evaluateOnCallFrame", {
@@ -243,6 +259,13 @@ export async function resumeRuntimeUi(fixture, ui) {
   await fixture.selectWindows();
   await ui.click({ role: "button", name: "작업 및 서비스" });
   await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
+}
+
+export async function readCompletedDependencyInventory(ui, inventory) {
+  // The UI owns the probe lane until its analysis completes. Starting another
+  // inventory while it is busy observes contention instead of the displayed report.
+  await ui.waitForTarget({ role: "button", name: "다시 분석" });
+  return inventory();
 }
 
 export function createWorkspaceUiFixture({
@@ -648,7 +671,7 @@ export function createWorkspaceUiFixture({
       await ui.waitForTarget({ role: "button", name: "의존성 분석" });
       await ui.click({ role: "button", name: "의존성 분석" });
       const inventory = () => read("workspace.dependencies", "dependency_inventory", { request: { path: root } });
-      const initial = await inventory();
+      const initial = await readCompletedDependencyInventory(ui, inventory);
       assert.ok(initial.packages.some((item) => item.version === "1.2.3"));
       await ui.click({ role: "button", name: "전송 내용 검토" });
       await this.waitForText({ role: "region", name: "원격 전송 검토" });
@@ -659,7 +682,7 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "검토한 정보 보내기" });
       await this.waitForText({ role: "button", name: "lockfile 다시 분석" });
       await ui.click({ role: "button", name: "lockfile 다시 분석" });
-      const fresh = await inventory();
+      const fresh = await readCompletedDependencyInventory(ui, inventory);
       assert.notEqual(fresh.revision, initial.revision);
       assert.ok(fresh.packages.some((item) => item.version === "1.2.4"));
       // Approved transmission reaches only the owned failure proxy, retaining local inventory.

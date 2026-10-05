@@ -134,6 +134,10 @@ on:
         description: With retained installer diagnosis, run only installed app journeys without update or migration cases
         type: boolean
         default: false
+      suite_app_journeys:
+        description: Optional comma-separated retained app journeys (workspace,api,knowledge,handoff,layout); empty runs all
+        type: string
+        default: ''
       suite_remaining_only:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
@@ -494,6 +498,8 @@ jobs:
           node .github/scripts/windows-suite-user-flow.mjs
       - name: Exercise actual work in the same installed namespace
         if: ${{ success() || (failure() && steps.retained_install.outcome == 'failure') }}
+        env:
+          SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}
         shell: pwsh
         run: |
           if ('${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true' -and '${{ inputs.suite_boundary_scope }}' -eq 'migration') {
@@ -504,6 +510,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $appsOnly = '${{ inputs.suite_diagnostic_apps_only }}' -eq 'true'
+          $appScripts = @{workspace='windows-workspace-user-flows.mjs';api='windows-api-user-flows.mjs';knowledge='windows-knowledge-user-flows.mjs';handoff='windows-suite-integration.mjs';layout='windows-suite-layout.mjs'}
+          $selectedAppScripts = @($appScripts.Values)
+          if ($env:SELECTED_APP_JOURNEYS) {
+            if (-not $appsOnly) { throw 'Selected app journeys require apps-only diagnosis' }
+            $selectedApps = @($env:SELECTED_APP_JOURNEYS.Split(',') | ForEach-Object { $_.Trim() })
+            if ($selectedApps.Count -gt 5 -or @($selectedApps | Select-Object -Unique).Count -ne $selectedApps.Count -or @($selectedApps | Where-Object { -not $appScripts.ContainsKey($_) }).Count -ne 0) { throw 'Invalid retained app journey selection' }
+            $selectedAppScripts = @($selectedApps | ForEach-Object { $appScripts[$_] })
+          }
           if ('${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true') {
             node .github/scripts/windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'
             exit $LASTEXITCODE
@@ -515,6 +529,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { $failed += 'owned-native-file-picker' }
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-agent-user-flows.mjs')) {
             if ($appsOnly -and $script -notin @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')) { continue }
+            if ($appsOnly -and $script -notin $selectedAppScripts) { continue }
             if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
               Write-Host "Installed journey start: withdrawn-same-version-update"
               node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn

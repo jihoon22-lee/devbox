@@ -258,14 +258,26 @@ public static class DevboxInstallerAutomation {
         throw new InvalidOperationException("Owned filename key release incomplete");
     }
   }
-  public static bool PickerFilenameMatches(int dialog,int edit,uint processId,string expected) {
+  private static string ReadPickerFilename(int dialog,int edit,uint processId) {
     if(!IsPickerControl(dialog,edit,processId,"Edit")) throw new InvalidOperationException("Owned filename editor changed");
     IntPtr text=Marshal.AllocHGlobal(32768*2);
     try {
       UIntPtr result;
       if(SendMessageTimeoutW(new IntPtr(edit),0x000D,new UIntPtr(32768),text,0x23,1500,out result)==IntPtr.Zero || result.ToUInt64()>=32768) throw new InvalidOperationException("Owned filename observation unavailable");
-      return String.Equals(Marshal.PtrToStringUni(text,(int)result.ToUInt64()),expected,StringComparison.Ordinal);
+      return Marshal.PtrToStringUni(text,(int)result.ToUInt64());
     } finally { Marshal.FreeHGlobal(text); }
+  }
+  public static bool PickerFilenameMatches(int dialog,int edit,uint processId,string expected) {
+    return String.Equals(ReadPickerFilename(dialog,edit,processId),expected,StringComparison.Ordinal);
+  }
+  public static string PickerFilenameFailure(int dialog,int edit,uint processId,string expected) {
+    string actual=ReadPickerFilename(dialog,edit,processId);
+    int prefix=0;
+    while(prefix<actual.Length && prefix<expected.Length && actual[prefix]==expected[prefix]) prefix++;
+    bool focused=true;
+    try { VerifyPickerFocus(dialog,edit,processId); } catch { focused=false; }
+    return "observedLength="+actual.Length+";expectedLength="+expected.Length+";commonPrefixLength="+prefix+
+      ";caseOnly="+String.Equals(actual,expected,StringComparison.OrdinalIgnoreCase)+";focused="+focused;
   }
   public static bool ClickPickerButton(int dialog,int edit,int button,uint processId) {
     VerifyPickerFocus(dialog,edit,processId);
@@ -447,7 +459,11 @@ if($Action -in @('ChooseFile','SaveFile')) {
     if($matched){break}
     Start-Sleep -Milliseconds 25
   } while([DateTime]::UtcNow -lt $inputDeadline)
-  if(-not $matched){throw 'Owned filename did not match exact requested path before confirmation'}
+  if(-not $matched){
+    $observation='unavailable'
+    try {$observation=[DevboxInstallerAutomation]::PickerFilenameFailure($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)} catch {}
+    throw ('Owned filename did not match exact requested path before confirmation: '+$observation)
+  }
   $dialogHandle=$dialog.Current.NativeWindowHandle
   $acknowledged=[DevboxInstallerAutomation]::ClickPickerButton($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId)
   $deadline=[DateTime]::UtcNow.AddSeconds(10)

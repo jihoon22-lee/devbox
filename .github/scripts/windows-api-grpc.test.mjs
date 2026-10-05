@@ -120,3 +120,42 @@ test("failure observation callback cannot replace the original read error", asyn
     (error) => error === original,
   );
 });
+
+test("method transition waits for matching editor shape and prior result reset before one input", async () => {
+  const events = [];
+  const observations = [false, false, true, true];
+  await runner.prepareGrpcInvocation(
+    {
+      cdp: {
+        evaluate: async () => {
+          events.push("observe");
+          return observations.shift();
+        },
+      },
+      ui: {
+        fill: async () => events.push("fill"),
+        waitForTarget: async () => events.push("enabled"),
+        click: async () => events.push("click"),
+      },
+    },
+    "Client",
+  );
+  assert.deepEqual(events, ["observe", "observe", "observe", "fill", "observe", "enabled", "click"]);
+});
+
+test("selected Client alone is insufficient while Unary template/result remain", () => {
+  const nodes = {
+    '[aria-label="gRPC method"]': { value: "fixture.Partial.Client" },
+    ".grpc-method-card code": { textContent: "fixture.Partial/Client" },
+    '[aria-label="gRPC ProtoJSON request"]': { value: '{"text":"fixture"}' },
+    ".grpc-result": {},
+  };
+  const document = { querySelector: (selector) => nodes[selector] };
+  assert.equal(runner.grpcMethodReady(document, "Client"), false);
+  delete nodes[".grpc-result"];
+  assert.equal(runner.grpcMethodReady(document, "Client"), false);
+  nodes['[aria-label="gRPC ProtoJSON request"]'].value = '[{"text":""}]';
+  assert.equal(runner.grpcMethodReady(document, "Client"), true);
+  nodes['[aria-label="gRPC method"]'].value = "fixture.Partial.Bidi";
+  assert.equal(runner.grpcMethodReady(document, "Client"), false);
+});

@@ -48,6 +48,25 @@ async function pending(context) {
   assert.equal(response.operation.outcome.state, "succeeded");
   return response.value;
 }
+export async function prepareExpiryPipeline(api) {
+  // The fresh expiry offer mounts asynchronously and changes the controls' scrollport.
+  await api.ui.waitForTarget(incoming);
+  await api.ui.click(button("새 파이프라인"));
+  await select(api, "파이프라인 입력 형식", 0);
+}
+export async function reviewHandoffClose(workspace, ownedFile) {
+  const dirtyPaths =
+    await workspace.cdp.evaluate(`Array.from(document.querySelectorAll('.document-tab-select[role="tab"]'))
+    .filter(tab => tab.querySelector('.document-tab-name')?.textContent.trimStart().startsWith('● '))
+    .map(tab => tab.title)`);
+  assert.ok(
+    dirtyPaths.every((file) => file === ownedFile),
+    "Unowned dirty document prevents handoff discard",
+  );
+  await workspace.ui.click(
+    button(dirtyPaths.length ? "파일 변경 폐기 후 종료" : "종료", { role: "dialog", name: "Workspace 종료 검토" }),
+  );
+}
 export async function review(context) {
   await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
@@ -239,7 +258,7 @@ async function coldReceiver(previous, activate) {
 export async function run(api) {
   requireApiContext(api);
   const results = [];
-  let workspace, knowledge, foreign;
+  let workspace, knowledge, foreign, ownedSourceFile;
   let restoreImage = null;
   try {
     const receipt = JSON.parse(
@@ -252,6 +271,7 @@ export async function run(api) {
     assert.equal(receipt.installationKey, api.installationKey);
     assert.ok(path.resolve(receipt.file).startsWith(path.resolve(receipt.root) + path.sep));
     const original = await readFile(receipt.file);
+    ownedSourceFile = receipt.file;
     workspace = await createInstalledProductContext("workspace");
     knowledge = await createInstalledProductContext("knowledge");
     const root = await domain(knowledge, "knowledge", "knowledge.notes", "get_root");
@@ -330,8 +350,7 @@ export async function run(api) {
         record(
           "Real native two-minute source selection expiry starts on a fresh UI-issued offer while independent transform/Knowledge journeys execute",
         );
-        await api.ui.click(button("새 파이프라인"));
-        await select(api, "파이프라인 입력 형식", 0);
+        await prepareExpiryPipeline(api);
         await selectBase64Stage(api);
         await api.ui.click(button("단계 추가"));
         const output = await executePipeline(api);
@@ -480,7 +499,11 @@ export async function run(api) {
     for (const context of [foreign, knowledge, workspace]) {
       if (!context) continue;
       try {
-        await context.close();
+        await context.close(
+          context === workspace
+            ? { reviewWorkspaceClose: () => reviewHandoffClose(workspace, ownedSourceFile) }
+            : undefined,
+        );
       } catch {
         cleanupFailed = true;
         const identity = context.processIdentity;

@@ -261,3 +261,63 @@ test("connection lazy mount and status readiness precede exactly one disconnect"
   });
   assert.deepEqual(events, ["제품 연결", "connected readiness", "자동 연결 끄기"]);
 });
+
+test("fresh pending review must mount before expiry pipeline input without action replay", async () => {
+  let release;
+  const mounted = new Promise((resolve) => {
+    release = resolve;
+  });
+  const actions = [];
+  const work = runner.prepareExpiryPipeline({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "region", name: "다른 제품의 열기 요청" });
+        await mounted;
+      },
+      click: async (target) => {
+        actions.push(target.name);
+      },
+      press: async (key) => {
+        actions.push(key);
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(actions, []);
+  release();
+  await work;
+  assert.deepEqual(actions, ["새 파이프라인", "파이프라인 입력 형식", "Home", "Enter"]);
+});
+
+test("handoff close discards only its dirty synthetic file and does not save changed bytes", async () => {
+  for (const dirty of [[], ["C:\\owned\\source.txt"]]) {
+    const clicks = [];
+    await runner.reviewHandoffClose(
+      { cdp: { evaluate: async () => dirty }, ui: { click: async (target) => clicks.push(target) } },
+      "C:\\owned\\source.txt",
+    );
+    assert.deepEqual(clicks, [
+      {
+        role: "button",
+        name: dirty.length ? "파일 변경 폐기 후 종료" : "종료",
+        scope: { role: "dialog", name: "Workspace 종료 검토" },
+      },
+    ]);
+  }
+  let clicked = false;
+  await assert.rejects(
+    runner.reviewHandoffClose(
+      {
+        cdp: { evaluate: async () => ["C:\\other.txt"] },
+        ui: {
+          click: async () => {
+            clicked = true;
+          },
+        },
+      },
+      "C:\\owned\\source.txt",
+    ),
+    /Unowned dirty document/,
+  );
+  assert.equal(clicked, false);
+});

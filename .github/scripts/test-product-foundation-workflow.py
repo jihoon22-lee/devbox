@@ -262,6 +262,11 @@ assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not co
 
 # Apps-only retained diagnosis is an exclusive installer mode, never a rebuild.
 assert "suite_diagnostic_apps_only:" in workflow
+assert "suite_app_journeys:" in workflow
+assert "SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}" in work_step
+assert "Invalid retained app journey selection" in work_step
+assert "Selected app journeys require apps-only diagnosis" in work_step
+assert "if ($appsOnly -and $script -notin $selectedAppScripts) { continue }" in work_step
 assert "purpose = 'retained-installer-ui-diagnostic-only'; appsOnly = $appsOnly" in installer_diagnostic
 assert "appsOnly = $appsOnly" in installer_diagnostic
 assert "Apps-only diagnosis requires only a retained installer source run" in installer_diagnostic

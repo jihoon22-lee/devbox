@@ -876,3 +876,27 @@ legacy 선택은 기존 boundary 진단의 opt-in이며 기본 tray/delivery 묶
 보관된 후보로 별도 실행할 수 있게 기존 boundary 진단에 분리했다. 자체 임시 설치와
 정리를 사용하며 부모 UI 설치·WSL·build를 생략하고, 원본 7개 digest와 진단 전용 표식을
 보존한다. workflow 계약·actionlint·변경된 PowerShell 본문의 실제 ParseFile을 통과했다.
+
+[legacy 진단 37284969312](https://github.com/jihoon22-lee/devbox/actions/runs/37284969312)은
+동일 payload와 fixture `9cf4b0b8`로 DELIVERY-01·checkpoint/WAL·rollback 보존·정리를 통과했다.
+[apps 진단 37284957067](https://github.com/jihoon22-lee/devbox/actions/runs/37284957067)은
+27 PASS·6 FAIL이며 HANDOFF-02가 실행되지 않았다. 실패는 RUNTIME-01/02, LSP-01,
+DEPS-01, GRPC-01, HANDOFF-01이다. 설치·Knowledge·layout은 통과했다. 새 Terminal 준비,
+의존성 UI 분석 완료, gRPC 메서드/editor 전환, fresh incoming review 준비를 확인한 뒤
+다음 입력을 한 번 실행하도록 수정했다. HANDOFF 정리는 검증한 synthetic 원본 경로의
+dirty 변경만 종료 검토에서 명시적으로 폐기하며 다른 dirty 파일은 거부한다.
+
+[분리 migration 진단 37285640985](https://github.com/jihoon22-lee/devbox/actions/runs/37285640985)은
+설치 확정 후 Workspace 종료 검토를 누락한 검증 코드에서 실패했다. 실제 종료 확인과
+exact child exit 후에만 강제 종료 여부·Agent 생존을 판단하도록 고쳤다. crash 복구는
+백그라운드 조회가 먼저 복구할 수 있는 일시 unavailable 상태를 필수 조건으로 삼지 않고,
+기존 단일 reconnect 이후 새 owner·durable 작업·자동 재실행 방지 검증을 유지한다.
+
+LSP 파일명 mismatch와 RUNTIME-01의 정확한 실패 원인은 아직 미확정이다. 파일 선택 실패에는
+문자열 내용 없이 길이·공통 prefix·대소문자·focus 관측을 남긴다. 응답 유실 검사는 정확한
+request의 성공/실패 응답을 모두 포착하되 succeeded·원래 job 검증은 유지하며 native 29초
+계약 내 응답을 관찰한다. gRPC도 메서드·요청 수·고정된 결과 상태를 실패 시 보존한다.
+예약 JSONL 문자열 문제라는 가설은 실제 생성 스크립트 실행으로 반증되어 변경하지 않았다.
+좁은 로컬 회귀와 실제 Chromium, Windows PowerShell helper compile·parser, 별도 diff 검토를
+통과했다. 다음 retained 실행은 workspace/api/handoff 및 실패한 migration에 한정한다.
+검증 코드만 변경됐으며 모든 진단은 승격 불가다. 원인 미확정 항목을 제품 해결로 표시하지 않는다.
