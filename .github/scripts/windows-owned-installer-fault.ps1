@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][ValidateSet('Lock','CreateVolume','CleanupVolume','Capture')][string]$Action,[Parameter(Mandatory=$true)][string]$FixtureRoot,[string]$FilePath,[string]$ReadyPath,[string]$ReleasePath,[string]$MetadataPath,[int]$TargetProcessId,[string]$ExpectedExecutable,[string]$ExpectedStartTimeUtc)
+param([Parameter(Mandatory=$true)][ValidateSet('Lock','CreateVolume','CleanupVolume','Capture')][string]$Action,[Parameter(Mandatory=$true)][string]$FixtureRoot,[string]$FilePath,[string]$ReadyPath,[string]$ReleasePath,[string]$MetadataPath,[int]$TargetProcessId,[string]$ExpectedExecutable,[string]$ExpectedStartTimeUtc,[ValidateSet('workspace','api-studio','knowledge','control-center')][string]$ProductWindow)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Disposable hosted Windows required'}
@@ -61,6 +61,17 @@ function Focus-OwnedCaptureWindow($Window,[int]$ExpectedProcessId,[scriptblock]$
  # selection is checked independently before reading/capturing their rectangle.
  & $NativeFocus ([IntPtr]$current.NativeWindowHandle) $ExpectedProcessId
 }
+function Select-OwnedCaptureWindow($Windows,$Native,[string]$Product) {
+ if(-not $Product){if($Windows.Count -ne 1){throw 'One owned installer window required'};return @($Windows)[0]}
+ $namespace=@{workspace='workspace';'api-studio'='apistudio';knowledge='knowledge';'control-center'='controlcenter'}
+ $helper='^com\.devbox\.v08\.'+$namespace[$Product]+'\.i[a-f0-9]{64}-sic$'
+ if($Windows.Count -gt 32 -or $Native.Count -gt 32){throw 'Owned capture roots exceeded bound'}
+ $visible=@($Native | Where-Object {$_.visible -and $_.topLevel -and $_.className -cne 'Tao Thread Event Target' -and $_.className -cnotmatch $helper})
+ if($visible.Count -ne 1 -or $visible[0].className -cne 'Tauri Window'){throw 'Unique owned product main window required'}
+ $selected=@($Windows | Where-Object {$_.Current.NativeWindowHandle -eq $visible[0].handle -and $_.Current.ClassName -ceq 'Tauri Window'})
+ if($selected.Count -ne 1){throw 'Owned product UIA/native window mismatch'}
+ return $selected[0]
+}
 if($Action -eq 'Capture') {
  $image=AssertPath $ExpectedExecutable
  $process=[Diagnostics.Process]::GetProcessById($TargetProcessId)
@@ -70,16 +81,36 @@ if($Action -eq 'Capture') {
  Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
  $condition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty,$TargetProcessId)
  $windows=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$condition)
- if($windows.Count -ne 1){throw 'One owned installer window required'}
  Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Text;
 public static class OwnedInstallerCapture {
  [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+ private delegate bool Callback(IntPtr window,IntPtr parameter);
+ [DllImport("user32.dll")] static extern bool EnumWindows(Callback callback,IntPtr parameter);
+ [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window,uint flags);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window,StringBuilder name,int capacity);
+ public sealed class WindowInfo {public long handle;public bool visible,topLevel;public string className;}
+ public static WindowInfo[] Observe(int expectedProcess) {
+  var windows=new List<WindowInfo>();
+  Callback callback=delegate(IntPtr window,IntPtr parameter) {
+   uint owner;GetWindowThreadProcessId(window,out owner);
+   if(owner==(uint)expectedProcess) {
+    if(windows.Count>=33)return false;
+    var name=new StringBuilder(128);GetClassName(window,name,name.Capacity);
+    windows.Add(new WindowInfo {handle=window.ToInt64(),visible=IsWindowVisible(window),topLevel=GetAncestor(window,2)==window,className=name.ToString()});
+   }
+   return true;
+  };
+  if(!EnumWindows(callback,IntPtr.Zero))throw new InvalidOperationException("Owned capture inventory unavailable");
+  return windows.ToArray();
+ }
  public static void Focus(IntPtr window,int expectedProcess) {
   uint process;
   GetWindowThreadProcessId(window,out process);
@@ -92,7 +123,8 @@ public static class OwnedInstallerCapture {
  }
 }
 '@
- $window=$windows.Item(0)
+ if($ProductWindow -and [IO.Path]::GetFileName($image) -ine ('devbox-'+$ProductWindow+'.exe')){throw 'Product capture executable mismatch'}
+ $window=Select-OwnedCaptureWindow $windows @([OwnedInstallerCapture]::Observe($TargetProcessId)) $ProductWindow
  Focus-OwnedCaptureWindow $window $TargetProcessId {param($handle,$owner) [OwnedInstallerCapture]::Focus($handle,$owner)}
  $rectangle=$window.Current.BoundingRectangle
  if($rectangle.IsEmpty -or $rectangle.Width -lt 100 -or $rectangle.Height -lt 100 -or $rectangle.Width -gt 2560 -or $rectangle.Height -gt 1600){throw 'Invalid owned installer rectangle'}

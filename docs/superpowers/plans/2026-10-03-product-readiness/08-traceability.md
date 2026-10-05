@@ -741,3 +741,79 @@ HTTP 완료 대기 5개가 통과했다. 수정 전 payload의 Source·Transform
 검토에서 포커스 확인 실패로 입력하지 않은 경우 key-up도 보내지 않도록 보정했고,
 기존 A 키 눌림도 거부한다. 실제 Windows C# 컴파일·0/부분 입력 해제 직렬화·구문 검사는
 통과했으며 로컬 UI 실행이나 PowerShell 실행 정책 우회는 하지 않았다.
+
+
+후보 [37262016303](https://github.com/jihoon22-lee/devbox/actions/runs/37262016303)는
+#627의 exact-main `1dafe10c8c07c5f11f7e7edfa48518f1a0aca696`으로 두 Windows 빌드,
+7개 자산 조립, 네 native scope, 독립 WSL2/Docker, 설치·활성화를 통과했다. 설치 후
+사용자 여정은 **30 PASS·9 FAIL·1 누락**이며 full migration/recovery는 선행 실패로
+미실행, 최종 봉인은 실패했다. 승격할 수 없다. API Studio 11개·Knowledge 8개,
+화면·성능은 통과했고 실제 gRPC 저장 경로와 Transform 지속 저장을 확인했다.
+legacy·철회본의 역사적 helper 제거도 각각 실제 exit 0/completed였다. 실패한 primary
+정리는 살아 있는 Knowledge를 발견한 것으로, 과거 helper 버전 거부와 구분한다.
+
+후속 보정은 한 브랜치에 모은다. Workspace 재시작 뒤 Git 실행 승인을 실제 UI에서
+다시 검토하며, terminal 여정 동안 검증된 소유 WSL fixture만 명시적으로 유지한다.
+변환 단계 선택은 비활성 옵션을 제외한 키보드 이동과 실제 Base64 선택값을 확인한다.
+바로가기 실행 후 제품 캡처는 helper 창을 엄격히 구분하며 일반 NSIS 단일 창 조건을
+유지한다. Agent 비정상 종료는 ADR 0015의 다음 읽기 요청에 의한 재연결도 관찰하고,
+의도한 트레이 종료는 명시적 UI 재연결을 계속 요구한다. 원래 업무 요청의 재실행 금지와
+새 Agent 소유 identity·단일 업무 효과 검사는 유지한다.
+
+LSP import 직후 fixture의 native 상태 조회가 화면 갱신과 같은 설치 잠금을 경합하는
+경로를 확인해 최초 표시·각 전환의 화면 준비 뒤에만 native 상태를 조회하도록 바꿨다.
+제품 자체의 동시 조회 결함은 확인되지 않았다. 데이터 보존 helper 이후 Center 재실행
+실패는 아직 원인을 확정하지 않았다. 최초 실패의 고정 코드·UI 불리언·helper 기록을 먼저
+보존하며 LSP 오류 화면 포착 뒤에만 확인창을 닫아 다음 DEPS 여정의 전파 실패를 막는다.
+로컬 회귀 통과를 실제 Windows 성공으로 바꾸지 않는다. 제품 재빌드 전에 같은 후보
+bytes를 보관 진단에 사용하고, 최종 소스 병합 후에는 새 exact-main 봉인 후보가 필요하다.
+
+이번 검증 코드 묶음의 catalog는 5.97초, 영향 검사는 10.55초에 통과했다. 제품
+frontend/Rust 변경이 없어 compiler 범위는 none이며 무관한 제품 검사를 반복하지 않았다.
+Agent 회복 10개, HANDOFF 10개, shortcut/delivery Node 14개, Workspace 최초 묶음 35개와
+최종 LSP/WSL 회귀 22개는 각 변경 범위로 통과했다(서로 중복된 숫자를 합산하지 않는다).
+WSL 소유 자식의 stdin 오류도 최초 실패를 보존하고 반드시 bounded 종료 대기를 거친다.
+트레이 실패는 같은 세션의 정확한 Explorer 이미지·native 창·제한된 UIA subtree를 별도
+artifact에 먼저 보존한다. 임의 이름/ID는 제외하며 기존 선택자·provider를 추측으로
+바꾸지 않았다. 최종 Biome 1924개 파일과 Windows helper 구문/C# 컴파일은 통과했다.
+실제 트레이 선택과 helper 재실행 원인은 다음 보관 진단으로 확인한다.
+
+
+사용자의 반복 검증 축소 지시에 따라 남은 원인 조사는 보관된 같은 설치 파일의 트레이와
+업데이트 후 checkpoint 재실행 두 경로만 분리한다. focused 진단은 제품 build·WSL 준비·
+기존 앱 여정·철회본 교체·전체 migration을 실행하지 않고 20분 상한을 둔다. 최초 오류와
+독립 후속 경로의 결과는 별도 diagnostic artifact에 보존하며 40개 출시 수용의 PASS로
+합산하지 않는다. 최종 후보의 전체 수용 및 봉인 조건은 변경하지 않는다. 새로운 workflow
+분기는 로컬 actionlint·실제 Windows PowerShell 파서로 검사했다.
+
+
+집중 진단 [37270511641](https://github.com/jihoon22-lee/devbox/actions/runs/37270511641)은
+runner `6468050c`·기존 payload `1dafe10c`로 설치·활성화와 업데이트 후 실제 checkpoint
+생성·Center 재실행을 통과했다. 앞선 전체 순서의 재실행 실패 원인을 단독 성공만으로
+해결됐다고 단정하지 않는다. 트레이는 기존 이름 탐색 실패를 재현했고 modern XAML
+버튼 구조를 확보했다. 로컬 Windows에서 읽기 전용으로 확인한 chevron과 IME는 같은
+AutomationId를 공유하므로 ID만으로 클릭하지 않는다. 이름 공백·대소문자 정규화와
+소유 taskbar의 제한된 UIA 탐색을 결합하며 잘못된 ID·복수 후보는 거부한다. 이 보정은
+실제 hosted 성공을 의미하지 않으며, 다음 진단은 트레이만 실행한다.
+
+병렬 교차 검토로 발견한 후속 경합도 같은 묶음에 반영했다. Terminal 프로필 삭제의
+화면 반영 뒤에 본창의 기존 캐시 선택으로 stale-profile 거부를 확인하고, lazy 제품
+연결 화면은 버튼이 준비된 뒤 조작한다. Agent 복구 후 업무 버튼도 준비를 관찰한다.
+LSP import/cache의 기존 120초 예산이 새 helper의 기본 10초로 단축되던 문제는 명시적
+bounded 예산 전달로 바로잡았다. 해당 경계·삭제 순서 회귀와 관련 Agent/Integration
+21개 검사는 로컬에서 통과했다. 무관한 전체 제품 검사는 반복하지 않았다.
+
+
+트레이 전용 진단 [37271999110](https://github.com/jihoon22-lee/devbox/actions/runs/37271999110)은
+제품 실행 전 PowerShell 회귀 파일의 UTF-8 BOM 누락으로 실패했다. 문자열로 디코딩한
+ParseInput 검사가 Windows PowerShell 5.1의 실제 파일 해석 차이를 놓쳤다. 해당 파일에
+BOM을 복구하고 실제 ParseFile에서 한글 AST literal을 확인해 RED→GREEN으로 검증했다.
+다른 PowerShell 파일에는 같은 누락이 없었다. 로컬 최종 영향 검사는 8.37초에 통과했고
+compiler 범위는 none, peak 79MB였다. 통과한 제품·데이터 보존 검사는 재실행하지 않는다.
+
+
+집중 진단 [37272491360](https://github.com/jihoon22-lee/devbox/actions/runs/37272491360)은
+Windows 사전 검사와 설치·활성화를 통과하고 실제 트레이를 펼쳤다. 이후 Explorer의
+`TopLevelWindowForOverflowXamlIsland` 팝업을 기존 root 목록이 거부했다. 확보한 native
+창 정보에 따라 이 정확한 class를 인식하고 기존 PID·이미지·세션·native 소유권 검사는
+유지했다. 실제 Windows ParseFile과 허용/거부 predicate 회귀는 통과했다.

@@ -149,3 +149,68 @@ test("connection review waits for delayed enabled approval before exactly one ap
   await operation;
   assert.deepEqual(events, ["이 설치 확인", "observe approval", "연결 켜기"]);
 });
+
+// Native select keyboard navigation skips disabled incompatible transformers.
+test("Base64 stage selection counts enabled options and confirms the exact value", async () => {
+  const options = [
+    { value: "json-format", disabled: true },
+    { value: "json-parse", disabled: false },
+    { value: "json-to-yaml", disabled: true },
+    { value: "url-encode", disabled: false },
+    { value: "url-decode", disabled: false },
+    { value: "base64-encode", disabled: false },
+    { value: "base64-decode", disabled: true },
+    { value: "hex-encode", disabled: false },
+  ];
+  let selected = 0;
+  let clicks = 0;
+  let valueReads = 0;
+  const enabled = options.filter((option) => !option.disabled);
+  const element = {
+    options,
+    get value() {
+      return enabled[selected].value;
+    },
+  };
+  const { runInNewContext } = await import("node:vm");
+  await runner.selectBase64Stage({
+    cdp: {
+      evaluate: async (expression) => {
+        if (expression.startsWith("document.querySelector")) valueReads++;
+        return runInNewContext(expression, { document: { querySelector: () => element } });
+      },
+    },
+    ui: {
+      click: async () => {
+        clicks++;
+      },
+      press: async (key) => {
+        if (key === "Home") selected = 0;
+        if (key === "ArrowDown") selected = Math.min(selected + 1, enabled.length - 1);
+      },
+    },
+  });
+  assert.equal(element.value, "base64-encode");
+  assert.equal(clicks, 1);
+  assert.equal(valueReads, 1);
+});
+
+test("connection lazy mount and status readiness precede exactly one disconnect", async () => {
+  const events = [];
+  let ready = false;
+  await runner.disconnectSuiteConnection({
+    ui: {
+      click: async (target) => {
+        if (target.name === "자동 연결 끄기") assert.equal(ready, true);
+        events.push(target.name);
+      },
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "자동 연결 끄기");
+        await Promise.resolve();
+        ready = true;
+        events.push("connected readiness");
+      },
+    },
+  });
+  assert.deepEqual(events, ["제품 연결", "connected readiness", "자동 연결 끄기"]);
+});

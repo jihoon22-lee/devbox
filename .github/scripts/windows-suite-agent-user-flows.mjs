@@ -38,7 +38,7 @@ export async function until(check, label, ms = 30000) {
   }
   throw new Error(label);
 }
-async function verifiedScope(context) {
+export async function verifiedScope(context) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
@@ -293,7 +293,7 @@ export async function observeAgentUpdateQuiesce(input) {
   return receipt;
 }
 
-const nativeStatus = (app) =>
+export const nativeStatus = (app) =>
   app.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')");
 async function reconnectUi(app) {
   await until(
@@ -302,6 +302,25 @@ async function reconnectUi(app) {
   );
   await app.ui.click({ role: "button", name: "백그라운드 서비스 다시 연결" });
   await until(async () => (await nativeStatus(app)) === "connected", "explicit UI reconnect");
+}
+// Crashes permit read-driven restart; intentional tray shutdown still requires reconnectUi.
+export async function recoverCrashedAgentUi(app, timeout = 30000) {
+  const mode = await until(
+    async () => {
+      if ((await nativeStatus(app)) === "connected") return "read-driven";
+      const ready = await app.cdp.evaluate(
+        "Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === '백그라운드 서비스 다시 연결' && !button.disabled && button.getClientRects().length > 0)",
+      );
+      return ready === true ? "explicit-ui" : false;
+    },
+    "crashed Agent recovery readiness",
+    timeout,
+  );
+  if (mode === "explicit-ui") {
+    await app.ui.click({ role: "button", name: "백그라운드 서비스 다시 연결" });
+    await until(async () => (await nativeStatus(app)) === "connected", "crashed Agent explicit UI reconnect", timeout);
+  }
+  return mode;
 }
 async function workspaceRead(app, component, method, args = {}) {
   const value = await app.cdp.evaluate(workspaceRequestExpression(component, method, args));
@@ -413,8 +432,14 @@ async function agentCrashBusiness(context, app) {
     assert.equal(agentProcesses(context).length, 0);
     await app.cdp.command("Debugger.disable");
     await click;
-    await reconnectUi(app);
-    assert.equal(agentProcesses(context).length, 1);
+    const recoveryMode = await recoverCrashedAgentUi(app);
+    const recoveredAgents = agentProcesses(context);
+    assert.equal(recoveredAgents.length, 1);
+    const recoveredOwner = captureWindowOwner(recoveredAgents[0], context.root);
+    assert.ok(
+      recoveredOwner.identity.Pid !== crashOwner.identity.Pid || recoveredOwner.started !== crashOwner.started,
+      "Crash recovery must establish a new owned Agent process identity",
+    );
     const receipt = await workspaceRead(app, "workspace.runtime", "runtime_control_status", {
       operationId: pending.operationId,
     });
@@ -424,16 +449,18 @@ async function agentCrashBusiness(context, app) {
       "launch\n",
       "Uncertain operation must not replay after Agent reconnect",
     );
+    await app.ui.waitForTarget({ role: "button", name: "지금 실행", scope });
     await app.ui.click({ role: "button", name: "지금 실행", scope });
     await until(
       async () => (await readFile(counter, "utf8")) === "launch\nlaunch\n",
       "new explicit business request after reconnect",
     );
+    await app.ui.waitForTarget({ role: "button", name: "중지", scope });
     await app.ui.clickWithConfirmation({ role: "button", name: "중지", scope }, true);
     return {
       assertions: [
         "Owned Agent crashed with actual business receipt paused while Workspace stayed open",
-        "Original operation was queried after real reconnect without replay; only new explicit business request produced second effect",
+        `Original operation was queried after ${recoveryMode} reconnect without replay; only new explicit business request produced second effect`,
       ],
       screenshotPaths: [await app.ui.screenshot("AGENT-02-reconnected-business")],
     };
@@ -443,7 +470,7 @@ async function agentCrashBusiness(context, app) {
     await click.catch(() => {});
   }
 }
-async function trayQuitReconnect(context, app) {
+export async function trayQuitReconnect(context, app) {
   const agents = agentProcesses(context);
   assert.equal(agents.length, 1);
   const owner = captureWindowOwner(agents[0], context.root);

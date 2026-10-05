@@ -94,6 +94,11 @@ export async function cancelKnowledgePreview(knowledge) {
   await knowledge.ui.click(button("취소", draftDialog));
   await awaitKnowledgePreviewClosed(knowledge);
 }
+export async function disconnectSuiteConnection(api) {
+  await api.ui.click(button("제품 연결"));
+  await api.ui.waitForTarget(button("자동 연결 끄기"));
+  await api.ui.click(button("자동 연결 끄기"));
+}
 export async function restoreSuiteConnection(api) {
   await api.ui.click(button("이 설치 확인"));
   await api.ui.waitForTarget(button("연결 켜기"));
@@ -107,6 +112,17 @@ export async function selectSource(workspace) {
   await workspace.cdp.command("Input.dispatchKeyEvent", { type: "keyUp", ...key });
   await workspace.ui.waitForTarget({ role: "menuitem", name: "선택 내용을 API Studio에서 변환" });
   await workspace.ui.click({ role: "menuitem", name: "선택 내용을 API Studio에서 변환" });
+}
+export async function selectBase64Stage(api) {
+  const index = await api.cdp.evaluate(
+    "Array.from(document.querySelector('[aria-label=\"변환 단계 추가\"]').options).filter(option=>!option.disabled).findIndex(option=>option.value==='base64-encode')",
+  );
+  assert.ok(index >= 0);
+  await select(api, "변환 단계 추가", index);
+  await until(
+    () => api.cdp.evaluate("document.querySelector('[aria-label=\"변환 단계 추가\"]').value==='base64-encode'"),
+    "Base64 stage selection not observed",
+  );
 }
 async function executePipeline(api) {
   const input = await api.ui.text(textbox("스마트 워크플로 입력"));
@@ -311,11 +327,7 @@ export async function run(api) {
         );
         await api.ui.click(button("새 파이프라인"));
         await select(api, "파이프라인 입력 형식", 0);
-        const index = await api.cdp.evaluate(
-          "Array.from(document.querySelector('[aria-label=\"변환 단계 추가\"]').options).findIndex(option=>option.value==='base64-encode')",
-        );
-        assert.ok(index >= 0);
-        await select(api, "변환 단계 추가", index);
+        await selectBase64Stage(api);
         await api.ui.click(button("단계 추가"));
         const output = await executePipeline(api);
         assert.ok(output.trim());
@@ -401,8 +413,7 @@ export async function run(api) {
         record(
           "L4 exact-candidate direct copy has a genuine different native installation; its authenticated foreign-artifact rejection probe cannot open the original offer, and actual foreign UI/source bytes remain unchanged",
         );
-        await api.ui.click(button("제품 연결"));
-        await api.ui.click(button("자동 연결 끄기"));
+        await disconnectSuiteConnection(api);
         await expectText(api, "자동 연결이 꺼져 있습니다.");
         await sendStored(api);
         await expectText(api, "전달 결과를 확인하지 못했습니다.");

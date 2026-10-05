@@ -19,6 +19,11 @@ export async function reviewAgentWorktree(ui, fixture) {
   await ui.waitForTarget({ role: "region", name: "Git 실행 승인" });
   await fixture.trustSource();
 }
+export async function reviewReopenedSource(fixture, root, worktreeId) {
+  await fixture.selectRoot(root);
+  assert.equal((await fixture.context()).worktreeId, worktreeId);
+  await fixture.trustSource();
+}
 export async function run(context) {
   const { ui, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
   const record = (id, status, assertions = [], screenshotPaths = [], failureCode = null) => ({
@@ -113,10 +118,7 @@ export async function run(context) {
     );
     const retainedBase = cleaned.worktrees.find((tree) => tree.id === baseContext.worktreeId);
     assert.ok(retainedBase, "Owned base remains registered");
-    await fixture.selectRoot(retainedBase.binding.root);
-    assert.equal((await fixture.context()).worktreeId, baseContext.worktreeId);
-    await ui.click({ role: "button", name: "소스" });
-    await fixture.waitForText({ role: "textbox", name: "커밋 메시지" });
+    await reviewReopenedSource(fixture, retainedBase.binding.root, baseContext.worktreeId);
     screenshots.push(await ui.screenshot("workspace-agent-cleanup"));
     results.push(
       record(

@@ -54,3 +54,26 @@ test("rejects redirected log directory and file without reading outside owned ro
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("includes fixed LSP failure codes without retaining installation arguments", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "lsp-observation-"));
+  try {
+    await mkdir(path.join(root, "logs"));
+    await writeFile(
+      path.join(root, "logs", "operations-2026-10-05.jsonl"),
+      JSON.stringify({
+        ...entry,
+        component: "workspace.lsp",
+        method: "lsp_import_archive",
+        code: "request_expired",
+        args: { archivePaths: ["private"] },
+      }),
+    );
+    const observed = await readWorkspaceAgentOperations(root);
+    assert.equal(observed.length, 1);
+    assert.equal(observed[0].code, "request_expired");
+    assert.equal(JSON.stringify(observed).includes("private"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

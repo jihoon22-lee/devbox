@@ -1,6 +1,8 @@
 import { executeReviewedDeliveryAction } from "./windows-delivery-review.mjs";
 // Actual Recovery review, native dirty-close cancellation and installed data preservation.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { preserveReviewedCommitFailure } from "./windows-reviewed-helper-evidence.mjs";
 import { withdrawnSource } from "./windows-suite-legacy-upgrade-ui.mjs";
 import { observeInstallerFailurePreservation } from "./windows-suite-installer-failures.mjs";
 import { readFile, writeFile, access } from "node:fs/promises";
@@ -14,6 +16,25 @@ import { runVisibleSetup, runVisibleRemoval, rejectBusyVisibleUpdate } from "./w
 import { completeInstalledHealth, closeAutomaticallyOpenedCenter } from "./windows-suite-health-actions.mjs";
 import { prepareDistinctGeneration } from "./windows-suite-update-fixture.mjs";
 import { allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+export async function observeDeliveryReopen(
+  center,
+  observe = observeUntil,
+  read = allWindowsProcesses,
+  preserve = preserveReviewedCommitFailure,
+) {
+  try {
+    await observe(
+      () => read().some((p) => p.Path.toLowerCase() === center.executable.toLowerCase()),
+      "helper reopened Center",
+      90000,
+    );
+  } catch (error) {
+    try {
+      await preserve(center, error, randomUUID());
+    } catch {}
+    throw error;
+  }
+}
 const editor = { role: "textbox", name: "Markdown 본문" };
 export async function assertKnowledgeDraft(context, expected) {
   assert.equal(await context.knowledgeFixture.editorText(), expected);
@@ -35,10 +56,12 @@ async function exists(file) {
     return false;
   }
 }
-export async function run() {
+export async function run({ checkpointOnly = false } = {}) {
   const identity = await packagedIdentity(),
     results = [],
     screenshots = [];
+  if (checkpointOnly)
+    assert.equal(identity.diagnosticOnly, true, "Checkpoint-only execution requires retained diagnostic identity");
   let center, knowledge;
   const record = (id, status, assertions, failureCode = null) => ({
     id,
@@ -69,11 +92,7 @@ export async function run() {
     // The reviewed helper launches Center as a normal shortcut; close only this
     // exact resulting image before a new debugging session takes ownership.
     const executable = center.executable;
-    await observeUntil(
-      () => allWindowsProcesses().some((p) => p.Path.toLowerCase() === executable.toLowerCase()),
-      "helper reopened Center",
-      90000,
-    );
+    await observeDeliveryReopen(center);
     const item = allWindowsProcesses().find((p) => p.Path.toLowerCase() === executable.toLowerCase());
     nativeWindowAction(captureWindowOwner(item, path.dirname(center.root)), "Close");
     await observeUntil(
@@ -175,6 +194,15 @@ export async function run() {
     await reattachCenter();
     assert.ok((await center.delivery("restore_inventory")).checkpoints.length > before.checkpoints.length);
     screenshots.push(await center.ui.screenshot("DELIVERY-02-real-data-checkpoint"));
+    if (checkpointOnly) {
+      return [
+        {
+          ...record("CHECKPOINT-DIAGNOSTIC", "PASS", ["Updated installation created a checkpoint and reopened Center"]),
+          diagnosticOnly: true,
+          promotionEvidence: false,
+        },
+      ];
+    }
     // The interactive reinstall/removal runner appends this same identity after
     // the visible NSIS journey, retaining this checkpoint and exact saved hash.
     const receipt = {

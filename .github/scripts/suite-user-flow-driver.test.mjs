@@ -517,3 +517,15 @@ test("product confirmation waits for the scoped accessible dialog and sends only
     );
   }
 });
+
+test("readiness accepts the explicit install budget and rejects values beyond its bound", async () => {
+  const cdp = transport([control]);
+  const ui = createUiDriver({ cdp, evidenceRoot: "/tmp/unused", closeOwnedWindow: async () => {} });
+  await ui.waitForTarget({ role: "button", name: "Continue" }, { timeoutMs: 120_000 });
+  const reads = cdp.calls.length;
+  await assert.rejects(
+    ui.waitForTarget({ role: "button", name: "Continue" }, { timeoutMs: 120_001 }),
+    /Bounded target/,
+  );
+  assert.equal(cdp.calls.length, reads);
+});

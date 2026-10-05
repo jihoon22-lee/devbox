@@ -117,3 +117,32 @@ test("paused Agent receipt is read in its exact call frame without scheduling re
     );
   }
 });
+
+test("crash recovery accepts a read-driven reconnect without requiring a transient disconnect screen", async () => {
+  const { recoverCrashedAgentUi } = await import("./windows-suite-agent-user-flows.mjs");
+  const app = {
+    cdp: { evaluate: async () => "connected" },
+    ui: { click: async () => assert.fail("already reconnected Agent must not be restarted") },
+  };
+  assert.equal(await recoverCrashedAgentUi(app), "read-driven");
+});
+test("crash recovery uses exactly one explicit reconnect when unavailable and rejects absent readiness", async () => {
+  const { recoverCrashedAgentUi } = await import("./windows-suite-agent-user-flows.mjs");
+  let connected = false;
+  const clicks = [];
+  const app = {
+    cdp: {
+      evaluate: async (expression) =>
+        expression.includes("agent_status") ? (connected ? "connected" : "unavailable") : true,
+    },
+    ui: {
+      click: async (target) => {
+        clicks.push(target);
+        connected = true;
+      },
+    },
+  };
+  assert.equal(await recoverCrashedAgentUi(app), "explicit-ui");
+  assert.deepEqual(clicks, [{ role: "button", name: "백그라운드 서비스 다시 연결" }]);
+  await assert.rejects(recoverCrashedAgentUi({ cdp: { evaluate: async () => false } }, 1), /crashed Agent recovery/);
+});

@@ -266,7 +266,7 @@ assert "$scriptExitCode = $LASTEXITCODE" in work_step
 assert "if ($scriptExitCode -ne 0)" in work_step
 for title in ("Fetch the pinned withdrawn version for same-version replacement", "Exercise full installed Suite migration and recovery"):
     selected = installer_diagnostic.split("      - name: " + title + "\n", 1)[1].split("\n      - ", 1)[0]
-    assert "if: ${{ !inputs.suite_diagnostic_apps_only }}" in selected
+    assert "if: ${{ !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_boundaries_only }}" in selected
 candidate_work = Path(".github/workflows/windows-package-candidate.yml").read_text().split("      - name: Exercise actual work in the same installed namespace\n", 1)[1].split("\n      - ", 1)[0]
 assert "$scriptExitCode = $LASTEXITCODE" in candidate_work
 assert "Installed journey start:" in candidate_work and "Installed journey end:" in candidate_work
@@ -298,3 +298,21 @@ for name in ("product-foundation.yml", "windows-package-candidate.yml"):
     assert "windows-user-flow-cleanup-observation.test.ps1" in step
     assert "windows-owned-installer-capture.test.ps1" in step
     assert "windows-suite-shortcut-launch.test.ps1" in step
+
+# Focused retained diagnosis cannot build, run unrelated app journeys, migrate,
+# or become candidate evidence. Invalid combinations fail before fixture work.
+assert "suite_diagnostic_boundaries_only:" in workflow
+assert "Boundary diagnosis requires only a retained installer source run" in installer_diagnostic
+assert "boundariesOnly = $boundariesOnly" in installer_diagnostic
+assert work_step.index("windows-suite-boundary-diagnostic.mjs") < work_step.index("windows-user-flow-file-picker.test.ps1")
+assert "exit $LASTEXITCODE" in work_step
+for job, block in re.findall(r"^  ([a-z][a-z0-9-]+):\n(.*?)(?=^  [a-z][a-z0-9-]+:|\Z)", workflow.split("jobs:\n",1)[1], re.M | re.S):
+    condition = next(line for line in block.splitlines() if line.startswith("    if:"))
+    assert ("|| inputs.suite_diagnostic_boundaries_only" if job == "installer-ui-diagnostic" else "!inputs.suite_diagnostic_boundaries_only") in condition
+for title in ("Prepare owned WSL1 filesystem for the installed journeys", "Provision Git in the prepared installed-journey fixture", "Exercise full installed Suite migration and recovery"):
+    step = installer_diagnostic.split("      - name: " + title + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "!inputs.suite_diagnostic_boundaries_only" in step
+assert "suite_diagnostic_boundaries_only" not in Path(".github/workflows/windows-package-candidate.yml").read_text()
+
+assert "options: [both, tray, delivery]" in workflow
+assert "windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'" in work_step
