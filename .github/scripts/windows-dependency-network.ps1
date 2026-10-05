@@ -10,9 +10,30 @@ param(
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+$failureStage='host-guard'
+trap {
+  $command='unavailable'
+  $required=@('Get-Item','Get-Content','Get-FileHash','Get-Process','Get-NetFirewallRule','Get-NetFirewallProfile','Get-NetFirewallApplicationFilter','Get-NetFirewallPortFilter','New-NetFirewallRule','Remove-NetFirewallRule','Get-OwnedRule','Assert-RuleScope','Import-Module','Get-Command')
+  if($_.Exception -is [System.Management.Automation.CommandNotFoundException]) {
+    $missing=$_.Exception.CommandName -replace '^NetSecurity\\',''
+    if($missing -cin $required){$command=$missing}
+  }
+  [Console]::Error.WriteLine("DependencyFirewallFailure stage=$failureStage command=$command")
+  break # Retain the original terminating error after the fixed diagnostic line.
+}
+function Initialize-DependencyFirewallCommands {
+  # A pwsh parent may supply a different PSModulePath. Import the inbox module
+  # from this Windows PowerShell installation, without changing that environment.
+  Import-Module (Join-Path $PSHOME 'Modules\NetSecurity\NetSecurity.psd1') -ErrorAction Stop
+  foreach($name in @('Get-NetFirewallRule','Get-NetFirewallProfile','Get-NetFirewallApplicationFilter','Get-NetFirewallPortFilter','New-NetFirewallRule','Remove-NetFirewallRule')) {
+    Get-Command -Name ('NetSecurity\'+$name) -ErrorAction Stop | Out-Null
+  }
+}
+
 if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
   $env:RUNNER_OS -cne 'Windows' -or $env:GITHUB_REPOSITORY -cne 'jihoon22-lee/devbox' -or
   $env:GITHUB_RUN_ID -notmatch '^\d+$'){throw 'Dependency firewall fixture requires disposable GitHub-hosted Windows; never spoof CI'}
+$failureStage='ownership-guard'
 if($RuleName -cnotmatch '^DevboxFixture-Dependencies-[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$' -or
   $ExpectedDigest -cnotmatch '^[a-f0-9]{64}$' -or $OwnerProcessId -le 0 -or
   $ExpectedStart -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$'){throw 'Invalid exact firewall ownership'}
@@ -25,10 +46,12 @@ if((Split-Path -Leaf $root) -cne 'Suite UI Fixture' -or
   -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or
   -not $image.StartsWith($root+'\generations\',[StringComparison]::OrdinalIgnoreCase) -or
   $image.Substring($root.Length) -cnotmatch '^\\generations\\[^\\]+\\products\\workspace\\devbox-workspace\.exe$'){throw 'Firewall image outside owned installation'}
+$failureStage='command-resolution'
+Initialize-DependencyFirewallCommands
 $group='Devbox owned dependency fixture'
 $description="run=$($env:GITHUB_RUN_ID);pid=$OwnerProcessId;started=$ExpectedStart;sha256=$ExpectedDigest;image=$image"
 function Get-OwnedRule {
-  $rules=@(Get-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -ErrorAction SilentlyContinue)
+  $rules=@(NetSecurity\Get-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -ErrorAction SilentlyContinue)
   if($rules.Count -gt 1){throw 'Ambiguous owned firewall rule'}
   if($rules.Count -eq 0){return $null}
   $rule=$rules[0]
@@ -37,21 +60,23 @@ function Get-OwnedRule {
   return $rule
 }
 function Assert-RuleScope($rule) {
-  $program=@($rule | Get-NetFirewallApplicationFilter)
-  $ports=@($rule | Get-NetFirewallPortFilter)
+  $program=@($rule | NetSecurity\Get-NetFirewallApplicationFilter)
+  $ports=@($rule | NetSecurity\Get-NetFirewallPortFilter)
   if($rule.Direction -ne 'Outbound' -or $rule.Action -ne 'Block' -or $rule.Enabled -ne 'True' -or
     $rule.Profile -ne 'Any' -or $program.Count -ne 1 -or $ports.Count -ne 1 -or
     $program[0].Program -ine $image -or $ports[0].Protocol -notin @('TCP','6') -or
     "$($ports[0].RemotePort)" -cne '443' -or "$($ports[0].LocalPort)" -cne 'Any'){throw 'Owned firewall scope changed'}
 }
 if($Action -eq 'Remove') {
+  $failureStage='remove-owned-rule'
   $rule=Get-OwnedRule
   if($null -eq $rule){throw 'Owned firewall rule missing before cleanup'}
   Assert-RuleScope $rule
-  $rule | Remove-NetFirewallRule
+  $rule | NetSecurity\Remove-NetFirewallRule
   if($null -ne (Get-OwnedRule)){throw 'Owned firewall rule removal unconfirmed'}
   exit 0
 }
+$failureStage='image-identity'
 # Validate immutable image and current PID again immediately before changing policy.
 if(-not (Test-Path -LiteralPath $image -PathType Leaf)){throw 'Owned image missing'}
 $node=Get-Item -LiteralPath $image
@@ -66,16 +91,19 @@ if($members.Count -ne 1 -or $members[0].executable -cne "generations/$($manifest
   $members[0].sha256 -cne $ExpectedDigest -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ExpectedDigest){throw 'Owned Workspace digest changed'}
 $process=Get-Process -Id $OwnerProcessId
 if($process.Path -ine $image -or $process.StartTime.ToUniversalTime().ToString('o') -cne $ExpectedStart){throw 'Owned Workspace PID identity changed'}
-if(@(Get-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -ErrorAction SilentlyContinue).Count -ne 0){throw 'Refusing to replace an existing firewall rule'}
+if(@(NetSecurity\Get-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -ErrorAction SilentlyContinue).Count -ne 0){throw 'Refusing to replace an existing firewall rule'}
+$failureStage='effective-profile'
 # Require enabled effective profiles; never enable/reconfigure an existing profile.
-$profiles=@(Get-NetFirewallProfile -PolicyStore ActiveStore)
+$profiles=@(NetSecurity\Get-NetFirewallProfile -PolicyStore ActiveStore)
 if($profiles.Count -eq 0 -or @($profiles | Where-Object {$_.Enabled -ne $true -or $_.AllowLocalFirewallRules -eq $false}).Count -ne 0){throw 'Effective firewall profile does not admit the owned rule'}
+$failureStage='create-rule'
 try {
-  New-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -DisplayName $RuleName -Group $group -Description $description -Program $image -Direction Outbound -Action Block -Enabled True -Profile Any -Protocol TCP -RemotePort 443 | Out-Null
+  NetSecurity\New-NetFirewallRule -PolicyStore PersistentStore -Name $RuleName -DisplayName $RuleName -Group $group -Description $description -Program $image -Direction Outbound -Action Block -Enabled True -Profile Any -Protocol TCP -RemotePort 443 | Out-Null
   $rule=Get-OwnedRule
   if($null -eq $rule){throw 'Owned firewall creation unconfirmed'}
   Assert-RuleScope $rule
-  $effective=@(Get-NetFirewallRule -PolicyStore ActiveStore -Name $RuleName)
+  $failureStage='verify-effective-rule'
+  $effective=@(NetSecurity\Get-NetFirewallRule -PolicyStore ActiveStore -Name $RuleName)
   if($effective.Count -ne 1 -or $effective[0].Description -cne $description){throw 'Owned firewall rule not effective'}
   Assert-RuleScope $effective[0]
 } catch {
@@ -83,6 +111,6 @@ try {
   # Add refused collisions before this try. Remove only our exact marker if a
   # partial creation occurred; no wildcard or policy-wide cleanup is permitted.
   $created=Get-OwnedRule
-  if($null -ne $created){$created | Remove-NetFirewallRule}
+  if($null -ne $created){$created | NetSecurity\Remove-NetFirewallRule}
   throw $original
 }

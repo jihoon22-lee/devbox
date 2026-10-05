@@ -263,6 +263,12 @@ assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not co
 # Apps-only retained diagnosis is an exclusive installer mode, never a rebuild.
 assert "suite_diagnostic_apps_only:" in workflow
 assert "suite_app_journeys:" in workflow
+assert workflow.count('.github/scripts/test-windows-dependency-network-commands.ps1') == 1
+helper_step = workflow.split("      - name: Check owned cleanup helpers\n", 1)[1].split("\n      - ", 1)[0]
+assert '.github/scripts/test-windows-dependency-network-commands.ps1' in helper_step
+assert "'dependencies' -in $selectedApps" in helper_step
+assert "'workspace' -in $selectedApps" in helper_step
+assert "inputs.suite_diagnostic_boundaries_only" in helper_step
 assert "$selectedApps = @()" in work_step
 assert "$selectedAppScripts = @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')" in work_step
 assert "$selectedAppScripts = @($appScripts.Values)" not in work_step

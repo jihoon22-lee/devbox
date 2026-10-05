@@ -930,3 +930,21 @@ context 표시 반영을 기다린다. 제품 권한·cache 검사를 약화하�
 112.1초에 통과했다. worker 2개·메모리 상한 8GiB를 유지했고 sampled RSS peak는
 약 2.18GiB였다. Biome은 1,931개 파일을 통과했다. 새 순수 fixture 회귀도 카탈로그 검증에
 등록했으며 독립 코드 검토에서 차단 결함은 발견하지 않았다. Windows 설치 수용은 별도다.
+
+
+[37ba003c의 PR CI 37291826867](https://github.com/jihoon22-lee/devbox/actions/runs/37291826867)은
+Windows·Linux Rust와 적용되는 카탈로그·의존성 gate를 통과했다.
+[전체 migration 진단 37291716429](https://github.com/jihoon22-lee/devbox/actions/runs/37291716429)은
+13분 24초에 통과했다. 두 committed 실행에서 Workspace 종료 검토·제출·실제 프로세스
+종료를 확인했고, UI 종료 중 Agent 작업/예약 유지, 재열기 후 session/log 복구, Agent crash
+후 durable 제어·자동 재실행 방지, Webhook·Knowledge 수집 및 설치·복원·재설치·업데이트·
+rollback·제거를 확인했다. 동일 이전 payload의 진단이므로 승격 근거는 아니다.
+
+[dependencies/handoff 진단 37291714642](https://github.com/jihoon22-lee/devbox/actions/runs/37291714642)은
+HANDOFF-01을 통과했으나 두 fixture 경계에서 실패했다. DEPS는 provider 전송 전에
+PowerShell command resolution에서 실패했다. 기존 stderr 정리가 명령명을 지워 정확한
+명령은 확정할 수 없다. Windows PowerShell의 inbox NetSecurity 모듈을 명시적으로 읽고
+module-qualified 명령을 확인하도록 보완하며 고정 stage/허용 명령명을 원래 오류와 함께
+보존한다. HANDOFF-02는 portable foreign 권한 거부·원본 보존 후 정리에서 실패했다.
+고유 basename을 기존 product-window 판별기가 인식하지 않아 native 보조 창을 잘못 셌다.
+정확한 fixture 경로·basename만 기존 product 창 검증에 연결하며 modal·외부 창 거부는 유지한다.

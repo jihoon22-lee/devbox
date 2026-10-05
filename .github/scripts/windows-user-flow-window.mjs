@@ -3,6 +3,21 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+export function productWindowForImage(image, fixtureRoot) {
+  const name = path.win32.basename(image);
+  const standard = /^devbox-(workspace|api-studio|knowledge|control-center)\.exe$/i.exec(name);
+  if (standard) return standard[1].toLowerCase();
+  const direct = /^direct-(workspace|api-studio|knowledge|control-center)-[a-z0-9]{6}\.exe$/i.exec(name);
+  const directory = path.win32.dirname(image);
+  if (
+    direct &&
+    path.win32.basename(directory).toLowerCase() === name.slice(0, -4).toLowerCase() &&
+    path.win32.dirname(directory).toLowerCase() === path.win32.resolve(fixtureRoot).toLowerCase() &&
+    /^devbox-suite-delivery-[a-f0-9]{32}$/i.test(path.win32.basename(fixtureRoot))
+  )
+    return direct[1].toLowerCase();
+  return undefined;
+}
 export function captureWindowOwner(identity, fixtureRoot) {
   const current = allWindowsProcesses().find(
     (p) =>
@@ -22,9 +37,7 @@ export function captureWindowOwner(identity, fixtureRoot) {
   assert.equal(result.status, 0, "Owned window start time unavailable");
   const started = result.stdout.trim();
   assert.match(started, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/);
-  const productWindow = /^devbox-(workspace|api-studio|knowledge|control-center)\.exe$/i
-    .exec(path.win32.basename(identity.Path))?.[1]
-    ?.toLowerCase();
+  const productWindow = productWindowForImage(identity.Path, fixtureRoot);
   return { identity, fixtureRoot, started, productWindow };
 }
 export function nativeWindowAction(

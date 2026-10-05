@@ -2,6 +2,23 @@
 # Disposable classic Win32 controls; no WinForms/UIA custom button provider.
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+# Pure image admission checks run with every existing helper regression mode.
+$imageSource=[IO.File]::ReadAllText((Join-Path $ScriptDirectory 'windows-installer-ui.ps1'))
+$imageTokens=$null;$imageErrors=$null
+$imageAst=[Management.Automation.Language.Parser]::ParseInput($imageSource,[ref]$imageTokens,[ref]$imageErrors)
+if($imageErrors.Count -ne 0){throw 'Native driver syntax invalid'}
+$imageDefinition=$imageAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-OwnedProductImage'},$true)
+if($null -eq $imageDefinition){throw 'Owned product image admission missing'}
+. ([scriptblock]::Create($imageDefinition.Extent.Text))
+$imageRoot='C:\Temp\devbox-suite-delivery-'+('a'*32)
+foreach($product in @('workspace','api-studio','knowledge','control-center')) {
+  $name='direct-'+$product+'-Ab123x'
+  if(-not (Test-OwnedProductImage ($imageRoot+'\'+$name+'\'+$name+'.exe') $imageRoot $product)){throw 'Renamed owned product rejected'}
+  if(-not (Test-OwnedProductImage ($imageRoot+'\devbox-'+$product+'.exe') $imageRoot $product)){throw 'Original product rejected'}
+  foreach($invalid in @($imageRoot+'\different\'+$name+'.exe','C:\foreign\'+$name+'\'+$name+'.exe',$imageRoot+'\'+$name+'\'+$name+'-extra.exe')) {
+    if(Test-OwnedProductImage $invalid $imageRoot $product){throw 'Invalid renamed product admitted'}
+  }
+}
 if($NativePickerRoots) {
   $content=[IO.File]::ReadAllText((Join-Path $ScriptDirectory 'windows-installer-ui.ps1'))
   $tokens=$null;$errors=$null

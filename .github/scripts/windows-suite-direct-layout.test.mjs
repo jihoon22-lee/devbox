@@ -5,6 +5,19 @@ import path from "node:path";
 import test from "node:test";
 import { copyDirectProductImage } from "./windows-suite-direct-layout.mjs";
 import { fileDigest } from "./suite-user-flow-results.mjs";
+import { productWindowForImage } from "./windows-user-flow-window.mjs";
+
+test("renamed direct images retain product lifecycle filtering only inside their owned copy", () => {
+  const root = `C:\\Temp\\devbox-suite-delivery-${"a".repeat(32)}`;
+  for (const product of ["workspace", "api-studio", "knowledge", "control-center"]) {
+    const name = `direct-${product}-Ab123x`;
+    assert.equal(productWindowForImage(`${root}\\${name}\\${name}.exe`, root), product);
+    assert.equal(productWindowForImage(`${root}\\different\\${name}.exe`, root), undefined);
+    assert.equal(productWindowForImage(`C:\\foreign\\${name}\\${name}.exe`, root), undefined);
+    assert.equal(productWindowForImage(`${root}\\${name}\\${name}-extra.exe`, root), undefined);
+    assert.equal(productWindowForImage(`${root}\\devbox-${product}.exe`, root), product);
+  }
+});
 
 test("concurrent direct copy has its own CDP policy name while preserving exact image and resources", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "direct-layout-test-"));

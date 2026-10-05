@@ -482,8 +482,14 @@ jobs:
           "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
       - name: Check owned cleanup helpers
         if: ${{ !(inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration') }}
+        env:
+          SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}
         shell: powershell
         run: |
+          $selectedApps = @($env:SELECTED_APP_JOURNEYS -split ',' | ForEach-Object { $_.Trim() })
+          if ('${{ inputs.suite_diagnostic_boundaries_only }}' -ne 'true' -and (-not $env:SELECTED_APP_JOURNEYS -or 'dependencies' -in $selectedApps -or 'workspace' -in $selectedApps)) {
+            .github/scripts/test-windows-dependency-network-commands.ps1
+          }
           .github/scripts/windows-user-flow-cleanup-observation.test.ps1
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1
