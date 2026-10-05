@@ -2,7 +2,12 @@ import { navigateWorkspaceFiles } from "./windows-workspace-ui-observations.mjs"
 // L4 preparations are identified separately; domain transfers/reviews use real UI input.
 import assert from "node:assert/strict";
 import path from "node:path";
-import { readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  changeKnowledgeExecuteAccess,
+  receiverAccessPending,
+  withUnavailableReceiver,
+} from "./windows-suite-receiver-access.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { createApiUserFlowContext, markApiCleanupFailure } from "./windows-api-user-flow-adapter.mjs";
@@ -48,6 +53,25 @@ async function pending(context) {
   assert.equal(response.operation.outcome.state, "succeeded");
   return response.value;
 }
+export async function prepareExpiryPipeline(api) {
+  // The fresh expiry offer mounts asynchronously and changes the controls' scrollport.
+  await api.ui.waitForTarget(incoming);
+  await api.ui.click(button("새 파이프라인"));
+  await select(api, "파이프라인 입력 형식", 0);
+}
+export async function reviewHandoffClose(workspace, ownedFile) {
+  const dirtyPaths =
+    await workspace.cdp.evaluate(`Array.from(document.querySelectorAll('.document-tab-select[role="tab"]'))
+    .filter(tab => tab.querySelector('.document-tab-name')?.textContent.trimStart().startsWith('● '))
+    .map(tab => tab.title)`);
+  assert.ok(
+    dirtyPaths.every((file) => file === ownedFile),
+    "Unowned dirty document prevents handoff discard",
+  );
+  await workspace.ui.click(
+    button(dirtyPaths.length ? "파일 변경 폐기 후 종료" : "종료", { role: "dialog", name: "Workspace 종료 검토" }),
+  );
+}
 export async function review(context) {
   await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
@@ -91,8 +115,13 @@ export async function awaitKnowledgePreviewClosed(knowledge) {
   );
 }
 export async function cancelKnowledgePreview(knowledge) {
+  await knowledge.ui.waitForTarget(button("취소", draftDialog));
   await knowledge.ui.click(button("취소", draftDialog));
   await awaitKnowledgePreviewClosed(knowledge);
+}
+export async function saveKnowledgePreview(knowledge) {
+  await knowledge.ui.waitForTarget(button("초안 저장", draftDialog));
+  await knowledge.ui.click(button("초안 저장", draftDialog));
 }
 export async function disconnectSuiteConnection(api) {
   await api.ui.click(button("제품 연결"));
@@ -234,8 +263,8 @@ async function coldReceiver(previous, activate) {
 export async function run(api) {
   requireApiContext(api);
   const results = [];
-  let workspace, knowledge, foreign;
-  let restoreImage = null;
+  let workspace, knowledge, foreign, ownedSourceFile;
+  let restoreAccess = null;
   try {
     const receipt = JSON.parse(
       (await readFile(path.join(path.dirname(api.root), "workspace-handoff-fixture.json"), "utf8")).replace(
@@ -247,6 +276,7 @@ export async function run(api) {
     assert.equal(receipt.installationKey, api.installationKey);
     assert.ok(path.resolve(receipt.file).startsWith(path.resolve(receipt.root) + path.sep));
     const original = await readFile(receipt.file);
+    ownedSourceFile = receipt.file;
     workspace = await createInstalledProductContext("workspace");
     knowledge = await createInstalledProductContext("knowledge");
     const root = await domain(knowledge, "knowledge", "knowledge.notes", "get_root");
@@ -325,8 +355,7 @@ export async function run(api) {
         record(
           "Real native two-minute source selection expiry starts on a fresh UI-issued offer while independent transform/Knowledge journeys execute",
         );
-        await api.ui.click(button("새 파이프라인"));
-        await select(api, "파이프라인 입력 형식", 0);
+        await prepareExpiryPipeline(api);
         await selectBase64Stage(api);
         await api.ui.click(button("단계 추가"));
         const output = await executePipeline(api);
@@ -340,7 +369,7 @@ export async function run(api) {
         assert.deepEqual(await snapshotFiles(root), before);
         await sendStored(api);
         await review(knowledge);
-        await knowledge.ui.click(button("초안 저장", draftDialog));
+        await saveKnowledgePreview(knowledge);
         await until(
           async () => Object.keys(await snapshotFiles(root)).length === Object.keys(before).length + 1,
           "Explicit draft save did not create exactly one note",
@@ -425,18 +454,24 @@ export async function run(api) {
           "Actual connection-off action blocks outgoing transfer and displays current failure guidance; explicit installation review restores the same connection without consuming another installation's offer",
         );
         await knowledge.close();
-        restoreImage = { source: knowledge.executable, backup: knowledge.executable + ".owned-unavailable" };
-        await rename(restoreImage.source, restoreImage.backup);
-        try {
-          await sendStored(api);
-          await expectText(api, "전달 결과를 확인하지 못했습니다.");
-          assert.deepEqual(await snapshotFiles(root), before);
-        } finally {
-          await rename(restoreImage.backup, restoreImage.source);
-          restoreImage = null;
-        }
+        const receiver = knowledge;
+        knowledge = null;
+        await withUnavailableReceiver(
+          (action) => {
+            if (action === "Deny") restoreAccess = receiver;
+            changeKnowledgeExecuteAccess(receiver, action);
+            restoreAccess = action === "Deny" ? receiver : null;
+          },
+          async () => {
+            await sendStored(api);
+            await expectText(api, "전달 결과를 확인하지 못했습니다.");
+            await api.ui.waitForTarget(button("Knowledge에서 초안 검토", pipeline));
+            assert.deepEqual(await snapshotFiles(root), before);
+            assert.deepEqual(await readFile(receipt.file), sourceBytes);
+          },
+        );
         record(
-          "L4 temporarily withholds only the owned exact candidate receiver image; actual UI transfer reports unavailable and preserves the producer/vault, then restores the same bytes",
+          "L4 temporarily denies execution only on the closed owned receiver image while Suite integrity pins remain active; actual UI transfer reports unavailable and preserves source/vault, then restores the original ACL and verifies identical bytes",
         );
         await api.ui.fill(textbox("스마트 워크플로 입력"), "recovered owned output");
         await executePipeline(api);
@@ -446,6 +481,7 @@ export async function run(api) {
         await review(knowledge);
         await cancelKnowledgePreview(knowledge);
         assert.deepEqual(await snapshotFiles(root), before);
+        assert.deepEqual(await readFile(receipt.file), sourceBytes);
         record(
           "Actual recovered receiver review succeeds after exact member restoration; cancellation still creates no note and source bytes remain intact",
         );
@@ -466,16 +502,20 @@ export async function run(api) {
     return results;
   } finally {
     let cleanupFailed = false;
-    if (restoreImage)
+    if (restoreAccess && receiverAccessPending(restoreAccess))
       try {
-        await rename(restoreImage.backup, restoreImage.source);
+        changeKnowledgeExecuteAccess(restoreAccess, "Restore");
       } catch {
         cleanupFailed = true;
       }
     for (const context of [foreign, knowledge, workspace]) {
       if (!context) continue;
       try {
-        await context.close();
+        await context.close(
+          context === workspace
+            ? { reviewWorkspaceClose: () => reviewHandoffClose(workspace, ownedSourceFile) }
+            : undefined,
+        );
       } catch {
         cleanupFailed = true;
         const identity = context.processIdentity;

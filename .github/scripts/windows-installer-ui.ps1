@@ -22,6 +22,16 @@ $zoomAction=$Action -in @('ZoomIn','ZoomReset')
 # Native input is an explicit hosted acceptance boundary; never spoof this locally.
 if($zoomAction -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted')){throw 'Native zoom requires GitHub hosted runner'}
 if($zoomAction -and (-not $ProductWindow -or $WindowName -or $AuxiliaryWindow)){throw 'Native zoom requires exact product main'}
+function Test-OwnedProductImage([string]$Image,[string]$Root,[string]$Product) {
+  $imageName=[IO.Path]::GetFileName($Image)
+  $standardImage=[string]::Equals($imageName,('devbox-'+$Product+'.exe'),[StringComparison]::OrdinalIgnoreCase)
+  $imageDirectory=[IO.Path]::GetDirectoryName($Image)
+  $directImage=$imageName -imatch ('^direct-'+[regex]::Escape($Product)+'-[a-z0-9]{6}\.exe$') -and
+    [string]::Equals([IO.Path]::GetFileName($imageDirectory),[IO.Path]::GetFileNameWithoutExtension($Image),[StringComparison]::OrdinalIgnoreCase) -and
+    [string]::Equals([IO.Path]::GetDirectoryName($imageDirectory),$Root.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase) -and
+    [IO.Path]::GetFileName($Root.TrimEnd('\')) -imatch '^devbox-suite-delivery-[a-f0-9]{32}$'
+  return $standardImage -or $directImage
+}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 # The .NET Framework proxy loader inspects its caller's reflected type. A
@@ -258,14 +268,26 @@ public static class DevboxInstallerAutomation {
         throw new InvalidOperationException("Owned filename key release incomplete");
     }
   }
-  public static bool PickerFilenameMatches(int dialog,int edit,uint processId,string expected) {
+  private static string ReadPickerFilename(int dialog,int edit,uint processId) {
     if(!IsPickerControl(dialog,edit,processId,"Edit")) throw new InvalidOperationException("Owned filename editor changed");
     IntPtr text=Marshal.AllocHGlobal(32768*2);
     try {
       UIntPtr result;
       if(SendMessageTimeoutW(new IntPtr(edit),0x000D,new UIntPtr(32768),text,0x23,1500,out result)==IntPtr.Zero || result.ToUInt64()>=32768) throw new InvalidOperationException("Owned filename observation unavailable");
-      return String.Equals(Marshal.PtrToStringUni(text,(int)result.ToUInt64()),expected,StringComparison.Ordinal);
+      return Marshal.PtrToStringUni(text,(int)result.ToUInt64());
     } finally { Marshal.FreeHGlobal(text); }
+  }
+  public static bool PickerFilenameMatches(int dialog,int edit,uint processId,string expected) {
+    return String.Equals(ReadPickerFilename(dialog,edit,processId),expected,StringComparison.Ordinal);
+  }
+  public static string PickerFilenameFailure(int dialog,int edit,uint processId,string expected) {
+    string actual=ReadPickerFilename(dialog,edit,processId);
+    int prefix=0;
+    while(prefix<actual.Length && prefix<expected.Length && actual[prefix]==expected[prefix]) prefix++;
+    bool focused=true;
+    try { VerifyPickerFocus(dialog,edit,processId); } catch { focused=false; }
+    return "observedLength="+actual.Length+";expectedLength="+expected.Length+";commonPrefixLength="+prefix+
+      ";caseOnly="+String.Equals(actual,expected,StringComparison.OrdinalIgnoreCase)+";focused="+focused;
   }
   public static bool ClickPickerButton(int dialog,int edit,int button,uint processId) {
     VerifyPickerFocus(dialog,edit,processId);
@@ -288,7 +310,7 @@ $process=Get-Process -Id $TargetProcessId
 if(-not [string]::Equals($process.Path,$exe,[StringComparison]::OrdinalIgnoreCase)){throw 'Process executable mismatch'}
 $started=$process.StartTime.ToUniversalTime().ToString('o')
 if($started -ne $ExpectedStartTimeUtc){throw 'Process start time mismatch'}
-if($ProductWindow -and -not [string]::Equals([IO.Path]::GetFileName($exe),('devbox-'+$ProductWindow+'.exe'),[StringComparison]::OrdinalIgnoreCase)){throw 'Product window executable mismatch'}
+if($ProductWindow -and -not (Test-OwnedProductImage $exe $root $ProductWindow)){throw 'Product window executable mismatch'}
 $productLifecycle=$ProductWindow -and $Action -in @('Close','Resize','Minimize','Activate','Inspect','ZoomIn','ZoomReset')
 if($productLifecycle -and $WindowName){throw 'Product lifecycle requires all owned roots for modal review'}
 if($AuxiliaryWindow -and ($ProductWindow -cne 'workspace' -or $WindowName -or $Action -notin @('Close','Inspect'))){throw 'Invalid owned auxiliary window boundary'}
@@ -447,7 +469,11 @@ if($Action -in @('ChooseFile','SaveFile')) {
     if($matched){break}
     Start-Sleep -Milliseconds 25
   } while([DateTime]::UtcNow -lt $inputDeadline)
-  if(-not $matched){throw 'Owned filename did not match exact requested path before confirmation'}
+  if(-not $matched){
+    $observation='unavailable'
+    try {$observation=[DevboxInstallerAutomation]::PickerFilenameFailure($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$TargetProcessId,$file)} catch {}
+    throw ('Owned filename did not match exact requested path before confirmation: '+$observation)
+  }
   $dialogHandle=$dialog.Current.NativeWindowHandle
   $acknowledged=[DevboxInstallerAutomation]::ClickPickerButton($dialog.Current.NativeWindowHandle,$controls.edit.Current.NativeWindowHandle,$controls.button.Current.NativeWindowHandle,$TargetProcessId)
   $deadline=[DateTime]::UtcNow.AddSeconds(10)

@@ -817,3 +817,202 @@ Windows 사전 검사와 설치·활성화를 통과하고 실제 트레이를 �
 `TopLevelWindowForOverflowXamlIsland` 팝업을 기존 root 목록이 거부했다. 확보한 native
 창 정보에 따라 이 정확한 class를 인식하고 기존 PID·이미지·세션·native 소유권 검사는
 유지했다. 실제 Windows ParseFile과 허용/거부 predicate 회귀는 통과했다.
+
+
+#628은 exact-main `1e5035a663c160a77c5ff22139fac7bcbcbfcca7`로 병합됐고
+[전체 CI 37273563670](https://github.com/jihoon22-lee/devbox/actions/runs/37273563670)의
+6개 job을 통과했다. 실제 트레이 종료·자동 재시작 거부·명시적 재연결은
+[집중 진단 37273128904](https://github.com/jihoon22-lee/devbox/actions/runs/37273128904)에서 통과했다.
+
+[후보 37274754806](https://github.com/jihoon22-lee/devbox/actions/runs/37274754806)은
+두 Windows 빌드·조립·API 및 cross-product native·독립 WSL2/Docker를 통과했다.
+Knowledge native는 최초 CDP target이 `about:blank`인 상태로 30초 후 실패했다.
+product-shells는 Knowledge 자동 준비와 기본 14개 호출을 통과한 뒤 Daily 또는 수집
+동의 묶음에서 CDP 응답 제한에 도달했다. 후속 marker 조회는 응답했으므로 두 실패를
+같은 원인이나 전체 renderer 정지로 단정하지 않는다. 기존 기록은 후속 묶음의 개별
+대기 호출을 식별하지 못했다. 설치 사용자 여정은 계속 수집 중이며 태그·공개는 보류한다.
+
+원인 분리를 위해 기존 marker를 Daily·수집 동의 단계에도 적용하고, portable 최초
+시작 실패 시 소유 프로세스·native 응답·CDP 위치·WCT 관찰을 정리 전에 보존한다.
+원래 오류·기존 제한은 유지하고 업무 재실행이나 페이지 reload는 추가하지 않는다.
+보관된 같은 bytes의 정확한 lifecycle 진단 경로를 추가하며 원본/검증 코드 source를
+구분하고 승격 근거로 사용할 수 없게 표시한다. 로컬 최소 회귀·workflow 계약·actionlint와
+실제 Windows PowerShell ParseFile 검사를 통과했다. 제품 원인은 아직 미확정이다.
+
+후보 37274754806의 설치 결과는 40개 중 **35 PASS·4 FAIL·1 미실행**으로 종료됐다.
+실패는 RUNTIME-02·DEPS-01·HANDOFF-01·DELIVERY-01이며 HANDOFF-02는 앞선 전송 실패로
+실행되지 않았다. 전체 migration/recovery는 선행 실패로 생략됐고 후보 봉인은 실패했다.
+API 11개·Knowledge 8개와 트레이·철회본 동일 버전 교체·업데이트 후 checkpoint는 통과했다.
+
+화면·코드와 로컬 실제 Chromium 재현으로 확인한 검증기 결함 세 가지를 수정했다.
+Terminal 시작 경로의 datalist 입력을 실제 접근성 역할인 combobox로 조작하고,
+성공한 LSP 검사의 마지막 창도 명시적 닫기와 소멸 관찰을 거친다. HANDOFF 고정 확인창은
+뒤쪽 일반 scrollport의 잘림을 상속하지 않으며 실제 containing block과 내부 잘림은
+유지한다. Chromium에서 원래 클릭 실패를 재현한 뒤 실제 pointer 입력과 transform·filter·
+contain의 잘림 거부를 확인했다. Terminal 경로·명령 입력도 실제 접근성 트리와 키보드로
+확인했다. 이 로컬 결과를 Windows 설치 수용 PASS로 대신하지 않는다.
+
+DELIVERY-01은 복원 후 재실행한 Center의 프로세스를 관찰하지 못했다. 기존 코드도 원래
+Center 종료를 기다렸으므로 종료 지연만으로 원인을 단정하지 않는다. 재시작 진행 조건을
+새 PID·생성 시각, 정확한 설치/generation의 기대 activation 단계, 복원 block 해제로
+명확히 하고, 실패 시 helper 기록과 새 프로세스의 종료/고정 native 오류를 정리 전에 보존한다.
+실제 실패 원인은 아직 미확정이며 재실행·timeout 연장으로 숨기지 않는다.
+
+동일 payload `1e5035a6`의 [Knowledge lifecycle 진단 37282800742](https://github.com/jihoon22-lee/devbox/actions/runs/37282800742)과
+[원래 전체 native 순서 진단 37282804908](https://github.com/jihoon22-lee/devbox/actions/runs/37282804908)은
+검증 코드 `f697cc7a`로 통과했다. 앞선 blank startup·후속 호출 timeout은 재현되지 않았으며
+원인 해결이나 승격 근거로 간주하지 않는다. 두 진단 모두 원본/fixture source와
+`diagnosticOnly: true`, `promotionEvidence: false`를 기록했다.
+
+남은 설치본 진단은 기존 apps-only 경로와 새 legacy-only 경로로 분리해 동시에 실행한다.
+legacy 선택은 기존 boundary 진단의 opt-in이며 기본 tray/delivery 묶음을 바꾸지 않는다.
+두 경로 모두 기존 assembly의 동일 7개 파일을 검증해 사용하며 제품 build나 승격은 하지 않는다.
+이 묶음의 로컬 영향 검사는 8.66초·peak RSS 약 138MB로 통과했고 compiler 범위는 none이다.
+관련 브라우저·Workspace·legacy·workflow 회귀만 실행했으며 무관한 제품 검사는 반복하지 않았다.
+
+후속 HANDOFF 검토에서 native 초안 도착 전에 저장·취소를 누를 수 있는 두 지점을 찾아
+해당 버튼 준비를 먼저 관찰하도록 했다. 지연된 초안 회귀를 RED→GREEN으로 확인했고
+관련 12개 검사를 통과했다. 선행 UI 실패로 실행되지 못했던 전체 native migration/recovery는
+보관된 후보로 별도 실행할 수 있게 기존 boundary 진단에 분리했다. 자체 임시 설치와
+정리를 사용하며 부모 UI 설치·WSL·build를 생략하고, 원본 7개 digest와 진단 전용 표식을
+보존한다. workflow 계약·actionlint·변경된 PowerShell 본문의 실제 ParseFile을 통과했다.
+
+[legacy 진단 37284969312](https://github.com/jihoon22-lee/devbox/actions/runs/37284969312)은
+동일 payload와 fixture `9cf4b0b8`로 DELIVERY-01·checkpoint/WAL·rollback 보존·정리를 통과했다.
+[apps 진단 37284957067](https://github.com/jihoon22-lee/devbox/actions/runs/37284957067)은
+27 PASS·6 FAIL이며 HANDOFF-02가 실행되지 않았다. 실패는 RUNTIME-01/02, LSP-01,
+DEPS-01, GRPC-01, HANDOFF-01이다. 설치·Knowledge·layout은 통과했다. 새 Terminal 준비,
+의존성 UI 분석 완료, gRPC 메서드/editor 전환, fresh incoming review 준비를 확인한 뒤
+다음 입력을 한 번 실행하도록 수정했다. HANDOFF 정리는 검증한 synthetic 원본 경로의
+dirty 변경만 종료 검토에서 명시적으로 폐기하며 다른 dirty 파일은 거부한다.
+
+[분리 migration 진단 37285640985](https://github.com/jihoon22-lee/devbox/actions/runs/37285640985)은
+설치 확정 후 Workspace 종료 검토를 누락한 검증 코드에서 실패했다. 실제 종료 확인과
+exact child exit 후에만 강제 종료 여부·Agent 생존을 판단하도록 고쳤다. crash 복구는
+백그라운드 조회가 먼저 복구할 수 있는 일시 unavailable 상태를 필수 조건으로 삼지 않고,
+기존 단일 reconnect 이후 새 owner·durable 작업·자동 재실행 방지 검증을 유지한다.
+
+LSP 파일명 mismatch와 RUNTIME-01의 정확한 실패 원인은 아직 미확정이다. 파일 선택 실패에는
+문자열 내용 없이 길이·공통 prefix·대소문자·focus 관측을 남긴다. 응답 유실 검사는 정확한
+request의 성공/실패 응답을 모두 포착하되 succeeded·원래 job 검증은 유지하며 native 29초
+계약 내 응답을 관찰한다. gRPC도 메서드·요청 수·고정된 결과 상태를 실패 시 보존한다.
+예약 JSONL 문자열 문제라는 가설은 실제 생성 스크립트 실행으로 반증되어 변경하지 않았다.
+좁은 로컬 회귀와 실제 Chromium, Windows PowerShell helper compile·parser, 별도 diff 검토를
+통과했다. 다음 retained 실행은 workspace/api/handoff 및 실패한 migration에 한정한다.
+검증 코드만 변경됐으며 모든 진단은 승격 불가다. 원인 미확정 항목을 제품 해결로 표시하지 않는다.
+
+
+[선택 여정 진단 37288377814](https://github.com/jihoon22-lee/devbox/actions/runs/37288377814)은
+API 11개·RUNTIME-01·LSP-01·HANDOFF-01과 정리를 통과했다. 남은 세 실패를 분리했다.
+RUNTIME-02는 실제 제품 결함이었다. 시작 경로·글꼴 등 preference 저장이 동일 파일의
+전체 digest를 바꿔 변경되지 않은 terminal profile도 stale revision으로 거부했다.
+revision을 profile content로 한정하고 전체 파일 compare-before-write와 preference CAS는
+유지했다. preference 변경 후 저장·삭제와 실제 stale profile 거부의 Rust 회귀 4개를 통과했다.
+제품 bytes가 바뀌므로 이전 후보는 새 제품의 수용 근거로 재사용하지 않는다.
+
+DEPS-01은 제품의 명시적 `no_proxy` 정책과 양립하지 않는 proxy 시도 조건이었다.
+일회성 GitHub-hosted Windows에서만 정확한 설치 이미지·digest·PID·생성 시각을 검증한 뒤
+해당 이미지의 외부 TCP 443만 차단하고, 같은 provider의 실제 전송·실패 수가 양수임을
+확인한다. 고유 rule의 생성·유효성·정리를 검증하며 기존 firewall profile은 바꾸지 않는다.
+로컬에서는 순수 adapter 회귀와 PowerShell 구문만 검증하고 방화벽은 실행하지 않았다.
+HANDOFF-02는 동시 installed/portable 실행 파일 basename의 WebView2 policy 충돌이었다.
+복사한 portable에만 고유 basename을 쓰고 bytes digest와 리소스·설치 경계는 유지했다.
+
+[종료 관측 진단 37290119469](https://github.com/jihoon22-lee/devbox/actions/runs/37290119469)의
+실제 화면은 종료 검토 제출 후 stale project-context 오류를 보였다. 검증 코드의 direct
+`select_project`가 renderer의 cached description을 갱신하지 않는 것이 원인이었다.
+초기·재시작 후 선택을 RegistryGate의 실제 목록 갱신·정확한 project 선택으로 바꾸고
+context 표시 반영을 기다린다. 제품 권한·cache 검사를 약화하지 않는다.
+남은 retained 진단은 dependency/handoff와 migration으로 제한하며, 이미 결함이 확인된
+이전 binary의 RUNTIME-02 및 무관한 통과 검사를 다시 실행하지 않는다.
+
+최종 로컬 영향 검사는 Workspace Rust check·clippy·fmt·123개 unit 및 binding 검사를
+112.1초에 통과했다. worker 2개·메모리 상한 8GiB를 유지했고 sampled RSS peak는
+약 2.18GiB였다. Biome은 1,931개 파일을 통과했다. 새 순수 fixture 회귀도 카탈로그 검증에
+등록했으며 독립 코드 검토에서 차단 결함은 발견하지 않았다. Windows 설치 수용은 별도다.
+
+
+[37ba003c의 PR CI 37291826867](https://github.com/jihoon22-lee/devbox/actions/runs/37291826867)은
+Windows·Linux Rust와 적용되는 카탈로그·의존성 gate를 통과했다.
+[전체 migration 진단 37291716429](https://github.com/jihoon22-lee/devbox/actions/runs/37291716429)은
+13분 24초에 통과했다. 두 committed 실행에서 Workspace 종료 검토·제출·실제 프로세스
+종료를 확인했고, UI 종료 중 Agent 작업/예약 유지, 재열기 후 session/log 복구, Agent crash
+후 durable 제어·자동 재실행 방지, Webhook·Knowledge 수집 및 설치·복원·재설치·업데이트·
+rollback·제거를 확인했다. 동일 이전 payload의 진단이므로 승격 근거는 아니다.
+
+[dependencies/handoff 진단 37291714642](https://github.com/jihoon22-lee/devbox/actions/runs/37291714642)은
+HANDOFF-01을 통과했으나 두 fixture 경계에서 실패했다. DEPS는 provider 전송 전에
+PowerShell command resolution에서 실패했다. 기존 stderr 정리가 명령명을 지워 정확한
+명령은 확정할 수 없다. Windows PowerShell의 inbox NetSecurity 모듈을 명시적으로 읽고
+module-qualified 명령을 확인하도록 보완하며 고정 stage/허용 명령명을 원래 오류와 함께
+보존한다. HANDOFF-02는 portable foreign 권한 거부·원본 보존 후 정리에서 실패했다.
+고유 basename을 기존 product-window 판별기가 인식하지 않아 native 보조 창을 잘못 셌다.
+정확한 fixture 경로·basename만 기존 product 창 검증에 연결하며 modal·외부 창 거부는 유지한다.
+
+
+[후속 진단 37293692460](https://github.com/jihoon22-lee/devbox/actions/runs/37293692460)은
+DEPS의 누락 명령을 `Get-FileHash`로 확정했다. helper 전체 AST의 25개 호출을 점검하고
+Management·Utility·NetSecurity를 inbox 경로로 명시적으로 로드·한정했다. 실제 Windows에서
+자동 명령 탐색을 끄고 전체 호출 해석과 실제 system image SHA256의 독립 계산 일치를 확인했다.
+HANDOFF-02는 foreign 거부와 연결 해제/복구를 통과한 뒤 receiver 파일 이동에서 실패했다.
+`CapturedScope`가 모든 member 파일을 `FILE_SHARE_READ`로 보관하고 Agent도 이를 유지하므로
+실행 파일 이동은 제품의 정상 보호 계약과 양립하지 않는다. 보호를 약화하거나 재시도하지 않는다.
+
+receiver 실패 재현은 정확한 임시 설치 이미지의 ExecuteFile 권한만 일시 거부하고 원래 Access
+SDDL과 digest를 복원·확인하는 방식으로 바꾼다. 독립 C# 검증 프로그램을 Windows compiler로
+빌드해 자체 임시 whoami 복사본과 동일 read pin으로 확인했다. 읽기/hash는 유지되고 실행은
+Win32 error 5로 거부되며, fresh descriptor에 원래 SDDL을 설정해 정확히 복원한 뒤 같은
+이미지 실행과 digest 일치를 확인했다. 검증용 파일·프로그램은 정리했다. 사용자 앱·서비스·
+방화벽은 변경하지 않았다. 실제 hosted helper에도 설치 여정 전 같은 좁은 회귀를 한 번 연결했다.
+
+
+[37296270693](https://github.com/jihoon22-lee/devbox/actions/runs/37296270693)은 새 사전 회귀에서
+중단됐다. dependency 전체 명령·hash는 통과했으나 PowerShell provider를 통한 receiver ACL
+복원이 원래 SDDL과 달라 설치 여정은 시작하지 않았다. 도우미의 capture/deny/restore/비교를
+직접 File API로 일치시키고 새 FileSecurity에 원래 Access SDDL을 설정했다. 실제 Windows에서
+동일 API 순서의 독립 C# 검증과 PowerShell 구문을 통과했으며 SDDL 일치 조건은 유지했다.
+
+아직 새 제품 후보에서 실행하지 않은 RUNTIME-02 후반도 코드로 검토했다. 창 표시 뒤 main
+프로필 갱신이 끝나기 전 companion 삭제가 경쟁하지 않도록 하고, 복원 후 main 목록 갱신이
+끝난 뒤 기존 native ID의 행 범위를 계산한다. 회귀 두 개를 RED→GREEN으로 확인했다.
+기존 프로필 선택은 enabled combobox를 기다려 이미 갱신 완료를 보장하므로 변경하지 않았다.
+
+[37297320649](https://github.com/jihoon22-lee/devbox/actions/runs/37297320649)도 receiver 사전 검사에서
+같은 정확 복원 조건에 실패했다. 이후 두 독립 검토가 실제 Windows의 상속 플래그 차이를
+재현했다. managed ACL setter는 원래 `D:`/`D:P`를 `D:AI`/`D:PAI`로 바꾸거나 상위 ACE를
+추가한다. 이전 UserTemp 검증은 이미 AI인 원본만 확인해 이 차이를 놓쳤다. 원래 AI에만
+일시 AR 요청 비트를 붙인 `SetFileSecurityW` 복원으로 바꾸고 정확 SDDL·digest 비교를 유지했다.
+실제 구현의 128가지 상속 조합이 통과했고, 별도 실행 검증 6가지에서 read pin·실행 거부·hash
+보존·정확 복원·재실행을 확인했다. hosted 실패의 원래 SDDL은 남아 있지 않아 같은 원인으로
+단정하지 않으며, 이후 mismatch에는 원래/실제 SDDL과 control flags를 남긴다.
+새 native source는 전체 checkout으로 전달되며 실제 Windows 구문·inbox 명령 해석과
+정리/원래 오류 보존의 Node 회귀 4개를 통과했다. 복구 후 수신 검토 취소도 vault뿐 아니라
+원래 source bytes를 다시 비교해 수용 기록과 일치시켰다.
+
+[37298549631](https://github.com/jihoon22-lee/devbox/actions/runs/37298549631)에서 실제 hosted 원본의
+실행 거부·정확 ACL 복원은 통과했다. 뒤에 추가한 합성 ACL matrix는 구성 단계에서 멈췄다.
+이 중복 matrix는 로컬 native 증거로 남기고 hosted 사전 검사에서는 제거한다. 실제 원본의
+read pin·실행 거부·hash·정확 복원·재실행 조건은 유지하며 설치 여정은 아직 미실행이다.
+
+사용자 후속 지시에 따라 CI의 동일 입력 재검사를 없앴다. 이전 같은 저장소 CI에서 실제
+성공한 compiler 단계·checkout·입력·범위를 대조하고 변경 없는 패키지 근거만 합성한다.
+실제로 실행하지 않은 skip/재사용 결과는 원본 근거로 삼지 않는다. 현재 입력에 대한
+read-only GitHub 대조는 Workspace를 37291826867, 나머지 Rust와 frontend를 37273563670에서
+충족했다. 이 결과는 새 제품의 설치 수용 근거가 아니며, final exact-main 패키지 수용은 유지한다.
+현재 advisory와 frontend fixture·format은 새로 확인하고 주간 감사는 재사용 없이 실행한다.
+
+[37299140746](https://github.com/jihoon22-lee/devbox/actions/runs/37299140746)은 설치·활성화,
+DEPS와 HANDOFF의 실제 사용자 여정 및 정리를 통과했다. 이 retained 증거는 runner
+`5d2a6e71`과 이전 payload를 구분하며 새 제품 후보의 수용을 대신하지 않는다.
+
+첫 CI 재사용 실행 37299370992는 조회 오류 뒤 전체 검사로 전환하려 해 즉시 취소했다.
+동일 파일명 endpoint가 최신 성공 대신 과거 목록을 돌려주는 차이를 로컬 조회에서도 확인했다.
+workflow metadata의 numeric ID와 명시적 첫 페이지로 조회하고 각 run의 workflow ID를
+검증한다. 조회·전송·해석 장애는 scope gate에서 원인 정보를 남기며 중단하고, 전체 컴파일을
+대신 시작하지 않는다. 정상적으로 확인된 변경·근거 부족에만 필요한 검사를 실행한다.
+
+37300414686에서는 무거운 검사 없이 조회 단계에서 멈춰 실제 오류를 확인했다. 새 `gh`가
+ANSI를 포함한 job log 출력을 거부한 것이 직접 원인이었다. 공식 checksum을 검증한 gh 2.102로
+로컬에서 같은 거부를 재현했고, 지원 여부를 확인한 raw-log 옵션·메모리 내 ANSI 제거 후 같은
+성공 기록을 정확히 해석했다. 전체 resolver도 이 실제 최신 CLI에서 세 compiler gate의
+재사용을 확인했다. 조회는 최근 7일로 제한하고 응답 날짜까지 확인해 과거 페이지 혼입을 막는다.

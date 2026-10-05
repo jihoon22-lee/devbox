@@ -1,3 +1,4 @@
+import { dependencyProviderFailureVisible } from "./windows-dependency-network.mjs";
 import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import { readWorkspaceAgentOperations } from "./windows-workspace-agent-observation.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
@@ -73,7 +74,18 @@ export async function observeManagedLspTransition(ui, scope, nextAction, observe
   await ui.waitForTarget({ role: "button", name: nextAction, scope }, { timeoutMs });
   return observe();
 }
+export async function clickTerminalSessionAction(ui, scope, name) {
+  // The manager publishes refreshed rows before clearing busy. Sample its
+  // ordinal scope only after that publication; native state can change first.
+  await ui.waitForTarget({ role: "button", name: "상태 새로고침" });
+  const target = { role: "button", name, scope: await scope() };
+  await ui.waitForTarget(target);
+  await ui.click(target);
+}
 export async function deleteTerminalProfile(surface, mainUi, wait) {
+  // Focus also refreshes the main profile catalog. Finish it before deleting
+  // the companion profile so the main selection remains deliberately stale.
+  await mainUi.waitForTarget({ role: "button", name: "상태 새로고침" });
   const remove = { role: "button", name: "owned terminal profile 프로필 삭제" };
   await surface.ui.waitForTarget(remove);
   await surface.ui.click(remove);
@@ -88,9 +100,10 @@ export async function deleteTerminalProfile(surface, mainUi, wait) {
   await mainUi.click({ role: "button", name: "프로필로 터미널 열기" });
 }
 export async function prepareTerminalStart(ui, root, command) {
-  await ui.waitForTarget({ role: "textbox", name: "시작 경로" });
-  await ui.fill({ role: "textbox", name: "시작 경로" }, root);
+  await ui.waitForTarget({ role: "combobox", name: "시작 경로" });
+  await ui.fill({ role: "combobox", name: "시작 경로" }, root);
   await ui.fill({ role: "textbox", name: "시작 명령" }, command);
+  await ui.waitForTarget({ role: "button", name: "+ 터미널" });
   await ui.click({ role: "button", name: "+ 터미널" });
   await ui.waitForTarget({ role: "button", name: "실행" });
   await ui.click({ role: "button", name: "실행" });
@@ -172,14 +185,29 @@ export async function loseRuntimeReply({
     await cdp.command("Debugger.removeBreakpoint", { breakpointId: entry.breakpointId });
     await cdp.command("Debugger.setBreakpointOnFunctionCall", {
       objectId: callback.result.objectId,
-      condition: `data?.operation?.provenance?.requestId===${JSON.stringify(request.requestId)}&&data?.value?.jobId===${JSON.stringify(jobId)}`,
+      condition: `(data?.operation?.provenance?.requestId??data?.provenance?.requestId)===${JSON.stringify(request.requestId)}`,
     });
     frameId = null;
     await cdp.command("Debugger.resume");
     await wait(
       async () => typeof frameId === "string" && frameId.length > 0,
       "exact native control result paused before renderer receipt",
+      35_000,
     );
+    // Native runtime controls have a 29s budget. Observe their exact response,
+    // including failures, before deciding whether a successful reply can be lost.
+    // Project fixed metadata only; never include native payloads in failures.
+    const observed = await cdp.command("Debugger.evaluateOnCallFrame", {
+      callFrameId: frameId,
+      expression: `({requestMatches:(data?.operation?.provenance?.requestId??data?.provenance?.requestId)===${JSON.stringify(request.requestId)},outcome:["succeeded","failed","cancelled","stale","running"].includes(data?.operation?.outcome?.state)?data.operation.outcome.state:"rejected",jobMatches:data?.value?.jobId===${JSON.stringify(jobId)},code:["unauthorized","invalid-request","expired","replayed","overloaded","stale-context","unavailable"].includes(data?.code??data?.operation?.outcome?.code)?(data.code??data.operation.outcome.code):null})`,
+      returnByValue: true,
+      silent: true,
+    });
+    assert.ok(!observed.exceptionDetails, "Paused native response observation failed");
+    const reply = observed.result?.value;
+    assert.equal(reply?.requestMatches, true, "Paused native response must match the original request");
+    assert.equal(reply?.outcome, "succeeded", `Native runtime reply: ${JSON.stringify(reply)}`);
+    assert.equal(reply?.jobMatches, true, "Native runtime reply must match the original job");
     // Runtime.evaluate awaits execution on the paused renderer. This read stays
     // in its current call frame and never resumes/consumes the native callback.
     const response = await cdp.command("Debugger.evaluateOnCallFrame", {
@@ -245,6 +273,13 @@ export async function resumeRuntimeUi(fixture, ui) {
   await ui.waitForTarget({ role: "button", name: "+ 새 작업" });
 }
 
+export async function readCompletedDependencyInventory(ui, inventory) {
+  // The UI owns the probe lane until its analysis completes. Starting another
+  // inventory while it is busy observes contention instead of the displayed report.
+  await ui.waitForTarget({ role: "button", name: "다시 분석" });
+  return inventory();
+}
+
 export function createWorkspaceUiFixture({
   ui,
   cdp,
@@ -252,6 +287,7 @@ export function createWorkspaceUiFixture({
   fixtureRoot,
   windowOwner,
   network,
+  withDependencyFailure,
   chooseArchive,
   terminalUi,
   restart,
@@ -648,7 +684,7 @@ export function createWorkspaceUiFixture({
       await ui.waitForTarget({ role: "button", name: "의존성 분석" });
       await ui.click({ role: "button", name: "의존성 분석" });
       const inventory = () => read("workspace.dependencies", "dependency_inventory", { request: { path: root } });
-      const initial = await inventory();
+      const initial = await readCompletedDependencyInventory(ui, inventory);
       assert.ok(initial.packages.some((item) => item.version === "1.2.3"));
       await ui.click({ role: "button", name: "전송 내용 검토" });
       await this.waitForText({ role: "region", name: "원격 전송 검토" });
@@ -659,29 +695,32 @@ export function createWorkspaceUiFixture({
       await ui.click({ role: "button", name: "검토한 정보 보내기" });
       await this.waitForText({ role: "button", name: "lockfile 다시 분석" });
       await ui.click({ role: "button", name: "lockfile 다시 분석" });
-      const fresh = await inventory();
+      const fresh = await readCompletedDependencyInventory(ui, inventory);
       assert.notEqual(fresh.revision, initial.revision);
       assert.ok(fresh.packages.some((item) => item.version === "1.2.4"));
-      // Approved transmission reaches only the owned failure proxy, retaining local inventory.
-      const attempts = network.attempts();
-      await ui.click({ role: "button", name: "전송 내용 검토" });
-      await this.waitForText({ role: "region", name: "원격 전송 검토" });
-      await ui.click({ role: "button", name: "검토한 정보 보내기" });
-      await network.waitForAttempt(attempts);
-      await wait(
-        async () =>
-          (await cdp.evaluate('document.querySelector(".dependency-lens-panel")?.textContent ?? ""')).includes("실패"),
-        "provider failure shown with local report",
-      );
-      assert.ok((await inventory()).packages.some((item) => item.version === "1.2.4"));
-      assert.deepEqual(JSON.parse(await readFile(path.join(root, "package.json"), "utf8")), manifest);
+      // Production enrichment deliberately ignores proxies. Deny only this
+      // verified image's HTTPS egress while the user-approved request executes.
+      assert.equal(typeof withDependencyFailure, "function", "Owned hosted dependency failure adapter required");
+      let screenshot;
+      await withDependencyFailure(async () => {
+        await ui.click({ role: "button", name: "전송 내용 검토" });
+        await this.waitForText({ role: "region", name: "원격 전송 검토" });
+        await ui.click({ role: "button", name: "검토한 정보 보내기" });
+        await wait(
+          async () => await cdp.evaluate(`(${dependencyProviderFailureVisible.toString()})(document)`),
+          "approved provider transmission failed with positive failure count",
+        );
+        assert.ok((await inventory()).packages.some((item) => item.version === "1.2.4"));
+        assert.deepEqual(JSON.parse(await readFile(path.join(root, "package.json"), "utf8")), manifest);
+        screenshot = await ui.screenshot("workspace-dependencies-safe-refresh");
+      });
       return {
         assertions: [
           "Actual cancellation releases the reviewed transmission without sending",
           "Lockfile mutation invalidates old preview; local reanalysis obtains new revision before new approval",
-          "Owned OSV/deps.dev proxy failures preserve local package inventory and never execute package scripts",
+          "Owned image HTTPS firewall failure preserves local package inventory; its exact temporary rule is removed",
         ],
-        screenshots: [await ui.screenshot("workspace-dependencies-safe-refresh")],
+        screenshots: [screenshot],
       };
     },
     async terminalLifecycle() {
@@ -798,7 +837,7 @@ export function createWorkspaceUiFixture({
         async () => (await sessions()).find((session) => session.id === opened.id)?.state === "interrupted",
         "interrupted original generation",
       );
-      await ui.click({ role: "button", name: "상태만 다시 연결", scope: await scoped(opened.id) });
+      await clickTerminalSessionAction(ui, () => scoped(opened.id), "상태만 다시 연결");
       await wait(
         async () => (await sessions()).find((session) => session.id === opened.id)?.state === "active",
         "explicit restore generation active",
@@ -807,7 +846,7 @@ export function createWorkspaceUiFixture({
       surface = await terminalUi(opened.id);
       try {
         const screenshot = await surface.ui.screenshot("workspace-terminal-explicit-restore");
-        await ui.click({ role: "button", name: "이 터미널 종료", scope: await scoped(opened.id) });
+        await clickTerminalSessionAction(ui, () => scoped(opened.id), "이 터미널 종료");
         await wait(
           async () => (await sessions()).find((session) => session.id === opened.id)?.state === "stopped",
           "exact owned terminal stopped",
@@ -967,7 +1006,7 @@ export function createWorkspaceUiFixture({
       await observeManagedLspTransition(ui, scope, "설치", () =>
         wait(async () => (await state(rust)).state === "not_installed", "owned server removed after cache proof"),
       );
-      await ui.press("Escape");
+      await this.closeFailedLsp();
       return {
         assertions: [
           "Actual UI review shows fixed catalog digest before archive import and cached installation",

@@ -1,6 +1,6 @@
 // A location-keyed portable copy of the exact installed candidate, on hosted Windows.
 import assert from "node:assert/strict";
-import { cp, readFile, realpath, mkdtemp, rm } from "node:fs/promises";
+import { cp, readFile, realpath, mkdtemp, rename, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import path from "node:path";
@@ -17,6 +17,14 @@ import {
   releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
 import { observeUntil } from "./windows-suite-ui-context.mjs";
+export async function copyDirectProductImage(source, root) {
+  await cp(path.dirname(source), root, { recursive: true, errorOnExist: true });
+  // WebView2 policy uses the image basename. A concurrent installed copy owns
+  // the original name, so this location-keyed portable fixture needs its own.
+  const executable = path.join(root, `${path.basename(root)}.exe`);
+  await rename(path.join(root, path.basename(source)), executable);
+  return realpath(executable);
+}
 export async function createDirectProductContext(product) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
@@ -35,16 +43,15 @@ export async function createDirectProductContext(product) {
       .sha256,
   );
   const root = await mkdtemp(path.join(path.dirname(installed), `direct-${product}-`));
-  await cp(path.dirname(source), root, { recursive: true, errorOnExist: true });
-  const executable = await realpath(path.join(root, path.basename(source)));
-  assert.equal(await fileDigest(executable), member.sha256);
-  const port = await freePort();
-  const policy = windowsProcessIsElevated() ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
-  if (policy) installElevatedCdpPolicy(policy);
-  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
-  for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
-  let child, processIdentity, cdp;
+  let child, processIdentity, cdp, policy, executable;
   try {
+    executable = await copyDirectProductImage(source, root);
+    assert.equal(await fileDigest(executable), member.sha256);
+    const port = await freePort();
+    policy = windowsProcessIsElevated() ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
+    if (policy) installElevatedCdpPolicy(policy);
+    const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
+    for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
     child = spawn(executable, [], { cwd: root, env, stdio: "ignore" });
     await once(child, "spawn");
     processIdentity = allWindowsProcesses().find(

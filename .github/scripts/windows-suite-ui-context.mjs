@@ -29,23 +29,48 @@ export async function observeUntil(check, label, timeout = 30000) {
 }
 // WebView shutdown precedes the exact child's exit event during normal Close.
 // A disconnected renderer is never itself proof that the owned child exited.
-export async function observeNormalClose({ child, product, cdp, ui }, observe = observeUntil) {
+export async function observeNormalClose(
+  { child, product, cdp, ui, reviewWorkspaceClose, reportClose },
+  observe = observeUntil,
+) {
   let reviewed = false;
   let rendererClosed = false;
+  let reviewObserved = false;
+  const report = () =>
+    reportClose?.({
+      reviewObserved,
+      reviewSubmitted: reviewed,
+      rendererDisconnected: rendererClosed,
+      childExited: child.exitCode !== null,
+    });
+  report();
   await observe(async () => {
-    if (child.exitCode !== null) return true;
+    if (child.exitCode !== null) {
+      report();
+      return true;
+    }
     if (product !== "workspace" || reviewed || rendererClosed) return false;
     try {
       if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
-        await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
+        reviewObserved = true;
+        report();
+        if (reviewWorkspaceClose) await reviewWorkspaceClose();
+        else await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
         reviewed = true;
+        report();
       }
     } catch (error) {
       if (error?.message !== "CDP disconnected") throw error;
       rendererClosed = true;
+      report();
     }
     return child.exitCode !== null;
   }, "normal native close");
+}
+export async function requestNormalClose(context, closeWindow, observe = observeUntil) {
+  if (context.child.exitCode !== null) return;
+  await closeWindow();
+  await observeNormalClose(context, observe);
 }
 export async function createInstalledProductContext(product, { legacyAssets } = {}) {
   assert.equal(process.platform, "win32");
@@ -121,12 +146,11 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
         () => stopOwnedProcess(processIdentity, executable, child),
         dispose,
       );
-    const close = () =>
+    const close = ({ reviewWorkspaceClose } = {}) =>
       withOwnedCleanup(async () => {
-        if (child.exitCode === null) {
-          nativeWindowAction(owner, "Close");
-          await observeNormalClose({ child, product, cdp, ui });
-        }
+        await requestNormalClose({ child, product, cdp, ui, reviewWorkspaceClose }, () =>
+          nativeWindowAction(owner, "Close"),
+        );
       }, cleanup);
     const delivery = async (method) => {
       assert.ok(
@@ -163,6 +187,20 @@ export async function createInstalledProductContext(product, { legacyAssets } = 
       body: () => cdp.evaluate("document.body.innerText"),
     };
   } catch (error) {
+    // Retain the first launch boundary before releasing its pipes and policy.
+    // Fixed issue tokens are already filtered by nativeIssueCollector.
+    if (error && typeof error === "object" && Object.isExtensible(error)) {
+      error.launch = {
+        product,
+        identityCaptured: Boolean(processIdentity),
+        exitCode: Number.isInteger(child?.exitCode) ? child.exitCode : null,
+        signal:
+          typeof child?.signalCode === "string" && /^SIG[A-Z0-9]{1,16}$/.test(child.signalCode)
+            ? child.signalCode
+            : null,
+        nativeIssues: [...nativeIssues.codes],
+      };
+    }
     await cleanupOwnedFixture(
       { identity: processIdentity, child },
       () => stopOwnedProcess(processIdentity, executable, child),

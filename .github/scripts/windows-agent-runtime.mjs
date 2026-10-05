@@ -7,11 +7,31 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { workspaceRequestExpression } from "./windows-workspace-registration.mjs";
 import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
+import { observeUntil } from "./windows-suite-ui-context.mjs";
+import { reconnectAgent } from "./windows-agent-reconnect.mjs";
+
+export async function selectAgentRuntimeProject({ ui, cdp }, directory) {
+  await ui.click({ role: "button", name: "개요" });
+  await ui.waitForTarget({ role: "button", name: "목록 새로 고침" });
+  await ui.click({ role: "button", name: "목록 새로 고침" });
+  const selection = { role: "button", name: "프로젝트 선택", scope: { role: "group", name: directory } };
+  await ui.waitForTarget(selection);
+  await ui.click(selection);
+  // This text appears only after RegistryGate publishes the native description
+  // back to the renderer. A direct native select leaves its cached header stale.
+  await observeUntil(
+    () =>
+      cdp.evaluate(`Array.from(document.querySelectorAll('p')).some(p =>
+    p.textContent.includes('현재 선택한 작업 폴더:') && p.textContent.includes(${JSON.stringify(directory)}))`),
+    "agent project selection published to renderer",
+  );
+}
 
 export async function exerciseAgentRuntime({
   workspace,
   directory,
   closeWorkspace,
+  selectWorkspaceProject,
   restartWorkspace,
   agentIdentity,
   crashAgent,
@@ -51,14 +71,12 @@ export async function exerciseAgentRuntime({
   );
   stage("prepare-project");
   const preview = await registry("preview_windows", { root: directory });
-  const context = (
-    await registry("apply_registration", {
-      previewId: preview.previewId,
-      name: "Owned agent lifetime fixture",
-      action: "register",
-    })
-  ).context;
-  await registry("select_project", { context });
+  await registry("apply_registration", {
+    previewId: preview.previewId,
+    name: "Owned agent lifetime fixture",
+    action: "register",
+  });
+  await selectWorkspaceProject(current, directory);
   stage("prepare-service");
   const service = await runtime("create_service", {
     input: {
@@ -170,7 +188,7 @@ export async function exerciseAgentRuntime({
 
     stage("reopen-workspace");
     current = await restartWorkspace();
-    await registry("select_project", { context });
+    await selectWorkspaceProject(current, directory);
     const scheduledRuns = await runtime("list_runs", { jobId: scheduledJob.id, limit: 4 });
     assert.ok(scheduledRuns.length > 0, "scheduled execution must have durable history");
     await runtime("delete_job", { id: scheduledJob.id });
@@ -207,20 +225,11 @@ export async function exerciseAgentRuntime({
 
     stage("agent-crash");
     await crashAgent(agentIdentity());
-    stage("wait-agent-disconnect");
-    await until(async () => {
-      const status = await current.cdp.evaluate(
-        "window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_status')",
-      );
-      return status === "unavailable";
-    }, "disconnected native owner was not observed");
     stage("agent-reconnect");
-    assert.equal(
-      await current.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')", {
-        timeoutMs: 35000,
-      }),
-      "connected",
-    );
+    await reconnectAgent(current, "after-crash", (state) => {
+      evidence.agentRecovery = state;
+      report(evidence);
+    });
     Object.assign(
       evidence,
       await verifyRuntimeCrash(current.cdp, crashFixture, (step) => stage(`runtime-recovery-${step}`)),

@@ -7,6 +7,7 @@ import { packagedIdentity } from "./suite-user-flow-results.mjs";
 import { createInstalledProductContext } from "./windows-suite-ui-context.mjs";
 import { verifiedScope, nativeStatus, trayQuitReconnect, until } from "./windows-suite-agent-user-flows.mjs";
 import { run as runDelivery } from "./windows-suite-delivery-user-flows.mjs";
+import { runLegacyUpgradeUserFlow } from "./windows-suite-legacy-upgrade-ui.mjs";
 import { withOwnedCleanup } from "./owned-fixture-cleanup.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 
@@ -49,6 +50,7 @@ export async function executeBoundaryProbes(
     modes = ["tray", "delivery"],
     tray = runTrayBoundary,
     delivery = runDeliveryBoundary,
+    legacy = runLegacyUpgradeUserFlow,
     persist = persistBoundary,
   } = {},
 ) {
@@ -56,7 +58,7 @@ export async function executeBoundaryProbes(
   assert.equal(identity.promotionEvidence, false, "Promotion evidence prohibited");
   const receipts = [];
   for (const mode of modes) {
-    assert.ok(["tray", "delivery"].includes(mode), "Exact boundary diagnostic mode required");
+    assert.ok(["tray", "delivery", "legacy"].includes(mode), "Exact boundary diagnostic mode required");
     const receipt = {
       ...identity,
       schemaVersion: 1,
@@ -67,15 +69,16 @@ export async function executeBoundaryProbes(
       runnerRunId: process.env.GITHUB_RUN_ID,
     };
     try {
-      const result = await (mode === "tray" ? tray(identity) : delivery());
-      receipt.status =
-        mode !== "delivery" ||
-        (Array.isArray(result) &&
-          result.length === 1 &&
-          result[0].id === "CHECKPOINT-DIAGNOSTIC" &&
-          result[0].status === "PASS")
-          ? "PASS"
-          : "FAIL";
+      const result = await (mode === "tray" ? tray(identity) : mode === "legacy" ? legacy() : delivery());
+      const passed =
+        mode === "tray" ||
+        (mode === "legacy"
+          ? result?.id === "DELIVERY-01" && result.status === "PASS"
+          : Array.isArray(result) &&
+            result.length === 1 &&
+            result[0].id === "CHECKPOINT-DIAGNOSTIC" &&
+            result[0].status === "PASS");
+      receipt.status = passed ? "PASS" : "FAIL";
       receipt.observation = result;
     } catch (error) {
       receipt.status = "FAIL";
@@ -92,7 +95,7 @@ export async function executeBoundaryProbes(
   return receipts;
 }
 export async function runBoundaryDiagnostic(mode = "both") {
-  assert.ok(["both", "tray", "delivery"].includes(mode), "Exact boundary diagnostic mode required");
+  assert.ok(["both", "tray", "delivery", "legacy"].includes(mode), "Exact boundary diagnostic mode required");
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");

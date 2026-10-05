@@ -10,6 +10,8 @@ import {
   historicalHealthUnavailable,
 } from "./windows-suite-native-protocol.mjs";
 import { createUiDriver } from "./suite-user-flow-driver.mjs";
+import { requestNormalClose } from "./windows-suite-ui-context.mjs";
+import { captureWindowOwner, nativeWindowAction } from "./windows-user-flow-window.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
 import { exerciseAgentCollectors } from "./windows-agent-collectors.mjs";
 import { exerciseAgentWebhooks } from "./windows-agent-webhooks.mjs";
@@ -17,7 +19,7 @@ import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconn
 import { observeWindowsCdpWaits } from "./windows-cdp-waits.mjs";
 import { observeWindowsCdpStacks } from "./windows-cdp-stacks.mjs";
 import { observeWindowsCdpHost, focusWindowsCdpHost } from "./windows-cdp-host.mjs";
-import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
+import { exerciseAgentRuntime, selectAgentRuntimeProject } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
 import { requireHostedNetworkFixture } from "./fixture-network-safety.mjs";
@@ -420,7 +422,70 @@ try {
       workspace: apps.workspace,
       directory: fixture,
       agentIdentity,
+      selectWorkspaceProject: async (item, directory) => {
+        const owner = captureWindowOwner(item.identity, path.dirname(root));
+        const ui = createUiDriver({
+          cdp: item.cdp,
+          evidenceRoot: "product-foundation-evidence",
+          closeOwnedWindow: () => nativeWindowAction(owner, "Close"),
+        });
+        await selectAgentRuntimeProject({ ui, cdp: item.cdp }, directory);
+      },
       closeWorkspace: async (item) => {
+        const owner = captureWindowOwner(item.identity, path.dirname(root));
+        const closeWindow = () => nativeWindowAction(owner, "Close");
+        const ui = createUiDriver({
+          cdp: item.cdp,
+          evidenceRoot: "product-foundation-evidence",
+          closeOwnedWindow: closeWindow,
+        });
+        try {
+          await requestNormalClose(
+            {
+              ...item,
+              ui,
+              reportClose: (state) => {
+                evidence.workspaceClose = state;
+              },
+            },
+            closeWindow,
+          );
+        } catch (error) {
+          // Observe once before cleanup can alter the failed native close.
+          evidence.workspaceClose ??= {};
+          try {
+            evidence.workspaceClose.sameOwnedProcess = sameProcess(item.identity);
+          } catch {
+            evidence.workspaceClose.processObservationUnavailable = true;
+          }
+          try {
+            evidence.workspaceClose.renderer = await item.cdp.evaluate(`(() => {
+              const review=document.querySelector('[role="dialog"][aria-label="Workspace 종료 검토"]');
+              const buttons=Array.from(review?.querySelectorAll('button')??[]);
+              const alert=review?.querySelector('[role="alert"]');
+              return {reviewPresent:!!review,reviewErrorPresent:!!alert,
+                cleanQuitPresent:buttons.some(button=>button.textContent.trim()==='종료'),
+                cleanQuitDisabled:buttons.find(button=>button.textContent.trim()==='종료')?.disabled??null,
+                fileSaveQuitPresent:buttons.some(button=>button.textContent.trim()==='파일 저장 후 종료'),
+                nonFileEditsBlocked:!!alert?.textContent.includes('내용을 편집 화면에서 정리해 주세요'),
+                newEditsBlocked:!!alert?.textContent.includes('종료 준비 중 새 편집이 발생했습니다'),
+                shellPresent:!!document.querySelector('nav[aria-label="제품 화면"]')};
+            })()`);
+          } catch {
+            evidence.workspaceClose.rendererUnavailable = true;
+          }
+          try {
+            evidence.workspaceClose.screenshot = await ui.screenshot("native-workspace-close-first-failure");
+          } catch {
+            evidence.workspaceClose.screenshotUnavailable = true;
+          }
+          try {
+            evidence.workspaceClose.nativeObserver = await item.inspectCdpHost();
+          } catch {
+            evidence.workspaceClose.nativeObserverUnavailable = true;
+          }
+          throw error;
+        }
         const stopped = await stopOwnedProcess(item.identity, item.executable, item.child);
         assert.equal(stopped.forced, false, "Workspace close must drain and exit instead of hiding");
         assert.equal(sameProcess(item.identity), false, "Workspace must finish ordinary owner shutdown");

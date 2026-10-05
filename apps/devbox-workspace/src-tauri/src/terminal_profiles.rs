@@ -90,9 +90,16 @@ fn decode(bytes: Option<&[u8]>) -> Result<Envelope> {
 fn load(root: &MetadataRoot) -> Result<(Envelope, Option<Vec<u8>>, String)> {
     let bytes = root.read(FILE)?;
     let envelope = decode(bytes.as_deref())?;
-    let revision =
-        crate::definitions::digest(bytes.as_deref().unwrap_or(b"missing-terminal-profiles"));
+    let revision = profile_revision(&envelope.content)?;
     Ok((envelope, bytes, revision))
+}
+
+fn profile_revision(content: &ProfileStore) -> Result<String> {
+    // Cwd/recent-path/settings writes share the file but do not change the
+    // reviewed profile inventory. Keep its optimistic revision scoped to it.
+    Ok(crate::definitions::digest(
+        &serde_json::to_vec(content).map_err(|_| "terminal_profiles_invalid")?,
+    ))
 }
 
 pub(crate) fn preferences(root: &MetadataRoot, method: &str, args: Value) -> Result<Value> {
@@ -207,11 +214,12 @@ pub(crate) fn dispatch(root: &MetadataRoot, method: &str, args: Value) -> Result
         _ => return Err("terminal_method_invalid"),
     };
     let bytes = serde_json::to_vec(&envelope).map_err(|_| "terminal_profiles_invalid")?;
+    let revision = profile_revision(&envelope.content)?;
     if root.read(FILE)? != before {
         return Err("terminal_profiles_changed");
     }
     root.write(FILE, &bytes)?;
-    Ok(json!({"revision":crate::definitions::digest(&bytes),"profile":profile}))
+    Ok(json!({"revision":revision,"profile":profile}))
 }
 
 #[derive(Deserialize, Serialize)]
@@ -304,6 +312,69 @@ pub(crate) fn layout(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_profile() -> Value {
+        json!({"id":"owned-profile","name":"Owned profile","tabs":[{"id":"tab","title":"Terminal","layout":"grid","paneKeys":["pane"],"sizing":{"columns":[1.0],"rows":[1.0]}}],"panes":[{"key":"pane","distro":"OwnedDistro","cwd":"/tmp/owned","multiplexer":"native"}],"activeTabId":"tab","activePaneKey":"pane"})
+    }
+    #[test]
+    fn preferences_do_not_invalidate_reviewed_profile_save_or_delete() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = MetadataRoot::open(directory.path()).unwrap();
+        let listed = dispatch(&root, "list_workspace_profiles", json!({})).unwrap();
+        preferences(
+            &root,
+            "set_terminal_preference",
+            json!({"key":"wsl-desktop:cwd-value","expected":null,"value":"/tmp/owned"}),
+        )
+        .unwrap();
+        let saved = dispatch(
+            &root,
+            "save_workspace_profile",
+            json!({"expectedRevision":listed["revision"],"profile":test_profile()}),
+        )
+        .unwrap();
+        assert_eq!(
+            dispatch(&root, "list_workspace_profiles", json!({})).unwrap()["revision"],
+            saved["revision"]
+        );
+        preferences(
+            &root,
+            "set_terminal_preference",
+            json!({"key":"wsl-desktop:font-size","expected":null,"value":"16"}),
+        )
+        .unwrap();
+        dispatch(
+            &root,
+            "delete_workspace_profile",
+            json!({"expectedRevision":saved["revision"],"id":"owned-profile"}),
+        )
+        .unwrap();
+        assert_eq!(
+            preferences(&root, "terminal_preferences", json!({})).unwrap(),
+            json!({"wsl-desktop:cwd-value":"/tmp/owned","wsl-desktop:font-size":"16"})
+        );
+    }
+    #[test]
+    fn profile_mutation_still_rejects_another_companions_stale_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = MetadataRoot::open(directory.path()).unwrap();
+        let listed = dispatch(&root, "list_workspace_profiles", json!({})).unwrap();
+        dispatch(
+            &root,
+            "save_workspace_profile",
+            json!({"expectedRevision":listed["revision"],"profile":test_profile()}),
+        )
+        .unwrap();
+        let before = root.read(FILE).unwrap();
+        assert_eq!(
+            dispatch(
+                &root,
+                "delete_workspace_profile",
+                json!({"expectedRevision":listed["revision"],"id":"owned-profile"})
+            ),
+            Err("terminal_profiles_changed")
+        );
+        assert_eq!(root.read(FILE).unwrap(), before);
+    }
     #[test]
     fn a_stale_companion_cannot_replace_imported_preferences() {
         let directory = tempfile::tempdir().unwrap();

@@ -7,7 +7,7 @@ on:
   # `main` requires this workflow's three compiler gates through GitHub branch
   # protection. Running the same change again after a reviewed PR is merged
   # only duplicates the verified work. Manual runs remain available for an
-  # explicit repository-wide audit.
+  # explicit verification; matching compiler inputs reuse successful evidence.
   workflow_dispatch:
   # Scoped PR checks are backed by one weekly repository-wide audit so lockfile
   # and platform interactions are still exercised together between releases.
@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 # Draft implementation/fix pushes do not start compiler suites. Ready-for-review
-# runs final CI; manual and scheduled audits retain their full scope. Cancellation
+# runs final CI. Manual runs retain full coverage; weekly audits execute it fresh. Cancellation
 # must stop superseded runs while scope-detection failures still fail closed.
 jobs:
   dependencies:
@@ -115,6 +115,9 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     name: Detect changed scope
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     outputs:
       frontend_scope: ${{ steps.scope.outputs.frontend_scope }}
       frontend_packages: ${{ steps.scope.outputs.frontend_packages }}
@@ -124,16 +127,27 @@ jobs:
       dependency_scope: ${{ steps.scope.outputs.dependency_scope }}
       changed_count: ${{ steps.scope.outputs.changed_count }}
       scope_reason: ${{ steps.scope.outputs.scope_reason }}
+      frontend_reuse: ${{ steps.reuse.outputs.frontend_reuse }}
+      rust_reuse: ${{ steps.reuse.outputs.rust_reuse }}
+      rust_windows_reuse: ${{ steps.reuse.outputs.rust_windows_reuse }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Prepare compiler evidence parser
+        run: |
+          # Hosted Python selections vary. Keep this pinned parser local to the
+          # disposable runner instead of depending on an implicit global module.
+          python3 -c 'import yaml' || python3 -m pip install --disable-pip-version-check --target "$RUNNER_TEMP/devbox-ci-reuse-python" 'PyYAML==6.0.3'
+          echo "PYTHONPATH=$RUNNER_TEMP/devbox-ci-reuse-python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
 
       - name: Test scope resolver and runners
         run: |
           python3 .github/scripts/test-verification-resources.py
           python3 .github/scripts/test-ci-scope.py
           python3 .github/scripts/test-ci-scope-runners.py
+          python3 .github/scripts/ci-reuse-test.py
 
       - id: scope
         name: Detect affected packages
@@ -142,12 +156,21 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ -z "$BASE_SHA" ]]; then
-            # An explicit manual run is a full repository audit. Passing the
-            # same SHA yields an empty diff, which ci-scope maps fail-safe to
-            # both full scopes.
+            # Manual and scheduled runs request full coverage. Only manual
+            # runs may reuse actual successful checks of unchanged inputs.
             BASE_SHA="$HEAD_SHA"
           fi
           bash .github/scripts/ci-scope.sh "$BASE_SHA" "$HEAD_SHA"
+
+      - id: reuse
+        name: Resolve successful compiler evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_SCOPE: ${{ steps.scope.outputs.frontend_scope }}
+          FRONTEND_PACKAGES: ${{ steps.scope.outputs.frontend_packages }}
+          RUST_SCOPE: ${{ steps.scope.outputs.rust_scope }}
+          RUST_PACKAGES: ${{ steps.scope.outputs.rust_packages }}
+        run: python3 .github/scripts/ci-reuse.py
 
       - name: Summarize affected scope
         env:
@@ -188,6 +211,10 @@ jobs:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
+
+      - name: Report reused compiler evidence
+        if: ${{ needs.scope.outputs.frontend_reuse == 'true' }}
+        run: echo "Compiler inputs and scope are covered by prior actual successful checks. Source run/job/checkout evidence is recorded in Detect changed scope."
 
       - uses: actions/checkout@v7
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
@@ -235,28 +262,28 @@ jobs:
         run: node --test --test-concurrency=1 .github/scripts/windows-workspace-registration.test.mjs .github/scripts/product-confirmation-browser.test.mjs .github/scripts/windows-workspace-files-layout.test.mjs .github/scripts/windows-workspace-tasks-layout.test.mjs
 
       - name: Build frontends
-        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' && needs.scope.outputs.frontend_reuse != 'true' }}
         run: bash .github/scripts/run-frontend-scope.sh build "$FRONTEND_SCOPE" "$FRONTEND_PACKAGES"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
           FRONTEND_PACKAGES: ${{ needs.scope.outputs.frontend_packages }}
 
       - name: Check frontend bundle budgets
-        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' && needs.scope.outputs.frontend_reuse != 'true' }}
         run: node .github/scripts/check-frontend-bundles.mjs "$FRONTEND_SCOPE" "$FRONTEND_APPS"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
           FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}
 
       - name: Test frontends
-        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' && needs.scope.outputs.frontend_reuse != 'true' }}
         run: bash .github/scripts/run-frontend-scope.sh test "$FRONTEND_SCOPE" "$FRONTEND_PACKAGES"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
           FRONTEND_PACKAGES: ${{ needs.scope.outputs.frontend_packages }}
 
       - name: Check TypeScript packages not covered by build
-        if: ${{ needs.scope.outputs.frontend_scope != 'none' && hashFiles('apps/*/tsconfig.json', 'packages/*/tsconfig.json') != '' }}
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' && hashFiles('apps/*/tsconfig.json', 'packages/*/tsconfig.json') != '' && needs.scope.outputs.frontend_reuse != 'true' }}
         run: bash .github/scripts/run-frontend-scope.sh typecheck "$FRONTEND_SCOPE" "$FRONTEND_PACKAGES"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
@@ -273,22 +300,26 @@ jobs:
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
+      - name: Report reused compiler evidence
+        if: ${{ needs.scope.outputs.rust_reuse == 'true' }}
+        run: echo "Compiler inputs and scope are covered by prior actual successful checks. Source run/job/checkout evidence is recorded in Detect changed scope."
+
       - uses: actions/checkout@v7
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
 
       - uses: dtolnay/rust-toolchain@1.98.1
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         with:
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         with:
           shared-key: devbox-linux
 
       # 계획 단계에는 앱/크레이트가 없어서 Cargo 단계는 전부 건너뛴다.
       - name: Install Linux system libs
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         timeout-minutes: 15
         run: |
           if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
@@ -308,38 +339,40 @@ jobs:
             libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Check
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         run: bash .github/scripts/run-rust-scope.sh check "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Clippy
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         run: bash .github/scripts/run-rust-scope.sh clippy "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Format
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         run: bash .github/scripts/run-rust-scope.sh fmt "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Test
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_reuse != 'true' }}
         run: bash .github/scripts/run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - uses: actions/setup-node@v7
+        if: ${{ needs.scope.outputs.rust_reuse != 'true' }}
         with:
           node-version-file: .nvmrc
 
       - name: Check generated TypeScript bindings
+        if: ${{ needs.scope.outputs.rust_reuse != 'true' }}
         run: |
           corepack enable pnpm
           pnpm install --frozen-lockfile
@@ -359,13 +392,17 @@ jobs:
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
+      - name: Report reused compiler evidence
+        if: ${{ needs.scope.outputs.rust_windows_reuse == 'true' }}
+        run: echo "Compiler inputs and scope are covered by prior actual successful checks. Source run/job/checkout evidence is recorded in Detect changed scope."
+
       - uses: actions/checkout@v7
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}
 
       # devbox는 Windows 타깃 Tauri 앱 모노레포지만 위 rust 잡은 ubuntu에서만
       # 돈다. #[cfg(target_os = "windows")] 코드는 여기서만 실제로 컴파일된다.
       - uses: dtolnay/rust-toolchain@1.98.1
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}
         with:
           components: clippy
 
@@ -374,7 +411,7 @@ jobs:
 
       # 캐시가 없으면 Tauri 의존성을 매번 새로 빌드해 20분 이상 걸린다.
       - uses: Swatinem/rust-cache@v2
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}
         with:
           shared-key: devbox-windows-unit-tests-v1
           # The old immutable cache contains check/Clippy metadata only. A new
@@ -385,7 +422,7 @@ jobs:
           cache-on-failure: true
 
       - name: Check
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}
         shell: bash
         run: bash .github/scripts/run-rust-scope.sh check "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
@@ -393,7 +430,7 @@ jobs:
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Clippy
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}
         shell: bash
         run: bash .github/scripts/run-rust-scope.sh clippy "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
@@ -403,7 +440,7 @@ jobs:
       # fmt 검사는 위 rust(ubuntu) 잡이 이미 수행하므로 여기서는 생략한다.
 
       - name: Test
-        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
+        if: ${{ needs.scope.outputs.rust_scope != 'none' && needs.scope.outputs.rust_windows_reuse != 'true' }}
         shell: bash
         run: bash .github/scripts/run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"
         env:

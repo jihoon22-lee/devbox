@@ -2,6 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconnect.mjs";
 
+test("verified crash recovery accepts a replacement already started by background reads", async () => {
+  const calls = [],
+    reports = [];
+  await reconnectAgent(
+    {
+      product: "workspace",
+      cdp: {
+        evaluate: async (expression) => {
+          calls.push(expression);
+          return "connected";
+        },
+      },
+    },
+    "after-crash",
+    (state) => reports.push(state),
+  );
+  assert.deepEqual(calls, ["window.__TAURI_INTERNALS__.invoke('plugin:product-shell|agent_reconnect')"]);
+  assert.equal(reports.at(-1).stage, "passed");
+});
+
 test("the control skips only the startup observer and records that absence explicitly", async () => {
   let probes = 0;
   const observation = {

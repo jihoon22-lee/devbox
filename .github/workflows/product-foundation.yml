@@ -113,23 +113,31 @@ on:
         description: Diagnose Knowledge component calls in two isolated copies of retained candidate bytes (never promotion evidence)
         type: boolean
         default: false
+      suite_knowledge_lifecycle:
+        description: In retained Knowledge mode, diagnose the original portable lifecycle and startup boundary
+        type: boolean
+        default: false
       suite_diagnostic_installer_ui:
         description: Diagnose retained candidate installation and installed user journeys only (never promotion evidence)
         type: boolean
         default: false
       suite_diagnostic_boundaries_only:
-        description: Diagnose only Agent tray and updated checkpoint reopen using retained bytes; never promotion evidence
+        description: Diagnose a selected Agent tray, checkpoint reopen, legacy upgrade, or native migration boundary using retained bytes; never promotion evidence
         type: boolean
         default: false
       suite_boundary_scope:
         description: Select only the unresolved retained boundary; requires boundaries-only diagnosis
         type: choice
-        options: [both, tray, delivery]
+        options: [both, tray, delivery, legacy, migration]
         default: both
       suite_diagnostic_apps_only:
         description: With retained installer diagnosis, run only installed app journeys without update or migration cases
         type: boolean
         default: false
+      suite_app_journeys:
+        description: Optional retained journeys (workspace,dependencies,api,knowledge,handoff,layout); dependencies excludes other Workspace checks
+        type: string
+        default: ''
       suite_remaining_only:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
@@ -165,12 +173,12 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}-${{ inputs.suite_diagnostic_apps_only && 'installed-apps' || inputs.suite_diagnostic_installer_ui && 'installer-ui' || inputs.suite_diagnostic_api_workflow && 'api-workflow' || inputs.suite_diagnostic_cross_product && 'cross-product' || inputs.suite_diagnostic_knowledge && 'knowledge-components' || 'default' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}-${{ inputs.suite_knowledge_lifecycle && 'knowledge-lifecycle' || inputs.suite_diagnostic_boundaries_only && format('boundary-{0}', inputs.suite_boundary_scope || 'both') || inputs.suite_diagnostic_apps_only && 'installed-apps' || inputs.suite_diagnostic_installer_ui && 'installer-ui' || inputs.suite_diagnostic_api_workflow && 'api-workflow' || inputs.suite_diagnostic_cross_product && 'cross-product' || inputs.suite_diagnostic_knowledge && 'knowledge-components' || 'default' }}
   cancel-in-progress: true
 
 jobs:
   delivery-diagnostic:
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && (github.event_name == 'workflow_dispatch' && inputs.delivery_diagnostic_run != '') }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && (github.event_name == 'workflow_dispatch' && inputs.delivery_diagnostic_run != '') }}
     runs-on: windows-2025
     timeout-minutes: ${{ inputs.delivery_rebuild_control_center && 60 || 45 }}
     env:
@@ -255,7 +263,7 @@ jobs:
           retention-days: 7
 
   suite-diagnostic:
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && (github.event_name == 'workflow_dispatch' && (inputs.suite_diagnostic_run != '' || inputs.suite_diagnostic_knowledge) && !inputs.suite_diagnostic_installer_ui) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.suite_knowledge_lifecycle || (!inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && (inputs.suite_diagnostic_run != '' || inputs.suite_diagnostic_knowledge) && !inputs.suite_diagnostic_installer_ui)) }}
     name: Suite workflow with retained executables
     runs-on: windows-2025
     timeout-minutes: 20
@@ -276,6 +284,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:SOURCE_RUN -notmatch '^\d+$') { throw 'Invalid suite source run' }
+          $lifecycle = '${{ inputs.suite_knowledge_lifecycle }}' -eq 'true'
+          if ($lifecycle -and ('${{ inputs.suite_diagnostic_knowledge }}' -ne 'true' -or '${{ inputs.suite_full_workflow }}' -eq 'true' -or '${{ inputs.suite_diagnostic_installer_ui }}' -eq 'true' -or '${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true' -or '${{ inputs.suite_diagnostic_apps_only }}' -eq 'true')) { throw 'Lifecycle diagnosis requires only retained Knowledge mode' }
           $modes = @('${{ inputs.suite_diagnostic_api_workflow }}', '${{ inputs.suite_diagnostic_cross_product }}', '${{ inputs.suite_diagnostic_installer_ui }}', '${{ inputs.suite_diagnostic_knowledge }}') | Where-Object { $_ -eq 'true' }
           if (@($modes).Count -gt 1) { throw 'Select at most one retained candidate diagnostic mode' }
           $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
@@ -295,9 +305,9 @@ jobs:
               "DEVBOX_FIXTURE_PROFILE=release" >> $env:GITHUB_ENV
             }
             New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
-            $purpose = if ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') { 'knowledge-components-diagnostic-only' } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-only' } else { 'native-api-workflow-diagnostic-only' }
-            $receipt = if ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') { 'knowledge-components-diagnostic-source.json' } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-source.json' } else { 'api-diagnostic-source.json' }
-            @{ schemaVersion = 1; purpose = $purpose; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; sequenceReplay = ('${{ inputs.suite_full_workflow }}' -eq 'true' -and '${{ inputs.suite_diagnostic_knowledge }}' -eq 'true'); diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content "product-foundation-evidence/$receipt" -Encoding utf8
+            $purpose = if ($lifecycle) { 'knowledge-lifecycle-diagnostic-only' } elseif ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') { 'knowledge-components-diagnostic-only' } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-only' } else { 'native-api-workflow-diagnostic-only' }
+            $receipt = if ($lifecycle) { 'knowledge-lifecycle-diagnostic-source.json' } elseif ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') { 'knowledge-components-diagnostic-source.json' } elseif ('${{ inputs.suite_diagnostic_cross_product }}' -eq 'true') { 'cross-product-diagnostic-source.json' } else { 'api-diagnostic-source.json' }
+            @{ schemaVersion = 1; purpose = $purpose; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; lifecycleDiagnostic = $lifecycle; sequenceReplay = ('${{ inputs.suite_full_workflow }}' -eq 'true' -and '${{ inputs.suite_diagnostic_knowledge }}' -eq 'true'); diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content "product-foundation-evidence/$receipt" -Encoding utf8
             exit 0
           }
           if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected suite source workflow' }
@@ -340,7 +350,7 @@ jobs:
         shell: pwsh
         run: .github/scripts/windows-product-performance.ps1 -Apps @('workbench','devbox-manager','run-manager','wsl-desktop')
       - name: Prepare owned WSL1 filesystem for the original product sequence
-        if: ${{ inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        if: ${{ inputs.suite_diagnostic_knowledge && (inputs.suite_full_workflow || inputs.suite_knowledge_lifecycle) }}
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1
       - name: Provision Git and private LSP for the original product sequence
@@ -353,7 +363,9 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ inputs.suite_diagnostic_knowledge }}' -eq 'true') {
-            if ('${{ inputs.suite_full_workflow }}' -eq 'true') {
+            if ('${{ inputs.suite_knowledge_lifecycle }}' -eq 'true') {
+              node .github/scripts/windows-knowledge-lifecycle.mjs --retained-diagnostic
+            } elseif ('${{ inputs.suite_full_workflow }}' -eq 'true') {
               node .github/scripts/windows-product-foundation.mjs --product-sequence-diagnostic
             } else {
               node .github/scripts/windows-product-foundation.mjs --knowledge-diagnostic
@@ -367,14 +379,14 @@ jobs:
           }
           exit $LASTEXITCODE
       - name: Remove only the owned sequence WSL1 fixture
-        if: ${{ always() && inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow }}
+        if: ${{ always() && inputs.suite_diagnostic_knowledge && (inputs.suite_full_workflow || inputs.suite_knowledge_lifecycle) }}
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
       - name: Preserve remaining suite evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.suite_diagnostic_knowledge && format('native-knowledge-components-diagnostic-{0}', github.run_id) || inputs.suite_diagnostic_api_workflow && format('native-api-workflow-diagnostic-{0}', github.run_id) || inputs.suite_diagnostic_cross_product && format('native-cross-product-diagnostic-{0}', github.run_id) || format('suite-remaining-{0}', github.run_id) }}
+          name: ${{ inputs.suite_knowledge_lifecycle && format('native-knowledge-lifecycle-diagnostic-{0}', github.run_id) || inputs.suite_diagnostic_knowledge && format('native-knowledge-components-diagnostic-{0}', github.run_id) || inputs.suite_diagnostic_api_workflow && format('native-api-workflow-diagnostic-{0}', github.run_id) || inputs.suite_diagnostic_cross_product && format('native-cross-product-diagnostic-{0}', github.run_id) || format('suite-remaining-{0}', github.run_id) }}
           path: product-foundation-evidence
           retention-days: 7
           if-no-files-found: error
@@ -386,10 +398,10 @@ jobs:
     env:
       DEVBOX_USER_FLOW_ASSETS: candidate/assets
       DEVBOX_WITHDRAWN_ASSETS: candidate/withdrawn/assets
-    if: ${{ github.event_name == 'workflow_dispatch' && ((inputs.suite_diagnostic_run != '' && inputs.suite_diagnostic_installer_ui) || inputs.suite_diagnostic_apps_only || inputs.suite_diagnostic_boundaries_only) }}
+    if: ${{ !inputs.suite_knowledge_lifecycle && github.event_name == 'workflow_dispatch' && ((inputs.suite_diagnostic_run != '' && inputs.suite_diagnostic_installer_ui) || inputs.suite_diagnostic_apps_only || inputs.suite_diagnostic_boundaries_only) }}
     name: Retained installer and installed UI diagnosis (unpromotable)
     runs-on: windows-2025
-    timeout-minutes: ${{ inputs.suite_diagnostic_boundaries_only && 20 || 60 }}
+    timeout-minutes: ${{ inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration' && 40 || inputs.suite_diagnostic_boundaries_only && 20 || 60 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -422,8 +434,12 @@ jobs:
           python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source "$($record.head_sha)" --run-id "$env:SOURCE_RUN"
           if ($LASTEXITCODE -ne 0) { throw 'Retained candidate source/hash verification failed' }
           New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
+          $artifactDigests = [ordered]@{}
+          foreach ($asset in Get-ChildItem -LiteralPath candidate/assets -File) {
+            $artifactDigests[$asset.Name] = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
           $receipt = Join-Path $env:GITHUB_WORKSPACE 'product-foundation-evidence/installer-ui-diagnostic-source.json'
-          @{ schemaVersion = 1; purpose = 'retained-installer-ui-diagnostic-only'; appsOnly = $appsOnly; boundariesOnly = $boundariesOnly; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding utf8
+          @{ schemaVersion = 1; purpose = 'retained-installer-ui-diagnostic-only'; appsOnly = $appsOnly; boundariesOnly = $boundariesOnly; boundaryScope = '${{ inputs.suite_boundary_scope || 'both' }}'; artifactDigests = $artifactDigests; runnerSourceSha = $env:GITHUB_SHA; runnerRunId = $env:GITHUB_RUN_ID; payloadSourceSha = $record.head_sha; payloadRunId = $env:SOURCE_RUN; repository = $env:GITHUB_REPOSITORY; sourceWorkflow = $record.path; assemblySucceeded = $true; diagnosticOnly = $true; promotionEvidence = $false } | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding utf8
           "DEVBOX_USER_FLOW_DIAGNOSTIC=true" >> $env:GITHUB_ENV
           "DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
           "DEVBOX_USER_FLOW_DIAGNOSTIC_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
@@ -465,14 +481,25 @@ jobs:
           .github/scripts/windows-workspace-wsl-git.ps1
           "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
       - name: Check owned cleanup helpers
+        if: ${{ !(inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration') }}
+        env:
+          SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}
         shell: powershell
         run: |
+          $selectedApps = @($env:SELECTED_APP_JOURNEYS -split ',' | ForEach-Object { $_.Trim() })
+          if ('${{ inputs.suite_diagnostic_boundaries_only }}' -ne 'true' -and (-not $env:SELECTED_APP_JOURNEYS -or 'dependencies' -in $selectedApps -or 'workspace' -in $selectedApps)) {
+            .github/scripts/test-windows-dependency-network-commands.ps1
+          }
+          if ('${{ inputs.suite_diagnostic_boundaries_only }}' -ne 'true' -and (-not $env:SELECTED_APP_JOURNEYS -or 'handoff' -in $selectedApps)) {
+            .github/scripts/windows-suite-receiver-access.test.ps1
+          }
           .github/scripts/windows-user-flow-cleanup-observation.test.ps1
           .github/scripts/windows-user-flow-cleanup-uninstall.test.ps1
           .github/scripts/windows-owned-installer-capture.test.ps1
           .github/scripts/windows-suite-shortcut-launch.test.ps1
           .github/scripts/windows-installer-ui.test.ps1 -NativePickerRoots
       - name: Install interactively and complete visible activation
+        if: ${{ !(inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration') }}
         id: retained_install
         shell: pwsh
         run: |
@@ -480,12 +507,28 @@ jobs:
           node .github/scripts/windows-suite-user-flow.mjs
       - name: Exercise actual work in the same installed namespace
         if: ${{ success() || (failure() && steps.retained_install.outcome == 'failure') }}
+        env:
+          SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}
         shell: pwsh
         run: |
+          if ('${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true' -and '${{ inputs.suite_boundary_scope }}' -eq 'migration') {
+            .github/scripts/windows-suite-delivery.ps1 -Staging candidate/delivery -Bootstrap candidate/delivery/devbox-suite-bootstrap.exe
+            exit $LASTEXITCODE
+          }
           node .github/scripts/verify-retained-committed-install.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $appsOnly = '${{ inputs.suite_diagnostic_apps_only }}' -eq 'true'
+          $appScripts = @{workspace='windows-workspace-user-flows.mjs';dependencies='windows-workspace-user-flows.mjs';api='windows-api-user-flows.mjs';knowledge='windows-knowledge-user-flows.mjs';handoff='windows-suite-integration.mjs';layout='windows-suite-layout.mjs'}
+          $selectedApps = @()
+          $selectedAppScripts = @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')
+          if ($env:SELECTED_APP_JOURNEYS) {
+            if (-not $appsOnly) { throw 'Selected app journeys require apps-only diagnosis' }
+            $selectedApps = @($env:SELECTED_APP_JOURNEYS.Split(',') | ForEach-Object { $_.Trim() })
+            if ($selectedApps.Count -gt 5 -or @($selectedApps | Select-Object -Unique).Count -ne $selectedApps.Count -or @($selectedApps | Where-Object { -not $appScripts.ContainsKey($_) }).Count -ne 0) { throw 'Invalid retained app journey selection' }
+            if ('workspace' -in $selectedApps -and 'dependencies' -in $selectedApps) { throw 'Workspace and dependency-only journeys are mutually exclusive' }
+            $selectedAppScripts = @($selectedApps | ForEach-Object { $appScripts[$_] })
+          }
           if ('${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true') {
             node .github/scripts/windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'
             exit $LASTEXITCODE
@@ -497,6 +540,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { $failed += 'owned-native-file-picker' }
           foreach ($script in @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs','windows-suite-delivery-user-flows.mjs','windows-suite-legacy-upgrade-ui.mjs','windows-suite-agent-user-flows.mjs')) {
             if ($appsOnly -and $script -notin @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')) { continue }
+            if ($appsOnly -and $script -notin $selectedAppScripts) { continue }
             if ($script -eq 'windows-suite-delivery-user-flows.mjs') {
               Write-Host "Installed journey start: withdrawn-same-version-update"
               node .github/scripts/windows-suite-legacy-upgrade-ui.mjs --withdrawn
@@ -505,14 +549,18 @@ jobs:
               if ($withdrawnExitCode -ne 0) { $failed += 'withdrawn-same-version-update' }
             }
             Write-Host "Installed journey start: $script"
-            node ".github/scripts/$script"
+            if ($appsOnly -and 'dependencies' -in $selectedApps -and $script -eq 'windows-workspace-user-flows.mjs') {
+              node ".github/scripts/$script" --dependencies-diagnostic
+            } else {
+              node ".github/scripts/$script"
+            }
             $scriptExitCode = $LASTEXITCODE
             Write-Host "Installed journey end: $script exit=$scriptExitCode"
             if ($scriptExitCode -ne 0) { $failed += $script }
           }
           if ($failed.Count -gt 0) { throw "Installed user journeys failed: $($failed -join ', ')" }
       - name: Remove only the owned interactive installation and data
-        if: ${{ always() }}
+        if: ${{ always() && !(inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration') }}
         shell: pwsh
         run: .github/scripts/windows-user-flow-install.ps1 -Cleanup
       - name: Remove only the owned WSL1 fixture
@@ -540,6 +588,7 @@ jobs:
             $evidence | Add-Member -Force NoteProperty runnerRunId $identity.runnerRunId
             $evidence | Add-Member -Force NoteProperty payloadSourceSha $identity.payloadSourceSha
             $evidence | Add-Member -Force NoteProperty payloadRunId $identity.payloadRunId
+            $evidence | Add-Member -Force NoteProperty artifactDigests $identity.artifactDigests
             $evidence | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $file.FullName -Encoding utf8
           }
       - uses: actions/upload-artifact@v7
@@ -551,7 +600,7 @@ jobs:
           retention-days: 14
 
   terminal-diagnostic:
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && (github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '') }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && (github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '') }}
     name: Retained Workspace artifact companion diagnostic
     runs-on: windows-2025
     timeout-minutes: 12
@@ -596,7 +645,7 @@ jobs:
           if-no-files-found: error
 
   workspace-wsl-helper:
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -644,7 +693,7 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
     name: Hidden products (Windows native)
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
@@ -915,7 +964,7 @@ jobs:
 
   windows-wsl2:
     needs: windows
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && (always() && ((needs.windows.result == 'success' && needs.windows.outputs.workspace_fixture_exported == 'success') || (github.event_name == 'workflow_dispatch' && inputs.wsl2_diagnostic_run != ''))) }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && (always() && ((needs.windows.result == 'success' && needs.windows.outputs.workspace_fixture_exported == 'success') || (github.event_name == 'workflow_dispatch' && inputs.wsl2_diagnostic_run != ''))) }}
     name: Workspace WSL2 and containers (isolated hosted VM)
     runs-on: windows-2025
     timeout-minutes: 20
@@ -992,7 +1041,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && (!inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == ''))) }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && (!inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == ''))) }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -1042,7 +1091,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && (github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
+    if: ${{ !inputs.suite_diagnostic_boundaries_only && !inputs.suite_diagnostic_apps_only && !inputs.suite_diagnostic_knowledge && !inputs.suite_knowledge_lifecycle && (github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:

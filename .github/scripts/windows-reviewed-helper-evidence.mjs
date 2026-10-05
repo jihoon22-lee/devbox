@@ -79,6 +79,9 @@ export async function preserveReviewedCommitFailure(center, error, observationId
   const updateBlocked = await lstat(path.join(center.root, "suite-update.block"))
     .then(() => true)
     .catch((issue) => (issue.code === "ENOENT" ? false : null));
+  const restoreBlocked = await lstat(path.join(center.root, "suite-data-restore.block"))
+    .then(() => true)
+    .catch((issue) => (issue.code === "ENOENT" ? false : null));
   await writeFile(
     `product-foundation-evidence/reviewed-commit-${observationId}.json`,
     JSON.stringify(
@@ -94,6 +97,7 @@ export async function preserveReviewedCommitFailure(center, error, observationId
         operations,
         activationPhase,
         updateBlocked,
+        restoreBlocked,
       },
       null,
       2,

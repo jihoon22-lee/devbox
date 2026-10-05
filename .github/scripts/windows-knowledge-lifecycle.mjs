@@ -1,3 +1,4 @@
+import { knowledgeLifecycleMode, observeKnowledgeStartupFailure } from "./knowledge-startup-observation.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { runInstalledKnowledgeUserFlows } from "./windows-knowledge-user-flows.mjs";
 export { runInstalledKnowledgeUserFlows };
@@ -45,15 +46,17 @@ assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 if (process.argv.includes("--packaged-ui")) {
+  assert.deepEqual(process.argv.slice(2), ["--packaged-ui"]);
   await runInstalledKnowledgeUserFlows();
   process.exit(0);
 }
+const mode = knowledgeLifecycleMode(process.argv.slice(2), process.env);
 const directory = mkdtempSync(path.join(tmpdir(), "devbox-knowledge-lifecycle-fixture-"));
 const base = windowsLocalAppData();
 const report = "product-foundation-evidence/knowledge-lifecycle.json";
 mkdirSync(path.dirname(report), { recursive: true });
 const evidence = {
-  source: process.env.GITHUB_SHA,
+  ...mode.evidence,
   environment: "github-hosted-windows",
   step: "startup",
   result: "failed",
@@ -87,7 +90,20 @@ async function start(executable, title, profile) {
     stdio: "ignore",
   });
   await once(item.child, "spawn");
-  const target = await waitForCdp(port, title);
+  try {
+    item.identity = allWindowsProcesses().find(
+      (row) =>
+        row.Pid === item.child.pid && path.resolve(row.Path).toLowerCase() === path.resolve(executable).toLowerCase(),
+    );
+  } catch {
+    // Observation failure must not change the original startup deadline.
+  }
+  let target;
+  try {
+    target = await waitForCdp(port, title);
+  } catch (error) {
+    return observeKnowledgeStartupFailure(error, item, port, evidence);
+  }
   item.cdp = new Cdp(target.webSocketDebuggerUrl);
   await item.cdp.connect();
   return item;
@@ -206,7 +222,7 @@ try {
   const executable = path.join(directory, `knowledge-product-${randomUUID()}.exe`);
   copyFileSync(path.resolve("target/debug/devbox-knowledge.exe"), executable);
   stageKnowledge(
-    process.env.GITHUB_SHA,
+    mode.evidence.source,
     path.resolve("apps/devbox-knowledge/src-tauri/resources/wsl"),
     path.join(directory, "resources/wsl"),
   );
@@ -532,7 +548,9 @@ try {
       cleanupFailed = true;
     }
   }
-  evidence.ownedProductProfilesCleaned = !cleanupFailed;
+  evidence.ownedProductProfilesObserved = profiles.length;
+  evidence.ownedProductProfilesCleaned = profiles.length > 0 ? !cleanupFailed : null;
+  evidence.productProfileDiscovery = evidence.startupFailure ? "incomplete" : "complete";
   if (cleanupFailed) evidence.result = "failed";
   writeFileSync(report, JSON.stringify(evidence, null, 2));
   if (cleanupFailed) throw new Error("owned product profile cleanup failed");

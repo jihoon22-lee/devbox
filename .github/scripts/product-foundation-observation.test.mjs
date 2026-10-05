@@ -77,6 +77,94 @@ test("Knowledge batch observes all fourteen IPC calls with unchanged native dead
   assert.equal(window.__devboxKnowledgeProbe.steps.at(-1).step, "set_root");
 });
 
+test("later Knowledge batches replace stale markers and expose the pending native call", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { typedComponentBridge } = await import("./typed-component-fixture.mjs");
+  const source = readFileSync(new URL("./windows-product-foundation.mjs", import.meta.url), "utf8");
+  for (const [batch, stage, blockedMethod] of [
+    ["daily", "knowledge-daily", "undo_created_note"],
+    ["collectionConsent", "knowledge-collection-consent", "is_tracking"],
+  ]) {
+    const assignment = source.indexOf(`componentProbe.${batch} = await cdp.evaluate(`);
+    const begin = source.indexOf("`(async () => {", assignment);
+    const end = source.indexOf("})()`);", begin) + 4;
+    const expression = source
+      .slice(begin + 1, end)
+      .replace("${knowledgeStepObserver.toString()}", knowledgeStepObserver.toString())
+      .replace("${typedComponentBridge}", typedComponentBridge);
+    const stale = { steps: [{ step: "set_root", state: "completed" }] };
+    let rejectNative;
+    let reached;
+    const pending = new Promise((resolve) => {
+      reached = resolve;
+    });
+    const window = {
+      __devboxKnowledgeProbe: stale,
+      __TAURI_INTERNALS__: {
+        invoke: async (method, args) => {
+          if (!args) return { handshake: { installationId: "owned", sessionId: "owned" } };
+          assert.ok(args.request.header.deadlineMs - Date.now() <= 5000);
+          if (args.request.method === blockedMethod) {
+            reached();
+            return new Promise((_, reject) => {
+              rejectNative = reject;
+            });
+          }
+          return { operation: { outcome: { state: "succeeded" } }, value: { revision: "synthetic" } };
+        },
+      },
+    };
+    const result = runInNewContext(expression, { window, crypto: { randomUUID: () => "owned" } });
+    await pending;
+    assert.notEqual(window.__devboxKnowledgeProbe, stale);
+    assert.equal(window.__devboxKnowledgeProbe.stage, stage);
+    assert.equal(window.__devboxKnowledgeProbe.steps.at(-1).step, blockedMethod);
+    assert.equal(window.__devboxKnowledgeProbe.steps.at(-1).state, "started");
+    const failure = new Error("private native failure");
+    rejectNative(failure);
+    await assert.rejects(result, (error) => error === failure);
+    assert.equal(window.__devboxKnowledgeProbe.steps.at(-1).state, "rejected");
+    assert.equal(JSON.stringify(window.__devboxKnowledgeProbe).includes("private"), false);
+  }
+});
+
+test("Knowledge timeout observations retain the original failure when diagnostic writes fail", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("./windows-product-foundation.mjs", import.meta.url), "utf8");
+  const begin = source.indexOf("const timer = setTimeout(() => {", source.indexOf("async evaluate(expression"));
+  const end = source.indexOf("}, timeoutMs);", begin) + "}, timeoutMs);".length;
+  for (const stage of ["knowledge-components", "knowledge-daily", "knowledge-collection-consent"]) {
+    const commands = [];
+    const failure = await new Promise((resolve) => {
+      runInNewContext(source.slice(begin, end), {
+        next: 1,
+        pending: new Map(),
+        currentProbe: { product: "knowledge", suffix: "a", stage },
+        diagnostics: [],
+        expression: "synthetic",
+        timeoutMs: 10_000,
+        mode: { evidence: {} },
+        setTimeout: (callback, deadline) => {
+          assert.equal(deadline, 10_000);
+          callback();
+        },
+        writeFileSync: () => {
+          throw new Error("diagnostic write failed");
+        },
+        command: async (method, params, deadline) => {
+          commands.push({ method, params, deadline });
+          throw new Error("diagnostic transport failed");
+        },
+        reject: resolve,
+      });
+    });
+    assert.equal(failure.message, `CDP request timeout at ${stage}`);
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0].deadline, 2000);
+    assert.equal(commands[0].params.awaitPromise, false);
+  }
+});
+
 test("full sequence diagnostic preserves product selection and cannot combine modes", () => {
   const env = { GITHUB_SHA: "b".repeat(40), DEVBOX_SUITE_ARTIFACT_SOURCE: "a".repeat(40) };
   const mode = foundationMode(["--product-sequence-diagnostic"], env);

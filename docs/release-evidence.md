@@ -40,7 +40,7 @@
 - 이전 source `444a82e4`의 [후보 36489337168](https://github.com/jihoon22-lee/devbox/actions/runs/36489337168)는
   이후 의존성/코드 변경으로 승격 대상에서 제외했다. 그 성공을 이번 source의 근거로 재사용하지 않았다.
 
-## v0.8.1 — 이전 stable
+## v0.8.1
 
 [Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1)는 2026-09-21에 공개됐다.
 source는 `1c97b41ee10ca0df7c062338bfe85659af025a89`, annotated tag object는

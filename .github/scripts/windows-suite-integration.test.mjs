@@ -81,13 +81,26 @@ test("source apply observes the accepted Unicode input before continuing without
 
 test("Knowledge cancel waits for delayed native discard and preview removal without replay", async () => {
   const events = [];
+  let previewReady = false;
+  let releasePreview;
+  const preview = new Promise((resolve) => {
+    releasePreview = resolve;
+  });
   let release;
   const discarded = new Promise((resolve) => {
     release = resolve;
   });
   const pending = runner.cancelKnowledgePreview({
     ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "취소");
+        assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
+        events.push("wait preview");
+        await preview;
+        previewReady = true;
+      },
       click: async (target) => {
+        assert.equal(previewReady, true, "Preview must arrive before cancellation input");
         assert.equal(target.name, "취소");
         assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
         events.push("cancel");
@@ -101,11 +114,15 @@ test("Knowledge cancel waits for delayed native discard and preview removal with
       },
     },
   });
+  pending.catch(() => {});
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(events, ["cancel", "observe"]);
+  assert.deepEqual(events, ["wait preview"]);
+  releasePreview();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["wait preview", "cancel", "observe"]);
   release();
   await pending;
-  assert.deepEqual(events, ["cancel", "observe"]);
+  assert.deepEqual(events, ["wait preview", "cancel", "observe"]);
 });
 
 test("Knowledge saved file does not authorize duplicate review before preview closes", async () => {
@@ -123,6 +140,36 @@ test("Knowledge saved file does not authorize duplicate review before preview cl
   });
   assert.equal(closed, true);
   assert.equal(observations, 2);
+});
+
+test("Knowledge save waits for its delayed preview before exactly one input", async () => {
+  const events = [];
+  let ready = false;
+  let release;
+  const preview = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = runner.saveKnowledgePreview({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "초안 저장");
+        assert.equal(target.scope.name, "API Studio 결과 초안 미리보기");
+        events.push("wait preview");
+        await preview;
+        ready = true;
+      },
+      click: async () => {
+        assert.equal(ready, true, "Preview must arrive before save input");
+        events.push("save");
+      },
+    },
+  });
+  pending.catch(() => {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ["wait preview"]);
+  release();
+  await pending;
+  assert.deepEqual(events, ["wait preview", "save"]);
 });
 
 test("connection review waits for delayed enabled approval before exactly one approval", async () => {
@@ -213,4 +260,64 @@ test("connection lazy mount and status readiness precede exactly one disconnect"
     },
   });
   assert.deepEqual(events, ["제품 연결", "connected readiness", "자동 연결 끄기"]);
+});
+
+test("fresh pending review must mount before expiry pipeline input without action replay", async () => {
+  let release;
+  const mounted = new Promise((resolve) => {
+    release = resolve;
+  });
+  const actions = [];
+  const work = runner.prepareExpiryPipeline({
+    ui: {
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "region", name: "다른 제품의 열기 요청" });
+        await mounted;
+      },
+      click: async (target) => {
+        actions.push(target.name);
+      },
+      press: async (key) => {
+        actions.push(key);
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(actions, []);
+  release();
+  await work;
+  assert.deepEqual(actions, ["새 파이프라인", "파이프라인 입력 형식", "Home", "Enter"]);
+});
+
+test("handoff close discards only its dirty synthetic file and does not save changed bytes", async () => {
+  for (const dirty of [[], ["C:\\owned\\source.txt"]]) {
+    const clicks = [];
+    await runner.reviewHandoffClose(
+      { cdp: { evaluate: async () => dirty }, ui: { click: async (target) => clicks.push(target) } },
+      "C:\\owned\\source.txt",
+    );
+    assert.deepEqual(clicks, [
+      {
+        role: "button",
+        name: dirty.length ? "파일 변경 폐기 후 종료" : "종료",
+        scope: { role: "dialog", name: "Workspace 종료 검토" },
+      },
+    ]);
+  }
+  let clicked = false;
+  await assert.rejects(
+    runner.reviewHandoffClose(
+      {
+        cdp: { evaluate: async () => ["C:\\other.txt"] },
+        ui: {
+          click: async () => {
+            clicked = true;
+          },
+        },
+      },
+      "C:\\owned\\source.txt",
+    ),
+    /Unowned dirty document/,
+  );
+  assert.equal(clicked, false);
 });

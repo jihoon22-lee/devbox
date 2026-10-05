@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { run, scenarioIds } from "./windows-workspace-runtime-recovery-ui.mjs";
+
+test("dependency-only diagnostics cannot execute unrelated runtime or LSP scenarios", async () => {
+  let calls = 0;
+  const result = await run({
+    diagnosticOnly: true,
+    dependenciesOnly: true,
+    workspaceFixture: {
+      dependencyRefresh: async () => {
+        calls++;
+        return { assertions: ["approved", "failed", "preserved"], screenshots: ["owned.png"] };
+      },
+    },
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(
+    result.map(({ id, status }) => ({ id, status })),
+    [{ id: "DEPS-01", status: "PASS" }],
+  );
+  await assert.rejects(run({ dependenciesOnly: true }), /retained diagnostic/);
+});
 test("missing actual adapters leave every mandatory runtime scenario NOT_RUN", async () => {
   const results = await run({ sourceSha: "a".repeat(40), fixtureSha: "a".repeat(40), artifactDigests: {} });
   assert.deepEqual(

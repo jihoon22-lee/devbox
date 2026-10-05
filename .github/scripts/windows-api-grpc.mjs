@@ -112,9 +112,45 @@ const descriptor = protobuf(
   field(12, "proto3"),
 );
 
+// The product resets both editor template and result in a selected-method effect.
+// Observe that transition before filling; CDP key dispatch is not a React commit receipt.
+export function grpcMethodReady(document, name) {
+  const method = document.querySelector('[aria-label="gRPC method"]');
+  const card = document.querySelector(".grpc-method-card code");
+  const editor = document.querySelector('[aria-label="gRPC ProtoJSON request"]');
+  try {
+    return (
+      method?.value === `fixture.Partial.${name}` &&
+      card?.textContent === `fixture.Partial/${name}` &&
+      !document.querySelector(".grpc-result") &&
+      Array.isArray(JSON.parse(editor?.value)) === ["Bidi", "Client"].includes(name)
+    );
+  } catch {
+    return false;
+  }
+}
+export async function prepareGrpcInvocation(context, name) {
+  await until(
+    () => context.cdp.evaluate(`(${grpcMethodReady.toString()})(document, ${JSON.stringify(name)})`),
+    `Current ${name} method/editor transition not committed`,
+  );
+  const request = ["Bidi", "Client"].includes(name) ? '[{"text":"fixture"}]' : '{"text":"fixture"}';
+  await context.ui.fill(textbox("gRPC ProtoJSON request"), request);
+  await until(
+    () =>
+      context.cdp.evaluate(
+        `document.querySelector('[aria-label="gRPC ProtoJSON request"]')?.value === ${JSON.stringify(request)}`,
+      ),
+    `Current ${name} request input not committed`,
+  );
+  await context.ui.waitForTarget(button("RPC 호출"));
+  await context.ui.click(button("RPC 호출"));
+}
+
 export async function createPartialGrpcFixture() {
   const server = createServer();
   const sessions = new Set();
+  const requests = { Unary: 0, Server: 0, Bidi: 0, Client: 0 };
   server.on("session", (session) => {
     sessions.add(session);
     session.on("error", () => {});
@@ -124,6 +160,8 @@ export async function createPartialGrpcFixture() {
     stream.on("error", () => {});
     const rpc = headers[":path"];
     const reflected = rpc.includes("grpc.reflection");
+    const methodName = rpc.split("/").at(-1);
+    if (Object.hasOwn(requests, methodName)) requests[methodName] = Math.min(100, requests[methodName] + 1);
     const partial = rpc.endsWith("/Server") || rpc.endsWith("/Bidi");
     stream.respond({ ":status": 200, "content-type": "application/grpc" }, { waitForTrailers: true });
     stream.on("wantTrailers", () =>
@@ -158,6 +196,7 @@ export async function createPartialGrpcFixture() {
   await once(server, "listening");
   return {
     endpoint: `http://127.0.0.1:${server.address().port}`,
+    requests,
     close: async () => {
       for (const session of sessions) session.destroy();
       await new Promise((resolve) => server.close(resolve));
@@ -171,7 +210,7 @@ export async function run(context) {
   requireApiContext(context);
   const fixture = await createPartialGrpcFixture();
   try {
-    let exportFailureObservation, exportPickerObservation;
+    let exportFailureObservation, exportPickerObservation, currentMethod;
     const result = await scenario(context, "GRPC-01", async (record) => {
       await context.ui.click(button("프로토콜"));
       await context.ui.waitForTarget({ role: "tab", name: "gRPC" });
@@ -186,16 +225,13 @@ export async function run(context) {
       );
       if ((await context.document("grpc_history"))?.value.entries.length) await context.ui.click(button("기록 지우기"));
       for (const name of ["Server", "Bidi", "Unary", "Client"]) {
+        currentMethod = name;
         const index = await context.cdp.evaluate(
           `Array.from(document.querySelector('[aria-label="gRPC method"]').options).findIndex(option=>option.value.endsWith('.${name}'))`,
         );
         assert.ok(index >= 0);
         await select(context, "gRPC method", index);
-        await context.ui.fill(
-          textbox("gRPC ProtoJSON request"),
-          ["Bidi", "Client"].includes(name) ? '[{"text":"fixture"}]' : '{"text":"fixture"}',
-        );
-        await context.ui.click(button("RPC 호출"));
+        await prepareGrpcInvocation(context, name);
         await until(async () => {
           const latest = (await context.document("grpc_history"))?.value.entries[0];
           return (
@@ -260,6 +296,34 @@ export async function run(context) {
       );
       await context.ui.click(button("연결 해제"));
     });
+    if (result.status === "FAIL" && currentMethod) {
+      result.rpcFailureObservation = { expectedMethod: currentMethod, requests: { ...fixture.requests } };
+      try {
+        const latest = (await context.document("grpc_history"))?.value.entries[0];
+        result.rpcFailureObservation.latest = latest
+          ? {
+              method: Object.hasOwn(fixture.requests, latest.method) ? latest.method : "other",
+              status: ["OK", "INTERNAL", "DEADLINE_EXCEEDED", "CANCELLED"].includes(latest.status)
+                ? latest.status
+                : "other",
+              responseMessageCount:
+                Number.isInteger(latest.responseMessageCount) &&
+                latest.responseMessageCount >= 0 &&
+                latest.responseMessageCount <= 100
+                  ? latest.responseMessageCount
+                  : null,
+            }
+          : null;
+        result.rpcFailureObservation.ui = await context.cdp.evaluate(`(() => ({
+          selectedMethod: ["Unary", "Server", "Bidi", "Client"].find(name => document.querySelector('[aria-label="gRPC method"]')?.value === 'fixture.Partial.' + name) ?? "other",
+          resultPresent: !!document.querySelector('.grpc-result'),
+          validationPresent: !!document.querySelector('.grpc-validation'),
+          errorPresent: !!document.querySelector('.grpc-lab .mcp-error')
+        }))()`);
+      } catch {
+        result.rpcFailureObservation.unavailable = true;
+      }
+    }
     if (exportFailureObservation) result.exportFailureObservation = exportFailureObservation;
     if (exportPickerObservation) result.exportPickerObservation = exportPickerObservation;
     return [result];

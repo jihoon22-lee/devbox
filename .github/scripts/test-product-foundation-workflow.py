@@ -190,6 +190,12 @@ assert "DEVBOX_PORTABLE_FIXTURES=target/portable-fixture" in suite_diagnostic
 assert "DEVBOX_FIXTURE_PROFILE=release" in suite_diagnostic
 assert "windows-product-foundation.mjs --knowledge-diagnostic" in suite_diagnostic
 assert "native-knowledge-components-diagnostic-" in suite_diagnostic
+assert "suite_knowledge_lifecycle:" in workflow
+assert "Lifecycle diagnosis requires only retained Knowledge mode" in suite_diagnostic
+assert "windows-knowledge-lifecycle.mjs --retained-diagnostic" in suite_diagnostic
+assert "inputs.suite_full_workflow || inputs.suite_knowledge_lifecycle" in suite_diagnostic
+assert "lifecycleDiagnostic =" in suite_diagnostic
+assert "inputs.suite_knowledge_lifecycle && 'knowledge-lifecycle'" in workflow
 for job in ("workspace-wsl-helper", "windows", "baseline-performance"):
     section = workflow.split(f"  {job}:\n", 1)[1]
     condition = next(line for line in section.splitlines() if line.strip().startswith("if:"))
@@ -205,7 +211,7 @@ assert "windows-knowledge-wsl.ps1" in sequence
 assert "windows-workspace-wsl-git.ps1" in sequence
 assert "windows-product-performance.ps1 -Apps" in sequence
 assert "sequenceReplay =" in suite_diagnostic
-assert "always() && inputs.suite_diagnostic_knowledge && inputs.suite_full_workflow" in suite_diagnostic
+assert "always() && inputs.suite_diagnostic_knowledge && (inputs.suite_full_workflow || inputs.suite_knowledge_lifecycle)" in suite_diagnostic
 
 installer_diagnostic = workflow.split("  installer-ui-diagnostic:\n", 1)[1].split("  terminal-diagnostic:\n", 1)[0]
 assert "suite_diagnostic_installer_ui:" in workflow
@@ -256,6 +262,26 @@ assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not co
 
 # Apps-only retained diagnosis is an exclusive installer mode, never a rebuild.
 assert "suite_diagnostic_apps_only:" in workflow
+assert "suite_app_journeys:" in workflow
+assert workflow.count('.github/scripts/test-windows-dependency-network-commands.ps1') == 1
+helper_step = workflow.split("      - name: Check owned cleanup helpers\n", 1)[1].split("\n      - ", 1)[0]
+assert '.github/scripts/test-windows-dependency-network-commands.ps1' in helper_step
+assert "'dependencies' -in $selectedApps" in helper_step
+assert "'workspace' -in $selectedApps" in helper_step
+assert "inputs.suite_diagnostic_boundaries_only" in helper_step
+assert workflow.count('.github/scripts/windows-suite-receiver-access.test.ps1') == 1
+assert '.github/scripts/windows-suite-receiver-access.test.ps1' in helper_step
+assert "'handoff' -in $selectedApps" in helper_step
+assert "$selectedApps = @()" in work_step
+assert "$selectedAppScripts = @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')" in work_step
+assert "$selectedAppScripts = @($appScripts.Values)" not in work_step
+assert "dependencies='windows-workspace-user-flows.mjs'" in work_step
+assert "Workspace and dependency-only journeys are mutually exclusive" in work_step
+assert 'node ".github/scripts/$script" --dependencies-diagnostic' in work_step
+assert "SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}" in work_step
+assert "Invalid retained app journey selection" in work_step
+assert "Selected app journeys require apps-only diagnosis" in work_step
+assert "if ($appsOnly -and $script -notin $selectedAppScripts) { continue }" in work_step
 assert "purpose = 'retained-installer-ui-diagnostic-only'; appsOnly = $appsOnly" in installer_diagnostic
 assert "appsOnly = $appsOnly" in installer_diagnostic
 assert "Apps-only diagnosis requires only a retained installer source run" in installer_diagnostic
@@ -314,5 +340,15 @@ for title in ("Prepare owned WSL1 filesystem for the installed journeys", "Provi
     assert "!inputs.suite_diagnostic_boundaries_only" in step
 assert "suite_diagnostic_boundaries_only" not in Path(".github/workflows/windows-package-candidate.yml").read_text()
 
-assert "options: [both, tray, delivery]" in workflow
+assert "options: [both, tray, delivery, legacy, migration]" in workflow
 assert "windows-suite-boundary-diagnostic.mjs '${{ inputs.suite_boundary_scope || 'both' }}'" in work_step
+
+# Native migration owns its independent installs; no interactive parent is required.
+migration_condition = "inputs.suite_diagnostic_boundaries_only && inputs.suite_boundary_scope == 'migration'"
+assert "inputs.suite_diagnostic_boundaries_only && format('boundary-{0}', inputs.suite_boundary_scope || 'both')" in workflow
+assert "timeout-minutes: ${{ " + migration_condition + " && 40 || inputs.suite_diagnostic_boundaries_only && 20 || 60 }}" in installer_diagnostic
+for title in ("Check owned cleanup helpers", "Install interactively and complete visible activation", "Remove only the owned interactive installation and data"):
+    selected = installer_diagnostic.split("      - name: " + title + "\n", 1)[1].split("\n      - ", 1)[0]
+    assert "!(" + migration_condition + ")" in selected
+assert work_step.index("windows-suite-delivery.ps1") < work_step.index("verify-retained-committed-install.mjs")
+assert "artifactDigests = $artifactDigests" in installer_diagnostic

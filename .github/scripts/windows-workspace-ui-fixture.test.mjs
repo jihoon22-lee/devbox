@@ -10,7 +10,29 @@ import {
   loseRuntimeReply,
   openCurrentProjectTerminal,
   waitForRuntimeControlIdle,
+  readCompletedDependencyInventory,
 } from "./windows-workspace-ui-fixture.mjs";
+
+test("dependency inventory observation waits for the UI analysis to release its probe", async () => {
+  let analysisComplete = false,
+    reads = 0;
+  const inventory = { revision: "current", packages: [{ version: "1.2.3" }] };
+  const result = await readCompletedDependencyInventory(
+    {
+      waitForTarget: async (target) => {
+        assert.deepEqual(target, { role: "button", name: "다시 분석" });
+        analysisComplete = true;
+      },
+    },
+    async () => {
+      assert.ok(analysisComplete, "concurrent native probe must not race the UI analysis");
+      reads++;
+      return inventory;
+    },
+  );
+  assert.equal(result, inventory);
+  assert.equal(reads, 1);
+});
 
 function performanceFixture({
   readinessFailure = null,
@@ -149,7 +171,12 @@ test("WSL combobox readiness precedes one keyboard option selection", async () =
   assert.deepEqual(events, ["ready", "click", "Home", "ArrowDown", "Enter"]);
 });
 
-function pausedReplyFixture({ action = "지금 실행", readFailure = null, disableFailure = null } = {}) {
+function pausedReplyFixture({
+  action = "지금 실행",
+  readFailure = null,
+  disableFailure = null,
+  replyState = "succeeded",
+} = {}) {
   const events = [];
   let listener,
     release,
@@ -178,6 +205,10 @@ function pausedReplyFixture({ action = "지금 실행", readFailure = null, disa
           assert.equal(params.callFrameId, "owned-frame");
           if (!responsePaused)
             return { result: { value: { requestId: "owned-request", operationId: "original-owned-operation" } } };
+          if (params.expression.includes("requestMatches:"))
+            return {
+              result: { value: { requestMatches: true, outcome: replyState, jobMatches: replyState === "succeeded" } },
+            };
           return { result: { value: [{ operationId: "original-owned-operation" }] } };
         }
         if (method === "Debugger.disable") {
@@ -415,6 +446,22 @@ test("lost reply binds the intended control request before accepting its respons
     matchResponse({ value: { jobId: "owned-job" }, operation: { provenance: { requestId: "owned-request" } } }),
     true,
   );
+  assert.equal(
+    matchResponse({
+      value: null,
+      operation: { provenance: { requestId: "owned-request" }, outcome: { state: "failed" } },
+    }),
+    true,
+    "the original native failure must be observed instead of silently timing out",
+  );
+  assert.equal(matchResponse({ provenance: { requestId: "owned-request" }, code: "expired" }), true);
+  assert.equal(matchResponse({ provenance: { requestId: "foreign-request" }, code: "expired" }), false);
+});
+test("lost reply fails on the exact native failure before crash or recovery assertions", async () => {
+  const { events, options } = pausedReplyFixture({ replyState: "failed" });
+  await assert.rejects(loseRuntimeReply(options), /Native runtime reply.*failed/);
+  assert.ok(!events.some(([event]) => event === "restart"));
+  assert.ok(events.some(([event]) => event === "Debugger.disable"));
 });
 
 test("terminal route waits for its actionable opener after lazy navigation", async () => {
@@ -452,19 +499,27 @@ test("next lost reply waits for the prior local and durable acknowledgement", as
 test("terminal companion waits for its renderer and review before actual input", async () => {
   const actions = [];
   let ready = false,
+    launchReady = false,
     reviewed = false;
   await prepareTerminalStart(
     {
       async waitForTarget(target) {
         actions.push(target.name);
-        if (target.name === "시작 경로") ready = true;
+        if (target.name === "시작 경로") {
+          // TerminalToolbar's input has a datalist: Chromium exposes a combobox.
+          assert.equal(target.role, "combobox");
+          ready = true;
+        }
         if (target.name === "실행") reviewed = true;
+        if (target.name === "+ 터미널") launchReady = true;
       },
       async fill(target) {
         assert.equal(ready, true);
+        if (target.name === "시작 경로") assert.equal(target.role, "combobox");
         actions.push(target.name);
       },
       async click(target) {
+        if (target.name === "+ 터미널") assert.equal(launchReady, true, "native workspace preparation still pending");
         if (target.name === "실행") assert.equal(reviewed, true);
         actions.push(target.name);
       },
@@ -472,7 +527,7 @@ test("terminal companion waits for its renderer and review before actual input",
     "owned-root",
     "owned-command",
   );
-  assert.deepEqual(actions, ["시작 경로", "시작 경로", "시작 명령", "+ 터미널", "실행", "실행"]);
+  assert.deepEqual(actions, ["시작 경로", "시작 경로", "시작 명령", "+ 터미널", "+ 터미널", "실행", "실행"]);
 });
 
 test("failed managed install is observed before cancel and waits for dialog retirement", async () => {
@@ -641,16 +696,25 @@ test("managed LSP readiness preserves the transition budget before native observ
 test("terminal profile deletion waits its queued dialog and companion acknowledgement before stale main open", async () => {
   const { deleteTerminalProfile } = await import("./windows-workspace-ui-fixture.mjs");
   const events = [];
-  let removed = false;
+  let removed = false,
+    focusRefreshed = false;
   await deleteTerminalProfile(
     {
       ui: {
         waitForTarget: async (target) => events.push(`ready:${target.name}`),
-        click: async (target) => events.push(`click:${target.name}`),
+        click: async (target) => {
+          assert.equal(focusRefreshed, true, "Companion deletion raced the main focus refresh");
+          events.push(`click:${target.name}`);
+        },
       },
       cdp: { evaluate: async () => removed },
     },
     {
+      waitForTarget: async (target) => {
+        assert.equal(target.name, "상태 새로고침");
+        focusRefreshed = true;
+        events.push("focus refresh completed");
+      },
       click: async (target) => {
         assert.equal(removed, true);
         events.push(`main:${target.name}`);
@@ -663,10 +727,43 @@ test("terminal profile deletion waits its queued dialog and companion acknowledg
     },
   );
   assert.deepEqual(events, [
+    "focus refresh completed",
     "ready:owned terminal profile 프로필 삭제",
     "click:owned terminal profile 프로필 삭제",
     "ready:삭제",
     "click:삭제",
     "main:프로필로 터미널 열기",
   ]);
+});
+
+test("terminal session action resolves the current row only after renderer refresh and target readiness", async () => {
+  const { clickTerminalSessionAction } = await import("./windows-workspace-ui-fixture.mjs");
+  const events = [];
+  let refreshed = false,
+    targetReady = false;
+  await clickTerminalSessionAction(
+    {
+      waitForTarget: async (target) => {
+        if (target.name === "상태 새로고침") {
+          refreshed = true;
+          events.push("refresh complete");
+        } else {
+          assert.equal(target.scope.name, "2번째 터미널");
+          targetReady = true;
+          events.push("target ready");
+        }
+      },
+      click: async (target) => {
+        assert.equal(targetReady, true);
+        events.push(target.name);
+      },
+    },
+    async () => {
+      assert.equal(refreshed, true, "Native row index was sampled before renderer refresh");
+      events.push("current owned row");
+      return { role: "listitem", name: "2번째 터미널" };
+    },
+    "이 터미널 종료",
+  );
+  assert.deepEqual(events, ["refresh complete", "current owned row", "target ready", "이 터미널 종료"]);
 });

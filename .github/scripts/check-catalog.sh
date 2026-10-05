@@ -226,11 +226,11 @@ python3 .github/scripts/check-feature-fixtures.py
 python3 .github/scripts/test-scaffold-product-feature.py
 python3 .github/scripts/test-product-foundation-workflow.py
 node --test .github/scripts/windows-suite-boundary-diagnostic.test.mjs .github/scripts/windows-suite-delivery-reopen.test.mjs .github/scripts/windows-suite-layout.test.mjs .github/scripts/verify-retained-committed-install.test.mjs
-node --test .github/scripts/windows-package-cache.test.mjs
+node --test .github/scripts/windows-package-cache.test.mjs .github/scripts/windows-suite-direct-layout.test.mjs .github/scripts/windows-suite-receiver-access.test.mjs .github/scripts/windows-dependency-network.test.mjs .github/scripts/windows-agent-runtime.test.mjs
 node --test .github/scripts/fixture-child-exit.test.mjs .github/scripts/owned-fixture-cleanup.test.mjs .github/scripts/windows-suite-uninstall-diagnostic.test.mjs
 node --test .github/scripts/user-flow-failure-evidence.test.mjs
 node --test .github/scripts/windows-reviewed-helper-evidence.test.mjs
-node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs .github/scripts/product-foundation-observation.test.mjs
+node --test .github/scripts/knowledge-diagnostic-sequence.test.mjs .github/scripts/product-foundation-observation.test.mjs .github/scripts/knowledge-startup-observation.test.mjs
 node --test .github/scripts/windows-workspace-ui-fixture.test.mjs .github/scripts/windows-workspace-crash.test.mjs
 node --test .github/scripts/visible-control-bounds.test.mjs .github/scripts/windows-workspace-registry-observations.test.mjs
 node --test .github/scripts/windows-workspace-agent-observation.test.mjs .github/scripts/windows-workspace-ui-observations.test.mjs .github/scripts/windows-workspace-draft-ui.test.mjs .github/scripts/windows-workspace-agent-registry-ui.test.mjs .github/scripts/windows-workspace-runtime-recovery-ui.test.mjs
