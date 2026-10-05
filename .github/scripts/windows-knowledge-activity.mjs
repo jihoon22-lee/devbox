@@ -21,6 +21,15 @@ export async function refreshActivityHistory(ui) {
   await ui.click(refresh);
   await ui.waitForTarget({ role: "button", name: "다시 생성" });
 }
+export async function stopActivityTracking(ui, fixture) {
+  await ui.click({ role: "button", name: "추적 중지" });
+  // Native stop and status use independent Agent lanes. Input delivery does
+  // not acknowledge the async stop; observe completion without repeating it.
+  await fixture.wait(async () => {
+    const status = await fixture.collectionStatus();
+    return status.tracking === false && status.consent === false;
+  }, "native activity stop and consent acknowledged");
+}
 export async function run(context) {
   return scenarios(context, [
     [
@@ -89,8 +98,7 @@ export async function run(context) {
         );
         await fixture.navigate("activity");
         await ui.click({ role: "button", name: "타임라인" });
-        await ui.click({ role: "button", name: "추적 중지" });
-        assert.equal((await fixture.collectionStatus()).tracking, false);
+        await stopActivityTracking(ui, fixture);
         await ui.click({ role: "button", name: "설정" });
         await ui.fill({ role: "textbox", name: "제목 치환 정규식" }, capture.marker);
         await ui.click({ role: "button", name: "규칙 저장" });

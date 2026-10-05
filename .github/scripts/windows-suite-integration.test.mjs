@@ -3,6 +3,7 @@ import { scenarioModuleContract } from "./windows-api-user-flow-contract.test-su
 scenarioModuleContract(runner, ["HANDOFF-01", "HANDOFF-02"], "windows-suite-integration.mjs");
 import assert from "node:assert/strict";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 test("editor context menu readiness precedes one transform selection", async () => {
   const events = [];
   let ready = false;
@@ -320,4 +321,51 @@ test("handoff close discards only its dirty synthetic file and does not save cha
     /Unowned dirty document/,
   );
   assert.equal(clicked, false);
+});
+
+const previewSelector = '.toolbox-handoff-text[aria-label="Toolbox 전달 텍스트"]';
+function previewContext(readNodes) {
+  return {
+    cdp: {
+      evaluate: async (expression) =>
+        runInNewContext(expression, {
+          document: {
+            body: { innerText: "Toolbox 텍스트 미리보기\n원본\nWorkspace\n전달\n만료" },
+            querySelectorAll: (selector) => (selector === previewSelector ? readNodes() : []),
+          },
+        }),
+    },
+  };
+}
+const observeOnce = async (check, message) => assert.equal(await check(), true, message);
+test("first handoff preview rejects metadata-only, wrong, and ambiguous payloads", async () => {
+  const original = Buffer.from("\uFEFF실패 후 보존할 초안\r\n");
+  for (const nodes of [
+    [],
+    [{ textContent: "" }],
+    [{ textContent: "원본\n" }],
+    [{ textContent: "실패 후 보존할 초안\n" }, { textContent: "실패 후 보존할 초안\n" }],
+  ]) {
+    await assert.rejects(() =>
+      runner.observeSourcePreview(
+        previewContext(() => nodes),
+        original,
+        observeOnce,
+      ),
+    );
+  }
+});
+test("first handoff preview waits for exact retained bytes with BOM and line-ending normalization", async () => {
+  const expected = "  실패 후 보존할 초안\n\n";
+  const original = Buffer.from("\uFEFF  실패 후 보존할 초안\r\n\r\n");
+  let reads = 0;
+  const result = await runner.observeSourcePreview(
+    previewContext(() => {
+      reads++;
+      return reads === 1 ? [] : [{ textContent: expected }];
+    }),
+    original,
+  );
+  assert.equal(result, expected);
+  assert.equal(reads, 2);
 });

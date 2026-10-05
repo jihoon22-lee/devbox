@@ -49,6 +49,12 @@ ALLOWED_CHANGES = frozenset({
     '.github/scripts/windows-product-foundation.mjs',
     '.github/scripts/windows-api-user-flow-actions.mjs',
     '.github/scripts/windows-api-user-flow-adapter.test.mjs',
+    '.github/scripts/windows-knowledge-activity.mjs',
+    '.github/scripts/windows-knowledge-user-flows.test.mjs',
+    '.github/scripts/windows-suite-integration.mjs',
+    '.github/scripts/windows-suite-integration.test.mjs',
+    '.github/scripts/windows-suite-delivery-user-flows.mjs',
+    '.github/scripts/windows-suite-delivery-reopen.test.mjs',
     'AGENTS.md',
     'CONVENTIONS.md',
     '.github/workflows/windows-candidate-revalidation.yml',
@@ -117,8 +123,11 @@ def validate_original_run(run, jobs, repository, source, build_run):
             and run.get('head_sha') == source and run.get('head_branch') == 'main'
             and run.get('head_repository', {}).get('full_name') == repository
             and run.get('event') == 'workflow_dispatch' and run.get('status') == 'completed'
-            and run.get('conclusion') in ('success', 'failure') and positive(run.get('run_attempt')),
+            and run.get('conclusion') in ('success', 'failure', 'cancelled') and positive(run.get('run_attempt')),
             'Untrusted original candidate workflow')
+    # A superseded UI observer can be cancelled only after every immutable build
+    # and native/WSL gate below actually succeeded. No cancelled/skipped gate is
+    # reusable; corrected installation/UI/migration evidence is always fresh.
     return checked_jobs(jobs)
 
 def validate_revalidation_proof(proof, source, fixture=None, repository=None, run_id=None, assets=None):

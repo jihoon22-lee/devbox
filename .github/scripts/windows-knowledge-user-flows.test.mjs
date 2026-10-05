@@ -311,3 +311,52 @@ test("opening an existing Knowledge note resolves the current native root withou
     ["/owned/reconnected-vault/Notes/legacy.md", "utf8"],
   ]);
 });
+
+test("Activity stop waits for both native tracking and consent acknowledgements after one click", async () => {
+  const events = [];
+  const observations = [
+    { tracking: true, consent: true },
+    { tracking: false, consent: true },
+    { tracking: false, consent: false },
+  ];
+  await activity.stopActivityTracking(
+    {
+      click: async (target) => {
+        assert.deepEqual(target, { role: "button", name: "추적 중지" });
+        events.push("click");
+      },
+    },
+    {
+      collectionStatus: async () => {
+        events.push("observe");
+        return observations.shift();
+      },
+      wait: async (check) => {
+        assert.equal(await check(), false);
+        assert.equal(await check(), false);
+        assert.equal(await check(), true);
+      },
+    },
+  );
+  assert.deepEqual(events, ["click", "observe", "observe", "observe"]);
+});
+
+test("Activity stop propagates bounded acknowledgement timeout without re-clicking", async () => {
+  let clicks = 0;
+  const timeout = new Error("native acknowledgement timed out");
+  await assert.rejects(
+    activity.stopActivityTracking(
+      { click: async () => clicks++ },
+      {
+        collectionStatus: async () => ({ tracking: false, consent: true }),
+        wait: async (check) => {
+          assert.equal(await check(), false);
+          assert.equal(await check(), false);
+          throw timeout;
+        },
+      },
+    ),
+    (error) => error === timeout,
+  );
+  assert.equal(clicks, 1);
+});
