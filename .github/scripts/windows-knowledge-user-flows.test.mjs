@@ -20,6 +20,7 @@ test("Knowledge native close observes the async review before one explicit decis
       click: async (target) => events.push(target.name),
     },
     "종료 취소",
+    { wait: async (observe) => assert.equal(await observe(), true), quitReviewOpen: async () => false },
   );
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(events, ["native close", "readonly review"]);
@@ -357,6 +358,71 @@ test("Activity stop propagates bounded acknowledgement timeout without re-clicki
       },
     ),
     (error) => error === timeout,
+  );
+  assert.equal(clicks, 1);
+});
+
+test("Knowledge cancel waits for modal removal after native ACK without repeating the click", async () => {
+  let open = true;
+  let clicks = 0;
+  let observe;
+  let release;
+  const waiting = new Promise((resolve) => {
+    release = resolve;
+  });
+  const journey = document.reviewKnowledgeQuit(
+    {
+      closeOwnedWindow: async () => {},
+      waitForTarget: async () => {},
+      click: async () => {
+        clicks++;
+      },
+    },
+    "종료 취소",
+    {
+      quitReviewOpen: async () => open,
+      wait: async (probe) => {
+        observe = probe;
+        assert.equal(await probe(), false);
+        await waiting;
+        assert.equal(await probe(), true);
+      },
+    },
+  );
+  let finished = false;
+  void journey.then(() => {
+    finished = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(finished, false);
+  assert.equal(clicks, 1);
+  assert.equal(await observe(), false);
+  open = false;
+  release();
+  await journey;
+  assert.equal(clicks, 1);
+});
+test("Knowledge cancel observation timeout remains a failure without retrying the decision", async () => {
+  let clicks = 0;
+  await assert.rejects(
+    document.reviewKnowledgeQuit(
+      {
+        closeOwnedWindow: async () => {},
+        waitForTarget: async () => {},
+        click: async () => {
+          clicks++;
+        },
+      },
+      "종료 취소",
+      {
+        quitReviewOpen: async () => true,
+        wait: async (observe) => {
+          assert.equal(await observe(), false);
+          throw new Error("cancel ACK timeout");
+        },
+      },
+    ),
+    /cancel ACK timeout/,
   );
   assert.equal(clicks, 1);
 });
