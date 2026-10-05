@@ -1,7 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { JSDOM } from "jsdom";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { observeNormalClose, requestNormalClose } from "./windows-suite-ui-context.mjs";
+// Catalog runs without pnpm install; only the optional DOM cases need jsdom.
+// Resolve separately so a broken installed package (or its dependency) still fails.
+let jsdomPath;
+try {
+  jsdomPath = createRequire(import.meta.url).resolve("jsdom");
+} catch (error) {
+  if (error?.code !== "MODULE_NOT_FOUND" || !error.message.startsWith("Cannot find module 'jsdom'\n")) throw error;
+}
+const JSDOM = jsdomPath ? (await import(pathToFileURL(jsdomPath).href)).JSDOM : undefined;
+if (jsdomPath) assert.equal(typeof JSDOM, "function", "Installed jsdom must export JSDOM");
+
 test("native close requests once, confirms review, and waits for child exit before cleanup", async () => {
   const child = { exitCode: null };
   const events = [];
@@ -220,7 +232,9 @@ for (const [name, markup, expected] of [
   ],
   ["other open dialog", '<dialog open aria-label="다른 검토"><button>종료</button></dialog>', false],
 ]) {
-  test(`normal close recognizes only actionable Workspace review: ${name}`, async () => {
+  test(`normal close recognizes only actionable Workspace review: ${name}`, {
+    skip: JSDOM ? false : "jsdom is not installed; DOM cases run after pnpm install",
+  }, async () => {
     const dom = new JSDOM(markup);
     const child = { exitCode: null };
     let clicks = 0;
