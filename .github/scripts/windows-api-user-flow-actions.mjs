@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import path from "node:path";
+import { revalidationIdentitySync } from "./revalidation-identity.mjs";
 
 export function requireApiContext(context) {
   assert.ok(
@@ -17,7 +18,14 @@ export function requireApiContext(context) {
   assert.match(context.installationKey ?? "", /^[a-f0-9]{64}$/);
   assert.equal(path.basename(context.namespace), `com.devbox.v08.apistudio.i${context.installationKey}`);
   assert.match(context.sourceSha ?? "", /^[a-f0-9]{40}$/);
-  assert.equal(context.fixtureSha, context.sourceSha);
+  const revalidation = revalidationIdentitySync();
+  if (revalidation) {
+    assert.equal(context.sourceSha, revalidation.sourceSha);
+    assert.equal(context.fixtureSha, revalidation.fixtureSha);
+    assert.deepEqual(context.artifactDigests, revalidation.assetDigests);
+  } else {
+    assert.equal(context.fixtureSha, context.sourceSha);
+  }
   assert.ok(
     Object.keys(context.artifactDigests ?? {}).length === 7 &&
       Object.values(context.artifactDigests).every((value) => /^[a-f0-9]{64}$/.test(value)),

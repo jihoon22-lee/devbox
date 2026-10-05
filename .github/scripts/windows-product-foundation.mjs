@@ -1,4 +1,6 @@
 import { knowledgeStepObserver, foundationMode, cleanupObservation } from "./product-foundation-observation.mjs";
+import { revalidationIdentity } from "./revalidation-identity.mjs";
+import { packagedIdentity } from "./suite-user-flow-results.mjs";
 import { typedComponentBridge } from "./typed-component-fixture.mjs";
 import { prepareRuntimeCrash, verifyRuntimeCrash } from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
@@ -40,6 +42,13 @@ if (process.argv.includes("--workspace-user-flows")) {
   process.exit(0);
 }
 const mode = foundationMode(process.argv.slice(2), process.env);
+const revalidation = await revalidationIdentity();
+if (revalidation) {
+  assert.equal(mode.smokeOnly, true, "Only fresh public startup uses revalidation in this runner");
+  assert.equal(mode.diagnostic, false);
+  await packagedIdentity(process.env.DEVBOX_USER_FLOW_ASSETS, revalidation.sourceSha);
+  mode.evidence = { source: revalidation.sourceSha, fixtureSource: revalidation.fixtureSha };
+}
 const { smokeOnly } = mode;
 const elevated = windowsProcessIsElevated();
 const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products.filter(
@@ -272,7 +281,8 @@ async function start(product, suffix) {
     `product-foundation-evidence/assembly-${product.id}-${suffix}.json`,
     JSON.stringify(
       {
-        source: process.env.GITHUB_SHA,
+        source: mode.evidence.source,
+        fixtureSource: process.env.GITHUB_SHA,
         product: product.id,
         profile: process.env.DEVBOX_FIXTURE_PROFILE ?? "debug",
         executableBytes: statSync(built).size,
@@ -434,7 +444,8 @@ async function start(product, suffix) {
           `product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,
           JSON.stringify(
             {
-              source: process.env.GITHUB_SHA,
+              source: mode.evidence.source,
+              fixtureSource: process.env.GITHUB_SHA,
               environment: "github-hosted-windows",
               result: "pass",
               checks: componentProbe.runtimeCrash,

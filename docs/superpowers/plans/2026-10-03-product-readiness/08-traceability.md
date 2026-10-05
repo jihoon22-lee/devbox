@@ -1065,4 +1065,9 @@ frontend 검사는 다시 실행하지 않았다. 최종 updater diff의 독립 
 검증·실행한 실제 executable을 context로 전달하여 정확한 프로세스 경로와 소유 폴더를
 비교하도록 수정했다. 원래 불일치를 로컬 회귀로 재현하고 관련 17개 검사를 통과했다.
 Agent 01–03은 통과했고 04는 선행 종료 증거 부재의 연쇄 NOT_RUN이었다. 기존 후보는
-승격할 수 없으며, 새 exact-main의 layout·Agent 종료·전체 migration과 sealing이 필요하다.
+직접 승격할 수 없다. 제품·빌드 입력이 같은 fixture-only 보정에는 릴리스 정책의 제한적
+재검증 절차를 적용한다. 원본 빌드 SHA `5d25aa75c3637e9d2e3ec1d0a5b25c2642960436`와
+7개 자산 bytes를 유지하고 현재 main fixture와의 유한 경로 tree 동일성 receipt를 남긴다.
+새 실행의 같은 설치 cohort에서 전체 40개 여정을 관측하고 별도 Windows VM의 전체 migration·
+recovery를 병렬 확인한 뒤 새 seal을 만든다. tag는 원본 빌드 SHA이며 새 fixture SHA와
+검증 run을 별도로 기록한다. 구현 중인 절차를 수용·게시 PASS로 기록하지 않는다.

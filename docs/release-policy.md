@@ -21,6 +21,35 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
    네 portable 기본 native 실행을 확인한다. 결과는 이번 단일 PR 본문·Release notes·Actions artifact에 기록한다. 닫힌 #580에 실기 요청을 남기지 않는다.
    결과 문서만을 위한 source 변경 PR로 이미 검증한 candidate SHA를 바꾸지 않는다.
 
+## Fixture만 바뀐 후보의 제한적 재검증
+
+제품 재빌드와 통과한 무관한 검사의 반복을 줄이기 위해, 제품·의존성·빌드·패키징 입력이
+같고 수용 fixture와 관련 문서만 바뀐 경우 다음 receipt 기반 예외를 허용한다.
+전용 실행은 `Windows candidate revalidation` (`.github/workflows/windows-candidate-revalidation.yml`)이며
+근거 파일은 `candidate/evidence/revalidation-proof.json`이다. 기존 일반 candidate/release 경로는 유지한다.
+
+- 원본은 main의 고정 SHA에서 만든 비만료 assembly여야 한다. 원본 repository·workflow·run·attempt와
+  assembly 및 재사용할 native/WSL2/성능 job의 실제 성공을 GitHub에서 확인한다. 실패한 원본 run을
+  성공 후보로 직접 승격하지 않는다. 조회·출처·digest 확인 실패는 재빌드로 대체하지 않고 중단한다.
+- 원본 빌드 SHA와 현재 main의 fixture SHA 사이 모든 tracked 파일의 blob·mode를 비교한다.
+  검토된 유한한 정확한 경로 목록 밖의 차이는 거부한다. 디렉터리 전체 제외나 제품·빌드 입력
+  변경은 허용하지 않는다. 후자는 기존 exact-main 전체 후보 빌드와 수용 절차를 따른다.
+- 원본 setup·네 ZIP·manifest·notices 7개 bytes와 digest, 내부 source 표기는 그대로 유지한다.
+  receipt에는 빌드 SHA/run, fixture SHA/run, 허용된 diff, 입력 동일성 근거와 재사용 job 출처를
+  각각 기록한다. `sourceSha`는 실제 빌드, `fixtureSha`는 현재 runner이며 `buildRunId`·
+  `revalidationRunId`·`artifactId`·`artifactDigest`·`assetDigests`·`changes`·`requiredJobs`로 출처를 연결한다.
+  기존 진단의 `diagnosticOnly` 결과를 승격 근거로 바꾸지 않는다.
+- 새 실행의 같은 설치 cohort에서 필수 40개 UI 여정을 모두 새로 관측한다. 전체 설치 migration·
+  recovery는 별도 일회성 Windows VM에서 병렬 실행하고 같은 7개 bytes를 사용한다. 새 수용과
+  기존의 검증된 독립 scope 근거를 모두 확인한 뒤 새 seal을 만든다. 누락·FAIL·NOT_RUN은 거부한다.
+- annotated stable tag는 새 fixture SHA가 아니라 **실제 원본 빌드 SHA**를 가리킨다. 새 seal과
+  receipt가 빌드·검증 SHA의 차이를 설명해야 한다. 이 전용 workflow는 `GITHUB_TOKEN`으로 tag를
+  게시한 뒤 같은 실행에서 draft 다운로드 검증·공개·공개본 재다운로드와 네 제품 smoke를 수행한다.
+  tag push로 별도 workflow가 시작된다고 가정하지 않는다. 결과에는 원본 빌드와 새 수용 run을 함께 남긴다.
+
+이 예외는 패키지 source를 새 main으로 재표기하는 절차가 아니며, 새 seal 없이 실패 후보를
+게시하는 허가도 아니다. 일반 후보와 동일한 7개 자산·데이터 보존·공개본 검증 경계를 유지한다.
+
 ## v0.9.0 공개 전 조건
 
 - 제품·agent 버전은 #612에서 이미 0.9.0으로 올렸다. 공개 전 수정 때문에 0.9.1로 다시 올리지 않는다.
@@ -41,7 +70,8 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
   동일 버전 철회본 위의 수정본 재설치와 데이터 보존도 필수다. 사용자 기본 실기 응답을 완료 조건으로 두지 않는다.
 - 기존 v0.9.0 태그는 재출시 후보 직전에 Release 부재와 ref object를 확인하고 명시적 lease로 제거한다.
   철회본 tag object `f31f111977956bd665cd432accdf54677444027f`와 source `e499ac7127269bf67863bf0fdc42eaf53236b9f3`를
-  역사 근거로 남긴다. 검증 성공한 최종 main에 동일 이름의 새 annotated tag를 생성한다.
+  역사 근거로 남긴다. 검증 성공한 후보의 빌드 SHA에 동일 이름의 새 annotated tag를 생성한다.
+  fixture-only 예외에서는 위 receipt로 현재 main과의 입력 동일성을 증명한다.
   다른 태그를 바꾸거나 candidate의 tag-exists 검사를 우회하지 않는다.
 - v0.8.1 내장 업데이터의 새 구성요소 거부는 확인된 호환성 제한이다. 공개 manifest에서 구성요소를
   숨기거나 검증을 완화하지 않는다. 중간 호환 릴리스는 만들지 않고, v0.9.0 Release에서 setup을

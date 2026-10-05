@@ -166,7 +166,9 @@ Tauri dialog 플러그인이 바꾸는 전역 `window.confirm`은 동기 Boolean
 
 - v0.8 공개 계약은 Suite setup + 네 portable ZIP + manifest + notices의 7개 파일이다. 필수 WSL/Suite helper를 ZIP에 포함한다. 소스 전환과 실제 게시 완료는 구분한다.
 - 안정판은 exact-main Windows candidate의 assembly·packaged runtime·installer acceptance 통과 후,
-  동일 commit의 annotated tag로 검증된 후보만 승격한다. 후보 부재·만료 시 새 build로 대체하지 않는다.
+  동일 빌드 commit의 annotated tag로 검증된 후보만 승격한다. 후보 부재·만료 시 새 build로 대체하지 않는다.
+  fixture-only 변경은 release policy의 유한 경로 입력 동일성 receipt와 새 수용/seal이 있는 경우에만
+  원본 7개 자산을 재사용한다. 빌드 SHA와 fixture SHA를 분리하며 제품·빌드 입력 변경은 예외가 아니다.
 - Stable verifier의 `always()` 및 preflight/draft-stage 명시적 success 조건을 유지한다.
 - 릴리스 작업 시 [릴리스 실행 정책](./docs/release-policy.md)을 읽는다. 명시 요청 없는 RC는 만들지 않는다.
 

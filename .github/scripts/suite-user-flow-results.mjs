@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { revalidationIdentity } from "./revalidation-identity.mjs";
 export async function fileDigest(file) {
   const stat = await lstat(file);
   assert.ok(stat.isFile() && !stat.isSymbolicLink(), "Regular evidence/package file required");
@@ -46,8 +47,10 @@ export async function diagnosticIdentity() {
 }
 export async function packagedIdentity(assets = process.env.DEVBOX_USER_FLOW_ASSETS, sourceSha) {
   const diagnostic = await diagnosticIdentity();
-  sourceSha ??= diagnostic?.sourceSha ?? process.env.GITHUB_SHA;
+  const revalidation = await revalidationIdentity();
+  sourceSha ??= diagnostic?.sourceSha ?? revalidation?.sourceSha ?? process.env.GITHUB_SHA;
   if (diagnostic) assert.equal(sourceSha, diagnostic.sourceSha);
+  if (revalidation) assert.equal(sourceSha, revalidation.sourceSha);
   assert.ok(assets, "Exact candidate assets required for packaged user flows");
   assert.match(sourceSha ?? "", /^[a-f0-9]{40}$/);
   const root = path.resolve(assets);
@@ -66,7 +69,8 @@ export async function packagedIdentity(assets = process.env.DEVBOX_USER_FLOW_ASS
   const artifactDigests = {};
   for (const name of names) artifactDigests[name] = await fileDigest(path.join(root, name));
   for (const entry of entries) assert.equal(artifactDigests[entry.name], entry.sha256, "Candidate bytes changed");
-  return { sourceSha, fixtureSha: sourceSha, artifactDigests, ...(diagnostic ?? {}) };
+  if (revalidation) assert.deepEqual(artifactDigests, revalidation.assetDigests, "Revalidated bytes changed");
+  return { sourceSha, fixtureSha: revalidation?.fixtureSha ?? sourceSha, artifactDigests, ...(diagnostic ?? {}) };
 }
 export async function installedFixtureIdentity() {
   const root = process.env.DEVBOX_USER_FLOW_INSTALL_ROOT;
@@ -76,7 +80,8 @@ export async function installedFixtureIdentity() {
   );
   assert.equal(owner.root, root);
   const diagnostic = await diagnosticIdentity();
-  assert.equal(owner.sourceSha, diagnostic?.sourceSha ?? process.env.GITHUB_SHA);
+  const revalidation = await revalidationIdentity();
+  assert.equal(owner.sourceSha, diagnostic?.sourceSha ?? revalidation?.sourceSha ?? process.env.GITHUB_SHA);
   assert.match(owner.installationKey, /^[a-f0-9]{64}$/);
   return owner.installationKey;
 }

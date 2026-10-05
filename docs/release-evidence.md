@@ -6,6 +6,15 @@
 수정본의 최종 source SHA·후보 run·수용 결과는 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)와 연결된 통합 PR·Actions artifact가 원장이다. 이 문서에 적힌 아래 결과는 **철회본의 역사적 자동 검사 결과**이며 수정본의 PASS로 재사용하지 않는다.
 [현재 실행 계획](superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)을 따른다.
 
+### 수정본 후보의 재검증 출처
+
+후보 `37306773490`의 실제 빌드 source는 `5d25aa75c3637e9d2e3ec1d0a5b25c2642960436`이다.
+네 native scope·WSL2/Docker와 설치 UI 36개는 통과했지만 layout 및 Agent 종료 증거가
+완료되지 않아 이 run 자체는 승격 대상이 아니다. fixture-only 보정 후 원본 7개 자산을
+재빌드 없이 새로 수용·sealing하는 절차는 [릴리스 정책](release-policy.md#fixture만-바뀐-후보의-제한적-재검증)을 따른다.
+빌드 SHA와 새 fixture SHA/run은 receipt와 Release에 각각 남기며, 새 seal·공개본 검증의
+성공 전에는 재출시 완료로 기록하지 않는다.
+
 ### 철회 전 공개 이력
 
 [Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.9.0)는 `2026-10-03T05:31:16Z`에 공개됐으며

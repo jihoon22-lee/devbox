@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from candidate_user_flow import verify_user_flow_evidence
+from candidate_revalidation import REQUIRED_JOBS
 
 class UserFlowCandidateTests(unittest.TestCase):
     def test_requires_every_bound_scenario_and_real_unchanged_screenshot(self):
@@ -39,6 +40,24 @@ class UserFlowCandidateTests(unittest.TestCase):
                 rejected=copy.deepcopy(legacy)
                 next(row for row in rejected['results'] if row['id']=='DELIVERY-01')[field]=value
                 with self.subTest(legacy_field=field),self.assertRaises(ValueError): verify(rejected)
+            revalidated=copy.deepcopy(evidence)
+            fixture='f'*40
+            new_assets=[{'name':f'asset-{i}','digest':'sha256:'+str(i)*64} for i in range(7)]
+            digest_map={a['name']:a['digest'][7:] for a in new_assets}
+            revalidated.update(expectedFixture=fixture,expectedDigests=digest_map)
+            for row in revalidated['results']: row.update(fixtureSha=fixture,artifactDigests=digest_map)
+            proof=dict(schemaVersion=1,purpose='candidate-fixture-revalidation',repository='owner/repo',
+                sourceSha=source,fixtureSha=fixture,buildRunId=11,revalidationRunId=22,artifactId=33,
+                artifactName='candidate-assembly-11',artifactDigest='sha256:'+'b'*64,assetDigests=digest_map,changes=[],
+                requiredJobs=[dict(id=i+1,name=name,status='completed',conclusion='success') for i,name in enumerate(REQUIRED_JOBS)])
+            report.write_text(json.dumps(revalidated))
+            with self.assertRaises(ValueError):verify_user_flow_evidence(report,source,new_assets)
+            self.assertEqual(verify_user_flow_evidence(report,source,new_assets,proof)['requiredScenarios'],len(matrix))
+            for target in [revalidated,revalidated['results'][0]]:
+                target['diagnosticOnly']=True
+                report.write_text(json.dumps(revalidated))
+                with self.assertRaises(ValueError):verify_user_flow_evidence(report,source,new_assets,proof)
+                del target['diagnosticOnly']
             screenshot.write_bytes(b'changed')
             with self.assertRaises(ValueError): verify(evidence)
 

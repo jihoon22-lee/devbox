@@ -94,6 +94,13 @@ function Assert-OwnedCleanupIdentity([string]$Root,$Expected) {
 }
 $payloadSource=$env:GITHUB_SHA
 $payloadRun=$env:GITHUB_RUN_ID
+if ($env:DEVBOX_USER_FLOW_REVALIDATION_PROOF) {
+  $revalidated = & node .github/scripts/revalidation-identity.mjs
+  if ($LASTEXITCODE -ne 0) { throw 'Revalidation identity rejected.' }
+  $revalidated = $revalidated | ConvertFrom-Json
+  $payloadSource=$revalidated.sourceSha
+  $payloadRun=[string]$revalidated.buildRunId
+}
 if ($env:DEVBOX_USER_FLOW_DIAGNOSTIC -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) {
   if ($env:DEVBOX_USER_FLOW_DIAGNOSTIC -cne 'true' -or $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch' -or $env:GITHUB_WORKFLOW -cne 'Product foundation acceptance' -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_SOURCE -notmatch '^[a-f0-9]{40}$' -or $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RUN -notmatch '^\d+$' -or -not $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT) { throw 'Invalid retained UI diagnostic identity.' }
   $diagnostic=Get-Content -LiteralPath $env:DEVBOX_USER_FLOW_DIAGNOSTIC_RECEIPT -Raw | ConvertFrom-Json
