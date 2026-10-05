@@ -67,10 +67,10 @@ export async function withOwnedWslRunning(owner, runId, action, launch = spawn) 
     if (!original && pipeError) throw pipeError;
   }
 }
-export async function observeManagedLspTransition(ui, scope, nextAction, observe) {
+export async function observeManagedLspTransition(ui, scope, nextAction, observe, timeoutMs = 30_000) {
   // Native status verifies archives under the same exclusive installer lock as
   // the renderer refresh. Never introduce a competing observer before it settles.
-  await ui.waitForTarget({ role: "button", name: nextAction, scope });
+  await ui.waitForTarget({ role: "button", name: nextAction, scope }, { timeoutMs });
   return observe();
 }
 export async function prepareTerminalStart(ui, root, command) {
@@ -861,8 +861,13 @@ export function createWorkspaceUiFixture({
       // Native commit can precede the response and renderer status refresh.
       // Do not overwrite an import error with the later intentional download failure.
       try {
-        await observeManagedLspTransition(ui, scope, "제거", () =>
-          wait(async () => (await state(rust)).state === "installed", "digest-verified archive imported", 120_000),
+        await observeManagedLspTransition(
+          ui,
+          scope,
+          "제거",
+          () =>
+            wait(async () => (await state(rust)).state === "installed", "digest-verified archive imported", 120_000),
+          120_000,
         );
       } catch (error) {
         try {
@@ -933,8 +938,12 @@ export function createWorkspaceUiFixture({
       const cachedAttempts = network.attempts();
       await ui.click({ role: "button", name: "설치", scope });
       await ui.click({ role: "button", name: "설치 확인" });
-      await observeManagedLspTransition(ui, scope, "제거", () =>
-        wait(async () => (await state(rust)).state === "installed", "cached exact server installed", 120_000),
+      await observeManagedLspTransition(
+        ui,
+        scope,
+        "제거",
+        () => wait(async () => (await state(rust)).state === "installed", "cached exact server installed", 120_000),
+        120_000,
       );
       assert.equal((await state(rust)).installed.install_source, "archive_cache");
       assert.equal(network.attempts(), cachedAttempts);

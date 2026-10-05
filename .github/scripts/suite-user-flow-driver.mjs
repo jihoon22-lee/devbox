@@ -33,7 +33,7 @@ export function createUiDriver({ cdp, evidenceRoot, closeOwnedWindow }) {
     return { ...found[0], axNodes: nodes };
   }
   async function waitForTarget(target, { timeoutMs = 10000 } = {}) {
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30000)
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120000)
       throw new Error("Bounded target readiness timeout required");
     const deadline = performance.now() + timeoutMs;
     do {

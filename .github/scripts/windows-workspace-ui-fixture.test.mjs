@@ -615,3 +615,25 @@ test("owned WSL pipe errors preserve journey failure while still awaiting child 
     assert.equal(exited, true);
   }
 });
+
+test("managed LSP readiness preserves the transition budget before native observation", async () => {
+  const { observeManagedLspTransition } = await import("./windows-workspace-ui-fixture.mjs");
+  for (const timeoutMs of [undefined, 120_000]) {
+    let observed = false;
+    await observeManagedLspTransition(
+      {
+        waitForTarget: async (_target, options) => {
+          assert.equal(options.timeoutMs, timeoutMs ?? 30_000);
+          assert.equal(observed, false);
+        },
+      },
+      {},
+      "제거",
+      async () => {
+        observed = true;
+      },
+      timeoutMs,
+    );
+    assert.equal(observed, true);
+  }
+});
