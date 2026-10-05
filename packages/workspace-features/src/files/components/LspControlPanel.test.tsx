@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   importLspArchives,
@@ -1147,3 +1147,30 @@ describe("LspControlPanel", () => {
     expect(rendered.queryByText("old-log")).toBeNull();
   });
 });
+
+it.each(["install", "uninstall"])(
+  "keeps a failed %s visible inside its retry dialog and clears it for a new review",
+  async (kind) => {
+    const manifest = fixtureManifest();
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([
+      fixtureInstallStatus(manifest, kind === "install" ? "not_installed" : "installed"),
+    ]);
+    const mutation = kind === "install" ? installMock : uninstallMock;
+    mutation.mockRejectedValue(new Error("owned operation failed"));
+    const view = render(<ManagedInstallerPanel />);
+    const open = await view.findByRole("button", { name: kind === "install" ? "설치" : "제거" });
+    fireEvent.click(open);
+    const dialog = await view.findByRole("dialog", { name: "관리형 서버 작업 확인" });
+    fireEvent.click(within(dialog).getByRole("button", { name: kind === "install" ? "설치 확인" : "제거 확인" }));
+    expect(await within(dialog).findByRole("alert")).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "취소" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(mutation).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+    expect(view.queryByRole("dialog", { name: "관리형 서버 작업 확인" })).toBeNull();
+    expect(view.getByRole("alert")).toBeTruthy();
+    fireEvent.click(open);
+    expect(within(await view.findByRole("dialog", { name: "관리형 서버 작업 확인" })).queryByRole("alert")).toBeNull();
+    expect(mutation).toHaveBeenCalledTimes(1);
+  },
+);
