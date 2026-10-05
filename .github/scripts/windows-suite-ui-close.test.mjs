@@ -122,6 +122,60 @@ test("Workspace close still requires the explicit owned quit review", async () =
   assert.equal(accepted, 1);
 });
 
+test("close diagnostics distinguish submitted review from missing review without claiming exit", async () => {
+  for (const present of [false, true]) {
+    const observations = [];
+    await assert.rejects(
+      observeNormalClose(
+        {
+          child: { exitCode: null },
+          product: "workspace",
+          cdp: { evaluate: async () => present },
+          ui: { click: async () => {} },
+          reportClose: (value) => observations.push(value),
+        },
+        async (check) => {
+          assert.equal(await check(), false);
+          throw new Error("owned close deadline");
+        },
+      ),
+      /owned close deadline/,
+    );
+    assert.deepEqual(observations.at(-1), {
+      reviewObserved: present,
+      reviewSubmitted: present,
+      rendererDisconnected: false,
+      childExited: false,
+    });
+  }
+});
+
+test("close diagnostics preserve CDP timeout and never classify it as renderer shutdown", async () => {
+  let last;
+  const failure = new Error("CDP setup timeout");
+  await assert.rejects(
+    observeNormalClose(
+      {
+        child: { exitCode: null },
+        product: "workspace",
+        cdp: {
+          evaluate: async () => {
+            throw failure;
+          },
+        },
+        ui: {},
+        reportClose: (value) => {
+          last = value;
+        },
+      },
+      async (check) => check(),
+    ),
+    (error) => error === failure,
+  );
+  assert.equal(last.rendererDisconnected, false);
+  assert.equal(last.childExited, false);
+});
+
 test("explicit owned handoff close review still waits for native process exit", async () => {
   const child = { exitCode: null };
   let reviews = 0;

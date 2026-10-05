@@ -29,21 +29,40 @@ export async function observeUntil(check, label, timeout = 30000) {
 }
 // WebView shutdown precedes the exact child's exit event during normal Close.
 // A disconnected renderer is never itself proof that the owned child exited.
-export async function observeNormalClose({ child, product, cdp, ui, reviewWorkspaceClose }, observe = observeUntil) {
+export async function observeNormalClose(
+  { child, product, cdp, ui, reviewWorkspaceClose, reportClose },
+  observe = observeUntil,
+) {
   let reviewed = false;
   let rendererClosed = false;
+  let reviewObserved = false;
+  const report = () =>
+    reportClose?.({
+      reviewObserved,
+      reviewSubmitted: reviewed,
+      rendererDisconnected: rendererClosed,
+      childExited: child.exitCode !== null,
+    });
+  report();
   await observe(async () => {
-    if (child.exitCode !== null) return true;
+    if (child.exitCode !== null) {
+      report();
+      return true;
+    }
     if (product !== "workspace" || reviewed || rendererClosed) return false;
     try {
       if (await cdp.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Workspace 종료 검토"]\')')) {
+        reviewObserved = true;
+        report();
         if (reviewWorkspaceClose) await reviewWorkspaceClose();
         else await ui.click({ role: "button", name: "종료", scope: { role: "dialog", name: "Workspace 종료 검토" } });
         reviewed = true;
+        report();
       }
     } catch (error) {
       if (error?.message !== "CDP disconnected") throw error;
       rendererClosed = true;
+      report();
     }
     return child.exitCode !== null;
   }, "normal native close");
