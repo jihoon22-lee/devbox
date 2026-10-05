@@ -93,3 +93,10 @@ $info.Name='English system label'
 if((Convert-TrayObservation $info 3).name -cne $info.Name){throw 'Modern system tray label must remain observable'}
 $info.ClassName='Taskbar.TaskListButtonAutomationPeer'
 if($null -ne (Convert-TrayObservation $info 3).name){throw 'Application taskbar label must remain omitted'}
+
+$rootPredicate=$trayAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-TrayRootClass'},$true)
+. ([scriptblock]::Create($rootPredicate.Extent.Text))
+if(-not (Test-TrayRootClass 'TopLevelWindowForOverflowXamlIsland')){throw 'Observed modern Explorer overflow root must be recognized'}
+foreach($foreign in @('Tauri Window','foreign','toplevelwindowforoverflowxamlisland')) {
+ if(Test-TrayRootClass $foreign){throw 'Unknown or changed root class must reject'}
+}

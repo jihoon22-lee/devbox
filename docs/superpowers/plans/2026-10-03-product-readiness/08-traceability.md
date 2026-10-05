@@ -810,3 +810,10 @@ ParseInput 검사가 Windows PowerShell 5.1의 실제 파일 해석 차이를 �
 BOM을 복구하고 실제 ParseFile에서 한글 AST literal을 확인해 RED→GREEN으로 검증했다.
 다른 PowerShell 파일에는 같은 누락이 없었다. 로컬 최종 영향 검사는 8.37초에 통과했고
 compiler 범위는 none, peak 79MB였다. 통과한 제품·데이터 보존 검사는 재실행하지 않는다.
+
+
+집중 진단 [37272491360](https://github.com/jihoon22-lee/devbox/actions/runs/37272491360)은
+Windows 사전 검사와 설치·활성화를 통과하고 실제 트레이를 펼쳤다. 이후 Explorer의
+`TopLevelWindowForOverflowXamlIsland` 팝업을 기존 root 목록이 거부했다. 확보한 native
+창 정보에 따라 이 정확한 class를 인식하고 기존 PID·이미지·세션·native 소유권 검사는
+유지했다. 실제 Windows ParseFile과 허용/거부 predicate 회귀는 통과했다.

@@ -46,6 +46,9 @@ function AssertAgent {
  $p=[Diagnostics.Process]::GetProcessById($AgentProcessId)
  if($p.MainModule.FileName -ne $ExpectedExecutable -or $p.StartTime.ToUniversalTime().ToString('o') -ne $ExpectedStartTimeUtc){throw 'Owned Agent identity changed'}
 }
+function Test-TrayRootClass([string]$ClassName) {
+ return $ClassName -cin @('Shell_TrayWnd','Shell_SecondaryTrayWnd','NotifyIconOverflowWindow','TopLevelWindowForOverflowXamlIsland')
+}
 function AssertExplorer($element) {
  $info=$element.Current
  $process=[Diagnostics.Process]::GetProcessById($info.ProcessId)
@@ -57,7 +60,7 @@ function AssertExplorer($element) {
    $owner=[uint32]0
    [void][OwnedTrayInput]::GetWindowThreadProcessId($handle,[ref]$owner)
    if($owner -ne $info.ProcessId -or -not [OwnedTrayInput]::IsWindowVisible($handle)){throw 'Explorer native control changed'}
-   if([OwnedTrayInput]::TopClass($handle,[uint32]$info.ProcessId) -cnotin @('Shell_TrayWnd','Shell_SecondaryTrayWnd','NotifyIconOverflowWindow')){throw 'Explorer control outside tray root'}
+   if(-not (Test-TrayRootClass ([OwnedTrayInput]::TopClass($handle,[uint32]$info.ProcessId)))){throw 'Explorer control outside tray root'}
    return
   }
   $current=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($current)
@@ -123,7 +126,7 @@ function Save-TrayFailureObservation {
  SaveObservation
  try {
   $queue=[Collections.Generic.Queue[object]]::new()
-  foreach($window in $native | Where-Object {$_.visible -and $_.className -in @('Shell_TrayWnd','Shell_SecondaryTrayWnd','NotifyIconOverflowWindow')}) {
+  foreach($window in $native | Where-Object {$_.visible -and (Test-TrayRootClass $_.className)}) {
    $element=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$window.handle)
    if($element.Current.ProcessId -ne $window.processId){throw 'Explorer root changed'}
    $queue.Enqueue(@{element=$element;depth=0;owner=$window.processId})
