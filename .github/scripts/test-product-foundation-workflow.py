@@ -263,6 +263,12 @@ assert "if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not co
 # Apps-only retained diagnosis is an exclusive installer mode, never a rebuild.
 assert "suite_diagnostic_apps_only:" in workflow
 assert "suite_app_journeys:" in workflow
+assert "$selectedApps = @()" in work_step
+assert "$selectedAppScripts = @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')" in work_step
+assert "$selectedAppScripts = @($appScripts.Values)" not in work_step
+assert "dependencies='windows-workspace-user-flows.mjs'" in work_step
+assert "Workspace and dependency-only journeys are mutually exclusive" in work_step
+assert 'node ".github/scripts/$script" --dependencies-diagnostic' in work_step
 assert "SELECTED_APP_JOURNEYS: ${{ inputs.suite_app_journeys }}" in work_step
 assert "Invalid retained app journey selection" in work_step
 assert "Selected app journeys require apps-only diagnosis" in work_step

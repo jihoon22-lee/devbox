@@ -1,3 +1,4 @@
+import { dependencyProviderFailureVisible } from "./windows-dependency-network.mjs";
 import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import { readWorkspaceAgentOperations } from "./windows-workspace-agent-observation.mjs";
 import { boundedFailure } from "./user-flow-failure-evidence.mjs";
@@ -275,6 +276,7 @@ export function createWorkspaceUiFixture({
   fixtureRoot,
   windowOwner,
   network,
+  withDependencyFailure,
   chooseArchive,
   terminalUi,
   restart,
@@ -685,26 +687,29 @@ export function createWorkspaceUiFixture({
       const fresh = await readCompletedDependencyInventory(ui, inventory);
       assert.notEqual(fresh.revision, initial.revision);
       assert.ok(fresh.packages.some((item) => item.version === "1.2.4"));
-      // Approved transmission reaches only the owned failure proxy, retaining local inventory.
-      const attempts = network.attempts();
-      await ui.click({ role: "button", name: "전송 내용 검토" });
-      await this.waitForText({ role: "region", name: "원격 전송 검토" });
-      await ui.click({ role: "button", name: "검토한 정보 보내기" });
-      await network.waitForAttempt(attempts);
-      await wait(
-        async () =>
-          (await cdp.evaluate('document.querySelector(".dependency-lens-panel")?.textContent ?? ""')).includes("실패"),
-        "provider failure shown with local report",
-      );
-      assert.ok((await inventory()).packages.some((item) => item.version === "1.2.4"));
-      assert.deepEqual(JSON.parse(await readFile(path.join(root, "package.json"), "utf8")), manifest);
+      // Production enrichment deliberately ignores proxies. Deny only this
+      // verified image's HTTPS egress while the user-approved request executes.
+      assert.equal(typeof withDependencyFailure, "function", "Owned hosted dependency failure adapter required");
+      let screenshot;
+      await withDependencyFailure(async () => {
+        await ui.click({ role: "button", name: "전송 내용 검토" });
+        await this.waitForText({ role: "region", name: "원격 전송 검토" });
+        await ui.click({ role: "button", name: "검토한 정보 보내기" });
+        await wait(
+          async () => await cdp.evaluate(`(${dependencyProviderFailureVisible.toString()})(document)`),
+          "approved provider transmission failed with positive failure count",
+        );
+        assert.ok((await inventory()).packages.some((item) => item.version === "1.2.4"));
+        assert.deepEqual(JSON.parse(await readFile(path.join(root, "package.json"), "utf8")), manifest);
+        screenshot = await ui.screenshot("workspace-dependencies-safe-refresh");
+      });
       return {
         assertions: [
           "Actual cancellation releases the reviewed transmission without sending",
           "Lockfile mutation invalidates old preview; local reanalysis obtains new revision before new approval",
-          "Owned OSV/deps.dev proxy failures preserve local package inventory and never execute package scripts",
+          "Owned image HTTPS firewall failure preserves local package inventory; its exact temporary rule is removed",
         ],
-        screenshots: [await ui.screenshot("workspace-dependencies-safe-refresh")],
+        screenshots: [screenshot],
       };
     },
     async terminalLifecycle() {

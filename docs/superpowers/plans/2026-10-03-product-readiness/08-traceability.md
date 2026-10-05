@@ -900,3 +900,33 @@ request의 성공/실패 응답을 모두 포착하되 succeeded·원래 job 검
 좁은 로컬 회귀와 실제 Chromium, Windows PowerShell helper compile·parser, 별도 diff 검토를
 통과했다. 다음 retained 실행은 workspace/api/handoff 및 실패한 migration에 한정한다.
 검증 코드만 변경됐으며 모든 진단은 승격 불가다. 원인 미확정 항목을 제품 해결로 표시하지 않는다.
+
+
+[선택 여정 진단 37288377814](https://github.com/jihoon22-lee/devbox/actions/runs/37288377814)은
+API 11개·RUNTIME-01·LSP-01·HANDOFF-01과 정리를 통과했다. 남은 세 실패를 분리했다.
+RUNTIME-02는 실제 제품 결함이었다. 시작 경로·글꼴 등 preference 저장이 동일 파일의
+전체 digest를 바꿔 변경되지 않은 terminal profile도 stale revision으로 거부했다.
+revision을 profile content로 한정하고 전체 파일 compare-before-write와 preference CAS는
+유지했다. preference 변경 후 저장·삭제와 실제 stale profile 거부의 Rust 회귀 4개를 통과했다.
+제품 bytes가 바뀌므로 이전 후보는 새 제품의 수용 근거로 재사용하지 않는다.
+
+DEPS-01은 제품의 명시적 `no_proxy` 정책과 양립하지 않는 proxy 시도 조건이었다.
+일회성 GitHub-hosted Windows에서만 정확한 설치 이미지·digest·PID·생성 시각을 검증한 뒤
+해당 이미지의 외부 TCP 443만 차단하고, 같은 provider의 실제 전송·실패 수가 양수임을
+확인한다. 고유 rule의 생성·유효성·정리를 검증하며 기존 firewall profile은 바꾸지 않는다.
+로컬에서는 순수 adapter 회귀와 PowerShell 구문만 검증하고 방화벽은 실행하지 않았다.
+HANDOFF-02는 동시 installed/portable 실행 파일 basename의 WebView2 policy 충돌이었다.
+복사한 portable에만 고유 basename을 쓰고 bytes digest와 리소스·설치 경계는 유지했다.
+
+[종료 관측 진단 37290119469](https://github.com/jihoon22-lee/devbox/actions/runs/37290119469)의
+실제 화면은 종료 검토 제출 후 stale project-context 오류를 보였다. 검증 코드의 direct
+`select_project`가 renderer의 cached description을 갱신하지 않는 것이 원인이었다.
+초기·재시작 후 선택을 RegistryGate의 실제 목록 갱신·정확한 project 선택으로 바꾸고
+context 표시 반영을 기다린다. 제품 권한·cache 검사를 약화하지 않는다.
+남은 retained 진단은 dependency/handoff와 migration으로 제한하며, 이미 결함이 확인된
+이전 binary의 RUNTIME-02 및 무관한 통과 검사를 다시 실행하지 않는다.
+
+최종 로컬 영향 검사는 Workspace Rust check·clippy·fmt·123개 unit 및 binding 검사를
+112.1초에 통과했다. worker 2개·메모리 상한 8GiB를 유지했고 sampled RSS peak는
+약 2.18GiB였다. Biome은 1,931개 파일을 통과했다. 새 순수 fixture 회귀도 카탈로그 검증에
+등록했으며 독립 코드 검토에서 차단 결함은 발견하지 않았다. Windows 설치 수용은 별도다.

@@ -135,7 +135,7 @@ on:
         type: boolean
         default: false
       suite_app_journeys:
-        description: Optional comma-separated retained app journeys (workspace,api,knowledge,handoff,layout); empty runs all
+        description: Optional retained journeys (workspace,dependencies,api,knowledge,handoff,layout); dependencies excludes other Workspace checks
         type: string
         default: ''
       suite_remaining_only:
@@ -510,12 +510,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Owned retained installation was not committed; independent journeys are blocked.' }
           . .github/scripts/prepare-windows-ui-display.ps1 -EvidenceName hosted-display-work
           $appsOnly = '${{ inputs.suite_diagnostic_apps_only }}' -eq 'true'
-          $appScripts = @{workspace='windows-workspace-user-flows.mjs';api='windows-api-user-flows.mjs';knowledge='windows-knowledge-user-flows.mjs';handoff='windows-suite-integration.mjs';layout='windows-suite-layout.mjs'}
-          $selectedAppScripts = @($appScripts.Values)
+          $appScripts = @{workspace='windows-workspace-user-flows.mjs';dependencies='windows-workspace-user-flows.mjs';api='windows-api-user-flows.mjs';knowledge='windows-knowledge-user-flows.mjs';handoff='windows-suite-integration.mjs';layout='windows-suite-layout.mjs'}
+          $selectedApps = @()
+          $selectedAppScripts = @('windows-workspace-user-flows.mjs','windows-api-user-flows.mjs','windows-knowledge-user-flows.mjs','windows-suite-integration.mjs','windows-suite-layout.mjs')
           if ($env:SELECTED_APP_JOURNEYS) {
             if (-not $appsOnly) { throw 'Selected app journeys require apps-only diagnosis' }
             $selectedApps = @($env:SELECTED_APP_JOURNEYS.Split(',') | ForEach-Object { $_.Trim() })
             if ($selectedApps.Count -gt 5 -or @($selectedApps | Select-Object -Unique).Count -ne $selectedApps.Count -or @($selectedApps | Where-Object { -not $appScripts.ContainsKey($_) }).Count -ne 0) { throw 'Invalid retained app journey selection' }
+            if ('workspace' -in $selectedApps -and 'dependencies' -in $selectedApps) { throw 'Workspace and dependency-only journeys are mutually exclusive' }
             $selectedAppScripts = @($selectedApps | ForEach-Object { $appScripts[$_] })
           }
           if ('${{ inputs.suite_diagnostic_boundaries_only }}' -eq 'true') {
@@ -538,7 +540,11 @@ jobs:
               if ($withdrawnExitCode -ne 0) { $failed += 'withdrawn-same-version-update' }
             }
             Write-Host "Installed journey start: $script"
-            node ".github/scripts/$script"
+            if ($appsOnly -and 'dependencies' -in $selectedApps -and $script -eq 'windows-workspace-user-flows.mjs') {
+              node ".github/scripts/$script" --dependencies-diagnostic
+            } else {
+              node ".github/scripts/$script"
+            }
             $scriptExitCode = $LASTEXITCODE
             Write-Host "Installed journey end: $script exit=$scriptExitCode"
             if ($scriptExitCode -ne 0) { $failed += $script }

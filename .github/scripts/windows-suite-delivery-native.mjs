@@ -19,7 +19,7 @@ import { reconnectAgent, observeReconnectBaseline } from "./windows-agent-reconn
 import { observeWindowsCdpWaits } from "./windows-cdp-waits.mjs";
 import { observeWindowsCdpStacks } from "./windows-cdp-stacks.mjs";
 import { observeWindowsCdpHost, focusWindowsCdpHost } from "./windows-cdp-host.mjs";
-import { exerciseAgentRuntime } from "./windows-agent-runtime.mjs";
+import { exerciseAgentRuntime, selectAgentRuntimeProject } from "./windows-agent-runtime.mjs";
 // Actual installed products, native owner observations and activation gating.
 // The PowerShell fixture owns the random installation and namespace cleanup.
 import { requireHostedNetworkFixture } from "./fixture-network-safety.mjs";
@@ -422,6 +422,15 @@ try {
       workspace: apps.workspace,
       directory: fixture,
       agentIdentity,
+      selectWorkspaceProject: async (item, directory) => {
+        const owner = captureWindowOwner(item.identity, path.dirname(root));
+        const ui = createUiDriver({
+          cdp: item.cdp,
+          evidenceRoot: "product-foundation-evidence",
+          closeOwnedWindow: () => nativeWindowAction(owner, "Close"),
+        });
+        await selectAgentRuntimeProject({ ui, cdp: item.cdp }, directory);
+      },
       closeWorkspace: async (item) => {
         const owner = captureWindowOwner(item.identity, path.dirname(root));
         const closeWindow = () => nativeWindowAction(owner, "Close");

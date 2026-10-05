@@ -3,6 +3,7 @@ import { observeWorkspaceFailure } from "./windows-workspace-ui-observations.mjs
 import assert from "node:assert/strict";
 export const scenarioIds = ["RUNTIME-01", "RUNTIME-02", "LSP-01", "DEPS-01"];
 export async function run(context) {
+  assert.ok(!context.dependenciesOnly || context.diagnosticOnly === true, "Explicit retained diagnostic required");
   const { ui, sourceSha, fixtureSha, artifactDigests, workspaceFixture: fixture } = context;
   const results = [];
   for (const [id, method] of [
@@ -11,6 +12,7 @@ export async function run(context) {
     ["LSP-01", "managedLspLifecycle"],
     ["DEPS-01", "dependencyRefresh"],
   ]) {
+    if (context.dependenciesOnly && id !== "DEPS-01") continue;
     const result = {
       id,
       status: "NOT_RUN",

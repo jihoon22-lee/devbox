@@ -1,3 +1,4 @@
+import { dependencyNetworkScope, withDependencyNetworkBlock } from "./windows-dependency-network.mjs";
 import { ownedFilePickerWhenReady } from "./windows-owned-file-picker.mjs";
 import { waitForFixtureChildExit } from "./fixture-child-exit.mjs";
 import { crashOwnedWorkspace } from "./windows-workspace-crash.mjs";
@@ -38,11 +39,12 @@ import {
   installElevatedCdpPolicy,
   releaseCdpSession,
 } from "./windows-packaged-smoke.mjs";
-export async function runWorkspaceUserFlows() {
+export async function runWorkspaceUserFlows({ dependenciesOnly = false } = {}) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   const identity = await packagedIdentity();
+  assert.ok(!dependenciesOnly || identity.diagnosticOnly === true, "Explicit retained diagnostic required");
   const root = await realpath(process.env.DEVBOX_USER_FLOW_INSTALL_ROOT);
   assert.match(path.basename(path.dirname(root)), /^devbox-suite-delivery-[a-f0-9]{32}$/u);
   assert.equal(path.basename(root), "Suite UI Fixture");
@@ -151,6 +153,8 @@ export async function runWorkspaceUserFlows() {
     fixtureRoot,
     windowOwner: () => captureWindowOwner(owner, root),
     network,
+    withDependencyFailure: (action) =>
+      withDependencyNetworkBlock(dependencyNetworkScope(captureWindowOwner(owner, root), member.sha256), action),
     async terminalUi(id) {
       const transport = await connect(port, child, performance.now() + 30_000, id);
       const windowOwner = captureWindowOwner(owner, root);
@@ -176,22 +180,34 @@ export async function runWorkspaceUserFlows() {
     },
   });
   const results = [];
-  const scenarioIds = ["WORK-01", "WORK-02", "WORK-03", "RUNTIME-01", "RUNTIME-02", "LSP-01", "DEPS-01"];
+  const scenarioIds = dependenciesOnly
+    ? ["DEPS-01"]
+    : ["WORK-01", "WORK-02", "WORK-03", "RUNTIME-01", "RUNTIME-02", "LSP-01", "DEPS-01"];
   try {
     await launch();
-    await observeProductPerformance({
-      product: "workspace",
-      cdp,
-      getIdentities: () => ownedProductCohort(owner),
-      coldRendererReadyMs,
-      warmExistingWindowMs: await measureWarmOwnedWindow(captureWindowOwner(owner, root), cdp),
-      workload: () => fixture.performanceTask(),
-    });
-    results.push(...(await draftFlows({ ...identity, ui, cdp, fixtureRoot, workspaceFixture: fixture })));
-    await launch();
-    results.push(...(await agentFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
-    await launch();
-    results.push(...(await runtimeFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
+    if (dependenciesOnly) {
+      const project = await mkdtemp(path.join(fixtureRoot, "workspace-dependencies-"));
+      await writeFile(path.join(project, "한글.txt"), "원본\r\n");
+      await ui.waitForTarget({ role: "textbox", name: "Windows 프로젝트 폴더" });
+      await fixture.prepare(project);
+      results.push(
+        ...(await runtimeFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture, dependenciesOnly })),
+      );
+    } else {
+      await observeProductPerformance({
+        product: "workspace",
+        cdp,
+        getIdentities: () => ownedProductCohort(owner),
+        coldRendererReadyMs,
+        warmExistingWindowMs: await measureWarmOwnedWindow(captureWindowOwner(owner, root), cdp),
+        workload: () => fixture.performanceTask(),
+      });
+      results.push(...(await draftFlows({ ...identity, ui, cdp, fixtureRoot, workspaceFixture: fixture })));
+      await launch();
+      results.push(...(await agentFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
+      await launch();
+      results.push(...(await runtimeFlows({ ...identity, ui, fixtureRoot, workspaceFixture: fixture })));
+    }
   } catch (error) {
     await preserveUserFlowFailure("workspace", error, { ui: attached ? ui : null, identity }).catch(() => {
       console.error("Workspace original-failure evidence unavailable");
@@ -246,5 +262,9 @@ export async function runWorkspaceUserFlows() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  await runWorkspaceUserFlows();
+  assert.ok(
+    process.argv.slice(2).every((arg) => arg === "--dependencies-diagnostic"),
+    "Unknown Workspace fixture option",
+  );
+  await runWorkspaceUserFlows({ dependenciesOnly: process.argv.includes("--dependencies-diagnostic") });
 }
