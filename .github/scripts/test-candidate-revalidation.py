@@ -45,6 +45,18 @@ class RevalidationTests(unittest.TestCase):
             with self.assertRaises(ValueError):validate_original_run({**run,key:value},jobs,REPO,SOURCE,11)
         with self.assertRaises(ValueError):validate_original_run(run,jobs[:-1],REPO,SOURCE,11)
 
+    def test_cancelled_original_requires_all_immutable_build_and_native_jobs_complete(self):
+        run=dict(id=11,path='.github/workflows/windows-package-candidate.yml',event='workflow_dispatch',status='completed',conclusion='cancelled',head_sha=SOURCE,head_branch='main',head_repository={'full_name':REPO},run_attempt=1)
+        jobs=proof()['requiredJobs']
+        self.assertEqual(validate_original_run(run,jobs,REPO,SOURCE,11),jobs)
+        for position in range(len(jobs)):
+            for status,conclusion in [('completed','cancelled'),('completed','failure'),('completed','skipped'),('in_progress',None)]:
+                incomplete=copy.deepcopy(jobs)
+                incomplete[position].update(status=status,conclusion=conclusion)
+                with self.subTest(job=jobs[position]['name'],status=status,conclusion=conclusion),self.assertRaises(ValueError):
+                    validate_original_run(run,incomplete,REPO,SOURCE,11)
+        with self.assertRaises(ValueError):validate_original_run({**run,'status':'in_progress'},jobs,REPO,SOURCE,11)
+
     def test_input_comparison_rejects_product_lock_build_mode_and_unlisted_changes(self):
         base={'apps/product.rs':('100644','a'*40),'Cargo.lock':('100644','b'*40),'.github/scripts/windows-suite-direct-layout.mjs':('100644','c'*40)}
         allowed={**base,'.github/scripts/windows-suite-direct-layout.mjs':('100644','d'*40)}
@@ -53,5 +65,21 @@ class RevalidationTests(unittest.TestCase):
             bad={**base,path:('100644','e'*40)}
             with self.subTest(path=path),self.assertRaises(ValueError):compare_inputs(base,bad)
         with self.assertRaises(ValueError):compare_inputs(base,{**base,'apps/product.rs':('100755','a'*40)})
+
+    def test_reviewed_final_observers_do_not_expand_package_or_fixture_allowance(self):
+        paths=['.github/scripts/windows-knowledge-activity.mjs',
+               '.github/scripts/windows-knowledge-user-flows.test.mjs',
+               '.github/scripts/windows-suite-integration.mjs',
+               '.github/scripts/windows-suite-integration.test.mjs',
+               '.github/scripts/windows-suite-delivery-user-flows.mjs',
+               '.github/scripts/windows-suite-delivery-reopen.test.mjs']
+        for path in paths:
+            self.assertEqual(compare_inputs({}, {path:('100644','a'*40)})[0]['path'],path)
+            with self.assertRaises(ValueError):compare_inputs({}, {path:('120000','a'*40)})
+            with self.assertRaises(ValueError):compare_inputs({}, {path+'.unreviewed':('100644','a'*40)})
+        for path in ['packages/workspace-features/src/terminal/lib/orderedInput.ts',
+                     'apps/devbox-knowledge/src-tauri/src/startup.rs',
+                     'apps/devbox-control-center/src-tauri/src/core/data_checkpoint.rs']:
+            with self.assertRaises(ValueError):compare_inputs({}, {path:('100644','a'*40)})
 
 if __name__=='__main__': unittest.main()

@@ -31,6 +31,11 @@ Workspace WSL helper와 Control Center Suite helper는 소유 제품 ZIP에 포�
 - 원본은 main의 고정 SHA에서 만든 비만료 assembly여야 한다. 원본 repository·workflow·run·attempt와
   assembly 및 재사용할 native/WSL2/성능 job의 실제 성공을 GitHub에서 확인한다. 실패한 원본 run을
   성공 후보로 직접 승격하지 않는다. 조회·출처·digest 확인 실패는 재빌드로 대체하지 않고 중단한다.
+  관측기만 수정되는 동안 기존 빌드를 계속한 경우, 위 필수 build·assembly·native·WSL2 job이
+  모두 실제 `completed/success`가 된 뒤 이전 UI 관측만 중단할 수 있다. 전체 run이
+  `cancelled`여도 이 성공 근거와 원본 자산이 모두 남아 있을 때만 재사용한다. 필수 job 하나라도
+  실패·취소·미실행·진행 중이면 거절한다. 이 예외 역시 아래의 새 40개 UI·migration 수용과
+  seal을 모두 요구하며, 취소된 원본을 그대로 승격하는 절차가 아니다.
 - 원본 빌드 SHA와 현재 main의 fixture SHA 사이 모든 tracked 파일의 blob·mode를 비교한다.
   검토된 유한한 정확한 경로 목록 밖의 차이는 거부한다. 디렉터리 전체 제외나 제품·빌드 입력
   변경은 허용하지 않는다. 후자는 기존 exact-main 전체 후보 빌드와 수용 절차를 따른다.

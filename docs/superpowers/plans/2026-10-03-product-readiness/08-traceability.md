@@ -177,10 +177,19 @@ check·Clippy·fmt와 2,947개 테스트 및 생성 타입 일치를 확인했�
 |---|---|---|
 | Terminal | 비동기 PTY 쓰기의 완료 전에 다음 Enter가 먼저 도달. pane별 제한된 대기열로 실제 쓰기·flush ACK 순서를 보존하고 종료·실패 시 대기 입력 폐기, 재전송 금지 | 지연된 첫 쓰기와 Enter로 RED→GREEN. 초기 명령·broadcast 대상 변경·실패·상한·pane 독립성 포함 |
 | Knowledge 시작·Health | 기존 제품 DB에 중단된 rollback journal이 있으면 읽기 전용 metadata 연결이 복구를 거절. 기존 선택 파일만 READ_WRITE로 열어 SQLite 복구를 허용하고 query_only·trusted_schema 제한 유지 | 실제 subprocess 중단 journal로 binding 및 Notes/Activity/Search 준비 실패를 재현. DB 생성·row/schema 변경은 금지. 원본 후보에는 journal 근거가 없어 동일 원인이라고 단정하지 않음 |
-| checkpoint | 제품 writer 종료보다 Windows 파일 handle 해제가 늦을 수 있음. 개별 open/read의 OS 32·33만 원래 120초·취소 범위에서 기다리며 나머지 오류는 즉시 거절 | byte/hash/identity·전체 보존 조건 유지, 완료된 read 재실행 없음. 실제 Windows exclusive handle 회귀는 Windows 검사에서 실행 예정이며 로컬 WSL에서는 미실행. 원본 후보의 정확한 파일·OS 원인은 미확정 |
+| checkpoint | 제품 writer 종료보다 Windows 파일 handle 해제가 늦을 수 있음. 개별 open/read의 OS 32·33만 원래 120초·취소 범위에서 기다리며 나머지 오류는 즉시 거절 | byte/hash/identity·전체 보존 조건 유지, 완료된 read 재실행 없음. 실제 Windows exclusive handle 회귀는 #634 Windows CI에서 통과했으며 로컬 WSL에서는 실행하지 않음. 원본 후보의 정확한 파일·OS 원인은 미확정 |
 | 설치 관측 | 종료 dialog 안의 경고를 명시적으로 선택, Knowledge 재시작 뒤 새 CDP로 성능 PNG 캡처, shortcut의 정확한 WebView 자식 종료까지 관측 | WORK 경고 중복과 이전 CDP 재사용은 fixture 결함으로 재현. 후속 LSP/Dependencies의 가림은 앞선 종료 dialog에서 발생 |
 | 실패 기록 | 미완료 activation의 Agent 여정은 NOT_RUN으로 기록하고 전체 gate는 실패 유지. 시작 시 Agent가 없던 경우 X가 종료시켰다고 표시하지 않음 | 최초 delivery 실패를 보존하며 성공을 만들기 위한 재시작·상태 변경은 하지 않음 |
 
 이 보정에는 제품 변경이 포함되므로 `45443fd8`의 자산을 승격하거나 새 source로
 재표기하지 않는다. 같은 보정 PR에 로컬 결과와 필수 CI를 기록한 뒤 새 exact-main
 후보의 설치·복구·전체 여정과 공개본 다운로드를 확인한다.
+
+`e5c8bd19`의 새 후보를 빌드하는 동안 후속 관측기 3곳도 보완했다. Activity 중지는
+한 번의 클릭 뒤 native tracking·consent 해제를 기다리고, 첫 HANDOFF 미리보기는
+레이블이 아니라 전달할 원문과 정확히 비교한다. delivery 정리 실패는 최초 실패를
+덮지 않고 결과에 추가하며, 성공 뒤 정리 실패도 FAIL로 남긴다. 모두 fixture 변경이며
+제품·의존성·빌드 입력에는 차이가 없다. 기존 빌드·assembly·native·WSL2 성공이
+모두 확보된 뒤 이전 관측을 중단하고 수정된 40개 UI·migration을 같은 7개 파일로
+수용하는 경우 [제한적 재검증 정책](../../../release-policy.md#fixture만-바뀐-후보의-제한적-재검증)을 따른다.
+어느 필수 독립 job이라도 완료·성공하지 않았으면 재사용하지 않는다.

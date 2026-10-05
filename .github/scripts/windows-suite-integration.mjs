@@ -76,6 +76,25 @@ export async function review(context) {
   await context.ui.waitForTarget(incoming);
   await context.ui.click(button("화면 열기", incoming));
 }
+export async function observeSourcePreview(api, original, observe = until) {
+  assert.ok(Buffer.isBuffer(original));
+  const expected = original
+    .toString("utf8")
+    .replace(/^\uFEFF/u, "")
+    .replace(/\r\n/g, "\n");
+  assert.ok(expected.length > 0 && Buffer.byteLength(expected) <= 1_000_000);
+  // The dialog's "원본" metadata label is independent of its payload. Compare
+  // the actual preview against retained file bytes, preserving whitespace.
+  await observe(
+    () =>
+      api.cdp.evaluate(`(() => {
+      const previews = document.querySelectorAll('.toolbox-handoff-text[aria-label="Toolbox 전달 텍스트"]');
+      return previews.length === 1 && previews[0].textContent === ${JSON.stringify(expected)};
+    })()`),
+    "Workspace selection preview does not match the retained source bytes",
+  );
+  return expected;
+}
 export async function applySourceSelection(api, expected) {
   assert.ok(typeof expected === "string" && expected.length > 0 && Buffer.byteLength(expected) <= 1_000_000);
   await api.ui.click(button("적용", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
@@ -316,7 +335,7 @@ export async function run(api) {
         await until(async () => (await pending(api)).length === 1, "Selection review missing");
         await review(api);
         await expectText(api, "Toolbox 텍스트 미리보기");
-        await expectText(api, "원본");
+        const expectedSelection = await observeSourcePreview(api, original);
         await api.ui.click(button("취소", { role: "dialog", name: "Toolbox 텍스트 미리보기" }));
         assert.deepEqual(await readFile(receipt.file), original);
         record(
@@ -343,13 +362,7 @@ export async function run(api) {
         await selectSource(workspace);
         await review(api);
         await expectText(api, "Toolbox 텍스트 미리보기");
-        await applySourceSelection(
-          api,
-          original
-            .toString("utf8")
-            .replace(/^\uFEFF/u, "")
-            .replace(/\r\n/g, "\n"),
-        );
+        await applySourceSelection(api, expectedSelection);
         await selectSource(workspace);
         expiredAt = Date.now() + 122000;
         record(

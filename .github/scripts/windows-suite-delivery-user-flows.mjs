@@ -40,6 +40,28 @@ export async function assertKnowledgeDraft(context, expected) {
   assert.equal(await context.knowledgeFixture.editorText(), expected);
 }
 export const scenarioIds = ["INSTALL-03", "DELIVERY-02"];
+export async function finalizeDeliveryContexts(center, knowledge, results) {
+  const failures = [];
+  for (const [product, context] of [
+    ["control-center", center],
+    ["knowledge", knowledge],
+  ]) {
+    try {
+      if (context) await context.close();
+    } catch {
+      failures.push(`Owned ${product} cleanup failed`);
+    }
+  }
+  if (!failures.length) return;
+  // Preserve the first journey failure and its rows even if normal close also fails.
+  const row = results.findLast((item) => item.status === "FAIL") ?? results.at(-1);
+  assert.ok(row, "Delivery cleanup failed before any evidence was recorded");
+  row.assertions.push(...failures);
+  if (row.status !== "FAIL") {
+    row.status = "FAIL";
+    row.failureCode = "delivery-cleanup-failed";
+  }
+}
 export async function completeHealthAfterKnowledgeClose(knowledge, label, completeHealth = completeInstalledHealth) {
   assert.notEqual(knowledge.child.exitCode, null, "Knowledge normal saved close must precede health");
   // Native X already exited the first owner; release its per-image CDP policy
@@ -195,13 +217,12 @@ export async function run({ checkpointOnly = false } = {}) {
     assert.ok((await center.delivery("restore_inventory")).checkpoints.length > before.checkpoints.length);
     screenshots.push(await center.ui.screenshot("DELIVERY-02-real-data-checkpoint"));
     if (checkpointOnly) {
-      return [
-        {
-          ...record("CHECKPOINT-DIAGNOSTIC", "PASS", ["Updated installation created a checkpoint and reopened Center"]),
-          diagnosticOnly: true,
-          promotionEvidence: false,
-        },
-      ];
+      results.splice(0, results.length, {
+        ...record("CHECKPOINT-DIAGNOSTIC", "PASS", ["Updated installation created a checkpoint and reopened Center"]),
+        diagnosticOnly: true,
+        promotionEvidence: false,
+      });
+      return results;
     }
     // The interactive reinstall/removal runner appends this same identity after
     // the visible NSIS journey, retaining this checkpoint and exact saved hash.
@@ -274,8 +295,7 @@ export async function run({ checkpointOnly = false } = {}) {
       if (!results.some((row) => row.id === id))
         results.push(record(id, "FAIL", [String(error.message).slice(0, 500)], "delivery-ui-failed"));
   } finally {
-    if (center) await center.close().catch(() => {});
-    if (knowledge) await knowledge.close();
+    await finalizeDeliveryContexts(center, knowledge, results);
   }
   return results;
 }
