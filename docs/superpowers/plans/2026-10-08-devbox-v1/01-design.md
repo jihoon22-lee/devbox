@@ -935,8 +935,8 @@ agents = [{ tool = "claude", worktree = false }]
 - CI의 systemd user 세션: GitHub Ubuntu 러너에서 `sudo loginctl enable-linger $USER`와 `XDG_RUNTIME_DIR`을 설정한다. S0a에서 확인하고, 안 되면 systemd에 의존하는 L2 시나리오만 WSL 로컬 필수로 옮긴다.
 - **flaky 테스트:** 발견한 PR에서 고치거나 지운다. 재시도 래퍼·격리 목록은 만들지 않는다.
 - **PR 규칙:**
-  - 하위 프로젝트 안에서 사용자 흐름 단위로 PR을 나눈다.
-  - 필수 CI(Linux: fmt·clippy·test·L2·biome·vitest·tsc·`gen-ts --check`·금지어·L3)가 통과하면 squash 머지한다. 보호 규칙의 필수 검사는 이 job들을 모은 `ci-ok` 하나다(IR-1). L4 Windows 워크플로는 필수 검사가 아니다.
+  - 하위 프로젝트 하나가 브랜치 하나·PR 하나다. 그 안의 작업 묶음은 push만 하는 중간 지점이다(00-roadmap §3).
+  - 필수 CI(Linux: fmt·clippy·test·L2·biome·vitest·tsc·`gen-ts --check`·금지어·L3)가 통과하면 rebase 머지한다(하위 프로젝트 하나 = PR 하나, 00-roadmap §3). 보호 규칙의 필수 검사는 이 job들을 모은 `ci-ok` 하나다(IR-1). L4 Windows 워크플로는 필수 검사가 아니다.
   - 진행 상태의 원장은 PR과 각 계획 문서 머리의 "상태" 줄이다. 체크박스는 작업 보조일 뿐이다.
 - **에이전트 작업 규칙(새 AGENTS.md, S0b 첫 과제):**
   - 한 장 이내로 쓴다.
@@ -945,7 +945,7 @@ agents = [{ tool = "claude", worktree = false }]
   - 새 방어 장치·검증 단계를 더하기 전에 구조로 없앨 수 있는지 먼저 본다.
   - 파일 600줄, 컴포넌트 300줄을 넘으면 나눈다.
   - RPC 경계에 `serde_json::Value`를 쓰지 않는다. `Result<T, String>`은 §5.3의 허용 범위에서만 쓴다.
-  - 하위 프로젝트·과제마다 전용 git worktree와 브랜치를 쓴다.
+  - 하위 프로젝트마다 브랜치·worktree 하나를 쓰고, PR은 하위 프로젝트 끝에 한 번 연다(00-roadmap §3).
 - **자원:**
   - `CARGO_BUILD_JOBS=4`로 둔다.
   - `scripts/sweep.sh`(오래된 incremental 결과물 + `cargo sweep`)를 각 하위 프로젝트 완료 때와 target-dir이 150 GiB를 넘을 때 돌린다(00-roadmap §3 자원).
@@ -989,7 +989,7 @@ agents = [{ tool = "claude", worktree = false }]
 | R6 | 재구축이 기능 동등에 이르기 전에 멈춤 | 사용 빈도 순서. 각 S 끝의 빌드가 단독으로 쓸 만해야 함. **전환점:** S2가 끝나면 에이전트·실행·터미널은 새 빌드로 옮기고 나머지는 v0.9.0을 씀 | 매 S |
 | R7 | WSL 안 LSP 메모리 | 지연 시작, 세션 0개부터 15분 유휴 종료, 메모리 표시 | S4 |
 | R8 | 다시 비대해짐 | SC8 예산 점검, "구조 먼저" 규칙 | 매 S |
-| R9 | 같은 체크아웃에서 여러 에이전트 세션이 동시에 작업 | 하위 프로젝트·과제마다 전용 worktree와 브랜치 | 상시 |
+| R9 | 같은 체크아웃에서 여러 에이전트 세션이 동시에 작업 | 하위 프로젝트마다 전용 worktree와 브랜치, 원본 체크아웃은 main | 상시 |
 | R10 | systemd가 띄운 데몬에서 WSL interop(Windows 실행 파일 호출)이 안 될 수 있음 | S0a에서 확인. 안 되면 Windows 대상 작업·DPAPI 풀기·외부 열기를 Windows 앱이 대신 실행(브리지로 요청) | S0a |
 | R11 | v0.9.0과 공존(단축키·트레이·활동 수집·업데이트 자산) | 개발 빌드 단축키 분리, 활동 수집 한쪽만, 자산 이름 분리, 개발 빌드 업데이트 끔 | S0b·S6 |
 | R12 | Tauri 알림 플러그인은 데스크톱에서 클릭 이벤트가 없음(확인됨) | WinRT 토스트 + protocol activation + deep-link를 `crates/win`에서 직접 구현. 설치본에서만 동작 | S1 |

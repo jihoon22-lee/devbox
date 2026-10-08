@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: [03-s0b-skeleton](03-s0b-skeleton.md)의 PR A·B·C 머지
+- 상태: 계획 · 미착수 · 시작 조건: [03-s0b-skeleton](03-s0b-skeleton.md)의 묶음 A·B·C push(같은 S0b 브랜치에서 이어감)
 
 **Goal:** React 화면 골격(프레임·라우팅·RPC 클라이언트·상태 갱신 규칙·연결 표시·명령 팔레트·프로젝트 전환기)과 Windows Tauri 껍데기(WSL 확인·바이너리 배치·setup·브리지·창별 채널)를 만든다. 같은 화면이 브라우저(dev-gateway)와 Tauri 양쪽에서 실제 데몬에 붙어 `system.ping`·`projects.*`가 동작하게 한다.
 
@@ -38,12 +38,16 @@
 
 ---
 
-## PR 묶음
+## 작업 묶음
 
-| PR | 브랜치 | 과제 |
+S0b 전체가 브랜치 `v1/s0b-skeleton` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s0b-skeleton`다.
+묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한 번 검사한다.
+
+| 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| D | `feat/app/skeleton` | Task 16–21 |
-| E | `feat/app/windows-shell` | Task 22–24 |
+| D | Task 16–21 | push |
+| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → 사용자 확인 → 보호 규칙 전환 → rebase 머지 |
 
 ---
 
@@ -67,7 +71,7 @@
   - `Kbd({ keys: string[] })`
   - `StatusDot({ tone: "ok"|"warn"|"danger"|"progress"|"idle", label })`: 색과 모양을 함께 쓴다
 
-- [ ] **Step 0: worktree** — `git worktree add ../devbox-wt/feat-app-skeleton -b feat/app/skeleton origin/main`
+- [ ] **Step 0: 작업 위치** — S0b worktree `../devbox-wt/v1-s0b-skeleton`에서 이어서 한다(새 브랜치를 만들지 않는다).
 
 - [ ] **Step 1: 패키지 설정**
 
@@ -2233,18 +2237,17 @@ gateway는 WebSocket마다 데몬에 새로 연결한다. 그래서 데몬을 �
     needs: [changes, rust, frontend, e2e]
 ```
 
-- [ ] **Step 5: 확인·커밋·PR D**
+- [ ] **Step 5: 확인·커밋·묶음 D 끝**
 
 ```bash
 chmod +x scripts/*.sh
 pnpm check
 git add -A && git commit -m "test(app): run end-to-end journeys against a real daemon"
-git push -u origin feat/app/skeleton && gh pr create --fill --body "화면 골격(RPC 클라이언트·rev 규칙·프레임·단축키·팔레트·프로젝트 전환기), dev/check 스크립트, E2E 2개. 01-design §5.5·§8.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 D 끝: PROGRESS.md의 묶음 D 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+git push origin v1/s0b-skeleton
 ```
 
-CI 통과 후 squash 머지, worktree 정리.
+묶음 끝. 같은 브랜치·worktree에서 다음 묶음을 이어간다(PR·CI 없음).
 
 ---
 
@@ -2263,7 +2266,7 @@ CI 통과 후 squash 머지, worktree 정리.
   - `--self-check`(종료 코드 0/1)
   - Task 23이 연결·명령을 붙인다.
 
-- [ ] **Step 0: worktree** — `git worktree add ../devbox-wt/feat-app-windows-shell -b feat/app/windows-shell origin/main`
+- [ ] **Step 0: 작업 위치** — S0b worktree `../devbox-wt/v1-s0b-skeleton`에서 이어서 한다(새 브랜치를 만들지 않는다).
 
 - [ ] **Step 1: 설정 파일**
 
@@ -3251,20 +3254,21 @@ echo "Windows 탐색기에서 Downloads\\devbox-dogfood 의 setup 파일을 실�
 
 `bash -n scripts/dogfood.sh`(있으면 `shellcheck`도)로 문법을 확인한다.
 
-- [ ] **Step 3: 커밋·push·PR E 열기**
+- [ ] **Step 3: 커밋·push·S0b PR 열기**
 
-PR E의 `pull_request`가 `windows.yml`을 돌려 설치 파일 산출물을 만든다. 사용자 확인은 그 산출물로 하므로 PR을 먼저 연다. 머지는 Step 5 뒤에 한다.
+S0b의 PR은 이것 하나다. PR의 `pull_request`가 `ci.yml`(S0b 전체 검사)과 `windows.yml`(설치 파일 산출물)을 한 번씩 돌린다. 사용자 확인은 그 산출물로 하므로 PR을 먼저 열고, 머지는 Step 5 뒤에 한다.
 
 ```bash
+pnpm check
 git add scripts .github && git commit -m "build: add Windows sync, dev, build and dogfood scripts and the Windows workflow"
-git push -u origin feat/app/windows-shell && gh pr create --fill --body "Windows 껍데기(WSL 확인·배치·setup·브리지·창별 채널·게이트 화면), Windows 스크립트·워크플로. 01-design §5.4·§6·§10. 머지는 사용자 실사용 확인 뒤.
+git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skeleton --title "feat: v1 walking skeleton (S0b)" --body "S0b 걷는 뼈대: 옛 코드 정리·v1 계획 폴더, 프로토콜·mux·생성기, core·projects·데몬·브리지·dev-gateway·setup·doctor, 화면 골격·E2E, Windows 껍데기·스크립트·워크플로. 01-design §3–§6·§8·§10. 머지는 사용자 실사용 확인 뒤.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
 - [ ] **Step 4: S0b 실사용 확인(사용자, 6개)**
 
-WSL에서 `bash scripts/dogfood.sh feat/app/windows-shell`로 설치 파일을 받아 설치한 뒤 확인한다(Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
+WSL에서 `bash scripts/dogfood.sh v1/s0b-skeleton`로 설치 파일을 받아 설치한 뒤 확인한다(Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
 
 1. 첫 실행 화면이 "연결하고 있습니다/설치하고 있습니다"를 거쳐 앱 화면으로 바뀌고, 상태 표시줄에 "데몬 연결됨"이 보인다.
 2. Ctrl+Shift+O → [프로젝트 추가] → `~/projects`의 폴더 하나 → 제목 표시줄에 이름이 보인다.
@@ -3273,12 +3277,24 @@ WSL에서 `bash scripts/dogfood.sh feat/app/windows-shell`로 설치 파일을 �
 5. 앱에서 Ctrl+P는 인쇄 창을 열지 않고, F5는 화면을 새로 고치지 않는다.
 6. 바로가기로 두 번째 실행을 하면 기존 창이 앞으로 온다.
 
-- [ ] **Step 5: 상태 갱신·머지**
+- [ ] **Step 5: 상태 갱신·보호 규칙 전환·머지**
 
 ```bash
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[03-s0b-skeleton\].*/- 상태: 완료(PR D·E 머지, 실사용 확인 6\/6)/' docs/superpowers/plans/2026-10-08-devbox-v1/03b-s0b-app.md
-# PROGRESS.md: S0b 행 완료, PR E 행, 현재 위치(다음: S1 PR F)를 고친다
-git add docs && git commit -m "docs(plan): mark S0b complete" && git push
+sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[03-s0b-skeleton\].*/- 상태: 완료(S0b PR 머지, 실사용 확인 6\/6)/' docs/superpowers/plans/2026-10-08-devbox-v1/03b-s0b-app.md
+# PROGRESS.md: S0b 행 완료, 묶음 E 행, PR 표의 S0b 행(번호), 현재 위치(다음: S1, 계획 원본은 이제 main)를 고친다
+git add docs && git commit -m "docs(plan): mark S0b complete" && git push origin v1/s0b-skeleton
 ```
 
-필수 CI와 Windows 워크플로가 통과하면 squash 머지, worktree 정리. 사용자에게 S0b 완료와 실사용 확인 결과를 보고하고 S1을 시작한다.
+필수 CI(`ci-ok`가 모은 job)와 Windows 워크플로가 통과하면, 머지 직전에 main 보호 규칙의 필수 검사를 `ci-ok` 하나로 바꾼다(IR-1). 지금(2026-10-08) 필수 검사는 옛 job 이름 셋(`Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`)이라 이 PR에는 없고, 바꾸지 않으면 머지가 영원히 막힌다.
+
+```bash
+gh api repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks --jq '.contexts'
+gh api -X PATCH repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks \
+  -F strict=false -f 'contexts[]=ci-ok'
+gh api repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks --jq '.contexts'
+gh pr merge --rebase v1/s0b-skeleton
+```
+
+Expected: 첫 줄은 옛 이름 셋, 셋째 줄은 `["ci-ok"]`, 머지 성공. 권한 오류(403)가 나면 사용자에게 저장소 설정 → Branches → main 규칙의 필수 검사를 `ci-ok` 하나로 바꿔 달라고 요청하고 기다린다. 우회 머지(`--admin`)는 하지 않는다.
+
+머지 뒤 정리: S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). 사용자에게 S0b 완료와 실사용 확인 결과를 보고하고 S1을 시작한다.

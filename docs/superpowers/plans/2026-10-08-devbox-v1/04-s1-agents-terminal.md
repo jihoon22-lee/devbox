@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: S0b 완료(PR A–E 머지, 실사용 확인)
+- 상태: 계획 · 미착수 · 시작 조건: S0b 완료(S0b PR 머지, 실사용 확인)
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)
@@ -27,6 +27,7 @@
 ## Global Constraints
 
 - S0b의 Global Constraints를 그대로 따른다.
+- 작업 위치: S1 전체(04·04b의 Task 1–24)가 브랜치 `v1/s1-agents-terminal`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s1-agents-terminal` 하나다. 시작할 때 `git worktree add ../devbox-wt/v1-s1-agents-terminal -b v1/s1-agents-terminal origin/main`. PR은 04b Task 24에서 한 번 연다(00-roadmap §3).
 - 외부 명령은 `tokio::process::Command`로 인자 배열을 넘긴다. 셸 문자열을 조립하지 않는다. 예외는 에이전트 시작 스크립트이며, 모든 값은 `sh_quote`로 감싼다.
 - tmux는 항상 `tmux -L devbox-<인스턴스> -f <devbox 소유 conf>`로 부른다. 사용자의 기본 tmux 서버를 건드리지 않는다.
 - 에이전트 worktree는 `<프로젝트 상위>/<프로젝트 이름>-agents/<slug>`, 브랜치는 `agent/<slug>`다.
@@ -47,15 +48,19 @@
 
 ---
 
-## PR 묶음
+## 작업 묶음
 
-| PR | 브랜치 | 과제 |
+S1 전체가 브랜치 `v1/s1-agents-terminal` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s1-agents-terminal`다.
+묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 번 검사한다.
+
+| 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| F | `feat/daemon/streams` | Task 1–2 |
-| G | `feat/terminal/core` | Task 3–4 |
-| H | `feat/git/agent-subset` | Task 5–6 |
-| I | `feat/agents/core` | Task 7–10 |
-| J | `feat/projects/launch-mcp` | Task 11–12 |
+| F | Task 1–2 | push |
+| G | Task 3–4 | push |
+| H | Task 5–6 | push |
+| I | Task 7–10 | push |
+| J | Task 11–12 | push |
 
 ---
 
@@ -688,12 +693,13 @@ private deliverChunk(id: number, flags: number, data: Uint8Array) {
 - `onClosed()`에서 모든 스트림 핸들러에 `onEnd()`를 부르고 비운다(`early`도 비운다).
 - `frame.ts`에 `streamFrame(id, flags, data)`를 추가한다. 형식은 `encodeFrame({kind: FRAME.stream, channel: 0, body: [u32 id LE, u8 flags, data]})`.
 
-- [ ] **Step 4: 통과·커밋·PR F**
+- [ ] **Step 4: 통과·커밋·묶음 F 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/rpc && pnpm --filter app typecheck && cargo run -q -p xtask -- gen-ts --check
 git add app crates && git commit -m "feat(app): consume flow-controlled streams in the RPC client"
-pnpm check && git push -u origin feat/daemon/streams && gh pr create --fill
+# 묶음 F 끝: PROGRESS.md의 묶음 F 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -1249,12 +1255,13 @@ method!(pub TerminalAttach = "terminal.attach", stream, AttachSession => devbox_
 method!(pub TerminalResize = "terminal.resize", mutation, ResizeStream => devbox_protocol::Done, TerminalError);
 ```
 
-- [ ] **Step 4: 통과·커밋·PR G**
+- [ ] **Step 4: 통과·커밋·묶음 G 끝**
 
 ```bash
 cargo test -p devbox-cli --test terminal_attach && cargo test --workspace && cargo run -q -p xtask -- gen-ts
 git add crates xtask app/src/rpc/gen && git commit -m "feat(terminal): stream tmux attach clients through a PTY with prefilled history"
-pnpm check && git push -u origin feat/terminal/core && gh pr create --fill
+# 묶음 G 끝: PROGRESS.md의 묶음 G 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -1771,12 +1778,13 @@ pub async fn merged_agent_branches(repo: &Path, base: &str) -> Result<Vec<String
 
 `Cargo.toml`에 `which = "7"`을 추가한다. `gh` 탐색 PATH는 데몬 환경(EnvironmentFile)을 따른다.
 
-- [ ] **Step 4: 통과·커밋·PR H**
+- [ ] **Step 4: 통과·커밋·묶음 H 끝**
 
 ```bash
 cargo test -p devbox-git
 git add crates && git commit -m "feat(git): add worktree, merge, rebase, pull request and cleanup operations"
-pnpm check && git push -u origin feat/git/agent-subset && gh pr create --fill
+# 묶음 H 끝: PROGRESS.md의 묶음 H 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -3035,12 +3043,13 @@ mod tests {
 
 `Cargo.toml`에 `regex = "1"`을 추가한다.
 
-- [ ] **Step 3: 통과·커밋·PR I**
+- [ ] **Step 3: 통과·커밋·묶음 I 끝**
 
 ```bash
 cargo test -p devbox-agents && cargo test -p devbox-cli && cargo run -q -p xtask -- gen-ts
 git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): detect waiting from output, measure resources and pin token usage"
-pnpm check && git push -u origin feat/agents/core && gh pr create --fill
+# 묶음 I 끝: PROGRESS.md의 묶음 I 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -3299,12 +3308,13 @@ pub async fn run() -> anyhow::Result<()> {
 - MCP는 외부 JSON-RPC 프로토콜이라 `serde_json::Value`를 쓴다(RPC 경계 규칙의 예외. 데몬 RPC 경계가 아님).
 - Claude Code 등록 예시를 `README.md`의 "개발" 절에 한 줄로 적는다: `claude mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`.
 
-- [ ] **Step 3: 통과·커밋·PR J**
+- [ ] **Step 3: 통과·커밋·묶음 J 끝**
 
 ```bash
 cargo test -p devbox-cli --test mcp && pnpm check
 git add crates README.md && git commit -m "feat(cli): expose projects and agents to coding agents over MCP"
-git push -u origin feat/projects/launch-mcp && gh pr create --fill
+# 묶음 J 끝: PROGRESS.md의 묶음 J 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+git push origin v1/s1-agents-terminal
 ```
 
 화면과 Windows 통합은 [04b-s1-app](04b-s1-app.md)으로 이어진다.

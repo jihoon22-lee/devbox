@@ -14,15 +14,17 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | P0 완료(2026-10-08) · S0a 대기 |
 | 다음 할 일 | 사용자가 실행을 지시하면 S0a Task 1 |
-| 작업 중인 브랜치·worktree | `docs/v1-plan` · `../devbox-wt/docs-v1-plan` — PR A 전까지 이 계획의 원본(00-roadmap §2 P0) |
+| 작업 중인 브랜치·worktree | `docs/v1-plan` · `../devbox-wt/docs-v1-plan` — S0b 브랜치가 생기기 전까지 이 계획의 원본(00-roadmap §2 P0) |
 | 마지막 갱신 | 2026-10-08 · 통합 검토 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
-| 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push, main에는 PR A와 함께 |
-| 2026-10-08 | 이 PC의 로컬 main에 원격에 없는 커밋 2개(`b2a508b6` source-map-js 갱신, `1b84aa9d` 완료 계획 정리, 둘 다 2026-10-07). `docs/v1-plan`은 원격 main(`72ff50c7`)에서 갈라졌다. 두 커밋의 내용은 PR A(옛 코드·문서 전부 삭제)로 의미가 없어진다. PR A 머지 뒤 로컬 main을 원격에 맞출지(두 커밋 버림), 그 전에 PR로 올릴지 | 사용자 | 대기 |
+| 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push(`aa5c6785`), main에는 S0b PR과 함께 |
+| 2026-10-08 | PR 47개 → 하위 프로젝트당 1개(7개)로 줄임 | 사용자 | 해결(00-roadmap §3) |
+| 2026-10-08 | S2 뒤 S3·S5를 두 세션이 동시에 진행할지(00-roadmap §2.1) | 사용자 | 대기(S2 끝날 때 다시 묻기) |
+| 2026-10-08 | 이 PC의 로컬 main에 원격에 없는 커밋 2개(`b2a508b6` source-map-js 갱신, `1b84aa9d` 완료 계획 정리, 둘 다 2026-10-07). `docs/v1-plan`은 원격 main(`72ff50c7`)에서 갈라졌다. 두 커밋의 내용은 S0b PR(옛 코드·문서 전부 삭제)로 의미가 없어진다. S0b PR 머지 뒤 로컬 main을 원격에 맞출지(두 커밋 버림), 그 전에 PR로 올릴지 | 사용자 | 대기 |
 | 2026-10-08 | 저장소 `user.email`이 개인 Gmail이라 명령줄 push가 거절된다(GitHub 이메일 비공개). P0 커밋은 noreply 주소로 다시 써서 push했다. 저장소 설정을 `188744452+jihoon22-lee@users.noreply.github.com`으로 바꿀지 | 사용자 | 대기(그 전까지 커밋마다 `-c user.email=…`, 00 §3.3) |
 
 ## 3. 하위 프로젝트
@@ -39,57 +41,72 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S5 | 07-s4-s6(→ 07b) | 대기 | | | 6개 |
 | S6 | 07-s4-s6(→ 07c) | 대기 | | | 7개 |
 
-## 4. PR
+## 4. PR (모두 7개)
 
-PR 경계는 각 계획 문서의 "PR 묶음" 표다. 머지하면 PR 번호와 머지 커밋을 적는다.
+하위 프로젝트 하나 = 브랜치 하나 = PR 하나다(00-roadmap §3). 머지하면 PR 번호와 머지 날짜를 적는다.
 
-| PR | 브랜치 | 과제 | 상태 | PR 번호 | 머지 커밋 |
+| PR | 브랜치 | 범위 | 상태 | PR 번호 | 머지 |
 |---|---|---|---|---|---|
-| P0 | `docs/v1-plan` | 계획 폴더 반영 | push(PR 없음, PR A에 포함) | — | `aa5c6785`(브랜치 커밋) |
-| S0a | `docs/v1-plan` | S0a Task 8 결과·설계 반영(직접 커밋, PR 없음) | 대기 | — | — |
-| A | `chore/rebuild/clean-slate` | S0b Task 1 | 대기 | | |
-| B | `feat/daemon/protocol` | S0b Task 2–6 | 대기 | | |
-| C | `feat/daemon/core` | S0b Task 7–15 | 대기 | | |
-| D | `feat/app/skeleton` | S0b Task 16–21 | 대기 | | |
-| E | `feat/app/windows-shell` | S0b Task 22–24 | 대기 | | |
-| F | `feat/daemon/streams` | S1 Task 1–2 | 대기 | | |
-| G | `feat/terminal/core` | S1 Task 3–4 | 대기 | | |
-| H | `feat/git/agent-subset` | S1 Task 5–6 | 대기 | | |
-| I | `feat/agents/core` | S1 Task 7–10 | 대기 | | |
-| J | `feat/projects/launch-mcp` | S1 Task 11–12 | 대기 | | |
-| K | `feat/app/terminal` | S1 Task 13–16 | 대기 | | |
-| L | `feat/app/agents` | S1 Task 17–19 | 대기 | | |
-| M | `feat/app/projects-settings` | S1 Task 20–21 | 대기 | | |
-| N | `feat/app/windows-integration` | S1 Task 22–23 | 대기 | | |
-| S1 마무리 | `chore/s1-wrap` | S1 Task 24 | 대기 | | |
-| S2 상세화 | `docs/s2-detail` | S2 Task 1 | 대기 | | |
-| O | `feat/runtime/core` | S2 Task 2–6 | 대기 | | |
-| P | `feat/runtime/observe` | S2 Task 7–10 | 대기 | | |
-| Q | `feat/secrets` | S2 Task 11–12 | 대기 | | |
-| R | `feat/app/runs` | S2 Task 13–15 | 대기 | | |
-| S2 마무리 | `chore/s2-wrap` | S2 Task 16 | 대기 | | |
-| S3 상세화 | `docs/s3-detail` | S3 Task 1 | 대기 | | |
-| S | `feat/documents/core` | S3 Task 2–3 | 대기 | | |
-| T | `feat/notes/core` | S3 Task 4–6 | 대기 | | |
-| U | `feat/search/core` | S3 Task 7 | 대기 | | |
-| V | `feat/activity/core` | S3 Task 8–9 | 대기 | | |
-| W | `feat/app/notes` | S3 Task 10–11 | 대기 | | |
-| S3 마무리 | `chore/s3-wrap` | S3 Task 12 | 대기 | | |
-| S4 상세화 | `docs/s4-detail` | S4-1 | 대기 | | |
-| X | `feat/editor/core` | S4-2–S4-4 | 대기 | | |
-| Y | `feat/git/full` | S4-5–S4-7 | 대기 | | |
-| Z | `feat/app/source` | S4-8–S4-9 | 대기 | | |
-| S5 상세화 | `docs/s5-detail` | S5-1 | 대기 | | |
-| AA | `feat/api/http` | S5-2–S5-3 | 대기 | | |
-| AB | `feat/api/streams` | S5-4 | 대기 | | |
-| AC | `feat/api/grpc-mcp` | S5-5 | 대기 | | |
-| AD | `feat/webhooks` | S5-6 | 대기 | | |
-| AE | `feat/tools/transforms-doctor` | S5-7–S5-8 | 대기 | | |
-| S5 마무리 | `chore/s5-wrap` | S5-9 | 대기 | | |
-| S6 상세화 | `docs/s6-detail` | S6-1 | 대기 | | |
-| AF | `feat/release/workflow` | S6-2 | 대기 | | |
-| AG | `feat/app/update` | S6-3 | 대기 | | |
-| AH | `chore/release-v1` | S6-4–S6-6 | 대기 | | |
+| S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 대기 | | |
+| S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 대기 | | |
+| S2 | `v1/s2-runs` | S2 Task 1–16 | 대기 | | |
+| S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
+| S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
+| S5 | `v1/s5-tools` | S5-1–S5-9 | 대기 | | |
+| S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
+
+P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
+
+## 4.1 작업 묶음 (브랜치 안의 중간 지점)
+
+묶음이 끝나면 `pnpm check` → 이 표의 행 갱신 커밋 → push 한다. PR·CI는 없다. 상태는 `대기`·`작업 중`·`push`·`막힘`. **작업 시간**은 그 묶음에 실제로 든 에이전트 작업 시간(대략, 시간 단위)이다. S0b가 끝나면 이 값으로 00-roadmap §2.1의 일정을 다시 계산한다.
+
+| S | 묶음 | 과제 | 브랜치 | 상태 | 시작 | 끝 | 작업 시간 |
+|---|---|---|---|---|---|---|---|
+| S0a | — | Task 1–8 | `docs/v1-plan` | 대기 | | | |
+| S0b | A | Task 1 | `v1/s0b-skeleton` | 대기 | | | |
+| S0b | B | Task 2–6 |  | 대기 | | | |
+| S0b | C | Task 7–15 |  | 대기 | | | |
+| S0b | D | Task 16–21 |  | 대기 | | | |
+| S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
+| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
+| S1 | G | Task 3–4 |  | 대기 | | | |
+| S1 | H | Task 5–6 |  | 대기 | | | |
+| S1 | I | Task 7–10 |  | 대기 | | | |
+| S1 | J | Task 11–12 |  | 대기 | | | |
+| S1 | K | Task 13–16 |  | 대기 | | | |
+| S1 | L | Task 17–19 |  | 대기 | | | |
+| S1 | M | Task 20–21 |  | 대기 | | | |
+| S1 | N | Task 22–23 |  | 대기 | | | |
+| S1 | 마무리 | Task 24 → S1 PR |  | 대기 | | | |
+| S2 | 상세화 | Task 1 | `v1/s2-runs` | 대기 | | | |
+| S2 | O | Task 2–6 |  | 대기 | | | |
+| S2 | P | Task 7–10 |  | 대기 | | | |
+| S2 | Q | Task 11–12 |  | 대기 | | | |
+| S2 | R | Task 13–15 |  | 대기 | | | |
+| S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
+| S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
+| S3 | S | Task 2–3 |  | 대기 | | | |
+| S3 | T | Task 4–6 |  | 대기 | | | |
+| S3 | U | Task 7 |  | 대기 | | | |
+| S3 | V | Task 8–9 |  | 대기 | | | |
+| S3 | W | Task 10–11 |  | 대기 | | | |
+| S3 | 마무리 | Task 12 → S3 PR |  | 대기 | | | |
+| S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
+| S4 | X | S4-2–S4-4 |  | 대기 | | | |
+| S4 | Y | S4-5–S4-7 |  | 대기 | | | |
+| S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
+| S5 | 상세화 | S5-1 | `v1/s5-tools` | 대기 | | | |
+| S5 | AA | S5-2–S5-3 |  | 대기 | | | |
+| S5 | AB | S5-4 |  | 대기 | | | |
+| S5 | AC | S5-5 |  | 대기 | | | |
+| S5 | AD | S5-6 |  | 대기 | | | |
+| S5 | AE | S5-7–S5-8 |  | 대기 | | | |
+| S5 | 마무리 | S5-9 → S5 PR |  | 대기 | | | |
+| S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
+| S6 | AF | S6-2 |  | 대기 | | | |
+| S6 | AG | S6-3 |  | 대기 | | | |
+| S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 

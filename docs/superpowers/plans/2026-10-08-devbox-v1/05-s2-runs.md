@@ -30,6 +30,7 @@ S2가 끝나면 **전환점**이다. 일상의 에이전트·실행·터미널(A
 ## Global Constraints
 
 - S0b·S1의 Global Constraints를 따른다.
+- 작업 위치: S2 전체가 브랜치 `v1/s2-runs`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s2-runs` 하나다. Task 1(상세화)이 이 브랜치의 첫 커밋이다. PR은 Task 16에서 한 번 연다(00-roadmap §3).
 - 실행 unit 이름은 `devbox-<인스턴스>-run-<runId>`다. tmux·데몬 unit과 섞지 않는다. 테스트는 `devbox-test-<난수>.slice` 아래에서만 띄우고 끝나면 slice를 멈춘다(01-design §4.3).
 - 재시작 주체는 systemd 하나다. 데몬은 재시작을 직접 하지 않는다. 표시와 알림만 한다.
 - 실행 결과의 원장은 `runs/<runId>.exit` 파일이다. transient unit은 끝나면 정리되므로 unit 상태를 결과로 쓰지 않는다.
@@ -51,16 +52,20 @@ S2가 끝나면 **전환점**이다. 일상의 에이전트·실행·터미널(A
 
 ---
 
-## PR 묶음
+## 작업 묶음
 
-| PR | 브랜치 | 과제 |
+S2 전체가 브랜치 `v1/s2-runs` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s2-runs`다.
+묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 번 검사한다.
+
+| 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| (상세화) | `docs/s2-detail` | Task 1 |
-| O | `feat/runtime/core` | Task 2–6 |
-| P | `feat/runtime/observe` | Task 7–10 |
-| Q | `feat/secrets` | Task 11–12 |
-| R | `feat/app/runs` | Task 13–15 |
-| (마무리) | `chore/s2-wrap` | Task 16 |
+| 상세화 | Task 1 | 커밋(이 브랜치의 첫 커밋) |
+| O | Task 2–6 | push |
+| P | Task 7–10 | push |
+| Q | Task 11–12 | push |
+| R | Task 13–15 | push |
+| 마무리 | Task 16 | **S2 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
 
 ---
 
@@ -216,8 +221,9 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 **핵심 테스트:** 각 파일 종류의 fixture 폴더로 제안 목록 비교. 이미 정의된 ID는 제외.
 
 ```bash
-# PR O 마무리
-pnpm check && git push -u origin feat/runtime/core && gh pr create --fill
+# 묶음 O 끝
+# 묶음 O 끝: PROGRESS.md의 묶음 O 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s2-runs
 ```
 
 ---
@@ -305,8 +311,9 @@ pnpm check && git push -u origin feat/runtime/core && gh pr create --fill
 - 실제 Docker 시험은 두지 않는다(Global Constraints).
 
 ```bash
-# PR P 마무리
-pnpm check && git push -u origin feat/runtime/observe && gh pr create --fill
+# 묶음 P 끝
+# 묶음 P 끝: PROGRESS.md의 묶음 P 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s2-runs
 ```
 
 ---
@@ -373,8 +380,9 @@ pnpm check && git push -u origin feat/runtime/observe && gh pr create --fill
 - 실제 실행은 Task 16 실사용 확인
 
 ```bash
-# PR Q 마무리
-pnpm check && git push -u origin feat/secrets && gh pr create --fill
+# 묶음 Q 끝
+# 묶음 Q 끝: PROGRESS.md의 묶음 Q 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s2-runs
 ```
 
 ---
@@ -460,8 +468,9 @@ pnpm check && git push -u origin feat/secrets && gh pr create --fill
 - `SecretsSettings` 단위(값 입력 후 입력란 비움, 목록에 값이 나오지 않음)
 
 ```bash
-# PR R 마무리
-pnpm check && git push -u origin feat/app/runs && gh pr create --fill
+# 묶음 R 끝
+# 묶음 R 끝: PROGRESS.md의 묶음 R 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s2-runs
 ```
 
 ---
@@ -472,7 +481,7 @@ pnpm check && git push -u origin feat/app/runs && gh pr create --fill
 - Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치), `scripts/loc.sh` 실행 결과를 PR 본문에 기록
 
 - [ ] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
-- [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh chore/s2-wrap`로 받는다.
+- [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
   1. 실제 프로젝트의 `pnpm dev`를 서비스로 정의 → 시작 → 로그 실시간 → 포트 칩으로 브라우저 열기
   2. 서비스를 일부러 죽여 자동 재시작, 한도 초과 시 Windows 알림 1회
   3. 앱을 닫았다 다시 열어도 서비스가 계속 돌고 로그가 이어진다.
@@ -487,7 +496,10 @@ pnpm check && git push -u origin feat/app/runs && gh pr create --fill
 - [ ] **Step 4: 상태 갱신·PR**
 
 ```bash
-sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(PR O–R 머지, 실사용 확인 10\/10, 전환 완료)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
-# PROGRESS.md: S2 행 머지·완료일, PR 행, 현재 위치(다음: S3 Task 1)를 고친다
+sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(S2 PR 머지, 실사용 확인 10\/10, 전환 완료)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
+# PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: S3 Task 1)를 고친다
 git add docs && git commit -m "docs(plan): mark S2 complete and record the switch-over"
+git push origin v1/s2-runs && gh pr create --base main --head v1/s2-runs --title "feat: runs and observation (S2)" --body "S2 실행·관찰 전체(Task 1–16), SC9 측정, 실사용 확인 10개 결과, 전환 날짜.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```

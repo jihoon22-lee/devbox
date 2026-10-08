@@ -30,6 +30,7 @@
 ## Global Constraints
 
 - S0b–S2의 Global Constraints를 따른다.
+- 작업 위치: S3 전체가 브랜치 `v1/s3-knowledge`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s3-knowledge` 하나다. Task 1(상세화)이 이 브랜치의 첫 커밋이다. PR은 Task 12에서 한 번 연다(00-roadmap §3).
 - 문서 쓰기·삭제는 등록한 프로젝트(에이전트 작업 폴더 포함)·vault·devbox 데이터 폴더 안에서만 한다. `realpath`로 확인하고 `O_NOFOLLOW`로 연다(01-design §12).
 - 원자적 교체는 `renameat2(RENAME_EXCHANGE)`, 새 파일은 `RENAME_NOREPLACE`를 쓴다. mode·EOL·BOM을 보존하고, symlink는 realpath 대상에 쓴다(01-design §9.1-2).
 - 이진·비 UTF-8·크기 초과(노트 2 MiB, 코드 5 MiB) 파일은 읽기 전용으로 연다.
@@ -52,17 +53,21 @@
 
 ---
 
-## PR 묶음
+## 작업 묶음
 
-| PR | 브랜치 | 과제 |
+S3 전체가 브랜치 `v1/s3-knowledge` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s3-knowledge`다.
+묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S3 전체를 한 번 검사한다.
+
+| 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| (상세화) | `docs/s3-detail` | Task 1 |
-| S | `feat/documents/core` | Task 2–3 |
-| T | `feat/notes/core` | Task 4–6 |
-| U | `feat/search/core` | Task 7 |
-| V | `feat/activity/core` | Task 8–9 |
-| W | `feat/app/notes` | Task 10–11 |
-| (마무리) | `chore/s3-wrap` | Task 12 |
+| 상세화 | Task 1 | 커밋(이 브랜치의 첫 커밋) |
+| S | Task 2–3 | push |
+| T | Task 4–6 | push |
+| U | Task 7 | push |
+| V | Task 8–9 | push |
+| W | Task 10–11 | push |
+| 마무리 | Task 12 | **S3 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
 
 ---
 
@@ -241,8 +246,9 @@ git add docs && git commit -m "docs(plan): detail S3 against the S2 code"
 - `summary_lists_closed_agent_tasks_and_commits_of_the_day`(가짜 서비스 주입)
 
 ```bash
-# PR T 마무리
-pnpm check && git push -u origin feat/notes/core && gh pr create --fill
+# 묶음 T 끝
+# 묶음 T 끝: PROGRESS.md의 묶음 T 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s3-knowledge
 ```
 
 ---
@@ -327,8 +333,9 @@ pnpm check && git push -u origin feat/notes/core && gh pr create --fill
 - Windows 훅 동작은 Task 12 실사용 확인
 
 ```bash
-# PR V 마무리
-pnpm check && git push -u origin feat/activity/core && gh pr create --fill
+# 묶음 V 끝
+# 묶음 V 끝: PROGRESS.md의 묶음 V 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s3-knowledge
 ```
 
 ---
@@ -395,8 +402,9 @@ pnpm check && git push -u origin feat/activity/core && gh pr create --fill
 - E2E `search.spec.ts`(2개): 노트 본문 한글 부분 검색, 코드 검색 결과 열기
 
 ```bash
-# PR W 마무리
-pnpm check && git push -u origin feat/app/notes && gh pr create --fill
+# 묶음 W 끝
+# 묶음 W 끝: PROGRESS.md의 묶음 W 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s3-knowledge
 ```
 
 ---
@@ -404,7 +412,7 @@ pnpm check && git push -u origin feat/app/notes && gh pr create --fill
 ### Task 12: S3 완료
 
 - [ ] **Step 1: 규모 통계:** `bash scripts/loc.sh 120000` 결과를 PR 본문에 쓴다. 넘으면 S4 전에 단순화 후보를 사용자와 정한다(01-design SC8).
-- [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh chore/s3-wrap`로 받는다.
+- [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge`로 받는다.
   1. 노트를 쓰고 1초 뒤 자동 저장, 앱을 닫았다 열어도 그대로
   2. VS Code에서 같은 노트를 고치면 devbox가 비교를 보여 주고 덮어쓰지 않는다.
   3. 노트 이름을 바꾸면 다른 노트의 링크가 따라 바뀐다.
@@ -418,7 +426,10 @@ pnpm check && git push -u origin feat/app/notes && gh pr create --fill
 - [ ] **Step 3: 상태 갱신·PR**
 
 ```bash
-sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S2 완료.*/- 상태: 완료(PR S–W 머지, 실사용 확인 10\/10)/' docs/superpowers/plans/2026-10-08-devbox-v1/06-s3-knowledge.md
-# PROGRESS.md: S3 행·PR 행·현재 위치(다음: S4-1)를 고친다
+sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S2 완료.*/- 상태: 완료(S3 PR 머지, 실사용 확인 10\/10)/' docs/superpowers/plans/2026-10-08-devbox-v1/06-s3-knowledge.md
+# PROGRESS.md: S3 행·PR 표의 S3 행·현재 위치(다음: S4-1)를 고친다
 git add docs && git commit -m "docs(plan): mark S3 complete"
+git push origin v1/s3-knowledge && gh pr create --base main --head v1/s3-knowledge --title "feat: notes, activity and search (S3)" --body "S3 기록 전체(Task 1–12), 규모 통계, 실사용 확인 10개 결과.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```

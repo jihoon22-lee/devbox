@@ -19,7 +19,7 @@
 ## Global Constraints
 
 - 저장소(`/home/jihoon/projects/devbox`)의 제품 파일을 바꾸지 않는다. 바꾸는 것은 이 계획 폴더뿐이다: 결과 문서 `09-s0a-results.md`, `PROGRESS.md`, 판정에 따라 `01-design.md`와 그 가정을 코드로 적은 계획 과제(Task 8 Step 2의 표). 이 변경은 계획 원본 worktree `../devbox-wt/docs-v1-plan`(브랜치 `docs/v1-plan`)에서 하고 바로 커밋·push한다. PR·CI는 없다(00-roadmap §2 P0).
-- 이 단계는 PR A 전이라 저장소의 `AGENTS.md`가 v0.9.0용이다. 00-roadmap §3의 규칙이 우선한다.
+- 이 단계는 S0b 전이라 main의 `AGENTS.md`가 v0.9.0용이다. 00-roadmap §3의 규칙이 우선한다.
 - 실험용 systemd unit·tmux 서버·파일 이름에는 반드시 `s0a`를 넣는다(`devbox-s0a-*`, `tmux -L devbox-s0a`). 사용자의 기존 tmux·unit과 섞이지 않게 한다.
 - `/etc`를 바꾸지 않는다. 패키지를 설치하지 않는다. `wsl --shutdown`은 에이전트가 실행하지 않는다(자신도 종료됨). 그런 확인은 Task 7의 사용자 수동 항목이다.
 - 실험이 끝나면 Task 8에서 만든 unit·소켓·tmux 서버·임시 파일을 모두 지운다.
@@ -751,13 +751,13 @@ Expected: 마지막 두 명령의 출력이 비어 있다. `/home/jihoon/project
 
 ```bash
 cd /home/jihoon/projects/devbox-wt/docs-v1-plan
-# PROGRESS.md: S0a 행 완료, PR "S0a" 행, 현재 위치(다음: PR A, 사용자 승인 대기)를 고친다
+# PROGRESS.md: S0a 행 완료, PR "S0a" 행, 현재 위치(다음: S0b, 사용자 승인 대기)를 고친다
 git add docs && git commit -m "docs(plan): record S0a results and design updates"
 git push origin docs/v1-plan
 ```
 
-계획 문서만 바뀌므로 PR·CI를 거치지 않는다. 이 내용은 PR A와 함께 main에 들어간다.
+계획 문서만 바뀌므로 PR·CI를 거치지 않는다. 이 내용은 S0b PR과 함께 main에 들어간다.
 
 - [ ] **Step 6: 사용자 보고**
 
-판정 표와 설계 반영 목록을 사용자에게 보고하고 S0b 시작 승인을 받는다(00-roadmap §3.2). 승인 전에는 PR A를 시작하지 않는다.
+판정 표와 설계 반영 목록을 사용자에게 보고하고 S0b 시작 승인을 받는다(00-roadmap §3.2). 승인 전에는 S0b를 시작하지 않는다.

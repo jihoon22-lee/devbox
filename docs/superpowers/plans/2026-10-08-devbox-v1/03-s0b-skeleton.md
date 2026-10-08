@@ -22,7 +22,7 @@
 
 ## Global Constraints
 
-- 작업은 `/home/jihoon/projects/devbox-wt/<브랜치>` 전용 worktree에서 한다. 원본 체크아웃은 `main`으로 둔다.
+- 작업은 S0b 브랜치 `v1/s0b-skeleton`의 worktree `/home/jihoon/projects/devbox-wt/v1-s0b-skeleton` 하나에서 한다(03·03b의 Task 1–24 모두). 원본 체크아웃은 `main`으로 둔다. 작업 묶음이 끝나면 push만 하고, PR은 03b Task 24에서 한 번 연다.
 - 버전은 `1.0.0-dev`. Rust edition 2024, `rust-version = "1.98"`.
 - 도메인 crate는 Tauri에 의존하지 않는다. 경계 타입으로 `serde_json::Value`와 `Result<T, String>`을 쓰지 않는다(RPC 파라미터의 `RawValue` 중계는 예외).
 - 프레임: `u32 LE 길이(뒤 바이트 수, 0 금지)` + `u8 종류` + `u32 LE 채널` + 본문. JSON 하드 상한 16 MiB, 스트림 조각 64 KiB, 제어 4 KiB.
@@ -47,13 +47,17 @@
 
 ---
 
-## PR 묶음
+## 작업 묶음
 
-| PR | 브랜치 | 과제 |
+S0b 전체가 브랜치 `v1/s0b-skeleton` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s0b-skeleton`다.
+묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한 번 검사한다.
+
+| 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| A | `chore/rebuild/clean-slate` | Task 1 |
-| B | `feat/daemon/protocol` | Task 2–6 |
-| C | `feat/daemon/core` | Task 7–15 |
+| A | Task 1 | push |
+| B | Task 2–6 | push |
+| C | Task 7–15 | push |
 
 ---
 
@@ -74,7 +78,7 @@
 
 - [ ] **Step 1: worktree 만들기**
 
-PR A는 계획 원본 브랜치 `docs/v1-plan`에서 갈라진다(00-roadmap §2 P0). 그래야 계획 폴더가 이 PR과 함께 main에 들어간다.
+S0b 브랜치 `v1/s0b-skeleton`는 계획 원본 브랜치 `docs/v1-plan`에서 갈라진다(00-roadmap §2 P0). 그래야 계획 폴더가 S0b PR과 함께 main에 들어간다. S0b의 모든 과제(Task 1–24)가 이 브랜치·worktree 하나에서 진행된다.
 
 ```bash
 cd /home/jihoon/projects/devbox && git fetch origin main docs/v1-plan && git status --short
@@ -82,8 +86,8 @@ cd /home/jihoon/projects/devbox && git fetch origin main docs/v1-plan && git sta
 git merge-base --is-ancestor origin/main origin/docs/v1-plan || {
   git -C ../devbox-wt/docs-v1-plan pull --ff-only && git -C ../devbox-wt/docs-v1-plan rebase origin/main &&
   git -C ../devbox-wt/docs-v1-plan push --force-with-lease origin docs/v1-plan && git fetch origin docs/v1-plan; }
-git worktree add ../devbox-wt/chore-rebuild-clean-slate -b chore/rebuild/clean-slate origin/docs/v1-plan
-cd ../devbox-wt/chore-rebuild-clean-slate
+git worktree add ../devbox-wt/v1-s0b-skeleton -b v1/s0b-skeleton origin/docs/v1-plan
+cd ../devbox-wt/v1-s0b-skeleton
 ```
 
 - [ ] **Step 2: 옛 파일 삭제**
@@ -233,9 +237,9 @@ devbox는 Windows 11 + WSL에서 혼자 개발하는 사람을 위한 개인 개
 - 세션을 시작·끝낼 때 `00-roadmap.md` §3.1 인계 절차를 따른다. §3.2에 해당하면 멈추고 사용자에게 묻는다.
 
 ## 작업 방식
-- 원본 체크아웃은 `main`으로 두고, 과제마다 `../devbox-wt/<브랜치>` worktree를 만든다. 브랜치: `feat|fix/<영역>/<범위>`, `chore/<범위>`, `docs/<범위>`.
+- 원본 체크아웃은 `main`으로 두고, 하위 프로젝트마다 브랜치 하나(`v1/<s>-<이름>`)와 worktree 하나(`../devbox-wt/v1-<s>-<이름>`)를 쓴다. 작업 묶음이 끝나면 `pnpm check` 후 push만 하고(CI 없음), PR은 하위 프로젝트 끝에 한 번 열어 rebase 머지한다.
 - 로직은 실패 테스트부터 쓴다. 바꾼 crate·화면의 테스트만 먼저 돌린다: `cargo test -p <crate>`, `pnpm --filter app exec vitest run <파일>`.
-- PR 전에 `pnpm check`를 한 번 돌린다. 필수 CI가 통과하면 squash 머지한다. 커밋은 영어 Conventional Commits.
+- 하위 프로젝트 하나가 브랜치 하나·PR 하나다. 묶음이 끝나면 `pnpm check` 후 push만 하고, PR은 하위 프로젝트 끝에 한 번 연다. 필수 CI가 통과하면 rebase 머지한다(과제 커밋이 main에 남는다). 커밋은 영어 Conventional Commits.
 - 진행 상태의 원장은 PR과 계획 문서 머리의 "상태" 줄이다. 체크박스는 보조다.
 
 ## 코드 규칙
@@ -252,7 +256,7 @@ devbox는 Windows 11 + WSL에서 혼자 개발하는 사람을 위한 개인 개
 - 사용자의 기존 tmux·systemd unit·Docker·방화벽을 테스트로 바꾸지 않는다. 테스트는 `DEVBOX_INSTANCE=test-<난수>`를 쓴다.
 
 ## 하위 에이전트
-- 계획은 subagent-driven-development로 실행한다(과제별 구현 + 검토 하위 에이전트). 하위 에이전트도 전용 worktree에서 일한다.
+- 계획은 subagent-driven-development로 실행한다(과제별 구현 + 검토 하위 에이전트). 하위 에이전트도 그 하위 프로젝트의 worktree에서 일한다.
 ```
 
 ```markdown
@@ -460,37 +464,14 @@ The v1 plan folder added in P0 is kept."
 
 Expected: 테스트 1개 통과, `banned-words: app/src 없음, 건너뜀`.
 
-- [ ] **Step 9: PR**
+- [ ] **Step 9: 묶음 A 끝(push)**
 
 ```bash
-git push -u origin chore/rebuild/clean-slate
-gh pr create --title "chore: start v1 rebuild from a clean tree" --body-file - <<'EOF'
-## 요약
-- v0.9.0 소스·CI·과정 문서를 걷어내고(태그 v0.9.0으로 보존) 재구축 골격을 만든다.
-- 새 AGENTS.md(한 장)와 ADR 0017을 넣는다. P0에서 넣은 v1 계획 폴더는 남긴다.
-- main 보호 규칙의 필수 검사를 `ci-ok` 하나로 바꾼다(Step 10).
-
-## 검증
-- `cargo test --workspace`, `scripts/banned-words.sh`
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
+# PROGRESS.md: 묶음 A 행(push)·현재 위치를 고쳐 커밋한다
+git add docs && git commit -m "docs(plan): record bundle A" && git push -u origin v1/s0b-skeleton
 ```
 
-- [ ] **Step 10: 보호 규칙의 필수 검사를 `ci-ok` 하나로 바꾸기 (IR-1)**
-
-2026-10-08 현재 main의 필수 검사는 옛 job 이름 셋(`Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`)이다. 이 PR에는 그 job이 없으므로 바꾸지 않으면 머지가 영원히 막힌다. PR의 CI가 모두 초록인 것을 본 뒤에 바꾼다.
-
-```bash
-gh api repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks --jq '.contexts'
-gh api -X PATCH repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks \
-  -F strict=false -f 'contexts[]=ci-ok'
-gh api repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks --jq '.contexts'
-```
-
-Expected: 첫 줄은 옛 이름 셋, 마지막 줄은 `["ci-ok"]`. 권한 오류(403)가 나면 사용자에게 저장소 설정 → Branches → main 규칙의 필수 검사를 `ci-ok` 하나로 바꿔 달라고 요청하고 기다린다. 우회 머지(`--admin`)는 하지 않는다.
-
-CI 통과와 보호 규칙 전환 뒤 squash 머지한다. worktree와 브랜치를 정리한다(00-roadmap §3). 계획 원본 브랜치 `docs/v1-plan`과 worktree `../devbox-wt/docs-v1-plan`도 정리한다. 이제 계획 원본은 main이다(PROGRESS "현재 위치"를 같은 PR에서 고친다).
+PR은 열지 않는다. 같은 브랜치에서 Task 2를 이어간다. main 보호 규칙의 필수 검사를 `ci-ok`로 바꾸는 일(IR-1)은 S0b PR을 머지하기 직전에 한다(03b Task 24 Step 5).
 
 ---
 
@@ -511,11 +492,10 @@ CI 통과와 보호 규칙 전환 뒤 squash 머지한다. worktree와 브랜치
   - `fn frame_channel(raw: &[u8]) -> Option<u32>`, `fn set_frame_channel(raw: &mut [u8], channel: u32) -> bool`
   - Task 3·5·11·12가 사용한다.
 
-- [ ] **Step 0: worktree**
+- [ ] **Step 0: 작업 위치**
 
 ```bash
-cd /home/jihoon/projects/devbox && git fetch origin main
-git worktree add ../devbox-wt/feat-daemon-protocol -b feat/daemon/protocol origin/main && cd ../devbox-wt/feat-daemon-protocol
+cd /home/jihoon/projects/devbox-wt/v1-s0b-skeleton   # S0b 브랜치 worktree에서 이어서 한다. 새 브랜치를 만들지 않는다
 ```
 
 - [ ] **Step 1: 의존성**
@@ -1996,19 +1976,18 @@ cargo run -q -p xtask -- gen-ts --check
 git add Cargo.toml xtask app/src/rpc/gen/rpc.ts && git commit -m "feat(xtask): generate TypeScript RPC types from method declarations"
 ```
 
-- [ ] **Step 6: CI에 생성물 검사 추가와 PR B**
+- [ ] **Step 6: CI에 생성물 검사 추가와 묶음 B 끝**
 
 `.github/workflows/ci.yml`의 rust job 끝에 `- run: cargo run -q -p xtask -- gen-ts --check`를 추가한다.
 
 ```bash
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 git add .github && git commit -m "ci: check generated RPC types"
-git push -u origin feat/daemon/protocol && gh pr create --fill --body "프로토콜(프레임·메시지·메서드·오류·라우터), mux, TS 생성기. 01-design §5·§9.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 B 끝: PROGRESS.md의 묶음 B 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+git push origin v1/s0b-skeleton
 ```
 
-CI 통과 후 squash 머지, worktree 정리.
+묶음 끝. 같은 브랜치·worktree에서 다음 묶음을 이어간다(PR·CI 없음).
 
 ---
 
@@ -2024,7 +2003,7 @@ CI 통과 후 squash 머지, worktree 정리.
   - `Paths { instance, home, data_dir, state_dir, config_dir, instance_config_dir, socket, bin_dir, log_dir, db_path, index_db_path, backups_dir }`, `Paths::resolve(Instance, &dyn Env)`
   - `CoreError`
 
-- [ ] **Step 0: worktree** — `git worktree add ../devbox-wt/feat-daemon-core -b feat/daemon/core origin/main`
+- [ ] **Step 0: 작업 위치** — S0b worktree `../devbox-wt/v1-s0b-skeleton`에서 이어서 한다(새 브랜치를 만들지 않는다).
 
 - [ ] **Step 1: Cargo.toml**
 
@@ -4785,13 +4764,12 @@ Expected:
 
 S1 이후에도 dev 인스턴스를 그대로 개발용으로 쓴다.
 
-- [ ] **Step 7: PR C**
+- [ ] **Step 7: 묶음 C 끝**
 
 ```bash
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo run -q -p xtask -- gen-ts --check && bash scripts/banned-words.sh
-git push -u origin feat/daemon/core && gh pr create --fill --body "core(경로·설정·허브·DB·로그), projects 도메인, devbox 바이너리(daemon·bridge·dev-gateway·setup·doctor). 01-design §4·§5·§9.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 C 끝: PROGRESS.md의 묶음 C 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+git push origin v1/s0b-skeleton
 ```
 
-CI 통과 후 squash 머지, worktree 정리. 화면과 Windows 껍데기는 [03b-s0b-app](03b-s0b-app.md)으로 이어진다.
+묶음 끝. 같은 브랜치·worktree에서 다음 묶음을 이어간다(PR·CI 없음). 화면과 Windows 껍데기는 [03b-s0b-app](03b-s0b-app.md)으로 이어진다.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) PR F–J 머지
+- 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) 묶음 F–J push(같은 S1 브랜치에서 이어감)
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -46,15 +46,19 @@
 
 ---
 
-## PR 묶음
+## 작업 묶음
 
-| PR | 브랜치 | 과제 |
+S1 전체가 브랜치 `v1/s1-agents-terminal` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s1-agents-terminal`다.
+묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 번 검사한다.
+
+| 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| K | `feat/app/terminal` | Task 13–16 |
-| L | `feat/app/agents` | Task 17–19 |
-| M | `feat/app/projects-settings` | Task 20–21 |
-| N | `feat/app/windows-integration` | Task 22–23 |
-| (마무리) | `chore/s1-wrap` | Task 24 |
+| K | Task 13–16 | push |
+| L | Task 17–19 | push |
+| M | Task 20–21 | push |
+| N | Task 22–23 | push |
+| 마무리 | Task 24 | **S1 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
 
 ---
 
@@ -1525,14 +1529,13 @@ test("split right opens a second live pane in the same tab", async ({ page }) =>
 
 xterm은 WebGL 렌더러를 쓰면 DOM에 글자가 없다. E2E에서는 `?renderer=dom` 쿼리가 있으면 WebGL을 불러오지 않게 하고(`TerminalView`의 `loadAddon(new WebglAddon())` 앞에서 검사), 위 테스트의 `goto`에 `&renderer=dom`을 붙인다. 접근성 트리(`screenReaderMode`) 대신 DOM 렌더러의 `.xterm-rows`를 `toContainText`로 읽는다.
 
-- [ ] **Step 6: 통과·커밋·PR K**
+- [ ] **Step 6: 통과·커밋·묶음 K 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/features/terminal && pnpm --filter app exec playwright test e2e/terminal.spec.ts
 git add app .github && git commit -m "feat(app): add the terminal section with tabs, splits, bottom panel and pop-out windows"
-pnpm check && git push -u origin feat/app/terminal && gh pr create --fill --body "터미널 화면(디자인 시스템 보강, 순서 보장 전송, xterm 연결·덮개, 탭·분할·하단 패널·분리 창, zellij 붙기), E2E 2개. 01-design §2.1 터미널·§8.1·§8.5·§9.1-11.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 K 끝: PROGRESS.md의 묶음 K 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -2411,14 +2414,13 @@ test.describe("with a task waiting for input", () => {
 ```
 - SC3의 2초 기준은 hook 이벤트 수신부터 목록 반영까지다. 위 시험은 전체 생성 흐름(worktree·tmux·bash 시작 포함)을 10초로 잡고, hook → 목록 구간은 데몬 통합 시험(04 Task 8)에서 잰다(Task 24에서 수치 기록).
 
-- [ ] **Step 5: 통과·커밋·PR L**
+- [ ] **Step 5: 통과·커밋·묶음 L 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/features && pnpm --filter app exec playwright test e2e/agents.spec.ts
 git add app && git commit -m "feat(app): add the agent grid, notification center and agent end-to-end journeys"
-pnpm check && git push -u origin feat/app/agents && gh pr create --fill --body "에이전트 화면(긴급순 목록·새 작업·상세 검토·지시 작성·병합·폐기·격자 보기·알림 센터), E2E 3개. 01-design §2.1 에이전트·§8.2·§9.1-9·§9.2.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 L 끝: PROGRESS.md의 묶음 L 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -2576,15 +2578,14 @@ test("shows tool checks and refreshes the shell environment", async () => {
 
 S0b의 `Check` 필드 이름(`id`·`status`·`title`·`detail`)이 다르면 그 이름에 맞춘다.
 
-- [ ] **Step 3: 구현·통과·커밋·PR M**
+- [ ] **Step 3: 구현·통과·커밋·묶음 M 끝**
 
 ```bash
 cargo test -p devbox-cli doctor && cargo run -q -p xtask -- gen-ts
 pnpm --filter app exec vitest run src/features/settings && pnpm --filter app typecheck
 git add crates xtask app && git commit -m "feat(settings): check agent tools and reload the shell environment"
-pnpm check && git push -u origin feat/app/projects-settings && gh pr create --fill --body "프로젝트 카드·시작 구성·clone, 설정(에이전트 도구 점검·셸 환경 다시 읽기·정리 후보·일반), E2E 1개. 01-design §2.1 프로젝트·§6.5·§8.2 설정.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 M 끝: PROGRESS.md의 묶음 M 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 ---
@@ -2938,14 +2939,13 @@ pub fn register(app: &tauri::AppHandle, status: &std::sync::Mutex<Vec<(String, S
 - `App.tsx`는 `listen("devbox://palette", () => setPalette(true))`를 등록한다.
 - 설정 › 단축키는 앱 단축키 표(레지스트리에서 생성, 읽기 전용)와 전역 단축키(팔레트 입력란 + 상태)를 보인다. 변경하면 `set_palette_shortcut` → 재등록이고, 결과를 표시한다.
 
-- [ ] **Step 3: 통과·커밋·PR N**
+- [ ] **Step 3: 통과·커밋·묶음 N 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/shell/FirstRun.test.tsx && pnpm --filter app typecheck
 git add app && git commit -m "feat(app): add tray, global palette shortcut, autostart and close-to-tray"
-pnpm check && git push -u origin feat/app/windows-integration && gh pr create --fill --body "Windows 통합(토스트·딥 링크·작업 표시줄 배지·창 깜빡임·트레이·전역 단축키·자동 시작·첫 실행). 01-design §6.1·§8.5.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+# 묶음 N 끝: PROGRESS.md의 묶음 N 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
+pnpm check && git push origin v1/s1-agents-terminal
 ```
 
 Windows 워크플로가 통과하면 머지한다. Rust Windows 코드의 실제 동작은 Task 24의 실사용 확인에서 본다.
@@ -3094,7 +3094,7 @@ if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝
 
 - [ ] **Step 4: 실사용 확인(사용자, 10개)**
 
-WSL에서 `bash scripts/dogfood.sh chore/s1-wrap`로 설치 파일을 받아 설치한 뒤 확인한다(브랜치를 push해 두면 스크립트가 그 커밋의 `windows.yml` 실행을 찾거나 새로 시작한다. Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
+WSL에서 `bash scripts/dogfood.sh v1/s1-agents-terminal`로 설치 파일을 받아 설치한 뒤 확인한다(브랜치를 push해 두면 스크립트가 그 커밋의 `windows.yml` 실행을 찾거나 새로 시작한다. Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
 
 1. 새 에이전트 작업(Claude Code, 작업 폴더 켬)을 만들면 1번의 [시작]으로 작업 폴더·세션·도구 실행까지 이어진다.
 2. Claude가 권한을 물으면 2초 안에 목록 "입력 대기"에 메시지가 보인다.
@@ -3111,12 +3111,12 @@ WSL에서 `bash scripts/dogfood.sh chore/s1-wrap`로 설치 파일을 받아 설
 
 ```bash
 git add crates scripts && git commit -m "test: measure S1 success criteria and add a code size report"
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: S0b 완료.*/- 상태: 완료(PR F–J 머지)/' docs/superpowers/plans/2026-10-08-devbox-v1/04-s1-agents-terminal.md
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(PR K–N 머지, 실사용 확인 10\/10)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
+sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: S0b 완료.*/- 상태: 완료(S1 PR 머지)/' docs/superpowers/plans/2026-10-08-devbox-v1/04-s1-agents-terminal.md
+sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(S1 PR 머지, 실사용 확인 10\/10)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
 git add docs && git commit -m "docs(plan): mark S1 complete"
-git push -u origin chore/s1-wrap && gh pr create --fill --body "S1 마무리: SC3(hook→목록 n ms)·SC4(데몬 재시작 유지) 시험, 규모 통계(rust=…, ts=…), 실사용 확인 10개 결과.
+git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…), 실사용 확인 10개 결과.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
-머지 뒤 사용자에게 S1 완료와 측정값을 보고하고 S2를 시작한다.
+CI·사용자 확인 뒤 `gh pr merge --rebase v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료와 측정값을 보고하고 S2를 시작한다.
