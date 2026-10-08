@@ -58,7 +58,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
 | L | Task 17–19 | push |
 | M | Task 20–21 | push |
 | N | Task 22–23 | push |
-| 마무리 | Task 24 | **S1 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
+| 마무리 | Task 24 | **S1 PR 열기** → CI 통과 → rebase 머지 → 확인 목록을 사용자에게 보냄(기다리지 않음) |
 
 ---
 
@@ -2948,11 +2948,11 @@ git add app && git commit -m "feat(app): add tray, global palette shortcut, auto
 pnpm check && git push origin v1/s1-agents-terminal
 ```
 
-Windows 워크플로가 통과하면 머지한다. Rust Windows 코드의 실제 동작은 Task 24의 실사용 확인에서 본다.
+Windows 워크플로가 통과하면 머지한다. Rust Windows 코드의 실제 동작은 Task 24의 확인 목록에서 본다.
 
 ---
 
-### Task 24: S1 완료 — 성공 기준 측정·규모 통계·실사용 확인
+### Task 24: S1 완료 — 성공 기준 측정·규모 통계·확인 목록
 
 **Files:**
 - Create: `crates/cli/tests/survival.rs`(SC4), `crates/cli/tests/terminal_latency.rs`(SC10), `scripts/loc.sh`(SC8)
@@ -3003,7 +3003,7 @@ async fn sessions_and_agent_tasks_survive_a_daemon_restart() {
 3. 이벤트 수신 시각과의 차이를 `eprintln!("SC3 hook→event {ms}ms")`로 남긴다.
 4. `assert!(ms < 2000)`.
 
-Windows 알림까지의 구간은 실사용 확인 3번에서 본다.
+Windows 알림까지의 구간은 확인 목록 3번에서 본다.
 
 - [ ] **Step 2b: SC10 터미널 반응 측정 (IR-6)**
 
@@ -3092,9 +3092,10 @@ if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝
 
 `bash scripts/loc.sh 60000` 결과를 PR 본문에 적는다. S3 끝에는 `120000`, S6 끝에는 `200000`을 인자로 준다.
 
-- [ ] **Step 4: 실사용 확인(사용자, 10개)**
+- [ ] **Step 4: 확인 목록(사용자, 10개)**
+  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
 
-WSL에서 `bash scripts/dogfood.sh v1/s1-agents-terminal`로 설치 파일을 받아 설치한 뒤 확인한다(브랜치를 push해 두면 스크립트가 그 커밋의 `windows.yml` 실행을 찾거나 새로 시작한다. Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
+사용자는 WSL에서 `bash scripts/dogfood.sh v1/s1-agents-terminal`로 설치 파일을 받아 설치한 뒤 확인한다(브랜치를 push해 두면 스크립트가 그 커밋의 `windows.yml` 실행을 찾거나 새로 시작한다. Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
 
 1. 새 에이전트 작업(Claude Code, 작업 폴더 켬)을 만들면 1번의 [시작]으로 작업 폴더·세션·도구 실행까지 이어진다.
 2. Claude가 권한을 물으면 2초 안에 목록 "입력 대기"에 메시지가 보인다.
@@ -3112,11 +3113,11 @@ WSL에서 `bash scripts/dogfood.sh v1/s1-agents-terminal`로 설치 파일을 �
 ```bash
 git add crates scripts && git commit -m "test: measure S1 success criteria and add a code size report"
 sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: S0b 완료.*/- 상태: 완료(S1 PR 머지)/' docs/superpowers/plans/2026-10-08-devbox-v1/04-s1-agents-terminal.md
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(S1 PR 머지, 실사용 확인 10\/10)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
+sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(S1 PR 머지, 확인 목록 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
 git add docs && git commit -m "docs(plan): mark S1 complete"
-git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…), 실사용 확인 10개 결과.
+git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…). 확인 목록 10개는 머지 뒤 사용자에게 보낸다.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
-CI·사용자 확인 뒤 `gh pr merge --rebase v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료와 측정값을 보고하고 S2를 시작한다.
+CI가 통과하면 `gh pr merge --rebase v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료·측정값·확인 목록·설치 파일 받는 법을 보내고 **기다리지 않고** S2를 시작한다.

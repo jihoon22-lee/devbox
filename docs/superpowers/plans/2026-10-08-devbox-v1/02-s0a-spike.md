@@ -591,58 +591,18 @@ Expected: 다음을 기록한다.
 
 ---
 
-### Task 7: 사용자 수동 확인 (R1·R2, 첫 응답, v0.9.0 비교)
+### Task 7: 사람이 재야 하는 측정 → S0 확인으로 옮김
 
-**Interfaces:**
-- Produces: 사람이 해야 하는 네 가지 측정값 → `09-s0a-results.md`
+`wsl --shutdown`처럼 에이전트가 할 수 없는 측정은 여기서 사용자를 기다리지 않는다(00-roadmap §2.2). S0b 끝의 S0 확인(03b Task 24 Step 4)에서 실제 앱으로 함께 잰다.
 
-이 과제는 에이전트가 `wsl --shutdown`을 할 수 없어서 사용자에게 요청한다. 실행 세션은 아래 안내를 그대로 사용자에게 보여 주고 결과를 받아 기록한다.
+| 원래 측정 | S0 확인에서 |
+|---|---|
+| R1 앱 연결 중 30분 유휴 뒤에도 유지 | 설치한 앱을 트레이에 둔 채 30분 → `systemctl --user is-active devbox@prod`가 `active`, `wsl.exe -l -v`에서 Running |
+| R1 앱 종료 뒤 멈춤 | 하지 않는다. 앱을 끄면 WSL이 멈출 수 있다는 것은 설계가 이미 전제하고 안내한다(01-design §4.1) |
+| R2 `wsl --shutdown` 뒤 복귀와 첫 응답 시간 | S0 확인 4번(다시 연결 배너가 사라질 때까지 걸린 시간을 적음) |
+| v0.9.0 에이전트 시작 시간 비교 | 하지 않는다. S1의 SC3(2초 안 반영) 절대 기준으로 대신한다 |
 
-- [ ] **Step 1: 사용자에게 안내문 전달**
-
-```
-S0a 확인 4가지를 부탁드립니다(약 40분, 대부분 기다리는 시간).
-준비: WSL 터미널에서 `systemctl --user start devbox-s0a@probe.socket` 를 한 번 실행해 두세요.
-
-1) 유휴 30분 유지 (R1)
-   Windows PowerShell에서:
-   powershell -NoProfile -ExecutionPolicy Bypass -File \\wsl.localhost\Ubuntu\home\jihoon\projects\devbox-spikes\s0a\hold.ps1
-   (창을 띄워 둔 채) 다른 WSL 터미널·VS Code WSL 창을 모두 닫고 30분 기다린 뒤,
-   PowerShell에서: wsl.exe -d Ubuntu --exec tmux -L devbox-s0a ls
-   → 세션 a1 이 보이면 통과. 결과를 알려 주세요.
-
-2) 앱 종료 뒤 멈춤 (R1)
-   1)의 hold 창을 닫고 2분 기다린 뒤 PowerShell에서: wsl.exe -l -v
-   → Ubuntu 상태(Running/Stopped)를 알려 주세요.
-
-3) wsl --shutdown 뒤 복귀 (R2)
-   PowerShell에서: wsl --shutdown ; 그다음 hold.ps1 을 다시 실행
-   → "first_response_ms" 값과, 창에 "OK" 가 찍혔는지 알려 주세요(재부팅 직후 첫 응답 시간).
-
-4) v0.9.0 비교
-   v0.9.0 Workspace에서 에이전트 작업을 하나 만들고(제목 아무거나, Claude Code),
-   "작업 만들기"를 누른 순간부터 터미널에 Claude 화면이 뜰 때까지를 스톱워치로 재서 알려 주세요.
-```
-
-- [ ] **Step 2: 안내문이 쓰는 hold 스크립트 작성**
-
-```powershell
-# /home/jihoon/projects/devbox-spikes/s0a/hold.ps1 — 브리지를 열어 둔 채 기다린다
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = "wsl.exe"
-$psi.Arguments = "-d Ubuntu --exec /home/jihoon/projects/devbox-spikes/s0a/target/release/devbox-probe bridge --sock /run/user/1000/devbox-s0a-probe.sock"
-$psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
-$psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true
-$sw = [Diagnostics.Stopwatch]::StartNew()
-$p = [Diagnostics.Process]::Start($psi)
-$buf = New-Object byte[] 16; $got = 0
-while ($got -lt 16) { $got += $p.StandardOutput.BaseStream.Read($buf, $got, 16 - $got) }
-"first_response_ms = {0:N1}" -f $sw.Elapsed.TotalMilliseconds
-"OK - 이 창을 닫으면 연결이 끊깁니다."
-$p.WaitForExit()
-```
-
-- [ ] **Step 3: 사용자 답을 결과 문서에 기록**
+`09-s0a-results.md`의 해당 행은 "S0 확인에서 채움"으로 두고, S0 확인 뒤 S0b 브랜치에서 채운다.
 
 ---
 
@@ -687,10 +647,8 @@ cd ../devbox-wt/docs-v1-plan && git pull --ff-only   # 이하 Step 1–5의 파�
 | R10 DPAPI 왕복(systemd 아래) | OK | | |
 | R5 Claude hook(`--settings`) | SessionStart·UserPromptSubmit·Notification 기록, 사용자 설정 불변 | | |
 | R5 Codex notify(`-c`) | agent-turn-complete JSON, 사용자 설정 불변 | | |
-| R1 유휴 30분 유지(수동) | tmux 세션 유지 | | |
-| R1 연결 끊긴 뒤 멈춤(수동) | Stopped 기록 | | |
-| R2 shutdown 뒤 복귀(수동) | OK + first_response_ms | | |
-| v0.9.0 에이전트 시작 시간(수동) | 비교 기록 | | |
+| R1 유휴 30분 유지 | WSL·데몬 유지 | S0 확인에서 채움 | |
+| R2 shutdown 뒤 복귀 | 다시 연결 + 걸린 시간 | S0 확인에서 채움 | |
 
 ## 설계 반영
 - (불합격·대체 경로가 생긴 항목과 01-design에서 고친 절)
@@ -751,7 +709,7 @@ Expected: 마지막 두 명령의 출력이 비어 있다. `/home/jihoon/project
 
 ```bash
 cd /home/jihoon/projects/devbox-wt/docs-v1-plan
-# PROGRESS.md: S0a 행 완료, PR "S0a" 행, 현재 위치(다음: S0b, 사용자 승인 대기)를 고친다
+# PROGRESS.md: S0a 행 완료, PR "S0a" 행, 현재 위치(다음: S0b)를 고친다
 git add docs && git commit -m "docs(plan): record S0a results and design updates"
 git push origin docs/v1-plan
 ```
@@ -760,4 +718,4 @@ git push origin docs/v1-plan
 
 - [ ] **Step 6: 사용자 보고**
 
-판정 표와 설계 반영 목록을 사용자에게 보고하고 S0b 시작 승인을 받는다(00-roadmap §3.2). 승인 전에는 S0b를 시작하지 않는다.
+판정 표를 사용자에게 보고한다. **모두 합격이면 기다리지 않고 S0b로 넘어간다**(00-roadmap §2.2). 불합격 항목 때문에 01-design의 구조를 바꿔야 하면(Step 2 표) 멈추고 사용자에게 묻는다(§3.2).

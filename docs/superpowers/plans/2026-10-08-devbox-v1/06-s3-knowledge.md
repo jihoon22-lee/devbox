@@ -68,7 +68,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S3 전체를 한 
 | U | Task 7 | push |
 | V | Task 8–9 | push |
 | W | Task 10–11 | push |
-| 마무리 | Task 12 | **S3 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
+| 마무리 | Task 12 | **S3 PR 열기** → CI 통과 → rebase 머지 → 확인 목록을 사용자에게 보냄(기다리지 않음) |
 
 ---
 
@@ -331,7 +331,7 @@ pnpm check && git push origin v1/s3-knowledge
 - `missing_or_broken_rules_drop_titles`(플랫폼 독립, Linux CI)
 - 이식: `input_ticks_share_the_low_32_bit_domain_across_uptime_wrap`(플랫폼 독립)
 - `offline_buffer_caps_at_1000_and_counts_drops`(플랫폼 독립 버퍼 타입)
-- Windows 훅 동작은 Task 12 실사용 확인
+- Windows 훅 동작은 Task 12 확인 목록
 
 ```bash
 # 묶음 V 끝
@@ -412,8 +412,9 @@ pnpm check && git push origin v1/s3-knowledge
 
 ### Task 12: S3 완료
 
-- [ ] **Step 1: 규모 통계:** `bash scripts/loc.sh 120000` 결과를 PR 본문에 쓴다. 넘으면 S4 전에 단순화 후보를 사용자와 정한다(01-design SC8).
-- [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge`로 받는다.
+- [ ] **Step 1: 규모 통계:** `bash scripts/loc.sh 120000` 결과를 PR 본문에 쓴다. 넘으면 단순화 후보를 PROGRESS §2에 적어 사용자에게 알리고 계속 진행한다(01-design SC8, 기다리지 않음).
+- [ ] **Step 2: 확인 목록(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge`로 받는다.
+  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
   1. 노트를 쓰고 1초 뒤 자동 저장, 앱을 닫았다 열어도 그대로
   2. VS Code에서 같은 노트를 고치면 devbox가 비교를 보여 주고 덮어쓰지 않는다.
   3. 노트 이름을 바꾸면 다른 노트의 링크가 따라 바뀐다.
@@ -427,10 +428,10 @@ pnpm check && git push origin v1/s3-knowledge
 - [ ] **Step 3: 상태 갱신·PR**
 
 ```bash
-sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S2 완료.*/- 상태: 완료(S3 PR 머지, 실사용 확인 10\/10)/' docs/superpowers/plans/2026-10-08-devbox-v1/06-s3-knowledge.md
+sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S2 완료.*/- 상태: 완료(S3 PR 머지, 확인 목록 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/06-s3-knowledge.md
 # PROGRESS.md: S3 행·PR 표의 S3 행·현재 위치(다음: S4-1)를 고친다
 git add docs && git commit -m "docs(plan): mark S3 complete"
-git push origin v1/s3-knowledge && gh pr create --base main --head v1/s3-knowledge --title "feat: notes, activity and search (S3)" --body "S3 기록 전체(Task 1–12), 규모 통계, 실사용 확인 10개 결과.
+git push origin v1/s3-knowledge && gh pr create --base main --head v1/s3-knowledge --title "feat: notes, activity and search (S3)" --body "S3 기록 전체(Task 1–12), 규모 통계. 확인 목록 10개는 머지 뒤 사용자에게 보낸다.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```

@@ -65,7 +65,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 
 | P | Task 7–10 | push |
 | Q | Task 11–12 | push |
 | R | Task 13–15b | push |
-| 마무리 | Task 16 | **S2 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
+| 마무리 | Task 16 | **S2 PR 열기** → CI 통과 → rebase 머지 → 확인 목록을 사용자에게 보냄(기다리지 않음) |
 
 ---
 
@@ -354,7 +354,7 @@ pnpm check && git push origin v1/s2-runs
 - `run_with_secret_hides_value_from_argv_unit_properties_logs_and_rpc`: `systemctl --user show <unit> -p Environment`·`/proc/<pid>/cmdline`·로그 파일·`runtime.runs` 결과에서 값 문자열을 검색해 없음을 확인
 - `missing_secret_blocks_the_run_with_names`
 - `recovery_string_restores_the_same_key_id`
-- DPAPI 구현은 Windows·interop이 필요하다. 플랫폼 독립인 blob 입출력 조립만 단위 테스트하고, 실제 왕복은 Task 16 실사용 확인에서 본다.
+- DPAPI 구현은 Windows·interop이 필요하다. 플랫폼 독립인 blob 입출력 조립만 단위 테스트하고, 실제 왕복은 Task 16 확인 목록에서 본다.
 
 ---
 
@@ -377,7 +377,7 @@ pnpm check && git push origin v1/s2-runs
 **핵심 테스트:**
 - `sync_copies_changed_tracked_files_and_keeps_extra_target_files`(임시 폴더 두 개로)
 - `windows_command_is_quoted_for_powershell`(작은따옴표 이스케이프)
-- 실제 실행은 Task 16 실사용 확인
+- 실제 실행은 Task 16 확인 목록
 
 ```bash
 # 묶음 Q 끝
@@ -513,7 +513,8 @@ pnpm check && git push origin v1/s2-runs
 - Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치, 다음은 S3·S5 동시 시작), `scripts/loc.sh` 실행 결과를 PR 본문에 기록
 
 - [ ] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
-- [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
+- [ ] **Step 2: 확인 목록(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
+  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
   1. 실제 프로젝트의 `pnpm dev`를 서비스로 정의 → 시작 → 로그 실시간 → 포트 칩으로 브라우저 열기
   2. 서비스를 일부러 죽여 자동 재시작, 한도 초과 시 Windows 알림 1회
   3. 앱을 닫았다 다시 열어도 서비스가 계속 돌고 로그가 이어진다.
@@ -524,14 +525,14 @@ pnpm check && git push origin v1/s2-runs
   8. 컨테이너 목록·로그 보기, 컨테이너 재시작
   9. 에이전트 상세의 [테스트 실행]이 실행 로그로 보이고, 실패 로그를 에이전트에게 보낸다.
   10. 시작 구성 실행으로 서비스·터미널·에이전트가 한 번에 뜬다.
-- [ ] **Step 3: 전환:** 사용자가 A·B·C를 새 빌드로 옮긴다. v0.9.0은 기록·편집·도구(E·D·F·G) 용도로만 쓴다. `PROGRESS.md` 세션 기록과 S2 행에 전환 날짜를 적는다.
+- [ ] **Step 3: 전환 안내:** 사용자에게 "이제 에이전트·실행·터미널(A·B·C)을 새 빌드로 옮겨 써도 된다. v0.9.0은 기록·편집·도구(E·D·F·G)에만 쓰면 된다"고 알린다. 기다리지 않는다. 사용자가 옮겼다고 하면 그 날짜를 PROGRESS에 적는다.
 - [ ] **Step 4: 상태 갱신·PR**
 
 ```bash
-sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(S2 PR 머지, 실사용 확인 10\/10, 전환 완료)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
+sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(S2 PR 머지, 확인 목록·전환 안내 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
 # PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: 트랙 1 S3 Task 1과 트랙 2 S5-1을 동시에 시작, 00-roadmap §3.6)를 고친다
-git add docs && git commit -m "docs(plan): mark S2 complete and record the switch-over"
-git push origin v1/s2-runs && gh pr create --base main --head v1/s2-runs --title "feat: runs and observation (S2)" --body "S2 실행·관찰 전체(Task 1–16), SC9 측정, 실사용 확인 10개 결과, 전환 날짜.
+git add docs && git commit -m "docs(plan): mark S2 complete"
+git push origin v1/s2-runs && gh pr create --base main --head v1/s2-runs --title "feat: runs and observation (S2)" --body "S2 실행·관찰 전체(Task 1–16), SC9 측정. 확인 목록 10개와 전환 안내는 머지 뒤 사용자에게 보낸다.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```

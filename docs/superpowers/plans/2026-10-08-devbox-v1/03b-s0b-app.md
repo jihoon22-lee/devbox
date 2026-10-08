@@ -47,7 +47,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
 | D | Task 16–21 | push |
-| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → 사용자 확인 → 보호 규칙 전환 → rebase 머지 |
+| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → **S0 확인(기다림)** → 보호 규칙 전환 → rebase 머지 |
 
 ---
 
@@ -3109,7 +3109,7 @@ git add app && git commit -m "feat(app): connect the Windows shell to the WSL da
 
 ---
 
-### Task 24: Windows 개발·빌드 스크립트, Windows CI, S0b 실사용 확인
+### Task 24: Windows 개발·빌드 스크립트, Windows CI, S0 확인
 
 **Files:**
 - Create: `scripts/win-sync.ps1`, `scripts/win-dev.ps1`, `scripts/win-build.ps1`, `scripts/dogfood.sh`, `.github/workflows/windows.yml`
@@ -3265,14 +3265,14 @@ S0b의 PR은 이것 하나다. PR의 `pull_request`가 `ci.yml`(S0b 전체 검�
 ```bash
 pnpm check
 git add scripts .github && git commit -m "build: add Windows sync, dev, build and dogfood scripts and the Windows workflow"
-git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skeleton --title "feat: v1 walking skeleton (S0b)" --body "S0b 걷는 뼈대: 옛 코드 정리·v1 계획 폴더, 프로토콜·mux·생성기, core·projects·데몬·브리지·dev-gateway·setup·doctor, 화면 골격·E2E, Windows 껍데기·스크립트·워크플로. 01-design §3–§6·§8·§10. 머지는 사용자 실사용 확인 뒤.
+git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skeleton --title "feat: v1 walking skeleton (S0b)" --body "S0b 걷는 뼈대: 옛 코드 정리·v1 계획 폴더, 프로토콜·mux·생성기, core·projects·데몬·브리지·dev-gateway·setup·doctor, 화면 골격·E2E, Windows 껍데기·스크립트·워크플로. 01-design §3–§6·§8·§10. 머지는 S0 확인(사용자) 뒤.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
-- [ ] **Step 4: S0b 실사용 확인(사용자, 6개)**
+- [ ] **Step 4: S0 확인(사용자, 8개) — 이 계획에서 에이전트가 기다리는 유일한 확인**
 
-WSL에서 `bash scripts/dogfood.sh v1/s0b-skeleton`로 설치 파일을 받아 설치한 뒤 확인한다(Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
+승인하면 S1부터 S6 끝까지 에이전트가 스스로 진행한다(00-roadmap §2.2). 에이전트는 설치 파일 받는 법(`bash scripts/dogfood.sh v1/s0b-skeleton`, Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`), 아래 목록, S0a 결과 보고서(`09-s0a-results.md`)를 함께 보낸다.
 
 1. 첫 실행 화면이 "연결하고 있습니다/설치하고 있습니다"를 거쳐 앱 화면으로 바뀌고, 상태 표시줄에 "데몬 연결됨"이 보인다.
 2. Ctrl+Shift+O → [프로젝트 추가] → `~/projects`의 폴더 하나 → 제목 표시줄에 이름이 보인다.
@@ -3280,11 +3280,13 @@ WSL에서 `bash scripts/dogfood.sh v1/s0b-skeleton`로 설치 파일을 받아 �
 4. PowerShell에서 `wsl --shutdown` → 앱에 "다시 연결하고 있습니다" 배너가 뜨고, 잠시 뒤 사라진다.
 5. 앱에서 Ctrl+P는 인쇄 창을 열지 않고, F5는 화면을 새로 고치지 않는다.
 6. 바로가기로 두 번째 실행을 하면 기존 창이 앞으로 온다.
+7. 앱을 트레이에 둔 채 30분 둔 뒤 PowerShell `wsl.exe -l -v`에서 Ubuntu가 Running이고, WSL에서 `systemctl --user is-active devbox@prod`가 `active`다(S0a R1).
+8. S0a 결과 보고서를 읽고, 4번에서 다시 연결까지 걸린 시간(초)을 알려 준다(S0a R2). 에이전트가 `09-s0a-results.md`에 채운다.
 
 - [ ] **Step 5: 상태 갱신·보호 규칙 전환·머지**
 
 ```bash
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[03-s0b-skeleton\].*/- 상태: 완료(S0b PR 머지, 실사용 확인 6\/6)/' docs/superpowers/plans/2026-10-08-devbox-v1/03b-s0b-app.md
+sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[03-s0b-skeleton\].*/- 상태: 완료(S0b PR 머지, S0 확인 8\/8)/' docs/superpowers/plans/2026-10-08-devbox-v1/03b-s0b-app.md
 # PROGRESS.md: S0b 행 완료, 묶음 E 행, PR 표의 S0b 행(번호), 현재 위치(다음: S1, 계획 원본은 이제 main)를 고친다
 git add docs && git commit -m "docs(plan): mark S0b complete" && git push origin v1/s0b-skeleton
 ```
@@ -3301,4 +3303,4 @@ gh pr merge --rebase v1/s0b-skeleton
 
 Expected: 첫 줄은 옛 이름 셋, 셋째 줄은 `["ci-ok"]`, 머지 성공. 권한 오류(403)가 나면 사용자에게 저장소 설정 → Branches → main 규칙의 필수 검사를 `ci-ok` 하나로 바꿔 달라고 요청하고 기다린다. 우회 머지(`--admin`)는 하지 않는다.
 
-머지 뒤 정리: S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). 사용자에게 S0b 완료와 실사용 확인 결과를 보고하고 S1을 시작한다.
+머지 뒤 정리: S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). 사용자에게 S0b 완료를 보고하고 **기다리지 않고** S1을 시작한다. 이후 v1.0.0 공개 직전까지는 §3.2 상황에서만 묻는다(00-roadmap §2.2).
