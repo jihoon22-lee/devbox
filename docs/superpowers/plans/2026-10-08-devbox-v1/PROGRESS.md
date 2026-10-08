@@ -12,7 +12,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | P0 완료 · S0a 대기 |
+| 단계 | P0 완료(2026-10-08) · S0a 대기 |
 | 다음 할 일 | 사용자가 실행을 지시하면 S0a Task 1 |
 | 작업 중인 브랜치·worktree | `docs/v1-plan` · `../devbox-wt/docs-v1-plan` — PR A 전까지 이 계획의 원본(00-roadmap §2 P0) |
 | 마지막 갱신 | 2026-10-08 · 통합 검토 세션 |
@@ -23,6 +23,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|---|---|
 | 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push, main에는 PR A와 함께 |
 | 2026-10-08 | 이 PC의 로컬 main에 원격에 없는 커밋 2개(`b2a508b6` source-map-js 갱신, `1b84aa9d` 완료 계획 정리, 둘 다 2026-10-07). `docs/v1-plan`은 원격 main(`72ff50c7`)에서 갈라졌다. 두 커밋의 내용은 PR A(옛 코드·문서 전부 삭제)로 의미가 없어진다. PR A 머지 뒤 로컬 main을 원격에 맞출지(두 커밋 버림), 그 전에 PR로 올릴지 | 사용자 | 대기 |
+| 2026-10-08 | 저장소 `user.email`이 개인 Gmail이라 명령줄 push가 거절된다(GitHub 이메일 비공개). P0 커밋은 noreply 주소로 다시 써서 push했다. 저장소 설정을 `188744452+jihoon22-lee@users.noreply.github.com`으로 바꿀지 | 사용자 | 대기(그 전까지 커밋마다 `-c user.email=…`, 00 §3.3) |
 
 ## 3. 하위 프로젝트
 
@@ -44,7 +45,7 @@ PR 경계는 각 계획 문서의 "PR 묶음" 표다. 머지하면 PR 번호와 
 
 | PR | 브랜치 | 과제 | 상태 | PR 번호 | 머지 커밋 |
 |---|---|---|---|---|---|
-| P0 | `docs/v1-plan` | 계획 폴더 반영 | push(PR 없음, PR A에 포함) | — | — |
+| P0 | `docs/v1-plan` | 계획 폴더 반영 | push(PR 없음, PR A에 포함) | — | `aa5c6785`(브랜치 커밋) |
 | S0a | `docs/v1-plan` | S0a Task 8 결과·설계 반영(직접 커밋, PR 없음) | 대기 | — | — |
 | A | `chore/rebuild/clean-slate` | S0b Task 1 | 대기 | | |
 | B | `feat/daemon/protocol` | S0b Task 2–6 | 대기 | | |

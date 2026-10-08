@@ -188,6 +188,7 @@ P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──�
 | cargo-sweep | `command -v cargo-sweep` | **없음** | `cargo install cargo-sweep`(S0b `scripts/sweep.sh`가 씀) |
 | Node 24·pnpm 9 | `node -v`, `pnpm -v` | 24.18·9.15.9 | 사용자에게 |
 | gh 인증 | `gh auth status` | 됨 | 사용자에게 |
+| 커밋 이메일 | `git config user.email` | 저장소 설정이 개인 Gmail이라 **push가 거절됨**(GitHub 이메일 비공개 설정) | 커밋할 때 `git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply.github.com commit …`. 저장소 설정을 이 주소로 바꿀지는 사용자가 정한다(PROGRESS §2) |
 | jq·actionlint | `command -v jq actionlint` | 있음 | `sudo apt install jq`(사용자), actionlint는 바이너리 |
 | tmux ≥ 3.2·systemd | `tmux -V`, `ps -p 1 -o comm=` | 3.6·systemd(`systemctl --user`는 `degraded`, 정상으로 봄) | §3.2 |
 | claude·codex | `claude --version`, `codex --version` | 2.1.288·0.161.0 | S0a hook 실험 전 사용자에게 |
@@ -212,6 +213,7 @@ P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──�
 | CI만 실패, 로컬은 통과 | 원인을 고친다. flaky면 그 PR에서 고치거나 지운다(재시도 래퍼 금지) |
 | 시험이 사용자 환경(systemd user·tmux)에 따라 다름 | 시험은 `DEVBOX_INSTANCE=test-<난수>` 자원만 쓰는지 확인. CI에서 systemd user를 못 쓰면 01-design §11의 대체(그 시험만 WSL 로컬 필수) |
 | 디스크 부족 | `du -sh ~/.cache/targets/devbox` → `scripts/sweep.sh`. 그래도 모자라면 사용자에게 |
+| push가 `push declined due to email privacy restrictions`로 거절됨 | 그 브랜치의 내 커밋을 noreply 주소로 다시 쓴다: `git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply.github.com commit --amend --no-edit --reset-author`(여러 개면 `git rebase -x '…같은 명령…' origin/main`). §3.3 |
 
 ## 4. v0.9.0 사용 중 회피 목록 (재구축 기간)
 
