@@ -31,7 +31,7 @@
 
 - S0b–S2의 Global Constraints를 따른다.
 - 작업 위치: S3 전체가 브랜치 `v1/s3-knowledge`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s3-knowledge` 하나다. Task 1(상세화)이 이 브랜치의 첫 커밋이다. PR은 Task 12에서 한 번 연다(00-roadmap §3).
-- **S5와 동시에 진행한다**(사용자 결정 2026-10-08). 다른 세션이 `v1/s5-tools`에서 일한다. 공유 파일·잠금 파일·생성 파일·rebase 규칙은 00-roadmap §3.6을 따른다. S3에서 S5 기능(API·변환 도구)을 쓰거나 고치지 않는다. 두 쪽을 잇는 기능(API 응답을 노트에 붙이기 등)은 S6-1b다.
+- **S5와 동시에 진행한다**(사용자 결정 2026-10-08). 같은 실행 세션이 트랙 2(`v1/s5-tools`)를 하위 에이전트로 동시에 진행한다. 이 문서는 트랙 1이다. 공유 파일·잠금 파일·생성 파일·rebase 규칙은 00-roadmap §3.6을 따른다. S3에서 S5 기능(API·변환 도구)을 쓰거나 고치지 않는다. 두 쪽을 잇는 기능(API 응답을 노트에 붙이기 등)은 S6-1b다.
 - 문서 쓰기·삭제는 등록한 프로젝트(에이전트 작업 폴더 포함)·vault·devbox 데이터 폴더 안에서만 한다. `realpath`로 확인하고 `O_NOFOLLOW`로 연다(01-design §12).
 - 원자적 교체는 `renameat2(RENAME_EXCHANGE)`, 새 파일은 `RENAME_NOREPLACE`를 쓴다. mode·EOL·BOM을 보존하고, symlink는 realpath 대상에 쓴다(01-design §9.1-2).
 - 이진·비 UTF-8·크기 초과(노트 2 MiB, 코드 5 MiB) 파일은 읽기 전용으로 연다.

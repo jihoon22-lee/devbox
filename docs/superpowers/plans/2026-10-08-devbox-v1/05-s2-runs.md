@@ -475,7 +475,7 @@ git add -A && git commit -m "feat(runs): add secrets settings, agent test runs a
 
 ### Task 15b: S3·S5 동시 진행 준비 — 공용 색인 DB와 코드 보기
 
-S2 다음에는 S3(기록)과 S5(개발 도구)를 두 세션이 동시에 진행한다(사용자 결정 2026-10-08, 00-roadmap §3.6). 두 쪽이 다 쓰는 바탕을 여기서 먼저 만든다. 그래야 두 브랜치가 같은 것을 따로 만들거나 서로를 기다리지 않는다.
+S2 다음에는 S3(기록)과 S5(개발 도구)를 한 세션이 두 트랙으로 동시에 진행한다(사용자 결정 2026-10-08, 00-roadmap §3.6). 두 쪽이 다 쓰는 바탕을 여기서 먼저 만든다. 그래야 두 브랜치가 같은 것을 따로 만들거나 서로를 기다리지 않는다.
 
 **Files:**
 - Create: `crates/core/src/index_db.rs`
@@ -529,7 +529,7 @@ pnpm check && git push origin v1/s2-runs
 
 ```bash
 sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(S2 PR 머지, 실사용 확인 10\/10, 전환 완료)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
-# PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: S3 Task 1과 S5-1을 두 세션이 동시에 시작, 00-roadmap §3.6)를 고친다
+# PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: 트랙 1 S3 Task 1과 트랙 2 S5-1을 동시에 시작, 00-roadmap §3.6)를 고친다
 git add docs && git commit -m "docs(plan): mark S2 complete and record the switch-over"
 git push origin v1/s2-runs && gh pr create --base main --head v1/s2-runs --title "feat: runs and observation (S2)" --body "S2 실행·관찰 전체(Task 1–16), SC9 측정, 실사용 확인 10개 결과, 전환 날짜.
 
