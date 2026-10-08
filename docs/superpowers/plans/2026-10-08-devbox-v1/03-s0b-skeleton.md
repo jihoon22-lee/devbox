@@ -430,8 +430,8 @@ jobs:
         with: { components: "clippy, rustfmt" }
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
       - run: bash scripts/banned-words.sh
   # 보호 규칙의 유일한 필수 검사(IR-1). job을 더하면 needs에도 더하고, 그 job에 `needs: changes`와 같은 `if`를 단다.
   # needs가 실패하면 이 job이 skipped가 되어 필수 검사가 통과로 보이는 것을 막으려고 always()로 돌리고 결과를 직접 본다.

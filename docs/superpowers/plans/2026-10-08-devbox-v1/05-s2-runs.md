@@ -64,7 +64,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 
 | O | Task 2–6 | push |
 | P | Task 7–10 | push |
 | Q | Task 11–12 | push |
-| R | Task 13–15 | push |
+| R | Task 13–15b | push |
 | 마무리 | Task 16 | **S2 PR 열기** → CI·설치 파일 → 사용자 확인 → rebase 머지 |
 
 ---
@@ -468,7 +468,39 @@ pnpm check && git push origin v1/s2-runs
 - `SecretsSettings` 단위(값 입력 후 입력란 비움, 목록에 값이 나오지 않음)
 
 ```bash
-# 묶음 R 끝
+git add -A && git commit -m "feat(runs): add secrets settings, agent test runs and MCP run tools"
+```
+
+---
+
+### Task 15b: S3·S5 동시 진행 준비 — 공용 색인 DB와 코드 보기
+
+S2 다음에는 S3(기록)과 S5(개발 도구)를 두 세션이 동시에 진행한다(사용자 결정 2026-10-08, 00-roadmap §3.6). 두 쪽이 다 쓰는 바탕을 여기서 먼저 만든다. 그래야 두 브랜치가 같은 것을 따로 만들거나 서로를 기다리지 않는다.
+
+**Files:**
+- Create: `crates/core/src/index_db.rs`
+- Create: `app/src/ui/code/{CodeView.tsx,theme.ts,languages.ts}` · Test: `app/src/ui/code/CodeView.test.tsx`
+- Modify: `crates/core/src/lib.rs`, `app/package.json`(`@codemirror/state`·`view`·`language`·`language-data`·`commands`·`search`), `.gitattributes`
+
+**Interfaces:**
+- `IndexDb::open(path: &Path) -> Result<IndexDb, CoreError>`: `index.db`(파생 데이터, 백업 없음, 01-design §4.4)를 WAL로 연다. 쓰기 연결 하나 + 읽기 연결은 S0b `Db`와 같은 방식이다.
+- `IndexDb::ensure_domain(&self, domain: &str, version: u32, create_sql: &str) -> Result<bool, CoreError>`:
+  - `index_schema(domain TEXT PRIMARY KEY, version INTEGER)`에 적힌 버전이 다르거나 없으면, 그 도메인의 테이블(`<domain>_` 접두사)만 지우고 `create_sql`로 다시 만든 뒤 `true`(다시 색인해야 함)를 돌려준다. 같으면 `false`.
+  - 다른 도메인의 테이블은 건드리지 않는다. S3(`notes`·`search`)과 S5(`api`)가 각자 자기 도메인으로 부른다. 그래서 동시에 진행해도 서로의 색인을 지우지 않는다.
+- 화면 `CodeView({ value, language?: string, readOnly?: boolean, onChange?: (text: string) => void, ariaLabel: string })`: CodeMirror 6 한 칸.
+  - `languages.ts`의 `loadLanguage(nameOrFileName)`이 `@codemirror/language-data`에서 언어를 지연 로드한다.
+  - `theme.ts`는 01-design §8.3의 토큰으로 편집기 색을 만드는 **유일한** 모듈이다.
+  - 쓰는 곳: S3 `EditorHost`(노트), S4 코드 편집기, S5 요청·응답 본문.
+- `.gitattributes`에 `Cargo.lock merge=lockfile`, `pnpm-lock.yaml merge=lockfile`, `app/src/rpc/gen/rpc.ts merge=lockfile`를 더한다. 각 clone에서 `git config merge.lockfile.driver true`가 필요하다(00-roadmap §3.3). rebase 중 충돌하면 위쪽(main) 판을 남기고, rebase가 끝난 뒤 한 번에 다시 만든다(00-roadmap §3.6).
+
+**핵심 테스트:**
+- `ensure_domain_recreates_only_that_domain`: `notes_x`·`api_y` 테이블에 행을 넣고 `api` 버전만 올림 → `api` 호출은 `true`이고 `api_y`가 비어 있음, `notes` 호출은 `false`이고 `notes_x` 행이 그대로
+- `ensure_domain_is_idempotent`: 같은 버전으로 두 번 부르면 두 번째는 `false`
+- `CodeView.test.tsx`: 텍스트 표시, `language="json"` 로드 뒤 구문 강조 요소가 생김, 편집하면 `onChange`가 새 텍스트로 불림, `readOnly`면 편집 안 됨
+
+```bash
+git config merge.lockfile.driver true
+git add -A && git commit -m "feat(core): add a per-domain index database and a shared code view"
 # 묶음 R 끝: PROGRESS.md의 묶음 R 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
 pnpm check && git push origin v1/s2-runs
 ```
@@ -478,7 +510,7 @@ pnpm check && git push origin v1/s2-runs
 ### Task 16: S2 완료 — 전환점 확인
 
 **Files:**
-- Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치), `scripts/loc.sh` 실행 결과를 PR 본문에 기록
+- Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치, 다음은 S3·S5 동시 시작), `scripts/loc.sh` 실행 결과를 PR 본문에 기록
 
 - [ ] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
 - [ ] **Step 2: 실사용 확인(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
@@ -497,7 +529,7 @@ pnpm check && git push origin v1/s2-runs
 
 ```bash
 sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(S2 PR 머지, 실사용 확인 10\/10, 전환 완료)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
-# PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: S3 Task 1)를 고친다
+# PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: S3 Task 1과 S5-1을 두 세션이 동시에 시작, 00-roadmap §3.6)를 고친다
 git add docs && git commit -m "docs(plan): mark S2 complete and record the switch-over"
 git push origin v1/s2-runs && gh pr create --base main --head v1/s2-runs --title "feat: runs and observation (S2)" --body "S2 실행·관찰 전체(Task 1–16), SC9 측정, 실사용 확인 10개 결과, 전환 날짜.
 

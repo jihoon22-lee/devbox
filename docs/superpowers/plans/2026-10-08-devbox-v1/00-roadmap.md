@@ -52,8 +52,9 @@
 ## 2. 하위 프로젝트 순서
 
 ```
-P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──► S1 에이전트·터미널 ──► S2 실행·관찰 ──► S3 기록 ──► S4 편집·Git ──► S5 개발 도구 ──► S6 마무리·출시(v1.0.0)
-                                                          (전환점: 이후 A·B·C는 새 빌드로)
+P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──► S1 에이전트·터미널 ──► S2 실행·관찰 ─┬─► S3 기록 ──► S4 편집·Git ─┬─► S6 마무리·출시(v1.0.0)
+                                                                (전환점: 이후 A·B·C는 새 빌드로) └─► S5 개발 도구 ──────────────┘
+                                                                                                 (세션 2개 동시, §3.6)
 ```
 
 | S | 시작 조건 | 완료 조건(요약, 상세는 각 계획) | 사용자 확인(수동 10개 이하) |
@@ -63,10 +64,10 @@ P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──�
 | S0b | S0a 합격(또는 대체 경로로 설계 갱신 완료) | 옛 코드·CI·지침 교체, 데몬·브리지·생성기·화면 골격, `system.ping`·`projects.list/add`가 브라우저·Tauri 양쪽에서 동작, CI 통과 | CI가 만든 설치 파일 설치 → 프로젝트 추가 |
 | S1 | S0b 머지 | 에이전트 전 과정, 격자 보기, 터미널 유지·분리 창, 트레이·전역 단축키·알림, MCP 기본, SC3·SC4·SC10 | 에이전트 2개 병렬 → 알림 → 병합 |
 | S2 | S1 머지 | 실행·관찰 전부, 비밀, Windows 대상 실행 | **전환점:** 일상 A·B·C를 새 빌드로 |
-| S3 | S2 머지 | 노트·일일·캡처·활동·검색 | 노트 작성·검색·활동 보기 |
-| S4 | S3 머지 | 편집기·LSP·Git 전체 | 파일 편집 + LSP 진단, 충돌 해결 |
-| S5 | S4 머지 | API·웹훅·변환 도구·환경 점검 | 요청·웹훅·변환 각 1회 |
-| S6 | S5 머지 | 설치기·업데이트·릴리스, 성공 기준 측정, 문서 정리, v1.0.0 공개 | 새 설치 → 업데이트 |
+| S3 | S2 머지(세션 1, S5와 동시) | 노트·일일·캡처·활동·검색 | 노트 작성·검색·활동 보기 |
+| S4 | S3 머지(세션 1, S5가 아직이면 동시) | 편집기·LSP·Git 전체 | 파일 편집 + LSP 진단, 충돌 해결 |
+| S5 | S2 머지(세션 2, S3와 동시) | API·웹훅·변환 도구·환경 점검 | 요청·웹훅·변환 각 1회 |
+| S6 | S4·S5 모두 머지 | S3·S4↔S5 연결(S6-1b), 설치기·업데이트·릴리스, 성공 기준 측정, 문서 정리, v1.0.0 공개 | 새 설치 → 업데이트, 연결 기능 |
 
 **P0: 계획을 저장소에 넣기(2026-10-08 완료).**
 - 이 폴더를 브랜치 `docs/v1-plan`에 커밋하고 push했다. PR은 열지 않았다. 사용자 요청: 계획 추가만으로 CI를 돌리지 않는다.
@@ -83,25 +84,28 @@ P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──�
 
 ### 2.1 일정 추정과 측정
 
-과제는 모두 약 108개다(S0a 8 · S0b 24 · S1 24 · S2 16 · S3 12 · S4 9 · S5 9 · S6 6). 아래는 **실측 전 추정**이다. 과제 하나에 구현 하위 에이전트 + 검토 하위 에이전트 + Rust 빌드·시험이 드는 시간을, 코드까지 적힌 과제(S0b·S1)는 약 1시간, 과제 수준만 적힌 과제(S2–S6, 상세화 포함)는 약 1.5–2시간으로 잡았다. 오차는 ±50%로 본다.
+과제는 모두 약 110개다(S0a 8 · S0b 24 · S1 24 · S2 17 · S3 12 · S4 9 · S5 9 · S6 7). 아래는 **실측 전 추정**이다. 과제 하나에 구현 하위 에이전트 + 검토 하위 에이전트 + Rust 빌드·시험이 드는 시간을, 코드까지 적힌 과제(S0b·S1)는 약 1시간, 과제 수준만 적힌 과제(S2–S6, 상세화 포함)는 약 1.5–2시간으로 잡았다. 오차는 ±50%로 본다.
 
 | S | 과제 | 에이전트 작업 시간(추정) | 사용자 할 일 |
 |---|---|---|---|
 | S0a | 8 | 4–6시간 | 수동 확인 4개(약 40분, 대부분 대기) |
 | S0b | 24 | 20–28시간 | 설치·확인 6개 |
 | S1 | 24 | 24–34시간 | 확인 10개 |
-| S2 | 16 | 20–30시간 | 확인 10개, **전환점** |
+| S2 | 17 | 22–32시간 | 확인 10개, **전환점** |
 | S3 | 12 | 16–24시간 | 확인 10개 |
 | S4 | 9 | 16–24시간 | 확인 8개 |
 | S5 | 9 | 18–28시간 | 확인 6개 |
-| S6 | 6 | 6–10시간 | 확인 7개 |
-| 합계 | 108 | **약 125–185시간** | 확인 약 60개 |
+| S6 | 7 | 8–13시간 | 확인 9개 |
+| 합계 | 110 | **약 130–190시간**(두 세션의 합) | 확인 약 62개 |
 
-- 하루 8시간씩 에이전트가 쉬지 않고 진행하면 약 16–23 작업일(3.5–5주)이다. 하루 4시간이면 그 두 배다. 사용자 확인 대기는 따로 더해진다.
-- 일상 사용(에이전트·실행·터미널)을 새 빌드로 옮기는 전환점(S2 끝)까지가 약 70–100시간, 전체의 절반을 조금 넘는다.
+- 한 세션으로 차례로 하면 하루 8시간 기준 약 16–24 작업일이다. S3·S5 동시 진행(아래)으로 가장 긴 경로는 약 15–21 작업일이다. 하루 4시간이면 그 두 배다. 사용자 확인 대기는 따로 더해진다.
+- 일상 사용(에이전트·실행·터미널)을 새 빌드로 옮기는 전환점(S2 끝)까지가 약 72–102시간이다.
 - CI는 PR 7번이라 전체 기간에 몇 시간뿐이다. 처음 계획(PR 47개)에서는 PR 준비·CI 대기·머지·정리가 PR마다 20–30분씩, 모두 약 15–25시간이었다.
 - **측정:** 묶음이 끝날 때 PROGRESS의 묶음 행에 시작·끝 날짜와 실제 작업 시간을 적는다. S0b가 끝나면 실측 속도로 이 표를 다시 계산해 사용자에게 보고한다.
-- **더 줄이는 선택지(사용자 승인 필요):** S2가 끝난 뒤 S3(기록)과 S5(API·도구)는 서로 기대지 않으므로, 두 세션이 두 브랜치에서 동시에 진행할 수 있다. S4는 S3의 문서 모델을 쓰므로 S3 뒤다. 동시에 하면 달력 기준 약 1–1.5주가 준다. 대신 생성 파일(`app/src/rpc/gen/rpc.ts`)·화면 틀·라우터 등록이 겹쳐, 나중에 머지하는 쪽이 main 위로 rebase하고 생성 파일을 다시 만들어야 한다.
+- **S3·S5 동시 진행(사용자 결정 2026-10-08, §3.6).** S2가 끝나면 세션 1이 S3 → S4, 세션 2가 S5를 동시에 진행하고, S6는 둘 다 머지된 뒤 한다.
+  - 기다리는 길이(가장 긴 경로)가 S3+S4+S5(50–76시간)에서 max(S3+S4, S5) = 32–48시간으로 준다. 대신 준비(S2 Task 15b)·연결(S6-1b)·나중 쪽의 rebase에 5–7시간이 더 든다. **순수하게 줄어드는 시간은 약 13–21시간**이다. 하루 8시간 기준 약 2–3일, 하루 4시간 기준 약 1주다(앞서 말한 "1–1.5주"는 하루 4시간 기준이었다).
+  - 에이전트 작업 시간의 합은 줄지 않는다(약 130–190시간). 두 세션을 동시에 돌리는 동안 PC 자원(Rust 빌드 두 개)과 사용자 확인이 겹친다.
+  - 가장 긴 경로 기준 전체: 약 115–165시간, 하루 8시간이면 약 15–21 작업일.
 
 - 버전은 S6에서 한 번만 올린다(`1.0.0-dev` → `1.0.0`). 중간 공개 릴리스는 없다.
 - 재구축 동안 v0.9.0 설치본은 그대로 쓴다. 전환점(S2 완료) 뒤에는 A·B·C(에이전트·실행·터미널)를 새 빌드로 옮긴다.
@@ -225,6 +229,7 @@ PR은 모두 7개다(S0b·S1·S2·S3·S4·S5·S6). P0·S0a는 PR 없이 `docs/v1
 | cargo-sweep | `command -v cargo-sweep` | **없음** | `cargo install cargo-sweep`(S0b `scripts/sweep.sh`가 씀) |
 | Node 24·pnpm 9 | `node -v`, `pnpm -v` | 24.18·9.15.9 | 사용자에게 |
 | gh 인증 | `gh auth status` | 됨 | 사용자에게 |
+| git 병합 드라이버·rerere | `git config --get merge.lockfile.driver`, `git config --get rerere.enabled` | 없음 | `git config merge.lockfile.driver true && git config rerere.enabled true`(clone마다 한 번, S2 Task 15b 전에. §3.6) |
 | 커밋 이메일 | `git config user.email` | 저장소 설정이 개인 Gmail이라 **push가 거절됨**(GitHub 이메일 비공개 설정) | 커밋할 때 `git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply.github.com commit …`. 저장소 설정을 이 주소로 바꿀지는 사용자가 정한다(PROGRESS §2) |
 | jq·actionlint | `command -v jq actionlint` | 있음 | `sudo apt install jq`(사용자), actionlint는 바이너리 |
 | tmux ≥ 3.2·systemd | `tmux -V`, `ps -p 1 -o comm=` | 3.6·systemd(`systemctl --user`는 `degraded`, 정상으로 봄) | §3.2 |
@@ -251,6 +256,46 @@ PR은 모두 7개다(S0b·S1·S2·S3·S4·S5·S6). P0·S0a는 PR 없이 `docs/v1
 | 시험이 사용자 환경(systemd user·tmux)에 따라 다름 | 시험은 `DEVBOX_INSTANCE=test-<난수>` 자원만 쓰는지 확인. CI에서 systemd user를 못 쓰면 01-design §11의 대체(그 시험만 WSL 로컬 필수) |
 | 디스크 부족 | `du -sh ~/.cache/targets/devbox` → `scripts/sweep.sh`. 그래도 모자라면 사용자에게 |
 | push가 `push declined due to email privacy restrictions`로 거절됨 | 그 브랜치의 내 커밋을 noreply 주소로 다시 쓴다: `git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply.github.com commit --amend --no-edit --reset-author`(여러 개면 `git rebase -x '…같은 명령…' origin/main`). §3.3 |
+
+### 3.6 S3·S5 동시 진행 (사용자 결정 2026-10-08)
+
+**세션과 브랜치**
+- S2 PR이 머지되면 세션 두 개를 띄운다. 시작 프롬프트(§6)에 자기 몫을 한 줄 덧붙인다.
+  - 세션 1: S3 → (S3 머지 뒤) S4. 브랜치 `v1/s3-knowledge` → `v1/s4-editor-git`.
+  - 세션 2: S5. 브랜치 `v1/s5-tools`.
+- 둘 다 `origin/main`에서 갈라진다. S6는 S4·S5가 모두 머지된 뒤 한 세션이 한다.
+- 두 쪽이 다 쓰는 바탕(`index.db` 도메인별 버전, CodeMirror `CodeView`·색 모듈, 잠금·생성 파일 병합 규칙)은 S2 Task 15b에서 미리 만든다. 두 쪽을 잇는 기능은 S6-1b다. 그래서 동시 진행 중에는 서로의 기능을 쓰지 않는다.
+
+**자원**
+- Rust target-dir: 세션 1은 기본(`~/.cache/targets/devbox`), 세션 2는 `export CARGO_TARGET_DIR=$HOME/.cache/targets/devbox-s5`. 같은 폴더를 쓰면 cargo의 빌드 잠금 때문에 서로 기다려 동시 진행의 이득이 사라진다. S5 머지 뒤 `devbox-s5` 폴더는 지운다(수십 GiB).
+- 두 세션 모두 `CARGO_BUILD_JOBS=3`(합 6). WSL 메모리(20 GB)가 모자라면 한쪽을 잠시 멈춘다. 이 PC의 wsl-resource-guard가 메모리 압박 때 세션을 끝낼 수 있다.
+- 전체 검사(`scripts/check.sh`)와 E2E(`pnpm --filter app e2e`)는 `flock`으로 한 번에 하나만 돈다(S0b Task 21). 다른 세션의 검사가 끝나기를 기다리는 것은 정상이다.
+- 데몬 시험은 `DEVBOX_INSTANCE=test-<난수>`라 서로 겹치지 않는다.
+
+**공유 파일**
+
+| 파일 | 규칙 |
+|---|---|
+| `app/src/rpc/gen/rpc.ts` | 손으로 합치지 않는다. 충돌하면 병합 드라이버가 main 판을 남기고, rebase가 끝난 뒤 `pnpm gen`으로 다시 만든다 |
+| `Cargo.lock`, `pnpm-lock.yaml` | 같은 방식. rebase 뒤 `cargo metadata --format-version 1 >/dev/null`(빠진 의존성만 더함)·`pnpm install`로 다시 만든다. CI가 `--locked`·`--frozen-lockfile`로 확인한다 |
+| 데몬 등록(`crates/cli/src/daemon/routes.rs`·`state.rs`), 생성기 등록(`xtask/src/main.rs`), 화면 섹션·라우터(`app/src/shell/sections.tsx`·`router.tsx`), 오류 문구(`app/src/rpc/messages.ts`), workspace `Cargo.toml`·`app/package.json`의 의존성 목록 | 두 쪽이 줄을 더하기만 한다. 충돌하면 양쪽 줄을 모두 남긴다 |
+| `crates/core`, `crates/protocol`, `app/src/ui`, `app/src/rpc`(gen 밖), `.github`, `scripts` | 동시 진행 중에는 고치지 않는다. 꼭 필요하면 PROGRESS §2에 적고, 먼저 머지할 쪽이 맡는다 |
+| `PROGRESS.md` | 자기 행만 고친다(세션 1: S3·S4 행과 그 묶음, 세션 2: S5 행과 그 묶음). "현재 위치"는 세션별 줄을 쓴다. 충돌하면 양쪽을 모두 남긴다 |
+| 계획 문서 | 자기 하위 프로젝트 부분만 고친다(세션 1: 06, 07의 S4 절. 세션 2: 07의 S5 절) |
+
+**머지 순서**
+- 먼저 끝난 쪽은 평소대로 PR → CI → 사용자 확인 → 머지한다.
+- 나중 쪽은 PR을 열기 전에 main 위로 올린다.
+  ```bash
+  git fetch origin main
+  git rebase origin/main   # 등록 파일 충돌은 양쪽 줄을 남기고 git add → git rebase --continue. 잠금·생성 파일은 드라이버가 처리
+  cargo metadata --format-version 1 >/dev/null && pnpm install && pnpm gen
+  git add -A && { git diff --cached --quiet || git commit -m "chore: refresh lockfiles and generated types after rebase"; }
+  pnpm check && git push --force-with-lease origin <브랜치>
+  ```
+- 같은 등록 파일이 rebase 중 여러 번 충돌할 수 있으므로 `git config rerere.enabled true`를 켜 둔다(§3.3).
+- S4는 S3 머지 뒤 `origin/main`에서 시작한다. 그때 S5가 아직이면 S4와 S5가 같은 규칙으로 동시에 간다.
+- S3·S5의 사용자 확인이 비슷한 때 올 수 있다. 각각 따로 받는다.
 
 ## 4. v0.9.0 사용 중 회피 목록 (재구축 기간)
 
@@ -281,6 +326,8 @@ PR은 모두 7개다(S0b·S1·S2·S3·S4·S5·S6). P0·S0a는 PR 없이 `docs/v1
 | Q3 | 앱 identifier `io.github.jihoon22lee.devbox` 사용 | **사용** |
 | Q4 | 노트 vault 기본 위치 `~/notes` | **사용** |
 | — | 실행 방식 | **Subagent-driven**(§3 실행 방식) |
+| — | PR 단위 | **하위 프로젝트당 하나, 모두 7개**(§3, 2026-10-08) |
+| — | S3·S5 | **동시 진행**(§3.6, 2026-10-08). 세션 1: S3 → S4, 세션 2: S5 |
 
 **남은 확인**
 - (해결 2026-10-08) 01-design §9.3의 "AU-K2"는 10-03 감사 K2 결함이다. 관찰이 반복된 뒤 idle로 끝나면 마지막 입력 뒤 298초까지 활동으로 집계했다. v0.9.0에 이미 고쳐져 있으므로 v0.9.0 코드와 테스트를 그대로 이식하면 된다([06 S3](06-s3-knowledge.md) Task 8). 출처: `docs/superpowers/plans/2026-10-03-product-readiness/08-traceability.md`(v0.9.0 공개본 커밋 `72ff50c7`에 있음: `git show 72ff50c7:<경로>`).
@@ -296,7 +343,7 @@ PR은 모두 7개다(S0b·S1·S2·S3·S4·S5·S6). P0·S0a는 PR 없이 `docs/v1
 원본 체크아웃은 main 으로 두고, 하위 프로젝트마다 §3 표의 브랜치·worktree 하나를 써. 작업 묶음이 끝나면 push만 하고, PR은 하위 프로젝트 끝에 한 번 열어.
 superpowers:subagent-driven-development 로 과제마다 구현 하위 에이전트와 검토 하위 에이전트(§3.4 기준)를 돌려.
 §3.2에 해당하면 멈추고 물어봐. 세션을 끝내기 전에 §3.1 "끝날 때"를 꼭 해.
-S2 이후 계획의 첫 과제는 상세화다. 00-roadmap §7 추적표와 PROGRESS §5를 반영해 먼저 커밋하고 진행해.
+S2 이후 계획의 첫 과제는 상세화다. S2가 끝난 뒤에는 §3.6대로 세션 두 개가 S3(→S4)와 S5를 나눠 맡는다. 자기 몫을 프롬프트 끝에 적어 줄 것. 00-roadmap §7 추적표와 PROGRESS §5를 반영해 먼저 커밋하고 진행해.
 ```
 
 ## 7. 검토 결함 추적표 (CV·AR → 새 구조)

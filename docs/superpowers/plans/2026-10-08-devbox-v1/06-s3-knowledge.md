@@ -31,6 +31,7 @@
 
 - S0b–S2의 Global Constraints를 따른다.
 - 작업 위치: S3 전체가 브랜치 `v1/s3-knowledge`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s3-knowledge` 하나다. Task 1(상세화)이 이 브랜치의 첫 커밋이다. PR은 Task 12에서 한 번 연다(00-roadmap §3).
+- **S5와 동시에 진행한다**(사용자 결정 2026-10-08). 다른 세션이 `v1/s5-tools`에서 일한다. 공유 파일·잠금 파일·생성 파일·rebase 규칙은 00-roadmap §3.6을 따른다. S3에서 S5 기능(API·변환 도구)을 쓰거나 고치지 않는다. 두 쪽을 잇는 기능(API 응답을 노트에 붙이기 등)은 S6-1b다.
 - 문서 쓰기·삭제는 등록한 프로젝트(에이전트 작업 폴더 포함)·vault·devbox 데이터 폴더 안에서만 한다. `realpath`로 확인하고 `O_NOFOLLOW`로 연다(01-design §12).
 - 원자적 교체는 `renameat2(RENAME_EXCHANGE)`, 새 파일은 `RENAME_NOREPLACE`를 쓴다. mode·EOL·BOM을 보존하고, symlink는 realpath 대상에 쓴다(01-design §9.1-2).
 - 이진·비 UTF-8·크기 초과(노트 2 MiB, 코드 5 MiB) 파일은 읽기 전용으로 연다.
@@ -147,7 +148,7 @@ git add docs && git commit -m "docs(plan): detail S3 against the S2 code"
 - `store.ts`(Zustand): 열린 문서 맵, `open(key, policy)`, `edit(key, text)`, `save(key)`, `close(key, choice)`, `resolve(key, "mine"|"disk"|"merged")`
 - `effects.ts`: 효과를 RPC로 실행하고 결과를 이벤트로 되돌린다.
 - `offlineJournal.ts`: 연결이 끊긴 동안 저널을 IndexedDB(문서당 최신 1개)에 둔다. 다시 연결되면 같은 `baseRev`로 저장을 다시 시도한다.
-- `EditorHost`: CodeMirror `EditorView` 하나. 문서를 바꿀 때 `view.setState(문서별 EditorState)`로 전환한다(AU-K1). 문서별 상태는 `Map<keyString, EditorState>`에 둔다.
+- `EditorHost`: CodeMirror `EditorView` 하나. 색·언어 로드는 S2 Task 15b의 `app/src/ui/code/theme.ts`·`languages.ts`를 쓴다(새로 만들지 않음). 문서를 바꿀 때 `view.setState(문서별 EditorState)`로 전환한다(AU-K1). 문서별 상태는 `Map<keyString, EditorState>`에 둔다.
 
 **핵심 테스트(표의 행마다 하나 이상):**
 - `own_save_echo_is_ignored_while_saving`
@@ -183,7 +184,7 @@ git add docs && git commit -m "docs(plan): detail S3 against the S2 code"
   - `notes.attach{ notePath, name, bytes }`(mutation): `attachments/<blake3 앞 12자>-<이름>`에 쓰고 Markdown 링크를 돌려준다.
   - `notes.templates{}`
 - 링크 해석: `[[제목]]`·`[[폴더/제목|별칭]]`·`[[제목#제목줄]]`, Markdown 상대 링크. 대소문자 무시, 같은 이름이 여럿이면 가까운 폴더를 우선한다(v0.9.0 `vault.rs` 규칙 참고).
-- 링크·태그 색인은 `index.db`의 `notes_links(src, dst)`·`notes_tags`다. 시작할 때와 `documents.changed`에서 갱신한다.
+- 링크·태그 색인은 `index.db`의 `notes_links(src, dst)`·`notes_tags`다. 테이블은 `IndexDb::ensure_domain("notes", <버전>, …)`(S2 Task 15b)로 만든다. 시작할 때와 `documents.changed`에서 갱신한다.
 - 렌더는 v0.9.0 `crates/markdown`의 `pulldown-cmark` + `ammonia` 설정을 그대로 이식한다. Mermaid 코드 블록은 `<pre class="mermaid">`로 남기고 화면이 `securityLevel: "strict"`로 그린다. 원격 이미지는 막는다.
 - 템플릿 변수: `{{date}}`·`{{time}}`·`{{title}}`·`{{pc}}`
 
@@ -259,7 +260,7 @@ pnpm check && git push origin v1/s3-knowledge
 - Create: `crates/search/{Cargo.toml,src/lib.rs,src/fts.rs,src/code.rs,src/files.rs,src/saved.rs}`
 
 **Interfaces:**
-- `index.db` 스키마 버전이 바뀌면 파일을 지우고 다시 만든다(백업 없음).
+- `index.db`의 search 테이블은 `IndexDb::ensure_domain("search", <버전>, …)`(S2 Task 15b)로 만든다. 버전이 바뀌면 search 테이블만 다시 만들고 다시 색인한다(백업 없음). 다른 도메인(S5의 `api`)은 건드리지 않는다.
 - `search.query{ text, scopes: [notes|code|files], projectIds?, regex?, caseSensitive?, limit }`(stream): 결과를 범위별로 나눠 보낸다(노트 FTS 먼저, 코드 grep은 진행에 따라).
   - 노트: FTS5(`unicode61` + 한글 2-gram 보조 열), 일치 부분 강조 조각
   - 코드: `ignore`(gitignore 존중) + `grep-searcher`. 파일 1 MiB 초과·이진은 건너뛴다.
@@ -272,7 +273,7 @@ pnpm check && git push origin v1/s3-knowledge
 **핵심 테스트:**
 - `korean_substring_matches_in_note_fts`("데몬재시작" 안의 "재시작")
 - `code_search_respects_gitignore_and_user_excludes`
-- `index_rebuilds_when_schema_version_changes`
+- `search_index_rebuilds_only_its_domain_when_version_changes`(`api_*` 테이블이 그대로)
 - `cancel_stops_the_code_walk`(스트림을 닫으면 탐색 중단)
 - `observed_time_only_changes_do_not_bump_the_rev`: 감시기의 관찰 시각만 바뀐 갱신 3회 → 결과 묶음 rev 그대로, `search.changed` 없음(01-design §5.5 R8, CV-F07·AR-F11)
 - `blank_title_note_is_found_by_file_name`: 빈 title의 `idea.md`를 이름 검색 `idea` → 1건(AR-F10)

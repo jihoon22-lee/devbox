@@ -87,7 +87,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test",
+    "e2e": "flock ${XDG_RUNTIME_DIR:-/tmp}/devbox-e2e.lock playwright test",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -2030,11 +2030,15 @@ VITE_DEVBOX_WS="ws://127.0.0.1:1451/ws?token=$TOKEN" VITE_DEVBOX_INSTANCE=dev pn
 # PR 전에 한 번 돌리는 전체 검사. CI와 같은 순서.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# 여러 세션(예: S3·S5 동시 진행)이 전체 검사를 겹쳐 돌리지 않게 한다. 먼저 잡은 쪽이 끝날 때까지 기다린다.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/devbox-check.lock"
+flock 9
+# shellcheck source=/dev/null
 source ~/.cargo/env
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 cargo run -q -p xtask -- gen-ts --check
 bash scripts/banned-words.sh
 pnpm exec biome ci .
