@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 A·B 확인/C 결정 정합화 및 Task 1 구현·별도 재검토 완료 |
-| 다음 할 일 | S1 Task 2 화면 클라이언트 스트림 → 별도 검토 → 가능하면 S0b 범위 Windows 조기 스모크 |
+| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, Windows 조기 스모크 준비 |
+| 다음 할 일 | Task 2 시점 SHA push·Windows CI 설치본 출처 확인 → S0b 조기 스모크 → S1 Task 3 tmux |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1 로컬 완료·Task 2 다음 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 로컬 완료, 조기 스모크 준비 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -76,7 +76,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | C | Task 7–15 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토 합산 추정) |
 | S0b | D | Task 16–21 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.0h(구현·검토 합산 추정) |
 | S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토·최종 통합 합산 추정) |
-| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
+| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.4h 경과(구현·별도 검토·영향 검사, CI/실기 별도) |
 | S1 | G | Task 3–4 |  | 대기 | | | |
 | S1 | H | Task 5–6 |  | 대기 | | | |
 | S1 | I | Task 7–10 |  | 대기 | | | |
@@ -176,6 +176,9 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04 Task 1 스트림·Outbox | sync StreamSink·단순 프레임 큐·전체 chunk 신용 대기 | Outgoing frame/generation/flushed·Hello flush ACK·dedupe·채널 취소 보존, bounded256/stream240(JSON16 여유) async enqueue, 가용 신용 부분 예약·256KiB 포화·64KiB 분할, async finish와 FIN 순서. debug.echo는 protocol 계약/TS 생성, test-*에서만 라우팅 | API 부재 RED 뒤 구현. 작은조각300개 Outbox/클라이언트 회귀 RED→수정, 입력 overflow는 해당 스트림 FIN. 최초 직접 영향43개·gen-ts/check·app typecheck PASS; 전체 check/clippy/build/E2E 미실행 |
 | 2026-10-13 | 04 Task 1 별도 검토 보완 | 입력 FIN만으로 Drop 정리 | 독립 검토가 credit 대기 생산자 누수 RED 재현. StreamClose 제어로 채널 소유권 검증·stream generation 취소·등록/대기출력 정리, FIN half-close 보존. 뒤늦은 old ID 버퍼 재생성 RED도 active 등록/마지막 open 정리로 해결 | StreamClose 관련37개 영향 검사 PASS, 최종 client6·독립 drop 회귀1·실제 stream 통합3 PASS(6.024s, cgroup peak515760128B·swap0). 별도 재검토 PASS. 실제 Windows 검증은 아직 미실행 |
 
+| 2026-10-13 | 04 Task 2 화면 스트림 | 초기 예제의 early 데이터 배열·FIN 폐기·직접 송신 | 별도 helper에 64KiB 페이지 coalescing·ID당256KiB/총4MiB/64ID early 제한, FIN 보존, ACK/onEnd 단발성, epoch 격리·StreamClose·orphan 정리·sendRaw 실패복원. onClosed 동기 재진입 call/open 거부 | 최초26 RED→GREEN, sync ACK 중 early 순서 RED [1,3,2]→수정. 관련 client/frame/stream74 PASS. 타입 인덱스 좁히기8곳 보정 후 app typecheck PASS, 독립 검토 PASS. 완료 Biome의 import 정렬 지적 보정 뒤 CI 통과. Task1 gen-ts/check 성공은 생성 입력 불변으로 재사용. 전체 build/E2E 미실행 |
+| 2026-10-13 | C2 Windows 조기 스모크 사전 조회 | 기존 v1/prod 있으면 중단 | 읽기 전용 조회: v1 identifier 데이터·uninstall 등록 및 Ubuntu prod 데이터/unit/socket/bin 없음. DevboxSuite0.9.0·com.devbox.*와 기존 LocalAppData/Devbox는 존재하므로 보존, 전용 설치 경로 사용 예정. Ubuntu는 유일한 비내부 WSL 배포판이라 자동 선택. UIA RootElement 접근 가능, WebDriver 도구 없음 | 아직 설치·실행·제거 미실행이며 실기 PASS 아님. 실제 설치 직전 재확인하고 해당 Task2 SHA Windows CI 산출물만 사용. R1/R2는 S6까지 미실행 |
+
 
 ## 6. 세션 기록
 
@@ -190,6 +193,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | Codex | PR #638 머지 후 자동 리뷰 1건을 검증·수정, PR #639 최종 CI와 코드·보안 리뷰 완료 후 머지 | main `fb6bc69d`와 S1 준비 브랜치 동기화. S1 준비 기록은 이미 후속 PR에 포함돼 중복 커밋 재적용 없이 최신 main으로 이동. 다음: S1 Task 1 |
 | 2026-10-13 | Codex | S0 검토 A/B 재확인·C 사용자 결정 반영, 재추정, glib 경보 dismiss, 통합된 docs/v1-plan 정리. 독립 문서 재검토·Biome 통과 | `v1/s1-agents-terminal`, 기존05c13913 보존. 문서 변경은 로컬 커밋, push/PR 없음. 다음 Task1 credit·Outbox(기존 flush ACK/세대/dedupe 보존), Windows 스모크는 Task2 뒤 조기 시도 |
 | 2026-10-13 | Codex | S1 Task 1 credit·공정 송신 구현, 별도 검토의 스트림 폐기/late buffer 누수 수정 및 재검토 통과 | `v1/s1-agents-terminal` 로컬 Task 1 완료. 직접 회귀·TS 생성/typecheck·Biome 검증 후 과제 커밋, 다음 Task 2·조기 Windows 스모크. S1 전체 검증/PR은 아직 |
+
+| 2026-10-13 | Codex | S1 Task 2 화면 스트림·수명 회귀 구현 및 독립 검토 통과 | Task1 `f1f4e445` 뒤 Task2 과제 커밋. 묶음 F 로컬 완료, 다음 승인된 조기 Windows 스모크. 일반 묶음 push/PR 없음, 스모크용 SHA push·workflow만 예외 |
 
 
 ## 7. 착수 준비 검토

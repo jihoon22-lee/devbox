@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · S0b 및 후속 PR #639 완료(`fb6bc69d`). `v1/s1-agents-terminal`에서 Task 1 스트림·공정 송신 로컬 완료, Task 2 다음
+- 상태: 구현 중 · S0b 및 후속 PR #639 완료(`fb6bc69d`). `v1/s1-agents-terminal`에서 Task 1–2 로컬 완료, S0b 범위 Windows 조기 스모크 뒤 Task 3
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)
@@ -583,7 +583,9 @@ git add crates && git commit -m "feat(daemon): add flow-controlled byte streams 
     - 연결이 끊기면 모든 스트림에 `onEnd()`를 호출한다.
     - `end()`는 입력 half-close가 아닌 로컬 dispose다. `StreamClose`를 보내고 핸들러를 제거하며 `onEnd()`를 한 번만 호출한다. 이전 연결의 write/end/ack는 새 연결을 건드리지 않는다.
 
-- [ ] **Step 1: 실패하는 테스트**
+**구현 보정(2026-10-13):** 실제 수명·버퍼 처리는 `app/src/rpc/client-streams.ts`로 분리했다. 아래 최초 예제와 달리 early FIN을 보존하고 작은 조각은 페이지로 합친다. ID당 256KiB·총 4MiB·64ID로 early 상태를 제한하고 마지막 open 뒤 미사용 ID를 `StreamClose`로 정리한다. ACK/onEnd는 한 번만 실행하며 이전 연결의 핸들은 아무것도 보내지 않는다. 응답 후 promise 재개 전 연결 종료 및 동기 콜백 재진입도 검증한다. 검증 결과는 PROGRESS §5를 따른다.
+
+- [x] **Step 1: 실패하는 테스트**
 
 ```ts
 // app/src/rpc/stream.test.ts
@@ -654,9 +656,9 @@ test("a dropped connection ends open streams", async () => {
 
 `debug.echo`는 테스트 인스턴스에서만 등록되지만 생성 타입에는 있으므로 TS에서 이름을 쓸 수 있다.
 
-- [ ] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/stream.test.ts`
+- [x] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/stream.test.ts`
 
-- [ ] **Step 3: 구현(client.ts에 추가)**
+- [x] **Step 3: 구현(client.ts에 추가)**
 
 ```ts
 // app/src/rpc/client.ts — 클래스 필드와 메서드 추가
@@ -704,7 +706,7 @@ private deliverChunk(id: number, flags: number, data: Uint8Array) {
 - `onClosed()`에서 모든 스트림 핸들러에 `onEnd()`를 부르고 비운다(`early`도 비운다).
 - `frame.ts`에 `streamFrame(id, flags, data)`를 추가한다. 형식은 `encodeFrame({kind: FRAME.stream, channel: 0, body: [u32 id LE, u8 flags, data]})`.
 
-- [ ] **Step 4: 통과·커밋·묶음 F 끝**
+- [x] **Step 4: 통과·커밋·묶음 F 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/rpc && pnpm --filter app typecheck && cargo run -q -p xtask -- gen-ts --check

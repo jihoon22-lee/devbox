@@ -1,3 +1,4 @@
+import { type ClientStream, ClientStreams, type StreamHandlers } from "./client-streams";
 import { decodeFrame, FRAME, jsonFrame } from "./frame";
 import type { Methods, RpcErrorCode, Topics } from "./gen/rpc";
 import { parseServerMessage, type ServerMessage } from "./server-message";
@@ -12,6 +13,7 @@ export interface Transport {
   onState(cb: (state: TransportState) => void): () => void;
 }
 export type ClientState = "connecting" | "ready" | "reconnecting" | "versionMismatch";
+type StreamMethod = { [M in keyof Methods]: Methods[M]["kind"] extends "stream" ? M : never }[keyof Methods];
 export type ErrorCode = RpcErrorCode | "connection_lost";
 export class RpcError extends Error {
   constructor(
@@ -36,6 +38,7 @@ export class RpcClient {
   state: ClientState = "connecting";
   daemonId?: string;
   daemonVersion?: string;
+  private streams = new ClientStreams((frame) => this.sendRaw(frame));
   private nextId = 1;
   private nextSubKey = 1;
   private pending = new Map<number, Pending>();
@@ -120,7 +123,8 @@ export class RpcClient {
     opts: { clientRequestId?: string; signal?: AbortSignal } = {},
   ): Promise<Methods[M]["result"]> {
     if (opts.signal?.aborted) return Promise.reject(new RpcError("cancelled"));
-    if (!this.running || this.state !== "ready") return Promise.reject(new RpcError("connection_lost"));
+    if (!this.running || !this.live || !this.welcomed || this.state !== "ready")
+      return Promise.reject(new RpcError("connection_lost"));
     const id = this.allocateId();
     return new Promise((resolve, reject) => {
       // Cancellation is cooperative: an accepted mutation may still commit and return success.
@@ -141,6 +145,33 @@ export class RpcClient {
         ...(opts.clientRequestId !== undefined ? { clientRequestId: opts.clientRequestId } : {}),
       });
     });
+  }
+  async openStream<M extends StreamMethod>(
+    method: M,
+    params: Methods[M]["params"],
+    handlers: StreamHandlers,
+  ): Promise<ClientStream & { result: Methods[M]["result"] }> {
+    if (!this.running || !this.live || !this.welcomed || this.state !== "ready") throw new RpcError("connection_lost");
+    const epoch = this.connectionEpoch;
+    const entry = this.streams.begin(handlers);
+    let result: Methods[M]["result"];
+    try {
+      result = await this.call(method, params);
+    } catch (error) {
+      this.streams.reject(entry);
+      throw error;
+    }
+    if (epoch !== this.connectionEpoch || !this.streams.current(entry)) throw new RpcError("connection_lost");
+    let stream: ClientStream;
+    try {
+      stream = this.streams.attach(entry, result);
+    } catch {
+      this.failConnection();
+      throw new RpcError("connection_lost");
+    }
+    // Callbacks while replaying early data may close the connection synchronously.
+    if (epoch !== this.connectionEpoch) throw new RpcError("connection_lost");
+    return { ...stream, result };
   }
   subscribe<T extends keyof Topics>(
     topic: T,
@@ -178,9 +209,19 @@ export class RpcClient {
   }
   private send(msg: unknown): void {
     try {
-      this.transport.send(jsonFrame(msg));
+      this.sendRaw(jsonFrame(msg));
     } catch {
       this.failConnection();
+    }
+  }
+  private sendRaw(frame: Uint8Array): boolean {
+    if (!this.running || !this.live) return false;
+    try {
+      this.transport.send(frame);
+      return true;
+    } catch {
+      this.failConnection();
+      return false;
     }
   }
   private setState(s: ClientState): void {
@@ -200,6 +241,7 @@ export class RpcClient {
     this.live = false;
     this.welcomed = false;
     this.restoring = false;
+    this.streams.reset();
     for (const id of this.pending.keys()) this.take(id)?.reject(new RpcError("connection_lost"));
     this.bySubId.clear();
     for (const sub of this.subs.values()) sub.subId = undefined;
@@ -246,6 +288,11 @@ export class RpcClient {
     let msg: ServerMessage;
     try {
       const frame = decodeFrame(raw);
+      if (frame.kind === FRAME.stream) {
+        if (!this.welcomed) throw new Error("Stream before Welcome");
+        this.streams.receive(frame.body);
+        return;
+      }
       if (frame.kind !== FRAME.json) return;
       msg = parseServerMessage(frame.body);
       if ((msg.type === "welcome") === this.welcomed) throw new Error("Unexpected handshake state");
