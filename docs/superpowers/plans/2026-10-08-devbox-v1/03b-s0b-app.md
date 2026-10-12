@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: [03-s0b-skeleton](03-s0b-skeleton.md)의 묶음 A·B·C push(같은 S0b 브랜치에서 이어감)
+- 상태: 작업 중 · 2026-10-13 착수 · [03-s0b-skeleton](03-s0b-skeleton.md)의 묶음 A·B·C 로컬 구현·검토 완료, 전체 검증·실제 설치는 Task 24
 
 **Goal:** React 화면 골격(프레임·라우팅·RPC 클라이언트·상태 갱신 규칙·연결 표시·명령 팔레트·프로젝트 전환기)과 Windows Tauri 껍데기(WSL 확인·바이너리 배치·setup·브리지·창별 채널)를 만든다. 같은 화면이 브라우저(dev-gateway)와 Tauri 양쪽에서 실제 데몬에 붙어 `system.ping`·`projects.*`가 동작하게 한다.
 
@@ -41,13 +41,13 @@
 ## 작업 묶음
 
 S0b 전체가 브랜치 `v1/s0b-skeleton` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s0b-skeleton`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 구현·좁은 회귀 검사·별도 검토의 중간 지점이다. 과제별로 커밋하고 PROGRESS를 갱신한다. 전체 검증·Biome CI·Windows/WSL 수용 검사는 모든 과제가 끝난 Task 24에서 한 번 모으며, 통과 뒤 push·PR을 한 번 한다. 실패 시 수정과 직접 영향 범위만 다시 검사한다.
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| D | Task 16–21 | push |
-| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → **S0 확인(기다림)** → 보호 규칙 전환 → rebase 머지 |
+| D | Task 16–21 | 로컬 구현·검토 완료 |
+| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → **S0 확인(기다림)** → 기존 필수 CI 확인 → squash 머지 |
 
 ---
 
@@ -3283,24 +3283,19 @@ git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skelet
 7. 설치한 앱 창을 열고 연결된 채 30분 둔 뒤 PowerShell `wsl.exe -l -v`에서 Ubuntu가 Running이고, WSL에서 `systemctl --user is-active devbox@prod`가 `active`다(S0a R1).
 8. S0a 결과 보고서를 읽고, 4번에서 다시 연결까지 걸린 시간(초)을 알려 준다(S0a R2). 에이전트가 `09-s0a-results.md`에 채운다.
 
-- [ ] **Step 5: 상태 갱신·보호 규칙 전환·머지**
+- [ ] **Step 5: S0 확인 이후 상태 갱신·필수 CI 확인·squash 머지**
+
+S0 확인 결과와 설치 산출물 SHA·CI 근거를 PROGRESS와 PR 본문에 기록한다. 아직 머지하지 않은 상태를 "머지 완료"로 적지 않는다. 필요한 문서 커밋을 올린 뒤 최종 PR 변경의 필수 CI를 확인한다.
+
+현재 사용자 지시와 CONVENTIONS §8을 따른다. `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 필수 검사를 유지하고 최종 PR 변경의 성공 근거를 확인한다. `ci-ok`는 보조 집계이며 보호 규칙을 줄이거나 우회하지 않는다. S0 확인 전에 머지하지 않는다.
 
 ```bash
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[03-s0b-skeleton\].*/- 상태: 완료(S0b PR 머지, S0 확인 8\/8)/' docs/superpowers/plans/2026-10-08-devbox-v1/03b-s0b-app.md
-# PROGRESS.md: S0b 행 완료, 묶음 E 행, PR 표의 S0b 행(번호), 현재 위치(다음: S1, 계획 원본은 이제 main)를 고친다
-git add docs && git commit -m "docs(plan): mark S0b complete" && git push origin v1/s0b-skeleton
+gh pr checks v1/s0b-skeleton
+gh pr merge --squash v1/s0b-skeleton
 ```
 
-필수 CI(`ci-ok`가 모은 job)와 Windows 워크플로가 통과하면, 머지 직전에 main 보호 규칙의 필수 검사를 `ci-ok` 하나로 바꾼다(IR-1). 지금(2026-10-08) 필수 검사는 옛 job 이름 셋(`Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`)이라 이 PR에는 없고, 바꾸지 않으면 머지가 영원히 막힌다.
+상태 문서 커밋도 최종 PR 변경에 포함한다. 같은 입력·범위의 이전 CI 성공을 재사용했다면 출처를 기록하며, 새로 실행한 검사와 구분한다. 검증·CI 실패는 해결한 뒤 해당 영향 범위만 다시 검사한다.
 
-```bash
-gh api repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks --jq '.contexts'
-gh api -X PATCH repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks \
-  -F strict=false -f 'contexts[]=ci-ok'
-gh api repos/jihoon22-lee/devbox/branches/main/protection/required_status_checks --jq '.contexts'
-gh pr merge --rebase v1/s0b-skeleton
-```
+머지 성공을 조회한 뒤 다음 S1 작업 원장에 PR 번호·머지 SHA·완료 상태를 반영한다.
 
-Expected: 첫 줄은 옛 이름 셋, 셋째 줄은 `["ci-ok"]`, 머지 성공. 권한 오류(403)가 나면 사용자에게 저장소 설정 → Branches → main 규칙의 필수 검사를 `ci-ok` 하나로 바꿔 달라고 요청하고 기다린다. 우회 머지(`--admin`)는 하지 않는다.
-
-머지 뒤 정리: S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). 사용자에게 S0b 완료를 보고하고 **기다리지 않고** S1을 시작한다. 이후 v1.0.0 공개 직전까지는 §3.2 상황에서만 묻는다(00-roadmap §2.2).
+머지 뒤 정리: 직접 소유한 clean·merged worktree만 제거 → prune → 로컬 브랜치 → 원격 브랜치 순으로 정리한다. 대상은 S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). 사용자에게 S0b 완료를 보고하고 **기다리지 않고** S1을 시작한다. 이후 v1.0.0 공개 직전까지는 §3.2 상황에서만 묻는다(00-roadmap §2.2).

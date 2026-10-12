@@ -3,8 +3,10 @@
 
 export type AddProject = { path: string, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
+export type Check = { id: string, status: Status, message: string, fix: string | null, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, };
+export type DoctorReport = { checks: Array<Check>, };
 export type Done = { rev: string, };
 export type ListProjects = Record<symbol, never>;
 export type PingParams = Record<symbol, never>;
@@ -16,6 +18,7 @@ export type ProjectsError = { "code": "projects.path_invalid", "detail": { path:
 export type RemoveProject = { id: string, };
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
+export type Status = "ok" | "warn" | "fail";
 export type SystemError = { "code": "system.unavailable" };
 
 export interface Methods {
@@ -23,6 +26,7 @@ export interface Methods {
   "projects.list": { kind: "query"; confirm: "none"; params: ListProjects; result: ProjectList; error: ProjectsError };
   "projects.remove": { kind: "mutation"; confirm: "always"; params: RemoveProject; result: Done; error: ProjectsError };
   "projects.scan": { kind: "query"; confirm: "none"; params: ScanProjects; result: ScanResult; error: ProjectsError };
+  "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
 }
@@ -36,6 +40,7 @@ export const METHOD_INFO = {
   "projects.list": { kind: "query", confirm: "none" },
   "projects.remove": { kind: "mutation", confirm: "always" },
   "projects.scan": { kind: "query", confirm: "none" },
+  "system.doctor": { kind: "query", confirm: "none" },
   "system.info": { kind: "query", confirm: "none" },
   "system.ping": { kind: "query", confirm: "none" },
 } as const;

@@ -22,6 +22,15 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
                 data_dir: s.paths.data_dir.display().to_string(),
             })
         })
+        .add::<devbox_protocol::system::Doctor, _, _>(|s, _, _| async move {
+            let probe = crate::doctor::OsProbe {
+                env_file: s.paths.instance_config_dir.join("env"),
+            };
+            let checks = tokio::task::spawn_blocking(move || crate::doctor::checks(&probe))
+                .await
+                .map_err(|e| devbox_protocol::Fail::Internal(e.to_string()))?;
+            Ok(devbox_protocol::system::DoctorReport { checks })
+        })
         .add::<projects::ProjectsList, _, _>(|s, _, p| async move { s.projects.list(p).await })
         .add::<projects::ProjectsAdd, _, _>(|s, _, p| async move { s.projects.add(p).await })
         .add::<projects::ProjectsRemove, _, _>(|s, _, p| async move { s.projects.remove(p).await })

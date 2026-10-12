@@ -22,7 +22,7 @@
 
 ## Global Constraints
 
-- 작업은 S0b 브랜치 `v1/s0b-skeleton`의 worktree `/home/jihoon/projects/devbox-wt/v1-s0b-skeleton` 하나에서 한다(03·03b의 Task 1–24 모두). 원본 체크아웃은 `main`으로 둔다. 작업 묶음이 끝나면 push만 하고, PR은 03b Task 24에서 한 번 연다.
+- 작업은 S0b 브랜치 `v1/s0b-skeleton`의 worktree `/home/jihoon/projects/devbox-wt/v1-s0b-skeleton` 하나에서 한다(03·03b의 Task 1–24 모두). 원본 체크아웃은 `main`으로 둔다. 과제별 로컬 커밋 뒤, 전체 상세 검증을 마친 03b Task 24에서 push·PR을 한 번 한다.
 - 버전은 `1.0.0-dev`. Rust edition 2024, `rust-version = "1.98"`.
 - 도메인 crate는 Tauri에 의존하지 않는다. 경계 타입으로 `serde_json::Value`와 `Result<T, String>`을 쓰지 않는다(RPC 파라미터의 `RawValue` 중계는 예외).
 - 프레임: `u32 LE 길이(뒤 바이트 수, 0 금지)` + `u8 종류` + `u32 LE 채널` + 본문. JSON 하드 상한 16 MiB, 스트림 조각 64 KiB, 제어 4 KiB.
@@ -50,7 +50,7 @@
 ## 작업 묶음
 
 S0b 전체가 브랜치 `v1/s0b-skeleton` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s0b-skeleton`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 구현·좁은 회귀 검사·별도 검토의 중간 지점이다. 과제별로 커밋하고 PROGRESS를 갱신한다. 전체 검증·Biome CI·Windows/WSL 수용 검사는 모든 과제가 끝난 Task 24에서 한 번 모으며, 통과 뒤 push·PR을 한 번 한다. 실패 시 수정과 직접 영향 범위만 다시 검사한다.
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
@@ -4737,17 +4737,22 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
 
 `system::export`에 `x.method::<Doctor>();`를 추가한다.
 
-- [ ] **Step 5: 통과·생성·실제 실행 확인·커밋**
+- [ ] **Step 5: 좁은 검사·생성·커밋**
 
 ```bash
-cargo test -p devbox-cli && cargo run -q -p xtask -- gen-ts
-cargo build -p devbox-cli && ./target/debug/devbox doctor || true
+cargo test -p devbox-cli --lib setup::
+cargo test -p devbox-cli --lib doctor::
+cargo test -p devbox-cli --lib daemon::routes::
+cargo run -q -p xtask -- gen-ts
+cargo run -q -p xtask -- gen-ts --check
 git add crates xtask app/src/rpc/gen && git commit -m "feat(cli): install systemd units, capture the user environment and run doctor checks"
 ```
 
 `target`은 전역 target-dir일 수 있다. 바이너리는 `$(cargo metadata --format-version 1 | jq -r .target_directory)/debug/devbox`에서 찾는다.
 
-- [ ] **Step 6: 실제 WSL에서 dev 인스턴스로 설치 시험(수동, 한 번)**
+- [ ] **Step 6: 실제 WSL 설치 수용 — Task 24 최종 통합 때 수행**
+
+지금은 임시 HOME·가짜 외부 명령으로만 검사한다. 아래는 제품 설치 동작의 예이며 이 경로에 기존 사용자 바이너리·설정·unit이 있으면 덮어쓰거나 재시작하지 않는다. 최종 검증에서 소유가 확인된 자원만 사용하고, 실행·미실행 근거를 구분한다.
 
 ```bash
 BIN=$(cargo metadata --format-version 1 | jq -r .target_directory)/debug/devbox
@@ -4764,12 +4769,8 @@ Expected:
 
 S1 이후에도 dev 인스턴스를 그대로 개발용으로 쓴다.
 
-- [ ] **Step 7: 묶음 C 끝**
+- [ ] **Step 7: 묶음 C 로컬 완료**
 
-```bash
-cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo run -q -p xtask -- gen-ts --check && bash scripts/banned-words.sh
-# 묶음 C 끝: PROGRESS.md의 묶음 C 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-git push origin v1/s0b-skeleton
-```
-
-묶음 끝. 같은 브랜치·worktree에서 다음 묶음을 이어간다(PR·CI 없음). 화면과 Windows 껍데기는 [03b-s0b-app](03b-s0b-app.md)으로 이어진다.
+과제별 좁은 검사·별도 검토 근거와 미실행 실기 항목을 PROGRESS의 묶음 C에 기록한다.
+전체 fmt/clippy/workspace/E2E·push는 Task 24의 최종 통합 검증에 모은다.
+같은 브랜치·worktree에서 [03b-s0b-app](03b-s0b-app.md)의 화면과 Windows 껍데기를 이어간다.

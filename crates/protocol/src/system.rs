@@ -33,7 +33,28 @@ domain_error! {
 method!(pub Ping = "system.ping", query, PingParams => Pong, SystemError);
 method!(pub Info = "system.info", query, PingParams => DaemonInfo, SystemError);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum Status {
+    Ok,
+    Warn,
+    Fail,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+pub struct Check {
+    pub id: String,
+    pub status: Status,
+    pub message: String,
+    pub fix: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+pub struct DoctorReport {
+    pub checks: Vec<Check>,
+}
+method!(pub Doctor = "system.doctor", query, PingParams => DoctorReport, SystemError);
+
 pub fn export<X: Exporter>(x: &mut X) {
     x.method::<Ping>();
     x.method::<Info>();
+    x.method::<Doctor>();
 }
