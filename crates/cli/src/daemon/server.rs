@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 
@@ -22,6 +22,7 @@ struct Daemon {
 struct Outgoing {
     frame: Frame,
     generation: CancellationToken,
+    flushed: Option<oneshot::Sender<()>>,
 }
 struct Channel {
     hello: bool,
@@ -103,6 +104,9 @@ async fn connection(
             if sink.send(outgoing.frame).await.is_err() {
                 break;
             }
+            if let Some(flushed) = outgoing.flushed {
+                let _ = flushed.send(());
+            }
         }
         writer_lost.cancel();
     });
@@ -171,7 +175,7 @@ async fn send(
 ) -> io::Result<()> {
     tokio::select! {
         _ = generation.cancelled() => Ok(()),
-        result = tx.send(Outgoing { frame: json_frame(channel, &message), generation: generation.clone() }) => result.map_err(|_| invalid("connection closed")),
+        result = tx.send(Outgoing { frame: json_frame(channel, &message), generation: generation.clone(), flushed: None }) => result.map_err(|_| invalid("connection closed")),
     }
 }
 async fn handle(
@@ -189,25 +193,34 @@ async fn handle(
             instance,
             ..
         } => {
-            if state.hello
-                || version != d.services.version
-                || protocol != PROTOCOL_VERSION
-                || instance != d.services.paths.instance.as_str()
-            {
-                return Err(invalid("hello version, protocol or instance mismatch"));
+            if state.hello || instance != d.services.paths.instance.as_str() {
+                return Err(invalid("duplicate hello or instance mismatch"));
+            }
+            let welcome = ServerMessage::Welcome {
+                version: d.services.version.into(),
+                protocol: PROTOCOL_VERSION,
+                daemon_id: d.services.daemon_id.clone(),
+            };
+            if version != d.services.version || protocol != PROTOCOL_VERSION {
+                // Wait for the writer: connection teardown cancels this generation and
+                // aborts the writer, so enqueueing alone can silently discard Welcome.
+                let (flushed, received) = oneshot::channel();
+                tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                    tx.send(Outgoing {
+                        frame: json_frame(ch, &welcome),
+                        generation: state.generation.clone(),
+                        flushed: Some(flushed),
+                    })
+                    .await
+                    .map_err(|_| invalid("connection closed"))?;
+                    received.await.map_err(|_| invalid("connection closed"))
+                })
+                .await
+                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Welcome flush deadline"))??;
+                return Err(invalid("hello version or protocol mismatch"));
             }
             state.hello = true;
-            send(
-                tx,
-                ch,
-                &state.generation,
-                ServerMessage::Welcome {
-                    version: d.services.version.into(),
-                    protocol: PROTOCOL_VERSION,
-                    daemon_id: d.services.daemon_id.clone(),
-                },
-            )
-            .await?;
+            send(tx, ch, &state.generation, welcome).await?;
         }
         ClientMessage::Request { id, .. } | ClientMessage::Subscribe { id, .. } if !state.hello => {
             send(
