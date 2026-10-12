@@ -1,0 +1,24 @@
+{
+  "client": {
+    "hello": { "type": "hello", "version": "1.0.0-dev", "protocol": 1, "client": "app", "instance": "prod" },
+    "request": { "type": "request", "id": 3, "method": "projects.add", "params": { "path": "/home/u/p" }, "clientRequestId": "c-1" },
+    "requestNoClientId": { "type": "request", "id": 4, "method": "projects.list", "params": {} },
+    "cancel": { "type": "cancel", "id": 3 },
+    "subscribe": { "type": "subscribe", "id": 5, "topic": "projects.changed" },
+    "unsubscribe": { "type": "unsubscribe", "subId": 2 }
+  },
+  "server": {
+    "welcome": { "type": "welcome", "version": "1.0.0-dev", "protocol": 1, "daemonId": "d-1" },
+    "ok": { "type": "response", "id": 3, "result": { "id": "p1" } },
+    "err": { "type": "response", "id": 3, "error": { "code": "projects.already_exists", "detail": { "path": "/home/u/p" } } },
+    "internal": { "type": "response", "id": 4, "error": { "code": "internal" }, "diagnosticId": "a1b2c3d4" },
+    "subscribed": { "type": "subscribed", "id": 5, "subId": 2, "rev": "41" },
+    "event": { "type": "event", "subId": 2, "rev": "42", "payload": { "rev": "42" } },
+    "resync": { "type": "resync", "subId": 2 }
+  },
+  "control": {
+    "open": { "type": "channelOpen" },
+    "close": { "type": "channelClose" },
+    "credit": { "type": "streamCredit", "stream": 7, "bytes": 262144 }
+  }
+}

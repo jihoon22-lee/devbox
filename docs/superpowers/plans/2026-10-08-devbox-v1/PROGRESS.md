@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 3 메시지 봉투·공용 fixture (Task 2 프레임 10개 검사·별도 검토 통과) |
+| 다음 할 일 | S0b Task 4 메서드·오류·타입 라우터 (Task 3 메시지 7개 검사·별도 검토 통과) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -67,7 +67,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 |---|---|---|---|---|---|---|---|
 | S0a | — | Task 1–8 | `docs/v1-plan` | push(`58fda4d7`, 자동 부분) | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
-| S0b | B | Task 2–6 | `v1/s0b-skeleton` | 작업 중(Task 2 완료) | 2026-10-13 | | |
+| S0b | B | Task 2–6 | `v1/s0b-skeleton` | 작업 중(Task 2–3 완료) | 2026-10-13 | | |
 | S0b | C | Task 7–15 |  | 대기 | | | |
 | S0b | D | Task 16–21 |  | 대기 | | | |
 | S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
@@ -127,6 +127,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 1 | 새 저장소 골격과 초기 CI | CONVENTIONS 유지·갱신, 실재 protocol member만 등록, 공유 cache sweep는 보고만 수행 | 현재 명시된 규약·자원 보호를 보존. 전체 검사·push·squash 정책은 00 §3 보정이 과거 예제보다 우선함 |
 | 2026-10-13 | 03 Task 1 검증 | 초기 script/CI 검사 | 실제 workflow shell을 쓰는 Git rename·잘못된 기준·grep 오류 회귀 포함 4개 통과, actionlint·syntax·metadata 통과, CI에 회귀 등록 | 코드→문서 rename 누락과 scope 조회 오류의 묵시적 성공을 수정. 상수 값만 비교하는 의미 없는 stub 테스트는 제거함 |
 | 2026-10-13 | 03 Task 2 | oversized stream 시험 길이 | 프레임 헤더 5 + stream ID/flags 5 + chunk 상한 + 1 | stream 본문 overhead 누락 보정. 부분/복수 프레임·상한·poisoning·encode 보존·채널 helper 10개 통과, 별도 검토 통과 |
+| 2026-10-13 | 03 Task 3 | tagged enum derive와 WireError detail Value | RawValue 봉투 직접 역직렬화·detail RawValue·TS optional/unknown; 누락과 실제 null 구분 | serde tagged enum의 중간 버퍼가 RawValue 역직렬화를 지원하지 않음. 메시지·정밀도·null·frame·TS 계약 7개 통과, 별도 검토 통과. Task 4의 to_wire·동등성 예제도 이에 맞춰 보정 |
 
 ## 6. 세션 기록
 
