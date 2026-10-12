@@ -2376,7 +2376,7 @@ impl Config {
 
 pub fn expand_home(s: &str, home: &Path) -> PathBuf {
     match s.strip_prefix("~/") {
-        Some(rest) => home.join(rest),
+        Some(rest) => home.join(rest.trim_start_matches('/')),
         None if s == "~" => home.to_path_buf(),
         None => PathBuf::from(s),
     }

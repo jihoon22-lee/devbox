@@ -1,4 +1,5 @@
 //! 데몬 공용 기반: 인스턴스·경로·설정·DB·이벤트 허브·로그.
+pub mod config;
 pub mod paths;
 
 #[derive(Debug, thiserror::Error)]
@@ -25,4 +26,5 @@ pub fn io_err(what: impl Into<String>) -> impl FnOnce(std::io::Error) -> CoreErr
     let what = what.into();
     move |source| CoreError::Io { what, source }
 }
+pub use config::{Config, expand_home};
 pub use paths::{Env, Instance, OsEnv, Paths};

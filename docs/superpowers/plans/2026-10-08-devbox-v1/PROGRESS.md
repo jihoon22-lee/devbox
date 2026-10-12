@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 8 공유·PC별 설정 (Task 7 경로 검사·예약 이름 회귀·재검토 완료) |
+| 다음 할 일 | S0b Task 9 이벤트 허브 (Task 8 설정 검사·tilde 회귀·재검토 완료) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -68,7 +68,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0a | — | Task 1–8 | `docs/v1-plan` | push(`58fda4d7`, 자동 부분) | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
 | S0b | B | Task 2–6 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h(구현·검토 합산 추정) |
-| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7 완료) | 2026-10-13 | | |
+| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–8 완료) | 2026-10-13 | | |
 | S0b | D | Task 16–21 |  | 대기 | | | |
 | S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
@@ -132,6 +132,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 5 | splitter의 5바이트 대기·채널/재시도 counter 증가 | 4바이트 길이 즉시 검사·malformed 뒤 poisoning, BytesMut 분할, active ID 회피·backoff 포화 증가 | 예제의 4바이트 zero 회귀와 일치시키고 채널 충돌·counter overflow 방지. mux 12개 통과, 별도 검토 통과 |
 | 2026-10-13 | 03 Task 6 | 타입 생성기·묶음 끝 전체 검사/push | 생성기 7개 검사·실제 생성/--check·별도 검토 통과, CI에 check 연결; 묶음 B는 로컬 완료 | 중복 주제·잘못된 CLI 인자도 거부. 현재 운영 규칙에 따라 전체 검사·push는 S0b 끝에 수행 |
 | 2026-10-13 | 03 Task 7 · 01 인스턴스 계약 | 이름 정규식·환경 변수 경로·uid=0 fallback | 공유 bin 경로와 충돌하는 `bin` 예약 거부, HOME 절대 경로 필수·빈/상대 XDG fallback, UID 실패 명시 진단 | 경로 10개 통과 뒤 검토에서 bin 충돌 발견. 이름 회귀 red→green 3개(8개 제외), 수정 재검토 통과. 소유 temp fixture만 사용 |
+| 2026-10-13 | 03 Task 8 | 병합 뒤 typed 변환·단순 tilde join | 각 파일 먼저 strict 검증·section table 확인, 반복 slash를 HOME 하위로 확장 | local override가 shared 오류를 숨기지 않고 serde의 positional section 허용을 막음. 설정 범위 9개 통과 뒤 ~// HOME 이탈 발견·해당 회귀 1개 red→green, 수정 재검토 통과 |
 
 ## 6. 세션 기록
 
