@@ -233,7 +233,7 @@ Windows 11                                        WSL2 (배포판 하나, system
 - systemd unit 인스턴스 `devbox@<i>`, `devbox-tmux@<i>`, 실행 unit 접두사 `devbox-<i>-run-`
 - 데이터 경로 `~/.local/share/devbox/<i>/`
 
-인스턴스가 다르면 서로의 세션·실행을 보지 않는다.
+인스턴스가 다르면 서로의 세션·실행을 보지 않는다. 이름은 `^[a-z][a-z0-9-]{0,31}$`를 따르되 공유 바이너리 디렉터리와 충돌하는 `bin`은 예약 이름으로 거부한다.
 
 ## 4. 데몬
 

@@ -26,7 +26,7 @@
 - 버전은 `1.0.0-dev`. Rust edition 2024, `rust-version = "1.98"`.
 - 도메인 crate는 Tauri에 의존하지 않는다. 경계 타입으로 `serde_json::Value`와 `Result<T, String>`을 쓰지 않는다(RPC 파라미터의 `RawValue` 중계는 예외).
 - 프레임: `u32 LE 길이(뒤 바이트 수, 0 금지)` + `u8 종류` + `u32 LE 채널` + 본문. JSON 하드 상한 16 MiB, 스트림 조각 64 KiB, 제어 4 KiB.
-- `DEVBOX_INSTANCE`는 `^[a-z][a-z0-9-]{0,31}$`, 기본 `prod`. 소켓은 `$XDG_RUNTIME_DIR/devbox-<i>.sock`(없으면 `/run/user/<uid>`), 데이터는 `~/.local/share/devbox/<i>/`.
+- `DEVBOX_INSTANCE`는 `^[a-z][a-z0-9-]{0,31}$`, 기본 `prod`. 공유 바이너리 경로와 충돌하는 `bin`은 예약 이름으로 거부한다. 소켓은 `$XDG_RUNTIME_DIR/devbox-<i>.sock`(없으면 `/run/user/<uid>`), 데이터는 `~/.local/share/devbox/<i>/`.
 - 오류 코드는 `<도메인>.<이름>` 소문자 snake_case. 공통 코드만 접두사가 없다(`internal`, `invalid_params`, `method_not_found`, `hello_required`, `cancelled`, `daemon_restarting`, `not_found`, `secrets_locked`).
 - 정수 ID·rev는 문자열로 보낸다. 시간은 `*_ms: i64`.
 - 커밋은 영어 Conventional Commits. 과제마다 커밋한다.
@@ -2137,7 +2137,7 @@ pub struct Instance(String);
 impl Instance {
     pub fn parse(s: &str) -> Result<Self, CoreError> {
         let mut chars = s.chars();
-        let ok = s.len() <= 32
+        let ok = s != "bin" && s.len() <= 32
             && chars.next().is_some_and(|c| c.is_ascii_lowercase())
             && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
         if ok { Ok(Self(s.to_owned())) } else { Err(CoreError::InvalidInstance(s.to_owned())) }

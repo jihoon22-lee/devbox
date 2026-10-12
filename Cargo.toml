@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/mux", "xtask"]
+members = ["crates/protocol", "crates/mux", "crates/core", "xtask"]
 exclude = ["app/src-tauri"]
 
 [workspace.package]
