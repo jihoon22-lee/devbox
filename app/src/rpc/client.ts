@@ -45,6 +45,8 @@ export class RpcClient {
   private resetCbs = new Set<() => void>();
   private offs: (() => void)[] = [];
   private retryTimer?: ReturnType<typeof setTimeout>;
+  private welcomeTimer?: ReturnType<typeof setTimeout>;
+  private connectionEpoch = 0;
   private retryAttempt = 0;
   private running = false;
   private live = false;
@@ -67,6 +69,12 @@ export class RpcClient {
           if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
           this.retryTimer = undefined;
           this.live = true;
+          const epoch = ++this.connectionEpoch;
+          // Arm before send: an in-process transport can synchronously return Welcome.
+          this.welcomeTimer = setTimeout(() => {
+            if (epoch !== this.connectionEpoch || !this.running || !this.live || this.welcomed) return;
+            this.failConnection();
+          }, 5000);
           this.send({
             type: "hello",
             version: this.opts.version,
@@ -187,6 +195,8 @@ export class RpcClient {
     return p;
   }
   private onClosed(): void {
+    this.connectionEpoch++;
+    this.clearWelcomeTimer();
     this.live = false;
     this.welcomed = false;
     this.restoring = false;
@@ -194,6 +204,10 @@ export class RpcClient {
     this.bySubId.clear();
     for (const sub of this.subs.values()) sub.subId = undefined;
     if (this.state !== "versionMismatch") this.setState(this.everReady ? "reconnecting" : "connecting");
+  }
+  private clearWelcomeTimer(): void {
+    if (this.welcomeTimer !== undefined) clearTimeout(this.welcomeTimer);
+    this.welcomeTimer = undefined;
   }
   private failConnection(): void {
     if (!this.running) return;
@@ -244,6 +258,7 @@ export class RpcClient {
   private receive(msg: ServerMessage): void {
     switch (msg.type) {
       case "welcome": {
+        this.clearWelcomeTimer();
         this.daemonVersion = msg.version;
         if (msg.protocol !== 1 || msg.version !== this.opts.version) {
           this.setState("versionMismatch");

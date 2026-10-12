@@ -80,7 +80,10 @@ function AddProjectContent({ onOpenChange }: { onOpenChange: (open: boolean) => 
           aria-label="폴더 경로"
           value={path}
           disabled={add.isPending}
-          onChange={(event) => setPath(event.target.value)}
+          onChange={(event) => {
+            add.reset();
+            setPath(event.target.value);
+          }}
           placeholder="/home/<user>/projects/..."
         />
         <Button type="submit" variant="primary" disabled={add.isPending || !path.trim()}>

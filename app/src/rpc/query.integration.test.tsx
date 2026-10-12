@@ -1,7 +1,7 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { type ReactNode, StrictMode } from "react";
-import { RpcClient, type Transport, type TransportState } from "./client";
+import { RpcClient, RpcError, type Transport, type TransportState } from "./client";
 import { useConnection } from "./connection";
 import { decodeFrame, jsonFrame } from "./frame";
 import { confirmPolicy, useRpcMutation, useRpcQuery, useTopicInvalidation } from "./query";
@@ -259,4 +259,249 @@ test("cancelling a refetch preserves a newer manual cache update through events 
   await waitFor(() => expect(result.current.list.fetchStatus).toBe("idle"));
   expect(result.current.list.data?.rev).toBe("12");
   expect(result.current.list.isError).toBe(false);
+});
+
+function mutationSetup() {
+  const wire = new Wire();
+  const client = new RpcClient(wire, { version: "1.0.0-dev", instance: "retry", client: "test" });
+  const wrapper = ({ children }: { children: ReactNode }) => <RpcProvider client={client}>{children}</RpcProvider>;
+  const hook = renderHook(() => useRpcMutation("projects.add"), { wrapper });
+  return { wire, client, wrapper, ...hook };
+}
+async function reconnectMutation(wire: Wire, daemonId = "one") {
+  await act(async () => {
+    wire.emit("open");
+    wire.welcome(daemonId);
+  });
+}
+
+test("lost mutation response retains its ID for manual retry only until an authoritative result", async () => {
+  const { wire, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  const first = wire.request("projects.add");
+  await act(async () => wire.emit("closed"));
+  await waitFor(() => expect(result.current.error?.code).toBe("connection_lost"));
+  await reconnectMutation(wire);
+  expect(wire.requests("projects.add")).toHaveLength(1);
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  expect(wire.request("projects.add", 1).clientRequestId).toBe(first.clientRequestId);
+  await act(async () => wire.reply(wire.request("projects.add", 1).id, { id: "created" }));
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(3));
+  expect(wire.request("projects.add", 2).clientRequestId).not.toBe(first.clientRequestId);
+});
+
+test.each(["params", "reset", "daemon"])("%s starts a new intent after an ambiguous result", async (change) => {
+  const { wire, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  const params = { path: "/fixture" };
+  act(() => result.current.mutate(params));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  const first = wire.request("projects.add");
+  await act(async () => wire.emit("closed"));
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  if (change === "params") params.path = "/other";
+  if (change === "reset") act(() => result.current.reset());
+  await reconnectMutation(wire, change === "daemon" ? "two" : "one");
+  act(() => result.current.mutate(params));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  expect(wire.request("projects.add", 1).clientRequestId).not.toBe(first.clientRequestId);
+});
+
+test("older concurrent failure cannot replace the latest unresolved mutation identity", async () => {
+  const { wire, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  act(() => result.current.mutate({ path: "/older" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  act(() => result.current.mutate({ path: "/latest" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  const latest = wire.request("projects.add", 1);
+  await act(async () => wire.emit("closed"));
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  await reconnectMutation(wire);
+  act(() => result.current.mutate({ path: "/latest" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(3));
+  expect(wire.request("projects.add", 2).clientRequestId).toBe(latest.clientRequestId);
+});
+
+test("known error after retry clears the ambiguous identity", async () => {
+  const { wire, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  const first = wire.request("projects.add");
+  await act(async () => wire.emit("closed"));
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  await reconnectMutation(wire);
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  expect(wire.request("projects.add", 1).clientRequestId).toBe(first.clientRequestId);
+  await act(async () =>
+    wire.deliver({ type: "response", id: wire.request("projects.add", 1).id, error: { code: "internal" } }),
+  );
+  await waitFor(() => expect(result.current.error?.code).toBe("internal"));
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(3));
+  expect(wire.request("projects.add", 2).clientRequestId).not.toBe(first.clientRequestId);
+});
+
+test.each(["success", "reset"])("a late older failure cannot resurrect an identity after %s", async (boundary) => {
+  const { wire, client, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  let rejectOlder!: (error: RpcError) => void;
+  const call = vi.spyOn(client, "call").mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        rejectOlder = reject;
+      }),
+  );
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(call).toHaveBeenCalledOnce());
+  const olderId = call.mock.calls[0]![2]?.clientRequestId;
+  if (boundary === "success") {
+    act(() => result.current.mutate({ path: "/fixture" }));
+    await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+    await act(async () => wire.reply(wire.request("projects.add").id, { id: "newer" }));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  } else act(() => result.current.reset());
+  await act(async () => rejectOlder(new RpcError("connection_lost")));
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(boundary === "success" ? 2 : 1));
+  expect(wire.request("projects.add", -1).clientRequestId).not.toBe(olderId);
+});
+
+test("unmount and reopen starts a new mutation intent", async () => {
+  const { wire, result, wrapper, unmount } = mutationSetup();
+  await act(async () => wire.welcome());
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  const first = wire.request("projects.add");
+  await act(async () => wire.emit("closed"));
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  unmount();
+  const reopened = renderHook(() => useRpcMutation("projects.add"), { wrapper });
+  await act(async () => wire.welcome());
+  act(() => reopened.result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  expect(wire.request("projects.add", 1).clientRequestId).not.toBe(first.clientRequestId);
+});
+
+test("retry sends identical JSON despite reordered fields and caller-owned object mutation", async () => {
+  const { wire, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  // Additional fields exercise the generic JSON contract through this fake wire.
+  const params = { path: "/fixture", extra: { z: 1, a: 2 } };
+  act(() => {
+    result.current.mutate(params);
+    params.path = "/changed-before-start";
+    params.extra.z = 9;
+  });
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  const first = wire.request("projects.add");
+  expect(first.params).toEqual({ path: "/fixture", extra: { z: 1, a: 2 } });
+  await act(async () => wire.emit("closed"));
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  await reconnectMutation(wire);
+  const reordered = { extra: { a: 2, z: 1 }, path: "/fixture" };
+  act(() => result.current.mutate(reordered));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  const retry = wire.request("projects.add", 1);
+  expect(retry.clientRequestId).toBe(first.clientRequestId);
+  expect(JSON.stringify(retry.params)).toBe(JSON.stringify(first.params));
+});
+
+test("synchronous reset fences a mutation that has not started yet", async () => {
+  const { wire, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  act(() => {
+    result.current.mutate({ path: "/fixture" });
+    result.current.reset();
+  });
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  const first = wire.request("projects.add");
+  await act(async () => wire.emit("closed"));
+  await reconnectMutation(wire);
+  act(() => result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+  expect(wire.request("projects.add", 1).clientRequestId).not.toBe(first.clientRequestId);
+});
+
+test("mutateAsync preserves rejection identity and passes immutable parameter snapshots to callbacks", async () => {
+  const { wire, client, result } = mutationSetup();
+  await act(async () => wire.welcome());
+  const error = new RpcError("connection_lost");
+  const call = vi.spyOn(client, "call").mockRejectedValueOnce(error);
+  const onError = vi.fn();
+  const params = { path: "/fixture" };
+  await act(async () => {
+    const promise = result.current.mutateAsync(params, { onError });
+    params.path = "/changed";
+    await expect(promise).rejects.toBe(error);
+  });
+  expect(call.mock.calls[0]![1]).toEqual({ path: "/fixture" });
+  expect(onError.mock.calls[0]![0]).toBe(error);
+  expect(onError.mock.calls[0]![1]).toEqual({ path: "/fixture" });
+});
+
+test("unmount before mutation startup cannot restore the abandoned intent on remount", async () => {
+  const { wire, client, result, wrapper, unmount } = mutationSetup();
+  await act(async () => wire.welcome());
+  const call = vi.spyOn(client, "call");
+  act(() => {
+    result.current.mutate({ path: "/fixture" });
+    unmount();
+  });
+  await waitFor(() => expect(call).toHaveBeenCalledOnce());
+  expect(wire.requests("projects.add")).toHaveLength(0);
+  const abandonedId = call.mock.calls[0]![2]?.clientRequestId;
+  const reopened = renderHook(() => useRpcMutation("projects.add"), { wrapper });
+  await act(async () => wire.welcome());
+  act(() => reopened.result.current.mutate({ path: "/fixture" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  expect(wire.request("projects.add").clientRequestId).not.toBe(abandonedId);
+});
+
+test("browser offline does not pause a ready local RPC query", async () => {
+  onlineManager.setOnline(false);
+  const { wire, result, unmount } = setup();
+  try {
+    expect(wire.requests()).toHaveLength(0);
+    await ready(wire);
+    await respond(wire, "1");
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+    expect(result.current.list.fetchStatus).toBe("idle");
+  } finally {
+    unmount();
+    onlineManager.setOnline(true);
+  }
+});
+
+test.each([true, false])("browser offline mutation executes against current RPC readiness (%s)", async (connected) => {
+  onlineManager.setOnline(false);
+  const { wire, result, unmount } = mutationSetup();
+  try {
+    await act(async () => wire.welcome());
+    if (!connected) await act(async () => wire.emit("closed"));
+    act(() => result.current.mutate({ path: "/fixture" }));
+    if (connected) {
+      await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+      await act(async () => wire.reply(wire.request("projects.add").id, { id: "created" }));
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    } else {
+      await waitFor(() => expect(result.current.error?.code).toBe("connection_lost"));
+      expect(wire.requests("projects.add")).toHaveLength(0);
+    }
+    expect(result.current.isPaused).toBe(false);
+    act(() => result.current.reset());
+    if (!connected) await reconnectMutation(wire);
+    await act(async () => onlineManager.setOnline(true));
+    expect(wire.requests("projects.add")).toHaveLength(connected ? 1 : 0);
+  } finally {
+    unmount();
+    onlineManager.setOnline(true);
+  }
 });

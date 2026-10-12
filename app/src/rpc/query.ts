@@ -1,6 +1,6 @@
-import { type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import type { RpcError } from "./client";
+import { hashKey, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
 import { useRpc, useRpcSession } from "./RpcProvider";
 import { invalidateIfNewer, shareByRevision } from "./revisions";
@@ -18,6 +18,8 @@ export function useRpcQuery<M extends QueryMethod>(
   return useQuery<Methods[M]["result"], RpcError>({
     queryKey: [method, params],
     enabled: (opts.enabled ?? true) && state === "ready",
+    // Local RPC readiness is independent of the browser's internet connection.
+    networkMode: "always",
     retry: false,
     meta: { generation },
     structuralSharing: shareByRevision,
@@ -26,10 +28,83 @@ export function useRpcQuery<M extends QueryMethod>(
 }
 export function useRpcMutation<M extends MutationMethod>(method: M) {
   const client = useRpc();
-  return useMutation<Methods[M]["result"], RpcError, Methods[M]["params"]>({
-    mutationFn: (params) => client.call(method, params, { clientRequestId: crypto.randomUUID() }),
+  type Params = Methods[M]["params"];
+  type Operation = {
+    key: string;
+    id: string;
+    method: M;
+    client: RpcClient;
+    daemonId?: string;
+    ambiguous: boolean;
+  };
+  // Only the latest ambiguous invocation can be retried by submitting identical
+  // params. reset() declares a new user intent, even when its params are identical.
+  // Closing/unmounting discards this identity; server dedupe is not durable across
+  // daemon restarts, so a new daemon always starts a fresh request.
+  const unresolved = useRef<Operation | null>(null);
+  const invocations = useRef(new WeakMap<Params, Operation>());
+  useEffect(
+    () => () => {
+      unresolved.current = null;
+    },
+    [],
+  );
+  const prepare = (params: Params): Params => {
+    const key = hashKey([method, params]);
+    const previous = unresolved.current;
+    const retry =
+      previous?.ambiguous &&
+      previous.key === key &&
+      previous.client === client &&
+      previous.daemonId === client.daemonId;
+    const operation: Operation = {
+      key,
+      id: retry ? previous.id : crypto.randomUUID(),
+      method,
+      client,
+      daemonId: client.daemonId,
+      ambiguous: false,
+    };
+    // Snapshot at invocation, before TanStack schedules mutationFn. Both callback
+    // variables and wire params use this copy, never the mutable caller reference.
+    // Canonical JSON also matches the daemon's raw-JSON deduplication comparison.
+    const snapshot = JSON.parse(key)[1] as Params;
+    invocations.current.set(snapshot, operation);
+    unresolved.current = operation;
+    return snapshot;
+  };
+  const mutation = useMutation<Methods[M]["result"], RpcError, Params>({
+    // Never queue local side effects for a later browser-online event.
+    networkMode: "always",
+    mutationFn: async (params) => {
+      const operation = invocations.current.get(params)!;
+      try {
+        const result = await operation.client.call(operation.method, params, { clientRequestId: operation.id });
+        if (unresolved.current === operation) unresolved.current = null;
+        return result;
+      } catch (error) {
+        if (unresolved.current === operation) {
+          if (error instanceof RpcError && error.code === "connection_lost") operation.ambiguous = true;
+          else unresolved.current = null;
+        }
+        throw error;
+      } finally {
+        invocations.current.delete(params);
+      }
+    },
     retry: false,
   });
+  return {
+    ...mutation,
+    mutate: (params: Params, options?: Parameters<typeof mutation.mutate>[1]) =>
+      mutation.mutate(prepare(params), options),
+    mutateAsync: (params: Params, options?: Parameters<typeof mutation.mutateAsync>[1]) =>
+      mutation.mutateAsync(prepare(params), options),
+    reset: () => {
+      unresolved.current = null;
+      mutation.reset();
+    },
+  };
 }
 export function confirmPolicy(method: keyof Methods) {
   return METHOD_INFO[method].confirm;

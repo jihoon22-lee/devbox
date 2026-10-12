@@ -310,3 +310,70 @@ test("a subscription created by reset listener is registered once", () => {
   t.deliver({ type: "subscribed", id: t.last().id, subId: 1, rev: "1" });
   expect(c.state).toBe("ready");
 });
+
+describe("Welcome deadline", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test("silent open connection retries after a bounded wait and fallback backoff", () => {
+    const { t, c } = setup(false);
+    Object.assign(t, { reconnect: undefined });
+    vi.advanceTimersByTime(4999);
+    expect(t.close).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(t.close).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(199);
+    expect(t.connect).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(1);
+    expect(t.connect).toHaveBeenCalledTimes(2);
+    t.welcome();
+    expect(c.state).toBe("ready");
+    expect(vi.getTimerCount()).toBe(0);
+    c.stop();
+  });
+
+  test("timeout delegates to transport reconnect and ignores its stale callback", () => {
+    const timer = vi.spyOn(globalThis, "setTimeout");
+    const { t, c } = setup(false);
+    const stale = timer.mock.calls.at(-1)![0] as () => void;
+    vi.advanceTimersByTime(5000);
+    expect(t.reconnect).toHaveBeenCalledOnce();
+    t.emit("open");
+    stale();
+    expect(t.reconnect).toHaveBeenCalledOnce();
+    t.welcome();
+    expect(c.state).toBe("ready");
+    expect(vi.getTimerCount()).toBe(0);
+    c.stop();
+    timer.mockRestore();
+  });
+
+  test.each(["welcome", "closed", "stop", "mismatch"])("%s cancels the deadline", (event) => {
+    const { t, c } = setup(false);
+    expect(vi.getTimerCount()).toBe(1);
+    if (event === "welcome") t.welcome();
+    if (event === "closed") t.emit("closed");
+    if (event === "stop") c.stop();
+    if (event === "mismatch") t.deliver({ ...fixtures.server.welcome, version: "old" });
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(5000);
+    expect(t.reconnect).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  test("synchronous Welcome during Hello send leaves no timer", () => {
+    const t = new FakeTransport();
+    const send = t.send.bind(t);
+    t.send = (frame) => {
+      send(frame);
+      t.welcome();
+    };
+    const c = new RpcClient(t, { version: "1.0.0-dev", instance: "test", client: "test" });
+    c.start();
+    expect(c.state).toBe("ready");
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(5000);
+    expect(t.reconnect).not.toHaveBeenCalled();
+    c.stop();
+  });
+});

@@ -213,7 +213,10 @@ function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
         title="프로젝트 제거"
         body={`${confirm?.name ?? ""}을(를) devbox 목록에서만 지웁니다. 폴더와 파일은 그대로 둡니다.`}
         confirmLabel="프로젝트 제거"
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          remove.reset();
+          setConfirm(null);
+        }}
         onConfirm={removeConfirmed}
       />
     </>

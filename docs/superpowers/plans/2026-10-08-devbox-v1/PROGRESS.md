@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b PR #638 열림, S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | PR #638 자동 리뷰의 연결 예외 3건 보완 → 최종 CI/설치 파일 → 사용자 S0 확인 (dd51f2e1의 필수 CI·native 16 tests/NSIS/self-check 통과, 아직 미머지) |
+| 다음 할 일 | PR #638 연결 예외 3건·오프라인 RPC 보완 완료 → 최종 CI/설치 파일 → 사용자 S0 확인 (dd51f2e1의 필수 CI·native 16 tests/NSIS/self-check 통과, 아직 미머지) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -164,6 +164,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | PR #638 첫 CI 보정 | CI 색상 로그·Windows Clippy | `fb93b565`의 CI `38289821740`: Frontend·Rust 성공, E2E는 ANSI 포트 강조 때문에 준비 판독 실패. Windows `38289822012`: Linux 리소스 성공, native Clippy 7건으로 후속 테스트/NSIS/self-check 중단 | 누적 로그 ANSI 제거·정확한 Local 주소 검사로 수정, 회귀 Vitest 8·Python 4와 `FORCE_COLOR=1 CI=true` 실제 E2E 3·tsc/Biome 통과. Windows let-chain·test 배치·동일 UTF-16 chunk 처리 보완, 영향 core 6개와 순수 앱 Clippy 통과. 재검토 후 최종 변경 CI 예정; 이전 실패를 성공으로 취급하지 않음 |
 
 | 2026-10-13 | PR #638 버전 불일치 리뷰 | Welcome 전달 전 연결 종료 | 실제 서버 버전 Welcome을 writer flush ACK 뒤 종료하도록 보완(전체 대기 2초 제한), 중복 Hello·다른 인스턴스는 계속 우선 거부 | 실제 Unix 소켓 RED 재현 → channel 4·server lifecycle 2 검사 통과, 별도 검토 PASS. 불일치 연결은 권한을 얻지 않으며 pipelined mutation도 실행되지 않음. 후속 클라이언트 2건과 함께 최종 영향 검증 예정 |
+
+| 2026-10-13 | PR #638 클라이언트 리뷰 | Welcome 제한 시간·동일 의도 재시도·오프라인 RPC | Hello 뒤 5초 제한과 연결 세대 방어, 동일 데몬의 응답 불명 요청만 같은 ID로 재시도. 입력 변경·취소·reset·unmount·확정 응답은 의도 종료. 호출 시 canonical params snapshot으로 중복 비교 일치. 로컬 RPC는 브라우저 offline에도 즉시 실행/실패 | RED 회귀 후 client 37·query/UI 37 통과, 별도 검토 PASS. 최종 영향 검사: daemon 21·Clippy/fmt·Biome·E2E 3 통과. 테스트의 엄격한 배열 접근 타입 5곳 보정 후 query 24·tsc/build/Biome 통과. 새 최종 SHA의 CI·Windows 설치 파일은 PR 본문에 기록; S0 수동 확인 전 미머지 |
 
 ## 6. 세션 기록
 

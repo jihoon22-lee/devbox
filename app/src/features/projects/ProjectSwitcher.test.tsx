@@ -189,3 +189,27 @@ test("project query diagnostics are visible and copyable with retry available", 
   expect(copy).toHaveBeenCalledWith("devbox 진단 ID: owned-project-diagnostic");
   expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
 });
+
+test.each([false, true])("lost removal response retries only until confirmation is cancelled (%s)", async (cancel) => {
+  const wire = await setup(true);
+  await list(wire);
+  await userEvent.click(await screen.findByRole("button", { name: "devbox 제거" }));
+  await userEvent.click(screen.getByRole("button", { name: "프로젝트 제거" }));
+  await waitFor(() => expect(wire.requests("projects.remove")).toHaveLength(1));
+  const first = wire.request("projects.remove");
+  await act(async () => wire.close());
+  await screen.findByRole("alert");
+  await act(async () => wire.connect());
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  expect(wire.requests("projects.remove")).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "devbox 제거" }));
+  if (cancel) {
+    await userEvent.click(screen.getByRole("button", { name: "취소" }));
+    await userEvent.click(screen.getByRole("button", { name: "devbox 제거" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "프로젝트 제거" }));
+  await waitFor(() => expect(wire.requests("projects.remove")).toHaveLength(2));
+  const retryId = wire.request("projects.remove", 1).clientRequestId;
+  if (cancel) expect(retryId).not.toBe(first.clientRequestId);
+  else expect(retryId).toBe(first.clientRequestId);
+});

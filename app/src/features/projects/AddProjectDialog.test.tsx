@@ -65,3 +65,36 @@ test("manual path is trimmed; typed add errors keep dialog open and allow retry"
   await userEvent.click(screen.getByRole("button", { name: "추가" }));
   await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
 });
+
+test.each([false, true])(
+  "lost add response retries its intent; edited input declares a new intent (%s)",
+  async (edit) => {
+    const wire = new ProjectWire();
+    render(
+      <RpcProvider client={wire.client}>
+        <Harness />
+      </RpcProvider>,
+    );
+    await waitFor(() => expect(wire.requests("projects.scan")).toHaveLength(1));
+    await act(async () => wire.reply("projects.scan", { candidates: [] }));
+    const input = screen.getByRole("textbox");
+    await userEvent.type(input, "/fixture/new");
+    await userEvent.click(screen.getByRole("button", { name: "추가" }));
+    await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+    const first = wire.request("projects.add");
+    await act(async () => wire.close());
+    await screen.findByRole("alert");
+    if (edit) {
+      await userEvent.clear(input);
+      await userEvent.type(input, "/fixture/new");
+    }
+    await act(async () => wire.connect());
+    await waitFor(() => expect(wire.client.state).toBe("ready"));
+    expect(wire.requests("projects.add")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "추가" }));
+    await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
+    const retryId = wire.request("projects.add", 1).clientRequestId;
+    if (edit) expect(retryId).not.toBe(first.clientRequestId);
+    else expect(retryId).toBe(first.clientRequestId);
+  },
+);
