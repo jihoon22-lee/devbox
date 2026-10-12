@@ -153,6 +153,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03b Task 22 | Tauri 껍데기·창 크기·self-check | Windows 의존성 분리·자체 lock·단일 인스턴스·COM 성공 뒤 창 표시, 물리 장식 포함 크기 제한 | 순수 geometry 3·리소스 2개 red→green, 스키마/metadata/태그 아이콘 확인·최종 별도 검토 통과. 작은 작업 영역의 장식 초과 수정. 실제 Windows 컴파일·UI·번들 위치는 Task 24까지 미검증 |
 | 2026-10-13 | 03b Task 23 | WSL 배포·게이트·브리지·창별 IPC | 소유 digest 배포·인스턴스 setup/doctor·단일 취소 supervisor·bounded duplex·Job 정리, attachment/revision 수명·오류 복구 UI | 새 Rust 19·프론트 14·직접 영향 시작 검사 3개 통과, 별도 최종 검토 통과. 반복 종료의 정리 우회·진단 소실·최초 연결 뒤 복구 UI 누락을 수정. 모든 실행 fixture는 소유 임시 자원이며 실제 WSL 설치/native Windows는 아직 미실행 |
 
+| 2026-10-13 | 03b Task 23 후속 | 사용자 지정 XDG 배포 경로 | publish·setup·doctor·bridge가 절대 XDG_DATA_HOME 또는 HOME 기본 경로를 함께 사용 | 새 회귀 4개(기존 구현에서 행동 실패 3개 확인) 포함 deploy 6개 통과·별도 검토 PASS. 소유 HOME/XDG fixture만 사용, symlink·기존 인스턴스 데이터 보존 확인. Windows 실기는 여전히 미실행 |
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

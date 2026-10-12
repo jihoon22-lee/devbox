@@ -10,8 +10,22 @@ mod tests {
         bytes: &[u8],
         sha: &str,
     ) -> Result<std::process::Output, ShellError> {
+        publish_with_data(home, None, bytes, sha).await
+    }
+    async fn publish_with_data(
+        home: &std::path::Path,
+        data: Option<&std::path::Path>,
+        bytes: &[u8],
+        sha: &str,
+    ) -> Result<std::process::Output, ShellError> {
         let mut cmd = Command::new("sh");
-        cmd.env("HOME", home).args(["-c", SCRIPT, "sh", sha]);
+        cmd.current_dir(home)
+            .env("HOME", home)
+            .env_remove("XDG_DATA_HOME");
+        if let Some(data) = data {
+            cmd.env("XDG_DATA_HOME", data);
+        }
+        cmd.args(["-c", &install_script(), "sh", sha]);
         super::super::process::run(
             cmd,
             bytes.to_vec(),
@@ -19,6 +33,126 @@ mod tests {
             CancellationToken::new(),
         )
         .await
+    }
+    #[tokio::test]
+    async fn absolute_xdg_publishes_in_custom_data_root_and_preserves_instance_data() {
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("home");
+        let data = fixture.path().join("custom data/nested");
+        std::fs::create_dir_all(&home).unwrap();
+        let instance = data.join("devbox/prod");
+        std::fs::create_dir_all(&instance).unwrap();
+        std::fs::write(instance.join("owned-fixture"), "keep").unwrap();
+        let bytes = b"custom xdg executable";
+        publish_with_data(&home, Some(&data), bytes, &digest(bytes))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read(data.join("devbox/bin/devbox")).unwrap(),
+            bytes
+        );
+        assert!(!home.join(".local").exists());
+        assert_eq!(
+            std::fs::read(instance.join("owned-fixture")).unwrap(),
+            b"keep"
+        );
+    }
+    #[tokio::test]
+    async fn relative_xdg_falls_back_to_home_and_custom_symlink_ancestors_are_rejected() {
+        let fixture = tempfile::tempdir().unwrap();
+        let bytes = b"relative xdg executable";
+        publish_with_data(
+            fixture.path(),
+            Some(std::path::Path::new("relative/data")),
+            bytes,
+            &digest(bytes),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(fixture.path().join(".local/share/devbox/bin/devbox")).unwrap(),
+            bytes
+        );
+        let other = tempfile::tempdir().unwrap();
+        let linked = fixture.path().join("linked-data");
+        std::os::unix::fs::symlink(other.path(), &linked).unwrap();
+        assert!(
+            publish_with_data(
+                fixture.path(),
+                Some(&linked.join("nested")),
+                bytes,
+                &digest(bytes)
+            )
+            .await
+            .is_err()
+        );
+        assert!(std::fs::read_dir(other.path()).unwrap().next().is_none());
+    }
+    #[tokio::test]
+    async fn setup_doctor_and_bridge_execute_the_published_xdg_binary() {
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("home");
+        let custom = fixture.path().join("custom data");
+        std::fs::create_dir_all(&home).unwrap();
+        let binary = b"#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\"\n";
+        for data in [
+            Some(custom.as_path()),
+            Some(std::path::Path::new("relative/data")),
+            None,
+        ] {
+            publish_with_data(&home, data, binary, &digest(binary))
+                .await
+                .unwrap();
+            let root = data
+                .filter(|path| path.is_absolute())
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| home.join(".local/share"));
+            for args in [&["setup", "--json"][..], &["doctor", "--json"], &["bridge"]] {
+                let mut cmd = Command::new("sh");
+                cmd.current_dir(&home)
+                    .env("HOME", &home)
+                    .env_remove("XDG_DATA_HOME");
+                if let Some(data) = data {
+                    cmd.env("XDG_DATA_HOME", data);
+                }
+                cmd.args(["-c", &exec_script(), "sh"]).args(args);
+                let output = super::super::process::run(
+                    cmd,
+                    vec![],
+                    Duration::from_secs(3),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                let expected = format!(
+                    "{}\n{}\n",
+                    root.join("devbox/bin/devbox").display(),
+                    args.join("\n")
+                );
+                assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+            }
+        }
+    }
+    #[tokio::test]
+    async fn nonabsolute_home_is_rejected_before_writing() {
+        let fixture = tempfile::tempdir().unwrap();
+        let bytes = b"invalid home";
+        let mut cmd = Command::new("sh");
+        cmd.current_dir(fixture.path())
+            .env("HOME", "relative-home")
+            .env_remove("XDG_DATA_HOME")
+            .args(["-c", &install_script(), "sh", &digest(bytes)]);
+        assert!(
+            super::super::process::run(
+                cmd,
+                bytes.to_vec(),
+                Duration::from_secs(3),
+                CancellationToken::new()
+            )
+            .await
+            .is_err()
+        );
+        assert!(std::fs::read_dir(fixture.path()).unwrap().next().is_none());
     }
     #[tokio::test]
     async fn verifies_digest_and_atomically_replaces_only_owned_link() {
@@ -62,18 +196,35 @@ pub fn digest(bytes: &[u8]) -> String {
 }
 /// Version strings are not identities: development builds share the same version.
 /// The private directory and ownership marker belong exclusively to this installer.
-pub const SCRIPT: &str = r#"set -eu
-umask 077
+// Keep publish and every native invocation aligned with core::Paths: only absolute
+// XDG_DATA_HOME overrides HOME/.local/share. HOME itself must always be absolute.
+const PATHS_SCRIPT: &str = r#"set -eu
+case "${HOME-}" in /*) ;; *) printf '%s\n' 'HOME must be absolute' >&2; exit 62;; esac
+case "${XDG_DATA_HOME-}" in /*) data="$XDG_DATA_HOME";; *) data="$HOME/.local/share";; esac
+d="$data/devbox/bin"
+check_path() {
+ p="$1"
+ while [ "$p" != / ] && [ "$p" != . ]; do
+  [ ! -L "$p" ] || exit 62
+  p=$(dirname "$p")
+ done
+}
+check_path "$HOME"
+check_path "$d"
+"#;
+
+pub fn install_script() -> String {
+    format!("{PATHS_SCRIPT}\n{INSTALL_SCRIPT}")
+}
+pub fn exec_script() -> String {
+    format!("{PATHS_SCRIPT}\nexec \"$d/devbox\" \"$@\"")
+}
+
+const INSTALL_SCRIPT: &str = r#"umask 077
 case "$1" in *[!0-9a-f]*|'') exit 61;; esac
 [ "${#1}" = 64 ] || exit 61
-p="$HOME"
-while [ "$p" != / ] && [ "$p" != . ]; do [ ! -L "$p" ] || exit 62; p=$(dirname "$p"); done
-for p in "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/devbox"; do
- [ ! -L "$p" ] || exit 62
- mkdir -p "$p"
- [ -d "$p" ] || exit 62
-done
-d="$HOME/.local/share/devbox/bin"
+mkdir -p -- "$data/devbox"
+[ -d "$data/devbox" ] && [ ! -L "$data/devbox" ] || exit 62
 if mkdir "$d" 2>/dev/null; then printf '%s\n' 'devbox-desktop-bin-v1' > "$d/.owner"; fi
 [ ! -L "$d" ] && [ -d "$d" ] && [ "$(stat -c %u "$d")" = "$(id -u)" ] && [ "$(stat -c %a "$d")" = 700 ] || exit 63
 [ ! -L "$d/.owner" ] && [ -f "$d/.owner" ] && [ "$(cat "$d/.owner")" = devbox-desktop-bin-v1 ] || exit 63

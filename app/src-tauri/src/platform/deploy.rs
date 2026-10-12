@@ -1,5 +1,5 @@
 use crate::core::{
-    deploy::{SCRIPT, digest},
+    deploy::{digest, exec_script, install_script},
     diagnostics::{ReportKind, describe},
     process::{self, ShellError},
 };
@@ -13,7 +13,7 @@ pub async fn install(
 ) -> Result<(), ShellError> {
     let sha = digest(&bytes);
     let mut cmd = crate::platform::wsl::command(distro);
-    cmd.args(["--exec", "sh", "-c", SCRIPT, "sh", &sha]);
+    cmd.args(["--exec", "sh", "-c", &install_script(), "sh", &sha]);
     process::run(cmd, bytes, Duration::from_secs(120), cancel).await?;
     Ok(())
 }
@@ -29,7 +29,10 @@ pub async fn setup(
         &format!("DEVBOX_INSTANCE={instance}"),
         "sh",
         "-c",
-        "exec \"$HOME/.local/share/devbox/bin/devbox\" setup --json",
+        &exec_script(),
+        "sh",
+        "setup",
+        "--json",
     ]);
     process::run(cmd, vec![], Duration::from_secs(90), cancel.clone())
         .await
@@ -41,7 +44,10 @@ pub async fn setup(
         &format!("DEVBOX_INSTANCE={instance}"),
         "sh",
         "-c",
-        "exec \"$HOME/.local/share/devbox/bin/devbox\" doctor --json",
+        &exec_script(),
+        "sh",
+        "doctor",
+        "--json",
     ]);
     process::run(doctor, vec![], Duration::from_secs(30), cancel)
         .await

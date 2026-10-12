@@ -173,7 +173,9 @@ async fn bridge_once(
         &format!("DEVBOX_INSTANCE={INSTANCE}"),
         "sh",
         "-c",
-        "exec \"$HOME/.local/share/devbox/bin/devbox\" bridge",
+        &crate::core::deploy::exec_script(),
+        "sh",
+        "bridge",
     ])
     .kill_on_drop(true)
     .stdin(Stdio::piped())
