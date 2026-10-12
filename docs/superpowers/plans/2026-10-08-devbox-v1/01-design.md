@@ -47,7 +47,7 @@
 
 측정(2026-10-08, 08 §8.2)으로는 이 계층의 전용 코드와 각 엔진의 Windows·WSL 이중 경로 파일이 전체 약 49.7만 줄의 약 25%(파일 단위 하한)이고, `.github`·`scripts`가 5.6만 줄이다. 더 큰 이유는 본질의 중심인 에이전트 기능(앱을 닫아도 유지되는 세션, hook 상태 감지, 알림, 재개)이 현 구조에 없고, 두 검토가 확정한 결함 약 20건 중 에이전트·터미널 결함은 0건이라는 점이다. 결함을 고쳐도 사용 빈도 1위 영역은 나아지지 않는다. 그래서 재구축을 택한다. 다만 그 의견에서 다음은 받아들인다.
 
-1. **구조 확인 실험:** S0a에서 새 구조의 핵심 가정을 측정한다. 같은 여정(에이전트 시작 → 알림, 터미널 입력 지연)을 v0.9.0과 수치로 비교하고, 실패하면 구조를 바꾼다.
+1. **구조 확인 실험:** S0a에서 새 구조의 핵심 가정을 측정한다. 브리지·PTY 지연과 hook 획득을 측정하고, 에이전트 반영·터미널 전체 경로는 S1 SC3·SC10 절대 기준으로 판정한다. v0.9.0 시작 시간 비교는 02 Task 7에 따라 생략한다. 구조 변경이 필요한 실패는 대체 경로를 검토한다.
 2. **확정 결함은 회귀 조건으로:** 두 검토가 확정한 결함 전부(CV-F01–F09, AR-F01·F02·F04·F06–F10·F12·F13·F15·F16·D01, 재시작 backoff 정책 AR-F14)를 새 구조의 회귀 조건으로 넣는다(§9.1). 결함별 시험 위치와 입력값은 [00-roadmap §7](00-roadmap.md) 추적표에 있다.
 3. **근본 원인은 설계 규칙으로:** 결함들의 공통 원인(본 것과 실행하는 것의 분리, 성공한 변경 뒤 조회 실패, 관찰 신호와 데이터 변경의 혼동, 화면 수명과 작업 수명의 혼동, 전환 때 초안 버림)을 §8.6 정합성 규칙으로 둔다.
 4. **기존 보호를 다시 만들지 않기:** 검증된 로직은 테스트와 함께 그대로 옮긴다(§9.3 이식 표).
@@ -300,7 +300,7 @@ set -g allow-passthrough on
 ```
 
 - 화면의 분할 칸 하나 = tmux 세션 하나이다. tmux 안의 분할은 쓰지 않는다.
-- 에이전트 명령은 pane 안에서 `systemd-run --user --scope --unit devbox-<i>-agent-<id> -- <도구 명령>`으로 실행해 에이전트별 CPU·메모리를 잰다(cgroup v2, user manager가 cpu·memory·pids 위임, 실측). scope로 옮긴 프로세스는 tmux unit을 멈춰도 같이 죽지 않으므로, 에이전트 작업을 닫을 때 scope를 명시적으로 멈춘다.
+- 에이전트 명령은 pane 안에서 `systemd-run --user --scope --unit devbox-<i>-agent-<id> -- <도구 명령>`으로 실행해 에이전트별 CPU·메모리를 잰다(cgroup v2, user manager가 cpu·memory·pids 위임, 실측). scope는 tmux unit과 별도 cgroup이지만 tmux 종료로 PTY가 닫히면 SIGHUP을 받아 끝날 수 있다(S0a 실측). SIGHUP을 무시하는 프로세스는 남을 수 있으므로, 에이전트 작업을 닫을 때 scope를 명시적으로 멈춘다. 세션 유지 보장은 데몬 재시작에 대한 것이며 tmux 서버 자체 종료는 포함하지 않는다.
 - **화면 터미널:**
   - 데몬이 PTY(`portable-pty`)로 `tmux -L devbox-<i> attach -t <세션>` 클라이언트를 띄우고, 출력은 스트림(§5.1)으로 보낸다.
   - 입력도 스트림으로 받는다.
@@ -849,7 +849,7 @@ agents = [{ tool = "claude", worktree = false }]
 |---|---|---|
 | `preparing` | worktree 생성·copy·setup 실행 중 | 생성 직후 |
 | `running` | 도구가 일하는 중 | 준비 완료 후 도구 시작, 지시 전송, hook `UserPromptSubmit`·도구 사용 |
-| `waiting` | 사용자 입력 필요(권한 요청·질문) | Claude hook `Notification`, (보조) 일정 시간 출력 없음 + 프롬프트 패턴 |
+| `waiting` | 사용자 입력 필요(권한 요청·질문) | Claude hook `PermissionRequest` 즉시, `Notification` 권한/입력 알림 fallback, (보조) 일정 시간 출력 없음 + 프롬프트 패턴 |
 | `idle` | 턴 종료, 다음 지시를 기다림 | Claude hook `Stop`, Codex `notify`(agent-turn-complete) |
 | `failed` | 준비 실패, 도구 비정상 종료 | setup 실패, scope 종료 코드 ≠ 0 |
 | `review` | 사용자가 "검토 시작"을 눌렀거나 도구가 정상 종료 | 사용자 동작, scope 종료 코드 = 0 |
@@ -864,8 +864,8 @@ agents = [{ tool = "claude", worktree = false }]
   - 이 폴더는 등록한 프로젝트의 쓰기 허용 범위(§12)에 포함된다.
 - **브랜치:** `agent/<slug>`. 겹치면 `-2…-99`를 붙인다(`agent_hub/plan.rs` 이식).
 - **hook 주입(PL-5):** 사용자 설정 파일(`~/.claude/settings.json`, `~/.codex/config.toml`)은 건드리지 않고 실행 인자로만 넣는다.
-  - Claude: `claude --settings <데이터 폴더>/agent-hooks/claude.json`. `Notification`(stdin의 `notification_type`이 `permission_prompt`·`agent_needs_input` → `waiting`, `idle_prompt` → `idle`. `idle_prompt`는 턴이 끝난 뒤 60초 넘게 입력이 없을 때 오는 알림이라 질문이 아니다), `Stop`(→ `idle`), `UserPromptSubmit`(→ `running`), `SessionStart`(세션 ID 기록)을 `<devbox> agent event --from claude`로 보낸다. stdin JSON의 `session_id`·`message`를 쓴다.
-  - Codex: `codex -c 'notify=["<devbox>","agent","event","--from","codex"]'`. 마지막 인자의 JSON(`type = agent-turn-complete`, `last-assistant-message`)으로 `idle`을 안다. Codex의 승인 대기는 notify에 없고, Codex hook(`PermissionRequest`)은 사용자가 신뢰 승인을 해야 동작하므로 기본으로 쓰지 않는다. 대신 tmux 출력 감지(일정 시간 출력 없음 + 프롬프트 패턴)로 `waiting`을 추정한다.
+  - Claude: `claude --settings <데이터 폴더>/agent-hooks/claude.json`. `PermissionRequest`(즉시 → `waiting`), `Notification`(stdin의 `notification_type`이 `permission_prompt`·`agent_needs_input` → `waiting`, `idle_prompt` → `idle`. `idle_prompt`는 턴이 끝난 뒤 60초 넘게 입력이 없을 때 오는 알림이라 질문이 아니다. 알 수 없는 notification_type은 무시), `Stop`(→ `idle`), `UserPromptSubmit`(→ `running`), `SessionStart`(세션 ID 기록)을 `<devbox> agent event --from claude`로 보낸다. stdin JSON의 `session_id`·`message`를 쓴다.
+  - Codex: `codex -c 'notify=["<devbox>","agent","event","--from","codex"]'`. 마지막 인자의 JSON(`type = agent-turn-complete`, `last-assistant-message`)은 완료 후보이다. 정확한 rollout의 `source=cli`·`thread_source=user`와 작업 launch/workdir를 검증해 최초 주 thread를 연결하고, 그 주 thread의 lifecycle로 확인한 현재 turn까지 일치할 때만 `idle`로 바꾼다. 같은 ENV/cwd의 자동 제목 thread·이전 turn 완료는 무시한다. newest-cwd 파일/첫 notify 선택은 금지하고, metadata 누락·모호함은 상태 불변·bounded retry·typed diagnostic으로 처리한다. 알려진 주 thread resume도 ID를 검증한다(04 Task 8·10). Codex의 승인 대기는 notify에 없고, Codex hook(`PermissionRequest`)은 사용자가 신뢰 승인을 해야 동작하므로 기본으로 쓰지 않는다. 대신 tmux 출력 감지(일정 시간 출력 없음 + 프롬프트 패턴)로 `waiting`을 추정한다.
   - 환경 변수 `DEVBOX_AGENT_ID`, `DEVBOX_INSTANCE`, `DEVBOX_PORT`를 넣는다. hook 명령은 `DEVBOX_AGENT_ID`가 없으면 아무것도 하지 않는다.
   - S0a에서 두 도구의 현재 버전(claude 2.1.x, codex-cli 0.160.x)으로 실제 동작을 확인한다.
 - **기록 고정:** `closed`가 될 때 지시문·이어서 지시 이력·세션 ID·토큰 합계·커밋 목록·결과를 DB에 남긴다.
@@ -981,8 +981,8 @@ agents = [{ tool = "claude", worktree = false }]
 
 | ID | 위험 | 대응 | 확인 시점 |
 |---|---|---|---|
-| R1 | WSL 배포판 유휴 종료(연결 없으면 15초)로 데몬·tmux가 멈춤 | 트레이 앱이 브리지 연결 유지, 자동 시작 기본 켬, 종료 시 경고, `instanceIdleTimeout=-1` 선택 안내. 합격 기준: 앱이 연결된 상태로 30분 유휴 뒤에도 tmux 세션 유지 | S0a |
-| R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | S0a |
+| R1 | WSL 배포판 유휴 종료(연결 없으면 15초)로 데몬·tmux가 멈춤 | 트레이 앱이 브리지 연결 유지, 자동 시작 기본 켬, 종료 시 경고, `instanceIdleTimeout=-1` 선택 안내. 합격 기준: 앱이 연결된 상태로 30분 유휴 뒤에도 WSL·데몬 유지(설치 창을 열고 연결 유지; 트레이 동작은 S1) | S0b S0 확인 7 |
+| R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | socket activation은 S0a 완료, shutdown 복귀는 S0b S0 확인 4·8 |
 | R3 | `wsl.exe` stdio 브리지의 지연·처리량·바이너리 안전성 | `cat` echo 실측은 목표의 수십 배(p50 0.16ms, 77–93 MiB/s, 바이너리 일치). S0a에서는 실제 bridge + 데몬 경로로 한 번만 확인. 미달이면 WSL localhost TCP + 토큰으로 전환 | S0a |
 | R4 | Tauri Windows 빌드가 Windows에서만 가능 | 화면은 브라우저 + dev-gateway로 개발. 껍데기 변경은 드묾 | S0b |
 | R5 | Claude Code·Codex의 hook·인자·로그 형식 변경 | `agents/adapters/{claude,codex}`로 격리, hook이 없으면 tmux 출력 활동으로 대체 감지 | S0a·S1 |
@@ -1000,7 +1000,7 @@ agents = [{ tool = "claude", worktree = false }]
 
 | ID | 이름 | 완료 기준 요약 |
 |---|---|---|
-| S0a | 구조 확인 실험 | R1·R2·R3·R5(hook 주입)·R10·R12 합격 기준 측정, v0.9.0과 같은 여정 수치 비교, 결과를 ADR 0017 초안에 기록. 실패 항목은 대체 경로로 설계 갱신 |
+| S0a | 구조 확인 실험 | R3·R5(hook 획득)·R10·socket activation 자동 기준 측정, R1 유휴·R2 shutdown 복귀는 S0b S0 확인 유보, 결과를 ADR 0017 초안에 기록. 실패 항목은 대체 경로로 설계 갱신 |
 | S0b | 걷는 뼈대 | 저장소 초기화(옛 코드·CI·지침 교체) · protocol·mux·core·cli(daemon·bridge·dev-gateway·setup) · `gen-ts` · 화면 골격(프레임·라우팅·RPC 클라이언트·연결 배너·오류 문구·팔레트 최소) · Windows 껍데기 최소(창·브리지·mux) · `system.ping`과 `projects.list/add`가 브라우저와 Tauri 양쪽에서 E2E 통과 · CI · 새 AGENTS.md·ADR 0017 |
 | S1 | 에이전트·터미널·프로젝트 | 에이전트 전 과정(생성·준비 → 실행 → 입력 대기 알림 → 변경·커밋 검토 → 기준 반영 → 병합·PR·폐기·정리·재개), 격자 보기, 터미널 세션 유지·분리 창, 프로젝트 전환기·시작 구성(터미널·에이전트), 트레이·전역 단축키·알림, MCP 기본 도구, 이 섹션에 필요한 디자인 시스템 컴포넌트, SC3·SC4 |
 | S2 | 실행·관찰 | 작업·서비스·예약·로그(소스 병합)·포트·프로세스·컨테이너·문제·WSL 상태, `.devbox/devbox.toml`, Windows 대상 실행, 비밀, 시작 구성(서비스), MCP 실행·로그 도구. **전환점** |

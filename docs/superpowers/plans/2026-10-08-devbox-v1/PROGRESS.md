@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | P0 완료(2026-10-08) · S0a 대기 |
-| 다음 할 일 | 사용자가 실행을 지시하면 S0a Task 1 |
+| 단계 | S0a 자동 부분 완료(2026-10-12), R1/R2는 S0 확인 유보 |
+| 다음 할 일 | S0b Task 1 저장소 뼈대 (S0a 최종 검토 통과; 결과 커밋·push 뒤 전용 브랜치 생성) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `docs/v1-plan` · `../devbox-wt/docs-v1-plan` — S0b 브랜치가 생기기 전까지 이 계획의 원본(00-roadmap §2 P0) |
-| 마지막 갱신 | 2026-10-08 · 통합 검토 세션 |
+| 마지막 갱신 | 2026-10-12 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -34,7 +34,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S | 계획 문서 | 상태 | 시작 | 완료 | 사용자(§2.2) |
 |---|---|---|---|---|---|
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
-| S0a | 02-s0a-spike | 대기 | | | 결과 보고만 |
+| S0a | 02-s0a-spike | 자동 부분 완료·수동 유보 | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 대기 | | | **S0 확인 8개(기다림)** |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 대기 | | | 확인 목록 10개(보냄) |
 | S2 | 05-s2-runs | 대기 | | | 확인 목록 10개(보냄)·전환 안내 |
@@ -65,7 +65,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 | S | 묶음 | 과제 | 브랜치 | 상태 | 시작 | 끝 | 작업 시간 |
 |---|---|---|---|---|---|---|---|
-| S0a | — | Task 1–8 | `docs/v1-plan` | 대기 | | | |
+| S0a | — | Task 1–8 | `docs/v1-plan` | 자동 부분 완료·검토 통과 | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 대기 | | | |
 | S0b | B | Task 2–6 |  | 대기 | | | |
 | S0b | C | Task 7–15 |  | 대기 | | | |
@@ -116,6 +116,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 | 날짜 | 위치(문서·과제) | 계획 | 실제 | 이유 |
 |---|---|---|---|---|
+| 2026-10-12 | 02 Task 1 | p50·p99 측정, 순차 쓰기/읽기 | p95와 원시 표본도 기록, Windows .NET 비동기 읽기·쓰기 및 FlushAsync, IO/종료 기한 적용 | 큰 echo의 양방향 버퍼 교착 위험을 줄이고 SC10 예비 판정 입력 확보. 초기 시간 초과는 PowerShell flush 누락으로 확인; 원래 Rust copy 경로도 작은 응답 회귀를 통과함 |
+| 2026-10-12 | 02 Task 1 | 저장소 밖 실험 빌드 | Rust 1.98.1과 외부 전용 target, 공통 검증 잠금·jobs=2 사용 | 첫 red 검사 의존성 빌드는 상속된 공유 target과 잠금 없이 실행된 절차 이탈이 있었음. 이후 실행은 수정했고 공유 cache는 보존함 |
+| 2026-10-12 | 02 Task 2 | journal의 activated=true로 socket activation 확인 | inactive→active 전환과 MainPID의 fd3 socket inode 대조 | 실험 probe 로그 필드를 바꾸고 재빌드하는 대신 실제 상속 descriptor로 확인. 대조 환경에서도 codex는 /usr/local/bin에서 발견되어 도구별 결과를 구분함 |
+| 2026-10-12 | 02 Task 3 | 셸 PID와 unit 결과 측정 | systemd-run에 --expand-environment=no 사용, 소유 cgroup/PID만 대조 | 초기 harness의 $$가 systemd에서 $로 확장돼 실패. 실패 근거를 보존하고 명령 전달만 보정함 |
+| 2026-10-12 | 01 §4.3 · 02 Task 4 | scope 프로세스는 tmux 종료에도 생존한다는 단정 | 별도 cgroup이어도 PTY 종료의 SIGHUP으로 끝날 수 있고, HUP 무시 프로세스는 남을 수 있음. 명시적 scope 종료 정책 유지 | 정상·HUP 처리 대역으로 실측. 데몬 재시작 중 tmux 세션 유지 기준은 통과했으며 구조·범위를 바꾸는 대체 경로가 아님 |
+| 2026-10-12 | 02 Task 4 | 실제 PTY/scope 측정 | private tmux socket·소유 PID/cgroup·기한 있는 입출력으로 검증 | 초기 0.6초 CPU probe의 공통 잠금 누락을 기록. 후속 수명 검사는 잠금을 사용했고 통과한 지연 측정을 반복하지 않음 |
+| 2026-10-12 | 01 §9.2 · 04 Task 8·10·resume | Claude Notification로 waiting, Codex ENV/cwd 또는 최신 파일로 완료·재개 연결 | PermissionRequest 즉시 waiting + 알림 fallback; Codex 정확한 source/주 thread/현재 turn gate와 bounded retry/진단, 필수 회귀 | 실제 TUI에서 6,018ms 지연 알림·동일 ENV 자동 제목 완료 관찰. 구조·목표 변경 없이 source 계약 보정; S1 구현 검증은 미완료 |
+| 2026-10-12 | 02 Task 7 · 03b Task 24 확인 7 | 트레이에서 30분 유휴 | 설치 창 열고 연결 유지 30분; R1 확인 7/R2 확인 4·8 유보, 미실행 | 트레이는 S1 Task 23 범위. 조기 구현하지 않고 S0 확인의 connected-client 목적 유지 |
 
 ## 6. 세션 기록
 
@@ -124,3 +132,31 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 날짜 | 하네스 | 한 일 | 남긴 상태(브랜치·커밋·다음 단계) |
 |---|---|---|---|
 | 2026-10-08 | Claude Code | 세 계획(rebuild·CV·AR)을 이 폴더로 통합·검수(08 §8·§9), 원본 세 폴더 삭제, P0 | `docs/v1-plan`에 커밋·push(PR·CI 없음). 원본 체크아웃의 추적 안 된 사본은 지움. 다음: S0a |
+| 2026-10-12 | Codex | 사용자 요청에 따라 계획 검토·착수 환경 확인만 수행. 아래 §7에 준비 결과 기록 | `docs/v1-plan@4aa88e62` 기준. S0a 미착수, 다음: Task 1의 측정 도구 보완 후 실험 |
+| 2026-10-12 | Codex | S0a Task 1–7 측정·별도 검토, Task 8 결과·ADR 초안·source 계약 보정·소유 자원 정리 | `docs/v1-plan` 문서 통합·Task 8 최종 검토 통과. 자동 부분 완료, R1/R2 유보. 다음: 문서 커밋/보고 뒤 S0b Task 1(미착수) |
+
+## 7. 착수 준비 검토
+
+아래는 실행 지시 전 준비 검토 시점의 기록이다. 그때는 S0a 실험·제품 구현·설정 변경·PR·CI를 실행하지 않았다. 현재 실행 상태는 §1과 09-s0a-results.md를 따른다. 전체 로드맵과 단계별 과제 구성을 확인하고, S0a 8개 과제와 연결된 설계를 우선 검토했다. S0b·S1의 모든 예제 코드를 컴파일 검증한 것은 아니다.
+
+### 확인한 상태
+
+- `git fetch origin` 후 `docs/v1-plan`과 원격은 `4aa88e62`로 일치한다. 기존 worktree `../devbox-wt/docs-v1-plan`을 사용한다. 열린 PR과 원격 `v1/*` 브랜치는 없다.
+- 원본 `main`은 clean이며 원격보다 2개 커밋 앞선 상태다. §2에 기록된 두 커밋은 보존했다. 이 결정과 저장소 커밋 이메일 변경은 S0a 준비를 막지 않는다.
+- Node 24.18.0, pnpm 9.0.0, Rust/Cargo 1.98.1, musl target, tmux 3.6, systemd 259, jq, actionlint, gh 인증을 확인했다. `systemctl --user is-system-running`은 `running`이다.
+- Claude Code 2.1.296, codex-cli 0.162.1이다. 계획 당시 버전과 달라 실제 hook 실험에서 계약을 다시 확인해야 한다. 이번에는 버전만 확인했다.
+- Windows `cmd.exe`, `wsl.exe`, PowerShell 5.1은 절대 경로 호출에 성공했다. 현재 셸 PATH에는 없고 `WSL_DISTRO_NAME`도 비어 있으므로 실험 도구는 배포판 `Ubuntu`와 실행 파일 경로를 명시한다. systemd 서비스 내부 interop·DPAPI는 아직 측정하지 않았다.
+- cargo-sweep은 없다. S0a에는 필요 없으며 S0b 정리 도구 준비 시 처리한다. 여유 디스크 약 678GiB, 메모리 available 약 8.1GiB, swap 사용 약 4.8GiB를 확인했다. 무거운 검증은 공통 자원 제한과 worktree 간 잠금을 따른다.
+
+### 실행 전에 반영할 사항
+
+| 위치 | 확인한 사항 | 처리 |
+|---|---|---|
+| 02 Task 1·4 | Task 4는 브리지 p95를 요구하지만 Task 1은 p50·p99·max만 출력한다 | 측정 도구에 p95를 추가한다. PTY와 브리지 백분위 합은 예비 판단으로 구분하고, 최종 SC10은 S1의 전체 경로 측정으로 판정한다 |
+| 02 Task 1 | `RoundTrip`은 큰 payload를 모두 쓴 다음 응답을 읽는다. 에코 경로의 양방향 버퍼가 차면 서로 기다릴 위험이 있고 `ReadExact`에 시간 제한도 없다 | 읽기·쓰기를 동시에 진행하고 전체 측정 시간 제한과 자식 프로세스 정리를 둔다. 실제 교착을 재현한 결과는 아직 없다 |
+| 02 Task 4 Step 6 | PTY 응답 시간 초과도 정상 sample로 넣고 다음 측정으로 넘어간다 | 시간 초과·EOF는 별도 실패로 기록하고 합격 판정에서 제외하지 않는다 |
+| 02 Task 8 Step 4 | 대상 없는 `systemctl --user reset-failed`는 실험 외 unit의 실패 상태도 초기화한다 | 이번 실행에서 생성·소유한 unit만 지정해 정리한다. 고정 `s0a` 이름·경로가 기존에 있으면 덮어쓰거나 일괄 삭제하지 않는다 |
+| 00 §3·§3.6, 01 §11, 03·03b의 Git/검증 절차 | 계획의 rebase 머지·묶음별 전체 검사/push·Cargo jobs 4 또는 트랙별 3은 이번 사용자 제공 AGENTS 및 CONVENTIONS의 squash·PR 끝 통합 검증/push·공통 자원 제한과 충돌한다 | 이번 세션의 명시 지침을 우선한다. S0b에서 새 운영 규약과 CI를 만들 때 해당 절차를 함께 정합화한다. 계획의 과거 승인 문구만으로 현재 지침을 덮어쓰지 않는다 |
+| 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
+
+다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 사용자 확인 시점은 계획의 S0b 끝과 공개 직전을 유지하되, 설계 변경이 필요한 실패는 별도로 보고한다.

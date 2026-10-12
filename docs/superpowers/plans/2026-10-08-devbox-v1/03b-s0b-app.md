@@ -3280,7 +3280,7 @@ git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skelet
 4. PowerShell에서 `wsl --shutdown` → 앱에 "다시 연결하고 있습니다" 배너가 뜨고, 잠시 뒤 사라진다.
 5. 앱에서 Ctrl+P는 인쇄 창을 열지 않고, F5는 화면을 새로 고치지 않는다.
 6. 바로가기로 두 번째 실행을 하면 기존 창이 앞으로 온다.
-7. 앱을 트레이에 둔 채 30분 둔 뒤 PowerShell `wsl.exe -l -v`에서 Ubuntu가 Running이고, WSL에서 `systemctl --user is-active devbox@prod`가 `active`다(S0a R1).
+7. 설치한 앱 창을 열고 연결된 채 30분 둔 뒤 PowerShell `wsl.exe -l -v`에서 Ubuntu가 Running이고, WSL에서 `systemctl --user is-active devbox@prod`가 `active`다(S0a R1).
 8. S0a 결과 보고서를 읽고, 4번에서 다시 연결까지 걸린 시간(초)을 알려 준다(S0a R2). 에이전트가 `09-s0a-results.md`에 채운다.
 
 - [ ] **Step 5: 상태 갱신·보호 규칙 전환·머지**

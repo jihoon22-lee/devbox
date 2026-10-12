@@ -2149,7 +2149,7 @@ pub struct ToolProfile {
     pub waiting_patterns: Vec<String>,
 }
 
-/// 기본 프로필. Codex 대기 패턴은 S0a 측정(09-s0a-results "Codex 승인 대기 화면 문구")으로 채운다.
+/// 기본 프로필. Codex 0.162.1 S0a에서 관찰한 승인 화면. 다른 UI 유형·버전은 실제 fixture로 보강한다.
 pub fn builtin() -> Vec<ToolProfile> {
     vec![
         ToolProfile { id: "claude".into(), label: "Claude Code".into(), command: "claude".into(), hooks: Hooks::Claude, waiting_patterns: vec![] },
@@ -2158,7 +2158,7 @@ pub fn builtin() -> Vec<ToolProfile> {
             label: "Codex".into(),
             command: "codex".into(),
             hooks: Hooks::Codex,
-            waiting_patterns: vec![r"(?i)allow .* (command|edit)\?".into(), r"(?i)\(y\)es.*\(n\)o".into(), r"(?i)approve".into()],
+            waiting_patterns: vec![r"(?im)^\s*Would you like to run the following command\?\s*$".into()],
         },
     ]
 }
@@ -2211,6 +2211,10 @@ git add crates && git commit -m "feat(agents): add the agent task model, state m
 
 ### Task 8: 에이전트 작업 생성·시작 스크립트·hook 이벤트
 
+**S0a 실제 source 계약 보정(필수, 아래 요점 코드보다 우선).** Codex notify의 `DEVBOX_AGENT_ID`와 cwd만으로 작업을 연결하지 않는다. 실제 주 대화와 자동 제목 생성이 같은 환경 ID로 서로 다른 `thread-id`·`turn-id`의 완료를 보냈다. session tracker가 정확한 thread의 rollout metadata `source=cli`·`thread_source=user`, 작업 launch 경계와 workdir를 확인한 뒤 최초 주 thread를 바인딩한다. cwd의 가장 최신 파일 또는 첫 notify를 선택하지 않는다. metadata 누락·모호함은 상태를 바꾸지 않고 기한·횟수 제한 재시도 뒤 typed diagnostic으로 보고한다. 이미 알려진 주 thread의 resume은 같은 ID를 검증한다. 주 thread lifecycle metadata로 현재 turn을 추적하고 완료 후보는 주 thread **및 현재 turn** 모두 일치해야 한다. 보조 제목 완료와 새 running/waiting 뒤 도착한 이전 turn 완료는 무시한다. Task 8의 parser는 후보 해석만 하며, service 적용 전에 이 gate를 구현한다. 토큰 조회도 검증된 정확한 주 thread 파일만 읽는다. S0a는 metadata 관찰까지 했으며 완성된 바인딩 구현을 측정한 것은 아니다.
+
+필수 회귀: 주 thread 현재 turn 완료 → idle, 같은 ENV/cwd의 자동 제목 완료 → 상태 불변, 이전 완료 후 새 turn의 running/waiting → 지연된 이전 완료 무시, 새 turn 현재 완료 → idle, known-thread resume 일치/불일치, metadata 누락·모호함의 bounded retry/진단과 상태 불변. 임시 rollout fixture로 시험하고 사용자 세션 자료를 fixture로 쓰지 않는다. S1 구현에서 실제 lifecycle 계약과 실패 경계를 검증한다(이 계획 코드는 미컴파일).
+
 **Files:**
 - Create: `crates/agents/src/service.rs`, `crates/agents/src/start.rs`, `crates/agents/src/hooks.rs`
 - Create: `crates/projects/src/config.rs`(Task 11에서 넓힐 `[agent]` 절을 이 과제에서 먼저 최소로 만든다: `copy`·`setup`·`teardown`·`test`)
@@ -2245,6 +2249,8 @@ mod tests {
     #[test]
     fn parses_claude_hook_payloads() {
         assert_eq!(parse("claude", r#"{"hook_event_name":"SessionStart","session_id":"abc"}"#, None), vec![E::SessionStarted { session_id: "abc".into() }]);
+        assert_eq!(parse("claude", r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash"}"#, None), vec![E::NeedsInput { message: "Bash 사용 승인이 필요합니다.".into() }]);
+        assert!(parse("claude", r#"{"hook_event_name":"Notification","notification_type":"unknown"}"#, None).is_empty());
         assert_eq!(parse("claude", r#"{"hook_event_name":"UserPromptSubmit","session_id":"abc"}"#, None), vec![E::PromptSubmitted]);
         assert_eq!(
             parse("claude", r#"{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"}"#, None),
@@ -2266,7 +2272,7 @@ mod tests {
     #[test]
     fn claude_settings_route_every_hook_through_devbox() {
         let s: serde_json::Value = serde_json::from_str(&claude_settings("/home/u/.local/share/devbox/bin/devbox")).unwrap();
-        for ev in ["SessionStart", "UserPromptSubmit", "Notification", "Stop"] {
+        for ev in ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification", "Stop"] {
             let cmd = s["hooks"][ev][0]["hooks"][0]["command"].as_str().unwrap();
             assert_eq!(cmd, "'/home/u/.local/share/devbox/bin/devbox' agent event --from claude");
         }
@@ -2341,7 +2347,7 @@ use crate::state::AgentEvent;
 pub fn claude_settings(devbox: &str) -> String {
     let cmd = format!("{} agent event --from claude", sh_quote(devbox));
     let hook = serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": cmd }] }]);
-    serde_json::json!({ "hooks": { "SessionStart": hook, "UserPromptSubmit": hook, "Notification": hook, "Stop": hook } }).to_string()
+    serde_json::json!({ "hooks": { "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook, "Notification": hook, "Stop": hook } }).to_string()
 }
 
 pub fn codex_notify_arg(devbox: &str) -> String {
@@ -2358,9 +2364,11 @@ pub fn parse(source: &str, payload: &str, code: Option<i32>) -> Vec<AgentEvent> 
             match v.get("hook_event_name").and_then(|x| x.as_str()) {
                 Some("SessionStart") => text("session_id").map(|session_id| AgentEvent::SessionStarted { session_id }).into_iter().collect(),
                 Some("UserPromptSubmit") => vec![AgentEvent::PromptSubmitted],
+                Some("PermissionRequest") => vec![AgentEvent::NeedsInput { message: format!("{} 사용 승인이 필요합니다.", text("tool_name").unwrap_or_else(|| "도구".into())) }],
                 Some("Notification") => match text("notification_type").as_deref() {
                     Some("idle_prompt") => vec![AgentEvent::TurnComplete { message: None }],
-                    _ => vec![AgentEvent::NeedsInput { message: text("message").unwrap_or_default() }],
+                    Some("permission_prompt" | "agent_needs_input") => vec![AgentEvent::NeedsInput { message: text("message").unwrap_or_default() }],
+                    _ => vec![],
                 },
                 Some("Stop") => vec![AgentEvent::TurnComplete { message: text("last_assistant_message") }],
                 _ => vec![],
@@ -2573,6 +2581,7 @@ const FAKE: &str = r#"#!/usr/bin/env bash
 send() { printf '%s' "$1" | "$DEVBOX_BIN" agent event --from claude; }
 send '{"hook_event_name":"SessionStart","session_id":"sess-1"}'
 send '{"hook_event_name":"UserPromptSubmit"}'
+send '{"hook_event_name":"PermissionRequest","tool_name":"Bash"}'
 send '{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"needs Bash"}'
 read -r answer
 send '{"hook_event_name":"Stop","last_assistant_message":"done"}'
@@ -2633,7 +2642,7 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): create agen
 - Consumes: Task 6 `mutate::*`, Task 3 `Tmux::paste`, Task 8 서비스
 - Produces(메서드):
   - `agents.send{ id, text }`(mutation): 세션이 있으면 bracketed paste + Enter. 기록을 남기고 `UserInstructed`를 적용한다. 세션이 없으면 `agents.session_missing`(화면이 [재개]를 권한다).
-  - `agents.resume{ id }`(mutation): 새 시작 스크립트(`resume_session`)로 tmux 세션을 다시 만든다. Codex 세션 ID가 없으면 `~/.codex/sessions`에서 `session_meta.cwd == workdir`인 가장 최근 파일의 ID를 쓴다.
+  - `agents.resume{ id }`(mutation): 새 시작 스크립트(`resume_session`)로 tmux 세션을 다시 만든다. Codex 세션 ID가 없으면 Task 8의 source/launch/workdir 검증 tracker로 바인딩한다. 가장 최근 cwd 파일로 대체하지 않으며, 확인 불가 시 bounded retry 뒤 typed diagnostic으로 재개를 중단한다.
   - `agents.review{ id }`(mutation) → `review`
   - `agents.rebase{ id }`(mutation) → `{ result: "done" | "conflict", files }`. 충돌 시 rebase를 진행 중으로 둔다.
   - `agents.rebase_abort{ id }`(mutation)
@@ -2953,6 +2962,8 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): instruct, r
 
 ### Task 10: 출력 기반 대기 감지·자원·토큰
 
+**S0a source 계약:** Task 8의 주 thread·현재 turn 검증과 필수 회귀를 그대로 적용한다. 토큰은 tracker가 검증한 정확한 주 thread rollout에서만 읽으며, cwd만 같은 최신 파일이나 보조 제목 thread를 사용하지 않는다. 실제 lifecycle 계약·실패 경계는 S1 구현에서 검증한다.
+
 **Files:**
 - Create: `crates/agents/src/watch.rs`, `crates/agents/src/usage.rs`, `crates/agents/src/resources.rs`
 - Test: `crates/agents/src/usage.rs`(v0.9.0 `agent_usage.rs` 시험 이식), `crates/agents/src/watch.rs`(패턴 단위)
@@ -2965,7 +2976,7 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): instruct, r
     - hook으로 들어온 `waiting`은 건드리지 않는다(`attention.kind == "output"`일 때만 되돌림).
   - `usage::tokens_for(home, task, hooks: Hooks) -> Option<Tokens>`. Task 9 `close()`의 `t.tokens = None;` 줄을 이 함수 호출로 바꾼다:
     - Claude: `~/.claude/projects/<workdir 변환>/<sessionId>.jsonl`의 `assistant` 기록을 `message.id` 기준으로 중복 없이 합산
-    - Codex: `~/.codex/sessions/**`에서 `session_meta.payload.cwd == workdir`인 파일의 마지막 `token_count.total_token_usage`
+    - Codex: Task 8 tracker가 검증한 정확한 주 thread rollout의 마지막 `token_count.total_token_usage`(cwd만 같은 다른 파일은 제외)
     - 파일 128MiB·줄 4MiB 상한(이식)
   - 메서드 `agents.usage{ id }`(query) → `{ tokens?, truncated }`
   - 메서드 `agents.git_stats{}`(query) → `{ items: [{ id, changedFiles, ahead, behind }] }`: 열린 작업마다 `changed_files`의 개수와 `ahead_behind`를 4개씩 동시에 계산한다. 목록 행의 "변경 n · 뒤처짐 m"에 쓴다. 화면은 `agents.changed` 이벤트와 10초 간격 폴링으로 갱신한다.

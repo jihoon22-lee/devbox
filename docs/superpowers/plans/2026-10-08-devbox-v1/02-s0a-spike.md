@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수
+- 상태: 자동 측정·문서·소유 자원 정리·최종 검토 완료 · 2026-10-12. R1/R2 수동 측정은 S0b S0 확인으로 유보(미실행). 결과는 [09-s0a-results](09-s0a-results.md).
 
 **Goal:** 재구축 설계가 기대는 플랫폼 가정(브리지 성능, systemd user unit, 실행 결과 기록, tmux 서버 유지, 에이전트 hook 주입, systemd 아래 interop, WSL 유휴 동작)을 실제 환경에서 측정해 합격·불합격을 판정하고, 결과를 설계에 반영한다.
 
@@ -597,7 +597,7 @@ Expected: 다음을 기록한다.
 
 | 원래 측정 | S0 확인에서 |
 |---|---|
-| R1 앱 연결 중 30분 유휴 뒤에도 유지 | 설치한 앱을 트레이에 둔 채 30분 → `systemctl --user is-active devbox@prod`가 `active`, `wsl.exe -l -v`에서 Running |
+| R1 앱 연결 중 30분 유휴 뒤에도 유지 | 설치한 앱 창을 열고 연결된 채 30분 → `systemctl --user is-active devbox@prod`가 `active`, `wsl.exe -l -v`에서 Running |
 | R1 앱 종료 뒤 멈춤 | 하지 않는다. 앱을 끄면 WSL이 멈출 수 있다는 것은 설계가 이미 전제하고 안내한다(01-design §4.1) |
 | R2 `wsl --shutdown` 뒤 복귀와 첫 응답 시간 | S0 확인 4번(다시 연결 배너가 사라질 때까지 걸린 시간을 적음) |
 | v0.9.0 에이전트 시작 시간 비교 | 하지 않는다. S1의 SC3(2초 안 반영) 절대 기준으로 대신한다 |
@@ -610,10 +610,10 @@ Expected: 다음을 기록한다.
 
 **Files:**
 - Create: `docs/superpowers/plans/2026-10-08-devbox-v1/09-s0a-results.md`
-- Modify: `docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md` (불합격 항목이 있을 때만)
+- Modify: `docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md` (실측 계약 보정 또는 불합격 항목이 있을 때)
 - Modify: 판정이 바뀐 가정을 코드로 적은 계획 과제(Step 2의 두 번째 표, 불합격 항목이 있을 때만)
 
-- [ ] **Step 0: 계획 원본 worktree로 가기**
+- [x] **Step 0: 계획 원본 worktree로 가기**
 
 ```bash
 cd /home/jihoon/projects/devbox && git fetch origin docs/v1-plan
@@ -621,7 +621,7 @@ test -d ../devbox-wt/docs-v1-plan || git worktree add ../devbox-wt/docs-v1-plan 
 cd ../devbox-wt/docs-v1-plan && git pull --ff-only   # 이하 Step 1–5의 파일 경로는 이 worktree 기준
 ```
 
-- [ ] **Step 1: 결과 문서 작성(양식 그대로)**
+- [x] **Step 1: 결과 문서 작성(양식 그대로)**
 
 ```markdown
 # S0a 구조 확인 결과
@@ -659,7 +659,7 @@ cd ../devbox-wt/docs-v1-plan && git pull --ff-only   # 이하 Step 1–5의 파�
 - Codex 승인 대기 화면 문구(대체 감지 패턴): ...
 ```
 
-- [ ] **Step 2: 판정에 따른 설계 반영**
+- [x] **Step 2: 판정에 따른 설계 반영**
 
 | 결과 | 01-design에 할 일 |
 |---|---|
@@ -682,7 +682,7 @@ cd ../devbox-wt/docs-v1-plan && git pull --ff-only   # 이하 Step 1–5의 파�
 | R5(hook) | 04 Task 8·10(hook 이벤트, 출력 기반 감지) |
 | SC10 | 04 Task 4(attach 스트림) |
 
-- [ ] **Step 3: ADR 0017 초안을 결과 문서 끝에 붙임** (S0b Task 1이 저장소로 옮긴다)
+- [x] **Step 3: ADR 0017 초안을 결과 문서 끝에 붙임** (S0b Task 1이 저장소로 옮긴다)
 
 ```markdown
 ## ADR 0017 초안 — 재구축: 단일 앱 + WSL 데몬
@@ -692,18 +692,17 @@ cd ../devbox-wt/docs-v1-plan && git pull --ff-only   # 이하 Step 1–5의 파�
 결과: ADR 0001·0002·0003·0004·0007·0009·0010·0011·0012·0014·0015를 대체한다. 0005·0006·0008·0013·0016은 01-design §13의 형태로 유지한다.
 ```
 
-- [ ] **Step 4: 정리**
+- [x] **Step 4: 정리**
 
 ```bash
-systemctl --user stop 'devbox-s0a*' 2>/dev/null; systemctl --user disable devbox-s0a@probe.socket 2>/dev/null
-rm -f ~/.config/systemd/user/devbox-s0a@.socket ~/.config/systemd/user/devbox-s0a@.service
-systemctl --user daemon-reload && systemctl --user reset-failed
-tmux -L devbox-s0a kill-server 2>/dev/null; tmux -L devbox-s0a-check kill-server 2>/dev/null
-rm -rf /tmp/devbox-s0a ~/.config/devbox-s0a /run/user/$(id -u)/devbox-s0a*.sock
-systemctl --user list-units --all 'devbox-s0a*' --no-legend; ls ~/.config/systemd/user | grep s0a; true
+# ownership.json의 정확한 unit·파일 hash·socket inode·PID/cgroup을 대조한다.
+# foreign tmux session이 없음을 확인한 뒤 소유 socket → service → tmux unit 순서로 stop한다.
+# 확인된 소유 unit 파일·env·socket만 제거하고 빈 환경 디렉터리만 rmdir한다.
+# unit 파일 제거 뒤 daemon-reload. wildcard stop/rm·전역 reset-failed는 금지한다.
+# exact unit/file 전후 상태를 외부 task8-cleanup.json에 남긴다.
 ```
 
-Expected: 마지막 두 명령의 출력이 비어 있다. `/home/jihoon/projects/devbox-spikes/s0a`는 S0b 이후 참고용으로 남겨 두고, S1 완료 후 지운다.
+Expected: 소유 unit은 inactive/not-found, 확인된 소유 파일·소켓은 없다. `/home/jihoon/projects/devbox-spikes/s0a`는 S0b 이후 참고용으로 남겨 두고, S1 완료 후 지운다.
 
 - [ ] **Step 5: 커밋·push(PR 없음)**
 
