@@ -1,35 +1,16 @@
-# Devbox
+# devbox
 
-Windows용 네 제품을 제공하는 Tauri v2·React·Rust 모노레포입니다.
+Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·돌리고·지켜보고·기록하는 개인 개발 허브.
 
-| 제품 | 포함 기능 |
-|---|---|
-| **Workspace** | 프로젝트·worktree·에이전트 작업·파일 편집·Windows/WSL LSP·Git·의존성·세션·작업·포트·로그·Problems·터미널 |
-| **API Studio** | Requests·가져오기·컬렉션 실행기·OAuth 2.0/TLS·Protocols·Webhooks·Transforms·response diff·mock·선택한 결과의 Knowledge 전달 |
-| **Knowledge** | Notes·Daily·Activity·파일/노트 통합 검색·vault·templates·저장 검색과 제외 설정 |
-| **Control Center** | 제품 관리·Command/Shortcut 검색·도구·진단·백그라운드 서비스/MCP 설정·Suite 설치/업데이트/복구 |
+- 상태: v1.0.0 재구축 S0b Task 1 골격. 앱과 데몬 실행 기능은 후속 과제에서 구현한다.
+- 이전 소스: [v0.9.0 태그](https://github.com/jihoon22-lee/devbox/tree/v0.9.0). 공개 상태는 GitHub Release에서 확인한다.
+- 설계: [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md)
+- 진행 원장: [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)
+- 공통 규약: [CONVENTIONS](CONVENTIONS.md)
 
-## 다운로드와 설치
+## 개발
 
-이 소스는 2026-10-03에 철회한 첫 v0.9.0의 설치·UI 문제를 수정한 버전입니다.
-실제 다운로드 가능한 버전은 [GitHub Releases](https://github.com/jihoon22-lee/devbox/releases),
-변경 범위와 검증 근거는 [현재 계획](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)과
-[릴리스 근거](docs/release-evidence.md)에서 확인하세요.
-
-Suite 배포는 `Devbox_0.9.0_x64-setup.exe` 하나와 제품별 portable ZIP 네 개,
-`release-manifest.json`, `THIRD_PARTY_NOTICES.md`로 구성됩니다. ZIP은 폴더 전체를
-풀어 실행하세요. Workspace WSL helper와 Control Center 설치 helper를 떼어내지 마세요.
-v0.9.0에는 v0.7 데이터 가져오기가 없습니다. v0.7 데이터는 [v0.8.1](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1)에서
-먼저 이전해야 합니다. v0.8.1의 내장 업데이터로는 v0.9.0을 설치할 수 없습니다.
-Release에서 setup을 직접 받아 실행하고, 기존 설치 폴더와 데이터를 삭제하지 마세요.
-검증 범위와 알려진 제한은 [Windows 안내](docs/windows-guide.md#v090-설치와-알려진-제한)를 확인하세요.
-
-## 문서
-
-- [아키텍처 결정 기록](docs/adr/README.md) · [이전 계획·감사 기록](docs/history.md)
-- [Windows 설치·이전·복구](docs/windows-guide.md)
-- [제품과 내부 모듈](docs/projects.md) · [아키텍처](docs/architecture.md)
-- [개발](docs/development.md) · [공통 규약](CONVENTIONS.md)
-- [v0.8 수용 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md) · [개선 로드맵](docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md)
-- [릴리스 정책](docs/release-policy.md) · [릴리스 상태와 검증 근거](docs/release-evidence.md)
-- [v0.7 역사적 제품·배포 안내](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/README.md)
+현재 사용 가능한 검사: `python3 scripts/tests/test_scaffold.py`, `bash scripts/banned-words.sh`.
+Rust 검사는 `source ~/.cargo/env` 뒤 공통 자원 supervisor로 `cargo test -p devbox-protocol --lib`를 실행한다.
+`pnpm install`은 Biome만 설치한다. `pnpm check`·`pnpm dev`·`pnpm gen`과 Windows 개발 스크립트는 후속 과제에서 구현한다.
+실제 Windows 앱 실행·배포 빌드는 Windows에서 한다.

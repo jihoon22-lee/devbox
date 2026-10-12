@@ -6,19 +6,20 @@
 
 | 번호 | 제목 | 상태 |
 |---|---|---|
-| 0001 | [네 제품 구성](0001-four-products.md) | 채택 |
-| 0002 | [세대별 Suite 설치](0002-suite-installation.md) | 채택 |
-| 0003 | [native 세션 입장 검사](0003-session-guard.md) | 채택 |
-| 0004 | [native 소유 권한](0004-native-owned-authority.md) | 채택 |
-| 0005 | [외부 입력과 작업의 상한](0005-bounded-io.md) | 채택 |
-| 0006 | [콘텐츠 파일 identity와 링크](0006-filesystem-safety.md) | 채택 |
-| 0007 | [설치별 제품 데이터 namespace](0007-data-namespaces.md) | 채택 |
-| 0008 | [사용자 범위 비밀 봉인](0008-secrets.md) | 채택 |
-| 0009 | [같은 설치 제품의 자동 연결](0009-suite-connection.md) | 채택 |
-| 0010 | [검증한 후보의 그대로 승격](0010-release-contract.md) | 채택 |
-| 0011 | [과제 회귀와 묶음 최종 검증](0011-verification-policy.md) | 채택 |
-| 0012 | [고정 스키마 운영 로그](0012-operation-log.md) | 채택 |
-| 0013 | [v0.7 가져오기 종료](0013-drop-v07-migration.md) | 채택 |
-| 0014 | [component별 타입 IPC](0014-typed-ipc.md) | 채택 |
-| 0015 | [사용자별 백그라운드 agent](0015-devbox-agent.md) | 채택 |
-| 0016 | [개인용 보안 범위](0016-personal-security-scope.md) | 채택 |
+| 0001 | [네 제품 구성](0001-four-products.md) | 대체됨(0017) |
+| 0002 | [세대별 Suite 설치](0002-suite-installation.md) | 대체됨(0017) |
+| 0003 | [native 세션 입장 검사](0003-session-guard.md) | 대체됨(0017) |
+| 0004 | [native 소유 권한](0004-native-owned-authority.md) | 대체됨(0017) |
+| 0005 | [외부 입력과 작업의 상한](0005-bounded-io.md) | 채택 · 0017에서 형태 조정 |
+| 0006 | [콘텐츠 파일 identity와 링크](0006-filesystem-safety.md) | 채택 · 0017에서 형태 조정 |
+| 0007 | [설치별 제품 데이터 namespace](0007-data-namespaces.md) | 대체됨(0017) |
+| 0008 | [사용자 범위 비밀 봉인](0008-secrets.md) | 채택 · 0017에서 형태 조정 |
+| 0009 | [같은 설치 제품의 자동 연결](0009-suite-connection.md) | 대체됨(0017) |
+| 0010 | [검증한 후보의 그대로 승격](0010-release-contract.md) | 대체됨(0017) |
+| 0011 | [과제 회귀와 묶음 최종 검증](0011-verification-policy.md) | 대체됨(0017) |
+| 0012 | [고정 스키마 운영 로그](0012-operation-log.md) | 대체됨(0017) |
+| 0013 | [v0.7 가져오기 종료](0013-drop-v07-migration.md) | 채택 · 0017에서 형태 조정 |
+| 0014 | [component별 타입 IPC](0014-typed-ipc.md) | 대체됨(0017) |
+| 0015 | [사용자별 백그라운드 agent](0015-devbox-agent.md) | 대체됨(0017) |
+| 0016 | [개인용 보안 범위](0016-personal-security-scope.md) | 채택 · 0017에서 형태 조정 |
+| 0017 | [재구축: 단일 앱 + WSL 데몬](0017-rebuild-single-app-wsl-daemon.md) | 채택 |

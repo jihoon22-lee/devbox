@@ -1,66 +1,27 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "vcs": {
-    "enabled": true,
-    "clientKind": "git",
-    "useIgnoreFile": false
-  },
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "includes": [
-      "apps/**/*.js",
-      "apps/**/*.jsx",
-      "apps/**/*.ts",
-      "apps/**/*.tsx",
-      "apps/**/*.mjs",
-      "apps/**/*.css",
-      "packages/**/*.js",
-      "packages/**/*.jsx",
-      "packages/**/*.ts",
-      "packages/**/*.tsx",
-      "packages/**/*.mjs",
-      "packages/**/*.css",
-      ".github/scripts/**/*.mjs",
+      "*.json",
+      "app/**/*.ts",
+      "app/**/*.tsx",
+      "app/**/*.css",
+      "app/**/*.mjs",
       "!!**/node_modules",
       "!!**/dist",
-      "!!**/target",
-      "!!**/src-tauri",
-      "!!**/fixtures",
-      "!**/*.json"
+      "!!app/src-tauri",
+      "!!app/src/rpc/gen"
     ]
   },
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
-    "indentWidth": 2,
-    "lineWidth": 120
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "double",
-      "semicolons": "always"
-    }
-  },
-  "css": {
-    "formatter": {
-      "enabled": true
-    }
-  },
-  "assist": {
-    "enabled": false
-  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 120 },
+  "javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } },
   "linter": {
     "enabled": true,
     "rules": {
-      "correctness": {
-        "useExhaustiveDependencies": "error",
-        "useHookAtTopLevel": "error",
-        "noUnusedImports": "error"
-      },
-      "suspicious": {
-        "noDoubleEquals": "error",
-        "noFallthroughSwitchClause": "error"
-      },
-      "preset": "none"
+      "preset": "none",
+      "correctness": { "useExhaustiveDependencies": "error", "useHookAtTopLevel": "error", "noUnusedImports": "error" },
+      "suspicious": { "noDoubleEquals": "error", "noFallthroughSwitchClause": "error" }
     }
   }
 }

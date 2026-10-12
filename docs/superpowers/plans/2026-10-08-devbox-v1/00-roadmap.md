@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **최종 계획 확정(2026-10-08)** · 구현 미착수 · 진행 상태는 [PROGRESS.md](PROGRESS.md)
+- 상태: **최종 계획 확정(2026-10-08)** · S0b 구현 중 · 진행 상태는 [PROGRESS.md](PROGRESS.md)
 - 작성: 2026-10-07 재구축 계획 → 2026-10-08 다른 두 검토 계획과 통합·검수 · 기준 원격 `main@72ff50c7`(v0.9.0 공개본). 이 PC의 로컬 main에는 원격에 없는 커밋 2개(`b2a508b6` 의존성 갱신, `1b84aa9d` 완료 계획 정리)가 더 있다(PROGRESS §2)
 - 이 폴더가 devbox 개선의 **유일한 계획**이다. 통합 전의 세 계획(재구축 계획, v0.9.0 리뷰 교차 검증 CV, Astra 교차 검증 AR)은 내용을 이 폴더에 모두 옮긴 뒤 지웠다(08 §8·§9).
 
@@ -123,6 +123,17 @@ P0 계획 반영 ──► S0a 구조 확인 ──► S0b 걷는 뼈대 ──�
 - 재구축 동안 v0.9.0 설치본은 그대로 쓴다. 전환점(S2 완료) 뒤에는 A·B·C(에이전트·실행·터미널)를 새 빌드로 옮긴다.
 
 ## 3. 실행 규칙
+
+### 이번 실행에 적용하는 운영 규칙 (2026-10-12)
+
+현재 사용자 제공 AGENTS와 CONVENTIONS의 Git·검증·자원 보호 규칙을 우선한다. 아래의 과거 실행 예제와 각 과제의 명령 블록은 이 보정과 충돌하는 부분을 그대로 실행하지 않는다. 제품 범위·하위 프로젝트 순서·7개 PR·S0 확인 시점은 유지한다.
+
+- 과제별 실패 테스트와 직접 영향 검사 → 과제 커밋. 묶음은 로컬 진행 지점이며 묶음마다 전체 검사·push를 하지 않는다. 하위 프로젝트의 구현을 통합한 뒤 상세 검증·Biome를 한 번 모아 수행하고 push·PR을 만든다. 실패·관련 변경이 없는 통과 검사는 반복하지 않는다. P0·S0a의 문서 전용 브랜치 기록은 기존의 PR 없는 push 경로를 유지한다.
+- main은 squash로 머지한다. 최종 변경의 Frontend·Rust Linux·Rust Windows 필수 CI 성공을 요구한다. `ci-ok` 집계가 있더라도 필요한 Windows 성공 근거를 생략하거나 보호 규칙을 약화하지 않는다.
+- 로컬 검증은 CONVENTIONS의 공통 잠금·자원 제한을 따른다(Cargo jobs 2, test threads 2, Vitest workers 2, CPU 4, nice +10, 지원 환경의 memory high/max 6/8GiB·swap max 1GiB). 전체 검증을 다른 명령으로 중복 실행하지 않는다.
+- 기존 서비스·사용자 데이터·공유 네트워크·공유 cache는 보존한다. 정리는 이번 작업이 소유한 자원과 clean·통합된 전용 worktree만 대상으로 한다. 아래 `sweep`·강제 정리 예제도 이 경계를 넘지 않는다.
+- 미완료 변경을 버리거나 WIP 커밋으로 완료를 대신하지 않는다. 세션 인계는 현재 작업 상태와 다음 단계를 PROGRESS에 남기며, 완료한 과제만 커밋한다.
+
 
 **하위 프로젝트 하나 = 브랜치 하나 = PR 하나 (2026-10-08 결정)**
 

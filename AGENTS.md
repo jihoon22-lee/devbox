@@ -1,77 +1,13 @@
 # AGENTS.md
 
-Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
-현재 소스는 v0.9.0 네 제품(Workspace·API Studio·Knowledge·Control Center)이다. 공개 상태는 GitHub Release를 확인한다.
-원격은 `https://github.com/jihoon22-lee/devbox`다.
+Devbox는 Windows 11 + WSL의 개인 개발 허브다. Rust 데몬이 상태·작업을 소유하고 단일 Windows Tauri 앱이 화면·트레이·단축키·알림을 맡는다.
 
-## 먼저 읽을 규약과 작업 범위
-
-- 공통 규약의 원장은 [CONVENTIONS.md](./CONVENTIONS.md)다. 변경 전에 §1·3·5·8·9의
-  환경·스택·검증·Git 정책을 읽고, 작업에 해당하는 절을 추가로 읽는다.
-- 대상 디렉터리의 AGENTS/override, `apps/<app>/README.md`, 해당 설계 문서를 확인한다.
-  전체 README·과거 계획을 매번 읽지 않는다. 현재 구현은 코드와 테스트로 확인한다.
-- 현재 작업의 원장은 `docs/superpowers/plans/2026-10-03-product-readiness/00-roadmap.md`와
-  그 추적표다. R00–R16을 통합 개발 브랜치에 모아 최종 PR **1개**로 제출한다.
-  작업별 branch/worktree/commit은 자유롭게 나누되 선행 변경을 통합한 뒤 후속 작업을 시작한다.
-  통합 PR #616 이후 후보 검증에서 발견된 출시 차단 결함은 사용자 후속 지시에 따라
-  필요한 최소 보정 PR에 묶어 자율 처리한다. PR 수 예외를 매번 다시 승인받지 않는다.
-  이전 2026-09-23 계획과 #580·#541·#542는 닫힌 역사 기록이다.
-- 현재/과거 stable의 SHA·workflow·실기 근거는 [release evidence](./docs/release-evidence.md),
-  앱·공용 모듈 목록은 CONVENTIONS §2와 [projects](./docs/projects.md)를 필요할 때 읽는다.
-
-## 구현과 검증
-
-- 패키지 매니저는 **pnpm 9**다. UI는 React/Vite·순수 CSS와 기존 `packages/tokens`를 사용한다.
-- 순수 Rust 로직은 앱 `src-tauri/src/core/`, Windows 전용 처리는 command/platform 계층에 둔다.
-  두 번째 실제 소비자가 생길 때만 `crates/`·`packages/`로 추출한다. 앱/crate 추가 시 Cargo
-  workspace members와 필요한 카탈로그·검증 등록을 함께 갱신한다.
-- WSL에서 Rust 사용 전 `source ~/.cargo/env`. 실제 앱 실행·배포 빌드는 Windows에서만 한다.
-- **과제 단위로 필요한 테스트만 먼저 실행하고, 전체 검증은 PR 끝에 한 번 한다.** 과제를 구현할 때는
-  실패하는 테스트를 먼저 쓰고 그 테스트와 직접 영향받는 테스트만 실행한다
-  (`cargo test -p <crate> --lib <module>`, `pnpm --filter <package> exec vitest run <file>`).
-  clippy·전체 build·`pnpm verify:affected`·Windows/WSL 실기 검증은 PR의 모든 과제가 끝난 뒤 모아 실행한다.
-  `pnpm verify:all`은 release 준비·CI 검증기 변경·명시적 전체 감사에만 쓴다.
-- 묶음 구현을 마친 뒤 완료 커밋·push 전에 `pnpm exec biome ci .`로 포맷·hook 규칙을 확인한다.
-- 커밋은 과제 단위로 한다. push와 PR 생성은 PR의 상세 검증을 마친 뒤 한 번 한다
-  (초안 PR은 CI를 실행하지 않는다). 완료 검증이 실패하면 확인된 수정을 먼저 모두 마치고
-  실패·영향 범위만 다시 실행한다. 통과한 무관한 검사는 반복하지 않는다.
-- 작업별 전체 검증·CI를 실행하지 않는다. 결함별 최소 회귀를 로컬에서 확인하고 최종 통합 뒤
-  영향 검증을 한 번 모은다. 실패·관련 변경이 없는 통과 검사를 반복하지 않는다.
-- 메모리·swap 압박 시 worker와 동시 작업을 줄인다. 완료한 소유 임시 산출물과 clean·통합된
-  전용 worktree는 정리하되 공유 cache·활성 작업·사용자 자료는 보존한다.
-- 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
-  제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
-- 로컬의 기존 서비스·Docker·방화벽·공유 네트워크를 테스트 때문에 변경하지 않는다.
-  새 WSL 배포판·별도 socket/data-root만으로 네트워크 격리를 인정하지 않는다. Docker 데몬
-  설치/시작/중지, container/network 조작, iptables/nftables·라우팅 변경을 수반하는 검사는
-  일회성 hosted CI 또는 검증된 독립 VM으로 제한한다. 환경 변수·옵션으로 차단을 우회하지 않는다.
-- 사용자 데이터·secret을 fixture로 쓰지 않는다. v0.8 migration은 원본 보존·WAL consistent
-  snapshot·destination namespace·재개/복구 경계를 검증한다. UI route 통합을 권한 통합으로 취급하지 않는다.
-
-## PR·릴리스·정리
-
-- 작업 시작 시 git status/worktree와 원격 작업에 필요한 인증 상태를 확인한다.
-  브랜치는 CONVENTIONS §8, 커밋은 영어 Conventional Commits를 따른다.
-- 커밋 완료와 PR 수용 완료를 구분한다. **main 머지 전에는 PR 최종 변경의 상세 검증과
-  GitHub Actions CI 통과**가 필수다. 미실행 Windows 검증은 PASS로 보고하지 않는다.
-  CI가 동일 입력·범위의 신뢰 가능한 이전 성공을 확인한 경우에는 그 출처를 기록하여
-  재사용하고, 새로 실행한 검사와 구분한다. 주간 전체 감사·현재 의존성 검사는 실제 실행한다.
-  정상 조회로 성공 근거가 없거나 입력이 바뀐 범위는 검사한다. 근거 조회·전송·해석 오류는
-  scope gate에서 진단과 함께 중단하며, 전체 컴파일 재실행으로 대신하지 않는다.
-- 릴리스 작업은 [release policy](./docs/release-policy.md)를 읽는다. exact-main 후보의
-  assembly·packaged runtime·installer 검증 후 같은 commit의 stable만 승격한다.
-  fixture만 바뀐 경우에는 release policy의 유한 경로 입력 동일성 receipt·새 수용/seal 예외를 따른다.
-  이 경우에도 tag는 실제 빌드 SHA이며 제품·빌드 입력 변경에는 전체 후보 빌드가 필요하다.
-  후보가 없거나 만료됐을 때 새 build로 대체하지 않는다. 명시 요청 없는 public RC는 만들지 않는다.
-- 직접 만든 전용 worktree는 clean·merged 확인 → 제거 → `git worktree prune` → 로컬 브랜치
-  삭제 → 원격 브랜치 삭제 순으로 정리한다. 활성·잠김·미머지·dirty·호스트 소유 worktree는
-  삭제하지 않고 보고한다. 완료 전 worktree와 로컬·원격 브랜치 목록을 다시 확인한다.
-
-## 작업 도구와 기록
-
-- 일반 개발·migration 검토에 별도 스킬을 요구하지 않는다. 이 지침과 CONVENTIONS를
-  직접 따른다. 릴리스도 별도 스킬 없이 `docs/release-policy.md`를 직접 따른다.
-- 하위 에이전트는 GPT-6 Astra 또는 GPT-6.1 Sol만 필요할 때 사용한다.
-- 작업 기록은 단일 PR 본문과 현재 계획의 추적표·검증 artifact에 남긴다. 새 `workthrough/` 파일은 만들지 않는다.
-  결정·영향·검증 결과·미실행 실기 항목을 기록한다. 닫힌 #580을 재오픈하거나 사용자 실기 요청을 만들지 않는다.
-  컨텍스트 인계는 CONVENTIONS §11, 개인 설정은 [Codex setup](./docs/codex-setup.md)을 따른다.
+- 공통 규약의 원장은 [CONVENTIONS.md](CONVENTIONS.md)다. 변경 전 §1·3·5·8·9·11과 대상 디렉터리 지침을 읽는다.
+- 설계: [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md), 실행: 같은 폴더의 00-roadmap.md, 진행 유일 원장: PROGRESS.md.
+- 사용자 지시와 승인된 미완료 계획만 구현한다. 과제마다 구현 후 별도 검토하며 하위 에이전트는 GPT-6.1 Sol/GPT-6 Astra만 사용한다.
+- pnpm 9, Rust 사용 전 `source ~/.cargo/env`; 실제 Windows 앱 실행·배포 빌드는 Windows에서만 한다.
+- 과제는 좁은 실패 테스트부터 검증한다. 전체 check·clippy·build·E2E는 PR 끝에 한 번, 완료 커밋·push 전 Biome CI를 실행한다.
+- 과제별 영어 Conventional Commit, 최종 상세 검증 뒤 push·PR 한 번. main squash만, Frontend/Linux Rust/Windows Rust 필수 CI 성공과 보호 규칙을 유지한다.
+- Cargo jobs 2·workers 2·test threads 2, CPU 4·nice +10, 지원 cgroup 6GiB/8GiB·swap 1GiB와 Git common-dir 비차단 잠금(exit 75)을 따른다.
+- 기존 서비스·Docker·방화벽·공유 네트워크를 테스트로 변경하지 않는다. 소유 자원만 정리하고 공유 cache·사용자 자료·활성/dirty/호스트 소유 worktree는 보존한다.
+- 실패·미실행 Windows 실기·수동 유보는 PASS로 보고하지 않는다. PROGRESS와 PR·검증 artifact에 근거를 기록한다.

@@ -704,7 +704,7 @@ cd ../devbox-wt/docs-v1-plan && git pull --ff-only   # 이하 Step 1–5의 파�
 
 Expected: 소유 unit은 inactive/not-found, 확인된 소유 파일·소켓은 없다. `/home/jihoon/projects/devbox-spikes/s0a`는 S0b 이후 참고용으로 남겨 두고, S1 완료 후 지운다.
 
-- [ ] **Step 5: 커밋·push(PR 없음)**
+- [x] **Step 5: 커밋·push(PR 없음)**
 
 ```bash
 cd /home/jihoon/projects/devbox-wt/docs-v1-plan
@@ -715,6 +715,6 @@ git push origin docs/v1-plan
 
 계획 문서만 바뀌므로 PR·CI를 거치지 않는다. 이 내용은 S0b PR과 함께 main에 들어간다.
 
-- [ ] **Step 6: 사용자 보고**
+- [x] **Step 6: 사용자 보고**
 
 판정 표를 사용자에게 보고한다. **모두 합격이면 기다리지 않고 S0b로 넘어간다**(00-roadmap §2.2). 불합격 항목 때문에 01-design의 구조를 바꿔야 하면(Step 2 표) 멈추고 사용자에게 묻는다(§3.2).

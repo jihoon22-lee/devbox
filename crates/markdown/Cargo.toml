@@ -1,9 +1,0 @@
-[package]
-name = "markdown"
-version = "0.1.0"
-publish = false
-edition.workspace = true
-
-[dependencies]
-ammonia = "4"
-pulldown-cmark = "0.13"

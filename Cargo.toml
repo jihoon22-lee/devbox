@@ -1,106 +1,53 @@
 [workspace]
-resolver = "2"
-members = [
-    "apps/devbox-agent",
-    "apps/devbox-workspace/src-tauri",
-    "crates/wsl-helper",
-    "apps/devbox-api-studio/src-tauri",
-    "apps/devbox-knowledge/src-tauri",
-    "apps/devbox-control-center/src-tauri",
-    "crates/product-shell-tauri",
-    "crates/suite-runtime",
-    "crates/product-contract",
-    "crates/product-ipc",
-    "crates/agent-protocol",
-    "crates/agent-client",
-    "crates/mcp-server",
-    "crates/workspace-core",
-    "crates/knowledge-stores",
-    "crates/api-protocols",
-    "crates/webhook-core",
-    "crates/transforms-core",
-    "crates/ports-engine",
-    "crates/toolbox-engine",
-    "crates/http-client-engine",
-    "crates/content-index-engine",
-    "crates/knowledge-vault-engine",
-    "crates/activity-engine",
-    "crates/terminal-engine",
-    "crates/installation-tools",
-    "crates/editor-engine",
-    "crates/runtime-engine",
-    "crates/projects-engine",
-    "crates/webhook-host",
-    "crates/repositories-engine",
-    "crates/logs-engine",
-    "crates/filesystem",
-    "crates/markdown",
-    "crates/process",
-    "crates/process-tree",
-    "crates/wsl",
-    "crates/search",
-    "crates/integration",
-    "crates/secrets",
-    "crates/git",
-    "crates/applink",
-    "crates/catalog",
-    "crates/window-state",
-    "crates/window-state-tauri",
-]
+resolver = "3"
+members = ["crates/protocol"]
+exclude = ["app/src-tauri"]
 
 [workspace.package]
-edition = "2021"
+version = "1.0.0-dev"
+edition = "2024"
+rust-version = "1.98"
+publish = false
 
 [workspace.dependencies]
-mcp-server = { path = "crates/mcp-server" }
-product-ipc = { path = "crates/product-ipc" }
+devbox-protocol = { path = "crates/protocol" }
+devbox-mux = { path = "crates/mux" }
+devbox-core = { path = "crates/core" }
+devbox-projects = { path = "crates/projects" }
+devbox-cli = { path = "crates/cli" }
+anyhow = "1"
+axum = { version = "0.8", features = ["ws"] }
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+libc = "0.2"
+mimalloc = "0.1"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time", "signal", "process", "fs"] }
+tokio-tungstenite = "0.27"
+tokio-util = { version = "0.7", features = ["codec", "rt"] }
+toml = "0.9"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 ts-rs = { version = "=12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
-process-tree = { path = "crates/process-tree" }
-base64 = { version = "0.22.1" }
-bytes = { version = "1.12.1" }
-chrono = { version = "0.4.45", default-features = false, features = ["alloc", "clock", "std"] }
-dirs = { version = "6.0.0" }
-futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
-getrandom = { version = "0.4.3" }
-hmac = { version = "0.13.0" }
-libc = { version = "0.2.189" }
-notify = { version = "8.2.0" }
-png = { version = "0.18.1" }
-prost = { version = "0.14.4" }
-prost-reflect = { version = "0.16.5", features = ["serde"] }
-qrcode = { version = "0.14.1", default-features = false }
-regex = { version = "1.13.1" }
-reqwest = { version = "0.13.4", default-features = false, features = ["brotli", "deflate", "form", "gzip", "json", "multipart", "rustls", "stream", "zstd"] }
-rusqlite = { version = "0.32.1", features = ["backup", "bundled", "hooks", "modern_sqlite"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.151" }
-sha2 = { version = "0.11.0" }
-sysinfo = { version = "0.39.6" }
-tauri = { version = "2.12.0", features = ["tray-icon"] }
-tauri-build = { version = "2.7.0" }
-tauri-plugin-clipboard-manager = { version = "2.3.2" }
-tauri-plugin-dialog = { version = "2.7.2" }
-tauri-plugin-notification = { version = "2.3.3" }
-tauri-plugin-opener = { version = "2.5.4" }
-tempfile = { version = "3.27.0" }
-tokio = { version = "1.53.1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
-toml = { version = "1.1.4" }
-toml-08 = { package = "toml", version = "0.8.2" }
-tonic = { version = "0.14.6", default-features = false, features = ["channel", "codegen", "server", "tls-aws-lc", "tls-native-roots"] }
-url = { version = "2.5.8" }
-uuid = { version = "1.24.0", features = ["serde", "v4"] }
-webview2-com = { version = "0.39.1" }
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_Controls_Dialogs", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
-zeroize = { version = "1.9.0", features = ["zeroize_derive"] }
-zip = { version = "8.6.0", default-features = false, features = ["deflate", "deflate-flate2"] }
+uuid = { version = "1", features = ["v4"] }
 
-# Keep file:line in backtraces while skipping full variable debug info.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+unwrap_used = "warn"
+
 [profile.dev]
 debug = "line-tables-only"
 
-[profile.test]
-debug = "line-tables-only"
-
 [profile.release]
-lto = true
-strip = true
+debug = "line-tables-only"
+lto = "thin"
