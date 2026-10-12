@@ -275,18 +275,57 @@ impl Db {
         T: Send + 'static,
         F: FnOnce(&Transaction<'_>) -> rusqlite::Result<T> + Send + 'static,
     {
+        match self
+            .write_checked::<T, std::convert::Infallible, _>(move |tx| f(tx).map(Ok))
+            .await?
+        {
+            Ok(committed) => Ok(committed),
+            Err(never) => match never {},
+        }
+    }
+    /// Roll back typed domain rejections without advancing the database revision.
+    /// The outer result reports database errors; the inner result reports rejection.
+    pub async fn write_checked<T, E, F>(&self, f: F) -> Result<Result<(T, u64), E>, CoreError>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: FnOnce(&Transaction<'_>) -> rusqlite::Result<Result<T, E>> + Send + 'static,
+    {
+        self.write_checked_with_commit(f, |_, _| {}).await
+    }
+    /// Invoke `committed` on the writer after commit and revision publication,
+    /// before replying, even if the caller has dropped its response future.
+    /// Rejections and database failures never invoke the callback.
+    pub async fn write_checked_with_commit<T, E, F, C>(
+        &self,
+        f: F,
+        committed: C,
+    ) -> Result<Result<(T, u64), E>, CoreError>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: FnOnce(&Transaction<'_>) -> rusqlite::Result<Result<T, E>> + Send + 'static,
+        C: FnOnce(&T, u64) + Send + 'static,
+    {
         let (reply, wait) = oneshot::channel();
         let rev = self.rev.clone();
         self.writer
             .send(Box::new(move |conn| {
                 let result = (|| {
                     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                    let out = f(&tx)?;
+                    let out = match f(&tx)? {
+                        Ok(out) => out,
+                        Err(rejected) => {
+                            tx.rollback()?;
+                            return Ok(Err(rejected));
+                        }
+                    };
                     tx.execute("UPDATE core_meta SET value=value+1 WHERE key='rev'", [])?;
                     let next = current_rev(&tx)?;
                     tx.commit()?;
                     rev.store(next, Ordering::Release);
-                    Ok((out, next))
+                    committed(&out, next);
+                    Ok(Ok((out, next)))
                 })();
                 let _ = reply.send(result.map_err(CoreError::Db));
             }))

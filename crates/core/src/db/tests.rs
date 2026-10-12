@@ -320,3 +320,82 @@ fn receipt_stage_collision_preserves_unowned_file() {
     assert_eq!(std::fs::read(target).unwrap(), original);
     assert_eq!(std::fs::read(dir.join(".devbox-backup")).unwrap(), receipt);
 }
+
+#[tokio::test]
+async fn rejected_write_rolls_back_without_revision() {
+    let d = tempfile::tempdir().unwrap();
+    let db = open(&d, "1", &[V1]).unwrap();
+    let rejected = db
+        .write_checked::<(), _, _>(|tx| {
+            tx.execute("INSERT INTO t_items VALUES ('discard')", [])?;
+            Ok(Err("rejected"))
+        })
+        .await
+        .unwrap();
+    assert_eq!(rejected, Err("rejected"));
+    assert_eq!(db.rev(), 0);
+    assert_eq!(
+        db.read(|tx| tx.query_row("SELECT COUNT(*) FROM t_items", [], |r| r.get::<_, u64>(0)))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        db.write_checked::<_, (), _>(|tx| Ok(Ok(
+            tx.execute("INSERT INTO t_items VALUES ('kept')", [])?
+        )))
+        .await
+        .unwrap()
+        .unwrap(),
+        (1, 1)
+    );
+}
+
+#[tokio::test]
+async fn commit_callback_runs_only_after_successful_commit() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let d = tempfile::tempdir().unwrap();
+    let db = open(&d, "1", &[V1]).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let callback = |calls: Arc<AtomicUsize>, db: Db| {
+        move |_: &(), rev| {
+            assert_eq!(db.rev(), rev);
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+    };
+    let rejected = db
+        .write_checked_with_commit::<(), _, _, _>(
+            |tx| {
+                tx.execute("INSERT INTO t_items VALUES ('rejected')", [])?;
+                Ok(Err("rejected"))
+            },
+            callback(calls.clone(), db.clone()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rejected, Err("rejected"));
+    let failure = db
+        .write_checked_with_commit::<(), (), _, _>(
+            |tx| {
+                tx.execute("INSERT INTO absent VALUES (1)", [])?;
+                Ok(Ok(()))
+            },
+            callback(calls.clone(), db.clone()),
+        )
+        .await;
+    assert!(failure.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(db.rev(), 0);
+    db.write_checked_with_commit::<(), (), _, _>(
+        |tx| {
+            tx.execute("INSERT INTO t_items VALUES ('committed')", [])?;
+            Ok(Ok(()))
+        },
+        callback(calls.clone(), db.clone()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(db.rev(), 1);
+}

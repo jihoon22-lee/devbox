@@ -112,6 +112,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-projects"
+version = "1.0.0-dev"
+dependencies = [
+ "devbox-core",
+ "devbox-protocol",
+ "rusqlite",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "devbox-protocol"
 version = "1.0.0-dev"
 dependencies = [
@@ -957,6 +972,7 @@ name = "xtask"
 version = "1.0.0-dev"
 dependencies = [
  "anyhow",
+ "devbox-projects",
  "devbox-protocol",
  "serde",
  "tempfile",
