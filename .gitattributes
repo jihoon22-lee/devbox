@@ -1,10 +1,4 @@
-# Reviewed npm lock bytes are hashed as an embedded artifact. Keep the blob
-# and every checkout LF-normalized on all platforms.
-crates/editor-engine/src/lsp/node-lock.json text eol=lf
-
-# The release manifest and every NSIS bundle bind to these exact generated
-# bytes, so Windows package jobs must not rewrite them to CRLF.
-THIRD_PARTY_NOTICES.md text eol=lf
-
-# The compiled legacy installer ownership reference is pinned by byte digest.
-apps/devbox-control-center/src-tauri/resources/legacy-v0.7-installed-files.json text eol=lf
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.woff2 binary

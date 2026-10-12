@@ -1,5 +1,5 @@
 # Logs
-logs
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -12,6 +12,7 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
+*.tsbuildinfo
 build/
 *.local
 
@@ -32,3 +33,9 @@ build/
 .claude/worktrees/
 __pycache__/
 *.py[cod]
+
+# Owned Windows mirror and generated bundle resources
+.devbox-win-owner.json
+app/src-tauri/resources/devbox-linux
+app/src-tauri/resources/devbox-version.txt
+app/src-tauri/resources/linux-receipt.json

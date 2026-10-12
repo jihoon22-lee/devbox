@@ -1,0 +1,45 @@
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+}
+.ok {
+  background: var(--ok);
+  border-radius: 50%;
+}
+.progress {
+  background: var(--progress);
+  transform: rotate(45deg);
+}
+.idle {
+  border: 2px solid var(--fg-subtle);
+  border-radius: 50%;
+}
+.warn {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 9px solid var(--warn);
+}
+.danger {
+  background: var(--danger);
+  border-radius: 1px;
+}
+@media (forced-colors: active) {
+  .dot {
+    forced-color-adjust: none;
+  }
+  .ok,
+  .progress,
+  .danger {
+    background: CanvasText;
+  }
+  .idle {
+    border-color: CanvasText;
+  }
+  .warn {
+    border-bottom-color: CanvasText;
+  }
+}

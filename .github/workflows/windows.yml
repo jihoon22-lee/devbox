@@ -1,0 +1,139 @@
+name: Windows
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CARGO_BUILD_JOBS: 2
+  RUST_TEST_THREADS: 2
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.SOURCE_SHA }}
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ] || { [ "$EVENT" = "push" ] && [ "$BASE" = "0000000000000000000000000000000000000000" ]; }; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}"; then
+              echo "Scope gate: missing or unreadable baseline commit: $BASE" >&2
+              exit 1
+            fi
+            # Count both sides of renames. Diff errors abort before classification.
+            git diff --no-renames --name-only "$BASE" HEAD > "$RUNNER_TEMP/devbox-changed-files"
+            status=0
+            grep -vE '^(docs/|[^/]+\.md$)' "$RUNNER_TEMP/devbox-changed-files" > /dev/null || status=$?
+            case "$status" in
+              0) echo "code=true" >> "$GITHUB_OUTPUT" ;;
+              1) echo "code=false" >> "$GITHUB_OUTPUT" ;;
+              *) echo "Scope gate: file classification failed (grep exit $status)" >&2; exit "$status" ;;
+            esac
+          fi
+  linux-bin:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.SOURCE_SHA }}" }
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with: { targets: x86_64-unknown-linux-musl }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: bash scripts/build-linux.sh release
+      - run: |
+          mkdir out
+          target=$(cargo metadata --locked --no-deps --format-version 1 | jq -r .target_directory)
+          cp "$target/x86_64-unknown-linux-musl/release/devbox" out/devbox-linux
+          cargo metadata --locked --no-deps --format-version 1 > out/metadata.json
+          node -e 'const fs = require("fs"); const cli = require("./out/metadata.json").packages.find(p => p.name === "devbox-cli"); if (cli.version !== require("./app/package.json").version) throw Error("CLI/app version mismatch"); fs.writeFileSync("out/devbox-version.txt", cli.version)'
+          rm out/metadata.json
+          python3 - <<'PYRECEIPT'
+          import hashlib, json, os
+          from pathlib import Path
+          Path('out/linux-receipt.json').write_text(json.dumps(dict(source_sha=os.environ['SOURCE_SHA'], sha256=hashlib.sha256(Path('out/devbox-linux').read_bytes()).hexdigest())))
+          PYRECEIPT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devbox-linux
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+  windows:
+    name: Rust (Windows)
+    needs: [changes, linux-bin]
+    if: always()
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Fail closed on scope or Linux build errors
+        shell: pwsh
+        env:
+          SCOPE: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          LINUX: ${{ needs.linux-bin.result }}
+        run: |
+          if ($env:SCOPE -ne 'success' -or $env:CODE -notin @('true', 'false')) { throw 'Scope gate failed' }
+          if ($env:CODE -eq 'true' -and $env:LINUX -ne 'success') { throw 'Linux resource build failed' }
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.code == 'true'
+        with: { ref: "${{ env.SOURCE_SHA }}" }
+      - uses: actions/download-artifact@v4
+        if: needs.changes.outputs.code == 'true'
+        with: { name: devbox-linux, path: app/src-tauri/resources }
+      - uses: dtolnay/rust-toolchain@1.98.1
+        if: needs.changes.outputs.code == 'true'
+        with: { components: "clippy, rustfmt" }
+      - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.code == 'true'
+        with: { workspaces: app/src-tauri }
+      - uses: pnpm/action-setup@v4
+        if: needs.changes.outputs.code == 'true'
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.code == 'true'
+        with: { node-version: 24, cache: pnpm }
+      - name: Verify resource provenance, test, build NSIS and run self-check
+        if: needs.changes.outputs.code == 'true'
+        shell: pwsh
+        run: |
+          $receipt = Get-Content app/src-tauri/resources/linux-receipt.json -Raw | ConvertFrom-Json
+          if ($receipt.source_sha -ne $env:SOURCE_SHA -or $receipt.sha256 -ne (Get-FileHash app/src-tauri/resources/devbox-linux).Hash.ToLowerInvariant()) { throw 'Linux artifact provenance mismatch' }
+          & ./scripts/tests/windows-sync.ps1
+          & ./scripts/tests/windows-package.ps1
+          & ./scripts/tests/windows-dev.ps1
+          & ./scripts/win-package.ps1 -Verify
+          $installers = @(Get-ChildItem app/src-tauri/target/release/bundle/nsis/*.exe -File)
+          if (!$installers.Count) { throw 'NSIS installers missing' }
+          $hashes = @{}
+          foreach ($file in $installers) { $hashes[$file.Name] = (Get-FileHash $file.FullName).Hash.ToLowerInvariant() }
+          @{ source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID; repository = $env:GITHUB_REPOSITORY; workflow = '.github/workflows/windows.yml'; version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version; installers = $hashes } | ConvertTo-Json | Set-Content app/src-tauri/target/release/bundle/nsis/receipt.json -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.code == 'true'
+        with:
+          name: devbox-setup
+          path: |
+            app/src-tauri/target/release/bundle/nsis/*.exe
+            app/src-tauri/target/release/bundle/nsis/receipt.json
+          if-no-files-found: error
+          retention-days: 14

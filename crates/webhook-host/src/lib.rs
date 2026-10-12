@@ -1,7 +1,0 @@
-//! Native domain engine and product-host adapter; no standalone application.
-pub mod api;
-mod commands;
-pub mod component;
-mod core;
-
-mod listener_settings;
