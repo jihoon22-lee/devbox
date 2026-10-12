@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 13 데몬 RPC 서버 (Task 12 프로젝트·취소 후 이벤트 회귀·재검토 완료) |
+| 다음 할 일 | S0b Task 14 stdio 브리지·개발 게이트웨이 (Task 13 데몬·소켓·구독 수명 회귀·재검토 완료) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -68,7 +68,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0a | — | Task 1–8 | `docs/v1-plan` | push(`58fda4d7`, 자동 부분) | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
 | S0b | B | Task 2–6 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h(구현·검토 합산 추정) |
-| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–12 완료) | 2026-10-13 | | |
+| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–13 완료) | 2026-10-13 | | |
 | S0b | D | Task 16–21 |  | 대기 | | | |
 | S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
@@ -138,6 +138,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 10 복구 경계 | 예제에 게시 중단 경계 없음 | snapshot 게시와 receipt 게시 사이 중단 시 복구본 보존. 첫 게시의 미소유 target은 재시도에서 안전 중단; 기존 소유본 교체의 재시도는 아직 migration 전인 DB에서 다시 snapshot | 파일·디렉터리 sync 순서를 구현. 실제 강제 종료/전원 중단 실기는 하지 않았고 Windows directory durability는 검증 대상이 아닌 Linux core 경계임 |
 | 2026-10-13 | 03 Task 11 | 초기화 오류 무시·같은 시각 crash 덮어쓰기 | 초기화 직렬화·직접 global subscriber 설치·오류 반환, create_new 접미사·panic ring try_lock | 필터 3개를 소유 자식 프로세스에서 통합 검사 1개로 확인, collision/busy ring 단위 2개 통과. scoped subscriber 오판과 try_init의 부분 초기화 결함 수정 후 재검토 통과. 일 단위 최대 7개·최근 50개·guard flush 확인 |
 | 2026-10-13 | 03 Task 12 | 프로젝트 CRUD/scan·거절을 Ok(false)로 반환·await 뒤 이벤트 발행 | typed write 거절 rollback, writer의 커밋 직후 callback으로 이벤트 발행; canonical UTF-8·별칭 dedup·blocking IO 분리 | 프로젝트 7개 및 writer 영향 필터 통과, TS 생성/check 통과. 취소된 waiter의 커밋 후 이벤트 누락 회귀 red→green·재검토 통과; 백업·무관한 생성기 검사는 반복하지 않음 |
+| 2026-10-13 | 03 Task 13 | 소켓 삭제·단순 fd3 채택·사후 dedupe·구독 등록 | data-dir lease와 소켓 receipt, PID/type/family/path/CLOEXEC 검증·abstract notify; in-flight 결과 공유·채널 generation·구독 overflow Resync·해제 | 데몬 통합 19개, route/dedupe 2개·client cleanup 2개·channel cleanup 2개 통과. 소유 fixture 전달 소켓으로 검증했으며 실제 systemd unit 변경 없음. 별도 최종 검토 통과 |
+| 2026-10-13 | 03 Task 13 취소·종료 계약 | 기다리는 future와 mutation 수명 혼합 | 수용한 mutation은 waiter 취소 후에도 실행·결과 보존, outer request와 실행 task를 함께 추적해 lease 해제 전에 drain | clientRequestId의 params 비교는 raw JSON 텍스트 기준. pending subscribe 취소는 ack 경쟁의 서버 구독 유출을 막기 위해 해당 연결 종료. 라이브 구독 Drop은 Unsubscribe 전송·로컬 제거 |
 
 ## 6. 세션 기록
 

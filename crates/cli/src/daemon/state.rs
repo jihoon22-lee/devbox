@@ -1,0 +1,15 @@
+use devbox_core::{Db, Hub, Paths};
+use devbox_projects::ProjectsService;
+use std::sync::Arc;
+use std::time::Instant;
+
+pub struct Services {
+    pub version: &'static str,
+    pub daemon_id: String,
+    pub paths: Paths,
+    pub started: Instant,
+    pub started_ms: i64,
+    pub db: Db,
+    pub hub: Arc<Hub>,
+    pub projects: ProjectsService,
+}
