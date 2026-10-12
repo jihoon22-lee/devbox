@@ -1985,10 +1985,10 @@ git add app && git commit -m "feat(app): add the project switcher with add and r
 
 ---
 
-### Task 21: 개발 스크립트·E2E·전체 검사·CI
+### Task 21: 개발 스크립트·E2E·검증 진입점·CI
 
 **Files:**
-- Create: `scripts/dev.sh`, `scripts/check.sh`
+- Create: `scripts/dev.sh`, `scripts/check.sh`, `scripts/verify-resources.py` 및 필요한 검증 내부 진입점
 - Create: `app/playwright.config.ts`, `app/e2e/support.ts`, `app/e2e/global-setup.ts`, `app/e2e/projects.spec.ts`, `app/e2e/reconnect.spec.ts`
 - Modify: `.github/workflows/ci.yml`(frontend·e2e job 추가)
 
@@ -1998,9 +1998,9 @@ git add app && git commit -m "feat(app): add the project switcher with add and r
   - Task 16–20의 화면
 - Produces:
   - `pnpm dev`: dev 인스턴스 데몬(없으면 실행) + gateway + Vite. 주소 `http://localhost:1450`
-  - `pnpm check`: 전체 검사 한 번
+  - `pnpm check`: 공유 supervisor 아래 PR 끝(Task 24)에 전체 검사 한 번
   - E2E 2개(화면 1460·gateway 1461, `pnpm dev`를 켜 둔 채로 돌 수 있음)
-  - CI: `rust`, `frontend`, `e2e` 세 job + 집계 `ci-ok`(필수 검사)
+  - CI: `rust`, `frontend`, `e2e` 세 job + 보조 집계 `ci-ok`. 필수 이름 `Rust (Cargo workspace)`·`Frontend (pnpm)`을 유지하고 Windows 검사는 Task 24에서 연결한다.
 
 - [ ] **Step 1: 개발·검사 스크립트**
 
@@ -2024,29 +2024,9 @@ trap 'kill ${GW:-} ${DAEMON:-} 2>/dev/null || true' EXIT
 VITE_DEVBOX_WS="ws://127.0.0.1:1451/ws?token=$TOKEN" VITE_DEVBOX_INSTANCE=dev pnpm --filter app dev
 ```
 
-```bash
-# scripts/check.sh
-#!/usr/bin/env bash
-# PR 전에 한 번 돌리는 전체 검사. CI와 같은 순서.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-# 여러 세션(예: S3·S5 동시 진행)이 전체 검사를 겹쳐 돌리지 않게 한다. 먼저 잡은 쪽이 끝날 때까지 기다린다.
-exec 9>"${XDG_RUNTIME_DIR:-/tmp}/devbox-check.lock"
-flock 9
-# shellcheck source=/dev/null
-source ~/.cargo/env
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-cargo run -q -p xtask -- gen-ts --check
-bash scripts/banned-words.sh
-pnpm exec biome ci .
-pnpm --filter app typecheck
-pnpm --filter app test
-pnpm --filter app e2e
-echo "check: all passed"
-```
+`scripts/check.sh`는 Git common-dir의 비차단 잠금과 CPU·메모리·worker 제한을 적용하는 `scripts/verify-resources.py`를 통해 내부 검사 순서를 실행한다. 초기 기준은 보존된 main의 같은 supervisor다. 이미 잠금을 가진 전체 검사 안에서는 E2E·테스트의 하위 명령을 직접 실행해 잠금을 다시 획득하지 않는다. 독립 E2E 진입점도 같은 supervisor를 사용한다.
+
+내부 검사는 fmt·clippy·workspace test(`--no-fail-fast`, test threads 2)·타입 생성 check·금지어·Biome CI·frontend typecheck/test/build·E2E를 실행하고, 가능한 독립 검사의 실패를 모아 최종 실패 코드를 유지한다. 과제 중에는 새 supervisor와 script의 필요한 좁은 회귀만 실행하고, 전체 순서는 Task 24에서 한 번 수행한다. 통과한 무관한 검사는 반복하지 않는다.
 
 - [ ] **Step 2: E2E 지원 코드**
 
@@ -2233,7 +2213,7 @@ gateway는 WebSocket마다 데몬에 새로 연결한다. 그래서 데몬을 �
       - run: pnpm --filter app e2e
 ```
 
-같은 파일의 집계 job을 고친다(IR-1). 필수 검사는 `ci-ok` 하나뿐이므로, 새 job을 여기에 넣지 않으면 그 job이 실패해도 머지된다.
+같은 파일의 보조 집계 job도 고친다(IR-1). 기존 필수 native 검사 이름과 보호 규칙을 유지하며, 집계에는 새 job을 포함해 실패를 드러낸다. 문서 전용 변경·scope 판정 실패는 기존 gate 계약을 따른다.
 
 ```yaml
   ci-ok:
@@ -2244,14 +2224,12 @@ gateway는 WebSocket마다 데몬에 새로 연결한다. 그래서 데몬을 �
 - [ ] **Step 5: 확인·커밋·묶음 D 끝**
 
 ```bash
-chmod +x scripts/*.sh
-pnpm check
-git add -A && git commit -m "test(app): run end-to-end journeys against a real daemon"
-# 묶음 D 끝: PROGRESS.md의 묶음 D 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-git push origin v1/s0b-skeleton
+# 새 진입점의 실행 권한·좁은 script 회귀·별도 검토를 확인한다.
+# 전체 검사와 실제 E2E 실행은 모든 과제가 끝난 Task 24에 모은다.
+git add scripts app .github && git commit -m "test(app): add daemon-backed journeys and bounded verification entrypoints"
 ```
 
-묶음 끝. 같은 브랜치·worktree에서 다음 묶음을 이어간다(PR·CI 없음).
+묶음 D의 로컬 구현·검토 상태와 다음 과제를 PROGRESS에 기록한다. 같은 브랜치·worktree에서 묶음 E를 이어가며 전체 검사·push·PR은 Task 24에서 수행한다.
 
 ---
 

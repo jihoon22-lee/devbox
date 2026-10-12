@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 21 개발·검증 진입점·E2E·CI 구성 (Task 16–20 로컬 구현·검토 완료, 실제 E2E·설치·전체 검증은 Task 24) |
+| 다음 할 일 | S0b Task 22 Windows Tauri 껍데기 (묶음 D 로컬 구현·검토 완료, 실제 E2E·설치·전체 검증은 Task 24) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -69,8 +69,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
 | S0b | B | Task 2–6 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h(구현·검토 합산 추정) |
 | S0b | C | Task 7–15 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토 합산 추정) |
-| S0b | D | Task 16–21 | `v1/s0b-skeleton` | 작업 중 | 2026-10-13 | | |
-| S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
+| S0b | D | Task 16–21 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.0h(구현·검토 합산 추정) |
+| S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 작업 중 | 2026-10-13 | | |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
 | S1 | G | Task 3–4 |  | 대기 | | | |
 | S1 | H | Task 5–6 |  | 대기 | | | |
@@ -148,6 +148,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03b Task 18 | queryFn 캐시 쓰기·clear만 수행·연결 수명 누락 | Query 커밋 시 rev 비교·조회 중 이벤트 취소/재조회, ACK 후 전체 무효화·데몬 변경 시 관찰자 재연결·StrictMode 수명 정리 | helper 1·실제 RPC/React 통합 8개 통과, 별도 검토 통과. 같은 데몬의 마지막 데이터 유지·최신 수동 캐시 취소 보존·이전 데몬 응답 차단·클라이언트 교체 확인 |
 | 2026-10-13 | 03b Task 19 | 프레임·라우팅·키맵·팔레트·섹션 오류 | 저장 경로 허용목록·gateway 쿼리 유지, 키 capture/IME/모달 보호·팔레트 접근성·확정 route 기반 오류 초기화 | 새 테스트 16개 통과, 별도 최종 검토 통과. 실제 프레임 오류 뒤 이동 경쟁과 터미널 이벤트 차단 회귀 수정. 키 예외는 01 §8.5의 문자 제한을 따름. 프로젝트·Tauri 연결은 다음 과제 |
 | 2026-10-13 | 03b Task 20 | 프로젝트 전환·추가·제거·선택 유지 | 공유 구독·키보드 grid·진행 중 창/선택 유지·진단 복사, 제거 rev 기반 재선택 차단 | 새 테스트 총 11개 통과, 별도 최종 검토 통과. 지연/실패 재조회와 창 재열기 회귀 수정, 기존 목록 rev 보존. interactive option 대신 [WAI-ARIA grid 권고](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/)에 맞춰 행별 동작을 구분 |
+| 2026-10-13 | 03b Task 21 | 개발·검증·E2E·CI 진입점 | 공통 잠금/자원 제한·기존 데몬 보존·소유 stdout 준비 확인·격리 fixture, 필수 Frontend/Linux Rust 이름 유지 | Python 회귀 총 10개·대상 E2E/config TS·actionlint·구문 검사 통과, 별도 재검토 통과. 추가 완료 전 Escape 경합과 상대 runtime 경로 수정. 실제 E2E·전체 check는 Task 24에서 수행 |
+| 2026-10-13 | Windows 사전 확인 | 로컬 native 빌드 도구 | Node만 확인, cargo/rustc/pnpm·기본 cargo·vswhere 미확인 | 별도 설치 없이 계획의 hosted Windows CI에서 native 검사와 설치 파일을 생성한다. 로컬 Windows 빌드 성공으로 보고하지 않음 |
 
 ## 6. 세션 기록
 

@@ -1,0 +1,179 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { createConnection } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { test as base, expect } from "@playwright/test";
+import { version } from "../package.json";
+import { decodeFrame, jsonFrame } from "../src/rpc/frame";
+import { parseServerMessage } from "../src/rpc/server-message";
+
+export async function stop(child: ChildProcess) {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((done) => child.once("exit", () => done()));
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  try {
+    await exited;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export class Stack {
+  readonly home = mkdtempSync(join(tmpdir(), "devbox-e2e-"));
+  readonly instance = `test-${randomBytes(6).toString("hex")}`;
+  readonly token = randomBytes(24).toString("hex");
+  readonly gatewayUrl = `ws://127.0.0.1:1461/ws?token=${this.token}`;
+  readonly children: ChildProcess[] = [];
+  readonly logs = new Map<string, string>();
+  readonly env: NodeJS.ProcessEnv;
+  daemon?: ChildProcess;
+  constructor() {
+    this.env = { ...process.env, HOME: this.home, DEVBOX_INSTANCE: this.instance };
+    for (const [key, directory] of Object.entries({
+      XDG_RUNTIME_DIR: "run",
+      XDG_DATA_HOME: "data",
+      XDG_STATE_HOME: "state",
+      XDG_CONFIG_HOME: "config",
+      XDG_CACHE_HOME: "cache",
+    })) {
+      this.env[key] = join(this.home, directory);
+      mkdirSync(this.env[key], { mode: 0o700 });
+    }
+    mkdirSync(join(this.home, "projects/alpha/.git"), { recursive: true });
+    mkdirSync(join(this.home, "projects/beta"), { recursive: true });
+  }
+  start(name: string, command: string, args: string[], env = this.env) {
+    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    this.children.push(child);
+    child.on("error", (error) => this.logs.set(name, `${error}\n${this.logs.get(name) ?? ""}`));
+    for (const stream of [child.stdout, child.stderr])
+      stream?.on("data", (data) => this.logs.set(name, `${this.logs.get(name) ?? ""}${data}`.slice(-16_384)));
+    return child;
+  }
+  async ready(probe: () => Promise<unknown>) {
+    const deadline = Date.now() + 20_000;
+    let failure: unknown;
+    while (Date.now() < deadline) {
+      if (this.children.some((child) => child.exitCode !== null || child.signalCode !== null || !child.pid))
+        throw new Error(`Child exited: ${this.diagnostics()}`);
+      try {
+        await probe();
+        return;
+      } catch (error) {
+        failure = error;
+      }
+      await delay(100);
+    }
+    throw new Error(`Readiness timeout: ${failure}\n${this.diagnostics()}`);
+  }
+  // Real Hello/Welcome readiness; no socket-file existence or fixed startup sleeps.
+  hello(): Promise<string> {
+    return new Promise((resolveHello, reject) => {
+      const socket = createConnection(join(this.env.XDG_RUNTIME_DIR as string, `devbox-${this.instance}.sock`));
+      let buffer = Buffer.alloc(0);
+      const timer = setTimeout(() => {
+        socket.destroy();
+        reject(new Error("Hello timed out"));
+      }, 1_000);
+      socket.on("error", reject);
+      socket.on("close", () => {
+        clearTimeout(timer);
+        reject(new Error("Closed before Welcome"));
+      });
+      socket.on("connect", () =>
+        socket.write(jsonFrame({ type: "hello", version, protocol: 1, client: "test", instance: this.instance })),
+      );
+      socket.on("data", (data) => {
+        buffer = Buffer.concat([buffer, data]);
+        if (buffer.length < 4) return;
+        const size = buffer.readUInt32LE(0) + 4;
+        if (size > 4096) {
+          reject(new Error("Oversized Welcome"));
+          socket.destroy();
+          return;
+        }
+        if (buffer.length < size) return;
+        try {
+          const message = parseServerMessage(decodeFrame(buffer.subarray(0, size)).body);
+          if (message.type !== "welcome" || message.protocol !== 1 || message.version !== version)
+            throw new Error("Expected compatible Welcome");
+          resolveHello(message.daemonId);
+        } catch (error) {
+          reject(error);
+        }
+        socket.destroy();
+      });
+    });
+  }
+  async startDaemon() {
+    const binary = process.env.DEVBOX_E2E_BIN;
+    if (!binary) throw new Error("global setup did not supply the binary");
+    this.daemon = this.start("daemon", binary, ["daemon", "--foreground"]);
+    await this.ready(() => this.hello());
+  }
+  async stopDaemon() {
+    if (!this.daemon) throw new Error("No owned daemon");
+    await stop(this.daemon);
+    this.children.splice(this.children.indexOf(this.daemon), 1);
+  }
+  async launch() {
+    await this.startDaemon();
+    const binary = process.env.DEVBOX_E2E_BIN as string;
+    this.start("gateway", binary, [
+      "dev-gateway",
+      "--port",
+      "1461",
+      "--token",
+      this.token,
+      "--origin",
+      "http://localhost:1460",
+    ]);
+    // Emitted only after our gateway binds. An occupied port cannot satisfy this probe.
+    await this.ready(async () => {
+      if (!this.logs.get("gateway")?.includes(`dev-gateway ${this.gatewayUrl}`))
+        throw new Error("Gateway has not bound");
+    });
+    this.start("vite", process.execPath, [resolve("node_modules/vite/bin/vite.js"), "--port", "1460", "--strictPort"], {
+      ...this.env,
+      VITE_DEVBOX_INSTANCE: this.instance,
+      VITE_DEVBOX_WS: this.gatewayUrl,
+    });
+    await this.ready(async () => {
+      if (!this.logs.get("vite")?.includes("Local:") || !this.logs.get("vite")?.includes(":1460/"))
+        throw new Error("Vite has not bound");
+      const response = await fetch("http://localhost:1460", { signal: AbortSignal.timeout(1_000) });
+      if (!response.ok) throw new Error(`Vite status ${response.status}`);
+    });
+  }
+  diagnostics() {
+    return [...this.logs].map(([name, log]) => `${name}:\n${log}`).join("\n");
+  }
+  async close() {
+    try {
+      await Promise.all(this.children.map(stop));
+    } finally {
+      rmSync(this.home, { recursive: true, force: true });
+    }
+  }
+}
+
+export const test = base.extend<{ stack: Stack }>({
+  stack: async ({}, use, info) => {
+    const stack = new Stack();
+    try {
+      await stack.launch();
+      await use(stack);
+    } finally {
+      try {
+        await info.attach("owned-process-logs", { body: stack.diagnostics(), contentType: "text/plain" });
+      } finally {
+        await stack.close();
+      }
+    }
+  },
+});
+export { expect };

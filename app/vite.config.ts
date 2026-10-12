@@ -8,5 +8,11 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   clearScreen: false,
   server: { port: 1450, strictPort: true, fs: { allow: [".."] }, watch: { ignored: ["**/src-tauri/**"] } },
-  test: { environment: "jsdom", globals: true, setupFiles: ["src/test-setup.ts"], include: ["src/**/*.test.{ts,tsx}"] },
+  test: {
+    maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 2),
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["src/test-setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+  },
 });
