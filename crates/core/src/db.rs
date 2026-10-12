@@ -1,5 +1,6 @@
 //! SQLite transactions with a dedicated writer and read-only reader pool.
 use crate::CoreError;
+use rusqlite::config::DbConfig;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,35 @@ fn revision(conn: &Connection) -> rusqlite::Result<u64> {
     conn.query_row("SELECT value FROM core_meta WHERE key='rev'", [], |r| {
         r.get(0)
     })
+}
+fn validate_schema_versions(
+    conn: &Connection,
+    supported: &HashMap<&str, u32>,
+) -> Result<(), CoreError> {
+    let initialized: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='schema_versions')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !initialized {
+        return Ok(());
+    }
+    let mut statement = conn.prepare("SELECT domain, version FROM schema_versions")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+    })?;
+    for row in rows {
+        let (domain, stored) = row?;
+        let Some(latest) = supported.get(domain.as_str()) else {
+            return Err(invalid("database contains an unsupported migration domain"));
+        };
+        if stored > *latest {
+            return Err(invalid(
+                "database schema version is newer than supported migrations",
+            ));
+        }
+    }
+    Ok(())
 }
 pub fn current_rev(tx: &Transaction<'_>) -> rusqlite::Result<u64> {
     revision(tx)
@@ -224,6 +254,13 @@ impl Db {
         }
         let existed = path.exists();
         let mut conn = Connection::open(path)?;
+        // A rejected connection may be the last WAL reader after a crash. Its
+        // close must not checkpoint newer data into the database or remove WAL.
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
+        // Check every stored domain before changing journal mode, initializing
+        // metadata, creating a backup, or applying any other domain's migration.
+        validate_schema_versions(&conn, &versions)?;
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         conn.execute_batch(BASE)?;
         let mut todo = Vec::new();

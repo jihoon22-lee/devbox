@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 완료: PR #638 squash 머지(`820576c9`). S1 착수 준비 완료·구현 미착수 |
-| 다음 할 일 | S1 Task 1: 스트림 흐름 제어·채널별 공정 송신의 실패 회귀 작성 → 구현 → 별도 검토 |
+| 단계 | S0 PR #638 머지 완료. 머지 후 자동 리뷰의 DB 버전 거부 보완 중. S1 착수 준비 완료·구현 미착수 |
+| 다음 할 일 | DB 버전 검증 후속 PR의 최종 CI·자동 리뷰 확인 → 머지 → S1 Task 1 스트림·채널별 공정 송신 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@820576c9`에서 분기, 현재 계획의 원본 |
+| 작업 중인 브랜치·worktree | 후속 보완: `fix/core/schema-version` · `../devbox-wt/fix-schema-version`. S1 준비: `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` (제품 구현 미착수) |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -169,6 +169,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | S0b 최종 CI·마무리 결정 | `c3212af815dca25bd11d290f32110d8157e9ebe6` | [CI 38294731916](https://github.com/jihoon22-lee/devbox/actions/runs/38294731916)·[Windows 38294732514](https://github.com/jihoon22-lee/devbox/actions/runs/38294732514) 전체 성공, 설치 파일 출처 확인 | 구현·자동 검증 완료. 실기 미실행 사실은 보존하며 사용자 테스트 요청·대기 gate로 두지 않음. 필요한 개발 검증은 에이전트가 해당 단계에서 수행. 당시 보존용 브랜치를 만들었으나 후속 사용자 지시로 제거했다(§2). 필요한 ADR 정리 반영. 이 행은 머지 전 기록이며 최종 결과는 아래 행 참조 |
 
 | 2026-10-13 | S0 마무리·S1 준비 | 최종 PR `f368df36` → squash `820576c9` | [CI 38312265408](https://github.com/jihoon22-lee/devbox/actions/runs/38312265408)·[Windows 38312265384](https://github.com/jihoon22-lee/devbox/actions/runs/38312265384) 모두 성공, PR/main tree OID 일치 확인. main 전환 뒤 남은 폐기 제품의 생성 schema 20개(1.84MB)를 식별·제거해 0 ahead/0 behind·clean 확인. S0 전용 worktree와 로컬·원격 브랜치 제거 | 미푸시 두 커밋은 필요한 변경을 반영한 뒤 main에서 제거, 보존용 브랜치·별도 파일 백업 없음. S1 전용 worktree를 최신 main에서 만들고 frozen 의존성 준비. Task 1의 기존 Hello flush ACK·채널 세대 취소·중복 요청 경계를 유지하며 credit 소진/재개·채널 공정성·종료 회귀부터 구현 예정 |
+
+| 2026-10-13 | PR #638 머지 후 자동 리뷰 | [DB 최신 스키마 거부](https://github.com/jihoon22-lee/devbox/pull/638#discussion_r4252644638) | 리뷰는 머지 뒤 도착. 구버전이 더 높은 도메인 버전을 건너뛰고 DB를 여는 결함으로 확인. 전체 도메인을 먼저 검증해 알려진 최고 버전 초과·알 수 없는 도메인을 거부하며 journal mode·기본 metadata·다른 migration·backup보다 먼저 실패 | RED 2개 재현 후 독립 검토에서 단독 WAL reader 종료 시 checkpoint 결함도 RED 재현·수정. 버전 검증 중 close-checkpoint 차단, 지원 확인 후 기존 동작 복원. DB 18·projects 7·daemon 21 검사 및 Clippy·fmt·Biome 통과, 독립 재검토 PASS. DB/WAL byte 보존·다른 도메인 미변경·정상 교차 도메인 upgrade 확인. 최종 CI와 자동 리뷰를 모두 확인한 뒤 후속 PR을 머지한다 |
 
 ## 6. 세션 기록
 
