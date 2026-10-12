@@ -1,6 +1,8 @@
 //! 데몬 공용 기반: 인스턴스·경로·설정·DB·이벤트 허브·로그.
 pub mod config;
+pub mod hub;
 pub mod paths;
+pub use hub::{Hub, HubMessage, HubReceiver};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
