@@ -20,6 +20,8 @@ pub enum CoreError {
     Config { path: String, message: String },
     #[error("database: {0}")]
     Db(#[from] rusqlite::Error),
+    #[error("invalid database input: {0}")]
+    DbInput(String),
     #[error("database worker stopped")]
     DbClosed,
 }
@@ -30,3 +32,6 @@ pub fn io_err(what: impl Into<String>) -> impl FnOnce(std::io::Error) -> CoreErr
 }
 pub use config::{Config, expand_home};
 pub use paths::{Env, Instance, OsEnv, Paths};
+
+pub mod db;
+pub use db::{Db, Migration, current_rev};

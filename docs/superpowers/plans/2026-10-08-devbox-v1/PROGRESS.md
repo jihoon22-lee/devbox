@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 10 SQLite writer·마이그레이션·백업 (Task 9 허브 6개 검사·동시성 검토 완료) |
+| 다음 할 일 | S0b Task 11 로그·panic 기록 (Task 10 DB 좁은 검사·백업 결함 수정·재검토 완료) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -68,7 +68,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0a | — | Task 1–8 | `docs/v1-plan` | push(`58fda4d7`, 자동 부분) | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
 | S0b | B | Task 2–6 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h(구현·검토 합산 추정) |
-| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–9 완료) | 2026-10-13 | | |
+| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–10 완료) | 2026-10-13 | | |
 | S0b | D | Task 16–21 |  | 대기 | | | |
 | S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
@@ -134,6 +134,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 7 · 01 인스턴스 계약 | 이름 정규식·환경 변수 경로·uid=0 fallback | 공유 bin 경로와 충돌하는 `bin` 예약 거부, HOME 절대 경로 필수·빈/상대 XDG fallback, UID 실패 명시 진단 | 경로 10개 통과 뒤 검토에서 bin 충돌 발견. 이름 회귀 red→green 3개(8개 제외), 수정 재검토 통과. 소유 temp fixture만 사용 |
 | 2026-10-13 | 03 Task 8 | 병합 뒤 typed 변환·단순 tilde join | 각 파일 먼저 strict 검증·section table 확인, 반복 slash를 HOME 하위로 확장 | local override가 shared 오류를 숨기지 않고 serde의 positional section 허용을 막음. 설정 범위 9개 통과 뒤 ~// HOME 이탈 발견·해당 회귀 1개 red→green, 수정 재검토 통과 |
 | 2026-10-13 | 03 Task 9 | mpsc·AtomicBool·수신 시 큐 drain | bounded VecDeque·구독별 짧은 mutex·Notify, overflow/Resync/새 발행을 같은 잠금으로 순서화 | drain 중 발행 경쟁·오래된 이벤트·무한 drain 위험 제거. 허브 6개(64회 발행/수신 경쟁·등록된 대기 깨우기 포함) 통과, 별도 동시성 검토 통과; 단위 기한을 성능 근거로 쓰지 않음 |
+| 2026-10-13 | 03 Task 10 · 01 DB 계약 | writer/read pool·마이그레이션 전 이전 백업 삭제 | 읽기 전용 연결·checked rev·panic/취소 경계, migration 순서 검사; VACUUM snapshot·batch/소유 receipt 동기화 후 원자적 게시·이전 소유본만 정리 | 초기 DB 8개 통과 후 semver/symlink·새 batch/receipt 충돌 회귀를 추가해 총 12개, 변경된 백업 범위만 재검사. 검토의 같은 앱 버전 stale backup·미소유 temp 삭제 2건 수정 후 재검토 통과 |
+| 2026-10-13 | 03 Task 10 복구 경계 | 예제에 게시 중단 경계 없음 | snapshot 게시와 receipt 게시 사이 중단 시 복구본 보존. 첫 게시의 미소유 target은 재시도에서 안전 중단; 기존 소유본 교체의 재시도는 아직 migration 전인 DB에서 다시 snapshot | 파일·디렉터리 sync 순서를 구현. 실제 강제 종료/전원 중단 실기는 하지 않았고 Windows directory durability는 검증 대상이 아닌 Linux core 경계임 |
 
 ## 6. 세션 기록
 

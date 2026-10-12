@@ -324,7 +324,7 @@ set -g allow-passthrough on
 | `runs/`, `api-history/`, `webhooks/` | 실행 로그, API·웹훅 본문 파일 | 보관 기한(기본 30일)으로 정리 |
 
 - `rusqlite`(bundled), WAL. DB 파일마다 쓰기 전용 연결 1개(전용 스레드) + 읽기 연결 풀.
-- 마이그레이션 버전은 도메인별로 둔다(`schema_versions(domain, version)`). 여러 worktree에서 병렬로 개발해도 번호가 충돌하지 않는다.
+- 마이그레이션 버전은 도메인별로 둔다(`schema_versions(domain, version)`). 여러 worktree에서 병렬로 개발해도 번호가 충돌하지 않는다. 백업 소유 receipt는 전체 `(domain, version)` 묶음을 기록하여 같은 앱 버전의 새 묶음은 새 snapshot을 만들고, 부분 실패한 같은 묶음의 재시도는 원본을 보존한다. 새 snapshot·receipt를 동기화한 뒤 게시하고 이전 소유 백업만 정리한다.
 - 활동처럼 쓰기가 잦은 데이터는 1초 또는 100건 단위로 묶어 쓴다.
 - 이벤트는 커밋 뒤에 발행하고, 그 커밋의 `rev`를 담는다.
 - enum 컬럼은 공통 `ToSql/FromSql` 파생 매크로로 처리한다(문자열 수작업 parse 금지).
