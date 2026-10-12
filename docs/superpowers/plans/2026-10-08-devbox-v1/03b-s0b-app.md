@@ -47,7 +47,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S0b 전체를 한
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
 | D | Task 16–21 | 로컬 구현·검토 완료 |
-| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → **S0 확인(기다림)** → 기존 필수 CI 확인 → squash 머지 |
+| E | Task 22–24 | **S0b PR 열기** → CI·설치 파일 → **자동 검증 근거 정리** → 기존 필수 CI 확인 → squash 머지 |
 
 ---
 
@@ -3087,7 +3087,7 @@ git add app && git commit -m "feat(app): connect the Windows shell to the WSL da
 
 ---
 
-### Task 24: Windows 개발·빌드 스크립트, Windows CI, S0 확인
+### Task 24: Windows 개발·빌드 스크립트, Windows CI, S0 자동 검증 마무리
 
 **Files:**
 - Create: `scripts/win-sync.ps1`, `scripts/win-dev.ps1`, `scripts/win-build.ps1`, `scripts/dogfood.sh`, `.github/workflows/windows.yml`
@@ -3238,34 +3238,27 @@ echo "Windows 탐색기에서 Downloads\\devbox-dogfood 의 setup 파일을 실�
 
 - [ ] **Step 3: 커밋·push·S0b PR 열기**
 
-S0b의 PR은 이것 하나다. PR의 `pull_request`가 `ci.yml`(S0b 전체 검사)과 `windows.yml`(설치 파일 산출물)을 한 번씩 돌린다. 사용자 확인은 그 산출물로 하므로 PR을 먼저 열고, 머지는 Step 5 뒤에 한다.
+S0b의 PR은 이것 하나다. PR의 `pull_request`가 `ci.yml`(S0b 전체 검사)과 `windows.yml`(설치 파일 산출물)을 한 번씩 돌린다. 설치 파일은 선택적 실사용에 제공하며, 머지는 Step 5의 필수 CI 확인 뒤에 한다.
 
 ```bash
 pnpm check
 git add scripts .github && git commit -m "build: add Windows sync, dev, build and dogfood scripts and the Windows workflow"
-git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skeleton --title "feat: v1 walking skeleton (S0b)" --body "S0b 걷는 뼈대: 옛 코드 정리·v1 계획 폴더, 프로토콜·mux·생성기, core·projects·데몬·브리지·dev-gateway·setup·doctor, 화면 골격·E2E, Windows 껍데기·스크립트·워크플로. 01-design §3–§6·§8·§10. 머지는 S0 확인(사용자) 뒤.
+git push origin v1/s0b-skeleton && gh pr create --base main --head v1/s0b-skeleton --title "feat: v1 walking skeleton (S0b)" --body "S0b 걷는 뼈대: 옛 코드 정리·v1 계획 폴더, 프로토콜·mux·생성기, core·projects·데몬·브리지·dev-gateway·setup·doctor, 화면 골격·E2E, Windows 껍데기·스크립트·워크플로. 01-design §3–§6·§8·§10. 머지는 최종 필수 CI 성공 확인 뒤.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
-- [ ] **Step 4: S0 확인(사용자, 8개) — 이 계획에서 에이전트가 기다리는 유일한 확인**
+- [ ] **Step 4: S0 자동 검증 근거 정리**
 
-승인하면 S1부터 S6 끝까지 에이전트가 스스로 진행한다(00-roadmap §2.2). 에이전트는 설치 파일 받는 법(`bash scripts/dogfood.sh v1/s0b-skeleton`, Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`), 아래 목록, S0a 결과 보고서(`09-s0a-results.md`)를 함께 보낸다.
+최신 사용자 지시(2026-10-13, 00-roadmap §2.2)에 따라 구현·별도 검토·자동 검증을 기준으로 S0를 마무리한다. 실제 실행한 WSL 검사, Windows native 테스트·패키징·self-check, E2E의 커밋·run·결과와 설치 산출물 출처를 기록한다. self-check는 WebView 초기화 전 종료하므로 실제 설치 앱의 GUI 실사용 성공을 뜻하지 않는다.
 
-1. 첫 실행 화면이 "연결하고 있습니다/설치하고 있습니다"를 거쳐 앱 화면으로 바뀌고, 상태 표시줄에 "데몬 연결됨"이 보인다.
-2. Ctrl+Shift+O → [프로젝트 추가] → `~/projects`의 폴더 하나 → 제목 표시줄에 이름이 보인다.
-3. 앱을 닫았다가 다시 열면 프로젝트가 그대로 있다.
-4. PowerShell에서 `wsl --shutdown` → 앱에 "다시 연결하고 있습니다" 배너가 뜨고, 잠시 뒤 사라진다.
-5. 앱에서 Ctrl+P는 인쇄 창을 열지 않고, F5는 화면을 새로 고치지 않는다.
-6. 바로가기로 두 번째 실행을 하면 기존 창이 앞으로 온다.
-7. 설치한 앱 창을 열고 연결된 채 30분 둔 뒤 PowerShell `wsl.exe -l -v`에서 Ubuntu가 Running이고, WSL에서 `systemctl --user is-active devbox@prod`가 `active`다(S0a R1).
-8. S0a 결과 보고서를 읽고, 4번에서 다시 연결까지 걸린 시간(초)을 알려 준다(S0a R2). 에이전트가 `09-s0a-results.md`에 채운다.
+설치 앱 첫 실행·프로젝트 유지·shutdown 후 재연결 시간·단축키·두 번째 실행·30분 유휴는 미실행 사실을 보존한다. 사용자에게 중간 테스트·결과 보고를 요청하지 않는다. 필요한 검증은 에이전트가 해당 구현 단계에서 수행한다. 사용자는 계획 기능 완성 후 실사용하며 이 항목들은 개발·머지·S1 착수 gate가 아니다.
 
-- [ ] **Step 5: S0 확인 이후 상태 갱신·필수 CI 확인·squash 머지**
+- [ ] **Step 5: 상태 갱신·필수 CI 확인·squash 머지**
 
-S0 확인 결과와 설치 산출물 SHA·CI 근거를 PROGRESS와 PR 본문에 기록한다. 아직 머지하지 않은 상태를 "머지 완료"로 적지 않는다. 필요한 문서 커밋을 올린 뒤 최종 PR 변경의 필수 CI를 확인한다.
+S0 자동 검증 결과와 설치 산출물 SHA·CI 근거를 PROGRESS와 PR 본문에 기록한다. 아직 머지하지 않은 상태를 "머지 완료"로 적지 않는다. 필요한 문서 커밋을 올린 뒤 최종 PR 변경의 필수 CI를 확인한다.
 
-현재 사용자 지시와 CONVENTIONS §8을 따른다. `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 필수 검사를 유지하고 최종 PR 변경의 성공 근거를 확인한다. `ci-ok`는 보조 집계이며 보호 규칙을 줄이거나 우회하지 않는다. S0 확인 전에 머지하지 않는다.
+현재 사용자 지시와 CONVENTIONS §8을 따른다. `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 필수 검사를 유지하고 최종 PR 변경의 성공 근거를 확인한다. `ci-ok`는 보조 집계이며 보호 규칙을 줄이거나 우회하지 않는다. 사용자 실사용 확인을 기다리지 않는다.
 
 ```bash
 gh pr checks v1/s0b-skeleton
@@ -3276,4 +3269,4 @@ gh pr merge --squash v1/s0b-skeleton
 
 머지 성공을 조회한 뒤 다음 S1 작업 원장에 PR 번호·머지 SHA·완료 상태를 반영한다.
 
-머지 뒤 정리: 직접 소유한 clean·merged worktree만 제거 → prune → 로컬 브랜치 → 원격 브랜치 순으로 정리한다. 대상은 S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). 사용자에게 S0b 완료를 보고하고 **기다리지 않고** S1을 시작한다. 이후 v1.0.0 공개 직전까지는 §3.2 상황에서만 묻는다(00-roadmap §2.2).
+머지 뒤 정리: 직접 소유한 clean·merged worktree만 제거 → prune → 로컬 브랜치 → 원격 브랜치 순으로 정리한다. 대상은 S0b worktree·브랜치, 그리고 계획 원본이던 `docs/v1-plan` 브랜치와 worktree `../devbox-wt/docs-v1-plan`(이제 계획 원본은 main). S0b 완료·main 커밋 정리 결과와 S1 착수 준비를 사용자에게 보고한다. 이후 v1.0.0 공개 직전까지는 §3.2 상황에서만 묻는다(00-roadmap §2.2).

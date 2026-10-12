@@ -27,7 +27,7 @@ GitHub CLI 인증이 필요하다. 정확한 원격 SHA의 `windows.yml` PR 실�
 실제 Windows Downloads 위치에 SHA·run ID·고유 접미사가 있는 새 폴더를 만들며 기존 자료는 보존한다.
 설치 파일의 SHA256과 `receipt.json`의 원본 SHA·run ID·저장소·워크플로를 검사하고 경로를 출력한다.
 Windows 쪽 Rust·MSVC·pnpm 없이 이 NSIS 설치 파일을 사용할 수 있다. public RC나 Release는 만들지 않는다.
-S0 사용자 확인과 필수 CI 성공 뒤에만 PR을 머지한다.
+최종 변경의 필수 CI 성공 근거를 확인한 뒤 PR을 squash 머지한다. 실사용은 사용자가 원할 때 하며 개발·머지의 대기 조건이 아니다.
 
 Windows 개발 도구가 이미 준비된 환경에서는 WSL 저장소의 스크립트를 PowerShell에서 호출한다.
 Node 24·pnpm 9·Rust 1.98.1·MSVC 및 Windows SDK가 필요하며 스크립트가 전역 도구를 설치하지 않는다.

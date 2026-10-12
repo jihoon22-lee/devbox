@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0b PR #638 열림, S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | PR #638 연결 예외 3건·오프라인 RPC 보완 완료 → 최종 CI/설치 파일 → 사용자 S0 확인 (dd51f2e1의 필수 CI·native 16 tests/NSIS/self-check 통과, 아직 미머지) |
+| 단계 | S0b 구현·자동 검증 완료, PR #638 열림. R1/R2 실기 미실행 기록 보존 |
+| 다음 할 일 | c3212af8의 최종 CI·Windows native 16 tests/NSIS/self-check 통과 → 문서 정리 최종 CI 근거 확인 → squash 머지·main 정리·S1 착수 준비 (아직 미머지) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -25,8 +25,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push(`aa5c6785`), main에는 S0b PR과 함께 |
 | 2026-10-08 | PR 47개 → 하위 프로젝트당 1개(7개)로 줄임 | 사용자 | 해결(00-roadmap §3) |
 | 2026-10-08 | S2 뒤 S3·S5를 동시에 진행할지 | 사용자 | 해결: 동시 진행. 한 세션이 하위 에이전트로 트랙 1(S3→S4)·트랙 2(S5)를 함께 돌림, 사용자가 세션을 더 띄우지 않음(00-roadmap §3.6) |
-| 2026-10-09 | 사용자 확인 방식 | 사용자 | 해결: S0 끝(S0b) 한 번만 기다리고, 그 뒤는 v1.0.0 공개 직전과 §3.2 상황에서만 묻는다. 확인 목록은 머지 뒤 보낸다(00-roadmap §2.2) |
-| 2026-10-08 | 이 PC의 로컬 main에 원격에 없는 커밋 2개(`b2a508b6` source-map-js 갱신, `1b84aa9d` 완료 계획 정리, 둘 다 2026-10-07). `docs/v1-plan`은 원격 main(`72ff50c7`)에서 갈라졌다. 두 커밋의 내용은 S0b PR(옛 코드·문서 전부 삭제)로 의미가 없어진다. S0b PR 머지 뒤 로컬 main을 원격에 맞출지(두 커밋 버림), 그 전에 PR로 올릴지 | 사용자 | 대기 |
+| 2026-10-09 | 사용자 확인 방식 | 사용자 | 변경(2026-10-13): 실사용은 계획 기능 완성 후 사용자가 진행하며 개발·머지·S1 착수 gate가 아니다. 필요한 개발 검증은 에이전트가 수행하며 사용자 테스트 요청 없이 확보된 자동 검증 근거로 S0 마무리(00-roadmap §2.2) |
+| 2026-10-13 | 로컬 main 미푸시 커밋 `b2a508b6`·`1b84aa9d` | 사용자 정리 지시 | 처리 결정: `backup/main-before-v1-s0b` → `1b84aa9d`로 두 커밋 보존. source-map-js 1.2.2는 S0b 반영 확인, 과거 CI 40개 시나리오는 v1 교체로 비적용. 삭제 계획 참조 정리는 S0b의 ADR 링크 보정으로 이관. PR 머지 확인 뒤 로컬 main을 origin/main에 맞춘다. 백업은 삭제하지 않음 |
 | 2026-10-08 | 저장소 `user.email`이 개인 Gmail이라 명령줄 push가 거절된다(GitHub 이메일 비공개). P0 커밋은 noreply 주소로 다시 써서 push했다. 저장소 설정을 `188744452+jihoon22-lee@users.noreply.github.com`으로 바꿀지 | 사용자 | 대기(그 전까지 커밋마다 `-c user.email=…`, 00 §3.3) |
 
 ## 3. 하위 프로젝트
@@ -34,13 +34,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S | 계획 문서 | 상태 | 시작 | 완료 | 사용자(§2.2) |
 |---|---|---|---|---|---|
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
-| S0a | 02-s0a-spike | 자동 부분 완료·수동 유보 | 2026-10-12 | 2026-10-12 | 결과 보고만 |
-| S0b | 03-s0b-skeleton · 03b-s0b-app | PR 열림 | 2026-10-12 | | **S0 확인 8개(기다림)** |
-| S1 | 04-s1-agents-terminal · 04b-s1-app | 대기 | | | 확인 목록 10개(보냄) |
-| S2 | 05-s2-runs | 대기 | | | 확인 목록 10개(보냄)·전환 안내 |
-| S3 | 06-s3-knowledge | 대기 | | | 확인 목록 10개(보냄) |
-| S4 | 07-s4-s6(→ 07a) | 대기 | | | 확인 목록 8개(보냄) |
-| S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 확인 목록 6개(보냄) |
+| S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
+| S0b | 03-s0b-skeleton · 03b-s0b-app | PR 열림 | 2026-10-12 | | 실사용은 선택, 대기 없음 |
+| S1 | 04-s1-agents-terminal · 04b-s1-app | 대기 | | | 완료·검증 결과 보고 |
+| S2 | 05-s2-runs | 대기 | | | 완료·검증 결과 보고 |
+| S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
+| S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
+| S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
 ## 4. PR (모두 7개)
@@ -123,7 +123,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-12 | 01 §4.3 · 02 Task 4 | scope 프로세스는 tmux 종료에도 생존한다는 단정 | 별도 cgroup이어도 PTY 종료의 SIGHUP으로 끝날 수 있고, HUP 무시 프로세스는 남을 수 있음. 명시적 scope 종료 정책 유지 | 정상·HUP 처리 대역으로 실측. 데몬 재시작 중 tmux 세션 유지 기준은 통과했으며 구조·범위를 바꾸는 대체 경로가 아님 |
 | 2026-10-12 | 02 Task 4 | 실제 PTY/scope 측정 | private tmux socket·소유 PID/cgroup·기한 있는 입출력으로 검증 | 초기 0.6초 CPU probe의 공통 잠금 누락을 기록. 후속 수명 검사는 잠금을 사용했고 통과한 지연 측정을 반복하지 않음 |
 | 2026-10-12 | 01 §9.2 · 04 Task 8·10·resume | Claude Notification로 waiting, Codex ENV/cwd 또는 최신 파일로 완료·재개 연결 | PermissionRequest 즉시 waiting + 알림 fallback; Codex 정확한 source/주 thread/현재 turn gate와 bounded retry/진단, 필수 회귀 | 실제 TUI에서 6,018ms 지연 알림·동일 ENV 자동 제목 완료 관찰. 구조·목표 변경 없이 source 계약 보정; S1 구현 검증은 미완료 |
-| 2026-10-12 | 02 Task 7 · 03b Task 24 확인 7 | 트레이에서 30분 유휴 | 설치 창 열고 연결 유지 30분; R1 확인 7/R2 확인 4·8 유보, 미실행 | 트레이는 S1 Task 23 범위. 조기 구현하지 않고 S0 확인의 connected-client 목적 유지 |
+| 2026-10-12 | 02 Task 7 · 03b Task 24 확인 7 | 트레이에서 30분 유휴 | 설치 창 열고 연결 유지 30분; R1 확인 7/R2 확인 4·8 유보, 미실행 | 트레이는 S1 Task 23 범위. 조기 구현하지 않음. 당시 유보는 2026-10-13 결정으로 대체, 실기 미실행 기록만 보존 |
 | 2026-10-13 | 03 Task 1 | 새 저장소 골격과 초기 CI | CONVENTIONS 유지·갱신, 실재 protocol member만 등록, 공유 cache sweep는 보고만 수행 | 현재 명시된 규약·자원 보호를 보존. 전체 검사·push·squash 정책은 00 §3 보정이 과거 예제보다 우선함 |
 | 2026-10-13 | 03 Task 1 검증 | 초기 script/CI 검사 | 실제 workflow shell을 쓰는 Git rename·잘못된 기준·grep 오류 회귀 포함 4개 통과, actionlint·syntax·metadata 통과, CI에 회귀 등록 | 코드→문서 rename 누락과 scope 조회 오류의 묵시적 성공을 수정. 상수 값만 비교하는 의미 없는 stub 테스트는 제거함 |
 | 2026-10-13 | 03 Task 2 | oversized stream 시험 길이 | 프레임 헤더 5 + stream ID/flags 5 + chunk 상한 + 1 | stream 본문 overhead 누락 보정. 부분/복수 프레임·상한·poisoning·encode 보존·채널 helper 10개 통과, 별도 검토 통과 |
@@ -142,7 +142,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 13 취소·종료 계약 | 기다리는 future와 mutation 수명 혼합 | 수용한 mutation은 waiter 취소 후에도 실행·결과 보존, outer request와 실행 task를 함께 추적해 lease 해제 전에 drain | clientRequestId의 params 비교는 raw JSON 텍스트 기준. pending subscribe 취소는 ack 경쟁의 서버 구독 유출을 막기 위해 해당 연결 종료. 라이브 구독 Drop은 Unsubscribe 전송·로컬 제거 |
 | 2026-10-13 | 03 Task 14 | Tokio stdio copy·WS 프레임 누적·단일 loop send | 독립 pipe OFD/AsyncFd로 양쪽 취소 가능, 5초 활성화 전체 기한·stdout 격리; WS 메시지별 단일 프레임·독립 양방향·토큰 URL 인코딩 | 브리지 7개·게이트웨이 6개·부모 pipe flag 보존 1개 통과. blocked stdout 종료 red→green, 8MiB raw/16MiB WS 양방향·강제 종료 후 flags 보존 확인. fake systemctl만 사용, 별도 재검토 통과 |
 | 2026-10-13 | 03 Task 15 | 고정 경로 unit·단순 env/which·실기와 묶음 전체 검사 | private atomic env·단계 실패 중단·instance XDG drop-in·실제 권한 검사, user manager 응답/linger 진단; 실제 설치는 Task 24 | setup 7개·doctor 4개·route 1개·TS 생성/check 통과. 실제 systemd parser가 quoted ListenStream을 거부하는 결함과 owner 실행권한 오판 각각 red→green 후 재검토 통과. Linux 검증은 systemd-analyze 필요, 서비스는 변경하지 않음 |
-| 2026-10-13 | 03·03b 운영 절차 | 묶음별 전체 검사/push·ci-ok 단일 보호 전환·rebase | 현재 사용자 규약대로 과제별 좁은 검사, Task 24 통합 검증/push, 기존 필수 CI 3개 유지·S0 확인 뒤 squash | 수용·머지 전 완료로 기록하지 않도록 순서도 정리. 구현자와 별도 검토 완료는 로컬 진행이며 PR/Windows 실기 통과와 구분 |
+| 2026-10-13 | 03·03b 운영 절차 | 묶음별 전체 검사/push·ci-ok 단일 보호 전환·rebase | 현재 사용자 규약대로 과제별 좁은 검사, Task 24 통합 검증/push, 기존 필수 CI 3개 유지·squash(당시 S0 확인 gate는 최신 §2 결정으로 대체) | 수용·머지 전 완료로 기록하지 않도록 순서도 정리. 구현자와 별도 검토 완료는 로컬 진행이며 PR/Windows 실기 통과와 구분 |
 | 2026-10-13 | 03b Task 16 | UI 골격·기본 컴포넌트·고정 높이 없는 Dialog | React/Vite 설정·토큰·native 버튼·Radix 포커스·복사 실패 처리, 화면 높이 제한과 스크롤 | UI 13개 red→green, 별도 검토의 긴 대화상자 버튼 잘림 수정 후 재검토 통과. CSS 수정 뒤 무관한 통과 검사는 반복하지 않음. 전체 typecheck/build·실기는 Task 24 |
 | 2026-10-13 | 03b Task 17 · 01 §5.5 R6 | 느슨한 프레임·구독 직후 resync·종료와 전송 실패 혼합 | Rust 상한·봉투 검증, 구독 ACK 후 ready/resync, 늦은 ACK 해제·협력 취소·재시도 수명 분리 | 프레임 5·클라이언트 30·WebSocket 7·오류 문구 1개 통과. 전송 실패 후 복구 red→green, 별도 검토 통과. fallback 재시도 timer와 오래된 socket callback 정리 확인 |
 | 2026-10-13 | 03b Task 18 | queryFn 캐시 쓰기·clear만 수행·연결 수명 누락 | Query 커밋 시 rev 비교·조회 중 이벤트 취소/재조회, ACK 후 전체 무효화·데몬 변경 시 관찰자 재연결·StrictMode 수명 정리 | helper 1·실제 RPC/React 통합 8개 통과, 별도 검토 통과. 같은 데몬의 마지막 데이터 유지·최신 수동 캐시 취소 보존·이전 데몬 응답 차단·클라이언트 교체 확인 |
@@ -165,7 +165,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 | 2026-10-13 | PR #638 버전 불일치 리뷰 | Welcome 전달 전 연결 종료 | 실제 서버 버전 Welcome을 writer flush ACK 뒤 종료하도록 보완(전체 대기 2초 제한), 중복 Hello·다른 인스턴스는 계속 우선 거부 | 실제 Unix 소켓 RED 재현 → channel 4·server lifecycle 2 검사 통과, 별도 검토 PASS. 불일치 연결은 권한을 얻지 않으며 pipelined mutation도 실행되지 않음. 후속 클라이언트 2건과 함께 최종 영향 검증 예정 |
 
-| 2026-10-13 | PR #638 클라이언트 리뷰 | Welcome 제한 시간·동일 의도 재시도·오프라인 RPC | Hello 뒤 5초 제한과 연결 세대 방어, 동일 데몬의 응답 불명 요청만 같은 ID로 재시도. 입력 변경·취소·reset·unmount·확정 응답은 의도 종료. 호출 시 canonical params snapshot으로 중복 비교 일치. 로컬 RPC는 브라우저 offline에도 즉시 실행/실패 | RED 회귀 후 client 37·query/UI 37 통과, 별도 검토 PASS. 최종 영향 검사: daemon 21·Clippy/fmt·Biome·E2E 3 통과. 테스트의 엄격한 배열 접근 타입 5곳 보정 후 query 24·tsc/build/Biome 통과. 새 최종 SHA의 CI·Windows 설치 파일은 PR 본문에 기록; S0 수동 확인 전 미머지 |
+| 2026-10-13 | PR #638 클라이언트 리뷰 | Welcome 제한 시간·동일 의도 재시도·오프라인 RPC | Hello 뒤 5초 제한과 연결 세대 방어, 동일 데몬의 응답 불명 요청만 같은 ID로 재시도. 입력 변경·취소·reset·unmount·확정 응답은 의도 종료. 호출 시 canonical params snapshot으로 중복 비교 일치. 로컬 RPC는 브라우저 offline에도 즉시 실행/실패 | RED 회귀 후 client 37·query/UI 37 통과, 별도 검토 PASS. 최종 영향 검사: daemon 21·Clippy/fmt·Biome·E2E 3 통과. 테스트의 엄격한 배열 접근 타입 5곳 보정 후 query 24·tsc/build/Biome 통과. 새 최종 SHA의 CI·Windows 설치 파일은 PR 본문에 기록; 당시 미머지. 최신 운영은 §2의 2026-10-13 결정 참조 |
+| 2026-10-13 | S0b 최종 CI·마무리 결정 | `c3212af815dca25bd11d290f32110d8157e9ebe6` | [CI 38294731916](https://github.com/jihoon22-lee/devbox/actions/runs/38294731916)·[Windows 38294732514](https://github.com/jihoon22-lee/devbox/actions/runs/38294732514) 전체 성공, 설치 파일 출처 확인 | 구현·자동 검증 완료. 실기 미실행 사실은 보존하며 사용자 테스트 요청·대기 gate로 두지 않음. 필요한 개발 검증은 에이전트가 해당 단계에서 수행. main 두 커밋 백업과 필요한 ADR 정리 반영. 문서 후속 커밋의 필수 CI 근거·머지·main 정리는 다음 작업이며 아직 완료로 보고하지 않음 |
 
 ## 6. 세션 기록
 
@@ -201,4 +202,4 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 00 §3·§3.6, 01 §11, 03·03b의 Git/검증 절차 | 계획의 rebase 머지·묶음별 전체 검사/push·Cargo jobs 4 또는 트랙별 3은 이번 사용자 제공 AGENTS 및 CONVENTIONS의 squash·PR 끝 통합 검증/push·공통 자원 제한과 충돌한다 | 이번 세션의 명시 지침을 우선한다. S0b에서 새 운영 규약과 CI를 만들 때 해당 절차를 함께 정합화한다. 계획의 과거 승인 문구만으로 현재 지침을 덮어쓰지 않는다 |
 | 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
 
-다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 사용자 확인 시점은 계획의 S0b 끝과 공개 직전을 유지하되, 설계 변경이 필요한 실패는 별도로 보고한다.
+다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 이 준비 검토 당시의 S0b 사용자 확인 gate는 2026-10-13 결정으로 대체하며, 설계 변경이 필요한 실패는 별도로 보고한다.

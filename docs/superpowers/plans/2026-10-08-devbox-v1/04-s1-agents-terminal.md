@@ -1,8 +1,11 @@
 # S1 에이전트·터미널·프로젝트 (1/2: 데몬) Implementation Plan
 
+> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 계획한 기능을 완성한 뒤 사용자가 진행하며 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 아래 과거 예제의 묶음별 전체 검사/push·rebase·사용자 확인 목록 전달은 적용하지 않는다.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: S0b 완료(S0b PR 머지, 확인 목록)
+- 상태: 계획 · 미착수 · 시작 조건: S0b 완료(S0b PR 머지·자동 검증 근거)
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)

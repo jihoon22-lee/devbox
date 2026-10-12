@@ -18,8 +18,8 @@ symlink·junction 등 이름 대리 reparse는 거부하고 storage reparse는 �
 
 ## 근거
 
-- [crates/filesystem/src/lib.rs](../../crates/filesystem/src/lib.rs)
-- [crates/filesystem/src/links.rs](../../crates/filesystem/src/links.rs)
+- [crates/filesystem/src/lib.rs](https://github.com/jihoon22-lee/devbox/blob/72ff50c7d992fccb54ca51d796cfa7f5b29c7caa/crates/filesystem/src/lib.rs)
+- [crates/filesystem/src/links.rs](https://github.com/jihoon22-lee/devbox/blob/72ff50c7d992fccb54ca51d796cfa7f5b29c7caa/crates/filesystem/src/links.rs)
 - [docs/superpowers/plans/2026-09-23-review-remediation/p0-05-filesystem-links.md](https://github.com/jihoon22-lee/devbox/blob/ab2ee78a54d3aef7a0e2d546349574bc12a4c2ac/docs/superpowers/plans/2026-09-23-review-remediation/p0-05-filesystem-links.md)
 
-현재 구현·검증: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).
+현재 결정: [ADR 0017](0017-rebuild-single-app-wsl-daemon.md) · [v1 설계](../superpowers/plans/2026-10-08-devbox-v1/01-design.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).

@@ -1,6 +1,6 @@
 # S0a 구조 확인 결과
 
-- 상태: 자동 측정·문서·소유 자원 정리 완료(2026-10-12 KST). Task 1–8 별도 검토 통과; R1/R2 실기는 유보이며 PASS가 아니다.
+- 상태: 자동 측정·문서·소유 자원 정리 완료(2026-10-12 KST). Task 1–8 별도 검토 통과; R1/R2 실기는 미실행이며 PASS가 아니다. 최신 사용자 지시(2026-10-13)에 따라 실사용은 선택 사항이고 개발·머지의 대기 조건이 아니다.
 - 측정 시작: 2026-10-12 KST. 원격 계획 기준 `4aa88e62`.
 - 환경: Windows 11 `10.0.26200.9457`, Ubuntu WSL 2.7.12.0(커널 6.18.33.2-2), systemd 259, tmux 3.6, Rust 1.98.1, PowerShell 5.1.26100.9444, Node 24.18.0, pnpm 9.0.0, Claude Code 2.1.296, codex-cli 0.162.1.
 - 실험 소스·원시 증거: `/home/jihoon/projects/devbox-spikes/s0a/`. 사용자 데이터 대신 새 실험 파일과 임의 바이트를 사용한다.
@@ -25,8 +25,8 @@
 | R10 DPAPI 왕복(systemd 아래) | OK | 32바이트 일치, protect 551.808ms / unprotect 523.850ms | PASS |
 | R5 Claude hook(`--settings`) | SessionStart·UserPromptSubmit·Notification 기록, 사용자 설정 불변 | 실제 TUI 전달 확인, 설정 SHA/mtime 불변 | PASS |
 | R5 Codex notify(`-c`) | agent-turn-complete JSON, 사용자 설정 불변 | 실제 TUI 전달 확인, 설정 SHA/mtime 불변 | PASS |
-| R1 유휴 30분 유지 | WSL·데몬 유지 | S0 확인에서 채움 | 유보 |
-| R2 shutdown 뒤 복귀 | 다시 연결 + 걸린 시간 | S0 확인에서 채움 | 유보 |
+| R1 유휴 30분 유지 | WSL·데몬 유지 | 미실행 | 미실행 |
+| R2 shutdown 뒤 복귀 | 다시 연결 + 걸린 시간 | 미실행 | 미실행 |
 
 ## 브리지 측정
 
@@ -103,9 +103,9 @@ Task 8에서 Task 2 template/env hash·두 소켓 device/inode와 Task 4 config 
 
 ## 수동 측정과 S0b 준비 판정
 
-`task7-deferred.json`: R1 connected-client 30분 유휴는 S0 확인 7, R2 shutdown 재연결 시간은 확인 4·8로 유보했다. 관측·경과 시간은 null이고 실제 대기는 실행하지 않았다. 설치 앱 **창을 열고 연결한 상태**로 확인한다. 트레이/닫기 동작은 S1 Task 23이며 S0b에서 조기 구현하지 않는다. 앱 종료 뒤 WSL 정지와 v0.9.0 시작 시간 비교는 계획에 따라 생략하고 S1 SC3 절대 기준(2초)을 검증한다.
+`task7-deferred.json`에 당시 R1 connected-client 30분 유휴와 R2 shutdown 재연결 시간을 미실행으로 기록했다. 관측·경과 시간은 null이며 실제 대기는 실행하지 않았다. 2026-10-13 사용자 지시에 따라 추가 실기나 결과 보고를 요청하지 않으며 이 기록은 개발·머지 gate가 아니다. 트레이/닫기 동작은 S1 Task 23에서 구현·검증하고 S1 SC3 절대 기준(2초)을 검증한다.
 
-자동 측정은 합격이고 구조 대체가 필요한 실패는 없다. 기존 아키텍처 안의 hook source/turn 계약 보정을 01 §9.2와 04 Task 8·10·resume에 반영했다. **Task 8 최종 검토까지 통과했으며 S0b 착수 조건을 충족했다**. R1/R2는 S0 확인에서 판정하고, SC10 전체 경로·Codex 바인딩 구현은 S1에서 검증한다. S0b 착수·Windows 수용·PR/CI 완료를 뜻하지 않는다.
+자동 측정은 합격이고 구조 대체가 필요한 실패는 없다. 기존 아키텍처 안의 hook source/turn 계약 보정을 01 §9.2와 04 Task 8·10·resume에 반영했다. **Task 8 최종 검토까지 통과했으며 S0b 착수 조건을 충족했다**. R1/R2의 실기 미실행 기록은 보존하며, SC10 전체 경로·Codex 바인딩 구현은 S1에서 검증한다. S0b 착수·Windows 수용·PR/CI 완료를 뜻하지 않는다.
 
 ## 최종 통합 확인
 
@@ -117,6 +117,6 @@ Task 1–8 구현/실험과 별도 검토를 마쳤다. 커밋 전 `pnpm exec bi
 
 맥락: 사용 빈도 1위인 에이전트 기능(세션 유지, hook 상태 감지, 알림, 재개)이 v0.9.0 구조에 없었고, 리뷰가 확정한 결함 약 20건 중 에이전트·터미널 결함은 0건이었다. 네 제품·설치 세대·제품 간 연결·Windows 프로세스 처리·WSL helper 중계 및 Windows·WSL 이중 경로 파일은 전체 약 49.7만 줄의 약 25%(파일 단위 하한), `.github`·`scripts`는 5.6만 줄이었다. 사용자는 데이터 이전 없이 WSL 중심 재구축을 결정했다.
 
-결정: `01-design.md`를 원장으로 하는 단일 Windows Tauri 앱 + WSL Linux 데몬 구조로 다시 짓는다. S0a 자동 측정은 위 결과와 같이 합격했다. R1/R2 수동 판정은 S0b S0 확인에 남긴다. 별도 scope는 PTY 소실의 SIGHUP 생존을 보장하지 않으며 명시적 종료 정책을 유지한다. hook은 Claude 즉시 PermissionRequest와 Codex 주 thread·현재 turn의 검증된 source 계약을 사용한다.
+결정: `01-design.md`를 원장으로 하는 단일 Windows Tauri 앱 + WSL Linux 데몬 구조로 다시 짓는다. S0a 자동 측정은 위 결과와 같이 합격했다. R1/R2 실기 미실행 사실은 기록으로 보존한다. 별도 scope는 PTY 소실의 SIGHUP 생존을 보장하지 않으며 명시적 종료 정책을 유지한다. hook은 Claude 즉시 PermissionRequest와 Codex 주 thread·현재 turn의 검증된 source 계약을 사용한다.
 
-결과: ADR 0001·0002·0003·0004·0007·0009·0010·0011·0012·0014·0015를 대체한다. 0005·0006·0008·0013·0016은 01 §13의 형태로 유지한다. Windows 설치본 수용, SC3·SC10 전체 경로 및 세션 tracker 회귀는 후속 단계의 gate이며 이 초안의 측정 PASS로 대체하지 않는다.
+결과: ADR 0001·0002·0003·0004·0007·0009·0010·0011·0012·0014·0015를 대체한다. 0005·0006·0008·0013·0016은 01 §13의 형태로 유지한다. SC3·SC10 전체 경로 및 세션 tracker 회귀는 후속 구현 단계에서 검증하며 이 초안의 측정 PASS로 대체하지 않는다. Windows 설치본 실사용은 선택 사항이며 개발·머지 gate가 아니다.

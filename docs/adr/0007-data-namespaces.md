@@ -18,8 +18,8 @@
 
 ## 근거
 
-- [crates/product-shell-tauri/src/lib.rs](../../crates/product-shell-tauri/src/lib.rs)
-- [crates/product-shell-tauri/src/installation.rs](../../crates/product-shell-tauri/src/installation.rs)
-- [crates/suite-runtime/src/platform/component_scope.rs](../../crates/suite-runtime/src/platform/component_scope.rs)
+- [crates/product-shell-tauri/src/lib.rs](https://github.com/jihoon22-lee/devbox/blob/72ff50c7d992fccb54ca51d796cfa7f5b29c7caa/crates/product-shell-tauri/src/lib.rs)
+- [crates/product-shell-tauri/src/installation.rs](https://github.com/jihoon22-lee/devbox/blob/72ff50c7d992fccb54ca51d796cfa7f5b29c7caa/crates/product-shell-tauri/src/installation.rs)
+- [crates/suite-runtime/src/platform/component_scope.rs](https://github.com/jihoon22-lee/devbox/blob/72ff50c7d992fccb54ca51d796cfa7f5b29c7caa/crates/suite-runtime/src/platform/component_scope.rs)
 
-현재 구현·검증: [재정비 계획](../superpowers/plans/2026-10-03-product-readiness/00-roadmap.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).
+현재 결정: [ADR 0017](0017-rebuild-single-app-wsl-daemon.md) · [v1 설계](../superpowers/plans/2026-10-08-devbox-v1/01-design.md). 과거 결정: [닫힌 ledger #580](https://github.com/jihoon22-lee/devbox/issues/580).

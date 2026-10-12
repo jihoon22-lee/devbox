@@ -1,5 +1,8 @@
 # S1 에이전트·터미널·프로젝트 (2/2: 화면·Windows 통합) Implementation Plan
 
+> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 계획한 기능을 완성한 뒤 사용자가 진행하며 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 아래 과거 예제의 묶음별 전체 검사/push·rebase·사용자 확인 목록 전달은 적용하지 않는다.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 - 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) 묶음 F–J push(같은 S1 브랜치에서 이어감)
@@ -58,7 +61,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
 | L | Task 17–19 | push |
 | M | Task 20–21 | push |
 | N | Task 22–23 | push |
-| 마무리 | Task 24 | **S1 PR 열기** → CI 통과 → rebase 머지 → 확인 목록을 사용자에게 보냄(기다리지 않음) |
+| 마무리 | Task 24 | **S1 PR 열기** → CI 통과 → squash 머지 → 완료·검증 결과 보고 |
 
 ---
 
@@ -3115,9 +3118,9 @@ git add crates scripts && git commit -m "test: measure S1 success criteria and a
 sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: S0b 완료.*/- 상태: 완료(S1 PR 머지)/' docs/superpowers/plans/2026-10-08-devbox-v1/04-s1-agents-terminal.md
 sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(S1 PR 머지, 확인 목록 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
 git add docs && git commit -m "docs(plan): mark S1 complete"
-git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…). 확인 목록 10개는 머지 뒤 사용자에게 보낸다.
+git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…). 완료·검증 결과를 보고하며 중간 실사용 확인을 요청하지 않는다.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
 
-CI가 통과하면 `gh pr merge --rebase v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료·측정값·확인 목록·설치 파일 받는 법을 보내고 **기다리지 않고** S2를 시작한다.
+CI가 통과하면 `gh pr merge --squash v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료·측정값을 간결히 보고하고 **기다리지 않고** S2를 시작한다.
