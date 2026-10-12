@@ -6,6 +6,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
 thiserror.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

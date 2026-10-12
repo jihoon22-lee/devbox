@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 11 로그·panic 기록 (Task 10 DB 좁은 검사·백업 결함 수정·재검토 완료) |
+| 다음 할 일 | S0b Task 12 프로젝트 도메인 (Task 11 로그·panic 좁은 검사·초기화 결함 수정·재검토 완료) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -68,7 +68,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0a | — | Task 1–8 | `docs/v1-plan` | push(`58fda4d7`, 자동 부분) | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
 | S0b | B | Task 2–6 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h(구현·검토 합산 추정) |
-| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–10 완료) | 2026-10-13 | | |
+| S0b | C | Task 7–15 | `v1/s0b-skeleton` | 작업 중(Task 7–11 완료) | 2026-10-13 | | |
 | S0b | D | Task 16–21 |  | 대기 | | | |
 | S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
@@ -136,6 +136,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 9 | mpsc·AtomicBool·수신 시 큐 drain | bounded VecDeque·구독별 짧은 mutex·Notify, overflow/Resync/새 발행을 같은 잠금으로 순서화 | drain 중 발행 경쟁·오래된 이벤트·무한 drain 위험 제거. 허브 6개(64회 발행/수신 경쟁·등록된 대기 깨우기 포함) 통과, 별도 동시성 검토 통과; 단위 기한을 성능 근거로 쓰지 않음 |
 | 2026-10-13 | 03 Task 10 · 01 DB 계약 | writer/read pool·마이그레이션 전 이전 백업 삭제 | 읽기 전용 연결·checked rev·panic/취소 경계, migration 순서 검사; VACUUM snapshot·batch/소유 receipt 동기화 후 원자적 게시·이전 소유본만 정리 | 초기 DB 8개 통과 후 semver/symlink·새 batch/receipt 충돌 회귀를 추가해 총 12개, 변경된 백업 범위만 재검사. 검토의 같은 앱 버전 stale backup·미소유 temp 삭제 2건 수정 후 재검토 통과 |
 | 2026-10-13 | 03 Task 10 복구 경계 | 예제에 게시 중단 경계 없음 | snapshot 게시와 receipt 게시 사이 중단 시 복구본 보존. 첫 게시의 미소유 target은 재시도에서 안전 중단; 기존 소유본 교체의 재시도는 아직 migration 전인 DB에서 다시 snapshot | 파일·디렉터리 sync 순서를 구현. 실제 강제 종료/전원 중단 실기는 하지 않았고 Windows directory durability는 검증 대상이 아닌 Linux core 경계임 |
+
+| 2026-10-13 | 03 Task 11 | 초기화 오류 무시·같은 시각 crash 덮어쓰기 | 초기화 직렬화·직접 global subscriber 설치·오류 반환, create_new 접미사·panic ring try_lock | 필터 3개를 소유 자식 프로세스에서 통합 검사 1개로 확인, collision/busy ring 단위 2개 통과. scoped subscriber 오판과 try_init의 부분 초기화 결함 수정 후 재검토 통과. 일 단위 최대 7개·최근 50개·guard flush 확인 |
 
 ## 6. 세션 기록
 
