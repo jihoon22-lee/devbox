@@ -46,6 +46,7 @@ Docker 설치/시작/중지/container/network 조작이나 iptables/nftables·�
 v1은 하위 프로젝트마다 `v1/<s>-<name>` 브랜치·전용 worktree 하나를 사용한다.
 영어 Conventional Commits로 과제마다 커밋한다. 상세 최종 검증 뒤 push·PR을 한 번 한다.
 main은 squash만 사용한다. PR 최종 변경의 `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` CI 성공이 필수다.
+자동 리뷰가 설정된 PR은 최종 커밋의 코드·보안 리뷰 완료까지 확인한다. 지적은 코드·회귀 근거로 타당성을 판단하고 필요한 수정과 재검증을 마친 뒤 머지한다. 타당하지 않은 지적은 판단 근거를 PR 본문에 남긴다.
 보호 규칙을 약화하거나 우회하지 않는다. CI 이전 성공을 재사용하면 같은 입력·범위와 출처를 기록한다.
 진행 커밋 완료와 PR 수용 완료를 구분한다. 릴리스 공개는 별도 명시 요청과 수용 근거가 필요하다.
 전용 worktree 정리는 clean·merged 확인 → 제거 → prune → 로컬 브랜치 → 원격 브랜치 삭제 순서다.

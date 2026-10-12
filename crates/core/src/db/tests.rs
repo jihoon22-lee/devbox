@@ -421,3 +421,129 @@ async fn commit_callback_runs_only_after_successful_commit() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(db.rev(), 1);
 }
+
+#[test]
+fn rejects_newer_schema_before_any_startup_changes() {
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let path = d.path().join("devbox.db");
+    let conn = Connection::open(&path).expect("open fixture database");
+    conn.execute_batch(
+        "CREATE TABLE schema_versions(domain TEXT PRIMARY KEY, version INTEGER NOT NULL);
+         INSERT INTO schema_versions VALUES ('t',2);
+         CREATE TABLE t_items(name TEXT, extra TEXT);
+         INSERT INTO t_items VALUES ('kept','newer data');",
+    )
+    .expect("create newer schema fixture");
+    let before = std::fs::read(&path).expect("read original database");
+    let other = Migration {
+        domain: "other",
+        version: 1,
+        sql: "CREATE TABLE other_items(id INTEGER);",
+    };
+    let result = open(&d, "older", &[other, V1]);
+    assert!(matches!(result, Err(CoreError::DbInput(ref message)) if message.contains("newer")));
+    assert_eq!(
+        std::fs::read(&path).expect("read preserved database"),
+        before
+    );
+    assert!(!d.path().join("backups").exists());
+    assert!(conn.prepare("SELECT * FROM core_meta").is_err());
+    assert!(conn.prepare("SELECT * FROM other_items").is_err());
+    assert_eq!(
+        conn.query_row("SELECT extra FROM t_items", [], |row| row
+            .get::<_, String>(0))
+            .expect("read preserved newer data"),
+        "newer data"
+    );
+}
+
+#[test]
+fn rejects_unknown_migration_domains_before_startup_changes() {
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let path = d.path().join("devbox.db");
+    let conn = Connection::open(&path).expect("open fixture database");
+    conn.execute_batch(
+        "CREATE TABLE schema_versions(domain TEXT PRIMARY KEY, version INTEGER NOT NULL);
+         INSERT INTO schema_versions VALUES ('future_domain',1);",
+    )
+    .expect("create unknown domain fixture");
+    let before = std::fs::read(&path).expect("read original database");
+    let result = open(&d, "older", &[V1]);
+    assert!(
+        matches!(result, Err(CoreError::DbInput(ref message)) if message.contains("unsupported migration domain"))
+    );
+    assert_eq!(
+        std::fs::read(&path).expect("read preserved database"),
+        before
+    );
+    assert!(!d.path().join("backups").exists());
+    assert!(conn.prepare("SELECT * FROM core_meta").is_err());
+    assert!(conn.prepare("SELECT * FROM t_items").is_err());
+}
+
+#[test]
+fn compares_schema_with_each_domains_latest_supported_version() {
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let other_v1 = Migration {
+        domain: "other",
+        version: 1,
+        sql: "CREATE TABLE other_items(id INTEGER);",
+    };
+    let other_v2 = Migration {
+        domain: "other",
+        version: 2,
+        sql: "ALTER TABLE other_items ADD COLUMN name TEXT;",
+    };
+    drop(open(&d, "newer", &[V1, other_v1, V2]).expect("create supported schemas"));
+    drop(
+        open(&d, "latest", &[V1, other_v1, V2, other_v2])
+            .expect("accept known latest schema and upgrade another domain"),
+    );
+    let conn = Connection::open(d.path().join("devbox.db")).expect("open fixture database");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM schema_versions WHERE version=2",
+            [],
+            |row| row.get::<_, u32>(0)
+        )
+        .expect("read updated versions"),
+        2
+    );
+    assert!(conn.prepare("SELECT extra FROM t_items").is_ok());
+    assert!(conn.prepare("SELECT name FROM other_items").is_ok());
+}
+
+#[test]
+fn rejects_newer_schema_in_wal_without_another_live_connection() {
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let path = d.path().join("devbox.db");
+    let conn = Connection::open(&path).expect("open fixture database");
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         CREATE TABLE schema_versions(domain TEXT PRIMARY KEY, version INTEGER NOT NULL);
+         INSERT INTO schema_versions VALUES ('t',1);
+         PRAGMA wal_checkpoint(TRUNCATE);
+         UPDATE schema_versions SET version=2 WHERE domain='t';",
+    )
+    .expect("commit newer version to fixture WAL");
+    // Leave committed WAL behind as after a stopped writer, with no other
+    // connection keeping SQLite's last-close checkpoint from running.
+    conn.set_db_config(
+        rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+        true,
+    )
+    .expect("preserve fixture WAL on close");
+    drop(conn);
+    let wal = d.path().join("devbox.db-wal");
+    let before_db = std::fs::read(&path).expect("read original database");
+    let before_wal = std::fs::read(&wal).expect("read committed WAL");
+    assert!(!before_wal.is_empty());
+    let result = open(&d, "older", &[V1]);
+    assert!(matches!(result, Err(CoreError::DbInput(ref message)) if message.contains("newer")));
+    assert_eq!(
+        std::fs::read(&path).expect("read preserved database"),
+        before_db
+    );
+    assert_eq!(std::fs::read(&wal).expect("read preserved WAL"), before_wal);
+    assert!(!d.path().join("backups").exists());
+}

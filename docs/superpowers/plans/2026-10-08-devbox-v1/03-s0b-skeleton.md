@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 작업 중 · 2026-10-12 착수 · S0a 자동 측정·별도 검토 통과(`58fda4d7`), R1/R2는 S0 확인 유보
+- 상태: 완료 · PR #638 squash 머지(`820576c9`, 2026-10-13) · 최종 필수 CI 성공, 검증 근거는 PROGRESS와 PR 참조
 
 **Goal:** 옛 코드를 걷어내고, WSL 데몬이 unix socket으로 타입 있는 RPC·구독을 제공하며, 브리지와 개발용 WebSocket gateway로 바깥에 연결되는 최소 동작 뼈대를 만든다. 첫 도메인은 `projects`다.
 
