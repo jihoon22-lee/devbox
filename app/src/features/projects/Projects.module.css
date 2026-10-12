@@ -1,0 +1,75 @@
+.input {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-lg);
+  padding: 0 var(--space-3);
+  color: var(--fg);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 380px;
+  overflow: auto;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.row[aria-selected="true"] {
+  background: var(--bg-3);
+}
+.pick {
+  flex: 1;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.pick:focus-visible,
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.path {
+  display: block;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.candidate {
+  width: 100%;
+  justify-content: space-between;
+  text-align: left;
+}
+.form {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.nameCell {
+  flex: 1;
+  min-width: 0;
+}
+.nameCell .pick {
+  width: 100%;
+}
+.nameCell,
+.actionCell {
+  border-radius: var(--radius-sm);
+}
+.nameCell[data-active="true"],
+.actionCell[data-active="true"] {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
