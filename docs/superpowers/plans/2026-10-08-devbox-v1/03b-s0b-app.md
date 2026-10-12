@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 작업 중 · 2026-10-13 착수 · [03-s0b-skeleton](03-s0b-skeleton.md)의 묶음 A·B·C 로컬 구현·검토 완료, 전체 검증·실제 설치는 Task 24
+- 상태: 완료 · PR #638 squash 머지(`820576c9`, 2026-10-13) · 최종 필수 CI 성공, 검증 근거는 PROGRESS와 PR 참조
 
 **Goal:** React 화면 골격(프레임·라우팅·RPC 클라이언트·상태 갱신 규칙·연결 표시·명령 팔레트·프로젝트 전환기)과 Windows Tauri 껍데기(WSL 확인·바이너리 배치·setup·브리지·창별 채널)를 만든다. 같은 화면이 브라우저(dev-gateway)와 Tauri 양쪽에서 실제 데몬에 붙어 `system.ping`·`projects.*`가 동작하게 한다.
 

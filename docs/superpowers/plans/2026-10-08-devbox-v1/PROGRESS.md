@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0b 구현·자동 검증 완료, PR #638 열림. R1/R2 실기 미실행 기록 보존 |
-| 다음 할 일 | c3212af8의 최종 CI·Windows native 16 tests/NSIS/self-check 통과 → 문서 정리 최종 CI 근거 확인 → squash 머지·main 정리·S1 착수 준비 (아직 미머지) |
+| 단계 | S0 완료: PR #638 squash 머지(`820576c9`). S1 착수 준비 완료·구현 미착수 |
+| 다음 할 일 | S1 Task 1: 스트림 흐름 제어·채널별 공정 송신의 실패 회귀 작성 → 구현 → 별도 검토 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@820576c9`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -26,8 +26,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-08 | PR 47개 → 하위 프로젝트당 1개(7개)로 줄임 | 사용자 | 해결(00-roadmap §3) |
 | 2026-10-08 | S2 뒤 S3·S5를 동시에 진행할지 | 사용자 | 해결: 동시 진행. 한 세션이 하위 에이전트로 트랙 1(S3→S4)·트랙 2(S5)를 함께 돌림, 사용자가 세션을 더 띄우지 않음(00-roadmap §3.6) |
 | 2026-10-09 | 사용자 확인 방식 | 사용자 | 변경(2026-10-13): 실사용은 계획 기능 완성 후 사용자가 진행하며 개발·머지·S1 착수 gate가 아니다. 필요한 개발 검증은 에이전트가 수행하며 사용자 테스트 요청 없이 확보된 자동 검증 근거로 S0 마무리(00-roadmap §2.2) |
-| 2026-10-13 | 로컬 main 미푸시 커밋 `b2a508b6`·`1b84aa9d` | 사용자 정리 지시 | 처리 결정: `backup/main-before-v1-s0b` → `1b84aa9d`로 두 커밋 보존. source-map-js 1.2.2는 S0b 반영 확인, 과거 CI 40개 시나리오는 v1 교체로 비적용. 삭제 계획 참조 정리는 S0b의 ADR 링크 보정으로 이관. PR 머지 확인 뒤 로컬 main을 origin/main에 맞춘다. 백업은 삭제하지 않음 |
-| 2026-10-08 | 저장소 `user.email`이 개인 Gmail이라 명령줄 push가 거절된다(GitHub 이메일 비공개). P0 커밋은 noreply 주소로 다시 써서 push했다. 저장소 설정을 `188744452+jihoon22-lee@users.noreply.github.com`으로 바꿀지 | 사용자 | 대기(그 전까지 커밋마다 `-c user.email=…`, 00 §3.3) |
+| 2026-10-13 | 로컬 main 미푸시 커밋 `b2a508b6`·`1b84aa9d` | 사용자 정리 지시 | 완료: source-map-js 1.2.2는 S0b에 이미 반영됐고 필요한 ADR 링크 정리는 PR #638에 반영했다. 별도 머지하지 않고 두 로컬 커밋을 main에서 제거해 `origin/main@820576c9`와 일치시켰다(차이 0/0). 사용자 지시에 따라 추가했던 보존용 브랜치도 제거했으며 별도 파일 백업은 만들지 않았다 |
+| 2026-10-08 | 저장소 `user.email`이 개인 Gmail이라 명령줄 push가 거절된다(GitHub 이메일 비공개). P0 커밋은 noreply 주소로 다시 써서 push했다. 저장소 설정을 `188744452+jihoon22-lee@users.noreply.github.com`으로 바꿀지 | 사용자 | 운영 해결: 커밋마다 `-c user.email=…`를 사용하며 저장소·전역 설정은 변경하지 않음(00 §3.3) |
 
 ## 3. 하위 프로젝트
 
@@ -35,8 +35,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|---|---|---|---|
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
-| S0b | 03-s0b-skeleton · 03b-s0b-app | PR 열림 | 2026-10-12 | | 실사용은 선택, 대기 없음 |
-| S1 | 04-s1-agents-terminal · 04b-s1-app | 대기 | | | 완료·검증 결과 보고 |
+| S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
+| S1 | 04-s1-agents-terminal · 04b-s1-app | 대기(착수 준비 완료) | | | 완료·검증 결과 보고 |
 | S2 | 05-s2-runs | 대기 | | | 완료·검증 결과 보고 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
@@ -49,7 +49,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | PR | 브랜치 | 범위 | 상태 | PR 번호 | 머지 |
 |---|---|---|---|---|---|
-| S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | PR 열림 | #638 | |
+| S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 대기 | | |
 | S2 | `v1/s2-runs` | S2 Task 1–16 | 대기 | | |
 | S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
@@ -166,7 +166,9 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | PR #638 버전 불일치 리뷰 | Welcome 전달 전 연결 종료 | 실제 서버 버전 Welcome을 writer flush ACK 뒤 종료하도록 보완(전체 대기 2초 제한), 중복 Hello·다른 인스턴스는 계속 우선 거부 | 실제 Unix 소켓 RED 재현 → channel 4·server lifecycle 2 검사 통과, 별도 검토 PASS. 불일치 연결은 권한을 얻지 않으며 pipelined mutation도 실행되지 않음. 후속 클라이언트 2건과 함께 최종 영향 검증 예정 |
 
 | 2026-10-13 | PR #638 클라이언트 리뷰 | Welcome 제한 시간·동일 의도 재시도·오프라인 RPC | Hello 뒤 5초 제한과 연결 세대 방어, 동일 데몬의 응답 불명 요청만 같은 ID로 재시도. 입력 변경·취소·reset·unmount·확정 응답은 의도 종료. 호출 시 canonical params snapshot으로 중복 비교 일치. 로컬 RPC는 브라우저 offline에도 즉시 실행/실패 | RED 회귀 후 client 37·query/UI 37 통과, 별도 검토 PASS. 최종 영향 검사: daemon 21·Clippy/fmt·Biome·E2E 3 통과. 테스트의 엄격한 배열 접근 타입 5곳 보정 후 query 24·tsc/build/Biome 통과. 새 최종 SHA의 CI·Windows 설치 파일은 PR 본문에 기록; 당시 미머지. 최신 운영은 §2의 2026-10-13 결정 참조 |
-| 2026-10-13 | S0b 최종 CI·마무리 결정 | `c3212af815dca25bd11d290f32110d8157e9ebe6` | [CI 38294731916](https://github.com/jihoon22-lee/devbox/actions/runs/38294731916)·[Windows 38294732514](https://github.com/jihoon22-lee/devbox/actions/runs/38294732514) 전체 성공, 설치 파일 출처 확인 | 구현·자동 검증 완료. 실기 미실행 사실은 보존하며 사용자 테스트 요청·대기 gate로 두지 않음. 필요한 개발 검증은 에이전트가 해당 단계에서 수행. main 두 커밋 백업과 필요한 ADR 정리 반영. 문서 후속 커밋의 필수 CI 근거·머지·main 정리는 다음 작업이며 아직 완료로 보고하지 않음 |
+| 2026-10-13 | S0b 최종 CI·마무리 결정 | `c3212af815dca25bd11d290f32110d8157e9ebe6` | [CI 38294731916](https://github.com/jihoon22-lee/devbox/actions/runs/38294731916)·[Windows 38294732514](https://github.com/jihoon22-lee/devbox/actions/runs/38294732514) 전체 성공, 설치 파일 출처 확인 | 구현·자동 검증 완료. 실기 미실행 사실은 보존하며 사용자 테스트 요청·대기 gate로 두지 않음. 필요한 개발 검증은 에이전트가 해당 단계에서 수행. 당시 보존용 브랜치를 만들었으나 후속 사용자 지시로 제거했다(§2). 필요한 ADR 정리 반영. 이 행은 머지 전 기록이며 최종 결과는 아래 행 참조 |
+
+| 2026-10-13 | S0 마무리·S1 준비 | 최종 PR `f368df36` → squash `820576c9` | [CI 38312265408](https://github.com/jihoon22-lee/devbox/actions/runs/38312265408)·[Windows 38312265384](https://github.com/jihoon22-lee/devbox/actions/runs/38312265384) 모두 성공, PR/main tree OID 일치 확인. main 전환 뒤 남은 폐기 제품의 생성 schema 20개(1.84MB)를 식별·제거해 0 ahead/0 behind·clean 확인. S0 전용 worktree와 로컬·원격 브랜치 제거 | 미푸시 두 커밋은 필요한 변경을 반영한 뒤 main에서 제거, 보존용 브랜치·별도 파일 백업 없음. S1 전용 worktree를 최신 main에서 만들고 frozen 의존성 준비. Task 1의 기존 Hello flush ACK·채널 세대 취소·중복 요청 경계를 유지하며 credit 소진/재개·채널 공정성·종료 회귀부터 구현 예정 |
 
 ## 6. 세션 기록
 
@@ -177,6 +179,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-08 | Claude Code | 세 계획(rebuild·CV·AR)을 이 폴더로 통합·검수(08 §8·§9), 원본 세 폴더 삭제, P0 | `docs/v1-plan`에 커밋·push(PR·CI 없음). 원본 체크아웃의 추적 안 된 사본은 지움. 다음: S0a |
 | 2026-10-12 | Codex | 사용자 요청에 따라 계획 검토·착수 환경 확인만 수행. 아래 §7에 준비 결과 기록 | `docs/v1-plan@4aa88e62` 기준. S0a 미착수, 다음: Task 1의 측정 도구 보완 후 실험 |
 | 2026-10-12 | Codex | S0a Task 1–7 측정·별도 검토, Task 8 결과·ADR 초안·source 계약 보정·소유 자원 정리 | `docs/v1-plan` 문서 통합·Task 8 최종 검토 통과. 자동 부분 완료, R1/R2 유보. 다음: 문서 커밋/보고 뒤 S0b Task 1(미착수) |
+
+| 2026-10-13 | Codex | S0 최종 CI 통과·PR #638 squash 머지, main 미푸시 2개 처리·S0 작업 공간 정리, S1 준비 | `v1/s1-agents-terminal`은 `820576c9`에서 분기. Task 1 구현 미착수, 다음: 스트림·공정 송신 실패 회귀. 중간 사용자 테스트 요청 없음 |
 
 ## 7. 착수 준비 검토
 
