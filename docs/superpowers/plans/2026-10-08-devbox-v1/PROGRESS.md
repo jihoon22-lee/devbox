@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, Windows 조기 스모크 결함 수정·재검증 중 |
-| 다음 할 일 | 조기 Windows 스모크에서 발견한 bridge/setup 수정 → 새 SHA 설치본 재검증 → S1 Task 3 tmux |
+| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과 |
+| 다음 할 일 | S1 Task 3 tmux — 설정·setup 안전성 → 고유 tmux 회귀 → DB/RPC 구현·별도 검토 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 로컬 완료, 조기 스모크 준비 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -76,7 +76,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | C | Task 7–15 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토 합산 추정) |
 | S0b | D | Task 16–21 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.0h(구현·검토 합산 추정) |
 | S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토·최종 통합 합산 추정) |
-| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.4h 경과(구현·별도 검토·영향 검사, CI/실기 별도) |
+| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h 경과(구현·별도 검토·영향 검사), 조기 CI/실기·발견 결함 수정 약0.5h 별도 |
 | S1 | G | Task 3–4 |  | 대기 | | | |
 | S1 | H | Task 5–6 |  | 대기 | | | |
 | S1 | I | Task 7–10 |  | 대기 | | | |
@@ -175,13 +175,12 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | A·C 문서 정합화 검증 | S1 선행 문서만 변경 | 11개 문서에 운영·실기·일정·후속 과제 반영. 독립 검토 지적(최종 SHA 예외/S2 강제전환 잔존)을 수정하고 재검토 통과. Biome CI 83 files 통과 | 새 보고서/제품 코드 없음. Windows 스모크는 아직 미실행. 실제 Windows 영향 없는 glib 업데이트와 Task8 헬퍼 선행 구현은 하지 않음. 기존05c13913 보존·문서 로컬 커밋 후 Task1 시작 |
 | 2026-10-13 | 04 Task 1 스트림·Outbox | sync StreamSink·단순 프레임 큐·전체 chunk 신용 대기 | Outgoing frame/generation/flushed·Hello flush ACK·dedupe·채널 취소 보존, bounded256/stream240(JSON16 여유) async enqueue, 가용 신용 부분 예약·256KiB 포화·64KiB 분할, async finish와 FIN 순서. debug.echo는 protocol 계약/TS 생성, test-*에서만 라우팅 | API 부재 RED 뒤 구현. 작은조각300개 Outbox/클라이언트 회귀 RED→수정, 입력 overflow는 해당 스트림 FIN. 최초 직접 영향43개·gen-ts/check·app typecheck PASS; 전체 check/clippy/build/E2E 미실행 |
 | 2026-10-13 | 04 Task 1 별도 검토 보완 | 입력 FIN만으로 Drop 정리 | 독립 검토가 credit 대기 생산자 누수 RED 재현. StreamClose 제어로 채널 소유권 검증·stream generation 취소·등록/대기출력 정리, FIN half-close 보존. 뒤늦은 old ID 버퍼 재생성 RED도 active 등록/마지막 open 정리로 해결 | StreamClose 관련37개 영향 검사 PASS, 최종 client6·독립 drop 회귀1·실제 stream 통합3 PASS(6.024s, cgroup peak515760128B·swap0). 별도 재검토 PASS. 실제 Windows 검증은 아직 미실행 |
-
 | 2026-10-13 | 04 Task 2 화면 스트림 | 초기 예제의 early 데이터 배열·FIN 폐기·직접 송신 | 별도 helper에 64KiB 페이지 coalescing·ID당256KiB/총4MiB/64ID early 제한, FIN 보존, ACK/onEnd 단발성, epoch 격리·StreamClose·orphan 정리·sendRaw 실패복원. onClosed 동기 재진입 call/open 거부 | 최초26 RED→GREEN, sync ACK 중 early 순서 RED [1,3,2]→수정. 관련 client/frame/stream74 PASS. 타입 인덱스 좁히기8곳 보정 후 app typecheck PASS, 독립 검토 PASS. 완료 Biome의 import 정렬 지적 보정 뒤 CI 통과. Task1 gen-ts/check 성공은 생성 입력 불변으로 재사용. 전체 build/E2E 미실행 |
 | 2026-10-13 | C2 Windows 조기 스모크 사전 조회 | 기존 v1/prod 있으면 중단 | 읽기 전용 조회: v1 identifier 데이터·uninstall 등록 및 Ubuntu prod 데이터/unit/socket/bin 없음. DevboxSuite0.9.0·com.devbox.*와 기존 LocalAppData/Devbox는 존재하므로 보존, 전용 설치 경로 사용 예정. Ubuntu는 유일한 비내부 WSL 배포판이라 자동 선택. UIA RootElement 접근 가능, WebDriver 도구 없음 | 아직 설치·실행·제거 미실행이며 실기 PASS 아님. 실제 설치 직전 재확인하고 해당 Task2 SHA Windows CI 산출물만 사용. R1/R2는 S6까지 미실행 |
-
-
 | 2026-10-13 | C2 Windows 조기 스모크 첫 시도 | Task2 SHA `9e21bc6a0f19020670723a400bc89cf1d6eb5681` | [Windows run38320568767](https://github.com/jihoon22-lee/devbox/actions/runs/38320568767) 출처/receipt·SHA256 `8ebf3651befa911a10d358a3f0c5fd8fa396fbe311aa7952a7cbe8f14aa2806d` 검증 후 전용 경로 설치·실행. Ubuntu 자동 선택·바이너리 배치·setup 수행, UIA에서 bridge Permission denied(os error13) 관측해 FAIL. projects/ping은 미실행 | wsl.exe root소유0600 FIFO의 /proc/self/fd 재열기 EACCES와 systemd EnvironmentFile 인용 경로 무시 발견. 앱 정상 닫기 후 이번 소유 prod/unit/socket/bin 및 설치본·identifier 데이터 정리, uninstall 등록 소멸 확인. v0.9/기존 데이터 보존. 수정 후 새 CI 설치본 재검증 예정 |
 | 2026-10-13 | Windows 스모크 발견 결함 보완 | 기존 브리지 독립 OFD·인용 EnvironmentFile | EACCES+FIFO에 한해 소유 staging pipe/splice NONBLOCK으로 처리해 부모 flags 보존, EnvironmentFile raw 절대경로·% 이스케이프. 실패 회귀 뒤 bridge11·setup9 PASS, 각각 별도 검토 | 실제 Windows PowerShell→wsl.exe→수정 debug bridge→고유 임시 소켓 MAGIC/65,536B echo/exit0 확인. 설치본 PASS 대체 아님. 기존 서비스 변경 없이 fixture만 정리 |
+| 2026-10-13 | C2 Windows 조기 스모크 재시도 | 수정 SHA `7eca14c5cd1809831c77f0d67ca77f5bdbfe0828` | [Windows run38322184013](https://github.com/jihoon22-lee/devbox/actions/runs/38322184013) 성공·repository/workflow/run/SHA receipt 대조, NSIS SHA256 `5c95c783779e069b85263c6b5e2320b42d46057232b67b7d2e9481f1f85abf44`. 전용 경로 설치 exit0, Ubuntu 자동 선택·Linux binary 배치(hash `5ab458e79c38aba31cd320270177c8c9cf2bdd53f1ca47c830faa831132cf25c`)·setup·prod active/정상 EnvironmentFiles 확인 | **PASS(실행한 S0b 범위)**: UIA 데몬 연결됨·프로젝트 빈 목록→소유 임시폴더 추가/선택, 실제 Windows wsl.exe bridge MAGIC/Welcome/ping 및 projects rev0→1. 앱 진단 정상 표시(기존 linger 꺼짐/inotify128 주의는 설정 변경 없이 보존). CloseMainWindow 수용·앱 종료, 추적한 Windows 자식11개와 Linux bridge 모두 소멸. user daemon은 설계대로 유지되다가 소유자 정리 단계에서 중지 |
+| 2026-10-13 | C2 조기 스모크 정리·한계 | 소유 자원만 제거·미실행 구분 | NSIS 제거 exit0 및 설치 경로/등록 소멸, 이번 identifier Local/Roaming 제거. marker/hash와 사전 부재 대조 후 prod data/state/config·bin·unit/drop-in/enable링크 제거, 비활성 잔여socket은 연결거절·inode/uid 확인 후 제거. 소유 임시 프로젝트 제거. v0.9 DevboxSuite·catalog/com.devbox.* 보존, unit not-found/inactive | **미실행**: 다중 배포판 선택 UI(비내부 배포판 Ubuntu 하나라 자동 선택), S1 알림·트레이·전역단축키·분리창(후속 과제), R1/R2(S6). 첫 FAIL을 유지하며 이 SHA의 조기 스모크 PASS로 구분; S1 최종 SHA 수용을 대체하지 않음. 시작용 PowerShell harness 25초 timeout은 app PID/UIA로 실행 확인해 중복 실행 안 함; 일부 PowerShell interop Invalid argument 호출은 재시도 성공. 로그는 해당 CI 다운로드 디렉터리에 보존 |
 
 ## 6. 세션 기록
 
@@ -196,9 +195,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | Codex | PR #638 머지 후 자동 리뷰 1건을 검증·수정, PR #639 최종 CI와 코드·보안 리뷰 완료 후 머지 | main `fb6bc69d`와 S1 준비 브랜치 동기화. S1 준비 기록은 이미 후속 PR에 포함돼 중복 커밋 재적용 없이 최신 main으로 이동. 다음: S1 Task 1 |
 | 2026-10-13 | Codex | S0 검토 A/B 재확인·C 사용자 결정 반영, 재추정, glib 경보 dismiss, 통합된 docs/v1-plan 정리. 독립 문서 재검토·Biome 통과 | `v1/s1-agents-terminal`, 기존05c13913 보존. 문서 변경은 로컬 커밋, push/PR 없음. 다음 Task1 credit·Outbox(기존 flush ACK/세대/dedupe 보존), Windows 스모크는 Task2 뒤 조기 시도 |
 | 2026-10-13 | Codex | S1 Task 1 credit·공정 송신 구현, 별도 검토의 스트림 폐기/late buffer 누수 수정 및 재검토 통과 | `v1/s1-agents-terminal` 로컬 Task 1 완료. 직접 회귀·TS 생성/typecheck·Biome 검증 후 과제 커밋, 다음 Task 2·조기 Windows 스모크. S1 전체 검증/PR은 아직 |
-
 | 2026-10-13 | Codex | S1 Task 2 화면 스트림·수명 회귀 구현 및 독립 검토 통과 | Task1 `f1f4e445` 뒤 Task2 과제 커밋. 묶음 F 로컬 완료, 다음 승인된 조기 Windows 스모크. 일반 묶음 push/PR 없음, 스모크용 SHA push·workflow만 예외 |
-
+| 2026-10-13 | Codex | Task2 뒤 승인된 Windows 조기 스모크에서 bridge/setup 결함 발견·회귀/독립검토 후 수정. 새 CI 설치본으로 실행한 S0b 범위 PASS, 소유 자원 정리 | `v1/s1-agents-terminal` Task1 `f1f4e445`, Task2 `9e21bc6a`, 수정/실기 source `7eca14c5`(원격 일치), 후속 실기 기록 로컬 커밋. 다음 Task3 tmux 미착수(읽기 전용 준비만). S1 전체 검사·브랜치 전체 검토·최종 Windows 실기·PR/머지 미실행 |
 
 ## 7. 착수 준비 검토
 
