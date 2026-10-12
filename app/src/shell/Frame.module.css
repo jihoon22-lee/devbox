@@ -1,0 +1,44 @@
+.frame {
+  display: grid;
+  height: 100%;
+  grid-template-columns: var(--activitybar) minmax(0, 1fr);
+  grid-template-rows: var(--titlebar) minmax(0, 1fr) var(--statusbar);
+  grid-template-areas: "title title" "activity main" "status status";
+}
+.title {
+  grid-area: title;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+.activity {
+  grid-area: activity;
+  display: grid;
+  min-height: 0;
+  overflow: auto;
+}
+.main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-1);
+}
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.status {
+  grid-area: status;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .title kbd {
+    display: none;
+  }
+}
