@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 PR #638 머지 완료. 머지 후 자동 리뷰의 DB 버전 거부 보완 중. S1 착수 준비 완료·구현 미착수 |
-| 다음 할 일 | DB 버전 검증 후속 PR의 최종 CI·자동 리뷰 확인 → 머지 → S1 Task 1 스트림·채널별 공정 송신 |
+| 단계 | S0 및 자동 리뷰 후속 PR #639 완료(`fb6bc69d`). S1 착수 준비 완료·구현 미착수 |
+| 다음 할 일 | S1 Task 1 스트림 흐름 제어·채널별 공정 송신: 실패 회귀 → 구현 → 별도 검토 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | 후속 보완: `fix/core/schema-version` · `../devbox-wt/fix-schema-version`. S1 준비: `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` (제품 구현 미착수) |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`와 동기화, 제품 구현 미착수 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -170,7 +170,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 | 2026-10-13 | S0 마무리·S1 준비 | 최종 PR `f368df36` → squash `820576c9` | [CI 38312265408](https://github.com/jihoon22-lee/devbox/actions/runs/38312265408)·[Windows 38312265384](https://github.com/jihoon22-lee/devbox/actions/runs/38312265384) 모두 성공, PR/main tree OID 일치 확인. main 전환 뒤 남은 폐기 제품의 생성 schema 20개(1.84MB)를 식별·제거해 0 ahead/0 behind·clean 확인. S0 전용 worktree와 로컬·원격 브랜치 제거 | 미푸시 두 커밋은 필요한 변경을 반영한 뒤 main에서 제거, 보존용 브랜치·별도 파일 백업 없음. S1 전용 worktree를 최신 main에서 만들고 frozen 의존성 준비. Task 1의 기존 Hello flush ACK·채널 세대 취소·중복 요청 경계를 유지하며 credit 소진/재개·채널 공정성·종료 회귀부터 구현 예정 |
 
-| 2026-10-13 | PR #638 머지 후 자동 리뷰 | [DB 최신 스키마 거부](https://github.com/jihoon22-lee/devbox/pull/638#discussion_r4252644638) | 리뷰는 머지 뒤 도착. 구버전이 더 높은 도메인 버전을 건너뛰고 DB를 여는 결함으로 확인. 전체 도메인을 먼저 검증해 알려진 최고 버전 초과·알 수 없는 도메인을 거부하며 journal mode·기본 metadata·다른 migration·backup보다 먼저 실패 | RED 2개 재현 후 독립 검토에서 단독 WAL reader 종료 시 checkpoint 결함도 RED 재현·수정. 버전 검증 중 close-checkpoint 차단, 지원 확인 후 기존 동작 복원. DB 18·projects 7·daemon 21 검사 및 Clippy·fmt·Biome 통과, 독립 재검토 PASS. DB/WAL byte 보존·다른 도메인 미변경·정상 교차 도메인 upgrade 확인. 최종 CI와 자동 리뷰를 모두 확인한 뒤 후속 PR을 머지한다 |
+| 2026-10-13 | PR #638 머지 후 자동 리뷰 | [DB 최신 스키마 거부](https://github.com/jihoon22-lee/devbox/pull/638#discussion_r4252644638) | 리뷰는 머지 뒤 도착. 구버전이 더 높은 도메인 버전을 건너뛰고 DB를 여는 결함으로 확인. 전체 도메인을 먼저 검증해 알려진 최고 버전 초과·알 수 없는 도메인을 거부하며 journal mode·기본 metadata·다른 migration·backup보다 먼저 실패 | RED 2개 재현 후 독립 검토에서 단독 WAL reader 종료 시 checkpoint 결함도 RED 재현·수정. 버전 검증 중 close-checkpoint 차단, 지원 확인 후 기존 동작 복원. DB 18·projects 7·daemon 21 검사 및 Clippy·fmt·Biome 통과, 독립 재검토 PASS. DB/WAL byte 보존·다른 도메인 미변경·정상 교차 도메인 upgrade 확인. 후속 [PR #639](https://github.com/jihoon22-lee/devbox/pull/639): [CI 38315340950](https://github.com/jihoon22-lee/devbox/actions/runs/38315340950)·[Windows 38315341119](https://github.com/jihoon22-lee/devbox/actions/runs/38315341119) 성공 및 [자동 코드·보안 리뷰](https://github.com/jihoon22-lee/devbox/pull/639#issuecomment-6133569350) 최종 SHA 일치·완료·추가 지적 없음 확인 뒤 `fb6bc69d`로 squash 머지. 원래 리뷰 해결, 수정용 worktree와 로컬/원격 브랜치 정리 완료 |
 
 ## 6. 세션 기록
 
@@ -183,6 +183,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-12 | Codex | S0a Task 1–7 측정·별도 검토, Task 8 결과·ADR 초안·source 계약 보정·소유 자원 정리 | `docs/v1-plan` 문서 통합·Task 8 최종 검토 통과. 자동 부분 완료, R1/R2 유보. 다음: 문서 커밋/보고 뒤 S0b Task 1(미착수) |
 
 | 2026-10-13 | Codex | S0 최종 CI 통과·PR #638 squash 머지, main 미푸시 2개 처리·S0 작업 공간 정리, S1 준비 | `v1/s1-agents-terminal`은 `820576c9`에서 분기. Task 1 구현 미착수, 다음: 스트림·공정 송신 실패 회귀. 중간 사용자 테스트 요청 없음 |
+
+| 2026-10-13 | Codex | PR #638 머지 후 자동 리뷰 1건을 검증·수정, PR #639 최종 CI와 코드·보안 리뷰 완료 후 머지 | main `fb6bc69d`와 S1 준비 브랜치 동기화. S1 준비 기록은 이미 후속 PR에 포함돼 중복 커밋 재적용 없이 최신 main으로 이동. 다음: S1 Task 1 |
 
 ## 7. 착수 준비 검토
 
