@@ -137,14 +137,23 @@ mod tests {
     #[test]
     fn instance_names_are_validated() {
         assert!(Instance::parse("prod").is_ok());
-        assert!(Instance::parse("test-ab12").unwrap().is_test());
+        assert!(
+            Instance::parse("test-ab12")
+                .expect("parse fixture instance")
+                .is_test()
+        );
         for bad in ["", "Prod", "1dev", "a/b", "x".repeat(33).as_str()] {
             assert!(Instance::parse(bad).is_err(), "{bad} should be rejected");
         }
-        assert_eq!(Instance::from_env(&env(&[])).unwrap().as_str(), "prod");
+        assert_eq!(
+            Instance::from_env(&env(&[]))
+                .expect("resolve fixture instance")
+                .as_str(),
+            "prod"
+        );
         assert_eq!(
             Instance::from_env(&env(&[("DEVBOX_INSTANCE", "dev")]))
-                .unwrap()
+                .expect("resolve fixture instance")
                 .as_str(),
             "dev"
         );
@@ -162,10 +171,10 @@ mod tests {
     #[test]
     fn defaults_follow_xdg_layout() {
         let p = Paths::resolve(
-            Instance::parse("dev").unwrap(),
+            Instance::parse("dev").expect("parse fixture instance"),
             &env(&[("HOME", "/home/u")]),
         )
-        .unwrap();
+        .expect("parse fixture instance");
         assert_eq!(p.data_dir, PathBuf::from("/home/u/.local/share/devbox/dev"));
         assert_eq!(
             p.state_dir,
@@ -191,7 +200,7 @@ mod tests {
     #[test]
     fn xdg_variables_override_defaults() {
         let p = Paths::resolve(
-            Instance::parse("prod").unwrap(),
+            Instance::parse("prod").expect("parse fixture instance"),
             &env(&[
                 ("HOME", "/h"),
                 ("XDG_DATA_HOME", "/d"),
@@ -200,7 +209,7 @@ mod tests {
                 ("XDG_RUNTIME_DIR", "/r"),
             ]),
         )
-        .unwrap();
+        .expect("parse fixture instance");
         assert_eq!(p.data_dir, PathBuf::from("/d/devbox/prod"));
         assert_eq!(p.state_dir, PathBuf::from("/s/devbox/prod"));
         assert_eq!(p.config_dir, PathBuf::from("/c/devbox"));
@@ -209,7 +218,13 @@ mod tests {
 
     #[test]
     fn missing_home_is_an_error() {
-        assert!(Paths::resolve(Instance::parse("prod").unwrap(), &env(&[])).is_err());
+        assert!(
+            Paths::resolve(
+                Instance::parse("prod").expect("parse fixture instance"),
+                &env(&[])
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -218,7 +233,11 @@ mod tests {
             Instance::from_env(&env(&[("DEVBOX_INSTANCE", "")])),
             Err(CoreError::InvalidInstance(_))
         ));
-        assert!(!Instance::parse("test").unwrap().is_test());
+        assert!(
+            !Instance::parse("test")
+                .expect("parse fixture instance")
+                .is_test()
+        );
         assert!(Instance::parse(&"a".repeat(32)).is_ok());
         for bad in ["a_b", "a.b", "a b", "é", "a\n"] {
             assert!(Instance::parse(bad).is_err());
@@ -229,7 +248,10 @@ mod tests {
     fn home_must_be_nonempty_and_absolute() {
         for home in ["", "relative"] {
             assert!(matches!(
-                Paths::resolve(Instance::parse("prod").unwrap(), &env(&[("HOME", home)])),
+                Paths::resolve(
+                    Instance::parse("prod").expect("parse fixture instance"),
+                    &env(&[("HOME", home)])
+                ),
                 Err(CoreError::NoHome)
             ));
         }
@@ -239,7 +261,7 @@ mod tests {
     fn empty_or_relative_xdg_values_use_defaults() {
         for invalid in ["", "relative"] {
             let p = Paths::resolve(
-                Instance::parse("dev").unwrap(),
+                Instance::parse("dev").expect("parse fixture instance"),
                 &env(&[
                     ("HOME", "/home/u"),
                     ("XDG_DATA_HOME", invalid),
@@ -248,7 +270,7 @@ mod tests {
                     ("XDG_RUNTIME_DIR", invalid),
                 ]),
             )
-            .unwrap();
+            .expect("parse fixture instance");
             assert_eq!(p.data_dir, PathBuf::from("/home/u/.local/share/devbox/dev"));
             assert_eq!(
                 p.state_dir,
@@ -262,8 +284,13 @@ mod tests {
     #[test]
     fn instances_isolate_state_and_share_config_and_binaries() {
         let e = env(&[("HOME", "/home/u")]);
-        let a = Paths::resolve(Instance::parse("prod").unwrap(), &e).unwrap();
-        let b = Paths::resolve(Instance::parse("test-ab").unwrap(), &e).unwrap();
+        let a = Paths::resolve(Instance::parse("prod").expect("parse fixture instance"), &e)
+            .expect("parse fixture instance");
+        let b = Paths::resolve(
+            Instance::parse("test-ab").expect("parse fixture instance"),
+            &e,
+        )
+        .expect("parse fixture instance");
         assert_ne!(a.data_dir, b.data_dir);
         assert_ne!(a.state_dir, b.state_dir);
         assert_ne!(a.log_dir, b.log_dir);
@@ -278,15 +305,15 @@ mod tests {
 
     #[test]
     fn ensure_dirs_creates_only_instance_directories_and_is_idempotent() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = temp.path().to_str().unwrap();
+        let temp = tempfile::tempdir().expect("create fixture directory");
+        let home = temp.path().to_str().expect("fixture path is UTF-8");
         let p = Paths::resolve(
-            Instance::parse("test-dirs").unwrap(),
+            Instance::parse("test-dirs").expect("parse fixture instance"),
             &env(&[("HOME", home), ("XDG_RUNTIME_DIR", home)]),
         )
-        .unwrap();
-        p.ensure_dirs().unwrap();
-        p.ensure_dirs().unwrap();
+        .expect("parse fixture instance");
+        p.ensure_dirs().expect("create fixture directories");
+        p.ensure_dirs().expect("create fixture directories");
         for dir in [
             &p.data_dir,
             &p.state_dir,
@@ -304,16 +331,17 @@ mod tests {
 
     #[test]
     fn ensure_dirs_reports_io_context_and_source() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = temp.path().to_str().unwrap();
+        let temp = tempfile::tempdir().expect("create fixture directory");
+        let home = temp.path().to_str().expect("fixture path is UTF-8");
         let p = Paths::resolve(
-            Instance::parse("test-error").unwrap(),
+            Instance::parse("test-error").expect("parse fixture instance"),
             &env(&[("HOME", home)]),
         )
-        .unwrap();
-        std::fs::create_dir_all(p.data_dir.parent().unwrap()).unwrap();
-        std::fs::write(&p.data_dir, "blocked").unwrap();
-        match p.ensure_dirs().unwrap_err() {
+        .expect("parse fixture instance");
+        std::fs::create_dir_all(p.data_dir.parent().expect("fixture path has parent"))
+            .expect("fixture path has parent");
+        std::fs::write(&p.data_dir, "blocked").expect("write fixture file");
+        match p.ensure_dirs().expect_err("fixture operation must fail") {
             CoreError::Io { what, source } => {
                 assert_eq!(what, format!("create {}", p.data_dir.display()));
                 assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);

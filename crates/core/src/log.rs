@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn busy_ring_never_blocks_the_panic_snapshot() {
         let recent = super::Mutex::new(super::VecDeque::new());
-        let _locked = recent.lock().unwrap();
+        let _locked = recent.lock().expect("lock fixture state");
         let mut text = String::new();
         super::append_recent(&mut text, &recent);
         assert!(text.contains("unavailable"));
@@ -160,8 +160,8 @@ mod tests {
 
     #[test]
     fn collision_preserves_existing_crash_files() {
-        let temp = tempfile::tempdir().unwrap();
-        std::fs::write(temp.path().join("crash-42.log"), "existing").unwrap();
+        let temp = tempfile::tempdir().expect("create fixture directory");
+        std::fs::write(temp.path().join("crash-42.log"), "existing").expect("write fixture file");
         super::write_crash(temp.path(), 42, "first");
         super::write_crash(temp.path(), 42, "second");
         for (name, content) in [
@@ -170,7 +170,7 @@ mod tests {
             ("crash-42-2.log", "second"),
         ] {
             assert_eq!(
-                std::fs::read_to_string(temp.path().join(name)).unwrap(),
+                std::fs::read_to_string(temp.path().join(name)).expect("read fixture text"),
                 content
             );
         }

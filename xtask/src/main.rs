@@ -61,29 +61,37 @@ mod tests {
     #[test]
     fn validates_the_complete_command_line() {
         let args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(!parse_args(&args(&["gen-ts"])).unwrap());
-        assert!(parse_args(&args(&["gen-ts", "--check"])).unwrap());
+        assert!(!parse_args(&args(&["gen-ts"])).expect("gen-ts parses"));
+        assert!(parse_args(&args(&["gen-ts", "--check"])).expect("gen-ts check parses"));
         for invalid in [
             vec![],
             vec!["other"],
             vec!["gen-ts", "--unknown"],
             vec!["gen-ts", "--check", "--check"],
         ] {
-            assert_eq!(parse_args(&args(&invalid)).unwrap_err().to_string(), USAGE);
+            assert_eq!(
+                parse_args(&args(&invalid))
+                    .expect_err("invalid arguments are rejected")
+                    .to_string(),
+                USAGE
+            );
         }
     }
 
     #[test]
     fn generation_creates_directories_and_check_never_writes() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create fixture directory");
         let path = dir.path().join("nested/rpc.ts");
         assert!(update_file(&path, "contract\n", true).is_err());
         assert!(!path.exists());
-        update_file(&path, "contract\n", false).unwrap();
-        update_file(&path, "contract\n", true).unwrap();
+        update_file(&path, "contract\n", false).expect("update or verify fixture content");
+        update_file(&path, "contract\n", true).expect("update or verify fixture content");
         assert!(update_file(&path, "changed\n", true).is_err());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "contract\n");
-        update_file(&path, "changed\n", false).unwrap();
-        update_file(&path, "changed\n", true).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read generated fixture"),
+            "contract\n"
+        );
+        update_file(&path, "changed\n", false).expect("update or verify fixture content");
+        update_file(&path, "changed\n", true).expect("update or verify fixture content");
     }
 }

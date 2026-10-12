@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { RpcError } from "../../rpc/client";
 import { useRpcQuery } from "../../rpc/query";
 import { SettingsPage } from "./SettingsPage";
+
 vi.mock("../../rpc/query", () => ({ useRpcQuery: vi.fn() }));
 test("settings loading and query errors are visible with diagnostic retry", async () => {
   const refetch = vi.fn();

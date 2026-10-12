@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { SectionBoundary } from "./SectionBoundary";
+
 test("section error keeps navigation, supports retry and route reset", () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   let broken = true;

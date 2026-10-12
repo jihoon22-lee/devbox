@@ -131,11 +131,11 @@ impl TypeVisitor for TsExporter {
         if T::output_path().is_some() {
             let ident = T::ident(&self.cfg);
             let decl = T::decl(&self.cfg);
-            if let Some(prev) = self.decls.get(&ident) {
-                if *prev != decl {
-                    self.error = Some(format!("two different types are both named {ident}"));
-                    return;
-                }
+            if let Some(prev) = self.decls.get(&ident)
+                && *prev != decl
+            {
+                self.error = Some(format!("two different types are both named {ident}"));
+                return;
             }
             self.decls.insert(ident, decl);
         }
@@ -152,7 +152,7 @@ mod tests {
     fn renders_system_methods_types_and_error_codes() {
         let mut x = TsExporter::new();
         devbox_protocol::system::export(&mut x);
-        let out = x.render().unwrap();
+        let out = x.render().expect("valid declarations render");
         assert!(out.starts_with("// 이 파일은 `pnpm gen`이 만든다. 직접 고치지 않는다.\n"));
         assert!(out.contains(
             "export type Pong = { daemonId: string, version: string, uptimeMs: number, };"
@@ -180,7 +180,7 @@ mod tests {
         let mut x = TsExporter::new();
         x.method::<NestedMethod>();
         x.topic::<Changed>();
-        let out = x.render().unwrap();
+        let out = x.render().expect("valid declarations render");
         assert!(out.contains("export type Leaf = { elapsedMs: number, };"));
         assert!(out.contains("export type Nested = { values: Array<Leaf | null>, };"));
         assert!(out.contains("\"test.changed\": Nested;"));
@@ -195,7 +195,7 @@ mod tests {
         x.method::<NestedMethod>();
         assert!(
             x.render()
-                .unwrap_err()
+                .expect_err("conflicting declarations must be rejected")
                 .to_string()
                 .contains("method test.nested declared twice")
         );
@@ -204,7 +204,7 @@ mod tests {
         x.topic::<Changed>();
         assert!(
             x.render()
-                .unwrap_err()
+                .expect_err("conflicting declarations must be rejected")
                 .to_string()
                 .contains("topic test.changed declared twice")
         );
@@ -223,7 +223,7 @@ mod tests {
         x.visit::<ConflictingLeaf>();
         assert!(
             x.render()
-                .unwrap_err()
+                .expect_err("conflicting declarations must be rejected")
                 .to_string()
                 .contains("both named Leaf")
         );
@@ -241,6 +241,9 @@ mod tests {
         reversed.method::<NestedMethod>();
         reversed.method::<devbox_protocol::system::Info>();
         reversed.method::<devbox_protocol::system::Ping>();
-        assert_eq!(first.render().unwrap(), reversed.render().unwrap());
+        assert_eq!(
+            first.render().expect("valid declarations render"),
+            reversed.render().expect("valid declarations render")
+        );
     }
 }

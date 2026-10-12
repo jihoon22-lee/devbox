@@ -1,4 +1,5 @@
 import { createCurrentProjectStore } from "./store";
+
 test("selection survives reload, validates persisted type and tolerates blocked storage", () => {
   localStorage.clear();
   const first = createCurrentProjectStore();

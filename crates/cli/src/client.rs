@@ -421,20 +421,38 @@ mod tests {
         .await;
         // Writer ack; reader processes subscription ack before the subscriber is
         // polled again. Dropping the future must clean the already active queue.
-        outbound.recv().await.unwrap().sent.send(()).unwrap();
+        outbound
+            .recv()
+            .await
+            .expect("receive fixture message")
+            .sent
+            .send(())
+            .expect("send fixture message");
         state
             .lock()
-            .unwrap()
+            .expect("lock fixture state")
             .receive(ServerMessage::Subscribed {
                 id: 1,
                 sub_id: 2,
                 rev: "0".into(),
             })
-            .unwrap();
-        let queue = state.lock().unwrap().subscriptions.get(&2).unwrap().clone();
+            .expect("handle fixture message");
+        let queue = state
+            .lock()
+            .expect("lock fixture state")
+            .subscriptions
+            .get(&2)
+            .expect("fixture entry exists")
+            .clone();
         drop(subscribe);
         assert!(shutdown.is_cancelled());
-        assert!(state.lock().unwrap().subscriptions.is_empty());
+        assert!(
+            state
+                .lock()
+                .expect("lock fixture state")
+                .subscriptions
+                .is_empty()
+        );
         assert!(queue.recv().await.is_none());
     }
 
@@ -444,13 +462,17 @@ mod tests {
         let out = Arc::new(out);
         let state = Arc::new(Mutex::new(State::default()));
         let queue = Arc::new(Queue::default());
-        state.lock().unwrap().subscriptions.insert(2, queue.clone());
+        state
+            .lock()
+            .expect("lock fixture state")
+            .subscriptions
+            .insert(2, queue.clone());
         let shutdown = CancellationToken::new();
         out.try_send(Outgoing {
             frame: control_frame(0, &Control::ChannelOpen),
             sent: oneshot::channel().0,
         })
-        .unwrap();
+        .expect("enqueue fixture message");
         let sub = Subscription {
             queue: queue.clone(),
             id: 2,
@@ -460,8 +482,14 @@ mod tests {
         };
         drop(sub);
         assert!(shutdown.is_cancelled());
-        assert!(state.lock().unwrap().closed);
-        assert!(state.lock().unwrap().subscriptions.is_empty());
+        assert!(state.lock().expect("lock fixture state").closed);
+        assert!(
+            state
+                .lock()
+                .expect("lock fixture state")
+                .subscriptions
+                .is_empty()
+        );
         assert!(queue.recv().await.is_none());
     }
 }

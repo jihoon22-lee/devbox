@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Dialog, Kbd } from "../ui";
-import { useCommands } from "./commands";
 import s from "./CommandPalette.module.css";
+import { useCommands } from "./commands";
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="명령" width={560}>

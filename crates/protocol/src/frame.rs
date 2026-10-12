@@ -212,9 +212,28 @@ mod tests {
     fn decodes_two_frames_from_one_buffer() {
         let mut buf = encode(&[json(1, "1"), json(2, "2")]);
         let mut codec = FrameCodec::default();
-        assert_eq!(codec.decode(&mut buf).unwrap().unwrap().channel, 1);
-        assert_eq!(codec.decode(&mut buf).unwrap().unwrap().channel, 2);
-        assert!(codec.decode(&mut buf).unwrap().is_none());
+        assert_eq!(
+            codec
+                .decode(&mut buf)
+                .expect("decode fixture frame")
+                .expect("decode fixture frame")
+                .channel,
+            1
+        );
+        assert_eq!(
+            codec
+                .decode(&mut buf)
+                .expect("decode fixture frame")
+                .expect("decode fixture frame")
+                .channel,
+            2
+        );
+        assert!(
+            codec
+                .decode(&mut buf)
+                .expect("decode fixture frame")
+                .is_none()
+        );
     }
 
     #[test]
@@ -296,7 +315,7 @@ mod tests {
                 channel: u32::MAX,
                 body: Bytes::from(vec![0; kind.max_body()]),
             };
-            let mut buf = encode(&[frame.clone()]);
+            let mut buf = encode(std::slice::from_ref(&frame));
             assert_eq!(
                 FrameCodec::default().decode(&mut buf).expect("decode"),
                 Some(frame)

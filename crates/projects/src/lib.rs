@@ -202,7 +202,7 @@ impl ProjectsService {
     pub async fn scan(&self, _: ScanProjects) -> R<ScanResult> {
         let registered: std::collections::HashSet<String> = self
             .db
-            .read(|tx| store::all(tx))
+            .read(store::all)
             .await
             .internal("scan projects")?
             .into_iter()
@@ -229,7 +229,7 @@ mod tests {
             "1.0.0-dev",
             MIGRATIONS,
         )
-        .unwrap();
+        .expect("open fixture database");
         let hub = Arc::new(Hub::new());
         (
             ProjectsService::new(
@@ -244,9 +244,9 @@ mod tests {
 
     #[tokio::test]
     async fn add_list_remove_and_publish() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let proj = t.path().join("projects/alpha");
-        std::fs::create_dir_all(proj.join(".git")).unwrap();
+        std::fs::create_dir_all(proj.join(".git")).expect("create fixture directory");
         let (s, hub) = service(t.path()).await;
         let mut events = hub.subscribe("projects.changed");
 
@@ -255,48 +255,65 @@ mod tests {
                 path: proj.display().to_string(),
             })
             .await
-            .unwrap();
+            .expect("register fixture project");
         assert_eq!(p.name, "alpha");
         assert!(matches!(
             events.recv().await,
             Some(devbox_core::HubMessage::Event { .. })
         ));
 
-        let list = s.list(ListProjects {}).await.unwrap();
+        let list = s
+            .list(ListProjects {})
+            .await
+            .expect("list fixture projects");
         assert_eq!(list.items.len(), 1);
-        assert!(list.rev.parse::<u64>().unwrap() >= 1);
+        assert!(list.rev.parse::<u64>().expect("parse fixture value") >= 1);
 
         let dup = s
             .add(AddProject {
                 path: proj.display().to_string(),
             })
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert!(matches!(
             dup,
             Fail::Domain(ProjectsError::AlreadyExists { .. })
         ));
 
-        s.remove(RemoveProject { id: p.id.clone() }).await.unwrap();
-        let gone = s.remove(RemoveProject { id: p.id }).await.unwrap_err();
+        s.remove(RemoveProject { id: p.id.clone() })
+            .await
+            .expect("remove fixture registration");
+        let gone = s
+            .remove(RemoveProject { id: p.id })
+            .await
+            .expect_err("fixture operation must fail");
         assert!(matches!(gone, Fail::Domain(ProjectsError::NotFound { .. })));
     }
 
     #[tokio::test]
     async fn rejects_relative_missing_and_file_paths() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let file = t.path().join("f.txt");
-        std::fs::write(&file, "x").unwrap();
+        std::fs::write(&file, "x").expect("write fixture file");
         let (s, _) = service(t.path()).await;
         for (path, want) in [
             ("rel/path", "projects.path_invalid"),
             (
-                t.path().join("missing").to_str().unwrap(),
+                t.path()
+                    .join("missing")
+                    .to_str()
+                    .expect("fixture path is UTF-8"),
                 "projects.path_invalid",
             ),
-            (file.to_str().unwrap(), "projects.not_directory"),
+            (
+                file.to_str().expect("fixture path is UTF-8"),
+                "projects.not_directory",
+            ),
         ] {
-            let e = s.add(AddProject { path: path.into() }).await.unwrap_err();
+            let e = s
+                .add(AddProject { path: path.into() })
+                .await
+                .expect_err("fixture operation must fail");
             let Fail::Domain(e) = e else {
                 panic!("domain error expected")
             };
@@ -306,19 +323,22 @@ mod tests {
 
     #[tokio::test]
     async fn scan_lists_root_children_and_marks_registered_and_git() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let root = t.path().join("projects");
-        std::fs::create_dir_all(root.join("a/.git")).unwrap();
-        std::fs::create_dir_all(root.join("b")).unwrap();
-        std::fs::create_dir_all(root.join("a-agents/x")).unwrap();
-        std::fs::create_dir_all(root.join(".hidden")).unwrap();
+        std::fs::create_dir_all(root.join("a/.git")).expect("create fixture directory");
+        std::fs::create_dir_all(root.join("b")).expect("create fixture directory");
+        std::fs::create_dir_all(root.join("a-agents/x")).expect("create fixture directory");
+        std::fs::create_dir_all(root.join(".hidden")).expect("create fixture directory");
         let (s, _) = service(t.path()).await;
         s.add(AddProject {
             path: root.join("a").display().to_string(),
         })
         .await
-        .unwrap();
-        let r = s.scan(ScanProjects {}).await.unwrap();
+        .expect("register fixture project");
+        let r = s
+            .scan(ScanProjects {})
+            .await
+            .expect("scan fixture projects");
         let names: Vec<_> = r
             .candidates
             .iter()
@@ -328,23 +348,29 @@ mod tests {
     }
     #[tokio::test]
     async fn concurrent_duplicate_and_missing_remove_do_not_commit_or_publish() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let project = t.path().join("project");
-        std::fs::create_dir(&project).unwrap();
+        std::fs::create_dir(&project).expect("create fixture directory");
         let (s, hub) = service(t.path()).await;
         let mut events = hub.subscribe("projects.changed");
-        let path = project.to_str().unwrap().to_owned();
+        let path = project.to_str().expect("fixture path is UTF-8").to_owned();
         let (a, b) = tokio::join!(
             s.add(AddProject { path: path.clone() }),
             s.add(AddProject { path })
         );
         let (ok, rejected) = if a.is_ok() { (a, b) } else { (b, a) };
-        let project = ok.unwrap();
+        let project = ok.expect("one fixture registration succeeds");
         assert!(matches!(
             rejected,
             Err(Fail::Domain(ProjectsError::AlreadyExists { .. }))
         ));
-        assert_eq!(s.list(ListProjects {}).await.unwrap().rev, "1");
+        assert_eq!(
+            s.list(ListProjects {})
+                .await
+                .expect("list fixture projects")
+                .rev,
+            "1"
+        );
         assert!(matches!(
             events.recv().await,
             Some(devbox_core::HubMessage::Event { rev: 1, .. })
@@ -356,8 +382,16 @@ mod tests {
             .await,
             Err(Fail::Domain(ProjectsError::NotFound { .. }))
         ));
-        assert_eq!(s.list(ListProjects {}).await.unwrap().rev, "1");
-        s.remove(RemoveProject { id: project.id }).await.unwrap();
+        assert_eq!(
+            s.list(ListProjects {})
+                .await
+                .expect("list fixture projects")
+                .rev,
+            "1"
+        );
+        s.remove(RemoveProject { id: project.id })
+            .await
+            .expect("remove fixture registration");
         drop(s);
         drop(hub);
         assert!(matches!(
@@ -370,21 +404,32 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn canonical_scan_deduplicates_roots_and_aliases() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let root = t.path().join("projects");
-        std::fs::create_dir_all(root.join("a/.git")).unwrap();
-        std::fs::create_dir_all(root.join("b")).unwrap();
-        std::os::unix::fs::symlink(root.join("a"), root.join("alias")).unwrap();
-        std::os::unix::fs::symlink(&root, t.path().join("root-alias")).unwrap();
+        std::fs::create_dir_all(root.join("a/.git")).expect("create fixture directory");
+        std::fs::create_dir_all(root.join("b")).expect("create fixture directory");
+        std::os::unix::fs::symlink(root.join("a"), root.join("alias"))
+            .expect("create fixture symlink");
+        std::os::unix::fs::symlink(&root, t.path().join("root-alias"))
+            .expect("create fixture symlink");
         let (mut s, _) = service(t.path()).await;
-        s.roots
-            .extend([root.to_str().unwrap().into(), "~/root-alias".into()]);
+        s.roots.extend([
+            root.to_str().expect("fixture path is UTF-8").into(),
+            "~/root-alias".into(),
+        ]);
         s.add(AddProject {
-            path: root.join("alias").to_str().unwrap().into(),
+            path: root
+                .join("alias")
+                .to_str()
+                .expect("fixture path is UTF-8")
+                .into(),
         })
         .await
-        .unwrap();
-        let r = s.scan(ScanProjects {}).await.unwrap();
+        .expect("fixture path is UTF-8");
+        let r = s
+            .scan(ScanProjects {})
+            .await
+            .expect("scan fixture projects");
         assert_eq!(
             r.candidates
                 .iter()
@@ -398,57 +443,63 @@ mod tests {
     #[tokio::test]
     async fn rejects_non_utf8_canonical_target() {
         use std::os::unix::ffi::OsStringExt;
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let root = t.path().join("projects");
-        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&root).expect("create fixture directory");
         let target = root.join(std::ffi::OsString::from_vec(vec![b'a', 0xff]));
-        std::fs::create_dir(&target).unwrap();
+        std::fs::create_dir(&target).expect("create fixture directory");
         let alias = root.join("alias");
-        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        std::os::unix::fs::symlink(&target, &alias).expect("create fixture symlink");
         let (s, _) = service(t.path()).await;
         assert!(matches!(
             s.add(AddProject {
-                path: alias.to_str().unwrap().into()
+                path: alias.to_str().expect("fixture path is UTF-8").into()
             })
             .await,
             Err(Fail::Domain(ProjectsError::PathInvalid { .. }))
         ));
-        assert!(s.scan(ScanProjects {}).await.unwrap().candidates.is_empty());
+        assert!(
+            s.scan(ScanProjects {})
+                .await
+                .expect("scan fixture projects")
+                .candidates
+                .is_empty()
+        );
     }
     #[tokio::test]
     async fn dropped_remove_waiter_still_publishes_committed_change() {
         use std::future::Future;
         use std::task::{Context, Poll, Waker};
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let project = t.path().join("project");
-        std::fs::create_dir(&project).unwrap();
+        std::fs::create_dir(&project).expect("create fixture directory");
         let (s, hub) = service(t.path()).await;
         let project = s
             .add(AddProject {
-                path: project.to_str().unwrap().into(),
+                path: project.to_str().expect("fixture path is UTF-8").into(),
             })
             .await
-            .unwrap();
+            .expect("fixture path is UTF-8");
         let mut events = hub.subscribe("projects.changed");
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         let db = s.db.clone();
         let blocker = tokio::spawn(async move {
             db.write_checked::<(), (), _>(move |_| {
-                ready_tx.send(()).unwrap();
-                release_rx.recv().unwrap();
+                ready_tx.send(()).expect("send fixture message");
+                release_rx.recv().expect("receive fixture message");
                 Ok(Err(()))
             })
             .await
-            .unwrap()
+            .expect("complete fixture transaction barrier")
         });
         tokio::task::spawn_blocking(move || {
             ready_rx
                 .recv_timeout(std::time::Duration::from_secs(5))
-                .unwrap()
+                .expect("receive fixture signal before deadline")
         })
         .await
-        .unwrap();
+        .expect("receive fixture signal before deadline");
         let mut remove = Box::pin(s.remove(RemoveProject { id: project.id }));
         assert!(matches!(
             remove
@@ -458,15 +509,21 @@ mod tests {
         ));
         // Dropping the handler after enqueue cannot retract the writer's job.
         drop(remove);
-        release_tx.send(()).unwrap();
-        assert_eq!(blocker.await.unwrap(), Err(()));
+        release_tx.send(()).expect("send fixture message");
+        assert_eq!(
+            blocker.await.expect("complete fixture transaction barrier"),
+            Err(())
+        );
         assert!(matches!(
             tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
                 .await
-                .unwrap(),
+                .expect("receive fixture message"),
             Some(devbox_core::HubMessage::Event { rev: 2, .. })
         ));
-        let list = s.list(ListProjects {}).await.unwrap();
+        let list = s
+            .list(ListProjects {})
+            .await
+            .expect("list fixture projects");
         assert_eq!(list.rev, "2");
         assert!(list.items.is_empty());
     }

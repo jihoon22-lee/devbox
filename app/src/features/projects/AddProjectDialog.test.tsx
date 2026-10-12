@@ -4,7 +4,8 @@ import { useState } from "react";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { useCurrentProject } from "./store";
-import { projects, ProjectWire } from "./test-wire";
+import { ProjectWire, projects } from "./test-wire";
+
 function Harness() {
   const [open, setOpen] = useState(true);
   return <AddProjectDialog open={open} onOpenChange={setOpen} />;
@@ -51,11 +52,11 @@ test("manual path is trimmed; typed add errors keep dialog open and allow retry"
   await userEvent.type(screen.getByRole("textbox"), "  /fixture/new  ");
   await userEvent.click(screen.getByRole("button", { name: "추가" }));
   await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
-  expect(wire.requests("projects.add")[0].params).toEqual({ path: "/fixture/new" });
+  expect(wire.request("projects.add").params).toEqual({ path: "/fixture/new" });
   await act(async () =>
     wire.deliver({
       type: "response",
-      id: wire.requests("projects.add")[0].id,
+      id: wire.request("projects.add").id,
       error: { code: "projects.not_directory", detail: { path: "/fixture/new" } },
     }),
   );

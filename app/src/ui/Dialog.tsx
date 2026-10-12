@@ -1,5 +1,5 @@
 import * as D from "@radix-ui/react-dialog";
-import { useRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { type ComponentPropsWithoutRef, type ReactNode, useRef } from "react";
 import s from "./Dialog.module.css";
 
 export function Dialog(props: {

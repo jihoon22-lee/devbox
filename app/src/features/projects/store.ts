@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+
 interface CurrentProject {
   id?: string;
   set(id: string | undefined): void;

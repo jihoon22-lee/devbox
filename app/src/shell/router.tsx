@@ -2,14 +2,15 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  redirect,
-  retainSearchParams,
   Link,
   type RouterHistory,
+  redirect,
+  retainSearchParams,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { EmptyState } from "../ui";
 import { SECTIONS } from "./sections";
+
 const paths = new Set([...SECTIONS.map((section) => section.path), "/settings"]);
 export function lastSection(): string {
   try {

@@ -42,6 +42,9 @@ class WorkflowScope(unittest.TestCase):
     def run_scope(self, root, base, event="pull_request", path=None):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         block = workflow.split("        run: |\n", 1)[1].split("  rust:\n", 1)[0]
+        windows = (ROOT / ".github/workflows/windows.yml").read_text()
+        windows_block = windows.split("        run: |\n", 1)[1].split("  linux-bin:\n", 1)[0]
+        self.assertEqual(block, windows_block, "Both required workflow scope gates must match")
         script = textwrap.dedent(block)
         output = root / "output"
         output.unlink(missing_ok=True)

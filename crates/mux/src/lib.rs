@@ -148,7 +148,7 @@ pub struct Backoff {
 
 impl Backoff {
     pub const DELAYS_MS: [u64; 5] = [200, 500, 1000, 2000, 5000];
-    pub fn next(&mut self) -> Duration {
+    pub fn next_delay(&mut self) -> Duration {
         let d = Self::DELAYS_MS[self.idx.min(Self::DELAYS_MS.len() - 1)];
         self.idx = self.idx.saturating_add(1);
         Duration::from_millis(d)
@@ -177,14 +177,14 @@ mod tests {
                 },
                 &mut out,
             )
-            .unwrap();
+            .expect("encode fixture frame");
         out.to_vec()
     }
     fn decode(raw: &[u8]) -> Frame {
         FrameCodec::default()
             .decode(&mut BytesMut::from(raw))
-            .unwrap()
-            .unwrap()
+            .expect("decode fixture frame")
+            .expect("decode fixture frame")
     }
 
     #[test]
@@ -196,7 +196,10 @@ mod tests {
         assert_eq!(fa.len(), 1);
         let f = decode(&fa[0]);
         assert_eq!((f.kind, f.channel), (FrameKind::Control, a));
-        assert_eq!(parse_json::<Control>(&f).unwrap(), Control::ChannelOpen);
+        assert_eq!(
+            parse_json::<Control>(&f).expect("parse fixture message"),
+            Control::ChannelOpen
+        );
     }
 
     #[test]
@@ -207,7 +210,7 @@ mod tests {
         assert_ne!(a, a2);
         assert_eq!(frames.len(), 2);
         assert_eq!(
-            parse_json::<Control>(&decode(&frames[0])).unwrap(),
+            parse_json::<Control>(&decode(&frames[0])).expect("parse fixture message"),
             Control::ChannelClose
         );
         assert_eq!(decode(&frames[0]).channel, a);
@@ -218,7 +221,8 @@ mod tests {
         let mut m = Mux::new();
         let (a, _) = m.open("main");
         let mut out = raw(FrameKind::Json, 0, b"{\"not\":\"parsed\"");
-        m.outbound(&"main", &mut out).unwrap();
+        m.outbound(&"main", &mut out)
+            .expect("route fixture outbound frame");
         assert_eq!(frame_channel(&out), Some(a));
         assert_eq!(m.inbound(&out), Some(&"main"));
         assert!(
@@ -231,7 +235,7 @@ mod tests {
     fn close_returns_a_close_frame_and_forgets_routing() {
         let mut m = Mux::new();
         let (a, _) = m.open("main");
-        let f = m.close(&"main").unwrap();
+        let f = m.close(&"main").expect("close fixture channel");
         assert_eq!(decode(&f).channel, a);
         assert_eq!(m.inbound(&raw(FrameKind::Json, a, b"{}")), None);
         assert!(m.close(&"main").is_none());
@@ -251,8 +255,8 @@ mod tests {
         let mut stream = raw(FrameKind::Json, 1, b"{}");
         stream.extend(raw(FrameKind::Stream, 2, &[0, 0, 0, 1, 0, 9, 9]));
         let (left, right) = stream.split_at(7);
-        assert!(s.push(left).unwrap().is_empty());
-        let frames = s.push(right).unwrap();
+        assert!(s.push(left).expect("split fixture frame bytes").is_empty());
+        let frames = s.push(right).expect("split fixture frame bytes");
         assert_eq!(frames.len(), 2);
         assert_eq!(frame_channel(&frames[1]), Some(2));
         assert!(s.push(&[0, 0, 0, 0]).is_err());
@@ -261,10 +265,10 @@ mod tests {
     #[test]
     fn backoff_follows_the_design_schedule() {
         let mut b = Backoff::default();
-        let ms: Vec<u128> = (0..7).map(|_| b.next().as_millis()).collect();
+        let ms: Vec<u128> = (0..7).map(|_| b.next_delay().as_millis()).collect();
         assert_eq!(ms, vec![200, 500, 1000, 2000, 5000, 5000, 5000]);
         b.reset();
-        assert_eq!(b.next().as_millis(), 200);
+        assert_eq!(b.next_delay().as_millis(), 200);
     }
 
     #[test]
@@ -288,7 +292,8 @@ mod tests {
         for kind in [FrameKind::Json, FrameKind::Stream, FrameKind::Control] {
             let mut frame = raw(kind, 0, &[0, 255, 3, 7]);
             let original = frame.clone();
-            m.outbound(&"main", &mut frame).unwrap();
+            m.outbound(&"main", &mut frame)
+                .expect("route fixture outbound frame");
             assert_eq!(&frame[..5], &original[..5]);
             assert_eq!(&frame[9..], &original[9..]);
         }
@@ -326,21 +331,31 @@ mod tests {
             let frame = raw(kind, 7, &[255, 0, 1]);
             for boundary in 0..=frame.len() {
                 let mut s = FrameSplitter::default();
-                let mut frames = s.push(&frame[..boundary]).unwrap();
-                frames.extend(s.push(&frame[boundary..]).unwrap());
+                let mut frames = s
+                    .push(&frame[..boundary])
+                    .expect("split fixture frame bytes");
+                frames.extend(
+                    s.push(&frame[boundary..])
+                        .expect("split fixture frame bytes"),
+                );
                 assert_eq!(frames, vec![frame.clone()]);
             }
             let frame = raw(kind, 8, &vec![0; kind.max_body()]);
-            assert_eq!(FrameSplitter::default().push(&frame).unwrap(), vec![frame]);
+            assert_eq!(
+                FrameSplitter::default()
+                    .push(&frame)
+                    .expect("split fixture frame bytes"),
+                vec![frame]
+            );
         }
     }
 
     #[test]
     fn backoff_counter_saturates() {
         let mut b = Backoff { idx: usize::MAX };
-        assert_eq!(b.next().as_millis(), 5000);
-        assert_eq!(b.next().as_millis(), 5000);
+        assert_eq!(b.next_delay().as_millis(), 5000);
+        assert_eq!(b.next_delay().as_millis(), 5000);
         b.reset();
-        assert_eq!(b.next().as_millis(), 200);
+        assert_eq!(b.next_delay().as_millis(), 200);
     }
 }

@@ -265,7 +265,11 @@ mod probe_tests {
                 if available { Status::Ok } else { Status::Fail }
             );
             assert_eq!(
-                checks.iter().find(|c| c.id == "linger").unwrap().status,
+                checks
+                    .iter()
+                    .find(|c| c.id == "linger")
+                    .expect("expected check exists")
+                    .status,
                 Status::Warn
             );
         }
@@ -284,7 +288,11 @@ mod probe_tests {
                 env,
             });
             assert_eq!(
-                checks.iter().find(|c| c.id == "env").unwrap().status,
+                checks
+                    .iter()
+                    .find(|c| c.id == "env")
+                    .expect("expected check exists")
+                    .status,
                 Status::Fail
             );
             assert!(!checks.iter().any(|c| c.id.starts_with("tool.")));
@@ -293,24 +301,29 @@ mod probe_tests {
     #[test]
     fn which_requires_absolute_directory_and_executable_file() {
         use std::os::unix::fs::PermissionsExt;
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("create fixture directory");
         let tool = temp.path().join("fixture-tool");
-        std::fs::write(&tool, "fixture").unwrap();
-        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::write(&tool, "fixture").expect("write fixture file");
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o600))
+            .expect("set fixture permissions");
         let probe = OsProbe {
             env_file: temp.path().join("env"),
         };
         assert!(!probe.which("fixture-tool", &temp.path().display().to_string()));
-        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o001)).unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o001))
+            .expect("set fixture permissions");
         // Root may execute a regular file with any execution bit set.
         if {
             use std::os::unix::fs::MetadataExt;
-            std::fs::metadata("/proc/self").unwrap().uid()
+            std::fs::metadata("/proc/self")
+                .expect("inspect fixture metadata")
+                .uid()
         } != 0
         {
             assert!(!probe.which("fixture-tool", &temp.path().display().to_string()));
         }
-        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700))
+            .expect("set fixture permissions");
         assert!(probe.which("fixture-tool", &temp.path().display().to_string()));
         assert!(!probe.which("fixture-tool", ":relative"));
     }

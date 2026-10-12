@@ -1,6 +1,7 @@
 import { createMemoryHistory, Outlet, RouterProvider } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import { buildRouter, lastSection } from "./router";
+
 test("last section is allowlisted with storage failure fallback", () => {
   localStorage.setItem("devbox.lastSection", "/settings");
   expect(lastSection()).toBe("/settings");

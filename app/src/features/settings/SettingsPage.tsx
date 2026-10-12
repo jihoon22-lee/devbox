@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { RpcError } from "../../rpc/client";
 import { useRpcQuery } from "../../rpc/query";
 import { Button, ErrorState, StatusDot } from "../../ui";
+
 function QueryResult({
   pending,
   error,

@@ -6,9 +6,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { test as base, expect } from "@playwright/test";
-import { version } from "../package.json";
+import packageJson from "../package.json" with { type: "json" };
 import { decodeFrame, jsonFrame } from "../src/rpc/frame";
 import { parseServerMessage } from "../src/rpc/server-message";
+
+const { version } = packageJson;
 
 export async function stop(child: ChildProcess) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;

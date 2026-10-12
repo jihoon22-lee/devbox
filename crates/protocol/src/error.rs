@@ -75,12 +75,16 @@ mod tests {
             detail: &'a serde_json::value::RawValue,
         }
         for json in ["null", r#"{"n":9007199254740993}"#] {
-            let raw = serde_json::value::RawValue::from_string(json.into()).unwrap();
+            let raw =
+                serde_json::value::RawValue::from_string(json.into()).expect("encode fixture JSON");
             let error = to_wire(&Error {
                 code: "test.raw",
                 detail: &raw,
             });
-            assert_eq!(error.detail.unwrap().get(), json);
+            assert_eq!(
+                error.detail.expect("fixture error includes details").get(),
+                json
+            );
         }
         assert_eq!(
             CommonError::CODES,
@@ -102,7 +106,7 @@ mod tests {
     fn lower_level_errors_are_contextual_internal_failures() {
         let error: Result<(), std::io::Error> = Err(std::io::Error::other("private cause"));
         let converted: Result<(), Fail<CommonError>> = error.internal("read fixture");
-        match converted.unwrap_err() {
+        match converted.expect_err("fixture operation must fail") {
             Fail::Internal(message) => assert_eq!(message, "read fixture: private cause"),
             Fail::Domain(_) => panic!("lower-level failures must be internal"),
         }

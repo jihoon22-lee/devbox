@@ -22,10 +22,10 @@ pub struct TestDaemon {
 }
 impl TestDaemon {
     pub fn fixture() -> Self {
-        let home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().expect("create fixture directory");
         let instance = format!("test-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
         let runtime = home.path().join("run");
-        std::fs::create_dir_all(&runtime).unwrap();
+        std::fs::create_dir_all(&runtime).expect("create fixture directory");
         struct FixtureEnv(PathBuf, PathBuf);
         impl Env for FixtureEnv {
             fn var(&self, key: &str) -> Option<String> {
@@ -40,10 +40,10 @@ impl TestDaemon {
             }
         }
         let paths = Paths::resolve(
-            Instance::parse(&instance).unwrap(),
+            Instance::parse(&instance).expect("parse fixture instance"),
             &FixtureEnv(home.path().into(), runtime),
         )
-        .unwrap();
+        .expect("parse fixture instance");
         Self {
             home,
             instance,
@@ -61,11 +61,17 @@ impl TestDaemon {
         let mut command = Command::new(program);
         command
             .env("HOME", self.home.path())
-            .env("XDG_RUNTIME_DIR", self.socket.parent().unwrap())
+            .env(
+                "XDG_RUNTIME_DIR",
+                self.socket.parent().expect("fixture path has parent"),
+            )
             .env("DEVBOX_INSTANCE", &self.instance)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(std::fs::File::create(self.home.path().join("stderr.log")).unwrap());
+            .stderr(
+                std::fs::File::create(self.home.path().join("stderr.log"))
+                    .expect("create fixture file"),
+            );
         for key in [
             "XDG_DATA_HOME",
             "XDG_STATE_HOME",
@@ -86,10 +92,18 @@ impl TestDaemon {
         daemon
     }
     pub fn launch(&mut self) {
-        self.child = Some(ChildGuard(self.command().spawn().unwrap()));
+        self.child = Some(ChildGuard(
+            self.command().spawn().expect("spawn fixture process"),
+        ));
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let status = self.child.as_mut().unwrap().0.try_wait().unwrap();
+            let status = self
+                .child
+                .as_mut()
+                .expect("fixture child exists")
+                .0
+                .try_wait()
+                .expect("inspect fixture process");
             assert!(
                 status.is_none(),
                 "daemon exited: {:?}: {}",
@@ -110,7 +124,7 @@ impl TestDaemon {
             &self.instance,
         ))
         .await
-        .unwrap()
+        .expect("connect fixture client")
     }
     pub fn stop(&mut self) {
         self.child.take();
@@ -128,7 +142,7 @@ pub async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
 pub fn exits(mut child: ChildGuard) -> std::process::ExitStatus {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if let Some(status) = child.0.try_wait().unwrap() {
+        if let Some(status) = child.0.try_wait().expect("inspect fixture process") {
             return status;
         }
         assert!(Instant::now() < deadline, "child exit deadline");

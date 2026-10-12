@@ -110,12 +110,12 @@ mod tests {
 
     #[tokio::test]
     async fn inflight_retry_coalesces_and_cancelled_waiter_retains_committed_result() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("create fixture directory");
         let service = super::super::build_services_for_test(temp.path());
         let started = Arc::new(tokio::sync::Notify::new());
         let finish = Arc::new(tokio::sync::Notify::new());
         let count = Arc::new(AtomicUsize::new(0));
-        let router = Arc::new(Router::new(service).add::<ProjectsRemove, _, _>({
+        let router = Arc::new(Router::new(service).register::<ProjectsRemove, _, _>({
             let (started, finish, count) = (started.clone(), finish.clone(), count.clone());
             move |_, _, _| {
                 let (started, finish, count) = (started.clone(), finish.clone(), count.clone());
@@ -128,7 +128,7 @@ mod tests {
             }
         }));
         let dedupe = Arc::new(Dedupe::default());
-        let raw = || RawValue::from_string("{\"id\":\"one\"}".into()).unwrap();
+        let raw = || RawValue::from_string("{\"id\":\"one\"}".into()).expect("encode fixture JSON");
         let cancel = CancellationToken::new();
         let first = tokio::spawn({
             let (dedupe, router, cancel) = (dedupe.clone(), router.clone(), cancel.clone());
@@ -146,7 +146,7 @@ mod tests {
         });
         tokio::time::timeout(Duration::from_secs(5), started.notified())
             .await
-            .unwrap();
+            .expect("fixture completes before deadline");
         let mut second = std::pin::pin!(dedupe.dispatch(
             &router,
             "projects.remove",
@@ -166,13 +166,21 @@ mod tests {
         })
         .await;
         cancel.cancel();
-        assert_eq!(first.await.unwrap().unwrap_err().error.code, "cancelled");
+        assert_eq!(
+            first
+                .await
+                .expect("join cancelled fixture request")
+                .expect_err("fixture operation must fail")
+                .error
+                .code,
+            "cancelled"
+        );
         assert_eq!(count.load(Ordering::SeqCst), 1);
         finish.notify_one();
         let result = tokio::time::timeout(Duration::from_secs(5), second)
             .await
-            .unwrap()
-            .unwrap();
+            .expect("fixture completes before deadline")
+            .expect("fixture completes before deadline");
         let retry = dedupe
             .dispatch(
                 &router,
@@ -185,7 +193,7 @@ mod tests {
                 Some("same".into()),
             )
             .await
-            .unwrap();
+            .expect("dispatch fixture request");
         assert_eq!(result.get(), retry.get());
         assert_eq!(count.load(Ordering::SeqCst), 1);
         dedupe.tracker.close();

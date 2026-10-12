@@ -9,21 +9,30 @@ use support::TestDaemon;
 async fn ping_and_project_round_trip_with_events() {
     let d = TestDaemon::start();
     let c = d.client().await;
-    let pong = c.call::<Ping>(&PingParams {}).await.unwrap();
+    let pong = c
+        .call::<Ping>(&PingParams {})
+        .await
+        .expect("complete fixture RPC");
     assert_eq!(pong.version, devbox_cli::VERSION);
 
-    let mut sub = c.subscribe("projects.changed").await.unwrap();
+    let mut sub = c
+        .subscribe("projects.changed")
+        .await
+        .expect("subscribe to fixture topic");
     let dir = d.home.path().join("projects/alpha");
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     let p = c
         .call::<ProjectsAdd>(&AddProject {
             path: dir.display().to_string(),
         })
         .await
-        .unwrap();
-    let ev = sub.next_event().await.unwrap();
-    assert!(ev.rev.parse::<u64>().unwrap() >= 1);
-    let list = c.call::<ProjectsList>(&ListProjects {}).await.unwrap();
+        .expect("complete fixture RPC");
+    let ev = sub.next_event().await.expect("receive fixture event");
+    assert!(ev.rev.parse::<u64>().expect("parse fixture value") >= 1);
+    let list = c
+        .call::<ProjectsList>(&ListProjects {})
+        .await
+        .expect("complete fixture RPC");
     assert_eq!(list.items[0].id, p.id);
 }
 
@@ -36,7 +45,7 @@ async fn domain_errors_and_unknown_methods_are_typed() {
             path: "relative".into(),
         })
         .await
-        .unwrap_err();
+        .expect_err("fixture operation must fail");
     assert!(
         matches!(e, ClientError::Rpc { ref code, .. } if code == "projects.path_invalid"),
         "{e:?}"
@@ -44,18 +53,20 @@ async fn domain_errors_and_unknown_methods_are_typed() {
     let e = c
         .raw_call("nope.method", serde_json::json!({}), None)
         .await
-        .unwrap_err();
+        .expect_err("fixture operation must fail");
     assert!(matches!(e, ClientError::Rpc { ref code, .. } if code == "method_not_found"));
 }
 
 #[tokio::test]
 async fn requests_before_hello_are_refused() {
     let d = TestDaemon::start();
-    let c = Client::connect_without_hello(&d.socket).await.unwrap();
+    let c = Client::connect_without_hello(&d.socket)
+        .await
+        .expect("connect fixture client");
     let e = c
         .raw_call("system.ping", serde_json::json!({}), None)
         .await
-        .unwrap_err();
+        .expect_err("fixture operation must fail");
     assert!(matches!(e, ClientError::Rpc { ref code, .. } if code == "hello_required"));
 }
 
@@ -64,16 +75,16 @@ async fn same_client_request_id_runs_a_mutation_once() {
     let d = TestDaemon::start();
     let c = d.client().await;
     let dir = d.home.path().join("projects/beta");
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     let params = serde_json::json!({ "path": dir.display().to_string() });
     let a = c
         .raw_call("projects.add", params.clone(), Some("req-1".into()))
         .await
-        .unwrap();
+        .expect("complete fixture RPC");
     let b = c
         .raw_call("projects.add", params, Some("req-1".into()))
         .await
-        .unwrap();
+        .expect("complete fixture RPC");
     assert_eq!(
         a, b,
         "second call must return the remembered result, not already_exists"
@@ -85,22 +96,25 @@ async fn closing_a_channel_stops_its_subscriptions() {
     let d = TestDaemon::start();
     let c = Client::connect(&d.socket, ClientKind::Test, &d.instance)
         .await
-        .unwrap();
-    let mut sub = c.subscribe("projects.changed").await.unwrap();
-    c.close_channel().await.unwrap();
+        .expect("connect fixture client");
+    let mut sub = c
+        .subscribe("projects.changed")
+        .await
+        .expect("subscribe to fixture topic");
+    c.close_channel().await.expect("close fixture channel");
     let other = d.client().await;
     let dir = d.home.path().join("projects/gamma");
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     other
         .call::<ProjectsAdd>(&AddProject {
             path: dir.display().to_string(),
         })
         .await
-        .unwrap();
+        .expect("complete fixture RPC");
     assert!(
         tokio::time::timeout(std::time::Duration::from_secs(2), sub.next_event())
             .await
-            .unwrap()
+            .expect("receive fixture event")
             .is_none()
     );
 }
@@ -117,7 +131,7 @@ async fn concurrent_connections_share_mutation_result_and_reject_changed_params(
     let d = TestDaemon::start();
     let (a, b) = (d.client().await, d.client().await);
     let dir = d.home.path().join("concurrent");
-    std::fs::create_dir(&dir).unwrap();
+    std::fs::create_dir(&dir).expect("create fixture directory");
     let params = serde_json::json!({ "path": dir.display().to_string() });
     let (first, second) = support::bounded(async {
         tokio::join!(
@@ -126,7 +140,10 @@ async fn concurrent_connections_share_mutation_result_and_reject_changed_params(
         )
     })
     .await;
-    assert_eq!(first.unwrap(), second.unwrap());
+    assert_eq!(
+        first.expect("complete deduplicated fixture mutation"),
+        second.expect("complete deduplicated fixture mutation")
+    );
     let changed = a
         .raw_call(
             "projects.add",
@@ -134,9 +151,12 @@ async fn concurrent_connections_share_mutation_result_and_reject_changed_params(
             Some("concurrent".into()),
         )
         .await
-        .unwrap_err();
+        .expect_err("fixture operation must fail");
     assert!(matches!(changed, ClientError::Rpc { code, .. } if code == "invalid_params"));
-    let list = a.call::<ProjectsList>(&ListProjects {}).await.unwrap();
+    let list = a
+        .call::<ProjectsList>(&ListProjects {})
+        .await
+        .expect("complete fixture RPC");
     assert_eq!(list.items.len(), 1);
     assert_eq!(list.rev, "1");
 }
@@ -145,7 +165,10 @@ async fn concurrent_connections_share_mutation_result_and_reject_changed_params(
 async fn disconnect_closes_subscriptions_and_calls_promptly_and_restart_recovers_owned_socket() {
     let mut d = TestDaemon::start();
     let client = d.client().await;
-    let mut sub = client.subscribe("projects.changed").await.unwrap();
+    let mut sub = client
+        .subscribe("projects.changed")
+        .await
+        .expect("subscribe to fixture topic");
     d.stop();
     assert!(support::bounded(sub.next_event()).await.is_none());
     assert!(matches!(
@@ -158,7 +181,7 @@ async fn disconnect_closes_subscriptions_and_calls_promptly_and_restart_recovers
             .await
             .call::<Ping>(&PingParams {})
             .await
-            .unwrap()
+            .expect("complete fixture RPC")
             .version,
         devbox_cli::VERSION
     );

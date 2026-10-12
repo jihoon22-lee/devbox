@@ -17,12 +17,20 @@ pub fn hello(instance: &str) -> ClientMessage {
 }
 pub async fn wire(d: &TestDaemon) -> Framed<UnixStream, FrameCodec> {
     Framed::new(
-        UnixStream::connect(&d.socket).await.unwrap(),
+        UnixStream::connect(&d.socket)
+            .await
+            .expect("connect fixture client"),
         FrameCodec::default(),
     )
 }
 pub async fn receive(wire: &mut Framed<UnixStream, FrameCodec>) -> ServerMessage {
-    parse_json(&bounded(wire.next()).await.unwrap().unwrap()).unwrap()
+    parse_json(
+        &bounded(wire.next())
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame"),
+    )
+    .expect("receive fixture frame")
 }
 
 #[tokio::test]
@@ -54,7 +62,7 @@ async fn invalid_hello_and_malformed_frames_close_without_authorizing() {
             },
         ))
         .await
-        .unwrap();
+        .expect("send fixture message");
         assert!(bounded(wire.next()).await.is_none(), "{field}");
     }
     let mut wire = wire(&d).await;
@@ -64,7 +72,7 @@ async fn invalid_hello_and_malformed_frames_close_without_authorizing() {
         body: bytes::Bytes::from_static(b"{"),
     })
     .await
-    .unwrap();
+    .expect("send fixture message");
     assert!(bounded(wire.next()).await.is_none());
 }
 
@@ -75,7 +83,7 @@ async fn reopen_requires_hello_and_independent_channel_remains_usable() {
     for ch in [7, 8] {
         wire.send(json_frame(ch, &hello(&d.instance)))
             .await
-            .unwrap();
+            .expect("send fixture message");
         assert!(matches!(
             receive(&mut wire).await,
             ServerMessage::Welcome { .. }
@@ -90,28 +98,29 @@ async fn reopen_requires_hello_and_independent_channel_remains_usable() {
         },
     ))
     .await
-    .unwrap();
+    .expect("send fixture message");
     assert!(matches!(
         receive(&mut wire).await,
         ServerMessage::Subscribed { .. }
     ));
     wire.send(control_frame(7, &Control::ChannelClose))
         .await
-        .unwrap();
+        .expect("send fixture message");
     wire.send(control_frame(7, &Control::ChannelOpen))
         .await
-        .unwrap();
+        .expect("send fixture message");
     wire.send(json_frame(
         7,
         &ClientMessage::Request {
             id: 2,
             method: "system.ping".into(),
-            params: serde_json::value::RawValue::from_string("{}".into()).unwrap(),
+            params: serde_json::value::RawValue::from_string("{}".into())
+                .expect("encode fixture JSON"),
             client_request_id: None,
         },
     ))
     .await
-    .unwrap();
+    .expect("encode fixture JSON");
     assert!(
         matches!(receive(&mut wire).await, ServerMessage::Response { error: Some(error), .. } if error.code == "hello_required")
     );
@@ -120,12 +129,13 @@ async fn reopen_requires_hello_and_independent_channel_remains_usable() {
         &ClientMessage::Request {
             id: 3,
             method: "system.ping".into(),
-            params: serde_json::value::RawValue::from_string("{}".into()).unwrap(),
+            params: serde_json::value::RawValue::from_string("{}".into())
+                .expect("encode fixture JSON"),
             client_request_id: None,
         },
     ))
     .await
-    .unwrap();
+    .expect("encode fixture JSON");
     assert!(matches!(
         receive(&mut wire).await,
         ServerMessage::Response {

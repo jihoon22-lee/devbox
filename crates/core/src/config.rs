@@ -115,34 +115,34 @@ mod tests {
             }
         }
         Paths::resolve(
-            Instance::parse("test-config").unwrap(),
+            Instance::parse("test-config").expect("parse fixture instance"),
             &E(dir.display().to_string()),
         )
-        .unwrap()
+        .expect("parse fixture instance")
     }
 
     fn write(p: &Paths, file: &str, text: &str) {
-        std::fs::create_dir_all(&p.config_dir).unwrap();
-        std::fs::write(p.config_dir.join(file), text).unwrap();
+        std::fs::create_dir_all(&p.config_dir).expect("create fixture directory");
+        std::fs::write(p.config_dir.join(file), text).expect("write fixture file");
     }
 
     #[test]
     fn defaults_when_files_are_missing_or_empty() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
-        let c = Config::load(&p).unwrap();
+        let c = Config::load(&p).expect("load fixture config");
         assert_eq!(c.projects.roots, ["~/projects"]);
         assert_eq!(c.pc.name, None);
         assert_eq!(c.pc.windows_root, None);
         assert!(!p.config_dir.exists());
         write(&p, "config.toml", "[projects]\n[pc]\n");
         write(&p, "config.local.toml", "");
-        assert_eq!(Config::load(&p).unwrap(), c);
+        assert_eq!(Config::load(&p).expect("load fixture config"), c);
     }
 
     #[test]
     fn local_overrides_keys_and_preserves_sibling_defaults() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
         write(
             &p,
@@ -150,7 +150,7 @@ mod tests {
             "[projects]\nroots = ['~/a', '~/b']\n[pc]\nname = 'shared'\nwindows_root = 'C:\\dev'\n",
         );
         write(&p, "config.local.toml", "[pc]\nname = 'desk'\n");
-        let c = Config::load(&p).unwrap();
+        let c = Config::load(&p).expect("load fixture config");
         assert_eq!(c.projects.roots, ["~/a", "~/b"]);
         assert_eq!(c.pc.name.as_deref(), Some("desk"));
         assert_eq!(c.pc.windows_root.as_deref(), Some("C:\\dev"));
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn arrays_are_replaced_including_empty_arrays() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
         write(&p, "config.toml", "[projects]\nroots = ['a', 'b']\n");
         for (input, expected) in [("['c']", vec!["c"]), ("[]", vec![])] {
@@ -167,16 +167,22 @@ mod tests {
                 "config.local.toml",
                 &format!("[projects]\nroots = {input}\n"),
             );
-            assert_eq!(Config::load(&p).unwrap().projects.roots, expected);
+            assert_eq!(
+                Config::load(&p)
+                    .expect("load fixture config")
+                    .projects
+                    .roots,
+                expected
+            );
         }
     }
 
     #[test]
     fn local_alone_is_supported() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
         write(&p, "config.local.toml", "[pc]\nwindows_root = 'D:\\work'\n");
-        let c = Config::load(&p).unwrap();
+        let c = Config::load(&p).expect("load fixture config");
         assert_eq!(c.projects.roots, ["~/projects"]);
         assert_eq!(c.pc.name, None);
         assert_eq!(c.pc.windows_root.as_deref(), Some("D:\\work"));
@@ -198,7 +204,7 @@ mod tests {
         ];
         for file in ["config.toml", "config.local.toml"] {
             for input in invalid {
-                let t = tempfile::tempdir().unwrap();
+                let t = tempfile::tempdir().expect("create fixture directory");
                 let p = paths_in(t.path());
                 write(
                     &p,
@@ -220,10 +226,10 @@ mod tests {
     #[test]
     fn read_errors_retain_path_and_io_source() {
         for file in ["config.toml", "config.local.toml"] {
-            let t = tempfile::tempdir().unwrap();
+            let t = tempfile::tempdir().expect("create fixture directory");
             let p = paths_in(t.path());
-            std::fs::create_dir_all(p.config_dir.join(file)).unwrap();
-            match Config::load(&p).unwrap_err() {
+            std::fs::create_dir_all(p.config_dir.join(file)).expect("create fixture directory");
+            match Config::load(&p).expect_err("fixture operation must fail") {
                 CoreError::Io { what, source } => {
                     assert_eq!(what, format!("read {}", p.config_dir.join(file).display()));
                     assert_eq!(source.kind(), std::io::ErrorKind::IsADirectory);
@@ -235,12 +241,12 @@ mod tests {
 
     #[test]
     fn invalid_utf8_is_a_read_error_with_source_path() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
-        std::fs::create_dir_all(&p.config_dir).unwrap();
+        std::fs::create_dir_all(&p.config_dir).expect("create fixture directory");
         let path = p.config_dir.join("config.toml");
-        std::fs::write(&path, [0xff]).unwrap();
-        match Config::load(&p).unwrap_err() {
+        std::fs::write(&path, [0xff]).expect("write fixture file");
+        match Config::load(&p).expect_err("fixture operation must fail") {
             CoreError::Io { what, source } => {
                 assert_eq!(what, format!("read {}", path.display()));
                 assert_eq!(source.kind(), std::io::ErrorKind::InvalidData);
@@ -251,7 +257,7 @@ mod tests {
 
     #[test]
     fn home_expansion_only_changes_bare_or_slash_prefixed_tilde() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::tempdir().expect("create fixture directory");
         let home = t.path();
         assert_eq!(expand_home("~", home), home);
         assert_eq!(expand_home("~/projects", home), home.join("projects"));

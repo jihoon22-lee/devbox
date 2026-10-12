@@ -7,8 +7,8 @@ import { Button, ConfirmDialog, Dialog } from "../../ui";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { PROJECT_KEYS, ProjectDataBoundary, recordProjectRemoval, useProjectData } from "./ProjectData";
 import { ProjectError } from "./ProjectError";
-import { useCurrentProject } from "./store";
 import s from "./Projects.module.css";
+import { useCurrentProject } from "./store";
 export function ProjectTitle({ onOpen }: { onOpen: () => void }) {
   return (
     <ProjectDataBoundary>

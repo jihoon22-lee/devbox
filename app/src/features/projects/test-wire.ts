@@ -37,11 +37,16 @@ export class ProjectWire implements Transport {
   requests(method = "projects.list") {
     return this.sent.filter((m) => m.method === method);
   }
+  request(method = "projects.list", index = 0) {
+    const request = this.requests(method).at(index);
+    if (!request) throw new Error(`Missing ${method} request at index ${index}`);
+    return request;
+  }
   reply(method: string, result: unknown) {
-    this.deliver({ type: "response", id: this.requests(method).at(-1)!.id, result });
+    this.deliver({ type: "response", id: this.request(method, -1).id, result });
   }
   fail(method: string) {
-    this.deliver({ type: "response", id: this.requests(method).at(-1)!.id, error: { code: "internal" } });
+    this.deliver({ type: "response", id: this.request(method, -1).id, error: { code: "internal" } });
   }
 }
 export const projects = [

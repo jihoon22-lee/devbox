@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react";
 import { allowedWhileFocused, type Binding, matches, useKeymap } from "./keymap";
+
 const binding: Binding = {
   id: "palette",
   code: "KeyP",

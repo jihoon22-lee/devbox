@@ -203,13 +203,13 @@ mod tests {
     #[test]
     fn every_fixture_round_trips_exactly() {
         let f = fixtures();
-        for (_, v) in f["client"].as_object().unwrap() {
+        for (_, v) in f["client"].as_object().expect("fixture JSON is an object") {
             round_trip::<ClientMessage>(v);
         }
-        for (_, v) in f["server"].as_object().unwrap() {
+        for (_, v) in f["server"].as_object().expect("fixture JSON is an object") {
             round_trip::<ServerMessage>(v);
         }
-        for (_, v) in f["control"].as_object().unwrap() {
+        for (_, v) in f["control"].as_object().expect("fixture JSON is an object") {
             round_trip::<Control>(v);
         }
     }
@@ -219,7 +219,10 @@ mod tests {
         let f = json_frame(6, &Control::ChannelOpen);
         assert_eq!(f.kind, FrameKind::Json);
         assert_eq!(f.channel, 6);
-        assert_eq!(parse_json::<Control>(&f).unwrap(), Control::ChannelOpen);
+        assert_eq!(
+            parse_json::<Control>(&f).expect("parse fixture message"),
+            Control::ChannelOpen
+        );
     }
 }
 
@@ -231,7 +234,7 @@ mod contract_tests {
     #[test]
     fn raw_payloads_keep_precision_and_original_json() {
         let text = r#"{"type":"request","id":4294967295,"method":"test.raw","params":{ "n": 9007199254740993, "nested": [null,true] }}"#;
-        let msg: ClientMessage = serde_json::from_str(text).unwrap();
+        let msg: ClientMessage = serde_json::from_str(text).expect("parse fixture JSON");
         let ClientMessage::Request {
             params,
             client_request_id,
@@ -245,10 +248,18 @@ mod contract_tests {
             r#"{ "n": 9007199254740993, "nested": [null,true] }"#
         );
         assert!(client_request_id.is_none());
-        assert!(serde_json::to_string(&msg).unwrap().contains(params.get()));
+        assert!(
+            serde_json::to_string(&msg)
+                .expect("serialize fixture JSON")
+                .contains(params.get())
+        );
         let error: WireError =
-            serde_json::from_str(r#"{"code":"test.raw","detail":{"n":9007199254740993}}"#).unwrap();
-        assert_eq!(error.detail.unwrap().get(), r#"{"n":9007199254740993}"#);
+            serde_json::from_str(r#"{"code":"test.raw","detail":{"n":9007199254740993}}"#)
+                .expect("parse fixture JSON");
+        assert_eq!(
+            error.detail.expect("fixture error includes details").get(),
+            r#"{"n":9007199254740993}"#
+        );
     }
 
     #[test]
@@ -259,12 +270,18 @@ mod contract_tests {
             r#"{"type":"response","id":1,"error":{"code":"test.x","detail":null}}"#,
             r#"{"type":"event","subId":2,"rev":"9007199254740993","payload":null}"#,
         ] {
-            let parsed: ServerMessage = serde_json::from_str(text).unwrap();
-            assert_eq!(serde_json::to_string(&parsed).unwrap(), text);
+            let parsed: ServerMessage = serde_json::from_str(text).expect("parse fixture JSON");
+            assert_eq!(
+                serde_json::to_string(&parsed).expect("serialize fixture JSON"),
+                text
+            );
         }
         let text = r#"{"type":"subscribe","id":1,"topic":"test.x","params":null}"#;
-        let parsed: ClientMessage = serde_json::from_str(text).unwrap();
-        assert_eq!(serde_json::to_string(&parsed).unwrap(), text);
+        let parsed: ClientMessage = serde_json::from_str(text).expect("parse fixture JSON");
+        assert_eq!(
+            serde_json::to_string(&parsed).expect("serialize fixture JSON"),
+            text
+        );
     }
 
     #[test]
@@ -301,10 +318,18 @@ mod contract_tests {
         let frame = control_frame(42, &expected);
         assert_eq!(frame.kind, FrameKind::Control);
         let mut encoded = BytesMut::new();
-        FrameCodec::default().encode(frame, &mut encoded).unwrap();
-        let decoded = FrameCodec::default().decode(&mut encoded).unwrap().unwrap();
+        FrameCodec::default()
+            .encode(frame, &mut encoded)
+            .expect("encode fixture frame");
+        let decoded = FrameCodec::default()
+            .decode(&mut encoded)
+            .expect("decode fixture frame")
+            .expect("decode fixture frame");
         assert_eq!(decoded.channel, 42);
-        assert_eq!(parse_json::<Control>(&decoded).unwrap(), expected);
+        assert_eq!(
+            parse_json::<Control>(&decoded).expect("parse fixture message"),
+            expected
+        );
         let bad = Frame {
             kind: FrameKind::Json,
             channel: 0,

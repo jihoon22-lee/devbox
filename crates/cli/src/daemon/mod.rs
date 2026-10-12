@@ -60,11 +60,11 @@ pub fn build_services_for_test(home: &std::path::Path) -> Arc<Services> {
         }
     }
     let paths = Paths::resolve(
-        devbox_core::Instance::parse("test-r").unwrap(),
+        devbox_core::Instance::parse("test-r").expect("parse fixture instance"),
         &E(home.display().to_string()),
     )
-    .unwrap();
-    build_services(paths).unwrap()
+    .expect("parse fixture instance");
+    build_services(paths).expect("build fixture services")
 }
 
 pub async fn run(foreground: bool) -> anyhow::Result<()> {

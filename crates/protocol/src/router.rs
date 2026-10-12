@@ -50,7 +50,7 @@ impl<S: Send + Sync + 'static> Router<S> {
         }
     }
 
-    pub fn add<M, F, Fut>(mut self, f: F) -> Self
+    pub fn register<M, F, Fut>(mut self, f: F) -> Self
     where
         M: Method,
         F: Fn(Arc<S>, Ctx, M::Params) -> Fut + Send + Sync + 'static,
@@ -153,7 +153,7 @@ mod tests {
 
     struct State;
     fn router() -> Router<State> {
-        Router::new(Arc::new(State)).add::<Echo, _, _>(|_, _, p| async move {
+        Router::new(Arc::new(State)).register::<Echo, _, _>(|_, _, p| async move {
             if p.text.is_empty() {
                 return Err(EchoError::Empty.into());
             }
@@ -167,7 +167,7 @@ mod tests {
         })
     }
     fn raw(s: &str) -> Box<serde_json::value::RawValue> {
-        serde_json::value::RawValue::from_string(s.into()).unwrap()
+        serde_json::value::RawValue::from_string(s.into()).expect("encode fixture JSON")
     }
     fn ctx() -> Ctx {
         Ctx {
@@ -182,40 +182,43 @@ mod tests {
         let ok = r
             .dispatch("echo.say", ctx(), raw(r#"{"text":"hi"}"#))
             .await
-            .unwrap();
+            .expect("dispatch fixture request");
         assert_eq!(ok.get(), r#"{"text":"hi"}"#);
 
         let e = r
             .dispatch("echo.say", ctx(), raw(r#"{"text":"toolong"}"#))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(e.error.code, "echo.too_long");
-        assert_eq!(e.error.detail.as_ref().unwrap().get(), r#"{"limit":5}"#);
+        assert_eq!(
+            e.error.detail.as_ref().expect("fixture child exists").get(),
+            r#"{"limit":5}"#
+        );
         assert!(e.diagnostic_id.is_none());
 
         let e = r
             .dispatch("echo.say", ctx(), raw(r#"{"text":"boom"}"#))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(e.error.code, "internal");
         assert!(e.diagnostic_id.is_some());
 
         let e = r
             .dispatch("echo.say", ctx(), raw(r#"{"nope":1}"#))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(e.error.code, "invalid_params");
 
         let e = r
             .dispatch("echo.unknown", ctx(), raw("{}"))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(e.error.code, "method_not_found");
     }
 
     #[tokio::test]
     async fn cancellation_wins_over_a_slow_handler() {
-        let r = Router::new(Arc::new(State)).add::<Echo, _, _>(|_, _, _| async move {
+        let r = Router::new(Arc::new(State)).register::<Echo, _, _>(|_, _, _| async move {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             Ok(EchoResult {
                 text: String::new(),
@@ -225,7 +228,13 @@ mod tests {
         let cancel = c.cancel.clone();
         let fut = r.dispatch("echo.say", c, raw(r#"{"text":"x"}"#));
         cancel.cancel();
-        assert_eq!(fut.await.unwrap_err().error.code, "cancelled");
+        assert_eq!(
+            fut.await
+                .expect_err("fixture operation must fail")
+                .error
+                .code,
+            "cancelled"
+        );
     }
 
     #[test]
@@ -243,15 +252,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "duplicate method echo.say")]
     fn duplicate_registration_panics() {
-        let _ =
-            router().add::<Echo, _, _>(|_, _, p| async move { Ok(EchoResult { text: p.text }) });
+        let _ = router()
+            .register::<Echo, _, _>(|_, _, p| async move { Ok(EchoResult { text: p.text }) });
     }
     #[tokio::test]
     async fn precancelled_dispatch_never_invokes_handler() {
         use std::sync::atomic::{AtomicBool, Ordering};
         let invoked = Arc::new(AtomicBool::new(false));
         let flag = invoked.clone();
-        let r = Router::new(Arc::new(State)).add::<Echo, _, _>(move |_, _, _| {
+        let r = Router::new(Arc::new(State)).register::<Echo, _, _>(move |_, _, _| {
             flag.store(true, Ordering::SeqCst);
             async {
                 Ok(EchoResult {
@@ -264,7 +273,7 @@ mod tests {
         let error = r
             .dispatch("echo.say", c, raw(r#"{"text":"x"}"#))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(error.error.code, "cancelled");
         assert!(!invoked.load(Ordering::SeqCst));
         assert!(error.diagnostic_id.is_none());
@@ -274,7 +283,7 @@ mod tests {
     async fn cancellation_interrupts_an_executing_handler() {
         let started = Arc::new(tokio::sync::Notify::new());
         let notify = started.clone();
-        let r = Router::new(Arc::new(State)).add::<Echo, _, _>(move |_, _, _| {
+        let r = Router::new(Arc::new(State)).register::<Echo, _, _>(move |_, _, _| {
             let notify = notify.clone();
             async move {
                 notify.notify_one();
@@ -289,7 +298,10 @@ mod tests {
             token.cancel();
         };
         let (result, ()) = tokio::join!(request, cancel);
-        assert_eq!(result.unwrap_err().error.code, "cancelled");
+        assert_eq!(
+            result.expect_err("fixture operation must fail").error.code,
+            "cancelled"
+        );
     }
 
     #[tokio::test]
@@ -298,32 +310,49 @@ mod tests {
         let unit = r
             .dispatch("echo.say", ctx(), raw(r#"{"text":""}"#))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(unit.error.code, "echo.empty");
         assert!(unit.error.detail.is_none());
         let failure = r
             .dispatch("echo.say", ctx(), raw(r#"{"text":"boom"}"#))
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert_eq!(
-            serde_json::to_string(&failure.error).unwrap(),
+            serde_json::to_string(&failure.error).expect("serialize fixture JSON"),
             r#"{"code":"internal"}"#
         );
         assert!(
             failure
                 .diagnostic_id
-                .unwrap()
+                .expect("internal failure has diagnostic ID")
                 .chars()
                 .all(|c| c.is_ascii_hexdigit())
         );
-        let missing = r.dispatch("unknown", ctx(), raw("{}")).await.unwrap_err();
+        let missing = r
+            .dispatch("unknown", ctx(), raw("{}"))
+            .await
+            .expect_err("fixture operation must fail");
         assert_eq!(
-            missing.error.detail.unwrap().get(),
+            missing
+                .error
+                .detail
+                .expect("fixture error includes details")
+                .get(),
             r#"{"method":"unknown"}"#
         );
         assert!(missing.diagnostic_id.is_none());
-        let invalid = r.dispatch("echo.say", ctx(), raw("{}")).await.unwrap_err();
-        assert!(invalid.error.detail.unwrap().get().contains("reason"));
+        let invalid = r
+            .dispatch("echo.say", ctx(), raw("{}"))
+            .await
+            .expect_err("fixture operation must fail");
+        assert!(
+            invalid
+                .error
+                .detail
+                .expect("fixture error includes details")
+                .get()
+                .contains("reason")
+        );
         assert!(invalid.diagnostic_id.is_none());
         assert_eq!(r.names(), vec!["echo.say"]);
         assert_eq!(r.kind_of("unknown"), None);

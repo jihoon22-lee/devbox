@@ -5,6 +5,8 @@ failures=()
 run() { "$@" || failures+=("$*"); }
 run python3 -m unittest discover -s scripts/tests
 run cargo fmt --all --check
+run cargo fmt --manifest-path app/src-tauri/Cargo.toml --check
+run cargo test --manifest-path app/src-tauri/Cargo.toml --locked --lib core:: -- --test-threads="${RUST_TEST_THREADS:-2}"
 run cargo clippy --workspace --all-targets --locked -- -D warnings
 run cargo test --workspace --locked --no-fail-fast -- --test-threads="${RUST_TEST_THREADS:-2}"
 run cargo run -q -p xtask -- gen-ts --check

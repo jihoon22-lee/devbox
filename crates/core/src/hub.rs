@@ -174,10 +174,10 @@ mod tests {
             Duration::from_secs(5),
             poll_fn(|cx| {
                 let result = receive.as_mut().poll(cx);
-                if result.is_pending() {
-                    if let Some(ready) = ready.take() {
-                        ready.send(()).expect("test coordinator alive");
-                    }
+                if result.is_pending()
+                    && let Some(ready) = ready.take()
+                {
+                    ready.send(()).expect("test coordinator alive");
                 }
                 result
             }),

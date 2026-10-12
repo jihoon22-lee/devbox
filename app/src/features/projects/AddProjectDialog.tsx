@@ -3,8 +3,8 @@ import { useRef, useState } from "react";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { Button, Dialog } from "../../ui";
 import { ProjectError } from "./ProjectError";
-import { useCurrentProject } from "./store";
 import s from "./Projects.module.css";
+import { useCurrentProject } from "./store";
 export function AddProjectDialog(props: { open: boolean; onOpenChange: (open: boolean) => void }) {
   // Each opening starts with an empty path and no stale mutation error.
   return props.open ? <AddProjectContent onOpenChange={props.onOpenChange} /> : null;

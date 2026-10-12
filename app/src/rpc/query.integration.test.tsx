@@ -40,6 +40,11 @@ class Wire implements Transport {
   requests(method = "projects.list") {
     return this.sent.filter((m) => m.method === method);
   }
+  request(method = "projects.list", index = 0) {
+    const request = this.requests(method).at(index);
+    if (!request) throw new Error(`Missing ${method} request at index ${index}`);
+    return request;
+  }
   ack() {
     const sub = this.sent.filter((m) => m.type === "subscribe").at(-1)!;
     this.deliver({ type: "subscribed", id: sub.id, subId: 7, rev: "1" });
@@ -76,7 +81,7 @@ async function ready(wire: Wire) {
   await waitFor(() => expect(wire.requests()).toHaveLength(1));
 }
 async function respond(wire: Wire, rev: string) {
-  await act(async () => wire.reply(wire.requests().at(-1)!.id, { rev, items: [] }));
+  await act(async () => wire.reply(wire.request("projects.list", -1).id, { rev, items: [] }));
 }
 
 test("ready and options gate queries; reconnect waits for ACK and refetches all active queries once", async () => {
@@ -85,7 +90,7 @@ test("ready and options gate queries; reconnect waits for ACK and refetches all 
   await ready(wire);
   await respond(wire, "8");
   await act(async () =>
-    wire.reply(wire.requests("system.ping")[0].id, { daemonId: "one", version: "1.0.0-dev", uptimeMs: 1 }),
+    wire.reply(wire.request("system.ping").id, { daemonId: "one", version: "1.0.0-dev", uptimeMs: 1 }),
   );
   await waitFor(() => expect(result.current.list.data?.rev).toBe("8"));
   result.current.qc.setQueryData(["inactive"], { rev: "2" });
@@ -112,7 +117,7 @@ test("ready and options gate queries; reconnect waits for ACK and refetches all 
 test("newer event during initial request replaces it; late response cannot undo a newer cache", async () => {
   const { wire, result } = setup();
   await ready(wire);
-  const old = wire.requests()[0].id;
+  const old = wire.request().id;
   await act(async () => wire.deliver({ type: "event", subId: 7, rev: "12", payload: { rev: "12" } }));
   await waitFor(() => expect(wire.requests()).toHaveLength(2));
   await act(async () => wire.reply(old, { rev: "1", items: [] }));
@@ -161,14 +166,14 @@ test("mutation invocations have distinct IDs, never retry, and expose generated 
   await act(async () => wire.welcome());
   act(() => result.current.mutate({ path: "/owned-fixture" }));
   await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
-  const first = wire.requests("projects.add")[0];
+  const first = wire.request("projects.add");
   await act(async () => wire.deliver({ type: "response", id: first.id, error: { code: "internal" } }));
   await waitFor(() => expect(result.current.isError).toBe(true));
   expect(wire.requests("projects.add")).toHaveLength(1);
   act(() => result.current.mutate({ path: "/owned-fixture" }));
   await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(2));
   expect(first.clientRequestId).toEqual(expect.any(String));
-  expect(wire.requests("projects.add")[1].clientRequestId).not.toBe(first.clientRequestId);
+  expect(wire.request("projects.add", 1).clientRequestId).not.toBe(first.clientRequestId);
   expect(confirmPolicy("projects.remove")).toBe("always");
   expect(confirmPolicy("projects.add")).toBe("none");
 });
@@ -196,7 +201,7 @@ test("explicitly disabled queries stay disabled after initial ACK and reconnect"
 test("old pending response cannot repopulate a new daemon cache", async () => {
   const { wire, result } = setup();
   await ready(wire);
-  const oldId = wire.requests()[0].id;
+  const oldId = wire.request().id;
   await act(async () => wire.emit("closed"));
   await act(async () => {
     wire.emit("open");

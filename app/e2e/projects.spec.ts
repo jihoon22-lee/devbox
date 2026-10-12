@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "./support";
 
-test("scan, persist across reload, and remove only the registration", async ({ page, stack }) => {
+test("scan, persist across reload, and remove only the registration", async ({ page, stack }, testInfo) => {
   await page.goto(`/?gateway=${encodeURIComponent(stack.gatewayUrl)}`);
   await expect(page.getByText("데몬 연결됨")).toBeVisible();
   await page.keyboard.press("Control+Shift+O");
@@ -11,12 +11,16 @@ test("scan, persist across reload, and remove only the registration", async ({ p
   await expect(page.getByRole("dialog", { name: "프로젝트 추가", exact: true })).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "프로젝트 전환" })).toHaveText(/alpha/);
+  await page.screenshot({ path: testInfo.outputPath("main-frame.png") });
   await page.reload();
   await expect(page.getByText("데몬 연결됨")).toBeVisible();
   await page.keyboard.press("Control+Shift+O");
   const path = join(stack.home, "projects/alpha");
   await expect(page.getByText(path, { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("project-switcher.png") });
   await page.getByRole("button", { name: "alpha 제거", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "프로젝트 제거", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("confirm-remove.png") });
   await page.getByRole("button", { name: "프로젝트 제거", exact: true }).click();
   await expect(page.getByText(path, { exact: true })).toHaveCount(0);
   expect(existsSync(path)).toBe(true);

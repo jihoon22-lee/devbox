@@ -13,12 +13,13 @@ impl Env for FixtureEnv {
 fn logging_and_panic_contract() {
     if std::env::var_os("DEVBOX_LOG_CHILD").is_none() {
         for filter in ["info", "warn", "info["] {
-            let output = Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "logging_and_panic_contract", "--nocapture"])
-                .env("DEVBOX_LOG_CHILD", "1")
-                .env("RUST_LOG", filter)
-                .output()
-                .unwrap();
+            let output =
+                Command::new(std::env::current_exe().expect("resolve fixture test executable"))
+                    .args(["--exact", "logging_and_panic_contract", "--nocapture"])
+                    .env("DEVBOX_LOG_CHILD", "1")
+                    .env("RUST_LOG", filter)
+                    .output()
+                    .expect("collect fixture process output");
             assert!(
                 output.status.success(),
                 "{}",
@@ -30,26 +31,27 @@ fn logging_and_panic_contract() {
     tracing::subscriber::with_default(tracing_subscriber::registry(), || {
         tracing::info!("scoped subscriber before initialization");
     });
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("create fixture directory");
     let mut paths = Paths::resolve(
-        Instance::parse("test-log").unwrap(),
+        Instance::parse("test-log").expect("parse fixture instance"),
         &FixtureEnv(temp.path().display().to_string()),
     )
-    .unwrap();
-    std::fs::write(temp.path().join("blocked"), "file").unwrap();
+    .expect("parse fixture instance");
+    std::fs::write(temp.path().join("blocked"), "file").expect("write fixture file");
     paths.log_dir = temp.path().join("blocked/child");
     assert!(log::init_logging(&paths, false).is_err());
     paths.log_dir = temp.path().join("logs");
-    std::fs::create_dir_all(&paths.log_dir).unwrap();
+    std::fs::create_dir_all(&paths.log_dir).expect("create fixture directory");
     for day in 1..=10 {
         std::fs::write(
             paths.log_dir.join(format!("daemon.2000-01-{day:02}.log")),
             "old",
         )
-        .unwrap();
+        .expect("write fixture file");
     }
-    std::fs::write(paths.log_dir.join("crash-preserved.log"), "preserve").unwrap();
-    let guard = log::init_logging(&paths, false).unwrap();
+    std::fs::write(paths.log_dir.join("crash-preserved.log"), "preserve")
+        .expect("write fixture file");
+    let guard = log::init_logging(&paths, false).expect("initialize fixture logger");
     assert!(log::init_logging(&paths, false).is_err());
     log::install_panic_hook(&paths, "1.0.0-test");
     for i in 0..60 {
@@ -60,32 +62,32 @@ fn logging_and_panic_contract() {
         std::thread::Builder::new()
             .name("worker-first".into())
             .spawn(|| panic!("boom here"))
-            .unwrap()
+            .expect("spawn fixture process")
             .join()
             .is_err()
     );
     drop(guard);
     let files: Vec<_> = std::fs::read_dir(&paths.log_dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
+        .expect("list fixture directory")
+        .map(|e| e.expect("list fixture directory").path())
         .collect();
     let crashes: Vec<_> = files
         .iter()
         .filter(|p| {
             p.file_name()
-                .unwrap()
+                .expect("fixture path has filename")
                 .to_str()
-                .unwrap()
+                .expect("fixture path is UTF-8")
                 .starts_with("crash-")
         })
         .collect();
     assert_eq!(crashes.len(), 2);
-    let info_enabled = std::env::var("RUST_LOG").unwrap() != "warn";
+    let info_enabled = std::env::var("RUST_LOG").expect("fixture environment is set") != "warn";
     for file in crashes
         .into_iter()
-        .filter(|p| p.file_name().unwrap() != "crash-preserved.log")
+        .filter(|p| p.file_name().expect("fixture path has filename") != "crash-preserved.log")
     {
-        let text = std::fs::read_to_string(file).unwrap();
+        let text = std::fs::read_to_string(file).expect("read fixture text");
         assert!(text.contains("version: 1.0.0-test"));
         assert!(text.contains("thread: worker-"));
         assert!(text.contains("panic_hook.rs"));
@@ -99,7 +101,7 @@ fn logging_and_panic_contract() {
             std::thread::Builder::new()
                 .name(format!("worker-{i}"))
                 .spawn(|| panic!("boom here"))
-                .unwrap()
+                .expect("spawn fixture process")
         })
         .collect();
     for thread in threads {
@@ -107,13 +109,13 @@ fn logging_and_panic_contract() {
     }
     assert_eq!(
         std::fs::read_dir(&paths.log_dir)
-            .unwrap()
+            .expect("list fixture directory")
             .filter(|e| e
                 .as_ref()
-                .unwrap()
+                .expect("fixture child exists")
                 .file_name()
                 .to_str()
-                .unwrap()
+                .expect("fixture path is UTF-8")
                 .starts_with("crash-"))
             .count(),
         10
@@ -123,29 +125,35 @@ fn logging_and_panic_contract() {
             .iter()
             .filter(|p| p
                 .file_name()
-                .unwrap()
+                .expect("fixture path has filename")
                 .to_str()
-                .unwrap()
+                .expect("fixture path is UTF-8")
                 .starts_with("daemon."))
             .count(),
         7
     );
     assert_eq!(
-        std::fs::read_to_string(paths.log_dir.join("crash-preserved.log")).unwrap(),
+        std::fs::read_to_string(paths.log_dir.join("crash-preserved.log"))
+            .expect("read fixture text"),
         "preserve"
     );
     let daemon = files
         .iter()
         .find(|p| {
             p.file_name()
-                .unwrap()
+                .expect("fixture path has filename")
                 .to_str()
-                .unwrap()
+                .expect("fixture path is UTF-8")
                 .starts_with("daemon.")
-                && !p.file_name().unwrap().to_str().unwrap().contains("2000-01")
+                && !p
+                    .file_name()
+                    .expect("fixture path has filename")
+                    .to_str()
+                    .expect("fixture path is UTF-8")
+                    .contains("2000-01")
         })
-        .unwrap();
-    let text = std::fs::read_to_string(daemon).unwrap();
+        .expect("fixture path is UTF-8");
+    let text = std::fs::read_to_string(daemon).expect("read fixture text");
     assert!(text.contains("sequence=0"));
     assert_eq!(text.contains("info-only"), info_enabled);
 }

@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import type { Transport } from "./rpc/client";
 import { App, pickTransport } from "./App";
+import type { Transport } from "./rpc/client";
+
 function transport(): Transport {
   return { connect: vi.fn(), close: vi.fn(), send: vi.fn(), onFrame: () => () => {}, onState: () => () => {} };
 }

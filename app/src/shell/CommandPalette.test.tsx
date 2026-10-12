@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { CommandPalette } from "./CommandPalette";
 import { useCommands } from "./commands";
+
 beforeEach(() => useCommands.setState({ items: new Map() }));
 test("old registration cleanup cannot delete a replacement", () => {
   const command = { id: "one", label: "명령", run: vi.fn() };

@@ -5,6 +5,7 @@ import { RpcProvider } from "../rpc/RpcProvider";
 import { TooltipProvider } from "../ui";
 import { useCommands } from "./commands";
 import { Shell } from "./Shell";
+
 test("title, Ctrl+Shift+O and registry open the project switcher", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   const wire = new ProjectWire();

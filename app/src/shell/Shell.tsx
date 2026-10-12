@@ -1,11 +1,11 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
-import { ProjectTitle, ProjectSwitcher } from "../features/projects/ProjectSwitcher";
+import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { SettingsPage } from "../features/settings/SettingsPage";
-import { Frame } from "./Frame";
 import { CommandPalette } from "./CommandPalette";
 import { useCommands } from "./commands";
+import { Frame } from "./Frame";
 import { type Binding, useKeymap } from "./keymap";
 import { buildRouter } from "./router";
 import { SECTIONS } from "./sections";

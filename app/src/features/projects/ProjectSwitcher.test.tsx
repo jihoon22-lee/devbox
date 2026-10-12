@@ -5,7 +5,8 @@ import { RpcProvider } from "../../rpc/RpcProvider";
 import { ProjectDataProvider } from "./ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "./ProjectSwitcher";
 import { useCurrentProject } from "./store";
-import { projects, ProjectWire } from "./test-wire";
+import { ProjectWire, projects } from "./test-wire";
+
 function Harness() {
   const [open, setOpen] = useState(false);
   return (
@@ -71,7 +72,7 @@ test("removal defaults to cancel, retains selection until authoritative success 
   await userEvent.click(remove);
   await userEvent.click(screen.getByRole("button", { name: "프로젝트 제거" }));
   await waitFor(() => expect(wire.requests("projects.remove")).toHaveLength(1));
-  expect(wire.requests("projects.remove")[0].params).toEqual({ id: "a" });
+  expect(wire.request("projects.remove").params).toEqual({ id: "a" });
   expect(useCurrentProject.getState().id).toBe("a");
   await userEvent.keyboard("{Escape}");
   expect(screen.getByRole("dialog", { name: "프로젝트" })).toBeInTheDocument();
@@ -178,7 +179,7 @@ test("project query diagnostics are visible and copyable with retry available", 
   await act(async () =>
     wire.deliver({
       type: "response",
-      id: wire.requests()[0].id,
+      id: wire.request().id,
       error: { code: "internal" },
       diagnosticId: "owned-project-diagnostic",
     }),

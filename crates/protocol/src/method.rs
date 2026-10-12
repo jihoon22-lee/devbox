@@ -145,7 +145,10 @@ mod tests {
         crate::system::export(&mut names);
         names.method::<Undo>();
         names.topic::<Changed>();
-        assert_eq!(names.methods, ["system.ping", "system.info", "test.undo"]);
+        assert_eq!(
+            names.methods,
+            ["system.ping", "system.info", "system.doctor", "test.undo"]
+        );
         assert_eq!(names.topics, ["test.changed"]);
         let config = ts_rs::Config::new().with_large_int("number");
         assert!(Done::decl(&config).contains("rev: string"));
@@ -156,7 +159,7 @@ mod tests {
             serde_json::to_string(&Done {
                 rev: "9007199254740993".into()
             })
-            .unwrap(),
+            .expect("serialize fixture JSON"),
             r#"{"rev":"9007199254740993"}"#
         );
     }

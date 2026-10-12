@@ -128,7 +128,7 @@ fn backup_at(
     let reserved = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&temporary)
+        .open(temporary)
         .map_err(crate::io_err("reserve backup"))?;
     drop(reserved);
     let result = (|| {
@@ -138,7 +138,7 @@ fn backup_at(
                 .to_str()
                 .ok_or_else(|| invalid("backup path is not UTF-8"))?],
         )?;
-        std::fs::File::open(&temporary)
+        std::fs::File::open(temporary)
             .and_then(|f| f.sync_all())
             .map_err(crate::io_err("sync backup"))?;
         let receipt_temp = temporary.with_extension("receipt");
@@ -184,13 +184,13 @@ fn backup_at(
             if let Some(v) = old
                 .strip_prefix("devbox-pre-")
                 .and_then(|s| s.strip_suffix(".db"))
+                && valid_version(v)
+                && old != name
             {
-                if valid_version(v) && old != name {
-                    match std::fs::remove_file(dir.join(old)) {
-                        Ok(()) => {}
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(crate::io_err("remove previous owned backup")(e)),
-                    }
+                match std::fs::remove_file(dir.join(old)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(crate::io_err("remove previous owned backup")(e)),
                 }
             }
         }

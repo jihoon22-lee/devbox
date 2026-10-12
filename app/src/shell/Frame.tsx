@@ -2,10 +2,10 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ActivityBar } from "./ActivityBar";
 import { ConnectionBanner } from "./ConnectionBanner";
+import s from "./Frame.module.css";
 import { SectionBoundary } from "./SectionBoundary";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
-import s from "./Frame.module.css";
 export function Frame({ project, onOpenPalette }: { project: ReactNode; onOpenPalette: () => void }) {
   const path = useRouterState({ select: (state) => state.matches.at(-1)?.pathname ?? state.location.pathname });
   const navigate = useNavigate();

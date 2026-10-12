@@ -156,7 +156,7 @@ pub async fn run(
         if let Err(e) = result {
             conn.gate(app, generation, "bridgeFailed", Some(e.to_string()), None);
         }
-        tokio::select! {_=cancel.cancelled()=>return,_=tokio::time::sleep(backoff.next())=>{}}
+        tokio::select! {_=cancel.cancelled()=>return,_=tokio::time::sleep(backoff.next_delay())=>{}}
     }
 }
 async fn bridge_once(

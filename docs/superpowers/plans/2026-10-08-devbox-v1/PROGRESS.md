@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 24 Windows 빌드·CI·최종 통합 검증·S0 확인 준비 (Task 1–23 로컬 구현·검토 완료, native Windows·실제 E2E는 아직 미실행) |
+| 다음 할 일 | S0b 완료 커밋·단일 PR → 필수 CI/native Windows 설치 파일 → 사용자 S0 확인 (Task 1–24 구현·별도 검토·로컬 통합/E2E·소유 WSL 실기 완료, 아직 미머지) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -70,7 +70,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | B | Task 2–6 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h(구현·검토 합산 추정) |
 | S0b | C | Task 7–15 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토 합산 추정) |
 | S0b | D | Task 16–21 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.0h(구현·검토 합산 추정) |
-| S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 작업 중 | 2026-10-13 | | |
+| S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토·최종 통합 합산 추정) |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
 | S1 | G | Task 3–4 |  | 대기 | | | |
 | S1 | H | Task 5–6 |  | 대기 | | | |
@@ -154,6 +154,12 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03b Task 23 | WSL 배포·게이트·브리지·창별 IPC | 소유 digest 배포·인스턴스 setup/doctor·단일 취소 supervisor·bounded duplex·Job 정리, attachment/revision 수명·오류 복구 UI | 새 Rust 19·프론트 14·직접 영향 시작 검사 3개 통과, 별도 최종 검토 통과. 반복 종료의 정리 우회·진단 소실·최초 연결 뒤 복구 UI 누락을 수정. 모든 실행 fixture는 소유 임시 자원이며 실제 WSL 설치/native Windows는 아직 미실행 |
 
 | 2026-10-13 | 03b Task 23 후속 | 사용자 지정 XDG 배포 경로 | publish·setup·doctor·bridge가 절대 XDG_DATA_HOME 또는 HOME 기본 경로를 함께 사용 | 새 회귀 4개(기존 구현에서 행동 실패 3개 확인) 포함 deploy 6개 통과·별도 검토 PASS. 소유 HOME/XDG fixture만 사용, symlink·기존 인스턴스 데이터 보존 확인. Windows 실기는 여전히 미실행 |
+
+| 2026-10-13 | 03b Task 24 | Windows 스크립트·CI·dogfood | 소유 원본 결합 Windows 동기화, musl 리소스 출처·native 검사·NSIS·self-check, 정확한 원격 SHA/run/설치 파일 해시 확인, E2E 성공 화면 artifact·문서 갱신 | PS5.1 소유 fixture 3종·Python 관련 5개·actionlint/문법/수정 TS Biome 통과. 최초 PR workflow 조회 결함을 재현 후 저장소 실행 API 조회로 수정, dogfood 2개 재통과. 별도 최종 검토 PASS. 최종 검사 실패를 수정 후 영향 범위 재검사: Rust workspace 146·앱 core 28·Python 12·프론트 106·실제 E2E 3개 통과(수정된 프론트 테스트 18개 재통과), fmt/clippy/생성 타입/Biome/typecheck/build 통과. E2E 화면 3장 시각 확인. native Windows는 CI에서 실행 예정 |
+
+| 2026-10-13 | S0b 최종 통합 검사 | 실패 범위 수정·재검증 | stale doctor 기대값, Node 24 ESM JSON import, 엄격한 테스트 타입, import 정렬·Clippy 규약 보완. 테스트 assertion 의미와 정상 동작 유지 검토 | 전체 check 1회 뒤 실패/영향 범위만 재실행. 초기 53.1초·메모리 peak 1.19GB, Rust/E2E 재검증 29.5초·peak 1.89GB. 자원 제한 준수. 실제 WSL 하네스의 임시 runtime 설정 오류는 실패·소유 파일 보존으로 기록 후 exact-content 검증 정리하고 실제 manager 경로로 보정했다 |
+
+| 2026-10-13 | S0b WSL 실제 수용 | 고유 인스턴스 setup·doctor·systemd·bridge·프로젝트 CRUD·EOF | `test-s0b-1c4aa0e8ee81`, 실제 사용자 manager + 소유 임시 XDG 데이터, 현재 debug CLI SHA256 `f2332c8759ec398c11d6bdd01e29eea878448991be8b30548cc801658532fe6b` | PASS. doctor systemd/tmux/env/도구 정상, 기존 linger·inotify는 warn 그대로 유지. 전용 unit·enable link·소켓·임시 데이터 정리와 잔존 unit 없음 확인. 근거: Git common-dir `devbox-verification/s0b-wsl-acceptance.json`; Windows 설치본/R1/R2 미실행을 대신하지 않음 |
 
 ## 6. 세션 기록
 

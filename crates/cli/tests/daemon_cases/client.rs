@@ -8,34 +8,44 @@ use tokio_util::codec::Framed;
 
 #[tokio::test]
 async fn pending_request_wakes_when_peer_disconnects() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("create fixture directory");
     let path = temp.path().join("peer.sock");
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = UnixListener::bind(&path).expect("bind fixture socket");
     let peer = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, _) = listener.accept().await.expect("accept fixture peer");
         let mut framed = Framed::new(stream, FrameCodec::default());
-        framed.next().await.unwrap().unwrap();
+        framed
+            .next()
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
         // Disconnect with a request registered and awaiting its reply.
     });
-    let client = Client::connect_without_hello(&path).await.unwrap();
+    let client = Client::connect_without_hello(&path)
+        .await
+        .expect("connect fixture client");
     assert!(matches!(
         bounded(client.raw_call("system.ping", (), None)).await,
         Err(ClientError::ConnectionLost)
     ));
-    peer.await.unwrap();
+    peer.await.expect("join fixture peer");
 }
 
 #[tokio::test]
 async fn immediate_subscription_event_is_registered_and_overflow_reports_resync() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("create fixture directory");
     let path = temp.path().join("peer.sock");
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = UnixListener::bind(&path).expect("bind fixture socket");
     let peer = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, _) = listener.accept().await.expect("accept fixture peer");
         let mut framed = Framed::new(stream, FrameCodec::default());
-        let hello = framed.next().await.unwrap().unwrap();
+        let hello = framed
+            .next()
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
         assert!(matches!(
-            parse_json::<ClientMessage>(&hello).unwrap(),
+            parse_json::<ClientMessage>(&hello).expect("parse fixture message"),
             ClientMessage::Hello { .. }
         ));
         framed
@@ -48,9 +58,15 @@ async fn immediate_subscription_event_is_registered_and_overflow_reports_resync(
                 },
             ))
             .await
-            .unwrap();
-        let subscribe = framed.next().await.unwrap().unwrap();
-        let ClientMessage::Subscribe { id, .. } = parse_json(&subscribe).unwrap() else {
+            .expect("send fixture message");
+        let subscribe = framed
+            .next()
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
+        let ClientMessage::Subscribe { id, .. } =
+            parse_json(&subscribe).expect("parse fixture message")
+        else {
             panic!("subscribe")
         };
         framed
@@ -63,7 +79,7 @@ async fn immediate_subscription_event_is_registered_and_overflow_reports_resync(
                 },
             ))
             .await
-            .unwrap();
+            .expect("complete fixture subscription exchange");
         framed
             .feed(json_frame(
                 0,
@@ -73,14 +89,20 @@ async fn immediate_subscription_event_is_registered_and_overflow_reports_resync(
                     payload: serde_json::value::RawValue::from_string(
                         "{\"n\":9007199254740993}".into(),
                     )
-                    .unwrap(),
+                    .expect("encode fixture JSON"),
                 },
             ))
             .await
-            .unwrap();
-        framed.flush().await.unwrap();
-        let barrier = framed.next().await.unwrap().unwrap();
-        let ClientMessage::Request { id, .. } = parse_json(&barrier).unwrap() else {
+            .expect("encode fixture JSON");
+        framed.flush().await.expect("flush fixture messages");
+        let barrier = framed
+            .next()
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
+        let ClientMessage::Request { id, .. } =
+            parse_json(&barrier).expect("parse fixture message")
+        else {
             panic!("request")
         };
         for n in 2..302 {
@@ -90,43 +112,60 @@ async fn immediate_subscription_event_is_registered_and_overflow_reports_resync(
                     &ServerMessage::Event {
                         sub_id: 1,
                         rev: n.to_string(),
-                        payload: serde_json::value::RawValue::from_string("null".into()).unwrap(),
+                        payload: serde_json::value::RawValue::from_string("null".into())
+                            .expect("encode fixture JSON"),
                     },
                 ))
                 .await
-                .unwrap();
+                .expect("encode fixture JSON");
         }
         framed
             .feed(json_frame(
                 0,
                 &ServerMessage::Response {
                     id,
-                    result: Some(serde_json::value::RawValue::from_string("null".into()).unwrap()),
+                    result: Some(
+                        serde_json::value::RawValue::from_string("null".into())
+                            .expect("encode fixture JSON"),
+                    ),
                     error: None,
                     diagnostic_id: None,
                 },
             ))
             .await
-            .unwrap();
-        framed.flush().await.unwrap();
+            .expect("encode fixture JSON");
+        framed.flush().await.expect("flush fixture messages");
         // Hold the connection open until the caller has consumed Resync.
         framed.next().await;
     });
     let client = Client::connect(&path, ClientKind::Test, "test-fake")
         .await
-        .unwrap();
-    let mut sub = client.subscribe("test.events").await.unwrap();
-    let first = bounded(sub.next_event()).await.unwrap();
+        .expect("connect fixture client");
+    let mut sub = client
+        .subscribe("test.events")
+        .await
+        .expect("subscribe to fixture topic");
+    let first = bounded(sub.next_event())
+        .await
+        .expect("receive fixture event");
     assert_eq!(first.rev, "1");
     assert_eq!(first.payload, "{\"n\":9007199254740993}");
     assert_eq!(
-        bounded(client.raw_call("barrier", (), None)).await.unwrap(),
+        bounded(client.raw_call("barrier", (), None))
+            .await
+            .expect("complete fixture RPC"),
         "null"
     );
-    assert!(bounded(sub.next_event()).await.unwrap().rev.is_empty());
-    client.close_channel().await.unwrap();
+    assert!(
+        bounded(sub.next_event())
+            .await
+            .expect("receive fixture event")
+            .rev
+            .is_empty()
+    );
+    client.close_channel().await.expect("close fixture channel");
     assert!(bounded(sub.next_event()).await.is_none());
-    peer.await.unwrap();
+    peer.await.expect("complete fixture subscription exchange");
 }
 
 #[tokio::test]
@@ -135,13 +174,17 @@ async fn client_rejects_mismatched_welcome() {
         ("wrong", devbox_protocol::PROTOCOL_VERSION),
         (devbox_cli::VERSION, devbox_protocol::PROTOCOL_VERSION + 1),
     ] {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("create fixture directory");
         let path = temp.path().join("peer.sock");
-        let listener = UnixListener::bind(&path).unwrap();
+        let listener = UnixListener::bind(&path).expect("bind fixture socket");
         let peer = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
+            let (stream, _) = listener.accept().await.expect("accept fixture peer");
             let mut framed = Framed::new(stream, FrameCodec::default());
-            framed.next().await.unwrap().unwrap();
+            framed
+                .next()
+                .await
+                .expect("receive fixture frame")
+                .expect("receive fixture frame");
             framed
                 .send(json_frame(
                     0,
@@ -152,26 +195,30 @@ async fn client_rejects_mismatched_welcome() {
                     },
                 ))
                 .await
-                .unwrap();
+                .expect("send fixture message");
             framed.next().await;
         });
         assert!(matches!(
             bounded(Client::connect(&path, ClientKind::Test, "test-fake")).await,
             Err(ClientError::Protocol("welcome mismatch"))
         ));
-        peer.await.unwrap();
+        peer.await.expect("join mismatched fixture peer");
     }
 }
 
 #[tokio::test]
 async fn dropping_subscription_sends_unsubscribe() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("create fixture directory");
     let path = temp.path().join("peer.sock");
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = UnixListener::bind(&path).expect("bind fixture socket");
     let peer = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, _) = listener.accept().await.expect("accept fixture peer");
         let mut framed = Framed::new(stream, FrameCodec::default());
-        framed.next().await.unwrap().unwrap();
+        framed
+            .next()
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
         framed
             .send(json_frame(
                 0,
@@ -182,9 +229,15 @@ async fn dropping_subscription_sends_unsubscribe() {
                 },
             ))
             .await
-            .unwrap();
-        let frame = framed.next().await.unwrap().unwrap();
-        let ClientMessage::Subscribe { id, .. } = parse_json(&frame).unwrap() else {
+            .expect("send fixture message");
+        let frame = framed
+            .next()
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
+        let ClientMessage::Subscribe { id, .. } =
+            parse_json(&frame).expect("parse fixture message")
+        else {
             panic!("subscribe")
         };
         framed
@@ -197,17 +250,23 @@ async fn dropping_subscription_sends_unsubscribe() {
                 },
             ))
             .await
-            .unwrap();
-        let frame = bounded(framed.next()).await.unwrap().unwrap();
+            .expect("send fixture message");
+        let frame = bounded(framed.next())
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame");
         assert!(matches!(
-            parse_json::<ClientMessage>(&frame).unwrap(),
+            parse_json::<ClientMessage>(&frame).expect("parse fixture message"),
             ClientMessage::Unsubscribe { sub_id: 19 }
         ));
     });
     let client = Client::connect(&path, ClientKind::Test, "test-fake")
         .await
-        .unwrap();
-    let sub = client.subscribe("test.events").await.unwrap();
+        .expect("connect fixture client");
+    let sub = client
+        .subscribe("test.events")
+        .await
+        .expect("subscribe to fixture topic");
     drop(sub);
-    bounded(peer).await.unwrap();
+    bounded(peer).await.expect("join fixture peer");
 }

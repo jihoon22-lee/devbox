@@ -17,7 +17,7 @@ fn request(id: u32, method: &str) -> ClientMessage {
     ClientMessage::Request {
         id,
         method: method.into(),
-        params: RawValue::from_string("{}".into()).unwrap(),
+        params: RawValue::from_string("{}".into()).expect("encode fixture JSON"),
         client_request_id: None,
     }
 }
@@ -27,19 +27,25 @@ async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
         .expect("test deadline")
 }
 async fn receive(wire: &mut Wire) -> ServerMessage {
-    parse_json(&bounded(wire.next()).await.unwrap().unwrap()).unwrap()
+    parse_json(
+        &bounded(wire.next())
+            .await
+            .expect("receive fixture frame")
+            .expect("receive fixture frame"),
+    )
+    .expect("receive fixture frame")
 }
 fn daemon(temp: &tempfile::TempDir, started: Arc<tokio::sync::Notify>) -> Arc<Daemon> {
     let services = super::super::build_services_for_test(temp.path());
     let router = Router::new(services.clone())
-        .add::<Ping, _, _>(|s, _, _| async move {
+        .register::<Ping, _, _>(|s, _, _| async move {
             Ok(Pong {
                 daemon_id: s.daemon_id.clone(),
                 version: s.version.into(),
                 uptime_ms: 0,
             })
         })
-        .add::<ProjectsScan, _, _>(move |_, _, _| {
+        .register::<ProjectsScan, _, _>(move |_, _, _| {
             let started = started.clone();
             async move {
                 started.notify_one();
@@ -59,13 +65,15 @@ fn daemon(temp: &tempfile::TempDir, started: Arc<tokio::sync::Notify>) -> Arc<Da
 
 #[tokio::test]
 async fn close_reopen_cancels_old_requests_and_subscriptions_without_old_replies() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("create fixture directory");
     let started = Arc::new(tokio::sync::Notify::new());
     let d = daemon(&temp, started.clone());
-    let (client, server) = UnixStream::pair().unwrap();
+    let (client, server) = UnixStream::pair().expect("create fixture socket pair");
     let serving = tokio::spawn(connection(server, d.clone(), CancellationToken::new()));
     let mut wire = Wire::new(client, FrameCodec::default());
-    wire.send(json_frame(7, &hello())).await.unwrap();
+    wire.send(json_frame(7, &hello()))
+        .await
+        .expect("send fixture message");
     assert!(matches!(
         receive(&mut wire).await,
         ServerMessage::Welcome { .. }
@@ -79,7 +87,7 @@ async fn close_reopen_cancels_old_requests_and_subscriptions_without_old_replies
         },
     ))
     .await
-    .unwrap();
+    .expect("send fixture message");
     assert!(matches!(
         receive(&mut wire).await,
         ServerMessage::Subscribed { .. }
@@ -87,15 +95,17 @@ async fn close_reopen_cancels_old_requests_and_subscriptions_without_old_replies
     assert_eq!(d.services.hub.subscriber_count("projects.changed"), 1);
     wire.send(json_frame(7, &request(1, "projects.scan")))
         .await
-        .unwrap();
+        .expect("send fixture message");
     bounded(started.notified()).await;
     wire.send(control_frame(7, &Control::ChannelClose))
         .await
-        .unwrap();
+        .expect("send fixture message");
     wire.send(control_frame(7, &Control::ChannelOpen))
         .await
-        .unwrap();
-    wire.send(json_frame(7, &hello())).await.unwrap();
+        .expect("send fixture message");
+    wire.send(json_frame(7, &hello()))
+        .await
+        .expect("send fixture message");
     // The cancelled old request must not deliver its id=1 reply into this epoch.
     assert!(matches!(
         receive(&mut wire).await,
@@ -103,7 +113,7 @@ async fn close_reopen_cancels_old_requests_and_subscriptions_without_old_replies
     ));
     wire.send(json_frame(7, &request(1, "system.ping")))
         .await
-        .unwrap();
+        .expect("send fixture message");
     assert!(matches!(
         receive(&mut wire).await,
         ServerMessage::Response {
@@ -120,30 +130,40 @@ async fn close_reopen_cancels_old_requests_and_subscriptions_without_old_replies
     })
     .await;
     drop(wire);
-    bounded(serving).await.unwrap().unwrap();
+    bounded(serving)
+        .await
+        .expect("join fixture connection")
+        .expect("serve fixture connection");
     d.dedupe.tracker.close();
     bounded(d.dedupe.tracker.wait()).await;
 }
 
 #[tokio::test]
 async fn inflight_request_id_collision_closes_connection_and_cleans_state() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("create fixture directory");
     let started = Arc::new(tokio::sync::Notify::new());
     let d = daemon(&temp, started.clone());
-    let (client, server) = UnixStream::pair().unwrap();
+    let (client, server) = UnixStream::pair().expect("create fixture socket pair");
     let serving = tokio::spawn(connection(server, d.clone(), CancellationToken::new()));
     let mut wire = Wire::new(client, FrameCodec::default());
-    wire.send(json_frame(0, &hello())).await.unwrap();
+    wire.send(json_frame(0, &hello()))
+        .await
+        .expect("send fixture message");
     receive(&mut wire).await;
     wire.send(json_frame(0, &request(4, "projects.scan")))
         .await
-        .unwrap();
+        .expect("send fixture message");
     bounded(started.notified()).await;
     wire.send(json_frame(0, &request(4, "system.ping")))
         .await
-        .unwrap();
+        .expect("send fixture message");
     assert!(bounded(wire.next()).await.is_none());
-    assert!(bounded(serving).await.unwrap().is_err());
+    assert!(
+        bounded(serving)
+            .await
+            .expect("join rejected fixture connection")
+            .is_err()
+    );
     d.dedupe.tracker.close();
     bounded(d.dedupe.tracker.wait()).await;
 }

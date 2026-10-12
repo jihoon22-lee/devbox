@@ -55,6 +55,9 @@ jobs:
       - run: command -v systemd-analyze
       - run: python3 scripts/verify-resources.py -- python3 -m unittest discover -s scripts/tests
       - run: python3 scripts/verify-resources.py -- cargo fmt --all --check
+      - run: python3 scripts/verify-resources.py -- cargo fmt --manifest-path app/src-tauri/Cargo.toml --check
+      - run: |
+          python3 scripts/verify-resources.py -- cargo test --manifest-path app/src-tauri/Cargo.toml --locked --lib core:: -- --test-threads=2
       - run: python3 scripts/verify-resources.py -- cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: python3 scripts/verify-resources.py -- cargo test --workspace --locked --no-fail-fast
       - run: bash scripts/banned-words.sh
@@ -91,12 +94,12 @@ jobs:
       - run: pnpm --filter app exec playwright install --with-deps chromium
       - run: pnpm --filter app e2e
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: e2e-diagnostics
           path: app/test-results/
           retention-days: 7
-  # Windows native required check is added in Task 24. This aggregate is supplemental.
+  # Rust (Windows) is enforced independently by windows.yml; this aggregate is supplemental.
   ci-ok:
     if: always()
     needs: [changes, rust, frontend, e2e]

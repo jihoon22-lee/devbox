@@ -23,12 +23,12 @@ fn open(
 }
 #[tokio::test]
 async fn commits_rollback_and_read_only() {
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     assert_eq!(
         db.write(|tx| tx.execute("INSERT INTO t_items VALUES ('a')", []))
             .await
-            .unwrap()
+            .expect("execute fixture SQL")
             .1,
         1
     );
@@ -47,7 +47,7 @@ async fn commits_rollback_and_read_only() {
             current_rev(tx)?
         )))
         .await
-        .unwrap(),
+        .expect("query fixture row"),
         (1, 1)
     );
     assert!(
@@ -66,8 +66,8 @@ async fn commits_rollback_and_read_only() {
 }
 #[tokio::test]
 async fn panic_recovers_writer_and_reader() {
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     assert!(
         db.write::<(), _>(|tx| {
             tx.execute("INSERT INTO t_items VALUES ('a')", [])?;
@@ -85,15 +85,15 @@ async fn panic_recovers_writer_and_reader() {
     assert_eq!(
         db.write(|tx| tx.execute("INSERT INTO t_items VALUES ('b')", []))
             .await
-            .unwrap()
+            .expect("execute fixture SQL")
             .1,
         1
     );
 }
 #[test]
 fn validates_versions_and_preserves_original_backup_on_retry() {
-    let d = tempfile::tempdir().unwrap();
-    drop(open(&d, "1", &[V1]).unwrap());
+    let d = tempfile::tempdir().expect("create fixture directory");
+    drop(open(&d, "1", &[V1]).expect("open fixture database"));
     assert!(open(&d, "../escape", &[V1, V2]).is_err());
     assert!(open(&d, "2", &[V2, V1]).is_err());
     assert!(open(&d, "2", &[V1, V1]).is_err());
@@ -103,33 +103,35 @@ fn validates_versions_and_preserves_original_backup_on_retry() {
         sql: "INVALID SQL",
     };
     let foreign = d.path().join("backups/devbox-pre-foreign.txt");
-    std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
-    std::fs::write(&foreign, "keep").unwrap();
+    std::fs::create_dir_all(foreign.parent().expect("fixture path has parent"))
+        .expect("fixture path has parent");
+    std::fs::write(&foreign, "keep").expect("write fixture file");
     assert!(open(&d, "2", &[V1, V2, bad]).is_err());
     let backup = d.path().join("backups/devbox-pre-2.db");
-    let before = std::fs::read(&backup).unwrap();
+    let before = std::fs::read(&backup).expect("read fixture file");
     assert!(open(&d, "2", &[V1, V2, bad]).is_err());
-    assert_eq!(std::fs::read(&backup).unwrap(), before);
+    assert_eq!(std::fs::read(&backup).expect("read fixture file"), before);
     assert!(foreign.exists());
-    drop(open(&d, "2", &[V1, V2]).unwrap());
-    let c = rusqlite::Connection::open(backup).unwrap();
+    drop(open(&d, "2", &[V1, V2]).expect("open fixture database"));
+    let c = rusqlite::Connection::open(backup).expect("open fixture database");
     assert!(c.prepare("SELECT extra FROM t_items").is_err());
     assert!(!d.path().join("backups/devbox-pre-3.db").exists());
-    drop(open(&d, "3", &[V1, V2]).unwrap());
+    drop(open(&d, "3", &[V1, V2]).expect("open fixture database"));
 }
 #[test]
 fn negative_revision_is_rejected() {
-    let d = tempfile::tempdir().unwrap();
-    drop(open(&d, "1", &[V1]).unwrap());
-    let c = rusqlite::Connection::open(d.path().join("devbox.db")).unwrap();
-    c.execute("UPDATE core_meta SET value=-1", []).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    drop(open(&d, "1", &[V1]).expect("open fixture database"));
+    let c = rusqlite::Connection::open(d.path().join("devbox.db")).expect("open fixture database");
+    c.execute("UPDATE core_meta SET value=-1", [])
+        .expect("execute fixture SQL");
     assert!(open(&d, "1", &[V1]).is_err());
 }
 
 #[tokio::test]
 async fn reader_snapshot_stays_consistent_across_write() {
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     let (started, ready) = tokio::sync::oneshot::channel();
     let (resume, proceed) = std::sync::mpsc::channel();
     let reader = db.clone();
@@ -140,24 +142,29 @@ async fn reader_snapshot_stays_consistent_across_write() {
                 let _ = started.send(());
                 proceed
                     .recv_timeout(std::time::Duration::from_secs(3))
-                    .unwrap();
+                    .expect("receive fixture signal before deadline");
                 let count: i64 = tx.query_row("SELECT count(*) FROM t_items", [], |r| r.get(0))?;
                 Ok((before, current_rev(tx)?, count))
             })
             .await
     });
-    ready.await.unwrap();
+    ready.await.expect("complete fixture snapshot task");
     db.write(|tx| tx.execute("INSERT INTO t_items VALUES ('a')", []))
         .await
-        .unwrap();
-    resume.send(()).unwrap();
-    assert_eq!(task.await.unwrap().unwrap(), (0, 0, 0));
+        .expect("execute fixture SQL");
+    resume.send(()).expect("send fixture message");
+    assert_eq!(
+        task.await
+            .expect("complete fixture snapshot task")
+            .expect("complete fixture snapshot task"),
+        (0, 0, 0)
+    );
 }
 
 #[tokio::test]
 async fn cancelled_waiter_does_not_stop_writer() {
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     let (started, ready) = tokio::sync::oneshot::channel();
     let (resume, proceed) = std::sync::mpsc::channel();
     let writer = db.clone();
@@ -167,18 +174,20 @@ async fn cancelled_waiter_does_not_stop_writer() {
                 let _ = started.send(());
                 proceed
                     .recv_timeout(std::time::Duration::from_secs(3))
-                    .unwrap();
+                    .expect("receive fixture signal before deadline");
                 tx.execute("INSERT INTO t_items VALUES ('a')", [])
             })
             .await
     });
-    ready.await.unwrap();
+    ready
+        .await
+        .expect("fixture writer starts before cancellation");
     task.abort();
-    resume.send(()).unwrap();
+    resume.send(()).expect("send fixture message");
     assert_eq!(
         db.write(|tx| tx.execute("INSERT INTO t_items VALUES ('b')", []))
             .await
-            .unwrap()
+            .expect("execute fixture SQL")
             .1,
         2
     );
@@ -186,32 +195,32 @@ async fn cancelled_waiter_does_not_stop_writer() {
 
 #[test]
 fn failed_backup_keeps_previous_and_retention_only_removes_owned_file() {
-    let d = tempfile::tempdir().unwrap();
-    drop(open(&d, "1", &[V1]).unwrap());
-    drop(open(&d, "2", &[V1, V2]).unwrap());
+    let d = tempfile::tempdir().expect("create fixture directory");
+    drop(open(&d, "1", &[V1]).expect("open fixture database"));
+    drop(open(&d, "2", &[V1, V2]).expect("open fixture database"));
     let previous = d.path().join("backups/devbox-pre-2.db");
-    let bytes = std::fs::read(&previous).unwrap();
+    let bytes = std::fs::read(&previous).expect("read fixture file");
     let foreign = d.path().join("backups/devbox-pre-foreign.db");
-    std::fs::write(&foreign, b"foreign").unwrap();
+    std::fs::write(&foreign, b"foreign").expect("write fixture file");
     let blocked = d.path().join("backups/devbox-pre-3.db");
-    std::fs::create_dir(&blocked).unwrap();
+    std::fs::create_dir(&blocked).expect("create fixture directory");
     let v3 = Migration {
         domain: "t",
         version: 3,
         sql: "CREATE TABLE t_more (id INTEGER);",
     };
     assert!(open(&d, "3", &[V1, V2, v3]).is_err());
-    assert_eq!(std::fs::read(&previous).unwrap(), bytes);
-    std::fs::remove_dir(blocked).unwrap();
-    drop(open(&d, "3", &[V1, V2, v3]).unwrap());
+    assert_eq!(std::fs::read(&previous).expect("read fixture file"), bytes);
+    std::fs::remove_dir(blocked).expect("remove fixture backup obstruction");
+    drop(open(&d, "3", &[V1, V2, v3]).expect("open fixture database"));
     assert!(!previous.exists());
     assert!(foreign.exists());
 }
 
 #[tokio::test]
 async fn negative_revision_in_transaction_is_rejected() {
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     assert!(
         db.write(|tx| {
             tx.execute("UPDATE core_meta SET value=-2", [])?;
@@ -220,14 +229,17 @@ async fn negative_revision_in_transaction_is_rejected() {
         .await
         .is_err()
     );
-    assert_eq!(db.read(current_rev).await.unwrap(), 0);
+    assert_eq!(
+        db.read(current_rev).await.expect("read fixture snapshot"),
+        0
+    );
 }
 
 #[test]
 fn semver_build_metadata_is_safe() {
-    let d = tempfile::tempdir().unwrap();
-    drop(open(&d, "1.0.0+build.1", &[V1]).unwrap());
-    drop(open(&d, "1.0.1+build.2", &[V1, V2]).unwrap());
+    let d = tempfile::tempdir().expect("create fixture directory");
+    drop(open(&d, "1.0.0+build.1", &[V1]).expect("open fixture database"));
+    drop(open(&d, "1.0.1+build.2", &[V1, V2]).expect("open fixture database"));
     assert!(
         d.path()
             .join("backups/devbox-pre-1.0.1+build.2.db")
@@ -238,33 +250,34 @@ fn semver_build_metadata_is_safe() {
 #[cfg(unix)]
 #[test]
 fn symlink_receipt_and_backup_fail_without_touching_foreign_data() {
-    let d = tempfile::tempdir().unwrap();
-    drop(open(&d, "1", &[V1]).unwrap());
+    let d = tempfile::tempdir().expect("create fixture directory");
+    drop(open(&d, "1", &[V1]).expect("open fixture database"));
     let backups = d.path().join("backups");
-    std::fs::create_dir(&backups).unwrap();
+    std::fs::create_dir(&backups).expect("create fixture directory");
     let foreign = d.path().join("foreign");
-    std::fs::write(&foreign, "owned by someone else").unwrap();
+    std::fs::write(&foreign, "owned by someone else").expect("write fixture file");
     let receipt = backups.join(".devbox-backup");
-    std::os::unix::fs::symlink(&foreign, &receipt).unwrap();
+    std::os::unix::fs::symlink(&foreign, &receipt).expect("create fixture symlink");
     assert!(open(&d, "2", &[V1, V2]).is_err());
     assert_eq!(
-        std::fs::read_to_string(&foreign).unwrap(),
+        std::fs::read_to_string(&foreign).expect("read fixture text"),
         "owned by someone else"
     );
-    std::fs::remove_file(receipt).unwrap();
-    std::os::unix::fs::symlink(&foreign, backups.join("devbox-pre-2.db")).unwrap();
+    std::fs::remove_file(receipt).expect("remove fixture file");
+    std::os::unix::fs::symlink(&foreign, backups.join("devbox-pre-2.db"))
+        .expect("create fixture symlink");
     assert!(open(&d, "2", &[V1, V2]).is_err());
     assert_eq!(
-        std::fs::read_to_string(&foreign).unwrap(),
+        std::fs::read_to_string(&foreign).expect("read fixture text"),
         "owned by someone else"
     );
 }
 
 #[tokio::test]
 async fn new_batch_same_app_version_refreshes_backup() {
-    let d = tempfile::tempdir().unwrap();
-    drop(open(&d, "1.0.0-dev", &[V1]).unwrap());
-    let db = open(&d, "1.0.0-dev", &[V1, V2]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    drop(open(&d, "1.0.0-dev", &[V1]).expect("open fixture database"));
+    let db = open(&d, "1.0.0-dev", &[V1, V2]).expect("open fixture database");
     db.write(|tx| {
         tx.execute(
             "INSERT INTO t_items(name,extra) VALUES ('user','saved')",
@@ -272,22 +285,22 @@ async fn new_batch_same_app_version_refreshes_backup() {
         )
     })
     .await
-    .unwrap();
+    .expect("execute fixture SQL");
     drop(db);
     let v3 = Migration {
         domain: "t",
         version: 3,
         sql: "CREATE TABLE t_more(id INTEGER);",
     };
-    drop(open(&d, "1.0.0-dev", &[V1, V2, v3]).unwrap());
-    let backup =
-        rusqlite::Connection::open(d.path().join("backups/devbox-pre-1.0.0-dev.db")).unwrap();
+    drop(open(&d, "1.0.0-dev", &[V1, V2, v3]).expect("open fixture database"));
+    let backup = rusqlite::Connection::open(d.path().join("backups/devbox-pre-1.0.0-dev.db"))
+        .expect("open fixture database");
     assert_eq!(
         backup
             .query_row("SELECT extra FROM t_items WHERE name='user'", [], |r| {
                 r.get::<_, String>(0)
             })
-            .unwrap(),
+            .expect("query fixture row"),
         "saved"
     );
     assert!(backup.prepare("SELECT * FROM t_more").is_err());
@@ -295,49 +308,58 @@ async fn new_batch_same_app_version_refreshes_backup() {
 
 #[test]
 fn receipt_stage_collision_preserves_unowned_file() {
-    let d = tempfile::tempdir().unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
     let db = d.path().join("devbox.db");
-    drop(open(&d, "1", &[V1]).unwrap());
-    let conn = rusqlite::Connection::open(db).unwrap();
+    drop(open(&d, "1", &[V1]).expect("open fixture database"));
+    let conn = rusqlite::Connection::open(db).expect("open fixture database");
     let dir = d.path().join("backups");
-    std::fs::create_dir(&dir).unwrap();
+    std::fs::create_dir(&dir).expect("create fixture directory");
     let temporary = dir.join(".collision.tmp");
     let receipt_stage = temporary.with_extension("receipt");
-    std::fs::write(&receipt_stage, b"unowned stage").unwrap();
+    std::fs::write(&receipt_stage, b"unowned stage").expect("write fixture file");
     assert!(backup_at(&conn, &dir, "2", &[V1, V2], &temporary).is_err());
-    assert_eq!(std::fs::read(&receipt_stage).unwrap(), b"unowned stage");
-    drop(open(&d, "2", &[V1, V2]).unwrap());
+    assert_eq!(
+        std::fs::read(&receipt_stage).expect("read fixture file"),
+        b"unowned stage"
+    );
+    drop(open(&d, "2", &[V1, V2]).expect("open fixture database"));
     let target = dir.join("devbox-pre-2.db");
-    let original = std::fs::read(&target).unwrap();
-    let receipt = std::fs::read(dir.join(".devbox-backup")).unwrap();
+    let original = std::fs::read(&target).expect("read fixture file");
+    let receipt = std::fs::read(dir.join(".devbox-backup")).expect("read fixture file");
     let v3 = Migration {
         domain: "t",
         version: 3,
         sql: "CREATE TABLE t_more(id INTEGER);",
     };
     assert!(backup_at(&conn, &dir, "2", &[V1, V2, v3], &temporary).is_err());
-    assert_eq!(std::fs::read(receipt_stage).unwrap(), b"unowned stage");
-    assert_eq!(std::fs::read(target).unwrap(), original);
-    assert_eq!(std::fs::read(dir.join(".devbox-backup")).unwrap(), receipt);
+    assert_eq!(
+        std::fs::read(receipt_stage).expect("read fixture file"),
+        b"unowned stage"
+    );
+    assert_eq!(std::fs::read(target).expect("read fixture file"), original);
+    assert_eq!(
+        std::fs::read(dir.join(".devbox-backup")).expect("read fixture file"),
+        receipt
+    );
 }
 
 #[tokio::test]
 async fn rejected_write_rolls_back_without_revision() {
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     let rejected = db
         .write_checked::<(), _, _>(|tx| {
             tx.execute("INSERT INTO t_items VALUES ('discard')", [])?;
             Ok(Err("rejected"))
         })
         .await
-        .unwrap();
+        .expect("complete rejected fixture transaction");
     assert_eq!(rejected, Err("rejected"));
     assert_eq!(db.rev(), 0);
     assert_eq!(
         db.read(|tx| tx.query_row("SELECT COUNT(*) FROM t_items", [], |r| r.get::<_, u64>(0)))
             .await
-            .unwrap(),
+            .expect("query fixture row"),
         0
     );
     assert_eq!(
@@ -345,8 +367,8 @@ async fn rejected_write_rolls_back_without_revision() {
             tx.execute("INSERT INTO t_items VALUES ('kept')", [])?
         )))
         .await
-        .unwrap()
-        .unwrap(),
+        .expect("execute fixture SQL")
+        .expect("execute fixture SQL"),
         (1, 1)
     );
 }
@@ -354,8 +376,8 @@ async fn rejected_write_rolls_back_without_revision() {
 #[tokio::test]
 async fn commit_callback_runs_only_after_successful_commit() {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let d = tempfile::tempdir().unwrap();
-    let db = open(&d, "1", &[V1]).unwrap();
+    let d = tempfile::tempdir().expect("create fixture directory");
+    let db = open(&d, "1", &[V1]).expect("open fixture database");
     let calls = Arc::new(AtomicUsize::new(0));
     let callback = |calls: Arc<AtomicUsize>, db: Db| {
         move |_: &(), rev| {
@@ -372,7 +394,7 @@ async fn commit_callback_runs_only_after_successful_commit() {
             callback(calls.clone(), db.clone()),
         )
         .await
-        .unwrap();
+        .expect("complete fixture commit callback");
     assert_eq!(rejected, Err("rejected"));
     let failure = db
         .write_checked_with_commit::<(), (), _, _>(
@@ -394,8 +416,8 @@ async fn commit_callback_runs_only_after_successful_commit() {
         callback(calls.clone(), db.clone()),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("complete fixture commit callback")
+    .expect("complete fixture commit callback");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(db.rev(), 1);
 }
