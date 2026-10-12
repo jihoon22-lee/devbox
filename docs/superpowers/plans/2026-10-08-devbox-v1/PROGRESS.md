@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 23 WSL 배포·연결 게이트·브리지·창 채널 (Task 22 로컬 구현·검토 완료, native Windows·실제 E2E·전체 검증은 Task 24) |
+| 다음 할 일 | S0b Task 24 Windows 빌드·CI·최종 통합 검증·S0 확인 준비 (Task 1–23 로컬 구현·검토 완료, native Windows·실제 E2E는 아직 미실행) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -151,6 +151,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03b Task 21 | 개발·검증·E2E·CI 진입점 | 공통 잠금/자원 제한·기존 데몬 보존·소유 stdout 준비 확인·격리 fixture, 필수 Frontend/Linux Rust 이름 유지 | Python 회귀 총 10개·대상 E2E/config TS·actionlint·구문 검사 통과, 별도 재검토 통과. 추가 완료 전 Escape 경합과 상대 runtime 경로 수정. 실제 E2E·전체 check는 Task 24에서 수행 |
 | 2026-10-13 | Windows 사전 확인 | 로컬 native 빌드 도구 | Node만 확인, cargo/rustc/pnpm·기본 cargo·vswhere 미확인 | 별도 설치 없이 계획의 hosted Windows CI에서 native 검사와 설치 파일을 생성한다. 로컬 Windows 빌드 성공으로 보고하지 않음 |
 | 2026-10-13 | 03b Task 22 | Tauri 껍데기·창 크기·self-check | Windows 의존성 분리·자체 lock·단일 인스턴스·COM 성공 뒤 창 표시, 물리 장식 포함 크기 제한 | 순수 geometry 3·리소스 2개 red→green, 스키마/metadata/태그 아이콘 확인·최종 별도 검토 통과. 작은 작업 영역의 장식 초과 수정. 실제 Windows 컴파일·UI·번들 위치는 Task 24까지 미검증 |
+| 2026-10-13 | 03b Task 23 | WSL 배포·게이트·브리지·창별 IPC | 소유 digest 배포·인스턴스 setup/doctor·단일 취소 supervisor·bounded duplex·Job 정리, attachment/revision 수명·오류 복구 UI | 새 Rust 19·프론트 14·직접 영향 시작 검사 3개 통과, 별도 최종 검토 통과. 반복 종료의 정리 우회·진단 소실·최초 연결 뒤 복구 UI 누락을 수정. 모든 실행 fixture는 소유 임시 자원이며 실제 WSL 설치/native Windows는 아직 미실행 |
 
 ## 6. 세션 기록
 
