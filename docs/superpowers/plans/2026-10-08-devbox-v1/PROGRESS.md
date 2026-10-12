@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 16 앱 골격·디자인 토큰·기본 컴포넌트 (묶음 C 로컬 구현·검토 완료, 실제 설치·전체 검증은 Task 24) |
+| 다음 할 일 | S0b Task 17 RPC 클라이언트·WebSocket 전송·오류 문구 (Task 16 로컬 구현·검토 완료, 실제 설치·전체 검증은 Task 24) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -143,6 +143,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 14 | Tokio stdio copy·WS 프레임 누적·단일 loop send | 독립 pipe OFD/AsyncFd로 양쪽 취소 가능, 5초 활성화 전체 기한·stdout 격리; WS 메시지별 단일 프레임·독립 양방향·토큰 URL 인코딩 | 브리지 7개·게이트웨이 6개·부모 pipe flag 보존 1개 통과. blocked stdout 종료 red→green, 8MiB raw/16MiB WS 양방향·강제 종료 후 flags 보존 확인. fake systemctl만 사용, 별도 재검토 통과 |
 | 2026-10-13 | 03 Task 15 | 고정 경로 unit·단순 env/which·실기와 묶음 전체 검사 | private atomic env·단계 실패 중단·instance XDG drop-in·실제 권한 검사, user manager 응답/linger 진단; 실제 설치는 Task 24 | setup 7개·doctor 4개·route 1개·TS 생성/check 통과. 실제 systemd parser가 quoted ListenStream을 거부하는 결함과 owner 실행권한 오판 각각 red→green 후 재검토 통과. Linux 검증은 systemd-analyze 필요, 서비스는 변경하지 않음 |
 | 2026-10-13 | 03·03b 운영 절차 | 묶음별 전체 검사/push·ci-ok 단일 보호 전환·rebase | 현재 사용자 규약대로 과제별 좁은 검사, Task 24 통합 검증/push, 기존 필수 CI 3개 유지·S0 확인 뒤 squash | 수용·머지 전 완료로 기록하지 않도록 순서도 정리. 구현자와 별도 검토 완료는 로컬 진행이며 PR/Windows 실기 통과와 구분 |
+| 2026-10-13 | 03b Task 16 | UI 골격·기본 컴포넌트·고정 높이 없는 Dialog | React/Vite 설정·토큰·native 버튼·Radix 포커스·복사 실패 처리, 화면 높이 제한과 스크롤 | UI 13개 red→green, 별도 검토의 긴 대화상자 버튼 잘림 수정 후 재검토 통과. CSS 수정 뒤 무관한 통과 검사는 반복하지 않음. 전체 typecheck/build·실기는 Task 24 |
 
 ## 6. 세션 기록
 

@@ -1,0 +1,36 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg-1);
+  color: var(--fg);
+  font: var(--text-sm) / var(--leading-body) var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+::selection {
+  background: var(--selection);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText;
+  }
+}
