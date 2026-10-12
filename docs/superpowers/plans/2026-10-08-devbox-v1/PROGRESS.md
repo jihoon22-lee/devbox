@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b Task 5 창·채널 mux (Task 4 라우터·선언·오류 10개 검사·별도 검토 통과) |
+| 다음 할 일 | S0b Task 6 TypeScript RPC 생성기 (Task 5 mux 12개 검사·별도 검토 통과) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -67,7 +67,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 |---|---|---|---|---|---|---|---|
 | S0a | — | Task 1–8 | `docs/v1-plan` | push(`58fda4d7`, 자동 부분) | 2026-10-12 | 2026-10-12 | 약 1.0h(구현·검토 합산 추정; 세션 경과 약 0.8h) |
 | S0b | A | Task 1 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-12 | 2026-10-13 | 약 0.25h |
-| S0b | B | Task 2–6 | `v1/s0b-skeleton` | 작업 중(Task 2–4 완료) | 2026-10-13 | | |
+| S0b | B | Task 2–6 | `v1/s0b-skeleton` | 작업 중(Task 2–5 완료) | 2026-10-13 | | |
 | S0b | C | Task 7–15 |  | 대기 | | | |
 | S0b | D | Task 16–21 |  | 대기 | | | |
 | S0b | E | Task 22–24 → S0b PR |  | 대기 | | | |
@@ -129,6 +129,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 03 Task 2 | oversized stream 시험 길이 | 프레임 헤더 5 + stream ID/flags 5 + chunk 상한 + 1 | stream 본문 overhead 누락 보정. 부분/복수 프레임·상한·poisoning·encode 보존·채널 helper 10개 통과, 별도 검토 통과 |
 | 2026-10-13 | 03 Task 3 | tagged enum derive와 WireError detail Value | RawValue 봉투 직접 역직렬화·detail RawValue·TS optional/unknown; 누락과 실제 null 구분 | serde tagged enum의 중간 버퍼가 RawValue 역직렬화를 지원하지 않음. 메시지·정밀도·null·frame·TS 계약 7개 통과, 별도 검토 통과. Task 4의 to_wire·동등성 예제도 이에 맞춰 보정 |
 | 2026-10-13 | 03 Task 4 | Value 기반 오류 변환·DispatchError 동등성 derive | 직접 직렬화 후 WireError 역직렬화, 동등성 derive 제거 | Task 3 RawValue 계약에 맞춤. 라우터 7·선언/주제 1·오류 2개 통과, 실행 전/중 취소와 내부 원인 비노출·별도 검토 통과 |
+| 2026-10-13 | 03 Task 5 | splitter의 5바이트 대기·채널/재시도 counter 증가 | 4바이트 길이 즉시 검사·malformed 뒤 poisoning, BytesMut 분할, active ID 회피·backoff 포화 증가 | 예제의 4바이트 zero 회귀와 일치시키고 채널 충돌·counter overflow 방지. mux 12개 통과, 별도 검토 통과 |
 
 ## 6. 세션 기록
 
