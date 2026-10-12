@@ -5,7 +5,8 @@ use devbox_protocol::{NameCollector, Router};
 use std::sync::Arc;
 
 pub fn router(s: Arc<Services>) -> Router<Services> {
-    Router::new(s)
+    let test_instance = s.paths.instance.as_str().starts_with("test-");
+    let router = Router::new(s)
         .register::<Ping, _, _>(|s, _, _| async move {
             Ok(Pong {
                 daemon_id: s.daemon_id.clone(),
@@ -36,7 +37,16 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<projects::ProjectsRemove, _, _>(
             |s, _, p| async move { s.projects.remove(p).await },
         )
-        .register::<projects::ProjectsScan, _, _>(|s, _, p| async move { s.projects.scan(p).await })
+        .register::<projects::ProjectsScan, _, _>(
+            |s, _, p| async move { s.projects.scan(p).await },
+        );
+    if test_instance {
+        router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
+            super::debug::echo(ctx, params)
+        })
+    } else {
+        router
+    }
 }
 
 /// 선언된 메서드·주제 전체(라우터 완전성 시험과 주제 검증에 쓴다).
@@ -56,6 +66,7 @@ mod tests {
         let s = crate::daemon::build_services_for_test(t.path());
         let r = super::router(s);
         let mut want = declared.methods.clone();
+        want.push("debug.echo");
         want.sort_unstable();
         assert_eq!(r.names(), want);
     }

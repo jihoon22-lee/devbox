@@ -1,7 +1,10 @@
+use super::outbox::{Outbox, Outgoing};
+use super::streams::Streams;
 use super::{dedupe::Dedupe, routes, state::Services};
 use devbox_core::HubMessage;
-use devbox_protocol::frame::{Frame, FrameCodec, FrameKind};
+use devbox_protocol::frame::{FrameCodec, FrameKind};
 use devbox_protocol::message::{ClientMessage, Control, ServerMessage, json_frame, parse_json};
+use devbox_protocol::stream::{FLAG_FIN, parse_stream};
 use devbox_protocol::{CommonError, Ctx, DispatchError, PROTOCOL_VERSION, Router};
 use futures::{SinkExt, StreamExt};
 use serde_json::value::RawValue;
@@ -9,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 
@@ -18,11 +21,6 @@ struct Daemon {
     services: Arc<Services>,
     topics: HashSet<&'static str>,
     dedupe: Dedupe,
-}
-struct Outgoing {
-    frame: Frame,
-    generation: CancellationToken,
-    flushed: Option<oneshot::Sender<()>>,
 }
 struct Channel {
     hello: bool,
@@ -93,11 +91,13 @@ async fn connection(
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     let (mut sink, mut source) = Framed::new(stream, FrameCodec::default()).split();
-    let (tx, mut rx) = mpsc::channel::<Outgoing>(256);
+    let tx = Arc::new(Outbox::default());
+    let writer_queue = tx.clone();
+    let streams = Streams::default();
     let lost = CancellationToken::new();
     let writer_lost = lost.clone();
     let writer = tokio::spawn(async move {
-        while let Some(outgoing) = rx.recv().await {
+        while let Some(outgoing) = writer_queue.next().await {
             if outgoing.generation.is_cancelled() {
                 continue;
             }
@@ -108,6 +108,7 @@ async fn connection(
                 let _ = flushed.send(());
             }
         }
+        writer_queue.close();
         writer_lost.cancel();
     });
     let mut channels: HashMap<u32, Channel> = HashMap::new();
@@ -123,21 +124,37 @@ async fn connection(
             match frame.kind {
                 FrameKind::Control => match parse_json::<Control>(&frame)? {
                     Control::ChannelOpen => {
+                        channels.remove(&ch);
+                        streams.close_channel(ch);
+                        tx.remove_channel(ch);
                         channels.insert(ch, Channel::default());
                     }
                     Control::ChannelClose => {
                         channels.remove(&ch);
+                        streams.close_channel(ch);
+                        tx.remove_channel(ch);
                     }
-                    Control::StreamCredit { .. } => return Err(invalid("no stream open").into()),
+                    Control::StreamClose { stream } => {
+                        if !channels.get(&ch).is_some_and(|state| state.hello) { return Err(invalid("hello required").into()); }
+                        streams.close(ch, stream, &tx).map_err(invalid)?;
+                    }
+                    Control::StreamCredit { stream, bytes } => {
+                        if !channels.get(&ch).is_some_and(|state| state.hello) { return Err(invalid("hello required").into()); }
+                        streams.credit(ch, stream, bytes).map_err(invalid)?;
+                    },
                 },
-                FrameKind::Stream => return Err(invalid("no stream open").into()),
+                FrameKind::Stream => {
+                    if !channels.get(&ch).is_some_and(|state| state.hello) { return Err(invalid("hello required").into()); }
+                    let (id, flags, _) = parse_stream(&frame.body).ok_or_else(|| invalid("malformed stream frame"))?;
+                    streams.input(ch, id, flags & FLAG_FIN != 0, frame.body.slice(5..)).map_err(invalid)?;
+                },
                 FrameKind::Json => {
                     let msg = parse_json::<ClientMessage>(&frame)?;
                     let state = channels.entry(ch).or_default();
                     tokio::select! {
                         _ = shutdown.cancelled() => break,
                         _ = lost.cancelled() => break,
-                        result = handle(msg, ch, state, &daemon, &tx, &mut next_sub) => result?,
+                        result = handle(msg, ch, state, &daemon, &tx, &streams, &mut next_sub) => result?,
                     }
                 }
             }
@@ -146,6 +163,8 @@ async fn connection(
     }
     .await;
     drop(channels);
+    streams.close_all();
+    tx.close();
     writer.abort();
     let _ = writer.await;
     result
@@ -168,14 +187,14 @@ fn response(id: u32, result: Result<Box<RawValue>, DispatchError>) -> ServerMess
     }
 }
 async fn send(
-    tx: &mpsc::Sender<Outgoing>,
+    tx: &Arc<Outbox>,
     channel: u32,
     generation: &CancellationToken,
     message: ServerMessage,
 ) -> io::Result<()> {
     tokio::select! {
         _ = generation.cancelled() => Ok(()),
-        result = tx.send(Outgoing { frame: json_frame(channel, &message), generation: generation.clone(), flushed: None }) => result.map_err(|_| invalid("connection closed")),
+        result = tx.send(Outgoing { frame: json_frame(channel, &message), generation: generation.clone(), flushed: None }) => if result { Ok(()) } else { Err(invalid("connection closed")) },
     }
 }
 async fn handle(
@@ -183,7 +202,8 @@ async fn handle(
     ch: u32,
     state: &mut Channel,
     d: &Arc<Daemon>,
-    tx: &mpsc::Sender<Outgoing>,
+    tx: &Arc<Outbox>,
+    streams: &Streams,
     next_sub: &mut u32,
 ) -> io::Result<()> {
     match msg {
@@ -212,7 +232,8 @@ async fn handle(
                         flushed: Some(flushed),
                     })
                     .await
-                    .map_err(|_| invalid("connection closed"))?;
+                    .then_some(())
+                    .ok_or_else(|| invalid("connection closed"))?;
                     received.await.map_err(|_| invalid("connection closed"))
                 })
                 .await
@@ -254,6 +275,7 @@ async fn handle(
                 state.inflight.clone(),
                 state.generation.clone(),
             );
+            let opener = streams.opener(ch, generation.clone(), tx.clone());
             let tracker = d.dedupe.tracker.clone();
             tracker.spawn(async move {
                 let result = d
@@ -264,6 +286,7 @@ async fn handle(
                         Ctx {
                             channel: ch,
                             cancel: token,
+                            streams: Some(opener),
                         },
                         params,
                         client_request_id,

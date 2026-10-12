@@ -357,7 +357,7 @@ set -g allow-passthrough on
 - **프레임:** `u32 LE 길이`(뒤따르는 바이트 수, 0 금지) + `u8 종류` + `u32 채널` + 본문.
   - 종류 0 JSON 메시지: 평소 1MiB 이하, 하드 상한 16MiB. 큰 결과는 페이지나 스트림으로 보낸다.
   - 종류 1 스트림 조각: `u32 스트림 ID` + `u8 플래그(FIN)` + 최대 64KiB.
-  - 종류 2 제어: `ChannelOpen`, `ChannelClose`, `StreamCredit{stream, bytes}`.
+  - 종류 2 제어: `ChannelOpen`, `ChannelClose`, `StreamCredit{stream, bytes}`, `StreamClose{stream}`.
   - 잘못된 프레임을 받으면 그 연결을 끊는다.
 - **채널:**
   - 창(또는 WebSocket·CLI 연결) 하나가 채널 하나다.
@@ -367,6 +367,7 @@ set -g allow-passthrough on
   - 스트림마다 신용 창(256KiB)을 둔다. 화면은 실제로 소비한 뒤(xterm `write` 콜백 등) `StreamCredit`를 보낸다.
   - 신용이 바닥나면 생산자가 멈춘다. 터미널은 PTY 읽기를 멈추고(tmux가 다시 그림), 로그 tail은 파일 오프셋에서 기다린다. SSE·WebSocket은 상한까지 쌓은 뒤 버리고 `dropped n`을 표시한다. LSP는 그 세션을 끊는다.
   - 데몬 송신기는 채널별 큐를 라운드로빈으로 돌리고, JSON 응답을 스트림보다 먼저 보낸다.
+  - 입력 FIN은 입력만 닫고 남은 출력을 받을 수 있다. 클라이언트가 스트림을 폐기할 때는 `StreamClose{stream}`으로 해당 채널 소유 스트림만 취소·해제한다. 신용 대기 중인 생산자도 끝내되 다른 스트림과 RPC는 유지한다(S1 Task 1 누수 회귀 보정).
 - **메시지(JSON):**
   - `Hello{version, client, instance}` → `Welcome{version, daemonId}`
   - `Request{id, method, params, clientRequestId?}` → `Response{id, result}` 또는 `Response{id, error, diagnosticId?}`

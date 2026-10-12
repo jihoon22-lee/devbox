@@ -1,8 +1,11 @@
+mod debug;
 mod dedupe;
+mod outbox;
 pub mod routes;
 pub mod server;
 mod socket;
 pub mod state;
+mod streams;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
 use state::Services;

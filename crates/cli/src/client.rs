@@ -1,5 +1,6 @@
 //! Typed daemon client; one channel (0) with bounded subscriptions.
 mod queue;
+mod stream;
 use devbox_protocol::Method;
 use devbox_protocol::frame::{Frame, FrameCodec, FrameKind};
 use devbox_protocol::message::{
@@ -8,10 +9,11 @@ use devbox_protocol::message::{
 use futures::{SinkExt, StreamExt};
 use queue::Queue;
 use serde_json::value::RawValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, Weak};
+pub use stream::ClientStream;
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::{codec::Framed, sync::CancellationToken};
@@ -81,6 +83,9 @@ struct State {
     closed: bool,
     pending: HashMap<u32, Pending>,
     subscriptions: HashMap<u32, Arc<Queue>>,
+    streams: HashMap<u32, Arc<stream::StreamQueue>>,
+    active_streams: HashSet<u32>,
+    opening_streams: usize,
 }
 impl State {
     fn close(&mut self) {
@@ -90,6 +95,11 @@ impl State {
             queue.close();
         }
         self.subscriptions.clear();
+        for stream in self.streams.values() {
+            stream.close();
+        }
+        self.streams.clear();
+        self.active_streams.clear();
     }
     fn receive(&mut self, message: ServerMessage) -> Result<(), ClientError> {
         match message {
@@ -240,7 +250,21 @@ impl Client {
         tokio::spawn(async move {
             loop {
                 let frame = tokio::select! { _ = reader_shutdown.cancelled() => break, frame = source.next() => match frame { Some(Ok(frame)) => frame, _ => break } };
-                if frame.kind != FrameKind::Json || frame.channel != 0 {
+                if frame.channel != 0 {
+                    break;
+                }
+                if frame.kind == FrameKind::Stream {
+                    if reader_state
+                        .lock()
+                        .expect("client")
+                        .receive_stream(frame)
+                        .is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                if frame.kind != FrameKind::Json {
                     break;
                 }
                 let Ok(message) = parse_json::<ServerMessage>(&frame) else {

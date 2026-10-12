@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 착수 준비 완료 · 구현 미착수 · S0b PR #638 머지(`820576c9`)·자동 검증 확인. `v1/s1-agents-terminal`에서 Task 1부터 진행
+- 상태: 구현 중 · S0b 및 후속 PR #639 완료(`fb6bc69d`). `v1/s1-agents-terminal`에서 Task 1 스트림·공정 송신 로컬 완료, Task 2 다음
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)
@@ -80,16 +80,19 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
 - Produces:
   - 상수 `STREAM_WINDOW = 256 KiB`, `FLAG_FIN = 1`
   - `stream_frame(channel, stream, flags, data) -> Frame`, `parse_stream(&[u8]) -> Option<(u32, u8, &[u8])>`
-  - `trait StreamSink { fn push(&self, Frame) -> bool }`
-  - `Credit`: `add(u32)`, `async take(n)`
-  - `StreamTx`: `id`, `async write(&[u8]) -> Result<(), StreamError>`, `finish()`, `closed() -> CancellationToken`
+  - `StreamSink::push(&self, Frame)`은 object-safe boxed future로 `bool`을 돌려준다. bounded 큐가 가득 차면 async backpressure로 기다린다(아래 예제의 sync API는 구현 시 보정).
+  - `Credit`: `add(u32)`는 256KiB로 포화, `async take(n, closed)`는 최대 n 중 가용 바이트 수를 예약해 반환한다. 작은 credit에도 부분 송신이 진행된다.
+  - `StreamTx`: `id`, `async write(&[u8]) -> Result<(), StreamError>`, `async finish()`, `closed() -> CancellationToken`
   - `StreamEnds { id, tx: StreamTx, input: mpsc::Receiver<Bytes> }`
   - `trait StreamOpener { fn open(&self) -> Result<StreamEnds, StreamError> }`
   - `Ctx::open_stream()`
+  - `Control::StreamClose { stream }`: 해당 채널 소유 스트림만 완전 종료한다. 입력 FIN은 half-close로 남긴다. Rust `ClientStream` Drop과 화면 `openStream().end()`는 이 제어를 보낸다.
   - 스트림 ID는 데몬 전체에서 유일하다(`AtomicU32`). 터미널·LSP·로그 서비스가 ID로 상태를 찾는다.
   - 시험용 메서드 `debug.echo`(stream): instance가 `test-*`일 때만 라우터에 등록한다.
 
-- [ ] **Step 1: 실패하는 단위 테스트**
+**구현 보정(2026-10-13):** 아래 최초 예제는 설계 골격이며 실제 구현은 `crates/protocol/src/stream.rs`·`crates/cli/src/daemon/{outbox,streams}.rs`를 따른다. 동기 큐 push를 비동기로 바꿔 작은 조각이 많아도 연결을 끊지 않으며, bounded Outbox는 JSON admission 여유를 둔다. `finish().await`는 대기 중인 쓰기를 끝내고 이미 큐에 넣은 데이터 뒤 FIN을 보낸다. 채널 generation과 스트림 closed는 분리한다. Rust 클라이언트 수신 버퍼는 작은 조각을 합쳐 바이트 창 안의 정상 데이터를 프레임 개수 때문에 거부하지 않는다. 계획과 실제 차이·검증은 PROGRESS §5에 기록한다.
+
+- [x] **Step 1: 실패하는 단위 테스트**
 
 ```rust
 // crates/protocol/src/stream.rs 끝
@@ -141,9 +144,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p devbox-protocol stream`
+- [x] **Step 2: 실패 확인** — `cargo test -p devbox-protocol stream`
 
-- [ ] **Step 3: 구현 — protocol::stream**
+- [x] **Step 3: 구현 — protocol::stream**
 
 ```rust
 // crates/protocol/src/stream.rs (테스트 위)
@@ -286,7 +289,7 @@ impl std::fmt::Debug for Ctx {
 
 S0b 테스트의 `Ctx { channel, cancel }` 생성 코드에 `streams: None`을 추가한다. `lib.rs`에 `pub mod stream;`을 추가한다.
 
-- [ ] **Step 4: 실패하는 통합 테스트(공정성·신용·채널 닫힘)**
+- [x] **Step 4: 실패하는 통합 테스트(공정성·신용·채널 닫힘)**
 
 ```rust
 // crates/cli/tests/streams.rs
@@ -331,6 +334,7 @@ fn _uses(_: Client) {}
 - `credit(n)`
 - `write(bytes)`
 - `wait_end(timeout) -> bool`
+- `finish_input()`은 입력 FIN을 보내는 half-close이며, 핸들 Drop은 `StreamClose`로 서버 생산자·등록을 정리한다(다른 스트림·RPC 유지).
 
 동작:
 - 종류 1 프레임은 스트림 ID별 버퍼에 쌓는다. 응답보다 먼저 온 조각은 ID별로 보관했다가 등록 시 넘긴다.
@@ -374,7 +378,7 @@ pub async fn echo(ctx: devbox_protocol::Ctx, p: EchoParams) -> Result<StreamOpen
 
 `StreamOpened`은 `protocol`로 옮겨 모든 스트림 메서드의 결과로 함께 쓴다(`devbox_protocol::StreamOpened`).
 
-- [ ] **Step 5: 구현 — Outbox와 스트림 등록**
+- [x] **Step 5: 구현 — Outbox와 스트림 등록**
 
 ```rust
 // crates/cli/src/daemon/outbox.rs
@@ -547,13 +551,13 @@ impl StreamOpener for Opener {
 - `Dedupe::dispatch`·tracker 종료 대기와 요청 ID 중복 검사를 유지한다. inflight ID 제거는 응답 enqueue 뒤에 하여 같은 ID의 새 응답이 이전 응답을 앞지르지 않게 한다.
 - `json_frame`·구독 송신은 세대와 선택적 flush ACK를 포함해 Outbox로 보낸다. 큐 종료 시 구독 전달도 끝낸다. 기존 서버 회귀 테스트를 유지하고 Hello flush·채널 재사용/취소·dedupe와 새 공정 송신의 교차 동작을 좁은 회귀 시험으로 확인한다.
 - 종류 1을 받으면 `parse_stream`으로 `streams.input(id, flags & FLAG_FIN != 0, data)`를 부른다.
-- `Control::StreamCredit { stream, bytes }`는 `streams.credit(stream, bytes)`로 넘긴다.
+- `Control::StreamCredit { stream, bytes }`는 채널 소유권을 확인해 신용을 더한다. `StreamClose { stream }`은 같은 소유권 검사 뒤 해당 스트림만 정리한다.
 - `close_channel`은 `streams.close_channel(ch)`도 부른다. 연결이 끝나면 `streams.close_all()` + `outbox.close()`.
 - 요청을 처리할 때 `Ctx { channel, cancel, streams: Some(streams.opener(ch, outbox.clone())) }`를 만든다.
 
 라우터의 메서드 종류가 `stream`인 경우도 `add`로 등록한다(핸들러가 `ctx.open_stream()`을 부른다).
 
-- [ ] **Step 6: 통과·커밋**
+- [x] **Step 6: 통과·커밋**
 
 ```bash
 cargo test -p devbox-protocol stream && cargo test -p devbox-cli --test streams && cargo test -p devbox-cli
@@ -577,6 +581,7 @@ git add crates && git commit -m "feat(daemon): add flow-controlled byte streams 
     - `ack()`를 불러야 그만큼 신용을 돌려준다(xterm `write` 콜백에서 부른다).
     - 응답보다 먼저 온 조각은 보관했다가 넘긴다(ID당 최대 256 KiB).
     - 연결이 끊기면 모든 스트림에 `onEnd()`를 호출한다.
+    - `end()`는 입력 half-close가 아닌 로컬 dispose다. `StreamClose`를 보내고 핸들러를 제거하며 `onEnd()`를 한 번만 호출한다. 이전 연결의 write/end/ack는 새 연결을 건드리지 않는다.
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -673,7 +678,7 @@ async openStream<M extends StreamMethod>(method: M, params: Methods[M]["params"]
     streamId: id,
     write: (bytes: Uint8Array) => this.transport.send(streamFrame(id, 0, bytes)),
     end: () => {
-      this.transport.send(streamFrame(id, 1, new Uint8Array()));
+      this.transport.send(jsonFrame({ type: "streamClose", stream: id }, FRAME.control));
       this.streams.delete(id);
     },
   };
@@ -1238,7 +1243,7 @@ pub async fn attach(tmux: &Tmux, atts: &Attachments, id: &str, cols: u16, rows: 
         }
         let _ = child.kill();
         atts2.0.lock().expect("attachments").remove(&stream_id);
-        tx.finish();
+        tx.finish().await;
     });
     Ok(())
 }

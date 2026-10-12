@@ -6,8 +6,10 @@ export type Candidate = { path: string, name: string, isGit: boolean, registered
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, };
+export type DebugError = { "code": "debug.unsupported" };
 export type DoctorReport = { checks: Array<Check>, };
 export type Done = { rev: string, };
+export type EchoParams = { bytes: number, };
 export type ListProjects = Record<symbol, never>;
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
@@ -19,9 +21,11 @@ export type RemoveProject = { id: string, };
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type Status = "ok" | "warn" | "fail";
+export type StreamOpened = { streamId: number, };
 export type SystemError = { "code": "system.unavailable" };
 
 export interface Methods {
+  "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.list": { kind: "query"; confirm: "none"; params: ListProjects; result: ProjectList; error: ProjectsError };
   "projects.remove": { kind: "mutation"; confirm: "always"; params: RemoveProject; result: Done; error: ProjectsError };
@@ -36,6 +40,7 @@ export interface Topics {
 }
 
 export const METHOD_INFO = {
+  "debug.echo": { kind: "stream", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.list": { kind: "query", confirm: "none" },
   "projects.remove": { kind: "mutation", confirm: "always" },
@@ -48,6 +53,7 @@ export const METHOD_INFO = {
 export const RPC_ERROR_CODES = [
   "cancelled",
   "daemon_restarting",
+  "debug.unsupported",
   "hello_required",
   "internal",
   "invalid_params",

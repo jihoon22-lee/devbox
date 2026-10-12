@@ -9,6 +9,7 @@ fn main() -> Result<()> {
     let check = parse_args(&args)?;
     let mut exporter = ts::TsExporter::new();
     devbox_protocol::system::export(&mut exporter);
+    devbox_protocol::debug::export(&mut exporter);
     devbox_projects::export(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");

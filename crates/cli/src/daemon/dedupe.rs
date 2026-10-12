@@ -78,6 +78,7 @@ impl Dedupe {
                 method,
                 Ctx {
                     channel: ctx.channel,
+                    streams: ctx.streams.clone(),
                     cancel: CancellationToken::new(),
                 },
                 params,
@@ -137,7 +138,11 @@ mod tests {
                     .dispatch(
                         &router,
                         "projects.remove",
-                        Ctx { channel: 1, cancel },
+                        Ctx {
+                            channel: 1,
+                            cancel,
+                            streams: None,
+                        },
                         raw(),
                         Some("same".into()),
                     )
@@ -152,6 +157,7 @@ mod tests {
             "projects.remove",
             Ctx {
                 channel: 2,
+                streams: None,
                 cancel: CancellationToken::new()
             },
             raw(),
@@ -187,6 +193,7 @@ mod tests {
                 "projects.remove",
                 Ctx {
                     channel: 3,
+                    streams: None,
                     cancel: CancellationToken::new(),
                 },
                 raw(),
