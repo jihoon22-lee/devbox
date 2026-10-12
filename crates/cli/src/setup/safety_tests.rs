@@ -141,6 +141,56 @@ fn socket_path_is_accepted_by_systemd_parser_without_shell_quoting() {
         .replace('%', "%%");
     assert!(body.contains(&format!("ListenStream={raw}\n")));
 }
+#[test]
+fn environment_file_path_is_loaded_by_systemd_parser() {
+    for suffix in ["ordinary", "space%\"\\${HOME}#literal"] {
+        let temp = tempfile::tempdir().expect("create fixture directory");
+        let mut paths = devbox_core::paths::Paths::resolve(
+            devbox_core::paths::Instance::parse("test-env-parser").expect("parse fixture instance"),
+            &FakeEnv(temp.path().into()),
+        )
+        .expect("resolve fixture paths");
+        paths.config_dir = temp.path().join(suffix).join("devbox");
+        paths.instance_config_dir = paths.config_dir.join(paths.instance.as_str());
+        let env_file = paths.instance_config_dir.join("env");
+        publish(&env_file, "PATH=\"/usr/bin\"\n", false).expect("publish fixture environment");
+        std::fs::create_dir_all(&paths.bin_dir).expect("create fixture binary directory");
+        let binary = paths.bin_dir.join("devbox");
+        std::fs::write(&binary, "#!/bin/sh\nexit 0\n").expect("write fixture executable");
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700))
+            .expect("make fixture executable");
+        let units = instance_units(&paths).expect("render fixture units");
+        let service = temp.path().join("test-env-parser.service");
+        std::fs::write(&service, &units[2].1).expect("write fixture unit");
+        // Offline manager parsing only: never load/start a unit in the real user manager.
+        let out = std::process::Command::new("/usr/bin/systemd-analyze")
+            .args(["--user", "--generators=no", "verify"])
+            .arg(&service)
+            .env_clear()
+            .env("HOME", temp.path())
+            .env("XDG_RUNTIME_DIR", temp.path())
+            .env("PATH", "/usr/bin:/bin")
+            .env("SYSTEMD_UNIT_PATH", format!("{}:", temp.path().display()))
+            .env("SYSTEMD_LOG_LEVEL", "debug")
+            .output()
+            .expect("systemd-analyze is required for environment file parser regression");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        // verify may exit successfully even when it warns and ignores EnvironmentFile.
+        let warning = stderr
+            .lines()
+            .find(|line| line.contains("EnvironmentFile= path"));
+        assert!(warning.is_none(), "{warning:?}");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let expected = env_file.to_str().expect("fixture path is UTF-8");
+        assert!(
+            stdout
+                .lines()
+                .any(|line| line.trim_start().strip_prefix("EnvironmentFile: ") == Some(expected)),
+            "environment file was not loaded literally: {stdout}\n{stderr}"
+        );
+    }
+}
 struct FakeEnv(std::path::PathBuf);
 impl devbox_core::paths::Env for FakeEnv {
     fn var(&self, key: &str) -> Option<String> {

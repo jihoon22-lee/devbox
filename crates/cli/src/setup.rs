@@ -127,11 +127,11 @@ fn unit_quote(path: &Path) -> Result<String, String> {
             .replace('%', "%%")
     ))
 }
-// ListenStream's parser consumes the raw rvalue rather than a shell-style word.
-fn socket_path(path: &Path) -> Result<String, String> {
-    let value = path.to_str().ok_or("socket path is not UTF-8")?;
+// EnvironmentFile and ListenStream consume raw rvalues, not shell-style words.
+fn raw_unit_path(path: &Path) -> Result<String, String> {
+    let value = path.to_str().ok_or("unit path is not UTF-8")?;
     if value.chars().any(char::is_control) {
-        return Err("socket path contains control characters".into());
+        return Err("unit path contains control characters".into());
     }
     Ok(value.replace('%', "%%"))
 }
@@ -144,7 +144,7 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
     let body = (|| -> Result<String, String> {
         let mut body = format!(
             "{MARKER}[Service]\nEnvironmentFile=\nEnvironmentFile={}\nExecStart=\nExecStart=:{} daemon\n",
-            unit_quote(&paths.instance_config_dir.join("env"))?,
+            raw_unit_path(&paths.instance_config_dir.join("env"))?,
             unit_quote(&paths.bin_dir.join("devbox"))?
         );
         for (key, path) in [
@@ -192,7 +192,7 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
         format!("devbox@{}.service.d/paths.conf", paths.instance.as_str()),
         body?,
     ));
-    let socket = socket_path(&paths.socket)?;
+    let socket = raw_unit_path(&paths.socket)?;
     units.push((
         format!("devbox@{}.socket.d/paths.conf", paths.instance.as_str()),
         format!("{MARKER}[Socket]\nListenStream=\nListenStream={socket}\n"),

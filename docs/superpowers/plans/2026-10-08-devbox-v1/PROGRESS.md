@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, Windows 조기 스모크 준비 |
-| 다음 할 일 | Task 2 시점 SHA push·Windows CI 설치본 출처 확인 → S0b 조기 스모크 → S1 Task 3 tmux |
+| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, Windows 조기 스모크 결함 수정·재검증 중 |
+| 다음 할 일 | 조기 Windows 스모크에서 발견한 bridge/setup 수정 → 새 SHA 설치본 재검증 → S1 Task 3 tmux |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 로컬 완료, 조기 스모크 준비 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -179,6 +179,9 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04 Task 2 화면 스트림 | 초기 예제의 early 데이터 배열·FIN 폐기·직접 송신 | 별도 helper에 64KiB 페이지 coalescing·ID당256KiB/총4MiB/64ID early 제한, FIN 보존, ACK/onEnd 단발성, epoch 격리·StreamClose·orphan 정리·sendRaw 실패복원. onClosed 동기 재진입 call/open 거부 | 최초26 RED→GREEN, sync ACK 중 early 순서 RED [1,3,2]→수정. 관련 client/frame/stream74 PASS. 타입 인덱스 좁히기8곳 보정 후 app typecheck PASS, 독립 검토 PASS. 완료 Biome의 import 정렬 지적 보정 뒤 CI 통과. Task1 gen-ts/check 성공은 생성 입력 불변으로 재사용. 전체 build/E2E 미실행 |
 | 2026-10-13 | C2 Windows 조기 스모크 사전 조회 | 기존 v1/prod 있으면 중단 | 읽기 전용 조회: v1 identifier 데이터·uninstall 등록 및 Ubuntu prod 데이터/unit/socket/bin 없음. DevboxSuite0.9.0·com.devbox.*와 기존 LocalAppData/Devbox는 존재하므로 보존, 전용 설치 경로 사용 예정. Ubuntu는 유일한 비내부 WSL 배포판이라 자동 선택. UIA RootElement 접근 가능, WebDriver 도구 없음 | 아직 설치·실행·제거 미실행이며 실기 PASS 아님. 실제 설치 직전 재확인하고 해당 Task2 SHA Windows CI 산출물만 사용. R1/R2는 S6까지 미실행 |
 
+
+| 2026-10-13 | C2 Windows 조기 스모크 첫 시도 | Task2 SHA `9e21bc6a0f19020670723a400bc89cf1d6eb5681` | [Windows run38320568767](https://github.com/jihoon22-lee/devbox/actions/runs/38320568767) 출처/receipt·SHA256 `8ebf3651befa911a10d358a3f0c5fd8fa396fbe311aa7952a7cbe8f14aa2806d` 검증 후 전용 경로 설치·실행. Ubuntu 자동 선택·바이너리 배치·setup 수행, UIA에서 bridge Permission denied(os error13) 관측해 FAIL. projects/ping은 미실행 | wsl.exe root소유0600 FIFO의 /proc/self/fd 재열기 EACCES와 systemd EnvironmentFile 인용 경로 무시 발견. 앱 정상 닫기 후 이번 소유 prod/unit/socket/bin 및 설치본·identifier 데이터 정리, uninstall 등록 소멸 확인. v0.9/기존 데이터 보존. 수정 후 새 CI 설치본 재검증 예정 |
+| 2026-10-13 | Windows 스모크 발견 결함 보완 | 기존 브리지 독립 OFD·인용 EnvironmentFile | EACCES+FIFO에 한해 소유 staging pipe/splice NONBLOCK으로 처리해 부모 flags 보존, EnvironmentFile raw 절대경로·% 이스케이프. 실패 회귀 뒤 bridge11·setup9 PASS, 각각 별도 검토 | 실제 Windows PowerShell→wsl.exe→수정 debug bridge→고유 임시 소켓 MAGIC/65,536B echo/exit0 확인. 설치본 PASS 대체 아님. 기존 서비스 변경 없이 fixture만 정리 |
 
 ## 6. 세션 기록
 
