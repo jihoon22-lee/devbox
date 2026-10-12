@@ -215,7 +215,7 @@ async fn bridge_once(
                 Some(Event::Frame(frame))=>{
                     // Only clone routing metadata while locked; IPC never runs inside the mutex.
                     let channel={let state=conn.state();state.mux.inbound(&frame).and_then(|label|state.channels.get(label)).map(|lease|lease.channel.clone())};
-                    if let Some(channel)=channel{if let Err(e)=channel.send(InvokeResponseBody::Raw(frame)){bridge_cancel.cancel();let _=drive.await;return (Err(ShellError::Invalid(e.to_string())),ready);}}
+                    if let Some(channel)=channel && let Err(e)=channel.send(InvokeResponseBody::Raw(frame)){bridge_cancel.cancel();let _=drive.await;return (Err(ShellError::Invalid(e.to_string())),ready);}
                 }
                 None=>{bridge_cancel.cancel();let result=drive.await;return (result,ready);}
             }

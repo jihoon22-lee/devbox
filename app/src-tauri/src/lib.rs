@@ -40,13 +40,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("devbox app failed to start")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { api, .. } = event {
-                if app
+            if let tauri::RunEvent::ExitRequested { api, .. } = event
+                && app
                     .state::<connection::Connection>()
                     .begin_exit(app.clone())
-                {
-                    api.prevent_exit();
-                }
+            {
+                api.prevent_exit();
             }
         });
     #[cfg(not(windows))]

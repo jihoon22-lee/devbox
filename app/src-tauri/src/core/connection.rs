@@ -168,10 +168,10 @@ impl<C> State<C> {
             return false;
         }
         self.channels.remove(label);
-        if let Some(f) = self.mux.close(&label.to_owned()) {
-            if self.open {
-                let _ = self.enqueue(f);
-            }
+        if let Some(f) = self.mux.close(&label.to_owned())
+            && self.open
+        {
+            let _ = self.enqueue(f);
         }
         self.bump();
         true

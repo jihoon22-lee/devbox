@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0b 작업 중(2026-10-12), S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
-| 다음 할 일 | S0b 완료 커밋·단일 PR → 필수 CI/native Windows 설치 파일 → 사용자 S0 확인 (Task 1–24 구현·별도 검토·로컬 통합/E2E·소유 WSL 실기 완료, 아직 미머지) |
+| 단계 | S0b PR #638 열림, S0a 자동 부분 완료·R1/R2는 S0 확인 유보 |
+| 다음 할 일 | PR #638의 CI 보정·native Windows 설치 파일 → 사용자 S0 확인 (로컬 통합/E2E·소유 WSL 실기 완료, 아직 미머지) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s0b-skeleton` · `../devbox-wt/v1-s0b-skeleton` — S0a 결과 `58fda4d7`에서 분기, 현재 계획의 원본 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -35,7 +35,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|---|---|---|---|
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
 | S0a | 02-s0a-spike | 자동 부분 완료·수동 유보 | 2026-10-12 | 2026-10-12 | 결과 보고만 |
-| S0b | 03-s0b-skeleton · 03b-s0b-app | 작업 중 | 2026-10-12 | | **S0 확인 8개(기다림)** |
+| S0b | 03-s0b-skeleton · 03b-s0b-app | PR 열림 | 2026-10-12 | | **S0 확인 8개(기다림)** |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 대기 | | | 확인 목록 10개(보냄) |
 | S2 | 05-s2-runs | 대기 | | | 확인 목록 10개(보냄)·전환 안내 |
 | S3 | 06-s3-knowledge | 대기 | | | 확인 목록 10개(보냄) |
@@ -49,7 +49,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | PR | 브랜치 | 범위 | 상태 | PR 번호 | 머지 |
 |---|---|---|---|---|---|
-| S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 대기 | | |
+| S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | PR 열림 | #638 | |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 대기 | | |
 | S2 | `v1/s2-runs` | S2 Task 1–16 | 대기 | | |
 | S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
@@ -160,6 +160,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | S0b 최종 통합 검사 | 실패 범위 수정·재검증 | stale doctor 기대값, Node 24 ESM JSON import, 엄격한 테스트 타입, import 정렬·Clippy 규약 보완. 테스트 assertion 의미와 정상 동작 유지 검토 | 전체 check 1회 뒤 실패/영향 범위만 재실행. 초기 53.1초·메모리 peak 1.19GB, Rust/E2E 재검증 29.5초·peak 1.89GB. 자원 제한 준수. 실제 WSL 하네스의 임시 runtime 설정 오류는 실패·소유 파일 보존으로 기록 후 exact-content 검증 정리하고 실제 manager 경로로 보정했다 |
 
 | 2026-10-13 | S0b WSL 실제 수용 | 고유 인스턴스 setup·doctor·systemd·bridge·프로젝트 CRUD·EOF | `test-s0b-1c4aa0e8ee81`, 실제 사용자 manager + 소유 임시 XDG 데이터, 현재 debug CLI SHA256 `f2332c8759ec398c11d6bdd01e29eea878448991be8b30548cc801658532fe6b` | PASS. doctor systemd/tmux/env/도구 정상, 기존 linger·inotify는 warn 그대로 유지. 전용 unit·enable link·소켓·임시 데이터 정리와 잔존 unit 없음 확인. 근거: Git common-dir `devbox-verification/s0b-wsl-acceptance.json`; Windows 설치본/R1/R2 미실행을 대신하지 않음 |
+
+| 2026-10-13 | PR #638 첫 CI 보정 | CI 색상 로그·Windows Clippy | `fb93b565`의 CI `38289821740`: Frontend·Rust 성공, E2E는 ANSI 포트 강조 때문에 준비 판독 실패. Windows `38289822012`: Linux 리소스 성공, native Clippy 7건으로 후속 테스트/NSIS/self-check 중단 | 누적 로그 ANSI 제거·정확한 Local 주소 검사로 수정, 회귀 Vitest 8·Python 4와 `FORCE_COLOR=1 CI=true` 실제 E2E 3·tsc/Biome 통과. Windows let-chain·test 배치·동일 UTF-16 chunk 처리 보완, 영향 core 6개와 순수 앱 Clippy 통과. 재검토 후 최종 변경 CI 예정; 이전 실패를 성공으로 취급하지 않음 |
 
 ## 6. 세션 기록
 

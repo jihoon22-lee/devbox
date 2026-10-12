@@ -65,10 +65,10 @@ pub fn validate_choice(list: &[Distro], name: &str) -> Result<String, &'static s
 }
 pub fn pick(list: &[Distro], saved: Option<&str>) -> Option<String> {
     let user: Vec<_> = list.iter().filter(|d| !is_internal(&d.name)).collect();
-    if let Some(name) = saved {
-        if user.iter().any(|d| d.name == name) {
-            return Some(name.into());
-        }
+    if let Some(name) = saved
+        && user.iter().any(|d| d.name == name)
+    {
+        return Some(name.into());
     }
     match user.as_slice() {
         [d] => Some(d.name.clone()),
@@ -93,8 +93,10 @@ pub fn decode_output(bytes: &[u8]) -> String {
     }
     let b = if bom { &bytes[2..] } else { bytes };
     let units: Vec<_> = b
-        .chunks_exact(2)
-        .map(|v| u16::from_le_bytes([v[0], v[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|v| u16::from_le_bytes(*v))
         .collect();
     let mut text = String::from_utf16_lossy(&units);
     if b.len() % 2 != 0 {

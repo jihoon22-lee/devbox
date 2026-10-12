@@ -1,4 +1,33 @@
 //! One worker owns each attempt until cancellation cleanup has finished.
+use std::future::Future;
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
+pub async fn run<F, Fut>(
+    mut retries: watch::Receiver<Option<String>>,
+    stop: CancellationToken,
+    mut attempt: F,
+) where
+    F: FnMut(u64, Option<String>, CancellationToken) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let mut generation = 0u64;
+    loop {
+        if stop.is_cancelled() {
+            return;
+        }
+        generation = generation.checked_add(1).expect("generation exhausted");
+        let forced = retries.borrow_and_update().clone();
+        let cancel = stop.child_token();
+        let work = attempt(generation, forced, cancel.clone());
+        tokio::pin!(work);
+        tokio::select! {
+            _=stop.cancelled()=>{cancel.cancel();work.await;return;}
+            changed=retries.changed()=>{cancel.cancel();work.await;if changed.is_err(){return;}}
+            _=&mut work=>{tokio::select!{_=stop.cancelled()=>return,changed=retries.changed()=>{if changed.is_err(){return;}}}}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -30,34 +59,5 @@ mod tests {
         stop.cancel();
         task.await.unwrap();
         assert_eq!(active.load(Ordering::SeqCst), 0);
-    }
-}
-
-use std::future::Future;
-use tokio::sync::watch;
-use tokio_util::sync::CancellationToken;
-pub async fn run<F, Fut>(
-    mut retries: watch::Receiver<Option<String>>,
-    stop: CancellationToken,
-    mut attempt: F,
-) where
-    F: FnMut(u64, Option<String>, CancellationToken) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    let mut generation = 0u64;
-    loop {
-        if stop.is_cancelled() {
-            return;
-        }
-        generation = generation.checked_add(1).expect("generation exhausted");
-        let forced = retries.borrow_and_update().clone();
-        let cancel = stop.child_token();
-        let work = attempt(generation, forced, cancel.clone());
-        tokio::pin!(work);
-        tokio::select! {
-            _=stop.cancelled()=>{cancel.cancel();work.await;return;}
-            changed=retries.changed()=>{cancel.cancel();work.await;if changed.is_err(){return;}}
-            _=&mut work=>{tokio::select!{_=stop.cancelled()=>return,changed=retries.changed()=>{if changed.is_err(){return;}}}}
-        }
     }
 }

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import select
 import signal
@@ -42,6 +43,10 @@ def hello(path):
 def runtime_directory(env):
     candidate = Path(env.get("XDG_RUNTIME_DIR") or "")
     return candidate if candidate.is_absolute() else Path(f"/run/user/{os.getuid()}")
+
+def vite_announced(log, port):
+    plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", log)
+    return bool(re.search(rf"^[\t ]*(?:➜[\t ]*)?Local:[\t ]+http://(?:localhost|127\.0\.0\.1):{port}/[\t ]*\r?$", plain, re.MULTILINE))
 
 def main():
     children = []
@@ -92,10 +97,12 @@ def main():
               dict(env, VITE_DEVBOX_WS=f'ws://127.0.0.1:1451/ws?token={token}', VITE_DEVBOX_INSTANCE='dev'), stdout=subprocess.PIPE)
         bound = threading.Event()
         def relay():
+            log = ""
             for raw in frontend.stdout:
                 line = raw.decode(errors='replace')
                 print(line, end='', flush=True)
-                if 'Local:' in line and ':1450/' in line:
+                log = (log + line)[-16384:]
+                if vite_announced(log, 1450):
                     bound.set()
         threading.Thread(target=relay, daemon=True).start()
         def frontend_ready():

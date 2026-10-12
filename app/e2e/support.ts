@@ -9,6 +9,7 @@ import { test as base, expect } from "@playwright/test";
 import packageJson from "../package.json" with { type: "json" };
 import { decodeFrame, jsonFrame } from "../src/rpc/frame";
 import { parseServerMessage } from "../src/rpc/server-message";
+import { viteAnnounced } from "./vite-readiness";
 
 const { version } = packageJson;
 
@@ -52,8 +53,10 @@ export class Stack {
     const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     this.children.push(child);
     child.on("error", (error) => this.logs.set(name, `${error}\n${this.logs.get(name) ?? ""}`));
-    for (const stream of [child.stdout, child.stderr])
+    for (const stream of [child.stdout, child.stderr]) {
+      stream?.setEncoding("utf8");
       stream?.on("data", (data) => this.logs.set(name, `${this.logs.get(name) ?? ""}${data}`.slice(-16_384)));
+    }
     return child;
   }
   async ready(probe: () => Promise<unknown>) {
@@ -145,8 +148,7 @@ export class Stack {
       VITE_DEVBOX_WS: this.gatewayUrl,
     });
     await this.ready(async () => {
-      if (!this.logs.get("vite")?.includes("Local:") || !this.logs.get("vite")?.includes(":1460/"))
-        throw new Error("Vite has not bound");
+      if (!viteAnnounced(this.logs.get("vite") ?? "", 1460)) throw new Error("Vite has not bound");
       const response = await fetch("http://localhost:1460", { signal: AbortSignal.timeout(1_000) });
       if (!response.ok) throw new Error(`Vite status ${response.status}`);
     });

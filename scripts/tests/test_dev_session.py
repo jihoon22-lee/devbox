@@ -11,6 +11,16 @@ spec.loader.exec_module(session)
 
 
 class OwnedDevelopmentSession(unittest.TestCase):
+    def test_vite_announcement_handles_colored_aggregated_output(self):
+        colored = '\x1b[32m  ➜\x1b[39m  \x1b[1mLocal:\x1b[22m  \x1b[36mhttp://127.0.0.1:\x1b[1m1450\x1b[22m/\x1b[39m\n'
+        for split in range(len(colored)):
+            self.assertTrue(session.vite_announced(colored[:split] + colored[split:], 1450))
+        for invalid in ['Local: http://localhost:1460/\n', 'Local: http://localhost:14500/\n',
+                        'Local:\nhttp://localhost:1450/\n', 'Local: error\nNetwork: http://localhost:1450/\n',
+                        'Local: http://foreign.example:1450/\n', 'Local: http://localhost:1450/extra\n',
+                        'Local: http://localhost:1450']:
+            self.assertFalse(session.vite_announced(invalid, 1450), invalid)
+
     def test_runtime_directory_matches_core_absolute_xdg_rule(self):
         with patch.object(session.os, 'getuid', return_value=123):
             for value in [None, '', 'relative/run']:

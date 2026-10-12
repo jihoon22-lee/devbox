@@ -57,13 +57,12 @@ fn disable_browser_accelerators_and_show(window: &tauri::WebviewWindow) -> tauri
 }
 
 pub fn focus_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(error) = window
+    if let Some(window) = app.get_webview_window("main")
+        && let Err(error) = window
             .unminimize()
             .and_then(|()| window.show())
             .and_then(|()| window.set_focus())
-        {
-            eprintln!("Cannot focus main window: {error}");
-        }
+    {
+        eprintln!("Cannot focus main window: {error}");
     }
 }
