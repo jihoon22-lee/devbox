@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 자동 리뷰 후속 PR #639 완료(`fb6bc69d`). S1 착수 준비 완료·구현 미착수 |
-| 다음 할 일 | S1 Task 1 스트림 흐름 제어·채널별 공정 송신: 실패 회귀 → 구현 → 별도 검토 |
+| 단계 | S0 및 후속 #639 완료. S1 선행 A·B 확인/C 결정 정합화 완료, Task 1 구현 시작 |
+| 다음 할 일 | S1 Task 1 스트림 credit·공정 송신 실패 회귀 → 구현 → 별도 검토 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`와 동기화, 제품 구현 미착수 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -28,6 +28,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-09 | 사용자 확인 방식 | 사용자 | 변경(2026-10-13): 실사용은 계획 기능 완성 후 사용자가 진행하며 개발·머지·S1 착수 gate가 아니다. 필요한 개발 검증은 에이전트가 수행하며 사용자 테스트 요청 없이 확보된 자동 검증 근거로 S0 마무리(00-roadmap §2.2) |
 | 2026-10-13 | 로컬 main 미푸시 커밋 `b2a508b6`·`1b84aa9d` | 사용자 정리 지시 | 완료: source-map-js 1.2.2는 S0b에 이미 반영됐고 필요한 ADR 링크 정리는 PR #638에 반영했다. 별도 머지하지 않고 두 로컬 커밋을 main에서 제거해 `origin/main@820576c9`와 일치시켰다(차이 0/0). 사용자 지시에 따라 추가했던 보존용 브랜치도 제거했으며 별도 파일 백업은 만들지 않았다 |
 | 2026-10-08 | 저장소 `user.email`이 개인 Gmail이라 명령줄 push가 거절된다(GitHub 이메일 비공개). P0 커밋은 noreply 주소로 다시 써서 push했다. 저장소 설정을 `188744452+jihoon22-lee@users.noreply.github.com`으로 바꿀지 | 사용자 | 운영 해결: 커밋마다 `-c user.email=…`를 사용하며 저장소·전역 설정은 변경하지 않음(00 §3.3) |
+| 2026-10-13 | 사용자 결정 2026-10-13 · 하위 에이전트 | 사용자 | 실행 하네스 제공 하위 에이전트를 사용, 과제마다 구현 → 별도 검토. 특정 모델 제한 제거 |
+| 2026-10-13 | 사용자 결정 2026-10-13 · Windows 실경로 | 사용자 | 에이전트의 WSL→절대 경로 PowerShell CI 설치본 설치·실행·제거 승인. S1부터 각 S PR 전, 가능하면 S1 Task 2 뒤 S0b 조기 스모크. 출처/SHA256 확인, 소유 자원만 정리, 기존 v1/prod 발견 시 질문·UAC/재부팅/클릭 필요 시 중단 보고. v0.9/기존 데이터 보존, PASS·FAIL·미실행 구분(00 §2.2·01 §11) |
+| 2026-10-13 | 사용자 결정 2026-10-13 · S2 전환점 | 사용자 | 기능 완성 뒤 실사용이 기본, S2 뒤 선택적 조기 사용 안내만 하고 기다리지 않음. 옮겼다고 알려 주면 날짜 기록, 문제는 이 표에 적고 진행 중 브랜치에서 수정 |
+| 2026-10-13 | 사용자 결정 2026-10-13 · S3/S5 자원 | 사용자 | 동시 진행 유지. S2 Task 15b에서 전체 검사/E2E common-dir 잠금 --wait(최대60분 exit75) 구현, 기본 비차단 유지. 초과는 검사 대기 초과로 보고/재시도. 좁은 검사 잠금 없이 트랙당 jobs/threads/workers2·nice+10·지원 cgroup6/8GiB swap1GiB, S5 전용 target, 메모리 압박시 한 트랙 중단 |
+| 2026-10-13 | 사용자 결정 2026-10-13 · R1/R2 | 사용자 | 30분 유휴 유지·WSL shutdown 재연결은 S6 공개 직전 사용자 확인으로 이동. R2 경과시간 기록. 그 전까지 미실행 |
 
 ## 3. 하위 프로젝트
 
@@ -36,7 +41,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
-| S1 | 04-s1-agents-terminal · 04b-s1-app | 대기(착수 준비 완료) | | | 완료·검증 결과 보고 |
+| S1 | 04-s1-agents-terminal · 04b-s1-app | 작업 중 | 2026-10-13 | | 완료·검증 결과 보고 |
 | S2 | 05-s2-runs | 대기 | | | 완료·검증 결과 보고 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
@@ -71,7 +76,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | C | Task 7–15 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토 합산 추정) |
 | S0b | D | Task 16–21 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.0h(구현·검토 합산 추정) |
 | S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토·최종 통합 합산 추정) |
-| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 대기 | | | |
+| S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
 | S1 | G | Task 3–4 |  | 대기 | | | |
 | S1 | H | Task 5–6 |  | 대기 | | | |
 | S1 | I | Task 7–10 |  | 대기 | | | |
@@ -152,25 +157,22 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | Windows 사전 확인 | 로컬 native 빌드 도구 | Node만 확인, cargo/rustc/pnpm·기본 cargo·vswhere 미확인 | 별도 설치 없이 계획의 hosted Windows CI에서 native 검사와 설치 파일을 생성한다. 로컬 Windows 빌드 성공으로 보고하지 않음 |
 | 2026-10-13 | 03b Task 22 | Tauri 껍데기·창 크기·self-check | Windows 의존성 분리·자체 lock·단일 인스턴스·COM 성공 뒤 창 표시, 물리 장식 포함 크기 제한 | 순수 geometry 3·리소스 2개 red→green, 스키마/metadata/태그 아이콘 확인·최종 별도 검토 통과. 작은 작업 영역의 장식 초과 수정. 실제 Windows 컴파일·UI·번들 위치는 Task 24까지 미검증 |
 | 2026-10-13 | 03b Task 23 | WSL 배포·게이트·브리지·창별 IPC | 소유 digest 배포·인스턴스 setup/doctor·단일 취소 supervisor·bounded duplex·Job 정리, attachment/revision 수명·오류 복구 UI | 새 Rust 19·프론트 14·직접 영향 시작 검사 3개 통과, 별도 최종 검토 통과. 반복 종료의 정리 우회·진단 소실·최초 연결 뒤 복구 UI 누락을 수정. 모든 실행 fixture는 소유 임시 자원이며 실제 WSL 설치/native Windows는 아직 미실행 |
-
 | 2026-10-13 | 03b Task 23 후속 | 사용자 지정 XDG 배포 경로 | publish·setup·doctor·bridge가 절대 XDG_DATA_HOME 또는 HOME 기본 경로를 함께 사용 | 새 회귀 4개(기존 구현에서 행동 실패 3개 확인) 포함 deploy 6개 통과·별도 검토 PASS. 소유 HOME/XDG fixture만 사용, symlink·기존 인스턴스 데이터 보존 확인. Windows 실기는 여전히 미실행 |
-
 | 2026-10-13 | 03b Task 24 | Windows 스크립트·CI·dogfood | 소유 원본 결합 Windows 동기화, musl 리소스 출처·native 검사·NSIS·self-check, 정확한 원격 SHA/run/설치 파일 해시 확인, E2E 성공 화면 artifact·문서 갱신 | PS5.1 소유 fixture 3종·Python 관련 5개·actionlint/문법/수정 TS Biome 통과. 최초 PR workflow 조회 결함을 재현 후 저장소 실행 API 조회로 수정, dogfood 2개 재통과. 별도 최종 검토 PASS. 최종 검사 실패를 수정 후 영향 범위 재검사: Rust workspace 146·앱 core 28·Python 12·프론트 106·실제 E2E 3개 통과(수정된 프론트 테스트 18개 재통과), fmt/clippy/생성 타입/Biome/typecheck/build 통과. E2E 화면 3장 시각 확인. native Windows는 CI에서 실행 예정 |
-
 | 2026-10-13 | S0b 최종 통합 검사 | 실패 범위 수정·재검증 | stale doctor 기대값, Node 24 ESM JSON import, 엄격한 테스트 타입, import 정렬·Clippy 규약 보완. 테스트 assertion 의미와 정상 동작 유지 검토 | 전체 check 1회 뒤 실패/영향 범위만 재실행. 초기 53.1초·메모리 peak 1.19GB, Rust/E2E 재검증 29.5초·peak 1.89GB. 자원 제한 준수. 실제 WSL 하네스의 임시 runtime 설정 오류는 실패·소유 파일 보존으로 기록 후 exact-content 검증 정리하고 실제 manager 경로로 보정했다 |
-
 | 2026-10-13 | S0b WSL 실제 수용 | 고유 인스턴스 setup·doctor·systemd·bridge·프로젝트 CRUD·EOF | `test-s0b-1c4aa0e8ee81`, 실제 사용자 manager + 소유 임시 XDG 데이터, 현재 debug CLI SHA256 `f2332c8759ec398c11d6bdd01e29eea878448991be8b30548cc801658532fe6b` | PASS. doctor systemd/tmux/env/도구 정상, 기존 linger·inotify는 warn 그대로 유지. 전용 unit·enable link·소켓·임시 데이터 정리와 잔존 unit 없음 확인. 근거: Git common-dir `devbox-verification/s0b-wsl-acceptance.json`; Windows 설치본/R1/R2 미실행을 대신하지 않음 |
-
 | 2026-10-13 | PR #638 첫 CI 보정 | CI 색상 로그·Windows Clippy | `fb93b565`의 CI `38289821740`: Frontend·Rust 성공, E2E는 ANSI 포트 강조 때문에 준비 판독 실패. Windows `38289822012`: Linux 리소스 성공, native Clippy 7건으로 후속 테스트/NSIS/self-check 중단 | 누적 로그 ANSI 제거·정확한 Local 주소 검사로 수정, 회귀 Vitest 8·Python 4와 `FORCE_COLOR=1 CI=true` 실제 E2E 3·tsc/Biome 통과. Windows let-chain·test 배치·동일 UTF-16 chunk 처리 보완, 영향 core 6개와 순수 앱 Clippy 통과. 재검토 후 최종 변경 CI 예정; 이전 실패를 성공으로 취급하지 않음 |
-
 | 2026-10-13 | PR #638 버전 불일치 리뷰 | Welcome 전달 전 연결 종료 | 실제 서버 버전 Welcome을 writer flush ACK 뒤 종료하도록 보완(전체 대기 2초 제한), 중복 Hello·다른 인스턴스는 계속 우선 거부 | 실제 Unix 소켓 RED 재현 → channel 4·server lifecycle 2 검사 통과, 별도 검토 PASS. 불일치 연결은 권한을 얻지 않으며 pipelined mutation도 실행되지 않음. 후속 클라이언트 2건과 함께 최종 영향 검증 예정 |
-
 | 2026-10-13 | PR #638 클라이언트 리뷰 | Welcome 제한 시간·동일 의도 재시도·오프라인 RPC | Hello 뒤 5초 제한과 연결 세대 방어, 동일 데몬의 응답 불명 요청만 같은 ID로 재시도. 입력 변경·취소·reset·unmount·확정 응답은 의도 종료. 호출 시 canonical params snapshot으로 중복 비교 일치. 로컬 RPC는 브라우저 offline에도 즉시 실행/실패 | RED 회귀 후 client 37·query/UI 37 통과, 별도 검토 PASS. 최종 영향 검사: daemon 21·Clippy/fmt·Biome·E2E 3 통과. 테스트의 엄격한 배열 접근 타입 5곳 보정 후 query 24·tsc/build/Biome 통과. 새 최종 SHA의 CI·Windows 설치 파일은 PR 본문에 기록; 당시 미머지. 최신 운영은 §2의 2026-10-13 결정 참조 |
 | 2026-10-13 | S0b 최종 CI·마무리 결정 | `c3212af815dca25bd11d290f32110d8157e9ebe6` | [CI 38294731916](https://github.com/jihoon22-lee/devbox/actions/runs/38294731916)·[Windows 38294732514](https://github.com/jihoon22-lee/devbox/actions/runs/38294732514) 전체 성공, 설치 파일 출처 확인 | 구현·자동 검증 완료. 실기 미실행 사실은 보존하며 사용자 테스트 요청·대기 gate로 두지 않음. 필요한 개발 검증은 에이전트가 해당 단계에서 수행. 당시 보존용 브랜치를 만들었으나 후속 사용자 지시로 제거했다(§2). 필요한 ADR 정리 반영. 이 행은 머지 전 기록이며 최종 결과는 아래 행 참조 |
-
 | 2026-10-13 | S0 마무리·S1 준비 | 최종 PR `f368df36` → squash `820576c9` | [CI 38312265408](https://github.com/jihoon22-lee/devbox/actions/runs/38312265408)·[Windows 38312265384](https://github.com/jihoon22-lee/devbox/actions/runs/38312265384) 모두 성공, PR/main tree OID 일치 확인. main 전환 뒤 남은 폐기 제품의 생성 schema 20개(1.84MB)를 식별·제거해 0 ahead/0 behind·clean 확인. S0 전용 worktree와 로컬·원격 브랜치 제거 | 미푸시 두 커밋은 필요한 변경을 반영한 뒤 main에서 제거, 보존용 브랜치·별도 파일 백업 없음. S1 전용 worktree를 최신 main에서 만들고 frozen 의존성 준비. Task 1의 기존 Hello flush ACK·채널 세대 취소·중복 요청 경계를 유지하며 credit 소진/재개·채널 공정성·종료 회귀부터 구현 예정 |
-
 | 2026-10-13 | PR #638 머지 후 자동 리뷰 | [DB 최신 스키마 거부](https://github.com/jihoon22-lee/devbox/pull/638#discussion_r4252644638) | 리뷰는 머지 뒤 도착. 구버전이 더 높은 도메인 버전을 건너뛰고 DB를 여는 결함으로 확인. 전체 도메인을 먼저 검증해 알려진 최고 버전 초과·알 수 없는 도메인을 거부하며 journal mode·기본 metadata·다른 migration·backup보다 먼저 실패 | RED 2개 재현 후 독립 검토에서 단독 WAL reader 종료 시 checkpoint 결함도 RED 재현·수정. 버전 검증 중 close-checkpoint 차단, 지원 확인 후 기존 동작 복원. DB 18·projects 7·daemon 21 검사 및 Clippy·fmt·Biome 통과, 독립 재검토 PASS. DB/WAL byte 보존·다른 도메인 미변경·정상 교차 도메인 upgrade 확인. 후속 [PR #639](https://github.com/jihoon22-lee/devbox/pull/639): [CI 38315340950](https://github.com/jihoon22-lee/devbox/actions/runs/38315340950)·[Windows 38315341119](https://github.com/jihoon22-lee/devbox/actions/runs/38315341119) 성공 및 [자동 코드·보안 리뷰](https://github.com/jihoon22-lee/devbox/pull/639#issuecomment-6133569350) 최종 SHA 일치·완료·추가 지적 없음 확인 뒤 `fb6bc69d`로 squash 머지. 원래 리뷰 해결, 수정용 worktree와 로컬/원격 브랜치 정리 완료 |
+| 2026-10-13 | A·B 사실 확인 | 낡은 운영 예제·S1 계약·헬퍼 | 00/04/04b/05/06/07의 묶음 push·rebase·사용자 전달·sed 패턴 잔존 확인. 보호 규칙 API는 Frontend (pnpm)·Rust (Cargo workspace)·Rust (Windows) 3개 유지. 서버 Outgoing frame/generation/flushed·dedupe·Hello flush ACK·세대 취소 존재, 지정 6개 헬퍼는 미구현 | 문서 정합화 대상. 헬퍼는 Task 8에서 생성하며 이번에는 구현하지 않음. S0b 브랜치 전체 검토는 기록 없어 수행 주장하지 않음 |
+| 2026-10-13 | A3 일정 재추정 | S0b 20–28h | PR #638 commits API: 78c2d3d9 15:00:35Z → c3212af8 19:00:15Z 약4h, 이후 CI/리뷰·마무리 약3h. 구현창에는 18:26 이후 리뷰 수정도 섞여 있어 순수 구현 시간 계측과 다름. 남은 S1 14–22h, S2 10–16h, S3 8–13h, S4 8–13h, S5 10–16h, S6 5–9h | S1 tmux/PTY/hook/Windows 실통합 위험으로 비율 일괄 축소 안 함. 순차55–89h, S2끝24–38h. S3/S4/S5 순차26–42h→병렬16–26h, 추가 잠금/통합2–4h 고려 순절감6–14h, 남은 최장경로47–77h. 상세화/연결 구현은 단계 예산 포함, 사용자 승인 대기 제외 |
+| 2026-10-13 | A6 GHSA-wrw7-89jp-8q8g | glib Windows 영향 재확인 | app/src-tauri에서 cargo tree --locked -i glib --target x86_64-pc-windows-msvc exit0, nothing to print. 경보 #14 not_used dismiss 완료, root lock #1은 fixed | ADR0016 개인용 범위와 지원 Windows graph 미포함. GTK/WebKit용 glib 0.18.5만 남음. Linux GUI 지원 시 재검토 |
+| 2026-10-13 | A6 Dependabot 실패 | SHA820576c9 업데이트 job | [run38312818489/job115022349175](https://github.com/jihoon22-lee/devbox/actions/runs/38312818489/job/115022349175): security_update_not_possible, latest-resolvable0.18.5/lowest-non-vulnerable0.20.0. GTK0.18/WebKit2GTK2가 glib0.18 요구 | CI 고장 아님. Windows graph 미포함이므로 S1에 GTK 스택 업그레이드 추가 안 함 |
+| 2026-10-13 | A7 계획 브랜치 정리 | clean·main 통합 확인 후 제거 | docs/v1-plan@58fda4d7 clean, PR638 head f368df36의 조상, head tree와 squash820576c9 tree 모두 d22d0e0b. worktree 제거→prune→로컬·원격 docs/v1-plan 삭제 완료 | squash라 main 조상 검사가 아닌 PR 조상+최종 tree 동일성으로 통합 확인. S1 05c13913 보존. 사용자 자료/공유cache 변경 없음 |
+| 2026-10-13 | A·C 문서 정합화 검증 | S1 선행 문서만 변경 | 11개 문서에 운영·실기·일정·후속 과제 반영. 독립 검토 지적(최종 SHA 예외/S2 강제전환 잔존)을 수정하고 재검토 통과. Biome CI 83 files 통과 | 새 보고서/제품 코드 없음. Windows 스모크는 아직 미실행. 실제 Windows 영향 없는 glib 업데이트와 Task8 헬퍼 선행 구현은 하지 않음. 기존05c13913 보존·문서 로컬 커밋 후 Task1 시작 |
 
 ## 6. 세션 기록
 
@@ -181,10 +183,9 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-08 | Claude Code | 세 계획(rebuild·CV·AR)을 이 폴더로 통합·검수(08 §8·§9), 원본 세 폴더 삭제, P0 | `docs/v1-plan`에 커밋·push(PR·CI 없음). 원본 체크아웃의 추적 안 된 사본은 지움. 다음: S0a |
 | 2026-10-12 | Codex | 사용자 요청에 따라 계획 검토·착수 환경 확인만 수행. 아래 §7에 준비 결과 기록 | `docs/v1-plan@4aa88e62` 기준. S0a 미착수, 다음: Task 1의 측정 도구 보완 후 실험 |
 | 2026-10-12 | Codex | S0a Task 1–7 측정·별도 검토, Task 8 결과·ADR 초안·source 계약 보정·소유 자원 정리 | `docs/v1-plan` 문서 통합·Task 8 최종 검토 통과. 자동 부분 완료, R1/R2 유보. 다음: 문서 커밋/보고 뒤 S0b Task 1(미착수) |
-
 | 2026-10-13 | Codex | S0 최종 CI 통과·PR #638 squash 머지, main 미푸시 2개 처리·S0 작업 공간 정리, S1 준비 | `v1/s1-agents-terminal`은 `820576c9`에서 분기. Task 1 구현 미착수, 다음: 스트림·공정 송신 실패 회귀. 중간 사용자 테스트 요청 없음 |
-
 | 2026-10-13 | Codex | PR #638 머지 후 자동 리뷰 1건을 검증·수정, PR #639 최종 CI와 코드·보안 리뷰 완료 후 머지 | main `fb6bc69d`와 S1 준비 브랜치 동기화. S1 준비 기록은 이미 후속 PR에 포함돼 중복 커밋 재적용 없이 최신 main으로 이동. 다음: S1 Task 1 |
+| 2026-10-13 | Codex | S0 검토 A/B 재확인·C 사용자 결정 반영, 재추정, glib 경보 dismiss, 통합된 docs/v1-plan 정리. 독립 문서 재검토·Biome 통과 | `v1/s1-agents-terminal`, 기존05c13913 보존. 문서 변경은 로컬 커밋, push/PR 없음. 다음 Task1 credit·Outbox(기존 flush ACK/세대/dedupe 보존), Windows 스모크는 Task2 뒤 조기 시도 |
 
 ## 7. 착수 준비 검토
 

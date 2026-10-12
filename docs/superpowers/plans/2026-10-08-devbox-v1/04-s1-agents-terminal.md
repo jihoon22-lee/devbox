@@ -1,6 +1,6 @@
 # S1 에이전트·터미널·프로젝트 (1/2: 데몬) Implementation Plan
 
-> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 계획한 기능을 완성한 뒤 사용자가 진행하며 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 아래 과거 예제의 묶음별 전체 검사/push·rebase·사용자 확인 목록 전달은 적용하지 않는다.
+> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 기능 완성 뒤가 기본이며 S2 뒤 선택적 조기 사용이 가능하다. 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 최종 SHA의 자동 코드·보안 리뷰 완료를 확인한다. Windows 설치본 스모크는 01-design §11에 따라 에이전트가 수행한다.
 
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -54,16 +54,16 @@
 ## 작업 묶음
 
 S1 전체가 브랜치 `v1/s1-agents-terminal` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s1-agents-terminal`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 진행 기록과 세션 인계 지점이다. 과제별 좁은 검사·별도 검토·커밋 뒤 `PROGRESS.md`의 묶음 행과 현재 위치를 갱신한다. 묶음별 전체 검사·push는 하지 않는다. S1 끝에 브랜치 전체 검토와 통합 검증을 마치고 한 번 push·PR한다(00-roadmap §3).
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| F | Task 1–2 | push |
-| G | Task 3–4 | push |
-| H | Task 5–6 | push |
-| I | Task 7–10 | push |
-| J | Task 11–12 | push |
+| F | Task 1–2 | 로컬 기록·인계 |
+| G | Task 3–4 | 로컬 기록·인계 |
+| H | Task 5–6 | 로컬 기록·인계 |
+| I | Task 7–10 | 로컬 기록·인계 |
+| J | Task 11–12 | 로컬 기록·인계 |
 
 ---
 
@@ -73,7 +73,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
 - Create: `crates/protocol/src/stream.rs`
 - Modify: `crates/protocol/src/router.rs`(`Ctx`에 `streams`), `crates/protocol/src/lib.rs`
 - Create: `crates/cli/src/daemon/outbox.rs`, `crates/cli/src/daemon/streams.rs`
-- Modify: `crates/cli/src/daemon/server.rs`(mpsc → `Outbox`, 종류 1·`StreamCredit` 처리, `ChannelClose` 시 스트림 정리)
+- Modify: `crates/cli/src/daemon/server.rs`(`mpsc::Sender<Outgoing>` → `Outbox`, 기존 세대·flush ACK·dedupe 보존, 종류 1·`StreamCredit` 처리, `ChannelClose` 시 스트림 정리)
 - Test: `crates/protocol/src/stream.rs`(단위), `crates/cli/tests/streams.rs`(통합, 시험용 `debug.echo` 스트림 메서드)
 
 **Interfaces:**
@@ -541,8 +541,11 @@ impl StreamOpener for Opener {
 ```
 
 `server.rs`를 이렇게 바꾼다.
-- `mpsc::Sender<Frame>` 대신 `Arc<Outbox>`를 쓰고, 쓰기 작업은 `while let Some(f) = outbox.next().await { sink.send(f).await }`로 돈다.
-- `json_frame`을 보낼 때 `outbox.push(...)`를 쓴다. 구독 전달 작업도 `push`가 false면 끝낸다.
+- 현재 서버(2026-10-13 확인)는 `mpsc::Sender<Outgoing>`이며 `Outgoing { frame, generation, flushed }`를 보낸다. 위 `Frame` 전용 Outbox 예제는 공정 송신 골격이다. 실제 구현에서는 이 envelope를 큐에 보존하고, 스트림 송신도 해당 채널 세대에 묶는다. 단순 `Frame` 큐로 대체하지 않는다.
+- writer는 취소된 `generation`을 버리고 `sink.send(frame).await` 성공 후에만 `flushed` ACK를 보낸다. Hello 버전·프로토콜 불일치 시 Welcome flush ACK를 최대 2초 기다린 뒤 연결을 닫는 기존 계약을 유지한다.
+- ChannelOpen으로 같은 채널 번호를 재사용하거나 ChannelClose·연결 종료 시 이전 세대를 취소한다. 이전 응답·구독·스트림이 새 세대로 새지 않도록 큐와 스트림 등록을 함께 정리한다. 기존 inflight 요청 취소·구독 중단도 보존한다.
+- `Dedupe::dispatch`·tracker 종료 대기와 요청 ID 중복 검사를 유지한다. inflight ID 제거는 응답 enqueue 뒤에 하여 같은 ID의 새 응답이 이전 응답을 앞지르지 않게 한다.
+- `json_frame`·구독 송신은 세대와 선택적 flush ACK를 포함해 Outbox로 보낸다. 큐 종료 시 구독 전달도 끝낸다. 기존 서버 회귀 테스트를 유지하고 Hello flush·채널 재사용/취소·dedupe와 새 공정 송신의 교차 동작을 좁은 회귀 시험으로 확인한다.
 - 종류 1을 받으면 `parse_stream`으로 `streams.input(id, flags & FLAG_FIN != 0, data)`를 부른다.
 - `Control::StreamCredit { stream, bytes }`는 `streams.credit(stream, bytes)`로 넘긴다.
 - `close_channel`은 `streams.close_channel(ch)`도 부른다. 연결이 끝나면 `streams.close_all()` + `outbox.close()`.
@@ -701,9 +704,10 @@ private deliverChunk(id: number, flags: number, data: Uint8Array) {
 ```bash
 pnpm --filter app exec vitest run src/rpc && pnpm --filter app typecheck && cargo run -q -p xtask -- gen-ts --check
 git add app crates && git commit -m "feat(app): consume flow-controlled streams in the RPC client"
-# 묶음 F 끝: PROGRESS.md의 묶음 F 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 F 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
+
+S1 Task 2 직후 가능하면 01-design §11의 Windows 설치본 스모크를 S0b 범위로 먼저 시도한다. 이 시점의 커밋 산출물임을 기록하고, 최종 SHA의 PR 전 스모크를 대체하지 않는다. 조기 스모크용 그 시점 SHA push·windows.yml workflow dispatch는 00 §2.2의 예외로 허용한다. 일반 묶음별 push는 하지 않으며 실행할 수 없으면 조기 시도만 미실행 사유를 남긴다.
 
 ---
 
@@ -1263,8 +1267,7 @@ method!(pub TerminalResize = "terminal.resize", mutation, ResizeStream => devbox
 ```bash
 cargo test -p devbox-cli --test terminal_attach && cargo test --workspace && cargo run -q -p xtask -- gen-ts
 git add crates xtask app/src/rpc/gen && git commit -m "feat(terminal): stream tmux attach clients through a PTY with prefilled history"
-# 묶음 G 끝: PROGRESS.md의 묶음 G 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 G 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -1786,8 +1789,7 @@ pub async fn merged_agent_branches(repo: &Path, base: &str) -> Result<Vec<String
 ```bash
 cargo test -p devbox-git
 git add crates && git commit -m "feat(git): add worktree, merge, rebase, pull request and cleanup operations"
-# 묶음 H 끝: PROGRESS.md의 묶음 H 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 H 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -2618,8 +2620,9 @@ async fn agent_task_goes_from_preparing_to_waiting_to_idle_via_hooks() {
 ```
 
 - 이 시험은 Task 9의 `agents.send`도 쓴다. Task 9를 마친 뒤 통과시킨다. Task 8에서는 `waiting`까지만 확인하는 형태로 먼저 둔다.
-- `TestDaemon`에 다음을 추가한다.
+- 아래 시험 헬퍼는 2026-10-13 현재 코드에 없다. **이 Task 8에서** `TestDaemon`에 다음을 추가한다(Task 1에서 선행 구현하지 않는다).
   - `start_with_env`. `start`·`start_with_env` 모두 데몬을 띄우기 전에 임시 HOME에 `.gitconfig`를 쓴다: `[user] name = devbox-test`, `email = test@devbox.invalid`, `[init] defaultBranch = main`. 임시 HOME이라 사용자의 `~/.gitconfig`가 보이지 않으므로, 이것이 없으면 데몬의 squash 병합·rebase 커밋이 "Please tell me who you are"로 실패한다(로컬·CI 모두)
+  - `add_project(client, path)`와 `create_agent(client, project, profile, worktree)`(해당 RPC 호출 헬퍼)
   - `write_config(text)`(`~/.config/devbox/config.toml`)
   - `git_repo(rel)`(`git init -q -b main` + 첫 커밋. 기준 브랜치 이름을 시험이 `main`으로 가정한다)
   - `wait_for(client, id, state, timeout)`(`agents.get` 폴링)
@@ -3062,8 +3065,7 @@ mod tests {
 ```bash
 cargo test -p devbox-agents && cargo test -p devbox-cli && cargo run -q -p xtask -- gen-ts
 git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): detect waiting from output, measure resources and pin token usage"
-# 묶음 I 끝: PROGRESS.md의 묶음 I 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 I 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -3325,10 +3327,9 @@ pub async fn run() -> anyhow::Result<()> {
 - [ ] **Step 3: 통과·커밋·묶음 J 끝**
 
 ```bash
-cargo test -p devbox-cli --test mcp && pnpm check
+cargo test -p devbox-cli --test mcp
 git add crates README.md && git commit -m "feat(cli): expose projects and agents to coding agents over MCP"
-# 묶음 J 끝: PROGRESS.md의 묶음 J 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-git push origin v1/s1-agents-terminal
+# 묶음 J 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 화면과 Windows 통합은 [04b-s1-app](04b-s1-app.md)으로 이어진다.

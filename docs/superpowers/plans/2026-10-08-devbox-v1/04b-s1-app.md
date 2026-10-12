@@ -1,11 +1,11 @@
 # S1 에이전트·터미널·프로젝트 (2/2: 화면·Windows 통합) Implementation Plan
 
-> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 계획한 기능을 완성한 뒤 사용자가 진행하며 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 아래 과거 예제의 묶음별 전체 검사/push·rebase·사용자 확인 목록 전달은 적용하지 않는다.
+> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 기능 완성 뒤가 기본이며 S2 뒤 선택적 조기 사용이 가능하다. 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 최종 SHA의 자동 코드·보안 리뷰 완료를 확인한다. Windows 설치본 스모크는 01-design §11에 따라 에이전트가 수행한다.
 
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) 묶음 F–J push(같은 S1 브랜치에서 이어감)
+- 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 구현·별도 검토 완료(같은 S1 브랜치에서 이어감)
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -52,16 +52,16 @@
 ## 작업 묶음
 
 S1 전체가 브랜치 `v1/s1-agents-terminal` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s1-agents-terminal`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 진행 기록과 세션 인계 지점이다. 과제별 좁은 검사·별도 검토·커밋 뒤 `PROGRESS.md`의 묶음 행과 현재 위치를 갱신한다. 묶음별 전체 검사·push는 하지 않는다. S1 끝에 브랜치 전체 검토와 통합 검증을 마치고 한 번 push·PR한다(00-roadmap §3).
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| K | Task 13–16 | push |
-| L | Task 17–19 | push |
-| M | Task 20–21 | push |
-| N | Task 22–23 | push |
-| 마무리 | Task 24 | **S1 PR 열기** → CI 통과 → squash 머지 → 완료·검증 결과 보고 |
+| K | Task 13–16 | 로컬 기록·인계 |
+| L | Task 17–19 | 로컬 기록·인계 |
+| M | Task 20–21 | 로컬 기록·인계 |
+| N | Task 22–23 | 로컬 기록·인계 |
+| 마무리 | Task 24 | 브랜치 전체 검토·최종 검증 → push·설치본 스모크 → PR·필수 CI·최종 SHA 리뷰 → squash 머지 |
 
 ---
 
@@ -1535,10 +1535,10 @@ xterm은 WebGL 렌더러를 쓰면 DOM에 글자가 없다. E2E에서는 `?rende
 - [ ] **Step 6: 통과·커밋·묶음 K 끝**
 
 ```bash
-pnpm --filter app exec vitest run src/features/terminal && pnpm --filter app exec playwright test e2e/terminal.spec.ts
+pnpm --filter app exec vitest run src/features/terminal
+# E2E e2e/terminal.spec.ts는 S1 PR 끝 통합 검증에서 실행한다.
 git add app .github && git commit -m "feat(app): add the terminal section with tabs, splits, bottom panel and pop-out windows"
-# 묶음 K 끝: PROGRESS.md의 묶음 K 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 K 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -2420,10 +2420,10 @@ test.describe("with a task waiting for input", () => {
 - [ ] **Step 5: 통과·커밋·묶음 L 끝**
 
 ```bash
-pnpm --filter app exec vitest run src/features && pnpm --filter app exec playwright test e2e/agents.spec.ts
+pnpm --filter app exec vitest run src/features
+# E2E e2e/agents.spec.ts는 S1 PR 끝 통합 검증에서 실행한다.
 git add app && git commit -m "feat(app): add the agent grid, notification center and agent end-to-end journeys"
-# 묶음 L 끝: PROGRESS.md의 묶음 L 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 L 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -2501,7 +2501,8 @@ test("launch profile opens its terminals in one action", async ({ page }) => {
 - [ ] **Step 4: 통과·커밋**
 
 ```bash
-pnpm --filter app exec vitest run src/features/projects && pnpm --filter app exec playwright test e2e/launch.spec.ts
+pnpm --filter app exec vitest run src/features/projects
+# E2E e2e/launch.spec.ts는 S1 PR 끝 통합 검증에서 실행한다.
 git add app && git commit -m "feat(app): show project cards with git and agent summary and run launch profiles"
 ```
 
@@ -2587,8 +2588,7 @@ S0b의 `Check` 필드 이름(`id`·`status`·`title`·`detail`)이 다르면 그
 cargo test -p devbox-cli doctor && cargo run -q -p xtask -- gen-ts
 pnpm --filter app exec vitest run src/features/settings && pnpm --filter app typecheck
 git add crates xtask app && git commit -m "feat(settings): check agent tools and reload the shell environment"
-# 묶음 M 끝: PROGRESS.md의 묶음 M 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 M 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -2947,15 +2947,14 @@ pub fn register(app: &tauri::AppHandle, status: &std::sync::Mutex<Vec<(String, S
 ```bash
 pnpm --filter app exec vitest run src/shell/FirstRun.test.tsx && pnpm --filter app typecheck
 git add app && git commit -m "feat(app): add tray, global palette shortcut, autostart and close-to-tray"
-# 묶음 N 끝: PROGRESS.md의 묶음 N 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 N 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
-Windows 워크플로가 통과하면 머지한다. Rust Windows 코드의 실제 동작은 Task 24의 확인 목록에서 본다.
+Task 24에서 브랜치 전체 검토·최종 검증·Windows 설치본 스모크를 완료하고 필수 CI 3개와 최종 SHA 자동 코드·보안 리뷰 완료 뒤 squash 머지한다.
 
 ---
 
-### Task 24: S1 완료 — 성공 기준 측정·규모 통계·확인 목록
+### Task 24: S1 완료 — 성공 기준 측정·규모 통계·에이전트 수용 검증
 
 **Files:**
 - Create: `crates/cli/tests/survival.rs`(SC4), `crates/cli/tests/terminal_latency.rs`(SC10), `scripts/loc.sh`(SC8)
@@ -3006,7 +3005,7 @@ async fn sessions_and_agent_tasks_survive_a_daemon_restart() {
 3. 이벤트 수신 시각과의 차이를 `eprintln!("SC3 hook→event {ms}ms")`로 남긴다.
 4. `assert!(ms < 2000)`.
 
-Windows 알림까지의 구간은 확인 목록 3번에서 본다.
+Windows 알림까지의 구간은 Step 4 설치본 스모크에서 에이전트가 확인한다.
 
 - [ ] **Step 2b: SC10 터미널 반응 측정 (IR-6)**
 
@@ -3095,10 +3094,13 @@ if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝
 
 `bash scripts/loc.sh 60000` 결과를 PR 본문에 적는다. S3 끝에는 `120000`, S6 끝에는 `200000`을 인자로 준다.
 
-- [ ] **Step 4: 확인 목록(사용자, 10개)**
-  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
+- [ ] **Step 4: 에이전트 실제 WSL·Windows 설치본 스모크**
 
-사용자는 WSL에서 `bash scripts/dogfood.sh v1/s1-agents-terminal`로 설치 파일을 받아 설치한 뒤 확인한다(브랜치를 push해 두면 스크립트가 그 커밋의 `windows.yml` 실행을 찾거나 새로 시작한다. Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
+01-design §11의 수용 검증 정책 전체를 적용한다. 고유 `test-<난수>` 인스턴스와 실제 user systemd에서 `DEVBOX_NO_SCOPE` 없이 `systemd-run --user --scope` 경로를 검증한다. 실제 claude·codex hook을 각각 1회 발생시켜 agents 상태 반영을 확인한다. 데몬 재시작 세션 유지와 tmux 서버 종료 시 SIGHUP 정책(01 §4.3)을 각각 확인하고, SIGHUP 무시 프로세스의 scope는 작업 종료 시 명시적으로 멈춘다. 시험이 만든 자원만 정리한다. Step 1의 scope 우회 시험은 이 실제 경로를 대체하지 않는다.
+
+Windows는 에이전트가 WSL에서 절대 경로 PowerShell로 최종 SHA의 `windows.yml` CI 설치본을 설치·실행·제거한다. `scripts/dogfood.sh`와 같은 저장소·workflow·run·source SHA·SHA256 검증 뒤 실행한다. 기존 v1 설치본 또는 `devbox@prod` 데이터 발견 시 제거하지 않고 멈춰 묻는다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 devbox 데이터는 보존하고 스모크 소유 설치·데이터·unit·소켓만 정리한다. UAC·재부팅·사용자 클릭이 필요하면 중단 보고한다.
+
+S0b 범위(첫 실행 배포판 선택·WSL 바이너리 배치·setup·wsl.exe 브리지·ping·projects 목록/추가·창 닫기 뒤 Job 정리)와 아래 S1 범위를 확인한다. S1 트레이 창 닫기와 앱 완전 종료의 Job 수명을 구분한다. 앱·데몬 로그·systemctl unit 상태·진단·필요시 스크린샷을 근거로 삼고 UI 자동화(tauri-driver/WebDriver 등)가 불가능한 항목만 미실행으로 남긴다. PROGRESS·PR에 출처와 PASS·FAIL·미실행을 구분하며 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다. 사용자에게 확인 목록을 전달하거나 중간 실사용을 기다리지 않는다.
 
 1. 새 에이전트 작업(Claude Code, 작업 폴더 켬)을 만들면 1번의 [시작]으로 작업 폴더·세션·도구 실행까지 이어진다.
 2. Claude가 권한을 물으면 2초 안에 목록 "입력 대기"에 메시지가 보인다.
@@ -3106,21 +3108,15 @@ if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝
 4. 작성란에서 한글로 지시를 쓰고 Ctrl+Enter → 에이전트가 받아 진행한다(조합 중 글자 누락 없음).
 5. 에이전트 두 개를 동시에 돌리고 격자 보기에서 둘 다 실시간으로 보인다.
 6. 변경 탭에서 줄을 인용해 지시하고, squash 병합 → 기준 체크아웃에 반영되고 작업 폴더가 정리된다.
-7. 앱 창을 닫았다(트레이) 다시 열어도 터미널·에이전트 세션이 그대로다. `systemctl --user restart devbox@prod`를 해도 그대로다.
+7. 앱 창을 닫았다(트레이) 다시 열어도 터미널·에이전트 세션이 그대로다. 이번 스모크가 만든 인스턴스의 데몬만 `systemctl --user restart devbox@test-<난수>`로 재시작해도 그대로다. 설치본이 prod에만 연결한다면 사전 확인으로 기존 prod 부재와 이번 스모크의 소유를 입증한 prod만 대상으로 한다.
 8. 터미널 탭·분할을 만들고 하나를 새 창으로 띄운다. 새 창을 닫아도 세션은 목록에 남는다.
 9. 트레이 상주 중 Ctrl+Alt+Space로 팔레트가 뜬다(개발 빌드면 Ctrl+Alt+Shift+Space).
 10. 프로젝트 전환기 카드에서 [시작 구성 실행]으로 터미널들이 한 번에 열린다.
 
-- [ ] **Step 5: 상태 갱신·PR**
+- [ ] **Step 5: 브랜치 전체 검토·상태 갱신·PR**
 
-```bash
-git add crates scripts && git commit -m "test: measure S1 success criteria and add a code size report"
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: S0b 완료.*/- 상태: 완료(S1 PR 머지)/' docs/superpowers/plans/2026-10-08-devbox-v1/04-s1-agents-terminal.md
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(S1 PR 머지, 확인 목록 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
-git add docs && git commit -m "docs(plan): mark S1 complete"
-git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…). 완료·검증 결과를 보고하며 중간 실사용 확인을 요청하지 않는다.
+S1 브랜치 전체를 별도 검토하고 결과를 PROGRESS에 기록한다. 과제별 좁은 검사 뒤 PR 끝 통합 검증을 한 번 모아 수행하고 실패·영향 범위만 재검사한다. 완료 커밋·push 전 Biome CI를 실행한다. `04`·`04b` 머리 상태 줄은 현재 내용을 확인해 **직접 편집**한다(sed 패턴 사용 금지). 머지 전에는 "구현 완료 · PR 수용 검증 중"처럼 실제 상태를 쓰고 PROGRESS에 구현 완료와 PR 수용 완료를 구분한다.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-```
+영어 Conventional Commit과 지정된 사용자 이메일로 커밋한다. 최종 검증 뒤 S1 브랜치를 한 번 push하고 `windows.yml` workflow dispatch로 받은 그 SHA의 Windows CI 산출물로 Step 4 스모크를 마친 뒤 PR을 한 번 연다(00-roadmap §3). PR 본문에는 SC3·SC4·SC10 측정값·규모 통계·브랜치 전체 검토 결과와 Windows 출처·SHA256·PASS/FAIL/미실행을 기록한다. 멀티라인 본문은 파일에 작성해 `gh pr create --body-file`로 전달한다.
 
-CI가 통과하면 `gh pr merge --squash v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료·측정값을 간결히 보고하고 **기다리지 않고** S2를 시작한다.
+최종 SHA의 `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 성공과 자동 코드·보안 리뷰 완료를 확인하고 지적을 처리한 뒤 squash 머지한다. 실제 머지 확인 후 상태 줄과 PROGRESS를 갱신하고 00 §3 정리 순서로 소유 worktree·브랜치를 정리한다. S1 완료·측정값·미실행 항목을 간결히 보고하고 사용자 실사용을 기다리지 않고 S2를 시작한다.
