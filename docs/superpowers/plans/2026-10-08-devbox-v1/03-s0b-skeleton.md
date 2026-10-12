@@ -576,7 +576,7 @@ mod tests {
         assert!(matches!(FrameCodec::default().decode(&mut bad), Err(CodecError::Frame(FrameError::UnknownKind(9)))));
 
         let mut big = BytesMut::new();
-        let len = (5 + MAX_STREAM_CHUNK + 1) as u32;
+        let len = (5 + 5 + MAX_STREAM_CHUNK + 1) as u32;
         big.extend_from_slice(&len.to_le_bytes());
         big.extend_from_slice(&[FrameKind::Stream as u8, 0, 0, 0, 0]);
         assert!(matches!(FrameCodec::default().decode(&mut big), Err(CodecError::Frame(FrameError::TooLarge { .. }))));
