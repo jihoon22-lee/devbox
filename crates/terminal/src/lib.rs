@@ -1,5 +1,8 @@
 //! Devbox-owned tmux terminal sessions, metadata and typed RPC declarations.
 mod attach;
+mod attach_gate;
+#[cfg(unix)]
+mod attach_history;
 pub mod model;
 mod service;
 mod store;

@@ -101,13 +101,19 @@ async fn zero_credit_history_does_not_starve_input_or_attachment_cleanup() {
         .expect("attach");
     assert_eq!((attached.cols, attached.rows), (100, 30));
     until(async || {
-        !h.terminal
+        let clients = h
+            .terminal
             .tmux()
-            .run(&["list-clients", "-t", &terminal.id, "-F", "#{client_pid}"])
+            .run(&[
+                "list-clients",
+                "-t",
+                &terminal.id,
+                "-F",
+                "#{client_pid} #{client_height}",
+            ])
             .await
-            .expect("clients")
-            .trim()
-            .is_empty()
+            .expect("clients");
+        clients.lines().count() == 1 && clients.split_whitespace().count() == 2
     })
     .await;
     let pid = h
@@ -123,6 +129,14 @@ async fn zero_credit_history_does_not_starve_input_or_attachment_cleanup() {
     until(async || h.home.path().join("credit-stalled-input").exists()).await;
     closed.cancel();
     until(async || !std::path::Path::new(&format!("/proc/{}", pid.trim())).exists()).await;
+    assert!(
+        h.terminal
+            .tmux()
+            .run(&["list-buffers", "-F", "#{buffer_name}"])
+            .await
+            .expect("buffers")
+            .is_empty()
+    );
     assert!(
         h.terminal
             .tmux()

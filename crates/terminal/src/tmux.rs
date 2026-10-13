@@ -59,7 +59,7 @@ impl Tmux {
             .kill_on_drop(true);
         command
     }
-    async fn output(&self, args: &[&str]) -> Result<Vec<u8>, TmuxError> {
+    pub(crate) async fn output(&self, args: &[&str]) -> Result<Vec<u8>, TmuxError> {
         let out = tokio::time::timeout(Duration::from_secs(10), self.cmd().args(args).output())
             .await
             .map_err(|_| TmuxError::Timeout)??;
@@ -75,6 +75,13 @@ impl Tmux {
         self.output(args)
             .await
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    }
+    pub(crate) async fn client_present(&self, pid: u32) -> Result<bool, TmuxError> {
+        match self.run(&["list-clients", "-F", "#{client_pid}"]).await {
+            Ok(clients) => Ok(clients.lines().any(|line| line == pid.to_string())),
+            Err(error) if error.missing() => Ok(false),
+            Err(error) => Err(error),
+        }
     }
     pub async fn start_direct(&self) -> Result<(), TmuxError> {
         self.run(&["start-server", ";", "set", "-g", "exit-empty", "off"])

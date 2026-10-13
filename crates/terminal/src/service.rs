@@ -101,12 +101,6 @@ impl TerminalService {
         {
             return Err(TerminalError::NotFound { id: p.id }.into());
         }
-        let history = self
-            .tmux
-            .capture_history(&p.id, 2000)
-            .await
-            .map_err(tmux_error)?;
-        let dimensions = crate::attach::dimensions(&self.tmux, &p).await?;
         if ctx.cancel.is_cancelled() {
             return Err(TerminalError::StreamUnavailable {}.into());
         }
@@ -115,12 +109,13 @@ impl TerminalService {
             .map_err(|_| TerminalError::StreamUnavailable {})?;
         let stream_id = ends.id;
         let tx = ends.tx.clone();
-        if let Err(error) =
-            crate::attach::start(&self.tmux, &self.attachments, p, history, ends, dimensions)
-        {
-            tx.finish().await;
-            return Err(error);
-        }
+        let dimensions = match crate::attach::start(&self.tmux, &self.attachments, p, ends).await {
+            Ok(dimensions) => dimensions,
+            Err(error) => {
+                tx.finish().await;
+                return Err(error);
+            }
+        };
         Ok(crate::TerminalAttached {
             stream_id,
             cols: dimensions.cols,
@@ -139,7 +134,7 @@ impl TerminalService {
             }
             .into());
         }
-        self.attachments.resize(p.stream_id, p.cols, p.rows)?;
+        self.attachments.resize(p.stream_id, p.cols, p.rows).await?;
         let rev = self
             .db
             .read(current_rev)

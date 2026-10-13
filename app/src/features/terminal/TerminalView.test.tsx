@@ -64,6 +64,10 @@ vi.mock("@xterm/xterm", () => ({
     options: any;
     events: Record<string, Function> = {};
     parser = {
+      registerCsiHandler: (_: unknown, cb: Function) => {
+        this.events.csi = cb;
+        return { dispose: vi.fn() };
+      },
       registerOscHandler: (_: number, cb: Function) => {
         this.events.osc = cb;
         return { dispose: vi.fn() };

@@ -238,6 +238,9 @@ PR #640 첫 CI는 `105494c3`에서 필수 Frontend/Linux Rust/Windows Rust가 �
 
 PR #640 후속 Git 보완: source 복사 FD 재검증, clone 전송 deadline 10분(일반 Git 조회 30초 유지), credential·제어 문자를 제거한 제한된 실패 진단을 추가했다. 각각 RED 뒤 기존 직접 범위 고유26개와 두 crate Clippy/포맷 PASS. 별도 재검토에서 목적지 부모 교체로 외부에 새 파일을 만드는 추가 경합을 발견했다. 결정적 `copy escaped owned worktree` RED 후 소유 worktree FD를 고정하고 모든 하위 디렉터리 생성·최종 파일 열기를 `mkdirat/openat`·NOFOLLOW·O_EXCL로 보완했다. 목적지 교체·하위 경로 생성·기존 파일/링크·권한 보존 고유11개, projects Clippy·포맷 PASS 및 Astra 독립 재검토 PASS. Linux/WSL 범위이며 Windows 실기 재확인은 아직이다. 근거: 같은 artifact의 git-review-followup/evidence.json·copy-destination-evidence.json(원래 config 해시는 후속 근거로 대체, 다른3개 파일 일치).
 
+
+PR #640 터미널 출력 보완: history 조회와 attach 사이 출력 누락을 결정적 RED로 재현하고 같은 tmux 명령 큐의 불변 버퍼 캡처로 첫 화면과 연결했다. 읽기 전용 크기 조회 뒤 다른 client의 크기 변경·정상 닫기가 끼어 번호행272가 사라지는 지원 경합도 각각 실제 RED로 확인했다. 세션별 초기화/resize/close 순서, 취소와 분리된 초기화·resize 확인, 제한 시간 정리와 미해결 peer 보존을 적용했다. 최초의 조기 응답 assertion·관리 설정 밖 WAIT hook 가설은 제품 결함 증거가 아니어서 철회하고 실제 번호행 실패와 구분했다. 원시 바이트 검사만으로 놓친 xterm 첫 화면 지우기의49행 손실과 연결 중 화면 성장의20행 손실도 실제 사용 중인 xterm6 파서로 RED를 확인했다. history를 스크롤백에 옮기고 첫 지우기에서만 현재 viewport 내용을 보존하도록 수정해 이후 일반 지우기·분할 CSI·재연결은 정상 처리한다. Rust 고유23개 중 마지막 수정 후 직접14개와 동일 경로 재사용9개를 구분했으며, 최종 terminal Clippy/fmt PASS 및 Rust11파일 독립 검토 PASS. 실제 xterm4+기존 TerminalView15=19개·타입 검사·화면4파일 독립 검토 PASS. 실제 제품 스트림 readonly/writable/reflow와 현재 TS helper의70행 화면 재생4개 모두 누락0·중복0·scrollback2000 PASS. 보강한 실제 화면 검색/데몬 재시작 E2E1개4.5초 PASS(감독17.341초, cgroup peak1,434,337,280byte). 나머지 E2E/전체 runner는 반복하지 않았다. 근거: terminal-continuity-frozen.json·initial-history-evidence.json·xterm-history-evidence.json·terminal-history-e2e.log. Windows 영향 재수용은 새 최종 SHA에서 수행할 예정이다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

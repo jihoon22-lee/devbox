@@ -10,6 +10,7 @@ import { openExternal } from "../../shell/external";
 import { useLayout } from "../../shell/layout";
 import { Button, useToasts } from "../../ui";
 import { setTerminalFont, storedFontSize, usePreferences } from "../settings/preferences";
+import { preserveInitialHistory } from "./initial-history";
 import { terminalKey } from "./keys";
 import { type LinkState, TerminalLink } from "./link";
 import { parseOsc7 } from "./osc";
@@ -76,6 +77,7 @@ export function TerminalView({
       linkHandler: { activate: (_event, uri) => external(uri) },
     });
     const fit = new FitAddon();
+    const initialHistory = preserveInitialHistory(term);
     const search = new SearchAddon();
     term.loadAddon(fit);
     term.loadAddon(search);
@@ -91,8 +93,15 @@ export function TerminalView({
       id,
       readOnly: preview,
       sink: {
-        write: (bytes, done) => term.write(bytes, done),
-        reset: () => term.reset(),
+        write: (bytes, done) =>
+          term.write(bytes, () => {
+            initialHistory.written();
+            done();
+          }),
+        reset: () => {
+          term.reset();
+          initialHistory.reset();
+        },
         resize: (cols, rows) => term.resize(cols, rows),
       },
       onState: (next) => {
@@ -101,6 +110,7 @@ export function TerminalView({
       onInputDropped: () => warn("연결이 끊겨 입력을 보내지 못했습니다"),
     });
     const subscriptions = [
+      initialHistory,
       term.onData((data) => {
         if (!disposed && !preview) link.input(data);
       }),
