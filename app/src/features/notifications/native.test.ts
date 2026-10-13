@@ -121,3 +121,14 @@ test("StrictMode abandoned registration cleans late listener and retains unconsu
   expect(navigate).toHaveBeenCalledOnce();
   nextStop();
 });
+test("tray summary navigation accepts the list without selecting a task", async () => {
+  native();
+  mocks.listen.mockResolvedValue(vi.fn());
+  mocks.invoke.mockImplementation((name) => Promise.resolve(name === "pending_navigation" ? intent(1, "") : undefined));
+  const navigate = vi.fn().mockResolvedValue(undefined);
+  const off = subscribeNativeNavigation(navigate);
+  await tick();
+  expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: "/agents", search: { id: "", view: "list" } });
+  expect(mocks.invoke).toHaveBeenCalledWith("acknowledge_navigation", { sequence: 1 });
+  off();
+});

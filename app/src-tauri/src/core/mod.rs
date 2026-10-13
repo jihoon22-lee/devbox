@@ -25,4 +25,10 @@ pub mod diagnostics;
 pub mod external;
 
 #[cfg(any(windows, test))]
+pub mod intents;
+#[cfg(any(windows, test))]
 pub mod notify;
+#[cfg(any(windows, test))]
+pub mod preferences;
+#[cfg(any(windows, test))]
+pub mod shortcuts;

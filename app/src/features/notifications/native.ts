@@ -41,7 +41,7 @@ function intent(value: unknown): value is NavigationIntent {
     candidate.to === "/agents" &&
     candidate.search?.view === "list" &&
     typeof candidate.search.id === "string" &&
-    /^[A-Za-z0-9]+$/.test(candidate.search.id)
+    /^[A-Za-z0-9]*$/.test(candidate.search.id)
   );
 }
 /** Register before reading pending state; ack only a completed navigation while still mounted. */

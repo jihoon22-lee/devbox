@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { Methods } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
+import { useNativeRuntime } from "../../shell/nativeRuntime";
 import { useAgentData } from "../agents/AgentData";
 import { STATE_LABEL } from "../agents/model";
 import { nativeAttention, nativeBadge } from "./native";
@@ -14,7 +15,7 @@ export function AttentionBridge({
 }: {
   location?: () => { pathname: string; search: Record<string, unknown> };
 }) {
-  const { client, qc } = useRpcSession();
+  const { client, qc, state } = useRpcSession();
   const data = useAgentData();
   useEffect(
     () =>
@@ -51,7 +52,17 @@ export function AttentionBridge({
   );
   useEffect(() => {
     nativeBadge(data.attention, data.tasks.filter((item) => item.state !== "closed").length);
-  }, [data.attention, data.tasks]);
-  useEffect(() => () => nativeBadge(0, 0), []);
+    useNativeRuntime.setState({
+      snapshotCurrent: state === "ready" && !!data.list.data && !data.list.isFetching && !data.list.isError,
+      ...(data.list.data ? { openTasks: data.tasks.filter((item) => item.state !== "closed").length } : {}),
+    });
+  }, [data.attention, data.tasks, data.list.data, data.list.isFetching, data.list.isError, state]);
+  useEffect(
+    () => () => {
+      nativeBadge(0, 0);
+      useNativeRuntime.setState({ snapshotCurrent: false });
+    },
+    [],
+  );
   return null;
 }

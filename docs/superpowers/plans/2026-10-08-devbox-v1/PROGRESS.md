@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 Task 1–22 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 23 트레이·전역 단축키·자동 시작·닫기 동작 |
+| 단계 | S0 및 후속 #639 완료. S1 Task 1–23 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 24 성공 기준·통합 검증·Windows 설치본 스모크·PR 수용 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -84,7 +84,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | K | Task 13–16 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h |
 | S1 | L | Task 17–19 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.6h |
 | S1 | M | Task 20–21 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.2h |
-| S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
+| S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.1h |
 | S1 | 마무리 | Task 24 → S1 PR |  | 대기 | | | |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 대기 | | | |
 | S2 | O | Task 2–6 |  | 대기 | | | |
@@ -215,6 +215,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04b Task 20 | 프로젝트 카드·시작 구성·Git 주소 가져오기·외부 열기 | 열린 전환기 summary·표시 카드 config 30초 캐시, 즐겨찾기·설정 경고·실행 후 선택/터미널 이동. 빈 LaunchConfig는 실행 대상 없음으로 처리. clone 대상 기본값·수정·중복/재시도·Git 오류 표시. 현재 Ready 배포판으로 셸 없는 Windows 외부 실행, Terminal 시작 폴더 UNC 변환 | 최초 UI2/native2 RED→GREEN. 별도 검토의 외부 메뉴 Escape 뒤 키보드 탐색 중단 P2를 영구 회귀로 재현·수정, 마우스/늦은 응답 포커스 보존 확인. 프론트71·순수 Rust8 고유79 PASS, 타입·변경 Biome 및 Astra 재검토 PASS. launch E2E1 수집만 PASS; 실제 E2E·Windows 빌드/실기는 Task24 |
 | 2026-10-13 | 04b Task 21 | 도구 점검·환경 다시 읽기·설정 | 실제 데몬 PATH와 ACL 실행 권한 점검, capture-only 원자 환경 기록·typed RPC. 관리형은 1초 뒤 취소·기존 요청/에이전트 drain 후 의도적 nonzero로 Restart=on-failure 충족, foreground/test는 기록만. 실제 configPath·설정5탭·확인 후 선택 정리·테마/배율/글꼴/시작 섹션 적용 | 초기 doctor/화면 RED, 읽기 가능한 이전 저장값+쓰기 실패 회귀 RED→메모리 보존 GREEN. 별도 검토의 숫자 직접 입력 P2를 2RED→draft/확정 처리로 수정·Astra 재검토 PASS. Rust41·프론트53 고유94 PASS, 타입·생성 계약·변경 Biome·금지어 PASS. 소유 fake bash/manager trap의 실제 RPC는 두 모드의 false·0600·secret 제외·dedupe·생존·실패 보존 PASS. 실제 managed systemd 재시작·Windows·전체 검사는 Task24 미실행 |
 | 2026-10-13 | 04b Task 22 | Windows 알림·딥 링크·배지 | XML 제어 문자/이스케이프·UTF-16 길이와 긴 ID 해시, WinRT/COM·GDI 자원 해제. 현재 작업 상세·포커스에 따른 알림, 메인 전용 명령. 초기/기존 인스턴스 링크를 순번 대기열·수신 후 확인으로 전달하고 COM 준비 뒤 창 표시. SI/opener 순서 유지·plugin 이벤트 중복 방지. Windows package에 새 crate test/clippy 추가 | 초기12 RED→순수 Rust6·프론트21 PASS, 타입·변경 Biome·Rust fmt·설정 스키마·두 locked 의존성 그래프 PASS. 독립 API/수명 검토 PASS 및 실제 Shell의 view 생략 회귀1 추가 PASS. Windows 소유 GUID 임시 fixture의 가짜 package 명령 PASS, 실제 빌드는 아님. scripts+GitHub1411/1500줄·워크플로2. 실제 Windows 컴파일·알림/배지/깜빡임·설치본/E2E는 Task24 미실행 |
+
+Task 23: 트레이·전역 단축키·자동 시작·첫 실행·닫기 동작 구현 및 Astra 독립 재검토 PASS. 프론트72·순수 Rust44 고유116개 PASS, 타입 검사·변경 Biome 통과. 등록/저장/복구 실패 후 실제 단축키 상태와 재시도, 열린 팔레트 재호출 뒤 재열림 회귀를 수정했다. 연결 전·끊김 상태의 종료 확인과 네이티브 요청 보존, 공유 설정 직렬화, 자동 시작 저장 실패 복구를 포함한다. 잠긴 플러그인 소스 API를 대조했으나 Windows 컴파일·트레이·단축키·자동 시작·Job 실기는 Task24에서 수행하며 현재 미실행이다.
 
 ## 6. 세션 기록
 

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { SECTIONS } from "../../shell/sections";
+import { NativeAutostartSettings } from "./NativeSettings";
+import { isNative } from "./nativePreferences";
 import {
   type StartSection,
   setStartSection,
@@ -60,6 +62,7 @@ export function GeneralSettings() {
   return (
     <section aria-label="일반 설정">
       <h3>일반</h3>
+      {isNative() && <NativeAutostartSettings />}
       <p>
         <label>
           테마{" "}

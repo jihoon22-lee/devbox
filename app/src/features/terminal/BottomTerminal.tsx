@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { compareRev } from "../../rpc/query";
 import { useRpc } from "../../rpc/RpcProvider";
+import { useNativeRuntime } from "../../shell/nativeRuntime";
 import { Button, EmptyState, ErrorState } from "../../ui";
 import { useCurrentProject } from "../projects/store";
 import { ensureBottomSession, readBottomSession, rememberBottomSession } from "./bottomSession";
@@ -13,6 +14,7 @@ export function BottomTerminal() {
   return <ProjectBottomTerminal key={projectKey(projectId)} projectId={projectId} />;
 }
 function ProjectBottomTerminal({ projectId }: { projectId: string | null }) {
+  const focusRequest = useNativeRuntime((state) => state.bottomFocus);
   const client = useRpc();
   const project = projectKey(projectId);
   const list = useSessions(projectId);
@@ -103,6 +105,7 @@ function ProjectBottomTerminal({ projectId }: { projectId: string | null }) {
   if (id && prepared)
     return (
       <TerminalView
+        focusRequest={focusRequest || undefined}
         id={id}
         onClose={() => {
           rememberBottomSession(client, project);

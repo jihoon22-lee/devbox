@@ -92,3 +92,31 @@ test("popout identity does not subscribe to navigation or invoke native counts o
   expect(mocks.invoke).not.toHaveBeenCalled();
   expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
 });
+test("global bottom terminal brings a background open panel forward and focuses the existing session, while foreground open panel hides", async () => {
+  const { view } = await setup();
+  const { useNativeRuntime } = await import("./nativeRuntime");
+  act(() => useLayout.setState({ bottomOpen: true }));
+  act(() => useNativeRuntime.getState().push({ kind: "bottom-terminal", wasFocused: false }));
+  await waitFor(() => expect(useNativeRuntime.getState().bottomFocus).toBeGreaterThan(0));
+  expect(useLayout.getState().bottomOpen).toBe(true);
+  expect(mocks.invoke).not.toHaveBeenCalledWith("hide_main");
+  act(() => useNativeRuntime.getState().push({ kind: "bottom-terminal", wasFocused: true }));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("hide_main"));
+  expect(useLayout.getState().bottomOpen).toBe(true);
+  view.unmount();
+});
+test("global palette preserves route search and queues while an existing modal is open", async () => {
+  window.history.replaceState({}, "", "/notes?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  const { view } = await setup();
+  const { useNativeRuntime } = await import("./nativeRuntime");
+  const blocker = document.createElement("div");
+  blocker.setAttribute("role", "dialog");
+  document.body.append(blocker);
+  act(() => useNativeRuntime.getState().push({ kind: "palette" }));
+  expect(screen.queryByRole("combobox", { name: "명령 검색" })).not.toBeInTheDocument();
+  await act(async () => blocker.remove());
+  expect(await screen.findByRole("combobox", { name: "명령 검색" })).toBeVisible();
+  expect(window.location.search).toContain("gateway=");
+  expect(window.location.search).toContain("renderer=dom");
+  view.unmount();
+});

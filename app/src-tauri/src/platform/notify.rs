@@ -16,7 +16,11 @@ impl Notifications {
 /// Windows protocol activation is delivered only through argv (cold and single-instance).
 /// The deep-link plugin's automatic new-url event is intentionally not also subscribed.
 pub fn handle_arguments(app: &AppHandle, args: &[String], focus: bool) -> bool {
-    let [_, uri] = args else { return false };
+    let uri = match args {
+        [_, uri] => uri,
+        [_, flag, uri] if flag == "--minimized" => uri,
+        _ => return false,
+    };
     let Some(intent) = app.state::<Notifications>().queue().enqueue(uri) else {
         return false;
     };
@@ -28,6 +32,13 @@ pub fn handle_arguments(app: &AppHandle, args: &[String], focus: bool) -> bool {
         eprintln!("Cannot emit pending navigation: {error}");
     }
     true
+}
+pub fn navigate_agents(app: &AppHandle) {
+    if let Some(intent) = app.state::<Notifications>().queue().enqueue_agents()
+        && let Err(error) = app.emit_to("main", "devbox://navigate", intent)
+    {
+        eprintln!("Cannot emit agents navigation: {error}");
+    }
 }
 
 #[tauri::command]
@@ -98,8 +109,7 @@ pub fn set_badge(app: AppHandle, window: WebviewWindow, attention: u32, open: u3
     if window.label() != "main" {
         return;
     }
-    // Task 23 adds the tray summary using both counts here.
-    let _ = open;
+    super::tray::set_summary(&app, open, attention);
     if let Some(main) = app.get_webview_window("main")
         && let Ok(hwnd) = main.hwnd()
         && let Err(error) =

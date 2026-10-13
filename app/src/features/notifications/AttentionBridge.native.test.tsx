@@ -62,3 +62,22 @@ test("attention uses current visible list detail and task counts, and hidden gri
   expect(mocks.attention).toHaveBeenCalledTimes(5);
   expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(1);
 });
+test("startup and unmount badge zeros never become a proven empty task snapshot", async () => {
+  const { useNativeRuntime } = await import("../../shell/nativeRuntime");
+  useNativeRuntime.setState({ openTasks: null, snapshotCurrent: false });
+  const wire = new ProjectWire();
+  const view = render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <AttentionBridge />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  expect(useNativeRuntime.getState().openTasks).toBeNull();
+  await act(async () => wire.reply("agents.list", { rev: "1", items: [task("retained", "running")] }));
+  await waitFor(() => expect(useNativeRuntime.getState().openTasks).toBe(1));
+  view.unmount();
+  expect(useNativeRuntime.getState().openTasks).toBe(1);
+  expect(useNativeRuntime.getState().snapshotCurrent).toBe(false);
+});

@@ -4,6 +4,7 @@ import { RpcProvider } from "./rpc/RpcProvider";
 import { tauriTransport } from "./rpc/transport-tauri";
 import { wsTransport } from "./rpc/transport-ws";
 import { ConnectionGate } from "./shell/ConnectionGate";
+import { NativeMainController } from "./shell/NativeMainController";
 import { Shell } from "./shell/Shell";
 import { Button, ErrorState, TooltipProvider } from "./ui";
 
@@ -21,11 +22,15 @@ export async function pickTransport(
 }
 export function App({ loadTransport = pickTransport }: { loadTransport?: () => Promise<Transport> }) {
   const native = "__TAURI_INTERNALS__" in window;
+  const [ready, setReady] = useState(false);
   if (native)
     return (
-      <ConnectionGate>
-        {(instance) => <ConnectedApp loadTransport={loadTransport} instance={instance} native />}
-      </ConnectionGate>
+      <>
+        <NativeMainController ready={ready} />
+        <ConnectionGate onReady={() => setReady(true)}>
+          {(instance) => <ConnectedApp loadTransport={loadTransport} instance={instance} native />}
+        </ConnectionGate>
+      </>
     );
   return (
     <ConnectedApp

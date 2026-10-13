@@ -76,12 +76,7 @@ pub async fn run(
         );
         return;
     }
-    if let Err(e) = settings::save(
-        &path,
-        &settings::Settings {
-            distro: Some(distro.clone()),
-        },
-    ) {
+    if let Err(e) = settings::update(&path, |settings| settings.distro = Some(distro.clone())) {
         conn.gate(
             app,
             generation,

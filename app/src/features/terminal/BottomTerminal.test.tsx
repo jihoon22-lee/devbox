@@ -8,7 +8,11 @@ import { ProjectWire } from "../projects/test-wire";
 import { BottomTerminal } from "./BottomTerminal";
 import type { Session } from "./useSessions";
 
-vi.mock("./TerminalView", () => ({ TerminalView: ({ id }: { id: string }) => <p>terminal {id}</p> }));
+vi.mock("./TerminalView", () => ({
+  TerminalView: ({ id, focusRequest }: { id: string; focusRequest?: number }) => (
+    <p data-focus-request={focusRequest}>terminal {id}</p>
+  ),
+}));
 const session = (id: string, projectId: string | null = null): Session => ({
   id,
   projectId,
@@ -133,4 +137,17 @@ test("failed post-create refresh retries the list and reuses the confirmed creat
   await act(async () => wire.reply("terminal.list", { rev: "2", items: [session("confirmed")] }));
   expect(await screen.findByText("terminal confirmed")).toBeVisible();
   expect(wire.requests("terminal.create")).toHaveLength(1);
+});
+
+test("global focus reaches the retained bottom terminal without creating another session", async () => {
+  const { useNativeRuntime } = await import("../../shell/nativeRuntime");
+  useNativeRuntime.setState({ bottomFocus: 0 });
+  localStorage.setItem("devbox.bottomTerminal.none", "kept");
+  const wire = mount();
+  await waitFor(() => expect(wire.requests("terminal.list")).toHaveLength(1));
+  await act(async () => wire.reply("terminal.list", { rev: "1", items: [session("kept")] }));
+  const terminal = await screen.findByText("terminal kept");
+  act(() => useNativeRuntime.setState({ bottomFocus: 7 }));
+  expect(terminal).toHaveAttribute("data-focus-request", "7");
+  expect(wire.requests("terminal.create")).toHaveLength(0);
 });

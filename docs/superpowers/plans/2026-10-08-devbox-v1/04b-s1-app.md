@@ -2841,6 +2841,8 @@ Windows 쪽 컴파일과 시험은 PR의 Windows 워크플로(`crates/win/**` �
 
 ### Task 23: 트레이·전역 단축키·자동 시작·닫기 동작
 
+구현·별도 재검토 완료. 실제 구현은 `core/{shortcuts,preferences,intents}`와 `platform/{shortcuts,preferences,intents,tray}`로 분리했다. 첫 실행과 종료 확인은 연결 게이트 밖에서 요청을 보존하며, 작업 수 미확인·끊김을 0으로 취급하지 않는다. 단축키는 OS 등록·설정 저장 실패를 복구하고 복구 실패 후 실제 등록 상태로 재시도한다. 이미 열린 팔레트 호출은 소비하여 닫은 뒤 재열리지 않는다. 프론트72·순수 Rust44 고유116개와 타입 검사 통과, Astra 재검토 PASS. 실제 Windows 컴파일·트레이·단축키·자동 시작·Job 수명은 Task24에서 검증한다.
+
 **Files:**
 - Create: `app/src-tauri/src/tray.rs`, `app/src-tauri/src/shortcuts.rs`
 - Modify: `app/src-tauri/src/lib.rs`, `app/src-tauri/src/settings.rs`(앱 설정 파일에 `autostart_asked`·`tray_notice_shown`·`global_shortcuts`), `app/src-tauri/Cargo.toml`(`tauri-plugin-global-shortcut`, `tauri-plugin-autostart`, tauri `tray-icon` 기능), `app/src-tauri/capabilities/default.json`
@@ -2869,7 +2871,7 @@ Windows 쪽 컴파일과 시험은 PR의 Windows 워크플로(`crates/win/**` �
     - 답을 앱 설정에 기록한다(다시 묻지 않음). 설정 › 일반에서 바꿀 수 있다.
   - 첫 실행 화면은 게이트가 `ready`가 된 뒤 한 번만 보인다. 자동 시작과 `instanceIdleTimeout` 안내를 담는다. 트레이가 브리지를 붙잡고 있어 WSL이 유휴로 꺼지지 않는다는 설명이다(01-design §14 R1).
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 ```rust
 // app/src-tauri/src/shortcuts.rs 끝
@@ -2910,7 +2912,7 @@ test("asks once about autostart with it on by default", async () => {
 });
 ```
 
-- [ ] **Step 2: 구현 요점**
+- [x] **Step 2: 구현 요점**
 
 ```rust
 // app/src-tauri/src/shortcuts.rs (테스트 위)
@@ -2962,7 +2964,7 @@ pub fn register(app: &tauri::AppHandle, status: &std::sync::Mutex<Vec<(String, S
 - `App.tsx`는 `listen("devbox://palette", () => setPalette(true))`를 등록한다.
 - 설정 › 단축키는 앱 단축키 표(레지스트리에서 생성, 읽기 전용)와 전역 단축키(팔레트 입력란 + 상태)를 보인다. 변경하면 `set_palette_shortcut` → 재등록이고, 결과를 표시한다.
 
-- [ ] **Step 3: 통과·커밋·묶음 N 끝**
+- [x] **Step 3: 통과·커밋·묶음 N 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/shell/FirstRun.test.tsx && pnpm --filter app typecheck

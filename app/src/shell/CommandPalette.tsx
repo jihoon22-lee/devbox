@@ -4,7 +4,7 @@ import s from "./CommandPalette.module.css";
 import { useCommands } from "./commands";
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="명령" width={560}>
+    <Dialog open={open} onOpenChange={onOpenChange} title="명령" width={560} contentId="devbox-command-palette">
       {open && <PaletteContents onClose={() => onOpenChange(false)} />}
     </Dialog>
   );

@@ -27,6 +27,19 @@ pub fn route_for(uri: &str) -> Option<AgentSearch> {
     })
 }
 impl PendingNavigation {
+    pub fn enqueue_agents(&mut self) -> Option<Navigation> {
+        self.sequence = self.sequence.checked_add(1)?;
+        let navigation = Navigation {
+            sequence: self.sequence,
+            to: "/agents",
+            search: AgentSearch {
+                id: String::new(),
+                view: "list",
+            },
+        };
+        self.pending = Some(navigation.clone());
+        Some(navigation)
+    }
     pub fn enqueue(&mut self, uri: &str) -> Option<Navigation> {
         let search = route_for(uri)?;
         self.sequence = self.sequence.checked_add(1)?;
@@ -94,5 +107,16 @@ mod tests {
         assert_eq!(queue.pending(), None);
         let repeated = queue.enqueue("devbox://agents/b2").unwrap();
         assert!(repeated.sequence > second.sequence);
+    }
+    #[test]
+    fn tray_agents_navigation_is_retained_and_replaces_a_previous_deep_link() {
+        let mut queue = PendingNavigation::default();
+        let link = queue.enqueue("devbox://agents/a1").unwrap();
+        let summary = queue.enqueue_agents().unwrap();
+        assert_eq!(summary.to, "/agents");
+        assert_eq!(summary.search.id, "");
+        assert_eq!(summary.search.view, "list");
+        queue.acknowledge(link.sequence);
+        assert_eq!(queue.pending(), Some(summary));
     }
 }

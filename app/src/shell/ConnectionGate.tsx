@@ -106,7 +106,15 @@ export function GateView({
   }
 }
 
-export function ConnectionGate({ children }: { children: ReactNode | ((instance: "dev" | "prod") => ReactNode) }) {
+export function ConnectionGate({
+  children,
+  onReady,
+}: {
+  children: ReactNode | ((instance: "dev" | "prod") => ReactNode);
+  onReady?: () => void;
+}) {
+  const readyCallback = useRef(onReady);
+  readyCallback.current = onReady;
   const [status, setStatus] = useState<GateStatus | null>(null);
   const [instance, setInstance] = useState<"dev" | "prod" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +132,10 @@ export function ConnectionGate({ children }: { children: ReactNode | ((instance:
       revision.current = BigInt(value.revision);
       setStatus(value);
       setError(null);
-      if (value.state === "ready") setInstance(value.instance);
+      if (value.state === "ready") {
+        setInstance(value.instance);
+        readyCallback.current?.();
+      }
     };
     setError(null);
     setRetrying(false);

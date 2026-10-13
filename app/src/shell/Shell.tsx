@@ -1,4 +1,5 @@
 import { RouterProvider } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useState } from "react";
 import { AgentCommands } from "../features/agents/AgentCommands";
@@ -23,6 +24,8 @@ import { CommandPalette } from "./CommandPalette";
 import { useCommands } from "./commands";
 import { Frame } from "./Frame";
 import { type Binding, useKeymap } from "./keymap";
+import { useLayout } from "./layout";
+import { consumeNativeIntents, useNativeRuntime } from "./nativeRuntime";
 import { buildRouter } from "./router";
 import { SECTIONS } from "./sections";
 import { uiBindings } from "./uiShortcuts";
@@ -58,6 +61,21 @@ export function Shell() {
   useEffect(() => {
     if (ownsAttention) return subscribeNativeNavigation((target) => router.navigate(target));
   }, [ownsAttention, router]);
+  useEffect(() => {
+    if (!ownsAttention || !("__TAURI_INTERNALS__" in window)) return;
+    return consumeNativeIntents((intent) => {
+      if (intent.kind === "palette") {
+        setPalette(true);
+        return;
+      }
+      if (intent.wasFocused && useLayout.getState().bottomOpen) {
+        void invoke("hide_main").catch(() => {});
+        return;
+      }
+      useLayout.setState({ bottomOpen: true });
+      useNativeRuntime.setState((state) => ({ bottomFocus: state.bottomFocus + 1 }));
+    });
+  }, [ownsAttention]);
   useEffect(() => registerSettingsNavigation(() => void router.navigate({ to: "/settings" })), [router]);
   const bindings = useMemo<Binding[]>(
     () => [
