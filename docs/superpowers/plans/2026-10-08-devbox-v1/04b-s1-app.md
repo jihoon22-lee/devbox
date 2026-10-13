@@ -2444,6 +2444,8 @@ git add app && git commit -m "feat(app): add the agent grid, notification center
 
 ### Task 20: 프로젝트 전환기 카드·시작 구성·clone
 
+구현·별도 검토 완료. 실제 `ProjectConfig.launch`는 기본 빈 배열 객체이므로 실행 대상이 있을 때만 버튼을 표시한다. 외부 열기는 현재 Ready 연결의 검증된 배포판을 사용하며, VS Code는 공식 CLI wrapper와 동등한 실행 파일·인자 호출, Windows Terminal 시작 폴더는 UNC로 변환한다. 프론트71·순수 Rust8 고유79개와 타입 검사 통과, 메뉴 종료 포커스 회귀 수정 후 Astra 재검토 PASS. E2E는 1개 작성·수집만 확인했고 실제 실행·Windows 검증은 Task24에 수행한다.
+
 **Files:**
 - Modify: `app/src/features/projects/ProjectSwitcher.tsx`, `AddProjectDialog.tsx`
 - Create: `app/src/features/projects/ProjectCard.tsx`, `app/e2e/launch.spec.ts`
@@ -2460,7 +2462,7 @@ git add app && git commit -m "feat(app): add the agent grid, notification center
   - 카드 메뉴의 외부 열기: [VS Code로 열기](`code --remote wsl+<배포판> <경로>`) · [탐색기로 열기](`\\wsl.localhost\<배포판>\<경로>`) · [Windows Terminal로 열기](`wt.exe -p <배포판> -d <경로>`). Tauri 명령 `open_external({ kind, path })`가 Windows 쪽에서 실행하고, 브라우저 개발 화면에서는 메뉴를 숨긴다.
   - 프로젝트 추가 대화상자에 [Git 주소로 가져오기] 탭: URL + 대상 폴더(기본 `~/projects/<이름>`) → `projects.clone`(진행 중 표시, 실패 시 git 메시지)
 
-- [ ] **Step 1: 실패하는 테스트(카드 정보와 시작 구성)**
+- [x] **Step 1: 실패하는 테스트(카드 정보와 시작 구성)**
 
 ```tsx
 // app/src/features/projects/ProjectSwitcher.test.tsx 에 추가
@@ -2484,12 +2486,12 @@ test("cards show git and agent summary and run the launch profile", async () => 
 
 `projects.launch`의 결과 타입은 04 Task 11의 `LaunchResult { terminals, agents }`다.
 
-- [ ] **Step 2: 구현** — 위 Interfaces대로 `ProjectCard`를 만들고 `ProjectSwitcher`의 행을 바꾼다.
+- [x] **Step 2: 구현** — 위 Interfaces대로 `ProjectCard`를 만들고 `ProjectSwitcher`의 행을 바꾼다.
   - `projects.summary`는 전환기가 열릴 때만 조회한다(`enabled: open`).
   - `projects.config`는 카드가 보일 때 프로젝트마다 조회한다(`enabled: open`, 결과는 30초 캐시).
   - `AddProjectDialog`에 `Tabs`(폴더에서 · Git 주소로)를 두고, 두 번째 탭은 `projects.clone`을 부른다.
 
-- [ ] **Step 3: E2E(시작 구성)**
+- [x] **Step 3: E2E 작성·수집(시작 구성, 실행은 Task24)**
 
 ```ts
 // app/e2e/launch.spec.ts
@@ -2512,7 +2514,7 @@ test("launch profile opens its terminals in one action", async ({ page }) => {
 
 `gamma`가 아직 등록되지 않았으면 이 시험의 `beforeAll`에서 `rpc("projects.add", { path })`로 등록한다(Task 19의 `support.ts` 보조 함수).
 
-- [ ] **Step 4: 통과·커밋**
+- [x] **Step 4: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/features/projects

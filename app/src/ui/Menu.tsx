@@ -11,7 +11,15 @@ export interface MenuItem {
   shortcut?: string[];
   afterClose?: boolean;
 }
-export function Menu({ trigger, items }: { trigger: ReactNode; items: MenuItem[] }) {
+export function Menu({
+  trigger,
+  items,
+  onCloseFocus,
+}: {
+  trigger: ReactNode;
+  items: MenuItem[];
+  onCloseFocus?: () => void;
+}) {
   const afterClose = useRef<(() => void) | undefined>(undefined);
   return (
     <M.Root>
@@ -21,7 +29,11 @@ export function Menu({ trigger, items }: { trigger: ReactNode; items: MenuItem[]
           className={s.content}
           sideOffset={4}
           align="end"
-          onCloseAutoFocus={() => {
+          onCloseAutoFocus={(event) => {
+            if (onCloseFocus) {
+              event.preventDefault();
+              onCloseFocus();
+            }
             const action = afterClose.current;
             afterClose.current = undefined;
             if (action) {

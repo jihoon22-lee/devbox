@@ -2,6 +2,24 @@
 mod tests {
     use super::*;
     #[test]
+    fn external_distro_requires_ready_current_bridge_and_clears_on_close() {
+        let mut c = State::<()>::default();
+        c.active_distro = Some("Debian".into());
+        assert!(c.ready_distro().is_err());
+        c.open = true;
+        assert!(c.ready_distro().is_err());
+        c.gate.state = "ready";
+        assert_eq!(c.ready_distro().unwrap(), "Debian");
+        c.generation = 2;
+        assert!(!c.close_generation(1));
+        assert_eq!(c.ready_distro().unwrap(), "Debian");
+        c.cancel.cancel();
+        assert!(c.ready_distro().is_err());
+        assert!(c.close_generation(2));
+        assert!(c.active_distro.is_none());
+        assert!(c.ready_distro().is_err());
+    }
+    #[test]
     fn stale_lease_cannot_detach_or_send_and_new_bridge_survives_old_cleanup() {
         let mut c = State::<()>::default();
         c.attach("main".into(), "old-lease".into(), ()).unwrap();
@@ -100,6 +118,8 @@ pub struct State<C> {
     pub revision: u64,
     pub generation: u64,
     pub open: bool,
+    /// Assigned only after this generation's validated distro reaches bridge Ready.
+    pub active_distro: Option<String>,
     pub mux: Mux<String>,
     pub channels: HashMap<String, Lease<C>>,
     pub writer: Option<mpsc::Sender<Vec<u8>>>,
@@ -118,6 +138,7 @@ impl<C> Default for State<C> {
             revision: 0,
             generation: 0,
             open: false,
+            active_distro: None,
             mux: Mux::new(),
             channels: HashMap::new(),
             writer: None,
@@ -126,6 +147,14 @@ impl<C> Default for State<C> {
     }
 }
 impl<C> State<C> {
+    pub fn ready_distro(&self) -> Result<&str, IpcError> {
+        if !self.open || self.gate.state != "ready" || self.cancel.is_cancelled() {
+            return Err(IpcError::new("연결이 준비되지 않았습니다"));
+        }
+        self.active_distro
+            .as_deref()
+            .ok_or_else(|| IpcError::new("연결된 배포판이 없습니다"))
+    }
     pub fn bump(&mut self) {
         self.revision = self.revision.checked_add(1).expect("revision exhausted");
     }
@@ -202,6 +231,7 @@ impl<C> State<C> {
             return Ok(());
         }
         self.open = false;
+        self.active_distro = None;
         self.writer = None;
         self.cancel.cancel();
         self.bump();
@@ -215,6 +245,7 @@ impl<C> State<C> {
         }
         self.writer = None;
         self.open = false;
+        self.active_distro = None;
         self.bump();
         true
     }

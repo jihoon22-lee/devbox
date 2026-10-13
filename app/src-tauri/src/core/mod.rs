@@ -21,3 +21,5 @@ pub mod shutdown;
 
 #[cfg(any(windows, test))]
 pub mod diagnostics;
+#[cfg(any(windows, test))]
+pub mod external;

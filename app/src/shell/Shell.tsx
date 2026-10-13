@@ -157,7 +157,11 @@ export function Shell() {
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />
-        <ProjectSwitcher open={projects} onOpenChange={setProjects} />
+        <ProjectSwitcher
+          open={projects}
+          onOpenChange={setProjects}
+          onLaunched={() => void router.navigate({ to: "/terminal" })}
+        />
       </AgentDataProvider>
     </ProjectDataProvider>
   );

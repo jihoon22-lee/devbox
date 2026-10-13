@@ -1,7 +1,7 @@
 import { type QueryClient, skipToken, useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext } from "react";
 import { compareRev, useRpcQuery, useTopicInvalidation } from "../../rpc/query";
-export const PROJECT_KEYS = [["projects.list", {}]];
+export const PROJECT_KEYS = [["projects.list", {}], ["projects.summary", {}], ["projects.config"]];
 const REMOVED_KEY = ["projects.removed"];
 type RemovedProjects = Record<string, string>;
 const Context = createContext<ReturnType<typeof useProjectList> | null>(null);

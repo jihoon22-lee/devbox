@@ -12,7 +12,12 @@ type MutationMethod = { [M in keyof Methods]: Methods[M]["kind"] extends "mutati
 export function useRpcQuery<M extends QueryMethod>(
   method: M,
   params: Methods[M]["params"],
-  opts: { enabled?: boolean; refetchInterval?: number | false; refetchIntervalInBackground?: boolean } = {},
+  opts: {
+    enabled?: boolean;
+    staleTime?: number;
+    refetchInterval?: number | false;
+    refetchIntervalInBackground?: boolean;
+  } = {},
 ) {
   const { client, state, generation } = useRpcSession();
   return useQuery<Methods[M]["result"], RpcError>({
@@ -21,6 +26,7 @@ export function useRpcQuery<M extends QueryMethod>(
     // Local RPC readiness is independent of the browser's internet connection.
     networkMode: "always",
     retry: false,
+    ...(opts.staleTime === undefined ? {} : { staleTime: opts.staleTime }),
     refetchInterval: opts.refetchInterval,
     refetchIntervalInBackground: opts.refetchIntervalInBackground,
     meta: { generation },

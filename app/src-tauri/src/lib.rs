@@ -23,7 +23,8 @@ pub fn run() {
             connection::gate_retry,
             connection::rpc_attach,
             connection::rpc_send,
-            connection::rpc_detach
+            connection::rpc_detach,
+            platform::external::open_external
         ])
         .setup(|app| {
             window::configure_main(app.handle())?;

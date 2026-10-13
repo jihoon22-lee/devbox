@@ -1,10 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Trash2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Project } from "../../rpc/gen/rpc";
-import { confirmPolicy, invalidateIfNewer, useRpcMutation } from "../../rpc/query";
-import { Button, ConfirmDialog, Dialog } from "../../ui";
+import { confirmPolicy, invalidateIfNewer, useRpcMutation, useRpcQuery } from "../../rpc/query";
+import { Button, ConfirmDialog, Dialog, useToasts } from "../../ui";
 import { AddProjectDialog } from "./AddProjectDialog";
+import { ProjectCard } from "./ProjectCard";
 import { PROJECT_KEYS, ProjectDataBoundary, recordProjectRemoval, useProjectData } from "./ProjectData";
 import { ProjectError } from "./ProjectError";
 import s from "./Projects.module.css";
@@ -26,17 +27,29 @@ function Title({ onOpen }: { onOpen: () => void }) {
     </Button>
   );
 }
-export function ProjectSwitcher({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function ProjectSwitcher({
+  open,
+  onOpenChange,
+  onLaunched,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onLaunched?: () => void;
+}) {
   return open ? (
     <ProjectDataBoundary>
-      <Switcher onOpenChange={onOpenChange} />
+      <Switcher onOpenChange={onOpenChange} onLaunched={onLaunched} />
     </ProjectDataBoundary>
   ) : null;
 }
-function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) => void; onLaunched?: () => void }) {
   const list = useProjectData();
   const qc = useQueryClient();
   const remove = useRpcMutation("projects.remove");
+  const favorite = useRpcMutation("projects.set_favorite");
+  const launch = useRpcMutation("projects.launch");
+  const summary = useRpcQuery("projects.summary", {}, { enabled: true, staleTime: 0 });
+  const pending = remove.isPending || favorite.isPending || launch.isPending;
   const locked = useRef(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -46,11 +59,24 @@ function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
   const normalized = query.trim().toLocaleLowerCase();
-  const items = (list.data?.items ?? []).filter(
-    (project) => !normalized || `${project.name}\n${project.path}`.toLocaleLowerCase().includes(normalized),
-  );
+  const items = (list.data?.items ?? [])
+    .filter((project) => !normalized || `${project.name}\n${project.path}`.toLocaleLowerCase().includes(normalized))
+    .toSorted((a, b) => Number(b.favorite) - Number(a.favorite));
   const selected = Math.max(0, Math.min(active, items.length - 1));
-  const activeId = items.length ? `${listId}-${selected}-${column}` : undefined;
+  const [cellColumn, setCellColumn] = useState(0);
+  const activeId = items.length ? `${listId}-${selected}-${cellColumn}` : undefined;
+  useEffect(() => {
+    const sync = () => {
+      const count = document.getElementById(`${listId}-${selected}`)?.querySelectorAll('[role="gridcell"]').length ?? 1;
+      setCellColumn(Math.min(column, count - 1));
+    };
+    sync();
+    // Config responses can add/remove actions independently of the parent query.
+    const grid = document.getElementById(listId);
+    const observer = new MutationObserver(sync);
+    if (grid) observer.observe(grid, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [column, selected, listId]);
   useEffect(() => {
     setActive(selected);
   }, [selected]);
@@ -62,6 +88,45 @@ function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
     if (!project || locked.current) return;
     useCurrentProject.getState().set(project.id);
     onOpenChange(false);
+  };
+  const runLaunch = (project: Project) => {
+    if (locked.current) return;
+    locked.current = true;
+    launch.mutate(
+      { id: project.id },
+      {
+        onSuccess: (result) => {
+          useCurrentProject.getState().set(project.id);
+          useToasts
+            .getState()
+            .push({ tone: "ok", title: `터미널 ${result.terminals}개 · 에이전트 ${result.agents}개를 시작했습니다` });
+          // Refresh errors cannot turn an acknowledged launch into a retry.
+          void qc.invalidateQueries({ queryKey: ["terminal.list"] });
+          void qc.invalidateQueries({ queryKey: ["agents.list"] });
+          void qc.invalidateQueries({ queryKey: ["projects.summary"] });
+          onOpenChange(false);
+          onLaunched?.();
+        },
+        onSettled: () => {
+          locked.current = false;
+        },
+      },
+    );
+  };
+  const toggleFavorite = (project: Project) => {
+    if (locked.current) return;
+    locked.current = true;
+    favorite.mutate(
+      { id: project.id, favorite: !project.favorite },
+      {
+        onSuccess: ({ rev }) => {
+          void invalidateIfNewer(qc, PROJECT_KEYS, rev);
+        },
+        onSettled: () => {
+          locked.current = false;
+        },
+      },
+    );
   };
   const removeConfirmed = () => {
     if (!confirm || locked.current) return;
@@ -96,12 +161,16 @@ function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
           input.current?.focus();
         }}
         footer={
-          <Button variant="primary" disabled={remove.isPending} onClick={() => setAdding(true)}>
+          <Button variant="primary" disabled={pending} onClick={() => setAdding(true)}>
             프로젝트 추가
           </Button>
         }
       >
+        {favorite.error && <ProjectError error={favorite.error} />}
+        {launch.error && <ProjectError error={launch.error} />}
+        {summary.error && <ProjectError error={summary.error} retry={() => void summary.refetch()} />}
         {remove.error && <ProjectError error={remove.error} />}
+        {launch.isPending && <p role="status">시작 구성을 실행하는 중…</p>}
         {remove.isPending && <p role="status">프로젝트 제거 중…</p>}
         {list.isPending && <p role="status">프로젝트를 불러오는 중…</p>}
         {list.error && <ProjectError error={list.error} retry={() => void list.refetch()} />}
@@ -130,13 +199,19 @@ function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
             }
             if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
               event.preventDefault();
-              setColumn(event.key === "ArrowRight" ? 1 : 0);
+              const count =
+                document.getElementById(`${listId}-${selected}`)?.querySelectorAll('[role="gridcell"]').length ?? 1;
+              setColumn(Math.max(0, Math.min(cellColumn + (event.key === "ArrowRight" ? 1 : -1), count - 1)));
             }
             if (event.key === "Enter") {
               event.preventDefault();
-              if (column === 0) pick(selected);
-              else if (items[selected] && !locked.current && confirmPolicy("projects.remove") === "always")
-                setConfirm(items[selected]);
+              if (cellColumn === 0) pick(selected);
+              else if (!locked.current) {
+                const button = document.getElementById(activeId ?? "")?.querySelector<HTMLButtonElement>("button");
+                if (button?.getAttribute("aria-haspopup") === "menu")
+                  button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+                else button?.click();
+              }
             }
           }}
         />
@@ -153,52 +228,25 @@ function Switcher({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
           }}
         >
           {items.map((project, index) => (
-            <div
-              id={`${listId}-${index}`}
-              className={s.row}
+            <ProjectCard
               key={project.id}
-              role="row"
-              aria-selected={index === selected}
-              onMouseEnter={() => setActive(index)}
-            >
-              <div
-                role="gridcell"
-                id={`${listId}-${index}-0`}
-                className={s.nameCell}
-                data-active={index === selected && column === 0}
-              >
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  className={s.pick}
-                  disabled={remove.isPending}
-                  onClick={() => pick(index)}
-                >
-                  <span>{project.name}</span>
-                  <span className={s.path}>{project.path}</span>
-                </button>
-              </div>
-              <div
-                role="gridcell"
-                id={`${listId}-${index}-1`}
-                aria-label={`${project.name} 제거`}
-                data-active={index === selected && column === 1}
-                className={s.actionCell}
-              >
-                <Button
-                  tabIndex={-1}
-                  variant="ghost"
-                  size="sm"
-                  disabled={remove.isPending}
-                  aria-label={`${project.name} 제거`}
-                  onClick={() => {
-                    if (confirmPolicy("projects.remove") === "always") setConfirm(project);
-                  }}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            </div>
+              project={project}
+              summary={summary.data?.items.find((item) => item.id === project.id)}
+              rowId={`${listId}-${index}`}
+              selected={index === selected}
+              column={cellColumn}
+              pending={pending}
+              pick={() => pick(index)}
+              activate={() => setActive(index)}
+              restoreFocus={() => {
+                if (input.current?.isConnected) input.current.focus();
+              }}
+              remove={() => {
+                if (!locked.current && confirmPolicy("projects.remove") === "always") setConfirm(project);
+              }}
+              favorite={() => toggleFavorite(project)}
+              launch={() => runLaunch(project)}
+            />
           ))}
         </div>
         {list.isSuccess && items.length === 0 && (

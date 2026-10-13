@@ -9,6 +9,12 @@ const files = (detail: unknown) =>
   detail && typeof detail === "object" && "files" in detail && Array.isArray(detail.files)
     ? detail.files.filter((file): file is string => typeof file === "string").join(", ")
     : "";
+const cloneMessage = (detail: unknown) => {
+  if (!detail || typeof detail !== "object" || !("message" in detail) || typeof detail.message !== "string") return "";
+  return ` ${detail.message
+    .replace(/([a-z]+:\/\/)[^\s/]*@/gi, "$1[인증 정보 숨김]@")
+    .replace(/([?&](?:token|password|access_token)=)[^&\s]+/gi, "$1[숨김]")}`;
+};
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   internal: { title: "예상하지 못한 문제가 생겼습니다.", action: "진단 ID를 복사해 두면 원인을 찾을 수 있습니다." },
   invalid_params: { title: "요청 형식이 맞지 않습니다.", action: "앱과 데몬 버전을 확인해 주세요." },
@@ -127,10 +133,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "projects.clone_invalid_url": { title: "저장소 주소가 올바르지 않습니다." },
   "projects.clone_target_exists": (d) => ({ title: `복제 대상 폴더가 이미 있습니다: ${path(d)}` }),
-  "projects.clone_failed": {
+  "projects.clone_failed": (d) => ({
     title: "저장소를 복제하지 못했습니다.",
-    action: "저장소 주소와 대상 폴더를 확인해 주세요. 남아 있는 파일은 보존했습니다.",
-  },
+    action: `저장소 주소와 접근 권한, 대상 폴더를 확인해 주세요. 남아 있는 파일은 보존했습니다.${cloneMessage(d)}`,
+  }),
   "projects.unsafe_prompt_path": { title: "지시문 템플릿 경로를 안전하게 읽을 수 없습니다." },
   "projects.prompt_limit_exceeded": {
     title: "지시문 템플릿이 허용 크기를 넘었습니다.",
