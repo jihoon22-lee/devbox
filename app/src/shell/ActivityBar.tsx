@@ -1,10 +1,12 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
-import { IconButton } from "../ui";
+import { useAgentSummary } from "../features/agents/AgentData";
+import { Badge, IconButton } from "../ui";
 import { SECTIONS } from "./sections";
 
 export function ActivityBar() {
   const navigate = useNavigate();
+  const agents = useAgentSummary();
   const path = useRouterState({ select: (s) => s.location.pathname });
   return (
     <nav
@@ -20,14 +22,24 @@ export function ActivityBar() {
       }}
     >
       {SECTIONS.map((s) => (
-        <IconButton
-          key={s.path}
-          label={s.label}
-          icon={s.icon}
-          shortcut={["Ctrl", String(s.digit)]}
-          pressed={path.startsWith(s.path)}
-          onClick={() => void navigate({ to: s.path })}
-        />
+        <div key={s.path} style={{ position: "relative" }}>
+          <IconButton
+            label={s.label}
+            icon={s.icon}
+            shortcut={["Ctrl", String(s.digit)]}
+            pressed={path.startsWith(s.path)}
+            onClick={() => void navigate({ to: s.path })}
+          />
+          {s.path === "/agents" && !!agents?.attention && (
+            <Badge
+              aria-label={`주의가 필요한 에이전트 작업 ${agents.attention}개`}
+              tone={agents.failed ? "danger" : "warn"}
+              style={{ position: "absolute", right: -4, top: -2, pointerEvents: "none" }}
+            >
+              {agents.attention}
+            </Badge>
+          )}
+        </div>
       ))}
       <span style={{ flex: 1 }} />
       <IconButton

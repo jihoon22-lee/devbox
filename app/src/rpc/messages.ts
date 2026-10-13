@@ -5,6 +5,10 @@ export interface Message {
   action?: string;
 }
 const path = (d: unknown) => (d && typeof d === "object" && "path" in d && typeof d.path === "string" ? d.path : "");
+const files = (detail: unknown) =>
+  detail && typeof detail === "object" && "files" in detail && Array.isArray(detail.files)
+    ? detail.files.filter((file): file is string => typeof file === "string").join(", ")
+    : "";
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   internal: { title: "예상하지 못한 문제가 생겼습니다.", action: "진단 ID를 복사해 두면 원인을 찾을 수 있습니다." },
   invalid_params: { title: "요청 형식이 맞지 않습니다.", action: "앱과 데몬 버전을 확인해 주세요." },
@@ -54,15 +58,18 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "작업 폴더에 커밋하지 않은 변경이 있습니다.",
     action: "변경을 확인하고 커밋한 뒤 다시 시도해 주세요.",
   },
-  "agents.base_dirty": {
-    title: "기준 브랜치에 커밋하지 않은 변경이 있습니다.",
-    action: "기준 폴더의 변경을 확인해 주세요.",
-  },
+  "agents.base_dirty": (detail) => ({
+    title: "기준 체크아웃에 커밋하지 않은 변경이 있어 병합하지 않았습니다.",
+    action: `기준 폴더의 변경을 커밋하거나 치운 뒤 다시 시도해 주세요.${files(detail) ? ` 변경 파일: ${files(detail)}` : ""}`,
+  }),
   "agents.base_not_checked_out": {
     title: "기준 브랜치가 열려 있지 않습니다.",
     action: "프로젝트 폴더에서 기준 브랜치를 선택해 주세요.",
   },
-  "agents.conflict": { title: "변경 내용이 충돌합니다.", action: "충돌 파일을 확인해 주세요." },
+  "agents.conflict": (detail) => ({
+    title: "변경 내용이 충돌해 작업을 멈췄습니다.",
+    action: `충돌 파일을 확인하고 기준 반영으로 해결해 주세요.${files(detail) ? ` 충돌 파일: ${files(detail)}` : ""}`,
+  }),
   "agents.unmerged_commits": {
     title: "아직 병합하지 않은 커밋이 있습니다.",
     action: "폐기할 변경 내용을 확인해 주세요.",

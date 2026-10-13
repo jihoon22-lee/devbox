@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 Task 1–16 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 17 에이전트 목록·새 작업·전역 이동·배지 — 실제 생성 타입과 공유 조회 계약 유지 |
+| 단계 | S0 및 후속 #639 완료. S1 Task 1–17 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 18 에이전트 상세·변경 검토·지시 작성·동작 확인 — IME 최종 글자와 Git 확인 스냅샷 보존 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -209,6 +209,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04b Task 14 순서 송신·터미널 연결 | 단순 invoke·예제 링크 | 실행 중 포함 256개/8 MiB FIFO, 실패 뒤 입력 폐기·재시도 없음. 기존 attachment 보호·같은 lease 재연결 유지. ACK는 렌더 완료 뒤 반환, raw byte 입력·100ms resize·세대 취소·read-only 차단. EOF는 1회 확인 후 반복 시 lost | 새 sender/link suite RED → 직접 범위 139 tests/10 files·타입 검사·변경 파일 포맷 PASS. 실제 RpcClient early FIN/reset 및 비동기 전송 실패/대기 Enter 폐기 별도 검토 PASS. Windows/전체 E2E는 Task24 미실행 |
 | 2026-10-13 | 04b Task 15 터미널 화면 | xterm 예제·크기 없는 attach·JS opener만 | xterm6 DOM/WebGL·검색·IME/클립보드·OSC7/8·raw bytes·테마, D2Coding1.4.0/OFL 번들. 1.5초 글꼴 대기와 늦은 측정·수명 보호. 실제 attach 격자를 초기 출력 전에 적용하는 typed 응답/onOpened, 실패 연결 정리. Windows opener를 single-instance 뒤 등록하고 HTTP(S)로 제한 | missing module·격자 없는 응답·초기 출력 순서 RED → 프론트 직접 영향 101 tests·Rust attach3·CLI attach4 PASS. 타입·생성 타입 일치·변경 포맷·diff PASS. 별도 검토에서 실제 xterm6 소스의 DOM/WebGL/글꼴 동작 확인, 최종 PASS. Native lock은 기존 업그레이드 없이 5패키지 추가. Windows 실행·전체 E2E는 Task24 미실행 |
 | 2026-10-13 | 04b Task 16 터미널 섹션·하단·분리 창 | 예제 배치·단순 생성 effect·즉시 메뉴 전환 | 저장 배치 검증·분할/탭·CWD/벨·프로필/zellij·이름 변경/종료 확인. 프로젝트 없는 세션 필터, 생성 뒤 리비전 보존 재조회·실패와 생성 성공 분리, StrictMode/전환 중 생성 중복 차단과 수동 재시도. Shell 등록·DOM 쿼리 보존·분리 창 재사용/오류·소유 tmux 정리 | 최초 store/coordinator RED 후 직접 범위 61 PASS, 추가 하단 회귀1·포커스 회귀2 포함 고유64 PASS. 타입·변경 포맷·금지어 PASS, E2E2 수집만 확인. Menu/Dialog 실제 포커스 충돌과 생성 캐시 보완. 독립 검토의 기존 칸 선택/오래된 요청 재사용 두 P2 각각 RED→영향17 PASS·최종 재검토 PASS. 전체/E2E/Windows 실행은 Task24 미실행 |
+| 2026-10-13 | 04b Task 17 에이전트 목록·새 작업 | 예제별 중복 조회·단순 폼·공통 토큰 합산 | 공유 목록/구독·가시 시간과 조건부 통계/자원 조회, 긴급순·행 지표·재개·전역 이동·배지. 프로젝트/프로필 재검증·템플릿·중복/IME/모달 보호·모호한 생성 응답 재시도 식별자 보존. 생성 확인과 목록 실패 분리. Radix focus-scope1.3.1/dismissable-layer1.2.1만 통일 | model/dialog missing module RED, 중첩 포커스 재귀 실행은130 중단 후 동일 구현의 중복 모듈 원인을 수정. 직접 범위 고유99 PASS 후 Codex 캐시 중복 합산 P2를 원시 항목별 표시로 수정(회귀 RED3→행/model9 PASS), 최종 고유102 PASS. 타입·변경 포맷·금지어·diff 및 독립 최종 재검토 PASS. 상세/격자는Task18/19, 전체/E2E/Windows는Task24 미실행 |
 
 ## 6. 세션 기록
 

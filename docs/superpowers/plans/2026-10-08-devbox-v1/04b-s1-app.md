@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–16 로컬 완료, Task 17 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
+- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–17 로컬 완료, Task 18 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -1553,6 +1553,8 @@ git add app .github && git commit -m "feat(app): add the terminal section with t
 
 ### Task 17: 에이전트 목록·새 작업·이동 단축키·배지
 
+실제 구현 보정: Shell의 공유 `AgentDataProvider`가 목록·구독과 가시 시간 갱신을 소유한다. 통계·자원 조회는 보이는 화면에서만 실행하며 새 작업은 개별 `agents.get` 캐시와 선택을 유지하고 목록 리비전을 만들어 내지 않는다. 중첩 Dialog/Select의 모듈별 포커스 스택 충돌은 구현이 같은 Radix 패치 두 개를 pnpm override로 통일해 해결했다. 토큰은 도구별 중첩 의미가 다르므로 `TokenMetrics`로 입력·출력·캐시 읽기·쓰기를 각각 표시한다([Codex 원시 입력·캐시 관계](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs)). Task18은 `AgentPreview`를 상세 화면으로 교체하고 Task19는 보류한 격자 전환을 연결한다.
+
 **Files:**
 - Create: `app/src/features/agents/{AgentsPage,AgentList,AgentRow,NewTaskDialog,model,hooks}.tsx|ts`
 - Modify: `app/src/shell/ActivityBar.tsx`(배지), `app/src/shell/StatusBar.tsx`(에이전트 요약), `app/src/App.tsx`, `app/src/rpc/messages.ts`(agents·terminal·git 오류 문구)
@@ -1575,7 +1577,7 @@ git add app .github && git commit -m "feat(app): add the terminal section with t
   - 활동 막대 배지: 에이전트 섹션에 `attentionCount`. 실패가 있으면 위험 색
   - 상태 표시줄: "에이전트 n(입력 대기 m)" 클릭하면 `/agents`
 
-- [ ] **Step 1: 실패하는 테스트 — 순수 함수**
+- [x] **Step 1: 실패하는 테스트 — 순수 함수**
 
 ```ts
 // app/src/features/agents/model.test.ts
@@ -1618,7 +1620,7 @@ test("templates substitute known variables and keep unknown ones", () => {
 });
 ```
 
-- [ ] **Step 2: 실패하는 테스트 — 새 작업 대화상자**
+- [x] **Step 2: 실패하는 테스트 — 새 작업 대화상자**
 
 ```tsx
 // app/src/features/agents/NewTaskDialog.test.tsx
@@ -1661,9 +1663,9 @@ test("creates a task with the chosen profile, template text and worktree", async
 });
 ```
 
-- [ ] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/features/agents`
+- [x] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/features/agents`
 
-- [ ] **Step 4: 구현 — model.ts**
+- [x] **Step 4: 구현 — model.ts**
 
 ```ts
 // app/src/features/agents/model.ts
@@ -1725,7 +1727,7 @@ export const STATE_LABEL: Record<AgentTask["state"], string> = {
 
 `i64` 필드(`createdMs` 등)는 ts-rs가 `bigint`로 내보낼 수 있다. S0b 생성기 설정(`#[ts(type = "number")]` 또는 전역 `bigint → number`)을 따르고, 위 코드는 `Number(...)`로 감싸 두 경우 모두 동작하게 한다.
 
-- [ ] **Step 5: 구현 — 화면**
+- [x] **Step 5: 구현 — 화면**
 
 ```tsx
 // app/src/features/agents/AgentsPage.tsx (요점)
@@ -1814,7 +1816,7 @@ export function useAgentsData() {
 - `"terminal.tmux_failed": (d) => ({ title: "tmux 명령이 실패했습니다.", action: reason(d) })`
 - `"git.not_repo": { title: "Git 저장소가 아닙니다." }`
 
-- [ ] **Step 6: 통과·커밋**
+- [x] **Step 6: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/features/agents && pnpm --filter app typecheck

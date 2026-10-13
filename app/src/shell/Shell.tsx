@@ -1,5 +1,8 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { AgentCommands } from "../features/agents/AgentCommands";
+import { AgentDataProvider } from "../features/agents/AgentData";
+import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -25,7 +28,10 @@ export function Shell() {
         frame: () => (
           <Frame project={<ProjectTitle onOpen={() => setProjects(true)} />} onOpenPalette={() => setPalette(true)} />
         ),
-        pages: { "/terminal": { component: TerminalPage } },
+        pages: {
+          "/terminal": { component: TerminalPage },
+          "/agents": { component: AgentsPage, validateSearch: agentsSearch },
+        },
         settings: SettingsPage,
         popouts: [{ path: "/popout/terminal/$id", component: PopoutTerminal }],
       }),
@@ -117,11 +123,27 @@ export function Shell() {
   }, [bindings, register, router]);
   return (
     <ProjectDataProvider>
-      <RouterProvider router={router} />
-      <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
-      <ToastHost />
-      <CommandPalette open={palette} onOpenChange={setPalette} />
-      <ProjectSwitcher open={projects} onOpenChange={setProjects} />
+      <AgentDataProvider>
+        <RouterProvider router={router} />
+        <AgentCommands
+          navigate={(id) =>
+            void router.navigate({
+              to: "/agents",
+              search: (previous: Record<string, unknown>) => ({ ...previous, id, view: "list" }),
+            })
+          }
+          currentId={() => {
+            const search = router.state.location.search as Record<string, unknown>;
+            return router.state.location.pathname === "/agents" && typeof search.id === "string"
+              ? search.id
+              : undefined;
+          }}
+        />
+        <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
+        <ToastHost />
+        <CommandPalette open={palette} onOpenChange={setPalette} />
+        <ProjectSwitcher open={projects} onOpenChange={setProjects} />
+      </AgentDataProvider>
     </ProjectDataProvider>
   );
 }
