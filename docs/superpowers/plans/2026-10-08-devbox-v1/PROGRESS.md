@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 같은 SHA 자동 리뷰 추가 6건의 수정·독립 코드 검토 및 영향 검사 완료, 후속 최종 SHA 수용 진행 |
-| 다음 할 일 | 후속 최종 SHA 필수 CI·Windows 영향 재수용·자동 리뷰 → squash 머지 |
+| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 추가 6건 보완 뒤 a7921ba3 필수 CI·Windows 영향 검증 PASS. 해당 SHA 리뷰의 후속4건 보완 중, 패치 영구 저장 제안1건은 설계 범위 근거로 적용하지 않음 |
+| 다음 할 일 | 후속4건 보완·별도 검토 → 최종 SHA 필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 수정·독립 코드 검토·영향 검사 완료. 후속 최종 SHA 수용 대기 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -258,6 +258,12 @@ PR #640 추가 터미널 제목 상한: 공개/내부 생성과 이름 변경의
 PR #640 추가 Git/에이전트 보완: 자동 정리는 종료 때 확인한 OID와 같은 로컬 ref만 CAS로 삭제하고 실제 정리 뒤 예약을 해제한다. 이동하거나 재생성된 ref는 보존하고 cleanupError를 남긴다. 사용자 branch.* 설정은 보존하며, 선택적으로 검토했던 설정 삭제 실험은 경합 우려로 철회해 최종 통과 근거와 분리했다. rebase 명령 실패 뒤 실제 작업 폴더의 rebase marker가 남거나 조회가 불확실하면 소유권을 유지해 중단 복구를 허용한다. PR 생성은 검토와 Git push 직전 양쪽에서 tracked/index/untracked 변경을 거부한다. 최초 회귀4개 RED→GREEN, ref 안전성4개·실제 CLI squash/rebase/승인 정리 및 PR 호출 영향 검사 PASS, 해당2개 crate Clippy·fmt·전체 Biome266파일 PASS, 고정6파일 독립 검토 PASS. 원본 실패와 선택적 실험은 agents-final-* artifact에 보존했다. 후속 최종 SHA CI·Windows 재수용은 아직이다.
 
 PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전체 패치의 SHA256에 묶고 기존 줄 수 기반 표시는 폐기한다. 긴 패치의 일부 조회에는 확인 표시를 붙이지 않는다. 선택 파일 하나만 새로 조회하며 변경 목록이 갱신되면 다른 파일의 표시는 재확인 전까지 숨긴다. 에이전트·연결 세대·조회 갱신 횟수로 시점을 구분하고, 변경 목록 이전 요청과 일반 상태 갱신으로 취소된 요청은 캐시 존재만으로 성공 처리하지 않는다. 확인 대화상자도 같은 새 패치 조회를 기다리며, 실패 후 명시적 재시도와 늦은 결과 격리를 유지한다. S1에서 미구현인 서비스만 있는 시작 구성은 시작 버튼을 제공하지 않는다. 최초 부분22PASS/3FAIL는 실제 확인 화면 회귀였으며 성공으로 바꾸지 않고 보완했다. 최종 소스의 영향5파일18개 PASS, 그대로인 storage/ProjectCards/ProjectSwitcher16개 PASS 재사용, 타입·변경 Biome PASS 및 고정12파일 독립 코드 검토 완료. 실제 생성→대기→추가 지시→변경 검토→squash E2E도4.0초 PASS(감독18.262초, cgroup peak1,609,990,144byte). 최초 부모 단위 실행은 지원하지 않는 minWorkers 옵션으로 테스트 시작 전 실패했으며 옵션 수정 후 위18개를 실행했다. ui-final-review-evidence.json에 이전 실패·후속 판정과 재사용 범위를, ui-root-final-impact.log·ui-root-final-impact-corrected.log·six-review-agent-e2e.log에 부모 실행의 원본 출력을 보존한다. 전체 Biome269파일도 PASS였다. 계획 머리의 낡은 수용 상태는 PROGRESS를 가리키도록 정리했고, 새 최종 SHA CI·Windows 영향 재수용·자동 리뷰를 이어간다.
+
+후속 SHA a7921ba3의 CI38438839708·Windows38438839731은 모두 PASS였다. 중복 수동 Windows38438830873은 동일 SHA PR 실행을 확인한 뒤 취소했으며 근거로 재사용하지 않았다. 실제 설치본은 서비스 전용 구성의 시작 버튼 없음, 승인 전 자원0/승인 후 setup, 같은 HEAD·줄 수의 패치 변경 시 봤음 해제, dirty PR 거부·작업 보존, UI squash 후 teardown·작업 폴더·브랜치·세션 제거 및 프로젝트 등록 제거를 확인했다. 프로젝트 등록을 지운 뒤에도 고정 변경 목록·커밋 목록은 반환됐고 패치는 명시적 agents.review_unavailable이었다. 터미널 create257자 거부·자원0, UI rename257자 실패 시 기존 세션 유지·Unicode256자 허용, 기본 canvas300줄의 재연결/분리 창 크기 변경 보존 PASS. rename 실패의 화면 문구는 일반 오류이며 typed API에는 limit256이 있다. SC10 echo200(예열10 별도)의 p50 1.7ms/p95 2.9ms, 100,000,000byte 출력4.502초 동안 다른 창 ping914회 p95 15ms·입력 복구99.8ms PASS. 171.8ms echo 표본도 제외하지 않고 원본에 포함했다. 앱/WebView/bridge·소유 WSL 자원 종료, 설치본/프로필/설정/다운로드 정리와 기존0.9 보존 PASS. 근거 windows-final-a7921ba3/acceptance.json·receipt·원본 CDP·resource/cleanup. hook은 이번에도 소유 fixture이며 실제 CLI 수용과 구분한다. 해당 SHA 자동 코드/보안 리뷰는 완료됐으나 후속4건을 수정 중이므로 최종 수용·머지 완료로 보고하지 않는다.
+
+리뷰4262016002의 패치 전체 영구 저장 제안은 이번 범위에 추가하지 않는다. 01-design §2.1은 지시문·추가 지시 이력·토큰·커밋 목록의 종료 시 DB 고정을 요구한다. 기존 closed review는 확인 당시 base/head·변경/커밋 목록을4MiB 한도에서 고정하고 패치만 정확한 Git 객체 쌍으로 읽으며, 저장소 등록이나 객체가 없으면 다른 현재 내용으로 대체하지 않고 typed 조회 불가를 표시한다. 이 제한은 앞선 PROGRESS 기록에도 명시돼 있다. 기존 소유 Git GC 회귀와 위 Windows 등록 제거 검증에서 고정 목록 유지·명시적 오류를 확인했다. 패치 본문의 DB 보관·전역 용량·보존/삭제 정책은 별도 설계 범위이며 추정으로 추가하지 않는다. 독립 검토도 같은 범위 판단을 확인했다(agents-close-patch-adjudication-a792.json).
+
+리뷰4261973440 복제 hook 보완: 상속된 상대 core.hooksPath가 복제된 실행 파일을 최초 checkout에서 실행하는 문제를 소유 GIT_CONFIG_GLOBAL fixture로 재현했다. clone 호출에만 core.hooksPath=/dev/null을 적용해 등록 전 hook 실행을 막으며, 사용자/저장소 설정과 기존 명시적 Git mutation hook 정책은 바꾸지 않는다. 원래 hook marker RED→차단 GREEN, clone/auth/기존 mutation/query hook 고유6개 및 포맷·Biome269파일 PASS, 고정2파일 독립 검토 PASS. 그 뒤 일반 checkout은 fixture hook을 실행해 호출 범위가 제한됨을 확인했다. 추가 hook 활성화 화면·영구 비활성화 정책은 넣지 않았다. 근거 clone-hooks-followup/evidence.json·원본 RED/GREEN·패치 해시. 마지막 대상 Clippy와 새 최종 SHA CI·Windows 영향 확인은 이어지는 보완 완료 뒤 수행한다.
 
 ## 6. 세션 기록
 

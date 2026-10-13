@@ -47,6 +47,9 @@ impl ProjectsService {
             "credential.interactive=false",
             "-c",
             "core.askPass=",
+            // Checkout precedes project consent, including globally configured hooks.
+            "-c",
+            "core.hooksPath=/dev/null",
             "clone",
             "--template=",
             "--",
