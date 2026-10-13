@@ -71,6 +71,38 @@ pub fn configured(
 mod tests {
     use super::*;
     #[test]
+    fn duplicate_configured_ids_are_rejected_instead_of_mixing_launch_and_waiting_rules() {
+        for id in ["codex", "custom"] {
+            let text = format!(
+                "[[agents.profiles]]\nid='{id}'\nlabel='First'\ncommand='first'\nhooks='codex'\nwaitingPatterns=['first']\n[[agents.profiles]]\nid='{id}'\nlabel='Second'\ncommand='second'\nhooks='none'\nwaitingPatterns=['second']\n"
+            );
+            let config: devbox_core::Config = toml::from_str(&text).expect("owned config");
+            assert!(
+                configured(&config.agents).is_err(),
+                "duplicate {id} must be rejected"
+            );
+        }
+    }
+    #[test]
+    fn duplicate_programmatic_ids_are_rejected_by_the_waiting_profile_compiler() {
+        let first = ToolProfile {
+            id: "custom".into(),
+            label: "First".into(),
+            command: "first".into(),
+            hooks: Hooks::Codex,
+            waiting_patterns: vec!["first".into()],
+        };
+        let mut second = first.clone();
+        second.command = "second".into();
+        second.waiting_patterns = vec!["second".into()];
+        assert!(
+            compiled(&crate::model::AgentProfiles {
+                items: vec![first, second]
+            })
+            .is_err()
+        );
+    }
+    #[test]
     fn custom_profiles_override_defaults_and_parse_strictly() {
         let config: devbox_core::Config = toml::from_str("[[agents.profiles]]\nid='claude'\nlabel='Custom'\ncommand='claude --verbose'\nhooks='none'\nwaitingPatterns=['ready']").expect("config");
         let custom = configured(&config.agents).expect("typed profiles");
@@ -92,6 +124,8 @@ mod tests {
 pub enum ProfileError {
     #[error("invalid agent profiles: {0}")]
     Configuration(#[from] toml::de::Error),
+    #[error("duplicate agent profile id: {id}")]
+    DuplicateId { id: String },
     #[error("invalid waiting pattern for profile {profile}: {source}")]
     WaitingPattern {
         profile: String,
@@ -102,6 +136,14 @@ pub enum ProfileError {
 pub(crate) fn compiled(
     profiles: &crate::model::AgentProfiles,
 ) -> Result<std::collections::HashMap<String, Vec<regex::Regex>>, ProfileError> {
+    let mut ids = std::collections::HashSet::new();
+    for profile in &profiles.items {
+        if !ids.insert(&profile.id) {
+            return Err(ProfileError::DuplicateId {
+                id: profile.id.clone(),
+            });
+        }
+    }
     profiles
         .items
         .iter()

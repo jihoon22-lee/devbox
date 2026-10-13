@@ -116,11 +116,15 @@ impl AgentsService {
                 devbox_protocol::Fail::Internal(format!("remove lost terminal record: {e:?}"))
             })?;
         }
+        let rollback_generation = generation.clone();
+        let terminal_uuid = uuid::Uuid::new_v4();
+        let new_terminal = format!("t{}", terminal_uuid.simple());
         let key = task.id.clone();
         let launch = now_ms();
         let initial_session = session_id.clone();
         let hub = self.hub.clone();
-        self.db
+        let previous_binding = self
+            .db
             .write_checked_with_commit(
                 move |tx| {
                     let mut binding = crate::store::binding(tx, &key)?
@@ -128,6 +132,7 @@ impl AgentsService {
                     let mut current =
                         crate::store::get(tx, &key)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
                     let previous = current.state;
+                    let previous_binding = binding.clone();
                     binding.launch_ms = launch;
                     binding.launch_id = Some(generation);
                     binding.turn_id = None;
@@ -141,19 +146,25 @@ impl AgentsService {
                     current.updated_ms = launch;
                     crate::store::put_binding(tx, &key, &binding)?;
                     crate::store::put(tx, &current)?;
-                    Ok(Ok::<_, std::convert::Infallible>((current, previous)))
+                    Ok(Ok::<_, std::convert::Infallible>((
+                        current,
+                        previous,
+                        previous_binding,
+                    )))
                 },
-                move |(current, previous), rev| {
+                move |(current, previous, _), rev| {
                     changed(&hub, current, rev, current.state != *previous)
                 },
             )
             .await
             .internal("resume launch state")?
-            .unwrap_or_else(|never| match never {});
+            .unwrap_or_else(|never| match never {})
+            .0
+            .2;
         let launched = self
             .terminal
-            .create_internal(
-                devbox_terminal::SessionKind::Agent,
+            .create_internal_with_id(
+                (devbox_terminal::SessionKind::Agent, terminal_uuid),
                 Some(task.project_id.clone()),
                 Path::new(&task.workdir).into(),
                 task.title.clone(),
@@ -164,19 +175,16 @@ impl AgentsService {
         let session = match launched {
             Ok(session) => session,
             Err(error) => {
-                self.update(id, |t| {
-                    t.state = AgentState::Failed;
-                    t.reason = Some("resume_failed".into());
-                    t.updated_ms = now_ms();
-                    true
-                })
-                .await?;
+                self.terminal.close_internal(&new_terminal).await.map_err(|cleanup| {
+                    devbox_protocol::Fail::Internal(format!("resume creation failed; retained launch {rollback_generation} terminal {new_terminal} after cleanup failure: {error:?}; {cleanup:?}"))
+                })?;
+                self.rollback_resume(id, &rollback_generation, previous_binding)
+                    .await?;
                 return Err(devbox_protocol::Fail::Internal(format!(
                     "resume terminal: {error:?}"
                 )));
             }
         };
-        let new_terminal = session.id.clone();
         let persisted = self
             .update(id, move |current| {
                 current.terminal_id = Some(session.id);
@@ -190,11 +198,60 @@ impl AgentsService {
                 .await
                 .map_err(|e| {
                     devbox_protocol::Fail::Internal(format!(
-                        "remove unrecorded resumed session: {e:?}"
+                        "remove unrecorded resumed session {new_terminal} failed; retained launch {rollback_generation}: {e:?}"
                     ))
                 })?;
+            self.rollback_resume(id, &rollback_generation, previous_binding)
+                .await?;
             return Err(error);
         }
         self.get(id).await
+    }
+    /// Restore correlation only after the replacement's exact terminal is gone.
+    async fn rollback_resume(
+        &self,
+        id: &str,
+        generation: &str,
+        mut previous: crate::tracker::Binding,
+    ) -> Result<()> {
+        let id = id.to_owned();
+        let generation = generation.to_owned();
+        let hub = self.hub.clone();
+        let _ = self
+            .db
+            .write_checked_with_commit(
+                move |tx| {
+                    let Some(mut current) = crate::store::get(tx, &id)? else {
+                        return Ok(Err(()));
+                    };
+                    let Some(binding) = crate::store::binding(tx, &id)? else {
+                        return Ok(Err(()));
+                    };
+                    if binding.launch_id.as_deref() != Some(&generation)
+                        || current.state == AgentState::Closed
+                    {
+                        return Ok(Err(()));
+                    }
+                    previous.resources = binding.resources;
+                    previous.owned_rebase = binding.owned_rebase;
+                    let old_state = current.state;
+                    current.state = AgentState::Failed;
+                    current.reason = Some("resume_failed".into());
+                    current.attention = None;
+                    current.tool_exited = true;
+                    current.terminal_id = None;
+                    current.activity_seq = current.activity_seq.wrapping_add(1);
+                    current.updated_ms = now_ms();
+                    crate::store::put_binding(tx, &id, &previous)?;
+                    crate::store::put(tx, &current)?;
+                    Ok(Ok((current, old_state)))
+                },
+                move |(current, old_state), rev| {
+                    changed(&hub, current, rev, current.state != *old_state)
+                },
+            )
+            .await
+            .internal("restore failed resume correlation")?;
+        Ok(())
     }
 }

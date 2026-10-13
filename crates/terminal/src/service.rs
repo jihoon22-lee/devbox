@@ -241,6 +241,27 @@ impl TerminalService {
         command: String,
         env: &[(String, String)],
     ) -> Result<TerminalSession> {
+        self.create_internal_with_id(
+            (kind, uuid::Uuid::new_v4()),
+            project_id,
+            cwd,
+            title,
+            command,
+            env,
+        )
+        .await
+    }
+    /// A caller retaining this fresh UUID can clean up an ambiguous creation failure.
+    pub async fn create_internal_with_id(
+        &self,
+        identity: (SessionKind, uuid::Uuid),
+        project_id: Option<String>,
+        cwd: PathBuf,
+        title: String,
+        command: String,
+        env: &[(String, String)],
+    ) -> Result<TerminalSession> {
+        let (kind, id) = identity;
         validate_title(&title)?;
         let _guard = self.mutations.lock().await;
         let cwd = canonical_cwd(cwd).await?;
@@ -260,7 +281,7 @@ impl TerminalService {
             return Err(TerminalError::ProjectNotFound { id: id.clone() }.into());
         }
         let session = TerminalSession {
-            id: format!("t{}", uuid::Uuid::new_v4().simple()),
+            id: format!("t{}", id.simple()),
             project_id,
             title,
             cwd,

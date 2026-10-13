@@ -510,3 +510,7 @@ async fn terminal_observation_transaction_rejects_newer_activity_and_launch() {
 
 #[path = "hook_limits_tests.rs"]
 mod hook_limits_tests;
+
+#[cfg(unix)]
+#[path = "resume_rollback_tests.rs"]
+mod resume_rollback_tests;
