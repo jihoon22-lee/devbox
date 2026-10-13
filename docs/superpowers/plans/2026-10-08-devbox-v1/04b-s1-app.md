@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13 로컬 완료, Task 14 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
+- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–14 로컬 완료, Task 15 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -552,6 +552,8 @@ git add app/src && git commit -m "feat(app): add tabs, split panes, menus, toast
 
 ### Task 14: 순서 보장 전송과 터미널 연결 컨트롤러
 
+실제 구현 계약: 송신 상한 256개/8 MiB는 실행 중 호출을 포함한다. 기존 Tauri attachment lease·header·revision·backoff 보호를 유지하며 같은 lease 재연결도 이전 송신기를 폐기한다. `input`은 UTF-8 문자열과 raw `Uint8Array`를 받는다. 정상 EOF 뒤 100ms 후 한 번 재attach하여 삭제 여부를 확인하고, 반복 EOF는 lost로 유지한다. 새 ready/open만 재확인 기회를 갱신한다. 아래 예제보다 실제 구현·회귀 테스트를 우선한다.
+
 **Files:**
 - Create: `app/src/rpc/orderedSender.ts`, `app/src/features/terminal/link.ts`
 - Modify: `app/src/rpc/transport-tauri.ts`
@@ -575,7 +577,7 @@ git add app/src && git commit -m "feat(app): add tabs, split panes, menus, toast
     - 세션이 사라지면(`terminal.not_found`) `ended`.
     - `dispose()`
 
-- [ ] **Step 1: 실패하는 테스트 — 순서 송신(이식)**
+- [x] **Step 1: 실패하는 테스트 — 순서 송신(이식)**
 
 ```ts
 // app/src/rpc/orderedSender.test.ts — v0.9.0 orderedInput.test.ts에서 이식
@@ -652,7 +654,7 @@ test("disposal discards waiting writes and ignores late completion", async () =>
 });
 ```
 
-- [ ] **Step 2: 실패하는 테스트 — 터미널 연결**
+- [x] **Step 2: 실패하는 테스트 — 터미널 연결**
 
 ```ts
 // app/src/features/terminal/link.test.ts
@@ -765,9 +767,9 @@ test("read-only links never send input and a missing session ends the link", asy
 
 `RpcError` 생성자 모양(`new RpcError(code, detail?)`)은 S0b Task 17을 따른다. 다르면 테스트를 그 모양에 맞춘다.
 
-- [ ] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/orderedSender.test.ts src/features/terminal/link.test.ts`
+- [x] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/orderedSender.test.ts src/features/terminal/link.test.ts`
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 ```ts
 // app/src/rpc/orderedSender.ts
@@ -943,7 +945,7 @@ export class TerminalLink {
 }
 ```
 
-- [ ] **Step 5: 통과·커밋**
+- [x] **Step 5: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/rpc src/features/terminal && pnpm --filter app typecheck

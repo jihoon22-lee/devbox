@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transport, TransportState } from "./client";
 import { decodeFrame } from "./frame";
+import { createOrderedSender } from "./orderedSender";
 
 interface TransportNotice {
   attachmentId: string;
@@ -14,9 +15,7 @@ interface Attachment {
   attaching: boolean;
   open: boolean;
   revision: bigint;
-  queue: Uint8Array[];
-  bytes: number;
-  writing: boolean;
+  sender?: ReturnType<typeof createOrderedSender>;
   epoch: number;
 }
 const DELAYS = [200, 500, 1000, 2000, 5000] as const;
@@ -35,8 +34,8 @@ export function tauriTransport(): Transport {
     void invoke("rpc_detach", { attachmentId: a.id }).catch(() => {});
   };
   const clearWrites = (a: Attachment) => {
-    a.queue = [];
-    a.bytes = 0;
+    a.sender?.dispose();
+    a.sender = undefined;
     a.epoch++;
   };
   const release = () => {
@@ -76,29 +75,14 @@ export function tauriTransport(): Transport {
     const isOpen = value.state === "open";
     if (a.open === isOpen) return;
     a.open = isOpen;
-    if (!isOpen) clearWrites(a);
-    emit(value.state);
-  };
-  const pump = async (a: Attachment) => {
-    if (a.writing) return;
-    a.writing = true;
-    try {
-      while (current(a) && a.open && a.queue.length) {
-        const frame = a.queue.shift();
-        if (!frame) break;
-        const epoch = a.epoch;
-        try {
-          await invoke("rpc_send", frame, { headers: { "x-devbox-attachment": a.id } });
-        } catch {
-          if (epoch === a.epoch) failed(a);
-          return;
-        }
-        if (epoch === a.epoch) a.bytes -= frame.byteLength;
-      }
-    } finally {
-      a.writing = false;
-      if (current(a) && a.open && a.queue.length) void pump(a);
+    clearWrites(a);
+    if (isOpen) {
+      const epoch = a.epoch;
+      a.sender = createOrderedSender(() => {
+        if (epoch === a.epoch) failed(a);
+      });
     }
+    emit(value.state);
   };
   const open = () => {
     if (!active || attachment) return;
@@ -107,9 +91,6 @@ export function tauriTransport(): Transport {
       attaching: false,
       open: false,
       revision: -1n,
-      queue: [],
-      bytes: 0,
-      writing: false,
       epoch: 0,
     };
     attachment = a;
@@ -178,13 +159,10 @@ export function tauriTransport(): Transport {
       const a = attachment;
       if (!active || !a?.open) throw new Error("Tauri transport is not open");
       decodeFrame(frame);
-      if (a.queue.length >= 64 || a.bytes + frame.byteLength > 32 * 1024 * 1024) {
-        failed(a);
+      const owned = frame.slice();
+      if (!a.sender?.enqueue(owned, () => invoke("rpc_send", owned, { headers: { "x-devbox-attachment": a.id } }))) {
         throw new Error("Tauri transport queue is full");
       }
-      a.queue.push(frame.slice());
-      a.bytes += frame.byteLength;
-      void pump(a);
     },
     onFrame(cb) {
       frames.add(cb);
