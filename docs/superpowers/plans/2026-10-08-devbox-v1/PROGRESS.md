@@ -12,7 +12,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 54931b6f 필수 CI·E2E·Windows 영향 검증 PASS. 코드·보안 리뷰 완료 후 squash 메시지와 인접 점검에서 찾은 정리 명령의 사전 검증·별도 검토·영향 검증을 완료했고 새 최종 SHA 수용을 진행한다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
+| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 a93de69d 필수 CI·E2E PASS. 코드·보안 리뷰 완료 후 초기 checkout 필터 실행과 런타임·diff의 추가 5건을 모두 수정하고 과제별 독립 검토·커밋을 마쳤다. 새 후보의 통합 검사·E2E 9개·브랜치 검토까지 통과했으며 최종 SHA의 필수 CI·자동 리뷰·Windows 수용이 남았다. a93de69d의 Windows 설치본은 출처·해시 확인 뒤 설치 전에 새 지적을 확인해 제거했다. 마지막 설치본 수용은 54931b6f이며 새 최종 SHA 수용이 필요하다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
 | 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
@@ -334,6 +334,22 @@ squash 메시지 보완 `2aa2e8f1`: effective 메시지를 한 번 결정해 squ
 정리 명령 사전 검사 보완: 실제 사용할 승인 snapshot의 모든 teardown 명령을 UTF-8 64KiB·NUL 규칙으로 검사하고 전용 오류로 안내한다. authorize_teardown, 수동 정리의 전체 선택 검증 뒤·변경 loop 전, 실제 명령 runner의 첫 명령 전에 같은 순수 검사를 적용했다. 새 parent 3개·15경우 PASS: 잘못된 두 번째 명령 10경우의 첫 sentinel·정지·task/runtime/rev/base/head/index/worktree·원격·앞선 선택 브랜치 보존, Unicode/ASCII 정확히 64KiB 원문 실행, 자동 정리=false Merge/PR·브랜치 단독 정리의 미사용 미승인 설정 허용. 초기 및 프로필 격리 후 causal RED에서 첫 sentinel이 실행됐고, 기존 Merge/PR은 공개·종료 뒤 cleanupError만 남기는 경우도 재현했다. 기존 descendant timeout 1개·실제 CLI cleanup 5개·불변 승인 snapshot merge 1개·문구 2개·TS·xtask·소유 fmt·agents all-target Clippy PASS(4.217초, cgroup peak 665,116,672byte). 테스트 bash는 원문 argv를 기록하고 실제 /bin/bash를 --noprofile/--norc로 실행하며 HOME을 바꾸지 않는다. 이 테스트 전용 수정 뒤 새 15경우를 다시 통과했고 제품 명령·신뢰 정책은 바꾸지 않았다. 원본 `agents-teardown-preflight-followup`·`agents-teardown-preflight-*`.
 
 정리 명령 소스 8개·로그/자원 24개 hash와 자원·원본 supervisor receipt 12쌍의 독립 검토 PASS. 두 보완을 통합한 실제 브라우저 생성→대기→지시→diff→squash 종료 E2E PASS(시나리오 3.9초, 감독 16.563초, cgroup peak 1,376,993,280byte). 이전 정상 흐름의 영향 밖 검사는 재실행하지 않았다. 원본 `message-teardown-final-e2e.log/resources.json`. 최종 SHA 필수 CI·자동 리뷰·Windows 영향 검증은 후속 수용 단계다.
+
+a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및 E2E PASS. 코드 리뷰 22:49:01 UTC·보안 리뷰 22:42:26 UTC 완료. Windows 설치본의 출처·SHA256은 확인했으나 새 보안 지적을 설치 전에 받아 설치·실행하지 않고 검증된 다운로드만 제거했다. Windows/prod 자원은 만들지 않았다(`windows-final-a93de69d/not-installed.json`).
+
+추가 6건은 별도 코드 검토에서 모두 타당하다고 판단했다: 초기 clone/worktree checkout의 inherited smudge/process 실행(4264830823), 누락된 SetupOk의 durable Tool phase 복구(4264876528), rename patch의 옛 경로 누락(4264876533), inline Resume의 symlink 경로 재검증(4264876537), 준비 실패 작업의 무단 inline 재개(4264876543), 살아 있는 Review 작업의 자원 표본 누락(4264876548). 초기 checkout은 생성과 파일 채우기를 분리하고 새 저장소/작업공간 문맥에서 찾은 필터 명령만 해당 호출에 한해 비운다. 기존 설정·인증·일반 Git 작업은 보존하고 required 필터는 필수 의미를 유지해 안전하게 실패시킨다. required=false로 바꿔 LFS/암호화 원문을 완료로 보고하지 않는다. 필터와 조건부 설정 근거는 [Git attributes](https://git-scm.com/docs/gitattributes)·[Git config](https://git-scm.com/docs/git-config#_conditional_includes)다. 초기 검토 당시 네 실제 clone/worktree smudge/process 실행 RED를 재현했고 다른 항목의 회귀 계획을 세웠다. 이후 완료 근거는 아래 과제별 기록에 있다. 새 최종 수용 전에는 머지하지 않는다.
+
+초기 checkout 필터 보완(7e780bb4): clone/worktree를 no-checkout 생성 뒤 새 Git 문맥의 유효 필터 이름을 조회하고 확정 OID를 채우는 두 단계로 바꿨다. 이 채우기 명령에만 clean/smudge/process를 비워 선택된 필수 필터는 실행 없이 실패 처리하며 기존 설정·일반 Git 동작은 보존한다. 실제 smudge/process 실행 4건 RED → 새 시험 8개/9시나리오와 영향 시험 13개, 고유 21개 PASS. 빈 저장소·인용/등호 드라이버·인증·pinned 디렉터리·부분 자원·취소/재시작·승인 스냅샷·일반 hook도 확인했다. 독립 검토에서 소스 5개/검증 artifact 46개/자원 기록 20개 해시와 원본 로그 대조 PASS, fmt·Biome 274 PASS(`implicit-checkout-filters-followup/`).
+
+재개 경계 보완(2442bfc5): 현재 launch binding의 Tool 또는 도구 단계 종료 기록(종료 코드와 무관)이 있을 때만 재개를 허용해 실패한 worktree 준비가 inline 실행으로 바뀌지 않도록 했다. inline 경로는 모든 상위 심볼릭 링크와 현재 디렉터리·canonical 경로·저장된 작업/프로젝트 경로의 일치를 부작용 전에 확인한다. 새 typed 오류와 한국어 안내를 추가하고 RPC 타입을 생성했다. 인과 RED 3 → GREEN 3, 기존 rollback 2개/6경우·CLI lifecycle 5개·실제 resume RPC 1개 PASS, gen-ts·Biome 274 PASS. 독립 검토 소스 7개와 자원 로그 7개 대조 PASS(`agents-resume-review-followup/`, 최종 freeze `0c246549…`). 이 검사는 외부 경로 변경과 원자적인 inode 고정 보장을 뜻하지 않는다.
+
+이름 변경 패치 보완(77534114): 현재 작업·고정 커밋의 동일한 name-status 메타데이터에서 이전 경로를 얻어 새 경로와 함께 literal 비교한다. 파일→디렉터리 재사용 때 섞이는 다른 변경은 메타데이터의 다른 source/destination 경로만 제외하며, 두 선택 경로가 상하위 관계여도 보존한다. 화면은 이전 경로 → 새 경로로 표시하고 선택 키·변경 전 인용 경로는 유지한다. 원래 결함 4건 RED, 단순 두 경로 초안의 하위 파일 혼입 2건 RED → 새 시험 9개·기존 Git 6개 PASS; UI 인과 RED → 관련 10개 PASS. 별도 검토 소스 4개·백엔드 artifact 32개·자원 기록 15개 대조 PASS, Rust fmt·Biome 274 PASS(`rename-patch-followup/`).
+
+누락된 setup 이벤트 복구(a5941913): Preparing이면서 현재 launch의 Tool 기록과 정확한 살아 있는 tmux 터미널이 확인되면 기존 action lock 안에서 SetupOk를 적용한다. 다른 세대·Starting·실행 종료·Failed/Review/Closed는 되살리지 않고, 나중에 도착한 hook의 현재 상태를 기존 apply_event가 보존한다. 실제 소유 tmux를 이용한 reconcile 호출의 인과 RED → 새 시험 2개/거부 8경우 PASS, 기존 CLI 종료 hook 누락 복구 1개 PASS, fmt·Biome 274 PASS. 독립 검토 소스 3개/자원 원본 로그 4개 PASS(`agents-tool-recovery-followup/`). 새 Tool 양성 시험은 reconcile을 직접 호출했으며 전체 데몬 재시작 시험으로 보고하지 않는다.
+
+검토 중 자원 집계 보완(26f4a5c9): 도구가 종료되지 않은 Review 작업을 집계 대상으로 추가하고 기존 binding·정확한 살아 있는 터미널·worktree 소유권·실행 세대별 sampler 검증을 유지한다. 실제 svc.review 호출 후 행이 사라지는 인과 RED → 자원 시험 8개 PASS, fmt·Biome 274 PASS. 독립 검토 소스 2개/자원 원본 로그 3개 PASS(`agents-review-metrics-followup/`). 이 fixture는 소유 tmux와 가짜 accounting provider를 사용했으며, 실제 Windows 설치본의 systemd 집계는 최종 수용에서 확인한다.
+
+여섯 지적 통합 수용 준비(26f4a5c9): 별도 최종 브랜치 검토에서 a93de69d 이후 변경 소스 20개를 과제별 고정 해시와 대조해 불일치·미검토 파일 0개, 지적 6건 모두 해결 및 교차 영향 검토 PASS. 영향받은 agents/git/projects/cli 전체 target Clippy·workspace fmt·RPC 생성물 일치·TypeScript PASS(19.410초, cgroup peak 1,449,451,520 bytes). 실제 데몬의 생성/지시/squash·선택/popout·신뢰·프로젝트·재연결·터미널 이력/분할 E2E 9개 PASS(시험 45.1초, supervisor 45.920초, peak 1,778,626,560 bytes). `six-findings-final-*`에 원본 로그·자원 기록·검토 판정을 보존했다. 새 최종 SHA의 필수 CI·자동 코드/보안 리뷰·Windows 설치본 수용은 다음 gate이며 아직 PASS로 보고하지 않는다.
 
 ## 6. 세션 기록
 
