@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 추가 6건 보완 뒤 a7921ba3 필수 CI·Windows 영향 검증 PASS. 해당 SHA 리뷰의 후속4건 보완·통합 검증 및72d1390a 필수 CI PASS. 해당 SHA 추가2건 보완 뒤1062c411 필수 CI·Windows 영향 검증 PASS. 최종 리뷰 추가5건 보완·독립 검토·영향 검증 완료, 새 최종 SHA 수용 대기. 명시적 Git hook 전면 차단 제안2건은 승인된 .devbox 신뢰 범위와 구분해 한계를 기록. 패치 영구 저장 제안1건은 설계 범위 근거로 적용하지 않음 |
+| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 78da672a 필수 CI·Windows 영향 검증 PASS. 해당 SHA 자동 리뷰의 추가 4건을 보완했고, 별도 검토와 새 최종 SHA 수용을 진행 중이다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
 | 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 수정·독립 코드 검토·영향 검사 완료. 후속 최종 SHA 수용 대기 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -290,6 +290,16 @@ PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전�
 리뷰4263067851·4263067861 보완: rebase전에정확한소유scope/terminal을정지하고Review/toolExited로기록한뒤소유권·확인head/base·clean상태·진행중Git작업을다시검사한다. 자동재개는추가하지않으며충돌은수동해결·continue후재개또는되돌리기로안내한다. 수동정리의branch-only와worktree+branch경로모두closed_head_oid의CAS삭제를사용해마지막순간바뀐host ref를보존한다. rebase3그룹5경우·cleanup1그룹2경우모두RED→GREEN. 리뷰4263067840은전체journal을추가하지않고이미반영된squash의정확한동일tree를새head/base확인후no-op성공으로처리해DB닫기재시도를허용한다. 실제SQLite trigger로Git성공/닫기저장실패를발생시킨뒤옛확인값거부·DB복구후새확인·추가commit없이동일mainOID로Closed/정리·마지막확인pair리뷰고정을확인했다. 첫실패는여전히오류이며로그에Git적용OID와closurepending을남긴다. 최초리뷰snapshot의재시작영속복구까지보장하지않는다. 관련고유15개와소유포맷PASS, 고정7파일·원본15artifact독립최종검토PASS. 근거agents-review-1062-followup/evidence.json.
 
 추가5건통합검증: 대상4crate all-target Clippy9.696초·cgroup peak710,377,472byte PASS, frontend typecheck·AgentActions7개PASS, 실제생성→대기→지시→diff→squash E2E4.4초(감독16.895초·cgroup peak1,505,931,264byte)PASS. 변경없는전체검사는반복하지않았으며새최종SHA CI와설치본영향검증은후속수용단계다. 최종Biome269파일PASS. 원본은five-review-final-*.log/resources.json에보존한다.
+
+78da672a 수용 결과: CI run 38458180029의 Frontend·Linux Rust·E2E와 Windows run 38458180391 모두 PASS. 출처·SHA256을 확인한 설치본에서 살아 있는 에이전트의 기준 반영 → 실행 정지·Review → 재개 → 확인된 squash → 실행 정지·작업공간 보존을 실제 Windows UI/WSL scope·tmux로 확인했다. 소유 fixture에 내용 변화 없는 ancestry merge를 명시적으로 추가한 뒤 정리 후보의 삭제·승인된 teardown을 별도 검증했다. 직접 squash 뒤 미병합 ancestry인 branch는 자동 정리 대상이라고 주장하지 않는다. 후순위 긴 제목·prompt 시작 구성은 각각 두 번 실행해도 생성 수 0, 목록·rev 불변이었다. 소유 앱·WSL·설치/다운로드 자원 제거와 v0.9 보존 PASS. 원본 `windows-final-78da672a/acceptance.json` 및 proof 파일. R1/R2·실제 DND toast/taskbar 항목은 여전히 미실행이다.
+
+78da672a 자동 코드·보안 리뷰는 모두 완료했다. 새 보안 지적은 없었고, 코드 지적 4건은 별도 검토에서 타당하다고 판단해 보완했다. 재개 실패(4263419776)는 새 terminal UUID를 생성 전에 소유하고, 그 정확한 terminal 정리가 성공했을 때만 기존 launch/turn/thread/rollout 바인딩을 CAS 복원한다. 이후 세대나 정리 실패를 덮어쓰지 않는다. 프로필 중복(4263419796)은 설정 내 ID 중복을 거부하되 단일 내장 프로필 재정의는 유지했다. causal RED 뒤 고유 14개 PASS, 고정 소스·artifact 독립 검토 PASS(`agents-78-followup`).
+
+squash 검증 거절(4263419792)은 실제 Git 명령 실패와 구분했다. 원래 base HEAD·공유 index·소유 lock이 모두 유지된 경우만 private index의 reset --merge로 안전한 작업 파일 복구를 시도하고 공유 index는 게시하지 않는다. 겹치는 외부 수정은 복구가 거부되며 외부 HEAD/index/lock을 보존한다. 실제 실패 hook이 HEAD를 바꾼 기존 계약은 별도로 유지한다. 5개 causal RED, 최종 11개 테스트·16개 시나리오 PASS, 소스 2개와 artifact 26개 독립 검토 PASS(`squash-rejected-publish-followup`).
+
+터미널 목록(4263419786)은 오래된 종료 세션 600개가 약 42MB 응답을 만드는 실패를 재현했다. 명령 입력은 UTF-8 64KiB·NUL 검사를 내부 생성과 시작 구성 전체 사전검증에 공유한다. 실행/저장 원문을 바꾸지 않고 목록에만 256자와 생략 표시를 제공한다. created_ms/id 순서로 256행·실제 JSON 768KiB 이하 페이지를 보내고, 화면은 같은 DB revision의 모든 페이지를 받은 뒤 목록을 게시한다. 커서 반복·revision 변경 3회·취소는 부분 결과를 게시하지 않는다. 프로젝트 요약은 전체 내부 목록을 센다. 터미널 13개·CLI 9개·프론트 14개와 typecheck PASS. 정확한 64KiB Unicode는 순수 입력 검증 경계이며 tmux 자체 인코딩 한계로 실행이 거절될 수 있음을 발견해 기록했다. 실제 Unicode 실행·원문 보존은 더 작은 명령으로 검증했다. 준비 중 fixture 컴파일 오류와 원래 실패 로그를 보존했다. 최종 소스 19개·artifact 27개 hash와 변경 전체를 독립 검토해 PASS(`terminal-command-followup`).
+
+추가 4건 통합 검증: 영향받은 terminal·agents·git·cli all-target Clippy PASS(14.016초, cgroup peak 758,157,312byte). 실제 생성·지시·squash, 대기 작업 선택, 격자 분리 창, 터미널 재시작·scrollback, 분할 창 E2E 5개 PASS(33.5초, 감독 34.487초, cgroup peak 1,559,953,408byte). 최종 소스 독립 검토를 마쳤으며 새 SHA의 CI·자동 리뷰·Windows 설치본 검증은 수용 단계에서 확인한다. 원본 `four-review-final-*.log/resources.json`.
 
 ## 6. 세션 기록
 
