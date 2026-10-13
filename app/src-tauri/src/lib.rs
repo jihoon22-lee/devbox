@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             window::focus_main(app);
         }))
+        .plugin(tauri_plugin_opener::init())
         .manage(connection::Connection::default())
         .invoke_handler(tauri::generate_handler![
             connection::gate_status,

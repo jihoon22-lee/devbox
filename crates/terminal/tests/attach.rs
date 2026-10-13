@@ -86,7 +86,8 @@ async fn zero_credit_history_does_not_starve_input_or_attachment_cleanup() {
             input: rx,
         }))))),
     };
-    h.terminal
+    let attached = h
+        .terminal
         .attach(
             ctx,
             AttachSession {
@@ -98,6 +99,7 @@ async fn zero_credit_history_does_not_starve_input_or_attachment_cleanup() {
         )
         .await
         .expect("attach");
+    assert_eq!((attached.cols, attached.rows), (100, 30));
     until(async || {
         !h.terminal
             .tmux()
@@ -180,4 +182,80 @@ async fn cancelled_request_and_missing_stream_support_do_not_spawn_attach_client
                 .is_empty()
         );
     }
+}
+
+#[tokio::test]
+async fn read_only_attach_reports_the_actual_grid_without_resizing_it() {
+    let h = support::Harness::new();
+    let terminal = h
+        .terminal
+        .create(CreateSession {
+            project_id: None,
+            cwd: Some(h.home.path().display().to_string()),
+            title: None,
+            command: Some("bash --norc --noprofile".into()),
+            attach_zellij: None,
+        })
+        .await
+        .expect("create");
+    let pane_size = || async {
+        h.terminal
+            .tmux()
+            .run(&[
+                "list-panes",
+                "-t",
+                &terminal.id,
+                "-F",
+                "#{pane_width} #{pane_height}",
+            ])
+            .await
+            .expect("grid")
+    };
+    let before = pane_size().await;
+    let actual: Vec<u16> = before
+        .split_whitespace()
+        .map(|v| v.parse().expect("dimension"))
+        .collect();
+    let closed = CancellationToken::new();
+    let (_input, input) = tokio::sync::mpsc::channel(4);
+    let ctx = devbox_protocol::Ctx {
+        channel: 0,
+        cancel: CancellationToken::new(),
+        streams: Some(Arc::new(Opener(Mutex::new(Some(StreamEnds {
+            id: 1,
+            tx: StreamTx::new(
+                1,
+                0,
+                Arc::new(Credit::new(0)),
+                Arc::new(Sink),
+                closed.clone(),
+            ),
+            input,
+        }))))),
+    };
+    let attached = h
+        .terminal
+        .attach(
+            ctx,
+            AttachSession {
+                id: terminal.id.clone(),
+                cols: 5,
+                rows: 5,
+                read_only: true,
+            },
+        )
+        .await
+        .expect("read-only attach");
+    assert_eq!((attached.cols, attached.rows), (actual[0], actual[1]));
+    until(async || {
+        !h.terminal
+            .tmux()
+            .run(&["list-clients", "-t", &terminal.id])
+            .await
+            .expect("clients")
+            .is_empty()
+    })
+    .await;
+    assert_eq!(before, pane_size().await);
+    closed.cancel();
 }

@@ -4,6 +4,7 @@ import type { ClientStream } from "../../rpc/client-streams";
 export interface TerminalSink {
   write(data: Uint8Array, done: () => void): void;
   reset(): void;
+  resize?(cols: number, rows: number): void;
 }
 export type LinkState = "connecting" | "live" | "lost" | "ended";
 interface Options {
@@ -167,6 +168,19 @@ export class TerminalLink {
           readOnly: this.options.readOnly,
         },
         {
+          onOpened: ({ cols, rows }) => {
+            if (!this.current(a) || !this.options.readOnly) return;
+            if (
+              !Number.isInteger(cols) ||
+              !Number.isInteger(rows) ||
+              cols < 1 ||
+              rows < 1 ||
+              cols > 65535 ||
+              rows > 65535
+            )
+              throw new Error("Invalid terminal grid");
+            this.options.sink.resize?.(cols, rows);
+          },
           onData: (data, ack) => {
             if (!this.current(a)) return;
             let done = false;

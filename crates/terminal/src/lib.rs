@@ -14,7 +14,7 @@ pub const MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
     sql: store::MIGRATION_1,
 }];
-method!(pub TerminalAttach = "terminal.attach", stream, AttachSession => devbox_protocol::StreamOpened, TerminalError);
+method!(pub TerminalAttach = "terminal.attach", stream, AttachSession => TerminalAttached, TerminalError);
 method!(pub TerminalResize = "terminal.resize", mutation, ResizeStream => devbox_protocol::Done, TerminalError);
 method!(pub TerminalList = "terminal.list", query, ListSessions => SessionList, TerminalError);
 method!(pub TerminalCreate = "terminal.create", mutation, CreateSession => TerminalSession, TerminalError);

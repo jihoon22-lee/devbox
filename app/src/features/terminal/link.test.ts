@@ -29,16 +29,21 @@ function fixture(state: ClientState = "ready") {
     },
     call: vi.fn().mockResolvedValue({}),
     openStream: vi.fn(
-      (_method: "terminal.attach", _params: Methods["terminal.attach"]["params"], handlers: StreamHandlers) => {
+      (
+        _method: "terminal.attach",
+        _params: Methods["terminal.attach"]["params"],
+        handlers: StreamHandlers & { onOpened?: (result: Opened["result"]) => void },
+      ) => {
         const id = opened.length + 1;
         const stream: Opened = {
           streamId: id,
-          result: { streamId: id },
+          result: { streamId: id, cols: 132, rows: 43 },
           write: vi.fn(),
           end: vi.fn(() => handlers.onEnd()),
         };
         const pending = deferred<Opened>();
         opened.push({ handlers, stream, pending });
+        handlers.onOpened?.(stream.result);
         early?.(handlers);
         if (automatic) pending.resolve(stream);
         return pending.promise;
@@ -51,6 +56,7 @@ function fixture(state: ClientState = "ready") {
       done.push(ack);
     }),
     reset: vi.fn(),
+    resize: vi.fn(),
   };
   const states: LinkState[] = [];
   const dropped = vi.fn();
@@ -311,7 +317,7 @@ test("resize rejection is handled and a late write callback cannot credit after 
   expect(ack).not.toHaveBeenCalled();
 });
 
-function realClientFixture(earlyFin = false) {
+function realClientFixture(earlyFin = false, readOnly = false) {
   const frames = new Set<(bytes: Uint8Array) => void>();
   const states = new Set<(state: TransportState) => void>();
   const sent: Record<string, unknown>[] = [];
@@ -334,7 +340,7 @@ function realClientFixture(earlyFin = false) {
         streamId++;
         // A synchronous transport produces early data/FIN before attach resolves.
         receive(streamFrame(streamId, earlyFin ? 1 : 0, new Uint8Array([65])));
-        receive(jsonFrame({ type: "response", id: message.id, result: { streamId } }));
+        receive(jsonFrame({ type: "response", id: message.id, result: { streamId, cols: 132, rows: 43 } }));
       }
     },
     onFrame: (cb) => {
@@ -358,11 +364,12 @@ function realClientFixture(earlyFin = false) {
       done.push(ack);
     }),
     reset: vi.fn(),
+    resize: vi.fn(),
   };
   const linkStates: LinkState[] = [];
   const link = new TerminalLink(client, {
     id: "t1",
-    readOnly: false,
+    readOnly,
     sink,
     onState: (s) => linkStates.push(s),
     onInputDropped: vi.fn(),
@@ -404,4 +411,55 @@ test("actual RpcClient buffered FIN cannot set a terminal live after onEnd", asy
   expect(f.linkStates.at(-1)).toBe("lost");
   f.link.dispose();
   f.client.stop();
+});
+
+test("read-only actual dimensions are applied before early ANSI replay and ACK", async () => {
+  const f = fixture();
+  const order: string[] = [];
+  f.sink.resize.mockImplementation(() => {
+    order.push("size");
+  });
+  f.sink.write.mockImplementation((_bytes, done) => {
+    order.push("write");
+    done();
+  });
+  const ack = vi.fn(() => order.push("ack"));
+  f.early((h) => h.onData(new Uint8Array([27, 91, 72]), ack));
+  const link = f.make(true);
+  await link.open(80, 24);
+  expect(f.sink.resize).toHaveBeenCalledExactlyOnceWith(132, 43);
+  expect(order).toEqual(["size", "write", "ack"]);
+  link.dispose();
+});
+
+test("actual RpcClient applies read-only grid before buffered ANSI and credits after render", async () => {
+  const f = realClientFixture(false, true);
+  const order: string[] = [];
+  f.sink.resize.mockImplementation(() => {
+    order.push("size");
+  });
+  f.sink.write.mockImplementation((_bytes, done) => {
+    order.push("write");
+    f.done.push(done);
+  });
+  f.client.start();
+  f.welcome();
+  await f.link.open(80, 24);
+  expect(f.sink.resize).toHaveBeenCalledExactlyOnceWith(132, 43);
+  expect(order).toEqual(["size", "write"]);
+  expect(f.sent.filter((m) => m.type === "streamCredit")).toHaveLength(0);
+  f.done[0]!();
+  expect(f.sent.filter((m) => m.type === "streamCredit")).toEqual([{ type: "streamCredit", stream: 1, bytes: 1 }]);
+  f.link.dispose();
+  f.client.stop();
+});
+test("read-only grid callback disposal ignores early replay and closes the late handle", async () => {
+  const f = fixture();
+  const link = f.make(true);
+  f.sink.resize.mockImplementation(() => link.dispose());
+  f.early((h) => h.onData(new Uint8Array([65]), vi.fn()));
+  await link.open(80, 24);
+  expect(f.sink.write).not.toHaveBeenCalled();
+  expect(f.opened[0]!.stream.end).toHaveBeenCalledOnce();
+  expect(f.states).not.toContain("live");
 });

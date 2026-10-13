@@ -149,7 +149,7 @@ export class RpcClient {
   async openStream<M extends StreamMethod>(
     method: M,
     params: Methods[M]["params"],
-    handlers: StreamHandlers,
+    handlers: StreamHandlers & { onOpened?(result: Methods[M]["result"]): void },
   ): Promise<ClientStream & { result: Methods[M]["result"] }> {
     if (!this.running || !this.live || !this.welcomed || this.state !== "ready") throw new RpcError("connection_lost");
     const epoch = this.connectionEpoch;
@@ -159,6 +159,15 @@ export class RpcClient {
       result = await this.call(method, params);
     } catch (error) {
       this.streams.reject(entry);
+      throw error;
+    }
+    if (epoch !== this.connectionEpoch || !this.streams.current(entry)) throw new RpcError("connection_lost");
+    // Apply attachment metadata before synchronous early data replay.
+    try {
+      handlers.onOpened?.(result);
+    } catch (error) {
+      this.streams.reject(entry);
+      this.failConnection(); // The remote stream exists even without buffered early data.
       throw error;
     }
     if (epoch !== this.connectionEpoch || !this.streams.current(entry)) throw new RpcError("connection_lost");

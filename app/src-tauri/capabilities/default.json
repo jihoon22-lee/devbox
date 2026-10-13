@@ -1,6 +1,24 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "windows": ["main", "popout-*"],
-  "permissions": ["core:default", "core:event:default", "core:window:default"]
+  "windows": [
+    "main",
+    "popout-*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "https://*"
+        }
+      ]
+    }
+  ]
 }

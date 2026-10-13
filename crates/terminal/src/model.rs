@@ -72,6 +72,13 @@ pub struct AttachSession {
 }
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct TerminalAttached {
+    pub stream_id: u32,
+    pub cols: u16,
+    pub rows: u16,
+}
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ResizeStream {
     pub stream_id: u32,
     pub cols: u16,

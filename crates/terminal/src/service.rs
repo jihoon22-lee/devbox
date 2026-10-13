@@ -82,7 +82,7 @@ impl TerminalService {
         &self,
         ctx: devbox_protocol::Ctx,
         p: AttachSession,
-    ) -> Result<devbox_protocol::StreamOpened> {
+    ) -> Result<crate::TerminalAttached> {
         crate::attach::validate(p.cols, p.rows)?;
         let id = p.id.clone();
         if self
@@ -121,7 +121,11 @@ impl TerminalService {
             tx.finish().await;
             return Err(error);
         }
-        Ok(devbox_protocol::StreamOpened { stream_id })
+        Ok(crate::TerminalAttached {
+            stream_id,
+            cols: dimensions.cols,
+            rows: dimensions.rows,
+        })
     }
     pub async fn resize(&self, ctx: devbox_protocol::Ctx, p: ResizeStream) -> Result<Done> {
         crate::attach::validate(p.cols, p.rows)?;

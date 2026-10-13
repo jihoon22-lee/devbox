@@ -93,6 +93,7 @@ export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" };
+export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } };
 export type TerminalProfile = { name: string, command: string, };
@@ -140,7 +141,7 @@ export interface Methods {
   "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
-  "terminal.attach": { kind: "stream"; confirm: "none"; params: AttachSession; result: StreamOpened; error: TerminalError };
+  "terminal.attach": { kind: "stream"; confirm: "none"; params: AttachSession; result: TerminalAttached; error: TerminalError };
   "terminal.close": { kind: "mutation"; confirm: "always"; params: CloseSession; result: Done; error: TerminalError };
   "terminal.create": { kind: "mutation"; confirm: "none"; params: CreateSession; result: TerminalSession; error: TerminalError };
   "terminal.list": { kind: "query"; confirm: "none"; params: ListSessions; result: SessionList; error: TerminalError };

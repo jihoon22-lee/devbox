@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–14 로컬 완료, Task 15 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
+- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–15 로컬 완료, Task 16 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -956,6 +956,8 @@ git add app/src && git commit -m "feat(app): keep Tauri sends ordered and link t
 
 ### Task 15: TerminalView
 
+실제 구현 보정: xterm 6의 기본 DOM 렌더러를 사용하며 WebGL 실패·context loss 때 복귀한다. D2Coding 1.4.0/OFL을 번들하고 글꼴 대기는 1.5초로 제한, 늦은 로딩 뒤 셀을 다시 측정한다. 읽기 전용·축소 화면은 typed attach 응답의 실제 cols/rows를 초기 ANSI 재생 전에 적용하며 입력·fit·상위 resize를 막는다. `RpcClient.openStream`의 선택적 `onOpened`가 이 순서를 보장하고 콜백 실패는 연결을 정리한다. scale·콜백 변경은 재attach하지 않는다. Windows opener는 single-instance 뒤 등록하며 main/popout 창에 HTTP(S)만 허용한다. 아래 예제보다 실제 코드·회귀 테스트를 우선한다.
+
 **Files:**
 - Create: `app/src/features/terminal/TerminalView.tsx`, `TerminalView.module.css`, `app/src/features/terminal/theme.ts`, `app/src/features/terminal/keys.ts`, `app/src/features/terminal/osc.ts`
 - Create: `app/src/assets/fonts/D2Coding.woff2`(OFL, `LICENSE-D2Coding.txt` 함께), `app/src/styles/fonts.css`에 `@font-face`
@@ -978,7 +980,7 @@ git add app/src && git commit -m "feat(app): keep Tauri sends ordered and link t
     - 선택이 있을 때 Ctrl+C는 복사(선택이 없으면 셸로 SIGINT)
   - `parseOsc7(data) -> string | null`(`file://host/path` → 디코딩한 경로)
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 ```ts
 // app/src/features/terminal/keys.test.ts
@@ -1012,9 +1014,9 @@ test("OSC 7 file URLs become decoded paths", () => {
 });
 ```
 
-- [ ] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal`
+- [x] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal`
 
-- [ ] **Step 3: 구현 — 순수 부분**
+- [x] **Step 3: 구현 — 순수 부분**
 
 ```ts
 // app/src/features/terminal/keys.ts
@@ -1073,7 +1075,7 @@ export function terminalTheme(): ITheme {
 
 `tokens.css`의 다크·라이트 두 벌에 `--term-*` 18개를 추가한다(다크는 One Dark 계열, 라이트는 One Light 계열 값). 편집기·diff 색도 같은 파일의 토큰에서 만든다(01-design §8.3 "테마 모듈은 하나").
 
-- [ ] **Step 4: 구현 — 컴포넌트**
+- [x] **Step 4: 구현 — 컴포넌트**
 
 ```tsx
 // app/src/features/terminal/TerminalView.tsx
@@ -1213,7 +1215,7 @@ export function TerminalView({ id, readOnly = false, scale, onCwd, onBell, onTit
 .overlay { position: absolute; inset: 0; display: flex; gap: var(--space-3); align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg-0) 70%, transparent); color: var(--fg); font-size: var(--text-sm); }
 ```
 
-- [ ] **Step 5: 통과·커밋**
+- [x] **Step 5: 통과·커밋**
 
 ```bash
 pnpm --filter app add @xterm/xterm@^6 @xterm/addon-fit @xterm/addon-webgl @xterm/addon-unicode11 @xterm/addon-search @xterm/addon-web-links @tauri-apps/plugin-opener

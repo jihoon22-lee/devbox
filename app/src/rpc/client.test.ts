@@ -1,6 +1,6 @@
 import fixtures from "../../../crates/protocol/fixtures/envelopes.json";
 import { RpcClient, type Transport, type TransportState } from "./client";
-import { decodeFrame, encodeFrame, jsonFrame } from "./frame";
+import { decodeFrame, encodeFrame, jsonFrame, streamFrame } from "./frame";
 
 class FakeTransport implements Transport {
   sent: Record<string, unknown>[] = [];
@@ -376,4 +376,48 @@ describe("Welcome deadline", () => {
     expect(t.reconnect).not.toHaveBeenCalled();
     c.stop();
   });
+});
+
+test("throwing attach metadata handler disconnects a confirmed stream with no early data", async () => {
+  const { t, c } = setup();
+  const onData = vi.fn(),
+    onEnd = vi.fn();
+  const opening = c.openStream(
+    "terminal.attach",
+    { id: "t1", cols: 80, rows: 24, readOnly: true },
+    {
+      onData,
+      onEnd,
+      onOpened: () => {
+        throw new Error("renderer grid failed");
+      },
+    },
+  );
+  t.deliver({ type: "response", id: t.last().id, result: { streamId: 7, cols: 132, rows: 43 } });
+  await expect(opening).rejects.toThrow("renderer grid failed");
+  expect(t.reconnect).toHaveBeenCalledOnce();
+  expect(c.state).toBe("reconnecting");
+  expect(onEnd).toHaveBeenCalledOnce();
+  t.raw(streamFrame(7, 0, new Uint8Array([65])));
+  expect(onData).not.toHaveBeenCalled();
+  c.stop();
+});
+test("attach metadata callback stopping client never replays early data", async () => {
+  const { t, c } = setup();
+  const onData = vi.fn(),
+    onEnd = vi.fn();
+  const opening = c.openStream(
+    "terminal.attach",
+    { id: "t1", cols: 80, rows: 24, readOnly: true },
+    {
+      onData,
+      onEnd,
+      onOpened: () => c.stop(),
+    },
+  );
+  t.raw(streamFrame(7, 0, new Uint8Array([27, 91, 72])));
+  t.deliver({ type: "response", id: t.last().id, result: { streamId: 7, cols: 132, rows: 43 } });
+  await expect(opening).rejects.toMatchObject({ code: "connection_lost" });
+  expect(onData).not.toHaveBeenCalled();
+  expect(onEnd).toHaveBeenCalledOnce();
 });
