@@ -42,3 +42,34 @@ test("unknown routes provide a usable recovery link despite unavailable storage"
 });
 
 beforeEach(() => vi.spyOn(window, "scrollTo").mockImplementation(() => {}));
+
+test("injected section pages validate search and popouts bypass the frame without changing last section", async () => {
+  localStorage.setItem("devbox.lastSection", "/notes");
+  const router = buildRouter(
+    {
+      frame: () => (
+        <div data-testid="shell-frame">
+          <Outlet />
+        </div>
+      ),
+      pages: {
+        "/terminal": {
+          component: () => <p>터미널 페이지</p>,
+          validateSearch: (search) => ({ selected: typeof search.selected === "string" ? search.selected : undefined }),
+        },
+      },
+      settings: () => <p>설정 페이지</p>,
+      popouts: [{ path: "/popout/terminal/$id", component: () => <p>분리 터미널</p> }],
+    },
+    createMemoryHistory({ initialEntries: ["/popout/terminal/owned?gateway=ws%3A%2F%2Flocalhost%3A1451"] }),
+  );
+  render(<RouterProvider router={router} />);
+  await screen.findByText("분리 터미널");
+  expect(screen.queryByTestId("shell-frame")).toBeNull();
+  expect(localStorage.getItem("devbox.lastSection")).toBe("/notes");
+  await router.navigate({ to: "/terminal", search: { selected: "owned" } });
+  await screen.findByText("터미널 페이지");
+  expect(screen.getByTestId("shell-frame")).toBeInTheDocument();
+  expect(router.state.location.search).toEqual({ gateway: "ws://localhost:1451", selected: "owned" });
+  expect(localStorage.getItem("devbox.lastSection")).toBe("/terminal");
+});

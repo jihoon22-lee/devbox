@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 Task 1–12 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 13 디자인 시스템·섹션 배치·하단 패널 — 04b 화면·Windows 통합 구현 시작 |
+| 단계 | S0 및 후속 #639 완료. S1 Task 1–13 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 14 순서 보장 송신·터미널 연결 컨트롤러 — 기존 attachment/세대 보호 유지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -204,6 +204,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04 Task 11 프로젝트 설정·시작 구성 | `[launch]`·6개 프로젝트 API 확장 | 설정 조회는 기본값+오류, mutation은 엄격한 오류. summary는 Git 동시4·항목별 null/오류·닫힌 작업 제외. 시작 전 설정·프로필 검증, worktree 설정 반영, 부분 실패 자원과 수용 개수 보존. prompts는 파일명 stem·50개/64KiB 명시 오류·descriptor 읽기, favorite는 커밋 후 이벤트 | 최초 projects18·launch5·router1·기존 agent setup/resume/teardown3, gen-ts·messages1·typecheck PASS. 복제 보완 후 projects22·CLI11 PASS. 서비스 시작은 S2 계약대로 유보. 테스트 모듈 위치 정리도 동작 변화 없음으로 별도 확인 |
 | 2026-10-13 | 04 Task 11 별도 검토 | clone 대상 예약 뒤 경로 재개방·credential.helper 제거·launch 배열 역직렬화 | 실제 RPC에서 대상 symlink 교체 시 외부 fixture 쓰기·비밀번호 URL의 Git config 저장을 재현. launch/항목 위치 기반 배열도 수용되어 엄격한 table 검사가 필요. 합성 helper로 기존 HTTPS 인증 차단 확인 | clone RPC 2개·설정 구조 1개 RED→GREEN. projects22·CLI review/auth/launch11 PASS. SSH 충돌 옵션·할당/env 접두부도 RED 후 보완: 최종 Git4·auth RPC3 PASS(실제 로컬 clone 6조합). 독립 최종 재검토·diff check·완료 Biome CI 85 files PASS. 네트워크·실제 인증정보 없이 소유 fixture로 검증했으며 Windows·전체 S1 검사는 Task24에 수행 |
 | 2026-10-13 | 04 Task 12 MCP | 외부 Value 봉투·즉시 데몬 연결·기본 읽기 도구 | 명시적 타입/RawValue·정수/문자열 ID 원형 보존·null 거절·알림 무응답/무실행. 오프라인 초기화/목록, 설정 table/키를 원본별 검증 후 병합, 목록·직접 호출 모두 write gate, Closed 명시 제외. 1MiB 입력·30초 부분 줄·5초 연결/RPC 제한·자동 지시 재전송 없음 | 최초 MCP6 RED, config 필드 부재 RED 후 MCP7·입력2·설정13 PASS. 알림 쓰기·clientInfo 배열·ready chunk의 만료 시간 경계 RED→GREEN. 별도 검토 unknown tool의 -32602 분류 보완도 RED→GREEN 1개 및 최종 재검토·diff check·완료 Biome CI 85 files PASS. 격리 가짜 도구/데몬만 사용, README에 등록 예시만 추가했으며 실제 MCP 등록·전체/Windows 검사는 미실행 |
+| 2026-10-13 | 04b Task 13 공통 UI·화면 배치 | UI 컴포넌트·배치 store·주입식 라우터 확장 | Tabs·SplitPane·Badge·Menu·Select·TextArea·Toast, 입력/IME/메뉴 포커스 보호·되돌리기 1회·UI 배율·마우스 이동. 저장값 whitelist/보정·접근 실패 대응, 경계 진입 시 접기와 사용자 재열기, 등록 해제 소유권. Shell의 공통 ToastHost와 기존 gateway·마지막 경로·오류 경계 유지 | 최초 배치/Toast 2 suite RED 후 서로 겹치는 좁은 실행에서 고유 47개 테스트 PASS. jsdom scrollIntoView fixture·Toast provider 의존 보완, 확대 좌표와 관찰 기준 회귀 통과. 타입 검사·변경 파일 포맷 PASS. 실제 터미널 내용은 Task16, 앱 E2E·Windows 검증은 Task24에 수행 |
+| 2026-10-13 | 04b Task 13 별도 검토 보완 | CSS 상한으로 줄어든 패널도 저장 높이에서 조절 | 격리 Chromium geometry probe에서 1280×800·150%·저장600px가 표시353.33px로 제한될 때 30px 드래그가 반응하지 않음 재현. 드래그는 표시 높이/배율을 시작 시 고정, 방향키는 표시 높이 재측정. 창 변화만으로 선호 높이를 덮어쓰지 않음 | 회귀 RED(expected333.33, got580) → 관련 상호작용4 PASS. 키보드·연속 이동 중 기준점 유지도 검증, 타입 검사·독립 최종 재검토·diff check·완료 Biome CI 113 files PASS. Chromium 검사는 격리된 기하 probe이며 실제 앱 E2E/Windows PASS가 아님 |
 
 ## 6. 세션 기록
 

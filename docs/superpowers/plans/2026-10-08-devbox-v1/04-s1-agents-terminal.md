@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · S0b 및 후속 PR #639 완료(`fb6bc69d`). `v1/s1-agents-terminal`에서 Task 1–2 로컬 완료, S0b 범위 Windows 조기 스모크 뒤 Task 3
+- 상태: 데몬 Task 1–12 구현·별도 검토 로컬 완료. 같은 `v1/s1-agents-terminal`에서 04b 화면·Windows 통합 진행 중. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 아직 완료하지 않음
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)

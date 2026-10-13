@@ -1,0 +1,29 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  max-height: calc(100% - 120px);
+  background: var(--bg-1);
+}
+.handle {
+  height: 4px;
+  flex-shrink: 0;
+  background: var(--border);
+  cursor: row-resize;
+  touch-action: none;
+}
+.handle:hover,
+.handle:focus-visible {
+  background: var(--accent);
+}
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (forced-colors: active) {
+  .handle {
+    background: CanvasText;
+  }
+}

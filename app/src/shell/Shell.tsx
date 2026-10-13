@@ -3,27 +3,32 @@ import { useEffect, useMemo, useState } from "react";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { ToastHost } from "../ui/Toast";
 import { CommandPalette } from "./CommandPalette";
 import { useCommands } from "./commands";
 import { Frame } from "./Frame";
 import { type Binding, useKeymap } from "./keymap";
 import { buildRouter } from "./router";
 import { SECTIONS } from "./sections";
+import { restoreUiScale, uiBindings } from "./uiShortcuts";
 export function Shell() {
   const [palette, setPalette] = useState(false);
   const [projects, setProjects] = useState(false);
   const router = useMemo(
     () =>
-      buildRouter(
-        () => (
+      buildRouter({
+        frame: () => (
           <Frame project={<ProjectTitle onOpen={() => setProjects(true)} />} onOpenPalette={() => setPalette(true)} />
         ),
-        SettingsPage,
-      ),
+        pages: {},
+        settings: SettingsPage,
+        popouts: [],
+      }),
     [],
   );
   const bindings = useMemo<Binding[]>(
     () => [
+      ...uiBindings(),
       ...SECTIONS.map((section) => ({
         id: `go.${section.path}`,
         code: `Digit${section.digit}`,
@@ -65,6 +70,22 @@ export function Shell() {
     [router],
   );
   useKeymap(bindings);
+  useEffect(() => {
+    restoreUiScale();
+    const onMouse = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
+      )
+        return;
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (event.button === 3) router.history.back();
+      else router.history.forward();
+    };
+    window.addEventListener("mouseup", onMouse);
+    return () => window.removeEventListener("mouseup", onMouse);
+  }, [router]);
   const register = useCommands((state) => state.register);
   useEffect(() => {
     const cleanups = bindings
@@ -77,7 +98,8 @@ export function Shell() {
             ...(binding.ctrl ? ["Ctrl"] : []),
             ...(binding.shift ? ["Shift"] : []),
             ...(binding.alt ? ["Alt"] : []),
-            binding.code.replace(/^(Key|Digit)/, ""),
+            ({ Backquote: "`", Equal: "=", Minus: "-" } as Record<string, string>)[binding.code] ??
+              binding.code.replace(/^(Key|Digit)/, ""),
           ],
           run: binding.run,
         }),
@@ -90,6 +112,7 @@ export function Shell() {
   return (
     <ProjectDataProvider>
       <RouterProvider router={router} />
+      <ToastHost />
       <CommandPalette open={palette} onOpenChange={setPalette} />
       <ProjectSwitcher open={projects} onOpenChange={setProjects} />
     </ProjectDataProvider>

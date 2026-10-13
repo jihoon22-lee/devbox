@@ -1,0 +1,31 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-1);
+  min-height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.badge[data-tone="ok"] {
+  color: var(--ok);
+}
+.badge[data-tone="warn"] {
+  color: var(--warn);
+}
+.badge[data-tone="danger"] {
+  color: var(--danger);
+}
+.badge[data-tone="info"] {
+  color: var(--info);
+}
+.badge[data-tone="progress"] {
+  color: var(--progress);
+}
+@media (forced-colors: active) {
+  .badge {
+    border-color: ButtonBorder;
+  }
+}

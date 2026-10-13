@@ -1,0 +1,36 @@
+.area {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--control-lg);
+  padding: 6px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+  color: var(--fg);
+  font: inherit;
+  line-height: 20px;
+  resize: none;
+  overflow-y: auto;
+}
+.area:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.area:disabled {
+  color: var(--fg-subtle);
+  cursor: not-allowed;
+}
+.area[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+@media (forced-colors: active) {
+  .area {
+    border-color: ButtonBorder;
+  }
+  .area:focus-visible {
+    outline-color: Highlight;
+  }
+  .area:disabled {
+    color: GrayText;
+  }
+}

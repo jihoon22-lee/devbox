@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 구현·별도 검토 완료(같은 S1 브랜치에서 이어감)
+- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13 로컬 완료, Task 14 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -89,6 +89,8 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
   - `BottomPanel`: 탭 `터미널`만(S2가 로그·문제를 더함). 내용은 등록식 `registerBottomTab({ id, label, render })`
   - `buildRouter({ frame, pages, settings, popouts })`: 섹션별 화면을 받는다. `/popout/*` 경로는 프레임 없이 그린다.
   - 단축키: Ctrl+Shift+B(목록 접기), Ctrl+\`(하단 패널)
+
+**현재 구현 계약:** 아래 예제는 인터페이스 설명이며 실제 변경은 기존 S0b 보호 동작을 유지한다. 라우터 호출·명령 등록은 `Shell.tsx`에 있고 `App.tsx`의 연결 준비는 유지한다. `Frame`의 연결 배너와 확정 경로 기반 오류 경계를 보존하며, `ToastHost`는 분리 창에도 보이도록 `Shell`에 한 번 둔다. 저장된 배치는 허용된 값만 검증·보정해 병합하고 저장소 접근 실패에도 동작한다. 자동 접기는 전체 프레임의 경계 진입 때 적용하며 같은 크기에서 사용자가 다시 여는 동작을 허용한다. 크기 조절은 UI 배율을 반영하고 취소·unmount에서 포인터 처리를 정리한다. 되돌리기는 항목을 먼저 제거한 뒤 한 번 실행하며 만료한 항목은 실행하지 않는다. 하단 탭의 이전 등록 해제가 같은 ID의 새 등록을 지우지 않아야 한다. 앱 배율 초기화는 터미널·편집기 포커스에서 가져가지 않고, Ctrl+Z는 입력 요소의 기본 되돌리기를 보존한다.
 
 - [ ] **Step 1: 실패하는 테스트**
 
