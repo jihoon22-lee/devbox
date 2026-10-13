@@ -300,6 +300,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
+name = "devbox-agents"
+version = "1.0.0-dev"
+dependencies = [
+ "devbox-core",
+ "devbox-git",
+ "devbox-protocol",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "toml",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
 name = "devbox-cli"
 version = "1.0.0-dev"
 dependencies = [

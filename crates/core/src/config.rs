@@ -8,6 +8,7 @@ pub struct Config {
     pub projects: ProjectsConfig,
     pub pc: PcConfig,
     pub terminal: TerminalConfig,
+    pub agents: AgentsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -43,6 +44,13 @@ pub struct TerminalProfile {
     pub command: String,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct AgentsConfig {
+    pub profiles: Vec<toml::Value>,
+    pub cleanup_after_close: Option<bool>,
+}
+
 fn config_error(path: &Path, message: impl ToString) -> CoreError {
     CoreError::Config {
         path: path.display().to_string(),
@@ -65,18 +73,23 @@ fn read_table(path: &Path) -> Result<toml::Table, CoreError> {
         .parse::<toml::Table>()
         .map_err(|error| config_error(path, error))?;
     // Serde structs also accept positional sequences; TOML sections must be tables.
-    for section in ["projects", "pc", "terminal"] {
+    for section in ["projects", "pc", "terminal", "agents"] {
         if table.get(section).is_some_and(|value| !value.is_table()) {
             return Err(config_error(path, format!("{section} must be a table")));
         }
     }
-    if let Some(profiles) = table
-        .get("terminal")
-        .and_then(|value| value.get("profiles"))
-        .and_then(toml::Value::as_array)
-        && profiles.iter().any(|value| !value.is_table())
-    {
-        return Err(config_error(path, "terminal profiles must be tables"));
+    for section in ["terminal", "agents"] {
+        if let Some(profiles) = table
+            .get(section)
+            .and_then(|value| value.get("profiles"))
+            .and_then(toml::Value::as_array)
+            && profiles.iter().any(|value| !value.is_table())
+        {
+            return Err(config_error(
+                path,
+                format!("{section} profiles must be tables"),
+            ));
+        }
     }
     // Validate each source before merging so an override cannot hide invalid input.
     let _: Config = toml::Value::Table(table.clone())
@@ -335,5 +348,43 @@ mod tests {
             "[terminal]\nprofiles=[['name','command']]\n",
         );
         assert!(Config::load(&paths).is_err());
+    }
+    #[test]
+    fn agents_sections_are_strict_and_profiles_override_as_a_list() {
+        let temp = tempfile::tempdir().expect("owned home");
+        let paths = paths_in(temp.path());
+        write(
+            &paths,
+            "config.toml",
+            "[agents]\ncleanup_after_close=true\n[[agents.profiles]]\nid='one'\n",
+        );
+        write(
+            &paths,
+            "config.local.toml",
+            "[[agents.profiles]]\nid='two'\n",
+        );
+        let config = Config::load(&paths).expect("agents config");
+        assert_eq!(config.agents.cleanup_after_close, Some(true));
+        assert_eq!(config.agents.profiles.len(), 1);
+        assert_eq!(
+            config.agents.profiles[0]
+                .get("id")
+                .and_then(toml::Value::as_str),
+            Some("two")
+        );
+        for input in [
+            "agents=[]",
+            "[agents]\nprofiles=[['id']]",
+            "[agents]\nprofiles=[1]",
+            "[agents]\nprofiles=1",
+            "[agents]\ncleanup_after_close='yes'",
+            "[agents]\nunknown=true",
+        ] {
+            write(&paths, "config.toml", input);
+            assert!(
+                matches!(Config::load(&paths),Err(CoreError::Config { path, .. }) if path == paths.config_dir.join("config.toml").display().to_string()),
+                "{input}"
+            );
+        }
     }
 }
