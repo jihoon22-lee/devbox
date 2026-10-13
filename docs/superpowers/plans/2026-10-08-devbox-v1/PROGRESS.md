@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 추가 6건 보완 뒤 a7921ba3 필수 CI·Windows 영향 검증 PASS. 해당 SHA 리뷰의 후속4건 보완·통합 검증 및72d1390a 필수 CI PASS. 해당 SHA 추가2건 보완 중. 패치 영구 저장 제안1건은 설계 범위 근거로 적용하지 않음 |
-| 다음 할 일 | 72d1390a 리뷰의 추가2건 보완·검토 → 새 최종 SHA 필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
+| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 추가 6건 보완 뒤 a7921ba3 필수 CI·Windows 영향 검증 PASS. 해당 SHA 리뷰의 후속4건 보완·통합 검증 및72d1390a 필수 CI PASS. 해당 SHA 추가2건 보완·독립 검토·영향 검증 완료. 새 최종 SHA 수용 대기. 패치 영구 저장 제안1건은 설계 범위 근거로 적용하지 않음 |
+| 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 수정·독립 코드 검토·영향 검사 완료. 후속 최종 SHA 수용 대기 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -274,6 +274,8 @@ PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전�
 후속0f5513f9의 CI38446690635는 Frontend·전체 E2E PASS, Linux Rust는 projects_trust의 PR teardown snapshot1개 FAIL이었다. 추가 fake-gh fixture가 새pr list 조회에도 설정을 바꾸고 URL을 출력했던 누락을 로컬에서 동일하게 재현했다. 해당 fixture의 list만 부작용 없는 빈 성공으로 분기하고 create의 설정 교체·URL 및 승인된 teardown/PR 성공/cleanupError/폴더 보존 assertions는 그대로 유지했다. 동일1개 GREEN·소유 포맷·최종 한파일 SHA의 별도 검토 PASS. Biome269파일을 확인한 뒤 최종 SHA를 갱신한다. 다른5개 Rust PR fixture도 읽기 감사해 조회 분기를 확인했다. 제품 소스는0f5513f9와 동일하며, 원본 CI 실패는0f5513f9-ci-failed.log, 로컬 RED/GREEN은pr-reconcile-followup/trust-fixture-0f5513f9에 보존한다.
 
 후속72d1390a의 CI38448024712·Windows38448024743은 모두 PASS, 해당 SHA 코드/보안 리뷰도 완료됐다. 추가2건(worktree 생성의 상속hook, 대형hook metadata의 상태 전이 rollback)이 도착했다. 확인된 설치본은 설치 전에 보완 필요를 확인해 실행하지 않았고, receipt/hash를 기록한 뒤 소유 다운로드만 제거했다. 이 SHA의 Windows 실기는 미실행이다. 리뷰4262619054: 자동 에이전트 준비의 worktree add 호출에만 core.hooksPath=/dev/null을 적용했다. 복제된 무설정 저장소에서 미승인 에이전트 시작 시 tracked post-checkout 실행을 실제 CLI RED로 재현한 뒤 차단 GREEN을 확인했다. Git/에이전트 부분 실패·파일/예약 보존·취소·재시작·불변setup snapshot·일반commit hook의 직접9개와 포맷·Biome269 PASS, 고정7파일·artifact38개 별도 검토 PASS. 기존 hook 기반 실패 fixture는 소유 child/daemon Git wrapper로 실제 checkout 뒤 파일 생성/설정 변경·오류 반환을 주어 모든 계약을 유지했다. missing-blob 대체 실험은 Git이 폴더/등록을 자체 정리해 맞지 않았고, 준비 테스트 tuple 컴파일 오류도 별도로 보존했다. 사용자/저장소 Git 설정은 바꾸지 않았고 명시적 일반 Git mutation hook 정책은 유지한다. 근거 worktree-hooks-followup/evidence.json·source-freeze.json·independent-astra-review.json. 대형hook 보완과 최종 SHA 수용은 이어서 수행한다.
+
+리뷰4262669198 hook metadata 보완: 사용자 입력64KiB·작업 admission512KiB·추가 지시의 기존4096byte 여유는 유지하고, 저장/get/list의 작업 한도만544KiB로 분리해 상태 정보32KiB 여유를 둔다. 전체 목록 응답은 여전히 실제 JSON768KiB 이하다. Claude/Codex 공통 attention 문구는 JSON escaping·UTF8·따옴표를 포함한1KiB로 제한하고 생략 표시를 붙인다. 새 session/thread/turn ID는 정확한128byte 이하 안전한 구성 요소로 검증하며 절단하지 않는다. 이미 저장된 큰 session ID와 사용자 지시 이력은 그대로 보존한다. 정확512KiB 기존 행의 대형 hook 전이 등 최초4개 RED→GREEN, Claude/Codex 전이·ID·상한/페이징·기존입력/이력·실제 RPC 직접 고유36개 및 소유 포맷 PASS. 고정7파일·artifact26개 최종 해시와 원본 검증의 독립 검토 PASS. 최종 Biome269파일 PASS. 두 보완의 Git/agents/CLI all-target Clippy PASS(6.299초, cgroup peak741,830,656byte), 기존 정상 흐름의 로컬 E2E는 이전 성공으로 구분하고 새 CI/설치본에서 영향 범위를 확인한다. 원본은 hook-metadata-*.log/json·two-review-final-clippy.log에 보존한다.
 
 ## 6. 세션 기록
 

@@ -116,6 +116,14 @@ struct Context {
     turn_id: String,
     cwd: String,
 }
+fn identity(text: &str) -> Result<(), Diagnostic> {
+    crate::limits::identity(text).map_err(|error| match error {
+        devbox_protocol::Fail::Domain(crate::model::AgentsError::InputTooLarge { .. }) => {
+            Diagnostic::LimitExceeded
+        }
+        _ => Diagnostic::Invalid,
+    })
+}
 fn safe_path(path: &Path) -> Result<(), Diagnostic> {
     for ancestor in path.ancestors() {
         match std::fs::symlink_metadata(ancestor) {
@@ -260,9 +268,7 @@ fn read(
             } else if created < binding.launch_ms {
                 return Ok(None);
             }
-            if meta.id.is_empty() {
-                return Err(Diagnostic::Invalid);
-            }
+            identity(&meta.id)?;
             if size > MAX_FILE_BYTES || size > *budget {
                 return Err(Diagnostic::LimitExceeded);
             }
@@ -289,6 +295,7 @@ fn read(
                         .turn_id
                         .filter(|s| !s.is_empty())
                         .ok_or(Diagnostic::Invalid)?;
+                    identity(&turn)?;
                     current.turn_id = Some(turn);
                     current.turn_started_ms = Some(at);
                 }

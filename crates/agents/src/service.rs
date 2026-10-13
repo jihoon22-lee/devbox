@@ -112,13 +112,13 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
     }
     let message = match event {
         AgentEvent::NeedsInput { message } if t.state == AgentState::Waiting => {
-            Some(message.clone())
+            Some(crate::limits::attention_message(message))
         }
-        AgentEvent::TurnComplete { message } if t.state == AgentState::Idle => Some(
-            message
-                .clone()
-                .unwrap_or_else(|| "다음 지시를 기다립니다".into()),
-        ),
+        AgentEvent::TurnComplete { message } if t.state == AgentState::Idle => {
+            Some(crate::limits::attention_message(
+                message.as_deref().unwrap_or("다음 지시를 기다립니다"),
+            ))
+        }
         AgentEvent::OutputWaiting if t.state == AgentState::Waiting => {
             Some("입력을 기다립니다".into())
         }
@@ -231,7 +231,7 @@ impl AgentsService {
             .await
             .internal("read agent")?
             .ok_or(AgentsError::NotFound { id: missing })?;
-        crate::limits::serialized(&task, crate::limits::TASK_BYTES)?;
+        crate::limits::serialized(&task, crate::limits::STORED_TASK_BYTES)?;
         Ok(task)
     }
     pub async fn create(self: &Arc<Self>, p: CreateAgentTask) -> Result<AgentTask> {
@@ -475,6 +475,8 @@ impl AgentsService {
                     rev: self.db.rev().to_string(),
                 });
             };
+            crate::limits::identity(&candidate.thread_id)?;
+            crate::limits::identity(&candidate.turn_id)?;
             if candidate.cwd != task.workdir {
                 return Ok(Done {
                     rev: self.db.rev().to_string(),
@@ -490,6 +492,11 @@ impl AgentsService {
         } else {
             crate::hooks::parse(p.source, &p.payload, p.code)
         };
+        for event in &events {
+            if let AgentEvent::SessionStarted { session_id } = event {
+                crate::limits::identity(session_id)?;
+            }
+        }
         self.update(&p.agent_id, move |t| {
             let mut changed = false;
             for event in events {

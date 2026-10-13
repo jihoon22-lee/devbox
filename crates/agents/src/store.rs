@@ -16,7 +16,7 @@ CREATE INDEX agents_tasks_state ON agents_tasks(state);";
 pub fn put(tx: &Transaction<'_>, task: &AgentTask) -> rusqlite::Result<()> {
     let body = serde_json::to_string(task)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    if body.len() > crate::limits::TASK_BYTES {
+    if body.len() > crate::limits::STORED_TASK_BYTES {
         return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
             std::io::Error::other("agent task serialized byte limit"),
         )));

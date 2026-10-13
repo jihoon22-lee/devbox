@@ -33,8 +33,8 @@ impl AgentsService {
             for task in tasks {
                 let task = task?;
                 let size = encode(&task)?.len();
-                if size > crate::limits::TASK_BYTES {
-                    return Ok(Err(AgentsError::InputTooLarge { limit_bytes: crate::limits::TASK_BYTES as u32 }));
+                if size > crate::limits::STORED_TASK_BYTES {
+                    return Ok(Err(AgentsError::InputTooLarge { limit_bytes: crate::limits::STORED_TASK_BYTES as u32 }));
                 }
                 // Reserve the exact JSON representation of this possible cursor and its envelope field.
                 let cursor = serde_json::to_vec(&task.id).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?.len() + ",\"nextAfterId\":".len();
