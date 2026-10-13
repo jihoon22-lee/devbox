@@ -216,3 +216,91 @@ test("agent popout mounts full detail without frame and retains gateway/renderer
   expect(window.location.search).toContain("renderer=dom");
   expect(wire.requests("agents.list")).toHaveLength(1);
 });
+
+test("grid selection keeps routing search and popout grid never mounts attention bridge", async () => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const { wire, view } = await setup("/agents?view=grid&gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  expect(await screen.findByRole("button", { name: "작업 w 터미널 미리보기" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "작업 w 터미널 미리보기" }));
+  await waitFor(() => expect(window.location.search).toContain("view=list"));
+  expect(window.location.search).toContain("id=w");
+  expect(window.location.search).toContain("gateway=");
+  expect(window.location.search).toContain("renderer=dom");
+  expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(1);
+  view.unmount();
+  const popout = await setup("/popout/agents-grid?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  expect(await screen.findByRole("region", { name: "에이전트 터미널 격자" })).toBeInTheDocument();
+  expect(popout.wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
+  expect(screen.queryByRole("button", { name: /알림 \d+개/ })).toBeNull();
+  expect(document.title).toBe("devbox");
+  popout.view.unmount();
+  vi.unstubAllGlobals();
+});
+
+test("a popout keeps attention ownership disabled after global section and waiting navigation", async () => {
+  document.title = "분리 창";
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const { wire, view } = await setup("/popout/agents-grid?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  await screen.findByRole("button", { name: "작업 w 터미널 미리보기" });
+  fireEvent.keyDown(window, { code: "KeyJ", ctrlKey: true, shiftKey: true });
+  await waitFor(() => expect(window.location.pathname).toBe("/agents"));
+  expect(window.location.search).toContain("id=w");
+  expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
+  expect(document.title).toBe("분리 창");
+  fireEvent.keyDown(window, { code: "Digit2", ctrlKey: true });
+  await waitFor(() => expect(window.location.pathname).toBe("/terminal"));
+  expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
+  view.unmount();
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    value: { metadata: { currentWindow: { label: "popout-agents-grid-main" } } },
+    configurable: true,
+  });
+  try {
+    const native = await setup("/agents?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+    await screen.findByRole("button", { name: "에이전트 3(입력 대기 2)" });
+    expect(native.wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
+    native.view.unmount();
+  } finally {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    document.title = "devbox";
+    vi.unstubAllGlobals();
+  }
+});
+
+test("opening a detail from the popout grid keeps the reusable grid window on its route", async () => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const popup = { closed: false, focus: vi.fn() };
+  const open = vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  const { view } = await setup("/popout/agents-grid?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  await userEvent.click(await screen.findByRole("button", { name: "작업 w 터미널 미리보기" }));
+  await waitFor(() =>
+    expect(open).toHaveBeenCalledWith(
+      "/popout/agent/w?gateway=ws%3A%2F%2Ffixture&renderer=dom",
+      expect.any(String),
+      expect.any(String),
+    ),
+  );
+  expect(window.location.pathname).toBe("/popout/agents-grid");
+  expect(screen.getByRole("region", { name: "에이전트 터미널 격자" })).toBeInTheDocument();
+  popup.closed = true;
+  view.unmount();
+  vi.unstubAllGlobals();
+});

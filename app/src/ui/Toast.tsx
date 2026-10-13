@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, Info, X } from "lucide-react";
 import { create } from "zustand";
+import { useNotifications } from "../features/notifications/store";
 import { Button } from "./Button";
 import s from "./Toast.module.css";
 
@@ -27,6 +28,10 @@ export const useToasts = create<Toasts>((set, get) => ({
   items: [],
   push: (input) => {
     const id = next++;
+    if (input.tone === "danger")
+      useNotifications
+        .getState()
+        .push({ key: `error:${Date.now()}:${id}`, kind: "error", title: input.title, body: input.body ?? "" });
     const duration = input.undo ? 10000 : 5000;
     const items = get().items;
     if (items.length >= 5) items.slice(0, items.length - 4).forEach((item) => get().dismiss(item.id));

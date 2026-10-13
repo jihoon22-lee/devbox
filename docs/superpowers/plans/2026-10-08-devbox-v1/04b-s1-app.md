@@ -2156,6 +2156,8 @@ git add app/src && git commit -m "feat(app): review, instruct, rebase, merge and
 
 ### Task 19: 격자 보기·알림 센터·에이전트 E2E
 
+실제 구현 보정: 격자는 닫힌 작업을 제외하고 실제 터미널 크기를 유지한 읽기 전용 미리보기를 칸 너비/1000으로 축소한다. 격자 분리 창은 별도 상세 창을 열어 격자 경로를 유지한다. 알림 소유권은 경로 대신 Tauri 창 레이블 또는 브라우저 최초 창 정체성으로 고정하며, 분리 창에서 전역 이동을 해도 구독하지 않는다. 알림 저장은 최근 100개·읽음 수 재계산·허용된 내부 이동과 다중 창의 최신 저장값을 사용하고, 쓰기 거부 시 메모리 기록을 보존한다. Task22 전에는 제목 배지만 갱신한다. E2E는 실제 `Stack`의 소유 HOME/XDG/Git/tmux fixture와 기존 `RpcClient`의 Unix 소켓 준비 경로를 사용하며 화면은 게이트웨이를 통과한다. hook 호출→목록 2초와 생성 전체 10초는 별도로 기록한다. 세 시나리오는 수집만 확인했고 실행은 Task24에서 한다. 아래 예제보다 실제 코드와 회귀 테스트를 우선한다.
+
 **Files:**
 - Create: `app/src/features/agents/AgentGrid.tsx`, `app/src/features/notifications/{store,NotificationCenter,AttentionBridge}.tsx|ts`
 - Modify: `app/src/shell/TitleBar.tsx`(🔔), `app/src/App.tsx`(`AttentionBridge`, 분리 창 경로 `/popout/agent/$id`·`/popout/agents-grid`)
@@ -2179,7 +2181,7 @@ git add app/src && git commit -m "feat(app): review, instruct, rebase, merge and
     - [새 창으로]는 `openPopout("agents-grid")`
   - 분리 창: `/popout/agent/$id`(상세 전체), `/popout/agents-grid`
 
-- [ ] **Step 1: 실패하는 테스트(알림 묶기)**
+- [x] **Step 1: 실패하는 테스트(알림 묶기)**
 
 ```ts
 // app/src/features/notifications/store.test.ts
@@ -2207,7 +2209,7 @@ test("keeps at most 100 notifications", () => {
 });
 ```
 
-- [ ] **Step 2: 구현**
+- [x] **Step 2: 구현**
 
 ```ts
 // app/src/features/notifications/store.ts
@@ -2305,7 +2307,7 @@ export function AttentionBridge() {
 
 `AttentionBridge`는 `App.tsx`에서 `!location.pathname.startsWith("/popout/")`일 때만 렌더한다.
 
-- [ ] **Step 3: E2E 준비**
+- [x] **Step 3: E2E 준비**
 
 `app/e2e/support.ts`의 `makeEnv()`에 다음을 추가한다.
 - `projects/gamma`를 실제 git 저장소로 만든다(`git init -b main`, 파일 하나 커밋, `user.name/email`은 저장소 로컬 설정).
@@ -2322,7 +2324,7 @@ hooks = "none"
 - `<home>/fake-tool.sh`는 04 Task 9의 `COMMITTING_TOOL` 앞에 권한 요청 단계를 더한 스크립트다(`SessionStart` → `Notification(permission_prompt, "needs Bash")` → `read` → 파일 커밋 → `Stop` → `sleep 600`).
 - `startDaemon`의 env에 `DEVBOX_NO_SCOPE: "1"`을 더한다.
 
-- [ ] **Step 4: E2E**
+- [x] **Step 4: E2E**
 
 ```ts
 // app/e2e/agents.spec.ts
@@ -2429,7 +2431,7 @@ test.describe("with a task waiting for input", () => {
 ```
 - SC3의 2초 기준은 hook 이벤트 수신부터 목록 반영까지다. 위 시험은 전체 생성 흐름(worktree·tmux·bash 시작 포함)을 10초로 잡고, hook → 목록 구간은 데몬 통합 시험(04 Task 8)에서 잰다(Task 24에서 수치 기록).
 
-- [ ] **Step 5: 통과·커밋·묶음 L 끝**
+- [x] **Step 5: 통과·커밋·묶음 L 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/features

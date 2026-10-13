@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 Task 1–18 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 19 에이전트 격자·알림 센터·E2E 준비 — 실행은 Task 24 통합 검증에서 |
+| 단계 | S0 및 후속 #639 완료. S1 Task 1–19 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 20 프로젝트 카드·시작 구성·Git 주소 가져오기·Windows 외부 열기 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -82,8 +82,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | I | Task 7–10 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약1.6h(구현·별도 검토·실제 hook 계약 보완·영향 검증) |
 | S1 | J | Task 11–12 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약1.0h(구현·독립 검토·복제/인증·MCP 회귀 보완) |
 | S1 | K | Task 13–16 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h |
-| S1 | L | Task 17–19 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
-| S1 | M | Task 20–21 |  | 대기 | | | |
+| S1 | L | Task 17–19 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.6h |
+| S1 | M | Task 20–21 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
 | S1 | N | Task 22–23 |  | 대기 | | | |
 | S1 | 마무리 | Task 24 → S1 PR |  | 대기 | | | |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 대기 | | | |
@@ -211,6 +211,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04b Task 16 터미널 섹션·하단·분리 창 | 예제 배치·단순 생성 effect·즉시 메뉴 전환 | 저장 배치 검증·분할/탭·CWD/벨·프로필/zellij·이름 변경/종료 확인. 프로젝트 없는 세션 필터, 생성 뒤 리비전 보존 재조회·실패와 생성 성공 분리, StrictMode/전환 중 생성 중복 차단과 수동 재시도. Shell 등록·DOM 쿼리 보존·분리 창 재사용/오류·소유 tmux 정리 | 최초 store/coordinator RED 후 직접 범위 61 PASS, 추가 하단 회귀1·포커스 회귀2 포함 고유64 PASS. 타입·변경 포맷·금지어 PASS, E2E2 수집만 확인. Menu/Dialog 실제 포커스 충돌과 생성 캐시 보완. 독립 검토의 기존 칸 선택/오래된 요청 재사용 두 P2 각각 RED→영향17 PASS·최종 재검토 PASS. 전체/E2E/Windows 실행은 Task24 미실행 |
 | 2026-10-13 | 04b Task 17 에이전트 목록·새 작업 | 예제별 중복 조회·단순 폼·공통 토큰 합산 | 공유 목록/구독·가시 시간과 조건부 통계/자원 조회, 긴급순·행 지표·재개·전역 이동·배지. 프로젝트/프로필 재검증·템플릿·중복/IME/모달 보호·모호한 생성 응답 재시도 식별자 보존. 생성 확인과 목록 실패 분리. Radix focus-scope1.3.1/dismissable-layer1.2.1만 통일 | model/dialog missing module RED, 중첩 포커스 재귀 실행은130 중단 후 동일 구현의 중복 모듈 원인을 수정. 직접 범위 고유99 PASS 후 Codex 캐시 중복 합산 P2를 원시 항목별 표시로 수정(회귀 RED3→행/model9 PASS), 최종 고유102 PASS. 타입·변경 포맷·금지어·diff 및 독립 최종 재검토 PASS. 상세/격자는Task18/19, 전체/E2E/Windows는Task24 미실행 |
 | 2026-10-13 | 04b Task 18 | 상세 탭·지시·Git 동작과 단순 확인 상태 재조회 | 공유 목록/상세 데이터·세션 상태 확인, diff 경로/hunk/절단·인용·초안 revision, frozen Git 확인과 명시적 재확인 | 초기 모듈 부재 RED 뒤 81개 직접 영향 검사 최종 통과. 별도 검토가 외부 Git 변경 후 stale patch P2를 재현: 작업별 변경/커밋/patch 갱신 완료 전 확인 차단·실패 시 명시적 재조회로 수정, 새 3개 RED→GREEN 포함 고유 84개·typecheck 통과 및 Astra 재검토 PASS. 중간 fixture/provider·공유 모달 상태·query 알림 대기 실패는 보정 후 해당 범위 재검사. 전체 검사·E2E·최종 Windows 실기는 Task24 |
+| 2026-10-13 | 04b Task 19 | 격자·알림 센터·에이전트 E2E 예제 | 읽기 전용 실제 크기 축소·닫힘 제외, 고정 창 정체성의 단일 알림 소유·격자/상세 창 분리. 최근100 저장·창 간 동기화·쓰기 실패 보존·안전한 이동. 소유 Stack/typed Unix 준비 RPC/실제 CLI hook의 독립 E2E3 | 초기 모듈 부재 RED, 오래된 분리 창의 저장 덮어쓰기와 quota 메모리 유실 RED→GREEN. 별도 검토의 팝아웃 중복 구독·격자 창 경로 유실·닫힘 필터 누락 3P2 수정·영구 회귀 RED→GREEN, 고유 38개·typecheck 통과 및 Astra 재검토 PASS. E2E3 수집만 PASS; 실행·전체 검사·실제 Windows 알림은 Task24 |
 
 ## 6. 세션 기록
 

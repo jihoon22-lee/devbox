@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { SectionLayout } from "../../shell/SectionLayout";
 import { Banner, Button, EmptyState, Kbd } from "../../ui";
+import { AgentGrid } from "./AgentGrid";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./detail/AgentDetail";
 import { useAgentsData } from "./hooks";
@@ -42,6 +43,18 @@ export function AgentsPage() {
               >
                 목록
               </Button>
+              <Button
+                size="sm"
+                aria-pressed={view === "grid"}
+                onClick={() =>
+                  void navigate({
+                    to: "/agents",
+                    search: (previous: Record<string, unknown>) => ({ ...previous, view: "grid" }),
+                  })
+                }
+              >
+                격자
+              </Button>
               <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
                 새 작업 <Kbd keys={["Ctrl", "Shift", "N"]} />
               </Button>
@@ -65,22 +78,7 @@ export function AgentsPage() {
       }
     >
       {view === "grid" ? (
-        <EmptyState
-          title="에이전트 작업을 목록에서 확인하세요"
-          body="목록에서 에이전트 작업을 선택해 확인하세요."
-          action={
-            <Button
-              onClick={() =>
-                void navigate({
-                  to: "/agents",
-                  search: (previous: Record<string, unknown>) => ({ ...previous, view: "list" }),
-                })
-              }
-            >
-              목록으로 이동
-            </Button>
-          }
-        />
+        <AgentGrid tasks={data.groups.flatMap((group) => group.items)} onOpen={select} />
       ) : id ? (
         <AgentDetail key={id} id={id} data={data} />
       ) : (

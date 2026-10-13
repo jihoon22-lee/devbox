@@ -1,9 +1,12 @@
 import { RouterProvider } from "@tanstack/react-router";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useState } from "react";
 import { AgentCommands } from "../features/agents/AgentCommands";
 import { AgentDataProvider } from "../features/agents/AgentData";
+import { PopoutAgentGrid } from "../features/agents/AgentGrid";
 import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { PopoutAgent } from "../features/agents/detail/AgentDetail";
+import { AttentionBridge } from "../features/notifications/AttentionBridge";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -21,6 +24,12 @@ import { buildRouter } from "./router";
 import { SECTIONS } from "./sections";
 import { restoreUiScale, uiBindings } from "./uiShortcuts";
 export function Shell() {
+  // Window identity survives navigation; browser popouts also have a stable target name.
+  const [ownsAttention] = useState(() =>
+    "__TAURI_INTERNALS__" in window
+      ? getCurrentWindow().label === "main"
+      : !window.name.startsWith("popout-") && !window.location.pathname.startsWith("/popout/"),
+  );
   const [palette, setPalette] = useState(false);
   const [projects, setProjects] = useState(false);
   const router = useMemo(
@@ -37,6 +46,7 @@ export function Shell() {
         popouts: [
           { path: "/popout/terminal/$id", component: PopoutTerminal },
           { path: "/popout/agent/$id", component: PopoutAgent },
+          { path: "/popout/agents-grid", component: PopoutAgentGrid },
         ],
       }),
     [],
@@ -128,6 +138,7 @@ export function Shell() {
   return (
     <ProjectDataProvider>
       <AgentDataProvider>
+        {ownsAttention && <AttentionBridge />}
         <RouterProvider router={router} />
         <AgentCommands
           navigate={(id) =>
