@@ -4,7 +4,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Component, Path},
 };
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -61,20 +61,7 @@ async fn changed_files_between(
         Some(head) => comparison_base(dir, base, head).await?,
         None => merge_base(dir, base).await?,
     };
-    let mut names_args = vec![
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--name-status",
-        "-z",
-        "-M",
-        &base,
-    ];
-    if let Some(head) = head {
-        names_args.push(head);
-    }
-    names_args.push("--");
-    let names = git(dir, &names_args).await?;
+    let mut map = changed_names(dir, &base, head).await?;
     let mut stats_args = vec![
         "diff",
         "--no-ext-diff",
@@ -89,32 +76,6 @@ async fn changed_files_between(
     }
     stats_args.push("--");
     let stats = git(dir, &stats_args).await?;
-    let mut map = BTreeMap::new();
-    let mut entries = names.split_terminator('\0');
-    while let Some(code) = entries.next() {
-        let (status, old_path) = match code.as_bytes().first() {
-            Some(b'A') => (ChangeStatus::Added, None),
-            Some(b'D') => (ChangeStatus::Deleted, None),
-            Some(b'R') => (
-                ChangeStatus::Renamed,
-                Some(entries.next().ok_or(GitError::InvalidOutput)?.into()),
-            ),
-            Some(b'U') => (ChangeStatus::Unmerged, None),
-            Some(b'M' | b'T') => (ChangeStatus::Modified, None),
-            _ => return Err(GitError::InvalidOutput),
-        };
-        let path = entries.next().ok_or(GitError::InvalidOutput)?.to_owned();
-        map.insert(
-            path.clone(),
-            FileChange {
-                path,
-                old_path,
-                status,
-                added: 0,
-                removed: 0,
-            },
-        );
-    }
     let mut entries = stats.split_terminator('\0');
     while let Some(line) = entries.next() {
         let mut fields = line.splitn(3, '\t');
@@ -180,6 +141,116 @@ async fn changed_files_between(
         );
     }
     Ok(map.into_values().collect())
+}
+async fn changed_names(
+    dir: &Path,
+    base: &str,
+    head: Option<&str>,
+) -> Result<BTreeMap<String, FileChange>, GitError> {
+    let mut names_args = vec![
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-status",
+        "-z",
+        "-M",
+        base,
+    ];
+    if let Some(head) = head {
+        names_args.push(head);
+    }
+    names_args.push("--");
+    let names = git(dir, &names_args).await?;
+    let mut map = BTreeMap::new();
+    let mut entries = names.split_terminator('\0');
+    while let Some(code) = entries.next() {
+        let (status, old_path) = match code.as_bytes().first() {
+            Some(b'A') => (ChangeStatus::Added, None),
+            Some(b'D') => (ChangeStatus::Deleted, None),
+            Some(b'R') => (
+                ChangeStatus::Renamed,
+                Some(entries.next().ok_or(GitError::InvalidOutput)?.into()),
+            ),
+            Some(b'U') => (ChangeStatus::Unmerged, None),
+            Some(b'M' | b'T') => (ChangeStatus::Modified, None),
+            _ => return Err(GitError::InvalidOutput),
+        };
+        let path = entries.next().ok_or(GitError::InvalidOutput)?.to_owned();
+        map.insert(
+            path.clone(),
+            FileChange {
+                path,
+                old_path,
+                status,
+                added: 0,
+                removed: 0,
+            },
+        );
+    }
+    Ok(map)
+}
+async fn patch_paths(
+    dir: &Path,
+    base: &str,
+    head: Option<&str>,
+    path: &str,
+) -> Result<Vec<String>, GitError> {
+    let changes = changed_names(dir, base, head).await?;
+    let Some(old) = changes
+        .get(path)
+        .and_then(|change| change.old_path.as_deref())
+    else {
+        return Ok(vec![path.to_owned()]);
+    };
+    validate_path(old)?;
+    let mut paths = vec![format!(":(literal){path}"), format!(":(literal){old}")];
+    let old_prefix = format!("{old}/");
+    let new_prefix = format!("{path}/");
+    // Either endpoint can be reused as a directory. Exclude other recorded files
+    // under it, never the selected endpoints (which can themselves be nested).
+    // Include rename sources too: a moved-away descendant is otherwise a deletion
+    // candidate when its destination lies outside this pair of pathspecs.
+    let others: BTreeSet<_> = changes
+        .values()
+        .flat_map(|change| std::iter::once(change.path.as_str()).chain(change.old_path.as_deref()))
+        .collect();
+    for other in others {
+        if other != old
+            && other != path
+            && (other.starts_with(&old_prefix) || other.starts_with(&new_prefix))
+        {
+            validate_path(other)?;
+            paths.push(format!(":(literal,exclude){other}"));
+        }
+    }
+    Ok(paths)
+}
+async fn patch_between(
+    dir: &Path,
+    base: &str,
+    head: Option<&str>,
+    path: &str,
+) -> Result<String, GitError> {
+    let paths = patch_paths(dir, base, head, path).await?;
+    let mut args = Vec::new();
+    if paths.len() > 1 {
+        // Only generated literal pathspecs may opt into exclusion syntax.
+        args.push("--no-literal-pathspecs");
+    }
+    args.extend([
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-color",
+        "-M",
+        base,
+    ]);
+    if let Some(head) = head {
+        args.push(head);
+    }
+    args.push("--");
+    args.extend(paths.iter().map(String::as_str));
+    git(dir, &args).await
 }
 fn count(s: &str) -> Result<u32, GitError> {
     if s == "-" { Ok(0) } else { number(s) }
@@ -306,21 +377,7 @@ pub async fn file_patch(dir: &Path, base: &str, path: &str) -> Result<String, Gi
             new_file_diff(dir, path, false).await
         };
     }
-    let patch = git(
-        dir,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-            "-M",
-            &base,
-            "--",
-            path,
-        ],
-    )
-    .await?;
-    Ok(patch)
+    patch_between(dir, &base, None, path).await
 }
 pub async fn log_range(dir: &Path, base: &str) -> Result<Vec<Commit>, GitError> {
     let head = resolve(dir, "HEAD").await?;
@@ -373,19 +430,5 @@ pub async fn file_patch_at(
     let root = crate::run::repository_root(dir).await?;
     let base = comparison_base(&root, base, head).await?;
     let head = resolve(&root, head).await?;
-    git(
-        &root,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-            "-M",
-            &base,
-            &head,
-            "--",
-            path,
-        ],
-    )
-    .await
+    patch_between(&root, &base, Some(&head), path).await
 }

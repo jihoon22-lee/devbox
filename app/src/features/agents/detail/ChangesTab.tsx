@@ -126,7 +126,8 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
                 aria-current={file.path === path ? "true" : undefined}
                 onClick={() => setSelected(file.path)}
               >
-                {labels[file.status]} {file.path} · +{file.added} −{file.removed} {seen(file) && "✓ 봤음"}
+                {labels[file.status]} {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path} · +{file.added} −
+                {file.removed} {seen(file) && "✓ 봤음"}
               </button>
             ))}
           </nav>

@@ -41,7 +41,7 @@ test("late file patches never replace current selection, quotes append to live d
   await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(2));
   await act(async () => wire.deliver({ type: "response", id: wire.request("agents.patch", 0).id, result: patch }));
   expect(screen.queryByText("old text")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /R new.txt/ }));
+  fireEvent.click(screen.getByRole("button", { name: /R old.txt → new.txt/ }));
   await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(3));
   await act(async () => wire.reply("agents.patch", patch));
   await screen.findByText("old text");
