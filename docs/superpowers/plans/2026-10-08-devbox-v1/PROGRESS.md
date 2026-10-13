@@ -12,7 +12,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 21f41d79 필수 CI·E2E·Windows 영향 검증 PASS. 코드·보안 리뷰 완료 후 남은 PR 제목 사전 검증 1건을 보완하고 새 최종 SHA 수용을 진행한다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
+| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 54931b6f 필수 CI·E2E·Windows 영향 검증 PASS. 코드·보안 리뷰 완료 후 squash 메시지와 인접 점검에서 찾은 정리 명령의 사전 검증·별도 검토·영향 검증을 완료했고 새 최종 SHA 수용을 진행한다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
 | 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
@@ -317,6 +317,24 @@ tmux 생성 실패는 생성 전 새 UUID의 부재를 확인하고, 응답 오�
 
 1dd89415의 Frontend·E2E CI는 통과했으나 Linux Rust의 기존 재개 회귀 2개가 실패했다(agents 114개 PASS). 새 has-session 확인에 기존 fake tmux가 무조건 성공을 답해 실제 생성 전에 중단되는 같은 실패를 로컬에서 재현했다. 대역의 정확한 UUID 존재 조회 4줄만 보완했고 제품 코드·기존 assertion은 바꾸지 않았다. 2개 parent·6개 mode GREEN, 소유 fmt·별도 검토 PASS. 원본 CI job 115544783591 로그와 RED/GREEN은 `resume-tmux-fixture-followup`에 보존했다. 다른 tmux 대역도 확인했으며 이 테스트 전용 수정으로 통과한 제품 Clippy·E2E를 반복하지 않는다. 1dd89415 설치본은 설치하지 않았고 새 최종 SHA 수용이 필요하다.
 
+21f41d79 수용 결과: CI 38470401002·Windows 38470401001 필수 검사와 E2E 모두 PASS. 출처·SHA256을 확인한 Windows 설치본에서 방향 제어 문자 표시·취소 시 무실행, 초기 옵션 모양 지시문의 `--` 뒤 원문 argv, 열린 프로젝트 선택 화면의 백그라운드 터미널 수 갱신(1,738ms)을 확인했다. 지시문은 실제 scope·hook을 사용하는 소유 fake CLI로 확인했으며 실제 모델 호출로 보고하지 않는다. 실제 tmux 생성 후 응답을 지연한 10,017ms 오류에서 새 UUID 제거·기존 세션과 rev 보존을 확인했다. 재개·squash·eligible 정리도 PASS. 소유 앱·WSL unit·설치·데이터·다운로드를 제거하고 v0.9 및 기존 빈 drop-in 디렉터리의 inode·빈 상태를 보존했다. 이전 paging/stream/desktop 근거 재사용 범위와 미실행 R1/R2·DND는 `windows-final-21f41d79/acceptance.json`·`unchanged-input-reuse.json`에 구분했다.
+
+해당 SHA 코드 리뷰 21:37:49 UTC·보안 리뷰 21:34:14 UTC 완료. 추가 P2 4264299043은 큰 PR 제목이 agent 정지·push 뒤 gh argv 한계를 넘는 실제 결함으로 독립 판단했다. 별도 task 제목의 120자 정책을 적용하거나 제목을 잘라내지 않고, 유효 PR 제목의 UTF-8 64KiB 및 NUL 검증을 부수 효과 전에 수행하도록 보완한다. 후속 검증·최종 SHA 수용 전에는 머지하지 않는다.
+
+PR 제목 보완 검증: 기존 코드에서 과대 제목·NUL·공백 포함 초과·Unicode 초과 4경우 모두 거부 전에 실행 중 terminal을 잃는 causal RED를 재현했다. 보완 후 2개 parent·8경우 PASS: 거부 시 task/rev·terminal·HUP 무시 소유 process·로컬 참조·빈 원격 저장소 유지, gh/scope stop 미호출, UTF-8/ASCII 정확히 65,536byte·기본 제목·앞뒤 공백 원문 전달. 기존 종료 계약 4개·RPC 문구 2개·TS·agents all-target Clippy PASS(최종 1.585초, cgroup peak 310,497,280byte). 생성 TS는 xtask로 갱신했다. typecheck 명령 이름을 잘못 호출한 최초 시도는 도구 오류로 보존하고 실제 tsc 검사를 완료했다. 실제 tmux·로컬 Git과 fake gh/systemctl을 사용한 경계 검증이며 실제 GitHub PR 생성으로 보고하지 않는다. 소스 7개·로그/자원 26개 hash 및 자원 내용 13쌍의 별도 검토 PASS. 원본 `agents-21f-pr-title-*.log/resources.json`·`agents-21f-pr-title-followup`.
+
+54931b6f 수용 결과: CI 38474009091·Windows 38474008935 필수 검사 및 E2E PASS. 출처·SHA256 확인 설치본의 실제 RPC에서 ASCII/Unicode 65,537byte PR 제목은 한도 65,536byte의 전용 오류, NUL은 InvalidInput을 반환했다. 세 경우 각각 task·rev 10·terminal metadata 보존, 실제 scope 활성·정확한 tmux UUID 생존·로컬 참조 불변·소유 bare remote 비어 있음·teardown 미실행을 확인했다. 확인 폐기는 승인된 teardown과 함께 소유 자원을 정리했다. 앱/자식 12개 종료, Windows/WSL/설치/다운로드 제거, v0.9·기존 빈 디렉터리 보존 PASS. 잘못된 fingerprint 필드·이미 완료된 폐기 뒤 정리 후보 기대·종료 직후 PowerShell 호출 재시도는 helper 오류로 보존했다. 원본 `windows-final-54931b6f/acceptance.json`. 이전 기능 근거 재사용과 실기 미실행 구분은 유지한다.
+
+해당 SHA 코드 리뷰 22:05:46 UTC·보안 리뷰 22:02:40 UTC 완료. 추가 P2 4264536612는 squash 메시지의 NUL/argv 크기 초과가 quiesce와 Git 작업 뒤 실패하는 실제 결함으로 별도 판단했다. squash에 사용되는 메시지만 UTF-8 64KiB·NUL 사전 검증하고, 기본 메시지·원문·Git 자체 정리 정책 및 Merge/Rebase에서 무시하는 메시지 계약은 보존한다. 후속 보완·검증·최종 SHA 수용 전에는 머지하지 않는다.
+
+같은 원인의 인접 argv 경계 별도 점검에서 승인된 `agent.teardown`도 `bash -lc`의 단일 인자로 전달되며 정지·공개·앞선 정리 후 NUL/크기 실패가 발생할 수 있음을 확인했다. 실제 사용할 불변 승인 snapshot의 정리 명령 전체를 부수 효과 전에 검사한다. 자동 정리를 사용하지 않는 merge/PR 및 작업공간 없는 정리처럼 해당 명령을 실행하지 않는 경로는 변경하지 않으며, 프로젝트 전체의 setup/test나 신뢰 정책으로 범위를 확대하지 않는다. PR 본문은 파일 경로로 전달되고 다른 Git 식별자는 앞선 읽기 전용 검증에서 확인돼 같은 추가 사례가 없다는 점도 별도 점검했다. 이 점검에 따른 보완과 회귀 결과는 아래에 구분한다.
+
+squash 메시지 보완 `2aa2e8f1`: effective 메시지를 한 번 결정해 squash에만 UTF-8 64KiB/NUL 검증을 수행하고 같은 문자열을 전달한다. 실제 tmux·Git과 통제된 scope 대역의 causal RED에서 140KiB/NUL은 정지 뒤 실패, 65,537byte ASCII/Unicode는 기존 코드가 실제 종료까지 허용함을 구분했다. 수정 후 거부 4경우는 task/runtime/rev/terminal/base/head/index/worktree·scope stop 미호출을 보존했다. 허용 6경우는 실제 Git의 정확한 전달 argv, Unicode/ASCII 65,536byte·기본·여러 줄 메시지 및 Merge/Rebase의 무시 계약을 확인했다. 새 parent 2개·10경우, 기존 종료 parent 4개·10경우, 문구 2개·TS·xtask·fmt·agents all-target Clippy PASS(3.962초, cgroup peak 842,657,792byte). 트리 OID를 commit 전용 helper로 조회한 오류와 성공 후 clean index 불변을 기대한 과도한 assertion은 fixture 수정으로 구분해 보존했다. gen-ts 자원 파일은 보존된 원본 supervisor JSON에서 복원해 출처를 기록했다. 별도 소스 7개·로그/자원 22개 hash와 원본 receipt 11쌍 검토 PASS, Biome 274 PASS 후 과제 커밋. 원본 `agents-54931-squash-message-followup`·`agents-54931-squash-message-*`. 이 커밋은 정리 명령 보완과 묶어 최종 수용하므로 단독 push하지 않았다.
+
+정리 명령 사전 검사 보완: 실제 사용할 승인 snapshot의 모든 teardown 명령을 UTF-8 64KiB·NUL 규칙으로 검사하고 전용 오류로 안내한다. authorize_teardown, 수동 정리의 전체 선택 검증 뒤·변경 loop 전, 실제 명령 runner의 첫 명령 전에 같은 순수 검사를 적용했다. 새 parent 3개·15경우 PASS: 잘못된 두 번째 명령 10경우의 첫 sentinel·정지·task/runtime/rev/base/head/index/worktree·원격·앞선 선택 브랜치 보존, Unicode/ASCII 정확히 64KiB 원문 실행, 자동 정리=false Merge/PR·브랜치 단독 정리의 미사용 미승인 설정 허용. 초기 및 프로필 격리 후 causal RED에서 첫 sentinel이 실행됐고, 기존 Merge/PR은 공개·종료 뒤 cleanupError만 남기는 경우도 재현했다. 기존 descendant timeout 1개·실제 CLI cleanup 5개·불변 승인 snapshot merge 1개·문구 2개·TS·xtask·소유 fmt·agents all-target Clippy PASS(4.217초, cgroup peak 665,116,672byte). 테스트 bash는 원문 argv를 기록하고 실제 /bin/bash를 --noprofile/--norc로 실행하며 HOME을 바꾸지 않는다. 이 테스트 전용 수정 뒤 새 15경우를 다시 통과했고 제품 명령·신뢰 정책은 바꾸지 않았다. 원본 `agents-teardown-preflight-followup`·`agents-teardown-preflight-*`.
+
+정리 명령 소스 8개·로그/자원 24개 hash와 자원·원본 supervisor receipt 12쌍의 독립 검토 PASS. 두 보완을 통합한 실제 브라우저 생성→대기→지시→diff→squash 종료 E2E PASS(시나리오 3.9초, 감독 16.563초, cgroup peak 1,376,993,280byte). 이전 정상 흐름의 영향 밖 검사는 재실행하지 않았다. 원본 `message-teardown-final-e2e.log/resources.json`. 최종 SHA 필수 CI·자동 리뷰·Windows 영향 검증은 후속 수용 단계다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.
@@ -358,9 +376,3 @@ tmux 생성 실패는 생성 전 새 UUID의 부재를 확인하고, 응답 오�
 | 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
 
 다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 이 준비 검토 당시의 S0b 사용자 확인 gate는 2026-10-13 결정으로 대체하며, 설계 변경이 필요한 실패는 별도로 보고한다.
-
-21f41d79 수용 결과: CI 38470401002·Windows 38470401001 필수 검사와 E2E 모두 PASS. 출처·SHA256을 확인한 Windows 설치본에서 방향 제어 문자 표시·취소 시 무실행, 초기 옵션 모양 지시문의 `--` 뒤 원문 argv, 열린 프로젝트 선택 화면의 백그라운드 터미널 수 갱신(1,738ms)을 확인했다. 지시문은 실제 scope·hook을 사용하는 소유 fake CLI로 확인했으며 실제 모델 호출로 보고하지 않는다. 실제 tmux 생성 후 응답을 지연한 10,017ms 오류에서 새 UUID 제거·기존 세션과 rev 보존을 확인했다. 재개·squash·eligible 정리도 PASS. 소유 앱·WSL unit·설치·데이터·다운로드를 제거하고 v0.9 및 기존 빈 drop-in 디렉터리의 inode·빈 상태를 보존했다. 이전 paging/stream/desktop 근거 재사용 범위와 미실행 R1/R2·DND는 `windows-final-21f41d79/acceptance.json`·`unchanged-input-reuse.json`에 구분했다.
-
-해당 SHA 코드 리뷰 21:37:49 UTC·보안 리뷰 21:34:14 UTC 완료. 추가 P2 4264299043은 큰 PR 제목이 agent 정지·push 뒤 gh argv 한계를 넘는 실제 결함으로 독립 판단했다. 별도 task 제목의 120자 정책을 적용하거나 제목을 잘라내지 않고, 유효 PR 제목의 UTF-8 64KiB 및 NUL 검증을 부수 효과 전에 수행하도록 보완한다. 후속 검증·최종 SHA 수용 전에는 머지하지 않는다.
-
-PR 제목 보완 검증: 기존 코드에서 과대 제목·NUL·공백 포함 초과·Unicode 초과 4경우 모두 거부 전에 실행 중 terminal을 잃는 causal RED를 재현했다. 보완 후 2개 parent·8경우 PASS: 거부 시 task/rev·terminal·HUP 무시 소유 process·로컬 참조·빈 원격 저장소 유지, gh/scope stop 미호출, UTF-8/ASCII 정확히 65,536byte·기본 제목·앞뒤 공백 원문 전달. 기존 종료 계약 4개·RPC 문구 2개·TS·agents all-target Clippy PASS(최종 1.585초, cgroup peak 310,497,280byte). 생성 TS는 xtask로 갱신했다. typecheck 명령 이름을 잘못 호출한 최초 시도는 도구 오류로 보존하고 실제 tsc 검사를 완료했다. 실제 tmux·로컬 Git과 fake gh/systemctl을 사용한 경계 검증이며 실제 GitHub PR 생성으로 보고하지 않는다. 소스 7개·로그/자원 26개 hash 및 자원 내용 13쌍의 별도 검토 PASS. 원본 `agents-21f-pr-title-*.log/resources.json`·`agents-21f-pr-title-followup`.
