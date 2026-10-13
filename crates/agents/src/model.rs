@@ -306,6 +306,8 @@ domain_error! {
         InputTooLarge { limit_bytes: u32 } = "agents.input_too_large",
         PrTitleTooLong { limit_bytes: u32 } = "agents.pr_title_too_long",
         SquashMessageTooLong { limit_bytes: u32 } = "agents.squash_message_too_long",
+        TeardownCommandTooLong { limit_bytes: u32 } = "agents.teardown_command_too_long",
+        TeardownCommandInvalid = "agents.teardown_command_invalid",
         DeliveryUnknown = "agents.delivery_unknown",
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",

@@ -312,6 +312,9 @@ impl AgentsService {
                 }
             }
         }
+        if let Some(snapshot) = &snapshot {
+            crate::limits::teardown_commands(&snapshot.config().agent.teardown)?;
+        }
         for task in selected {
             if !task
                 .worktree_path

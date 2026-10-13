@@ -10,6 +10,9 @@ mod pr_title_tests;
 #[path = "squash_message_tests.rs"]
 mod squash_message_tests;
 
+#[path = "teardown_preflight_tests.rs"]
+mod teardown_preflight_tests;
+
 #[test]
 fn review_close_without_git_cleanup_stops_owned_terminal_and_scope() {
     cases(&["merge", "pr"]);
@@ -36,6 +39,10 @@ fn review_close_rechecks_confirmed_state_after_quiesce() {
 }
 
 async fn close_case(mode: &str) {
+    if mode.starts_with("teardown-") {
+        teardown_preflight_tests::case(mode).await;
+        return;
+    }
     if mode.starts_with("squash-message-") {
         squash_message_tests::case(mode).await;
         return;
@@ -257,7 +264,7 @@ fn cases(modes: &[&str]) {
         r#"#!/bin/sh
 case "$2" in
  stop) printf '%s\n' "$3" >> "$DEVBOX_CLOSE_SCOPE_MARKER"
-   case "$DEVBOX_CLOSE_CASE" in squash-message-*) ;; *fails|*ended) exit 23;; esac
+   case "$DEVBOX_CLOSE_CASE" in squash-message-*|teardown-*) ;; *fails|*ended) exit 23;; esac
    kill -TERM "$DEVBOX_CLOSE_SCOPE_PID" || exit $?
    case "$DEVBOX_CLOSE_CASE" in
     *late-head) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
@@ -310,7 +317,34 @@ os.execv('/usr/bin/git',['git',*args])
 "#).expect("owned transparent git argv receipt");
         fs::set_permissions(git, fs::Permissions::from_mode(0o700)).expect("wrapper mode");
     }
-    let test = if modes[0].starts_with("squash-message-") {
+    if modes[0].starts_with("teardown-") {
+        let bash = root.path().join("bash");
+        fs::write(
+            &bash,
+            r#"#!/usr/bin/env python3
+import os,sys,pathlib,json
+args=sys.argv[1:]
+if args and args[0]=='-lc':
+    p=pathlib.Path(os.environ['DEVBOX_TEARDOWN_RECEIPT'])
+    values=json.loads(p.read_text()) if p.exists() else []
+    values.append(args[1]);p.write_text(json.dumps(values))
+os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
+"#,
+        )
+        .expect("owned transparent bash argv receipt");
+        fs::set_permissions(bash, fs::Permissions::from_mode(0o700)).expect("wrapper mode");
+    }
+    let test = if modes[0].starts_with("teardown-") {
+        if modes[0].starts_with("teardown-cleanup-") && modes[0].ends_with("fails")
+            || modes[0].starts_with("teardown-runner-")
+        {
+            "teardown_preflight_tests::teardown_lists_preflight_runner_and_entire_cleanup_selection"
+        } else if modes[0].ends_with("fails") {
+            "teardown_preflight_tests::teardown_lists_reject_before_discard_merge_or_pr_side_effects"
+        } else {
+            "teardown_preflight_tests::teardown_bounds_preserve_snapshot_bytes_and_unused_paths"
+        }
+    } else if modes[0].starts_with("squash-message-") {
         if modes[0].ends_with("fails") {
             "squash_message_tests::squash_messages_reject_before_quiesce_or_git_mutation"
         } else {
@@ -382,6 +416,10 @@ os.execv('/usr/bin/git',['git',*args])
             ])
             .env(CHILD, mode)
             .env(
+                "DEVBOX_TEARDOWN_RECEIPT",
+                root.path().join(format!("teardown-{mode}")),
+            )
+            .env(
                 "DEVBOX_SQUASH_RECEIPT",
                 root.path().join(format!("squash-{mode}")),
             )
@@ -409,7 +447,14 @@ os.execv('/usr/bin/git',['git',*args])
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             ));
-        } else if (mode.starts_with("pr-title-") || mode.starts_with("squash-message-"))
+        } else if mode == &"teardown-cleanup-branch-unused" {
+            assert!(
+                owner.scope.try_wait().expect("scope state").is_none(),
+                "branch-only cleanup must preserve unselected runtime"
+            );
+        } else if (mode.starts_with("pr-title-")
+            || mode.starts_with("squash-message-")
+            || mode.starts_with("teardown-"))
             && mode.ends_with("fails")
         {
             assert!(

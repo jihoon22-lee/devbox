@@ -66,6 +66,14 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "병합 커밋 메시지가 너무 깁니다.",
     action: "메시지를 UTF-8 기준 64KiB 이내로 줄여 주세요.",
   },
+  "agents.teardown_command_too_long": {
+    title: "정리 명령이 너무 깁니다.",
+    action: "명령을 UTF-8 기준 64KiB 이내로 줄여 주세요.",
+  },
+  "agents.teardown_command_invalid": {
+    title: "정리 명령에 사용할 수 없는 문자가 있습니다.",
+    action: "널 문자를 제거해 주세요.",
+  },
   "agents.delivery_unknown": {
     title: "지시 전달 결과를 확인할 수 없습니다.",
     action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",

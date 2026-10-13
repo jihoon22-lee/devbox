@@ -44,6 +44,20 @@ pub(crate) fn squash_message(message: &str) -> Result<()> {
     }
     Ok(())
 }
+pub(crate) fn teardown_commands(commands: &[String]) -> Result<()> {
+    for command in commands {
+        if command.len() > INPUT_BYTES {
+            return Err(AgentsError::TeardownCommandTooLong {
+                limit_bytes: INPUT_BYTES as u32,
+            }
+            .into());
+        }
+        if command.contains('\0') {
+            return Err(AgentsError::TeardownCommandInvalid.into());
+        }
+    }
+    Ok(())
+}
 pub(crate) fn serialized<T: Serialize>(value: &T, limit: usize) -> Result<()> {
     let bytes = serde_json::to_vec(value)
         .map_err(|e| Fail::Internal(format!("measure agent response: {e}")))?;

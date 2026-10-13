@@ -39,6 +39,7 @@ impl AgentsService {
         if config.project_id() != task.project_id {
             return Err(AgentsError::UnsafeWorktree.into());
         }
+        crate::limits::teardown_commands(&config.config().agent.teardown)?;
         for command in &config.config().agent.teardown {
             bounded_command("bash", &["-lc", command], Some(Path::new(&task.workdir))).await?;
         }
@@ -60,6 +61,9 @@ impl AgentsService {
             .is_some_and(|s| s.canonical_path() != project.path)
         {
             return Err(AgentsError::UnsafeWorktree.into());
+        }
+        if let Some(snapshot) = &snapshot {
+            crate::limits::teardown_commands(&snapshot.config().agent.teardown)?;
         }
         Ok(snapshot)
     }
