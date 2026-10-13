@@ -2,6 +2,9 @@ use super::*;
 use devbox_core::{Instance, Migration, paths::Env};
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 
+#[path = "action_review_tests.rs"]
+mod action_review_tests;
+
 #[tokio::test]
 async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
     let fixture = Fixture::new().await;

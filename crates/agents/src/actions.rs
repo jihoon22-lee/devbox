@@ -16,6 +16,26 @@ pub(crate) fn open(task: &AgentTask) -> Result<()> {
     }
     Ok(())
 }
+async fn rebase_markers_absent(worktree: &Path) -> Result<bool> {
+    for marker in ["rebase-merge", "rebase-apply"] {
+        let path = devbox_git::run::git(
+            worktree,
+            &["rev-parse", "--path-format=absolute", "--git-path", marker],
+        )
+        .await
+        .map_err(git_failure)?;
+        match std::fs::symlink_metadata(Path::new(path.trim_end_matches('\n'))) {
+            Ok(_) => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => {
+                return Err(Fail::Internal(format!(
+                    "inspect owned rebase markers: {error}"
+                )));
+            }
+        }
+    }
+    Ok(true)
+}
 impl AgentsService {
     pub async fn review(&self, id: &str) -> Result<AgentTask> {
         let _guard = self.actions.lock().await;
@@ -121,7 +141,17 @@ impl AgentsService {
         let outcome = match result {
             Ok(outcome) => outcome,
             Err(error) => {
-                self.mark_rebase(id, false).await?;
+                // A failed/timed-out command can leave our rebase active. Unknown
+                // inspection retains recovery ownership; abort still checks head-name.
+                match rebase_markers_absent(&wt).await {
+                    Ok(true) => self.mark_rebase(id, false).await?,
+                    Ok(false) => (),
+                    Err(inspection) => tracing::warn!(
+                        ?inspection,
+                        agent = id,
+                        "retained owned rebase after failed marker inspection"
+                    ),
+                }
                 return Err(git_failure(error));
             }
         };
@@ -273,6 +303,12 @@ impl AgentsService {
         let repo = Path::new(&project.path);
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
+        if !devbox_git::status(&wt).await.map_err(git_failure)?.clean {
+            return Err(AgentsError::WorktreeDirty {
+                files: self.dirty_paths(&wt).await?,
+            }
+            .into());
+        }
         let base = p
             .expect
             .base_oid

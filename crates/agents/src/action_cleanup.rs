@@ -129,6 +129,25 @@ impl AgentsService {
         devbox_git::mutate::worktree_remove(Path::new(&project.path), &wt, false)
             .await
             .map_err(git_failure)?;
+        devbox_git::mutate::delete_branch_at(
+            Path::new(&project.path),
+            &branch,
+            task.closed_head_oid
+                .as_deref()
+                .ok_or(AgentsError::UnsafeWorktree)?,
+        )
+        .await
+        .map_err(git_failure)?;
+        self.record_resources(id, crate::tracker::Resources::Planned)
+            .await?;
+        self.update(id, |task| {
+            if task.cleanup_error.take().is_none() {
+                return false;
+            }
+            task.updated_ms = now_ms();
+            true
+        })
+        .await?;
         Ok(())
     }
 }

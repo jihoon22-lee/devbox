@@ -255,6 +255,8 @@ PR #640 승인된 신뢰 확인 추가(2026-10-14): 프로젝트 정규 경로·
 
 PR #640 추가 터미널 제목 상한: 공개/내부 생성과 이름 변경의 상태 변경 전에 Unicode scalar256자 상한을 검사하고, 허용된 원문은 자르거나 바꾸지 않는다. 자동 cwd/zellij 제목에도 같은 검사와 typed `terminal.title_too_long{limit:256}`·한국어 안내를 적용했다. 기존 무제한 create/rename의 RED2와 기존 정상1을 확인한 뒤 Rust8·메시지2 PASS, 생성기·해당 crate Clippy·fmt·변경 Biome PASS 및 최종6파일 독립 검토 PASS. 근거 `windows-final-7c9dabff/terminal-title-frozen.json`과 원본 실패/후속 로그. 새 SHA Windows 검증은 아직이다.
 
+PR #640 추가 Git/에이전트 보완: 자동 정리는 종료 때 확인한 OID와 같은 로컬 ref만 CAS로 삭제하고 실제 정리 뒤 예약을 해제한다. 이동하거나 재생성된 ref는 보존하고 cleanupError를 남긴다. 사용자 branch.* 설정은 보존하며, 선택적으로 검토했던 설정 삭제 실험은 경합 우려로 철회해 최종 통과 근거와 분리했다. rebase 명령 실패 뒤 실제 작업 폴더의 rebase marker가 남거나 조회가 불확실하면 소유권을 유지해 중단 복구를 허용한다. PR 생성은 검토와 Git push 직전 양쪽에서 tracked/index/untracked 변경을 거부한다. 최초 회귀4개 RED→GREEN, ref 안전성4개·실제 CLI squash/rebase/승인 정리 및 PR 호출 영향 검사 PASS, 해당2개 crate Clippy·fmt·전체 Biome266파일 PASS, 고정6파일 독립 검토 PASS. 원본 실패와 선택적 실험은 agents-final-* artifact에 보존했다. 후속 최종 SHA CI·Windows 재수용은 아직이다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

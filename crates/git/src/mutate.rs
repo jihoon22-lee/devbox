@@ -218,6 +218,64 @@ pub async fn delete_branch(repo: &Path, branch: &str, force: bool) -> Result<(),
     .await?;
     Ok(())
 }
+async fn branch_head(repo: &Path, reference: &str) -> Result<Option<String>, GitError> {
+    let (code, head, stderr) =
+        crate::run::output(repo, &["rev-parse", "--verify", "--quiet", reference]).await?;
+    match code {
+        0 => Ok(Some(head.trim_end_matches('\n').into())),
+        1 => Ok(None),
+        _ => Err(GitError::Failed {
+            op: "inspect cleanup branch".into(),
+            stderr,
+        }),
+    }
+}
+/// Configured post-close cleanup may delete unmerged squash/PR sources, but only
+/// the confirmed local ref. Atomic expected-OID deletion preserves later commits.
+pub async fn delete_branch_at(
+    repo: &Path,
+    branch: &str,
+    expected_oid: &str,
+) -> Result<(), GitError> {
+    branch_valid(repo, branch).await?;
+    if !matches!(expected_oid.len(), 40 | 64)
+        || !expected_oid.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(GitError::InvalidInput);
+    }
+    let reference = format!("refs/heads/{branch}");
+    let worktrees = git(repo, &["worktree", "list", "--porcelain", "-z"]).await?;
+    if worktrees
+        .split_terminator('\0')
+        .any(|field| field == format!("branch {reference}"))
+    {
+        return Err(GitError::UnsafeWorktree);
+    }
+    match branch_head(repo, &reference).await? {
+        None => return Ok(()),
+        Some(head) if head != expected_oid => return Err(GitError::StateChanged),
+        Some(_) => (),
+    }
+    if let Err(error) = git(
+        repo,
+        &["update-ref", "--no-deref", "-d", &reference, expected_oid],
+    )
+    .await
+    {
+        return match branch_head(repo, &reference).await? {
+            None => Ok(()),
+            Some(head) if head != expected_oid => Err(GitError::StateChanged),
+            Some(_) => Err(error),
+        };
+    }
+    // Preserve a ref re-created after deletion; do not release its reservation.
+    if branch_head(repo, &reference).await?.is_some() {
+        return Err(GitError::StateChanged);
+    }
+    // Local branch.* configuration can be user-authored or concurrently replaced.
+    // Keep it; ref deletion already removes the corresponding reflog.
+    Ok(())
+}
 pub async fn unmerged_count(repo: &Path, branch: &str, base: &str) -> Result<u32, GitError> {
     let a = resolve(repo, branch).await?;
     let b = resolve(repo, base).await?;
@@ -395,6 +453,7 @@ pub async fn push_and_pr_at(
     {
         return Err(GitError::StateChanged);
     }
+    clean(worktree, false).await?;
     let gh = which::which("gh").map_err(|_| GitError::GhMissing)?;
     let mut file =
         tempfile::NamedTempFile::new().map_err(|e| crate::run::internal(e, "create PR body"))?;
