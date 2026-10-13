@@ -1,4 +1,12 @@
-import { ByteEcho, floodVerdict, percentile } from "../acceptance/measurement";
+import { ByteEcho, floodVerdict, MarkerScanner, percentile } from "../acceptance/measurement";
+
+test("producer marker is found before trimming a large callback and across chunk boundaries", () => {
+  const scanner = new MarkerScanner("DONE-owned");
+  expect(scanner.receive(new TextEncoder().encode("DONE-owned" + "x".repeat(32000)))).toBe(true);
+  const split = new MarkerScanner("DONE-owned");
+  expect(split.receive(new TextEncoder().encode("x".repeat(32000) + "DONE-"))).toBe(false);
+  expect(split.receive(new TextEncoder().encode("owned" + "x".repeat(32000)))).toBe(true);
+});
 
 test("echo timing waits for matching one-byte reception and includes frontend send", async () => {
   let clock = 10;

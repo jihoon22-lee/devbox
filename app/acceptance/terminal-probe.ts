@@ -1,6 +1,6 @@
 import type { RpcClient } from "../src/rpc/client";
 import type { ClientStream } from "../src/rpc/client-streams";
-import { ByteEcho, floodVerdict, type PingSample, percentile } from "./measurement";
+import { ByteEcho, floodVerdict, MarkerScanner, type PingSample, percentile } from "./measurement";
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const encoder = new TextEncoder();
@@ -71,7 +71,7 @@ async function attach(
     resolveReady = resolve;
     rejectReady = reject;
   });
-  let tail = "";
+  const scanner = new MarkerScanner(marker);
   const timer = setTimeout(() => rejectReady(new Error("Fixture readiness timed out")), 10000);
   try {
     const stream = await client.openStream(
@@ -81,9 +81,7 @@ async function attach(
         onData(bytes, ack) {
           echo.receive(bytes);
           onBytes?.(bytes);
-          // Retain only a bounded tail for readiness/producer markers, not 100MB output.
-          tail = (tail + new TextDecoder().decode(bytes)).slice(-4096);
-          if (tail.includes(marker)) resolveReady();
+          if (scanner.receive(bytes)) resolveReady();
           ack();
         },
         onEnd() {
@@ -168,12 +166,11 @@ export async function beginFlood() {
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
   });
-  let tail = "";
+  const scanner = new MarkerScanner(doneMarker);
   let finished = 0;
   try {
     const stream = await attach(client, id, ready, receiver, (bytes) => {
-      tail = (tail + new TextDecoder().decode(bytes)).slice(-4096);
-      if (!finished && tail.includes(doneMarker)) {
+      if (!finished && scanner.receive(bytes)) {
         finished = Date.now();
         if (flood) flood.finished = finished;
         resolveDone();

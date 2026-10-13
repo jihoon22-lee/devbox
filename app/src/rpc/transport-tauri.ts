@@ -160,7 +160,9 @@ export function tauriTransport(): Transport {
       if (!active || !a?.open) throw new Error("Tauri transport is not open");
       decodeFrame(frame);
       const owned = frame.slice();
-      if (!a.sender?.enqueue(owned, () => invoke("rpc_send", owned, { headers: { "x-devbox-attachment": a.id } }))) {
+      if (
+        !a.sender?.enqueue(owned, (queued) => invoke("rpc_send", queued, { headers: { "x-devbox-attachment": a.id } }))
+      ) {
         throw new Error("Tauri transport queue is full");
       }
     },

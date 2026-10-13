@@ -1,5 +1,18 @@
 import type { ClientStream } from "../src/rpc/client-streams";
 
+/** Bounded terminal-output marker detection across transport chunks. */
+export class MarkerScanner {
+  private tail = "";
+  private decoder = new TextDecoder();
+  constructor(private marker: string) {}
+  receive(bytes: Uint8Array): boolean {
+    const text = this.tail + this.decoder.decode(bytes, { stream: true });
+    const found = text.includes(this.marker);
+    this.tail = text.slice(-4096);
+    return found;
+  }
+}
+
 export function percentile(samples: number[], fraction: number): number {
   if (!samples.length || samples.some((n) => !Number.isFinite(n) || n < 0)) throw new Error("Invalid samples");
   if (fraction <= 0 || fraction > 1) throw new Error("Invalid percentile");

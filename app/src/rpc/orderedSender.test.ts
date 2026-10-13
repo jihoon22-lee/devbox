@@ -1,3 +1,4 @@
+import { decodeFrame, FRAME, jsonFrame, streamFrame } from "./frame";
 import { createOrderedSender } from "./orderedSender";
 
 function deferred() {
@@ -83,4 +84,70 @@ test("synchronous invocation errors fail once", () => {
     throw new Error("bridge closed");
   });
   expect(failure).toHaveBeenCalledOnce();
+});
+
+test("tiny consumed chunks coalesce queued credits by stream without overflowing", async () => {
+  const failure = vi.fn();
+  const sender = createOrderedSender(failure);
+  const first = deferred();
+  const delivered: Uint8Array[] = [];
+  const send = vi.fn(async (frame: Uint8Array) => {
+    delivered.push(frame);
+  });
+  sender.enqueue(jsonFrame({ blocked: true }), () => first.promise);
+  for (let i = 0; i < 2000; i++) {
+    expect(sender.enqueue(jsonFrame({ type: "streamCredit", stream: i % 2, bytes: 1 }, FRAME.control), send)).toBe(
+      true,
+    );
+  }
+  expect(failure).not.toHaveBeenCalled();
+  first.resolve();
+  await flush();
+  expect(delivered.map((frame) => JSON.parse(new TextDecoder().decode(decodeFrame(frame).body)))).toEqual([
+    { type: "streamCredit", stream: 0, bytes: 1000 },
+    { type: "streamCredit", stream: 1, bytes: 1000 },
+  ]);
+});
+
+test("input, FIN, JSON and full close remain FIFO barriers between credit batches", async () => {
+  const sender = createOrderedSender(vi.fn());
+  const first = deferred();
+  const delivered: Uint8Array[] = [];
+  const send = async (frame: Uint8Array) => {
+    delivered.push(frame);
+  };
+  const credit = (bytes: number) => jsonFrame({ type: "streamCredit", stream: 9, bytes }, FRAME.control);
+  sender.enqueue(jsonFrame({ blocked: true }), () => first.promise);
+  const barriers = [
+    streamFrame(9, 0, Uint8Array.of(113)),
+    streamFrame(9, 1, new Uint8Array()),
+    jsonFrame({ request: true }),
+    jsonFrame({ type: "streamClose", stream: 9 }, FRAME.control),
+  ];
+  for (const barrier of barriers) {
+    sender.enqueue(credit(1), send);
+    sender.enqueue(credit(2), send);
+    sender.enqueue(barrier, send);
+  }
+  first.resolve();
+  for (let i = 0; i < 10; i++) await flush();
+  expect(delivered).toEqual(barriers.flatMap((barrier) => [credit(3), barrier]));
+});
+
+test("a merged credit never exceeds the stream window", async () => {
+  const sender = createOrderedSender(vi.fn());
+  const first = deferred();
+  const delivered: Uint8Array[] = [];
+  const send = async (frame: Uint8Array) => {
+    delivered.push(frame);
+  };
+  sender.enqueue(jsonFrame({ blocked: true }), () => first.promise);
+  for (let i = 0; i < 32; i++)
+    sender.enqueue(jsonFrame({ type: "streamCredit", stream: 9, bytes: 8192 }, FRAME.control), send);
+  sender.enqueue(jsonFrame({ type: "streamCredit", stream: 9, bytes: 1 }, FRAME.control), send);
+  first.resolve();
+  await flush();
+  expect(delivered.map((frame) => JSON.parse(new TextDecoder().decode(decodeFrame(frame).body)).bytes)).toEqual([
+    262144, 1,
+  ]);
 });
