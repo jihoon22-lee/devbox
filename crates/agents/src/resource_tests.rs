@@ -499,3 +499,6 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
         "owned-checkout-data"
     );
 }
+
+#[path = "prepare_binding_tests.rs"]
+mod prepare_binding_tests;
