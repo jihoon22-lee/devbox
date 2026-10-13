@@ -2668,15 +2668,18 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): create agen
   - `agents.pr{ id, title?, body?, expect: ReviewExpect }`(mutation, always) → `closed(pullRequest)`, `prUrl`
   - `agents.discard_check{ id }`(query) → `{ unmergedCommits: u32, dirtyFiles: u32, headOid: String }`
   - `agents.discard{ id, expect: ReviewExpect }`(mutation, always): `headOid`·`unmergedCommits`가 확인 때와 다르면 `agents.state_changed`. 같으면 세션 종료, scope 정지, teardown, worktree 강제 제거, 브랜치 삭제 → `closed(discarded)`
+    - worktree 없는 작업은 Task 18의 "세션 끝내기"다. 현재 프로젝트 HEAD·미병합 개수를 재확인한 뒤 소유 세션·scope만 종료한다. 프로젝트 checkout·브랜치·수정 파일을 보존하고 teardown은 실행하지 않는다. 원래 기준 브랜치와 다른 브랜치를 checkout한 경우도 새 확인 정보가 일치하면 종료할 수 있다.
+    - 이미 사라진 scope는 정확한 소유 unit의 `LoadState=not-found`를 확인하면 정리 완료로 취급한다. 실제 정지 실패·버스 오류는 보존하며, 부분 정리 실패는 닫힌 기록의 `cleanupError`에 남긴다.
   - `ReviewExpect { headOid: String, baseOid?: String, unmergedCommits?: u32 }`: 사용자가 확인 대화상자에서 본 상태(01-design §5.2). 병합은 `baseOid`, 폐기는 `unmergedCommits`가 필수다.
   - `agents.test{ id }`(mutation): `[agent] test` 명령을 같은 작업 폴더의 새 터미널 세션에서 실행한다. 반환은 터미널 ID다(S2가 runtime으로 바꾼다).
   - `agents.cleanup_candidates{ projectId }`(query) → `{ worktrees: [path], branches: [name] }`
   - `agents.cleanup{ projectId, worktrees, branches }`(mutation, always)
+    - 이름 패턴만으로 소유권을 추정하지 않는다. 닫힌 작업의 저장된 소유 상태·닫을 당시 OID·Git 등록 상태를 재검사하며 활성·dirty·locked·미병합·다른 작업에서 재사용한 자원을 보존한다. worktree가 이미 제거된 소유 브랜치도 확인 후 정리할 수 있으며 삭제 뒤 소유 상태를 해제한다.
   - 검토 화면용 조회(모두 query, 작업 폴더가 없으면 프로젝트 체크아웃 기준):
     - `agents.changes{ id }` → `{ base, ahead, behind, headOid, baseOid, files: FileChange[] }`(`changed_files(workdir, base)` + `ahead_behind` + `rev_parse`). 검토 화면은 이 `headOid`·`baseOid`를 병합·PR 확인의 `expect`로 쓴다
     - `agents.patch{ id, path }` → `{ patch }`(`file_patch`, 1 MiB 넘으면 앞부분만 + `truncated: true`)
     - `agents.commits{ id }` → `{ items: Commit[] }`(`log_range(workdir, base)`)
-  - 닫힐 때 기록 고정: 토큰(Task 10의 `usage`), 커밋 목록 수, `closedMs`
+  - 닫힐 때 기록 고정: 토큰(Task 10의 `usage`), 커밋 목록 수(`closedCommits`), 실제 처리한 source OID(`closedHeadOid`), `closedMs`. 병합·PR 성공 뒤 정리에 실패해도 닫힌 상태와 `cleanupError`를 함께 보존한다.
 
 - [ ] **Step 1: 실패하는 통합 테스트**
 

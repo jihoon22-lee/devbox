@@ -85,6 +85,9 @@ mod tests {
             created_ms: 1,
             updated_ms: 2,
             closed_ms: None,
+            closed_commits: None,
+            closed_head_oid: None,
+            cleanup_error: None,
         }
     }
     #[test]

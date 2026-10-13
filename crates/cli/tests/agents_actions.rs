@@ -1,0 +1,402 @@
+mod support;
+use serde_json::{Value, json};
+use std::time::Duration;
+use support::TestDaemon;
+
+fn fixture(cleanup: bool) -> TestDaemon {
+    let d = TestDaemon::fixture();
+    d.paths.ensure_dirs().unwrap();
+    std::fs::write(
+        d.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .unwrap();
+    let tool = d.home.path().join("commit.sh");
+    std::fs::write(&tool, r#"#!/usr/bin/env bash
+printf '{"hook_event_name":"SessionStart","session_id":"fake-%s"}' "$$" | "$DEVBOX_BIN" agent event --from claude
+if [ ! -f agent.txt ]; then
+ echo change > agent.txt
+ git add agent.txt
+ git commit -qm 'agent change'
+fi
+printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"done"}' | "$DEVBOX_BIN" agent event --from claude
+while read -r text; do printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"done"}' | "$DEVBOX_BIN" agent event --from claude; done
+"#).unwrap();
+    let command = format!("bash {}", devbox_core::sh_quote(tool.to_str().unwrap()));
+    d.write_config(&format!("[agents]\ncleanup_after_close={cleanup}\n[[agents.profiles]]\nid='commit'\nlabel='C'\ncommand={}\nhooks='none'\n",serde_json::to_string(&command).unwrap()));
+    d
+}
+async fn call(c: &devbox_cli::client::Client, method: &str, params: Value) -> Value {
+    serde_json::from_str(&c.raw_call(method, params, None).await.unwrap()).unwrap()
+}
+async fn expect(c: &devbox_cli::client::Client, id: &str) -> Value {
+    let ch = call(c, "agents.changes", json!({"id":id})).await;
+    json!({"headOid":ch["headOid"],"baseOid":ch["baseOid"]})
+}
+#[tokio::test]
+async fn squash_merge_freezes_record_and_cleans_owned_worktree() {
+    let mut d = fixture(true);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", true).await;
+    let idle = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    let reviewed = expect(&c, &id).await;
+    let closed = call(
+        &c,
+        "agents.merge",
+        json!({"id":id,"strategy":"squash","message":"change","expect":reviewed}),
+    )
+    .await;
+    assert_eq!(closed["closedHow"], "merged");
+    assert_eq!(closed["closedCommits"], 1);
+    assert!(closed["closedMs"].as_i64().is_some());
+    assert!(std::path::Path::new(&repo).join("agent.txt").exists());
+    assert!(!std::path::Path::new(idle["worktreePath"].as_str().unwrap()).exists());
+}
+
+#[tokio::test]
+async fn instructions_review_resume_and_test_use_owned_sessions() {
+    let mut d = fixture(false);
+    let repo = d.git_repo("projects/lifecycle");
+    std::fs::create_dir_all(std::path::Path::new(&repo).join(".devbox")).unwrap();
+    std::fs::write(
+        std::path::Path::new(&repo).join(".devbox/devbox.toml"),
+        "[agent]\ntest='printf tested > test-result.txt'\n",
+    )
+    .unwrap();
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", true).await;
+    let idle = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    call(&c, "agents.send", json!({"id":id,"text":"one\ntwo"})).await;
+    let task = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    assert_eq!(task["followUps"][0]["text"], "one\ntwo");
+    let review = call(&c, "agents.review", json!({"id":id})).await;
+    assert_eq!(review["state"], "review");
+    let terminal = call(&c, "agents.test", json!({"id":id})).await;
+    assert_ne!(terminal["terminalId"], idle["terminalId"]);
+    let wt = std::path::Path::new(idle["worktreePath"].as_str().unwrap());
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !wt.join("test-result.txt").exists() {
+        assert!(std::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    d.kill_tmux_server();
+    let error = c
+        .raw_call("agents.send", json!({"id":id,"text":"lost"}), None)
+        .await
+        .unwrap_err();
+    assert!(format!("{error:?}").contains("agents.session_missing"));
+    drop(c);
+    d.restart();
+    let c = d.client().await;
+    let resumed = call(&c, "agents.resume", json!({"id":id})).await;
+    assert_ne!(resumed["terminalId"], idle["terminalId"]);
+    let task = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    assert_eq!(task["followUps"][0]["text"], "one\ntwo");
+    assert_eq!(task["prompt"], idle["prompt"]);
+    assert_ne!(
+        task["sessionId"], idle["sessionId"],
+        "fresh hook session metadata survives resume launch persistence"
+    );
+    let data = d.paths.data_dir.join("agents").join(&id);
+    assert!(data.join("start.sh").exists());
+    assert!(std::fs::read_dir(data).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("resume-")
+    }));
+}
+
+#[tokio::test]
+async fn dirty_base_is_preserved_and_confirmed_discard_removes_owned_resources() {
+    let mut d = fixture(false);
+    let repo = d.git_repo("projects/discard");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", true).await;
+    let idle = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    std::fs::write(
+        std::path::Path::new(&repo).join("dirty.txt"),
+        "owned user edit",
+    )
+    .unwrap();
+    let reviewed = expect(&c, &id).await;
+    let error = c
+        .raw_call(
+            "agents.merge",
+            json!({"id":id,"strategy":"merge","expect":reviewed}),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{error:?}").contains("agents.base_dirty"));
+    let check = call(&c, "agents.discard_check", json!({"id":id})).await;
+    let closed=call(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    assert_eq!(closed["closedHow"], "discarded");
+    assert!(!std::path::Path::new(idle["worktreePath"].as_str().unwrap()).exists());
+    assert_eq!(
+        std::fs::read_to_string(std::path::Path::new(&repo).join("dirty.txt")).unwrap(),
+        "owned user edit"
+    );
+    let error = c
+        .raw_call("agents.send", json!({"id":id,"text":"closed"}), None)
+        .await
+        .unwrap_err();
+    assert!(format!("{error:?}").contains("agents.bad_state"));
+}
+
+#[tokio::test]
+async fn queries_return_review_files_commits_and_literal_patch() {
+    let mut d = fixture(false);
+    let repo = d.git_repo("projects/queries");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", true).await;
+    d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    let changes = call(&c, "agents.changes", json!({"id":id})).await;
+    assert_eq!(changes["ahead"], 1);
+    assert_eq!(changes["files"][0]["path"], "agent.txt");
+    let patch = call(&c, "agents.patch", json!({"id":id,"path":"agent.txt"})).await;
+    assert!(patch["patch"].as_str().unwrap().contains("+change"));
+    assert_eq!(patch["truncated"], false);
+    let commits = call(&c, "agents.commits", json!({"id":id})).await;
+    assert_eq!(commits["items"][0]["subject"], "agent change");
+    let error = c
+        .raw_call(
+            "agents.patch",
+            json!({"id":id,"path":"../initial.txt"}),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{error:?}").contains("agents.invalid_input"));
+}
+
+#[tokio::test]
+async fn rebase_conflicts_are_owned_and_abort_restores_the_agent_branch() {
+    let mut d = fixture(false);
+    let repo = d.git_repo("projects/rebase");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", true).await;
+    let idle = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    let wt = std::path::Path::new(idle["worktreePath"].as_str().unwrap());
+    std::fs::write(
+        std::path::Path::new(&repo).join("agent.txt"),
+        "base change\n",
+    )
+    .unwrap();
+    d.git(std::path::Path::new(&repo), &["add", "agent.txt"]);
+    d.git(
+        std::path::Path::new(&repo),
+        &["commit", "-qm", "base change"],
+    );
+    let conflict = call(&c, "agents.rebase", json!({"id":id})).await;
+    assert_eq!(conflict["result"], "conflict");
+    assert_eq!(conflict["files"][0], "agent.txt");
+    call(&c, "agents.rebase_abort", json!({"id":id})).await;
+    assert_eq!(
+        std::fs::read_to_string(wt.join("agent.txt")).unwrap(),
+        "change\n"
+    );
+    let changes = call(&c, "agents.changes", json!({"id":id})).await;
+    let head = changes["headOid"].clone();
+    let base = changes["baseOid"].clone();
+    let error = c
+        .raw_call(
+            "agents.merge",
+            json!({"id":id,"strategy":"merge","expect":{"headOid":head,"baseOid":base}}),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{error:?}").contains("agents.conflict"));
+    assert_eq!(
+        std::fs::read_to_string(std::path::Path::new(&repo).join("agent.txt")).unwrap(),
+        "base change\n"
+    );
+    let status = d
+        .environment("git")
+        .args(["-C", &repo, "status", "--porcelain"])
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .unwrap();
+    assert!(
+        status.stdout.is_empty(),
+        "failed merge restores a clean base"
+    );
+    let external = d
+        .environment("git")
+        .arg("-C")
+        .arg(wt)
+        .args(["rebase", "main"])
+        .output()
+        .unwrap();
+    assert!(!external.status.success());
+    let error = c
+        .raw_call("agents.rebase_abort", json!({"id":id}), None)
+        .await
+        .unwrap_err();
+    assert!(format!("{error:?}").contains("agents.operation_in_progress"));
+    d.git(wt, &["rebase", "--abort"]);
+}
+
+#[tokio::test]
+async fn automatic_cleanup_preserves_teardown_changes_and_closed_result() {
+    let mut d = fixture(true);
+    let repo = d.git_repo("projects/retain");
+    std::fs::create_dir_all(std::path::Path::new(&repo).join(".devbox")).unwrap();
+    std::fs::write(
+        std::path::Path::new(&repo).join(".devbox/devbox.toml"),
+        "[agent]\nteardown=['printf retained > retained.txt']\n",
+    )
+    .unwrap();
+    d.git(std::path::Path::new(&repo), &["add", ".devbox/devbox.toml"]);
+    d.git(
+        std::path::Path::new(&repo),
+        &["commit", "-qm", "teardown config"],
+    );
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", true).await;
+    let idle = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    let reviewed = expect(&c, &id).await;
+    let closed = call(
+        &c,
+        "agents.merge",
+        json!({"id":id,"strategy":"squash","expect":reviewed}),
+    )
+    .await;
+    assert_eq!(closed["closedHow"], "merged");
+    assert!(
+        closed["cleanupError"]
+            .as_str()
+            .unwrap()
+            .contains("agents.worktree_dirty")
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            std::path::Path::new(idle["worktreePath"].as_str().unwrap()).join("retained.txt")
+        )
+        .unwrap(),
+        "retained"
+    );
+}
+
+#[tokio::test]
+async fn inline_discard_closes_only_its_session_and_preserves_the_project() {
+    let mut d = fixture(true);
+    let repo = d.git_repo("projects/inline");
+    std::fs::create_dir_all(std::path::Path::new(&repo).join(".devbox")).unwrap();
+    std::fs::write(
+        std::path::Path::new(&repo).join(".devbox/devbox.toml"),
+        "[agent]\nteardown=['rm initial.txt']\n",
+    )
+    .unwrap();
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &p, "commit", false).await;
+    let idle = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    std::fs::write(
+        std::path::Path::new(&repo).join("initial.txt"),
+        "dirty tracked data",
+    )
+    .unwrap();
+    std::fs::write(
+        std::path::Path::new(&repo).join("untracked.txt"),
+        "user data",
+    )
+    .unwrap();
+    let check = call(&c, "agents.discard_check", json!({"id":id})).await;
+    let closed=call(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    assert_eq!(closed["closedHow"], "discarded");
+    assert_eq!(
+        std::fs::read_to_string(std::path::Path::new(&repo).join("initial.txt")).unwrap(),
+        "dirty tracked data"
+    );
+    assert_eq!(
+        std::fs::read_to_string(std::path::Path::new(&repo).join("untracked.txt")).unwrap(),
+        "user data"
+    );
+    let branch = d
+        .environment("git")
+        .args(["-C", &repo, "branch", "--show-current"])
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(branch.stdout).unwrap().trim(), "main");
+    let sessions = call(&c, "terminal.list", json!({})).await;
+    assert!(
+        !sessions["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["id"] == idle["terminalId"])
+    );
+}
+
+#[tokio::test]
+async fn review_inline_session_can_end_after_checkout_with_fresh_confirmation() {
+    let mut d = fixture(false);
+    let repo = d.git_repo("projects/inline-switched");
+    d.launch();
+    let c = d.client().await;
+    let project = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &project, "commit", false).await;
+    d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
+    d.git(
+        std::path::Path::new(&repo),
+        &["checkout", "-qb", "user-work"],
+    );
+    let check = call(&c, "agents.discard_check", json!({"id":id})).await;
+    d.git(
+        std::path::Path::new(&repo),
+        &["commit", "--allow-empty", "-qm", "late inline commit"],
+    );
+    let stale = c
+        .raw_call(
+            "agents.discard",
+            json!({"id":id,"expect":{
+                "headOid":check["headOid"], "unmergedCommits":check["unmergedCommits"]
+            }}),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{stale:?}").contains("agents.state_changed"));
+    let check = call(&c, "agents.discard_check", json!({"id":id})).await;
+    let result = c
+        .raw_call(
+            "agents.discard",
+            json!({"id":id,"expect":{
+                "headOid":check["headOid"], "unmergedCommits":check["unmergedCommits"]
+            }}),
+            None,
+        )
+        .await;
+    assert!(
+        result.is_ok(),
+        "freshly confirmed inline session end failed: {result:?}"
+    );
+    assert!(std::path::Path::new(&repo).join("agent.txt").exists());
+    let branch = d
+        .environment("git")
+        .args(["-C", &repo, "branch", "--show-current"])
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(branch.stdout).unwrap().trim(),
+        "user-work"
+    );
+}

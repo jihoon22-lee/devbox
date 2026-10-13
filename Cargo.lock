@@ -308,6 +308,7 @@ dependencies = [
  "devbox-projects",
  "devbox-protocol",
  "devbox-terminal",
+ "nix 0.30.1",
  "rusqlite",
  "serde",
  "serde_json",

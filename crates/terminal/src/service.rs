@@ -319,6 +319,37 @@ impl TerminalService {
             rev: rev.to_string(),
         })
     }
+    /// Agent-owned terminal cleanup also removes records whose tmux session was lost.
+    pub async fn close_internal(&self, id: &str) -> Result<Done> {
+        let _guard = self.mutations.lock().await;
+        if self
+            .tmux
+            .list()
+            .await
+            .map_err(tmux_error)?
+            .iter()
+            .any(|s| s.name == id)
+        {
+            self.tmux.kill_session(id).await.map_err(tmux_error)?;
+        }
+        let id = id.to_owned();
+        let hub = self.hub.clone();
+        let (_, rev) = self
+            .db
+            .write_checked_with_commit(
+                move |tx| {
+                    store::delete(tx, &id)?;
+                    Ok(Ok::<_, std::convert::Infallible>(()))
+                },
+                move |_, rev| changed(&hub, rev),
+            )
+            .await
+            .internal("remove agent terminal")?
+            .unwrap();
+        Ok(Done {
+            rev: rev.to_string(),
+        })
+    }
     pub async fn close(&self, params: CloseSession) -> Result<Done> {
         let _guard = self.mutations.lock().await;
         let id = params.id.clone();

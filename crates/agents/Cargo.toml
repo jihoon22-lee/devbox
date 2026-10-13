@@ -25,3 +25,5 @@ tokio-util.workspace = true
 uuid.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["signal", "process"] }

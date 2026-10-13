@@ -65,6 +65,7 @@ impl Fixture {
             vec![],
             "/owned/devbox".into(),
             false,
+            false,
         ));
         let repo = root.path().join("project");
         fs::create_dir(&repo).expect("repo");

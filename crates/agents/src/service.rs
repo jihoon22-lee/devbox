@@ -24,6 +24,8 @@ pub struct AgentsService {
     pub(crate) devbox_bin: String,
     pub(crate) use_scope: bool,
     reservations: Mutex<()>,
+    pub(crate) actions: Mutex<()>,
+    pub(crate) cleanup_after_close: bool,
     pub(crate) hook_files: Mutex<()>,
     pub(crate) background: TaskTracker,
     pub(crate) stop: CancellationToken,
@@ -148,6 +150,7 @@ impl AgentsService {
         profiles: Vec<ToolProfile>,
         devbox_bin: String,
         use_scope: bool,
+        cleanup_after_close: bool,
     ) -> Self {
         Self {
             db,
@@ -159,6 +162,8 @@ impl AgentsService {
             devbox_bin,
             use_scope,
             reservations: Mutex::new(()),
+            actions: Mutex::new(()),
+            cleanup_after_close,
             hook_files: Mutex::new(()),
             background: TaskTracker::new(),
             stop: CancellationToken::new(),
@@ -302,6 +307,9 @@ impl AgentsService {
                         created_ms: now,
                         updated_ms: now,
                         closed_ms: None,
+                        closed_commits: None,
+                        closed_head_oid: None,
+                        cleanup_error: None,
                     };
                     store::put(tx, &task)?;
                     store::put_binding(tx, &task.id, &Binding::new(now))?;

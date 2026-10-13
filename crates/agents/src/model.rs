@@ -53,6 +53,12 @@ pub struct AgentTask {
     pub created_ms: i64,
     pub updated_ms: i64,
     pub closed_ms: Option<i64>,
+    #[serde(default)]
+    pub closed_commits: Option<u32>,
+    #[serde(default)]
+    pub closed_head_oid: Option<String>,
+    #[serde(default)]
+    pub cleanup_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -104,6 +110,140 @@ pub struct AgentsAttention {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SendToAgent {
+    pub id: String,
+    pub text: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviewExpect {
+    pub head_oid: String,
+    #[ts(optional)]
+    pub base_oid: Option<String>,
+    #[ts(optional)]
+    pub unmerged_commits: Option<u32>,
+}
+fn merge_expect<'de, D: serde::Deserializer<'de>>(d: D) -> Result<ReviewExpect, D::Error> {
+    let expect = ReviewExpect::deserialize(d)?;
+    if expect.head_oid.is_empty() || expect.base_oid.as_ref().is_none_or(String::is_empty) {
+        return Err(serde::de::Error::custom(
+            "expect.headOid and expect.baseOid are required",
+        ));
+    }
+    Ok(expect)
+}
+fn discard_expect<'de, D: serde::Deserializer<'de>>(d: D) -> Result<ReviewExpect, D::Error> {
+    let expect = ReviewExpect::deserialize(d)?;
+    if expect.head_oid.is_empty() || expect.unmerged_commits.is_none() {
+        return Err(serde::de::Error::custom(
+            "expect.headOid and expect.unmergedCommits are required",
+        ));
+    }
+    Ok(expect)
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeKind {
+    Merge,
+    Squash,
+    Rebase,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MergeAgent {
+    pub id: String,
+    pub strategy: MergeKind,
+    pub message: Option<String>,
+    #[serde(deserialize_with = "merge_expect")]
+    #[ts(type = "ReviewExpect & { baseOid: string }")]
+    pub expect: ReviewExpect,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PrAgent {
+    pub id: String,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    #[serde(deserialize_with = "merge_expect")]
+    #[ts(type = "ReviewExpect & { baseOid: string }")]
+    pub expect: ReviewExpect,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiscardAgent {
+    pub id: String,
+    #[serde(deserialize_with = "discard_expect")]
+    #[ts(type = "ReviewExpect & { unmergedCommits: number }")]
+    pub expect: ReviewExpect,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CleanupCandidates {
+    pub project_id: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CleanupAgents {
+    pub project_id: String,
+    pub worktrees: Vec<String>,
+    pub branches: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct CleanupOptions {
+    pub worktrees: Vec<String>,
+    pub branches: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentChanges {
+    pub base: String,
+    pub ahead: u32,
+    pub behind: u32,
+    pub head_oid: String,
+    pub base_oid: String,
+    pub files: Vec<devbox_git::FileChange>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentPatch {
+    pub patch: String,
+    pub truncated: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentCommits {
+    pub items: Vec<devbox_git::Commit>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscardCheck {
+    pub unmerged_commits: u32,
+    pub dirty_files: u32,
+    pub head_oid: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GetAgentPatch {
+    pub id: String,
+    pub path: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum RebaseResult {
+    Done,
+    Conflict,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentRebase {
+    pub result: RebaseResult,
+    pub files: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTest {
+    pub terminal_id: String,
+}
+
 domain_error! {
     pub enum AgentsError {
         TitleInvalid = "agents.title_invalid",
@@ -119,7 +259,7 @@ domain_error! {
         UnmergedCommits { count: u32 } = "agents.unmerged_commits",
         GhMissing = "agents.gh_missing",
         NotRepo = "agents.not_repo",
-        StateChanged = "agents.state_changed",
+        StateChanged { head: String, base: String, unmerged: u32 } = "agents.state_changed",
         OperationInProgress = "agents.operation_in_progress",
         UnsafeWorktree = "agents.unsafe_worktree",
         BranchExists { branch: String } = "agents.branch_exists",
@@ -141,7 +281,6 @@ pub fn git_failure(error: devbox_git::GitError) -> devbox_protocol::Fail<AgentsE
         G::GhMissing => AgentsError::GhMissing,
         G::NotRepo => AgentsError::NotRepo,
         G::InvalidInput => AgentsError::InvalidInput,
-        G::StateChanged => AgentsError::StateChanged,
         G::OperationInProgress => AgentsError::OperationInProgress,
         G::UnsafeWorktree => AgentsError::UnsafeWorktree,
         G::BranchExists { branch } => AgentsError::BranchExists { branch },
@@ -173,6 +312,17 @@ mod tests {
     use super::*;
     use devbox_git::GitError as G;
     use devbox_protocol::Fail;
+    #[test]
+    fn confirmation_requests_require_the_reviewed_fields() {
+        let missing_base = r#"{"id":"a","strategy":"merge","expect":{"headOid":"abc"}}"#;
+        assert!(serde_json::from_str::<MergeAgent>(missing_base).is_err());
+        let missing_count = r#"{"id":"a","expect":{"headOid":"abc"}}"#;
+        assert!(serde_json::from_str::<DiscardAgent>(missing_count).is_err());
+        let valid = r#"{"id":"a","expect":{"headOid":"abc","unmergedCommits":0}}"#;
+        assert!(serde_json::from_str::<DiscardAgent>(valid).is_ok());
+        assert!(serde_json::from_str::<MergeAgent>(r#"{"id":"a","strategy":"merge"}"#).is_err());
+    }
+
     #[test]
     fn raw_process_causes_never_become_domain_details() {
         for error in [

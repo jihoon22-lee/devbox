@@ -6,7 +6,7 @@ use crate::{
 };
 use devbox_protocol::Fail;
 use std::{fs::OpenOptions, io::Write, path::Path};
-fn private_dir(path: &Path) -> std::io::Result<()> {
+pub(crate) fn private_dir(path: &Path) -> std::io::Result<()> {
     for ancestor in path.ancestors() {
         if std::fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(std::io::Error::other("symlink private directory"));
@@ -20,7 +20,7 @@ fn private_dir(path: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-fn private_file(path: &Path, body: &str, executable: bool) -> std::io::Result<()> {
+pub(crate) fn private_file(path: &Path, body: &str, executable: bool) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         for ancestor in parent.ancestors() {
             if std::fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink()) {

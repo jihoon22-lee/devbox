@@ -67,6 +67,7 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         profiles,
         devbox_bin,
         use_scope,
+        config.agents.cleanup_after_close.unwrap_or(false),
     ));
     Ok(Arc::new(Services {
         version: crate::VERSION,

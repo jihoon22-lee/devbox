@@ -81,6 +81,50 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsEvent, _, _>(
             |s, _, p| async move { s.agents.event(p).await },
         );
+    let router = router
+        .register::<devbox_agents::AgentsSend, _, _>(
+            |s, _, p| async move { s.agents.send(p).await },
+        )
+        .register::<devbox_agents::AgentsResume, _, _>(|s, _, p| async move {
+            s.agents.resume(&p.id).await
+        })
+        .register::<devbox_agents::AgentsReview, _, _>(|s, _, p| async move {
+            s.agents.review(&p.id).await
+        })
+        .register::<devbox_agents::AgentsRebase, _, _>(|s, _, p| async move {
+            s.agents.rebase(&p.id).await
+        })
+        .register::<devbox_agents::AgentsRebaseAbort, _, _>(|s, _, p| async move {
+            s.agents.rebase_abort(&p.id).await
+        })
+        .register::<devbox_agents::AgentsMerge, _, _>(
+            |s, _, p| async move { s.agents.merge(p).await },
+        )
+        .register::<devbox_agents::AgentsPr, _, _>(|s, _, p| async move { s.agents.pr(p).await })
+        .register::<devbox_agents::AgentsDiscardCheck, _, _>(|s, _, p| async move {
+            s.agents.discard_check(&p.id).await
+        })
+        .register::<devbox_agents::AgentsDiscard, _, _>(|s, _, p| async move {
+            s.agents.discard(p).await
+        })
+        .register::<devbox_agents::AgentsTest, _, _>(
+            |s, _, p| async move { s.agents.test(&p.id).await },
+        )
+        .register::<devbox_agents::AgentsCleanupCandidates, _, _>(|s, _, p| async move {
+            s.agents.cleanup_candidates(p).await
+        })
+        .register::<devbox_agents::AgentsCleanup, _, _>(|s, _, p| async move {
+            s.agents.cleanup(p).await
+        })
+        .register::<devbox_agents::AgentsChanges, _, _>(|s, _, p| async move {
+            s.agents.changes(&p.id).await
+        })
+        .register::<devbox_agents::AgentsPatch, _, _>(
+            |s, _, p| async move { s.agents.patch(p).await },
+        )
+        .register::<devbox_agents::AgentsCommits, _, _>(|s, _, p| async move {
+            s.agents.commits(&p.id).await
+        });
     if test_instance {
         router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
             super::debug::echo(ctx, params)

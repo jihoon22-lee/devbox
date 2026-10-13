@@ -535,3 +535,49 @@ async fn checkout_shorthand_cannot_delete_a_different_literal_branch() {
             .contains(&"agent/x".into())
     );
 }
+
+#[tokio::test]
+async fn merge_at_rechecks_the_confirmed_base_and_source_branch() {
+    let d = repo();
+    identity(d.path());
+    let holder = tempfile::tempdir().unwrap();
+    let wt = holder.path().join("owned");
+    git::mutate::worktree_add(d.path(), &wt, "agent/confirmed", "main")
+        .await
+        .unwrap();
+    let base = git::run::resolve(d.path(), "main").await.unwrap();
+    commit_file(&wt, "new.txt", "agent\n");
+    let head = git::run::resolve(&wt, "HEAD").await.unwrap();
+    sh(d.path(), &["commit", "--allow-empty", "-qm", "late base"]);
+    let current = git::run::resolve(d.path(), "main").await.unwrap();
+    let error = git::mutate::merge_into_at(
+        d.path(),
+        "main",
+        &head,
+        git::mutate::MergeStrategy::Merge,
+        Some(&base),
+        Some("agent/confirmed"),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, git::GitError::StateChanged));
+    assert_eq!(git::run::resolve(d.path(), "HEAD").await.unwrap(), current);
+    sh(&wt, &["checkout", "-qb", "foreign"]);
+    let error = git::mutate::merge_into_at(
+        d.path(),
+        "main",
+        &head,
+        git::mutate::MergeStrategy::Rebase {
+            worktree: wt.clone(),
+        },
+        Some(&current),
+        Some("agent/confirmed"),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, git::GitError::StateChanged));
+    assert_eq!(
+        git::current_branch(&wt).await.unwrap().as_deref(),
+        Some("foreign")
+    );
+}

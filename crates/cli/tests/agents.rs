@@ -62,11 +62,10 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
         started.elapsed() < Duration::from_secs(2),
         "SC3 hook-to-query deadline"
     );
-    let terminal = task["terminalId"].as_str().expect("terminal recorded");
-    let tmux = devbox_terminal::tmux::Tmux::for_paths(&d.paths);
-    tmux.paste(terminal, "yes", true)
+    client
+        .raw_call("agents.send", json!({"id":id,"text":"yes"}), None)
         .await
-        .expect("owned tmux input");
+        .expect("instruction through agent action");
     d.wait_for(&client, &id, "idle", Duration::from_secs(10))
         .await;
     drop(client);

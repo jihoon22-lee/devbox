@@ -16,6 +16,7 @@ pub enum MergeStrategy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeOutcome {
     pub sha: String,
+    pub source_sha: String,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RebaseOutcome {
@@ -252,14 +253,36 @@ pub async fn merge_into(
     source: &str,
     strategy: MergeStrategy,
 ) -> Result<MergeOutcome, GitError> {
+    merge_into_at(dir, base_branch, source, strategy, None, None).await
+}
+/// Bind the base checkout to the commit shown by the confirmation dialog.
+pub async fn merge_into_at(
+    dir: &Path,
+    base_branch: &str,
+    source: &str,
+    strategy: MergeStrategy,
+    expected_base: Option<&str>,
+    expected_branch: Option<&str>,
+) -> Result<MergeOutcome, GitError> {
     let original = baseline(dir, base_branch).await?;
+    if expected_base.is_some_and(|oid| oid != original) {
+        return Err(GitError::StateChanged);
+    }
     let source_oid = resolve(dir, source).await?;
+    let mut merged_source = source_oid.clone();
+    if let Some(branch) = expected_branch {
+        if resolve(dir, branch).await? != source_oid {
+            return Err(GitError::StateChanged);
+        }
+    }
     if let MergeStrategy::Rebase { worktree } = strategy {
         registered(dir, &worktree).await?;
         let branch = current_branch(&worktree)
             .await?
             .ok_or(GitError::UnsafeWorktree)?;
-        if crate::branches(dir).await?.iter().any(|b| b == source) && branch != source {
+        if expected_branch.is_some_and(|expected| expected != branch)
+            || (crate::branches(dir).await?.iter().any(|b| b == source) && branch != source)
+        {
             return Err(GitError::StateChanged);
         }
         if resolve(&worktree, "HEAD").await? != source_oid
@@ -277,6 +300,7 @@ pub async fn merge_into(
             RebaseOutcome::Done => {}
         }
         let rebased = resolve(&worktree, "HEAD").await?;
+        merged_source = rebased.clone();
         if current_branch(&worktree).await?.as_deref() != Some(&branch)
             || baseline(dir, base_branch).await? != original
         {
@@ -303,6 +327,7 @@ pub async fn merge_into(
     }
     Ok(MergeOutcome {
         sha: resolve(dir, "HEAD").await?,
+        source_sha: merged_source,
     })
 }
 pub async fn rebase_onto(worktree: &Path, base: &str) -> Result<RebaseOutcome, GitError> {
@@ -366,6 +391,7 @@ pub async fn push_and_pr_at(
     let oid = resolve(worktree, oid).await?;
     if current_branch(worktree).await?.as_deref() != Some(branch)
         || resolve(worktree, "HEAD").await? != oid
+        || resolve(worktree, branch).await? != oid
     {
         return Err(GitError::StateChanged);
     }

@@ -78,6 +78,7 @@ impl Fixture {
             vec![],
             "/owned/devbox".into(),
             false,
+            false,
         ))
     }
     async fn seed(&self, binding: Binding) {
@@ -104,6 +105,9 @@ impl Fixture {
             created_ms: binding.launch_ms,
             updated_ms: binding.launch_ms,
             closed_ms: None,
+            closed_commits: None,
+            closed_head_oid: None,
+            cleanup_error: None,
         };
         self.svc
             .db
@@ -307,4 +311,60 @@ async fn symlink_metadata_cannot_escape_owned_home() {
     std::os::unix::fs::symlink(&target, f.sessions.join("rollout-primary.jsonl")).unwrap();
     f.expect_diagnostic(Diagnostic::UnsafePath).await;
     assert_eq!(fs::read(&target).unwrap(), b"owned outside fixture");
+}
+
+#[cfg(unix)]
+#[test]
+fn review_quiesce_accepts_an_already_unloaded_owned_scope() {
+    const CHILD: &str = "DEVBOX_REVIEW_MISSING_SCOPE_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let mut fixture = Fixture::new().await;
+            Arc::get_mut(&mut fixture.svc).unwrap().use_scope = true;
+            let mut task = fixture.svc.get("a").await.unwrap();
+            task.terminal_id = None;
+            let result = fixture.svc.quiesce(&task).await;
+            let expected = std::env::var("DEVBOX_REVIEW_SCOPE_MODE").unwrap();
+            assert_eq!(
+                result.is_ok(),
+                expected.starts_with("absent"),
+                "scope stop outcome for {expected}: {result:?}"
+            );
+        });
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let systemctl = root.path().join("systemctl");
+    fs::write(
+        &systemctl,
+        r#"#!/bin/sh
+case "$*" in
+ *show*) case "$DEVBOX_REVIEW_SCOPE_MODE" in
+    absent0) printf 'not-found\n'; exit 0;;
+    absent1) printf 'not-found\n'; exit 1;;
+    loaded) printf 'loaded\n'; exit 0;;
+    bus) exit 1;;
+ esac;;
+esac
+exit 5
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&systemctl, fs::Permissions::from_mode(0o700)).unwrap();
+    for mode in ["absent0", "absent1", "loaded", "bus"] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "service::correlation_tests::review_quiesce_accepts_an_already_unloaded_owned_scope", "--nocapture"])
+        .env(CHILD, "1")
+        .env("DEVBOX_REVIEW_SCOPE_MODE", mode)
+        .env("PATH", root.path())
+        .env("TOKIO_WORKER_THREADS", "2")
+        .output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

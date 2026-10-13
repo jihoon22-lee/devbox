@@ -41,6 +41,18 @@ impl AgentsService {
                                 }
                                 let previous_state = current.state;
                                 let current_binding = store::binding(tx, &id)?;
+                                // A poll started before resume must not replace the new launch or ownership.
+                                if current_binding
+                                    .as_ref()
+                                    .is_some_and(|b| b.launch_ms != saved.launch_ms)
+                                {
+                                    return Ok(Err(()));
+                                }
+                                let mut saved = saved;
+                                if let Some(binding) = &current_binding {
+                                    saved.resources = binding.resources.clone();
+                                    saved.owned_rebase = binding.owned_rebase;
+                                }
                                 if current_binding.as_ref().and_then(|b| b.turn_started_ms)
                                     > saved.turn_started_ms
                                 {

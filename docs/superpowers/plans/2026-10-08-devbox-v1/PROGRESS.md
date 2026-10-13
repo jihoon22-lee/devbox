@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과. Task 3–8 구현·별도 검토 및 실제 Claude/Codex hook 확인 완료, S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 9 에이전트 행동 — 확인 OID 기반 병합·PR·폐기, 재개·기준 반영·정리·검토 조회 구현 |
+| 단계 | S0 및 후속 #639 완료. S1 Task 1–9 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 10 출력 기반 대기 감지·자원·토큰 — 정확한 세션 연결과 닫힌 기록 고정, 관련 RPC 구현 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -195,6 +195,9 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04 Task 8 생성·hook·수명 | preparing 저장 뒤 detached 준비·단순 hook 상태 갱신 | DB 커밋 callback의 추적 토큰으로 취소된 create waiter도 준비 완료/실패까지 drain, 동시 branch/path/port 예약, 최신 행 재조회 갱신. Git 부분 생성의 소유 상태를 별도 저장·재시작 대조하며 hook 파일 보존. CLI stdin/connect/RPC 전체3초 제한, no-ID 즉시 no-op, 준비 실패 뒤 셸 유지. 프로젝트 설정 strict table·copy 경로/권한 보존 | 실제 CLI 부재 RED 뒤 관련29개 PASS(CLI3/agent2/Codex RPC1/daemon21/terminal1/route1), gen-ts/check/typecheck PASS. agents 초기35·최종 자원4 PASS. 별도 검토의 이전 날짜 known-thread 재탐색·metadata/무효 hook의 attention 덮어쓰기 회귀 RED 뒤 agents40 PASS·재검토 PASS |
 | 2026-10-13 | 04 Task 8 Codex 실제 계약 | metadata source·현재 turn gate의 fixture 검증 | 정확한 cli/user·workdir·launch·현재 turn을 검증하고 private binding 저장. 같은 DB transaction에서 완료 후보의 최신 binding을 재검사, 동일 binding은 쓰기·이벤트 생략. missing/ambiguous는 bounded retry 뒤 typed diagnostic, 상태 유지. 주 세션이 아닌 객체형 source는 먼저 제외하며 숫자형 started_at 대신 이벤트 봉투 timestamp 사용 | 실제 Codex 두 번은 PONG 출력 후에도 Running/sessionId 없음으로 TIMEOUT(75초): 첫 숫자 started_at, 다음 보조 세션 객체 source가 원인. 각각 synthetic RED 후 수정, agents40 및 tracker7/correlation5·최종 Codex RPC1 PASS. 별도 재검토 PASS. 원시 실패 근거도 보존 |
 | 2026-10-13 | 04 Task 8 실제 CLI 수용 | CLI 실행 인자 hook 주입·사용자 설정 보존 | 이미 신뢰된 main cwd, 프로젝트 설정 파일 없음·worktree=false, 전용 test 인스턴스/XDG/tmux에서 도구 사용 없는 PONG만 요청. Claude 2.1.296 PASS(생성→idle 약3.284초), Codex 0.162.1 수정 뒤 PASS(약8.094초), 정확한 primary thread/turn metadata와 binding 대조. 이 시간은 SC3 hook→화면 측정값이 아님 | 근거 Git common-dir `devbox-verification/s1-task8-hooks-aa0z3vxv`(Claude PASS/Codex 첫 실패), `s1-task8-hooks-15667yzo`(두 번째 실패), `s1-task8-hooks-8imklb7_`(Codex PASS·binary SHA256 13aaf6836dcf1b2e625dc90d8f8179c13f62cc6d1ecc089b8b8fca6ef0d62586). config SHA/mtime·main status 불변, 소유 CLI PID/starttime·tmux·daemon 종료·runtime 정리 확인. 첫 stale runtime은 소유 확인 후 후속 정리 기록. 새 fixture cwd 신뢰 승인·전역 설정 변경 없음; Windows 실기는 최종 Task24 별도 |
+| 2026-10-13 | 04 Task 9 작업 행동·검토 조회 | 행동·조회 RPC 없음, Task 8의 waiting→send 시험 유보 | 지시·재개·검토·rebase/abort·병합·PR·폐기·테스트·정리·변경/patch/commits 15개 API 연결. 확인 OID 기반 실제 source 고정, 생성 TS에서도 행동별 필수 확인값 보장. 재개 직후 hook 세션 정보와 최신 launch binding 보존, 닫힌 커밋 수·OID·시각 고정 | 최초 agents.changes method_not_found RED. CLI actions7/safety7/cleanup1·기존 agents2(waiting→send→idle) PASS, agents 단위46·Git mutate13/lib4·terminal service5/lib3 PASS. xtask 확인 계약1·gen-ts PASS. 로컬 bare 원격+가짜 gh로 PR 성공/실패 검증; 실제 외부 PR 생성 아님 |
+| 2026-10-13 | 04 Task 9 소유 자원·부분 정리 | 이름 패턴 정리와 닫기 후 오류 구분 부족 | 저장된 소유 상태·Git 등록·닫을 당시 OID·활성 충돌 재검사. dirty/locked/미병합/부분 생성/호스트/재사용 자원 보존, 사라진 worktree의 소유 브랜치만 별도 정리 후 소유 해제. cleanupError로 병합·PR 성공과 정리 실패를 구분. inline 세션 끝내기는 원본 checkout·브랜치·수정/미추적 파일 보존, teardown 생략 | 재사용 ref·외부 worktree·symlink·teardown dirty 보존·병합 충돌 복구·소유 rebase abort·60초 teardown 제한의 자식 process group 정리 회귀 PASS. 전체 check/clippy/build/E2E·Windows 최종 실기·실제 scope 실행은 이 과제에서 반복하지 않음 |
+| 2026-10-13 | 04 Task 9 별도 검토 보완 | 이미 사라진 scope 정지 실패·inline 최초 브랜치 강제 | 독립 검토에서 두 실패 재현: missing scope는 정확한 unit LoadState=not-found만 허용, loaded/버스 실패는 계속 거절. inline은 현재 HEAD·확인한 미병합 수를 검증하고 브랜치 변경 자체는 허용. mutation 취소 우려는 기존 Dedupe의 추적 실행 보호를 확인해 철회 | fake systemctl 4모드(부재 exit0/1·loaded 실패·버스 실패) 단위1 PASS, stale→fresh inline 확인 포함 actions8 PASS. 실제 서비스 변경 없음. 독립 재검토·diff check·완료 Biome CI 85 files PASS. 전체 S1 검증은 Task24에 수행 |
 
 ## 6. 세션 기록
 
