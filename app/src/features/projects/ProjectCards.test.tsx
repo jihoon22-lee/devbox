@@ -47,7 +47,9 @@ test("cards show actual summary and launch once before selecting and navigating"
   expect(useCurrentProject.getState().id).toBeUndefined();
   await userEvent.keyboard("{Escape}");
   expect(close).not.toHaveBeenCalled();
-  await act(async () => wire.reply("projects.launch", { terminals: 1, agents: 0 }));
+  await act(async () =>
+    wire.reply("projects.launch", { terminals: 1, agents: 0, terminalIds: ["launch-shell"], rev: "2" }),
+  );
   await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
   expect(useCurrentProject.getState().id).toBe("a");
   expect(useToasts.getState().items.at(-1)?.title).toBe("터미널 1개 · 에이전트 0개를 시작했습니다");

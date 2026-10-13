@@ -108,39 +108,42 @@ mod tests {
     use super::*;
     #[test]
     fn clone_reservation_rejects_existing_targets_and_symlinked_parents() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().expect("owned clone reservation fixture");
         let existing = root.path().join("existing");
-        std::fs::create_dir(&existing).unwrap();
-        std::fs::write(existing.join("precious"), "preserve").unwrap();
+        std::fs::create_dir(&existing).expect("owned clone reservation fixture");
+        std::fs::write(existing.join("precious"), "preserve")
+            .expect("owned clone reservation fixture");
         assert!(matches!(
             CloneTarget::reserve(&existing),
             Err(Fail::Domain(ProjectsError::CloneTargetExists { .. }))
         ));
         let external = root.path().join("outside");
-        std::fs::create_dir(&external).unwrap();
-        std::os::unix::fs::symlink(&external, root.path().join("alias")).unwrap();
+        std::fs::create_dir(&external).expect("owned clone reservation fixture");
+        std::os::unix::fs::symlink(&external, root.path().join("alias"))
+            .expect("owned clone reservation fixture");
         assert!(CloneTarget::reserve(&root.path().join("alias/new/clone")).is_err());
         assert!(!external.join("new").exists());
         assert_eq!(
-            std::fs::read_to_string(existing.join("precious")).unwrap(),
+            std::fs::read_to_string(existing.join("precious"))
+                .expect("owned clone reservation fixture"),
             "preserve"
         );
     }
 
     #[test]
     fn clone_reservation_detects_replacement_directory_without_following_links() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().expect("owned clone reservation fixture");
         let path = root.path().join("target");
-        let reservation = CloneTarget::reserve(&path).unwrap();
+        let reservation = CloneTarget::reserve(&path).expect("owned clone reservation fixture");
         let retained = root.path().join("retained");
-        std::fs::rename(&path, &retained).unwrap();
-        std::fs::create_dir(&path).unwrap();
+        std::fs::rename(&path, &retained).expect("owned clone reservation fixture");
+        std::fs::create_dir(&path).expect("owned clone reservation fixture");
         assert!(matches!(
             reservation.verify(),
             Err(ProjectsError::CloneFailed { .. })
         ));
-        std::fs::remove_dir(&path).unwrap();
-        std::os::unix::fs::symlink(&retained, &path).unwrap();
+        std::fs::remove_dir(&path).expect("owned clone reservation fixture");
+        std::os::unix::fs::symlink(&retained, &path).expect("owned clone reservation fixture");
         assert!(reservation.verify().is_err());
         assert!(retained.is_dir());
     }

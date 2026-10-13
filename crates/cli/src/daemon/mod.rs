@@ -74,9 +74,11 @@ fn build_services_with_runtime(
         projects.clone(),
         terminal.clone(),
         profiles,
-        devbox_bin,
-        use_scope,
-        config.agents.cleanup_after_close.unwrap_or(false),
+        devbox_agents::AgentRuntime {
+            devbox_bin,
+            use_scope,
+            cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(false),
+        },
     ));
     Ok(Arc::new(Services {
         runtime,

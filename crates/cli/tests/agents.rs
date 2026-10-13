@@ -56,7 +56,7 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
     })
     .await;
     let mut events = client.subscribe("agents.changed").await.expect("subscribe");
-    std::fs::write(d.home.path().join("send-waiting"), "go").unwrap();
+    std::fs::write(d.home.path().join("send-waiting"), "go").expect("owned fixture");
     measure_hook(&d, &mut events, &id, "waiting").await;
     let task = d
         .wait_for(&client, &id, "waiting", Duration::from_secs(10))
@@ -89,7 +89,7 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
     support::bounded(events.next_event())
         .await
         .expect("running event");
-    std::fs::write(d.home.path().join("send-idle"), "go").unwrap();
+    std::fs::write(d.home.path().join("send-idle"), "go").expect("owned fixture");
     measure_hook(&d, &mut events, &id, "idle").await;
     d.wait_for(&client, &id, "idle", Duration::from_secs(10))
         .await;
@@ -119,17 +119,18 @@ async fn measure_hook(
         .expect("hook event");
     let received = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("owned fixture")
         .as_nanos();
-    let payload: Value = serde_json::from_str(&event.payload).unwrap();
+    let payload: Value = serde_json::from_str(&event.payload).expect("owned fixture");
     assert_eq!(payload["id"], id);
     let sent: u128 = std::fs::read_to_string(d.home.path().join(format!("{state}-hook.ns")))
-        .unwrap()
+        .expect("owned fixture")
         .trim()
         .parse()
-        .unwrap();
+        .expect("owned fixture");
     let elapsed = Duration::from_nanos(
-        u64::try_from(received.checked_sub(sent).expect("hook before event")).unwrap(),
+        u64::try_from(received.checked_sub(sent).expect("hook before event"))
+            .expect("owned fixture"),
     );
     eprintln!(
         "SC3 fixture CLI hook→agents.changed {state} {:.3}ms",

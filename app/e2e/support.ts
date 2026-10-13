@@ -24,7 +24,7 @@ send() { printf '%s' "$1" | "$DEVBOX_BIN" agent event --from claude; }
 send "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$session\"}"
 send "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$session\"}"
 send '{"hook_event_name":"PermissionRequest","tool_name":"Bash"}'
-date +%s%3N > "$HOME/agent-hook-$DEVBOX_AGENT_ID.ms"
+date +%s%N > "$HOME/agent-hook-$DEVBOX_AGENT_ID.ns"
 send '{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"needs Bash"}'
 read -r answer
 printf 'change\n' > agent.txt

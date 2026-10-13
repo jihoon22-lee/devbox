@@ -28,6 +28,7 @@ export function TerminalPage() {
   const project = projectKey(projectId);
   const sessions = useSessions(projectId);
   const layout = useTerminalLayout((state) => state.byProject[project] ?? EMPTY_LAYOUT);
+  const pendingLaunch = useTerminalLayout((state) => state.pendingLaunches[project]);
   const update = useTerminalLayout((state) => state.update);
   const focusState = useTerminalFocus();
   const [focusRequest, setFocusRequest] = useState<{ session: string; version: number }>();
@@ -48,10 +49,16 @@ export function TerminalPage() {
   }, []);
   useEffect(() => {
     if (!sessions.data || sessions.isError || sessions.isFetching || creating) return;
-    update(project, (current) =>
-      prune(current, new Set(sessions.items.filter((session) => session.alive).map((session) => session.id))),
-    );
-  }, [sessions.data, sessions.items, sessions.isError, sessions.isFetching, project, update, creating]);
+    const alive = new Set(sessions.items.filter((session) => session.alive).map((session) => session.id));
+    const latest = useTerminalLayout.getState().pendingLaunches[project];
+    if (latest !== pendingLaunch) return;
+    if (latest && BigInt(sessions.data.rev) < BigInt(latest.rev)) {
+      for (const id of latest.ids) alive.add(id);
+    } else {
+      useTerminalLayout.getState().confirmLaunch(project, sessions.data.rev);
+    }
+    update(project, (current) => prune(current, alive));
+  }, [sessions.data, sessions.items, sessions.isError, sessions.isFetching, project, update, creating, pendingLaunch]);
   const newSession = async (place: "tab" | "row" | "column", command?: string, attachZellij?: string) => {
     if (pending.current.has(project)) return false;
     const origin = project,

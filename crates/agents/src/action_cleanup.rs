@@ -160,15 +160,14 @@ async fn bounded_command_for(
         Ok(Err(error)) => Err(Fail::Internal(format!("agent cleanup wait: {error}"))),
         Err(_) => {
             #[cfg(unix)]
-            if let Some(id) = child.id() {
-                if let Err(error) = nix::sys::signal::killpg(
+            if let Some(id) = child.id()
+                && let Err(error) = nix::sys::signal::killpg(
                     nix::unistd::Pid::from_raw(id as i32),
                     nix::sys::signal::Signal::SIGKILL,
-                ) {
-                    if error != nix::errno::Errno::ESRCH {
-                        tracing::error!(?error, "kill timed out cleanup group failed");
-                    }
-                }
+                )
+                && error != nix::errno::Errno::ESRCH
+            {
+                tracing::error!(?error, "kill timed out cleanup group failed");
             }
             child
                 .kill()
@@ -188,7 +187,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn teardown_timeout_kills_owned_descendants_and_reaps_the_shell() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().expect("owned fixture");
         let result = bounded_command_for(
             "bash",
             &["-c", "(sleep .2; printf leaked > sentinel) & wait"],

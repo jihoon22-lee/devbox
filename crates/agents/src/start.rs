@@ -140,16 +140,17 @@ mod tests {
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("owned fixture")
                 .as_nanos()
         ));
-        fs::create_dir(&root).unwrap();
+        fs::create_dir(&root).expect("owned fixture");
         let devbox = root.join("devbox");
         let shell = root.join("bash");
-        fs::write(&devbox, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$EVENTS\"\n").unwrap();
-        fs::write(&shell, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::write(&devbox, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$EVENTS\"\n")
+            .expect("owned fixture");
+        fs::write(&shell, "#!/bin/sh\nexit 0\n").expect("owned fixture");
         for file in [&devbox, &shell] {
-            fs::set_permissions(file, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::set_permissions(file, fs::Permissions::from_mode(0o700)).expect("owned fixture");
         }
         let output = root.join("output");
         let events = root.join("events");
@@ -167,34 +168,34 @@ mod tests {
         );
         let script = root.join("start.sh");
         let run = |p: &StartPlan| {
-            fs::write(&script, render_start_script(p)).unwrap();
+            fs::write(&script, render_start_script(p)).expect("owned fixture");
             Command::new("/bin/bash")
                 .arg(&script)
                 .env("PATH", format!("{}:/usr/bin:/bin", root.display()))
                 .env("EVENTS", &events)
                 .output()
-                .unwrap()
+                .expect("owned fixture")
         };
         assert!(run(&p).status.success());
         assert_eq!(
-            fs::read_to_string(&output).unwrap(),
+            fs::read_to_string(&output).expect("owned fixture"),
             "a'one $HOME:5200:/d/prompt.md"
         );
         assert_eq!(
-            fs::read_to_string(&events).unwrap(),
+            fs::read_to_string(&events).expect("owned fixture"),
             "agent event --from setup --code 0\nagent event --from exit --code 0\n"
         );
-        fs::remove_file(&output).unwrap();
-        fs::remove_file(&events).unwrap();
+        fs::remove_file(&output).expect("owned fixture");
+        fs::remove_file(&events).expect("owned fixture");
         p.setup = vec!["false".into(), "touch should-not-exist".into()];
         assert!(run(&p).status.success());
         assert!(!output.exists());
         assert!(!root.join("should-not-exist").exists());
         assert_eq!(
-            fs::read_to_string(&events).unwrap(),
+            fs::read_to_string(&events).expect("owned fixture"),
             "agent event --from setup --code 1\n"
         );
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root).expect("owned fixture");
     }
     #[test]
     fn resume_and_custom_profiles_have_no_prompt_argument() {

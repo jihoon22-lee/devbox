@@ -3,41 +3,52 @@ use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 use support::TestDaemon;
 async fn call(c: &devbox_cli::client::Client, method: &str, params: Value) -> Value {
-    serde_json::from_str(&c.raw_call(method, params, None).await.unwrap()).unwrap()
+    serde_json::from_str(
+        &c.raw_call(method, params, None)
+            .await
+            .expect("owned fixture"),
+    )
+    .expect("owned fixture")
 }
 fn fixture() -> TestDaemon {
     let d = TestDaemon::fixture();
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     let tool = d.home.path().join("usage-tool.sh");
     std::fs::write(&tool, r#"#!/usr/bin/env bash
 printf '{"hook_event_name":"SessionStart","session_id":"s-%s"}' "$DEVBOX_AGENT_ID" | "$DEVBOX_BIN" agent event --from claude
 printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"ready"}' | "$DEVBOX_BIN" agent event --from claude
 while read -r answer; do :; done
-"#).unwrap();
-    let command = format!("bash {}", devbox_core::sh_quote(tool.to_str().unwrap()));
-    d.write_config(&format!("[agents]\ncleanup_after_close=true\n[[agents.profiles]]\nid='usage'\nlabel='Usage'\ncommand={}\nhooks='claude'\n", serde_json::to_string(&command).unwrap()));
+"#).expect("owned fixture");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(tool.to_str().expect("owned fixture"))
+    );
+    d.write_config(&format!("[agents]\ncleanup_after_close=true\n[[agents.profiles]]\nid='usage'\nlabel='Usage'\ncommand={}\nhooks='claude'\n", serde_json::to_string(&command).expect("owned fixture")));
     d
 }
 fn usage_file(d: &TestDaemon, task: &Value, input: u64, truncated: bool) -> std::path::PathBuf {
-    let cwd = task["workdir"].as_str().unwrap();
+    let cwd = task["workdir"].as_str().expect("owned fixture");
     let encoded: String = cwd
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     let dir = d.home.path().join(".claude/projects").join(encoded);
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(format!("{}.jsonl", task["sessionId"].as_str().unwrap()));
+    std::fs::create_dir_all(&dir).expect("owned fixture");
+    let path = dir.join(format!(
+        "{}.jsonl",
+        task["sessionId"].as_str().expect("owned fixture")
+    ));
     let line = json!({"type":"assistant","sessionId":task["sessionId"],"cwd":cwd,"message":{"id":"owned-synthetic-message","usage":{"input_tokens":input,"output_tokens":3,"cache_creation_input_tokens":2,"cache_read_input_tokens":4}}});
     std::fs::write(
         &path,
         format!("{line}\n{}", if truncated { "{partial" } else { "" }),
     )
-    .unwrap();
+    .expect("owned fixture");
     path
 }
 #[tokio::test]
@@ -59,7 +70,7 @@ async fn discard_freezes_tokens_truncation_and_unavailable_snapshot_across_resta
         let task = call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
         assert_eq!(task["tokens"], expected["tokens"]);
         assert_eq!(task["tokensTruncated"], true);
-        std::fs::write(path, "invalid replacement\n").unwrap();
+        std::fs::write(path, "invalid replacement\n").expect("owned fixture");
         assert_eq!(call(&c, "agents.usage", json!({"id":id})).await, expected);
         closed.push((id, expected));
     }
@@ -87,12 +98,12 @@ async fn git_stats_resources_and_merge_usage_follow_owned_task_lifecycle() {
     let project = d.add_project(&c, &repo).await;
     let id = d.create_agent(&c, &project, "usage", true).await;
     let task = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
-    let wt = Path::new(task["workdir"].as_str().unwrap());
-    std::fs::write(wt.join("change.txt"), "owned change").unwrap();
+    let wt = Path::new(task["workdir"].as_str().expect("owned fixture"));
+    std::fs::write(wt.join("change.txt"), "owned change").expect("owned fixture");
     d.git(wt, &["add", "change.txt"]);
     d.git(wt, &["commit", "-qm", "owned fixture change"]);
     let stats = call(&c, "agents.git_stats", json!({})).await;
-    assert_eq!(stats["items"].as_array().unwrap().len(), 1);
+    assert_eq!(stats["items"].as_array().expect("owned fixture").len(), 1);
     assert_eq!(stats["items"][0]["id"], id);
     assert_eq!(stats["items"][0]["changedFiles"], 1);
     assert_eq!(stats["items"][0]["ahead"], 1);
@@ -106,7 +117,7 @@ async fn git_stats_resources_and_merge_usage_follow_owned_task_lifecycle() {
     let closed = call(&c, "agents.merge", json!({"id":id,"strategy":"squash","expect":{"headOid":changes["headOid"],"baseOid":changes["baseOid"]}})).await;
     assert_eq!(closed["tokens"]["input"], 40);
     assert!(!wt.exists());
-    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(path).expect("owned fixture");
     assert_eq!(
         call(&c, "agents.usage", json!({"id":id})).await["tokens"]["input"],
         40
@@ -126,8 +137,8 @@ async fn review_regression_missing_profile_does_not_leave_successful_merge_open(
     let project = d.add_project(&c, &repo).await;
     let id = d.create_agent(&c, &project, "usage", true).await;
     let task = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
-    let wt = Path::new(task["workdir"].as_str().unwrap());
-    std::fs::write(wt.join("change.txt"), "owned change").unwrap();
+    let wt = Path::new(task["workdir"].as_str().expect("owned fixture"));
+    std::fs::write(wt.join("change.txt"), "owned change").expect("owned fixture");
     d.git(wt, &["add", "change.txt"]);
     d.git(wt, &["commit", "-qm", "owned fixture change"]);
     drop(c);

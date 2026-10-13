@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn dirty_count_deduplicates_index_and_worktree_and_rename_source() {
         assert_eq!(
-            dirty_count("MM file\0R  new\0old\0?? untracked\0").unwrap(),
+            dirty_count("MM file\0R  new\0old\0?? untracked\0").expect("owned fixture"),
             3
         );
         assert!(dirty_count("R  new\0").is_err());

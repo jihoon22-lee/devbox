@@ -154,16 +154,15 @@ impl Drop for ClientStream {
         if let Some(state) = self.state.upgrade() {
             state.lock().expect("client").remove_stream(self.id);
         }
-        if let Some(out) = self.out.upgrade() {
-            if out
+        if let Some(out) = self.out.upgrade()
+            && out
                 .try_send(Outgoing {
                     frame: control_frame(0, &Control::StreamClose { stream: self.id }),
                     sent: oneshot::channel().0,
                 })
                 .is_err()
-            {
-                self.shutdown.cancel();
-            }
+        {
+            self.shutdown.cancel();
         }
     }
 }

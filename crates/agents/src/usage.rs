@@ -221,10 +221,10 @@ fn codex_read(reader: impl BufRead, session: &str, cwd: &str) -> AgentUsage {
                     },
                     None => None,
                 };
-                if let Some(total) = info.and_then(|i| i.total_token_usage) {
-                    if let Some(tokens) = total.tokens() {
-                        last = Some(tokens);
-                    }
+                if let Some(total) = info.and_then(|i| i.total_token_usage)
+                    && let Some(tokens) = total.tokens()
+                {
+                    last = Some(tokens);
                 }
             }
         }

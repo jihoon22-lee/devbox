@@ -360,11 +360,11 @@ mod tests {
     fn mcp_write_defaults_false_and_local_can_disable_shared_permission() {
         let temp = tempfile::tempdir().expect("owned home");
         let paths = paths_in(temp.path());
-        assert!(!Config::load(&paths).unwrap().mcp.write);
+        assert!(!Config::load(&paths).expect("owned fixture").mcp.write);
         write(&paths, "config.toml", "[mcp]\nwrite=true\n");
-        assert!(Config::load(&paths).unwrap().mcp.write);
+        assert!(Config::load(&paths).expect("owned fixture").mcp.write);
         write(&paths, "config.local.toml", "[mcp]\nwrite=false\n");
-        assert!(!Config::load(&paths).unwrap().mcp.write);
+        assert!(!Config::load(&paths).expect("owned fixture").mcp.write);
     }
 
     #[test]

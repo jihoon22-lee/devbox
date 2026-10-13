@@ -112,9 +112,12 @@ pub struct LaunchProject {
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct LaunchResult {
     pub terminals: u32,
     pub agents: u32,
+    pub terminal_ids: Vec<String>,
+    pub rev: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]

@@ -7,7 +7,7 @@ fn claude_deduplicates_with_maxima_and_verifies_owner() {
         "{\"type\":\"assistant\",\"sessionId\":\"s\",\"cwd\":\"/work\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":3,\"output_tokens\":5,\"cache_creation_input_tokens\":7}}}\n"
     );
     let result = claude_read(Cursor::new(lines), "s", "/work");
-    let t = result.tokens.unwrap();
+    let t = result.tokens.expect("owned fixture");
     assert_eq!(
         (t.input, t.output, t.cache_read, t.cache_write),
         (10, 5, 8, 7)
@@ -32,7 +32,7 @@ fn codex(source: &str, origin: &str) -> String {
 #[test]
 fn codex_last_cumulative_primary_total_excludes_reasoning_duplication() {
     let result = codex_read(Cursor::new(codex("cli", "user")), "s", "/work");
-    let t = result.tokens.unwrap();
+    let t = result.tokens.expect("owned fixture");
     assert_eq!(
         (t.input, t.output, t.cache_read, t.cache_write),
         (9, 3, 4, 2)
@@ -73,20 +73,20 @@ fn claude_project_directory_uses_cli_naming() {
     );
 }
 fn task() -> AgentTask {
-    serde_json::from_str(r#"{"id":"a","projectId":"p","title":"x","profile":"codex","baseBranch":"main","branch":null,"worktreePath":null,"workdir":"/work","sessionId":"s","terminalId":null,"state":"preparing","reason":null,"attention":null,"port":20000,"prompt":"","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null}"#).unwrap()
+    serde_json::from_str(r#"{"id":"a","projectId":"p","title":"x","profile":"codex","baseBranch":"main","branch":null,"worktreePath":null,"workdir":"/work","sessionId":"s","terminalId":null,"state":"preparing","reason":null,"attention":null,"port":20000,"prompt":"","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null}"#).expect("owned fixture")
 }
 #[test]
 fn codex_uses_only_exact_binding_and_missing_is_not_truncated() {
-    let home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().expect("owned fixture");
     let root = home.path().join(".codex/sessions");
-    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&root).expect("owned fixture");
     let exact = root.join("rollout-s.jsonl");
-    std::fs::write(&exact, codex("cli", "user")).unwrap();
+    std::fs::write(&exact, codex("cli", "user")).expect("owned fixture");
     std::fs::write(
         root.join("rollout-newer-title.jsonl"),
         codex("cli", "title"),
     )
-    .unwrap();
+    .expect("owned fixture");
     let task = task();
     let absent = tokens_for(home.path(), &task, Hooks::Codex, None);
     assert!(absent.tokens.is_none());
@@ -97,7 +97,7 @@ fn codex_uses_only_exact_binding_and_missing_is_not_truncated() {
     assert_eq!(
         tokens_for(home.path(), &task, Hooks::Codex, Some(&b))
             .tokens
-            .unwrap()
+            .expect("owned fixture")
             .input,
         9
     );
@@ -109,10 +109,10 @@ fn codex_uses_only_exact_binding_and_missing_is_not_truncated() {
 #[cfg(unix)]
 #[test]
 fn symlinks_and_special_files_are_rejected_without_reading() {
-    let home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().expect("owned fixture");
     let dir = claude_project_dir(home.path(), "/work");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::os::unix::fs::symlink("/dev/zero", dir.join("s.jsonl")).unwrap();
+    std::fs::create_dir_all(&dir).expect("owned fixture");
+    std::os::unix::fs::symlink("/dev/zero", dir.join("s.jsonl")).expect("owned fixture");
     let report = tokens_for(home.path(), &task(), Hooks::Claude, None);
     assert!(report.tokens.is_none());
     assert!(report.truncated);
@@ -122,7 +122,7 @@ fn assistant(id: &str, cwd: &str, input: u64) -> String {
 }
 #[test]
 fn unicode_legacy_directory_fallback_is_exact_and_ambiguous_matches_fail() {
-    let home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().expect("owned fixture");
     let mut task = task();
     task.workdir = "/work/한글".into();
     assert_eq!(
@@ -130,26 +130,28 @@ fn unicode_legacy_directory_fallback_is_exact_and_ambiguous_matches_fail() {
         Path::new("/h/.claude/projects/-work---")
     );
     let legacy = home.path().join(".claude/projects/legacy");
-    std::fs::create_dir_all(&legacy).unwrap();
-    std::fs::write(legacy.join("s.jsonl"), assistant("m", &task.workdir, 7)).unwrap();
+    std::fs::create_dir_all(&legacy).expect("owned fixture");
+    std::fs::write(legacy.join("s.jsonl"), assistant("m", &task.workdir, 7))
+        .expect("owned fixture");
     std::fs::write(
         legacy.join("newer.jsonl"),
         assistant("m", &task.workdir, 99),
     )
-    .unwrap();
+    .expect("owned fixture");
     assert_eq!(
         tokens_for(home.path(), &task, Hooks::Claude, None)
             .tokens
-            .unwrap()
+            .expect("owned fixture")
             .input,
         7
     );
     let sibling = home.path().join(".claude/projects/sibling");
-    std::fs::create_dir_all(&sibling).unwrap();
-    std::fs::write(sibling.join("s.jsonl"), assistant("m", "/other", 99)).unwrap();
+    std::fs::create_dir_all(&sibling).expect("owned fixture");
+    std::fs::write(sibling.join("s.jsonl"), assistant("m", "/other", 99)).expect("owned fixture");
     let report = tokens_for(home.path(), &task, Hooks::Claude, None);
-    assert_eq!(report.tokens.unwrap().input, 7);
-    std::fs::write(sibling.join("s.jsonl"), assistant("m", &task.workdir, 99)).unwrap();
+    assert_eq!(report.tokens.expect("owned fixture").input, 7);
+    std::fs::write(sibling.join("s.jsonl"), assistant("m", &task.workdir, 99))
+        .expect("owned fixture");
     let ambiguous = tokens_for(home.path(), &task, Hooks::Claude, None);
     assert!(ambiguous.tokens.is_none());
     assert!(ambiguous.truncated);
@@ -159,7 +161,7 @@ fn partial_usage_is_retained_and_overflow_is_explicit() {
     let complete = assistant("m", "/work", 8);
     for tail in ["{invalid}\n", "{incomplete"] {
         let report = claude_read(Cursor::new(complete.clone() + tail), "s", "/work");
-        assert_eq!(report.tokens.unwrap().input, 8);
+        assert_eq!(report.tokens.expect("owned fixture").input, 8);
         assert!(report.truncated);
     }
     let report = claude_read(
@@ -167,7 +169,7 @@ fn partial_usage_is_retained_and_overflow_is_explicit() {
         "s",
         "/work",
     );
-    assert_eq!(report.tokens.unwrap().input, u64::MAX);
+    assert_eq!(report.tokens.expect("owned fixture").input, u64::MAX);
     assert!(report.truncated);
     let lines = complete + "{\"type\":\"user\",\"message\":{\"content\":\"fixture\"}}\n";
     assert!(!claude_read(Cursor::new(lines), "s", "/work").truncated);
@@ -219,7 +221,11 @@ fn unavailable_counters_differ_from_explicitly_measured_zero() {
                 .tokens
                 .is_none()
         );
-        let lines = codex("cli", "user").lines().next().unwrap().to_owned()
+        let lines = codex("cli", "user")
+            .lines()
+            .next()
+            .expect("owned fixture")
+            .to_owned()
             + &format!(
                 "\n{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{usage}}}}}}}\n"
             );
@@ -231,12 +237,16 @@ fn unavailable_counters_differ_from_explicitly_measured_zero() {
     }
     let lines = assistant("m", "/work", 0);
     let report = claude_read(Cursor::new(lines), "s", "/work");
-    assert_eq!(report.tokens.unwrap().input, 0);
+    assert_eq!(report.tokens.expect("owned fixture").input, 0);
     assert!(!report.truncated);
-    let lines = codex("cli", "user").lines().next().unwrap().to_owned()
+    let lines = codex("cli", "user")
+        .lines()
+        .next()
+        .expect("owned fixture")
+        .to_owned()
         + "\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":0,\"output_tokens\":0}}}}\n";
     let report = codex_read(Cursor::new(lines), "s", "/work");
-    let zero = report.tokens.unwrap();
+    let zero = report.tokens.expect("owned fixture");
     assert_eq!((zero.input, zero.output), (0, 0));
     assert!(!report.truncated);
 }

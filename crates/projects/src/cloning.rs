@@ -153,10 +153,10 @@ fn repository_name(url: &str) -> Option<&str> {
         let authority = remainder.split('/').next()?;
         // HTTP usernames may themselves contain tokens. Never persist URI secrets as
         // remote.origin.url; noninteractive helpers provide HTTPS authentication instead.
-        if let Some((userinfo, _)) = authority.rsplit_once('@') {
-            if scheme != "ssh" || userinfo.is_empty() || userinfo.contains([':', '%']) {
-                return None;
-            }
+        if let Some((userinfo, _)) = authority.rsplit_once('@')
+            && (scheme != "ssh" || userinfo.is_empty() || userinfo.contains([':', '%']))
+        {
+            return None;
         }
     } else {
         if url.contains("::") || (!Path::new(url).is_absolute() && !url.contains(':')) {

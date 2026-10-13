@@ -6,25 +6,33 @@ use support::TestDaemon;
 
 fn fixture() -> TestDaemon {
     let d = TestDaemon::fixture();
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     let tool = d.home.path().join("commit.sh");
     std::fs::write(&tool, r#"#!/usr/bin/env bash
 printf change > agent.txt
 git add agent.txt && git commit -qm 'agent change'
 printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"done"}' | "$DEVBOX_BIN" agent event --from claude
 while read -r text; do :; done
-"#).unwrap();
-    let command = format!("bash {}", devbox_core::sh_quote(tool.to_str().unwrap()));
-    d.write_config(&format!("[agents]\ncleanup_after_close=false\n[[agents.profiles]]\nid='commit'\nlabel='C'\ncommand={}\nhooks='none'\n", serde_json::to_string(&command).unwrap()));
+"#).expect("owned fixture");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(tool.to_str().expect("owned fixture"))
+    );
+    d.write_config(&format!("[agents]\ncleanup_after_close=false\n[[agents.profiles]]\nid='commit'\nlabel='C'\ncommand={}\nhooks='none'\n", serde_json::to_string(&command).expect("owned fixture")));
     d
 }
 async fn call(c: &Client, method: &str, params: Value) -> Value {
-    serde_json::from_str(&c.raw_call(method, params, None).await.unwrap()).unwrap()
+    serde_json::from_str(
+        &c.raw_call(method, params, None)
+            .await
+            .expect("owned fixture"),
+    )
+    .expect("owned fixture")
 }
 async fn start(d: &mut TestDaemon) -> (String, Client, String, String, Value) {
     let repo = d.git_repo("projects/app");
@@ -41,9 +49,12 @@ fn rev(d: &TestDaemon, repo: &str, reference: &str) -> String {
         .args(["-C", repo, "rev-parse", reference])
         .stdout(Stdio::piped())
         .output()
-        .unwrap();
+        .expect("owned fixture");
     assert!(out.status.success());
-    String::from_utf8(out.stdout).unwrap().trim().into()
+    String::from_utf8(out.stdout)
+        .expect("owned fixture")
+        .trim()
+        .into()
 }
 async fn reviewed(c: &Client, id: &str) -> Value {
     let ch = call(c, "agents.changes", json!({"id":id})).await;
@@ -61,7 +72,7 @@ async fn late_head_and_stale_discard_count_preserve_the_task() {
     let mut d = fixture();
     let (repo, c, _, id, idle) = start(&mut d).await;
     let expect = reviewed(&c, &id).await;
-    let wt = idle["worktreePath"].as_str().unwrap();
+    let wt = idle["worktreePath"].as_str().expect("owned fixture");
     let base = rev(&d, &repo, "main");
     d.git(Path::new(wt), &["commit", "--allow-empty", "-qm", "late"]);
     refused(
@@ -116,7 +127,7 @@ async fn changed_worktree_branch_cannot_be_discarded() {
     let mut d = fixture();
     let (_, c, _, id, idle) = start(&mut d).await;
     let check = call(&c, "agents.discard_check", json!({"id":id})).await;
-    let wt = idle["worktreePath"].as_str().unwrap();
+    let wt = idle["worktreePath"].as_str().expect("owned fixture");
     d.git(Path::new(wt), &["checkout", "-qb", "external-agent"]);
     refused(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}}),"agents.state_changed").await;
     assert!(Path::new(wt).exists());
@@ -137,11 +148,11 @@ async fn cleanup_preserves_foreign_worktrees_and_symlinks() {
             "add",
             "-qb",
             "agent/foreign",
-            foreign.to_str().unwrap(),
+            foreign.to_str().expect("owned fixture"),
         ],
     );
     let link = d.home.path().join("foreign-link");
-    std::os::unix::fs::symlink(&foreign, &link).unwrap();
+    std::os::unix::fs::symlink(&foreign, &link).expect("owned fixture");
     for path in [&foreign, &link] {
         refused(
             &c,
@@ -153,7 +164,7 @@ async fn cleanup_preserves_foreign_worktrees_and_symlinks() {
         assert!(foreign.join("initial.txt").exists());
         assert!(
             std::fs::symlink_metadata(&link)
-                .unwrap()
+                .expect("owned fixture")
                 .file_type()
                 .is_symlink()
         );
@@ -167,13 +178,13 @@ async fn cleanup_preserves_foreign_worktrees_and_symlinks() {
     assert!(
         !candidates["worktrees"]
             .as_array()
-            .unwrap()
+            .expect("owned fixture")
             .contains(&json!(foreign))
     );
     assert!(
         !candidates["branches"]
             .as_array()
-            .unwrap()
+            .expect("owned fixture")
             .contains(&json!("agent/foreign"))
     );
 }
@@ -181,35 +192,42 @@ async fn cleanup_preserves_foreign_worktrees_and_symlinks() {
 fn fake_gh(d: &mut TestDaemon, success: bool) {
     use std::os::unix::fs::PermissionsExt;
     let bin = d.home.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
+    std::fs::create_dir(&bin).expect("owned fixture");
     let gh = bin.join("gh");
     let script = if success {
         "#!/bin/sh\nprintf '%s\\n' 'https://github.com/fixture/app/pull/1'\n"
     } else {
         "#!/bin/sh\nprintf '%s\\n' 'PRIVATE_GH_FAILURE' >&2\nexit 1\n"
     };
-    std::fs::write(&gh, script).unwrap();
-    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(&gh, script).expect("owned fixture");
+    std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).expect("owned fixture");
     let mut search_path = vec![bin];
-    search_path.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    search_path.extend(std::env::split_paths(
+        &std::env::var_os("PATH").expect("owned fixture"),
+    ));
     d.extra_env.push((
         "PATH".into(),
         std::env::join_paths(search_path)
-            .unwrap()
+            .expect("owned fixture")
             .to_str()
-            .unwrap()
+            .expect("owned fixture")
             .into(),
     ));
 }
 fn remote(d: &TestDaemon, repo: &str) -> String {
     let remote = d.home.path().join("remote.git");
-    std::fs::create_dir(&remote).unwrap();
+    std::fs::create_dir(&remote).expect("owned fixture");
     d.git(&remote, &["init", "--bare", "-q"]);
     d.git(
         Path::new(repo),
-        &["remote", "add", "origin", remote.to_str().unwrap()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            remote.to_str().expect("owned fixture"),
+        ],
     );
-    remote.to_str().unwrap().into()
+    remote.to_str().expect("owned fixture").into()
 }
 #[tokio::test]
 async fn pull_request_pushes_confirmed_commit_and_closes_with_url() {
@@ -229,10 +247,10 @@ async fn pull_request_pushes_confirmed_commit_and_closes_with_url() {
     assert_eq!(closed["prUrl"], "https://github.com/fixture/app/pull/1");
     assert_eq!(closed["closedCommits"], 1);
     assert_eq!(
-        rev(&d, &remote, idle["branch"].as_str().unwrap()),
-        expect["headOid"].as_str().unwrap()
+        rev(&d, &remote, idle["branch"].as_str().expect("owned fixture")),
+        expect["headOid"].as_str().expect("owned fixture")
     );
-    assert!(Path::new(idle["worktreePath"].as_str().unwrap()).exists());
+    assert!(Path::new(idle["worktreePath"].as_str().expect("owned fixture")).exists());
 }
 #[tokio::test]
 async fn failed_pull_request_keeps_task_open_and_reports_no_private_output() {
@@ -251,11 +269,11 @@ async fn failed_pull_request_keeps_task_open_and_reports_no_private_output() {
     assert_eq!(task["state"], "idle");
     assert!(task["prUrl"].is_null());
     assert!(task["closedMs"].is_null());
-    assert!(Path::new(idle["worktreePath"].as_str().unwrap()).exists());
+    assert!(Path::new(idle["worktreePath"].as_str().expect("owned fixture")).exists());
     // Push already succeeded before gh failed; the reviewed commit remains actionable.
     assert_eq!(
-        rev(&d, &remote, idle["branch"].as_str().unwrap()),
-        expect["headOid"].as_str().unwrap()
+        rev(&d, &remote, idle["branch"].as_str().expect("owned fixture")),
+        expect["headOid"].as_str().expect("owned fixture")
     );
 }
 
@@ -280,7 +298,7 @@ async fn incomplete_confirmation_returns_invalid_params_without_side_effects() {
         refused(&c, method, params, "invalid_params").await;
     }
     assert_eq!(rev(&d, &repo, "main"), initial);
-    assert!(Path::new(idle["worktreePath"].as_str().unwrap()).exists());
+    assert!(Path::new(idle["worktreePath"].as_str().expect("owned fixture")).exists());
     assert_eq!(
         call(&c, "agents.get", json!({"id":id})).await["state"],
         "idle"

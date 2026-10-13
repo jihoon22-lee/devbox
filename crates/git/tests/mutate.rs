@@ -27,12 +27,12 @@ fn repo() -> tempfile::TempDir {
 #[tokio::test]
 async fn squash_and_safe_worktree_removal() {
     let d = repo();
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
-    std::fs::write(wt.join("new"), "new").unwrap();
+        .expect("owned fixture");
+    std::fs::write(wt.join("new"), "new").expect("owned fixture");
     sh(&wt, &["add", "."]);
     sh(&wt, &["commit", "-qm", "new"]);
     sh(d.path(), &["config", "user.name", "test"]);
@@ -46,7 +46,7 @@ async fn squash_and_safe_worktree_removal() {
         },
     )
     .await
-    .unwrap();
+    .expect("owned fixture");
     assert!(d.path().join("new").exists());
     assert!(
         git::mutate::worktree_remove(d.path(), d.path(), true)
@@ -55,14 +55,14 @@ async fn squash_and_safe_worktree_removal() {
     );
     git::mutate::worktree_remove(d.path(), &wt, false)
         .await
-        .unwrap();
+        .expect("owned fixture");
 }
 fn identity(d: &Path) {
     sh(d, &["config", "user.name", "test"]);
     sh(d, &["config", "user.email", "test@test"]);
 }
 fn commit_file(d: &Path, name: &str, contents: &str) {
-    std::fs::write(d.join(name), contents).unwrap();
+    std::fs::write(d.join(name), contents).expect("owned fixture");
     sh(d, &["add", "."]);
     sh(d, &["commit", "-qm", "change"]);
 }
@@ -70,14 +70,16 @@ fn commit_file(d: &Path, name: &str, contents: &str) {
 async fn conflicts_restore_base_and_rebase_conflicts_remain_until_abort() {
     let d = repo();
     identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     commit_file(&wt, "a.txt", "side\n");
     commit_file(d.path(), "a.txt", "base\n");
-    let before = git::run::resolve(d.path(), "HEAD").await.unwrap();
+    let before = git::run::resolve(d.path(), "HEAD")
+        .await
+        .expect("owned fixture");
     for strategy in [
         git::mutate::MergeStrategy::Merge,
         git::mutate::MergeStrategy::Squash {
@@ -89,47 +91,54 @@ async fn conflicts_restore_base_and_rebase_conflicts_remain_until_abort() {
     ] {
         let error = git::mutate::merge_into(d.path(), "main", "agent/x", strategy)
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert!(
             matches!(error, git::GitError::Conflict { ref files } if files == &["a.txt"]),
             "{error:?}"
         );
-        assert_eq!(git::run::resolve(d.path(), "HEAD").await.unwrap(), before);
-        assert!(git::status(d.path()).await.unwrap().clean);
-        assert!(git::status(&wt).await.unwrap().clean);
+        assert_eq!(
+            git::run::resolve(d.path(), "HEAD")
+                .await
+                .expect("owned fixture"),
+            before
+        );
+        assert!(git::status(d.path()).await.expect("owned fixture").clean);
+        assert!(git::status(&wt).await.expect("owned fixture").clean);
     }
     assert!(matches!(
-        git::mutate::rebase_onto(&wt, "main").await.unwrap(),
+        git::mutate::rebase_onto(&wt, "main")
+            .await
+            .expect("owned fixture"),
         git::mutate::RebaseOutcome::Conflict { .. }
     ));
     assert!(matches!(
         git::mutate::rebase_onto(&wt, "main").await,
         Err(git::GitError::OperationInProgress)
     ));
-    git::mutate::rebase_abort(&wt).await.unwrap();
-    assert!(git::status(&wt).await.unwrap().clean);
+    git::mutate::rebase_abort(&wt).await.expect("owned fixture");
+    assert!(git::status(&wt).await.expect("owned fixture").clean);
 }
 #[tokio::test]
 async fn rebase_success_counts_and_ancestry_cleanup() {
     let d = repo();
     identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     commit_file(&wt, "side", "side");
     commit_file(d.path(), "base", "base");
     assert_eq!(
         git::mutate::unmerged_count(d.path(), "agent/x", "main")
             .await
-            .unwrap(),
+            .expect("owned fixture"),
         1
     );
     assert!(
         git::mutate::merged_agent_branches(d.path(), "main")
             .await
-            .unwrap()
+            .expect("owned fixture")
             .is_empty()
     );
     git::mutate::merge_into(
@@ -141,36 +150,36 @@ async fn rebase_success_counts_and_ancestry_cleanup() {
         },
     )
     .await
-    .unwrap();
+    .expect("owned fixture");
     assert!(d.path().join("side").exists());
     assert_eq!(
         git::mutate::merged_agent_branches(d.path(), "main")
             .await
-            .unwrap(),
+            .expect("owned fixture"),
         vec!["agent/x"]
     );
     git::mutate::worktree_remove(d.path(), &wt, false)
         .await
-        .unwrap();
+        .expect("owned fixture");
     git::mutate::delete_branch(d.path(), "agent/x", false)
         .await
-        .unwrap();
+        .expect("owned fixture");
 }
 #[tokio::test]
 async fn guards_reject_dirty_wrong_foreign_locked_existing_and_options() {
     let d = repo();
     identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     assert!(matches!(
         git::mutate::worktree_add(d.path(), &wt, "agent/x", "main").await,
         Err(git::GitError::BranchExists { .. })
     ));
     let existing = holder.path().join("existing");
-    std::fs::create_dir(&existing).unwrap();
+    std::fs::create_dir(&existing).expect("owned fixture");
     assert!(
         git::mutate::worktree_add(d.path(), &existing, "agent/new", "main")
             .await
@@ -179,10 +188,10 @@ async fn guards_reject_dirty_wrong_foreign_locked_existing_and_options() {
     assert!(
         !git::branches(d.path())
             .await
-            .unwrap()
+            .expect("owned fixture")
             .contains(&"agent/new".into())
     );
-    std::fs::write(d.path().join("untracked"), "u").unwrap();
+    std::fs::write(d.path().join("untracked"), "u").expect("owned fixture");
     assert!(matches!(
         git::mutate::merge_into(
             d.path(),
@@ -193,7 +202,7 @@ async fn guards_reject_dirty_wrong_foreign_locked_existing_and_options() {
         .await,
         Err(git::GitError::BaseDirty { .. })
     ));
-    std::fs::remove_file(d.path().join("untracked")).unwrap();
+    std::fs::remove_file(d.path().join("untracked")).expect("owned fixture");
     assert!(matches!(
         git::mutate::merge_into(
             d.path(),
@@ -204,18 +213,24 @@ async fn guards_reject_dirty_wrong_foreign_locked_existing_and_options() {
         .await,
         Err(git::GitError::BaseNotCheckedOut { .. })
     ));
-    std::fs::write(wt.join("untracked"), "u").unwrap();
+    std::fs::write(wt.join("untracked"), "u").expect("owned fixture");
     assert!(matches!(
         git::mutate::worktree_remove(d.path(), &wt, false).await,
         Err(git::GitError::WorktreeDirty { .. })
     ));
-    sh(d.path(), &["worktree", "lock", wt.to_str().unwrap()]);
+    sh(
+        d.path(),
+        &["worktree", "lock", wt.to_str().expect("owned fixture")],
+    );
     assert!(
         git::mutate::worktree_remove(d.path(), &wt, true)
             .await
             .is_err()
     );
-    sh(d.path(), &["worktree", "unlock", wt.to_str().unwrap()]);
+    sh(
+        d.path(),
+        &["worktree", "unlock", wt.to_str().expect("owned fixture")],
+    );
     let foreign = repo();
     assert!(
         git::mutate::worktree_remove(d.path(), foreign.path(), true)
@@ -243,19 +258,19 @@ async fn guards_reject_dirty_wrong_foreign_locked_existing_and_options() {
     }
     git::mutate::worktree_remove(d.path(), &wt, true)
         .await
-        .unwrap();
+        .expect("owned fixture");
 }
 #[cfg(unix)]
 #[tokio::test]
 async fn symlink_worktree_alias_is_never_removed() {
     let d = repo();
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     let alias = holder.path().join("alias");
-    std::os::unix::fs::symlink(&wt, &alias).unwrap();
+    std::os::unix::fs::symlink(&wt, &alias).expect("owned fixture");
     assert!(
         git::mutate::worktree_remove(d.path(), &alias, true)
             .await
@@ -269,16 +284,18 @@ async fn failed_squash_commit_rolls_back_and_preserves_failure() {
     use std::os::unix::fs::PermissionsExt;
     let d = repo();
     identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     commit_file(&wt, "new", "new");
     let hook = d.path().join(".git/hooks/pre-commit");
-    std::fs::write(&hook, "#!/bin/sh\necho rejected >&2\nexit 1\n").unwrap();
-    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let before = git::run::resolve(d.path(), "HEAD").await.unwrap();
+    std::fs::write(&hook, "#!/bin/sh\necho rejected >&2\nexit 1\n").expect("owned fixture");
+    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
+    let before = git::run::resolve(d.path(), "HEAD")
+        .await
+        .expect("owned fixture");
     assert!(matches!(
         git::mutate::merge_into(
             d.path(),
@@ -291,8 +308,13 @@ async fn failed_squash_commit_rolls_back_and_preserves_failure() {
         .await,
         Err(git::GitError::Failed { .. })
     ));
-    assert_eq!(git::run::resolve(d.path(), "HEAD").await.unwrap(), before);
-    assert!(git::status(d.path()).await.unwrap().clean);
+    assert_eq!(
+        git::run::resolve(d.path(), "HEAD")
+            .await
+            .expect("owned fixture"),
+        before
+    );
+    assert!(git::status(d.path()).await.expect("owned fixture").clean);
     assert!(!d.path().join("new").exists());
 }
 #[cfg(unix)]
@@ -307,24 +329,25 @@ fn fake_gh_cases_use_isolated_process_environment() {
         "switched",
     ] {
         use std::os::unix::fs::PermissionsExt;
-        let fixture = tempfile::tempdir().unwrap();
+        let fixture = tempfile::tempdir().expect("owned fixture");
         let bin = fixture.path().join("bin");
-        std::fs::create_dir(&bin).unwrap();
-        std::os::unix::fs::symlink(which::which("git").unwrap(), bin.join("git")).unwrap();
+        std::fs::create_dir(&bin).expect("owned fixture");
+        std::os::unix::fs::symlink(which::which("git").expect("owned fixture"), bin.join("git"))
+            .expect("owned fixture");
         let marker = fixture.path().join("body");
         let script = "#!/bin/sh\nfor arg do last=$arg; done\n/bin/cat \"$last\" > \"$DEVBOX_GIT_BODY_MARKER\"\ncase \"$DEVBOX_GIT_GH_CASE\" in failed) echo gh-error >&2; exit 1;; empty) exit 0;; esac\nprintf 'https://example.invalid/pr/1\\n'\n";
         if case != "missing" {
-            std::fs::write(bin.join("gh"), script).unwrap();
+            std::fs::write(bin.join("gh"), script).expect("owned fixture");
             std::fs::set_permissions(bin.join("gh"), std::fs::Permissions::from_mode(0o700))
-                .unwrap();
+                .expect("owned fixture");
         }
-        let out = Command::new(std::env::current_exe().unwrap())
+        let out = Command::new(std::env::current_exe().expect("owned fixture"))
             .args(["--exact", "fake_gh_child", "--nocapture"])
             .env("DEVBOX_GIT_GH_CASE", case)
             .env("PATH", &bin)
             .env("DEVBOX_GIT_BODY_MARKER", &marker)
             .output()
-            .unwrap();
+            .expect("owned fixture");
         assert!(
             out.status.success(),
             "{case}: {} {}",
@@ -341,20 +364,33 @@ async fn fake_gh_child() {
     };
     let d = repo();
     identity(d.path());
-    let fixture = tempfile::tempdir().unwrap();
+    let fixture = tempfile::tempdir().expect("owned fixture");
     let origin = fixture.path().join("origin.git");
     sh(
         fixture.path(),
-        &["init", "--bare", "-q", origin.to_str().unwrap()],
+        &[
+            "init",
+            "--bare",
+            "-q",
+            origin.to_str().expect("owned fixture"),
+        ],
     );
     sh(
         d.path(),
-        &["remote", "add", "origin", origin.to_str().unwrap()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            origin.to_str().expect("owned fixture"),
+        ],
     );
     sh(d.path(), &["checkout", "-qb", "agent/x"]);
     commit_file(d.path(), "side", "side");
-    let oid = git::run::resolve(d.path(), "HEAD").await.unwrap();
-    let marker = Path::new(&std::env::var("DEVBOX_GIT_BODY_MARKER").unwrap()).to_path_buf();
+    let oid = git::run::resolve(d.path(), "HEAD")
+        .await
+        .expect("owned fixture");
+    let marker =
+        Path::new(&std::env::var("DEVBOX_GIT_BODY_MARKER").expect("owned fixture")).to_path_buf();
     if case == "push-failed" {
         sh(
             d.path(),
@@ -362,7 +398,11 @@ async fn fake_gh_child() {
                 "remote",
                 "set-url",
                 "origin",
-                fixture.path().join("absent.git").to_str().unwrap(),
+                fixture
+                    .path()
+                    .join("absent.git")
+                    .to_str()
+                    .expect("owned fixture"),
             ],
         );
     }
@@ -373,7 +413,10 @@ async fn fake_gh_child() {
     let result =
         git::mutate::push_and_pr_at(d.path(), "agent/x", &oid, "main", "Title", body).await;
     match case.as_str() {
-        "success" => assert_eq!(result.unwrap(), "https://example.invalid/pr/1"),
+        "success" => assert_eq!(
+            result.expect("owned fixture"),
+            "https://example.invalid/pr/1"
+        ),
         "failed" => assert!(matches!(result, Err(git::GitError::GhFailed { .. }))),
         "empty" => assert!(matches!(result, Err(git::GitError::GhInvalidOutput))),
         "push-failed" => assert!(matches!(result, Err(git::GitError::PushFailed { .. }))),
@@ -382,8 +425,16 @@ async fn fake_gh_child() {
         _ => panic!("unknown case"),
     }
     if matches!(case.as_str(), "success" | "failed" | "empty") {
-        assert_eq!(std::fs::read_to_string(marker).unwrap(), body);
-        assert_eq!(git::run::resolve(&origin, "agent/x").await.unwrap(), oid);
+        assert_eq!(
+            std::fs::read_to_string(marker).expect("owned fixture"),
+            body
+        );
+        assert_eq!(
+            git::run::resolve(&origin, "agent/x")
+                .await
+                .expect("owned fixture"),
+            oid
+        );
     } else {
         assert!(!marker.exists());
         assert!(git::run::resolve(&origin, "agent/x").await.is_err());
@@ -395,21 +446,23 @@ async fn rollback_preserves_head_changed_by_failing_hook_and_add_rejects_parent_
     use std::os::unix::fs::PermissionsExt;
     let d = repo();
     identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     commit_file(&wt, "new", "new");
     sh(d.path(), &["branch", "outside", "agent/x"]);
-    let outside = git::run::resolve(d.path(), "outside").await.unwrap();
+    let outside = git::run::resolve(d.path(), "outside")
+        .await
+        .expect("owned fixture");
     let hook = d.path().join(".git/hooks/pre-commit");
     std::fs::write(
         &hook,
         "#!/bin/sh\ngit update-ref refs/heads/main refs/heads/outside\nexit 1\n",
     )
-    .unwrap();
-    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).unwrap();
+    .expect("owned fixture");
+    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
     assert!(matches!(
         git::mutate::merge_into(
             d.path(),
@@ -422,9 +475,14 @@ async fn rollback_preserves_head_changed_by_failing_hook_and_add_rejects_parent_
         .await,
         Err(git::GitError::StateChanged)
     ));
-    assert_eq!(git::run::resolve(d.path(), "HEAD").await.unwrap(), outside);
+    assert_eq!(
+        git::run::resolve(d.path(), "HEAD")
+            .await
+            .expect("owned fixture"),
+        outside
+    );
     let alias = holder.path().join("alias");
-    std::os::unix::fs::symlink(holder.path(), &alias).unwrap();
+    std::os::unix::fs::symlink(holder.path(), &alias).expect("owned fixture");
     assert!(
         git::mutate::worktree_add(d.path(), &alias.join("new"), "agent/new", "main")
             .await
@@ -433,7 +491,7 @@ async fn rollback_preserves_head_changed_by_failing_hook_and_add_rejects_parent_
     assert!(
         !git::branches(d.path())
             .await
-            .unwrap()
+            .expect("owned fixture")
             .contains(&"agent/new".into())
     );
 }
@@ -441,15 +499,15 @@ async fn rollback_preserves_head_changed_by_failing_hook_and_add_rejects_parent_
 async fn existing_merge_state_is_preserved_and_wrong_rebase_worktree_is_rejected() {
     let d = repo();
     identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
+    let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
     git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     let other = holder.path().join("other");
     git::mutate::worktree_add(d.path(), &other, "agent/other", "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     commit_file(&other, "other", "other");
     assert!(matches!(
         git::mutate::merge_into(
@@ -468,7 +526,7 @@ async fn existing_merge_state_is_preserved_and_wrong_rebase_worktree_is_rejected
             .await
             .is_err()
     );
-    let index = std::fs::read(d.path().join(".git/index")).unwrap();
+    let index = std::fs::read(d.path().join(".git/index")).expect("owned fixture");
     assert!(matches!(
         git::mutate::merge_into(
             d.path(),
@@ -479,105 +537,12 @@ async fn existing_merge_state_is_preserved_and_wrong_rebase_worktree_is_rejected
         .await,
         Err(git::GitError::OperationInProgress)
     ));
-    assert_eq!(std::fs::read(d.path().join(".git/index")).unwrap(), index);
+    assert_eq!(
+        std::fs::read(d.path().join(".git/index")).expect("owned fixture"),
+        index
+    );
     assert!(d.path().join(".git/MERGE_HEAD").exists());
 }
-#[cfg(unix)]
-#[tokio::test]
-async fn failed_worktree_hook_reports_partial_resources_and_preserves_hook_changes() {
-    use std::os::unix::fs::PermissionsExt;
-    let d = repo();
-    let holder = tempfile::tempdir().unwrap();
-    let wt = holder.path().join("worker");
-    let hook = d.path().join(".git/hooks/post-checkout");
-    std::fs::write(
-        &hook,
-        "#!/bin/sh\nprintf hook-data > hook-created\necho hook-failed >&2\nexit 1\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let error = git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&error, git::GitError::WorktreeAddPartial { branch, path, path_exists: true, branch_exists: Some(true), worktree_registered: Some(true), cause } if branch == "agent/x" && path == wt.to_str().unwrap() && matches!(cause.as_ref(), git::GitError::Failed { stderr, .. } if stderr.contains("hook-failed"))),
-        "{error:?}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(wt.join("hook-created")).unwrap(),
-        "hook-data"
-    );
-    assert_eq!(
-        git::current_branch(&wt).await.unwrap().as_deref(),
-        Some("agent/x")
-    );
-    assert!(
-        git::branches(d.path())
-            .await
-            .unwrap()
-            .contains(&"agent/x".into())
-    );
-}
-#[tokio::test]
-async fn checkout_shorthand_cannot_delete_a_different_literal_branch() {
-    let d = repo();
-    sh(d.path(), &["checkout", "-qb", "agent/x"]);
-    sh(d.path(), &["checkout", "-q", "main"]);
-    assert!(
-        git::mutate::delete_branch(d.path(), "@{-1}", true)
-            .await
-            .is_err()
-    );
-    assert!(
-        git::branches(d.path())
-            .await
-            .unwrap()
-            .contains(&"agent/x".into())
-    );
-}
 
-#[tokio::test]
-async fn merge_at_rechecks_the_confirmed_base_and_source_branch() {
-    let d = repo();
-    identity(d.path());
-    let holder = tempfile::tempdir().unwrap();
-    let wt = holder.path().join("owned");
-    git::mutate::worktree_add(d.path(), &wt, "agent/confirmed", "main")
-        .await
-        .unwrap();
-    let base = git::run::resolve(d.path(), "main").await.unwrap();
-    commit_file(&wt, "new.txt", "agent\n");
-    let head = git::run::resolve(&wt, "HEAD").await.unwrap();
-    sh(d.path(), &["commit", "--allow-empty", "-qm", "late base"]);
-    let current = git::run::resolve(d.path(), "main").await.unwrap();
-    let error = git::mutate::merge_into_at(
-        d.path(),
-        "main",
-        &head,
-        git::mutate::MergeStrategy::Merge,
-        Some(&base),
-        Some("agent/confirmed"),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(error, git::GitError::StateChanged));
-    assert_eq!(git::run::resolve(d.path(), "HEAD").await.unwrap(), current);
-    sh(&wt, &["checkout", "-qb", "foreign"]);
-    let error = git::mutate::merge_into_at(
-        d.path(),
-        "main",
-        &head,
-        git::mutate::MergeStrategy::Rebase {
-            worktree: wt.clone(),
-        },
-        Some(&current),
-        Some("agent/confirmed"),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(error, git::GitError::StateChanged));
-    assert_eq!(
-        git::current_branch(&wt).await.unwrap().as_deref(),
-        Some("foreign")
-    );
-}
+#[path = "support/mutate_safety.rs"]
+mod safety_cases;

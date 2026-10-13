@@ -375,12 +375,24 @@ async fn read_bounded(
     }
 }
 
+pub(crate) fn internal(error: std::io::Error, operation: &'static str) -> GitError {
+    tracing::error!(%error, operation, "Git I/O failure");
+    GitError::Internal
+}
+
+/// File query paths are repository-root-relative, including for callers in a subdirectory.
+pub(crate) async fn repository_root(dir: &Path) -> Result<std::path::PathBuf, GitError> {
+    let root = git(dir, &["rev-parse", "--show-toplevel"]).await?;
+    let root = root.strip_suffix('\n').ok_or(GitError::InvalidOutput)?;
+    Ok(std::path::PathBuf::from(root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(target_os = "linux")]
     async fn effective_ssh_options(command: &str) {
-        let ssh = ssh_with_batch(command).unwrap();
+        let ssh = ssh_with_batch(command).expect("owned fixture");
         let mut process = Command::new("sh");
         process
             .args(["-c", &format!("{ssh} -G fixture.invalid")])
@@ -388,7 +400,7 @@ mod tests {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let (code, output, _) = execute(process, TIMEOUT).await.unwrap();
+        let (code, output, _) = execute(process, TIMEOUT).await.expect("owned fixture");
         assert_eq!(code, 0, "SSH environment prefix broke command execution");
         assert!(output.lines().any(|line| line == "batchmode yes"));
         assert!(
@@ -410,8 +422,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn clone_batch_options_override_conflicting_ssh_options_without_network() {
-        let ssh =
-            ssh_with_batch("ssh -F /dev/null -oBatchMode=no -oStrictHostKeyChecking=no").unwrap();
+        let ssh = ssh_with_batch("ssh -F /dev/null -oBatchMode=no -oStrictHostKeyChecking=no")
+            .expect("owned fixture");
         let mut command = Command::new("sh");
         command
             .args(["-c", &format!("{ssh} -G fixture.invalid")])
@@ -419,7 +431,7 @@ mod tests {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let (code, output, _) = execute(command, TIMEOUT).await.unwrap();
+        let (code, output, _) = execute(command, TIMEOUT).await.expect("owned fixture");
         assert_eq!(code, 0);
         assert!(
             output.lines().any(|line| line == "batchmode yes"),
@@ -435,8 +447,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn clone_credential_environment_cannot_launch_interactive_helpers() {
-        let fixture = tempfile::tempdir().unwrap();
-        let directory = std::fs::File::open(fixture.path()).unwrap();
+        let fixture = tempfile::tempdir().expect("owned fixture");
+        let directory = std::fs::File::open(fixture.path()).expect("owned fixture");
         let command = clone_command(&directory, &["clone", "--", "fixture", "."]);
         let variables: std::collections::HashMap<_, _> = command.as_std().get_envs().collect();
         for key in ["GIT_ASKPASS", "SSH_ASKPASS"] {
@@ -469,11 +481,11 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn timed_out_command_does_not_leave_owned_descendants() {
-        let fixture_dir = tempfile::tempdir().unwrap();
+        let fixture_dir = tempfile::tempdir().expect("owned fixture");
         let marker = fixture_dir.path().join("survived");
         let child = format!(
             "import time,pathlib; time.sleep(.3); pathlib.Path({:?}).write_text('survived')",
-            marker.to_str().unwrap()
+            marker.to_str().expect("owned fixture")
         );
         let script = format!(
             "import subprocess,time; subprocess.Popen(['python3','-c', {child:?}]); time.sleep(60)"
@@ -491,16 +503,16 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn cancelled_command_does_not_leave_owned_descendants() {
-        let fixture_dir = tempfile::tempdir().unwrap();
+        let fixture_dir = tempfile::tempdir().expect("owned fixture");
         let marker = fixture_dir.path().join("survived");
         let ready = fixture_dir.path().join("ready");
         let child = format!(
             "import time,pathlib; time.sleep(.3); pathlib.Path({:?}).write_text('survived')",
-            marker.to_str().unwrap()
+            marker.to_str().expect("owned fixture")
         );
         let script = format!(
             "import subprocess,time,pathlib; subprocess.Popen(['python3','-c', {child:?}]); pathlib.Path({:?}).write_text('ready'); time.sleep(60)",
-            ready.to_str().unwrap()
+            ready.to_str().expect("owned fixture")
         );
         let task = tokio::spawn(execute(fixture(&script), Duration::from_secs(30)));
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -509,9 +521,13 @@ mod tests {
             }
         })
         .await
-        .unwrap();
+        .expect("owned fixture");
         task.abort();
-        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(
+            task.await
+                .expect_err("fixture operation must fail")
+                .is_cancelled()
+        );
         tokio::time::sleep(Duration::from_millis(450)).await;
         assert!(!marker.exists(), "owned descendant survived cancellation");
     }
@@ -546,16 +562,4 @@ mod tests {
             Err(GitError::InvalidEncoding)
         ));
     }
-}
-
-pub(crate) fn internal(error: std::io::Error, operation: &'static str) -> GitError {
-    tracing::error!(%error, operation, "Git I/O failure");
-    GitError::Internal
-}
-
-/// File query paths are repository-root-relative, including for callers in a subdirectory.
-pub(crate) async fn repository_root(dir: &Path) -> Result<std::path::PathBuf, GitError> {
-    let root = git(dir, &["rev-parse", "--show-toplevel"]).await?;
-    let root = root.strip_suffix('\n').ok_or(GitError::InvalidOutput)?;
-    Ok(std::path::PathBuf::from(root))
 }

@@ -205,8 +205,8 @@ pub(crate) fn start(
             result = input => Some(result),
             _ = async {
                 loop {
-                    if let Some(child) = &mut guard.child {
-                        if matches!(child.try_wait(), Ok(Some(_))) { guard.child = None; break; }
+                    if let Some(child) = &mut guard.child
+                        && matches!(child.try_wait(), Ok(Some(_))) { guard.child = None; break;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 }

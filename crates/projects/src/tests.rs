@@ -475,31 +475,33 @@ async fn clone_registers_success_and_preserves_preexisting_and_failed_targets() 
 async fn clone_registration_rechecks_inode_after_waiting_for_database_writer() {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("owned project fixture operation");
     let (s, hub) = service(root.path()).await;
     let mut events = hub.subscribe("projects.changed");
     let target = root.path().join("clone");
-    let reservation = crate::clone_target::CloneTarget::reserve(&target).unwrap();
-    std::fs::write(target.join("owned"), "preserve owned files").unwrap();
+    let reservation = crate::clone_target::CloneTarget::reserve(&target)
+        .expect("owned project fixture operation");
+    std::fs::write(target.join("owned"), "preserve owned files")
+        .expect("owned project fixture operation");
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let db = s.db.clone();
     let blocker = tokio::spawn(async move {
         db.write_checked::<(), (), _>(move |_| {
-            ready_tx.send(()).unwrap();
-            release_rx.recv().unwrap();
+            ready_tx.send(()).expect("owned project fixture operation");
+            release_rx.recv().expect("owned project fixture operation");
             Ok(Err(()))
         })
         .await
-        .unwrap()
+        .expect("owned project fixture operation")
     });
     tokio::task::spawn_blocking(move || {
         ready_rx
             .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap()
+            .expect("owned project fixture operation")
     })
     .await
-    .unwrap();
+    .expect("owned project fixture operation");
     let mut register = Box::pin(s.register_clone(reservation));
     assert!(matches!(
         register
@@ -508,24 +510,33 @@ async fn clone_registration_rechecks_inode_after_waiting_for_database_writer() {
         Poll::Pending
     ));
     let retained = root.path().join("retained");
-    std::fs::rename(&target, &retained).unwrap();
-    std::fs::create_dir(&target).unwrap();
-    std::fs::write(target.join("foreign"), "preserve foreign files").unwrap();
-    release_tx.send(()).unwrap();
-    assert_eq!(blocker.await.unwrap(), Err(()));
+    std::fs::rename(&target, &retained).expect("owned project fixture operation");
+    std::fs::create_dir(&target).expect("owned project fixture operation");
+    std::fs::write(target.join("foreign"), "preserve foreign files")
+        .expect("owned project fixture operation");
+    release_tx
+        .send(())
+        .expect("owned project fixture operation");
+    assert_eq!(
+        blocker.await.expect("owned project fixture operation"),
+        Err(())
+    );
     assert!(matches!(
         register.await,
         Err(Fail::Domain(ProjectsError::CloneFailed { .. }))
     ));
-    let list = s.list(ListProjects {}).await.unwrap();
+    let list = s
+        .list(ListProjects {})
+        .await
+        .expect("owned project fixture operation");
     assert!(list.items.is_empty());
     assert_eq!(list.rev, "0");
     assert_eq!(
-        std::fs::read_to_string(retained.join("owned")).unwrap(),
+        std::fs::read_to_string(retained.join("owned")).expect("owned project fixture operation"),
         "preserve owned files"
     );
     assert_eq!(
-        std::fs::read_to_string(target.join("foreign")).unwrap(),
+        std::fs::read_to_string(target.join("foreign")).expect("owned project fixture operation"),
         "preserve foreign files"
     );
     drop(s);

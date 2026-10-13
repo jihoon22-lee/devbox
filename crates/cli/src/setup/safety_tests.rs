@@ -344,20 +344,23 @@ async fn tmux_config_refuses_foreign_files_and_symlinks_before_manager_changes()
 async fn refresh_captures_only_environment_and_preserves_previous_on_failure() {
     let temp = tempfile::tempdir().expect("fixture home");
     let paths = devbox_core::Paths::resolve(
-        devbox_core::Instance::parse("test-refresh").unwrap(),
+        devbox_core::Instance::parse("test-refresh").expect("owned fixture"),
         &FakeEnv(temp.path().into()),
     )
-    .unwrap();
+    .expect("owned fixture");
     let runner = FakeRunner {
         env: b"PATH=/usr/bin\0TOKEN=secret\0".to_vec(),
         calls: Default::default(),
         fail: None,
     };
-    refresh_with(&paths, &runner).await.unwrap();
+    refresh_with(&paths, &runner).await.expect("owned fixture");
     let file = paths.instance_config_dir.join("env");
-    let text = std::fs::read_to_string(&file).unwrap();
+    let text = std::fs::read_to_string(&file).expect("owned fixture");
     assert_eq!(text, "PATH=\"/usr/bin\"\n");
-    assert_eq!(*runner.calls.lock().unwrap(), vec!["bash -lc env -0"]);
+    assert_eq!(
+        *runner.calls.lock().expect("owned fixture"),
+        vec!["bash -lc env -0"]
+    );
     assert!(!paths.home.join(".config/systemd/user").exists());
     let invalid = FakeRunner {
         env: b"PATH=relative\0".to_vec(),
@@ -365,15 +368,22 @@ async fn refresh_captures_only_environment_and_preserves_previous_on_failure() {
         fail: None,
     };
     assert!(refresh_with(&paths, &invalid).await.is_err());
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
+    assert_eq!(std::fs::read_to_string(&file).expect("owned fixture"), text);
     assert_eq!(
-        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        std::fs::metadata(&file)
+            .expect("owned fixture")
+            .permissions()
+            .mode()
+            & 0o777,
         0o600
     );
     let foreign = temp.path().join("foreign");
-    std::fs::write(&foreign, "preserve").unwrap();
-    std::fs::remove_file(&file).unwrap();
-    symlink(&foreign, &file).unwrap();
+    std::fs::write(&foreign, "preserve").expect("owned fixture");
+    std::fs::remove_file(&file).expect("owned fixture");
+    symlink(&foreign, &file).expect("owned fixture");
     assert!(refresh_with(&paths, &runner).await.is_err());
-    assert_eq!(std::fs::read_to_string(foreign).unwrap(), "preserve");
+    assert_eq!(
+        std::fs::read_to_string(foreign).expect("owned fixture"),
+        "preserve"
+    );
 }

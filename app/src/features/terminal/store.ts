@@ -130,12 +130,38 @@ export function sanitizeProjects(value: unknown): Record<string, Layout> {
 }
 interface Store {
   byProject: Record<string, Layout>;
+  pendingLaunches: Record<string, { ids: string[]; rev: string }>;
+  openLaunched(project: string, ids: string[], rev: string): void;
+  confirmLaunch(project: string, rev: string): void;
   update(project: string, change: (layout: Layout) => Layout): void;
 }
 export const useTerminalLayout = create<Store>()(
   persist(
     (set, get) => ({
       byProject: {},
+      pendingLaunches: {},
+      openLaunched: (project, ids, rev) => {
+        if (!ids.length) return;
+        const state = get(),
+          previous = state.pendingLaunches[project];
+        set({
+          byProject: { ...state.byProject, [project]: ids.reduce(openTab, state.byProject[project] ?? EMPTY_LAYOUT) },
+          pendingLaunches: {
+            ...state.pendingLaunches,
+            [project]: {
+              ids: [...new Set([...(previous?.ids ?? []), ...ids])],
+              rev: previous && BigInt(previous.rev) > BigInt(rev) ? previous.rev : rev,
+            },
+          },
+        });
+      },
+      confirmLaunch: (project, rev) => {
+        const pending = get().pendingLaunches;
+        if (!pending[project] || BigInt(rev) < BigInt(pending[project].rev)) return;
+        const next = { ...pending };
+        delete next[project];
+        set({ pendingLaunches: next });
+      },
       update: (project, change) => {
         const current = get().byProject[project] ?? EMPTY_LAYOUT;
         const next = change(current);

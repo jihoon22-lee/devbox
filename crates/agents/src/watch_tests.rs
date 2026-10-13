@@ -1,6 +1,6 @@
 use super::*;
 fn task() -> AgentTask {
-    serde_json::from_str(r#"{"id":"a","projectId":"p","title":"x","profile":"codex","baseBranch":"main","branch":null,"worktreePath":null,"workdir":"/owned","sessionId":null,"terminalId":"term","state":"running","reason":null,"attention":null,"port":20000,"prompt":"","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null}"#).unwrap()
+    serde_json::from_str(r#"{"id":"a","projectId":"p","title":"x","profile":"codex","baseBranch":"main","branch":null,"worktreePath":null,"workdir":"/owned","sessionId":null,"terminalId":"term","state":"running","reason":null,"attention":null,"port":20000,"prompt":"","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null}"#).expect("owned fixture")
 }
 fn snapshot() -> Snapshot {
     Snapshot {
@@ -11,7 +11,8 @@ fn snapshot() -> Snapshot {
 #[test]
 fn observed_codex_wrapped_choices_match_only_current_ordered_footer() {
     let builtin = profile::builtin();
-    let patterns = profile::compiled(&crate::AgentProfiles { items: builtin }).unwrap();
+    let patterns =
+        profile::compiled(&crate::AgentProfiles { items: builtin }).expect("owned fixture");
     // Scrubbed fixture follows the owned S0a 0.162.1 approval capture. The header is
     // 19 physical lines above the bottom and option 2 spans multiple lines.
     let tail = "old conversation\n\nWould you like to run the following command?\n\nEnvironment: local\n\nReason: create an owned fixture\n\n$ mkdir -p /owned/test && printf hi >\n/owned/test/hello.txt\n\n\n› 1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `mkdir -p /owned/long-path\n  /with/more/wrapping/hello.txt` (p)\n3. No, and tell Codex what to do differently (esc)\n\nPress enter to confirm or esc to cancel\n";
@@ -43,7 +44,7 @@ fn quiet_period_requires_two_seconds_of_unchanged_output_and_generation() {
     assert!(observation.observe(snapshot(), "prompt".into(), now + QUIET));
     assert!(!observation.observe(snapshot(), "changed".into(), now + QUIET));
     let mut resumed = snapshot();
-    resumed.binding.as_mut().unwrap().launch_ms = 2;
+    resumed.binding.as_mut().expect("owned fixture").launch_ms = 2;
     assert!(!observation.observe(resumed, "changed".into(), now + QUIET * 2));
 }
 #[test]
@@ -78,7 +79,7 @@ fn in_flight_output_cannot_replace_new_hook_terminal_or_turn() {
     current.terminal_id = Some("resumed".into());
     assert!(!old.current(&current, &old.binding));
     let mut binding = old.binding.clone();
-    binding.as_mut().unwrap().turn_id = Some("new-turn".into());
+    binding.as_mut().expect("owned fixture").turn_id = Some("new-turn".into());
     assert!(!old.current(&old.task, &binding));
 }
 #[test]
@@ -86,7 +87,7 @@ fn invalid_profile_regex_is_a_typed_configuration_error() {
     let config: devbox_core::Config = toml::from_str(
         "[[agents.profiles]]\nid='x'\nlabel='X'\ncommand='x'\nhooks='none'\nwaitingPatterns=['[']",
     )
-    .unwrap();
+    .expect("owned fixture");
     assert!(matches!(
         profile::configured(&config.agents),
         Err(ProfileError::WaitingPattern { .. })

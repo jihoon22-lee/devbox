@@ -65,18 +65,18 @@ impl AgentsService {
                     worktree_registered,
                     ..
                 } = &error
+                    && observed_branch == branch
+                    && observed_path == path
                 {
-                    if observed_branch == branch && observed_path == path {
-                        self.record_resources(
-                            &task.id,
-                            crate::tracker::Resources::Partial {
-                                path_exists: *path_exists,
-                                branch_exists: *branch_exists,
-                                worktree_registered: *worktree_registered,
-                            },
-                        )
-                        .await?;
-                    }
+                    self.record_resources(
+                        &task.id,
+                        crate::tracker::Resources::Partial {
+                            path_exists: *path_exists,
+                            branch_exists: *branch_exists,
+                            worktree_registered: *worktree_registered,
+                        },
+                    )
+                    .await?;
                 }
                 return Err(crate::model::git_failure(error));
             }

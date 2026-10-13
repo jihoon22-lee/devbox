@@ -63,9 +63,11 @@ impl Fixture {
             projects,
             terminal,
             vec![],
-            "/owned/devbox".into(),
-            false,
-            false,
+            crate::AgentRuntime {
+                devbox_bin: "/owned/devbox".into(),
+                use_scope: false,
+                cleanup_after_close: false,
+            },
         ));
         let repo = root.path().join("project");
         fs::create_dir(&repo).expect("repo");
@@ -232,7 +234,7 @@ async fn canceled_create_waiter_still_drains_committed_preparation() {
     // create constructs its tracker token immediately before synchronously
     // enqueueing the reservation; its next suspension awaits the blocked writer.
     let reached = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        while fixture.svc.background.len() == 0 {
+        while fixture.svc.background.is_empty() {
             tokio::task::yield_now().await;
         }
     })
@@ -297,7 +299,7 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
             .to_string_lossy()
             .into_owned(),
     );
-    unmade.workdir = unmade.worktree_path.clone().unwrap();
+    unmade.workdir = unmade.worktree_path.clone().expect("owned fixture");
     fixture
         .svc
         .db
@@ -317,23 +319,34 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
     assert_eq!(recovered.branch, reserved.branch);
     assert_eq!(recovered.worktree_path, reserved.worktree_path);
     assert_eq!(
-        fixture.svc.get("review").await.unwrap().state,
+        fixture
+            .svc
+            .get("review")
+            .await
+            .expect("owned fixture")
+            .state,
         AgentState::Review
     );
     assert_eq!(
-        fixture.svc.get("closed").await.unwrap().state,
+        fixture
+            .svc
+            .get("closed")
+            .await
+            .expect("owned fixture")
+            .state,
         AgentState::Closed
     );
-    let unmade = fixture.svc.get("unmade").await.unwrap();
+    let unmade = fixture.svc.get("unmade").await.expect("owned fixture");
     assert_eq!(unmade.state, AgentState::Failed);
     assert!(unmade.branch.is_none());
     assert!(unmade.worktree_path.is_none());
     assert_eq!(unmade.workdir, fixture.repo.to_string_lossy());
     assert_eq!(
         fs::read_to_string(
-            Path::new(recovered.worktree_path.as_deref().unwrap()).join("hook-created")
+            Path::new(recovered.worktree_path.as_deref().expect("owned fixture"))
+                .join("hook-created")
         )
-        .unwrap(),
+        .expect("owned fixture"),
         "owned-hook-data"
     );
 }

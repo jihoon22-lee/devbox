@@ -51,17 +51,17 @@ async fn clone_does_not_follow_target_symlink_swapped_after_reservation() {
     let source = d.git_repo("source");
     let target = d.home.path().join("target");
     let external = d.home.path().join("unselected-external");
-    std::fs::create_dir(&external).unwrap();
+    std::fs::create_dir(&external).expect("owned fixture");
     let bin = d.home.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
+    std::fs::create_dir(&bin).expect("owned fixture");
     let ready = d.home.path().join("git-ready");
     let release = d.home.path().join("git-release");
     let real_git = std::process::Command::new("sh")
         .args(["-c", "command -v git"])
         .output()
-        .unwrap();
-    let real_git = String::from_utf8(real_git.stdout).unwrap();
-    let quote = |p: &Path| devbox_core::sh_quote(p.to_str().unwrap());
+        .expect("owned fixture");
+    let real_git = String::from_utf8(real_git.stdout).expect("owned fixture");
+    let quote = |p: &Path| devbox_core::sh_quote(p.to_str().expect("owned fixture"));
     let script = format!(
         "#!/bin/bash\nfor arg in \"$@\"; do\nif [[ $arg == clone ]]; then\n touch {ready}\n for ((n=0;n<500;n++)); do\n [[ -f {release} ]] && break\n sleep 0.01\n done\n [[ -f {release} ]] || exit 99\nfi\ndone\nexec {real_git} \"$@\"\n",
         ready = quote(&ready),
@@ -69,11 +69,15 @@ async fn clone_does_not_follow_target_symlink_swapped_after_reservation() {
         real_git = devbox_core::sh_quote(real_git.trim())
     );
     let git = bin.join("git");
-    std::fs::write(&git, script).unwrap();
-    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(&git, script).expect("owned fixture");
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
     d.extra_env.push((
         "PATH".into(),
-        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").expect("owned fixture")
+        ),
     ));
     d.launch();
     let c = d.client().await;
@@ -85,10 +89,10 @@ async fn clone_does_not_follow_target_symlink_swapped_after_reservation() {
             }
         })
         .await
-        .unwrap();
-        std::fs::remove_dir(&target).unwrap();
-        std::os::unix::fs::symlink(&external, &target).unwrap();
-        std::fs::write(&release, "release").unwrap();
+        .expect("owned fixture");
+        std::fs::remove_dir(&target).expect("owned fixture");
+        std::os::unix::fs::symlink(&external, &target).expect("owned fixture");
+        std::fs::write(&release, "release").expect("owned fixture");
     };
     let (result, ()) = tokio::join!(clone, swap);
     assert!(

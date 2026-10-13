@@ -109,8 +109,8 @@ async fn exact_primary_thread_and_current_turn_gate_completion_over_rpc() {
             .await
             .expect("bound usage"),
     )
-    .unwrap();
-    let tokens = usage.tokens.unwrap();
+    .expect("owned fixture");
+    let tokens = usage.tokens.expect("owned fixture");
     assert_eq!(
         (
             tokens.input,

@@ -5,17 +5,23 @@ use support::TestDaemon;
 
 fn fixture() -> TestDaemon {
     let d = TestDaemon::fixture();
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     d.write_config("[[agents.profiles]]\nid='fake'\nlabel='Fake'\ncommand='cat'\nhooks='none'\n");
     d
 }
 async fn value(client: &devbox_cli::client::Client, method: &str, params: Value) -> Value {
-    serde_json::from_str(&client.raw_call(method, params, None).await.unwrap()).unwrap()
+    serde_json::from_str(
+        &client
+            .raw_call(method, params, None)
+            .await
+            .expect("owned fixture"),
+    )
+    .expect("owned fixture")
 }
 #[tokio::test]
 async fn dependent_project_removal_is_rejected_and_agent_cleanup_remains_possible() {
@@ -63,7 +69,13 @@ async fn closed_retained_resources_protect_project_until_explicit_cleanup() {
         json!({"projectId":project}),
     )
     .await;
-    assert_eq!(candidates["worktrees"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        candidates["worktrees"]
+            .as_array()
+            .expect("owned fixture")
+            .len(),
+        1
+    );
     value(
         &client,
         "agents.cleanup",
@@ -83,7 +95,13 @@ async fn closed_retained_resources_protect_project_until_explicit_cleanup() {
         json!({"projectId":project}),
     )
     .await;
-    assert_eq!(candidates["branches"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        candidates["branches"]
+            .as_array()
+            .expect("owned fixture")
+            .len(),
+        1
+    );
     value(
         &client,
         "agents.cleanup",

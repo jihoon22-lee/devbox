@@ -356,19 +356,27 @@ mod probe_tests {
         }
         for id in ["tool.claude", "tool.codex", "tool.gh"] {
             assert_eq!(
-                checks.iter().find(|c| c.id == id).unwrap().status,
+                checks
+                    .iter()
+                    .find(|c| c.id == id)
+                    .expect("owned fixture")
+                    .status,
                 Status::Warn
             );
         }
         assert_eq!(
-            checks.iter().find(|c| c.id == "tool.tmux").unwrap().status,
+            checks
+                .iter()
+                .find(|c| c.id == "tool.tmux")
+                .expect("owned fixture")
+                .status,
             Status::Ok
         );
         assert_eq!(
             checks
                 .iter()
                 .find(|c| c.id == "hook.binary")
-                .unwrap()
+                .expect("owned fixture")
                 .status,
             Status::Fail
         );

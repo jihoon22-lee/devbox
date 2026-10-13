@@ -5,18 +5,21 @@ use support::TestDaemon;
 
 fn fixture(tool: &str) -> TestDaemon {
     let d = TestDaemon::fixture();
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     let script = d.home.path().join("tool.sh");
-    std::fs::write(&script, format!("#!/usr/bin/env bash\n{tool}\n")).unwrap();
-    let command = format!("bash {}", devbox_core::sh_quote(script.to_str().unwrap()));
+    std::fs::write(&script, format!("#!/usr/bin/env bash\n{tool}\n")).expect("owned fixture");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(script.to_str().expect("owned fixture"))
+    );
     d.write_config(&format!(
         "[[agents.profiles]]\nid='fake'\nlabel='Fake'\ncommand={}\nhooks='none'\n",
-        serde_json::to_string(&command).unwrap()
+        serde_json::to_string(&command).expect("owned fixture")
     ));
     d
 }
@@ -28,9 +31,9 @@ async fn terminal_alive(d: &TestDaemon, client: &devbox_cli::client::Client, id:
                 &client
                     .raw_call("agents.get", json!({"id":id}), None)
                     .await
-                    .unwrap(),
+                    .expect("owned fixture"),
             )
-            .unwrap();
+            .expect("owned fixture");
             if task["terminalId"].is_string() {
                 break task;
             }
@@ -38,18 +41,21 @@ async fn terminal_alive(d: &TestDaemon, client: &devbox_cli::client::Client, id:
         }
     })
     .await;
-    let terminal = task["terminalId"].as_str().unwrap().to_owned();
+    let terminal = task["terminalId"]
+        .as_str()
+        .expect("owned fixture")
+        .to_owned();
     let list: Value = serde_json::from_str(
         &client
             .raw_call("terminal.list", json!({}), None)
             .await
-            .unwrap(),
+            .expect("owned fixture"),
     )
-    .unwrap();
+    .expect("owned fixture");
     assert!(
         list["items"]
             .as_array()
-            .unwrap()
+            .expect("owned fixture")
             .iter()
             .any(|s| s["id"] == terminal && s["alive"] == true)
     );
@@ -82,7 +88,7 @@ async fn killed_tool_resumes_with_the_owned_terminal_still_alive() {
     assert_ne!(resumed["terminalId"], old_terminal);
     support::bounded(async {
         while std::fs::read_to_string(d.home.path().join("launches"))
-            .unwrap()
+            .expect("owned fixture")
             .lines()
             .count()
             != 2
@@ -91,8 +97,8 @@ async fn killed_tool_resumes_with_the_owned_terminal_still_alive() {
         }
     })
     .await;
-    let launches = std::fs::read_to_string(d.home.path().join("launches")).unwrap();
-    let stale = launches.lines().next().unwrap();
+    let launches = std::fs::read_to_string(d.home.path().join("launches")).expect("owned fixture");
+    let stale = launches.lines().next().expect("owned fixture");
     client
         .raw_call(
             "agents.event",
@@ -100,7 +106,7 @@ async fn killed_tool_resumes_with_the_owned_terminal_still_alive() {
             None,
         )
         .await
-        .unwrap();
+        .expect("owned fixture");
     client
         .raw_call(
             "agents.event",
@@ -108,13 +114,13 @@ async fn killed_tool_resumes_with_the_owned_terminal_still_alive() {
             None,
         )
         .await
-        .unwrap();
+        .expect("owned fixture");
     d.wait_for(&client, &id, "running", Duration::from_secs(2))
         .await;
     client
         .raw_call("agents.review", json!({"id":id}), None)
         .await
-        .unwrap();
+        .expect("owned fixture");
     client
         .raw_call(
             "agents.send",
@@ -139,7 +145,7 @@ async fn ended_agent_rejects_prose_and_its_holder_never_executes_queued_input() 
     let sentinel = d.home.path().join("must-not-execute");
     let instruction = format!(
         "touch {}",
-        devbox_core::sh_quote(sentinel.to_str().unwrap())
+        devbox_core::sh_quote(sentinel.to_str().expect("owned fixture"))
     );
     let rejected = client
         .raw_call("agents.send", json!({"id":id,"text":instruction}), None)
@@ -157,7 +163,7 @@ async fn ended_agent_rejects_prose_and_its_holder_never_executes_queued_input() 
             "Enter",
         ])
         .status()
-        .unwrap();
+        .expect("owned fixture");
     assert!(status.success());
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert!(
@@ -181,7 +187,7 @@ async fn live_tool_cannot_be_replaced_even_after_user_review() {
     client
         .raw_call("agents.review", json!({"id":id}), None)
         .await
-        .unwrap();
+        .expect("owned fixture");
     assert!(
         client
             .raw_call("agents.resume", json!({"id":id}), None)
@@ -204,10 +210,11 @@ async fn marker_recovers_an_exit_hook_lost_while_the_daemon_is_stopped() {
     terminal_alive(&d, &client, &id).await;
     drop(client);
     d.stop();
-    std::fs::write(d.home.path().join("exit-now"), "go").unwrap();
+    std::fs::write(d.home.path().join("exit-now"), "go").expect("owned fixture");
     support::bounded(async {
         loop {
-            let phases = std::fs::read_dir(d.paths.data_dir.join("agents").join(&id)).unwrap();
+            let phases = std::fs::read_dir(d.paths.data_dir.join("agents").join(&id))
+                .expect("owned fixture");
             if phases.filter_map(Result::ok).any(|file| {
                 file.path().extension().is_some_and(|v| v == "phase")
                     && std::fs::read_to_string(file.path())
@@ -241,20 +248,25 @@ async fn failed_holder_close_keeps_old_launch_evidence_so_resume_can_retry() {
     );
     let repo = d.git_repo("projects/app");
     let bin = d.home.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
-    let tmux = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+    std::fs::create_dir(&bin).expect("owned fixture");
+    let tmux = std::env::split_paths(&std::env::var_os("PATH").expect("owned fixture"))
         .map(|dir| dir.join("tmux"))
         .find(|path| path.is_file())
         .expect("installed tmux");
     let wrapper = bin.join("tmux");
     std::fs::write(&wrapper, format!(
         "#!/usr/bin/env bash\nfor arg in \"$@\"; do\n if [ \"$arg\" = kill-session ] && [ -e \"$HOME/fail-kill\" ]; then\n  rm \"$HOME/fail-kill\"; echo 'fixture requested kill failure' >&2; exit 1\n fi\ndone\nexec {} \"$@\"\n",
-        devbox_core::sh_quote(tmux.to_str().unwrap())
-    )).unwrap();
-    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        devbox_core::sh_quote(tmux.to_str().expect("owned fixture"))
+    )).expect("owned fixture");
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700))
+        .expect("owned fixture");
     d.extra_env.push((
         "PATH".into(),
-        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").expect("owned fixture")
+        ),
     ));
     d.launch();
     let client = d.client().await;
@@ -264,7 +276,7 @@ async fn failed_holder_close_keeps_old_launch_evidence_so_resume_can_retry() {
         .wait_for(&client, &id, "failed", Duration::from_secs(10))
         .await;
     let old = terminal_alive(&d, &client, &id).await;
-    std::fs::write(d.home.path().join("fail-kill"), "one failure").unwrap();
+    std::fs::write(d.home.path().join("fail-kill"), "one failure").expect("owned fixture");
     let rejected = client
         .raw_call("agents.resume", json!({"id":id}), None)
         .await;
@@ -278,9 +290,9 @@ async fn failed_holder_close_keeps_old_launch_evidence_so_resume_can_retry() {
         &client
             .raw_call("agents.get", json!({"id":id}), None)
             .await
-            .unwrap(),
+            .expect("owned fixture"),
     )
-    .unwrap();
+    .expect("owned fixture");
     assert_eq!(current["toolExited"], failed["toolExited"]);
     assert_eq!(current["state"], failed["state"]);
     client

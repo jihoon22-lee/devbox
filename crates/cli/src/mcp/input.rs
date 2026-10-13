@@ -132,7 +132,9 @@ mod tests {
         let (tx, mut input) = fixture();
         input.line = b"partial".to_vec();
         input.deadline = Some(tokio::time::Instant::now() - Duration::from_millis(1));
-        tx.send(Ok(b"more\n".to_vec())).await.unwrap();
+        tx.send(Ok(b"more\n".to_vec()))
+            .await
+            .expect("owned fixture");
         assert_eq!(
             input
                 .next()
@@ -146,13 +148,15 @@ mod tests {
     #[tokio::test]
     async fn eof_processes_final_line_once_and_empty_eof_is_clean() {
         let (tx, mut input) = fixture();
-        tx.send(Ok(b"{}\n{}".to_vec())).await.unwrap();
+        tx.send(Ok(b"{}\n{}".to_vec()))
+            .await
+            .expect("owned fixture");
         drop(tx);
         for _ in 0..2 {
             assert!(
-                matches!(input.next().await.unwrap(), Some(Line::Message(line)) if line == b"{}")
+                matches!(input.next().await.expect("owned fixture"), Some(Line::Message(line)) if line == b"{}")
             );
         }
-        assert!(input.next().await.unwrap().is_none());
+        assert!(input.next().await.expect("owned fixture").is_none());
     }
 }

@@ -6,17 +6,17 @@ use support::TestDaemon;
 async fn test_instance_uses_scope_unless_explicitly_disabled() {
     let mut d = TestDaemon::fixture();
     d.extra_env.retain(|(key, _)| key != "DEVBOX_NO_SCOPE");
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     let bin = d.home.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
+    std::fs::create_dir(&bin).expect("owned fixture");
     let scope = bin.join("systemd-run");
-    std::fs::write(&scope, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/scope-args\"\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n").unwrap();
-    std::fs::set_permissions(scope, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(&scope, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/scope-args\"\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n").expect("owned fixture");
+    std::fs::set_permissions(scope, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
     d.extra_env
         .push(("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())));
     d.write_config(
@@ -35,7 +35,7 @@ async fn test_instance_uses_scope_unless_explicitly_disabled() {
         }
     })
     .await;
-    let args = std::fs::read_to_string(d.home.path().join("scope-args")).unwrap();
+    let args = std::fs::read_to_string(d.home.path().join("scope-args")).expect("owned fixture");
     assert!(args.contains(&format!("devbox-{}-agent-{id}", d.instance)));
     assert!(args.contains("--user\n--scope\n"));
     // This validates selection only: the owned shim is not real systemd acceptance.

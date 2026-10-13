@@ -142,7 +142,7 @@ impl TerminalService {
         self.attachments.resize(p.stream_id, p.cols, p.rows)?;
         let rev = self
             .db
-            .read(|tx| current_rev(tx))
+            .read(current_rev)
             .await
             .internal("terminal revision")?;
         Ok(Done {

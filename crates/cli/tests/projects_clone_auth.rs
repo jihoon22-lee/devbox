@@ -4,16 +4,19 @@ use std::{os::unix::fs::PermissionsExt, path::Path};
 use support::TestDaemon;
 
 fn executable(path: &Path, text: &str) {
-    std::fs::write(path, text).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(path, text).expect("owned fixture");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
 }
 
 fn real_git() -> String {
     let output = std::process::Command::new("sh")
         .args(["-c", "command -v git"])
         .output()
-        .unwrap();
-    String::from_utf8(output.stdout).unwrap().trim().into()
+        .expect("owned fixture");
+    String::from_utf8(output.stdout)
+        .expect("owned fixture")
+        .trim()
+        .into()
 }
 
 fn configure_git(d: &TestDaemon, key: &str, value: &str) {
@@ -23,13 +26,13 @@ fn configure_git(d: &TestDaemon, key: &str, value: &str) {
         .arg(d.home.path().join(".gitconfig"))
         .args([key, value])
         .status()
-        .unwrap();
+        .expect("owned fixture");
     assert!(status.success());
 }
 
 fn intercept_clone(d: &mut TestDaemon, before: &str) {
     let bin = d.home.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
+    std::fs::create_dir(&bin).expect("owned fixture");
     let script = format!(
         "#!/bin/bash\nprefix=()\nfor arg in \"$@\"; do\nif [[ $arg == clone ]]; then\n{before}\nbreak\nfi\nprefix+=(\"$arg\")\ndone\nexec {} \"$@\"\n",
         devbox_core::sh_quote(&real_git())
@@ -37,7 +40,11 @@ fn intercept_clone(d: &mut TestDaemon, before: &str) {
     executable(&bin.join("git"), &script);
     d.extra_env.push((
         "PATH".into(),
-        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").expect("owned fixture")
+        ),
     ));
 }
 
@@ -51,10 +58,14 @@ async fn clone_preserves_configured_https_helper_without_interactive_prompts() {
         &helper,
         &format!(
             "#!/bin/bash\n[[ $GIT_TERMINAL_PROMPT == 0 && $GCM_INTERACTIVE == Never && $GCM_GUI_PROMPT == false ]] || exit 91\nif [[ $1 == get ]]; then\n touch {}\n printf 'username=fixture-user\\npassword=fixture-password\\n'\nfi\n",
-            devbox_core::sh_quote(marker.to_str().unwrap())
+            devbox_core::sh_quote(marker.to_str().expect("owned fixture"))
         ),
     );
-    configure_git(&d, "credential.helper", helper.to_str().unwrap());
+    configure_git(
+        &d,
+        "credential.helper",
+        helper.to_str().expect("owned fixture"),
+    );
     let before = format!(
         "printf 'protocol=https\\nhost=fixture.invalid\\n\\n' | {} \"${{prefix[@]}}\" credential fill >/dev/null || exit 92",
         devbox_core::sh_quote(&real_git())
@@ -66,16 +77,16 @@ async fn clone_preserves_configured_https_helper_without_interactive_prompts() {
     let result = c
         .raw_call("projects.clone", json!({"url":source,"dir":target}), None)
         .await
-        .unwrap();
-    let project: Value = serde_json::from_str(&result).unwrap();
-    assert_eq!(project["path"], target.to_str().unwrap());
+        .expect("owned fixture");
+    let project: Value = serde_json::from_str(&result).expect("owned fixture");
+    assert_eq!(project["path"], target.to_str().expect("owned fixture"));
     assert!(
         marker.exists(),
         "configured HTTPS helper must remain available"
     );
     assert!(
         !std::fs::read_to_string(target.join(".git/config"))
-            .unwrap()
+            .expect("owned fixture")
             .contains("fixture-password")
     );
 }
@@ -103,14 +114,14 @@ async fn clone_preserves_configured_and_environment_ssh_identity_with_batch_mode
                 } else {
                     "[[ $SSH_AUTH_SOCK == 'fixture socket' ]] || exit 94"
                 },
-                devbox_core::sh_quote(arguments.to_str().unwrap()),
+                devbox_core::sh_quote(arguments.to_str().expect("owned fixture")),
                 devbox_core::sh_quote(&real_git()),
                 devbox_core::sh_quote(&source),
             ),
         );
         let command = format!(
             "{prefix}{} -i 'fixture-config-identity with space'",
-            devbox_core::sh_quote(ssh.to_str().unwrap())
+            devbox_core::sh_quote(ssh.to_str().expect("owned fixture"))
         );
         configure_git(&d, "core.sshCommand", &command);
         if environment_override {
@@ -118,7 +129,7 @@ async fn clone_preserves_configured_and_environment_ssh_identity_with_batch_mode
                 "GIT_SSH_COMMAND".into(),
                 format!(
                     "{prefix}{} -i 'fixture-env-identity with space'",
-                    devbox_core::sh_quote(ssh.to_str().unwrap())
+                    devbox_core::sh_quote(ssh.to_str().expect("owned fixture"))
                 ),
             ));
         }
@@ -130,8 +141,8 @@ async fn clone_preserves_configured_and_environment_ssh_identity_with_batch_mode
             None,
         )
         .await
-        .unwrap();
-        let arguments = std::fs::read_to_string(arguments).unwrap();
+        .expect("owned fixture");
+        let arguments = std::fs::read_to_string(arguments).expect("owned fixture");
         assert!(arguments.lines().any(|argument| argument
             == if environment_override {
                 "fixture-env-identity with space"
@@ -162,7 +173,7 @@ async fn clone_rejects_http_token_usernames_and_uri_passwords_before_reservation
         let result = c
             .raw_call("projects.clone", json!({"url":url,"dir":target}), None)
             .await
-            .unwrap_err();
+            .expect_err("fixture operation must fail");
         assert!(format!("{result:?}").contains("projects.clone_invalid_url"));
         assert!(!format!("{result:?}").contains("fixture-token"));
         assert!(!format!("{result:?}").contains("fixture-password"));

@@ -57,7 +57,9 @@ test("launch selects project, navigates to terminal preserving search and keeps 
   );
   await userEvent.click(await screen.findByRole("button", { name: "devbox 시작 구성 실행" }));
   await waitFor(() => expect(wire.requests("projects.launch")).toHaveLength(1));
-  await act(async () => wire.reply("projects.launch", { terminals: 1, agents: 0 }));
+  await act(async () =>
+    wire.reply("projects.launch", { terminals: 1, agents: 0, terminalIds: ["launch-shell"], rev: "2" }),
+  );
   await waitFor(() => expect(window.location.pathname).toBe("/terminal"));
   expect(window.location.search).toContain("gateway=");
   expect(window.location.search).toContain("renderer=dom");

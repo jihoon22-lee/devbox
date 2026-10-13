@@ -6,8 +6,9 @@ const MAX_FILES: usize = 2048;
 const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 128 * 1024;
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub(crate) enum Resources {
+    #[default]
     Planned,
     Owned,
     Partial {
@@ -15,11 +16,6 @@ pub(crate) enum Resources {
         branch_exists: Option<bool>,
         worktree_registered: Option<bool>,
     },
-}
-impl Default for Resources {
-    fn default() -> Self {
-        Self::Planned
-    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Binding {

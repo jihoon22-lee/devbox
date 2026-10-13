@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Project } from "../../rpc/gen/rpc";
 import { confirmPolicy, invalidateIfNewer, useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { Button, ConfirmDialog, Dialog, useToasts } from "../../ui";
+import { projectKey, useTerminalLayout } from "../terminal/store";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { ProjectCard } from "./ProjectCard";
 import { PROJECT_KEYS, ProjectDataBoundary, recordProjectRemoval, useProjectData } from "./ProjectData";
@@ -96,6 +97,7 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
       { id: project.id },
       {
         onSuccess: (result) => {
+          useTerminalLayout.getState().openLaunched(projectKey(project.id), result.terminalIds, result.rev);
           useCurrentProject.getState().set(project.id);
           useToasts
             .getState()

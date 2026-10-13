@@ -59,7 +59,7 @@ pub fn unique_slug(base: &str, taken: &HashSet<String>) -> Result<String, Agents
             let keep = MAX_SLUG_BYTES - suffix.len();
             format!(
                 "{}{suffix}",
-                &base[..base.len().min(keep)].trim_end_matches('-')
+                base[..base.len().min(keep)].trim_end_matches('-')
             )
         };
         if !taken.contains(&candidate) {
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn unique_slugs_get_numbered_suffixes() {
         let taken: HashSet<String> = ["fix".into(), "fix-2".into()].into();
-        assert_eq!(unique_slug("fix", &taken).unwrap(), "fix-3");
+        assert_eq!(unique_slug("fix", &taken).expect("owned fixture"), "fix-3");
     }
 
     #[test]

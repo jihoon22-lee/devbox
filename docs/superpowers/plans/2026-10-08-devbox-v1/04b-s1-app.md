@@ -2457,7 +2457,7 @@ git add app && git commit -m "feat(app): add the agent grid, notification center
   - 전환기 행 = `ProjectCard`: 이름·경로·브랜치·변경 여부·앞섬/뒤처짐·터미널 수·열린 에이전트(입력 대기 수)
     - 카드 오른쪽 [시작 구성 실행]은 `[launch]`가 있을 때만 보인다.
     - 설정 파일 오류가 있으면 카드에 경고 아이콘 + 툴팁으로 오류 문구를 보인다.
-  - [시작 구성 실행]: `projects.launch` 뒤 그 프로젝트로 전환하고 터미널 섹션으로 이동한다. 결과 토스트는 "터미널 n개 · 에이전트 m개를 시작했습니다"다.
+  - [시작 구성 실행]: `projects.launch`가 반환한 정확한 `terminalIds`를 해당 프로젝트의 기존 배치에 탭으로 추가한 뒤 터미널 섹션으로 이동한다. 응답 `rev`보다 오래된 목록은 새 탭을 제거하지 못하며, 일시적인 프로젝트별 보호 상태는 최신 목록 확인 뒤 해제한다. 결과 토스트는 "터미널 n개 · 에이전트 m개를 시작했습니다"다.
   - 카드의 별 버튼은 즐겨찾기(`projects.set_favorite`)다. 즐겨찾기가 위로 온다.
   - 카드 메뉴의 외부 열기: [VS Code로 열기](`code --remote wsl+<배포판> <경로>`) · [탐색기로 열기](`\\wsl.localhost\<배포판>\<경로>`) · [Windows Terminal로 열기](`wt.exe -p <배포판> -d <경로>`). Tauri 명령 `open_external({ kind, path })`가 Windows 쪽에서 실행하고, 브라우저 개발 화면에서는 메뉴를 숨긴다.
   - 프로젝트 추가 대화상자에 [Git 주소로 가져오기] 탭: URL + 대상 폴더(기본 `~/projects/<이름>`) → `projects.clone`(진행 중 표시, 실패 시 git 메시지)
@@ -2471,7 +2471,7 @@ test("cards show git and agent summary and run the launch profile", async () => 
     "projects.list": { rev: "3", items: [{ id: "a", name: "devbox", path: "/home/u/projects/devbox", favorite: false, addedMs: 1 }] },
     "projects.summary": { items: [{ id: "a", branch: "main", dirty: true, ahead: 2, behind: 0, terminals: 3, agents: { open: 2, attention: 1 } }] },
     "projects.config": { config: { agent: {}, launch: { services: [], terminals: [{ name: "shell" }], agents: [] } }, error: null },
-    "projects.launch": { terminals: 1, agents: 0 },
+    "projects.launch": { terminals: 1, agents: 0, terminalIds: ["t1"], rev: "2" },
   });
   render(<RpcProvider client={client}><ProjectSwitcher open onOpenChange={() => {}} /></RpcProvider>);
   expect(await screen.findByText("main")).toBeInTheDocument();
@@ -2484,7 +2484,7 @@ test("cards show git and agent summary and run the launch profile", async () => 
 });
 ```
 
-`projects.launch`의 결과 타입은 04 Task 11의 `LaunchResult { terminals, agents }`다.
+`projects.launch`의 결과 타입은 04 Task 11의 `LaunchResult { terminals, agents, terminalIds, rev }`다.
 
 - [x] **Step 2: 구현** — 위 Interfaces대로 `ProjectCard`를 만들고 `ProjectSwitcher`의 행을 바꾼다.
   - `projects.summary`는 전환기가 열릴 때만 조회한다(`enabled: open`).

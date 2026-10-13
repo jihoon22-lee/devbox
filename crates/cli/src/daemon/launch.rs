@@ -67,10 +67,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
             .into());
         }
     }
-    let mut result = LaunchResult {
-        terminals: 0,
-        agents: 0,
-    };
+    let mut result = LaunchResult::default();
     let base = if config.launch.agents.is_empty() {
         None
     } else {
@@ -106,7 +103,8 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         Some(branch)
     };
     for (index, terminal) in config.launch.terminals.into_iter().enumerate() {
-        s.terminal
+        let created = s
+            .terminal
             .create(CreateSession {
                 project_id: Some(project.id.clone()),
                 cwd: None,
@@ -116,6 +114,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
             })
             .await
             .map_err(|error| launch_failure(error, &result, &format!("terminal {}", index + 1)))?;
+        result.terminal_ids.push(created.id);
         result.terminals += 1;
     }
     for (index, agent) in config.launch.agents.into_iter().enumerate() {
@@ -134,6 +133,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         result.agents += 1;
     }
     // Services are intentionally deferred to S2.
+    result.rev = s.db.rev().to_string();
     Ok(result)
 }
 

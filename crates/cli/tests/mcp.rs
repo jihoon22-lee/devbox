@@ -109,7 +109,7 @@ fn offline_initialize_notifications_and_eof_keep_stdout_protocol_only() {
     assert!(
         unavailable["result"]["content"][0]["text"]
             .as_str()
-            .unwrap()
+            .expect("owned fixture")
             .contains("데몬")
     );
     m.finish();
@@ -172,7 +172,11 @@ fn oversized_and_invalid_utf8_lines_are_bounded_and_recover() {
     let mut m = Mcp::start(&d);
     m.raw(&"x".repeat(1024 * 1024 + 1));
     assert_eq!(m.read()["error"]["code"], -32700);
-    m.input.as_mut().unwrap().write_all(&[0xff, b'\n']).unwrap();
+    m.input
+        .as_mut()
+        .expect("owned fixture")
+        .write_all(&[0xff, b'\n'])
+        .expect("owned fixture");
     assert_eq!(m.read()["error"]["code"], -32700);
     assert_eq!(
         names(&m.call(json!({"jsonrpc":"2.0","id":8,"method":"tools/list"}))),
@@ -188,7 +192,7 @@ fn local_false_overrides_shared_write_true() {
         d.paths.config_dir.join("config.local.toml"),
         "[mcp]\nwrite=false\n",
     )
-    .unwrap();
+    .expect("owned fixture");
     let mut m = Mcp::start(&d);
     assert_eq!(
         names(&m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))),
@@ -202,19 +206,22 @@ fn local_false_overrides_shared_write_true() {
 }
 fn agent_fixture(write: bool) -> TestDaemon {
     let d = TestDaemon::fixture();
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     let tool = d.home.path().join("owned-fake.sh");
     std::fs::write(&tool, r#"#!/usr/bin/env bash
 printf '%s' '{"hook_event_name":"PermissionRequest","tool_name":"Bash"}' | "$DEVBOX_BIN" agent event --from claude
 while read -r text; do :; done
-"#).unwrap();
-    let command = format!("bash {}", devbox_core::sh_quote(tool.to_str().unwrap()));
-    d.write_config(&format!("[mcp]\nwrite={write}\n[[agents.profiles]]\nid='owned-fake'\nlabel='테스트'\ncommand={}\nhooks='none'\n", serde_json::to_string(&command).unwrap()));
+"#).expect("owned fixture");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(tool.to_str().expect("owned fixture"))
+    );
+    d.write_config(&format!("[mcp]\nwrite={write}\n[[agents.profiles]]\nid='owned-fake'\nlabel='테스트'\ncommand={}\nhooks='none'\n", serde_json::to_string(&command).expect("owned fixture")));
     d
 }
 #[tokio::test]
@@ -230,7 +237,8 @@ async fn read_tools_return_projects_and_only_open_tasks_and_denied_send_has_no_e
         .await;
     // Future closure guarantees agents.list(includeClosedHours=0) still returns
     // this owned row, so MCP must explicitly exclude Closed rather than rely on time.
-    let mut closed: devbox_agents::AgentTask = serde_json::from_value(task.clone()).unwrap();
+    let mut closed: devbox_agents::AgentTask =
+        serde_json::from_value(task.clone()).expect("owned fixture");
     closed.id = "owned-closed".into();
     closed.state = devbox_agents::state::AgentState::Closed;
     closed.closed_ms = Some(i64::MAX);
@@ -246,20 +254,20 @@ async fn read_tools_return_projects_and_only_open_tasks_and_denied_send_has_no_e
         devbox_cli::VERSION,
         &migrations,
     )
-    .unwrap();
+    .expect("owned fixture");
     db.write(move |tx| devbox_agents::store::put(tx, &closed))
         .await
-        .unwrap();
+        .expect("owned fixture");
     let all: Value = serde_json::from_str(
         &c.raw_call("agents.list", json!({"includeClosedHours":0}), None)
             .await
-            .unwrap(),
+            .expect("owned fixture"),
     )
-    .unwrap();
+    .expect("owned fixture");
     assert!(
         all["items"]
             .as_array()
-            .unwrap()
+            .expect("owned fixture")
             .iter()
             .any(|t| t["id"] == "owned-closed")
     );
@@ -267,7 +275,7 @@ async fn read_tools_return_projects_and_only_open_tasks_and_denied_send_has_no_e
     let projects = body(&m.tool("devbox_projects", json!({})));
     assert_eq!(projects["items"][0]["id"], project);
     let agents = body(&m.tool("devbox_agents", json!({})));
-    assert_eq!(agents["items"].as_array().unwrap().len(), 1);
+    assert_eq!(agents["items"].as_array().expect("owned fixture").len(), 1);
     assert_eq!(agents["items"][0]["id"], id);
     assert_eq!(agents["items"][0]["state"], "waiting");
     assert_eq!(agents["items"][0]["attention"], task["attention"]);
@@ -276,7 +284,7 @@ async fn read_tools_return_projects_and_only_open_tasks_and_denied_send_has_no_e
     assert!(
         denied["result"]["content"][0]["text"]
             .as_str()
-            .unwrap()
+            .expect("owned fixture")
             .contains("쓰기")
     );
     let after = d.wait_for(&c, &id, "waiting", Duration::from_secs(2)).await;
@@ -318,7 +326,10 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
         json!({"id":id,"text":"owned instruction"}),
     ));
     assert_eq!(sent["id"], id);
-    assert_eq!(sent["followUps"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        sent["followUps"].as_array().expect("owned fixture").len(),
+        1
+    );
     assert_eq!(sent["followUps"][0]["text"], "owned instruction");
     let error = m.tool(
         "devbox_agent_send",
@@ -341,13 +352,17 @@ async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
     use futures::{SinkExt, StreamExt};
     use tokio_util::codec::Framed;
     let d = TestDaemon::fixture();
-    let listener = tokio::net::UnixListener::bind(&d.socket).unwrap();
+    let listener = tokio::net::UnixListener::bind(&d.socket).expect("owned fixture");
     let peer = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, _) = listener.accept().await.expect("owned fixture");
         let mut framed = Framed::new(stream, FrameCodec::default());
-        let hello = framed.next().await.unwrap().unwrap();
+        let hello = framed
+            .next()
+            .await
+            .expect("owned fixture")
+            .expect("owned fixture");
         assert!(matches!(
-            parse_json::<ClientMessage>(&hello).unwrap(),
+            parse_json::<ClientMessage>(&hello).expect("owned fixture"),
             ClientMessage::Hello {
                 client: ClientKind::Mcp,
                 ..
@@ -363,16 +378,20 @@ async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
                 },
             ))
             .await
-            .unwrap();
-        let request = framed.next().await.unwrap().unwrap();
+            .expect("owned fixture");
+        let request = framed
+            .next()
+            .await
+            .expect("owned fixture")
+            .expect("owned fixture");
         assert!(
-            matches!(parse_json::<ClientMessage>(&request).unwrap(), ClientMessage::Request { method, .. } if method == "projects.list")
+            matches!(parse_json::<ClientMessage>(&request).expect("owned fixture"), ClientMessage::Request { method, .. } if method == "projects.list")
         );
         // Deliberately withhold the response; MCP must close the cancelled client.
         assert!(
             tokio::time::timeout(Duration::from_secs(7), framed.next())
                 .await
-                .unwrap()
+                .expect("owned fixture")
                 .is_none()
         );
     });
@@ -384,7 +403,7 @@ async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
     assert!(
         result["result"]["content"][0]["text"]
             .as_str()
-            .unwrap()
+            .expect("owned fixture")
             .contains("시간이 초과")
     );
     assert_eq!(
@@ -392,5 +411,5 @@ async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
         ["devbox_projects", "devbox_agents"]
     );
     m.finish();
-    peer.await.unwrap();
+    peer.await.expect("owned fixture");
 }

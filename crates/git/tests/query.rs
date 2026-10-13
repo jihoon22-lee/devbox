@@ -33,48 +33,71 @@ async fn reports_branch_changes_commits_and_ahead_behind() {
     std::fs::write(d.path().join("a.txt"), "one\ntwo\nthree\n").expect("write");
     std::fs::write(d.path().join("b.txt"), "new").expect("write");
     assert_eq!(
-        git::current_branch(d.path()).await.unwrap().as_deref(),
+        git::current_branch(d.path())
+            .await
+            .expect("owned fixture")
+            .as_deref(),
         Some("agent/x")
     );
-    let st = git::status(d.path()).await.unwrap();
+    let st = git::status(d.path()).await.expect("owned fixture");
     assert!(!st.clean);
     assert_eq!(st.untracked, 1);
     assert_eq!(
-        git::ahead_behind(d.path(), "main", "HEAD").await.unwrap(),
+        git::ahead_behind(d.path(), "main", "HEAD")
+            .await
+            .expect("owned fixture"),
         (1, 0)
     );
-    let files = git::changed_files(d.path(), "main").await.unwrap();
-    let a = files.iter().find(|f| f.path == "a.txt").unwrap();
+    let files = git::changed_files(d.path(), "main")
+        .await
+        .expect("owned fixture");
+    let a = files
+        .iter()
+        .find(|f| f.path == "a.txt")
+        .expect("owned fixture");
     assert_eq!((a.added, a.removed), (2, 0));
-    let b = files.iter().find(|f| f.path == "b.txt").unwrap();
+    let b = files
+        .iter()
+        .find(|f| f.path == "b.txt")
+        .expect("owned fixture");
     assert_eq!(b.added, 1);
     assert!(
         git::file_patch(d.path(), "main", "a.txt")
             .await
-            .unwrap()
+            .expect("owned fixture")
             .contains("+three")
     );
     assert_eq!(
-        git::log_range(d.path(), "main").await.unwrap()[0].subject,
+        git::log_range(d.path(), "main")
+            .await
+            .expect("owned fixture")[0]
+            .subject,
         "add two"
     );
 }
 #[tokio::test]
 async fn non_repository_and_unborn_and_detached_are_distinct() {
-    let d = tempfile::tempdir().unwrap();
+    let d = tempfile::tempdir().expect("owned fixture");
     assert!(matches!(
         git::status(d.path()).await,
         Err(git::GitError::NotRepo)
     ));
     sh(d.path(), &["init", "-q", "-b", "main"]);
     assert_eq!(
-        git::status(d.path()).await.unwrap().branch.as_deref(),
+        git::status(d.path())
+            .await
+            .expect("owned fixture")
+            .branch
+            .as_deref(),
         Some("main")
     );
     assert!(git::ahead_behind(d.path(), "main", "HEAD").await.is_err());
     let d = repo();
     sh(d.path(), &["checkout", "--detach", "-q"]);
-    assert_eq!(git::current_branch(d.path()).await.unwrap(), None);
+    assert_eq!(
+        git::current_branch(d.path()).await.expect("owned fixture"),
+        None
+    );
 }
 #[tokio::test]
 async fn literal_unusual_paths_renames_binary_and_empty_files() {
@@ -88,23 +111,48 @@ async fn literal_unusual_paths_renames_binary_and_empty_files() {
                 "line without newline"
             },
         )
-        .unwrap();
+        .expect("owned fixture");
     }
-    std::fs::write(d.path().join("binary"), b"\0one\n").unwrap();
-    let files = git::changed_files(d.path(), "main").await.unwrap();
+    std::fs::write(d.path().join("binary"), b"\0one\n").expect("owned fixture");
+    let files = git::changed_files(d.path(), "main")
+        .await
+        .expect("owned fixture");
     for name in ["a space\t한글\n.txt", ":(glob)*", "-option"] {
-        assert_eq!(files.iter().find(|f| f.path == name).unwrap().added, 1);
+        assert_eq!(
+            files
+                .iter()
+                .find(|f| f.path == name)
+                .expect("owned fixture")
+                .added,
+            1
+        );
         assert!(
             git::file_patch(d.path(), "main", name)
                 .await
-                .unwrap()
+                .expect("owned fixture")
                 .contains("+line without newline")
         );
     }
-    assert_eq!(files.iter().find(|f| f.path == "empty").unwrap().added, 0);
-    assert_eq!(files.iter().find(|f| f.path == "binary").unwrap().added, 0);
     assert_eq!(
-        git::file_patch(d.path(), "main", "a.txt").await.unwrap(),
+        files
+            .iter()
+            .find(|f| f.path == "empty")
+            .expect("owned fixture")
+            .added,
+        0
+    );
+    assert_eq!(
+        files
+            .iter()
+            .find(|f| f.path == "binary")
+            .expect("owned fixture")
+            .added,
+        0
+    );
+    assert_eq!(
+        git::file_patch(d.path(), "main", "a.txt")
+            .await
+            .expect("owned fixture"),
         ""
     );
     assert!(
@@ -119,27 +167,32 @@ async fn literal_unusual_paths_renames_binary_and_empty_files() {
     );
     assert!(git::ahead_behind(d.path(), "--all", "HEAD").await.is_err());
     sh(d.path(), &["mv", "a.txt", "renamed space\t\n.txt"]);
-    let files = git::changed_files(d.path(), "main").await.unwrap();
+    let files = git::changed_files(d.path(), "main")
+        .await
+        .expect("owned fixture");
     let renamed = files
         .iter()
         .find(|f| f.path == "renamed space\t\n.txt")
-        .unwrap();
+        .expect("owned fixture");
     assert_eq!(renamed.status, git::ChangeStatus::Renamed);
     assert_eq!(renamed.old_path.as_deref(), Some("a.txt"));
-    assert_eq!(git::status(d.path()).await.unwrap().staged, 1);
+    assert_eq!(
+        git::status(d.path()).await.expect("owned fixture").staged,
+        1
+    );
 }
 #[tokio::test]
 async fn conflicts_keep_complete_paths_and_branch_log_queries() {
     let d = repo();
     let name = "conflict space\t한글\n.txt";
-    std::fs::write(d.path().join(name), "base\n").unwrap();
+    std::fs::write(d.path().join(name), "base\n").expect("owned fixture");
     sh(d.path(), &["add", "."]);
     sh(d.path(), &["commit", "-qm", "base"]);
     sh(d.path(), &["checkout", "-qb", "side"]);
-    std::fs::write(d.path().join(name), "side\n").unwrap();
+    std::fs::write(d.path().join(name), "side\n").expect("owned fixture");
     sh(d.path(), &["commit", "-qam", "side"]);
     sh(d.path(), &["checkout", "-q", "main"]);
-    std::fs::write(d.path().join(name), "main\n").unwrap();
+    std::fs::write(d.path().join(name), "main\n").expect("owned fixture");
     sh(d.path(), &["commit", "-qam", "main"]);
     let result = Command::new("git")
         .args([
@@ -152,26 +205,39 @@ async fn conflicts_keep_complete_paths_and_branch_log_queries() {
         ])
         .current_dir(d.path())
         .output()
-        .unwrap();
+        .expect("owned fixture");
     assert!(!result.status.success());
-    assert_eq!(git::status(d.path()).await.unwrap().conflicted, vec![name]);
-    assert!(!git::status(d.path()).await.unwrap().clean);
-    let files = git::changed_files(d.path(), "HEAD").await.unwrap();
+    assert_eq!(
+        git::status(d.path())
+            .await
+            .expect("owned fixture")
+            .conflicted,
+        vec![name]
+    );
+    assert!(!git::status(d.path()).await.expect("owned fixture").clean);
+    let files = git::changed_files(d.path(), "HEAD")
+        .await
+        .expect("owned fixture");
     assert!(
         files
             .iter()
             .any(|f| f.path == name && f.status == git::ChangeStatus::Unmerged)
     );
-    std::fs::create_dir(d.path().join("nested")).unwrap();
+    std::fs::create_dir(d.path().join("nested")).expect("owned fixture");
     let subdir_files = git::changed_files(&d.path().join("nested"), "HEAD")
         .await
-        .unwrap();
+        .expect("owned fixture");
     assert_eq!(
         subdir_files, files,
         "subdirectory queries keep repository-root paths, including conflicts"
     );
-    assert_eq!(git::branches(d.path()).await.unwrap(), vec!["main", "side"]);
-    let log = git::log_range(d.path(), "side").await.unwrap();
+    assert_eq!(
+        git::branches(d.path()).await.expect("owned fixture"),
+        vec!["main", "side"]
+    );
+    let log = git::log_range(d.path(), "side")
+        .await
+        .expect("owned fixture");
     assert_eq!(log.len(), 1);
     assert_eq!(log[0].subject, "main");
 }
@@ -180,16 +246,18 @@ async fn conflicts_keep_complete_paths_and_branch_log_queries() {
 async fn symlink_diff_never_reads_target_and_invalid_utf8_is_rejected() {
     use std::os::unix::{ffi::OsStringExt, fs::symlink};
     let d = repo();
-    let outside = tempfile::tempdir().unwrap();
-    std::fs::write(outside.path().join("secret"), "private target data").unwrap();
-    symlink(outside.path().join("secret"), d.path().join("link")).unwrap();
-    let patch = git::file_patch(d.path(), "main", "link").await.unwrap();
+    let outside = tempfile::tempdir().expect("owned fixture");
+    std::fs::write(outside.path().join("secret"), "private target data").expect("owned fixture");
+    symlink(outside.path().join("secret"), d.path().join("link")).expect("owned fixture");
+    let patch = git::file_patch(d.path(), "main", "link")
+        .await
+        .expect("owned fixture");
     assert!(!patch.contains("private target data"));
     std::fs::write(
         d.path().join(std::ffi::OsString::from_vec(vec![b'x', 255])),
         "bad",
     )
-    .unwrap();
+    .expect("owned fixture");
     assert!(matches!(
         git::changed_files(d.path(), "main").await,
         Err(git::GitError::InvalidEncoding)
@@ -199,34 +267,42 @@ async fn symlink_diff_never_reads_target_and_invalid_utf8_is_rejected() {
 async fn branch_divergence_and_subdirectory_queries_are_consistent() {
     let d = repo();
     sh(d.path(), &["checkout", "-qb", "agent"]);
-    std::fs::create_dir(d.path().join("nested")).unwrap();
-    std::fs::write(d.path().join("nested/item"), "item\n").unwrap();
+    std::fs::create_dir(d.path().join("nested")).expect("owned fixture");
+    std::fs::write(d.path().join("nested/item"), "item\n").expect("owned fixture");
     sh(d.path(), &["add", "."]);
     sh(d.path(), &["commit", "-qm", "nested"]);
     sh(d.path(), &["branch", "--set-upstream-to=main"]);
     sh(d.path(), &["checkout", "-q", "main"]);
-    std::fs::write(d.path().join("other"), "other\n").unwrap();
+    std::fs::write(d.path().join("other"), "other\n").expect("owned fixture");
     sh(d.path(), &["add", "."]);
     sh(d.path(), &["commit", "-qm", "other"]);
     sh(d.path(), &["checkout", "-q", "agent"]);
     assert_eq!(
-        git::ahead_behind(d.path(), "main", "HEAD").await.unwrap(),
+        git::ahead_behind(d.path(), "main", "HEAD")
+            .await
+            .expect("owned fixture"),
         (1, 1)
     );
-    let status = git::status(d.path()).await.unwrap();
+    let status = git::status(d.path()).await.expect("owned fixture");
     assert_eq!((status.ahead, status.behind), (1, 1));
     let files = git::changed_files(&d.path().join("nested"), "main")
         .await
-        .unwrap();
+        .expect("owned fixture");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].path, "nested/item");
     assert!(
         git::file_patch(&d.path().join("nested"), "main", "nested/item")
             .await
-            .unwrap()
+            .expect("owned fixture")
             .contains("+item")
     );
-    assert_eq!(git::log_range(d.path(), "main").await.unwrap().len(), 1);
+    assert_eq!(
+        git::log_range(d.path(), "main")
+            .await
+            .expect("owned fixture")
+            .len(),
+        1
+    );
 }
 #[cfg(unix)]
 #[tokio::test]
@@ -236,7 +312,7 @@ async fn untracked_fifo_is_ignored_without_opening() {
         Command::new("mkfifo")
             .arg(d.path().join("pipe"))
             .status()
-            .unwrap()
+            .expect("owned fixture")
             .success()
     );
     let result = tokio::time::timeout(
@@ -257,39 +333,48 @@ async fn staged_delete_recreated_untracked_is_a_combined_change() {
     sh(d.path(), &["rm", "-q", "a.txt"]);
     sh(d.path(), &["config", "core.splitIndex", "true"]);
     sh(d.path(), &["config", "core.sparseCheckout", "true"]);
-    let index_before = std::fs::read(d.path().join(".git/index")).unwrap();
+    let index_before = std::fs::read(d.path().join(".git/index")).expect("owned fixture");
     let git_files = || {
         let mut files: Vec<_> = std::fs::read_dir(d.path().join(".git"))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
+            .expect("owned fixture")
+            .map(|entry| entry.expect("owned fixture").file_name())
             .collect();
         files.sort();
         files
     };
     let files_before = git_files();
-    std::fs::write(d.path().join("a.txt"), "two\n").unwrap();
-    let files = git::changed_files(d.path(), "main").await.unwrap();
-    let a = files.iter().find(|f| f.path == "a.txt").unwrap();
+    std::fs::write(d.path().join("a.txt"), "two\n").expect("owned fixture");
+    let files = git::changed_files(d.path(), "main")
+        .await
+        .expect("owned fixture");
+    let a = files
+        .iter()
+        .find(|f| f.path == "a.txt")
+        .expect("owned fixture");
     assert_eq!(
         (a.status, a.added, a.removed),
         (git::ChangeStatus::Modified, 1, 1)
     );
-    let patch = git::file_patch(d.path(), "main", "a.txt").await.unwrap();
+    let patch = git::file_patch(d.path(), "main", "a.txt")
+        .await
+        .expect("owned fixture");
     assert!(patch.contains("-one") && patch.contains("+two"));
-    std::fs::write(d.path().join("a.txt"), "one\n").unwrap();
+    std::fs::write(d.path().join("a.txt"), "one\n").expect("owned fixture");
     assert!(
         !git::changed_files(d.path(), "main")
             .await
-            .unwrap()
+            .expect("owned fixture")
             .iter()
             .any(|f| f.path == "a.txt")
     );
     assert_eq!(
-        git::file_patch(d.path(), "main", "a.txt").await.unwrap(),
+        git::file_patch(d.path(), "main", "a.txt")
+            .await
+            .expect("owned fixture"),
         ""
     );
     assert_eq!(
-        std::fs::read(d.path().join(".git/index")).unwrap(),
+        std::fs::read(d.path().join(".git/index")).expect("owned fixture"),
         index_before
     );
     assert_eq!(
@@ -304,23 +389,27 @@ async fn recreated_file_queries_do_not_run_index_hooks() {
     use std::os::unix::fs::PermissionsExt;
     let d = repo();
     sh(d.path(), &["rm", "-q", "a.txt"]);
-    std::fs::write(d.path().join("a.txt"), "replacement\n").unwrap();
+    std::fs::write(d.path().join("a.txt"), "replacement\n").expect("owned fixture");
     let hook = d.path().join(".git/hooks/post-index-change");
     std::fs::write(
         &hook,
         "#!/bin/sh\nprintf hook-ran > .git/query-hook-marker\n",
     )
-    .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let original_index = std::fs::read(d.path().join(".git/index")).unwrap();
-    git::changed_files(d.path(), "main").await.unwrap();
-    git::file_patch(d.path(), "main", "a.txt").await.unwrap();
+    .expect("owned fixture");
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
+    let original_index = std::fs::read(d.path().join(".git/index")).expect("owned fixture");
+    git::changed_files(d.path(), "main")
+        .await
+        .expect("owned fixture");
+    git::file_patch(d.path(), "main", "a.txt")
+        .await
+        .expect("owned fixture");
     assert!(
         !d.path().join(".git/query-hook-marker").exists(),
         "read-only queries must not execute project hooks"
     );
     assert_eq!(
-        std::fs::read(d.path().join(".git/index")).unwrap(),
+        std::fs::read(d.path().join(".git/index")).expect("owned fixture"),
         original_index
     );
 }

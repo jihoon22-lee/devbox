@@ -3103,7 +3103,7 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): detect wait
   - `ProjectConfig { agent: AgentConfig { copy, setup, teardown, test? }, launch: LaunchConfig { services, terminals: [{ name, command? }], agents: [{ tool, worktree, prompt? }] }, raw_tasks, raw_services, raw_schedules }`. 작업 관련 절은 S2가 해석한다(`toml::Value` 보관).
   - `projects.config{ id }`(query) → `{ config, error? }`. 파일이 없으면 기본값이다. 문법 오류면 `error: { message }`이고 기본값으로 동작한다.
   - `projects.summary{}`(query) → `{ items: [{ id, branch?, dirty, ahead, behind, terminals, agents: { open, attention } }] }`. 전환기 카드용이며, 각 프로젝트 `git status`를 동시에 4개씩 돈다. 측정할 수 없는 Git 값은 `null`과 항목별 `error`로 표시하며 다른 카드 결과는 보존한다. 일반 디렉터리도 유효한 프로젝트다.
-  - `projects.launch{ id }`(mutation) → `LaunchResult { terminals: u32, agents: u32 }`(시작한 개수)
+  - `projects.launch{ id }`(mutation) → `LaunchResult { terminals: u32, agents: u32, terminalIds: string[], rev: string }`(시작한 개수·정확한 새 터미널 ID·완료 시점 revision)
     - `[launch].terminals` → 터미널 세션들
     - `[launch].agents` → `worktree` 설정을 따르는 에이전트 작업들(`agents.create` 내부 호출, 기본값 `false`). 전체 설정·프로필을 먼저 검증한다. 실행 중 실패하면 이미 생성된 자원은 보존하고 `projects.launch_failed`에 성공한 개수를 담는다. 에이전트 개수는 비동기 준비가 수용된 작업 수이며 이후 준비 실패는 작업 상태로 보고한다.
     - services는 S2에서 연결하고, 지금은 건너뛰며 `warnings`에 "실행은 S2"를 넣지 않고 조용히 무시한다.

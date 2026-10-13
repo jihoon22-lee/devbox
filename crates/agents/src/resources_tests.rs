@@ -253,26 +253,27 @@ async fn review_regression_inline_live_agent_is_included_in_resources() {
             1000
         }
     }
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("owned fixture");
     let instance = Instance::parse(&format!(
         "test-{}",
         &uuid::Uuid::new_v4().simple().to_string()[..8]
     ))
-    .unwrap();
-    let paths = Paths::resolve(instance, &TestEnv(root.path().into())).unwrap();
-    paths.ensure_dirs().unwrap();
+    .expect("owned fixture");
+    let paths = Paths::resolve(instance, &TestEnv(root.path().into())).expect("owned fixture");
+    paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     let migrations: Vec<Migration> = crate::MIGRATIONS
         .iter()
         .chain(devbox_projects::MIGRATIONS)
         .chain(devbox_terminal::MIGRATIONS)
         .copied()
         .collect();
-    let db = Db::open(&paths.db_path, &paths.backups_dir, "test", &migrations).unwrap();
+    let db =
+        Db::open(&paths.db_path, &paths.backups_dir, "test", &migrations).expect("owned fixture");
     let hub = Arc::new(Hub::new());
     let projects = Arc::new(devbox_projects::ProjectsService::new(
         db.clone(),
@@ -294,15 +295,17 @@ async fn review_regression_inline_live_agent_is_included_in_resources() {
         projects,
         terminal.clone(),
         vec![],
-        "/owned/devbox".into(),
-        true,
-        false,
+        crate::AgentRuntime {
+            devbox_bin: "/owned/devbox".into(),
+            use_scope: true,
+            cleanup_after_close: false,
+        },
     );
     let (_provider_dir, sampler) = provider(&format!(
         "printf 'LoadState=loaded\\nActiveState=active\\nInvocationID={INVOCATION}\\nCPUUsageNSec=1000000000\\nMemoryCurrent=77\\n'"
     ));
     *svc.resource_samples.lock().await = sampler;
-    let task: AgentTask = serde_json::from_str(r#"{"id":"a","projectId":"p","title":"inline","profile":"codex","baseBranch":"main","branch":null,"worktreePath":null,"workdir":"/owned","sessionId":null,"terminalId":"owned-term","state":"running","reason":null,"attention":null,"port":20000,"prompt":"","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null}"#).unwrap();
+    let task: AgentTask = serde_json::from_str(r#"{"id":"a","projectId":"p","title":"inline","profile":"codex","baseBranch":"main","branch":null,"worktreePath":null,"workdir":"/owned","sessionId":null,"terminalId":"owned-term","state":"running","reason":null,"attention":null,"port":20000,"prompt":"","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null}"#).expect("owned fixture");
     svc.db
         .write(move |tx| {
             store::put(tx, &task)?;
@@ -310,15 +313,15 @@ async fn review_regression_inline_live_agent_is_included_in_resources() {
             store::put_binding(tx, "a", &Binding::new(0))
         })
         .await
-        .unwrap();
+        .expect("owned fixture");
     terminal
         .tmux()
         .new_session("owned-term", root.path(), Some("sleep 60"), &[])
         .await
-        .unwrap();
+        .expect("owned fixture");
     let result = svc.resources().await;
     terminal.tmux().kill_server().await;
-    let items = result.unwrap().items;
+    let items = result.expect("owned fixture").items;
     assert_eq!(items.len(), 1, "live inline agent scope must be sampled");
     assert_eq!(items[0].memory_bytes, Some(77));
 }

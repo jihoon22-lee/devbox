@@ -8,7 +8,10 @@ test("new task → permission waiting → instruct → idle → diff → squash 
   await page.keyboard.press("Control+Shift+O");
   await page.getByRole("button", { name: "프로젝트 추가", exact: true }).click();
   await page.getByRole("dialog", { name: "프로젝트 추가", exact: true }).getByRole("button", { name: /gamma/ }).click();
+  await expect(page.getByRole("dialog", { name: "프로젝트 추가", exact: true })).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "프로젝트", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "프로젝트", exact: true })).toBeHidden();
   await page.keyboard.press("Control+Shift+N");
   await page.getByLabel("제목", { exact: true }).fill("Fix login");
   await page.getByRole("combobox", { name: "도구", exact: true }).click();
@@ -17,14 +20,15 @@ test("new task → permission waiting → instruct → idle → diff → squash 
   const createdAt = Date.now();
   await page.getByRole("button", { name: "시작", exact: true }).click();
   const group = page.getByRole("region", { name: "입력 대기", exact: true });
-  await expect(group.getByRole("button", { name: "Fix login", exact: true })).toBeVisible({ timeout: 10_000 });
+  const taskButton = group.getByRole("button").filter({ has: page.getByText("Fix login", { exact: true }) });
+  await expect(taskButton).toBeVisible({ timeout: 10_000 });
   await expect(group.getByText("needs Bash", { exact: true })).toBeVisible({ timeout: 2000 });
   const listAt = Date.now();
   const id = new URL(page.url()).searchParams.get("id");
   expect(id).toBeTruthy();
   // The marker is written immediately before the real CLI Notification hook, so this
   // includes CLI/socket delivery and is stricter than daemon-receipt → list latency.
-  const hookAt = Number(readFileSync(join(stack.home, `agent-hook-${id}.ms`), "utf8").trim());
+  const hookAt = Number(BigInt(readFileSync(join(stack.home, `agent-hook-${id}.ns`), "utf8").trim()) / 1_000_000n);
   expect(Number.isFinite(hookAt)).toBe(true);
   const hookToListMs = listAt - hookAt;
   await info.attach("SC3-fixture-latency", {
@@ -40,7 +44,7 @@ test("new task → permission waiting → instruct → idle → diff → squash 
   expect(hookToListMs).toBeGreaterThanOrEqual(0);
   expect(hookToListMs).toBeLessThan(2000);
   await expect(page.getByRole("button", { name: "알림 1개", exact: true })).toBeVisible();
-  await group.getByRole("button", { name: "Fix login", exact: true }).click();
+  await taskButton.click();
   await page.getByLabel("에이전트에게 보낼 지시").fill("yes");
   await page.keyboard.press("Control+Enter");
   await expect(
@@ -51,11 +55,14 @@ test("new task → permission waiting → instruct → idle → diff → squash 
   await page.getByRole("button", { name: "병합", exact: true }).click();
   await page.getByRole("menuitem", { name: "커밋 하나로 합쳐 병합", exact: true }).click();
   await page.getByRole("dialog", { name: "병합 커밋 메시지" }).getByRole("button", { name: "내용 확인" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "main에 병합", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "main에 병합 · Fix login", exact: true });
+  await expect(confirmation).toContainText("HEAD");
+  await confirmation.getByRole("button", { name: "main에 병합", exact: true }).click();
   await expect(
     page
       .getByRole("region", { name: "닫힘(24시간)", exact: true })
-      .getByRole("button", { name: "Fix login", exact: true }),
+      .getByRole("button")
+      .filter({ has: page.getByText("Fix login", { exact: true }) }),
   ).toBeVisible({ timeout: 10_000 });
   await expect.poll(async () => (await stack.rpc("agents.get", { id: id as string })).closedHow).toBe("merged");
 });

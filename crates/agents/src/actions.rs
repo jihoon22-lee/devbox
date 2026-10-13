@@ -242,15 +242,15 @@ impl AgentsService {
         };
         let head = devbox_git::run::resolve(repo, branch).await;
         let base = devbox_git::run::resolve(repo, &task.base_branch).await;
-        if let (Ok(head), Ok(base)) = (head, base) {
-            if let Ok(unmerged) = devbox_git::mutate::unmerged_count(repo, &head, &base).await {
-                return AgentsError::StateChanged {
-                    head,
-                    base,
-                    unmerged,
-                }
-                .into();
+        if let (Ok(head), Ok(base)) = (head, base)
+            && let Ok(unmerged) = devbox_git::mutate::unmerged_count(repo, &head, &base).await
+        {
+            return AgentsError::StateChanged {
+                head,
+                base,
+                unmerged,
             }
+            .into();
         }
         git_failure(error)
     }

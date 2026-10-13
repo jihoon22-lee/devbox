@@ -6,12 +6,12 @@ use support::{TestDaemon, bounded};
 #[tokio::test]
 async fn one_byte_input_matches_pty_tmux_return_without_claiming_windows_sc10() {
     let mut d = TestDaemon::fixture();
-    d.paths.ensure_dirs().unwrap();
+    d.paths.ensure_dirs().expect("owned fixture");
     std::fs::write(
         d.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
-    .unwrap();
+    .expect("owned fixture");
     d.launch();
     let client = d.client().await;
     let program = "import os,tty; tty.setraw(0); os.write(1,b'READY')\nwhile True:\n b=os.read(0,1)\n if not b: break\n os.write(1,b'\\r'+b)";
@@ -23,15 +23,15 @@ async fn one_byte_input_matches_pty_tmux_return_without_claiming_windows_sc10() 
             None,
         ))
         .await
-        .unwrap(),
+        .expect("owned fixture"),
     )
-    .unwrap();
+    .expect("owned fixture");
     let stream = bounded(client.open_stream(
         "terminal.attach",
         json!({"id":terminal["id"],"cols":120,"rows":40,"readOnly":false}),
     ))
     .await
-    .unwrap();
+    .expect("owned fixture");
     assert!(
         stream
             .read_until(b"READY", Duration::from_secs(2))
@@ -44,16 +44,16 @@ async fn one_byte_input_matches_pty_tmux_return_without_claiming_windows_sc10() 
     for i in 0..60 {
         let byte = b"qzwb"[i % 4];
         let started = Instant::now();
-        stream.write(&[byte]).await.unwrap();
+        stream.write(&[byte]).await.expect("owned fixture");
         let output = stream.read_until(&[byte], Duration::from_secs(1)).await;
         assert!(output.contains(&byte), "matching one-byte output deadline");
         if i >= 10 {
             samples.push(started.elapsed().as_secs_f64() * 1000.0);
         }
         stream
-            .credit(output.len().try_into().unwrap())
+            .credit(output.len().try_into().expect("owned fixture"))
             .await
-            .unwrap();
+            .expect("owned fixture");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     samples.sort_by(f64::total_cmp);

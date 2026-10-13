@@ -394,12 +394,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn ownership_rejects_symlink_ancestors_and_noncanonical_paths() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("owned fixture");
         let directory = temp.path().join("owned");
-        std::fs::create_dir(&directory).unwrap();
+        std::fs::create_dir(&directory).expect("owned fixture");
         assert!(safe_path(&directory));
         let alias = temp.path().join("alias");
-        std::os::unix::fs::symlink(&directory, &alias).unwrap();
+        std::os::unix::fs::symlink(&directory, &alias).expect("owned fixture");
         assert!(!safe_path(&alias));
         assert!(!safe_path(&alias.join(".")));
         assert!(!safe_path(Path::new("relative")));

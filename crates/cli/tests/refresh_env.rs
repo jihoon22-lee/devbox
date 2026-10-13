@@ -32,25 +32,27 @@ async fn refresh_rpc_keeps_foreground_alive_and_restarts_managed_test_instance()
                 &uuid::Uuid::new_v4().simple().to_string()[..8]
             );
             daemon.paths = Paths::resolve(
-                Instance::parse(&daemon.instance).unwrap(),
+                Instance::parse(&daemon.instance).expect("owned fixture"),
                 &FixtureEnv(daemon.home.path().into(), daemon.home.path().join("run")),
             )
-            .unwrap();
+            .expect("owned fixture");
             daemon.socket = daemon.paths.socket.clone();
         }
         let bin = daemon.home.path().join("fake-bin");
-        std::fs::create_dir(&bin).unwrap();
+        std::fs::create_dir(&bin).expect("owned fixture");
         let bash = bin.join("bash");
-        std::fs::write(&bash, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/capture-calls\"\nprintf 'PATH=/new/tool/bin\\0LANG=C\\0GITHUB_TOKEN=fixture-secret\\0'\n").unwrap();
-        std::fs::set_permissions(&bash, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(&bash, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/capture-calls\"\nprintf 'PATH=/new/tool/bin\\0LANG=C\\0GITHUB_TOKEN=fixture-secret\\0'\n").expect("owned fixture");
+        std::fs::set_permissions(&bash, std::fs::Permissions::from_mode(0o700))
+            .expect("owned fixture");
         // Any accidental setup/manager action is trapped inside this fixture.
         let manager = bin.join("systemctl");
         std::fs::write(
             &manager,
             "#!/bin/sh\nprintf invoked > \"$HOME/manager-invoked\"\nexit 1\n",
         )
-        .unwrap();
-        std::fs::set_permissions(manager, std::fs::Permissions::from_mode(0o700)).unwrap();
+        .expect("owned fixture");
+        std::fs::set_permissions(manager, std::fs::Permissions::from_mode(0o700))
+            .expect("owned fixture");
         daemon
             .extra_env
             .push(("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())));
@@ -59,7 +61,7 @@ async fn refresh_rpc_keeps_foreground_alive_and_restarts_managed_test_instance()
         if foreground {
             command.arg("--foreground");
         }
-        daemon.child = Some(ChildGuard(command.spawn().unwrap()));
+        daemon.child = Some(ChildGuard(command.spawn().expect("owned fixture")));
         let client = support::bounded(async {
             loop {
                 if let Ok(client) =
@@ -78,9 +80,9 @@ async fn refresh_rpc_keeps_foreground_alive_and_restarts_managed_test_instance()
                 Some("refresh-owned".into()),
             )
             .await
-            .unwrap();
+            .expect("owned fixture");
         let result: devbox_protocol::system::RefreshEnvResult =
-            serde_json::from_str(&first).unwrap();
+            serde_json::from_str(&first).expect("owned fixture");
         assert_eq!(result.restarting, !foreground);
         let repeated = client
             .raw_call(
@@ -89,23 +91,28 @@ async fn refresh_rpc_keeps_foreground_alive_and_restarts_managed_test_instance()
                 Some("refresh-owned".into()),
             )
             .await
-            .unwrap();
+            .expect("owned fixture");
         assert_eq!(first, repeated);
         assert_eq!(
-            std::fs::read_to_string(daemon.home.path().join("capture-calls")).unwrap(),
+            std::fs::read_to_string(daemon.home.path().join("capture-calls"))
+                .expect("owned fixture"),
             "-lc env -0\n"
         );
         let env = daemon.paths.instance_config_dir.join("env");
-        let saved = std::fs::read_to_string(&env).unwrap();
+        let saved = std::fs::read_to_string(&env).expect("owned fixture");
         assert!(saved.contains("PATH=\"/new/tool/bin\""));
         assert!(!saved.contains("fixture-secret"));
         assert_eq!(
-            std::fs::metadata(&env).unwrap().permissions().mode() & 0o777,
+            std::fs::metadata(&env)
+                .expect("owned fixture")
+                .permissions()
+                .mode()
+                & 0o777,
             0o600
         );
         tokio::time::sleep(Duration::from_millis(1100)).await;
         if !foreground {
-            let child = daemon.child.take().unwrap();
+            let child = daemon.child.take().expect("owned fixture");
             assert!(!support::exits(child).success(), "managed restart exit");
             assert!(!daemon.home.path().join("manager-invoked").exists());
             continue;
@@ -115,20 +122,23 @@ async fn refresh_rpc_keeps_foreground_alive_and_restarts_managed_test_instance()
             daemon
                 .child
                 .as_mut()
-                .unwrap()
+                .expect("owned fixture")
                 .0
                 .try_wait()
-                .unwrap()
+                .expect("owned fixture")
                 .is_none()
         );
         assert!(!daemon.home.path().join("manager-invoked").exists());
         assert!(!daemon.home.path().join(".config/systemd/user").exists());
-        std::fs::write(&bash, "#!/bin/sh\nexit 1\n").unwrap();
-        let error = client.call::<RefreshEnv>(&PingParams {}).await.unwrap_err();
+        std::fs::write(&bash, "#!/bin/sh\nexit 1\n").expect("owned fixture");
+        let error = client
+            .call::<RefreshEnv>(&PingParams {})
+            .await
+            .expect_err("fixture operation must fail");
         assert!(
             matches!(error, ClientError::Rpc { code, .. } if code == "system.env_refresh_failed")
         );
-        assert_eq!(std::fs::read_to_string(env).unwrap(), saved);
+        assert_eq!(std::fs::read_to_string(env).expect("owned fixture"), saved);
         assert!(client.call::<Ping>(&PingParams {}).await.is_ok());
     }
 }

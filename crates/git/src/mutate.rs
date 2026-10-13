@@ -270,10 +270,10 @@ pub async fn merge_into_at(
     }
     let source_oid = resolve(dir, source).await?;
     let mut merged_source = source_oid.clone();
-    if let Some(branch) = expected_branch {
-        if resolve(dir, branch).await? != source_oid {
-            return Err(GitError::StateChanged);
-        }
+    if let Some(branch) = expected_branch
+        && resolve(dir, branch).await? != source_oid
+    {
+        return Err(GitError::StateChanged);
     }
     if let MergeStrategy::Rebase { worktree } = strategy {
         registered(dir, &worktree).await?;
@@ -319,10 +319,10 @@ pub async fn merge_into_at(
         if let Err(error) = result {
             return failed_merge(dir, base_branch, &original, error).await;
         }
-        if let MergeStrategy::Squash { message } = strategy {
-            if let Err(error) = git(dir, &["commit", "-m", &message]).await {
-                return failed_merge(dir, base_branch, &original, error).await;
-            }
+        if let MergeStrategy::Squash { message } = strategy
+            && let Err(error) = git(dir, &["commit", "-m", &message]).await
+        {
+            return failed_merge(dir, base_branch, &original, error).await;
         }
     }
     Ok(MergeOutcome {

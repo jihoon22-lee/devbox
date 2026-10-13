@@ -75,10 +75,10 @@ impl Streams {
     /// Full close discards queued output and interrupts producers; input FIN is only a half-close.
     pub fn close(&self, channel: u32, id: u32, outbox: &Outbox) -> Result<(), &'static str> {
         let mut map = self.0.lock().expect("streams");
-        if let Some(entry) = map.get(&id) {
-            if entry.channel != channel {
-                return Err("stream belongs to another channel");
-            }
+        if let Some(entry) = map.get(&id)
+            && entry.channel != channel
+        {
+            return Err("stream belongs to another channel");
         }
         if let Some(entry) = map.remove(&id) {
             entry.generation.cancel();

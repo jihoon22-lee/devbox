@@ -14,6 +14,11 @@ use std::{collections::HashSet, path::Path, sync::Arc};
 use tokio::sync::Mutex;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub(crate) type Result<T> = std::result::Result<T, Fail<AgentsError>>;
+pub struct AgentRuntime {
+    pub devbox_bin: String,
+    pub use_scope: bool,
+    pub cleanup_after_close: bool,
+}
 pub struct AgentsService {
     pub(crate) db: Db,
     pub(crate) hub: Arc<Hub>,
@@ -185,9 +190,7 @@ impl AgentsService {
         projects: Arc<ProjectsService>,
         terminal: Arc<TerminalService>,
         profiles: Vec<ToolProfile>,
-        devbox_bin: String,
-        use_scope: bool,
-        cleanup_after_close: bool,
+        runtime: AgentRuntime,
     ) -> Self {
         Self {
             db,
@@ -196,11 +199,11 @@ impl AgentsService {
             projects,
             terminal,
             profiles,
-            devbox_bin,
-            use_scope,
+            devbox_bin: runtime.devbox_bin,
+            use_scope: runtime.use_scope,
             reservations: Mutex::new(()),
             actions: Mutex::new(()),
-            cleanup_after_close,
+            cleanup_after_close: runtime.cleanup_after_close,
             hook_files: Mutex::new(()),
             background: TaskTracker::new(),
             stop: CancellationToken::new(),

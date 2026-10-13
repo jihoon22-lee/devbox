@@ -222,6 +222,8 @@ Task 24 수용 테스트·계측 도구 로컬 구현: scope와 managed runtime�
 
 브랜치 전체 검토(80d092c2 기준): Astra가 에이전트 종료 뒤 대체 셸·재개/지시 경로, 프로젝트 삭제 후 종속 작업 유실, 같은 revision의 tmux 실시간 상태 누락 등 P2 3건을 확인했다. Task24 뒤 통합 수정은 `toolExited`·실행별 상태 파일/식별자와 입력을 실행하지 않는 보존 화면, DB 트랜잭션의 종속 자원·생성 참조 확인, 터미널 alive/command 한정 캐시 갱신과 가시 상태 재조회로 대응했다. 닫힌 작업도 Git 자원이 남으면 프로젝트를 보존하며 명시적 정리가 끝난 과거 기록은 삭제를 막지 않는다. 종료된 터미널 기록 닫기에서 발견한 tmux `no current target`도 보완했다. 좁은 Rust129·프론트47개 및 우발적으로 함께 실행된 CLI lib40개 PASS, 타입 검사·TS 생성·변경 형식 검사 PASS. 재검토에서 발견한 기존 세션 정리 실패 후 재시도 차단도 RED→GREEN으로 수정했다. 기존 세션 정리 성공 뒤 실행 세대·작업 상태를 원자적으로 저장한다. 관련 재개/동작13개 PASS 및 Astra 최종 재검토 PASS, 남은 확정 P1/P2 없음. 전체 검사·실제 수용 검증 전 단계다.
 
+S1 전체 검사 1회(`efb7fc1e`): 242.643초, cgroup peak 2,848,993,280B·swap 4,714,496B. Python16·순수 앱 core를 포함한 Rust435·프론트410/79파일·타입 검사·TS 생성·Biome·프론트 빌드 PASS. Rust의 메서드 목록 기대값1, Clippy, E2E2/9 실패를 보존했다(`.git/devbox-verification/s1-acceptance-f7wwsjih/full-check*`). 실패 단계 후속: 메서드 목록에 기존 system.refresh_env를 반영하고 공식 Clippy 수정·테스트 expect·동등한 생성자 설정 묶음으로 규칙 위반을 해결했다. 시작 구성이 세션만 만들던 실제 화면 결함은 정확한 ID/revision 응답과 탭 열기·오래된 목록 보호로 고쳤다. 에이전트 E2E의 중첩 대화상자 대기·현재 접근성 이름·ns/ms 변환·확인 대화상자 선택자를 보정했고 원래 시간 기준을 유지했다. 최종 workspace/all-targets Clippy 오류0, 직접 Rust123·프론트14 및 마지막 보호 로직 부분집합5 PASS. 실패 E2E2는 에이전트4.1초·시작 구성2.5초 PASS, 기존7개는 같은 영향 밖 입력의 PASS를 재사용하며 전체 실행을 반복하지 않았다. 통과 E2E의 수치 첨부는 기본 reporter가 보존하지 않아 SC3는 <2000ms 검증 통과만 기록한다. 후속 증거는 같은 artifact의 failed-step-followup-evidence.json과 clippy-followup-*에 있다. 후속 수정 Astra 독립 검토 PASS(68개 소스 해시 일치, 남은 P1/P2 없음). 최종 프론트 빌드·별도 SC10 probe·CLI 빌드·Biome253 PASS, cgroup peak770,387,968B. 실제 수용 검증은 진행 중이다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

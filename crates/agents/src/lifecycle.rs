@@ -143,23 +143,30 @@ impl AgentsService {
         crate::watch::spawn(self).internal("compile output waiting patterns")?;
         let svc = self.clone();
         self.background.spawn(async move {
-            let mut interval=tokio::time::interval(std::time::Duration::from_millis(250));
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
             loop {
                 tokio::select! {
                     _=svc.stop.cancelled()=>break,
                     _=interval.tick()=>{}
                 }
-                let Ok(list)=svc.list(ListAgents::default()).await else {continue};
+                let Ok(list) = svc.list(ListAgents::default()).await else {
+                    continue;
+                };
                 for task in list.items {
                     if !task.tool_exited && svc.recover_tool_exit(&task.id).await.unwrap_or(false) {
                         continue;
                     }
-                    let codex=crate::profile::resolve(&svc.profiles,&task.profile)
-                        .is_some_and(|p|p.hooks==crate::profile::Hooks::Codex);
-                    if codex && !task.tool_exited && matches!(task.state,AgentState::Running|AgentState::Waiting|AgentState::Idle) {
-                        if let Err(error)=svc.refresh_binding(&task,false).await {
-                            tracing::debug!(?error,agent=%task.id,"Codex lifecycle metadata pending");
-                        }
+                    let codex = crate::profile::resolve(&svc.profiles, &task.profile)
+                        .is_some_and(|p| p.hooks == crate::profile::Hooks::Codex);
+                    if codex
+                        && !task.tool_exited
+                        && matches!(
+                            task.state,
+                            AgentState::Running | AgentState::Waiting | AgentState::Idle
+                        )
+                        && let Err(error) = svc.refresh_binding(&task, false).await
+                    {
+                        tracing::debug!(?error,agent=%task.id,"Codex lifecycle metadata pending");
                     }
                 }
             }

@@ -229,7 +229,8 @@ mod tests {
     }
     #[test]
     fn settings_route_every_hook_and_notify_escapes_paths() {
-        let settings: serde_json::Value = serde_json::from_str(&claude_settings("/b/a'b")).unwrap();
+        let settings: serde_json::Value =
+            serde_json::from_str(&claude_settings("/b/a'b")).expect("owned fixture");
         for event in [
             "SessionStart",
             "UserPromptSubmit",
@@ -244,7 +245,8 @@ mod tests {
         }
         let notify = codex_notify_arg("/b/\"quoted\\path");
         let args: Vec<String> =
-            serde_json::from_str(notify.strip_prefix("notify=").unwrap()).unwrap();
+            serde_json::from_str(notify.strip_prefix("notify=").expect("owned fixture"))
+                .expect("owned fixture");
         assert_eq!(args[0], "/b/\"quoted\\path");
     }
 }

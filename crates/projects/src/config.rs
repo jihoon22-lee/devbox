@@ -435,7 +435,7 @@ mod tests {
             std::fs::write(source.join(&name), "secret").expect("fixture");
             std::fs::set_permissions(source.join(&name), std::fs::Permissions::from_mode(mode))
                 .expect("fixture");
-            copy_files(&source, &target, &[name.clone()]).expect("copy");
+            copy_files(&source, &target, std::slice::from_ref(&name)).expect("copy");
             assert_eq!(
                 std::fs::metadata(target.join(name))
                     .expect("fixture")
