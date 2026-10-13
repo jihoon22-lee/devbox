@@ -12,7 +12,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 de37f328 필수 CI·E2E·Windows 영향 검증 PASS. 해당 SHA 코드·보안 리뷰의 추가 5건 보완·독립 검토·영향 검증을 마쳤고 새 최종 SHA 수용을 기다린다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
+| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 21f41d79 필수 CI·E2E·Windows 영향 검증 PASS. 코드·보안 리뷰 완료 후 남은 PR 제목 사전 검증 1건을 보완하고 새 최종 SHA 수용을 진행한다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
 | 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
@@ -358,3 +358,9 @@ tmux 생성 실패는 생성 전 새 UUID의 부재를 확인하고, 응답 오�
 | 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
 
 다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 이 준비 검토 당시의 S0b 사용자 확인 gate는 2026-10-13 결정으로 대체하며, 설계 변경이 필요한 실패는 별도로 보고한다.
+
+21f41d79 수용 결과: CI 38470401002·Windows 38470401001 필수 검사와 E2E 모두 PASS. 출처·SHA256을 확인한 Windows 설치본에서 방향 제어 문자 표시·취소 시 무실행, 초기 옵션 모양 지시문의 `--` 뒤 원문 argv, 열린 프로젝트 선택 화면의 백그라운드 터미널 수 갱신(1,738ms)을 확인했다. 지시문은 실제 scope·hook을 사용하는 소유 fake CLI로 확인했으며 실제 모델 호출로 보고하지 않는다. 실제 tmux 생성 후 응답을 지연한 10,017ms 오류에서 새 UUID 제거·기존 세션과 rev 보존을 확인했다. 재개·squash·eligible 정리도 PASS. 소유 앱·WSL unit·설치·데이터·다운로드를 제거하고 v0.9 및 기존 빈 drop-in 디렉터리의 inode·빈 상태를 보존했다. 이전 paging/stream/desktop 근거 재사용 범위와 미실행 R1/R2·DND는 `windows-final-21f41d79/acceptance.json`·`unchanged-input-reuse.json`에 구분했다.
+
+해당 SHA 코드 리뷰 21:37:49 UTC·보안 리뷰 21:34:14 UTC 완료. 추가 P2 4264299043은 큰 PR 제목이 agent 정지·push 뒤 gh argv 한계를 넘는 실제 결함으로 독립 판단했다. 별도 task 제목의 120자 정책을 적용하거나 제목을 잘라내지 않고, 유효 PR 제목의 UTF-8 64KiB 및 NUL 검증을 부수 효과 전에 수행하도록 보완한다. 후속 검증·최종 SHA 수용 전에는 머지하지 않는다.
+
+PR 제목 보완 검증: 기존 코드에서 과대 제목·NUL·공백 포함 초과·Unicode 초과 4경우 모두 거부 전에 실행 중 terminal을 잃는 causal RED를 재현했다. 보완 후 2개 parent·8경우 PASS: 거부 시 task/rev·terminal·HUP 무시 소유 process·로컬 참조·빈 원격 저장소 유지, gh/scope stop 미호출, UTF-8/ASCII 정확히 65,536byte·기본 제목·앞뒤 공백 원문 전달. 기존 종료 계약 4개·RPC 문구 2개·TS·agents all-target Clippy PASS(최종 1.585초, cgroup peak 310,497,280byte). 생성 TS는 xtask로 갱신했다. typecheck 명령 이름을 잘못 호출한 최초 시도는 도구 오류로 보존하고 실제 tsc 검사를 완료했다. 실제 tmux·로컬 Git과 fake gh/systemctl을 사용한 경계 검증이며 실제 GitHub PR 생성으로 보고하지 않는다. 소스 7개·로그/자원 26개 hash 및 자원 내용 13쌍의 별도 검토 PASS. 원본 `agents-21f-pr-title-*.log/resources.json`·`agents-21f-pr-title-followup`.
