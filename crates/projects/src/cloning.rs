@@ -52,32 +52,22 @@ impl ProjectsService {
             "core.hooksPath=/dev/null",
             "clone",
             "--template=",
+            "--no-checkout",
             "--",
             &p.url,
             ".",
         ];
         // The working directory is the reserved inode, never the caller's replaceable path.
         // A failed/cancelled clone preserves all exposed resources for inspection.
-        match devbox_git::run::clone_output(&reservation.directory, &args).await {
-            Ok((0, _, _)) => (),
-            Ok((_, _, stderr)) => {
-                return Err(ProjectsError::CloneFailed {
-                    path,
-                    message: clone_failure_message(&stderr),
-                }
-                .into());
-            }
-            Err(error) => {
-                return Err(ProjectsError::CloneFailed {
-                    path,
-                    message: format!(
-                        "Git clone stopped ({})",
-                        devbox_protocol::to_wire(&error).code
-                    ),
-                }
-                .into());
-            }
-        }
+        clone_step(
+            devbox_git::run::clone_output(&reservation.directory, &args).await,
+            &path,
+        )?;
+        reservation.verify()?;
+        clone_step(
+            devbox_git::run::implicit_checkout::pinned_checkout(&reservation.directory).await,
+            &path,
+        )?;
         self.register_clone(reservation).await
     }
 
@@ -141,6 +131,26 @@ impl ProjectsService {
             message: "Project cloning requires the Linux daemon.".into(),
         }
         .into())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn clone_step(result: Result<(i32, String, String), devbox_git::GitError>, path: &str) -> R<()> {
+    match result {
+        Ok((0, _, _)) => Ok(()),
+        Ok((_, _, stderr)) => Err(ProjectsError::CloneFailed {
+            path: path.into(),
+            message: clone_failure_message(&stderr),
+        }
+        .into()),
+        Err(error) => Err(ProjectsError::CloneFailed {
+            path: path.into(),
+            message: format!(
+                "Git clone stopped ({})",
+                devbox_protocol::to_wire(&error).code
+            ),
+        }
+        .into()),
     }
 }
 

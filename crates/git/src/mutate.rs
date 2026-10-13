@@ -168,22 +168,27 @@ pub async fn worktree_add(
     let oid = resolve(repo, base).await?;
     // Implicit agent checkout must not execute repository content before trust.
     // Keep this override scoped to creation; ordinary Git mutations retain hooks.
-    if let Err(cause) = git(
-        repo,
-        &[
-            "-c",
-            "core.hooksPath=/dev/null",
-            "worktree",
-            "add",
-            "-b",
-            branch,
-            "--",
-            text(dir)?,
-            &oid,
-        ],
-    )
-    .await
-    {
+    let result = async {
+        git(
+            repo,
+            &[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "worktree",
+                "add",
+                "--no-checkout",
+                "-b",
+                branch,
+                "--",
+                text(dir)?,
+                &oid,
+            ],
+        )
+        .await?;
+        crate::run::implicit_checkout::worktree_checkout(dir, &oid).await
+    }
+    .await;
+    if let Err(cause) = result {
         let branch_exists = crate::branches(repo)
             .await
             .ok()

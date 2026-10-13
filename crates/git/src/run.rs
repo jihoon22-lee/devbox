@@ -3,6 +3,8 @@ use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{io::AsyncReadExt, process::Command};
 pub const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 pub const TIMEOUT: Duration = Duration::from_secs(30);
+#[path = "implicit_checkout.rs"]
+pub mod implicit_checkout;
 // Cloning can transfer a large history over a slow connection. Keep it bounded
 // independently of short queries; execute still kills owned helpers on cancellation.
 #[cfg(target_os = "linux")]
