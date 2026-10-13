@@ -68,7 +68,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
         (Some(id), Hooks::Codex) => tool.push_str(&format!(" resume {}", sh_quote(id))),
         (None, Hooks::Claude | Hooks::Codex) => {
             if let Some(f) = &p.prompt_file {
-                tool.push_str(&format!(" \"$(cat {})\"", sh_quote(f)));
+                tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
             }
         }
         _ => {}
@@ -89,7 +89,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn plan() -> StartPlan {
+    pub(super) fn plan() -> StartPlan {
         StartPlan {
             devbox: "/b/devbox".into(),
             instance: "prod".into(),
@@ -119,7 +119,7 @@ mod tests {
             "cd '/w/x y'",
             "pnpm install",
             "--expand-environment=no",
-            "claude --settings '/d/claude.json' \"$(cat '/d/prompt.md')\"",
+            "claude --settings '/d/claude.json' -- \"$(cat '/d/prompt.md')\"",
             "--from exit --code \"$code\"",
         ] {
             assert!(s.contains(part), "missing {part}");
@@ -214,3 +214,7 @@ mod tests {
         assert!(!s.contains("$(cat"));
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "start_prompt_tests.rs"]
+mod prompt_tests;
