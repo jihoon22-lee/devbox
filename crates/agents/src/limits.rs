@@ -32,6 +32,18 @@ pub(crate) fn pr_title(title: &str) -> Result<()> {
     }
     Ok(())
 }
+pub(crate) fn squash_message(message: &str) -> Result<()> {
+    if message.len() > INPUT_BYTES {
+        return Err(AgentsError::SquashMessageTooLong {
+            limit_bytes: INPUT_BYTES as u32,
+        }
+        .into());
+    }
+    if message.contains('\0') {
+        return Err(AgentsError::InvalidInput.into());
+    }
+    Ok(())
+}
 pub(crate) fn serialized<T: Serialize>(value: &T, limit: usize) -> Result<()> {
     let bytes = serde_json::to_vec(value)
         .map_err(|e| Fail::Internal(format!("measure agent response: {e}")))?;

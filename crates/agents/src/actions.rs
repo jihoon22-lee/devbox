@@ -277,6 +277,12 @@ impl AgentsService {
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;
+        let message = p
+            .message
+            .unwrap_or_else(|| format!("{} (agent)", task.title));
+        if matches!(p.strategy, MergeKind::Squash) {
+            crate::limits::squash_message(&message)?;
+        }
         let (project, wt, branch) = self.owned_worktree(&task).await?;
         let cleanup_snapshot = if self.cleanup_after_close {
             self.authorize_teardown(&task, &project).await?
@@ -294,11 +300,7 @@ impl AgentsService {
             .await?;
         let strategy = match p.strategy {
             MergeKind::Merge => devbox_git::mutate::MergeStrategy::Merge,
-            MergeKind::Squash => devbox_git::mutate::MergeStrategy::Squash {
-                message: p
-                    .message
-                    .unwrap_or_else(|| format!("{} (agent)", task.title)),
-            },
+            MergeKind::Squash => devbox_git::mutate::MergeStrategy::Squash { message },
             MergeKind::Rebase => devbox_git::mutate::MergeStrategy::Rebase {
                 worktree: wt.clone(),
             },

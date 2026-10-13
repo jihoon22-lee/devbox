@@ -7,6 +7,9 @@ mod rebase_review_tests;
 #[path = "pr_title_tests.rs"]
 mod pr_title_tests;
 
+#[path = "squash_message_tests.rs"]
+mod squash_message_tests;
+
 #[test]
 fn review_close_without_git_cleanup_stops_owned_terminal_and_scope() {
     cases(&["merge", "pr"]);
@@ -33,6 +36,10 @@ fn review_close_rechecks_confirmed_state_after_quiesce() {
 }
 
 async fn close_case(mode: &str) {
+    if mode.starts_with("squash-message-") {
+        squash_message_tests::case(mode).await;
+        return;
+    }
     if mode.starts_with("pr-title-") {
         pr_title_tests::case(mode).await;
         return;
@@ -250,7 +257,7 @@ fn cases(modes: &[&str]) {
         r#"#!/bin/sh
 case "$2" in
  stop) printf '%s\n' "$3" >> "$DEVBOX_CLOSE_SCOPE_MARKER"
-   case "$DEVBOX_CLOSE_CASE" in *fails|*ended) exit 23;; esac
+   case "$DEVBOX_CLOSE_CASE" in squash-message-*) ;; *fails|*ended) exit 23;; esac
    kill -TERM "$DEVBOX_CLOSE_SCOPE_PID" || exit $?
    case "$DEVBOX_CLOSE_CASE" in
     *late-head) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
@@ -292,7 +299,24 @@ esac
         std::env::split_paths(&std::env::var_os("PATH").expect("PATH")),
     ))
     .expect("owned PATH");
-    let test = if modes[0].starts_with("pr-title-") {
+    if modes[0].starts_with("squash-message-") {
+        let git = root.path().join("git");
+        fs::write(&git, r#"#!/usr/bin/env python3
+import os,sys,pathlib
+args=sys.argv[1:]
+if 'commit' in args and '-m' in args:
+    pathlib.Path(os.environ['DEVBOX_SQUASH_RECEIPT']).write_bytes(args[args.index('-m')+1].encode('utf-8'))
+os.execv('/usr/bin/git',['git',*args])
+"#).expect("owned transparent git argv receipt");
+        fs::set_permissions(git, fs::Permissions::from_mode(0o700)).expect("wrapper mode");
+    }
+    let test = if modes[0].starts_with("squash-message-") {
+        if modes[0].ends_with("fails") {
+            "squash_message_tests::squash_messages_reject_before_quiesce_or_git_mutation"
+        } else {
+            "squash_message_tests::squash_messages_accept_boundary_default_and_raw_multiline_bytes"
+        }
+    } else if modes[0].starts_with("pr-title-") {
         if modes[0].ends_with("fails") {
             "pr_title_tests::pr_titles_reject_before_quiesce_or_push"
         } else {
@@ -358,6 +382,10 @@ esac
             ])
             .env(CHILD, mode)
             .env(
+                "DEVBOX_SQUASH_RECEIPT",
+                root.path().join(format!("squash-{mode}")),
+            )
+            .env(
                 "DEVBOX_PR_TITLE_RECEIPT",
                 root.path().join(format!("title-{mode}")),
             )
@@ -381,7 +409,9 @@ esac
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             ));
-        } else if mode.starts_with("pr-title-") && mode.ends_with("fails") {
+        } else if (mode.starts_with("pr-title-") || mode.starts_with("squash-message-"))
+            && mode.ends_with("fails")
+        {
             assert!(
                 owner.scope.try_wait().expect("scope state").is_none(),
                 "rejected title must leave owned process alive"
