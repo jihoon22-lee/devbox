@@ -390,7 +390,7 @@ exec "$DEVBOX_REVIEW_REAL_GIT" "$@"
     fs::write(root.path().join("git"), wrapper).expect("git wrapper");
     fs::write(
         root.path().join("gh"),
-        "#!/bin/sh\n: > \"$DEVBOX_REVIEW_GH_MARKER\"\nprintf 'https://example.invalid/pr/1\\n'\n",
+        "#!/bin/sh\nif [ \"$1\" = pr ] && [ \"$2\" = list ]; then exit 0; fi\n: > \"$DEVBOX_REVIEW_GH_MARKER\"\nprintf 'https://example.invalid/pr/1\\n'\n",
     )
     .expect("gh fixture");
     for name in ["git", "gh"] {

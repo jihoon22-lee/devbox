@@ -195,9 +195,9 @@ fn fake_gh(d: &mut TestDaemon, success: bool) {
     std::fs::create_dir(&bin).expect("owned fixture");
     let gh = bin.join("gh");
     let script = if success {
-        "#!/bin/sh\nprintf '%s\\n' 'https://github.com/fixture/app/pull/1'\n"
+        "#!/bin/sh\nif [ \"$1\" = pr ] && [ \"$2\" = list ]; then exit 0; fi\nprintf '%s\\n' 'https://github.com/fixture/app/pull/1'\n"
     } else {
-        "#!/bin/sh\nprintf '%s\\n' 'PRIVATE_GH_FAILURE' >&2\nexit 1\n"
+        "#!/bin/sh\nif [ \"$1\" = pr ] && [ \"$2\" = list ]; then exit 0; fi\nprintf '%s\\n' 'PRIVATE_GH_FAILURE' >&2\nexit 1\n"
     };
     std::fs::write(&gh, script).expect("owned fixture");
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).expect("owned fixture");

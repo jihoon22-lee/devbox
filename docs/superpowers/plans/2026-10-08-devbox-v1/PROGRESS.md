@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 추가 6건 보완 뒤 a7921ba3 필수 CI·Windows 영향 검증 PASS. 해당 SHA 리뷰의 후속4건 보완 중, 패치 영구 저장 제안1건은 설계 범위 근거로 적용하지 않음 |
-| 다음 할 일 | 후속4건 보완·별도 검토 → 최종 SHA 필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
+| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 추가 6건 보완 뒤 a7921ba3 필수 CI·Windows 영향 검증 PASS. 해당 SHA 리뷰의 후속4건 보완·영향 회귀 통과, 최종 통합 검사·수용 진행 중. 패치 영구 저장 제안1건은 설계 범위 근거로 적용하지 않음 |
+| 다음 할 일 | 후속4건 최종 검증·push → 최종 SHA 필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 수정·독립 코드 검토·영향 검사 완료. 후속 최종 SHA 수용 대기 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -268,6 +268,8 @@ PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전�
 리뷰4262016027 종료 정지 보완: Git 자동 정리를 꺼도 merge/PR의 비가역 변경 전에 정확한 소유 터미널·scope를 항상 정지한다. 정지 실패는 병합·push·PR보다 먼저 실패하고, 정지 뒤 소유권·확인한 head/base/branch·clean 상태를 다시 확인한다. 자동 정리는 이미 성공한 정지를 중복 실행하지 않으며, 설정을 끄면 작업 폴더·브랜치를 남기고 저장소 teardown을 실행하지 않는다. 최초3개 RED 뒤 새4개10시나리오와 기존 직접4·실제 CLI2·종료 usage 고정1의 고유11개 및 소유 포맷 PASS, 고정4파일 별도 검토 PASS. scope 실패/정지 중 HEAD·dirty 변경·이미 종료된 자원·SIGHUP을 무시하는 소유 프로세스를 포함한다. mock scope 근거와 실제 Windows/systemd 수용을 구분하며 후자는 최종 설치본에서 확인한다. 근거 agents-close-quiesce-evidence.json·freeze·independent-sol-review.json.
 
 리뷰4262016019 Codex 조회 보완: 도구 종료 감시는250ms를 유지하고, Codex 배경 metadata fallback만 작업별 최대2초에 한 번 수행한다. 검증된 rollout의 경로·실행 세대·thread·크기·수정 시각·파일 identity가 같으면 본문을 다시 읽지 않는다. 실패/DB 저장 실패는 다음 조회에서 재시도하며, 명시적 완료 알림·resume은 캐시를 우회해 기존 직접 읽기와3회 제한 재시도를 유지한다. 최초5개 중3개 RED 뒤 새5·기존 tracker7·correlation7·CLI usage2·실제 RPC notify1의 고유22개와 포맷 PASS. 실제 RPC는 기존 background 대기2초가 새2초 주기와 겹쳐 최초 실패했으며 해당 전환의 대기만5초로 바꿔 통과했다. 즉시 notify·stale/current turn 검증은 유지했고 실패 원본을 보존했다. 소스5파일 고정 해시·원본 근거의 별도 검토 PASS. 근거 tracker-poll-followup/evidence.json·final.patch·원본 명령/출력/자원 기록.
+
+리뷰4262016013 PR 재확인 보완: 확인한 HEAD의 push 뒤 같은 저장소·열림 상태·정확한 base/head 이름과 HEAD OID·안전한 URL을 가진 단일 PR만 재사용한다. 조회 실패는 부재로 취급하지 않고 생성을 막는다. create의 오류·시간 초과·잘못된 출력 뒤에도 같은 검증 조회로 실제 생성 여부를 확인하며, 확인되지 않으면 원래 오류를 유지한다. 다음 재시도도 생성 전 조회해 취소/응답 유실 뒤 중복 생성을 피한다. 새15시나리오를 담은2개 RED→GREEN, 기존 직접Git1·agents1·RPC2·profile1까지 고유7개와 소유 포맷 PASS. 실제 원격 PR을 만들지 않고 소유 bare remote와 fake-gh만 사용했다. 고정6파일 독립 검토 PASS. 후속4건의 대상4crate all-target Clippy·workspace fmt·에이전트 생성→대기→지시→diff→squash 실제 E2E PASS(시나리오4.1초, 감독16.521초, cgroup peak1,527,689,216byte), 최종 Biome269파일 PASS. 해당 통합 검사 원본은 four-review-final-*.log에 보존한다. 근거 pr-reconcile-followup/evidence.json·final.patch·원본 RED/GREEN/자원 기록.
 
 ## 6. 세션 기록
 

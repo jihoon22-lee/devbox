@@ -7,6 +7,9 @@ use crate::{
 };
 use std::path::{Path, PathBuf};
 
+#[path = "pull_request.rs"]
+mod pull_request;
+
 #[derive(Debug, Clone)]
 pub enum MergeStrategy {
     Merge,
@@ -468,46 +471,5 @@ pub async fn push_and_pr_at(
         GitError::Failed { stderr, .. } => GitError::PushFailed { stderr },
         other => other,
     })?;
-    // Reuse the Git runner's sanitized repository environment and bounded execution.
-    let command = crate::run::command(worktree, &[]);
-    // Build a gh command while preserving authentication and removing Git routing vars.
-    let mut gh_command = tokio::process::Command::new(gh);
-    gh_command.current_dir(worktree).args([
-        "pr",
-        "create",
-        "--base",
-        base,
-        "--head",
-        branch,
-        "--title",
-        title,
-        "--body-file",
-        text(file.path())?,
-    ]);
-    for (key, value) in command.as_std().get_envs() {
-        match value {
-            Some(value) => {
-                gh_command.env(key, value);
-            }
-            None => {
-                gh_command.env_remove(key);
-            }
-        }
-    }
-    gh_command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    let (code, out, err) = crate::run::execute(gh_command, crate::run::TIMEOUT).await?;
-    if code != 0 {
-        return Err(GitError::GhFailed {
-            stderr: err.trim().into(),
-        });
-    }
-    let url = out.trim();
-    if !(url.starts_with("https://") && !url.contains(char::is_whitespace)) {
-        return Err(GitError::GhInvalidOutput);
-    }
-    Ok(url.into())
+    pull_request::create(worktree, &gh, branch, &oid, base, title, file.path()).await
 }

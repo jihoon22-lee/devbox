@@ -335,7 +335,7 @@ fn fake_gh_cases_use_isolated_process_environment() {
         std::os::unix::fs::symlink(which::which("git").expect("owned fixture"), bin.join("git"))
             .expect("owned fixture");
         let marker = fixture.path().join("body");
-        let script = "#!/bin/sh\nfor arg do last=$arg; done\n/bin/cat \"$last\" > \"$DEVBOX_GIT_BODY_MARKER\"\ncase \"$DEVBOX_GIT_GH_CASE\" in failed) echo gh-error >&2; exit 1;; empty) exit 0;; esac\nprintf 'https://example.invalid/pr/1\\n'\n";
+        let script = "#!/bin/sh\nif [ \"$1\" = pr ] && [ \"$2\" = list ]; then exit 0; fi\nfor arg do last=$arg; done\n/bin/cat \"$last\" > \"$DEVBOX_GIT_BODY_MARKER\"\ncase \"$DEVBOX_GIT_GH_CASE\" in failed) echo gh-error >&2; exit 1;; empty) exit 0;; esac\nprintf 'https://example.invalid/pr/1\\n'\n";
         if case != "missing" {
             std::fs::write(bin.join("gh"), script).expect("owned fixture");
             std::fs::set_permissions(bin.join("gh"), std::fs::Permissions::from_mode(0o700))
