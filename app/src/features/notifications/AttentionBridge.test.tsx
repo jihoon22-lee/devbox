@@ -49,16 +49,11 @@ test("attention owns one subscription, reads current cache titles and counts tas
   expect(wire.sent).toContainEqual({ type: "unsubscribe", subId: sub.id });
   expect(document.title).toBe("devbox");
 });
-test("badge fallback deduplicates equal values and never invokes missing native commands", () => {
+test("badge fallback deduplicates equal values", () => {
   const setter = vi.spyOn(document, "title", "set");
-  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
-  try {
-    nativeBadge(5, 10);
-    nativeBadge(5, 10);
-    nativeBadge(0, 10);
-    expect(setter).toHaveBeenCalledTimes(2);
-    expect(document.title).toBe("devbox");
-  } finally {
-    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
-  }
+  nativeBadge(5, 10);
+  nativeBadge(5, 10);
+  nativeBadge(0, 10);
+  expect(setter).toHaveBeenCalledTimes(2);
+  expect(document.title).toBe("devbox");
 });

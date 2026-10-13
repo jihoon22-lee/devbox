@@ -27,7 +27,9 @@ serde_json = "1"
 sha2 = "0.10"
 [target.'cfg(windows)'.dependencies]
 tauri = { version = "2.12", features = [] }
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
+devbox-win = { path = "../../crates/win" }
 tauri-plugin-opener = "2"
 winreg = "0.55"
 webview2-com = "0.39"

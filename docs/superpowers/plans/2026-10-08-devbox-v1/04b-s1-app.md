@@ -2613,6 +2613,8 @@ git add crates xtask app && git commit -m "feat(settings): check agent tools and
 
 ### Task 22: Windows 알림·딥 링크·작업 표시줄 배지 (`crates/win`)
 
+구현·독립 검토 완료. 순수 기능은 `core/notify.rs`, Windows 연결은 `platform/notify.rs`로 나눴다. 초기 링크를 화면 준비까지 보존하고 순번·확인 응답으로 오래된 스냅샷과 중복 이동을 막는다. 알림은 고정된 메인 창 소유권과 현재 상세 화면을 사용하며 격자의 잔존 선택 ID로 숨기지 않는다. XML 제어 문자·긴 태그와 COM/GDI 자원 수명을 보완했다. 순수 Rust6·프론트21 및 독립 Shell 회귀1 통과. Windows package에 `devbox-win` test/clippy를 추가했으며 기존 workflow의 모든 비문서 변경 gate가 새 crate를 포함한다. 플러그인 JS IPC를 사용하지 않아 capabilities 추가는 필요 없다. 실제 Windows 컴파일·설치본 알림·배지 검증은 Task24에 수행한다.
+
 **Files:**
 - Create: `crates/win/Cargo.toml`, `crates/win/src/lib.rs`, `crates/win/src/toast.rs`, `crates/win/src/taskbar.rs`
 - Modify: `Cargo.toml`(workspace members에 `crates/win`)
@@ -2637,7 +2639,7 @@ git add crates xtask app && git commit -m "feat(settings): check agent tools and
   - 딥 링크: `devbox://agents/<id>` → 기존 인스턴스가 `devbox://navigate` 이벤트(`{ to: "/agents", search: { id } }`)를 메인 창에 보내고 창을 앞으로 가져온다.
   - 개발 실행(설치 안 된 AUMID)에서는 토스트가 실패할 수 있다. 실패하면 깜빡임만 하고, 한 번만 로그에 남긴다.
 
-- [ ] **Step 1: 실패하는 테스트(플랫폼 무관)**
+- [x] **Step 1: 실패하는 테스트(플랫폼 무관)**
 
 ```rust
 // crates/win/src/toast.rs 끝
@@ -2680,7 +2682,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 구현 — 플랫폼 무관 부분**
+- [x] **Step 2: 구현 — 플랫폼 무관 부분**
 
 ```rust
 // crates/win/src/toast.rs (테스트 위)
@@ -2745,7 +2747,7 @@ windows = { version = "0.62", features = ["Data_Xml_Dom", "UI_Notifications", "W
 
 AUMID는 설치본의 바로가기에 Tauri NSIS가 넣는 identifier(`io.github.jihoon22lee.devbox`)를 쓴다. S0a·S0b 실사용에서 실제 값을 확인하고 다르면 상수를 고친다.
 
-- [ ] **Step 3: 구현 — Tauri 연결**
+- [x] **Step 3: 구현 — Tauri 연결**
 
 ```rust
 // app/src-tauri/src/notify.rs
@@ -2826,7 +2828,7 @@ fn log_once(msg: &str) {
 - `native.ts`의 `nativeAttention`은 `visible: document.visibilityState === "visible" && 현재 경로가 /agents?id=<id>`를 함께 넘긴다.
 - `App.tsx`는 `listen("devbox://navigate", e => router.navigate(e.payload))`를 메인 창에서만 등록한다.
 
-- [ ] **Step 4: 통과·커밋**
+- [x] **Step 4: 통과·커밋**
 
 ```bash
 cargo test -p devbox-win

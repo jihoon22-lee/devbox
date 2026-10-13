@@ -8,3 +8,4 @@ pub mod supervisor;
 
 pub mod deploy;
 pub mod external;
+pub mod notify;

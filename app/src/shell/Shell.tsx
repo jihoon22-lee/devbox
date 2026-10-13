@@ -7,6 +7,7 @@ import { PopoutAgentGrid } from "../features/agents/AgentGrid";
 import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { PopoutAgent } from "../features/agents/detail/AgentDetail";
 import { AttentionBridge } from "../features/notifications/AttentionBridge";
+import { subscribeNativeNavigation } from "../features/notifications/native";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { openSettings, registerSettingsNavigation } from "../features/settings/open";
@@ -53,6 +54,10 @@ export function Shell() {
       }),
     [],
   );
+  const attentionLocation = useMemo(() => () => router.state.location, [router]);
+  useEffect(() => {
+    if (ownsAttention) return subscribeNativeNavigation((target) => router.navigate(target));
+  }, [ownsAttention, router]);
   useEffect(() => registerSettingsNavigation(() => void router.navigate({ to: "/settings" })), [router]);
   const bindings = useMemo<Binding[]>(
     () => [
@@ -142,7 +147,7 @@ export function Shell() {
   return (
     <ProjectDataProvider>
       <AgentDataProvider>
-        {ownsAttention && <AttentionBridge />}
+        {ownsAttention && <AttentionBridge location={attentionLocation} />}
         <RouterProvider router={router} />
         <AgentCommands
           navigate={(id) =>
