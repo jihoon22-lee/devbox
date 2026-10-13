@@ -23,7 +23,7 @@ impl Env for FixtureEnv {
 }
 
 #[tokio::test]
-async fn refresh_rpc_captures_only_fixture_shell_and_keeps_foreground_and_test_daemons_alive() {
+async fn refresh_rpc_keeps_foreground_alive_and_restarts_managed_test_instance() {
     for foreground in [true, false] {
         let mut daemon = TestDaemon::fixture();
         if foreground {
@@ -81,7 +81,7 @@ async fn refresh_rpc_captures_only_fixture_shell_and_keeps_foreground_and_test_d
             .unwrap();
         let result: devbox_protocol::system::RefreshEnvResult =
             serde_json::from_str(&first).unwrap();
-        assert!(!result.restarting);
+        assert_eq!(result.restarting, !foreground);
         let repeated = client
             .raw_call(
                 "system.refresh_env",
@@ -104,6 +104,12 @@ async fn refresh_rpc_captures_only_fixture_shell_and_keeps_foreground_and_test_d
             0o600
         );
         tokio::time::sleep(Duration::from_millis(1100)).await;
+        if !foreground {
+            let child = daemon.child.take().unwrap();
+            assert!(!support::exits(child).success(), "managed restart exit");
+            assert!(!daemon.home.path().join("manager-invoked").exists());
+            continue;
+        }
         assert!(client.call::<Ping>(&PingParams {}).await.is_ok());
         assert!(
             daemon

@@ -7,8 +7,13 @@ const FAKE: &str = r#"#!/usr/bin/env bash
 send() { printf '%s' "$1" | "$DEVBOX_BIN" agent event --from claude; }
 send '{"hook_event_name":"SessionStart","session_id":"sess-1"}'
 send '{"hook_event_name":"UserPromptSubmit","session_id":"sess-1"}'
+touch "$HOME/tool-ready"
+while [ ! -e "$HOME/send-waiting" ]; do sleep 0.01; done
+date +%s%N > "$HOME/waiting-hook.ns"
 send '{"hook_event_name":"PermissionRequest","tool_name":"Bash"}'
 read -r answer
+while [ ! -e "$HOME/send-idle" ]; do sleep 0.01; done
+date +%s%N > "$HOME/idle-hook.ns"
 send '{"hook_event_name":"Stop","session_id":"sess-1","last_assistant_message":"done"}'
 while read -r answer; do :; done
 "#;
@@ -42,6 +47,17 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
     let client = d.client().await;
     let project = d.add_project(&client, &repo).await;
     let id = d.create_agent(&client, &project, "fake", true).await;
+    d.wait_for(&client, &id, "running", Duration::from_secs(10))
+        .await;
+    support::bounded(async {
+        while !d.home.path().join("tool-ready").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let mut events = client.subscribe("agents.changed").await.expect("subscribe");
+    std::fs::write(d.home.path().join("send-waiting"), "go").unwrap();
+    measure_hook(&d, &mut events, &id, "waiting").await;
     let task = d
         .wait_for(&client, &id, "waiting", Duration::from_secs(10))
         .await;
@@ -54,6 +70,9 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
     );
     let started = std::time::Instant::now();
     client.raw_call("agents.event", json!({"agentId":id,"source":"claude","payload":"{\"hook_event_name\":\"Notification\",\"notification_type\":\"permission_prompt\",\"message\":\"needs Bash\"}"}), None).await.expect("same-state hook");
+    support::bounded(events.next_event())
+        .await
+        .expect("same-state event");
     let task = d
         .wait_for(&client, &id, "waiting", Duration::from_secs(2))
         .await;
@@ -66,6 +85,12 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
         .raw_call("agents.send", json!({"id":id,"text":"yes"}), None)
         .await
         .expect("instruction through agent action");
+    // agents.send publishes running before the tool sends its Stop hook.
+    support::bounded(events.next_event())
+        .await
+        .expect("running event");
+    std::fs::write(d.home.path().join("send-idle"), "go").unwrap();
+    measure_hook(&d, &mut events, &id, "idle").await;
     d.wait_for(&client, &id, "idle", Duration::from_secs(10))
         .await;
     drop(client);
@@ -81,6 +106,36 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
         .wait_for(&client, &id, "failed", Duration::from_secs(3))
         .await;
     assert_eq!(task["reason"], "session_lost");
+}
+
+async fn measure_hook(
+    d: &TestDaemon,
+    events: &mut devbox_cli::client::Subscription,
+    id: &str,
+    state: &str,
+) {
+    let event = support::bounded(events.next_event())
+        .await
+        .expect("hook event");
+    let received = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let payload: Value = serde_json::from_str(&event.payload).unwrap();
+    assert_eq!(payload["id"], id);
+    let sent: u128 = std::fs::read_to_string(d.home.path().join(format!("{state}-hook.ns")))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let elapsed = Duration::from_nanos(
+        u64::try_from(received.checked_sub(sent).expect("hook before event")).unwrap(),
+    );
+    eprintln!(
+        "SC3 fixture CLI hook→agents.changed {state} {:.3}ms",
+        elapsed.as_secs_f64() * 1000.0
+    );
+    assert!(elapsed < Duration::from_secs(2), "SC3 hook event deadline");
 }
 
 #[tokio::test]

@@ -218,6 +218,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 Task 23: 트레이·전역 단축키·자동 시작·첫 실행·닫기 동작 구현 및 Astra 독립 재검토 PASS. 프론트72·순수 Rust44 고유116개 PASS, 타입 검사·변경 Biome 통과. 등록/저장/복구 실패 후 실제 단축키 상태와 재시도, 열린 팔레트 재호출 뒤 재열림 회귀를 수정했다. 연결 전·끊김 상태의 종료 확인과 네이티브 요청 보존, 공유 설정 직렬화, 자동 시작 저장 실패 복구를 포함한다. 잠긴 플러그인 소스 API를 대조했으나 Windows 컴파일·트레이·단축키·자동 시작·Job 실기는 Task24에서 수행하며 현재 미실행이다.
 
+Task 24 수용 테스트·계측 도구 로컬 구현: scope와 managed runtime이 test-* 이름으로 암묵 우회되던 두 회귀를 RED→GREEN으로 수정했다. 일반 CLI fixture는 DEVBOX_NO_SCOPE=1을 명시하고 scope 선택 시험은 소유 systemd-run shim만 사용한다(실제 systemd 수용 PASS가 아님). SC3 CLI fixture hook→agents.changed 대기 15.558ms·idle 9.812ms, 에이전트/터미널의 데몬 재시작 뒤 기록·새 입력 회귀 PASS. Linux 1바이트 진단 50 sample(warm-up10) p50 0.611ms·p95 0.781ms는 부분 경로이며 SC10 전체 PASS가 아니다. Windows native popout의 기존 생산 RpcClient를 사용하는 CDP 계측 도구의 직접 helper4·좁은 TypeScript 검사·별도 IIFE 번들 생성 PASS. unpaced100MB 출력·다른 창 ping·출력 뒤 입력과 원시 sample 판정 API를 제공한다. 규모 rust19045+TS9684=28729/60000, 제품 파일600줄 초과 없음; .github+scripts 전체1416/1500줄·workflow2. 독립 Task24 검토는 LOC의 첫 cfg(test) 뒤 제품 누락과 출력 뒤 도착한 ping 제외의 두 P2를 발견했다. 실제 setup/taskbar/store·선두/중간/외부 테스트·리터럴/주석/combined cfg 회귀3 RED→GREEN, 19개30ms+150ms+출력 뒤 완료1000ms의 ping 회귀가 기존 p95=30/PASS에서 p95=150/FAIL로 RED→GREEN(프론트5 PASS). xtask의 lexical item 제거와 ping 시작 시각 기준으로 수정하고 규모를 위 값으로 정정했다. 두 P2의 Astra 독립 재검토 PASS. 전체 S1 검사·실제 managed systemd/실제 hook·설치본 Windows 측정·PR/CI 수용은 아직 미실행이며 별도 검토에서 발견한 lifecycle/프로젝트 제거/live cache 회귀 보완 뒤 수행한다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

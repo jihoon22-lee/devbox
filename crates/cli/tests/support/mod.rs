@@ -21,6 +21,7 @@ pub struct TestDaemon {
     pub paths: Paths,
     pub child: Option<ChildGuard>,
     pub extra_env: Vec<(String, String)>,
+    pub foreground: bool,
 }
 impl TestDaemon {
     pub fn fixture() -> Self {
@@ -53,12 +54,16 @@ impl TestDaemon {
             socket: paths.socket.clone(),
             paths,
             child: None,
-            extra_env: Vec::new(),
+            extra_env: vec![("DEVBOX_NO_SCOPE".into(), "1".into())],
+            foreground: true,
         }
     }
     pub fn command(&self) -> Command {
         let mut command = self.environment(env!("CARGO_BIN_EXE_devbox"));
-        command.args(["daemon", "--foreground"]);
+        command.arg("daemon");
+        if self.foreground {
+            command.arg("--foreground");
+        }
         command
     }
     pub fn environment(&self, program: &str) -> Command {
@@ -90,6 +95,7 @@ impl TestDaemon {
             "RUST_LOG",
             "TMUX",
             "TMUX_TMPDIR",
+            "DEVBOX_NO_SCOPE",
         ] {
             command.env_remove(key);
         }

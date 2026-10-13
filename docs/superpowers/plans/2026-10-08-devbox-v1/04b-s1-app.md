@@ -2979,7 +2979,7 @@ Task 24에서 브랜치 전체 검토·최종 검증·Windows 설치본 스모�
 ### Task 24: S1 완료 — 성공 기준 측정·규모 통계·에이전트 수용 검증
 
 **Files:**
-- Create: `crates/cli/tests/survival.rs`(SC4), `crates/cli/tests/terminal_latency.rs`(SC10), `scripts/loc.sh`(SC8)
+- Create: `crates/cli/tests/survival.rs`(SC4), `crates/cli/tests/terminal_latency.rs`(SC10 부분 진단), `app/acceptance/`(SC10 Windows 전체 경로 계측), `scripts/loc.sh`(SC8)
 - Modify: `crates/cli/tests/agents.rs`(SC3 시간 측정 출력)
 - Modify: `04-s1-agents-terminal.md`·`04b-s1-app.md`(상태 줄), `PROGRESS.md`(S1 완료·PR 행·현재 위치)
 
@@ -2991,130 +2991,25 @@ Task 24에서 브랜치 전체 검토·최종 검증·Windows 설치본 스모�
 
 - [ ] **Step 1: SC4 통합 시험**
 
-```rust
-// crates/cli/tests/survival.rs
-mod support;
-use std::time::Duration;
-use support::TestDaemon;
-
-#[tokio::test]
-async fn sessions_and_agent_tasks_survive_a_daemon_restart() {
-    let mut d = TestDaemon::start_with_env(&[("DEVBOX_NO_SCOPE", "1")]);
-    d.write_config("[[agents.profiles]]\nid = \"sleepy\"\nlabel = \"S\"\ncommand = \"sleep 600\"\nhooks = \"none\"\n");
-    let repo = d.git_repo("projects/keep");
-    let c = d.client().await;
-    let term: serde_json::Value = serde_json::from_str(&c.raw_call("terminal.create", serde_json::json!({ "cwd": d.home.path(), "command": "bash --norc" }), None).await.unwrap()).unwrap();
-    let p = d.add_project(&c, &repo).await;
-    let agent = d.create_agent(&c, &p, "sleepy", true).await;
-    d.wait_for(&c, &agent, "running", Duration::from_secs(10)).await;
-
-    d.restart();
-    let c = d.client().await;
-    let list: serde_json::Value = serde_json::from_str(&c.raw_call("terminal.list", serde_json::json!({}), None).await.unwrap()).unwrap();
-    assert!(list["items"].as_array().unwrap().iter().any(|s| s["id"] == term["id"] && s["alive"] == true));
-    let a: serde_json::Value = serde_json::from_str(&c.raw_call("agents.get", serde_json::json!({ "id": agent }), None).await.unwrap()).unwrap();
-    assert_eq!(a["state"], "running", "a live tmux session must not be marked lost");
-}
-```
-
-`TestDaemon::restart`는 데몬 프로세스만 다시 띄우고 tmux 서버(`-L devbox-<test 인스턴스>`)는 그대로 둔다. S0b 구현이 tmux까지 끄면 Drop에서만 끄도록 고친다.
+`crates/cli/tests/survival.rs`의 실제 구현은 에이전트 작업·worktree와 일반 터미널을 생성하고, 출력 기록을 만든 뒤 연결을 닫고 데몬만 재시작한다. `terminal.list`의 alive·에이전트 상태/동일 자원·재attach 기록·재시작 뒤 실제 새 입력 응답까지 검증한다. 기존 `terminal_sessions.rs`의 메타데이터 회귀와 `agents.rs`의 idle 유지/session_lost 구분도 보존한다. 일반 fixture는 `DEVBOX_NO_SCOPE=1`을 명시하며 실제 systemd/Windows 수용 검증을 대신하지 않는다.
 
 - [ ] **Step 2: SC3 측정**
 
-04 Task 8의 `agent_task_goes_from_preparing_to_waiting_to_idle_via_hooks`에 다음을 추가한다.
-1. `agents.changed`를 구독한다.
-2. 가짜 도구가 `Notification`을 보내기 직전 시각(밀리초)을 테스트 HOME 안의 `hook-sent.ts` 파일에 쓰게 한다.
-3. 이벤트 수신 시각과의 차이를 `eprintln!("SC3 hook→event {ms}ms")`로 남긴다.
-4. `assert!(ms < 2000)`.
-
-Windows 알림까지의 구간은 Step 4 설치본 스모크에서 에이전트가 확인한다.
+`crates/cli/tests/agents.rs`의 fixture 도구가 대기/턴 종료 hook CLI 실행 직전에 나노초 시각을 소유 HOME에 기록한다. 테스트는 `agents.changed`를 먼저 구독하고 실제 이벤트 수신 시각과의 차이를 출력하며 각각 2초 미만을 요구한다. 초기 lifecycle 이벤트와 대기/idle 이벤트를 소유 gate로 구분한다. 화면 목록 구간은 기존 `app/e2e/agents.spec.ts`에서 측정하며 실제 도구 hook과 Windows 토스트는 Step 4에서 별도로 확인한다.
 
 - [ ] **Step 2b: SC10 터미널 반응 측정 (IR-6)**
 
-데몬·PTY·tmux를 거친 입력 왕복과, 한 터미널이 출력을 쏟는 동안 다른 연결의 응답 지연을 잰다. 브리지 구간은 S0a 결과(`09-s0a-results.md`)의 64B p95를 더해 판정한다.
+SC10의 판정은 입력 **1바이트**를 보낸 프론트 클라이언트부터 같은 바이트 수신까지 전체 경로를 직접 잰 값만 사용한다. 브리지와 Linux PTY의 백분위를 더하지 않는다. `crates/cli/tests/terminal_latency.rs`는 daemon→PTY→tmux의 부분 경로 진단으로 명시되며 Windows 전체 기준 PASS가 아니다.
 
-```rust
-// crates/cli/tests/terminal_latency.rs
-mod support;
-use std::time::{Duration, Instant};
-use support::TestDaemon;
+Windows 설치본의 두 소유 native popout에서 `app/acceptance/terminal-probe.ts`를 별도 번들로 주입하고, 기존 생산 `RpcClient`를 사용한다. `performance.now()`로 frontend→Tauri→Windows wsl.exe bridge→daemon PTY→tmux→return의 200개 샘플(추가 warm-up 10개, 화면 그리기 제외)을 잰다. p50 10ms·p95 25ms 이하를 판정한다. 프론트/제품에 debug API를 추가하거나 같은 창의 Tauri 연결을 교체하지 않는다.
 
-fn pct(v: &mut Vec<f64>, p: f64) -> f64 {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    v[((v.len() as f64 - 1.0) * p).round() as usize]
-}
+같은 도구의 unpaced 100,000,000바이트 출력 fixture와 다른 창의 ping 클라이언트를 동시에 실행한다. 출력 중 시작한 최소 20개 ping(출력 종료 뒤 도착한 응답도 포함)의 p95 100ms 이하와 완료 직후 그 터미널 1바이트 echo 1000ms 이하를 검증한다. 동시 sample 부족은 실패/근거 부족이며 출력 생산자를 늦춰 PASS를 만들지 않는다. 원시 샘플·source SHA·설치본 출처/해시·창/인스턴스·미실행/FAIL을 기록한다. CDP 주입·호출·소유 정리는 [app/acceptance/README.md](../../../../app/acceptance/README.md)를 따른다.
 
-#[tokio::test]
-async fn input_echo_p95_and_ping_during_flood_meet_sc10() {
-    let d = TestDaemon::start();
-    let c = d.client().await;
-    let s: serde_json::Value = serde_json::from_str(
-        &c.raw_call("terminal.create", serde_json::json!({ "cwd": d.home.path(), "command": "sh -c 'stty raw -echo; cat'" }), None).await.unwrap(),
-    ).unwrap();
-    let a = c.open_stream("terminal.attach", serde_json::json!({ "id": s["id"], "cols": 120, "rows": 40, "readOnly": false })).await.unwrap();
-    a.credit(1 << 22).await;
-    let _ = a.read_available(Duration::from_millis(500)).await;
-
-    let marks = ["가", "나", "다", "라"];
-    let mut echo = Vec::new();
-    for i in 0..200 {
-        let m = marks[i % marks.len()].as_bytes();
-        let t0 = Instant::now();
-        a.write(m).await;
-        a.read_until(m, Duration::from_secs(1)).await;
-        echo.push(t0.elapsed().as_secs_f64() * 1000.0);
-        a.credit(1 << 16).await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let (p50, p95) = (pct(&mut echo.clone(), 0.5), pct(&mut echo, 0.95));
-    eprintln!("SC10 echo p50={p50:.2}ms p95={p95:.2}ms (브리지 제외)");
-
-    // 다른 세션이 100MB를 출력하는 동안, 그 출력을 읽는 화면이 느려도(신용을 조금만 줌) 다른 연결의 ping은 막히지 않아야 한다.
-    let f: serde_json::Value = serde_json::from_str(
-        &c.raw_call("terminal.create", serde_json::json!({ "cwd": d.home.path(), "command": "sh -c 'yes x | head -c 100000000; sleep 60'" }), None).await.unwrap(),
-    ).unwrap();
-    let flood = c.open_stream("terminal.attach", serde_json::json!({ "id": f["id"], "cols": 120, "rows": 40, "readOnly": true })).await.unwrap();
-    flood.credit(1 << 18).await;
-    let other = d.client().await;
-    let mut ping = Vec::new();
-    for _ in 0..100 {
-        let t0 = Instant::now();
-        other.raw_call("system.ping", serde_json::json!({}), None).await.unwrap();
-        ping.push(t0.elapsed().as_secs_f64() * 1000.0);
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    let ping95 = pct(&mut ping, 0.95);
-    eprintln!("SC10 ping during flood p95={ping95:.2}ms");
-
-    assert!(p50 <= 10.0 && p95 <= 25.0, "echo p50={p50} p95={p95}");
-    assert!(ping95 <= 100.0, "ping p95 during flood={ping95}");
-}
-```
-
-판정이 실패하면 시험을 느슨하게 고치지 않는다. 원인(PTY 읽기 크기, 송신 큐 공정성, tmux 다시 그리기)을 찾아 04 Task 1·4를 고친다.
+판정이 실패하면 시험을 느슨하게 고치지 않는다. 실제 경로의 PTY 읽기·송신 공정성·tmux 갱신 원인을 찾아 고친다.
 
 - [ ] **Step 3: 규모 통계**
 
-```bash
-# scripts/loc.sh
-#!/usr/bin/env bash
-# 제품 코드 줄 수(SC8 관찰용, 게이트 아님). 테스트·생성 파일·E2E는 뺀다.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-budget=${1:-60000}
-rust=0
-while IFS= read -r f; do
-  # 파일 끝의 #[cfg(test)] 모듈부터는 세지 않는다.
-  n=$(awk '/^#\[cfg\(test\)\]/{exit} {c++} END{print c+0}' "$f")
-  rust=$((rust + n))
-done < <(git ls-files 'crates/*.rs' 'app/src-tauri/src/*.rs' 'xtask/*.rs' | grep -v -e '/tests/' -e '/benches/')
-ts=$(git ls-files 'app/src/*.ts' 'app/src/*.tsx' | grep -v -e '\.test\.' -e '/gen/' -e '^app/src/test/' | xargs -r cat | wc -l)
-total=$((rust + ts))
-echo "rust=$rust ts=$ts total=$total budget=$budget"
-if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝트 전에 단순화를 검토하세요"; fi
-```
-
-`bash scripts/loc.sh 60000` 결과를 PR 본문에 적는다. S3 끝에는 `120000`, S6 끝에는 `200000`을 인자로 준다.
+`bash scripts/loc.sh 60000`는 `xtask/loc.py`로 추적된 Rust/TS 제품 코드 줄 수를 집계한다. 테스트·생성 파일·E2E·수용 도구는 제외한다. Rust 문자열/raw 문자열/문자/주석을 가린 뒤 `cfg(test)`·`cfg(all(test,...))` 등의 테스트 전용 item만 제거하며 파일의 앞/중간 테스트 뒤 제품 코드와 `cfg(any(windows,test))` 제품 코드는 보존한다. `xtask/tests/test_loc.py`가 실제 setup/taskbar/store 배치와 합성 fixture를 검증한다. 예산은 관찰값이며 gate가 아니다. S3 끝에는 120000, S6 끝에는 200000으로 관찰한다. PR 본문에는 `.github`+`scripts` 전체 파일 줄 수와 workflow 개수도 별도로 기록한다.
 
 - [ ] **Step 4: 에이전트 실제 WSL·Windows 설치본 스모크**
 

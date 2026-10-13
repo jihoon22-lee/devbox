@@ -8,10 +8,9 @@ use std::{
 impl TestDaemon {
     pub fn start_with_env(env: &[(&str, &str)]) -> Self {
         let mut daemon = Self::fixture();
-        daemon.extra_env = env
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
+        daemon
+            .extra_env
+            .extend(env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         daemon.launch();
         daemon
     }

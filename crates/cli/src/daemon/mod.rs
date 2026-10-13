@@ -66,7 +66,7 @@ fn build_services_with_runtime(
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("executable path is not UTF-8"))?
         .to_owned();
-    let use_scope = !paths.instance.is_test() && std::env::var_os("DEVBOX_NO_SCOPE").is_none();
+    let use_scope = std::env::var_os("DEVBOX_NO_SCOPE").is_none();
     let agents = Arc::new(devbox_agents::AgentsService::new(
         db.clone(),
         hub.clone(),
@@ -119,7 +119,7 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     paths.ensure_dirs()?;
     let _guard = log::init_logging(&paths, foreground)?;
     log::install_panic_hook(&paths, crate::VERSION);
-    let runtime = system::Runtime::new(!foreground && !paths.instance.is_test());
+    let runtime = system::Runtime::new(!foreground);
     let shutdown = runtime.shutdown.clone();
     let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
     socket::notify_ready()?;
