@@ -2,7 +2,7 @@ import { promisify } from "node:util";
 import { afterEach, expect, test, vi } from "vitest";
 import { stopOwnedTmux } from "../e2e/tmux-cleanup";
 
-const mock = vi.hoisted(() => ({ run: vi.fn(), error: null as null | Error }));
+const mock = vi.hoisted(() => ({ run: vi.fn(), error: null as null | Error, listError: null as null | Error }));
 vi.mock("node:child_process", () => {
   const execFile = (
     command: string,
@@ -16,6 +16,7 @@ vi.mock("node:child_process", () => {
   Object.defineProperty(execFile, promisify.custom, {
     value: async (...args: unknown[]) => {
       mock.run(...args);
+      if ((args[1] as string[]).includes("list-panes") && mock.listError) throw mock.listError;
       if (mock.error) throw mock.error;
       return { stdout: "", stderr: "" };
     },
@@ -25,6 +26,7 @@ vi.mock("node:child_process", () => {
 afterEach(() => {
   mock.run.mockClear();
   mock.error = null;
+  mock.listError = null;
 });
 test("cleanup targets only the exact owned tmux socket with a timeout and clean environment", async () => {
   await stopOwnedTmux("test-0123456789ab", { HOME: "/owned", TMUX: "shared", TMUX_TMPDIR: "/shared", PATH: "/bin" });
@@ -39,6 +41,13 @@ test("cleanup targets only the exact owned tmux socket with a timeout and clean 
 test("absent owned servers are harmless; unexpected cleanup failures remain failures", async () => {
   mock.error = Object.assign(new Error("absent"), { stderr: "no server running on /tmp/owned" });
   await expect(stopOwnedTmux("test-0123456789ab", {})).resolves.toBeUndefined();
+  mock.error = Object.assign(new Error("permission denied"), { stderr: "permission denied" });
+  await expect(stopOwnedTmux("test-0123456789ab", {})).rejects.toThrow("permission denied");
+});
+test("an empty owned server is still killed and kill failures are preserved", async () => {
+  mock.listError = Object.assign(new Error("empty"), { stderr: "no current target\n" });
+  await expect(stopOwnedTmux("test-0123456789ab", {})).resolves.toBeUndefined();
+  expect(mock.run).toHaveBeenCalledWith("tmux", ["-L", "devbox-test-0123456789ab", "kill-server"], expect.anything());
   mock.error = Object.assign(new Error("permission denied"), { stderr: "permission denied" });
   await expect(stopOwnedTmux("test-0123456789ab", {})).rejects.toThrow("permission denied");
 });
