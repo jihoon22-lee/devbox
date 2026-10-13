@@ -9,7 +9,8 @@ pub(crate) const STORED_TASK_BYTES: usize = TASK_BYTES + 32 * 1024;
 pub(crate) const ATTENTION_BYTES: usize = 1024;
 pub(crate) const IDENTITY_BYTES: usize = 128;
 pub(crate) const PAGE_BYTES: usize = 768 * 1024;
-pub(crate) fn input(text: &str) -> Result<()> {
+/// Pure admission check shared with compound launch preflight.
+pub fn input(text: &str) -> Result<()> {
     if text.len() > INPUT_BYTES {
         return Err(AgentsError::InputTooLarge {
             limit_bytes: INPUT_BYTES as u32,

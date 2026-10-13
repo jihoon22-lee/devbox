@@ -50,8 +50,13 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
     {
         return Err(ProjectsError::PathInvalid { path: project.path }.into());
     }
+    let mut result = LaunchResult::default();
+    for (index, terminal) in config.terminals.iter().enumerate() {
+        devbox_terminal::validate_title(&terminal.name)
+            .map_err(|error| launch_failure(error, &result, &format!("terminal {}", index + 1)))?;
+    }
     let profiles = s.agents.profiles();
-    for agent in &config.agents {
+    for (index, agent) in config.agents.iter().enumerate() {
         if !profiles
             .items
             .iter()
@@ -62,8 +67,9 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
             }
             .into());
         }
+        devbox_agents::validate_input(agent.prompt.as_deref().unwrap_or_default())
+            .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
     }
-    let mut result = LaunchResult::default();
     let base = if config.agents.is_empty() {
         None
     } else {

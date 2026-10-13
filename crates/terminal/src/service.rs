@@ -32,7 +32,8 @@ fn changed(hub: &Hub, rev: u64) {
 fn tmux_error(error: TmuxError) -> Fail<TerminalError> {
     Fail::Internal(format!("terminal tmux: {error}"))
 }
-fn validate_title(title: &str) -> Result<()> {
+/// Pure admission check shared with compound launch preflight.
+pub fn validate_title(title: &str) -> Result<()> {
     if title.chars().take(MAX_TITLE_CHARS + 1).count() > MAX_TITLE_CHARS {
         return Err(TerminalError::TitleTooLong {
             limit: MAX_TITLE_CHARS as u16,

@@ -199,6 +199,97 @@ async fn launch_validates_every_profile_and_config_before_creating_resources() {
 }
 
 #[tokio::test]
+async fn launch_preflights_later_titles_and_prompts_without_reserving_resources() {
+    let cases = [
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}},{{name={}}}]\n",
+                serde_json::to_string(&"가".repeat(257)).expect("owned title")
+            ),
+            "terminal.title_too_long",
+        ),
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}}]\nagents=[{{tool='fake'}},{{tool='fake',prompt={}}}]\n",
+                serde_json::to_string(&"x".repeat(65_537)).expect("owned prompt")
+            ),
+            "agents.input_too_large",
+        ),
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}}]\nagents=[{{tool='fake',prompt={}}}]\n",
+                serde_json::to_string(&"가".repeat(21_846)).expect("owned prompt")
+            ),
+            "agents.input_too_large",
+        ),
+    ];
+    for (config, expected_code) in cases {
+        let (mut d, repo) = fixture(&config);
+        d.launch();
+        let c = d.client().await;
+        let p = d.add_project(&c, &repo).await;
+        d.approve_project(&c, &p).await;
+        let before = call(&c, "terminal.list", json!({})).await;
+        for _ in 0..2 {
+            let error = c
+                .raw_call("projects.launch", json!({"id":p}), None)
+                .await
+                .expect_err("invalid later entry must fail before any reservation");
+            let devbox_cli::client::ClientError::Rpc {
+                code,
+                detail: Some(detail),
+                ..
+            } = error
+            else {
+                panic!("expected a typed launch failure")
+            };
+            assert_eq!(code, "projects.launch_failed");
+            let detail: Value = serde_json::from_str(detail.get()).expect("launch detail");
+            assert_eq!(detail["terminals"], 0, "preflight must precede terminals");
+            assert_eq!(detail["agents"], 0, "preflight must precede agents");
+            assert!(
+                detail["message"]
+                    .as_str()
+                    .expect("public code")
+                    .contains(expected_code)
+            );
+            assert_eq!(call(&c, "terminal.list", json!({})).await, before);
+            assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+        }
+    }
+}
+
+#[tokio::test]
+async fn launch_admits_exact_title_character_and_prompt_byte_limits() {
+    let title = "가".repeat(256);
+    let prompt = format!("{}x", "가".repeat(21_845));
+    assert_eq!(prompt.len(), 65_536);
+    let config = format!(
+        "[launch]\nterminals=[{{name={}}}]\nagents=[{{tool='fake',prompt={}}}]\n",
+        serde_json::to_string(&title).expect("owned title"),
+        serde_json::to_string(&prompt).expect("owned prompt")
+    );
+    let (mut d, repo) = fixture(&config);
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let result = call(&c, "projects.launch", json!({"id":p})).await;
+    assert_eq!(result["terminals"], 1);
+    assert_eq!(result["agents"], 1);
+    let terminals = call(&c, "terminal.list", json!({})).await;
+    assert!(
+        terminals["items"]
+            .as_array()
+            .expect("terminals")
+            .iter()
+            .any(|t| t["title"] == title)
+    );
+    let tasks = call(&c, "agents.list", json!({})).await;
+    assert_eq!(tasks["items"][0]["prompt"], prompt);
+}
+
+#[tokio::test]
 async fn launch_honors_worktree_and_repeated_launch_uses_distinct_branches() {
     let (mut d, repo) = fixture("[launch]\nagents=[{tool='fake',worktree=true}]\n");
     d.launch();

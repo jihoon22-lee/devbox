@@ -9,6 +9,7 @@ pub mod store;
 pub mod tracker;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
+pub use limits::input as validate_input;
 pub use model::*;
 pub use service::{AgentRuntime, AgentsService};
 pub const MIGRATIONS: &[Migration] = &[

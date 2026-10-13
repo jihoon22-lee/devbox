@@ -10,7 +10,7 @@ pub mod tmux;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
 pub use model::*;
-pub use service::TerminalService;
+pub use service::{TerminalService, validate_title};
 pub const TMUX_CONF: &str = include_str!("../assets/tmux.conf");
 pub const MIGRATIONS: &[Migration] = &[Migration {
     domain: "terminal",
