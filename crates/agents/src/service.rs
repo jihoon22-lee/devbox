@@ -6,7 +6,7 @@ use crate::{
     store,
     tracker::Binding,
 };
-use devbox_core::{Db, Hub, Paths, current_rev};
+use devbox_core::{Db, Hub, Paths};
 use devbox_projects::ProjectsService;
 use devbox_protocol::{Done, Fail, Internal};
 use devbox_terminal::TerminalService;
@@ -222,26 +222,17 @@ impl AgentsService {
     pub async fn get(&self, id: &str) -> Result<AgentTask> {
         let missing = id.to_owned();
         let id = id.to_owned();
-        self.db
+        let task = self
+            .db
             .read(move |tx| store::get(tx, &id))
             .await
             .internal("read agent")?
-            .ok_or_else(|| AgentsError::NotFound { id: missing }.into())
-    }
-    pub async fn list(&self, p: ListAgents) -> Result<AgentsList> {
-        let cutoff =
-            now_ms().saturating_sub(i64::from(p.include_closed_hours.unwrap_or(24)) * 3600000);
-        let (items, rev) = self
-            .db
-            .read(move |tx| Ok((store::list(tx, cutoff)?, current_rev(tx)?)))
-            .await
-            .internal("list agents")?;
-        Ok(AgentsList {
-            rev: rev.to_string(),
-            items,
-        })
+            .ok_or(AgentsError::NotFound { id: missing })?;
+        crate::limits::serialized(&task, crate::limits::TASK_BYTES)?;
+        Ok(task)
     }
     pub async fn create(self: &Arc<Self>, p: CreateAgentTask) -> Result<AgentTask> {
+        crate::limits::input(&p.prompt)?;
         let title = crate::plan::checked_title(&p.title)?.to_owned();
         let _reservation = self.reservations.lock().await;
         let project = self
@@ -363,6 +354,13 @@ impl AgentsService {
                         tokens_truncated: false,
                         activity_seq: 0,
                     };
+                    if let Err(error) = crate::limits::serialized(&task, crate::limits::TASK_BYTES)
+                    {
+                        return Ok(Err(match error {
+                            Fail::Domain(error) => error,
+                            Fail::Internal(_) => AgentsError::InvalidInput,
+                        }));
+                    }
                     store::put(tx, &task)?;
                     let mut binding = Binding::new(now);
                     binding.launch_id = Some(uuid::Uuid::new_v4().simple().to_string());

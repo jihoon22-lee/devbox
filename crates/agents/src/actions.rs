@@ -17,58 +17,6 @@ pub(crate) fn open(task: &AgentTask) -> Result<()> {
     Ok(())
 }
 impl AgentsService {
-    pub async fn send(&self, p: SendToAgent) -> Result<AgentTask> {
-        let _guard = self.actions.lock().await;
-        let task = self.get(&p.id).await?;
-        open(&task)?;
-        if task.tool_exited
-            || !matches!(
-                self.tool_phase(&task).await?,
-                Some(crate::tool_lifecycle::Phase::Tool)
-            )
-        {
-            return Err(AgentsError::BadState {
-                state: "tool-ended".into(),
-            }
-            .into());
-        }
-        let session = task
-            .terminal_id
-            .as_deref()
-            .ok_or(AgentsError::SessionMissing)?;
-        if !self
-            .terminal
-            .tmux()
-            .list()
-            .await
-            .internal("list agent sessions")?
-            .iter()
-            .any(|s| s.name == session)
-        {
-            return Err(AgentsError::SessionMissing.into());
-        }
-        let instruction = p.text.clone();
-        // Record the submitted instruction before the tool can synchronously emit completion hooks.
-        self.update(&p.id, move |t| {
-            if t.state == AgentState::Closed {
-                return false;
-            }
-            t.follow_ups.push(FollowUp {
-                at_ms: now_ms(),
-                text: p.text,
-            });
-            apply_event(t, &AgentEvent::UserInstructed, now_ms());
-            t.updated_ms = now_ms();
-            true
-        })
-        .await?;
-        self.terminal
-            .tmux()
-            .paste(session, &instruction, true)
-            .await
-            .internal("send agent instruction")?;
-        self.get(&p.id).await
-    }
     pub async fn review(&self, id: &str) -> Result<AgentTask> {
         let _guard = self.actions.lock().await;
         open(&self.get(id).await?)?;
@@ -143,6 +91,7 @@ impl AgentsService {
                 head_oid: head,
                 base_oid: None,
                 unmerged_commits: None,
+                discard_fingerprint: None,
             },
         )
         .await?;
@@ -262,10 +211,12 @@ impl AgentsService {
         let repo = Path::new(&project.path);
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
-        let commits =
-            devbox_git::mutate::unmerged_count(repo, &p.expect.head_oid, &task.base_branch)
-                .await
-                .map_err(git_failure)?;
+        let base = devbox_git::run::resolve(repo, &task.base_branch)
+            .await
+            .map_err(git_failure)?;
+        let review = self
+            .capture_review(&task, repo, &p.expect.head_oid, &base)
+            .await?;
         let strategy = match p.strategy {
             MergeKind::Merge => devbox_git::mutate::MergeStrategy::Merge,
             MergeKind::Squash => devbox_git::mutate::MergeStrategy::Squash {
@@ -297,15 +248,8 @@ impl AgentsService {
             Err(error) => return Err(self.mutation_failure(&task, repo, error).await),
         };
         let usage = self.closure_usage(&task.id).await;
-        self.close_record(
-            &task.id,
-            CloseHow::Merged,
-            commits,
-            None,
-            closed_head,
-            usage,
-        )
-        .await?;
+        self.close_record(&task.id, CloseHow::Merged, None, closed_head, usage, review)
+            .await?;
         if self.cleanup_after_close {
             self.cleanup_closed(&task.id).await;
         }
@@ -319,11 +263,15 @@ impl AgentsService {
         let repo = Path::new(&project.path);
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
-        let commits = devbox_git::log_range(&wt, &task.base_branch)
-            .await
-            .map_err(git_failure)?;
-        let count = u32::try_from(commits.len())
-            .map_err(|_| Fail::Internal("commit count overflow".into()))?;
+        let base = p
+            .expect
+            .base_oid
+            .as_deref()
+            .ok_or(AgentsError::InvalidInput)?;
+        let review = self
+            .capture_review(&task, repo, &p.expect.head_oid, base)
+            .await?;
+        let commits = &review.commits;
         let body = p.body.unwrap_or_else(|| {
             format!(
                 "{}\n\n{}",
@@ -352,10 +300,10 @@ impl AgentsService {
         self.close_record(
             &task.id,
             CloseHow::PullRequest,
-            count,
             Some(url),
             p.expect.head_oid.clone(),
             usage,
+            review,
         )
         .await?;
         if self.cleanup_after_close {
@@ -403,15 +351,16 @@ impl AgentsService {
                 }
                 .into());
             }
+            let review = self.capture_review(&task, &repo, &head, &base).await?;
             self.quiesce(&task).await?;
             let usage = self.closure_usage(&task.id).await;
             self.close_record(
                 &task.id,
                 CloseHow::Discarded,
-                commits,
                 None,
                 p.expect.head_oid.clone(),
                 usage,
+                review,
             )
             .await?;
             return self.get(&task.id).await;
@@ -420,16 +369,25 @@ impl AgentsService {
         let repo = Path::new(&project.path);
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
-        let commits =
-            devbox_git::mutate::unmerged_count(repo, &p.expect.head_oid, &task.base_branch)
-                .await
-                .map_err(git_failure)?;
+        let base = devbox_git::run::resolve(repo, &task.base_branch)
+            .await
+            .map_err(git_failure)?;
+        let review = self
+            .capture_review(&task, repo, &p.expect.head_oid, &base)
+            .await?;
+        self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
+            .await?;
         self.quiesce(&task).await?;
         let usage = self.closure_usage(&task.id).await;
         self.teardown_commands(&task, &project).await?;
         // Hooks and teardown may have committed. Destructive removal still uses the confirmed state.
         self.owned_worktree(&task).await?;
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
+            .await?;
+        let base = devbox_git::run::resolve(repo, &task.base_branch)
+            .await
+            .map_err(git_failure)?;
+        self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
             .await?;
         devbox_git::mutate::worktree_remove(repo, &wt, true)
             .await
@@ -439,10 +397,10 @@ impl AgentsService {
             self.close_record(
                 &task.id,
                 CloseHow::Discarded,
-                commits,
                 None,
                 p.expect.head_oid.clone(),
                 usage,
+                review,
             )
             .await?;
             self.record_cleanup_error(&task.id, &git_failure(error))
@@ -454,39 +412,13 @@ impl AgentsService {
         self.close_record(
             &task.id,
             CloseHow::Discarded,
-            commits,
             None,
             p.expect.head_oid.clone(),
             usage,
+            review,
         )
         .await?;
         self.get(&task.id).await
-    }
-    async fn close_record(
-        &self,
-        id: &str,
-        how: CloseHow,
-        count: u32,
-        url: Option<String>,
-        head: String,
-        usage: AgentUsage,
-    ) -> Result<()> {
-        self.update(id, move |t| {
-            if t.state == AgentState::Closed {
-                return false;
-            }
-            t.tokens = usage.tokens;
-            t.tokens_truncated = usage.truncated;
-            t.closed_how = Some(how);
-            t.closed_ms = Some(now_ms());
-            t.closed_commits = Some(count);
-            t.closed_head_oid = Some(head);
-            t.pr_url = url;
-            apply_event(t, &AgentEvent::Closed { how }, now_ms());
-            true
-        })
-        .await?;
-        Ok(())
     }
     pub async fn test(&self, id: &str) -> Result<AgentTest> {
         let _guard = self.actions.lock().await;

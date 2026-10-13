@@ -145,7 +145,7 @@ async fn dirty_base_is_preserved_and_confirmed_discard_removes_owned_resources()
         .expect_err("fixture operation must fail");
     assert!(format!("{error:?}").contains("agents.base_dirty"));
     let check = call(&c, "agents.discard_check", json!({"id":id})).await;
-    let closed=call(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    let closed=call(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
     assert_eq!(closed["closedHow"], "discarded");
     assert!(!std::path::Path::new(idle["worktreePath"].as_str().expect("owned fixture")).exists());
     assert_eq!(
@@ -334,7 +334,7 @@ async fn inline_discard_closes_only_its_session_and_preserves_the_project() {
     )
     .expect("owned fixture");
     let check = call(&c, "agents.discard_check", json!({"id":id})).await;
-    let closed=call(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    let closed=call(&c,"agents.discard",json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
     assert_eq!(closed["closedHow"], "discarded");
     assert_eq!(
         std::fs::read_to_string(std::path::Path::new(&repo).join("initial.txt"))
@@ -390,7 +390,7 @@ async fn review_inline_session_can_end_after_checkout_with_fresh_confirmation() 
         .raw_call(
             "agents.discard",
             json!({"id":id,"expect":{
-                "headOid":check["headOid"], "unmergedCommits":check["unmergedCommits"]
+                "headOid":check["headOid"], "unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]
             }}),
             None,
         )
@@ -402,7 +402,7 @@ async fn review_inline_session_can_end_after_checkout_with_fresh_confirmation() 
         .raw_call(
             "agents.discard",
             json!({"id":id,"expect":{
-                "headOid":check["headOid"], "unmergedCommits":check["unmergedCommits"]
+                "headOid":check["headOid"], "unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]
             }}),
             None,
         )

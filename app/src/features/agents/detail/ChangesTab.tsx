@@ -30,6 +30,12 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
       <QueryError query={changes} />
       {changes.data && (
         <p>
+          {closed && (
+            <>
+              종료할 때 확인한 기록 · 검토 HEAD {changes.data.headOid} · 기준 {changes.data.baseOid}
+              <br />
+            </>
+          )}
           기준 {changes.data.base} 대비 · 앞섬 {changes.data.ahead} · 뒤처짐 {changes.data.behind}
         </p>
       )}

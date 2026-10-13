@@ -39,7 +39,7 @@ async fn dependent_project_removal_is_rejected_and_agent_cleanup_remains_possibl
         .expect_err("open agent protects its project ownership");
     assert!(format!("{error:?}").contains("projects.in_use"));
     let check = value(&client, "agents.discard_check", json!({"id":id})).await;
-    value(&client, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    value(&client, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
     client
         .raw_call("projects.remove", json!({"id":project}), None)
         .await
@@ -48,6 +48,7 @@ async fn dependent_project_removal_is_rejected_and_agent_cleanup_remains_possibl
 #[tokio::test]
 async fn closed_retained_resources_protect_project_until_explicit_cleanup() {
     let mut d = fixture();
+    d.write_config("[agents]\ncleanup_after_close=false\n[[agents.profiles]]\nid='fake'\nlabel='Fake'\ncommand='cat'\nhooks='none'\n");
     let repo = d.git_repo("projects/app");
     d.launch();
     let client = d.client().await;

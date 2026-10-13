@@ -76,6 +76,14 @@ fn eligible(task: &AgentTask) -> bool {
                 && task.attention.as_ref().is_some_and(|a| a.kind == "output")))
 }
 impl AgentsService {
+    pub(crate) async fn watched_tasks(&self) -> Result<Vec<AgentTask>> {
+        Ok(self
+            .all_tasks(None)
+            .await?
+            .into_iter()
+            .filter(eligible)
+            .collect())
+    }
     pub(crate) async fn output_event(
         &self,
         snapshot: Snapshot,
@@ -120,10 +128,10 @@ pub(crate) fn spawn(service: &Arc<AgentsService>) -> std::result::Result<(), Pro
         let mut interval = tokio::time::interval(QUIET);
         loop {
             tokio::select! { _ = svc.stop.cancelled() => break, _ = interval.tick() => {} }
-            let Ok(list) = svc.list(crate::ListAgents::default()).await else { continue };
-            let live: Vec<_> = list.items.iter().filter(|task| eligible(task)).map(|t| t.id.clone()).collect();
+            let Ok(tasks) = svc.watched_tasks().await else { continue };
+            let live: Vec<_> = tasks.iter().map(|t| t.id.clone()).collect();
             observations.retain(|id, _| live.contains(id));
-            for task in list.items.into_iter().filter(eligible) {
+            for task in tasks {
                 let Some(patterns) = patterns.get(&task.profile).filter(|p| !p.is_empty()) else { continue };
                 let id = task.id.clone();
                 let binding = match svc.db.read(move |tx| store::binding(tx, &id)).await { Ok(b) => b, Err(_) => continue };

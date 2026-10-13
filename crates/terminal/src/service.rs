@@ -376,6 +376,9 @@ impl TerminalService {
         if existing.is_none() {
             return Err(TerminalError::NotFound { id: params.id }.into());
         }
+        if existing.is_some_and(|session| session.kind == SessionKind::Agent) {
+            return Err(TerminalError::AgentOwned.into());
+        }
         self.tmux
             .kill_session(&params.id)
             .await

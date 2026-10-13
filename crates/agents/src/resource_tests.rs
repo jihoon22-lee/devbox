@@ -2,7 +2,133 @@ use super::*;
 use devbox_core::{Instance, Migration, paths::Env};
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 
+#[tokio::test]
+async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
+    let fixture = Fixture::new().await;
+    let project = fixture.project.clone();
+    fixture
+        .svc
+        .db
+        .write(move |tx| {
+            for index in 0..32 {
+                let task: AgentTask = serde_json::from_value(serde_json::json!({
+                    "id":format!("fixture-{index:03}"),"projectId":project,
+                    "title":"Fixture","profile":"fixture","baseBranch":"main",
+                    "branch":null,"worktreePath":null,"workdir":"/owned/fixture",
+                    "sessionId":null,"terminalId":null,"state":"idle","reason":null,
+                    "attention":null,"port":20000,"prompt":"\"".repeat(60 * 1024),
+                    "followUps":[],"tokens":null,"prUrl":null,"closedHow":null,
+                    "createdMs":0,"updatedMs":0,"closedMs":null
+                }))
+                .expect("task");
+                crate::store::put(tx, &task)?;
+            }
+            Ok(())
+        })
+        .await
+        .expect("seed owned rows");
+    let mut cursor = None;
+    let mut ids = std::collections::HashSet::new();
+    loop {
+        let mut params = serde_json::json!({"includeClosedHours":24});
+        if let Some(cursor) = &cursor {
+            params["afterId"] = serde_json::json!(cursor);
+        }
+        let params: ListAgents = serde_json::from_value(params).expect("pagination parameters");
+        let page = fixture.svc.list(params).await.expect("bounded page");
+        let serialized = serde_json::to_vec(&page).expect("page JSON");
+        assert!(
+            serialized.len() <= 768 * 1024,
+            "escaped JSON, metadata and envelope must fit the response budget: {}",
+            serialized.len()
+        );
+        for item in &page.items {
+            assert!(
+                ids.insert(item.id.clone()),
+                "pages must not duplicate a task"
+            );
+        }
+        let value = serde_json::to_value(&page).expect("page");
+        cursor = value["nextAfterId"].as_str().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(ids.len(), 32, "pagination may not impose a task-count cap");
+}
+
 struct TestEnv(PathBuf);
+#[tokio::test]
+async fn output_watcher_observes_waiting_and_resumed_tasks_beyond_the_first_rpc_page() {
+    let fixture = Fixture::new().await;
+    let project = fixture.project.clone();
+    fixture.svc.db.write(move |tx| {
+        for id in ["a-first", "z-last"] {
+            let task: AgentTask = serde_json::from_value(serde_json::json!({
+                "id":id,"projectId":project,"title":"Fixture","profile":"codex","baseBranch":"main",
+                "branch":null,"worktreePath":null,"workdir":"/owned/fixture","sessionId":null,"terminalId":format!("terminal-{id}"),
+                "state":"running","reason":null,"attention":null,"port":20000,"prompt":"p".repeat(64*1024),
+                "followUps":(0..7).map(|at| serde_json::json!({"atMs":at,"text":"x".repeat(48*1024)})).collect::<Vec<_>>(),
+                "tokens":null,"prUrl":null,"closedHow":null,"createdMs":0,"updatedMs":0,"closedMs":null
+            })).expect("task");
+            crate::store::put(tx,&task)?;
+        }
+        Ok(())
+    }).await.expect("seed owned rows");
+    assert_eq!(
+        fixture
+            .svc
+            .list(ListAgents::default())
+            .await
+            .expect("bounded page")
+            .items
+            .len(),
+        1
+    );
+    let watched = fixture.svc.watched_tasks().await.expect("observer tasks");
+    let hidden = watched
+        .into_iter()
+        .find(|task| task.id == "z-last")
+        .expect("second RPC page must stay eligible for output observation");
+    let waiting = fixture
+        .svc
+        .output_event(
+            crate::watch::Snapshot {
+                task: hidden,
+                binding: None,
+            },
+            true,
+        )
+        .await
+        .expect("observe waiting")
+        .expect("transition");
+    assert_eq!(waiting.state, AgentState::Waiting);
+    assert_eq!(
+        waiting.attention.as_ref().expect("attention").kind,
+        "output"
+    );
+    let hidden = fixture
+        .svc
+        .watched_tasks()
+        .await
+        .expect("observer tasks")
+        .into_iter()
+        .find(|task| task.id == "z-last")
+        .expect("hidden waiting task must remain observed");
+    let resumed = fixture
+        .svc
+        .output_event(
+            crate::watch::Snapshot {
+                task: hidden,
+                binding: None,
+            },
+            false,
+        )
+        .await
+        .expect("observe resume")
+        .expect("transition");
+    assert_eq!(resumed.state, AgentState::Running);
+}
 impl Env for TestEnv {
     fn var(&self, key: &str) -> Option<String> {
         match key {

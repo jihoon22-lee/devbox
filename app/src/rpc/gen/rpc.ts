@@ -6,8 +6,9 @@ export type AgentChanges = { base: string, ahead: number, behind: number, headOi
 export type AgentCommits = { items: Array<Commit>, };
 export type AgentConfig = { copy: Array<string>, setup: Array<string>, teardown: Array<string>, test: string | null, };
 export type AgentEventParams = { agentId: string, source: HookSource, payload: string, code: number | null, };
+export type AgentGitFailure = { id: string, code: string, };
 export type AgentGitStat = { id: string, changedFiles: number, ahead: number, behind: number, };
-export type AgentGitStats = { items: Array<AgentGitStat>, };
+export type AgentGitStats = { items: Array<AgentGitStat>, failures: Array<AgentGitFailure>, };
 export type AgentPatch = { patch: string, truncated: boolean, };
 export type AgentProfiles = { items: Array<ToolProfile>, };
 export type AgentRebase = { result: RebaseResult, files: Array<string>, };
@@ -19,8 +20,8 @@ export type AgentTest = { terminalId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
-export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } };
-export type AgentsList = { rev: string, items: Array<AgentTask>, };
+export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.delivery_unknown" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" };
+export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attention = { kind: string, message: string, atMs: number, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
@@ -40,23 +41,24 @@ export type DaemonInfo = { version: string, instance: string, pid: number, start
 export type DebugError = { "code": "debug.unsupported" };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
-export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, };
+export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
 export type DoctorReport = { checks: Array<Check>, };
 export type Done = { rev: string, };
 export type EchoParams = { bytes: number, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
-export type FollowUp = { atMs: number, text: string, };
+export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
+export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type LaunchAgent = { tool: string, worktree: boolean, prompt: string | null, };
 export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTerminal>, agents: Array<LaunchAgent>, };
 export type LaunchProject = { id: string, };
 export type LaunchResult = { terminals: number, agents: number, terminalIds: Array<string>, rev: string, };
 export type LaunchTerminal = { name: string, command: string | null, };
-export type ListAgents = { includeClosedHours: number | null, };
+export type ListAgents = { includeClosedHours: number | null, afterId?: string, };
 export type ListProjects = Record<symbol, never>;
 export type ListSessions = { projectId: string | null, };
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
@@ -83,7 +85,7 @@ export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
-export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, };
+export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type SendToAgent = { id: string, text: string, };
@@ -96,7 +98,7 @@ export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
-export type TerminalError = { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } };
+export type TerminalError = { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
 export type TerminalProfile = { name: string, command: string, };
 export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
@@ -215,13 +217,18 @@ export const RPC_ERROR_CODES = [
   "agents.base_not_checked_out",
   "agents.branch_exists",
   "agents.conflict",
+  "agents.delivery_unknown",
+  "agents.discard_snapshot_unavailable",
   "agents.gh_missing",
+  "agents.input_too_large",
   "agents.invalid_input",
+  "agents.list_changed",
   "agents.not_found",
   "agents.not_repo",
   "agents.operation_in_progress",
   "agents.profile_not_found",
   "agents.project_not_found",
+  "agents.review_unavailable",
   "agents.session_metadata",
   "agents.session_missing",
   "agents.slug_exhausted",
@@ -256,6 +263,7 @@ export const RPC_ERROR_CODES = [
   "secrets_locked",
   "system.env_refresh_failed",
   "system.unavailable",
+  "terminal.agent_owned",
   "terminal.cwd_invalid",
   "terminal.invalid_size",
   "terminal.not_found",

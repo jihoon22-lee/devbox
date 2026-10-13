@@ -18,6 +18,10 @@ pub fn list(write: bool) -> Vec<Tool> {
             &[],
         ),
     ];
+    tools[1]
+        .input_schema
+        .properties
+        .insert("afterId", StringSchema { kind: "string" });
     if write {
         tools.push(tool(
             "devbox_agent_send",
@@ -58,7 +62,12 @@ impl Server {
                 }
             }
             "devbox_agents" => {
-                let _: Empty = call
+                #[derive(Default, serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct AgentPage {
+                    after_id: Option<String>,
+                }
+                let page: AgentPage = call
                     .arguments
                     .as_deref()
                     .map(|raw| params(Some(raw)))
@@ -67,6 +76,7 @@ impl Server {
                 match self
                     .rpc::<AgentsListMethod>(&ListAgents {
                         include_closed_hours: Some(0),
+                        after_id: page.after_id,
                     })
                     .await
                 {

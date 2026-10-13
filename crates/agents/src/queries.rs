@@ -1,3 +1,4 @@
+use crate::state::AgentState;
 use crate::{
     model::*,
     service::{AgentsService, Result},
@@ -32,7 +33,9 @@ impl AgentsService {
         let directory = match &task.worktree_path {
             Some(path) => match std::fs::symlink_metadata(path) {
                 Ok(_) => self.owned_worktree(task).await?.1,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => PathBuf::from(&project.path),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Err(AgentsError::UnsafeWorktree.into());
+                }
                 Err(e) => {
                     return Err(Fail::Internal(format!(
                         "inspect agent query directory: {e}"
@@ -51,6 +54,9 @@ impl AgentsService {
 
     pub async fn changes(&self, id: &str) -> Result<AgentChanges> {
         let task = self.get(id).await?;
+        if task.state == AgentState::Closed {
+            return Ok(self.closed_review(id).await?.changes);
+        }
         let dir = self.query_directory(&task).await?;
         let head_oid = devbox_git::run::resolve(&dir, "HEAD")
             .await
@@ -77,6 +83,32 @@ impl AgentsService {
 
     pub async fn patch(&self, p: GetAgentPatch) -> Result<AgentPatch> {
         let task = self.get(&p.id).await?;
+        if task.state == AgentState::Closed {
+            let review = self.closed_review(&p.id).await?;
+            let project = self
+                .projects
+                .get(&task.project_id)
+                .await
+                .map_err(|e| Fail::Internal(format!("closed review project: {e:?}")))?
+                .ok_or(AgentsError::ReviewUnavailable)?;
+            let dir = Path::new(&project.path);
+            for oid in [&review.changes.base_oid, &review.changes.head_oid] {
+                if let Err(error) = devbox_git::run::resolve(dir, oid).await {
+                    tracing::warn!(?error, agent = %task.id, "frozen review object unavailable");
+                    return Err(AgentsError::ReviewUnavailable.into());
+                }
+            }
+            return Ok(bounded_patch(
+                devbox_git::diff::file_patch_at(
+                    dir,
+                    &review.changes.base_oid,
+                    &review.changes.head_oid,
+                    &p.path,
+                )
+                .await
+                .map_err(git_failure)?,
+            ));
+        }
         let dir = self.query_directory(&task).await?;
         let base = devbox_git::run::resolve(&dir, &task.base_branch)
             .await
@@ -90,6 +122,11 @@ impl AgentsService {
 
     pub async fn commits(&self, id: &str) -> Result<AgentCommits> {
         let task = self.get(id).await?;
+        if task.state == AgentState::Closed {
+            return Ok(AgentCommits {
+                items: self.closed_review(id).await?.commits,
+            });
+        }
         let dir = self.query_directory(&task).await?;
         let head = devbox_git::run::resolve(&dir, "HEAD")
             .await
@@ -123,11 +160,17 @@ impl AgentsService {
         .await
         .map_err(git_failure)?;
         let dirty_files = dirty_count(&out)?;
+        let fingerprint = if task.worktree_path.is_some() {
+            Some(self.discard_fingerprint(&dir, &head_oid, &base).await?)
+        } else {
+            None
+        };
         query_snapshot(&dir, &task.base_branch, &head_oid, &base).await?;
         Ok(DiscardCheck {
             head_oid,
             unmerged_commits,
             dirty_files,
+            fingerprint,
         })
     }
 }

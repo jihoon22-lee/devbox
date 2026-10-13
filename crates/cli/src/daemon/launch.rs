@@ -1,6 +1,6 @@
 //! Compose project configuration with terminal and agent services without domain cycles.
 use super::state::Services;
-use devbox_agents::{CreateAgentTask, ListAgents, state::AgentState};
+use devbox_agents::{CreateAgentTask, state::AgentState};
 use devbox_projects::*;
 use devbox_protocol::{Fail, Internal};
 use devbox_terminal::{CreateSession, ListSessions};
@@ -148,16 +148,14 @@ pub async fn summary(s: Arc<Services>, _: SummaryProjects) -> Result<ProjectSumm
         },
         async {
             s.agents
-                .list(ListAgents {
-                    include_closed_hours: Some(0),
-                })
+                .all_tasks(Some(0))
                 .await
                 .map_err(|error| Fail::Internal(format!("project agent summary: {error:?}")))
         }
     )?;
     let mut items = stream::iter(projects.into_iter().enumerate().map(|(index, project)| {
         let terminals = &terminals.items;
-        let agents = &agents.items;
+        let agents = &agents;
         async move {
             let mut item = ProjectSummary {
                 id: project.id.clone(), branch: None, dirty: None, ahead: None, behind: None,

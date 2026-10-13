@@ -35,37 +35,60 @@ pub struct Commit {
 }
 
 pub async fn changed_files(dir: &Path, base: &str) -> Result<Vec<FileChange>, GitError> {
+    changed_files_between(dir, base, None).await
+}
+/// Compare immutable trees, without reading the current index or checkout.
+pub async fn changed_files_at(
+    dir: &Path,
+    base: &str,
+    head: &str,
+) -> Result<Vec<FileChange>, GitError> {
+    changed_files_between(dir, base, Some(head)).await
+}
+async fn comparison_base(dir: &Path, base: &str, head: &str) -> Result<String, GitError> {
+    let base = resolve(dir, base).await?;
+    let head = resolve(dir, head).await?;
+    Ok(git(dir, &["merge-base", &base, &head]).await?.trim().into())
+}
+async fn changed_files_between(
+    dir: &Path,
+    base: &str,
+    head: Option<&str>,
+) -> Result<Vec<FileChange>, GitError> {
     let root = crate::run::repository_root(dir).await?;
     let dir = root.as_path();
-    let base = merge_base(dir, base).await?;
-    let names = git(
-        dir,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--name-status",
-            "-z",
-            "-M",
-            &base,
-            "--",
-        ],
-    )
-    .await?;
-    let stats = git(
-        dir,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--numstat",
-            "-z",
-            "-M",
-            &base,
-            "--",
-        ],
-    )
-    .await?;
+    let base = match head {
+        Some(head) => comparison_base(dir, base, head).await?,
+        None => merge_base(dir, base).await?,
+    };
+    let mut names_args = vec![
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-status",
+        "-z",
+        "-M",
+        &base,
+    ];
+    if let Some(head) = head {
+        names_args.push(head);
+    }
+    names_args.push("--");
+    let names = git(dir, &names_args).await?;
+    let mut stats_args = vec![
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--numstat",
+        "-z",
+        "-M",
+        &base,
+    ];
+    if let Some(head) = head {
+        stats_args.push(head);
+    }
+    stats_args.push("--");
+    let stats = git(dir, &stats_args).await?;
     let mut map = BTreeMap::new();
     let mut entries = names.split_terminator('\0');
     while let Some(code) = entries.next() {
@@ -106,6 +129,9 @@ pub async fn changed_files(dir: &Path, base: &str) -> Result<Vec<FileChange>, Gi
         // An unmerged path may also have a second worktree numstat record.
         file.added = added;
         file.removed = removed;
+    }
+    if head.is_some() {
+        return Ok(map.into_values().collect());
     }
     for path in crate::status(dir).await?.conflicted {
         map.entry(path.clone())
@@ -297,8 +323,12 @@ pub async fn file_patch(dir: &Path, base: &str, path: &str) -> Result<String, Gi
     Ok(patch)
 }
 pub async fn log_range(dir: &Path, base: &str) -> Result<Vec<Commit>, GitError> {
-    let base = resolve(dir, base).await?;
     let head = resolve(dir, "HEAD").await?;
+    log_range_at(dir, base, &head).await
+}
+pub async fn log_range_at(dir: &Path, base: &str, head: &str) -> Result<Vec<Commit>, GitError> {
+    let base = resolve(dir, base).await?;
+    let head = resolve(dir, head).await?;
     let text = git(
         dir,
         &[
@@ -331,4 +361,31 @@ pub async fn log_range(dir: &Path, base: &str) -> Result<Vec<Commit>, GitError> 
         });
     }
     Ok(result)
+}
+
+pub async fn file_patch_at(
+    dir: &Path,
+    base: &str,
+    head: &str,
+    path: &str,
+) -> Result<String, GitError> {
+    validate_path(path)?;
+    let root = crate::run::repository_root(dir).await?;
+    let base = comparison_base(&root, base, head).await?;
+    let head = resolve(&root, head).await?;
+    git(
+        &root,
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "-M",
+            &base,
+            &head,
+            "--",
+            path,
+        ],
+    )
+    .await
 }

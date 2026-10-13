@@ -88,7 +88,7 @@ async fn launch_creates_configured_terminals_and_inline_agent_and_summary_counts
         json!({"open":1,"attention":1})
     );
     let check = call(&c, "agents.discard_check", json!({"id":id})).await;
-    call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
     let summary = call(&c, "projects.summary", json!({})).await;
     assert_eq!(
         summary["items"][0]["agents"],

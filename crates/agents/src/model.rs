@@ -26,6 +26,20 @@ pub struct Tokens {
 pub struct FollowUp {
     pub at_ms: i64,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub instruction_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub delivery: Option<InstructionDelivery>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum InstructionDelivery {
+    Pending,
+    Delivered,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -83,6 +97,9 @@ pub struct CreateAgentTask {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListAgents {
     pub include_closed_hours: Option<u32>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub after_id: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -93,6 +110,13 @@ pub struct GetAgent {
 pub struct AgentsList {
     pub rev: String,
     pub items: Vec<AgentTask>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "nextAfterId"
+    )]
+    #[ts(optional)]
+    pub next_after_id: Option<String>,
 }
 #[derive(Debug, Serialize, Deserialize, TS)]
 pub struct AgentProfiles {
@@ -132,6 +156,9 @@ pub struct ReviewExpect {
     pub base_oid: Option<String>,
     #[ts(optional)]
     pub unmerged_commits: Option<u32>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub discard_fingerprint: Option<String>,
 }
 fn merge_expect<'de, D: serde::Deserializer<'de>>(d: D) -> Result<ReviewExpect, D::Error> {
     let expect = ReviewExpect::deserialize(d)?;
@@ -228,6 +255,7 @@ pub struct DiscardCheck {
     pub unmerged_commits: u32,
     pub dirty_files: u32,
     pub head_oid: String,
+    pub fingerprint: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -275,6 +303,11 @@ domain_error! {
         InvalidInput = "agents.invalid_input",
         SessionMissing = "agents.session_missing",
         SessionMetadata { diagnostic: crate::tracker::Diagnostic } = "agents.session_metadata",
+        InputTooLarge { limit_bytes: u32 } = "agents.input_too_large",
+        DeliveryUnknown = "agents.delivery_unknown",
+        ReviewUnavailable = "agents.review_unavailable",
+        DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",
+        ListChanged = "agents.list_changed",
     }
 }
 
@@ -384,6 +417,13 @@ pub struct AgentGitStat {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct AgentGitStats {
     pub items: Vec<AgentGitStat>,
+    #[serde(default)]
+    pub failures: Vec<AgentGitFailure>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentGitFailure {
+    pub id: String,
+    pub code: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

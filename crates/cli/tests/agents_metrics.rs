@@ -67,7 +67,7 @@ async fn discard_freezes_tokens_truncation_and_unavailable_snapshot_across_resta
         assert_eq!(expected["tokens"]["input"], 20);
         assert_eq!(expected["truncated"], true);
         let check = call(&c, "agents.discard_check", json!({"id":id})).await;
-        let task = call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+        let task = call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
         assert_eq!(task["tokens"], expected["tokens"]);
         assert_eq!(task["tokensTruncated"], true);
         std::fs::write(path, "invalid replacement\n").expect("owned fixture");
@@ -77,7 +77,7 @@ async fn discard_freezes_tokens_truncation_and_unavailable_snapshot_across_resta
     let id = d.create_agent(&c, &project, "usage", false).await;
     let task = d.wait_for(&c, &id, "idle", Duration::from_secs(10)).await;
     let check = call(&c, "agents.discard_check", json!({"id":id})).await;
-    call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"]}})).await;
+    call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
     usage_file(&d, &task, 999, false);
     let missing = json!({"tokens":null,"truncated":false});
     assert_eq!(call(&c, "agents.usage", json!({"id":id})).await, missing);
@@ -124,7 +124,7 @@ async fn git_stats_resources_and_merge_usage_follow_owned_task_lifecycle() {
     );
     assert_eq!(
         call(&c, "agents.git_stats", json!({})).await,
-        json!({"items":[]})
+        json!({"items":[],"failures":[]})
     );
 }
 

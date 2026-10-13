@@ -39,6 +39,27 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "터미널 시작 폴더를 열 수 없습니다.",
     action: "WSL 안의 폴더 경로를 확인해 주세요.",
   },
+  "terminal.agent_owned": {
+    title: "에이전트가 소유한 터미널입니다.",
+    action: "에이전트 화면에서 작업을 종료해 주세요.",
+  },
+  "agents.input_too_large": {
+    title: "지시문이나 누적 이력이 너무 큽니다.",
+    action: "지시를 줄이거나 새 작업에서 계속하세요.",
+  },
+  "agents.delivery_unknown": {
+    title: "지시 전달 결과를 확인할 수 없습니다.",
+    action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",
+  },
+  "agents.review_unavailable": {
+    title: "고정된 검토 객체를 찾을 수 없습니다.",
+    action: "저장된 작업과 커밋 기록은 유지됩니다. Git 객체 보관 상태를 확인해 주세요.",
+  },
+  "agents.discard_snapshot_unavailable": {
+    title: "삭제할 파일의 상태를 확인하지 못했습니다.",
+    action: "파일을 읽을 수 있는지와 크기를 확인한 뒤 다시 검토하세요.",
+  },
+  "agents.list_changed": { title: "목록을 읽는 동안 작업이 바뀌었습니다.", action: "목록을 다시 확인해 주세요." },
   "projects.in_use": {
     title: "프로젝트에 에이전트 작업이나 터미널이 남아 있습니다.",
     action: "열린 작업과 터미널을 끝내고 남은 작업 폴더와 브랜치를 정리한 뒤 다시 시도하세요.",

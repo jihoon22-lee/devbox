@@ -85,10 +85,28 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
         .raw_call("agents.send", json!({"id":id,"text":"yes"}), None)
         .await
         .expect("instruction through agent action");
-    // agents.send publishes running before the tool sends its Stop hook.
-    support::bounded(events.next_event())
-        .await
-        .expect("running event");
+    // Drain the submitted instruction's revision before measuring the next hook.
+    // Delivery metadata can commit independently of the running transition.
+    let list: Value = serde_json::from_str(
+        &client
+            .raw_call("agents.list", json!({}), None)
+            .await
+            .expect("send revision"),
+    )
+    .expect("list");
+    let submitted = list["rev"]
+        .as_str()
+        .expect("revision")
+        .parse::<u64>()
+        .expect("revision number");
+    loop {
+        let event = support::bounded(events.next_event())
+            .await
+            .expect("instruction event");
+        if event.rev.parse::<u64>().expect("event revision") >= submitted {
+            break;
+        }
+    }
     std::fs::write(d.home.path().join("send-idle"), "go").expect("owned fixture");
     measure_hook(&d, &mut events, &id, "idle").await;
     d.wait_for(&client, &id, "idle", Duration::from_secs(10))

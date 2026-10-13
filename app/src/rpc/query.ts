@@ -1,5 +1,6 @@
 import { hashKey, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { readAgentList } from "./agentPages";
 import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
 import { useRpc, useRpcSession } from "./RpcProvider";
@@ -33,7 +34,10 @@ export function useRpcQuery<M extends QueryMethod>(
     ...(opts.refetchOnWindowFocus === undefined ? {} : { refetchOnWindowFocus: opts.refetchOnWindowFocus }),
     meta: { generation },
     structuralSharing: method === "terminal.list" ? shareTerminalLive : shareByRevision,
-    queryFn: ({ signal }) => client.call(method, params, { signal }),
+    queryFn: ({ signal }) =>
+      method === "agents.list"
+        ? (readAgentList(client, params as Methods["agents.list"]["params"], signal) as Promise<Methods[M]["result"]>)
+        : client.call(method, params, { signal }),
   });
 }
 export function useRpcMutation<M extends MutationMethod>(method: M) {

@@ -77,7 +77,7 @@ fn build_services_with_runtime(
         devbox_agents::AgentRuntime {
             devbox_bin,
             use_scope,
-            cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(false),
+            cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
         },
     ));
     Ok(Arc::new(Services {

@@ -55,28 +55,46 @@ impl AgentsService {
     }
     pub async fn git_stats(&self) -> Result<AgentGitStats> {
         let tasks = self
-            .list(ListAgents::default())
+            .all_tasks(Some(0))
             .await?
-            .items
             .into_iter()
             .filter(|t| t.state != AgentState::Closed);
         let results = stream::iter(tasks.map(|task| async move {
-            let changes = self.changes(&task.id).await?;
-            let changed_files = u32::try_from(changes.files.len())
-                .map_err(|_| Fail::Internal("changed file count overflow".into()))?;
-            Ok(AgentGitStat {
-                id: task.id,
-                changed_files,
-                ahead: changes.ahead,
-                behind: changes.behind,
-            })
+            let id = task.id;
+            let result = async {
+                let changes = self.changes(&id).await?;
+                let changed_files = u32::try_from(changes.files.len())
+                    .map_err(|_| Fail::Internal("changed file count overflow".into()))?;
+                Ok(AgentGitStat {
+                    id: id.clone(),
+                    changed_files,
+                    ahead: changes.ahead,
+                    behind: changes.behind,
+                })
+            }
+            .await;
+            (id, result)
         }))
         .buffered(4)
-        .collect::<Vec<Result<AgentGitStat>>>()
+        .collect::<Vec<(String, Result<AgentGitStat>)>>()
         .await;
-        Ok(AgentGitStats {
-            items: results.into_iter().collect::<Result<_>>()?,
-        })
+        let mut stats = AgentGitStats {
+            items: vec![],
+            failures: vec![],
+        };
+        for (id, result) in results {
+            match result {
+                Ok(item) => stats.items.push(item),
+                Err(error) => {
+                    tracing::warn!(?error, agent = %id, "agent Git stats unavailable");
+                    stats.failures.push(AgentGitFailure {
+                        id,
+                        code: "agents.git_stats_unavailable".into(),
+                    });
+                }
+            }
+        }
+        Ok(stats)
     }
     pub async fn resources(&self) -> Result<AgentResources> {
         let mut sampler = self.resource_samples.lock().await;

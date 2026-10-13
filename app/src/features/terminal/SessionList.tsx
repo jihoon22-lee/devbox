@@ -54,7 +54,7 @@ export function SessionList({
     }
   };
   const end = async (session: Session) => {
-    if (busy.current) return;
+    if (busy.current || session.kind === "agent") return;
     busy.current = true;
     setEnding(undefined);
     setError(undefined);
@@ -150,10 +150,10 @@ export function SessionList({
                 },
               },
               {
-                label: "세션 끝내기",
+                label: session.kind === "agent" ? "에이전트 화면에서 종료" : "세션 끝내기",
                 afterClose: true,
                 danger: true,
-                disabled: close.isPending,
+                disabled: close.isPending || session.kind === "agent",
                 onSelect: () => {
                   if (confirmPolicy("terminal.close") === "always") setEnding(session);
                 },

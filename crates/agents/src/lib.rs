@@ -22,6 +22,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: store::MIGRATION_2,
     },
+    Migration {
+        domain: "agents",
+        version: 3,
+        sql: store::MIGRATION_3,
+    },
 ];
 method!(pub AgentsCreate = "agents.create", mutation, CreateAgentTask => AgentTask, AgentsError);
 method!(pub AgentsListMethod = "agents.list", query, ListAgents => AgentsList, AgentsError);
@@ -89,6 +94,11 @@ mod resume;
 
 mod usage;
 
+mod closed_review;
+mod discard_snapshot;
+mod limits;
+mod listing;
 mod metrics;
 mod resources;
+mod send;
 mod watch;

@@ -25,13 +25,18 @@ test("discard freezes displayed head/count and cancel receives focus", async () 
   await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
   await userEvent.click(await screen.findByRole("menuitem", { name: "폐기" }));
   await waitFor(() => expect(wire.requests("agents.discard_check")).toHaveLength(1));
-  await act(async () => wire.reply("agents.discard_check", { headOid: "h1", unmergedCommits: 3, dirtyFiles: 1 }));
+  await act(async () =>
+    wire.reply("agents.discard_check", { headOid: "h1", unmergedCommits: 3, dirtyFiles: 1, fingerprint: "snapshot1" }),
+  );
   expect(await screen.findByText(/병합하지 않은 커밋 3개/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
   expect(wire.requests("agents.discard")).toHaveLength(0);
   await userEvent.click(screen.getByRole("button", { name: "작업 폴더와 브랜치 삭제" }));
   await waitFor(() => expect(wire.requests("agents.discard")).toHaveLength(1));
-  expect(wire.request("agents.discard").params).toEqual({ id: "a1", expect: { headOid: "h1", unmergedCommits: 3 } });
+  expect(wire.request("agents.discard").params).toEqual({
+    id: "a1",
+    expect: { headOid: "h1", unmergedCommits: 3, discardFingerprint: "snapshot1" },
+  });
 });
 test("state_changed refetches the snapshot but requires a second explicit confirmation", async () => {
   const wire = await setup();
@@ -107,6 +112,7 @@ test("PR edits title/body, confirms exact refs, and exposes a successful open ac
 });
 test("rebase conflict offers resolution instruction and abort; review and configured test return their results", async () => {
   const wire = await setup();
+  await waitFor(() => expect(wire.requests("projects.config")).toHaveLength(1));
   await act(async () =>
     wire.reply("projects.config", {
       config: {

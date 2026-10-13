@@ -19,6 +19,7 @@ thiserror.workspace = true
 tracing.workspace = true
 regex = "1"
 futures.workspace = true
+sha2.workspace = true
 
 devbox-projects.workspace = true
 devbox-terminal.workspace = true

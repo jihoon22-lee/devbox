@@ -91,5 +91,6 @@ domain_error! {
         NotFound { id: String } = "terminal.not_found",
         ProjectNotFound { id: String } = "terminal.project_not_found",
         CwdInvalid { path: String } = "terminal.cwd_invalid",
+        AgentOwned = "terminal.agent_owned",
     }
 }

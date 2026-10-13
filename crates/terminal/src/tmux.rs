@@ -16,6 +16,16 @@ pub enum TmuxError {
     #[error("invalid tmux session name")]
     InvalidSession,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasteDelivery {
+    Unsent,
+    Unknown,
+}
+#[derive(Debug)]
+pub struct PasteFailure {
+    pub error: TmuxError,
+    pub delivery: PasteDelivery,
+}
 impl TmuxError {
     fn missing(&self) -> bool {
         matches!(self, Self::Failed { stderr, .. } if stderr.contains("no server running") || stderr.contains("no sessions") || stderr.contains("can't find session") || (stderr.contains("error connecting to") && stderr.contains("No such file or directory")))
@@ -252,8 +262,22 @@ impl Tmux {
         .await
     }
     pub async fn paste(&self, name: &str, text: &str, enter: bool) -> Result<(), TmuxError> {
-        let target = Self::target(name)?;
+        self.paste_with_delivery(name, text, enter)
+            .await
+            .map_err(|failure| failure.error)
+    }
+    pub async fn paste_with_delivery(
+        &self,
+        name: &str,
+        text: &str,
+        enter: bool,
+    ) -> Result<(), PasteFailure> {
+        let target = Self::target(name).map_err(|error| PasteFailure {
+            error,
+            delivery: PasteDelivery::Unsent,
+        })?;
         let buffer = format!("devbox-{}", uuid::Uuid::new_v4().simple());
+        let mut delivery = PasteDelivery::Unsent;
         let result = async {
             let mut child = self
                 .cmd()
@@ -276,6 +300,8 @@ impl Tmux {
                     stderr: String::from_utf8_lossy(&loaded.stderr).trim().into(),
                 });
             }
+            // Once this command is invoked, an error or timeout cannot prove that no bytes arrived.
+            delivery = PasteDelivery::Unknown;
             self.run(&["paste-buffer", "-p", "-d", "-b", &buffer, "-t", &target])
                 .await?;
             if enter {
@@ -287,7 +313,7 @@ impl Tmux {
         if result.is_err() {
             let _ = self.run(&["delete-buffer", "-b", &buffer]).await;
         }
-        result
+        result.map_err(|error| PasteFailure { error, delivery })
     }
 }
 

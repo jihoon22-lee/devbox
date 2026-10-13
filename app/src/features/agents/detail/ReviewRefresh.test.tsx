@@ -49,7 +49,14 @@ async function setup(kind: "merge" | "discard") {
     await act(async () => wire.reply("agents.changes", changes));
   } else {
     await waitFor(() => expect(wire.requests("agents.discard_check")).toHaveLength(1));
-    await act(async () => wire.reply("agents.discard_check", { headOid: "h1", unmergedCommits: 1, dirtyFiles: 1 }));
+    await act(async () =>
+      wire.reply("agents.discard_check", {
+        headOid: "h1",
+        unmergedCommits: 1,
+        dirtyFiles: 1,
+        fingerprint: "snapshot1",
+      }),
+    );
   }
   const label = kind === "merge" ? "main에 병합" : "작업 폴더와 브랜치 삭제";
   await waitFor(() => expect(screen.getByRole("button", { name: label })).toBeEnabled());
@@ -77,7 +84,13 @@ test.each(["merge", "discard"] as const)(
     await act(async () => {
       wire.reply("agents.changes", { ...changes, headOid: "h2", baseOid: "b2", ahead: 2 });
       wire.reply("agents.commits", commits("new-commit"));
-      if (kind === "discard") wire.reply("agents.discard_check", { headOid: "h2", unmergedCommits: 2, dirtyFiles: 1 });
+      if (kind === "discard")
+        wire.reply("agents.discard_check", {
+          headOid: "h2",
+          unmergedCommits: 2,
+          dirtyFiles: 1,
+          fingerprint: "snapshot2",
+        });
     });
     expect(screen.getByRole("button", { name: label })).toBeDisabled();
     expect(wire.requests(method)).toHaveLength(1);

@@ -106,7 +106,11 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
         intent.kind === "discard"
           ? await discard.mutateAsync({
               id: task.id,
-              expect: { headOid: check!.headOid, unmergedCommits: check!.unmergedCommits },
+              expect: {
+                headOid: check!.headOid,
+                unmergedCommits: check!.unmergedCommits,
+                discardFingerprint: check!.fingerprint ?? undefined,
+              },
             })
           : intent.kind === "merge"
             ? await merge.mutateAsync({

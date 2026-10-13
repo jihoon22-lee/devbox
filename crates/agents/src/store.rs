@@ -16,13 +16,18 @@ CREATE INDEX agents_tasks_state ON agents_tasks(state);";
 pub fn put(tx: &Transaction<'_>, task: &AgentTask) -> rusqlite::Result<()> {
     let body = serde_json::to_string(task)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    if body.len() > crate::limits::TASK_BYTES {
+        return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+            std::io::Error::other("agent task serialized byte limit"),
+        )));
+    }
     let state = serde_json::to_string(&task.state)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     tx.execute("INSERT INTO agents_tasks(id,project_id,state,updated_ms,closed_ms,body) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,state=excluded.state,updated_ms=excluded.updated_ms,closed_ms=excluded.closed_ms,body=excluded.body", params![task.id,task.project_id,state.trim_matches('"'),task.updated_ms,task.closed_ms,body])?;
     Ok(())
 }
 
-fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentTask> {
+pub(crate) fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentTask> {
     let body: String = row.get(0)?;
     serde_json::from_str(&body)
         .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
@@ -43,6 +48,38 @@ pub fn list(
 }
 
 pub const MIGRATION_2: &str = "CREATE TABLE agents_runtime (id TEXT PRIMARY KEY REFERENCES agents_tasks(id), body TEXT NOT NULL);";
+pub const MIGRATION_3: &str = "CREATE TABLE agents_closed_reviews (id TEXT PRIMARY KEY REFERENCES agents_tasks(id), body TEXT NOT NULL);";
+pub(crate) fn closed_review(
+    tx: &Transaction<'_>,
+    id: &str,
+) -> rusqlite::Result<Option<crate::closed_review::ClosedReview>> {
+    let text: Option<String> = tx
+        .query_row(
+            "SELECT body FROM agents_closed_reviews WHERE id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    text.map(|body| {
+        serde_json::from_str(&body).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))
+        })
+    })
+    .transpose()
+}
+pub(crate) fn put_closed_review(
+    tx: &Transaction<'_>,
+    id: &str,
+    review: &crate::closed_review::ClosedReview,
+) -> rusqlite::Result<()> {
+    let body = serde_json::to_string(review)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    tx.execute(
+        "INSERT INTO agents_closed_reviews(id,body) VALUES(?1,?2)",
+        params![id, body],
+    )?;
+    Ok(())
+}
 pub(crate) fn binding(
     tx: &Transaction<'_>,
     id: &str,
@@ -101,6 +138,8 @@ mod tests {
             follow_ups: vec![FollowUp {
                 at_ms: 2,
                 text: "next".into(),
+                instruction_id: None,
+                delivery: None,
             }],
             tokens: Some(Tokens {
                 input: 1,

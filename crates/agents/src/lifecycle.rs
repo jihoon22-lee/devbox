@@ -112,7 +112,7 @@ impl AgentsService {
             .list()
             .await
             .map_err(|e| Fail::Internal(format!("agent reconcile tmux: {e}")))?;
-        for task in self.list(ListAgents::default()).await?.items {
+        for task in self.all_tasks(None).await? {
             if self.recover_tool_exit(&task.id).await? {
                 continue;
             }
@@ -149,10 +149,10 @@ impl AgentsService {
                     _=svc.stop.cancelled()=>break,
                     _=interval.tick()=>{}
                 }
-                let Ok(list) = svc.list(ListAgents::default()).await else {
+                let Ok(tasks) = svc.all_tasks(None).await else {
                     continue;
                 };
-                for task in list.items {
+                for task in tasks {
                     if !task.tool_exited && svc.recover_tool_exit(&task.id).await.unwrap_or(false) {
                         continue;
                     }
