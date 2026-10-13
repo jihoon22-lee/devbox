@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 #[path = "pull_request.rs"]
 mod pull_request;
 
+#[path = "squash_index.rs"]
+mod squash_index;
+
 #[derive(Debug, Clone)]
 pub enum MergeStrategy {
     Merge,
@@ -305,15 +308,40 @@ async fn failed_merge(
     branch: &str,
     original: &str,
     failure: GitError,
+    index: Option<&squash_index::Index>,
 ) -> Result<MergeOutcome, GitError> {
     if current_branch(dir).await?.as_deref() != Some(branch)
         || resolve(dir, "HEAD").await? != original
     {
         return Err(GitError::StateChanged);
     }
-    let files = status(dir).await?.conflicted;
+    let files = if let Some(index) = index {
+        index
+            .git(
+                dir,
+                &[
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--name-only",
+                    "--diff-filter=U",
+                    "-z",
+                    "--",
+                ],
+            )
+            .await?
+            .split_terminator('\0')
+            .map(str::to_owned)
+            .collect()
+    } else {
+        status(dir).await?.conflicted
+    };
     // Only called after our clean-baseline mutation. A failed reset is itself an error.
-    git(dir, &["reset", "--merge", original]).await?;
+    if let Some(index) = index {
+        index.git(dir, &["reset", "--merge", original]).await?;
+    } else {
+        git(dir, &["reset", "--merge", original]).await?;
+    }
     if files.is_empty() {
         Err(failure)
     } else {
@@ -380,22 +408,26 @@ pub async fn merge_into_at(
             return Err(GitError::StateChanged);
         }
         git(dir, &["merge", "--ff-only", &rebased]).await?;
+    } else if let MergeStrategy::Squash { message } = strategy {
+        squash_index::squash(
+            dir,
+            base_branch,
+            &original,
+            &source_oid,
+            expected_branch,
+            &message,
+        )
+        .await?;
     } else {
         if baseline(dir, base_branch).await? != original {
             return Err(GitError::StateChanged);
         }
         let result = match &strategy {
             MergeStrategy::Merge => git(dir, &["merge", "--no-ff", "--no-edit", &source_oid]).await,
-            MergeStrategy::Squash { .. } => git(dir, &["merge", "--squash", &source_oid]).await,
             _ => unreachable!(),
         };
         if let Err(error) = result {
-            return failed_merge(dir, base_branch, &original, error).await;
-        }
-        if let MergeStrategy::Squash { message } = strategy
-            && let Err(error) = git(dir, &["commit", "-m", &message]).await
-        {
-            return failed_merge(dir, base_branch, &original, error).await;
+            return failed_merge(dir, base_branch, &original, error, None).await;
         }
     }
     Ok(MergeOutcome {
