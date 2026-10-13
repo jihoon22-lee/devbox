@@ -79,6 +79,21 @@ async fn exact_primary_thread_and_current_turn_gate_completion_over_rpc() {
         json!({"type":"task_started","turn_id":"one","started_at":time}),
     );
     body += &record(&time, "turn_context", json!({"turn_id":"one","cwd":cwd}));
+    body += &record(
+        &time,
+        "event_msg",
+        json!({"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"output_tokens":3,"cached_input_tokens":4,"cache_write_input_tokens":2,"reasoning_output_tokens":1}}}),
+    );
+    let title = record(
+        &time,
+        "session_meta",
+        json!({"id":"title","timestamp":time,"cwd":cwd,"source":"cli","thread_source":"title"}),
+    ) + &record(
+        &time,
+        "event_msg",
+        json!({"type":"token_count","info":{"total_token_usage":{"input_tokens":999}}}),
+    );
+    std::fs::write(dir.join("rollout-newer-title.jsonl"), title).expect("owned auxiliary rollout");
     std::fs::write(&file, &body).expect("owned rollout");
     notify(&client, &id, cwd, "automatic-title", "one").await;
     let running = d
@@ -88,6 +103,24 @@ async fn exact_primary_thread_and_current_turn_gate_completion_over_rpc() {
     notify(&client, &id, cwd, "primary", "one").await;
     d.wait_for(&client, &id, "idle", Duration::from_secs(2))
         .await;
+    let usage: devbox_agents::AgentUsage = serde_json::from_str(
+        &client
+            .raw_call("agents.usage", json!({"id":id}), None)
+            .await
+            .expect("bound usage"),
+    )
+    .unwrap();
+    let tokens = usage.tokens.unwrap();
+    assert_eq!(
+        (
+            tokens.input,
+            tokens.output,
+            tokens.cache_read,
+            tokens.cache_write
+        ),
+        (9, 3, 4, 2)
+    );
+    assert!(!usage.truncated);
     let time = timestamp(&d);
     body += &record(
         &time,

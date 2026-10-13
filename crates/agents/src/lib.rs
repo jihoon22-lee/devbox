@@ -43,6 +43,9 @@ method!(pub AgentsCleanup = "agents.cleanup", mutation(always), CleanupAgents =>
 method!(pub AgentsChanges = "agents.changes", query, GetAgent => AgentChanges, AgentsError);
 method!(pub AgentsPatch = "agents.patch", query, GetAgentPatch => AgentPatch, AgentsError);
 method!(pub AgentsCommits = "agents.commits", query, GetAgent => AgentCommits, AgentsError);
+method!(pub AgentsUsage = "agents.usage", query, GetAgent => AgentUsage, AgentsError);
+method!(pub AgentsGitStats = "agents.git_stats", query, devbox_protocol::system::PingParams => AgentGitStats, AgentsError);
+method!(pub AgentsResources = "agents.resources", query, devbox_protocol::system::PingParams => AgentResources, AgentsError);
 topic!(pub AgentsChangedTopic = "agents.changed", AgentsChanged);
 topic!(pub AgentsAttentionTopic = "agents.attention", AgentsAttention);
 pub fn export<X: Exporter>(e: &mut X) {
@@ -66,6 +69,9 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.method::<AgentsChanges>();
     e.method::<AgentsPatch>();
     e.method::<AgentsCommits>();
+    e.method::<AgentsUsage>();
+    e.method::<AgentsGitStats>();
+    e.method::<AgentsResources>();
     e.topic::<AgentsChangedTopic>();
     e.topic::<AgentsAttentionTopic>();
 }
@@ -79,3 +85,9 @@ mod actions;
 mod cleanup;
 mod queries;
 mod resume;
+
+mod usage;
+
+mod metrics;
+mod resources;
+mod watch;

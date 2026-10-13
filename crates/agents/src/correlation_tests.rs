@@ -108,6 +108,8 @@ impl Fixture {
             closed_commits: None,
             closed_head_oid: None,
             cleanup_error: None,
+            tokens_truncated: false,
+            activity_seq: 0,
         };
         self.svc
             .db
@@ -367,4 +369,93 @@ exit 5
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+#[tokio::test]
+async fn terminal_observation_transaction_rejects_newer_activity_and_launch() {
+    let f = Fixture::new().await;
+    f.svc
+        .update("a", |task| {
+            task.terminal_id = Some("old-terminal".into());
+            true
+        })
+        .await
+        .unwrap();
+    let task = f.svc.get("a").await.unwrap();
+    let binding = f.svc.db.read(|tx| store::binding(tx, "a")).await.unwrap();
+    let observation = crate::watch::Snapshot {
+        task: task.clone(),
+        binding: binding.clone(),
+    };
+    f.svc
+        .update("a", move |task| {
+            apply_event(task, &AgentEvent::PromptSubmitted, task.updated_ms)
+        })
+        .await
+        .unwrap();
+    let rev = f.svc.db.rev();
+    assert!(
+        f.svc
+            .output_event(observation, true)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(f.svc.db.rev(), rev);
+    assert_eq!(f.state().await, AgentState::Running);
+    let observation = crate::watch::Snapshot {
+        task: f.svc.get("a").await.unwrap(),
+        binding,
+    };
+    f.svc
+        .db
+        .write(|tx| {
+            let mut b = store::binding(tx, "a")?.unwrap();
+            b.launch_ms += 1;
+            store::put_binding(tx, "a", &b)
+        })
+        .await
+        .unwrap();
+    let rev = f.svc.db.rev();
+    assert!(
+        f.svc
+            .output_event(observation, true)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(f.svc.db.rev(), rev);
+    f.svc
+        .update("a", |task| apply_event(task, &AgentEvent::OutputWaiting, 1))
+        .await
+        .unwrap();
+    let observation = crate::watch::Snapshot {
+        task: f.svc.get("a").await.unwrap(),
+        binding: f.svc.db.read(|tx| store::binding(tx, "a")).await.unwrap(),
+    };
+    f.svc
+        .update("a", |task| {
+            apply_event(
+                task,
+                &AgentEvent::NeedsInput {
+                    message: "permission".into(),
+                },
+                1,
+            )
+        })
+        .await
+        .unwrap();
+    let rev = f.svc.db.rev();
+    assert!(
+        f.svc
+            .output_event(observation, false)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(f.svc.db.rev(), rev);
+    assert_eq!(
+        f.svc.get("a").await.unwrap().attention.unwrap().kind,
+        "input"
+    );
 }

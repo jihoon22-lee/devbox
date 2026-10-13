@@ -285,8 +285,16 @@ impl AgentsService {
             Ok(outcome) => outcome.source_sha,
             Err(error) => return Err(self.mutation_failure(&task, repo, error).await),
         };
-        self.close_record(&task.id, CloseHow::Merged, commits, None, closed_head)
-            .await?;
+        let usage = self.closure_usage(&task.id).await;
+        self.close_record(
+            &task.id,
+            CloseHow::Merged,
+            commits,
+            None,
+            closed_head,
+            usage,
+        )
+        .await?;
         if self.cleanup_after_close {
             self.cleanup_closed(&task.id).await;
         }
@@ -329,12 +337,14 @@ impl AgentsService {
             Ok(url) => url,
             Err(error) => return Err(self.mutation_failure(&task, repo, error).await),
         };
+        let usage = self.closure_usage(&task.id).await;
         self.close_record(
             &task.id,
             CloseHow::PullRequest,
             count,
             Some(url),
             p.expect.head_oid.clone(),
+            usage,
         )
         .await?;
         if self.cleanup_after_close {
@@ -383,12 +393,14 @@ impl AgentsService {
                 .into());
             }
             self.quiesce(&task).await?;
+            let usage = self.closure_usage(&task.id).await;
             self.close_record(
                 &task.id,
                 CloseHow::Discarded,
                 commits,
                 None,
                 p.expect.head_oid.clone(),
+                usage,
             )
             .await?;
             return self.get(&task.id).await;
@@ -402,6 +414,7 @@ impl AgentsService {
                 .await
                 .map_err(git_failure)?;
         self.quiesce(&task).await?;
+        let usage = self.closure_usage(&task.id).await;
         self.teardown_commands(&task, &project).await?;
         // Hooks and teardown may have committed. Destructive removal still uses the confirmed state.
         self.owned_worktree(&task).await?;
@@ -418,6 +431,7 @@ impl AgentsService {
                 commits,
                 None,
                 p.expect.head_oid.clone(),
+                usage,
             )
             .await?;
             self.record_cleanup_error(&task.id, &git_failure(error))
@@ -432,6 +446,7 @@ impl AgentsService {
             commits,
             None,
             p.expect.head_oid.clone(),
+            usage,
         )
         .await?;
         self.get(&task.id).await
@@ -443,11 +458,14 @@ impl AgentsService {
         count: u32,
         url: Option<String>,
         head: String,
+        usage: AgentUsage,
     ) -> Result<()> {
         self.update(id, move |t| {
             if t.state == AgentState::Closed {
                 return false;
             }
+            t.tokens = usage.tokens;
+            t.tokens_truncated = usage.truncated;
             t.closed_how = Some(how);
             t.closed_ms = Some(now_ms());
             t.closed_commits = Some(count);

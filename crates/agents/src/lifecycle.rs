@@ -138,6 +138,7 @@ impl AgentsService {
     }
     pub async fn initialize(self: &Arc<Self>) -> Result<()> {
         self.reconcile().await?;
+        crate::watch::spawn(self).internal("compile output waiting patterns")?;
         let svc = self.clone();
         self.background.spawn(async move {
             let mut interval=tokio::time::interval(std::time::Duration::from_millis(250));

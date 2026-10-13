@@ -37,7 +37,7 @@ pub fn builtin() -> Vec<ToolProfile> {
             command: "codex".into(),
             hooks: Hooks::Codex,
             waiting_patterns: vec![
-                r"(?im)^\s*Would you like to run the following command\?\s*$".into(),
+                r"(?im)^\s*3\. No, and tell Codex what to do differently \(esc\)\s*\n\s*Press enter to confirm or esc to cancel\s*$".into(),
             ],
         },
     ]
@@ -54,13 +54,17 @@ pub fn resolve(custom: &[ToolProfile], id: &str) -> Option<ToolProfile> {
 /// Parse domain-owned profile types without making core depend on agents.
 pub fn configured(
     config: &devbox_core::config::AgentsConfig,
-) -> Result<Vec<ToolProfile>, toml::de::Error> {
-    config
+) -> Result<Vec<ToolProfile>, ProfileError> {
+    let profiles: Vec<ToolProfile> = config
         .profiles
         .iter()
         .cloned()
         .map(toml::Value::try_into)
-        .collect()
+        .collect::<Result<_, toml::de::Error>>()?;
+    compiled(&crate::model::AgentProfiles {
+        items: profiles.clone(),
+    })?;
+    Ok(profiles)
 }
 
 #[cfg(test)]
@@ -82,4 +86,37 @@ mod tests {
             assert!(configured(&config.agents).is_err());
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProfileError {
+    #[error("invalid agent profiles: {0}")]
+    Configuration(#[from] toml::de::Error),
+    #[error("invalid waiting pattern for profile {profile}: {source}")]
+    WaitingPattern {
+        profile: String,
+        #[source]
+        source: regex::Error,
+    },
+}
+pub(crate) fn compiled(
+    profiles: &crate::model::AgentProfiles,
+) -> Result<std::collections::HashMap<String, Vec<regex::Regex>>, ProfileError> {
+    profiles
+        .items
+        .iter()
+        .map(|p| {
+            let patterns = p
+                .waiting_patterns
+                .iter()
+                .map(|text| {
+                    regex::Regex::new(text).map_err(|source| ProfileError::WaitingPattern {
+                        profile: p.id.clone(),
+                        source,
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            Ok((p.id.clone(), patterns))
+        })
+        .collect()
 }

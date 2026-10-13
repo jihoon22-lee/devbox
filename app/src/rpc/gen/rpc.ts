@@ -5,12 +5,17 @@ export type AddProject = { path: string, };
 export type AgentChanges = { base: string, ahead: number, behind: number, headOid: string, baseOid: string, files: Array<FileChange>, };
 export type AgentCommits = { items: Array<Commit>, };
 export type AgentEventParams = { agentId: string, source: HookSource, payload: string, code: number | null, };
+export type AgentGitStat = { id: string, changedFiles: number, ahead: number, behind: number, };
+export type AgentGitStats = { items: Array<AgentGitStat>, };
 export type AgentPatch = { patch: string, truncated: boolean, };
 export type AgentProfiles = { items: Array<ToolProfile>, };
 export type AgentRebase = { result: RebaseResult, files: Array<string>, };
+export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes: number | null, };
+export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
-export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
+export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
 export type AgentTest = { terminalId: string, };
+export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } };
@@ -87,6 +92,7 @@ export interface Methods {
   "agents.discard_check": { kind: "query"; confirm: "none"; params: GetAgent; result: DiscardCheck; error: AgentsError };
   "agents.event": { kind: "mutation"; confirm: "none"; params: AgentEventParams; result: Done; error: AgentsError };
   "agents.get": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
+  "agents.git_stats": { kind: "query"; confirm: "none"; params: PingParams; result: AgentGitStats; error: AgentsError };
   "agents.list": { kind: "query"; confirm: "none"; params: ListAgents; result: AgentsList; error: AgentsError };
   "agents.merge": { kind: "mutation"; confirm: "always"; params: MergeAgent; result: AgentTask; error: AgentsError };
   "agents.patch": { kind: "query"; confirm: "none"; params: GetAgentPatch; result: AgentPatch; error: AgentsError };
@@ -94,10 +100,12 @@ export interface Methods {
   "agents.profiles": { kind: "query"; confirm: "none"; params: PingParams; result: AgentProfiles; error: AgentsError };
   "agents.rebase": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentRebase; error: AgentsError };
   "agents.rebase_abort": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
+  "agents.resources": { kind: "query"; confirm: "none"; params: PingParams; result: AgentResources; error: AgentsError };
   "agents.resume": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
   "agents.review": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
   "agents.send": { kind: "mutation"; confirm: "none"; params: SendToAgent; result: AgentTask; error: AgentsError };
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
+  "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.list": { kind: "query"; confirm: "none"; params: ListProjects; result: ProjectList; error: ProjectsError };
@@ -133,6 +141,7 @@ export const METHOD_INFO = {
   "agents.discard_check": { kind: "query", confirm: "none" },
   "agents.event": { kind: "mutation", confirm: "none" },
   "agents.get": { kind: "query", confirm: "none" },
+  "agents.git_stats": { kind: "query", confirm: "none" },
   "agents.list": { kind: "query", confirm: "none" },
   "agents.merge": { kind: "mutation", confirm: "always" },
   "agents.patch": { kind: "query", confirm: "none" },
@@ -140,10 +149,12 @@ export const METHOD_INFO = {
   "agents.profiles": { kind: "query", confirm: "none" },
   "agents.rebase": { kind: "mutation", confirm: "none" },
   "agents.rebase_abort": { kind: "mutation", confirm: "none" },
+  "agents.resources": { kind: "query", confirm: "none" },
   "agents.resume": { kind: "mutation", confirm: "none" },
   "agents.review": { kind: "mutation", confirm: "none" },
   "agents.send": { kind: "mutation", confirm: "none" },
   "agents.test": { kind: "mutation", confirm: "none" },
+  "agents.usage": { kind: "query", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.list": { kind: "query", confirm: "none" },

@@ -29,6 +29,7 @@ pub struct AgentsService {
     pub(crate) hook_files: Mutex<()>,
     pub(crate) background: TaskTracker,
     pub(crate) stop: CancellationToken,
+    pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -60,10 +61,24 @@ pub(crate) fn changed(hub: &Hub, task: &AgentTask, rev: u64, entered_attention: 
     }
 }
 pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bool {
+    if matches!(event, AgentEvent::OutputWaiting) && t.state != AgentState::Running {
+        return false;
+    }
+    if matches!(event, AgentEvent::OutputResumed)
+        && t.attention.as_ref().is_none_or(|a| a.kind != "output")
+    {
+        return false;
+    }
     if t.state == AgentState::Closed {
         return false;
     }
-    let mut updated = false;
+    let mut updated = matches!(
+        event,
+        AgentEvent::PromptSubmitted | AgentEvent::UserInstructed
+    ) && matches!(
+        t.state,
+        AgentState::Running | AgentState::Waiting | AgentState::Idle
+    );
     let mut transitioned = false;
     if let AgentEvent::SessionStarted { session_id } = event
         && t.session_id.as_ref() != Some(session_id)
@@ -86,6 +101,9 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
                 .clone()
                 .unwrap_or_else(|| "다음 지시를 기다립니다".into()),
         ),
+        AgentEvent::OutputWaiting if t.state == AgentState::Waiting => {
+            Some("입력을 기다립니다".into())
+        }
         _ => None,
     };
     if state::is_attention(t.state) && (transitioned || message.is_some()) {
@@ -94,17 +112,22 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
                 .clone()
                 .unwrap_or_else(|| "다음 지시를 기다립니다".into())
         });
-        if t.attention.as_ref().is_none_or(|a| a.message != message) {
+        let kind = match t.state {
+            AgentState::Waiting if matches!(event, AgentEvent::OutputWaiting) => "output",
+            AgentState::Waiting => "input",
+            AgentState::Idle => "idle",
+            _ => "failed",
+        };
+        let attention_changed = t
+            .attention
+            .as_ref()
+            .is_none_or(|a| a.message != message || a.kind != kind);
+        if attention_changed {
             updated = true;
         }
-        if transitioned || t.attention.as_ref().is_none_or(|a| a.message != message) {
+        if transitioned || attention_changed {
             t.attention = Some(Attention {
-                kind: match t.state {
-                    AgentState::Waiting => "input",
-                    AgentState::Idle => "idle",
-                    _ => "failed",
-                }
-                .into(),
+                kind: kind.into(),
                 message,
                 at_ms: now,
             });
@@ -113,6 +136,7 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
         t.attention = None;
     }
     if updated {
+        t.activity_seq = t.activity_seq.wrapping_add(1);
         t.updated_ms = now;
     }
     updated
@@ -167,6 +191,7 @@ impl AgentsService {
             hook_files: Mutex::new(()),
             background: TaskTracker::new(),
             stop: CancellationToken::new(),
+            resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -310,6 +335,8 @@ impl AgentsService {
                         closed_commits: None,
                         closed_head_oid: None,
                         cleanup_error: None,
+                        tokens_truncated: false,
+                        activity_seq: 0,
                     };
                     store::put(tx, &task)?;
                     store::put_binding(tx, &task.id, &Binding::new(now))?;

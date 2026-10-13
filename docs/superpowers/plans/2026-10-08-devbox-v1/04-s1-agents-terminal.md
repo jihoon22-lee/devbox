@@ -2990,17 +2990,20 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): instruct, r
 - Produces:
   - `watch::spawn(service)`: 2초마다 동작한다.
     - 대상: `running`·`waiting` 중 프로필에 `waiting_patterns`가 있는 작업(Codex·사용자 정의)
-    - `capture_tail(15)`이 패턴과 맞으면 `OutputWaiting`, `waiting(출처=출력)`인데 더는 맞지 않으면 `OutputResumed`를 적용한다.
+    - `capture_tail(15)`의 마지막 비어 있지 않은 6줄을 원래 순서로 검사한다. 화면이 2초 동안 변하지 않고 패턴과 맞으면 `OutputWaiting`, `waiting(출처=출력)`인데 더는 맞지 않으면 `OutputResumed`를 적용한다.
+    - 실제 S0a Codex 승인 화면은 질문 제목이 마지막 6줄 밖에 있으므로 하단의 거절 선택지와 확인 안내 조합을 사용한다. 정규식은 시작 시 검증·컴파일한다. 지시 뒤 그대로 남은 승인 화면은 새 출력 전까지 재사용하지 않는다.
     - hook으로 들어온 `waiting`은 건드리지 않는다(`attention.kind == "output"`일 때만 되돌림).
-  - `usage::tokens_for(home, task, hooks: Hooks) -> Option<Tokens>`. Task 9 `close()`의 `t.tokens = None;` 줄을 이 함수 호출로 바꾼다:
-    - Claude: `~/.claude/projects/<workdir 변환>/<sessionId>.jsonl`의 `assistant` 기록을 `message.id` 기준으로 중복 없이 합산
+    - DB에서 작업·세션 binding·활동 순번을 다시 대조한다. 같은 상태·같은 밀리초에 들어온 새 지시나 hook도 이전 화면 관찰을 무효화한다.
+  - `usage::tokens_for(home, task, hooks, binding) -> AgentUsage { tokens, truncated }`. Task 9의 모든 닫기 경로에서 값·값 없음·잘림 여부를 고정한다:
+    - Claude: `~/.claude/projects/<workdir 변환>/<sessionId>.jsonl`의 `assistant` 기록을 `message.id` 기준으로 중복 없이 합산한다. 같은 메시지의 부분 사용량 갱신은 항목별 최댓값을 사용한다. 디렉터리 인코딩이 다르면 최대 2,048개 프로젝트 디렉터리에서 정확한 세션 파일명만 찾고 cwd·sessionId를 재검증하며, 모호하면 값을 쓰지 않는다.
     - Codex: Task 8 tracker가 검증한 정확한 주 thread rollout의 마지막 `token_count.total_token_usage`(cwd만 같은 다른 파일은 제외)
-    - 파일 128MiB·줄 4MiB 상한(이식)
+    - 파일 128MiB·줄 4MiB 상한(Claude 후보 합계도 128MiB). 읽기 실패·잘린 줄·잘못된 기록·오버플로를 `truncated`에 반영하고 값 없음과 측정된 0을 구분한다.
+    - 폐기는 세션 종료 뒤, teardown·폴더 제거 전에 읽는다. 닫힌 작업은 파일이 바뀌거나 데몬이 재시작돼도 다시 읽지 않는다. 보조 사용량 조회 실패가 성공한 병합·PR의 닫힌 기록을 막지 않도록 진단을 남기고 값 없음으로 고정한다.
   - 메서드 `agents.usage{ id }`(query) → `{ tokens?, truncated }`
   - 메서드 `agents.git_stats{}`(query) → `{ items: [{ id, changedFiles, ahead, behind }] }`: 열린 작업마다 `changed_files`의 개수와 `ahead_behind`를 4개씩 동시에 계산한다. 목록 행의 "변경 n · 뒤처짐 m"에 쓴다. 화면은 `agents.changed` 이벤트와 10초 간격 폴링으로 갱신한다.
   - 메서드 `agents.resources{}`(query) → `{ items: [{ id, cpuPercent, memoryBytes }] }`
-    - 살아 있는 작업의 scope를 `systemctl --user show -p CPUUsageNSec -p MemoryCurrent --value`로 읽는다.
-    - CPU%는 이전 표본과의 차로 계산한다(서비스 메모리에 마지막 표본 보관).
+    - 살아 있는 소유 세션의 scope를 `systemctl --user show`의 이름 있는 `CPUUsageNSec`·`MemoryCurrent`·`InvocationID` 속성으로 읽는다. worktree 없는 작업도 포함한다.
+    - CPU%는 이전 표본과의 차로 계산한다(서비스 메모리에 마지막 표본 보관). 재개 launch·InvocationID 변경과 카운터 초기화를 구분한다. 첫 표본과 읽을 수 없는 수치는 null이며 scope 미사용 환경은 빈 목록이다.
     - 화면이 보일 때 3초 간격으로 부른다(이벤트 원천 없음, 01-design §5.5).
 
 - [ ] **Step 1: 실패하는 테스트(토큰)**
@@ -3014,24 +3017,25 @@ mod tests {
 
     #[test]
     fn claude_sums_unique_assistant_messages() {
-        let lines = r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":7}}}
-{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5}}}
+        let lines = r#"{"type":"assistant","sessionId":"s","cwd":"/w/app","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":7}}}
+{"type":"assistant","sessionId":"s","cwd":"/w/app","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5}}}
 {"type":"user","message":{"id":"u"}}
-{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":2}}}
+{"type":"assistant","sessionId":"s","cwd":"/w/app","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":2}}}
 "#;
-        let t = claude_totals(Cursor::new(lines)).unwrap();
+        let t = claude_read(Cursor::new(lines), "s", "/w/app").tokens.unwrap();
         assert_eq!((t.input, t.output, t.cache_read, t.cache_write), (11, 7, 100, 7));
     }
 
     #[test]
-    fn codex_takes_the_last_total_for_the_matching_cwd() {
-        let lines = r#"{"type":"session_meta","payload":{"cwd":"/w/app-agents/x","id":"s"}}
+    fn codex_takes_the_last_total_for_the_exact_primary_session() {
+        let lines = r#"{"type":"session_meta","payload":{"cwd":"/w/app-agents/x","id":"s","source":"cli","thread_source":"user"}}
 {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"output_tokens":1,"cached_input_tokens":2}}}}
 {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"output_tokens":3,"cached_input_tokens":4}}}}
 "#;
-        let t = codex_session(Cursor::new(lines), std::path::Path::new("/w/app-agents/x")).unwrap();
+        let t = codex_read(Cursor::new(lines), "s", "/w/app-agents/x").tokens.unwrap();
         assert_eq!((t.input, t.output, t.cache_read), (9, 3, 4));
-        assert!(codex_session(Cursor::new(lines), std::path::Path::new("/w/other")).is_none());
+        assert!(codex_read(Cursor::new(lines), "s", "/w/other").tokens.is_none());
+        assert!(codex_read(Cursor::new(lines), "other", "/w/app-agents/x").tokens.is_none());
     }
 
     #[test]
@@ -3049,13 +3053,15 @@ mod tests {
 - `claude_read`
 - `codex_read`
 
-반환 타입은 `crate::model::Tokens`로 바꾸고, 세션 수 집계는 뺀다. `tokens_for`는 프로필 hooks 종류로 Claude/Codex를 고르고, 파일을 찾지 못하면 `None`이다.
+반환 타입은 `crate::model::AgentUsage`로 바꾸고, 세션 수 집계는 뺀다. `tokens_for`는 프로필 hooks 종류로 Claude/Codex를 고르며 정확한 세션 파일을 찾지 못하면 `tokens: None`이다. 잘림 여부는 별도로 보존한다.
 
 `watch.rs`:
 
 ```rust
 pub fn matches_waiting(patterns: &[regex::Regex], tail: &str) -> bool {
-    let last = tail.lines().rev().filter(|l| !l.trim().is_empty()).take(6).collect::<Vec<_>>().join("\n");
+    let mut lines = tail.lines().rev().filter(|l| !l.trim().is_empty()).take(6).collect::<Vec<_>>();
+    lines.reverse();
+    let last = lines.join("\n");
     patterns.iter().any(|p| p.is_match(&last))
 }
 

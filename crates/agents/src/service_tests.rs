@@ -72,3 +72,17 @@ fn rejected_live_hooks_preserve_failure_attention_and_revision_timestamp() {
         assert_eq!(serde_json::to_string(&task).unwrap(), before);
     }
 }
+
+#[test]
+fn output_attention_has_provenance_and_hook_promotes_same_state() {
+    let mut t = task();
+    t.state = AgentState::Running;
+    assert!(apply_event(&mut t, &AgentEvent::OutputWaiting, 1));
+    assert_eq!(t.attention.as_ref().unwrap().kind, "output");
+    let message = t.attention.as_ref().unwrap().message.clone();
+    assert!(apply_event(&mut t, &AgentEvent::NeedsInput { message }, 2));
+    assert_eq!(t.attention.as_ref().unwrap().kind, "input");
+    assert!(!apply_event(&mut t, &AgentEvent::OutputWaiting, 3));
+    assert!(!apply_event(&mut t, &AgentEvent::OutputResumed, 3));
+    assert_eq!(t.state, AgentState::Waiting);
+}

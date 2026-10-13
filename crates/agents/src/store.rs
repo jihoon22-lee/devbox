@@ -88,6 +88,8 @@ mod tests {
             closed_commits: None,
             closed_head_oid: None,
             cleanup_error: None,
+            tokens_truncated: false,
+            activity_seq: 0,
         }
     }
     #[test]

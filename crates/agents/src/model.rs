@@ -4,7 +4,7 @@ use devbox_protocol::domain_error;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Attention {
     pub kind: String,
@@ -12,7 +12,7 @@ pub struct Attention {
     pub at_ms: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Tokens {
     pub input: u64,
@@ -21,14 +21,14 @@ pub struct Tokens {
     pub cache_write: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FollowUp {
     pub at_ms: i64,
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTask {
     pub id: String,
@@ -48,6 +48,11 @@ pub struct AgentTask {
     pub prompt: String,
     pub follow_ups: Vec<FollowUp>,
     pub tokens: Option<Tokens>,
+    #[serde(default)]
+    pub tokens_truncated: bool,
+    // Monotonic activity epoch rejects terminal observations captured before hooks/input.
+    #[serde(default)]
+    pub activity_seq: u64,
     pub pr_url: Option<String>,
     pub closed_how: Option<CloseHow>,
     pub created_ms: i64,
@@ -358,4 +363,33 @@ mod tests {
         assert!(!json.contains("PRIVATE_MARKER"));
         assert!(json.contains("/tmp/owned"));
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+pub struct AgentUsage {
+    pub tokens: Option<Tokens>,
+    pub truncated: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentGitStat {
+    pub id: String,
+    pub changed_files: u32,
+    pub ahead: u32,
+    pub behind: u32,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentGitStats {
+    pub items: Vec<AgentGitStat>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResource {
+    pub id: String,
+    pub cpu_percent: Option<f64>,
+    pub memory_bytes: Option<u64>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentResources {
+    pub items: Vec<AgentResource>,
 }

@@ -122,6 +122,7 @@ impl AgentsService {
         let initial_session = session_id.clone();
         self.update(id, move |current| {
             current.session_id = initial_session;
+            current.terminal_id = None;
             current.state = AgentState::Running;
             current.reason = None;
             current.attention = None;

@@ -122,6 +122,15 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsPatch, _, _>(
             |s, _, p| async move { s.agents.patch(p).await },
         )
+        .register::<devbox_agents::AgentsUsage, _, _>(|s, _, p| async move {
+            s.agents.usage(&p.id).await
+        })
+        .register::<devbox_agents::AgentsGitStats, _, _>(|s, _, _| async move {
+            s.agents.git_stats().await
+        })
+        .register::<devbox_agents::AgentsResources, _, _>(|s, _, _| async move {
+            s.agents.resources().await
+        })
         .register::<devbox_agents::AgentsCommits, _, _>(|s, _, p| async move {
             s.agents.commits(&p.id).await
         });

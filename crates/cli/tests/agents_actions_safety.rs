@@ -220,6 +220,12 @@ async fn pull_request_pushes_confirmed_commit_and_closes_with_url() {
     let expect = reviewed(&c, &id).await;
     let closed = call(&c, "agents.pr", json!({"id":id,"expect":expect})).await;
     assert_eq!(closed["closedHow"], "pullRequest");
+    assert!(closed["tokens"].is_null());
+    assert_eq!(closed["tokensTruncated"], false);
+    assert_eq!(
+        call(&c, "agents.usage", json!({"id":id})).await,
+        json!({"tokens":null,"truncated":false})
+    );
     assert_eq!(closed["prUrl"], "https://github.com/fixture/app/pull/1");
     assert_eq!(closed["closedCommits"], 1);
     assert_eq!(
@@ -278,5 +284,35 @@ async fn incomplete_confirmation_returns_invalid_params_without_side_effects() {
     assert_eq!(
         call(&c, "agents.get", json!({"id":id})).await["state"],
         "idle"
+    );
+}
+
+#[tokio::test]
+async fn review_regression_missing_profile_does_not_leave_successful_pr_open() {
+    let mut d = fixture();
+    fake_gh(&mut d, true);
+    let (repo, c, _, id, _) = start(&mut d).await;
+    remote(&d, &repo);
+    let expect = reviewed(&c, &id).await;
+    drop(c);
+    d.stop();
+    d.write_config("[agents]\ncleanup_after_close=false\n");
+    d.launch();
+    let c = d.client().await;
+    let response = c
+        .raw_call("agents.pr", json!({"id":id,"expect":expect}), None)
+        .await;
+    let closed = call(&c, "agents.get", json!({"id":id})).await;
+    assert_eq!(
+        closed["state"], "closed",
+        "successful PR must close: {response:?}"
+    );
+    assert!(response.is_ok());
+    assert_eq!(closed["prUrl"], "https://github.com/fixture/app/pull/1");
+    assert!(closed["tokens"].is_null());
+    assert_eq!(closed["tokensTruncated"], true);
+    assert_eq!(
+        call(&c, "agents.usage", json!({"id":id})).await,
+        json!({"tokens":null,"truncated":true})
     );
 }

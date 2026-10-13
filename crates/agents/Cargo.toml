@@ -17,6 +17,8 @@ toml.workspace = true
 ts-rs.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+regex = "1"
+futures.workspace = true
 
 devbox-projects.workspace = true
 devbox-terminal.workspace = true
