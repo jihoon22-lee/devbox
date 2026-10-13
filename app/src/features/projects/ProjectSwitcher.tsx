@@ -56,7 +56,7 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
   const remove = useRpcMutation("projects.remove");
   const favorite = useRpcMutation("projects.set_favorite");
   const launch = useRpcMutation("projects.launch");
-  const summary = useRpcQuery("projects.summary", {}, { enabled: true, staleTime: 0 });
+  const summary = useRpcQuery("projects.summary", {}, { enabled: true, staleTime: 0, refetchInterval: 2000 });
   const trust = useProjectTrust(JSON.stringify(list.data?.items.map((project) => project.id) ?? []));
   const pending = remove.isPending || favorite.isPending || launch.isPending || trust.pending;
   const mounted = useRef(true);
