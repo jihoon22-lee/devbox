@@ -230,7 +230,7 @@ impl TerminalService {
         )
         .await
     }
-    /// A caller retaining this fresh UUID can clean up an ambiguous creation failure.
+    /// Creates only an absent UUID; a retained ID also permits retrying unresolved cleanup.
     pub async fn create_internal_with_id(
         &self,
         identity: (SessionKind, uuid::Uuid),
@@ -277,7 +277,21 @@ impl TerminalService {
             .ensure_server(&self.paths.instance)
             .await
             .map_err(tmux_error)?;
-        self.tmux
+        // Caller-supplied identities must still be fresh. Never compensate a
+        // rejected duplicate by deleting a preexisting session.
+        if self
+            .tmux
+            .session_present(&session.id)
+            .await
+            .map_err(tmux_error)?
+        {
+            return Err(Fail::Internal(format!(
+                "terminal identity already exists: {}",
+                session.id
+            )));
+        }
+        if let Err(error) = self
+            .tmux
             .new_session(
                 &session.id,
                 Path::new(&session.cwd),
@@ -285,7 +299,28 @@ impl TerminalService {
                 env,
             )
             .await
-            .map_err(tmux_error)?;
+        {
+            // A failed reply cannot establish that new-session had no effect.
+            // The lock and absent fresh UUID give this operation its own target.
+            let cleanup = async {
+                self.tmux.kill_session(&session.id).await?;
+                if self.tmux.session_present(&session.id).await? {
+                    return Err(TmuxError::Failed {
+                        operation: "verify creation cleanup".into(),
+                        stderr: "fresh session is still present".into(),
+                    });
+                }
+                Ok::<(), TmuxError>(())
+            }
+            .await;
+            return Err(Fail::Internal(match cleanup {
+                Ok(()) => format!("create terminal {}: {error}", session.id),
+                Err(cleanup) => format!(
+                    "create terminal {} failed: {error}; cleanup unresolved: {cleanup}",
+                    session.id
+                ),
+            }));
+        }
         let row = session.clone();
         let hub = self.hub.clone();
         let stored = self

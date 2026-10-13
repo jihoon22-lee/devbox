@@ -2,7 +2,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 #[derive(Debug, thiserror::Error)]
@@ -93,6 +93,19 @@ impl Tmux {
             Err(error) => Err(error),
         }
     }
+    pub(crate) async fn session_present(&self, name: &str) -> Result<bool, TmuxError> {
+        Self::target(name)?;
+        match self.run(&["has-session", "-t", &format!("={name}")]).await {
+            Ok(_) => Ok(true),
+            Err(error)
+                if error.missing()
+                    || matches!(&error, TmuxError::Failed { stderr, .. } if stderr == "no current target") =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
     pub async fn start_direct(&self) -> Result<(), TmuxError> {
         self.run(&["start-server", ";", "set", "-g", "exit-empty", "off"])
             .await
@@ -178,9 +191,42 @@ impl Tmux {
         if let Some(command) = command {
             args.push(command.into());
         }
-        self.run(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        self.create_command(&args.iter().map(String::as_str).collect::<Vec<_>>())
             .await
-            .map(|_| ())
+    }
+    async fn create_command(&self, args: &[&str]) -> Result<(), TmuxError> {
+        let mut child = self
+            .cmd()
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let mut pipe = child.stderr.take().expect("piped creation stderr");
+        let mut stderr = Vec::new();
+        let result = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::try_join!(child.wait(), pipe.read_to_end(&mut stderr)).map(|(status, _)| status)
+        })
+        .await;
+        let error = match result {
+            Ok(Ok(status)) if status.success() => return Ok(()),
+            Ok(Ok(_)) => {
+                return Err(TmuxError::Failed {
+                    operation: "new-session".into(),
+                    stderr: String::from_utf8_lossy(&stderr).trim().into(),
+                });
+            }
+            Ok(Err(error)) => TmuxError::Spawn(error),
+            Err(_) => TmuxError::Timeout,
+        };
+        // Only the owned command client is stopped; the server and any created
+        // session are reconciled separately by TerminalService's exact UUID.
+        match tokio::time::timeout(Duration::from_secs(2), child.kill()).await {
+            Ok(Ok(())) => Err(error),
+            cleanup => Err(TmuxError::Failed {
+                operation: "new-session".into(),
+                stderr: format!("{error}; owned client cleanup unresolved: {cleanup:?}"),
+            }),
+        }
     }
     pub async fn kill_session(&self, name: &str) -> Result<(), TmuxError> {
         Self::target(name)?;
