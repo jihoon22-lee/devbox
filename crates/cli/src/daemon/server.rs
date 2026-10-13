@@ -55,6 +55,11 @@ pub async fn serve(
     services: Arc<Services>,
     shutdown: CancellationToken,
 ) -> io::Result<()> {
+    services
+        .agents
+        .initialize()
+        .await
+        .map_err(|error| io::Error::other(format!("initialize agents: {error:?}")))?;
     let daemon = Arc::new(Daemon {
         router: routes::router(services.clone()),
         topics: routes::declared().topics.into_iter().collect(),
@@ -62,23 +67,25 @@ pub async fn serve(
         dedupe: Dedupe::default(),
     });
     let mut connections = tokio::task::JoinSet::new();
-    loop {
+    let result = loop {
         tokio::select! {
-            _ = shutdown.cancelled() => break,
+            _ = shutdown.cancelled() => break Ok(()),
             Some(_) = connections.join_next(), if !connections.is_empty() => {},
             accepted = listener.accept() => {
-                let (stream, _) = accepted?;
+                let (stream, _) = match accepted { Ok(value) => value, Err(error) => break Err(error) };
                 let (daemon, shutdown) = (daemon.clone(), shutdown.clone());
                 connections.spawn(async move {
                     if let Err(error) = connection(stream, daemon, shutdown).await { tracing::debug!(%error, "connection closed"); }
                 });
             }
         }
-    }
+    };
+    shutdown.cancel();
     while connections.join_next().await.is_some() {}
     daemon.dedupe.tracker.close();
     daemon.dedupe.tracker.wait().await;
-    Ok(())
+    daemon.services.agents.shutdown().await;
+    result
 }
 
 fn invalid(reason: &str) -> io::Error {

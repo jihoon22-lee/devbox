@@ -40,8 +40,28 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// 에이전트 도구의 상태를 알린다.
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCmd,
+    },
     /// 버전만 출력한다.
     Version,
+}
+
+#[derive(Subcommand)]
+enum AgentCmd {
+    Event {
+        #[arg(long, value_parser = ["claude", "codex", "setup", "exit"])]
+        from: String,
+        #[arg(long, conflicts_with_all = ["ok", "failed"])]
+        code: Option<i32>,
+        #[arg(long, conflicts_with = "failed")]
+        ok: bool,
+        #[arg(long)]
+        failed: bool,
+        payload: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -63,6 +83,33 @@ fn main() -> anyhow::Result<()> {
             } => devbox_cli::gateway::run(port, origin, token).await,
             Cmd::Setup { json } => devbox_cli::setup::run(json).await,
             Cmd::Doctor { json } => devbox_cli::doctor::run(json).await,
+            Cmd::Agent {
+                cmd:
+                    AgentCmd::Event {
+                        from,
+                        code,
+                        ok,
+                        failed,
+                        payload,
+                    },
+            } => {
+                use devbox_agents::hooks::HookSource;
+                let source = match from.as_str() {
+                    "claude" => HookSource::Claude,
+                    "codex" => HookSource::Codex,
+                    "setup" => HookSource::Setup,
+                    _ => HookSource::Exit,
+                };
+                let code = code.or(if ok {
+                    Some(0)
+                } else if failed {
+                    Some(1)
+                } else {
+                    None
+                });
+                devbox_cli::agent_event::run(source, code, payload).await;
+                Ok(())
+            }
             Cmd::Version => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 Ok(())

@@ -1,3 +1,4 @@
+pub mod agent_event;
 pub mod bridge;
 pub mod client;
 pub mod daemon;

@@ -12,5 +12,6 @@ pub struct Services {
     pub db: Db,
     pub hub: Arc<Hub>,
     pub projects: Arc<ProjectsService>,
-    pub terminal: devbox_terminal::TerminalService,
+    pub terminal: Arc<devbox_terminal::TerminalService>,
+    pub agents: Arc<devbox_agents::AgentsService>,
 }

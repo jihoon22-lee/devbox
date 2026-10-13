@@ -1,4 +1,5 @@
 //! 프로젝트 목록 도메인.
+pub mod config;
 pub mod model;
 mod store;
 

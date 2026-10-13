@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과. Task 3–7 구현·별도 검토 완료, S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 8 에이전트 생성·시작 스크립트·hook 상태 및 정확한 Codex thread/turn 연결 구현 |
+| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과. Task 3–8 구현·별도 검토 및 실제 Claude/Codex hook 확인 완료, S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 9 에이전트 행동 — 확인 OID 기반 병합·PR·폐기, 재개·기준 반영·정리·검토 조회 구현 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -191,6 +191,10 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04 Task 6 Git 변경 | worktree·병합·rebase·push/PR 기본 래퍼 | canonical 등록/common-dir·primary/locked/별칭 보호, 원본 OID 고정·기준 branch/HEAD 재확인 후 소유 병합만 복구, 실제 gh 대신 소유 fake gh·로컬 bare remote로 검증. PR 본문은 private 임시 파일과 --body-file 사용. Unix 명령 전용 process group으로 timeout/취소 자식 정리 | 초기 Git 전체23개 PASS(runner4/mutation10/query9). 별도 검토에서 hook 실패 뒤 부분 생성과 @{-1} 브랜치 별칭 삭제를 재현; 부분 자원·원인을 typed error로 반환하며 hook 변경 보존, literal ref 검증 후 mutation12 PASS·검토자 두 회귀 각1 PASS·최종 검토 PASS. Task7에서 중첩 내부 원인 비노출, Task8에서 부분 자원 reconcile 필요. Windows 자식 수명 실기는 미실행 |
 
 | 2026-10-13 | 04 Task 7 에이전트 기반 | 모델·상태 전이·JSON 저장·프로필·설정 및 Git 오류 변환 | typed model/state와 폐쇄 시각 기준 목록·upsert/index, core의 중립 TOML profile 설정 및 도메인 strict 파싱. 외부 타입에 대한 From 구현은 Rust orphan 규칙상 불가하여 git_failure 함수로 대체; raw/중첩 원인 비노출. branch_for/worktree_dir도 Result로 공통 slug 검증 후 같은 이름 보존 | API 부재 RED 뒤 agents12 PASS, 추가 상태 범위4 PASS·설정11 PASS. 별도 검토의 fix--login/fix-login 폴더 충돌 RED 뒤 naming7 PASS, 최종 검토 PASS. Task8은 변경한 helper Result에 ? 적용. 커밋 전 Biome85 PASS |
+
+| 2026-10-13 | 04 Task 8 생성·hook·수명 | preparing 저장 뒤 detached 준비·단순 hook 상태 갱신 | DB 커밋 callback의 추적 토큰으로 취소된 create waiter도 준비 완료/실패까지 drain, 동시 branch/path/port 예약, 최신 행 재조회 갱신. Git 부분 생성의 소유 상태를 별도 저장·재시작 대조하며 hook 파일 보존. CLI stdin/connect/RPC 전체3초 제한, no-ID 즉시 no-op, 준비 실패 뒤 셸 유지. 프로젝트 설정 strict table·copy 경로/권한 보존 | 실제 CLI 부재 RED 뒤 관련29개 PASS(CLI3/agent2/Codex RPC1/daemon21/terminal1/route1), gen-ts/check/typecheck PASS. agents 초기35·최종 자원4 PASS. 별도 검토의 이전 날짜 known-thread 재탐색·metadata/무효 hook의 attention 덮어쓰기 회귀 RED 뒤 agents40 PASS·재검토 PASS |
+| 2026-10-13 | 04 Task 8 Codex 실제 계약 | metadata source·현재 turn gate의 fixture 검증 | 정확한 cli/user·workdir·launch·현재 turn을 검증하고 private binding 저장. 같은 DB transaction에서 완료 후보의 최신 binding을 재검사, 동일 binding은 쓰기·이벤트 생략. missing/ambiguous는 bounded retry 뒤 typed diagnostic, 상태 유지. 주 세션이 아닌 객체형 source는 먼저 제외하며 숫자형 started_at 대신 이벤트 봉투 timestamp 사용 | 실제 Codex 두 번은 PONG 출력 후에도 Running/sessionId 없음으로 TIMEOUT(75초): 첫 숫자 started_at, 다음 보조 세션 객체 source가 원인. 각각 synthetic RED 후 수정, agents40 및 tracker7/correlation5·최종 Codex RPC1 PASS. 별도 재검토 PASS. 원시 실패 근거도 보존 |
+| 2026-10-13 | 04 Task 8 실제 CLI 수용 | CLI 실행 인자 hook 주입·사용자 설정 보존 | 이미 신뢰된 main cwd, 프로젝트 설정 파일 없음·worktree=false, 전용 test 인스턴스/XDG/tmux에서 도구 사용 없는 PONG만 요청. Claude 2.1.296 PASS(생성→idle 약3.284초), Codex 0.162.1 수정 뒤 PASS(약8.094초), 정확한 primary thread/turn metadata와 binding 대조. 이 시간은 SC3 hook→화면 측정값이 아님 | 근거 Git common-dir `devbox-verification/s1-task8-hooks-aa0z3vxv`(Claude PASS/Codex 첫 실패), `s1-task8-hooks-15667yzo`(두 번째 실패), `s1-task8-hooks-8imklb7_`(Codex PASS·binary SHA256 13aaf6836dcf1b2e625dc90d8f8179c13f62cc6d1ecc089b8b8fca6ef0d62586). config SHA/mtime·main status 불변, 소유 CLI PID/starttime·tmux·daemon 종료·runtime 정리 확인. 첫 stale runtime은 소유 확인 후 후속 정리 기록. 새 fixture cwd 신뢰 승인·전역 설정 변경 없음; Windows 실기는 최종 Task24 별도 |
 
 ## 6. 세션 기록
 

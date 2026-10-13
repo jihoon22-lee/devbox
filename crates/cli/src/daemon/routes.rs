@@ -65,6 +65,22 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_terminal::Profiles, _, _>(
             |s, _, _| async move { Ok(s.terminal.profiles()) },
         );
+    let router = router
+        .register::<devbox_agents::AgentsCreate, _, _>(
+            |s, _, p| async move { s.agents.create(p).await },
+        )
+        .register::<devbox_agents::AgentsListMethod, _, _>(|s, _, p| async move {
+            s.agents.list(p).await
+        })
+        .register::<devbox_agents::AgentsGet, _, _>(
+            |s, _, p| async move { s.agents.get(&p.id).await },
+        )
+        .register::<devbox_agents::AgentsProfiles, _, _>(|s, _, _| async move {
+            Ok(s.agents.profiles())
+        })
+        .register::<devbox_agents::AgentsEvent, _, _>(
+            |s, _, p| async move { s.agents.event(p).await },
+        );
     if test_instance {
         router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
             super::debug::echo(ctx, params)
@@ -80,6 +96,7 @@ pub fn declared() -> NameCollector {
     devbox_protocol::system::export(&mut n);
     projects::export(&mut n);
     devbox_terminal::export(&mut n);
+    devbox_agents::export(&mut n);
     n
 }
 

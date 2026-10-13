@@ -20,7 +20,12 @@ fn now_ms() -> i64 {
 }
 
 fn migrations() -> Vec<devbox_core::Migration> {
-    [devbox_projects::MIGRATIONS, devbox_terminal::MIGRATIONS].concat()
+    [
+        devbox_projects::MIGRATIONS,
+        devbox_terminal::MIGRATIONS,
+        devbox_agents::MIGRATIONS,
+    ]
+    .concat()
 }
 
 pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
@@ -39,13 +44,30 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         paths.home.clone(),
         config.projects.roots.clone(),
     ));
-    let terminal = devbox_terminal::TerminalService::new(
+    let terminal = Arc::new(devbox_terminal::TerminalService::new(
         db.clone(),
         hub.clone(),
         paths.clone(),
         projects.clone(),
         config.terminal,
-    );
+    ));
+    let profiles = devbox_agents::profile::configured(&config.agents)?;
+    let executable = std::env::current_exe()?;
+    let devbox_bin = executable
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("executable path is not UTF-8"))?
+        .to_owned();
+    let use_scope = !paths.instance.is_test() && std::env::var_os("DEVBOX_NO_SCOPE").is_none();
+    let agents = Arc::new(devbox_agents::AgentsService::new(
+        db.clone(),
+        hub.clone(),
+        paths.clone(),
+        projects.clone(),
+        terminal.clone(),
+        profiles,
+        devbox_bin,
+        use_scope,
+    ));
     Ok(Arc::new(Services {
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
@@ -56,6 +78,7 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         hub,
         projects,
         terminal,
+        agents,
     }))
 }
 

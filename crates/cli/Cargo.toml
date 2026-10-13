@@ -10,6 +10,7 @@ name = "devbox"
 path = "src/main.rs"
 
 [dependencies]
+devbox-agents.workspace = true
 devbox-core.workspace = true
 devbox-protocol.workspace = true
 devbox-projects.workspace = true

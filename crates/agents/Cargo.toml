@@ -17,3 +17,11 @@ toml.workspace = true
 ts-rs.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+devbox-projects.workspace = true
+devbox-terminal.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+uuid.workspace = true
+[dev-dependencies]
+tempfile.workspace = true

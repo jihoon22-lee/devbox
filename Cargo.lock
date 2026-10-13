@@ -305,14 +305,20 @@ version = "1.0.0-dev"
 dependencies = [
  "devbox-core",
  "devbox-git",
+ "devbox-projects",
  "devbox-protocol",
+ "devbox-terminal",
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
  "toml",
  "tracing",
  "ts-rs",
+ "uuid",
 ]
 
 [[package]]
@@ -323,6 +329,7 @@ dependencies = [
  "axum",
  "bytes",
  "clap",
+ "devbox-agents",
  "devbox-core",
  "devbox-mux",
  "devbox-projects",
@@ -396,6 +403,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
  "ts-rs",
  "uuid",
 ]
@@ -1873,6 +1881,7 @@ name = "xtask"
 version = "1.0.0-dev"
 dependencies = [
  "anyhow",
+ "devbox-agents",
  "devbox-projects",
  "devbox-protocol",
  "devbox-terminal",

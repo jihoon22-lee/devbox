@@ -55,6 +55,55 @@ pub struct AgentTask {
     pub closed_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateAgentTask {
+    pub project_id: String,
+    pub title: String,
+    pub profile: String,
+    pub base_branch: Option<String>,
+    pub worktree: bool,
+    pub prompt: String,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListAgents {
+    pub include_closed_hours: Option<u32>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GetAgent {
+    pub id: String,
+}
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct AgentsList {
+    pub rev: String,
+    pub items: Vec<AgentTask>,
+}
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct AgentProfiles {
+    pub items: Vec<crate::profile::ToolProfile>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentEventParams {
+    pub agent_id: String,
+    pub source: crate::hooks::HookSource,
+    pub payload: String,
+    pub code: Option<i32>,
+}
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct AgentsChanged {
+    pub rev: String,
+    pub id: String,
+}
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct AgentsAttention {
+    pub id: String,
+    pub state: AgentState,
+    pub message: String,
+}
+
 domain_error! {
     pub enum AgentsError {
         TitleInvalid = "agents.title_invalid",
@@ -77,6 +126,7 @@ domain_error! {
         WorktreeAddPartial { branch: String, path: String, path_exists: bool, branch_exists: Option<bool>, worktree_registered: Option<bool> } = "agents.worktree_add_partial",
         InvalidInput = "agents.invalid_input",
         SessionMissing = "agents.session_missing",
+        SessionMetadata { diagnostic: crate::tracker::Diagnostic } = "agents.session_metadata",
     }
 }
 

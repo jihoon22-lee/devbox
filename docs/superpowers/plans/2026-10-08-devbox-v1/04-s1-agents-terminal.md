@@ -2225,6 +2225,8 @@ git add crates && git commit -m "feat(agents): add the agent task model, state m
 
 **S0a 실제 source 계약 보정(필수, 아래 요점 코드보다 우선).** Codex notify의 `DEVBOX_AGENT_ID`와 cwd만으로 작업을 연결하지 않는다. 실제 주 대화와 자동 제목 생성이 같은 환경 ID로 서로 다른 `thread-id`·`turn-id`의 완료를 보냈다. session tracker가 정확한 thread의 rollout metadata `source=cli`·`thread_source=user`, 작업 launch 경계와 workdir를 확인한 뒤 최초 주 thread를 바인딩한다. cwd의 가장 최신 파일 또는 첫 notify를 선택하지 않는다. metadata 누락·모호함은 상태를 바꾸지 않고 기한·횟수 제한 재시도 뒤 typed diagnostic으로 보고한다. 이미 알려진 주 thread의 resume은 같은 ID를 검증한다. 주 thread lifecycle metadata로 현재 turn을 추적하고 완료 후보는 주 thread **및 현재 turn** 모두 일치해야 한다. 보조 제목 완료와 새 running/waiting 뒤 도착한 이전 turn 완료는 무시한다. Task 8의 parser는 후보 해석만 하며, service 적용 전에 이 gate를 구현한다. 토큰 조회도 검증된 정확한 주 thread 파일만 읽는다. S0a는 metadata 관찰까지 했으며 완성된 바인딩 구현을 측정한 것은 아니다.
 
+실제 0.162.1 계약 보정: `task_started.started_at`은 Unix 초 정수일 수 있으므로 현재 turn의 시각은 이벤트 봉투의 RFC3339 `timestamp`로 검증한다. 보조 세션의 `session_meta.source`는 객체형일 수 있다. `source="cli"`·`thread_source="user"`인 후보만 엄격히 해석하고 다른 출처 때문에 주 세션 검색 전체를 실패시키지 않는다. known-thread 재탐색은 기존 세션의 날짜 폴더도 확인한다.
+
 필수 회귀: 주 thread 현재 turn 완료 → idle, 같은 ENV/cwd의 자동 제목 완료 → 상태 불변, 이전 완료 후 새 turn의 running/waiting → 지연된 이전 완료 무시, 새 turn 현재 완료 → idle, known-thread resume 일치/불일치, metadata 누락·모호함의 bounded retry/진단과 상태 불변. 임시 rollout fixture로 시험하고 사용자 세션 자료를 fixture로 쓰지 않는다. S1 구현에서 실제 lifecycle 계약과 실패 경계를 검증한다(이 계획 코드는 미컴파일).
 
 **Files:**

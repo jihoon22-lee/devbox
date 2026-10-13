@@ -135,3 +135,30 @@ mod tests {
         ));
     }
 }
+
+pub const MIGRATION_2: &str = "CREATE TABLE agents_runtime (id TEXT PRIMARY KEY REFERENCES agents_tasks(id), body TEXT NOT NULL);";
+pub(crate) fn binding(
+    tx: &Transaction<'_>,
+    id: &str,
+) -> rusqlite::Result<Option<crate::tracker::Binding>> {
+    let text: Option<String> = tx
+        .query_row("SELECT body FROM agents_runtime WHERE id=?1", [id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    text.map(|s| {
+        serde_json::from_str(&s)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
+    })
+    .transpose()
+}
+pub(crate) fn put_binding(
+    tx: &Transaction<'_>,
+    id: &str,
+    binding: &crate::tracker::Binding,
+) -> rusqlite::Result<()> {
+    let body = serde_json::to_string(binding)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    tx.execute("INSERT INTO agents_runtime(id,body) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET body=excluded.body",params![id,body])?;
+    Ok(())
+}
