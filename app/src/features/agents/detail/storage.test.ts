@@ -18,16 +18,17 @@ test("draft hydration rejects malformed values; storage access failure retains e
   useDrafts.getState().append("good", "인용");
   expect(useDrafts.getState().text.good).toBe("초안\n인용");
 });
-test("seen hydration accepts only paired keys and status/count signatures", async () => {
+test("seen hydration accepts only paired keys and content digests, discarding legacy count-only marks", async () => {
+  const digest = `sha256:${"0".repeat(64)}`;
   localStorage.setItem(
     "devbox.agentSeen",
     JSON.stringify({
-      state: { entries: { '["a","x"]': "modified:1:2", '["a","y"]': "random", wrong: "modified:0:0" } },
+      state: { entries: { '["a","x"]': digest, '["a","y"]': "random", '["a","z"]': "modified:1:2", wrong: digest } },
       version: 0,
     }),
   );
   await useSeen.persist.rehydrate();
-  expect(useSeen.getState().entries).toEqual({ '["a","x"]': "modified:1:2" });
+  expect(useSeen.getState().entries).toEqual({ '["a","x"]': digest });
 });
 test("quotes use side/range and a fence longer than code content", () => {
   expect(quoteForPrompt("a.txt", { side: "new", from: 2, to: 3, text: "```\ncontent" })).toBe(

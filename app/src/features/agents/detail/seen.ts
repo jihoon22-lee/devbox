@@ -28,7 +28,7 @@ export const useSeen = create<{
                 Array.isArray(pair) &&
                 pair.length === 2 &&
                 pair.every((value) => typeof value === "string") &&
-                /^(added|modified|deleted|renamed|unmerged):\d+:\d+$/.test(sig)
+                /^sha256:[a-f0-9]{64}$/.test(sig)
               );
             } catch {
               return false;

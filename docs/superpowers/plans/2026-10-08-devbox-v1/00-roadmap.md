@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **최종 계획 확정(2026-10-08)** · S0b·후속 PR #639 완료, S1 선행 정합화 중 · 진행 상태는 [PROGRESS.md](PROGRESS.md)
+- 상태: **최종 계획 확정(2026-10-08)** · 단계별 진행·검증·PR 수용 상태는 [PROGRESS.md](PROGRESS.md)
 - 작성: 2026-10-07 재구축 계획 → 2026-10-08 다른 두 검토 계획과 통합·검수 · 기준 원격 `main@72ff50c7`(v0.9.0 공개본). 당시 로컬 main의 미푸시 2개 커밋은 필요한 변경을 통합한 뒤 정리했다(PROGRESS §2)
 - 이 폴더가 devbox 개선의 **유일한 계획**이다. 통합 전의 세 계획(재구축 계획, v0.9.0 리뷰 교차 검증 CV, Astra 교차 검증 AR)은 내용을 이 폴더에 모두 옮긴 뒤 지웠다(08 §8·§9).
 

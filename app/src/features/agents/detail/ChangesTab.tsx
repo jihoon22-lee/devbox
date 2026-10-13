@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { RpcError } from "../../../rpc/client";
 import { useRpcQuery } from "../../../rpc/query";
+import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Button, EmptyState } from "../../../ui";
 import { DiffView } from "../../../ui/DiffView";
 import { type DiffRange, parseUnifiedDiff } from "../../../ui/diff";
@@ -7,6 +9,8 @@ import s from "./Detail.module.css";
 import { useDrafts } from "./drafts";
 import { QueryError } from "./QueryError";
 import { quoteForPrompt } from "./quote";
+import { freshReviewPatch } from "./reviewPatch";
+import { useReviewSignature, useReviewSnapshot } from "./reviewSignature";
 import { useSeen } from "./seen";
 
 const labels = { added: "A", modified: "M", deleted: "D", renamed: "R", unmerged: "U" };
@@ -14,16 +18,86 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
   const changes = useRpcQuery("agents.changes", { id: agentId });
   const [selected, setSelected] = useState<string>();
   const entries = useSeen((state) => state.entries);
+  const [verified, setVerified] = useState<Record<string, { signature: string; snapshot: string }>>({});
+  const [refreshed, setRefreshed] = useState<{ path: string; snapshot: string; version: number }>();
+  const [verificationError, setVerificationError] = useState<{
+    path: string;
+    snapshot: string;
+    version: number;
+    error: RpcError;
+  }>();
+  const [readVersion, setReadVersion] = useState(0);
   const [selection, setSelection] = useState<{ path: string; patch: string; range: DiffRange }>();
   const files = changes.data?.files ?? [];
   const current = files.find((file) => file.path === selected) ?? files[0];
   const path = current?.path ?? "";
   const patch = useRpcQuery("agents.patch", { id: agentId, path }, { enabled: !!current });
+  const snapshot = useReviewSnapshot(agentId);
+  const { qc } = useRpcSession();
+  useEffect(() => {
+    if (!path) return;
+    let current = true;
+    setVerificationError(undefined);
+    // Only the selected patch is queried. A refresh makes off-selection marks
+    // unverified until those files are selected again, avoiding query fan-out.
+    void freshReviewPatch(qc, agentId, path, snapshot)
+      .then(() => {
+        if (current) setRefreshed({ path, snapshot, version: readVersion });
+      })
+      .catch((error) => {
+        if (current)
+          setVerificationError({
+            path,
+            snapshot,
+            version: readVersion,
+            error: error instanceof RpcError ? error : new RpcError("internal"),
+          });
+      });
+    return () => {
+      current = false;
+    };
+  }, [agentId, path, snapshot, qc, readVersion]);
+  const retryPatch = async () => {
+    setRefreshed(undefined);
+    setVerificationError(undefined);
+    setReadVersion((version) => version + 1);
+  };
+  const patchError =
+    patch.error ??
+    (verificationError?.path === path &&
+    verificationError.snapshot === snapshot &&
+    verificationError.version === readVersion
+      ? verificationError.error
+      : null);
   const reviewing = changes.isFetching || patch.isFetching;
-  const stale = reviewing || !!changes.error || !!patch.error;
+  const stale =
+    reviewing ||
+    !!changes.error ||
+    !!patchError ||
+    refreshed?.path !== path ||
+    refreshed?.snapshot !== snapshot ||
+    refreshed?.version !== readVersion;
   const parsed = useMemo(() => parseUnifiedDiff(patch.data?.patch ?? ""), [patch.data?.patch]);
-  const seen = (file: (typeof files)[number]) =>
-    entries[JSON.stringify([agentId, file.path])] === `${file.status}:${file.added}:${file.removed}`;
+  const signature = useReviewSignature(changes.data, current, patch.data);
+  useEffect(() => {
+    if (!signature || stale) return;
+    setVerified((previous) =>
+      previous[path]?.signature === signature && previous[path]?.snapshot === snapshot
+        ? previous
+        : { ...previous, [path]: { signature, snapshot } },
+    );
+  }, [signature, stale, path, snapshot]);
+  const seen = (file: (typeof files)[number]) => {
+    const trusted =
+      file.path === path
+        ? !stale
+          ? signature
+          : undefined
+        : !changes.isFetching && !changes.error && verified[file.path]?.snapshot === snapshot
+          ? verified[file.path]?.signature
+          : undefined;
+    return !!trusted && entries[JSON.stringify([agentId, file.path])] === trusted;
+  };
   const range = selection?.path === path && selection.patch === patch.data?.patch ? selection.range : undefined;
   return (
     <>
@@ -60,9 +134,10 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
             {current && (
               <Button
                 size="sm"
-                disabled={stale}
+                disabled={stale || !signature}
                 onClick={() => {
-                  useSeen.getState().mark(agentId, path, `${current.status}:${current.added}:${current.removed}`);
+                  if (!signature) return;
+                  useSeen.getState().mark(agentId, path, signature);
                   const next = files.find((file) => file.path !== path && !seen(file));
                   if (next) setSelected(next.path);
                 }}
@@ -83,7 +158,7 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
                 지시에 인용
               </Button>
             )}
-            <QueryError query={patch} />
+            <QueryError query={{ error: patchError, refetch: retryPatch }} />
             {stale && patch.data && (
               <p role="status">
                 {reviewing

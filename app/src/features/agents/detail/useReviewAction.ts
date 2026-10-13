@@ -4,11 +4,13 @@ import { RpcError } from "../../../rpc/client";
 import type { MergeKind, Methods } from "../../../rpc/gen/rpc";
 import { messageFor } from "../../../rpc/messages";
 import { confirmPolicy, useRpcMutation, useRpcQuery } from "../../../rpc/query";
+import { useRpcSession } from "../../../rpc/RpcProvider";
 import { useToasts } from "../../../ui";
 import { isProjectTrustError, useProjectTrust } from "../../projects/useProjectTrust";
 import type { AgentTask } from "../model";
 import { useAgentResult } from "./data";
 import { openAgentPr } from "./links";
+import { freshReviewPatch, reviewSnapshot } from "./reviewPatch";
 
 type Changes = Methods["agents.changes"]["result"];
 type Check = Methods["agents.discard_check"]["result"];
@@ -26,6 +28,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
     discard = useRpcMutation("agents.discard");
   const apply = useAgentResult(),
     qc = useQueryClient();
+  const { generation } = useRpcSession();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -79,6 +82,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       for (const queryKey of keys) {
         // The merge/PR snapshot refetch below already refreshes agents.changes.
         if (queryKey[0] === "agents.changes" && intent.kind !== "discard") continue;
+        if (queryKey[0] === "agents.patch") continue;
         details.push(qc.refetchQueries({ queryKey, type: "active" }, { throwOnError: true }));
       }
     }
@@ -86,6 +90,18 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       intent.kind === "discard" ? check.refetch() : changes.refetch(),
       Promise.allSettled(details),
     ]);
+    if (mismatch.current && !response.error && !reviewed.some((result) => result.status === "rejected")) {
+      const token = reviewSnapshot(qc, task.id, generation);
+      const patches = qc.getQueryCache().findAll({ queryKey: ["agents.patch", { id: task.id }], type: "active" });
+      reviewed.push(
+        ...(await Promise.allSettled(
+          patches.map((query) => {
+            const params = query.queryKey[1] as { path: string };
+            return freshReviewPatch(qc, task.id, params.path, token).then(() => {});
+          }),
+        )),
+      );
+    }
     if (stamp !== version.current) return;
     setLoading(false);
     const failed = reviewed.find((result) => result.status === "rejected");

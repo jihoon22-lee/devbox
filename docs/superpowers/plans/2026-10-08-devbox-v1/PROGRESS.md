@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 같은 SHA 자동 리뷰 추가 6건의 수정·별도 검토 진행 중 |
-| 다음 할 일 | 추가 리뷰 6건 회귀·수정·별도 검토 → 후속 최종 SHA 필수 CI·Windows 영향 재수용·자동 리뷰 → squash 머지 |
+| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 같은 SHA 자동 리뷰 추가 6건의 수정·독립 코드 검토 및 영향 검사 완료, 후속 최종 SHA 수용 진행 |
+| 다음 할 일 | 후속 최종 SHA 필수 CI·Windows 영향 재수용·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 처리 중 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 수정·독립 코드 검토·영향 검사 완료. 후속 최종 SHA 수용 대기 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -256,6 +256,8 @@ PR #640 승인된 신뢰 확인 추가(2026-10-14): 프로젝트 정규 경로·
 PR #640 추가 터미널 제목 상한: 공개/내부 생성과 이름 변경의 상태 변경 전에 Unicode scalar256자 상한을 검사하고, 허용된 원문은 자르거나 바꾸지 않는다. 자동 cwd/zellij 제목에도 같은 검사와 typed `terminal.title_too_long{limit:256}`·한국어 안내를 적용했다. 기존 무제한 create/rename의 RED2와 기존 정상1을 확인한 뒤 Rust8·메시지2 PASS, 생성기·해당 crate Clippy·fmt·변경 Biome PASS 및 최종6파일 독립 검토 PASS. 근거 `windows-final-7c9dabff/terminal-title-frozen.json`과 원본 실패/후속 로그. 새 SHA Windows 검증은 아직이다.
 
 PR #640 추가 Git/에이전트 보완: 자동 정리는 종료 때 확인한 OID와 같은 로컬 ref만 CAS로 삭제하고 실제 정리 뒤 예약을 해제한다. 이동하거나 재생성된 ref는 보존하고 cleanupError를 남긴다. 사용자 branch.* 설정은 보존하며, 선택적으로 검토했던 설정 삭제 실험은 경합 우려로 철회해 최종 통과 근거와 분리했다. rebase 명령 실패 뒤 실제 작업 폴더의 rebase marker가 남거나 조회가 불확실하면 소유권을 유지해 중단 복구를 허용한다. PR 생성은 검토와 Git push 직전 양쪽에서 tracked/index/untracked 변경을 거부한다. 최초 회귀4개 RED→GREEN, ref 안전성4개·실제 CLI squash/rebase/승인 정리 및 PR 호출 영향 검사 PASS, 해당2개 crate Clippy·fmt·전체 Biome266파일 PASS, 고정6파일 독립 검토 PASS. 원본 실패와 선택적 실험은 agents-final-* artifact에 보존했다. 후속 최종 SHA CI·Windows 재수용은 아직이다.
+
+PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전체 패치의 SHA256에 묶고 기존 줄 수 기반 표시는 폐기한다. 긴 패치의 일부 조회에는 확인 표시를 붙이지 않는다. 선택 파일 하나만 새로 조회하며 변경 목록이 갱신되면 다른 파일의 표시는 재확인 전까지 숨긴다. 에이전트·연결 세대·조회 갱신 횟수로 시점을 구분하고, 변경 목록 이전 요청과 일반 상태 갱신으로 취소된 요청은 캐시 존재만으로 성공 처리하지 않는다. 확인 대화상자도 같은 새 패치 조회를 기다리며, 실패 후 명시적 재시도와 늦은 결과 격리를 유지한다. S1에서 미구현인 서비스만 있는 시작 구성은 시작 버튼을 제공하지 않는다. 최초 부분22PASS/3FAIL는 실제 확인 화면 회귀였으며 성공으로 바꾸지 않고 보완했다. 최종 소스의 영향5파일18개 PASS, 그대로인 storage/ProjectCards/ProjectSwitcher16개 PASS 재사용, 타입·변경 Biome PASS 및 고정12파일 독립 코드 검토 완료. 실제 생성→대기→추가 지시→변경 검토→squash E2E도4.0초 PASS(감독18.262초, cgroup peak1,609,990,144byte). 최초 부모 단위 실행은 지원하지 않는 minWorkers 옵션으로 테스트 시작 전 실패했으며 옵션 수정 후 위18개를 실행했다. ui-final-review-evidence.json에 이전 실패·후속 판정과 재사용 범위를, ui-root-final-impact.log·ui-root-final-impact-corrected.log·six-review-agent-e2e.log에 부모 실행의 원본 출력을 보존한다. 전체 Biome269파일도 PASS였다. 계획 머리의 낡은 수용 상태는 PROGRESS를 가리키도록 정리했고, 새 최종 SHA CI·Windows 영향 재수용·자동 리뷰를 이어간다.
 
 ## 6. 세션 기록
 

@@ -1,12 +1,38 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import { useRpcQuery } from "../../rpc/query";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useToasts } from "../../ui";
 import { ProjectDataProvider } from "./ProjectData";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { useCurrentProject } from "./store";
 import { ProjectWire, projects } from "./test-wire";
+
+test("services-only launch configuration offers no S1 start action", async () => {
+  function ConfigResult() {
+    const config = useRpcQuery("projects.config", { id: "a" }, { enabled: false });
+    return config.data && <output>설정 확인 완료</output>;
+  }
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <ConfigResult />
+      <ProjectSwitcher open onOpenChange={() => {}} />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests()).toHaveLength(1));
+  await act(async () => wire.reply("projects.list", { rev: "1", items: [projects[0]] }));
+  await waitFor(() => expect(wire.requests("projects.config")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("projects.config", {
+      config: { agent: {}, launch: { services: ["database"], terminals: [], agents: [] } },
+    }),
+  );
+  await screen.findByText("설정 확인 완료");
+  expect(screen.queryByRole("button", { name: "devbox 시작 구성 실행" })).not.toBeInTheDocument();
+  expect(wire.requests("projects.launch")).toHaveLength(0);
+});
 
 test("cards show actual summary and launch once before selecting and navigating", async () => {
   const wire = new ProjectWire({ trustNotRequired: true });

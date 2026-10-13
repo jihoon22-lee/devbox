@@ -18,12 +18,14 @@ const changes = {
 };
 const patch = {
   patch: "diff --git a/old.txt b/new.txt\n--- a/old.txt\n+++ b/new.txt\n@@ -1 +1 @@\n-old text\n+new text\n",
-  truncated: true,
+  truncated: false,
 };
 beforeEach(() => {
+  vi.stubGlobal("crypto", webcrypto);
   useDrafts.setState({ text: {} });
   useSeen.setState({ entries: {} });
 });
+afterEach(() => vi.unstubAllGlobals());
 test("late file patches never replace current selection, quotes append to live draft, seen moves to next file", async () => {
   const wire = new ProjectWire();
   const focus = vi.fn();
@@ -43,15 +45,16 @@ test("late file patches never replace current selection, quotes append to live d
   await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(3));
   await act(async () => wire.reply("agents.patch", patch));
   await screen.findByText("old text");
-  expect(screen.getByRole("status")).toHaveTextContent("일부만 가져왔습니다");
   fireEvent.click(screen.getByRole("button", { name: "변경 전 1줄" }));
   act(() => useDrafts.getState().set("a", "방금 쓴 지시"));
   fireEvent.click(screen.getByRole("button", { name: "지시에 인용" }));
   expect(useDrafts.getState().text.a).toBe("방금 쓴 지시\n`old.txt` L1 (변경 전):\n```\nold text\n```\n");
   expect(focus).toHaveBeenCalledOnce();
+  await waitFor(() => expect(screen.getByRole("button", { name: "봤음" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "봤음" }));
-  expect(useSeen.getState().isSeen("a", "new.txt", "renamed:1:1")).toBe(true);
-  expect(useSeen.getState().isSeen("a", "new.txt", "renamed:2:1")).toBe(false);
+  expect(useSeen.getState().entries['["a","new.txt"]']).toMatch(/^sha256:[a-f0-9]{64}$/);
   expect(screen.getByRole("button", { name: /M next.txt/ })).toHaveAttribute("aria-current", "true");
   expect(screen.queryByRole("button", { name: "지시에 인용" })).toBeNull();
 });
+
+import { webcrypto } from "node:crypto";

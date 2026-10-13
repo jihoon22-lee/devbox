@@ -76,11 +76,11 @@ test.each(["merge", "discard"] as const)(
   "%s state mismatch refreshes only its review data and requires a fresh explicit confirmation",
   async (kind) => {
     const { wire, method, label } = await setup(kind);
-    await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(2));
     await waitFor(() => expect(wire.requests("agents.commits")).toHaveLength(2));
     const count = kind === "merge" ? 4 : 3;
     await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(count));
     if (kind === "discard") await waitFor(() => expect(wire.requests("agents.discard_check")).toHaveLength(2));
+    const olderPatchCount = wire.requests("agents.patch").length;
     await act(async () => {
       wire.reply("agents.changes", { ...changes, headOid: "h2", baseOid: "b2", ahead: 2 });
       wire.reply("agents.commits", commits("new-commit"));
@@ -92,6 +92,7 @@ test.each(["merge", "discard"] as const)(
           fingerprint: "snapshot2",
         });
     });
+    await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(olderPatchCount + 1));
     expect(screen.getByRole("button", { name: label })).toBeDisabled();
     expect(wire.requests(method)).toHaveLength(1);
     expect(
@@ -112,22 +113,25 @@ test.each(["merge", "discard"] as const)(
 );
 test("failed mismatch patch refresh keeps confirmation blocked until an explicit successful retry", async () => {
   const { wire, method, label } = await setup("merge");
-  await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(2));
+  const olderPatchCount = wire.requests("agents.patch").length;
   await act(async () => {
     wire.reply("agents.changes", { ...changes, headOid: "h2", baseOid: "b2" });
     wire.reply("agents.commits", commits("new-commit"));
-    wire.fail("agents.patch");
   });
+  await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(olderPatchCount + 1));
+  await act(async () => wire.fail("agents.patch"));
   const retry = await screen.findByRole("button", { name: "다시 확인" });
   expect(screen.getByRole("button", { name: label })).toBeDisabled();
   expect(wire.requests(method)).toHaveLength(1);
+  const previousChangesCount = wire.requests("agents.changes").length;
   await userEvent.click(retry);
-  await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(3));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(previousChangesCount + 1));
   await act(async () => {
     wire.reply("agents.changes", { ...changes, headOid: "h3", baseOid: "b3" });
     wire.reply("agents.commits", commits("latest-commit"));
-    wire.reply("agents.patch", patch("latest-reviewed-text"));
   });
+  await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(olderPatchCount + 2));
+  await act(async () => wire.reply("agents.patch", patch("latest-reviewed-text")));
   await waitFor(() => expect(screen.getByRole("button", { name: label })).toBeEnabled());
   expect(wire.requests(method)).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: label }));
