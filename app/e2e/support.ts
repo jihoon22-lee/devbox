@@ -9,6 +9,7 @@ import { test as base, expect } from "@playwright/test";
 import packageJson from "../package.json" with { type: "json" };
 import { decodeFrame, jsonFrame } from "../src/rpc/frame";
 import { parseServerMessage } from "../src/rpc/server-message";
+import { stopOwnedTmux } from "./tmux-cleanup";
 import { viteAnnounced } from "./vite-readiness";
 
 const { version } = packageJson;
@@ -36,6 +37,8 @@ export class Stack {
   daemon?: ChildProcess;
   constructor() {
     this.env = { ...process.env, HOME: this.home, DEVBOX_INSTANCE: this.instance };
+    delete this.env.TMUX;
+    delete this.env.TMUX_TMPDIR;
     for (const [key, directory] of Object.entries({
       XDG_RUNTIME_DIR: "run",
       XDG_DATA_HOME: "data",
@@ -157,11 +160,10 @@ export class Stack {
     return [...this.logs].map(([name, log]) => `${name}:\n${log}`).join("\n");
   }
   async close() {
-    try {
-      await Promise.all(this.children.map(stop));
-    } finally {
-      rmSync(this.home, { recursive: true, force: true });
-    }
+    await Promise.all(this.children.map(stop));
+    // Daemon restarts preserve sessions; only fixture teardown kills its exact server.
+    await stopOwnedTmux(this.instance, this.env);
+    rmSync(this.home, { recursive: true, force: true });
   }
 }
 

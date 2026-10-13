@@ -12,18 +12,18 @@ test("last section is allowlisted with storage failure fallback", () => {
   });
   expect(lastSection()).toBe("/agents");
 });
-test("index restores settings and preserves gateway across navigation", async () => {
+test("index restores settings and preserves gateway and DOM renderer across navigation", async () => {
   localStorage.setItem("devbox.lastSection", "/settings");
   const router = buildRouter(
     () => <Outlet />,
     () => <p>설정 페이지</p>,
-    createMemoryHistory({ initialEntries: ["/?gateway=ws%3A%2F%2Flocalhost%3A1451%2F%3Ftoken%3Downed"] }),
+    createMemoryHistory({ initialEntries: ["/?gateway=ws%3A%2F%2Flocalhost%3A1451%2F%3Ftoken%3Downed&renderer=dom"] }),
   );
   render(<RouterProvider router={router} />);
   await screen.findByText("설정 페이지");
   await router.navigate({ to: "/notes" });
   await waitFor(() => expect(router.state.location.pathname).toBe("/notes"));
-  expect(router.state.location.search).toEqual({ gateway: "ws://localhost:1451/?token=owned" });
+  expect(router.state.location.search).toEqual({ gateway: "ws://localhost:1451/?token=owned", renderer: "dom" });
   expect(localStorage.getItem("devbox.lastSection")).toBe("/notes");
 });
 test("unknown routes provide a usable recovery link despite unavailable storage", async () => {

@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { BottomTerminal } from "../features/terminal/BottomTerminal";
+import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
+import { TerminalCommands } from "../features/terminal/TerminalCommands";
+import { TerminalPage } from "../features/terminal/TerminalPage";
 import { ToastHost } from "../ui/Toast";
+import { registerBottomTab } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
 import { useCommands } from "./commands";
 import { Frame } from "./Frame";
@@ -20,9 +25,9 @@ export function Shell() {
         frame: () => (
           <Frame project={<ProjectTitle onOpen={() => setProjects(true)} />} onOpenPalette={() => setPalette(true)} />
         ),
-        pages: {},
+        pages: { "/terminal": { component: TerminalPage } },
         settings: SettingsPage,
-        popouts: [],
+        popouts: [{ path: "/popout/terminal/$id", component: PopoutTerminal }],
       }),
     [],
   );
@@ -70,6 +75,7 @@ export function Shell() {
     [router],
   );
   useKeymap(bindings);
+  useEffect(() => registerBottomTab({ id: "terminal", label: "터미널", render: () => <BottomTerminal /> }), []);
   useEffect(() => {
     restoreUiScale();
     const onMouse = (event: MouseEvent) => {
@@ -112,6 +118,7 @@ export function Shell() {
   return (
     <ProjectDataProvider>
       <RouterProvider router={router} />
+      <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
       <ToastHost />
       <CommandPalette open={palette} onOpenChange={setPalette} />
       <ProjectSwitcher open={projects} onOpenChange={setProjects} />

@@ -36,6 +36,7 @@ export interface TerminalViewProps {
   onTitle?: (title: string) => void;
   onClose?: () => void;
   autoFocus?: boolean;
+  focusRequest?: number;
 }
 export function TerminalView({
   id,
@@ -46,6 +47,7 @@ export function TerminalView({
   onTitle,
   onClose,
   autoFocus,
+  focusRequest,
 }: TerminalViewProps) {
   const client = useRpc();
   const host = useRef<HTMLDivElement>(null);
@@ -53,8 +55,9 @@ export function TerminalView({
   const [searching, setSearching] = useState(false);
   const searchRef = useRef<SearchAddon | undefined>(undefined);
   const termRef = useRef<Terminal | undefined>(undefined);
-  const callbacks = useRef({ onCwd, onBell, onTitle, autoFocus });
-  callbacks.current = { onCwd, onBell, onTitle, autoFocus };
+  const openedRef = useRef(false);
+  const callbacks = useRef({ onCwd, onBell, onTitle, autoFocus, focusRequest });
+  callbacks.current = { onCwd, onBell, onTitle, autoFocus, focusRequest };
   // Scaled previews always use the upstream grid, even if readOnly was omitted.
   const preview = readOnly || scale !== undefined;
   useEffect(() => {
@@ -186,6 +189,7 @@ export function TerminalView({
       link.dispose();
       for (const subscription of subscriptions) subscription.dispose();
       termRef.current = undefined;
+      openedRef.current = false;
       searchRef.current = undefined;
       term.dispose();
     };
@@ -204,6 +208,7 @@ export function TerminalView({
         if (fontTimer !== undefined) clearTimeout(fontTimer);
         term.open(el);
         opened = true;
+        openedRef.current = true;
         if (new URLSearchParams(location.search).get("renderer") !== "dom") {
           let webgl: WebglAddon | undefined;
           try {
@@ -221,7 +226,7 @@ export function TerminalView({
         }
         fitView();
         void link.open(term.cols, term.rows);
-        if (callbacks.current.autoFocus && !preview) term.focus();
+        if ((callbacks.current.autoFocus || callbacks.current.focusRequest !== undefined) && !preview) term.focus();
       })
       .catch(() => {
         if (disposed) return;
@@ -240,6 +245,11 @@ export function TerminalView({
       .catch(() => warn("터미널 글꼴을 적용하지 못했습니다"));
     return cleanup;
   }, [client, id, preview]);
+  useEffect(() => {
+    // Selection is an explicit intent. Changing callbacks/autoFocus or opening
+    // search must not pull focus away from its controls on an existing view.
+    if (focusRequest !== undefined && openedRef.current && !preview) termRef.current?.focus();
+  }, [focusRequest, preview]);
   const validScale = scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : undefined;
   return (
     <div className={s.wrap} data-keyscope="terminal">

@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–15 로컬 완료, Task 16 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
+- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–16 로컬 완료, Task 17 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -1227,6 +1227,8 @@ git add app && git commit -m "feat(app): render tmux sessions with xterm, search
 
 ### Task 16: 터미널 섹션·하단 패널 터미널·분리 창·E2E
 
+실제 구현 보정: Shell에 화면·하단 탭·명령을 등록한다. `terminal.list(null)`의 모든 프로젝트 결과는 화면에서 프로젝트 없음으로 필터링한다. 생성 뒤 같은 리비전의 가상 캐시를 쓰지 않고 이전 조회를 취소·비활성 프로젝트까지 재조회하며, 조회 실패를 생성 실패로 바꾸지 않는다. 하단 세션은 StrictMode·프로젝트 전환 중 생성 중복과 종료 뒤 자동 재생성을 막고 명시적으로 다시 시도한다. 메뉴의 `afterClose`로 포커스 정리 뒤 대화상자를 열고 취소 시 버튼으로 돌아온다. 목록 선택의 명시적 포커스 요청은 현재 칸에만 전달하고 직접 포커스가 바뀌면 폐기한다. 분리 창은 안전한 고유 이름으로 재사용한다. E2E 2개는 작성·수집만 확인했으며 실제 실행은 Task24다. fixture는 자식 종료 뒤 자기 tmux 서버만 정리한다.
+
 **Files:**
 - Create: `app/src/features/terminal/TerminalPage.tsx`, `SessionList.tsx`, `PaneTree.tsx`, `store.ts`, `popout.ts`, `BottomTerminal.tsx`
 - Modify: `app/src/App.tsx`(pages·popouts 등록, 하단 탭 등록, 명령 등록)
@@ -1254,7 +1256,7 @@ git add app && git commit -m "feat(app): render tmux sessions with xterm, search
   - `openPopout(kind: "terminal"|"agent"|"agents-grid", id?)`: Tauri면 `WebviewWindow`, 브라우저면 `window.open`. 같은 대상 창이 있으면 앞으로 가져온다.
   - 분리 창 경로: `/popout/terminal/$id`
 
-- [ ] **Step 1: 실패하는 테스트(배치 함수)**
+- [x] **Step 1: 실패하는 테스트(배치 함수)**
 
 ```ts
 // app/src/features/terminal/store.test.ts
@@ -1287,9 +1289,9 @@ test("opening a session already shown focuses its tab instead of duplicating", (
 });
 ```
 
-- [ ] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal/store.test.ts`
+- [x] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal/store.test.ts`
 
-- [ ] **Step 3: 구현 — 배치 함수와 저장**
+- [x] **Step 3: 구현 — 배치 함수와 저장**
 
 ```ts
 // app/src/features/terminal/store.ts
@@ -1363,7 +1365,7 @@ export const useTerminalLayout = create<Store>()(
 );
 ```
 
-- [ ] **Step 4: 구현 — 화면**
+- [x] **Step 4: 구현 — 화면**
 
 ```tsx
 // app/src/features/terminal/TerminalPage.tsx (요점)
@@ -1499,7 +1501,7 @@ export function BottomTerminal() {
 - `useBottomTabs.getState().register({ id: "terminal", label: "터미널", render: () => <BottomTerminal/> })`
 - 명령 등록: "새 터미널"·"하단 패널 열고 닫기"·"터미널을 새 창으로"
 
-- [ ] **Step 5: E2E**
+- [x] **Step 5: E2E**
 
 ```ts
 // app/e2e/terminal.spec.ts
@@ -1538,7 +1540,7 @@ test("split right opens a second live pane in the same tab", async ({ page }) =>
 
 xterm은 WebGL 렌더러를 쓰면 DOM에 글자가 없다. E2E에서는 `?renderer=dom` 쿼리가 있으면 WebGL을 불러오지 않게 하고(`TerminalView`의 `loadAddon(new WebglAddon())` 앞에서 검사), 위 테스트의 `goto`에 `&renderer=dom`을 붙인다. 접근성 트리(`screenReaderMode`) 대신 DOM 렌더러의 `.xterm-rows`를 `toContainText`로 읽는다.
 
-- [ ] **Step 6: 통과·커밋·묶음 K 끝**
+- [x] **Step 6: 통과·커밋·묶음 K 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/features/terminal

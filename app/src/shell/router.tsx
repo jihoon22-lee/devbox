@@ -56,9 +56,11 @@ export function buildRouter(
   const history = typeof partsOrFrame === "function" ? legacyHistory : (settingsOrHistory as RouterHistory | undefined);
   const rootRoute = createRootRoute({
     component: () => <RouterFrame frame={parts.frame} />,
-    validateSearch: (search: Record<string, unknown>): { gateway?: string } =>
-      typeof search.gateway === "string" ? { gateway: search.gateway } : {},
-    search: { middlewares: [retainSearchParams(["gateway"])] },
+    validateSearch: (search: Record<string, unknown>): { gateway?: string; renderer?: "dom" } => ({
+      ...(typeof search.gateway === "string" ? { gateway: search.gateway } : {}),
+      ...(search.renderer === "dom" ? { renderer: "dom" as const } : {}),
+    }),
+    search: { middlewares: [retainSearchParams(["gateway", "renderer"])] },
     notFoundComponent: () => (
       <EmptyState title="화면을 찾을 수 없습니다" action={<Link to="/agents">에이전트로 이동</Link>} />
     ),

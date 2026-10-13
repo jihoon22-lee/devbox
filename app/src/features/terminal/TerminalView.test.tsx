@@ -1,5 +1,11 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useToasts } from "../../ui";
+import userEvent from "@testing-library/user-event";
+import { TooltipProvider, useToasts } from "../../ui";
+import { useCurrentProject } from "../projects/store";
+import { useTerminalFocus } from "./focus";
+import { emptyLayout, openTab, splitActive, useTerminalLayout } from "./store";
+import { TerminalPage } from "./TerminalPage";
 import { TerminalView } from "./TerminalView";
 
 const mock = vi.hoisted(() => ({
@@ -14,6 +20,27 @@ const mock = vi.hoisted(() => ({
   webglError: false,
 }));
 vi.mock("../../rpc/RpcProvider", () => ({ useRpc: () => mock.client }));
+vi.mock("../../rpc/query", () => ({
+  useRpcMutation: () => ({ isPending: false }),
+  useRpcQuery: () => ({ data: { items: [] } }),
+  confirmPolicy: () => "always",
+}));
+vi.mock("./useSessions", () => {
+  const items = ["s1", "s2", "s3"].map((id) => ({
+    id,
+    projectId: null,
+    title: id,
+    cwd: "/fixture",
+    command: "bash",
+    alive: true,
+    kind: "shell",
+    createdMs: 1,
+  }));
+  return {
+    useSessions: () => ({ data: { rev: "1", items }, items, isError: false, isFetching: false }),
+    useCreateSession: () => vi.fn(),
+  };
+});
 vi.mock("./link", () => ({
   TerminalLink: class {
     open = vi.fn(async () => this.options.onState("live"));
@@ -113,6 +140,68 @@ const flush = async () => {
     await Promise.resolve();
   });
 };
+test("selecting an existing split session focuses its real view, including selecting the same session again", async () => {
+  useCurrentProject.getState().set(undefined);
+  useTerminalLayout.setState({ byProject: { none: splitActive(openTab(emptyLayout(), "s1"), "s1", "s2", "row") } });
+  useTerminalFocus.setState({ byProject: { none: "s1" }, cwd: {}, bells: {} });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <TerminalPage />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  );
+  await flush();
+  const first = mock.terms[0],
+    second = mock.terms[1];
+  expect(first.focus).toHaveBeenCalledTimes(1);
+  expect(second.focus).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: /s2.*bash/ }));
+  expect(second.focus).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole("button", { name: /s2.*bash/ }));
+  expect(second.focus).toHaveBeenCalledTimes(2);
+  act(() => second.events.key(new KeyboardEvent("keydown", { code: "KeyF", ctrlKey: true, shiftKey: true })));
+  const search = screen.getByRole("textbox", { name: "터미널 검색" });
+  expect(search).toHaveFocus();
+  act(() => useTerminalFocus.getState().ring("s2"));
+  expect(second.focus).toHaveBeenCalledTimes(2);
+  expect(search).toHaveFocus();
+  expect(mock.terms).toHaveLength(2);
+  expect(mock.links).toHaveLength(2);
+  expect(first.dispose).not.toHaveBeenCalled();
+  expect(second.dispose).not.toHaveBeenCalled();
+});
+test("directly focusing another pane supersedes an old selection request when its tab remounts", async () => {
+  useCurrentProject.getState().set(undefined);
+  const split = splitActive(openTab(emptyLayout(), "s1"), "s1", "s2", "row");
+  const layout = { ...openTab(split, "s3"), active: split.active };
+  useTerminalLayout.setState({ byProject: { none: layout } });
+  useTerminalFocus.setState({ byProject: { none: "s1" }, cwd: {}, bells: {} });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <TerminalPage />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  );
+  await flush();
+  await userEvent.click(screen.getByRole("button", { name: /s2.*bash/ }));
+  expect(mock.terms[1].focus).toHaveBeenCalledTimes(1);
+  // The renderer fixture has no textarea; add one to exercise real browser focus
+  // capture through the actual PaneTree, rather than updating the focus store.
+  const input = document.createElement("textarea");
+  document.querySelector('[data-terminal-session="s1"]')!.append(input);
+  act(() => input.focus());
+  expect(useTerminalFocus.getState().byProject.none).toBe("s1");
+  await userEvent.click(screen.getByRole("tab", { name: "s3" }));
+  await flush();
+  await userEvent.click(screen.getByRole("tab", { name: "s1 +1" }));
+  await flush();
+  expect(mock.terms).toHaveLength(5);
+  expect(mock.terms[3].focus).toHaveBeenCalledTimes(1);
+  expect(mock.terms[4].focus).not.toHaveBeenCalled();
+  expect(useTerminalFocus.getState().byProject.none).toBe("s1");
+});
 beforeEach(() => {
   for (const list of [mock.terms, mock.links, mock.fits, mock.searches, mock.webgl, mock.callbacks]) list.length = 0;
   mock.openError = false;
