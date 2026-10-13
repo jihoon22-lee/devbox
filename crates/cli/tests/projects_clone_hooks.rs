@@ -1,12 +1,15 @@
 mod support;
 
 use serde_json::{Value, json};
-use std::{os::unix::fs::PermissionsExt, path::Path};
+use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 use support::TestDaemon;
 
 #[tokio::test]
-async fn clone_checkout_does_not_execute_tracked_hooks_from_global_relative_hooks_path() {
+async fn clone_and_agent_checkout_do_not_execute_tracked_hooks_from_global_relative_hooks_path() {
     let mut daemon = TestDaemon::fixture();
+    daemon.write_config(
+        "[[agents.profiles]]\nid='fixture'\nlabel='Fixture'\ncommand='true'\nhooks='none'\n",
+    );
     let global_config = daemon.home.path().join(".gitconfig");
     daemon.extra_env.extend([
         (
@@ -48,6 +51,25 @@ async fn clone_checkout_does_not_execute_tracked_hooks_from_global_relative_hook
         !target.join("clone-hook-marker").exists(),
         "clone executed tracked repository content before project trust"
     );
+    assert!(!target.join(".devbox/devbox.toml").exists());
+    // A command-free repository requires no setup approval before agent creation.
+    let response = client.raw_call("agents.create", json!({"projectId":project["id"],"title":"Owned hook fixture","profile":"fixture","worktree":true,"prompt":""}), None).await.expect("create without project approval");
+    let task: Value = serde_json::from_str(&response).expect("owned task");
+    let task = daemon
+        .wait_for(
+            &client,
+            task["id"].as_str().expect("task ID"),
+            "review",
+            Duration::from_secs(10),
+        )
+        .await;
+    let worktree = Path::new(task["worktreePath"].as_str().expect("owned worktree"));
+    assert!(worktree.join("initial.txt").is_file());
+    assert!(worktree.join(".githooks/post-checkout").is_file());
+    assert!(
+        !worktree.join("clone-hook-marker").exists(),
+        "agent checkout executed tracked repository content before project trust"
+    );
     assert_eq!(
         std::fs::read_to_string(global_config).expect("owned fixture"),
         config,
@@ -57,6 +79,6 @@ async fn clone_checkout_does_not_execute_tracked_hooks_from_global_relative_hook
     assert_eq!(
         std::fs::read_to_string(target.join("clone-hook-marker")).expect("owned fixture"),
         "hook-ran",
-        "the clone override must not persist into later Git mutations"
+        "checkout overrides must not persist into later Git mutations"
     );
 }

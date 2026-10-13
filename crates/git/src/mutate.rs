@@ -163,9 +163,21 @@ pub async fn worktree_add(
         return Err(GitError::UnsafeWorktree);
     }
     let oid = resolve(repo, base).await?;
+    // Implicit agent checkout must not execute repository content before trust.
+    // Keep this override scoped to creation; ordinary Git mutations retain hooks.
     if let Err(cause) = git(
         repo,
-        &["worktree", "add", "-b", branch, "--", text(dir)?, &oid],
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "worktree",
+            "add",
+            "-b",
+            branch,
+            "--",
+            text(dir)?,
+            &oid,
+        ],
     )
     .await
     {
@@ -186,7 +198,7 @@ pub async fn worktree_add(
         if !path_exists && branch_exists == Some(false) && worktree_registered == Some(false) {
             return Err(cause);
         }
-        // Hooks may write files or move refs. Report observed residual resources instead
+        // A failed response can leave files and refs. Report observed resources instead
         // of deleting them. None means inspection failed; callers must reconcile state.
         return Err(GitError::WorktreeAddPartial {
             branch: branch.into(),

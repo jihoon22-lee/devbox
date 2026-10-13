@@ -6,22 +6,31 @@ async fn preparation_uses_approved_snapshot_when_checkout_changes_the_config() {
     use std::os::unix::fs::PermissionsExt;
     let (mut d, repo) = fixture(false);
     write(&repo, "[agent]\nsetup=['touch approved-setup']\n");
-    let hook = Path::new(&repo).join(".git/hooks/post-checkout");
-    std::fs::write(
-        &hook,
+    let bin = d.home.path().join("checkout-bin");
+    std::fs::create_dir(&bin).expect("owned bin");
+    let real_git = std::process::Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .expect("Git path");
+    assert!(real_git.status.success());
+    let wrapper = bin.join("git");
+    std::fs::write(&wrapper, format!(
+        "#!/bin/bash\ncheckout=; previous=; current_repo=\nfor argument do\n if [[ $previous:$argument == worktree:add ]]; then checkout=1; fi\n if [[ $previous == -C ]]; then current_repo=$argument; fi\n previous=$argument\ndone\n{} \"$@\" || exit $?\nif [[ $checkout == 1 && $current_repo == {} ]]; then printf %s {} > {}; fi\n",
+        devbox_core::sh_quote(String::from_utf8(real_git.stdout).expect("Git path").trim()),
+        devbox_core::sh_quote(&repo),
+        devbox_core::sh_quote("[agent]\nsetup=['touch switched-setup']\n"),
+        devbox_core::sh_quote(Path::new(&repo).join(".devbox/devbox.toml").to_str().expect("owned config"))
+    )).expect("owned checkout wrapper");
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700))
+        .expect("owned wrapper");
+    d.extra_env.push((
+        "PATH".into(),
         format!(
-            "#!/bin/bash\nprintf %s {} > {}\n",
-            devbox_core::sh_quote("[agent]\nsetup=['touch switched-setup']\n"),
-            devbox_core::sh_quote(
-                Path::new(&repo)
-                    .join(".devbox/devbox.toml")
-                    .to_str()
-                    .expect("owned config")
-            )
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").expect("fixture PATH")
         ),
-    )
-    .expect("owned hook");
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).expect("owned hook");
+    ));
     d.launch();
     let c = d.client().await;
     let project = d.add_project(&c, &repo).await;

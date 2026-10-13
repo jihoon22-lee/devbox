@@ -2,6 +2,9 @@ use super::*;
 use devbox_core::{Instance, Migration, paths::Env};
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 
+#[path = "resource_checkout_fixture.rs"]
+mod checkout_fixture;
+
 #[path = "action_review_tests.rs"]
 mod action_review_tests;
 
@@ -227,13 +230,10 @@ impl Fixture {
             repo,
             project,
         };
-        let hook = fixture.repo.join(".git/hooks/post-checkout");
-        fs::write(
-            &hook,
-            "#!/bin/sh\nprintf owned-hook-data > hook-created\nexit 3\n",
-        )
-        .expect("hook");
-        fs::set_permissions(hook, fs::Permissions::from_mode(0o700)).expect("hook mode");
+        if let Some(flag) = std::env::var_os("DEVBOX_RESOURCE_CHECKOUT_FLAG") {
+            fs::write(flag, fixture.repo.to_str().expect("owned fixture path"))
+                .expect("owned checkout flag");
+        }
         fixture
     }
     fn request(&self) -> CreateAgentTask {
@@ -268,7 +268,12 @@ fn git(repo: &Path, args: &[&str]) {
 }
 
 #[tokio::test]
-async fn partial_worktree_failure_retains_hook_written_files_and_ownership() {
+async fn partial_worktree_failure_retains_written_files_and_ownership() {
+    if checkout_fixture::run_child(
+        "service::resource_tests::partial_worktree_failure_retains_written_files_and_ownership",
+    ) {
+        return;
+    }
     let fixture = Fixture::new().await;
     let reserved = fixture
         .svc
@@ -284,10 +289,10 @@ async fn partial_worktree_failure_retains_hook_written_files_and_ownership() {
     assert_eq!(task.worktree_path, reserved.worktree_path);
     assert_eq!(
         fs::read_to_string(
-            Path::new(task.worktree_path.as_deref().expect("path")).join("hook-created")
+            Path::new(task.worktree_path.as_deref().expect("path")).join("checkout-created")
         )
-        .expect("retained hook file"),
-        "owned-hook-data"
+        .expect("retained checkout file"),
+        "owned-checkout-data"
     );
     let binding = fixture
         .svc
@@ -308,6 +313,11 @@ async fn partial_worktree_failure_retains_hook_written_files_and_ownership() {
 
 #[tokio::test]
 async fn concurrent_reservations_skip_foreign_paths_and_branches() {
+    if checkout_fixture::run_child(
+        "service::resource_tests::concurrent_reservations_skip_foreign_paths_and_branches",
+    ) {
+        return;
+    }
     let fixture = Fixture::new().await;
     git(&fixture.repo, &["branch", "agent/owned"]);
     let foreign = fixture.root.path().join("project-agents/owned-2");
@@ -341,6 +351,11 @@ async fn concurrent_reservations_skip_foreign_paths_and_branches() {
 
 #[tokio::test]
 async fn canceled_create_waiter_still_drains_committed_preparation() {
+    if checkout_fixture::run_child(
+        "service::resource_tests::canceled_create_waiter_still_drains_committed_preparation",
+    ) {
+        return;
+    }
     let fixture = Fixture::new().await;
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
@@ -395,13 +410,18 @@ async fn canceled_create_waiter_still_drains_committed_preparation() {
                 .as_deref()
                 .expect("retained worktree")
         )
-        .join("hook-created")
+        .join("checkout-created")
         .is_file()
     );
 }
 
 #[tokio::test]
 async fn restart_reconciles_exact_preparing_resources_without_touching_review_or_closed() {
+    if checkout_fixture::run_child(
+        "service::resource_tests::restart_reconciles_exact_preparing_resources_without_touching_review_or_closed",
+    ) {
+        return;
+    }
     let fixture = Fixture::new().await;
     let reserved = fixture
         .svc
@@ -473,9 +493,9 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
     assert_eq!(
         fs::read_to_string(
             Path::new(recovered.worktree_path.as_deref().expect("owned fixture"))
-                .join("hook-created")
+                .join("checkout-created")
         )
         .expect("owned fixture"),
-        "owned-hook-data"
+        "owned-checkout-data"
     );
 }

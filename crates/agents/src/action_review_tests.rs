@@ -10,7 +10,6 @@ async fn action_fixture() -> (Fixture, AgentTask, PathBuf) {
     Arc::get_mut(&mut fixture.svc)
         .expect("owned service")
         .cleanup_after_close = true;
-    fs::remove_file(fixture.repo.join(".git/hooks/post-checkout")).expect("owned hook");
     fs::write(fixture.repo.join("tracked"), "base\n").expect("tracked file");
     git(&fixture.repo, &["add", "tracked"]);
     git(&fixture.repo, &["commit", "-m", "base"]);

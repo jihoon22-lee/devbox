@@ -2,28 +2,26 @@ use super::*;
 
 #[cfg(unix)]
 #[tokio::test]
-async fn failed_worktree_hook_reports_partial_resources_and_preserves_hook_changes() {
-    use std::os::unix::fs::PermissionsExt;
+async fn failed_worktree_checkout_reports_partial_resources_and_preserves_written_files() {
+    if checkout_failure_child() {
+        return;
+    }
     let d = repo();
     let holder = tempfile::tempdir().expect("owned fixture");
     let wt = holder.path().join("worker");
-    let hook = d.path().join(".git/hooks/post-checkout");
-    std::fs::write(
-        &hook,
-        "#!/bin/sh\nprintf hook-data > hook-created\necho hook-failed >&2\nexit 1\n",
-    )
-    .expect("owned fixture");
-    std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
+    let flag = std::env::var_os("DEVBOX_CHECKOUT_FAILURE_FLAG").expect("owned child flag");
+    std::fs::write(flag, format!("{}\n{}\n", d.path().display(), wt.display()))
+        .expect("owned fixture paths");
     let error = git::mutate::worktree_add(d.path(), &wt, "agent/x", "main")
         .await
         .expect_err("fixture operation must fail");
     assert!(
-        matches!(&error, git::GitError::WorktreeAddPartial { branch, path, path_exists: true, branch_exists: Some(true), worktree_registered: Some(true), cause } if branch == "agent/x" && path == wt.to_str().expect("owned fixture") && matches!(cause.as_ref(), git::GitError::Failed { stderr, .. } if stderr.contains("hook-failed"))),
+        matches!(&error, git::GitError::WorktreeAddPartial { branch, path, path_exists: true, branch_exists: Some(true), worktree_registered: Some(true), cause } if branch == "agent/x" && path == wt.to_str().expect("owned fixture") && matches!(cause.as_ref(), git::GitError::Failed { stderr, .. } if stderr.contains("owned checkout response failure"))),
         "{error:?}"
     );
     assert_eq!(
-        std::fs::read_to_string(wt.join("hook-created")).expect("owned fixture"),
-        "hook-data"
+        std::fs::read_to_string(wt.join("checkout-created")).expect("owned fixture"),
+        "owned-checkout-data"
     );
     assert_eq!(
         git::current_branch(&wt)
@@ -113,4 +111,62 @@ async fn merge_at_rechecks_the_confirmed_base_and_source_branch() {
             .as_deref(),
         Some("foreign")
     );
+}
+
+#[cfg(unix)]
+fn checkout_failure_child() -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    if std::env::var_os("DEVBOX_CHECKOUT_FAILURE_FLAG").is_some() {
+        return false;
+    }
+    let root = tempfile::tempdir().expect("owned wrapper");
+    let real_git = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .expect("Git path");
+    assert!(real_git.status.success());
+    let wrapper = root.path().join("git");
+    std::fs::write(
+        &wrapper,
+        r#"#!/bin/sh
+checkout=; previous=; target=; current_repo=
+for argument do
+ if [ "$previous:$argument" = worktree:add ]; then checkout=1; fi
+ if [ "$previous" = -- ]; then target=$argument; fi
+ if [ "$previous" = -C ]; then current_repo=$argument; fi
+ previous=$argument
+done
+"$DEVBOX_CHECKOUT_REAL_GIT" "$@" || exit $?
+if [ "$checkout" = 1 ] && [ -f "$DEVBOX_CHECKOUT_FAILURE_FLAG" ]; then
+ repo=$(sed -n '1p' "$DEVBOX_CHECKOUT_FAILURE_FLAG")
+ expected=$(sed -n '2p' "$DEVBOX_CHECKOUT_FAILURE_FLAG")
+ if [ "$current_repo" = "$repo" ] && [ "$target" = "$expected" ]; then
+  printf owned-checkout-data > "$target/checkout-created"
+  echo 'owned checkout response failure' >&2
+  exit 3
+ fi
+fi
+"#,
+    )
+    .expect("owned wrapper");
+    std::fs::set_permissions(wrapper, std::fs::Permissions::from_mode(0o700))
+        .expect("wrapper mode");
+    let output = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["safety_cases::failed_worktree_checkout_reports_partial_resources_and_preserves_written_files", "--exact", "--nocapture"])
+        .env("DEVBOX_CHECKOUT_FAILURE_FLAG", root.path().join("paths"))
+        .env("DEVBOX_CHECKOUT_REAL_GIT", String::from_utf8(real_git.stdout).expect("Git path").trim())
+        .env("PATH", format!("{}:{}", root.path().display(), std::env::var("PATH").expect("PATH")))
+        .output().expect("owned child");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+        "child must execute exactly the selected test"
+    );
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    true
 }
