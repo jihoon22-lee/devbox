@@ -339,6 +339,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-git"
+version = "1.0.0-dev"
+dependencies = [
+ "devbox-protocol",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
 name = "devbox-mux"
 version = "1.0.0-dev"
 dependencies = [

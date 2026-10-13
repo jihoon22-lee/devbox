@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "xtask"]
+members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "xtask"]
 exclude = ["app/src-tauri"]
 
 [workspace.package]
@@ -16,6 +16,7 @@ devbox-core = { path = "crates/core" }
 devbox-projects = { path = "crates/projects" }
 devbox-cli = { path = "crates/cli" }
 devbox-terminal = { path = "crates/terminal" }
+devbox-git = { path = "crates/git" }
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 bytes = "1"
