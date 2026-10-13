@@ -1,6 +1,8 @@
-//! Read-only Git queries. Commands never invoke a shell or external diff drivers.
+//! Git queries and mutations. Commands never invoke a shell.
+//! Read-only queries disable external diff drivers.
 //! File paths are repository-root-relative even when `dir` is a repository subdirectory.
 pub mod diff;
+pub mod mutate;
 pub mod run;
 pub mod status;
 use devbox_protocol::domain_error;
@@ -22,7 +24,13 @@ domain_error! {
         BaseNotCheckedOut { branch: String } = "git.base_not_checked_out",
         Conflict { files: Vec<String> } = "git.conflict",
         BranchExists { branch: String } = "git.branch_exists",
+        WorktreeAddPartial { branch: String, path: String, path_exists: bool, branch_exists: Option<bool>, worktree_registered: Option<bool>, cause: Box<GitError> } = "git.worktree_add_partial",
         PushFailed { stderr: String } = "git.push_failed",
+        StateChanged = "git.state_changed",
+        OperationInProgress = "git.operation_in_progress",
+        UnsafeWorktree = "git.unsafe_worktree",
+        GhFailed { stderr: String } = "git.gh_failed",
+        GhInvalidOutput = "git.gh_invalid_output",
         GhMissing = "git.gh_missing",
     }
 }

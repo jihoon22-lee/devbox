@@ -8,7 +8,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 pub async fn output(dir: &Path, args: &[&str]) -> Result<(i32, String, String), GitError> {
     execute(command(dir, args), TIMEOUT).await
 }
-fn command(dir: &Path, args: &[&str]) -> Command {
+pub(crate) fn command(dir: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     command
         .arg("--literal-pathspecs")
@@ -86,14 +86,18 @@ pub(crate) async fn with_index(
     }
 }
 
-async fn execute(
+pub(crate) async fn execute(
     mut command: Command,
     timeout: Duration,
 ) -> Result<(i32, String, String), GitError> {
+    #[cfg(unix)]
+    command.process_group(0);
     let mut child = command.spawn().map_err(|error| {
         tracing::error!(%error, "spawn Git command");
         GitError::Internal
     })?;
+    #[cfg(unix)]
+    let _owned_group = OwnedGroup(child.id().ok_or(GitError::Internal)?);
     let mut stdout = child
         .stdout
         .take()
@@ -135,6 +139,22 @@ async fn execute(
         String::from_utf8(err).map_err(|_| GitError::InvalidEncoding)?,
     ))
 }
+// Killing a command's private group also covers helpers that inherited its pipes.
+// The guard runs on timeout, output failure, and future cancellation.
+#[cfg(unix)]
+struct OwnedGroup(u32);
+#[cfg(unix)]
+impl Drop for OwnedGroup {
+    fn drop(&mut self) {
+        if let Ok(pid) = i32::try_from(self.0) {
+            let _ = nix::sys::signal::killpg(
+                nix::unistd::Pid::from_raw(pid),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+        }
+    }
+}
+
 pub async fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
     let (code, out, err) = output(dir, args).await?;
     if code == 0 {
@@ -205,6 +225,55 @@ mod tests {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         command
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timed_out_command_does_not_leave_owned_descendants() {
+        let fixture_dir = tempfile::tempdir().unwrap();
+        let marker = fixture_dir.path().join("survived");
+        let child = format!(
+            "import time,pathlib; time.sleep(.3); pathlib.Path({:?}).write_text('survived')",
+            marker.to_str().unwrap()
+        );
+        let script = format!(
+            "import subprocess,time; subprocess.Popen(['python3','-c', {child:?}]); time.sleep(60)"
+        );
+        assert!(matches!(
+            execute(fixture(&script), Duration::from_millis(100)).await,
+            Err(GitError::TimedOut)
+        ));
+        tokio::time::sleep(Duration::from_millis(450)).await;
+        assert!(
+            !marker.exists(),
+            "owned descendant survived its command timeout"
+        );
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancelled_command_does_not_leave_owned_descendants() {
+        let fixture_dir = tempfile::tempdir().unwrap();
+        let marker = fixture_dir.path().join("survived");
+        let ready = fixture_dir.path().join("ready");
+        let child = format!(
+            "import time,pathlib; time.sleep(.3); pathlib.Path({:?}).write_text('survived')",
+            marker.to_str().unwrap()
+        );
+        let script = format!(
+            "import subprocess,time,pathlib; subprocess.Popen(['python3','-c', {child:?}]); pathlib.Path({:?}).write_text('ready'); time.sleep(60)",
+            ready.to_str().unwrap()
+        );
+        let task = tokio::spawn(execute(fixture(&script), Duration::from_secs(30)));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !ready.exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::time::sleep(Duration::from_millis(450)).await;
+        assert!(!marker.exists(), "owned descendant survived cancellation");
     }
     #[cfg(unix)]
     #[tokio::test]

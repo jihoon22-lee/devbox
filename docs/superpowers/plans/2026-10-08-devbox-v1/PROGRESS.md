@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과. Task 3–5 구현·별도 검토 완료, S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 6 Git 변경 — 소유 worktree·충돌 복구·확인 OID·로컬 remote/fake gh 회귀부터 구현 |
+| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과. Task 3–6 구현·별도 검토 완료, S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 7 에이전트 모델·상태 기계·저장소·도구 프로필 구현 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -78,8 +78,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토·최종 통합 합산 추정) |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h 경과(구현·별도 검토·영향 검사), 조기 CI/실기·발견 결함 수정 약0.5h 별도 |
 | S1 | G | Task 3–4 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약0.6h(구현·별도 검토·정책 수정·영향 검증) |
-| S1 | H | Task 5–6 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
-| S1 | I | Task 7–10 |  | 대기 | | | |
+| S1 | H | Task 5–6 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약0.9h(구현·별도 검토·실패 회귀 보완) |
+| S1 | I | Task 7–10 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
 | S1 | J | Task 11–12 |  | 대기 | | | |
 | S1 | K | Task 13–16 |  | 대기 | | | |
 | S1 | L | Task 17–19 |  | 대기 | | | |
@@ -187,6 +187,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | Task4 독립 검토 오류 경계 보완 | PTY/Tmux raw 원인을 도메인 오류 detail로 반환 | 01 §5.3에 맞춰 내부 PTY I/O·tmux Spawn/명령 실패는 Fail::Internal→진단 ID로 반환. private marker 노출 Router RED→GREEN, raw reason 변형/메시지 제거·타입 재생성. 정상 Linux PTY EIO·스트림 종료·전체 취소는 오류로 기록하지 않음 | 정책 수정 뒤 영향15개 PASS(terminal lib3/attach2/service5/CLI attach4/session1), gen-ts/check/typecheck/Biome85 PASS. 실패를 기록하고 영향 범위만 재검증. 독립 재검토 PASS |
 | 2026-10-13 | 04 Task 5 Git 조회 | 단순 문자열/공백 파싱·오류 시 빈 값·빈 diff의 신규 파일 fallback | strict UTF-8/NUL 파싱·literal pathspec·검증한 commit OID, nonrepo/detached/unborn 구분, 저장소 루트 기준 경로 일치. tracked 무변경은 빈 패치, untracked symlink는 링크 문자열만, 충돌 index 상태를 변경 목록에 반영. subprocess 출력 각8MiB/30초 제한·즉시 kill/reap, 저장소 경로 환경만 제외하며 인증 설정 유지 | API 부재 RED 및 충돌 M 오분류 RED 뒤 관련9개 PASS(runner2/query7), diff 검사 PASS. 내부 OS 오류는 원인을 로그에 두고 GitError::Internal로 분류; 후속 RPC caller에서 Fail::Internal 매핑 필요. 독립 검토 지적은 아래 행에서 보완 |
 | 2026-10-13 | Task5 독립 검토 조합·조회 부작용 보완 | staged 삭제 후 같은 경로 재생성 시 목록/패치 불일치 | 변경 재생성은 Modified+1/-1와 원문/새 내용 패치로 일치, 동일 내용은 net content diff 없음(status는 staged/untracked 변화 보존). 소유 임시 index의 read-tree→diff만 사용하고 실제 index/refs/objects는 보존. split-index/sparse 설정을 해당 경로에서 끄며 실제 index bytes/저장소 파일 목록 불변 회귀 | 조합 RED→GREEN 뒤10개 PASS. 재검토에서 read-tree의 post-index-change hook 실행을 marker RED로 재현, 해당 임시 비교 호출에만 소유 빈 hooksPath를 적용. 영향 recreated 회귀2개 PASS, 일반 mutation hook 정책 미변경. 독립 재검토 PASS |
+
+| 2026-10-13 | 04 Task 6 Git 변경 | worktree·병합·rebase·push/PR 기본 래퍼 | canonical 등록/common-dir·primary/locked/별칭 보호, 원본 OID 고정·기준 branch/HEAD 재확인 후 소유 병합만 복구, 실제 gh 대신 소유 fake gh·로컬 bare remote로 검증. PR 본문은 private 임시 파일과 --body-file 사용. Unix 명령 전용 process group으로 timeout/취소 자식 정리 | 초기 Git 전체23개 PASS(runner4/mutation10/query9). 별도 검토에서 hook 실패 뒤 부분 생성과 @{-1} 브랜치 별칭 삭제를 재현; 부분 자원·원인을 typed error로 반환하며 hook 변경 보존, literal ref 검증 후 mutation12 PASS·검토자 두 회귀 각1 PASS·최종 검토 PASS. Task7에서 중첩 내부 원인 비노출, Task8에서 부분 자원 reconcile 필요. Windows 자식 수명 실기는 미실행 |
 
 ## 6. 세션 기록
 
