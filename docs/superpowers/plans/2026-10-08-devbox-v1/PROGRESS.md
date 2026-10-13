@@ -271,6 +271,8 @@ PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전�
 
 리뷰4262016013 PR 재확인 보완: 확인한 HEAD의 push 뒤 같은 저장소·열림 상태·정확한 base/head 이름과 HEAD OID·안전한 URL을 가진 단일 PR만 재사용한다. 조회 실패는 부재로 취급하지 않고 생성을 막는다. create의 오류·시간 초과·잘못된 출력 뒤에도 같은 검증 조회로 실제 생성 여부를 확인하며, 확인되지 않으면 원래 오류를 유지한다. 다음 재시도도 생성 전 조회해 취소/응답 유실 뒤 중복 생성을 피한다. 새15시나리오를 담은2개 RED→GREEN, 기존 직접Git1·agents1·RPC2·profile1까지 고유7개와 소유 포맷 PASS. 실제 원격 PR을 만들지 않고 소유 bare remote와 fake-gh만 사용했다. 고정6파일 독립 검토 PASS. 후속4건의 대상4crate all-target Clippy·workspace fmt·에이전트 생성→대기→지시→diff→squash 실제 E2E PASS(시나리오4.1초, 감독16.521초, cgroup peak1,527,689,216byte), 최종 Biome269파일 PASS. 해당 통합 검사 원본은 four-review-final-*.log에 보존한다. 근거 pr-reconcile-followup/evidence.json·final.patch·원본 RED/GREEN/자원 기록.
 
+후속0f5513f9의 CI38446690635는 Frontend·전체 E2E PASS, Linux Rust는 projects_trust의 PR teardown snapshot1개 FAIL이었다. 추가 fake-gh fixture가 새pr list 조회에도 설정을 바꾸고 URL을 출력했던 누락을 로컬에서 동일하게 재현했다. 해당 fixture의 list만 부작용 없는 빈 성공으로 분기하고 create의 설정 교체·URL 및 승인된 teardown/PR 성공/cleanupError/폴더 보존 assertions는 그대로 유지했다. 동일1개 GREEN·소유 포맷·최종 한파일 SHA의 별도 검토 PASS. Biome269파일을 확인한 뒤 최종 SHA를 갱신한다. 다른5개 Rust PR fixture도 읽기 감사해 조회 분기를 확인했다. 제품 소스는0f5513f9와 동일하며, 원본 CI 실패는0f5513f9-ci-failed.log, 로컬 RED/GREEN은pr-reconcile-followup/trust-fixture-0f5513f9에 보존한다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

@@ -204,7 +204,7 @@ async fn pr_keeps_pre_git_teardown_and_preserves_success_when_cleanup_fails() {
         ))
         .expect("TOML string")
     );
-    std::fs::write(&gh,format!("#!/bin/bash\nprintf %s {} > {}\nprintf '%s\\n' 'https://github.com/fixture/trust/pull/1'\n",devbox_core::sh_quote(&changed),devbox_core::sh_quote(Path::new(&repo).join(".devbox/devbox.toml").to_str().expect("owned config")))).expect("owned gh");
+    std::fs::write(&gh,format!("#!/bin/bash\nif [ \"$1\" = pr ] && [ \"$2\" = list ]; then exit 0; fi\nprintf %s {} > {}\nprintf '%s\\n' 'https://github.com/fixture/trust/pull/1'\n",devbox_core::sh_quote(&changed),devbox_core::sh_quote(Path::new(&repo).join(".devbox/devbox.toml").to_str().expect("owned config")))).expect("owned gh");
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o700)).expect("owned gh");
     d.extra_env.push((
         "PATH".into(),
