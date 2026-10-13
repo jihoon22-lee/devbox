@@ -211,6 +211,12 @@ impl ProjectsService {
             .db
             .write_checked_with_commit(
                 move |tx| {
+                    if store::get(tx, &p.id)?.is_none() {
+                        return Ok(Err(ProjectsError::NotFound { id: p.id }));
+                    }
+                    if store::has_dependents(tx, &p.id)? {
+                        return Ok(Err(ProjectsError::InUse { id: p.id }));
+                    }
                     if store::delete(tx, &p.id)? == 0 {
                         return Ok(Err(ProjectsError::NotFound { id: p.id }));
                     }

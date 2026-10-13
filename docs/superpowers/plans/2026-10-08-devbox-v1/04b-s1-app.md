@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 구현 중 · [04-s1-agents-terminal](04-s1-agents-terminal.md) Task 1–12 로컬 완료 후 같은 S1 브랜치에서 Task 13–17 로컬 완료, Task 18 진행. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 Task 24에서 수행
+- 상태: 기능 구현·브랜치 전체 독립 재검토 완료 · 전체 검사 및 PR 수용 검증 중. Task 13–23 및 Task 24 수용 테스트·계측 도구 구현·별도 검토 완료. 전체 검사·실제 systemd·최종 Windows 설치본·PR 수용 검증은 아직 완료하지 않음
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창

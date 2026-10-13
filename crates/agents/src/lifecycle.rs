@@ -42,10 +42,9 @@ impl AgentsService {
                                 let previous_state = current.state;
                                 let current_binding = store::binding(tx, &id)?;
                                 // A poll started before resume must not replace the new launch or ownership.
-                                if current_binding
-                                    .as_ref()
-                                    .is_some_and(|b| b.launch_ms != saved.launch_ms)
-                                {
+                                if current_binding.as_ref().is_some_and(|b| {
+                                    b.launch_ms != saved.launch_ms || b.launch_id != saved.launch_id
+                                }) {
                                     return Ok(Err(()));
                                 }
                                 let mut saved = saved;
@@ -114,6 +113,9 @@ impl AgentsService {
             .await
             .map_err(|e| Fail::Internal(format!("agent reconcile tmux: {e}")))?;
         for task in self.list(ListAgents::default()).await?.items {
+            if self.recover_tool_exit(&task.id).await? {
+                continue;
+            }
             if matches!(
                 task.state,
                 AgentState::Preparing
@@ -149,9 +151,12 @@ impl AgentsService {
                 }
                 let Ok(list)=svc.list(ListAgents::default()).await else {continue};
                 for task in list.items {
+                    if !task.tool_exited && svc.recover_tool_exit(&task.id).await.unwrap_or(false) {
+                        continue;
+                    }
                     let codex=crate::profile::resolve(&svc.profiles,&task.profile)
                         .is_some_and(|p|p.hooks==crate::profile::Hooks::Codex);
-                    if codex && matches!(task.state,AgentState::Running|AgentState::Waiting|AgentState::Idle) {
+                    if codex && !task.tool_exited && matches!(task.state,AgentState::Running|AgentState::Waiting|AgentState::Idle) {
                         if let Err(error)=svc.refresh_binding(&task,false).await {
                             tracing::debug!(?error,agent=%task.id,"Codex lifecycle metadata pending");
                         }

@@ -152,6 +152,7 @@ domain_error! {
         NotDirectory { path: String } = "projects.not_directory",
         AlreadyExists { path: String } = "projects.already_exists",
         NotFound { id: String } = "projects.not_found",
+        InUse { id: String } = "projects.in_use",
         ConfigurationInvalid { message: String } = "projects.configuration_invalid",
         LaunchProfileNotFound { id: String } = "projects.launch_profile_not_found",
         LaunchFailed { terminals: u32, agents: u32, message: String } = "projects.launch_failed",

@@ -14,7 +14,9 @@ pub async fn run(source: HookSource, code: Option<i32>, payload: Option<String>)
         return;
     }
     let operation = async {
-        let payload = if matches!(source, HookSource::Claude) {
+        let payload = if matches!(source, HookSource::Setup | HookSource::Exit) {
+            std::env::var("DEVBOX_AGENT_LAUNCH").unwrap_or_default()
+        } else if matches!(source, HookSource::Claude) {
             let (tx, rx) = tokio::sync::oneshot::channel();
             // A blocked stdin reader must not keep Tokio's blocking pool alive on exit.
             std::thread::Builder::new()

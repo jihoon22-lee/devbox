@@ -153,7 +153,7 @@ export function SessionList({
                 label: "세션 끝내기",
                 afterClose: true,
                 danger: true,
-                disabled: !session.alive || close.isPending,
+                disabled: close.isPending,
                 onSelect: () => {
                   if (confirmPolicy("terminal.close") === "always") setEnding(session);
                 },

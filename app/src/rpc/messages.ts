@@ -39,6 +39,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "터미널 시작 폴더를 열 수 없습니다.",
     action: "WSL 안의 폴더 경로를 확인해 주세요.",
   },
+  "projects.in_use": {
+    title: "프로젝트에 에이전트 작업이나 터미널이 남아 있습니다.",
+    action: "열린 작업과 터미널을 끝내고 남은 작업 폴더와 브랜치를 정리한 뒤 다시 시도하세요.",
+  },
   "agents.title_invalid": {
     title: "에이전트 작업 제목을 확인해 주세요.",
     action: "120자 이내의 제목을 입력해 주세요.",

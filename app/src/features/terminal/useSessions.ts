@@ -7,7 +7,13 @@ export type Session = Methods["terminal.create"]["result"];
 export type NewSession = Methods["terminal.create"]["params"];
 export function useSessions(projectId: string | null, options: { enabled?: boolean } = {}) {
   const params = { projectId };
-  const query = useRpcQuery("terminal.list", params, options);
+  const query = useRpcQuery("terminal.list", params, {
+    ...options,
+    staleTime: 0,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
   useTopicInvalidation("terminal.changed", [["terminal.list", params]]);
   const items = useMemo(
     () => query.data?.items.filter((session) => session.projectId === projectId) ?? [],

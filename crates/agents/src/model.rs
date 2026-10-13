@@ -41,6 +41,9 @@ pub struct AgentTask {
     pub workdir: String,
     pub session_id: Option<String>,
     pub terminal_id: Option<String>,
+    // The owned terminal can outlive the tool. Review alone does not imply exit.
+    #[serde(default)]
+    pub tool_exited: bool,
     pub state: AgentState,
     pub reason: Option<String>,
     pub attention: Option<Attention>,

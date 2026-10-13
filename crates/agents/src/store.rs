@@ -61,6 +61,7 @@ mod tests {
             workdir: "/tmp/owned".into(),
             session_id: Some("session".into()),
             terminal_id: Some("terminal".into()),
+            tool_exited: false,
             state: AgentState::Waiting,
             reason: Some("reason".into()),
             attention: Some(Attention {

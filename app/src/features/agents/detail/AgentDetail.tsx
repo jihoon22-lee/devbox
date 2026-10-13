@@ -92,7 +92,9 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         {tab === "commits" && <CommitsTab agentId={id} />}
         {tab === "run" && <RunTab task={task} />}
       </div>
-      {task.state !== "closed" && <Compose agentId={id} disabled={!sessionAlive} focusRequest={focus} />}
+      {task.state !== "closed" && (
+        <Compose agentId={id} disabled={!sessionAlive || task.toolExited} focusRequest={focus} />
+      )}
     </article>
   );
 }

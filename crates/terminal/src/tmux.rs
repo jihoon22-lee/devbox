@@ -169,7 +169,12 @@ impl Tmux {
         Self::target(name)?;
         match self.run(&["kill-session", "-t", &format!("={name}")]).await {
             Ok(_) => Ok(()),
-            Err(error) if error.missing() => Ok(()),
+            Err(error)
+                if error.missing()
+                    || matches!(&error, TmuxError::Failed { stderr, .. } if stderr == "no current target") =>
+            {
+                Ok(())
+            }
             Err(error) => Err(error),
         }
     }

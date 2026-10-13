@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
 import { useRpc, useRpcSession } from "./RpcProvider";
-import { invalidateIfNewer, shareByRevision } from "./revisions";
+import { invalidateIfNewer, shareByRevision, shareTerminalLive } from "./revisions";
 
 export { compareRev, invalidateIfNewer, setIfNewer } from "./revisions";
 
@@ -17,6 +17,7 @@ export function useRpcQuery<M extends QueryMethod>(
     staleTime?: number;
     refetchInterval?: number | false;
     refetchIntervalInBackground?: boolean;
+    refetchOnWindowFocus?: boolean | "always";
   } = {},
 ) {
   const { client, state, generation } = useRpcSession();
@@ -29,8 +30,9 @@ export function useRpcQuery<M extends QueryMethod>(
     ...(opts.staleTime === undefined ? {} : { staleTime: opts.staleTime }),
     refetchInterval: opts.refetchInterval,
     refetchIntervalInBackground: opts.refetchIntervalInBackground,
+    ...(opts.refetchOnWindowFocus === undefined ? {} : { refetchOnWindowFocus: opts.refetchOnWindowFocus }),
     meta: { generation },
-    structuralSharing: shareByRevision,
+    structuralSharing: method === "terminal.list" ? shareTerminalLive : shareByRevision,
     queryFn: ({ signal }) => client.call(method, params, { signal }),
   });
 }

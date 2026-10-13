@@ -25,6 +25,8 @@ impl Default for Resources {
 pub(crate) struct Binding {
     pub launch_ms: i64,
     #[serde(default)]
+    pub launch_id: Option<String>,
+    #[serde(default)]
     pub owned_rebase: bool,
     #[serde(default)]
     pub resources: Resources,
@@ -37,6 +39,7 @@ impl Binding {
     pub fn new(launch_ms: i64) -> Self {
         Self {
             launch_ms,
+            launch_id: None,
             owned_rebase: false,
             resources: Resources::Planned,
             thread_id: None,

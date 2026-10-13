@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 데몬 Task 1–12 구현·별도 검토 로컬 완료. 같은 `v1/s1-agents-terminal`에서 04b 화면·Windows 통합 진행 중. S1 전체 검증·최종 설치본 스모크·PR 수용 검증은 아직 완료하지 않음
+- 상태: 기능 구현·브랜치 전체 독립 재검토 완료 · 전체 검사 및 PR 수용 검증 중. Task 24 수용 테스트·계측 도구 구현 및 별도 검토 완료. S1 전체 검사·실제 systemd·최종 Windows 설치본·PR 수용 검증은 아직 완료하지 않음
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)
@@ -2223,6 +2223,8 @@ git add crates && git commit -m "feat(agents): add the agent task model, state m
 
 ### Task 8: 에이전트 작업 생성·시작 스크립트·hook 이벤트
 
+브랜치 통합 검토 보정: 도구 종료와 tmux 세션 존재를 구분하는 `toolExited`를 저장한다. 도구가 종료되면 출력 화면을 남기는 입력 폐기 대기로 전환하고 [재개]로 다시 실행한다. 실행 가능한 로그인 셸을 남기지 않아 지시 전송과 종료가 경합해도 지시문이 셸 명령으로 실행되지 않는다. 실제 구현은 실행별 식별자와 비공개 상태 파일을 사용해 이전 실행의 setup/exit 이벤트를 거절하고, hook 전달 실패 뒤에도 종료를 복구한다. 아래 최초 예제보다 `start.rs`·`tool_lifecycle.rs`의 현재 계약을 우선한다.
+
 **S0a 실제 source 계약 보정(필수, 아래 요점 코드보다 우선).** Codex notify의 `DEVBOX_AGENT_ID`와 cwd만으로 작업을 연결하지 않는다. 실제 주 대화와 자동 제목 생성이 같은 환경 ID로 서로 다른 `thread-id`·`turn-id`의 완료를 보냈다. session tracker가 정확한 thread의 rollout metadata `source=cli`·`thread_source=user`, 작업 launch 경계와 workdir를 확인한 뒤 최초 주 thread를 바인딩한다. cwd의 가장 최신 파일 또는 첫 notify를 선택하지 않는다. metadata 누락·모호함은 상태를 바꾸지 않고 기한·횟수 제한 재시도 뒤 typed diagnostic으로 보고한다. 이미 알려진 주 thread의 resume은 같은 ID를 검증한다. 주 thread lifecycle metadata로 현재 turn을 추적하고 완료 후보는 주 thread **및 현재 turn** 모두 일치해야 한다. 보조 제목 완료와 새 running/waiting 뒤 도착한 이전 turn 완료는 무시한다. Task 8의 parser는 후보 해석만 하며, service 적용 전에 이 gate를 구현한다. 토큰 조회도 검증된 정확한 주 thread 파일만 읽는다. S0a는 metadata 관찰까지 했으며 완성된 바인딩 구현을 측정한 것은 아니다.
 
 실제 0.162.1 계약 보정: `task_started.started_at`은 Unix 초 정수일 수 있으므로 현재 turn의 시각은 이벤트 봉투의 RFC3339 `timestamp`로 검증한다. 보조 세션의 `session_meta.source`는 객체형일 수 있다. `source="cli"`·`thread_source="user"`인 후보만 엄격히 해석하고 다른 출처 때문에 주 세션 검색 전체를 실패시키지 않는다. known-thread 재탐색은 기존 세션의 날짜 폴더도 확인한다.
@@ -2327,7 +2329,7 @@ mod tests {
         assert!(s.contains("systemd-run --user --scope --quiet --unit 'devbox-prod-agent-a1' --"));
         assert!(s.contains("claude --settings '/d/agents/a1/claude.json' \"$(cat '/d/agents/a1/prompt.md')\""));
         assert!(s.contains("'/b/devbox' agent event --from exit --code \"$code\""));
-        assert!(s.trim_end().ends_with("exec bash -l"));
+        assert!(s.trim_end().ends_with("hold_terminal"));
     }
 
     #[test]
@@ -2426,6 +2428,7 @@ pub struct StartPlan {
 pub fn render_start_script(p: &StartPlan) -> String {
     let dv = sh_quote(&p.devbox);
     let mut s = String::from("#!/usr/bin/env bash\n# devbox 에이전트 시작 스크립트(자동 생성)\n");
+    s.push_str("hold_terminal() { while IFS= read -r discarded; do :; done; exit 0; }\n");
     s.push_str(&format!("cd {} || exit 1\n", sh_quote(&p.workdir)));
     if p.setup.is_empty() {
         s.push_str(&format!("{dv} agent event --from setup --code 0\n"));
@@ -2436,7 +2439,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
         }
         s.push_str(")\n");
         s.push_str(&format!("setup=$?\n{dv} agent event --from setup --code \"$setup\"\n"));
-        s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; exec bash -l; fi\n");
+        s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; hold_terminal; fi\n");
     }
     let mut tool = p.tool_command.clone();
     match p.hooks {
@@ -2465,7 +2468,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
     } else {
         s.push_str(&format!("{tool}\n"));
     }
-    s.push_str(&format!("code=$?\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code). 이 셸은 그대로 쓸 수 있습니다.\"\nexec bash -l\n"));
+    s.push_str(&format!("code=$?\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code). 재개 버튼으로 다시 시작하세요.\"\nhold_terminal\n"));
     s
 }
 ```
@@ -2656,8 +2659,8 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): create agen
 **Interfaces:**
 - Consumes: Task 6 `mutate::*`, Task 3 `Tmux::paste`, Task 8 서비스
 - Produces(메서드):
-  - `agents.send{ id, text }`(mutation): 세션이 있으면 bracketed paste + Enter. 기록을 남기고 `UserInstructed`를 적용한다. 세션이 없으면 `agents.session_missing`(화면이 [재개]를 권한다).
-  - `agents.resume{ id }`(mutation): 새 시작 스크립트(`resume_session`)로 tmux 세션을 다시 만든다. Codex 세션 ID가 없으면 Task 8의 source/launch/workdir 검증 tracker로 바인딩한다. 가장 최근 cwd 파일로 대체하지 않으며, 확인 불가 시 bounded retry 뒤 typed diagnostic으로 재개를 중단한다.
+  - `agents.send{ id, text }`(mutation): 살아 있는 도구에만 bracketed paste + Enter를 전달하고 기록·`UserInstructed`를 적용한다. 세션이 없거나 도구가 종료된 보존 화면이면 전송을 거절하고 화면이 [재개]를 권한다. `review` 상태 자체는 도구 종료를 뜻하지 않는다.
+  - `agents.resume{ id }`(mutation): 새 시작 스크립트(`resume_session`)로 tmux 세션을 다시 만든다. 기존 세션은 해당 실행이 종료된 보존 화면임을 확인했을 때만 교체하며 살아 있는 도구는 교체하지 않는다. Codex 세션 ID가 없으면 Task 8의 source/launch/workdir 검증 tracker로 바인딩한다. 가장 최근 cwd 파일로 대체하지 않으며, 확인 불가 시 bounded retry 뒤 typed diagnostic으로 재개를 중단한다.
   - `agents.review{ id }`(mutation) → `review`
   - `agents.rebase{ id }`(mutation) → `{ result: "done" | "conflict", files }`. 충돌 시 rebase를 진행 중으로 둔다.
   - `agents.rebase_abort{ id }`(mutation)

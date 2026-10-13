@@ -74,6 +74,26 @@ fn rejected_live_hooks_preserve_failure_attention_and_revision_timestamp() {
 }
 
 #[test]
+fn tool_exit_is_recorded_independently_of_user_review_state() {
+    let mut task = task();
+    task.state = AgentState::Idle;
+    apply_event(&mut task, &AgentEvent::UserReview, 1);
+    assert_eq!(task.state, AgentState::Review);
+    assert!(!task.tool_exited, "user review preserves the live tool");
+    assert!(apply_event(&mut task, &AgentEvent::Exited { code: 0 }, 2));
+    assert!(task.tool_exited);
+    assert_eq!(task.state, AgentState::Review);
+    assert!(!apply_event(&mut task, &AgentEvent::UserInstructed, 3));
+    assert!(!apply_event(
+        &mut task,
+        &AgentEvent::SessionStarted {
+            session_id: "stale".into()
+        },
+        3
+    ));
+}
+
+#[test]
 fn output_attention_has_provenance_and_hook_promotes_same_state() {
     let mut t = task();
     t.state = AgentState::Running;

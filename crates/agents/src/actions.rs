@@ -21,6 +21,17 @@ impl AgentsService {
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;
+        if task.tool_exited
+            || !matches!(
+                self.tool_phase(&task).await?,
+                Some(crate::tool_lifecycle::Phase::Tool)
+            )
+        {
+            return Err(AgentsError::BadState {
+                state: "tool-ended".into(),
+            }
+            .into());
+        }
         let session = task
             .terminal_id
             .as_deref()

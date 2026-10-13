@@ -44,6 +44,41 @@ pub fn delete(tx: &Transaction, id: &str) -> rusqlite::Result<usize> {
     tx.execute("DELETE FROM projects_projects WHERE id = ?1", [id])
 }
 
+/// Optional domains share this database, but projects does not depend on their crates.
+/// Check reservations in the same writer transaction as deletion. Creation must
+/// check the project in its own reservation transaction to fence concurrent removal.
+pub fn has_dependents(tx: &Transaction, id: &str) -> rusqlite::Result<bool> {
+    let has_table = |name: &str| -> rusqlite::Result<bool> {
+        tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [name],
+            |row| row.get(0),
+        )
+    };
+    if has_table("terminal_sessions")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM terminal_sessions WHERE project_id=?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(true);
+    }
+    if !has_table("agents_tasks")? {
+        return Ok(false);
+    }
+    // Closed inline history has no owned Git resources. Planned means the
+    // resource reservation was released after both worktree and branch cleanup.
+    let resources = if has_table("agents_runtime")? {
+        "NOT EXISTS(SELECT 1 FROM agents_runtime r WHERE r.id=t.id AND json_extract(r.body,'$.resources')='Planned')"
+    } else {
+        "1"
+    };
+    tx.query_row(&format!(
+        "SELECT EXISTS(SELECT 1 FROM agents_tasks t WHERE project_id=?1 AND (state!='closed' OR (json_extract(body,'$.worktreePath') IS NOT NULL AND ({resources}))))"
+    ), [id], |row| row.get(0))
+}
+
 pub fn get(tx: &Transaction, id: &str) -> rusqlite::Result<Option<Project>> {
     tx.query_row(
         "SELECT id, name, path, favorite, added_ms FROM projects_projects WHERE id=?1",

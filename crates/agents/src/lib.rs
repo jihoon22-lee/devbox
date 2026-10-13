@@ -77,6 +77,7 @@ pub fn export<X: Exporter>(e: &mut X) {
 }
 
 mod prepare;
+mod tool_lifecycle;
 
 mod lifecycle;
 

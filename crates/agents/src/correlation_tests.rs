@@ -93,6 +93,7 @@ impl Fixture {
             workdir: self.workdir.clone(),
             session_id: binding.thread_id.clone(),
             terminal_id: None,
+            tool_exited: false,
             state: AgentState::Running,
             reason: None,
             attention: None,

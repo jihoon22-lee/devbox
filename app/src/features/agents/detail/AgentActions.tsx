@@ -99,7 +99,7 @@ export function AgentActions({
   return (
     <>
       <div className={s.actions}>
-        {sessionAlive ? (
+        {sessionAlive && !task.toolExited ? (
           <Button disabled={blocked} onClick={onInstruct}>
             이어서 지시
           </Button>
@@ -183,7 +183,7 @@ export function AgentActions({
             rebaseConflict ? (
               <>
                 <Button
-                  disabled={blocked || !sessionAlive}
+                  disabled={blocked || !sessionAlive || task.toolExited}
                   onClick={() =>
                     void run(async () => {
                       apply(

@@ -72,13 +72,26 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
     if t.state == AgentState::Closed {
         return false;
     }
-    let mut updated = matches!(
+    let ended = matches!(
         event,
-        AgentEvent::PromptSubmitted | AgentEvent::UserInstructed
-    ) && matches!(
-        t.state,
-        AgentState::Running | AgentState::Waiting | AgentState::Idle
+        AgentEvent::Exited { .. } | AgentEvent::SetupFailed { .. } | AgentEvent::SessionLost
     );
+    if t.tool_exited
+        && !ended
+        && !matches!(event, AgentEvent::UserReview | AgentEvent::Closed { .. })
+    {
+        return false;
+    }
+    let exit_changed = ended && !t.tool_exited;
+    t.tool_exited |= ended;
+    let mut updated = exit_changed
+        || matches!(
+            event,
+            AgentEvent::PromptSubmitted | AgentEvent::UserInstructed
+        ) && matches!(
+            t.state,
+            AgentState::Running | AgentState::Waiting | AgentState::Idle
+        );
     let mut transitioned = false;
     if let AgentEvent::SessionStarted { session_id } = event
         && t.session_id.as_ref() != Some(session_id)
@@ -269,6 +282,14 @@ impl AgentsService {
             .db
             .write_checked_with_commit(
                 move |tx| {
+                    let project_exists: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM projects_projects WHERE id=?1)",
+                        [&project.id],
+                        |row| row.get(0),
+                    )?;
+                    if !project_exists {
+                        return Ok(Err(AgentsError::ProjectNotFound { id: project.id }));
+                    }
                     let existing = store::list(tx, i64::MIN)?;
                     for task in &existing {
                         if task.project_id == project.id
@@ -320,6 +341,7 @@ impl AgentsService {
                         workdir: worktree.unwrap_or(project.path),
                         session_id: None,
                         terminal_id: None,
+                        tool_exited: false,
                         state: AgentState::Preparing,
                         reason: None,
                         attention: None,
@@ -339,7 +361,9 @@ impl AgentsService {
                         activity_seq: 0,
                     };
                     store::put(tx, &task)?;
-                    store::put_binding(tx, &task.id, &Binding::new(now))?;
+                    let mut binding = Binding::new(now);
+                    binding.launch_id = Some(uuid::Uuid::new_v4().simple().to_string());
+                    store::put_binding(tx, &task.id, &binding)?;
                     Ok(Ok((task, profile)))
                 },
                 move |(task, profile), rev| {
@@ -398,7 +422,28 @@ impl AgentsService {
         }
     }
     pub async fn event(&self, p: AgentEventParams) -> Result<Done> {
+        let lifecycle = matches!(
+            p.source,
+            crate::hooks::HookSource::Setup | crate::hooks::HookSource::Exit
+        );
+        let _guard = if lifecycle {
+            Some(self.actions.lock().await)
+        } else {
+            None
+        };
         let task = self.get(&p.agent_id).await?;
+        if lifecycle
+            && self
+                .launch_binding(&task.id)
+                .await?
+                .launch_id
+                .as_deref()
+                .is_some_and(|launch| launch != p.payload)
+        {
+            return Ok(Done {
+                rev: self.db.rev().to_string(),
+            });
+        }
         if task.state == AgentState::Closed {
             return Ok(Done {
                 rev: self.db.rev().to_string(),

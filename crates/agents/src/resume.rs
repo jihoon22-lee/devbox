@@ -1,6 +1,6 @@
 use crate::{
     model::*,
-    service::{AgentsService, Result, now_ms},
+    service::{AgentsService, Result, changed, now_ms},
     state::AgentState,
 };
 use devbox_protocol::Internal;
@@ -30,6 +30,10 @@ impl AgentsService {
                 .internal("resume session list")?
                 .iter()
                 .any(|s| Some(&s.name) == task.terminal_id.as_ref())
+            && !matches!(
+                self.tool_phase(&task).await?,
+                Some(crate::tool_lifecycle::Phase::Ended(_))
+            )
         {
             return Err(AgentsError::BadState {
                 state: "session-present".into(),
@@ -70,6 +74,8 @@ impl AgentsService {
         let data = self.paths.data_dir.join("agents").join(&task.id);
         crate::prepare::private_dir(&data).internal("resume data directory")?;
         let generation = uuid::Uuid::new_v4().simple().to_string();
+        let phase = self.phase_path(&task, &generation);
+        crate::prepare::private_file(&phase, "starting\n", false).internal("resume phase")?;
         let script = data.join(format!("resume-{generation}.sh"));
         let prompt = data.join(format!("resume-{generation}.md"));
         crate::prepare::private_file(&prompt, &task.prompt, false).internal("resume prompt")?;
@@ -89,6 +95,8 @@ impl AgentsService {
             devbox: self.devbox_bin.clone(),
             instance: self.paths.instance.as_str().into(),
             agent_id: task.id.clone(),
+            launch_id: generation.clone(),
+            phase_file: phase.to_string_lossy().into_owned(),
             workdir: task.workdir.clone(),
             setup: vec![],
             tool_command: profile.command.clone(),
@@ -101,35 +109,47 @@ impl AgentsService {
         };
         crate::prepare::private_file(&script, &crate::start::render_start_script(&plan), true)
             .internal("resume script")?;
-        let key = task.id.clone();
-        let launch = now_ms();
-        self.db
-            .write(move |tx| {
-                let mut binding =
-                    crate::store::binding(tx, &key)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-                binding.launch_ms = launch;
-                binding.turn_id = None;
-                binding.turn_started_ms = None;
-                crate::store::put_binding(tx, &key, &binding)
-            })
-            .await
-            .internal("resume launch binding")?;
+        // Preserve the ended launch's evidence until its holder is gone. A
+        // failed close must leave a subsequent resume able to identify it.
         if let Some(old) = &task.terminal_id {
             self.terminal.close_internal(old).await.map_err(|e| {
                 devbox_protocol::Fail::Internal(format!("remove lost terminal record: {e:?}"))
             })?;
         }
+        let key = task.id.clone();
+        let launch = now_ms();
         let initial_session = session_id.clone();
-        self.update(id, move |current| {
-            current.session_id = initial_session;
-            current.terminal_id = None;
-            current.state = AgentState::Running;
-            current.reason = None;
-            current.attention = None;
-            current.updated_ms = now_ms();
-            true
-        })
-        .await?;
+        let hub = self.hub.clone();
+        self.db
+            .write_checked_with_commit(
+                move |tx| {
+                    let mut binding = crate::store::binding(tx, &key)?
+                        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+                    let mut current =
+                        crate::store::get(tx, &key)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+                    let previous = current.state;
+                    binding.launch_ms = launch;
+                    binding.launch_id = Some(generation);
+                    binding.turn_id = None;
+                    binding.turn_started_ms = None;
+                    current.session_id = initial_session;
+                    current.terminal_id = None;
+                    current.state = AgentState::Running;
+                    current.tool_exited = false;
+                    current.reason = None;
+                    current.attention = None;
+                    current.updated_ms = launch;
+                    crate::store::put_binding(tx, &key, &binding)?;
+                    crate::store::put(tx, &current)?;
+                    Ok(Ok::<_, std::convert::Infallible>((current, previous)))
+                },
+                move |(current, previous), rev| {
+                    changed(&hub, current, rev, current.state != *previous)
+                },
+            )
+            .await
+            .internal("resume launch state")?
+            .unwrap_or_else(|never| match never {});
         let launched = self
             .terminal
             .create_internal(

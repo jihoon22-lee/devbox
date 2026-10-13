@@ -285,15 +285,31 @@ impl TerminalService {
             .db
             .write_checked_with_commit(
                 move |tx| {
+                    if let Some(id) = &row.project_id {
+                        let exists: bool = tx.query_row(
+                            "SELECT EXISTS(SELECT 1 FROM projects_projects WHERE id=?1)",
+                            [id],
+                            |row| row.get(0),
+                        )?;
+                        if !exists {
+                            return Ok(Err(TerminalError::ProjectNotFound { id: id.clone() }));
+                        }
+                    }
                     store::insert(tx, &row)?;
-                    Ok(Ok::<_, std::convert::Infallible>(()))
+                    Ok(Ok(()))
                 },
                 move |_, rev| changed(&hub, rev),
             )
             .await;
         match stored {
             Ok(Ok(_)) => Ok(session),
-            Ok(Err(never)) => match never {},
+            Ok(Err(error)) => {
+                self.tmux
+                    .kill_session(&session.id)
+                    .await
+                    .internal("remove rejected terminal")?;
+                Err(error.into())
+            }
             Err(error) => {
                 self.tmux
                     .kill_session(&session.id)

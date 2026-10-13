@@ -94,6 +94,13 @@ impl AgentsService {
         let prompt = data.join("prompt.md");
         let script = data.join("start.sh");
         private_file(&prompt, &task.prompt, false).map_err(|e| internal("agent prompt", e))?;
+        let launch_id = self
+            .launch_binding(&task.id)
+            .await?
+            .launch_id
+            .ok_or_else(|| internal("agent launch", "missing launch identity"))?;
+        let phase = self.phase_path(task, &launch_id);
+        private_file(&phase, "starting\n", false).map_err(|e| internal("agent phase", e))?;
         let settings = if profile.hooks == Hooks::Claude {
             let _hook_files = self.hook_files.lock().await;
             let hooks = self.paths.data_dir.join("agent-hooks");
@@ -121,6 +128,8 @@ impl AgentsService {
             devbox: self.devbox_bin.clone(),
             instance: self.paths.instance.as_str().into(),
             agent_id: task.id.clone(),
+            launch_id,
+            phase_file: phase.to_string_lossy().into_owned(),
             port: task.port,
             workdir: task.workdir.clone(),
             setup: config.agent.setup,

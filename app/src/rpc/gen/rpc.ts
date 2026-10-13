@@ -14,7 +14,7 @@ export type AgentRebase = { result: RebaseResult, files: Array<string>, };
 export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes: number | null, };
 export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
-export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
+export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
 export type AgentTest = { terminalId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
@@ -76,7 +76,7 @@ export type ProjectSummary = { id: string, branch?: string, dirty: boolean | nul
 export type ProjectSummaryIssue = { message: string, };
 export type ProjectSummaryList = { items: Array<ProjectSummary>, };
 export type ProjectsChanged = { rev: string, };
-export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } };
+export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type RebaseResult = "done" | "conflict";
 export type RefreshEnvResult = { restarting: boolean, };
@@ -244,6 +244,7 @@ export const RPC_ERROR_CODES = [
   "projects.clone_invalid_url",
   "projects.clone_target_exists",
   "projects.configuration_invalid",
+  "projects.in_use",
   "projects.launch_failed",
   "projects.launch_profile_not_found",
   "projects.not_directory",

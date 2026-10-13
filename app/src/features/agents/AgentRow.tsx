@@ -70,6 +70,7 @@ export function AgentRow({
     task.state !== "closed" &&
     task.state !== "preparing" &&
     (!task.terminalId ||
+      task.toolExited ||
       (task.state === "failed" && (task.reason === "session_lost" || task.reason?.startsWith("killed:"))));
   const doResume = async () => {
     if (pending.current) return;

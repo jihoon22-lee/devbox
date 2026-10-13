@@ -6,6 +6,8 @@ pub struct StartPlan {
     pub devbox: String,
     pub instance: String,
     pub agent_id: String,
+    pub launch_id: String,
+    pub phase_file: String,
     pub workdir: String,
     pub setup: Vec<String>,
     pub tool_command: String,
@@ -23,18 +25,23 @@ pub fn render_start_script(p: &StartPlan) -> String {
     for (key, value) in [
         ("DEVBOX_BIN", p.devbox.as_str()),
         ("DEVBOX_AGENT_ID", p.agent_id.as_str()),
+        ("DEVBOX_AGENT_LAUNCH", p.launch_id.as_str()),
         ("DEVBOX_INSTANCE", p.instance.as_str()),
         ("DEVBOX_PORT", &p.port.to_string()),
         ("DEVBOX_PROMPT_FILE", p.prompt_file.as_deref().unwrap_or("")),
     ] {
         s.push_str(&format!("export {key}={}\n", sh_quote(value)));
     }
+    let phase = sh_quote(&p.phase_file);
+    s.push_str("hold_terminal() { echo '[devbox] 작업이 끝났습니다. 재개 버튼으로 다시 시작하세요.'; while IFS= read -r discarded; do :; done; exit 0; }\n");
     s.push_str(&format!(
-        "cd {} || {{ {dv} agent event --from setup --code 1; exec bash -l; }}\n",
+        "cd {} || {{ printf 'setup:1\\n' > {phase}; {dv} agent event --from setup --code 1; hold_terminal; }}\n",
         sh_quote(&p.workdir)
     ));
     if p.setup.is_empty() {
-        s.push_str(&format!("{dv} agent event --from setup --code 0\n"));
+        s.push_str(&format!(
+            "printf 'tool\\n' > {phase}\n{dv} agent event --from setup --code 0\n"
+        ));
     } else {
         s.push_str("( set -e\n");
         for command in &p.setup {
@@ -42,9 +49,9 @@ pub fn render_start_script(p: &StartPlan) -> String {
         }
         s.push_str(")\n");
         s.push_str(&format!(
-            "setup=$?\n{dv} agent event --from setup --code \"$setup\"\n"
+            "setup=$?\nif [ \"$setup\" -ne 0 ]; then printf 'setup:%s\\n' \"$setup\" > {phase}; else printf 'tool\\n' > {phase}; fi\n{dv} agent event --from setup --code \"$setup\"\n"
         ));
-        s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; exec bash -l; fi\n");
+        s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; hold_terminal; fi\n");
     }
     let mut tool = p.tool_command.clone();
     match p.hooks {
@@ -75,7 +82,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
     } else {
         s.push_str(&format!("{tool}\n"));
     }
-    s.push_str(&format!("code=$?\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code). 이 셸은 그대로 쓸 수 있습니다.\"\nexec bash -l\n"));
+    s.push_str(&format!("code=$?\nprintf 'exit:%s\\n' \"$code\" > {phase}\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code).\"\nhold_terminal\n"));
     s
 }
 
@@ -87,6 +94,8 @@ mod tests {
             devbox: "/b/devbox".into(),
             instance: "prod".into(),
             agent_id: "a1".into(),
+            launch_id: "launch-1".into(),
+            phase_file: "/d/phase".into(),
             workdir: "/w/x y".into(),
             setup: vec!["pnpm install".into()],
             tool_command: "claude".into(),
@@ -115,7 +124,7 @@ mod tests {
         ] {
             assert!(s.contains(part), "missing {part}");
         }
-        assert!(s.trim_end().ends_with("exec bash -l"));
+        assert!(s.trim_end().ends_with("hold_terminal"));
     }
     #[cfg(unix)]
     #[test]
@@ -147,6 +156,7 @@ mod tests {
         let mut p = plan();
         p.devbox = devbox.to_string_lossy().into_owned();
         p.workdir = root.to_string_lossy().into_owned();
+        p.phase_file = root.join("phase").to_string_lossy().into_owned();
         p.agent_id = "a'one $HOME".into();
         p.hooks = Hooks::None;
         p.use_scope = false;

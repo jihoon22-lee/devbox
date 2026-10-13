@@ -19,6 +19,7 @@ export function task(
     workdir: "/fixture/worktree",
     sessionId: "s",
     terminalId: "t",
+    toolExited: false,
     state,
     reason: null,
     attention: null,
