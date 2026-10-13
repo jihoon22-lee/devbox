@@ -8,6 +8,7 @@ import re
 import sys
 source = Path(sys.argv[1]) / "app/src"
 pattern = re.compile(r"Workbench|Code Pad|Repo Manager|Run Manager|Log Lens|Port Manager|⌘|provenance|receipt|generation|\broute\b")
+interpolation = re.compile(r'(?<!\\)((?:\\\\)*)\$\{[A-Za-z_$][\w$]*\}')
 bad = False
 for path in sorted(source.rglob("*")):
     if path.suffix not in {".ts", ".tsx"} or "gen" in path.relative_to(source).parts or ".test." in path.name:
@@ -16,8 +17,11 @@ for path in sorted(source.rglob("*")):
         if line.lstrip().startswith(("//", "*", "import ", "export {")):
             continue
         # Check quoted text and JSX text without discarding whole router-related lines.
-        strings = re.findall(r'''["'`](.*?)["'`]|>([^<]+)<''', line)
-        if any(pattern.search(a or b) for a, b in strings):
+        strings = re.findall(r'''(["'`])((?:\\.|(?!\1).)*?)\1|>([^<]+)<''', line)
+        # A plain interpolation names a variable, not displayed literal text.
+        # Keep quoted expressions and escaped quotes visible to the word check.
+        if any(pattern.search(interpolation.sub(r'\1', a) if quote == '`' else a or b)
+               for quote, a, b in strings):
             print(f"{path}:{number}:{line}")
             bad = True
 if bad:

@@ -249,6 +249,8 @@ PR #640 승인된 신뢰 확인 추가(2026-10-14): 프로젝트 정규 경로·
 
 후속 CI `ca761e47`의 Frontend·전체 E2E는 PASS였으나 Linux Rust는 생성 타입 계약 테스트 한 건에서 FAIL이었다([run38424217215](https://github.com/jihoon22-lee/devbox/actions/runs/38424217215)). 실제 생성 타입에는 이미 `discardFingerprint?: string`이 있었고 xtask의 기대 문자열만 이전 형태였다. 해당 필드를 기대값에 추가하되 head/base/unmerged 필수 확인은 유지했다. 직접1개 재검증 PASS(2.911초 감독), 한 줄 독립 검토 PASS이며 제품·생성물은 변경하지 않았다. 원본 실패는 ca761e47-ci-failed.log, 후속은 export-contract-green.log에 보존한다. 새 최종 SHA의 필수 CI·자동 리뷰와 Windows 설치본 확인은 다시 수행한다.
 
+이어진 CI `bb3dfa75`는 Rust 테스트·Clippy와 Frontend·전체 E2E를 통과했으나 화면 용어 검사에서 내부 template 변수 `${generation}`을 표시 문구로 오인해 FAIL이었다([run38425549168](https://github.com/jihoon22-lee/devbox/actions/runs/38425549168)). 제품 코드를 바꾸지 않고 검사기가 같은 따옴표·이스케이프를 읽고, backtick의 실제 변수 보간만 제외하도록 보완했다. 실제 금지 문구·따옴표를 포함한 식·이스케이프된 보간은 계속 검출한다. 기존 단위 검사에 보간/표시 문자열 사례7개를 추가해 오탐과 기존 누락의 RED, 이스케이프 경계 RED 뒤 최종 PASS를 확인했고 실제 전체 소스 용어 검사도 PASS였다. `.github`+`scripts`는1,432줄로 제한1,500줄 이내다. 원본 bb3dfa75-ci-failed.log와 banned-template-*·banned-current-final-green.log에 근거를 보존하며 새 최종 SHA 검증을 계속한다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.
