@@ -41,19 +41,19 @@ fn resolved_xdg_paths_are_bound_to_only_the_selected_instance() {
     paths.state_dir = root.join("state/devbox/test-custom");
     paths.socket = root.join("runtime/devbox-test-custom.sock");
     let units = instance_units(&paths).expect("render fixture units");
-    assert_eq!(units.len(), 4);
-    assert_eq!(units[2].0, "devbox@test-custom.service.d/paths.conf");
-    assert!(units[2].1.contains("ExecStart=:\""));
-    assert!(units[2].1.contains("space%%\\\"${HOME}"));
+    assert_eq!(units.len(), 6);
+    assert_eq!(units[3].0, "devbox@test-custom.service.d/paths.conf");
+    assert!(units[3].1.contains("ExecStart=:\""));
+    assert!(units[3].1.contains("space%%\\\"${HOME}"));
     for key in [
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
         "XDG_STATE_HOME",
         "XDG_RUNTIME_DIR",
     ] {
-        assert!(units[2].1.contains(key));
+        assert!(units[3].1.contains(key));
     }
-    assert!(units[3].1.contains("ListenStream=\nListenStream="));
+    assert!(units[4].1.contains("ListenStream=\nListenStream="));
     let other = temp
         .path()
         .join(".config/systemd/user/devbox@other.service.d/paths.conf");
@@ -113,7 +113,7 @@ fn socket_path_is_accepted_by_systemd_parser_without_shell_quoting() {
     // Spaces, quotes, backslashes and dollar signs are literal socket path bytes.
     paths.socket = temp.path().join("socket space%\"\\$literal.sock");
     let units = instance_units(&paths).expect("render fixture units");
-    let body = &units[3].1;
+    let body = &units[4].1;
     let socket = temp.path().join("fixture.socket");
     let service = temp.path().join("fixture.service");
     std::fs::write(&socket, body).expect("write fixture file");
@@ -161,7 +161,7 @@ fn environment_file_path_is_loaded_by_systemd_parser() {
             .expect("make fixture executable");
         let units = instance_units(&paths).expect("render fixture units");
         let service = temp.path().join("test-env-parser.service");
-        std::fs::write(&service, &units[2].1).expect("write fixture unit");
+        std::fs::write(&service, &units[3].1).expect("write fixture unit");
         // Offline manager parsing only: never load/start a unit in the real user manager.
         let out = std::process::Command::new("/usr/bin/systemd-analyze")
             .args(["--user", "--generators=no", "verify"])
@@ -252,6 +252,12 @@ async fn setup_orders_commands_and_stops_after_each_failure() {
         let calls = runner.calls.lock().expect("lock fixture state");
         assert_eq!(calls.len(), expected - 1);
         if expected >= 4 {
+            assert!(calls[2].contains("devbox-tmux@test-setup.service"));
+            assert!(
+                !calls
+                    .iter()
+                    .any(|call| call.contains("restart devbox-tmux@"))
+            );
             assert!(
                 calls[2]
                     .contains("enable --now devbox@test-setup.socket devbox@test-setup.service")
@@ -284,5 +290,52 @@ async fn invalid_env_or_foreign_unit_prevents_reload() {
         assert_eq!(report.steps.len(), if invalid_env { 1 } else { 2 });
         assert!(!report.steps.last().expect("report contains a step").ok);
         assert_eq!(runner.calls.lock().expect("lock fixture state").len(), 1);
+    }
+}
+
+#[test]
+fn tmux_unit_is_managed_foreground_and_independent_of_daemon_lifetime() {
+    let units = render_units();
+    let (_, body) = units
+        .iter()
+        .find(|(name, _)| *name == "devbox-tmux@.service")
+        .expect("tmux unit");
+    assert!(body.starts_with(MARKER));
+    assert!(body.contains("Type=exec"));
+    assert!(body.contains("tmux -D -L devbox-%i"));
+    assert!(!body.contains("PartOf=devbox@"));
+    assert!(!body.contains("KillMode=none"));
+}
+
+#[tokio::test]
+async fn tmux_config_refuses_foreign_files_and_symlinks_before_manager_changes() {
+    for linked in [false, true] {
+        let temp = tempfile::tempdir().expect("fixture home");
+        let paths = devbox_core::Paths::resolve(
+            devbox_core::Instance::parse("test-tmux").expect("instance"),
+            &FakeEnv(temp.path().into()),
+        )
+        .expect("paths");
+        std::fs::create_dir_all(&paths.instance_config_dir).expect("fixture config directory");
+        let target = paths.instance_config_dir.join("tmux.conf");
+        if linked {
+            let foreign = temp.path().join("foreign");
+            std::fs::write(&foreign, "foreign").expect("foreign fixture");
+            symlink(foreign, &target).expect("fixture symlink");
+        } else {
+            std::fs::write(&target, "foreign").expect("foreign fixture");
+        }
+        let runner = FakeRunner {
+            env: b"PATH=/usr/bin\0".to_vec(),
+            calls: Default::default(),
+            fail: None,
+        };
+        let report = install(&paths, &runner).await;
+        assert!(!report.steps.last().expect("report").ok);
+        assert_eq!(runner.calls.lock().expect("calls").len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(target).expect("foreign remains"),
+            "foreign"
+        );
     }
 }

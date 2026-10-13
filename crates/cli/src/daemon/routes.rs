@@ -40,6 +40,25 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<projects::ProjectsScan, _, _>(
             |s, _, p| async move { s.projects.scan(p).await },
         );
+    let router = router
+        .register::<devbox_terminal::TerminalList, _, _>(|s, _, p| async move {
+            s.terminal.list(p).await
+        })
+        .register::<devbox_terminal::TerminalCreate, _, _>(|s, _, p| async move {
+            s.terminal.create(p).await
+        })
+        .register::<devbox_terminal::TerminalRename, _, _>(|s, _, p| async move {
+            s.terminal.rename(p).await
+        })
+        .register::<devbox_terminal::TerminalClose, _, _>(|s, _, p| async move {
+            s.terminal.close(p).await
+        })
+        .register::<devbox_terminal::TerminalZellijList, _, _>(|s, _, _| async move {
+            Ok(s.terminal.zellij_list().await)
+        })
+        .register::<devbox_terminal::Profiles, _, _>(
+            |s, _, _| async move { Ok(s.terminal.profiles()) },
+        );
     if test_instance {
         router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
             super::debug::echo(ctx, params)
@@ -54,6 +73,7 @@ pub fn declared() -> NameCollector {
     let mut n = NameCollector::default();
     devbox_protocol::system::export(&mut n);
     projects::export(&mut n);
+    devbox_terminal::export(&mut n);
     n
 }
 

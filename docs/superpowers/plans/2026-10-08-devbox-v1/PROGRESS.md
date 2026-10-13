@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과 |
-| 다음 할 일 | S1 Task 3 tmux — 설정·setup 안전성 → 고유 tmux 회귀 → DB/RPC 구현·별도 검토 |
+| 단계 | S0 및 후속 #639 완료. S1 선행 정합화 및 Task 1–2 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 통과. Task 3 구현·별도 검토 완료, S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 4 PTY attach 스트림 — 입력/출력·소유권·종료 회귀부터 구현 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -77,7 +77,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S0b | D | Task 16–21 | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.0h(구현·검토 합산 추정) |
 | S0b | E | Task 22–24 → S0b PR | `v1/s0b-skeleton` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.5h(구현·검토·최종 통합 합산 추정) |
 | S1 | F | Task 1–2 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 0.5h 경과(구현·별도 검토·영향 검사), 조기 CI/실기·발견 결함 수정 약0.5h 별도 |
-| S1 | G | Task 3–4 |  | 대기 | | | |
+| S1 | G | Task 3–4 | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
 | S1 | H | Task 5–6 |  | 대기 | | | |
 | S1 | I | Task 7–10 |  | 대기 | | | |
 | S1 | J | Task 11–12 |  | 대기 | | | |
@@ -181,6 +181,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | Windows 스모크 발견 결함 보완 | 기존 브리지 독립 OFD·인용 EnvironmentFile | EACCES+FIFO에 한해 소유 staging pipe/splice NONBLOCK으로 처리해 부모 flags 보존, EnvironmentFile raw 절대경로·% 이스케이프. 실패 회귀 뒤 bridge11·setup9 PASS, 각각 별도 검토 | 실제 Windows PowerShell→wsl.exe→수정 debug bridge→고유 임시 소켓 MAGIC/65,536B echo/exit0 확인. 설치본 PASS 대체 아님. 기존 서비스 변경 없이 fixture만 정리 |
 | 2026-10-13 | C2 Windows 조기 스모크 재시도 | 수정 SHA `7eca14c5cd1809831c77f0d67ca77f5bdbfe0828` | [Windows run38322184013](https://github.com/jihoon22-lee/devbox/actions/runs/38322184013) 성공·repository/workflow/run/SHA receipt 대조, NSIS SHA256 `5c95c783779e069b85263c6b5e2320b42d46057232b67b7d2e9481f1f85abf44`. 전용 경로 설치 exit0, Ubuntu 자동 선택·Linux binary 배치(hash `5ab458e79c38aba31cd320270177c8c9cf2bdd53f1ca47c830faa831132cf25c`)·setup·prod active/정상 EnvironmentFiles 확인 | **PASS(실행한 S0b 범위)**: UIA 데몬 연결됨·프로젝트 빈 목록→소유 임시폴더 추가/선택, 실제 Windows wsl.exe bridge MAGIC/Welcome/ping 및 projects rev0→1. 앱 진단 정상 표시(기존 linger 꺼짐/inotify128 주의는 설정 변경 없이 보존). CloseMainWindow 수용·앱 종료, 추적한 Windows 자식11개와 Linux bridge 모두 소멸. user daemon은 설계대로 유지되다가 소유자 정리 단계에서 중지 |
 | 2026-10-13 | C2 조기 스모크 정리·한계 | 소유 자원만 제거·미실행 구분 | NSIS 제거 exit0 및 설치 경로/등록 소멸, 이번 identifier Local/Roaming 제거. marker/hash와 사전 부재 대조 후 prod data/state/config·bin·unit/drop-in/enable링크 제거, 비활성 잔여socket은 연결거절·inode/uid 확인 후 제거. 소유 임시 프로젝트 제거. v0.9 DevboxSuite·catalog/com.devbox.* 보존, unit not-found/inactive | **미실행**: 다중 배포판 선택 UI(비내부 배포판 Ubuntu 하나라 자동 선택), S1 알림·트레이·전역단축키·분리창(후속 과제), R1/R2(S6). 첫 FAIL을 유지하며 이 SHA의 조기 스모크 PASS로 구분; S1 최종 SHA 수용을 대체하지 않음. 시작용 PowerShell harness 25초 timeout은 app PID/UIA로 실행 확인해 중복 실행 안 함; 일부 PowerShell interop Invalid argument 호출은 재시도 성공. 로그는 해당 CI 다운로드 디렉터리에 보존 |
+| 2026-10-13 | 04 Task 3 tmux 세션 | forking unit·DB 뒤 await 발행·예제 프로필 누락 | S0a 근거 Type=exec/-D 독립 unit과 XDG/소유 conf 보호, bounded 명령·정확 세션 대상, 터미널 DB/프로필/CRUD/RPC·Projects.get·TS 연결. DB 실패 시 생성 세션 정리, commit callback 발행, 죽은 세션의 시작 명령 보존. 제어문자 cwd는 명시 거부하고 session ID는 전체 UUID 사용 | 실패 회귀 뒤 관련24개 PASS(tmux1/service5/readiness2/config2/sh_quote1/setup11/RPC재시작1/routes1), gen-ts/check/typecheck PASS. 빈 history의 화면 첫 줄 중복·Type=exec 소켓 준비 경쟁은 실제 fixture RED→GREEN. 독립 검토 PASS(현재 데몬 진입 경로); 전체 검사는 S1 끝에 수행 |
+| 2026-10-13 | Task3 내부 호출 취소 검토 | RPC와 서비스 직접 호출의 수명 구분 | 독립 검토가 create_internal의 직접 future 중단+후속 DB insert 실패에서 미등록 tmux 잔존을 재현. 현재 terminal.create는 dedupe의 독립 TaskTracker·비취소 Ctx·shutdown drain으로 해당 경로를 차단하므로 Task3 blocking 아님 | Task8의 background 준비 호출은 동일한 실행 추적/완료 후 실패 정리를 보장하고 회귀를 추가해야 함. 현재 직접 서비스 호출까지 취소 안전하다고 주장하지 않음. 추측성 취소 기반을 Task3에 선행 추가하지 않음 |
 
 ## 6. 세션 기록
 

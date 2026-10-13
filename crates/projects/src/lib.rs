@@ -142,6 +142,14 @@ impl ProjectsService {
         }
     }
 
+    pub async fn get(&self, id: &str) -> R<Option<Project>> {
+        let id = id.to_owned();
+        self.db
+            .read(move |tx| store::get(tx, &id))
+            .await
+            .internal("get project")
+    }
+
     pub async fn list(&self, _: ListProjects) -> R<ProjectList> {
         let (items, rev) = self
             .db

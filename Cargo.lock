@@ -293,6 +293,7 @@ dependencies = [
  "devbox-mux",
  "devbox-projects",
  "devbox-protocol",
+ "devbox-terminal",
  "futures",
  "libc",
  "mimalloc",
@@ -322,6 +323,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "ts-rs",
 ]
 
 [[package]]
@@ -360,6 +362,22 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "devbox-terminal"
+version = "1.0.0-dev"
+dependencies = [
+ "devbox-core",
+ "devbox-projects",
+ "devbox-protocol",
+ "rusqlite",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "tokio",
  "ts-rs",
  "uuid",
 ]
@@ -1632,6 +1650,7 @@ dependencies = [
  "anyhow",
  "devbox-projects",
  "devbox-protocol",
+ "devbox-terminal",
  "serde",
  "tempfile",
  "ts-rs",

@@ -9,6 +9,7 @@ publish.workspace = true
 anyhow.workspace = true
 devbox-protocol.workspace = true
 devbox-projects.workspace = true
+devbox-terminal.workspace = true
 ts-rs.workspace = true
 
 [lints]

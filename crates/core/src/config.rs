@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub projects: ProjectsConfig,
     pub pc: PcConfig,
+    pub terminal: TerminalConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -28,6 +29,18 @@ impl Default for ProjectsConfig {
 pub struct PcConfig {
     pub name: Option<String>,
     pub windows_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct TerminalConfig {
+    pub profiles: Vec<TerminalProfile>,
+}
+#[derive(Debug, Clone, serde::Serialize, Deserialize, PartialEq, ts_rs::TS)]
+#[serde(deny_unknown_fields)]
+pub struct TerminalProfile {
+    pub name: String,
+    pub command: String,
 }
 
 fn config_error(path: &Path, message: impl ToString) -> CoreError {
@@ -52,10 +65,18 @@ fn read_table(path: &Path) -> Result<toml::Table, CoreError> {
         .parse::<toml::Table>()
         .map_err(|error| config_error(path, error))?;
     // Serde structs also accept positional sequences; TOML sections must be tables.
-    for section in ["projects", "pc"] {
+    for section in ["projects", "pc", "terminal"] {
         if table.get(section).is_some_and(|value| !value.is_table()) {
             return Err(config_error(path, format!("{section} must be a table")));
         }
+    }
+    if let Some(profiles) = table
+        .get("terminal")
+        .and_then(|value| value.get("profiles"))
+        .and_then(toml::Value::as_array)
+        && profiles.iter().any(|value| !value.is_table())
+    {
+        return Err(config_error(path, "terminal profiles must be tables"));
     }
     // Validate each source before merging so an override cannot hide invalid input.
     let _: Config = toml::Value::Table(table.clone())
@@ -275,5 +296,44 @@ mod tests {
         ] {
             assert_eq!(expand_home(input, home), PathBuf::from(input));
         }
+    }
+    #[test]
+    fn terminal_config_accepts_profiles_and_rejects_non_table_sections() {
+        let config =
+            toml::from_str::<Config>("[[terminal.profiles]]\nname = 'Nu'\ncommand = 'nu'\n");
+        assert!(
+            config.is_ok(),
+            "terminal profile config must deserialize: {config:?}"
+        );
+        assert!(toml::from_str::<Config>("terminal = ['bad']").is_err());
+    }
+    #[test]
+    fn terminal_profiles_override_as_a_list_and_reject_positional_tables() {
+        let temp = tempfile::tempdir().expect("fixture home");
+        let paths = paths_in(temp.path());
+        write(
+            &paths,
+            "config.toml",
+            "[[terminal.profiles]]\nname='one'\ncommand='bash -l'\n",
+        );
+        write(
+            &paths,
+            "config.local.toml",
+            "[[terminal.profiles]]\nname='two'\ncommand='nu'\n",
+        );
+        let config = Config::load(&paths).expect("profiles load");
+        assert_eq!(
+            config.terminal.profiles,
+            vec![TerminalProfile {
+                name: "two".into(),
+                command: "nu".into()
+            }]
+        );
+        write(
+            &paths,
+            "config.local.toml",
+            "[terminal]\nprofiles=[['name','command']]\n",
+        );
+        assert!(Config::load(&paths).is_err());
     }
 }

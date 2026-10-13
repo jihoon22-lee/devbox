@@ -1,5 +1,5 @@
 use crate::model::Project;
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 pub const MIGRATION_1: &str = "
 CREATE TABLE projects_projects (
@@ -42,4 +42,21 @@ pub fn exists_path(tx: &Transaction, path: &str) -> rusqlite::Result<bool> {
 
 pub fn delete(tx: &Transaction, id: &str) -> rusqlite::Result<usize> {
     tx.execute("DELETE FROM projects_projects WHERE id = ?1", [id])
+}
+
+pub fn get(tx: &Transaction, id: &str) -> rusqlite::Result<Option<Project>> {
+    tx.query_row(
+        "SELECT id, name, path, favorite, added_ms FROM projects_projects WHERE id=?1",
+        [id],
+        |row| {
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                favorite: row.get::<_, i64>(3)? != 0,
+                added_ms: row.get(4)?,
+            })
+        },
+    )
+    .optional()
 }

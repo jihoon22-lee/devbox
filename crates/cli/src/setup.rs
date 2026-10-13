@@ -112,6 +112,12 @@ pub fn render_units() -> Vec<(&'static str, String)> {
                 "{MARKER}[Unit]\nDescription=devbox daemon (%i)\nRequires=devbox@%i.socket\nAfter=devbox@%i.socket\n\n[Service]\nType=notify\nEnvironmentFile=-%h/.config/devbox/%i/env\nEnvironment=DEVBOX_INSTANCE=%i\nExecStart=%h/.local/share/devbox/bin/devbox daemon\nRestart=on-failure\nRestartSec=1\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n"
             ),
         ),
+        (
+            "devbox-tmux@.service",
+            format!(
+                "{MARKER}[Unit]\nDescription=devbox tmux server (%i)\n\n[Service]\nType=exec\nEnvironmentFile=-%h/.config/devbox/%i/env\nUnsetEnvironment=TMUX TMUX_TMPDIR\nExecStart=/usr/bin/env tmux -D -L devbox-%i -f %h/.config/devbox/%i/tmux.conf\nExecStop=/usr/bin/env tmux -L devbox-%i kill-server\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
+            ),
+        ),
     ]
 }
 fn unit_quote(path: &Path) -> Result<String, String> {
@@ -188,14 +194,24 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
         }
         Ok(body)
     })();
+    let body = body?;
+    let environment = body
+        .lines()
+        .filter(|line| line.starts_with("Environment="))
+        .collect::<Vec<_>>()
+        .join("\n");
     units.push((
         format!("devbox@{}.service.d/paths.conf", paths.instance.as_str()),
-        body?,
+        body,
     ));
     let socket = raw_unit_path(&paths.socket)?;
     units.push((
         format!("devbox@{}.socket.d/paths.conf", paths.instance.as_str()),
         format!("{MARKER}[Socket]\nListenStream=\nListenStream={socket}\n"),
+    ));
+    units.push((
+        format!("devbox-tmux@{}.service.d/paths.conf", paths.instance.as_str()),
+        format!("{MARKER}[Service]\nEnvironmentFile=\nEnvironmentFile={}\nExecStart=\nExecStart=:/usr/bin/env tmux -D -L devbox-%i -f {}\n{environment}\n", raw_unit_path(&paths.instance_config_dir.join("env"))?, unit_quote(&paths.instance_config_dir.join("tmux.conf"))?),
     ));
     Ok(units)
 }
@@ -302,6 +318,12 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                 Err(e) => Err(e),
             },
             "units" => instance_units(paths).and_then(|units| {
+                publish(
+                    &paths.instance_config_dir.join("tmux.conf"),
+                    devbox_terminal::TMUX_CONF,
+                    true,
+                )
+                .map_err(|error| error.to_string())?;
                 units
                     .iter()
                     .try_for_each(|(name, body)| {
@@ -326,6 +348,7 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                         "--now",
                         &format!("devbox@{}.socket", paths.instance.as_str()),
                         &format!("devbox@{}.service", paths.instance.as_str()),
+                        &format!("devbox-tmux@{}.service", paths.instance.as_str()),
                     ],
                 )
                 .await

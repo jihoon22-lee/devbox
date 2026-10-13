@@ -1,0 +1,23 @@
+[package]
+name = "devbox-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+devbox-core.workspace = true
+devbox-projects.workspace = true
+devbox-protocol.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+ts-rs.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

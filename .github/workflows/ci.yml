@@ -52,6 +52,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
         with: { components: "clippy, rustfmt" }
       - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y tmux
       - run: command -v systemd-analyze
       - run: python3 scripts/verify-resources.py -- python3 -m unittest discover -s scripts/tests
       - run: python3 scripts/verify-resources.py -- cargo fmt --all --check

@@ -36,3 +36,20 @@ pub use paths::{Env, Instance, OsEnv, Paths};
 
 pub mod db;
 pub use db::{Db, Migration, current_rev};
+
+/// Quote one shell argument, including literal quotes, whitespace and newlines.
+pub fn sh_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod shell_tests {
+    #[test]
+    fn sh_quote_preserves_literal_shell_characters() {
+        assert_eq!(super::sh_quote("a b"), "'a b'");
+        assert_eq!(super::sh_quote("it's"), "'it'\\''s'");
+        assert_eq!(super::sh_quote("$HOME\nnext"), "'$HOME\nnext'");
+    }
+}
+
+mod sql_enum;

@@ -11,5 +11,6 @@ pub struct Services {
     pub started_ms: i64,
     pub db: Db,
     pub hub: Arc<Hub>,
-    pub projects: ProjectsService,
+    pub projects: Arc<ProjectsService>,
+    pub terminal: devbox_terminal::TerminalService,
 }

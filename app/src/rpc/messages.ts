@@ -18,6 +18,19 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "시험용 스트림을 열 수 없습니다.",
     action: "시험 인스턴스의 연결 상태를 확인해 주세요.",
   },
+  "terminal.not_found": { title: "터미널을 찾을 수 없습니다.", action: "목록을 새로 확인해 주세요." },
+  "terminal.project_not_found": {
+    title: "터미널의 프로젝트를 찾을 수 없습니다.",
+    action: "프로젝트를 다시 선택해 주세요.",
+  },
+  "terminal.cwd_invalid": {
+    title: "터미널 시작 폴더를 열 수 없습니다.",
+    action: "WSL 안의 폴더 경로를 확인해 주세요.",
+  },
+  "terminal.tmux_failed": {
+    title: "터미널 세션을 준비하지 못했습니다.",
+    action: "tmux 설치와 연결 상태를 확인해 주세요.",
+  },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,

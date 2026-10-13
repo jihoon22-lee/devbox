@@ -20,7 +20,7 @@ fn now_ms() -> i64 {
 }
 
 fn migrations() -> Vec<devbox_core::Migration> {
-    devbox_projects::MIGRATIONS.to_vec()
+    [devbox_projects::MIGRATIONS, devbox_terminal::MIGRATIONS].concat()
 }
 
 pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
@@ -33,11 +33,18 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         &migrations(),
     )?;
     let hub = Arc::new(Hub::new());
-    let projects = devbox_projects::ProjectsService::new(
+    let projects = Arc::new(devbox_projects::ProjectsService::new(
         db.clone(),
         hub.clone(),
         paths.home.clone(),
         config.projects.roots.clone(),
+    ));
+    let terminal = devbox_terminal::TerminalService::new(
+        db.clone(),
+        hub.clone(),
+        paths.clone(),
+        projects.clone(),
+        config.terminal,
     );
     Ok(Arc::new(Services {
         version: crate::VERSION,
@@ -48,6 +55,7 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         db,
         hub,
         projects,
+        terminal,
     }))
 }
 
