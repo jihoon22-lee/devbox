@@ -235,7 +235,7 @@ mod tests {
         devbox_agents::export(&mut exporter);
         exporter.visit::<devbox_agents::ReviewExpect>();
         let out = exporter.render().expect("agent declarations render");
-        assert!(out.contains("export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, };"));
+        assert!(out.contains("export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };"));
         assert!(out.contains("expect: ReviewExpect & { baseOid: string }"));
         assert!(out.contains("expect: ReviewExpect & { unmergedCommits: number }"));
     }

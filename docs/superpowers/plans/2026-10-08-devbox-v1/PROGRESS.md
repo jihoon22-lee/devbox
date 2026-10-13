@@ -247,6 +247,8 @@ PR #640 승인된 신뢰 확인 추가(2026-10-14): 프로젝트 정규 경로·
 
 신뢰 확인 영향 E2E: 시작 구성의 승인 취소→자원0→설정 변경 stale→명시적 재승인→터미널 탭 흐름은3.7초 PASS. 에이전트 생성→입력 대기→추가 지시→검토→병합 검사는 세션이 모두 닫힌 소유 tmux 서버의 `list-panes: no current target` 정리 오류로 실패했다. 정확한 빈 서버 응답만 허용하고 해당 소유 서버 종료는 계속 수행하며 다른 조회/종료 오류는 보존하도록 수정했다. helper RED1→관련8개 GREEN 및 두 파일 독립 검토 PASS, 실패했던 실제 에이전트 E2E만 재실행해4.0초 PASS(감독5.874초, cgroup peak920,928,256byte). 통과한 시작 구성과 다른 E2E는 반복하지 않았다. 원래 실패 trace·로그는 trust-first-e2e-test-results·trust-affected-e2e.log, 수정 근거는 empty-tmux-{red,green}.log·trust-agent-e2e-recheck.log에 보존한다.
 
+후속 CI `ca761e47`의 Frontend·전체 E2E는 PASS였으나 Linux Rust는 생성 타입 계약 테스트 한 건에서 FAIL이었다([run38424217215](https://github.com/jihoon22-lee/devbox/actions/runs/38424217215)). 실제 생성 타입에는 이미 `discardFingerprint?: string`이 있었고 xtask의 기대 문자열만 이전 형태였다. 해당 필드를 기대값에 추가하되 head/base/unmerged 필수 확인은 유지했다. 직접1개 재검증 PASS(2.911초 감독), 한 줄 독립 검토 PASS이며 제품·생성물은 변경하지 않았다. 원본 실패는 ca761e47-ci-failed.log, 후속은 export-contract-green.log에 보존한다. 새 최종 SHA의 필수 CI·자동 리뷰와 Windows 설치본 확인은 다시 수행한다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.
