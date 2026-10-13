@@ -12,7 +12,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 78da672a 필수 CI·Windows 영향 검증 PASS. 해당 SHA 자동 리뷰의 추가 4건을 보완했고, 별도 검토와 새 최종 SHA 수용을 진행 중이다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
+| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 de37f328 필수 CI·E2E·Windows 영향 검증 PASS. 해당 SHA 코드·보안 리뷰의 추가 5건 보완·독립 검토·영향 검증을 마쳤고 새 최종 SHA 수용을 기다린다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
 | 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
@@ -300,6 +300,20 @@ squash 검증 거절(4263419792)은 실제 Git 명령 실패와 구분했다. �
 터미널 목록(4263419786)은 오래된 종료 세션 600개가 약 42MB 응답을 만드는 실패를 재현했다. 명령 입력은 UTF-8 64KiB·NUL 검사를 내부 생성과 시작 구성 전체 사전검증에 공유한다. 실행/저장 원문을 바꾸지 않고 목록에만 256자와 생략 표시를 제공한다. created_ms/id 순서로 256행·실제 JSON 768KiB 이하 페이지를 보내고, 화면은 같은 DB revision의 모든 페이지를 받은 뒤 목록을 게시한다. 커서 반복·revision 변경 3회·취소는 부분 결과를 게시하지 않는다. 프로젝트 요약은 전체 내부 목록을 센다. 터미널 13개·CLI 9개·프론트 14개와 typecheck PASS. 정확한 64KiB Unicode는 순수 입력 검증 경계이며 tmux 자체 인코딩 한계로 실행이 거절될 수 있음을 발견해 기록했다. 실제 Unicode 실행·원문 보존은 더 작은 명령으로 검증했다. 준비 중 fixture 컴파일 오류와 원래 실패 로그를 보존했다. 최종 소스 19개·artifact 27개 hash와 변경 전체를 독립 검토해 PASS(`terminal-command-followup`).
 
 추가 4건 통합 검증: 영향받은 terminal·agents·git·cli all-target Clippy PASS(14.016초, cgroup peak 758,157,312byte). 실제 생성·지시·squash, 대기 작업 선택, 격자 분리 창, 터미널 재시작·scrollback, 분할 창 E2E 5개 PASS(33.5초, 감독 34.487초, cgroup peak 1,559,953,408byte). 최종 소스 독립 검토를 마쳤으며 새 SHA의 CI·자동 리뷰·Windows 설치본 검증은 수용 단계에서 확인한다. 원본 `four-review-final-*.log/resources.json`.
+
+de37f328 수용 결과: CI 38464310718·Windows 38464310589 모두 PASS. 검증된 설치본에서 65,537byte·NUL 명령을 각각 두 번 거부하고 rev 0·자원 없음이 유지됐다. 실제 종료 세션 260개는 256/4행, 329,815/5,175byte의 두 페이지로 조회됐다. Windows 화면에 260개와 Unicode 생략 표시가 모두 보였고 마지막 페이지 세션을 UI 확인으로 종료했다. DB 명령 원문은 보존됐다. 설치 앱의 실제 RPC로 에이전트 기준 반영·정지·재개 시 새 terminal ID·확인 head/base squash·scope/tmux 정지·clean index·작업공간 보존을 확인했다. 정리 eligibility용 소유 ancestry merge는 앞선 검증과 동일하게 별도 기록했다. 소유 Windows/WSL·설치·다운로드 자원 제거, v0.9 보존 PASS. GitHub 다운로드 502와 CDP 출력 제한·메뉴 이벤트·helper 호출 재시도는 도구/fixture 오류로 원본을 보존했다. 원본 `windows-final-de37f328/acceptance.json`. R1/R2·DND 시각 효과는 미실행 유지.
+
+해당 SHA 코드 리뷰는 20:47:53 UTC, 보안 리뷰는 20:51:27 UTC 완료했다. 초기 지시문의 CLI 옵션 해석(4263849190), 모호한 tmux 생성 실패 정리(4263849204), 초기 에이전트 terminal 연결 저장 실패(4263849213), 열린 프로젝트 요약 갱신(4263849217), 신뢰 승인 화면의 Unicode 방향 제어 문자(4263882548) 5건 모두 별도 검토에서 타당하다고 판단했다. PR 하나에서 보완하며 완료 전 머지하지 않는다.
+
+요약 화면은 선택 창이 열린 동안 2초마다 조회한다. 실제 주기의 causal RED → GREEN 10개, 창을 닫은 뒤 2.3초 동안 추가 요청이 없는 것을 확인했다. 기존 공유 project 구독은 변경하지 않았다. 고정 소스 2개·artifact 13개 별도 검토 PASS(`summary-refresh-followup`). 초기 fake timer·fixture 오타 실패는 최종 causal 실패와 구분해 보존했다.
+
+승인 화면은 모든 외부 이름·경로·실행 위치·명령·지시문에 표시 전용 제어 문자 변환을 적용한다. Cc/Cf·줄/문단 구분자는 눈에 보이는 Unicode 표기로, 실제 역슬래시는 이중 표기로 구별한다. LF/tab과 일반 RTL 문자는 유지하며 실행 원문·digest·승인 callback은 바꾸지 않는다. raw bidi가 남는 causal RED → 관련 27개·typecheck·format PASS, 고정 소스 3개·artifact 6개 별도 검토 PASS(`trust-visible-controls-followup`).
+
+tmux 생성 실패는 생성 전 새 UUID의 부재를 확인하고, 응답 오류 시 정확한 UUID만 종료한 뒤 부재를 재확인한다. 타임아웃의 tmux 명령 client는 2초 제한으로 kill/wait를 시도하며 서버나 다른 세션을 종료하지 않는다. 정리가 불확실하면 원래 오류·정리 오류·UUID를 진단에 남긴다. 실제 after-new-session hook으로 서버 생성 뒤 응답만 10초 지연시키는 causal RED → 새 3개·기존 service 5개·명령 경계 1개 PASS, terminal all-target Clippy·fmt PASS. 지원되지 않는 hook을 쓴 초기 fixture와 빈 서버의 no-current-target 실패는 별도 보존했다. 소스 3개·원본 로그/자원 hash 독립 검토 PASS(`windows-final-de37f328/terminal-create-frozen.json`).
+
+초기 Claude/Codex 지시문은 의도한 옵션 뒤의 `--` 다음 argv로 전달한다. 24개 argv 조합과 resume/custom 기존 계약, 설치 CLI parser 근거를 확인했으며 실제 모델을 추가 호출하지 않았다. 초기 준비는 terminal 생성 전에 UUID를 소유하고 생성 오류와 연결 저장 오류 모두 보상 정리한다. 같은 세대만 소유 scope와 terminal을 정지하며, 이후 세대에서는 옛 terminal만 정리한다. 정리 불완료나 세대 교체는 Failed/toolExited로 덮어쓰지 않고 실패 기록도 generation CAS로 제한한다. worktree/ref·teardown 정책은 유지한다. causal argv 1개·초기 준비 2개 실패 → 고유 12개 테스트 PASS(준비 4경우·argv 24조합·실제 daemon/RPC/tmux 2개 포함). scope 오류 주입은 fake systemctl과 소유 HUP 무시 process로 검증한 것으로, 실제 systemd 수용 결과와 구분한다. 통합 Clippy의 큰 오류 타입 경고는 내부 필드 boxing으로 수정하고 준비·부분 checkout 회귀를 재확인했다. 원본 실패·수정 전 freeze와 최종 근거는 `agents-de37-followup`에 보존한다. 최종 소스 5개·로그/자원 17쌍 및 자원 내용 hash 독립 검토 PASS.
+
+추가 5건 통합 검증: agents·cli all-target Clippy PASS(8.429초, cgroup peak 708,505,600byte). terminal all-target Clippy는 같은 동결 소스의 과제 검증 PASS를 사용한다. 실제 에이전트 생성·지시·squash/선택/격자 분리 창, 설정 신뢰 변경·승인 후 시작, 프로젝트 추가/제거/오류 E2E 6개 PASS(감독 30.904초, cgroup peak 1,508,814,848byte). 최종 소스별 검토를 마쳤으며 새 SHA의 CI·자동 리뷰·설치본 영향 검증은 후속 수용 단계다. 원본 `five-de37-final-*.log/resources.json`.
 
 ## 6. 세션 기록
 
