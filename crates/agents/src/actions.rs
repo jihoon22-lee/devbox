@@ -350,6 +350,7 @@ impl AgentsService {
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;
+        crate::limits::pr_title(p.title.as_deref().unwrap_or(&task.title))?;
         let (project, wt, branch) = self.owned_worktree(&task).await?;
         let cleanup_snapshot = if self.cleanup_after_close {
             self.authorize_teardown(&task, &project).await?

@@ -4,6 +4,9 @@ use std::process::{Child, Stdio};
 #[path = "rebase_review_tests.rs"]
 mod rebase_review_tests;
 
+#[path = "pr_title_tests.rs"]
+mod pr_title_tests;
+
 #[test]
 fn review_close_without_git_cleanup_stops_owned_terminal_and_scope() {
     cases(&["merge", "pr"]);
@@ -30,6 +33,10 @@ fn review_close_rechecks_confirmed_state_after_quiesce() {
 }
 
 async fn close_case(mode: &str) {
+    if mode.starts_with("pr-title-") {
+        pr_title_tests::case(mode).await;
+        return;
+    }
     if mode.starts_with("rebase") {
         rebase_review_tests::case(mode).await;
         return;
@@ -263,7 +270,15 @@ esac
         r#"#!/bin/sh
 case "$2" in
  list) exit 0;;
- create) : > "$DEVBOX_CLOSE_GH_MARKER"; printf 'https://example.invalid/pr/1\n';;
+ create) : > "$DEVBOX_CLOSE_GH_MARKER"
+   if [ -n "$DEVBOX_PR_TITLE_RECEIPT" ]; then
+     python3 - "$@" <<'PYTITLE'
+import os,sys,pathlib
+args=sys.argv[1:]
+pathlib.Path(os.environ['DEVBOX_PR_TITLE_RECEIPT']).write_text(args[args.index('--title')+1])
+PYTITLE
+   fi
+   printf 'https://example.invalid/pr/1\n';;
  *) exit 25;;
 esac
 "#,
@@ -277,7 +292,13 @@ esac
         std::env::split_paths(&std::env::var_os("PATH").expect("PATH")),
     ))
     .expect("owned PATH");
-    let test = if modes[0].starts_with("rebase") {
+    let test = if modes[0].starts_with("pr-title-") {
+        if modes[0].ends_with("fails") {
+            "pr_title_tests::pr_titles_reject_before_quiesce_or_push"
+        } else {
+            "pr_title_tests::pr_titles_accept_unicode_boundary_and_default_without_changing_input"
+        }
+    } else if modes[0].starts_with("rebase") {
         if modes[0].ends_with("fails") {
             "rebase_review_tests::rebase_stop_failure_blocks_git_mutation"
         } else if modes[0].contains("-late-") {
@@ -336,6 +357,10 @@ esac
                 "--nocapture",
             ])
             .env(CHILD, mode)
+            .env(
+                "DEVBOX_PR_TITLE_RECEIPT",
+                root.path().join(format!("title-{mode}")),
+            )
             .env("PATH", &path)
             .env("DEVBOX_CLOSE_SCOPE_PID", pid.to_string())
             .env("DEVBOX_CLOSE_SCOPE_MARKER", marker)
@@ -356,6 +381,11 @@ esac
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             ));
+        } else if mode.starts_with("pr-title-") && mode.ends_with("fails") {
+            assert!(
+                owner.scope.try_wait().expect("scope state").is_none(),
+                "rejected title must leave owned process alive"
+            );
         } else if !mode.ends_with("fails") {
             assert!(
                 owner.scope.try_wait().expect("scope state").is_some(),

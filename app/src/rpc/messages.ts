@@ -58,6 +58,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "지시문이나 누적 이력이 너무 큽니다.",
     action: "지시를 줄이거나 새 작업에서 계속하세요.",
   },
+  "agents.pr_title_too_long": {
+    title: "PR 제목이 너무 깁니다.",
+    action: "제목을 UTF-8 기준 64KiB 이내로 줄여 주세요.",
+  },
   "agents.delivery_unknown": {
     title: "지시 전달 결과를 확인할 수 없습니다.",
     action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",

@@ -304,6 +304,7 @@ domain_error! {
         SessionMissing = "agents.session_missing",
         SessionMetadata { diagnostic: crate::tracker::Diagnostic } = "agents.session_metadata",
         InputTooLarge { limit_bytes: u32 } = "agents.input_too_large",
+        PrTitleTooLong { limit_bytes: u32 } = "agents.pr_title_too_long",
         DeliveryUnknown = "agents.delivery_unknown",
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",
