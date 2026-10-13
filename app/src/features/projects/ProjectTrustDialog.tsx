@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { Methods } from "../../rpc/gen/rpc";
 import { Button, Dialog } from "../../ui";
 import s from "./ProjectTrust.module.css";
+import { visibleTrustText } from "./visibleTrustText";
 
 type Preview = Methods["projects.trust_preview"]["result"];
 export function ProjectTrustDialog({
@@ -48,19 +49,24 @@ export function ProjectTrustDialog({
       {pending && <p role="status">명령 설정을 확인하는 중…</p>}
       {preview && config && (
         <div className={s.preview}>
+          <p>
+            {
+              "방향 제어 문자 등 보이지 않는 제어 문자는 \u005cuXXXX로, 역슬래시는 \u005c\u005c로 표시합니다. 실행할 원문은 바뀌지 않습니다."
+            }
+          </p>
           <dl className={s.paths}>
             <dt>프로젝트</dt>
-            <dd>{preview.projectName}</dd>
+            <dd>{visibleTrustText(preview.projectName)}</dd>
             <dt>프로젝트 경로</dt>
-            <dd>{preview.canonicalPath}</dd>
+            <dd>{visibleTrustText(preview.canonicalPath)}</dd>
             <dt>설정 파일</dt>
-            <dd>{preview.configPath}</dd>
+            <dd>{visibleTrustText(preview.configPath)}</dd>
           </dl>
           <section aria-label="실행 위치">
             <h3>실행 위치</h3>
             <ul>
               {preview.executionDirectories.map((path) => (
-                <li key={path}>{path}</li>
+                <li key={path}>{visibleTrustText(path)}</li>
               ))}
             </ul>
           </section>
@@ -74,9 +80,9 @@ export function ProjectTrustDialog({
               config.launch.terminals.map((terminal, index) => (
                 <div key={`${terminal.name}:${index}`}>
                   <p>
-                    {terminal.name} · 실행 위치: {preview.canonicalPath}
+                    {visibleTrustText(terminal.name)} · 실행 위치: {visibleTrustText(preview.canonicalPath)}
                   </p>
-                  <pre>{terminal.command ?? "기본 셸"}</pre>
+                  <pre>{visibleTrustText(terminal.command ?? "기본 셸")}</pre>
                 </div>
               ))
             ) : (
@@ -89,15 +95,16 @@ export function ProjectTrustDialog({
               config.launch.agents.map((agent, index) => (
                 <div key={`${agent.tool}:${index}`}>
                   <p>
-                    도구: {agent.tool} · {agent.worktree ? "작업 폴더 만들기" : "현재 체크아웃에서 실행"}
+                    도구: {visibleTrustText(agent.tool)} ·{" "}
+                    {agent.worktree ? "작업 폴더 만들기" : "현재 체크아웃에서 실행"}
                   </p>
                   <p>
                     실행 위치:{" "}
                     {agent.worktree
-                      ? `${preview.canonicalPath}-agents/<새 작업 폴더> (생성할 때 이름 확정)`
-                      : preview.canonicalPath}
+                      ? `${visibleTrustText(preview.canonicalPath)}-agents/<새 작업 폴더> (생성할 때 이름 확정)`
+                      : visibleTrustText(preview.canonicalPath)}
                   </p>
-                  <pre>{agent.prompt ?? "지시문 없음"}</pre>
+                  <pre>{visibleTrustText(agent.prompt ?? "지시문 없음")}</pre>
                 </div>
               ))
             ) : (
@@ -116,7 +123,7 @@ function Commands({ label, commands }: { label: string; commands: string[] }) {
     <section aria-label={label}>
       <h3>{label}</h3>
       {commands.length ? (
-        commands.map((command, index) => <pre key={`${index}:${command}`}>{command}</pre>)
+        commands.map((command, index) => <pre key={`${index}:${command}`}>{visibleTrustText(command)}</pre>)
       ) : (
         <p>없음</p>
       )}
