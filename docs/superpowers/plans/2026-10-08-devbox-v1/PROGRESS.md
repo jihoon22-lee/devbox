@@ -267,6 +267,8 @@ PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전�
 
 리뷰4262016027 종료 정지 보완: Git 자동 정리를 꺼도 merge/PR의 비가역 변경 전에 정확한 소유 터미널·scope를 항상 정지한다. 정지 실패는 병합·push·PR보다 먼저 실패하고, 정지 뒤 소유권·확인한 head/base/branch·clean 상태를 다시 확인한다. 자동 정리는 이미 성공한 정지를 중복 실행하지 않으며, 설정을 끄면 작업 폴더·브랜치를 남기고 저장소 teardown을 실행하지 않는다. 최초3개 RED 뒤 새4개10시나리오와 기존 직접4·실제 CLI2·종료 usage 고정1의 고유11개 및 소유 포맷 PASS, 고정4파일 별도 검토 PASS. scope 실패/정지 중 HEAD·dirty 변경·이미 종료된 자원·SIGHUP을 무시하는 소유 프로세스를 포함한다. mock scope 근거와 실제 Windows/systemd 수용을 구분하며 후자는 최종 설치본에서 확인한다. 근거 agents-close-quiesce-evidence.json·freeze·independent-sol-review.json.
 
+리뷰4262016019 Codex 조회 보완: 도구 종료 감시는250ms를 유지하고, Codex 배경 metadata fallback만 작업별 최대2초에 한 번 수행한다. 검증된 rollout의 경로·실행 세대·thread·크기·수정 시각·파일 identity가 같으면 본문을 다시 읽지 않는다. 실패/DB 저장 실패는 다음 조회에서 재시도하며, 명시적 완료 알림·resume은 캐시를 우회해 기존 직접 읽기와3회 제한 재시도를 유지한다. 최초5개 중3개 RED 뒤 새5·기존 tracker7·correlation7·CLI usage2·실제 RPC notify1의 고유22개와 포맷 PASS. 실제 RPC는 기존 background 대기2초가 새2초 주기와 겹쳐 최초 실패했으며 해당 전환의 대기만5초로 바꿔 통과했다. 즉시 notify·stale/current turn 검증은 유지했고 실패 원본을 보존했다. 소스5파일 고정 해시·원본 근거의 별도 검토 PASS. 근거 tracker-poll-followup/evidence.json·final.patch·원본 명령/출력/자원 기록.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

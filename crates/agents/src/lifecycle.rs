@@ -6,9 +6,31 @@ use crate::{
     tracker::{self, Binding},
 };
 use devbox_protocol::{Fail, Internal};
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Instant,
+};
 impl AgentsService {
     pub(crate) async fn refresh_binding(&self, task: &AgentTask, retry: bool) -> Result<Binding> {
+        // Completion candidates and resume must always verify current metadata;
+        // only the background lifecycle fallback supplies polling state.
+        self.refresh_binding_inner(task, retry, None)
+            .await?
+            .ok_or_else(|| {
+                AgentsError::SessionMetadata {
+                    diagnostic: tracker::Diagnostic::Missing,
+                }
+                .into()
+            })
+    }
+
+    async fn refresh_binding_inner(
+        &self,
+        task: &AgentTask,
+        retry: bool,
+        mut poll: Option<&mut tracker::Poll>,
+    ) -> Result<Option<Binding>> {
         let id = task.id.clone();
         let old = self
             .db
@@ -20,12 +42,22 @@ impl AgentsService {
         let mut last = tracker::Diagnostic::Missing;
         for attempt in 0..if retry { 3 } else { 1 } {
             let (root, workdir, binding) = (root.clone(), task.workdir.clone(), old.clone());
-            let result =
-                tokio::task::spawn_blocking(move || tracker::refresh(&root, &workdir, &binding))
-                    .await
-                    .internal("read Codex metadata")?;
+            let polling = poll.as_deref_mut().map(std::mem::take);
+            let (polling, result) = tokio::task::spawn_blocking(move || match polling {
+                Some(mut state) => {
+                    let result = state.refresh(Instant::now(), &root, &workdir, &binding);
+                    (Some(state), result)
+                }
+                None => (None, tracker::refresh(&root, &workdir, &binding).map(Some)),
+            })
+            .await
+            .internal("read Codex metadata")?;
+            if let (Some(target), Some(state)) = (poll.as_deref_mut(), polling) {
+                *target = state;
+            }
             match result {
-                Ok(binding) => {
+                Ok(None) => return Ok(None),
+                Ok(Some(binding)) => {
                     let id = task.id.clone();
                     let saved = binding.clone();
                     let hub = self.hub.clone();
@@ -95,7 +127,7 @@ impl AgentsService {
                         )
                         .await
                         .internal("save Codex binding")?;
-                    return Ok(binding);
+                    return Ok(Some(binding));
                 }
                 Err(d) => last = d,
             }
@@ -144,6 +176,7 @@ impl AgentsService {
         let svc = self.clone();
         self.background.spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+            let mut polls: HashMap<String, tracker::Poll> = HashMap::new();
             loop {
                 tokio::select! {
                     _=svc.stop.cancelled()=>break,
@@ -152,6 +185,7 @@ impl AgentsService {
                 let Ok(tasks) = svc.all_tasks(None).await else {
                     continue;
                 };
+                let mut active = HashSet::new();
                 for task in tasks {
                     if !task.tool_exited && svc.recover_tool_exit(&task.id).await.unwrap_or(false) {
                         continue;
@@ -164,11 +198,20 @@ impl AgentsService {
                             task.state,
                             AgentState::Running | AgentState::Waiting | AgentState::Idle
                         )
-                        && let Err(error) = svc.refresh_binding(&task, false).await
                     {
-                        tracing::debug!(?error,agent=%task.id,"Codex lifecycle metadata pending");
+                        active.insert(task.id.clone());
+                        let poll = polls.entry(task.id.clone()).or_default();
+                        if poll.due(Instant::now())
+                            && let Err(error) = svc.refresh_binding_inner(&task, false, Some(poll)).await
+                        {
+                            // A successful read whose DB publication failed must be
+                            // retried even if its file stayed unchanged.
+                            poll.invalidate();
+                            tracing::debug!(?error,agent=%task.id,"Codex lifecycle metadata pending");
+                        }
                     }
                 }
+                polls.retain(|id, _| active.contains(id));
             }
         });
         Ok(())
