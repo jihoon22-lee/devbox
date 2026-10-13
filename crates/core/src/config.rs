@@ -9,6 +9,7 @@ pub struct Config {
     pub pc: PcConfig,
     pub terminal: TerminalConfig,
     pub agents: AgentsConfig,
+    pub mcp: McpConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -51,6 +52,12 @@ pub struct AgentsConfig {
     pub cleanup_after_close: Option<bool>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct McpConfig {
+    pub write: bool,
+}
+
 fn config_error(path: &Path, message: impl ToString) -> CoreError {
     CoreError::Config {
         path: path.display().to_string(),
@@ -73,7 +80,7 @@ fn read_table(path: &Path) -> Result<toml::Table, CoreError> {
         .parse::<toml::Table>()
         .map_err(|error| config_error(path, error))?;
     // Serde structs also accept positional sequences; TOML sections must be tables.
-    for section in ["projects", "pc", "terminal", "agents"] {
+    for section in ["projects", "pc", "terminal", "agents", "mcp"] {
         if table.get(section).is_some_and(|value| !value.is_table()) {
             return Err(config_error(path, format!("{section} must be a table")));
         }
@@ -349,6 +356,39 @@ mod tests {
         );
         assert!(Config::load(&paths).is_err());
     }
+    #[test]
+    fn mcp_write_defaults_false_and_local_can_disable_shared_permission() {
+        let temp = tempfile::tempdir().expect("owned home");
+        let paths = paths_in(temp.path());
+        assert!(!Config::load(&paths).unwrap().mcp.write);
+        write(&paths, "config.toml", "[mcp]\nwrite=true\n");
+        assert!(Config::load(&paths).unwrap().mcp.write);
+        write(&paths, "config.local.toml", "[mcp]\nwrite=false\n");
+        assert!(!Config::load(&paths).unwrap().mcp.write);
+    }
+
+    #[test]
+    fn invalid_mcp_sections_are_rejected_before_local_overrides() {
+        for file in ["config.toml", "config.local.toml"] {
+            for input in [
+                "mcp=[]",
+                "mcp=[true]",
+                "mcp=true",
+                "[mcp]\nwrite='true'",
+                "[mcp]\nunknown=true",
+            ] {
+                let temp = tempfile::tempdir().expect("owned home");
+                let paths = paths_in(temp.path());
+                write(&paths, "config.local.toml", "[mcp]\nwrite=false\n");
+                write(&paths, file, input);
+                assert!(
+                    matches!(Config::load(&paths), Err(CoreError::Config { path, .. }) if path == paths.config_dir.join(file).display().to_string()),
+                    "{input}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn agents_sections_are_strict_and_profiles_override_as_a_list() {
         let temp = tempfile::tempdir().expect("owned home");

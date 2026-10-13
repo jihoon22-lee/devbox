@@ -21,6 +21,8 @@ enum Cmd {
     },
     /// stdin/stdout을 데몬 소켓에 잇는다(Windows 앱이 wsl.exe로 실행).
     Bridge,
+    /// 코딩 에이전트에 프로젝트·작업 도구를 제공하는 MCP stdio 서버.
+    Mcp,
     /// 개발·E2E용 WebSocket gateway.
     DevGateway {
         #[arg(long, default_value_t = 1451)]
@@ -76,6 +78,7 @@ fn main() -> anyhow::Result<()> {
         match cli.cmd {
             Cmd::Daemon { foreground } => devbox_cli::daemon::run(foreground).await,
             Cmd::Bridge => devbox_cli::bridge::run().await,
+            Cmd::Mcp => devbox_cli::mcp::run().await,
             Cmd::DevGateway {
                 port,
                 origin,

@@ -3214,7 +3214,7 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(projects): read .dev
     - `devbox_projects`(읽기): 프로젝트 목록
     - `devbox_agents`(읽기): 열린 에이전트 작업과 상태·주의 메시지
     - `devbox_agent_send`(쓰기): `[mcp] write = true`일 때만 목록에 나온다. 다른 에이전트 작업에 지시를 보낸다.
-  - 결과는 `content: [{ type: "text", text: <JSON 문자열> }]`이다. 오류는 `isError: true`와 한국어 문구다.
+  - 결과는 `content: [{ type: "text", text: <JSON 문자열> }]`이다. 도구 실행 오류는 `isError: true`와 한국어 문구다. 존재하지 않는 도구·잘못된 인자는 JSON-RPC `-32602` 오류로 구별한다.
   - S2·S3이 실행·로그·노트 도구를 덧붙인다(같은 표에 행 추가).
 
 - [ ] **Step 1: 실패하는 테스트**
@@ -3248,48 +3248,20 @@ fn mcp_lists_read_tools_and_calls_projects() {
     let r = call(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"devbox_projects","arguments":{}}}));
     assert_eq!(r["result"]["content"][0]["type"], "text");
     let _ = child.kill();
+    let _ = child.wait();
 }
 ```
 
 - [ ] **Step 2: 구현 요점**
 
-```rust
-// crates/cli/src/mcp.rs (요점)
-pub async fn run() -> anyhow::Result<()> {
-    let paths = crate::paths()?;
-    let config = devbox_core::Config::load(&paths)?;
-    let client = crate::client::Client::connect(&paths.socket, devbox_protocol::message::ClientKind::Mcp, paths.instance.as_str()).await?;
-    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut lines = tokio::io::AsyncBufReadExt::lines(stdin);
-    let mut stdout = tokio::io::stdout();
-    while let Some(line) = lines.next_line().await? {
-        let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
-        let Some(id) = msg.get("id").cloned() else { continue }; // 알림은 응답하지 않는다
-        let result = match msg["method"].as_str().unwrap_or("") {
-            "initialize" => Ok(serde_json::json!({
-                "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
-                "capabilities": { "tools": {} },
-                "serverInfo": { "name": "devbox", "version": crate::VERSION }
-            })),
-            "tools/list" => Ok(serde_json::json!({ "tools": tools(config.mcp.write) })),
-            "tools/call" => call_tool(&client, &config, &msg["params"]).await,
-            other => Err(format!("unknown method {other}")),
-        };
-        let reply = match result {
-            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": r }),
-            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": e } }),
-        };
-        use tokio::io::AsyncWriteExt;
-        stdout.write_all(format!("{reply}\n").as_bytes()).await?;
-        stdout.flush().await?;
-    }
-    Ok(())
-}
-```
+외부 JSON-RPC 봉투·요청 ID·도구 schema·결과·오류는 명시적 타입을 사용한다. `RawValue`는 ID와 중계 JSON에만 사용하며 현재 CONVENTIONS의 경계 규칙을 따른다. 정수·문자열 ID를 그대로 돌려주고 `null` ID는 잘못된 요청으로 거절한다. ID가 없는 알림에는 응답하지 않으며 `tools/call` 같은 요청 전용 기능을 실행하지 않는다.
 
-- `tools(write)`는 이름·설명(한국어)·`inputSchema`(JSON Schema)를 가진 목록이다.
-- `call_tool`은 도구 이름으로 `projects.list`·`agents.list`·`agents.send`를 부른다. 결과 JSON을 `content[0].text`에 담고, RPC 오류는 `messageFor`와 같은 뜻의 한국어로 `isError: true`를 붙인다.
-- MCP는 외부 JSON-RPC 프로토콜이라 `serde_json::Value`를 쓴다(RPC 경계 규칙의 예외. 데몬 RPC 경계가 아님).
+- `[mcp] write`는 기본 `false`다. 공유·로컬 설정을 병합하기 전에 각 파일의 `mcp` 절이 table이고 알려진 키만 갖는지 검사한다. `mcp = [true]` 같은 위치 기반 배열이 쓰기를 켜서는 안 된다.
+- 초기화·도구 목록은 데몬 연결 없이 제공한다. 실제 도구 호출 때 `ClientKind::Mcp`로 연결하며 연결·RPC에 제한 시간을 둔다. 수용 여부가 불분명한 지시는 자동 재전송하지 않는다.
+- stdio는 한 줄당 메시지 하나이며 입력 크기와 대기열을 제한한다. 잘못된 JSON·요청·메서드·입력값을 구별하고, 잘못된 한 줄 뒤에도 다음 요청을 처리한다. EOF에서 종료하고 stdout에는 프로토콜 응답만 쓴다.
+- `tools(write)`는 이름·한국어 설명·객체형 `inputSchema` 목록이다. 표준 `_meta` 입력을 허용한다.
+- `call_tool`은 `projects.list`·`agents.list`·`agents.send`를 호출한다. 열린 작업은 `Closed`를 명시적으로 제외하며, 쓰기 도구의 직접 호출에서도 설정을 검사한다. 성공은 JSON 문자열을 `content[0].text`에 넣고, 실행 오류는 한국어 문구와 `isError: true`로 반환한다. 존재하지 않는 도구는 [도구 오류 규격](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#error-handling)에 따라 `-32602`로 반환한다.
+- 요청 ID와 알림의 구분은 [MCP 2025-06-18 기본 규격](https://modelcontextprotocol.io/specification/2025-06-18/basic)을 따른다. `protocolVersion` 응답은 위 인터페이스대로 클라이언트 값을 유지한다.
 - Claude Code 등록 예시를 `README.md`의 "개발" 절에 한 줄로 적는다: `claude mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`.
 
 - [ ] **Step 3: 통과·커밋·묶음 J 끝**
