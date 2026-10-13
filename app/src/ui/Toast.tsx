@@ -8,6 +8,7 @@ export interface ToastInput {
   title: string;
   body?: string;
   undo?: () => void;
+  action?: { label: string; run: () => void };
 }
 interface Toast extends ToastInput {
   id: number;
@@ -69,6 +70,11 @@ export function ToastHost() {
               <strong>{item.title}</strong>
               {item.body && <span>{item.body}</span>}
             </div>
+            {item.action && (
+              <Button size="sm" variant="ghost" onClick={item.action.run}>
+                {item.action.label}
+              </Button>
+            )}
             {item.undo && (
               <Button size="sm" variant="ghost" onClick={() => undo(item.id)}>
                 되돌리기

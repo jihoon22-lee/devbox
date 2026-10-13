@@ -2,7 +2,16 @@ import { createContext, type ReactNode, useContext } from "react";
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
 import { useVisibleClock } from "../../shell/visibility";
 import { attentionCount, groupByUrgency, hookMissing } from "./model";
-export const AGENT_KEYS = [["agents.list", { includeClosedHours: 24 }], ["agents.git_stats", {}], ["agents.get"]];
+export const AGENT_KEYS = [
+  ["agents.list", { includeClosedHours: 24 }],
+  ["agents.git_stats", {}],
+  ["agents.get"],
+  ["agents.changes"],
+  ["agents.commits"],
+  ["agents.patch"],
+  ["agents.usage"],
+  ["agents.discard_check"],
+];
 const Context = createContext<ReturnType<typeof useSharedAgents> | null>(null);
 function useSharedAgents() {
   const list = useRpcQuery("agents.list", { includeClosedHours: 24 });

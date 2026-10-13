@@ -2,7 +2,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { SectionLayout } from "../../shell/SectionLayout";
 import { Banner, Button, EmptyState, Kbd } from "../../ui";
 import { AgentList } from "./AgentList";
-import { AgentPreview } from "./AgentPreview";
+import { AgentDetail } from "./detail/AgentDetail";
 import { useAgentsData } from "./hooks";
 import { useAgentsUi } from "./ui";
 export function agentsSearch(search: Record<string, unknown>) {
@@ -82,7 +82,7 @@ export function AgentsPage() {
           }
         />
       ) : id ? (
-        <AgentPreview key={id} id={id} />
+        <AgentDetail key={id} id={id} data={data} />
       ) : (
         <EmptyState title="에이전트 작업을 고르세요" body="입력을 기다리는 작업이 위에 모입니다." />
       )}

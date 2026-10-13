@@ -5,9 +5,9 @@ import { useRpcMutation, useRpcQuery, useTopicInvalidation } from "../../rpc/que
 
 export type Session = Methods["terminal.create"]["result"];
 export type NewSession = Methods["terminal.create"]["params"];
-export function useSessions(projectId: string | null) {
+export function useSessions(projectId: string | null, options: { enabled?: boolean } = {}) {
   const params = { projectId };
-  const query = useRpcQuery("terminal.list", params);
+  const query = useRpcQuery("terminal.list", params, options);
   useTopicInvalidation("terminal.changed", [["terminal.list", params]]);
   const items = useMemo(
     () => query.data?.items.filter((session) => session.projectId === projectId) ?? [],

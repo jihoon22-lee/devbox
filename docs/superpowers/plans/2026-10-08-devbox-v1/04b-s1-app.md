@@ -1827,6 +1827,8 @@ git add app/src && git commit -m "feat(app): list agent tasks by urgency and cre
 
 ### Task 18: 에이전트 상세 — 머리줄·동작·탭·지시 작성
 
+실제 구현 보정: 목록과 상세는 동일한 에이전트 데이터를 공유하고, 분리 창은 별도 관찰자 하나를 사용한다. 세션 조회 전·오류 상태와 확인된 종료를 구분한다. diff는 hunk 길이·Git C-quoted UTF-8 경로·바이너리·메타데이터·절단을 처리하며 파일별 선택 범위를 격리한다. IME 전송은 최종 DOM 값을 한 번 보내고, 작업별 초안 revision으로 화면을 떠난 뒤 완료와 새 초안 보존을 함께 처리한다. 병합·PR·폐기는 표시한 확인 상태를 고정한다. 상태 불일치 시 해당 작업의 변경·커밋·patch 캐시를 함께 무효화하고 활성 조회가 모두 성공해야 새 확인을 허용한다. 실패는 명시적 재조회, 실행은 두 번째 확인을 요구한다. 머리줄은 Task17의 원시 `TokenMetrics`를 재사용한다. 아래 예제보다 실제 typed API와 회귀 테스트를 우선한다.
+
 **Files:**
 - Create: `app/src/features/agents/detail/{AgentDetail,AgentHeader,AgentActions,ChangesTab,CommitsTab,RunTab,Compose,seen,quote}.tsx|ts`
 - Create: `app/src/ui/DiffView.tsx`, `app/src/ui/DiffView.module.css`, `app/src/ui/diff.ts`
@@ -1849,7 +1851,7 @@ git add app/src && git commit -m "feat(app): list agent tasks by urgency and cre
     - worktree 없는 작업은 [기준 반영]·[병합▾]·[PR]을 숨기고, 폐기 대신 [세션 끝내기]다.
     - 닫힌 작업은 버튼이 없다.
 
-- [ ] **Step 1: 실패하는 테스트 — diff 해석**
+- [x] **Step 1: 실패하는 테스트 — diff 해석**
 
 ```ts
 // app/src/ui/diff.test.ts
@@ -1889,7 +1891,7 @@ test("new files from /dev/null and binary files", () => {
 });
 ```
 
-- [ ] **Step 2: 실패하는 테스트 — 지시 작성(IME)과 폐기 확인**
+- [x] **Step 2: 실패하는 테스트 — 지시 작성(IME)과 폐기 확인**
 
 ```tsx
 // app/src/features/agents/detail/Compose.test.tsx
@@ -1972,9 +1974,9 @@ test("a lost session offers resume instead of instructing", () => {
 
 `app/src/test/fakeClient.ts`로 S0b `ProjectSwitcher.test.tsx`의 `fakeClient`를 옮겨 공용으로 쓴다(그 테스트도 이 파일을 쓰게 바꾼다). 옮길 때 값이 `RpcError`이면 reject하도록 한 줄을 더한다: `call: vi.fn((method: string) => calls[method] instanceof RpcError ? Promise.reject(calls[method]) : Promise.resolve(calls[method]))`.
 
-- [ ] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/ui/diff.test.ts src/features/agents/detail`
+- [x] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/ui/diff.test.ts src/features/agents/detail`
 
-- [ ] **Step 4: 구현 — diff.ts**
+- [x] **Step 4: 구현 — diff.ts**
 
 ```ts
 // app/src/ui/diff.ts
@@ -2028,7 +2030,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
 
 새 파일 diff(`@@ -0,0 +1 @@`)는 `n`이 1부터 시작하므로 위 규칙 그대로 맞는다.
 
-- [ ] **Step 5: 구현 — Compose·동작·탭**
+- [x] **Step 5: 구현 — Compose·동작·탭**
 
 ```tsx
 // app/src/features/agents/detail/Compose.tsx
@@ -2143,7 +2145,7 @@ export function quoteForPrompt(path: string, r: { side: "old" | "new"; from: num
 
 `agents.changed` 이벤트가 오면 `agents.get{id}`·`agents.changes{id}`·`agents.commits{id}`를 무효화한다(`useTopicInvalidation`).
 
-- [ ] **Step 6: 통과·커밋**
+- [x] **Step 6: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/ui src/features/agents && pnpm --filter app typecheck

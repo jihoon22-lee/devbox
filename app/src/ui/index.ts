@@ -3,6 +3,7 @@ export { Banner } from "./Banner";
 export { Button } from "./Button";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { Dialog } from "./Dialog";
+export { DiffView } from "./DiffView";
 export { EmptyState } from "./EmptyState";
 export { ErrorState } from "./ErrorState";
 export { IconButton } from "./IconButton";

@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { profiles, task } from "../features/agents/test-fixtures";
+import { useAgentsUi } from "../features/agents/ui";
 import { ProjectWire, projects } from "../features/projects/test-wire";
 import { RpcProvider } from "../rpc/RpcProvider";
 import { TooltipProvider } from "../ui";
@@ -11,6 +12,7 @@ import { Shell } from "./Shell";
 vi.mock("../features/terminal/TerminalView", () => ({ TerminalView: () => <div /> }));
 
 async function setup(path: string) {
+  useAgentsUi.getState().setCreating(false);
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
   useLayout.setState({ listCollapsed: false, bottomOpen: false });
@@ -118,7 +120,7 @@ test("confirmed new selection survives stale list and a failed refresh", async (
   await act(async () => wire.fail("agents.list"));
   await waitFor(() => expect(window.location.search).toContain("id=new"));
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(await screen.findByRole("article", { name: "에이전트 작업 미리보기" })).toHaveTextContent("New task");
+  expect(await screen.findByRole("article", { name: "에이전트 작업 상세" })).toHaveTextContent("New task");
   expect(screen.queryByRole("button", { name: "작업 new" })).toBeNull();
   expect(window.location.search).toContain("gateway=");
 });
@@ -130,4 +132,87 @@ test("new command from palette keeps the created dialog input focused", async ()
   await userEvent.keyboard("{Enter}");
   expect(await screen.findByLabelText("제목")).toHaveFocus();
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
+});
+
+test("detail uses live terminal status despite missing CLI session metadata; explicit instruct focuses without polling theft", async () => {
+  const { wire } = await setup("/agents?id=w&gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  await waitFor(() => expect(wire.requests("agents.get")).toHaveLength(1));
+  await act(async () => wire.reply("agents.get", { ...task("w", "waiting"), sessionId: null }));
+  await waitFor(() =>
+    expect(
+      wire.requests("terminal.list").some((request) => (request.params as { projectId: string }).projectId === "a"),
+    ).toBe(true),
+  );
+  expect(screen.getByRole("button", { name: "세션 확인 중…" })).toBeDisabled();
+  const request = wire
+    .requests("terminal.list")
+    .find((request) => (request.params as { projectId: string }).projectId === "a")!;
+  await act(async () => wire.deliver({ type: "response", id: request.id, error: { code: "internal" } }));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: "세션 확인 중…" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "다시 확인" }));
+  await waitFor(() => expect(wire.requests("terminal.list")).toHaveLength(2));
+  await act(async () =>
+    wire.reply("terminal.list", {
+      rev: "1",
+      items: [
+        {
+          id: "t",
+          projectId: "a",
+          title: "agent",
+          cwd: "/fixture",
+          kind: "agent",
+          alive: false,
+          command: "fixture",
+          createdMs: 1,
+        },
+      ],
+    }),
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "재개" })).toBeEnabled());
+  const subscription = wire.sent.filter((message) => message.topic === "terminal.changed").at(-1)!;
+  await act(async () => wire.deliver({ type: "event", subId: subscription.id, rev: "2", payload: { rev: "2" } }));
+  await waitFor(() => expect(wire.requests("terminal.list")).toHaveLength(3));
+  await act(async () =>
+    wire.reply("terminal.list", {
+      rev: "2",
+      items: [
+        {
+          id: "t",
+          projectId: "a",
+          title: "agent",
+          cwd: "/fixture",
+          kind: "agent",
+          alive: true,
+          command: "fixture",
+          createdMs: 1,
+        },
+      ],
+    }),
+  );
+  const box = await screen.findByLabelText("에이전트에게 보낼 지시");
+  await waitFor(() => expect(screen.getByRole("button", { name: "이어서 지시" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "이어서 지시" }));
+  expect(box).toHaveFocus();
+  fireEvent.change(box, { target: { value: "초안 유지" } });
+  await userEvent.click(screen.getByRole("tab", { name: "변경" }));
+  expect(box).toHaveValue("초안 유지");
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("agents.changes", { base: "main", ahead: 0, behind: 1, headOid: "h", baseOid: "b", files: [] }),
+  );
+  expect(screen.getByRole("tab", { name: "변경" })).toHaveFocus();
+  expect(box).not.toHaveFocus();
+  await waitFor(() => expect(screen.getByRole("tabpanel", { name: "변경" })).toHaveTextContent("뒤처짐 1"));
+  expect(wire.requests("agents.resources")).toHaveLength(1);
+  expect(wire.sent.filter((message) => message.topic === "agents.changed")).toHaveLength(1);
+});
+test("agent popout mounts full detail without frame and retains gateway/renderer", async () => {
+  const { wire } = await setup("/popout/agent/w?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  expect(await screen.findByRole("article", { name: "에이전트 작업 상세" })).toHaveTextContent("작업 w");
+  expect(screen.getByRole("tab", { name: "변경" })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "섹션" })).toBeNull();
+  expect(window.location.search).toContain("gateway=");
+  expect(window.location.search).toContain("renderer=dom");
+  expect(wire.requests("agents.list")).toHaveLength(1);
 });

@@ -77,8 +77,8 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "agents.gh_missing": { title: "GitHub CLI를 찾을 수 없습니다.", action: "WSL에 gh를 설치하고 로그인해 주세요." },
   "agents.not_repo": { title: "Git 저장소가 아닙니다.", action: "프로젝트 폴더를 확인해 주세요." },
   "agents.state_changed": {
-    title: "확인한 뒤 변경 내용이 달라졌습니다.",
-    action: "최신 변경 내용을 다시 확인해 주세요.",
+    title: "확인한 뒤 작업이 바뀌었습니다.",
+    action: "바뀐 내용을 확인하고 다시 실행하세요.",
   },
   "agents.operation_in_progress": {
     title: "다른 Git 작업이 진행 중입니다.",

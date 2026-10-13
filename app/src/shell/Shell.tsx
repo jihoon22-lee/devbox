@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AgentCommands } from "../features/agents/AgentCommands";
 import { AgentDataProvider } from "../features/agents/AgentData";
 import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
+import { PopoutAgent } from "../features/agents/detail/AgentDetail";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -33,7 +34,10 @@ export function Shell() {
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
         },
         settings: SettingsPage,
-        popouts: [{ path: "/popout/terminal/$id", component: PopoutTerminal }],
+        popouts: [
+          { path: "/popout/terminal/$id", component: PopoutTerminal },
+          { path: "/popout/agent/$id", component: PopoutAgent },
+        ],
       }),
     [],
   );

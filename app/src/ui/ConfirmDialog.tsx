@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 
@@ -8,6 +8,8 @@ export function ConfirmDialog(props: {
   body: string;
   confirmLabel: string;
   tone?: "danger" | "primary";
+  disabled?: boolean;
+  children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -27,11 +29,17 @@ export function ConfirmDialog(props: {
           <Button ref={cancel} onClick={props.onCancel}>
             취소
           </Button>
-          <Button variant={props.tone === "primary" ? "primary" : "danger"} onClick={props.onConfirm}>
+          <Button
+            variant={props.tone === "primary" ? "primary" : "danger"}
+            disabled={props.disabled}
+            onClick={props.onConfirm}
+          >
             {props.confirmLabel}
           </Button>
         </>
       }
-    />
+    >
+      {props.children}
+    </Dialog>
   );
 }
