@@ -10,6 +10,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { startSection } from "../features/settings/preferences";
 import { EmptyState } from "../ui";
 import { SECTIONS } from "./sections";
 
@@ -69,7 +70,8 @@ export function buildRouter(
     getParentRoute: () => rootRoute,
     path: "/",
     beforeLoad: ({ search }) => {
-      throw redirect({ to: lastSection(), search });
+      const preference = startSection();
+      throw redirect({ to: preference === "last" ? lastSection() : preference, search });
     },
   });
   const sectionRoutes = SECTIONS.map((section) =>

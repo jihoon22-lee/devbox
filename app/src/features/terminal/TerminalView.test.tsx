@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider, useToasts } from "../../ui";
 import { useCurrentProject } from "../projects/store";
+import { setTerminalFont } from "../settings/preferences";
 import { useTerminalFocus } from "./focus";
 import { emptyLayout, openTab, splitActive, useTerminalLayout } from "./store";
 import { TerminalPage } from "./TerminalPage";
@@ -398,4 +399,44 @@ test("WebGL construction failure falls back to the opened DOM terminal", async (
   expect(mock.terms[0].open).toHaveBeenCalledOnce();
   expect(mock.links[0].open).toHaveBeenCalledOnce();
   expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("settings font preference updates all live views while terminal zoom stays local", async () => {
+  render(
+    <>
+      <TerminalView id="font-a" />
+      <TerminalView id="font-b" />
+    </>,
+  );
+  await flush();
+  const [first, second] = mock.terms.slice(-2);
+  act(() => setTerminalFont(18));
+  expect(first.options.fontSize).toBe(18);
+  expect(second.options.fontSize).toBe(18);
+  const key = new KeyboardEvent("keydown", { code: "Equal", key: "+", ctrlKey: true, cancelable: true });
+  act(() => first.events.key(key));
+  expect(first.options.fontSize).toBe(19);
+  expect(second.options.fontSize).toBe(18);
+  expect(localStorage.getItem("devbox.terminalFont")).toBe("19");
+});
+
+test("readable old font storage cannot override the live or newly opened font after a quota failure", async () => {
+  localStorage.setItem("devbox.terminalFont", "13");
+  const view = render(<TerminalView id="quota-a" />);
+  await flush();
+  const first = mock.terms.at(-1);
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("quota");
+  });
+  act(() => setTerminalFont(22));
+  expect(first.options.fontSize).toBe(22);
+  view.rerender(
+    <>
+      <TerminalView id="quota-a" />
+      <TerminalView id="quota-b" />
+    </>,
+  );
+  await flush();
+  expect(mock.terms.at(-1).options.fontSize).toBe(22);
+  expect(localStorage.getItem("devbox.terminalFont")).toBe("13");
 });

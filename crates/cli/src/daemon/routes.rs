@@ -21,43 +21,46 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
                 pid: std::process::id(),
                 started_ms: s.started_ms,
                 data_dir: s.paths.data_dir.display().to_string(),
+                config_path: s.paths.config_dir.join("config.toml").display().to_string(),
             })
         })
         .register::<devbox_protocol::system::Doctor, _, _>(|s, _, _| async move {
             let probe = crate::doctor::OsProbe {
                 env_file: s.paths.instance_config_dir.join("env"),
+                hook_binary: s.paths.bin_dir.join("devbox"),
             };
             let checks = tokio::task::spawn_blocking(move || crate::doctor::checks(&probe))
                 .await
                 .map_err(|e| devbox_protocol::Fail::Internal(e.to_string()))?;
             Ok(devbox_protocol::system::DoctorReport { checks })
         })
+        .register::<devbox_protocol::system::RefreshEnv, _, _>(|s, _, _| async move {
+            super::system::refresh_env(s).await
+        })
         .register::<projects::ProjectsList, _, _>(|s, _, p| async move { s.projects.list(p).await })
         .register::<projects::ProjectsAdd, _, _>(|s, _, p| async move { s.projects.add(p).await })
         .register::<projects::ProjectsRemove, _, _>(
             |s, _, p| async move { s.projects.remove(p).await },
         )
-        .register::<projects::ProjectsScan, _, _>(
-            |s, _, p| async move { s.projects.scan(p).await },
-        )
+        .register::<projects::ProjectsScan, _, _>(|s, _, p| async move { s.projects.scan(p).await })
         .register::<projects::ProjectsConfig, _, _>(
             |s, _, p| async move { s.projects.config(p).await },
         )
-        .register::<projects::ProjectsSummary, _, _>(
-            |s, _, p| async move { super::launch::summary(s, p).await },
-        )
-        .register::<projects::ProjectsLaunch, _, _>(
-            |s, _, p| async move { super::launch::launch(s, p).await },
-        )
-        .register::<projects::ProjectsClone, _, _>(
-            |s, _, p| async move { s.projects.clone_repository(p).await },
-        )
-        .register::<projects::ProjectsSetFavorite, _, _>(
-            |s, _, p| async move { s.projects.set_favorite(p).await },
-        )
-        .register::<projects::ProjectsPrompts, _, _>(
-            |s, _, p| async move { s.projects.prompts(p).await },
-        );
+        .register::<projects::ProjectsSummary, _, _>(|s, _, p| async move {
+            super::launch::summary(s, p).await
+        })
+        .register::<projects::ProjectsLaunch, _, _>(|s, _, p| async move {
+            super::launch::launch(s, p).await
+        })
+        .register::<projects::ProjectsClone, _, _>(|s, _, p| async move {
+            s.projects.clone_repository(p).await
+        })
+        .register::<projects::ProjectsSetFavorite, _, _>(|s, _, p| async move {
+            s.projects.set_favorite(p).await
+        })
+        .register::<projects::ProjectsPrompts, _, _>(|s, _, p| async move {
+            s.projects.prompts(p).await
+        });
     let router = router
         .register::<devbox_terminal::TerminalAttach, _, _>(|s, ctx, p| async move {
             s.terminal.attach(ctx, p).await

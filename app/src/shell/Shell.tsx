@@ -9,6 +9,8 @@ import { PopoutAgent } from "../features/agents/detail/AgentDetail";
 import { AttentionBridge } from "../features/notifications/AttentionBridge";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
+import { openSettings, registerSettingsNavigation } from "../features/settings/open";
+import { restorePreferences } from "../features/settings/preferences";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { BottomTerminal } from "../features/terminal/BottomTerminal";
 import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
@@ -22,7 +24,7 @@ import { Frame } from "./Frame";
 import { type Binding, useKeymap } from "./keymap";
 import { buildRouter } from "./router";
 import { SECTIONS } from "./sections";
-import { restoreUiScale, uiBindings } from "./uiShortcuts";
+import { uiBindings } from "./uiShortcuts";
 export function Shell() {
   // Window identity survives navigation; browser popouts also have a stable target name.
   const [ownsAttention] = useState(() =>
@@ -51,6 +53,7 @@ export function Shell() {
       }),
     [],
   );
+  useEffect(() => registerSettingsNavigation(() => void router.navigate({ to: "/settings" })), [router]);
   const bindings = useMemo<Binding[]>(
     () => [
       ...uiBindings(),
@@ -97,7 +100,7 @@ export function Shell() {
   useKeymap(bindings);
   useEffect(() => registerBottomTab({ id: "terminal", label: "터미널", render: () => <BottomTerminal /> }), []);
   useEffect(() => {
-    restoreUiScale();
+    const cleanupPreferences = restorePreferences();
     const onMouse = (event: MouseEvent) => {
       if (
         event.defaultPrevented ||
@@ -110,7 +113,10 @@ export function Shell() {
       else router.history.forward();
     };
     window.addEventListener("mouseup", onMouse);
-    return () => window.removeEventListener("mouseup", onMouse);
+    return () => {
+      window.removeEventListener("mouseup", onMouse);
+      cleanupPreferences();
+    };
   }, [router]);
   const register = useCommands((state) => state.register);
   useEffect(() => {
@@ -130,11 +136,9 @@ export function Shell() {
           run: binding.run,
         }),
       );
-    cleanups.push(
-      register({ id: "settings.open", label: "설정 열기", run: () => void router.navigate({ to: "/settings" }) }),
-    );
+    cleanups.push(register({ id: "settings.open", label: "설정 열기", run: () => openSettings("general") }));
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [bindings, register, router]);
+  }, [bindings, register]);
   return (
     <ProjectDataProvider>
       <AgentDataProvider>

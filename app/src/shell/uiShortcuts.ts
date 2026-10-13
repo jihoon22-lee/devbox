@@ -1,3 +1,7 @@
+import { setUiScale } from "../features/settings/preferences";
+
+export { restoreUiScale, setUiScale } from "../features/settings/preferences";
+
 import { useToasts } from "../ui/Toast";
 import type { Binding } from "./keymap";
 import { useLayout } from "./layout";
@@ -9,27 +13,6 @@ function textFocus() {
 }
 function zoomFocus() {
   return !!document.activeElement?.closest('[data-keyscope="terminal"], [data-keyscope="editor"]');
-}
-function readScale() {
-  try {
-    const saved = localStorage.getItem("devbox.uiScale");
-    const value = saved === null ? 1 : Number(saved);
-    return Number.isFinite(value) ? Math.min(1.5, Math.max(0.9, value)) : 1;
-  } catch {
-    return 1;
-  }
-}
-export function setUiScale(scale: number) {
-  const value = Math.round(Math.min(1.5, Math.max(0.9, scale)) * 100) / 100;
-  document.documentElement.style.zoom = String(value);
-  try {
-    localStorage.setItem("devbox.uiScale", String(value));
-  } catch {
-    /* Zoom works without persistence. */
-  }
-}
-export function restoreUiScale() {
-  setUiScale(readScale());
 }
 function zoom(delta: number) {
   setUiScale((Number(document.documentElement.style.zoom) || 1) + delta);

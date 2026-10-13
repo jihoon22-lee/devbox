@@ -304,3 +304,22 @@ test("opening a detail from the popout grid keeps the reusable grid window on it
   view.unmount();
   vi.unstubAllGlobals();
 });
+
+test("hook connection banner opens agent settings while shared data and attention retain their owners", async () => {
+  const { wire } = await setup("/agents?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  const subscription = wire.sent.find((message) => message.topic === "agents.changed")!;
+  await act(async () => wire.deliver({ type: "event", subId: subscription.id, rev: "2", payload: { rev: "2" } }));
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(2));
+  await act(async () =>
+    wire.reply("agents.list", { rev: "2", items: [{ ...task("unlinked", "running"), sessionId: null }] }),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "연결 확인" }));
+  await waitFor(() => expect(window.location.pathname).toBe("/settings"));
+  expect(screen.getByRole("tab", { name: "에이전트" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tabpanel", { name: "에이전트" })).toBeInTheDocument();
+  expect(window.location.search).toContain("gateway=");
+  expect(window.location.search).toContain("renderer=dom");
+  expect(wire.sent.filter((message) => message.topic === "agents.changed")).toHaveLength(1);
+  expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(1);
+  expect(wire.requests("agents.list")).toHaveLength(2);
+});

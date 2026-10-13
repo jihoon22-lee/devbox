@@ -73,3 +73,25 @@ test("injected section pages validate search and popouts bypass the frame withou
   expect(router.state.location.search).toEqual({ gateway: "ws://localhost:1451", selected: "owned" });
   expect(localStorage.getItem("devbox.lastSection")).toBe("/terminal");
 });
+
+test("chosen start section changes only the index redirect and preserves explicit routes", async () => {
+  localStorage.setItem("devbox.startSection", "/terminal");
+  localStorage.setItem("devbox.lastSection", "/notes");
+  const router = buildRouter(
+    () => <Outlet />,
+    () => <p>설정 페이지</p>,
+    createMemoryHistory({ initialEntries: ["/?renderer=dom"] }),
+  );
+  const view = render(<RouterProvider router={router} />);
+  await waitFor(() => expect(router.state.location.pathname).toBe("/terminal"));
+  expect(router.state.location.search).toEqual({ renderer: "dom" });
+  view.unmount();
+  const explicit = buildRouter(
+    () => <Outlet />,
+    () => <p>설정 페이지</p>,
+    createMemoryHistory({ initialEntries: ["/notes"] }),
+  );
+  render(<RouterProvider router={explicit} />);
+  await waitFor(() => expect(explicit.state.location.pathname).toBe("/notes"));
+  localStorage.removeItem("devbox.startSection");
+});

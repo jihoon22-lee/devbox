@@ -2526,6 +2526,8 @@ git add app && git commit -m "feat(app): show project cards with git and agent s
 
 ### Task 21: 설정 — 에이전트·셸 환경 다시 읽기
 
+구현·별도 검토 완료. 실제 점검 필드는 `message`/`fix`이며 도구는 데몬 PATH, hook은 실제 실행 권한으로 검사한다. `system.refresh_env`는 setup의 캡처·환경 기록만 재사용한다. 관리형 데몬은 기존 작업 drain 후 nonzero를 반환해 `Restart=on-failure`로 재시작하며 foreground/test는 종료하지 않는다. `system.info.configPath`로 설정 위치를 전달한다. 설정5탭·실시간 환경설정과 저장 실패 보존·숫자 직접 입력 회귀를 포함해 Rust41·프론트53 고유94개 통과 및 Astra 재검토 PASS. 소유 fixture RPC는 검증했으나 실제 managed systemd 재시작·Windows 실기는 Task24에 수행한다.
+
 **Files:**
 - Modify: `crates/cli/src/doctor.rs`(도구 점검 추가), `crates/protocol/src/system.rs`(`system.refresh_env` 선언), `crates/cli/src/daemon/routes.rs`(등록)
 - Create: `crates/cli/src/daemon/system.rs`(`system.refresh_env` 처리: `setup`의 환경 잡기를 다시 실행한 뒤 데몬 재시작)
@@ -2553,7 +2555,7 @@ git add app && git commit -m "feat(app): show project cards with git and agent s
   - 설정 › 일반 탭: 테마(시스템·다크·라이트), UI 배율(90–150%), 터미널 글꼴 크기, 시작 섹션
   - `openSettings(tab: "general"|"agents"|"shortcuts"|"diagnostics"|"about")`(`app/src/features/settings/open.ts`): `useSettingsUi`(Zustand)에 탭을 두고 `/settings`로 이동한다. Task 17의 [연결 확인] 배너 버튼을 `openSettings("agents")`로 바꾼다.
 
-- [ ] **Step 1: 실패하는 테스트(Rust, doctor)**
+- [x] **Step 1: 실패하는 테스트(Rust, doctor)**
 
 ```rust
 // crates/cli/src/doctor.rs 의 tests에 추가
@@ -2570,7 +2572,7 @@ fn missing_agent_tools_are_warnings_not_errors() {
 
 S0b `Probe` 트레잇에 `fn which(&self, name: &str) -> bool`이 없으면 추가한다. 실제 구현은 `which::which(name).is_ok()`이고, `FakeProbe`는 `which` 목록으로 답한다.
 
-- [ ] **Step 2: 실패하는 테스트(화면)**
+- [x] **Step 2: 실패하는 테스트(화면)**
 
 ```tsx
 // app/src/features/settings/AgentsSettings.test.tsx
@@ -2598,7 +2600,7 @@ test("shows tool checks and refreshes the shell environment", async () => {
 
 S0b의 `Check` 필드 이름(`id`·`status`·`title`·`detail`)이 다르면 그 이름에 맞춘다.
 
-- [ ] **Step 3: 구현·통과·커밋·묶음 M 끝**
+- [x] **Step 3: 구현·통과·커밋·묶음 M 끝**
 
 ```bash
 cargo test -p devbox-cli doctor && cargo run -q -p xtask -- gen-ts

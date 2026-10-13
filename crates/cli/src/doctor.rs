@@ -21,6 +21,8 @@ pub trait Probe {
     fn inotify_instances(&self) -> String;
     fn env_file(&self) -> Option<String>;
     fn which(&self, tool: &str, path: &str) -> bool;
+    fn daemon_path(&self) -> String;
+    fn hook_executable(&self) -> bool;
 }
 pub fn tmux_at_least(v: &str, want: (u32, u32)) -> bool {
     let Some(v) = v.strip_prefix("tmux ") else {
@@ -78,13 +80,13 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
     });
     out.push(match p.tmux_version() {
         Some(v) if tmux_at_least(&v, (3, 2)) => check(
-            "tmux",
+            "tool.tmux",
             Status::Ok,
             "tmux 3.2 이상을 사용할 수 있습니다",
             None,
         ),
         _ => check(
-            "tmux",
+            "tool.tmux",
             Status::Fail,
             "tmux 3.2 이상이 필요합니다",
             Some("sudo apt install tmux 또는 최신 tmux 설치"),
@@ -101,45 +103,66 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
         format!("max_user_instances={inotify}"),
         (inotify < 512).then_some("fs.inotify.max_user_instances를 1024로 설정"),
     ));
-    match p.env_file().and_then(|text| crate::setup::env_path(&text)) {
-        None => out.push(check(
-            "env",
-            Status::Fail,
-            "사용자 환경 파일에 유효한 PATH가 없습니다",
-            Some("devbox setup"),
-        )),
-        Some(path) => {
-            out.push(check(
+    out.push(
+        if p.env_file()
+            .and_then(|text| crate::setup::env_path(&text))
+            .is_some()
+        {
+            check("env", Status::Ok, "사용자 환경을 잡아 두었습니다", None)
+        } else {
+            check(
                 "env",
-                Status::Ok,
-                "사용자 환경을 잡아 두었습니다",
-                None,
-            ));
-            for tool in ["git", "claude", "codex", "node", "pnpm"] {
-                let found = p.which(tool, &path);
-                out.push(check(
-                    &format!("tool.{tool}"),
-                    if found {
-                        Status::Ok
-                    } else if tool == "git" {
-                        Status::Fail
-                    } else {
-                        Status::Warn
-                    },
-                    if found {
-                        format!("{tool} 사용 가능")
-                    } else {
-                        format!("{tool}를 찾지 못했습니다")
-                    },
-                    (!found).then_some("설치한 뒤 환경 다시 잡기"),
-                ));
-            }
-        }
+                Status::Fail,
+                "사용자 환경 파일에 유효한 PATH가 없습니다",
+                Some("devbox setup"),
+            )
+        },
+    );
+    let path = p.daemon_path();
+    for tool in ["git", "claude", "codex", "gh", "node", "pnpm"] {
+        let found = p.which(tool, &path);
+        out.push(check(
+            &format!("tool.{tool}"),
+            if found {
+                Status::Ok
+            } else if tool == "git" {
+                Status::Fail
+            } else {
+                Status::Warn
+            },
+            if found {
+                format!("{tool} 사용 가능")
+            } else {
+                format!("{tool}: PATH에서 찾지 못했습니다")
+            },
+            (!found).then_some(if tool == "gh" {
+                "PR 만들기를 쓰려면 설치"
+            } else {
+                "설치했다면 셸 환경 다시 읽기"
+            }),
+        ));
     }
+    let hook_executable = p.hook_executable();
+    out.push(check(
+        "hook.binary",
+        if hook_executable {
+            Status::Ok
+        } else {
+            Status::Fail
+        },
+        if hook_executable {
+            "상태 알림 실행 파일 사용 가능"
+        } else {
+            "상태 알림 실행 파일을 실행할 수 없습니다"
+        },
+        (!hook_executable).then_some("devbox 실행 파일 배치를 확인하세요"),
+    ));
+
     out
 }
 pub struct OsProbe {
     pub env_file: std::path::PathBuf,
+    pub hook_binary: std::path::PathBuf,
 }
 fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -163,6 +186,12 @@ fn executable(path: &std::path::Path) -> bool {
     unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
 impl Probe for OsProbe {
+    fn daemon_path(&self) -> String {
+        std::env::var("PATH").unwrap_or_default()
+    }
+    fn hook_executable(&self) -> bool {
+        executable(&self.hook_binary)
+    }
     fn pid1(&self) -> String {
         std::fs::read_to_string("/proc/1/comm").unwrap_or_default()
     }
@@ -196,6 +225,7 @@ impl Probe for OsProbe {
 pub async fn run(json: bool) -> anyhow::Result<()> {
     let probe = OsProbe {
         env_file: crate::paths()?.instance_config_dir.join("env"),
+        hook_binary: crate::paths()?.bin_dir.join("devbox"),
     };
     let report = DoctorReport {
         checks: tokio::task::spawn_blocking(move || checks(&probe)).await?,
@@ -231,6 +261,12 @@ mod probe_tests {
         env: Option<&'static str>,
     }
     impl Probe for Fake {
+        fn daemon_path(&self) -> String {
+            "/daemon/bin".into()
+        }
+        fn hook_executable(&self) -> bool {
+            false
+        }
         fn pid1(&self) -> String {
             "systemd".into()
         }
@@ -249,8 +285,9 @@ mod probe_tests {
         fn env_file(&self) -> Option<String> {
             self.env.map(Into::into)
         }
-        fn which(&self, _tool: &str, _path: &str) -> bool {
-            true
+        fn which(&self, tool: &str, path: &str) -> bool {
+            assert_eq!(path, "/daemon/bin");
+            !matches!(tool, "claude" | "codex" | "gh")
         }
     }
     #[test]
@@ -275,7 +312,7 @@ mod probe_tests {
         }
     }
     #[test]
-    fn env_missing_empty_relative_or_malformed_fails_without_tool_claims() {
+    fn saved_environment_diagnostic_is_independent_of_current_tool_checks() {
         for env in [
             None,
             Some("LANG=\"C\""),
@@ -295,8 +332,46 @@ mod probe_tests {
                     .status,
                 Status::Fail
             );
-            assert!(!checks.iter().any(|c| c.id.starts_with("tool.")));
+            assert!(
+                checks
+                    .iter()
+                    .any(|c| c.id == "tool.gh" && c.status == Status::Warn)
+            );
         }
+    }
+    #[test]
+    fn agent_checks_use_daemon_path_even_without_saved_environment() {
+        let checks = checks(&Fake {
+            available: true,
+            env: None,
+        });
+        for id in [
+            "tool.claude",
+            "tool.codex",
+            "tool.gh",
+            "tool.tmux",
+            "hook.binary",
+        ] {
+            assert!(checks.iter().any(|check| check.id == id), "missing {id}");
+        }
+        for id in ["tool.claude", "tool.codex", "tool.gh"] {
+            assert_eq!(
+                checks.iter().find(|c| c.id == id).unwrap().status,
+                Status::Warn
+            );
+        }
+        assert_eq!(
+            checks.iter().find(|c| c.id == "tool.tmux").unwrap().status,
+            Status::Ok
+        );
+        assert_eq!(
+            checks
+                .iter()
+                .find(|c| c.id == "hook.binary")
+                .unwrap()
+                .status,
+            Status::Fail
+        );
     }
     #[test]
     fn which_requires_absolute_directory_and_executable_file() {
@@ -308,8 +383,10 @@ mod probe_tests {
             .expect("set fixture permissions");
         let probe = OsProbe {
             env_file: temp.path().join("env"),
+            hook_binary: tool.clone(),
         };
         assert!(!probe.which("fixture-tool", &temp.path().display().to_string()));
+        assert!(!probe.hook_executable());
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o001))
             .expect("set fixture permissions");
         // Root may execute a regular file with any execution bit set.
@@ -325,6 +402,7 @@ mod probe_tests {
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700))
             .expect("set fixture permissions");
         assert!(probe.which("fixture-tool", &temp.path().display().to_string()));
+        assert!(probe.hook_executable());
         assert!(!probe.which("fixture-tool", ":relative"));
     }
 }

@@ -7,6 +7,7 @@ pub mod server;
 mod socket;
 pub mod state;
 mod streams;
+mod system;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
 use state::Services;
@@ -30,6 +31,13 @@ fn migrations() -> Vec<devbox_core::Migration> {
 }
 
 pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
+    build_services_with_runtime(paths, system::Runtime::new(false))
+}
+
+fn build_services_with_runtime(
+    paths: Paths,
+    runtime: system::Runtime,
+) -> anyhow::Result<Arc<Services>> {
     paths.ensure_dirs()?;
     let config = Config::load(&paths)?;
     let db = Db::open(
@@ -71,6 +79,7 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         config.agents.cleanup_after_close.unwrap_or(false),
     ));
     Ok(Arc::new(Services {
+        runtime,
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
         started: Instant::now(),
@@ -110,10 +119,11 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     paths.ensure_dirs()?;
     let _guard = log::init_logging(&paths, foreground)?;
     log::install_panic_hook(&paths, crate::VERSION);
-    let services = build_services(paths.clone())?;
+    let runtime = system::Runtime::new(!foreground && !paths.instance.is_test());
+    let shutdown = runtime.shutdown.clone();
+    let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
-    let shutdown = tokio_util::sync::CancellationToken::new();
     let s2 = shutdown.clone();
     tokio::spawn(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -123,5 +133,8 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     });
     server::serve(socket.listener, services, shutdown).await?;
     tracing::info!("daemon stopped");
+    if runtime.restart_requested() {
+        anyhow::bail!("intentional daemon restart after environment refresh");
+    }
     Ok(())
 }

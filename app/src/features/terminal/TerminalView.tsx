@@ -9,6 +9,7 @@ import { useRpc } from "../../rpc/RpcProvider";
 import { openExternal } from "../../shell/external";
 import { useLayout } from "../../shell/layout";
 import { Button, useToasts } from "../../ui";
+import { setTerminalFont, storedFontSize, usePreferences } from "../settings/preferences";
 import { terminalKey } from "./keys";
 import { type LinkState, TerminalLink } from "./link";
 import { parseOsc7 } from "./osc";
@@ -18,15 +19,6 @@ import { terminalTheme } from "./theme";
 
 const FONT = '"Cascadia Mono", "D2Coding", monospace';
 const DEFAULT_SIZE = 13;
-function storedFontSize(): number {
-  try {
-    const raw = localStorage.getItem("devbox.terminalFont");
-    const size = raw === null || !raw.trim() ? DEFAULT_SIZE : Number(raw);
-    return Number.isFinite(size) ? Math.min(28, Math.max(9, size)) : DEFAULT_SIZE;
-  } catch {
-    return DEFAULT_SIZE;
-  }
-}
 export interface TerminalViewProps {
   id: string;
   readOnly?: boolean;
@@ -160,17 +152,19 @@ export function TerminalView({
             ? DEFAULT_SIZE
             : Math.min(28, Math.max(9, (term.options.fontSize ?? DEFAULT_SIZE) + (action === "zoomIn" ? 1 : -1)));
         term.options.fontSize = size;
-        try {
-          localStorage.setItem("devbox.terminalFont", String(size));
-        } catch {
-          /* Optional preference. */
-        }
+        setTerminalFont(size, false);
         fitView();
       }
       if (action === "search") setSearching(true);
       if (action === "bottom") useLayout.getState().toggleBottom();
       return false;
     });
+    const updateFont = () => {
+      if (disposed) return;
+      term.options.fontSize = usePreferences.getState().terminalFont;
+      fitView();
+    };
+    window.addEventListener("devbox-terminal-font", updateFont);
     const resize = new ResizeObserver(fitView);
     resize.observe(el);
     const theme = new MutationObserver(() => {
@@ -184,6 +178,7 @@ export function TerminalView({
       if (disposed) return;
       disposed = true;
       if (fontTimer !== undefined) clearTimeout(fontTimer);
+      window.removeEventListener("devbox-terminal-font", updateFont);
       resize.disconnect();
       theme.disconnect();
       link.dispose();

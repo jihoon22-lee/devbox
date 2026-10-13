@@ -36,7 +36,7 @@ export type Commit = { sha: string, subject: string, author: string, timeMs: num
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
 export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
-export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, };
+export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, };
 export type DebugError = { "code": "debug.unsupported" };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
@@ -79,6 +79,7 @@ export type ProjectsChanged = { rev: string, };
 export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type RebaseResult = "done" | "conflict";
+export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
@@ -92,7 +93,7 @@ export type SetFavorite = { id: string, favorite: boolean, };
 export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
 export type SummaryProjects = Record<symbol, never>;
-export type SystemError = { "code": "system.unavailable" };
+export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } };
@@ -141,6 +142,7 @@ export interface Methods {
   "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
+  "system.refresh_env": { kind: "mutation"; confirm: "none"; params: PingParams; result: RefreshEnvResult; error: SystemError };
   "terminal.attach": { kind: "stream"; confirm: "none"; params: AttachSession; result: TerminalAttached; error: TerminalError };
   "terminal.close": { kind: "mutation"; confirm: "always"; params: CloseSession; result: Done; error: TerminalError };
   "terminal.create": { kind: "mutation"; confirm: "none"; params: CreateSession; result: TerminalSession; error: TerminalError };
@@ -196,6 +198,7 @@ export const METHOD_INFO = {
   "system.doctor": { kind: "query", confirm: "none" },
   "system.info": { kind: "query", confirm: "none" },
   "system.ping": { kind: "query", confirm: "none" },
+  "system.refresh_env": { kind: "mutation", confirm: "none" },
   "terminal.attach": { kind: "stream", confirm: "none" },
   "terminal.close": { kind: "mutation", confirm: "always" },
   "terminal.create": { kind: "mutation", confirm: "none" },
@@ -250,6 +253,7 @@ export const RPC_ERROR_CODES = [
   "projects.prompt_limit_exceeded",
   "projects.unsafe_prompt_path",
   "secrets_locked",
+  "system.env_refresh_failed",
   "system.unavailable",
   "terminal.cwd_invalid",
   "terminal.invalid_size",

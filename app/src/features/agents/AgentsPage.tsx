@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { SectionLayout } from "../../shell/SectionLayout";
 import { Banner, Button, EmptyState, Kbd } from "../../ui";
+import { openSettings } from "../settings/open";
 import { AgentGrid } from "./AgentGrid";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./detail/AgentDetail";
@@ -65,7 +66,7 @@ export function AgentsPage() {
               <Banner
                 tone="warn"
                 actions={
-                  <Button size="sm" onClick={() => void navigate({ to: "/settings" })}>
+                  <Button size="sm" onClick={() => openSettings("agents")}>
                     연결 확인
                   </Button>
                 }

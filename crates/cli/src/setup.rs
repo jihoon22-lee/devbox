@@ -293,6 +293,17 @@ impl Runner for OsRunner {
         command(cmd, args).await.map(|out| out.stdout)
     }
 }
+pub(crate) async fn refresh_env(paths: &devbox_core::Paths) -> Result<(), String> {
+    refresh_with(paths, &OsRunner).await
+}
+async fn refresh_with(paths: &devbox_core::Paths, runner: &impl Runner) -> Result<(), String> {
+    let raw = runner.run("bash", &["-lc", "env -0"]).await?;
+    let text = capture_env(&raw);
+    if env_path(&text).is_none() {
+        return Err("captured PATH has no absolute entry".into());
+    }
+    publish(&paths.instance_config_dir.join("env"), &text, false).map_err(|e| e.to_string())
+}
 async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> SetupReport {
     let mut report = SetupReport { steps: vec![] };
     if let Err(message) = instance_units(paths) {
@@ -305,18 +316,7 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
     }
     for id in ["env", "units", "reload", "enable", "restart"] {
         let result: Result<(), String> = match id {
-            "env" => match runner.run("bash", &["-lc", "env -0"]).await {
-                Ok(out) => {
-                    let text = capture_env(&out);
-                    if env_path(&text).is_none() {
-                        Err("captured PATH has no absolute entry".into())
-                    } else {
-                        publish(&paths.instance_config_dir.join("env"), &text, false)
-                            .map_err(|e| e.to_string())
-                    }
-                }
-                Err(e) => Err(e),
-            },
+            "env" => refresh_with(paths, runner).await,
             "units" => instance_units(paths).and_then(|units| {
                 publish(
                     &paths.instance_config_dir.join("tmux.conf"),

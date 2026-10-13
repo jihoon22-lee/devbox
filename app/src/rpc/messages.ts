@@ -111,6 +111,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "에이전트의 대화 기록을 확인하지 못했습니다.",
     action: "잠시 뒤 상태를 다시 확인해 주세요.",
   },
+  "system.env_refresh_failed": {
+    title: "셸 환경을 다시 읽지 못했습니다.",
+    action: "로그인 셸 설정과 환경 파일 위치를 확인한 뒤 다시 시도해 주세요.",
+  },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,
