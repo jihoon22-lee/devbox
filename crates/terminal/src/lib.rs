@@ -1,4 +1,5 @@
 //! Devbox-owned tmux terminal sessions, metadata and typed RPC declarations.
+mod attach;
 pub mod model;
 mod service;
 mod store;
@@ -13,6 +14,8 @@ pub const MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
     sql: store::MIGRATION_1,
 }];
+method!(pub TerminalAttach = "terminal.attach", stream, AttachSession => devbox_protocol::StreamOpened, TerminalError);
+method!(pub TerminalResize = "terminal.resize", mutation, ResizeStream => devbox_protocol::Done, TerminalError);
 method!(pub TerminalList = "terminal.list", query, ListSessions => SessionList, TerminalError);
 method!(pub TerminalCreate = "terminal.create", mutation, CreateSession => TerminalSession, TerminalError);
 method!(pub TerminalRename = "terminal.rename", mutation, RenameSession => devbox_protocol::Done, TerminalError);
@@ -21,6 +24,8 @@ method!(pub TerminalZellijList = "terminal.zellij_list", query, devbox_protocol:
 method!(pub Profiles = "terminal.profiles", query, devbox_protocol::system::PingParams => TerminalProfiles, TerminalError);
 topic!(pub TerminalChangedTopic = "terminal.changed", TerminalChanged);
 pub fn export<X: Exporter>(exporter: &mut X) {
+    exporter.method::<TerminalAttach>();
+    exporter.method::<TerminalResize>();
     exporter.method::<TerminalList>();
     exporter.method::<TerminalCreate>();
     exporter.method::<TerminalRename>();

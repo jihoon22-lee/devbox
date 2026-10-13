@@ -169,6 +169,9 @@ pub struct StreamEnds {
 }
 pub trait StreamOpener: Send + Sync {
     fn open(&self) -> Result<StreamEnds, StreamError>;
+    fn owns(&self, _id: u32) -> bool {
+        false
+    }
 }
 #[cfg(test)]
 mod tests;

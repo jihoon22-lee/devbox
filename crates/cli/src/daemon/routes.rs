@@ -41,6 +41,12 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             |s, _, p| async move { s.projects.scan(p).await },
         );
     let router = router
+        .register::<devbox_terminal::TerminalAttach, _, _>(|s, ctx, p| async move {
+            s.terminal.attach(ctx, p).await
+        })
+        .register::<devbox_terminal::TerminalResize, _, _>(|s, ctx, p| async move {
+            s.terminal.resize(ctx, p).await
+        })
         .register::<devbox_terminal::TerminalList, _, _>(|s, _, p| async move {
             s.terminal.list(p).await
         })

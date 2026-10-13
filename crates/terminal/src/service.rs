@@ -19,6 +19,7 @@ pub struct TerminalService {
     tmux: Tmux,
     config: TerminalConfig,
     mutations: Mutex<()>,
+    attachments: crate::attach::Attachments,
 }
 fn changed(hub: &Hub, rev: u64) {
     hub.publish::<TerminalChangedTopic>(
@@ -29,10 +30,7 @@ fn changed(hub: &Hub, rev: u64) {
     );
 }
 fn tmux_error(error: TmuxError) -> Fail<TerminalError> {
-    TerminalError::Tmux {
-        reason: error.to_string(),
-    }
-    .into()
+    Fail::Internal(format!("terminal tmux: {error}"))
 }
 async fn canonical_cwd(path: PathBuf) -> Result<String> {
     let original = path.to_string_lossy().into_owned();
@@ -77,7 +75,75 @@ impl TerminalService {
             projects,
             config,
             mutations: Mutex::new(()),
+            attachments: Default::default(),
         }
+    }
+    pub async fn attach(
+        &self,
+        ctx: devbox_protocol::Ctx,
+        p: AttachSession,
+    ) -> Result<devbox_protocol::StreamOpened> {
+        crate::attach::validate(p.cols, p.rows)?;
+        let id = p.id.clone();
+        if self
+            .db
+            .read(move |tx| store::get(tx, &id))
+            .await
+            .internal("find terminal")?
+            .is_none()
+            || !self
+                .tmux
+                .list()
+                .await
+                .map_err(tmux_error)?
+                .iter()
+                .any(|session| session.name == p.id)
+        {
+            return Err(TerminalError::NotFound { id: p.id }.into());
+        }
+        let history = self
+            .tmux
+            .capture_history(&p.id, 2000)
+            .await
+            .map_err(tmux_error)?;
+        let dimensions = crate::attach::dimensions(&self.tmux, &p).await?;
+        if ctx.cancel.is_cancelled() {
+            return Err(TerminalError::StreamUnavailable {}.into());
+        }
+        let ends = ctx
+            .open_stream()
+            .map_err(|_| TerminalError::StreamUnavailable {})?;
+        let stream_id = ends.id;
+        let tx = ends.tx.clone();
+        if let Err(error) =
+            crate::attach::start(&self.tmux, &self.attachments, p, history, ends, dimensions)
+        {
+            tx.finish().await;
+            return Err(error);
+        }
+        Ok(devbox_protocol::StreamOpened { stream_id })
+    }
+    pub async fn resize(&self, ctx: devbox_protocol::Ctx, p: ResizeStream) -> Result<Done> {
+        crate::attach::validate(p.cols, p.rows)?;
+        if !ctx
+            .streams
+            .as_ref()
+            .is_some_and(|streams| streams.owns(p.stream_id))
+        {
+            return Err(TerminalError::NotFound {
+                id: p.stream_id.to_string(),
+            }
+            .into());
+        }
+        self.attachments.resize(p.stream_id, p.cols, p.rows)?;
+        let rev = self
+            .db
+            .read(|tx| current_rev(tx))
+            .await
+            .internal("terminal revision")?;
+        Ok(Done {
+            rev: rev.to_string(),
+        })
     }
     pub fn tmux(&self) -> &Tmux {
         &self.tmux
@@ -302,5 +368,51 @@ impl TerminalService {
             _ => vec![],
         };
         ZellijSessions { items }
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+    use devbox_protocol::{Ctx, Router};
+    #[tokio::test]
+    async fn terminal_io_causes_are_private_and_receive_router_diagnostics() {
+        for error in [
+            crate::attach::pty_error(std::io::Error::other("private-pty-marker")),
+            tmux_error(TmuxError::Spawn(std::io::Error::other(
+                "private-spawn-marker",
+            ))),
+            tmux_error(TmuxError::Failed {
+                operation: "attach".into(),
+                stderr: "private-stderr-marker".into(),
+            }),
+        ] {
+            let error = Mutex::new(Some(error));
+            let router =
+                Router::new(Arc::new(error)).register::<crate::TerminalResize, _, _>(
+                    |error, _, _| async move {
+                        Err(error.lock().await.take().expect("fixture failure"))
+                    },
+                );
+            let failure = router
+                .dispatch(
+                    "terminal.resize",
+                    Ctx {
+                        channel: 0,
+                        cancel: Default::default(),
+                        streams: None,
+                    },
+                    serde_json::value::RawValue::from_string(
+                        "{\"streamId\":1,\"cols\":80,\"rows\":24}".into(),
+                    )
+                    .expect("params"),
+                )
+                .await
+                .expect_err("failure");
+            let wire = serde_json::to_string(&failure.error).expect("wire");
+            assert!(!wire.contains("private-"), "private cause leaked: {wire}");
+            assert_eq!(failure.error.code, "internal");
+            assert!(failure.diagnostic_id.is_some());
+        }
     }
 }

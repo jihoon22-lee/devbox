@@ -112,6 +112,23 @@ impl ClientStream {
         }
         result
     }
+    pub async fn end(&self) -> Result<(), ClientError> {
+        self.close().await
+    }
+    pub async fn read_until(&self, pattern: &[u8], timeout: Duration) -> Vec<u8> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut bytes = Vec::new();
+        if pattern.is_empty() {
+            return bytes;
+        }
+        while let Ok(Some(chunk)) = tokio::time::timeout_at(deadline, self.queue.read()).await {
+            bytes.extend_from_slice(&chunk);
+            if bytes.windows(pattern.len()).any(|window| window == pattern) {
+                break;
+            }
+        }
+        bytes
+    }
     pub async fn finish_input(&self) -> Result<(), ClientError> {
         self.send(stream_frame(0, self.id, FLAG_FIN, &[])).await
     }

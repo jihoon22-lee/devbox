@@ -62,11 +62,27 @@ pub struct TerminalProfiles {
 pub struct TerminalChanged {
     pub rev: String,
 }
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachSession {
+    pub id: String,
+    pub cols: u16,
+    pub rows: u16,
+    pub read_only: bool,
+}
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ResizeStream {
+    pub stream_id: u32,
+    pub cols: u16,
+    pub rows: u16,
+}
 domain_error! {
     pub enum TerminalError {
+        InvalidSize { cols: u16, rows: u16 } = "terminal.invalid_size",
+        StreamUnavailable {} = "terminal.stream_unavailable",
         NotFound { id: String } = "terminal.not_found",
         ProjectNotFound { id: String } = "terminal.project_not_found",
         CwdInvalid { path: String } = "terminal.cwd_invalid",
-        Tmux { reason: String } = "terminal.tmux_failed",
     }
 }

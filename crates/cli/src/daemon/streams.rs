@@ -126,6 +126,18 @@ struct Opener {
     outbox: Arc<Outbox>,
 }
 impl StreamOpener for Opener {
+    fn owns(&self, id: u32) -> bool {
+        !self.generation.is_cancelled()
+            && self
+                .streams
+                .0
+                .lock()
+                .expect("streams")
+                .get(&id)
+                .is_some_and(|entry| {
+                    entry.channel == self.channel && !entry.generation.is_cancelled()
+                })
+    }
     fn open(&self) -> Result<StreamEnds, StreamError> {
         let mut entries = self.streams.0.lock().expect("streams");
         if self.generation.is_cancelled() {
@@ -307,6 +319,22 @@ mod tests {
         let generation = CancellationToken::new();
         let opener = registry.opener(1, generation.clone(), q.clone());
         let mut stream = opener.open().expect("fixture operation succeeds");
+        assert!(opener.owns(stream.id));
+        assert!(
+            registry
+                .opener(1, generation.clone(), q.clone())
+                .owns(stream.id)
+        );
+        assert!(
+            !registry
+                .opener(2, generation.clone(), q.clone())
+                .owns(stream.id)
+        );
+        assert!(
+            !Streams::default()
+                .opener(1, generation.clone(), q.clone())
+                .owns(stream.id)
+        );
         assert!(
             registry
                 .input(2, stream.id, false, Bytes::from_static(b"bad"))
@@ -328,6 +356,7 @@ mod tests {
         generation.cancel();
         registry.close_channel(1);
         assert!(opener.open().is_err());
+        assert!(!opener.owns(stream.id));
         assert_eq!(stream.tx.write(b"late").await, Err(StreamError::Closed));
         assert!(stream.input.recv().await.is_none());
         let new = registry

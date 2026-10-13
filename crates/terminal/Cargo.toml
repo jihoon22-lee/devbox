@@ -18,6 +18,12 @@ ts-rs.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+portable-pty = "0.9"
+tracing.workspace = true
+filedescriptor = "0.8"
+libc.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
+tokio-util.workspace = true
 tempfile.workspace = true

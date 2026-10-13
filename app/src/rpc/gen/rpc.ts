@@ -2,6 +2,7 @@
 /* eslint-disable */
 
 export type AddProject = { path: string, };
+export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
 export type CloseSession = { id: string, };
@@ -22,6 +23,7 @@ export type ProjectsChanged = { rev: string, };
 export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } };
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
+export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type SessionKind = "shell" | "agent";
@@ -30,7 +32,7 @@ export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
 export type SystemError = { "code": "system.unavailable" };
 export type TerminalChanged = { rev: string, };
-export type TerminalError = { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.tmux_failed", "detail": { reason: string, } };
+export type TerminalError = { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } };
 export type TerminalProfile = { name: string, command: string, };
 export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
@@ -45,11 +47,13 @@ export interface Methods {
   "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
+  "terminal.attach": { kind: "stream"; confirm: "none"; params: AttachSession; result: StreamOpened; error: TerminalError };
   "terminal.close": { kind: "mutation"; confirm: "always"; params: CloseSession; result: Done; error: TerminalError };
   "terminal.create": { kind: "mutation"; confirm: "none"; params: CreateSession; result: TerminalSession; error: TerminalError };
   "terminal.list": { kind: "query"; confirm: "none"; params: ListSessions; result: SessionList; error: TerminalError };
   "terminal.profiles": { kind: "query"; confirm: "none"; params: PingParams; result: TerminalProfiles; error: TerminalError };
   "terminal.rename": { kind: "mutation"; confirm: "none"; params: RenameSession; result: Done; error: TerminalError };
+  "terminal.resize": { kind: "mutation"; confirm: "none"; params: ResizeStream; result: Done; error: TerminalError };
   "terminal.zellij_list": { kind: "query"; confirm: "none"; params: PingParams; result: ZellijSessions; error: TerminalError };
 }
 
@@ -67,11 +71,13 @@ export const METHOD_INFO = {
   "system.doctor": { kind: "query", confirm: "none" },
   "system.info": { kind: "query", confirm: "none" },
   "system.ping": { kind: "query", confirm: "none" },
+  "terminal.attach": { kind: "stream", confirm: "none" },
   "terminal.close": { kind: "mutation", confirm: "always" },
   "terminal.create": { kind: "mutation", confirm: "none" },
   "terminal.list": { kind: "query", confirm: "none" },
   "terminal.profiles": { kind: "query", confirm: "none" },
   "terminal.rename": { kind: "mutation", confirm: "none" },
+  "terminal.resize": { kind: "mutation", confirm: "none" },
   "terminal.zellij_list": { kind: "query", confirm: "none" },
 } as const;
 
@@ -91,8 +97,9 @@ export const RPC_ERROR_CODES = [
   "secrets_locked",
   "system.unavailable",
   "terminal.cwd_invalid",
+  "terminal.invalid_size",
   "terminal.not_found",
   "terminal.project_not_found",
-  "terminal.tmux_failed",
+  "terminal.stream_unavailable",
 ] as const;
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number];
