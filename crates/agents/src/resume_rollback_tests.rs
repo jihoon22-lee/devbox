@@ -199,6 +199,10 @@ fn cases(modes: &[&str]) {
     let root = tempfile::tempdir().expect("owned fake tmux");
     fs::write(root.path().join("tmux"), r#"#!/bin/sh
 case "$5" in
+ has-session)
+   target=${7#=}
+   if [ -f "$DEVBOX_RESUME_LIVE" ] && [ "$(cat "$DEVBOX_RESUME_LIVE")" = "$target" ]; then exit 0; fi
+   printf '%s\n' "can't find session" >&2; exit 1;;
  new-session)
    previous=; id=
    for argument do

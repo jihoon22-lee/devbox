@@ -315,6 +315,8 @@ tmux 생성 실패는 생성 전 새 UUID의 부재를 확인하고, 응답 오�
 
 추가 5건 통합 검증: agents·cli all-target Clippy PASS(8.429초, cgroup peak 708,505,600byte). terminal all-target Clippy는 같은 동결 소스의 과제 검증 PASS를 사용한다. 실제 에이전트 생성·지시·squash/선택/격자 분리 창, 설정 신뢰 변경·승인 후 시작, 프로젝트 추가/제거/오류 E2E 6개 PASS(감독 30.904초, cgroup peak 1,508,814,848byte). 최종 소스별 검토를 마쳤으며 새 SHA의 CI·자동 리뷰·설치본 영향 검증은 후속 수용 단계다. 원본 `five-de37-final-*.log/resources.json`.
 
+1dd89415의 Frontend·E2E CI는 통과했으나 Linux Rust의 기존 재개 회귀 2개가 실패했다(agents 114개 PASS). 새 has-session 확인에 기존 fake tmux가 무조건 성공을 답해 실제 생성 전에 중단되는 같은 실패를 로컬에서 재현했다. 대역의 정확한 UUID 존재 조회 4줄만 보완했고 제품 코드·기존 assertion은 바꾸지 않았다. 2개 parent·6개 mode GREEN, 소유 fmt·별도 검토 PASS. 원본 CI job 115544783591 로그와 RED/GREEN은 `resume-tmux-fixture-followup`에 보존했다. 다른 tmux 대역도 확인했으며 이 테스트 전용 수정으로 통과한 제품 Clippy·E2E를 반복하지 않는다. 1dd89415 설치본은 설치하지 않았고 새 최종 SHA 수용이 필요하다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.
