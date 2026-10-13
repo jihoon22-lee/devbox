@@ -13,9 +13,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 구현 및 브랜치 전체 독립 재검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 24 전체 검사 → 실제 systemd/Windows 수용 → PR·필수 CI·자동 리뷰 |
+| 다음 할 일 | S1 최종 Windows 설치본 수용 → PR·필수 CI·자동 리뷰(전체 검사 보완 및 실제 systemd 수용 완료) |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, 최종 source 8c07b416 push. WSL 수용 PASS, Windows CI 후속 검증 중 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -223,6 +223,8 @@ Task 24 수용 테스트·계측 도구 로컬 구현: scope와 managed runtime�
 브랜치 전체 검토(80d092c2 기준): Astra가 에이전트 종료 뒤 대체 셸·재개/지시 경로, 프로젝트 삭제 후 종속 작업 유실, 같은 revision의 tmux 실시간 상태 누락 등 P2 3건을 확인했다. Task24 뒤 통합 수정은 `toolExited`·실행별 상태 파일/식별자와 입력을 실행하지 않는 보존 화면, DB 트랜잭션의 종속 자원·생성 참조 확인, 터미널 alive/command 한정 캐시 갱신과 가시 상태 재조회로 대응했다. 닫힌 작업도 Git 자원이 남으면 프로젝트를 보존하며 명시적 정리가 끝난 과거 기록은 삭제를 막지 않는다. 종료된 터미널 기록 닫기에서 발견한 tmux `no current target`도 보완했다. 좁은 Rust129·프론트47개 및 우발적으로 함께 실행된 CLI lib40개 PASS, 타입 검사·TS 생성·변경 형식 검사 PASS. 재검토에서 발견한 기존 세션 정리 실패 후 재시도 차단도 RED→GREEN으로 수정했다. 기존 세션 정리 성공 뒤 실행 세대·작업 상태를 원자적으로 저장한다. 관련 재개/동작13개 PASS 및 Astra 최종 재검토 PASS, 남은 확정 P1/P2 없음. 전체 검사·실제 수용 검증 전 단계다.
 
 S1 전체 검사 1회(`efb7fc1e`): 242.643초, cgroup peak 2,848,993,280B·swap 4,714,496B. Python16·순수 앱 core를 포함한 Rust435·프론트410/79파일·타입 검사·TS 생성·Biome·프론트 빌드 PASS. Rust의 메서드 목록 기대값1, Clippy, E2E2/9 실패를 보존했다(`.git/devbox-verification/s1-acceptance-f7wwsjih/full-check*`). 실패 단계 후속: 메서드 목록에 기존 system.refresh_env를 반영하고 공식 Clippy 수정·테스트 expect·동등한 생성자 설정 묶음으로 규칙 위반을 해결했다. 시작 구성이 세션만 만들던 실제 화면 결함은 정확한 ID/revision 응답과 탭 열기·오래된 목록 보호로 고쳤다. 에이전트 E2E의 중첩 대화상자 대기·현재 접근성 이름·ns/ms 변환·확인 대화상자 선택자를 보정했고 원래 시간 기준을 유지했다. 최종 workspace/all-targets Clippy 오류0, 직접 Rust123·프론트14 및 마지막 보호 로직 부분집합5 PASS. 실패 E2E2는 에이전트4.1초·시작 구성2.5초 PASS, 기존7개는 같은 영향 밖 입력의 PASS를 재사용하며 전체 실행을 반복하지 않았다. 통과 E2E의 수치 첨부는 기본 reporter가 보존하지 않아 SC3는 <2000ms 검증 통과만 기록한다. 후속 증거는 같은 artifact의 failed-step-followup-evidence.json과 clippy-followup-*에 있다. 후속 수정 Astra 독립 검토 PASS(68개 소스 해시 일치, 남은 P1/P2 없음). 최종 프론트 빌드·별도 SC10 probe·CLI 빌드·Biome253 PASS, cgroup peak770,387,968B. 실제 수용 검증은 진행 중이다.
+
+S1 실제 WSL 수용(`8c07b416`, 동일 트리 `b7f3e2d5`): 고유 test-*·실제 user systemd·scope 사용, DEVBOX_NO_SCOPE 없음. 첫 실행의 Claude hook·PONG·sessionId PASS, Codex는 fixture 신뢰 화면에서 timeout FAIL 후 소유 자원 정리 PASS. 신뢰 설정을 바꾸지 않고 이미 신뢰된 main을 읽기 전용/no-tools Codex 작업 경로로 사용한 재개 실행은 실제 hook·PONG·sessionId, 데몬 재시작·system.refresh_env 후 작업/터미널/tmux PID 보존, tmux 종료 SIGHUP와 무시 프로세스의 명시적 scope 정리 PASS. 첫 Claude 결과는 바이너리 SHA·소스 트리 동일성을 확인해 재사용했다. 재개 15.126초, 모든 소유 PID/unit/socket/lock 정리 및 개인 설정·신뢰 설정·main HEAD/status 보존 PASS. 증거: `.git/devbox-verification/s1-managed-acceptance-_lprv3b4`(첫 실패 포함), `s1-managed-resume-0hc5vv_d`(재개·정리). 제품 소스 Rust19,317+TS9,753=29,070/60,000줄, 파일600줄 위반 없음. Windows run38382326988은 앱 core 테스트의 field_reassign_with_default Clippy1건으로 실패했다(로그 windows-first-failed.log). 해당 테스트 초기화만 동등한 struct 구문으로 수정했다. 관련 테스트1·Linux 앱 전체 대상 Clippy·fmt/diff PASS 및 Astra 독립 검토 PASS. 제품 동작·WSL 수용 입력은 같아 해당 검증을 재사용하며 Windows CI를 재실행한다. 실제 S1 Windows 수용은 아직 미실행.
 
 ## 6. 세션 기록
 

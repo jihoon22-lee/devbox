@@ -3,8 +3,10 @@ mod tests {
     use super::*;
     #[test]
     fn external_distro_requires_ready_current_bridge_and_clears_on_close() {
-        let mut c = State::<()>::default();
-        c.active_distro = Some("Debian".into());
+        let mut c = State::<()> {
+            active_distro: Some("Debian".into()),
+            ..Default::default()
+        };
         assert!(c.ready_distro().is_err());
         c.open = true;
         assert!(c.ready_distro().is_err());
