@@ -236,7 +236,7 @@ async fn canceled_query_kills_its_owned_subprocess_group() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn review_regression_inline_live_agent_is_included_in_resources() {
+async fn review_regression_live_review_agents_are_sampled_until_exit() {
     use crate::{model::AgentTask, service::AgentsService, store, tracker::Binding};
     use devbox_core::{Db, Hub, Instance, Migration, Paths, paths::Env};
     use std::sync::Arc;
@@ -319,9 +319,58 @@ async fn review_regression_inline_live_agent_is_included_in_resources() {
         .new_session("owned-term", root.path(), Some("sleep 60"), &[])
         .await
         .expect("owned fixture");
+    let running = svc.resources().await.expect("live inline resources");
+    assert_eq!(running.items.len(), 1);
+    svc.review("a")
+        .await
+        .expect("user enters review without stopping the tool");
+    let task = svc.get("a").await.expect("review task");
+    assert_eq!(task.state, crate::state::AgentState::Review);
+    assert!(!task.tool_exited);
     let result = svc.resources().await;
-    terminal.tmux().kill_server().await;
     let items = result.expect("owned fixture").items;
-    assert_eq!(items.len(), 1, "live inline agent scope must be sampled");
+    if items.len() != 1 {
+        terminal.tmux().kill_server().await;
+    }
+    assert_eq!(items.len(), 1, "live Review tool scope must remain sampled");
     assert_eq!(items[0].memory_bytes, Some(77));
+    for mode in [
+        "exited",
+        "wrong-terminal",
+        "unowned-worktree",
+        "owned-worktree",
+    ] {
+        svc.db
+            .write(move |tx| {
+                let mut task = store::get(tx, "a")?.expect("owned task");
+                task.tool_exited = mode == "exited";
+                task.terminal_id = Some(
+                    if mode == "wrong-terminal" {
+                        "absent-term"
+                    } else {
+                        "owned-term"
+                    }
+                    .into(),
+                );
+                task.worktree_path = (mode.ends_with("worktree")).then(|| "/owned/worktree".into());
+                task.branch = (mode.ends_with("worktree")).then(|| "agent/owned".into());
+                let mut binding = store::binding(tx, "a")?.expect("owned binding");
+                binding.resources = if mode == "owned-worktree" {
+                    crate::tracker::Resources::Owned
+                } else {
+                    crate::tracker::Resources::Planned
+                };
+                store::put_binding(tx, "a", &binding)?;
+                store::put(tx, &task)
+            })
+            .await
+            .expect("owned eligibility change");
+        let sampled = svc.resources().await.expect("resources").items;
+        assert_eq!(
+            sampled.len(),
+            usize::from(mode == "owned-worktree"),
+            "{mode}"
+        );
+    }
+    terminal.tmux().kill_server().await;
 }

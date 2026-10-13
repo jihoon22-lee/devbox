@@ -124,11 +124,16 @@ impl AgentsService {
         let mut scopes = Vec::new();
         for (task, binding) in tasks {
             let Some(binding) = binding else { continue };
-            if !matches!(
-                task.state,
-                AgentState::Running | AgentState::Waiting | AgentState::Idle
-            ) || ((task.worktree_path.is_some() || task.branch.is_some())
-                && binding.resources != crate::tracker::Resources::Owned)
+            if task.tool_exited
+                || !matches!(
+                    task.state,
+                    AgentState::Running
+                        | AgentState::Waiting
+                        | AgentState::Idle
+                        | AgentState::Review
+                )
+                || ((task.worktree_path.is_some() || task.branch.is_some())
+                    && binding.resources != crate::tracker::Resources::Owned)
                 || !task
                     .terminal_id
                     .as_ref()
