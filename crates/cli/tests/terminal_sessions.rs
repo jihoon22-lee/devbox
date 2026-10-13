@@ -69,9 +69,12 @@ async fn terminal_rpc_metadata_and_tmux_survive_daemon_restart() {
     );
     fixture.0.restart();
     let client = fixture.0.client().await;
-    let list = bounded(client.call::<TerminalList>(&ListSessions { project_id: None }))
-        .await
-        .expect("list after restart");
+    let list = bounded(client.call::<TerminalList>(&ListSessions {
+        project_id: None,
+        after_id: None,
+    }))
+    .await
+    .expect("list after restart");
     assert_eq!(list.items.len(), 1);
     assert_eq!(list.items[0].id, terminal.id);
     assert!(list.items[0].alive);
@@ -81,18 +84,24 @@ async fn terminal_rpc_metadata_and_tmux_survive_daemon_restart() {
     }))
     .await
     .expect("rename terminal");
-    let list = bounded(client.call::<TerminalList>(&ListSessions { project_id: None }))
-        .await
-        .expect("renamed list");
+    let list = bounded(client.call::<TerminalList>(&ListSessions {
+        project_id: None,
+        after_id: None,
+    }))
+    .await
+    .expect("renamed list");
     assert_eq!(list.items[0].title, "renamed");
     bounded(client.call::<TerminalClose>(&CloseSession { id: terminal.id }))
         .await
         .expect("close terminal");
     assert!(
-        bounded(client.call::<TerminalList>(&ListSessions { project_id: None }))
-            .await
-            .expect("empty list")
-            .items
-            .is_empty()
+        bounded(client.call::<TerminalList>(&ListSessions {
+            project_id: None,
+            after_id: None
+        }))
+        .await
+        .expect("empty list")
+        .items
+        .is_empty()
     );
 }

@@ -60,7 +60,7 @@ export type LaunchResult = { terminals: number, agents: number, terminalIds: Arr
 export type LaunchTerminal = { name: string, command: string | null, };
 export type ListAgents = { includeClosedHours: number | null, afterId?: string, };
 export type ListProjects = Record<symbol, never>;
-export type ListSessions = { projectId: string | null, };
+export type ListSessions = { projectId: string | null, afterId?: string, };
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type MergeKind = "merge" | "squash" | "rebase";
 export type PingParams = Record<symbol, never>;
@@ -90,7 +90,7 @@ export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type SendToAgent = { id: string, text: string, };
 export type SessionKind = "shell" | "agent";
-export type SessionList = { rev: string, items: Array<TerminalSession>, };
+export type SessionList = { rev: string, items: Array<TerminalSession>, nextAfterId?: string, };
 export type SetFavorite = { id: string, favorite: boolean, };
 export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
@@ -98,7 +98,7 @@ export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
-export type TerminalError = { "code": "terminal.title_too_long", "detail": { limit: number, } } | { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
+export type TerminalError = { "code": "terminal.command_too_long", "detail": { limit_bytes: number, } } | { "code": "terminal.command_invalid" } | { "code": "terminal.invalid_cursor" } | { "code": "terminal.list_changed" } | { "code": "terminal.title_too_long", "detail": { limit: number, } } | { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
 export type TerminalProfile = { name: string, command: string, };
 export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
@@ -277,8 +277,12 @@ export const RPC_ERROR_CODES = [
   "system.env_refresh_failed",
   "system.unavailable",
   "terminal.agent_owned",
+  "terminal.command_invalid",
+  "terminal.command_too_long",
   "terminal.cwd_invalid",
+  "terminal.invalid_cursor",
   "terminal.invalid_size",
+  "terminal.list_changed",
   "terminal.not_found",
   "terminal.project_not_found",
   "terminal.stream_unavailable",

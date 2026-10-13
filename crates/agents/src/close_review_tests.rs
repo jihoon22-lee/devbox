@@ -183,7 +183,8 @@ async fn close_case(mode: &str) {
                 .svc
                 .terminal
                 .list(devbox_terminal::ListSessions {
-                    project_id: Some(fixture.project.clone())
+                    project_id: Some(fixture.project.clone()),
+                    after_id: None,
                 })
                 .await
                 .expect("terminal records")

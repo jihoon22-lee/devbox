@@ -5,6 +5,7 @@ import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
 import { useRpc, useRpcSession } from "./RpcProvider";
 import { invalidateIfNewer, shareByRevision, shareTerminalLive } from "./revisions";
+import { readTerminalList } from "./terminalPages";
 
 export { compareRev, invalidateIfNewer, setIfNewer } from "./revisions";
 
@@ -37,7 +38,11 @@ export function useRpcQuery<M extends QueryMethod>(
     queryFn: ({ signal }) =>
       method === "agents.list"
         ? (readAgentList(client, params as Methods["agents.list"]["params"], signal) as Promise<Methods[M]["result"]>)
-        : client.call(method, params, { signal }),
+        : method === "terminal.list"
+          ? (readTerminalList(client, params as Methods["terminal.list"]["params"], signal) as Promise<
+              Methods[M]["result"]
+            >)
+          : client.call(method, params, { signal }),
   });
 }
 export function useRpcMutation<M extends MutationMethod>(method: M) {

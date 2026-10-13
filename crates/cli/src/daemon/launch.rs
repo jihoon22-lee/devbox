@@ -3,7 +3,7 @@ use super::state::Services;
 use devbox_agents::{CreateAgentTask, state::AgentState};
 use devbox_projects::*;
 use devbox_protocol::Fail;
-use devbox_terminal::{CreateSession, ListSessions};
+use devbox_terminal::CreateSession;
 use futures::{StreamExt, stream};
 use std::{path::Path, sync::Arc};
 
@@ -52,6 +52,8 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
     }
     let mut result = LaunchResult::default();
     for (index, terminal) in config.terminals.iter().enumerate() {
+        devbox_terminal::validate_command(terminal.command.as_deref().unwrap_or("bash -l"))
+            .map_err(|error| launch_failure(error, &result, &format!("terminal {}", index + 1)))?;
         devbox_terminal::validate_title(&terminal.name)
             .map_err(|error| launch_failure(error, &result, &format!("terminal {}", index + 1)))?;
     }
@@ -147,7 +149,7 @@ pub async fn summary(s: Arc<Services>, _: SummaryProjects) -> Result<ProjectSumm
     let (terminals, agents) = tokio::try_join!(
         async {
             s.terminal
-                .list(ListSessions { project_id: None })
+                .all_sessions(None)
                 .await
                 .map_err(|error| Fail::Internal(format!("project terminal summary: {error:?}")))
         },
@@ -159,7 +161,7 @@ pub async fn summary(s: Arc<Services>, _: SummaryProjects) -> Result<ProjectSumm
         }
     )?;
     let mut items = stream::iter(projects.into_iter().enumerate().map(|(index, project)| {
-        let terminals = &terminals.items;
+        let terminals = &terminals;
         let agents = &agents;
         async move {
             let mut item = ProjectSummary {

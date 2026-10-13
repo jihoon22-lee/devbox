@@ -23,8 +23,19 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TerminalSession> {
     })
 }
 pub fn all(tx: &Transaction, project_id: Option<&str>) -> rusqlite::Result<Vec<TerminalSession>> {
-    let mut statement = tx.prepare("SELECT id, project_id, title, cwd, kind, command, created_ms FROM terminal_sessions WHERE (?1 IS NULL OR project_id=?1) ORDER BY created_ms, id")?;
+    let mut statement = tx.prepare("SELECT id, project_id, title, cwd, kind, substr(command,1,257), created_ms FROM terminal_sessions WHERE (?1 IS NULL OR project_id=?1) ORDER BY created_ms, id")?;
     statement.query_map([project_id], row)?.collect()
+}
+pub fn page(
+    tx: &Transaction,
+    project_id: Option<&str>,
+    created_ms: i64,
+    id: &str,
+) -> rusqlite::Result<Vec<TerminalSession>> {
+    let mut statement = tx.prepare("SELECT id, project_id, title, cwd, kind, substr(command,1,257), created_ms FROM terminal_sessions WHERE (?1 IS NULL OR project_id=?1) AND (created_ms > ?2 OR (created_ms=?2 AND id>?3)) ORDER BY created_ms, id LIMIT 257")?;
+    statement
+        .query_map(params![project_id, created_ms, id], row)?
+        .collect()
 }
 pub fn get(tx: &Transaction, id: &str) -> rusqlite::Result<Option<TerminalSession>> {
     tx.query_row("SELECT id, project_id, title, cwd, kind, command, created_ms FROM terminal_sessions WHERE id=?1", [id], row).optional()

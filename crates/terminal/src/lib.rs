@@ -3,12 +3,14 @@ mod attach;
 mod attach_gate;
 #[cfg(unix)]
 mod attach_history;
+mod limits;
 pub mod model;
 mod service;
 mod store;
 pub mod tmux;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
+pub use limits::{MAX_COMMAND_BYTES, validate_command};
 pub use model::*;
 pub use service::{TerminalService, validate_title};
 pub const TMUX_CONF: &str = include_str!("../assets/tmux.conf");

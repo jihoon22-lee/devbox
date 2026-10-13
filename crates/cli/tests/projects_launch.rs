@@ -203,6 +203,18 @@ async fn launch_preflights_later_titles_and_prompts_without_reserving_resources(
     let cases = [
         (
             format!(
+                "[launch]\nterminals=[{{name='first'}},{{name='second',command={}}}]\n",
+                serde_json::to_string(&"x".repeat(65_537)).expect("owned command")
+            ),
+            "terminal.command_too_long",
+        ),
+        (
+            "[launch]\nterminals=[{name='first'},{name='second',command=\"echo\\u0000bad\"}]\n"
+                .into(),
+            "terminal.command_invalid",
+        ),
+        (
+            format!(
                 "[launch]\nterminals=[{{name='first'}},{{name={}}}]\n",
                 serde_json::to_string(&"가".repeat(257)).expect("owned title")
             ),
@@ -366,4 +378,30 @@ async fn summary_handles_plain_and_unavailable_projects_independently() {
     assert_eq!(plain["dirty"], false);
     assert_eq!(plain["ahead"], 0);
     assert!(plain["error"].is_null());
+}
+
+#[tokio::test]
+async fn summary_counts_live_terminals_beyond_the_first_rpc_page() {
+    let (mut d, repo) = fixture("[launch]\nterminals=[{name='live',command='sleep 60'}]\n");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    call(&c, "projects.launch", json!({"id":p})).await;
+    // Older ended metadata pushes the live terminal beyond the first bounded page.
+    let status = std::process::Command::new("python3").args(["-c", "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.executemany(\"INSERT INTO terminal_sessions VALUES(?,?,'ended','/tmp','shell','true',0)\", [(f'ended{i:04}', sys.argv[2]) for i in range(260)]); c.commit(); c.close()"])
+        .arg(&d.paths.db_path).arg(&p).status().expect("owned fixture seed");
+    assert!(status.success());
+    let page = call(&c, "terminal.list", json!({"projectId":p})).await;
+    assert_eq!(page["items"].as_array().expect("first page").len(), 256);
+    assert!(page["nextAfterId"].is_string());
+    assert!(
+        page["items"]
+            .as_array()
+            .expect("ended page")
+            .iter()
+            .all(|s| s["alive"] == false)
+    );
+    let summary = call(&c, "projects.summary", json!({})).await;
+    assert_eq!(summary["items"][0]["terminals"], 1);
 }

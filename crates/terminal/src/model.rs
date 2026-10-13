@@ -26,14 +26,21 @@ pub struct TerminalSession {
     pub created_ms: i64,
 }
 #[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionList {
     pub rev: String,
     pub items: Vec<TerminalSession>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_after_id: Option<String>,
 }
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSessions {
     pub project_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub after_id: Option<String>,
 }
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -89,6 +96,10 @@ pub struct ResizeStream {
 }
 domain_error! {
     pub enum TerminalError {
+        CommandTooLong { limit_bytes: u32 } = "terminal.command_too_long",
+        CommandInvalid = "terminal.command_invalid",
+        InvalidCursor = "terminal.invalid_cursor",
+        ListChanged = "terminal.list_changed",
         TitleTooLong { limit: u16 } = "terminal.title_too_long",
         InvalidSize { cols: u16, rows: u16 } = "terminal.invalid_size",
         StreamUnavailable {} = "terminal.stream_unavailable",

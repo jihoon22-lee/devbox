@@ -10,6 +10,8 @@ use devbox_protocol::{Done, Fail, Internal};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+#[path = "listing.rs"]
+mod listing;
 type Result<T> = std::result::Result<T, Fail<TerminalError>>;
 pub struct TerminalService {
     db: Db,
@@ -157,29 +159,6 @@ impl TerminalService {
     pub fn tmux(&self) -> &Tmux {
         &self.tmux
     }
-    pub async fn list(&self, params: ListSessions) -> Result<SessionList> {
-        let (mut items, rev) = self
-            .db
-            .read(move |tx| {
-                Ok((
-                    store::all(tx, params.project_id.as_deref())?,
-                    current_rev(tx)?,
-                ))
-            })
-            .await
-            .internal("list terminals")?;
-        let live = self.tmux.list().await.map_err(tmux_error)?;
-        for item in &mut items {
-            if let Some(session) = live.iter().find(|session| session.name == item.id) {
-                item.alive = true;
-                item.command.clone_from(&session.command);
-            }
-        }
-        Ok(SessionList {
-            rev: rev.to_string(),
-            items,
-        })
-    }
     pub fn profiles(&self) -> TerminalProfiles {
         let mut items = vec![TerminalProfile {
             name: "기본 셸".into(),
@@ -263,6 +242,7 @@ impl TerminalService {
     ) -> Result<TerminalSession> {
         let (kind, id) = identity;
         validate_title(&title)?;
+        crate::validate_command(&command)?;
         let _guard = self.mutations.lock().await;
         let cwd = canonical_cwd(cwd).await?;
         if let Some(id) = &project_id

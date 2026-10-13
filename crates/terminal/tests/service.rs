@@ -32,7 +32,10 @@ async fn service_create_rename_list_close_and_missing_errors_preserve_revisions(
     ));
     let list = h
         .terminal
-        .list(ListSessions { project_id: None })
+        .list(ListSessions {
+            project_id: None,
+            after_id: None,
+        })
         .await
         .expect("list terminal");
     assert_eq!(list.items.len(), 1);
@@ -64,7 +67,10 @@ async fn service_create_rename_list_close_and_missing_errors_preserve_revisions(
     ));
     let list = h
         .terminal
-        .list(ListSessions { project_id: None })
+        .list(ListSessions {
+            project_id: None,
+            after_id: None,
+        })
         .await
         .expect("empty list");
     assert!(list.items.is_empty());
@@ -187,6 +193,7 @@ async fn project_cwd_profiles_dead_rows_and_untracked_tmux_are_kept_separate() {
         .terminal
         .list(ListSessions {
             project_id: Some(project.id),
+            after_id: None,
         })
         .await
         .expect("dead metadata");
@@ -278,7 +285,10 @@ async fn dropped_rename_waiter_still_publishes_the_committed_revision() {
     ));
     assert_eq!(
         h.terminal
-            .list(ListSessions { project_id: None })
+            .list(ListSessions {
+                project_id: None,
+                after_id: None
+            })
             .await
             .expect("committed list")
             .items[0]

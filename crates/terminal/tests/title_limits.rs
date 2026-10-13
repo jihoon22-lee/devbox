@@ -59,7 +59,10 @@ async fn oversized_create_titles_have_no_metadata_or_tmux_side_effects() {
     );
     assert!(
         h.terminal
-            .list(ListSessions { project_id: None })
+            .list(ListSessions {
+                project_id: None,
+                after_id: None
+            })
             .await
             .expect("no metadata")
             .items
@@ -98,7 +101,10 @@ async fn oversized_rename_preserves_title_revision_and_notifications() {
     }
     let list = h
         .terminal
-        .list(ListSessions { project_id: None })
+        .list(ListSessions {
+            project_id: None,
+            after_id: None,
+        })
         .await
         .expect("manageable list");
     assert_eq!(list.items.len(), 1);
@@ -138,7 +144,10 @@ async fn title_boundary_counts_unicode_characters_and_preserves_short_text() {
             .expect("allowed rename");
         assert_eq!(
             h.terminal
-                .list(ListSessions { project_id: None })
+                .list(ListSessions {
+                    project_id: None,
+                    after_id: None
+                })
                 .await
                 .expect("list")
                 .items[0]
