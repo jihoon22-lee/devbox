@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { ownedPaneSessions, waitPaneShutdown } from "./pane-shutdown";
 
 const run = promisify(execFile);
 export async function stopOwnedTmux(instance: string, env: NodeJS.ProcessEnv) {
@@ -7,12 +8,22 @@ export async function stopOwnedTmux(instance: string, env: NodeJS.ProcessEnv) {
   const cleanEnv = { ...env };
   delete cleanEnv.TMUX;
   delete cleanEnv.TMUX_TMPDIR;
+  let panes: ReturnType<typeof ownedPaneSessions> = [];
   try {
+    const { stdout } = await run("tmux", ["-L", `devbox-${instance}`, "list-panes", "-a", "-F", "#{pane_pid}"], {
+      env: cleanEnv,
+      timeout: 5_000,
+      maxBuffer: 4096,
+    });
+    const pids = stdout.trim() ? stdout.trim().split(/\s+/).map(Number) : [];
+    if (pids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)) throw new Error("Invalid owned tmux pane PID");
+    panes = ownedPaneSessions(pids);
     await run("tmux", ["-L", `devbox-${instance}`, "kill-server"], { env: cleanEnv, timeout: 5_000, maxBuffer: 4096 });
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { stderr?: string };
     // No terminal was created, or the owned server already exited.
-    if (failure.code === "ENOENT" || /no server running|No such file or directory/.test(failure.stderr ?? "")) return;
-    throw error;
+    if (failure.code !== "ENOENT" && !/no server running|No such file or directory/.test(failure.stderr ?? ""))
+      throw error;
   }
+  await waitPaneShutdown(panes);
 }
