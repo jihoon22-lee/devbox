@@ -78,6 +78,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "지시 전달 결과를 확인할 수 없습니다.",
     action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",
   },
+  "agents.resume_unavailable": {
+    title: "에이전트를 이어서 실행할 수 없습니다.",
+    action: "이전 도구 실행을 확인할 수 없습니다. 새 작업을 만들어 주세요.",
+  },
   "agents.review_unavailable": {
     title: "고정된 검토 객체를 찾을 수 없습니다.",
     action: "저장된 작업과 커밋 기록은 유지됩니다. Git 객체 보관 상태를 확인해 주세요.",

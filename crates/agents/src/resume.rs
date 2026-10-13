@@ -1,7 +1,8 @@
 use crate::{
     model::*,
     service::{AgentsService, Result, changed, now_ms},
-    state::AgentState,
+    state::{AgentEvent, AgentState},
+    tool_lifecycle::Phase,
 };
 use devbox_protocol::Internal;
 use std::{path::Path, sync::Arc};
@@ -21,6 +22,15 @@ impl AgentsService {
         let _guard = self.actions.lock().await;
         let task = self.get(id).await?;
         crate::actions::open(&task)?;
+        // Only current-launch evidence that setup reached the tool authorizes
+        // continuing without the original worktree/setup preparation plan.
+        let phase = self.tool_phase(&task).await?;
+        if !matches!(
+            phase,
+            Some(Phase::Tool | Phase::Ended(AgentEvent::Exited { .. }))
+        ) {
+            return Err(AgentsError::ResumeUnavailable.into());
+        }
         if task.terminal_id.as_ref().is_some_and(|id| !id.is_empty())
             && self
                 .terminal
@@ -30,10 +40,7 @@ impl AgentsService {
                 .internal("resume session list")?
                 .iter()
                 .any(|s| Some(&s.name) == task.terminal_id.as_ref())
-            && !matches!(
-                self.tool_phase(&task).await?,
-                Some(crate::tool_lifecycle::Phase::Ended(_))
-            )
+            && !matches!(phase, Some(Phase::Ended(_)))
         {
             return Err(AgentsError::BadState {
                 state: "session-present".into(),
@@ -58,8 +65,16 @@ impl AgentsService {
             {
                 return Err(AgentsError::UnsafeWorktree.into());
             }
-        } else if task.workdir != project.path {
-            return Err(AgentsError::UnsafeWorktree.into());
+        } else {
+            let directory = self.query_directory(&task).await?;
+            let canonical =
+                std::fs::canonicalize(&directory).map_err(|_| AgentsError::UnsafeWorktree)?;
+            if !canonical.is_dir()
+                || canonical != Path::new(&task.workdir)
+                || canonical != Path::new(&project.path)
+            {
+                return Err(AgentsError::UnsafeWorktree.into());
+            }
         }
         let profile = crate::profile::resolve(&self.profiles, &task.profile).ok_or(
             AgentsError::ProfileNotFound {

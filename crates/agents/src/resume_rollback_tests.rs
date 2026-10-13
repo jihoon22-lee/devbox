@@ -60,6 +60,11 @@ async fn case(mode: &str) {
         })
         .await
         .expect("ended previous launch");
+    let ended = f.svc.get("a").await.expect("ended task");
+    let phase = f.svc.phase_path(&ended, "old-generation");
+    crate::prepare::private_dir(phase.parent().expect("data directory")).expect("old data");
+    crate::prepare::private_file(&phase, "exit:0\n", false)
+        .expect("all cases completed the previous tool launch");
     let old = f.svc.launch_binding("a").await.expect("old binding");
     let before = f.svc.get("a").await.expect("old task");
     fs::write(
@@ -82,11 +87,6 @@ async fn case(mode: &str) {
             old_terminal,
         )
         .expect("fake old holder");
-        let current = f.svc.get("a").await.expect("old holder task");
-        let phase = f.svc.phase_path(&current, "old-generation");
-        crate::prepare::private_dir(phase.parent().expect("data directory")).expect("old data");
-        crate::prepare::private_file(&phase, "exit:0\n", false)
-            .expect("ended old generation marker");
     }
     if mode == "persist" || mode == "cleanup" {
         f.svc.db.write(|tx| tx.execute_batch("CREATE TRIGGER owned_resume_terminal_fail BEFORE UPDATE ON agents_tasks WHEN json_extract(NEW.body, '$.terminalId') IS NOT NULL BEGIN SELECT RAISE(FAIL, 'owned terminal-id failure'); END;")).await.expect("owned terminal-id failure");
