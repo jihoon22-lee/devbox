@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 #639 완료. S1 Task 1–24·신뢰 확인 구현과 독립 검토 완료. PR #640의 a93de69d 필수 CI·E2E PASS. 코드·보안 리뷰 완료 후 초기 checkout 필터 실행과 런타임·diff의 추가 5건을 모두 수정하고 과제별 독립 검토·커밋을 마쳤다. 새 후보의 통합 검사·E2E 9개·브랜치 검토까지 통과했으며 최종 SHA의 필수 CI·자동 리뷰·Windows 수용이 남았다. a93de69d의 Windows 설치본은 출처·해시 확인 뒤 설치 전에 새 지적을 확인해 제거했다. 마지막 설치본 수용은 54931b6f이며 새 최종 SHA 수용이 필요하다. 명시적 Git hook 정책 확대와 패치 영구 저장 제안은 승인 범위 근거로 적용하지 않고 한계를 기록했다 |
-| 다음 할 일 | 새 최종 SHA push·필수 CI·Windows 영향 검증·자동 리뷰 → squash 머지 |
+| 단계 | S1 Task 1–24·신뢰 확인 및 앞선 리뷰 보완 구현·독립 검토 완료. PR #640 최종 후보 3cfcb0fc의 필수 CI·E2E·Windows 설치본 수용과 자동 코드·보안 리뷰가 완료됐다. 코드 리뷰의 추가 4건(폐기 branch OID 경쟁, 폐기 후 DB 실패 복구, 지시문 전송 후 저장 실패, 원격 OSC 7 경로)을 검증·보완 중이며 아직 머지하지 않았다 |
+| 다음 할 일 | 추가 4건 타당성 확인 → 과제별 실패 회귀·수정·별도 검토 → 새 최종 SHA 수용·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -350,6 +350,13 @@ a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및
 검토 중 자원 집계 보완(26f4a5c9): 도구가 종료되지 않은 Review 작업을 집계 대상으로 추가하고 기존 binding·정확한 살아 있는 터미널·worktree 소유권·실행 세대별 sampler 검증을 유지한다. 실제 svc.review 호출 후 행이 사라지는 인과 RED → 자원 시험 8개 PASS, fmt·Biome 274 PASS. 독립 검토 소스 2개/자원 원본 로그 3개 PASS(`agents-review-metrics-followup/`). 이 fixture는 소유 tmux와 가짜 accounting provider를 사용했으며, 실제 Windows 설치본의 systemd 집계는 최종 수용에서 확인한다.
 
 여섯 지적 통합 수용 준비(26f4a5c9): 별도 최종 브랜치 검토에서 a93de69d 이후 변경 소스 20개를 과제별 고정 해시와 대조해 불일치·미검토 파일 0개, 지적 6건 모두 해결 및 교차 영향 검토 PASS. 영향받은 agents/git/projects/cli 전체 target Clippy·workspace fmt·RPC 생성물 일치·TypeScript PASS(19.410초, cgroup peak 1,449,451,520 bytes). 실제 데몬의 생성/지시/squash·선택/popout·신뢰·프로젝트·재연결·터미널 이력/분할 E2E 9개 PASS(시험 45.1초, supervisor 45.920초, peak 1,778,626,560 bytes). `six-findings-final-*`에 원본 로그·자원 기록·검토 판정을 보존했다. 새 최종 SHA의 필수 CI·자동 코드/보안 리뷰·Windows 설치본 수용은 다음 gate이며 아직 PASS로 보고하지 않는다.
+
+
+3cfcb0fc 수용 결과: CI 38484374083·Windows 38484374097의 필수 검사 및 E2E PASS. 코드 리뷰 23:44:27 UTC·보안 리뷰 23:36:13 UTC 완료. 출처·SHA256 확인 설치본에서 추적된 attributes가 지정한 상속 필터를 clone/worktree checkout이 실행하지 않고 파일 내용·일반 승인 setup을 보존했다. ASCII/Unicode 65,537byte·NUL squash와 과대/NUL 두 번째 teardown 명령을 task/rev/terminal·refs/index/files·실제 scope/tmux를 바꾸지 않고 거부했으며 첫 teardown sentinel도 미실행이다. rename의 두 경로를 유지한 patch와 실제 Review scope 메모리 385,024byte를 확인했다. 확인 폐기·일반 teardown·project 제거·Windows 자식 포함 12개 종료·소유 Windows/WSL/다운로드 정리 PASS, v0.9·기존 빈 디렉터리 inode 보존. 폐기 후 helper의 필수 projectId 누락과 응답 shape 오해는 실패 artifact로 보존하고 수정된 assertion만 다시 확인했다. `native-resources`의 208.124초/메모리는 잠금 keeper 계측이며 실제 daemon/scope drop-in·Windows affinity/priority 근거와 구분한다. `windows-final-3cfcb0fc/acceptance.json`·`independent-acceptance-review.json` 독립 검토 PASS. 기존 동일 입력 재사용과 미실행 R1/R2·DND·native fault injection 구분 유지.
+
+완료된 코드 리뷰는 추가 4건을 남겼다: discard의 confirmed OID 없는 branch 삭제(4265254669), 자원 삭제 후 DB 저장 실패의 복구(4265254675), 지시문 전송 후 final DB 저장 실패의 중복 재시도(4265254681), 원격 호스트 OSC 7 경로의 로컬 cwd 오인(4265254688). 현재 코드·실패 조건을 별도로 검토하며 이 후보는 머지하지 않는다.
+
+폐기 branch 경쟁 보완(4265254669): worktree 제거 뒤 branch 삭제를 확인된 head OID의 원자적 비교·삭제로 바꿨다. 소유 Git wrapper가 실제 worktree 제거 직후 해당 fixture branch를 새 host commit으로 옮겨, 기존 강제 삭제가 새 tip을 지우는 RED를 확인했다. 수정 후 새 ref/commit 보존, 원래 확인한 head/base/commit count의 ClosedDiscarded 기록과 cleanup_error·Owned 예약 유지 GREEN이다. 새 회귀 1개와 기존 정상 폐기·stale 확인·다른 worktree branch 3개, 소유 fmt PASS. 원본 `discard-cas-followup`의 RED/GREEN·자원·3파일 동결 근거에 보존한다. DB 저장 실패 복구는 별도 후속 과제다.
 
 ## 6. 세션 기록
 

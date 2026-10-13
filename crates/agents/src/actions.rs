@@ -501,7 +501,9 @@ impl AgentsService {
         devbox_git::mutate::worktree_remove(repo, &wt, true)
             .await
             .map_err(git_failure)?;
-        if let Err(error) = devbox_git::mutate::delete_branch(repo, &branch, true).await {
+        if let Err(error) =
+            devbox_git::mutate::delete_branch_at(repo, &branch, &p.expect.head_oid).await
+        {
             // Removal completed; retain an accurate closed record and a reviewable branch cleanup failure.
             self.close_record(
                 &task.id,
