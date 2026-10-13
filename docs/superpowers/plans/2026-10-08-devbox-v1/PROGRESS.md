@@ -13,9 +13,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 구현 및 브랜치 전체 독립 재검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | Windows 실기에서 발견한 ACK 큐 포화 수정·설치본 재검증 → PR·필수 CI·자동 리뷰 |
+| 다음 할 일 | PR #640 코드 리뷰 보완 및 승인된 프로젝트 신뢰 확인 구현·별도 검토 → 영향 검증·필수 CI 3개·최종 SHA 자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, 설치본 source e762e44f Windows CI PASS. WSL 수용 PASS, Windows SC10 실패 후 전송 수정·독립 검토 완료, 새 설치본 재검증 대기 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640 필수 CI 3개 PASS, 별도 E2E 정리 실패 및 자동 리뷰 지적 보완·승인된 신뢰 확인 추가 작업 중. 후속 최종 SHA 검증은 아직 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -33,6 +33,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-13 | 사용자 결정 2026-10-13 · S2 전환점 | 사용자 | 기능 완성 뒤 실사용이 기본, S2 뒤 선택적 조기 사용 안내만 하고 기다리지 않음. 옮겼다고 알려 주면 날짜 기록, 문제는 이 표에 적고 진행 중 브랜치에서 수정 |
 | 2026-10-13 | 사용자 결정 2026-10-13 · S3/S5 자원 | 사용자 | 동시 진행 유지. S2 Task 15b에서 전체 검사/E2E common-dir 잠금 --wait(최대60분 exit75) 구현, 기본 비차단 유지. 초과는 검사 대기 초과로 보고/재시도. 좁은 검사 잠금 없이 트랙당 jobs/threads/workers2·nice+10·지원 cgroup6/8GiB swap1GiB, S5 전용 target, 메모리 압박시 한 트랙 중단 |
 | 2026-10-13 | 사용자 결정 2026-10-13 · R1/R2 | 사용자 | 30분 유휴 유지·WSL shutdown 재연결은 S6 공개 직전 사용자 확인으로 이동. R2 경과시간 기록. 그 전까지 미실행 |
+| 2026-10-13 | PR #640 보안 권고: 저장소 명령의 신뢰 승인 | 사용자 · 00 §3.2 범위 변경 | 승인: 사용자가 “S1에 신뢰 확인 추가(권장)”를 선택했다. 프로젝트의 정규 경로·설정 내용 digest에 묶인 영속 승인과 setup/test/teardown/launch 명령 미리보기를 S1에 추가한다. 설정 변경 시 재승인하고 daemon의 직접 RPC·내부 실행 경로에도 적용한다. 실행은 승인된 불변 설정 snapshot을 사용하며 신뢰가 바뀐 teardown은 자원을 보존하고 오류를 보고한다. worktree/scope를 sandbox로 간주하지 않는다. 구현·회귀 검증·별도 검토 후 머지한다 |
 
 ## 3. 하위 프로젝트
 
@@ -41,7 +42,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
-| S1 | 04-s1-agents-terminal · 04b-s1-app | 작업 중 | 2026-10-13 | | 완료·검증 결과 보고 |
+| S1 | 04-s1-agents-terminal · 04b-s1-app | PR 열림 | 2026-10-13 | | 완료·검증 결과 보고 |
 | S2 | 05-s2-runs | 대기 | | | 완료·검증 결과 보고 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
@@ -55,7 +56,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | PR | 브랜치 | 범위 | 상태 | PR 번호 | 머지 |
 |---|---|---|---|---|---|
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
-| S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 대기 | | |
+| S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | PR 열림 | #640 | |
 | S2 | `v1/s2-runs` | S2 Task 1–16 | 대기 | | |
 | S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
@@ -229,6 +230,13 @@ S1 실제 WSL 수용(`8c07b416`, 동일 트리 `b7f3e2d5`): 고유 test-*·실�
 S1 Windows 설치본 1차 수용(`e762e44f`, [run38383196853](https://github.com/jihoon22-lee/devbox/actions/runs/38383196853)): CI PASS, repository/workflow/source SHA와 설치본 SHA256 `e8fbc13505ddc2adc02eadc5eaa54231cede68857ba6d0d5c424a56cb3c7d806` 확인 후 전용 사용자 경로에 무인 설치(exit0). 첫 실행의 Ubuntu 자동 선택·WSL 배치/setup/bridge·ping·프로젝트 UI 추가, 네이티브 터미널/분리 창2개, 자동 시작 등록/해제 PASS. 창 닫기→트레이 유지, 기본 전역 단축키 충돌 표시→대체 Ctrl+Alt+F11 등록/창 복원/팔레트, 실제 트레이 메뉴의 입력 대기 수·종료 확인, 종료 후 앱/소유 wsl.exe Job 자식 정리, `--minimized` 숨김 시작 PASS. 소유 fixture hook→native attention/알림 센터 및 Windows 토스트 이력·등록 protocol 작업 이동 PASS(실제 Claude/Codex 검증은 위 WSL 수용과 구분). Windows 방해 금지가 켜져 있어 팝업/작업 표시줄 깜박임의 시각 검증은 미실행이며 설정을 바꾸지 않았다. 설치/데이터는 기존 v1/prod 부재를 확인한 뒤 만든 것만 사용했고 v0.9를 보존했다.
 
 SC10 1차: 설치본 분리 창의 전체 경로 1byte 왕복200회(warmup10, 화면 그리기 제외) p50=1.8ms·p95=2.4ms PASS. 100,000,000byte 무제한 속도 출력은 완료 신호60초 timeout **FAIL**. 후속 진단에서 생산자3.132초 완료에도 native 스트림이 약300,750byte 렌더 출력 뒤 끊겼으며 `Tauri transport queue is full`과 채널 재연결을 확인했다. 작은 소비 ACK가 256개 전송 대기 상한에 쌓이는 제품 결함이다. 큐 상한을 유지하며 대기 중인 같은 스트림 credit만 합치고 활성 전송·입력/FIN/요청/close 순서·연결 세대를 보존하도록 보완했다. 완료 마커를 4096자 꼬리로 자르기 전에 검색하도록 계측 결함도 수정했다. 각 실패 회귀 RED 후 직접4suite57개·typecheck·변경 Biome·크기/diff 검사 PASS, Astra 독립 검토 PASS(소스7개 해시 일치, 추가 P1/P2 없음). 새 설치본의 영향을 받는 SC10/전송과 업데이트 세션 유지 재검증이 남았다. 첫 실패·원본 측정·소유 자원은 `.git/devbox-verification/s1-acceptance-f7wwsjih/{windows-first-acceptance.json,sc10-first-echo.json,sc10-native-queue-failure.json,native-ack-followup-evidence.json}`에 보존한다. 초기 로컬 잠금 유지 프로세스는543.369초 뒤 exit143으로 끝나 감독 성공으로 보고하지 않는다. 다른 검사는 전 기간 대기했고 WSL unit/scope CPU4·nice10·6/8GiB·swap1GiB 및 Windows CPU4/BelowNormal을 별도 확인했다. 앱·자동 시작을 끈 뒤 수정 검증에 슬롯을 넘겼으며 소유한 유휴 tmux/작업만 업데이트 검증용으로 유지한다.
+
+S1 Windows 재수용(`105494c38d927e431273dbc32726fd6aa0b94127`, [run38387183972](https://github.com/jihoon22-lee/devbox/actions/runs/38387183972)): source/receipt/installer SHA256 `ae4a2e3f0e2ff3b95d14264eacd077276243920c8044b15e221117dbe80c2c6e` 확인·Windows CI PASS. 이전 소유 설치본 업데이트 exit0, Linux 내장 바이너리 SHA256 불변. 기존 tmux PID3897891·터미널4개·동일 입력 대기 작업/sessionId 보존 PASS. 수정된 native 경로에서 1byte 왕복200회(warmup10) p50=1.8ms·p95=2.5ms PASS. 한 분리 창의 정확한100MB 무제한 속도 출력은5.175초 완료, 다른 창의 동시 ping686회 p95=20.7ms·출력 뒤1byte 입력 복구102ms PASS, 두 창 재연결0. 작업 폐기/터미널 정리 후 앱·bridge·WebView PID 소멸, uninstall exit0, 소유 Windows 설치/identifier 데이터/다운로드·자동 시작·scheme·WSL prod/unit/template/links/drop-in/socket/lock/bin 제거 PASS. 기존 DevboxSuite0.9 및 기존 Devbox 데이터 보존. 초기 정리 도구가 배치 `.owner`, 이미 수거된 scope, setup의 paths.conf를 빠뜨려 중단한 내역을 보존했고 알려진 내용·소유권 대조 뒤 마무리했다. 재시도 감독은355.906초 exit0이며 실제 WSL cgroup 제한과 Windows 소유 프로세스 트리 affinity4/BelowNormal을 확인했다. 자원 수치는 감독/서비스별 근거이며 Windows 전체 메모리 peak로 오해하지 않는다. 실제 Windows 토스트 이력·protocol 이동은 PASS, 방해 금지 하 팝업/작업 표시줄 효과의 시각 검증은 여전히 미실행이다. 원본 샘플과 정리 근거: 같은 artifact의 windows-final-acceptance.json·sc10-retry-echo.json·flood-retry-results.json·windows-wsl-cleanup.json. 최종 소스는 Rust19,317+TS9,808=29,125/60,000줄, 파일600줄 위반 없음. 이 결과는 검증된 `105494c3`의 이력으로 보존한다. 후속 PR 수정으로 소스가 바뀌므로 새 최종 SHA 설치본의 영향 범위 재확인이 필요하다. 새 최종 스모크 결과만 담은 PROGRESS 변경은 00 §3에 따라 다음 작업 브랜치로 인계한다.
+
+
+PR #640 첫 CI는 `105494c3`에서 필수 Frontend/Linux Rust/Windows Rust가 성공했지만, 별도 E2E의 터미널2개가 fixture HOME 제거 시 ENOTEMPTY로 실패했다. tmux 종료 명령 완료 후 지연된 pane HUP finalizer가 HOME에 쓰는 실패를 재현했다. 정확한 소유 pane PID/starttime·SID와 고아 자손을 검사하고, 경합 시 새로 스캔하여 연속2회 안정적으로 비어 있을 때만 HOME을 제거하도록 수정했다. 5초 내 종료를 확인하지 못하면 HOME을 보존하고 실패하며 추가 kill이나 rm 재시도는 하지 않는다. helper9개·실패했던 실제 E2E2개(각4.1초)·typecheck·변경 Biome PASS, Astra 독립 재검토 PASS. 다른7개 E2E 성공은 반복하지 않았다. 원래 실패는 pr-first-failed.log, 수정 근거는 e2e-teardown-followup-evidence.json에 보존한다.
+
+PR #640 후속 Git 보완: source 복사 FD 재검증, clone 전송 deadline 10분(일반 Git 조회 30초 유지), credential·제어 문자를 제거한 제한된 실패 진단을 추가했다. 각각 RED 뒤 기존 직접 범위 고유26개와 두 crate Clippy/포맷 PASS. 별도 재검토에서 목적지 부모 교체로 외부에 새 파일을 만드는 추가 경합을 발견했다. 결정적 `copy escaped owned worktree` RED 후 소유 worktree FD를 고정하고 모든 하위 디렉터리 생성·최종 파일 열기를 `mkdirat/openat`·NOFOLLOW·O_EXCL로 보완했다. 목적지 교체·하위 경로 생성·기존 파일/링크·권한 보존 고유11개, projects Clippy·포맷 PASS 및 Astra 독립 재검토 PASS. Linux/WSL 범위이며 Windows 실기 재확인은 아직이다. 근거: 같은 artifact의 git-review-followup/evidence.json·copy-destination-evidence.json(원래 config 해시는 후속 근거로 대체, 다른3개 파일 일치).
 
 ## 6. 세션 기록
 

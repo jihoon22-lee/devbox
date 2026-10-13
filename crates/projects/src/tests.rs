@@ -448,14 +448,17 @@ async fn clone_registers_success_and_preserves_preexisting_and_failed_targets() 
         "preserve"
     );
     let failed = t.path().join("failed");
-    assert!(matches!(
-        s.clone_repository(CloneProject {
+    let failure = s
+        .clone_repository(CloneProject {
             url: t.path().join("absent.git").display().to_string(),
-            dir: Some(failed.display().to_string())
+            dir: Some(failed.display().to_string()),
         })
-        .await,
-        Err(Fail::Domain(ProjectsError::CloneFailed { .. }))
-    ));
+        .await;
+    let Err(Fail::Domain(ProjectsError::CloneFailed { path, message })) = failure else {
+        panic!("expected failed local clone");
+    };
+    assert_eq!(path, failed.display().to_string());
+    assert!(message.contains("does not exist"), "{message}");
     assert!(failed.is_dir());
     assert_eq!(s.list(ListProjects {}).await.expect("list").items.len(), 1);
     let rejected = t.path().join("rejected");

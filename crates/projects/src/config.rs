@@ -259,6 +259,8 @@ fn collect(
 pub fn copy_files(project: &Path, worktree: &Path, paths: &[String]) -> Result<(), ConfigError> {
     check_ancestors(project)?;
     check_ancestors(worktree)?;
+    let target =
+        crate::copy_target::CopyTarget::open(worktree).map_err(|error| io(worktree, error))?;
     let mut files = Vec::new();
     for path in paths {
         relative(Path::new(path))?;
@@ -267,48 +269,103 @@ pub fn copy_files(project: &Path, worktree: &Path, paths: &[String]) -> Result<(
     for (source, destination) in files {
         check_ancestors(&source)?;
         check_ancestors(&destination)?;
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| io(parent, error))?;
-        }
-        let mut input = std::fs::File::open(&source).map_err(|error| io(&source, error))?;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut output = options.open(&destination).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                ConfigError::DestinationExists {
-                    path: destination.clone(),
-                }
-            } else {
-                io(&destination, error)
-            }
-        })?;
-        std::io::copy(&mut input, &mut output).map_err(|error| io(&destination, error))?;
-        let permissions = input
-            .metadata()
-            .map_err(|error| io(&source, error))?
-            .permissions();
-        #[cfg(unix)]
-        let permissions = {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = permissions;
-            permissions.set_mode(permissions.mode() & 0o777);
-            permissions
-        };
-        output
-            .set_permissions(permissions)
-            .map_err(|error| io(&destination, error))?;
+        copy_collected_file(&source, &destination, &target)?;
     }
+    Ok(())
+}
+
+fn copy_collected_file(
+    source: &Path,
+    destination: &Path,
+    target: &crate::copy_target::CopyTarget,
+) -> Result<(), ConfigError> {
+    let mut input = open_regular(source).map_err(|error| io(source, error))?;
+    let mut output = target.create(destination).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            ConfigError::DestinationExists {
+                path: destination.to_owned(),
+            }
+        } else {
+            io(destination, error)
+        }
+    })?;
+    std::io::copy(&mut input, &mut output).map_err(|error| io(destination, error))?;
+    let permissions = input
+        .metadata()
+        .map_err(|error| io(source, error))?
+        .permissions();
+    #[cfg(unix)]
+    let permissions = {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = permissions;
+        permissions.set_mode(permissions.mode() & 0o777);
+        permissions
+    };
+    output
+        .set_permissions(permissions)
+        .map_err(|error| io(destination, error))?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn collected_copy_rejects_source_replacement_after_ancestor_validation() {
+        for replace_ancestor in [false, true] {
+            let root = tempfile::tempdir().expect("owned fixture");
+            let source = root.path().join("source");
+            let external = root.path().join("external");
+            let destination = root.path().join("copied");
+            std::fs::create_dir(&source).expect("owned fixture");
+            std::fs::create_dir(&external).expect("owned fixture");
+            std::fs::write(source.join("file"), "project file").expect("owned fixture");
+            std::fs::write(external.join("file"), "outside file").expect("owned fixture");
+            check_ancestors(&source.join("file")).expect("initial validation");
+            if replace_ancestor {
+                std::fs::rename(&source, root.path().join("old-source")).expect("owned fixture");
+                std::os::unix::fs::symlink(&external, &source).expect("owned fixture");
+            } else {
+                std::fs::remove_file(source.join("file")).expect("owned fixture");
+                std::os::unix::fs::symlink(external.join("file"), source.join("file"))
+                    .expect("owned fixture");
+            }
+            assert!(
+                copy_collected_file(
+                    &source.join("file"),
+                    &destination,
+                    &crate::copy_target::CopyTarget::open(root.path()).expect("pin destination")
+                )
+                .is_err()
+            );
+            assert!(!destination.exists(), "outside source was copied");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn collected_copy_rejects_destination_parent_replacement() {
+        let root = tempfile::tempdir().expect("owned fixture");
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        let external = root.path().join("external");
+        std::fs::write(&source, "project file").expect("owned fixture");
+        std::fs::create_dir_all(target.join("dir")).expect("owned fixture");
+        std::fs::create_dir(&external).expect("owned fixture");
+        let destination = target.join("dir/file");
+        check_ancestors(&destination).expect("initial validation");
+        let pinned = crate::copy_target::CopyTarget::open(&target).expect("pin destination");
+        std::fs::rename(target.join("dir"), target.join("old-dir")).expect("owned fixture");
+        std::os::unix::fs::symlink(&external, target.join("dir")).expect("owned fixture");
+        let result = copy_collected_file(&source, &destination, &pinned);
+        assert!(
+            !external.join("file").exists(),
+            "copy escaped owned worktree"
+        );
+        assert!(result.is_err());
+    }
 
     #[test]
     fn launch_sections_and_entries_require_named_toml_tables() {

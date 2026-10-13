@@ -3,6 +3,10 @@ use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{io::AsyncReadExt, process::Command};
 pub const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 pub const TIMEOUT: Duration = Duration::from_secs(30);
+// Cloning can transfer a large history over a slow connection. Keep it bounded
+// independently of short queries; execute still kills owned helpers on cancellation.
+#[cfg(target_os = "linux")]
+const CLONE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// Nonzero exit is returned to allow explicit handling of symbolic-ref and no-index.
 pub async fn output(dir: &Path, args: &[&str]) -> Result<(i32, String, String), GitError> {
@@ -40,7 +44,7 @@ pub async fn clone_output(
     // Keep configured identities, wrappers, and SSH config. User helper commands are
     // trusted configuration; stdin, askpass, batch mode, output, and time stay bounded.
     command.env("GIT_SSH_COMMAND", ssh_with_batch(&ssh)?);
-    execute(command, TIMEOUT).await
+    execute(command, CLONE_TIMEOUT).await
 }
 
 #[cfg(target_os = "linux")]
@@ -390,6 +394,20 @@ pub(crate) async fn repository_root(dir: &Path) -> Result<std::path::PathBuf, Gi
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clone_runner_allows_transfer_past_query_deadline() {
+        let fixture = tempfile::tempdir().expect("owned fixture");
+        let directory = std::fs::File::open(fixture.path()).expect("owned fixture");
+        // An owned Git alias models a slow transfer without any network or global config.
+        let result = clone_output(
+            &directory,
+            &["-c", "alias.fixture-clone=!sleep 31", "fixture-clone"],
+        )
+        .await
+        .expect("clone should outlive the 30-second query deadline");
+        assert_eq!(result.0, 0);
+    }
     #[cfg(target_os = "linux")]
     async fn effective_ssh_options(command: &str) {
         let ssh = ssh_with_batch(command).expect("owned fixture");

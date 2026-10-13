@@ -3,6 +3,7 @@ mod actions;
 #[cfg(target_os = "linux")]
 mod clone_target;
 mod cloning;
+mod copy_target;
 pub mod config;
 pub mod model;
 mod prompts;
