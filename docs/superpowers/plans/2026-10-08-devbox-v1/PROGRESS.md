@@ -265,6 +265,8 @@ PR #640 추가 화면 보완: 파일별 봤음은 HEAD/base·파일 정보·전�
 
 리뷰4261973440 복제 hook 보완: 상속된 상대 core.hooksPath가 복제된 실행 파일을 최초 checkout에서 실행하는 문제를 소유 GIT_CONFIG_GLOBAL fixture로 재현했다. clone 호출에만 core.hooksPath=/dev/null을 적용해 등록 전 hook 실행을 막으며, 사용자/저장소 설정과 기존 명시적 Git mutation hook 정책은 바꾸지 않는다. 원래 hook marker RED→차단 GREEN, clone/auth/기존 mutation/query hook 고유6개 및 포맷·Biome269파일 PASS, 고정2파일 독립 검토 PASS. 그 뒤 일반 checkout은 fixture hook을 실행해 호출 범위가 제한됨을 확인했다. 추가 hook 활성화 화면·영구 비활성화 정책은 넣지 않았다. 근거 clone-hooks-followup/evidence.json·원본 RED/GREEN·패치 해시. 마지막 대상 Clippy와 새 최종 SHA CI·Windows 영향 확인은 이어지는 보완 완료 뒤 수행한다.
 
+리뷰4262016027 종료 정지 보완: Git 자동 정리를 꺼도 merge/PR의 비가역 변경 전에 정확한 소유 터미널·scope를 항상 정지한다. 정지 실패는 병합·push·PR보다 먼저 실패하고, 정지 뒤 소유권·확인한 head/base/branch·clean 상태를 다시 확인한다. 자동 정리는 이미 성공한 정지를 중복 실행하지 않으며, 설정을 끄면 작업 폴더·브랜치를 남기고 저장소 teardown을 실행하지 않는다. 최초3개 RED 뒤 새4개10시나리오와 기존 직접4·실제 CLI2·종료 usage 고정1의 고유11개 및 소유 포맷 PASS, 고정4파일 별도 검토 PASS. scope 실패/정지 중 HEAD·dirty 변경·이미 종료된 자원·SIGHUP을 무시하는 소유 프로세스를 포함한다. mock scope 근거와 실제 Windows/systemd 수용을 구분하며 후자는 최종 설치본에서 확인한다. 근거 agents-close-quiesce-evidence.json·freeze·independent-sol-review.json.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.

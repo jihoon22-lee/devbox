@@ -82,7 +82,8 @@ impl AgentsService {
             })
             .await;
     }
-    pub(crate) async fn cleanup_closed(
+    /// Merge/PR callers have already stopped the owned terminal/scope before mutation.
+    pub(crate) async fn cleanup_closed_after_quiesce(
         &self,
         id: &str,
         snapshot: &Option<devbox_projects::trust::AuthorizedConfig>,
@@ -103,8 +104,7 @@ impl AgentsService {
         }) {
             return Err(AgentsError::UnsafeWorktree.into());
         }
-        // Stop only the task's own resources, then inspect again before any removal.
-        self.quiesce(&task).await?;
+        // Do not stop a second time; only optional teardown and Git removal remain.
         self.teardown_commands(&task, snapshot).await?;
         self.owned_worktree(&task).await?;
         if task.closed_head_oid.as_deref()

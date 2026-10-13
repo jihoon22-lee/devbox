@@ -2,6 +2,9 @@ use super::*;
 use crate::tracker::{Binding, Resources};
 use devbox_protocol::Fail;
 
+#[path = "close_review_tests.rs"]
+mod close_review_tests;
+
 async fn action_fixture() -> (Fixture, AgentTask, PathBuf) {
     let mut fixture = Fixture::new().await;
     Arc::get_mut(&mut fixture.svc)
@@ -250,7 +253,15 @@ async fn child_cleanup(mode: &str) {
         )
         .await
         .expect("closed task");
-    fixture.svc.cleanup_closed(&task.id, &None).await;
+    fixture
+        .svc
+        .quiesce(&task)
+        .await
+        .expect("owned resources stopped");
+    fixture
+        .svc
+        .cleanup_closed_after_quiesce(&task.id, &None)
+        .await;
     assert!(!wt.exists(), "owned clean worktree was removed");
     let closed = fixture.svc.get(&task.id).await.expect("closed task");
     if mode == "gone" {

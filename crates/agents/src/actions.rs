@@ -37,6 +37,27 @@ async fn rebase_markers_absent(worktree: &Path) -> Result<bool> {
     Ok(true)
 }
 impl AgentsService {
+    async fn quiesce_confirmed_review(
+        &self,
+        task: &AgentTask,
+        repo: &Path,
+        wt: &Path,
+        branch: &str,
+        expect: &ReviewExpect,
+    ) -> Result<()> {
+        // Closing always stops the owned tool, independently of Git cleanup.
+        // Stop failures happen before irreversible merge/push/PR side effects.
+        self.quiesce(task).await?;
+        self.owned_worktree(task).await?;
+        self.check_expect(task, repo, wt, branch, expect).await?;
+        if !devbox_git::status(wt).await.map_err(git_failure)?.clean {
+            return Err(AgentsError::WorktreeDirty {
+                files: self.dirty_paths(wt).await?,
+            }
+            .into());
+        }
+        Ok(())
+    }
     pub async fn review(&self, id: &str) -> Result<AgentTask> {
         let _guard = self.actions.lock().await;
         open(&self.get(id).await?)?;
@@ -269,6 +290,8 @@ impl AgentsService {
             }
             .into());
         }
+        self.quiesce_confirmed_review(&task, repo, &wt, &branch, &p.expect)
+            .await?;
         let merged = devbox_git::mutate::merge_into_at(
             repo,
             &task.base_branch,
@@ -286,7 +309,8 @@ impl AgentsService {
         self.close_record(&task.id, CloseHow::Merged, None, closed_head, usage, review)
             .await?;
         if self.cleanup_after_close {
-            self.cleanup_closed(&task.id, &cleanup_snapshot).await;
+            self.cleanup_closed_after_quiesce(&task.id, &cleanup_snapshot)
+                .await;
         }
         self.get(&task.id).await
     }
@@ -329,6 +353,8 @@ impl AgentsService {
                     .join("\n")
             )
         });
+        self.quiesce_confirmed_review(&task, repo, &wt, &branch, &p.expect)
+            .await?;
         let result = devbox_git::mutate::push_and_pr_at(
             &wt,
             &branch,
@@ -353,7 +379,8 @@ impl AgentsService {
         )
         .await?;
         if self.cleanup_after_close {
-            self.cleanup_closed(&task.id, &cleanup_snapshot).await;
+            self.cleanup_closed_after_quiesce(&task.id, &cleanup_snapshot)
+                .await;
         }
         self.get(&task.id).await
     }
